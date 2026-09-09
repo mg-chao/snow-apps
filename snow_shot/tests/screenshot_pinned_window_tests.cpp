@@ -1,5 +1,8 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "../src/presentation/pinned/screenshotpinnedwindownative.h"
+#include "../src/presentation/pinned/screenshotpinnednativegeometrycontroller.h"
+#include "snow_shot/presentation/screenshotcanvasrenderer.h"
+#include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
@@ -76,6 +79,70 @@
 #include <vector>
 
 void runPinnedOriginalImageTranslationTests();
+
+// Offscreen tests exercise restored state and queued DPI notifications without
+// installing the Windows HWND hooks required by present().
+class ScreenshotPinnedWindowTestAccess {
+  public:
+    static void restoreOffscreen(ScreenshotPinnedWindow& window,
+                                 const ScreenshotPinnedWindow::Config& config) {
+        window.setAttribute(Qt::WA_DeleteOnClose, false);
+        const qreal dpr = window.devicePixelRatioF();
+        window.resize(qRound(config.nativeGeometry.width() / dpr),
+                      qRound(config.nativeGeometry.height() / dpr));
+        window.m_canvas->setGeometry(window.rect());
+        window.m_canvasSourceRect = config.canvasSourceRect;
+        window.m_backgroundCanvasRect = config.canvasSourceRect;
+        window.m_resultSurfaceCanvasRect = config.canvasSourceRect;
+        window.m_initialPhysicalSize = config.fullResolutionScaleBasis;
+        window.m_originalImage = config.imageSource.materializedImage;
+        window.m_transformedImage = window.m_originalImage;
+        window.m_screenshotRenderer->setImageSource(config.imageSource);
+        window.m_screenshotRenderer->setPinnedResultSurface(
+            config.canvasSourceRect, config.canvasSourceRect, config.resultStyle);
+        window.restorePersistentState(config);
+        static_cast<void>(window.m_nativeGeometryController->initialize(config.nativeGeometry));
+        window.m_presented = true;
+        window.updateCanvasViewport();
+    }
+
+    static void leaveViewportAtPreviousDpi(ScreenshotPinnedWindow& window, qreal ratio) {
+        window.m_viewportZoom *= ratio;
+        window.m_canvas->setViewportCamera(window.m_viewportCenter.x(), window.m_viewportCenter.y(),
+                                           window.m_viewportZoom);
+    }
+
+    static double viewportZoom(const ScreenshotPinnedWindow& window) {
+        return window.m_viewportZoom;
+    }
+
+    static std::shared_ptr<ScreenshotExportArtifact>
+    exportArtifact(ScreenshotPinnedWindow& window) {
+        return window.m_exportArtifact;
+    }
+
+    static void setAnimationSnapshot(ScreenshotPinnedWindow& window, const QRect& target) {
+        window.m_geometryAnimation = new QVariantAnimation(&window);
+        window.m_geometryAnimation->setStartValue(window.currentNativeGeometry());
+        window.m_geometryAnimation->setEndValue(target);
+        window.m_geometryAnimation->start();
+        window.m_geometryAnimation->pause();
+        window.m_geometryAnimating = true;
+    }
+
+    static void finishExpansionOffscreen(ScreenshotPinnedWindow& window) {
+        window.m_thumbnailMode = false;
+        // Geometry is verified by the native recreation test. Suppress the
+        // HWND mutation here so the transition state can be tested offscreen.
+        window.m_nativeGeometryController.reset();
+        window.restoreFromThumbnailImmediately();
+    }
+
+    static bool isGeometryAnimating(const ScreenshotPinnedWindow& window) {
+        return window.m_geometryAnimating ||
+               window.m_geometryAnimation->state() != QAbstractAnimation::Stopped;
+    }
+};
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include <qt_windows.h>
@@ -155,8 +222,11 @@ QPoint systemCursorPosition() {
 
 void setSystemCursorPosition(const QPoint& position) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    require(SetPhysicalCursorPos(position.x(), position.y()) != FALSE,
-            "failed to set the physical system cursor position");
+    const bool positioned = SetPhysicalCursorPos(position.x(), position.y()) != FALSE;
+    if (!positioned) {
+        std::cerr << "SetPhysicalCursorPos failed: error=" << GetLastError() << '\n';
+    }
+    require(positioned, "failed to set the physical system cursor position");
 #else
     QCursor::setPos(position);
 #endif
@@ -3185,6 +3255,86 @@ void pinnedOcrDoubleClickUsesDragRegion(bool middleClick = false) {
     require(processUntilDeleted(guarded, 2000), "double-clicking OCR drag background must close");
 }
 
+void enlargedPinnedThumbnailRemainsVisible() {
+    const CursorPositionRestorer cursorRestorer;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "enlarged thumbnail requires a screen");
+    const QRect screenRect = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+    QImage image(600, 400, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry =
+        QRect(screenRect.topLeft(), QSize(screenRect.width() + 500, screenRect.height() + 500));
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(image.size()));
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    config.screen = screen;
+    config.automaticTextRecognition = false;
+    auto* window = new ScreenshotPinnedWindow();
+    QPointer<ScreenshotPinnedWindow> guarded(window);
+    require(window->present(config), "enlarged thumbnail pin presentation failed");
+    waitForUi(200);
+    require(guarded && window->isVisible(), "enlarged pin must start visible");
+    const QRect original = window->currentNativeGeometry();
+    setSystemCursorPosition(screenRect.center());
+    auto* thumbnail =
+        window->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
+    require(thumbnail != nullptr, "enlarged thumbnail action missing");
+    thumbnail->setChecked(true);
+    waitForUi(300);
+    require(guarded && window->isVisible(),
+            "shrinking an enlarged pin to a thumbnail must not close the window");
+    require(screenRect.intersects(window->currentNativeGeometry()),
+            "enlarged pin thumbnail must remain on screen");
+    thumbnail->setChecked(false);
+    waitForUi(300);
+    require(guarded && window->isVisible() && window->currentNativeGeometry() == original,
+            "leaving thumbnail mode must restore the enlarged pin without closing it");
+    window->close();
+    require(processUntilDeleted(guarded, 2000), "enlarged thumbnail fixture did not close");
+}
+
+void pinnedThumbnailTracksCurrentMousePosition() {
+    const CursorPositionRestorer cursorRestorer;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "thumbnail anchoring requires a screen");
+    QImage image(600, 400, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(100, 100), image.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(image.size()));
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    config.screen = screen;
+    config.automaticTextRecognition = false;
+    ScreenshotPinnedWindow window;
+    require(window.present(config), "thumbnail anchoring pin presentation failed");
+    waitForUi(200);
+    auto* thumbnail = window.findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
+    require(thumbnail != nullptr, "thumbnail anchoring action missing");
+    const auto requireAnchor = [](const QRect& before, const QRect& after, const QPoint& cursor) {
+        const QPointF fraction((cursor.x() - before.x()) / double(before.width()),
+                               (cursor.y() - before.y()) / double(before.height()));
+        const QPointF mapped(after.x() + fraction.x() * after.width(),
+                             after.y() + fraction.y() * after.height());
+        require((mapped - cursor).manhattanLength() <= 1.0,
+                "thumbnail transitions must preserve the current mouse anchor");
+    };
+    const QRect original = window.currentNativeGeometry();
+    const QPoint shrinkCursor = original.topLeft() + QPoint(200, 100);
+    setSystemCursorPosition(shrinkCursor);
+    thumbnail->setChecked(true);
+    waitForUi(300);
+    const QRect thumbnailGeometry = window.currentNativeGeometry();
+    requireAnchor(original, thumbnailGeometry, shrinkCursor);
+    const QPoint expandCursor =
+        thumbnailGeometry.topLeft() +
+        QPoint(thumbnailGeometry.width() / 2, thumbnailGeometry.height() / 2);
+    setSystemCursorPosition(expandCursor);
+    thumbnail->setChecked(false);
+    waitForUi(300);
+    require(window.currentNativeGeometry() == original,
+            "thumbnail exit must restore the saved position and size despite mouse movement");
+}
+
 void pinnedDoubleClickActions() {
     const snow_shot::storage::PinToScreenSettings settings;
     const QString previousAction = settings.doubleClickAction();
@@ -4406,6 +4556,172 @@ void restoredPinnedWindowIgnoresMonitorDpiChange(SnowCanvasRuntime&) {
     closeRestoredPinnedWindow(restoredWindow, record.id);
 }
 
+void restoredThumbnailStateOffscreen(const QString& scenario) {
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = QRect(40, 30, 120, 120);
+    config.canvasSourceRect = QRectF(0, 0, 400, 200);
+    config.fullResolutionScaleBasis = QSize(800, 400);
+    QImage transparentImage(400, 200, QImage::Format_ARGB32_Premultiplied);
+    transparentImage.fill(Qt::transparent);
+    config.imageSource =
+        ScreenshotImageSource::fromImage(transparentImage, config.canvasSourceRect);
+    config.restorePersistentState = true;
+    config.persistedThumbnailMode = true;
+    config.persistedPreThumbnailNativeGeometry = QRect(200, 120, 400, 200);
+    ScreenshotPinnedWindow window;
+    ScreenshotPinnedWindowTestAccess::restoreOffscreen(window, config);
+    if (scenario == QStringLiteral("appearance")) {
+        auto* thumbnail =
+            window.findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
+        auto* canvas = window.findChild<SnowCanvasWidget*>();
+        const QImage rendered = renderWidget(*canvas);
+        require(rendered.pixelColor(rendered.rect().center()).alpha() == 255,
+                "a recreated thumbnail must paint an opaque background from its first frame");
+        require(thumbnail != nullptr && thumbnail->isChecked(),
+                "restored thumbnail action must reflect the mode before opening a menu");
+    } else if (scenario == QStringLiteral("dpi")) {
+        const double expectedZoom = ScreenshotPinnedWindowTestAccess::viewportZoom(window);
+        // A native resize may arrive before Qt updates the DPR. Leave the camera
+        // at that earlier scale, then deliver the final DPR notification alone.
+        for (const qreal ratio : {0.5, 1.25, 2.0}) {
+            ScreenshotPinnedWindowTestAccess::leaveViewportAtPreviousDpi(window, ratio);
+            QEvent dpiChanged(QEvent::DevicePixelRatioChange);
+            QCoreApplication::sendEvent(&window, &dpiChanged);
+            waitForUi(30);
+            require(
+                qFuzzyCompare(ScreenshotPinnedWindowTestAccess::viewportZoom(window), expectedZoom),
+                "DPI settlement must refresh a thumbnail camera even without another resize");
+        }
+        require(window.persistenceSnapshot().preThumbnailNativeGeometry ==
+                    config.persistedPreThumbnailNativeGeometry,
+                "thumbnail DPI changes must preserve the saved expansion rectangle");
+    } else if (scenario == QStringLiteral("snapshot")) {
+        const QRect target(70, 60, 83, 83);
+        ScreenshotPinnedWindowTestAccess::setAnimationSnapshot(window, target);
+        const auto snapshot = window.persistenceSnapshot();
+        require(snapshot.thumbnailMode && snapshot.nativeGeometry == target,
+                "a persisted mode must be paired with the animation destination, never a frame");
+        ScreenshotPinnedWindowTestAccess::finishExpansionOffscreen(window);
+        require(!ScreenshotPinnedWindowTestAccess::isGeometryAnimating(window),
+                "an immediate command must finish expansion even after the mode flag is cleared");
+    } else if (scenario == QStringLiteral("copy")) {
+        auto* copy = window.findChild<QAction*>(QStringLiteral("screenshotPinnedCopyAction"));
+        require(copy != nullptr, "restored thumbnail copy action missing");
+        static_cast<void>(renderWidget(*window.findChild<SnowCanvasWidget*>()));
+        waitForUi(30);
+        QApplication::clipboard()->clear();
+        copy->trigger();
+        // Windows publishes to the native clipboard even with offscreen QPA.
+        // Inspect the same artifact the Copy command sends to that adapter.
+        const auto artifact = ScreenshotPinnedWindowTestAccess::exportArtifact(window);
+        require(artifact != nullptr, "thumbnail Copy must create an export artifact");
+        QImage copied;
+        require(artifact->requestImage(&window,
+                                       [&copied](ScreenshotExportImageResult result) {
+                                           copied = std::move(result.image);
+                                       }),
+                "thumbnail copy artifact must provide an image");
+        QElapsedTimer deadline;
+        deadline.start();
+        while (copied.isNull() && deadline.elapsed() < 5000) {
+            waitForUi(10);
+        }
+        if (copied.size() != QSize(120, 60)) {
+            std::cerr << "thumbnail copy size=" << copied.width() << 'x' << copied.height()
+                      << " widget=" << window.width() << 'x' << window.height()
+                      << " dpr=" << window.devicePixelRatioF() << '\n';
+        }
+        require(copied.size() == QSize(120, 60),
+                "thumbnail copy must use the displayed physical pixels at the current DPI");
+    }
+}
+
+void thumbnailAnimationSurvivesRecreation(bool entering) {
+    IsolatedPinnedStorage storage;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "thumbnail recreation requires a screen");
+    auto record = savedPinnedRecord(*screen, 1.0, QSize(800, 400), 50.0, QPoint(200, 120));
+    const QRect expanded = record.nativeGeometry;
+    record.image.fill(Qt::transparent);
+    ScreenshotSelectionExportUiServices services;
+    auto* window = restoreSeededPinnedWindow(services, record);
+    auto* thumbnail =
+        window->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
+    require(thumbnail != nullptr, "thumbnail recreation action missing");
+    thumbnail->setChecked(true);
+    if (!entering) {
+        waitForUi(250);
+        thumbnail->setChecked(false);
+    }
+    auto* animation =
+        window->findChild<QVariantAnimation*>(QStringLiteral("screenshotPinnedGeometryAnimation"));
+    require(animation != nullptr, "thumbnail recreation animation missing");
+    animation->pause();
+    animation->setCurrentTime(animation->duration() / 2);
+    const QRect target = animation->endValue().toRect();
+    auto snapshot = window->persistenceSnapshot();
+    require(snapshot.thumbnailMode == entering && snapshot.nativeGeometry == target &&
+                snapshot.preThumbnailNativeGeometry == expanded,
+            "closing during a thumbnail transition must save the destination and expansion state");
+    QPointer<ScreenshotPinnedWindow> guarded(window);
+    window->closeForInactiveGroup();
+    require(processUntilDeleted(guarded, 2000), "thumbnail transition fixture did not close");
+    window = restoreSeededPinnedWindow(services, snapshot);
+    require(window->currentNativeGeometry() == target &&
+                window->persistenceSnapshot().thumbnailMode == entering,
+            "recreation must finish the saved transition at its destination");
+    const QImage rendered = renderWidget(*window);
+    require(rendered.pixelColor(rendered.rect().center()).alpha() == (entering ? 255 : 0),
+            "recreated pins must immediately render the background appropriate to their mode");
+    closeRestoredPinnedWindow(window, record.id);
+}
+
+void thumbnailReentryPreservesExpandedGeometry(bool scaleDuringExpansion = false) {
+    IsolatedPinnedStorage storage;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "thumbnail reentry requires a screen");
+    auto record = savedPinnedRecord(*screen, 1.0, QSize(800, 400), 50.0, QPoint(200, 120));
+    const QRect expanded = record.nativeGeometry;
+    record.thumbnailMode = true;
+    record.preThumbnailNativeGeometry = expanded;
+    record.nativeGeometry.setSize(QSize(120, 120));
+    ScreenshotSelectionExportUiServices services;
+    auto* window = restoreSeededPinnedWindow(services, record);
+    static_cast<void>(scaleMenuReadout(*window));
+    auto* thumbnail =
+        window->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
+    thumbnail->setChecked(false);
+    auto* animation =
+        window->findChild<QVariantAnimation*>(QStringLiteral("screenshotPinnedGeometryAnimation"));
+    require(animation != nullptr, "thumbnail expansion animation missing");
+    animation->pause();
+    animation->setCurrentTime(animation->duration() / 2);
+    if (scaleDuringExpansion) {
+        auto* scale = window->findChild<adqt::widgets::AdContextMenu*>(
+            QStringLiteral("screenshotPinnedScaleMenu"));
+        require(scale != nullptr, "thumbnail scale menu missing");
+        scale->actions().at(3)->trigger();
+        require(animation->state() == QAbstractAnimation::Stopped,
+                "scaling during thumbnail expansion must cancel the pending animation");
+        waitForUi(250);
+        const QRect expected(expanded.topLeft(), record.initialPhysicalSize);
+        require(window->currentNativeGeometry() == expected &&
+                    window->persistenceSnapshot().nativeGeometry == expected,
+                "a new scale command must replace the pending expansion in live and saved state");
+        closeRestoredPinnedWindow(window, record.id);
+        return;
+    }
+    thumbnail->setChecked(true);
+    require(window->persistenceSnapshot().preThumbnailNativeGeometry == expanded,
+            "reentering during expansion must not replace the saved rectangle with a frame");
+    waitForUi(250);
+    thumbnail->setChecked(false);
+    waitForUi(250);
+    require(window->currentNativeGeometry() == expanded,
+            "rapid thumbnail toggles must still expand to the original physical rectangle");
+    closeRestoredPinnedWindow(window, record.id);
+}
+
 void restoredThumbnailScaleMenuStaysConsistentThroughExit(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -5188,6 +5504,8 @@ int main(int argc, char* argv[]) {
             if (QGuiApplication::platformName() == QStringLiteral("offscreen")) {
                 pinnedOffscreenDoubleClickActions();
             } else {
+                enlargedPinnedThumbnailRemainsVisible();
+                pinnedThumbnailTracksCurrentMousePosition();
                 pinnedDoubleClickActions();
                 pinnedOcrDoubleClickUsesDragRegion();
             }
@@ -5304,6 +5622,23 @@ int main(int argc, char* argv[]) {
             restoredThumbnailScaleMenuStaysConsistentThroughExit(sourceRuntime);
             restoredFractionalScaleCopiesTheDisplayedViewport(sourceRuntime);
             restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(sourceRuntime);
+            return 0;
+        }
+        for (const QString& scenario : {QStringLiteral("appearance"), QStringLiteral("dpi"),
+                                        QStringLiteral("snapshot"), QStringLiteral("copy")}) {
+            if (app.arguments().contains(QStringLiteral("--thumbnail-%1-only").arg(scenario))) {
+                restoredThumbnailStateOffscreen(scenario);
+                return 0;
+            }
+        }
+        if (app.arguments().contains(QStringLiteral("--thumbnail-recreation-only"))) {
+            thumbnailAnimationSurvivesRecreation(true);
+            thumbnailAnimationSurvivesRecreation(false);
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--thumbnail-reentry-only"))) {
+            thumbnailReentryPreservesExpandedGeometry();
+            thumbnailReentryPreservesExpandedGeometry(true);
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--tray-pin-runtime-only"))) {

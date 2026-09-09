@@ -29,6 +29,14 @@ enum class ScaleAnchor {
 
 [[nodiscard]] QSize scaledSize(const QSize& baseline, double scale);
 
+struct TrackSizeLimits {
+    QSize minimum;
+    QSize maximum;
+};
+
+[[nodiscard]] TrackSizeLimits trackSizeLimits(const QSize& minimum, const QSize& maximum,
+                                              const QSize& current, const QSize& target);
+
 [[nodiscard]] ScaleAnchor scaleAnchorFromSetting(QStringView value);
 
 [[nodiscard]] QRect anchoredScaleRect(const QRect& reference, const QSize& targetSize,

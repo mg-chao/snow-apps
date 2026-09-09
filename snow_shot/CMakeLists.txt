@@ -2650,6 +2650,26 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-pinned-shortcut-display-tests
         COMMAND snow-shot-pinned-window-tests --shortcut-display-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-shortcut-display-tests PROPERTIES LABELS "unit")
+    foreach(_thumbnail_scenario IN ITEMS appearance dpi snapshot copy)
+        add_test(NAME snow-shot-pinned-thumbnail-${_thumbnail_scenario}-tests
+            COMMAND snow-shot-pinned-window-tests --thumbnail-${_thumbnail_scenario}-only -platform offscreen)
+        set_tests_properties(snow-shot-pinned-thumbnail-${_thumbnail_scenario}-tests PROPERTIES
+            TIMEOUT 30 RUN_SERIAL TRUE
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endforeach()
+    set_tests_properties(snow-shot-pinned-thumbnail-copy-tests PROPERTIES
+        ENVIRONMENT "QT_SCALE_FACTOR=2")
+    add_test(NAME snow-shot-pinned-thumbnail-copy-fractional-tests
+        COMMAND snow-shot-pinned-window-tests --thumbnail-copy-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-thumbnail-copy-fractional-tests PROPERTIES
+        TIMEOUT 30 RUN_SERIAL TRUE ENVIRONMENT "QT_SCALE_FACTOR=1.25"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-pinned-thumbnail-background-tests
+        COMMAND snow-shot-pinned-window-tests --thumbnail-background-only)
+    add_test(NAME snow-shot-pinned-thumbnail-recreation-tests
+        COMMAND snow-shot-pinned-window-tests --thumbnail-recreation-only)
+    add_test(NAME snow-shot-pinned-thumbnail-reentry-tests
+        COMMAND snow-shot-pinned-window-tests --thumbnail-reentry-only)
     add_test(NAME snow-shot-pinned-middle-click-tests
         COMMAND snow-shot-pinned-window-tests --middle-click-only)
     add_test(NAME snow-shot-pinned-middle-click-offscreen-tests
@@ -2869,6 +2889,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-pinned-recognition-shortcut-offscreen-tests
         snow-shot-pinned-transformed-ocr-tests
         snow-shot-pinned-restore-wiring-tests
+        snow-shot-pinned-thumbnail-recreation-tests
+        snow-shot-pinned-thumbnail-reentry-tests
+        snow-shot-pinned-thumbnail-background-tests
         snow-shot-pinned-toolbar-parity-tests
         snow-shot-pinned-movement-shortcut-tests
         snow-shot-pinned-drawing-shortcut-toggle-tests

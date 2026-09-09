@@ -5,6 +5,19 @@
 #include <algorithm>
 #include <cmath>
 
+screenshot_pinned_resize_geometry::TrackSizeLimits
+screenshot_pinned_resize_geometry::trackSizeLimits(const QSize& minimum, const QSize& maximum,
+                                                   const QSize& current, const QSize& target) {
+    TrackSizeLimits limits{minimum, maximum.expandedTo(minimum)};
+    for (const QSize& size : {current, target}) {
+        if (size.isValid() && !size.isEmpty()) {
+            limits.minimum = limits.minimum.boundedTo(size);
+            limits.maximum = limits.maximum.expandedTo(size);
+        }
+    }
+    return limits;
+}
+
 namespace {
 using DragHandle = screenshot_pinned_resize_geometry::DragHandle;
 using ScaleAnchor = screenshot_pinned_resize_geometry::ScaleAnchor;
