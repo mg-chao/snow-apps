@@ -78,159 +78,169 @@
 <context>
     <name>CustomAiModelsSettingsWidget</name>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="118"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="136"/>
         <source>No custom models configured</source>
         <translation>尚未配置自定义模型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="138"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="149"/>
+        <source>Vision</source>
+        <translation>视觉</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="154"/>
         <source>Edit</source>
         <translation>编辑</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="138"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="407"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="154"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="451"/>
         <source>Delete</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="138"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="154"/>
         <source>Copy</source>
         <translation>复制</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="144"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="166"/>
         <source>%1 model %2</source>
         <translation>%1模型 %2</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="172"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="387"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="421"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="194"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="430"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="465"/>
         <source>Unable to save models. Check that configuration storage is writable and try again.</source>
         <translation>无法保存模型。请确认配置存储位置可写，然后重试。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="189"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="211"/>
         <source>%1 (Copy)</source>
         <translation>%1（副本）</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="190"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="212"/>
         <source>%1 (Copy %2)</source>
         <translation>%1（副本 %2）</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="319"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="362"/>
         <source>Enter a model name.</source>
         <translation>请输入模型名称。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="324"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="367"/>
         <source>A model with this name already exists.</source>
         <translation>已存在同名模型。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="328"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="371"/>
         <source>Enter the base URL without /chat/completions.</source>
         <translation>请输入不含 /chat/completions 的基础 URL。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="331"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="374"/>
         <source>Enter an HTTP or HTTPS base URL without credentials, a query, or a fragment.</source>
         <translation>请输入 HTTP 或 HTTPS 基础 URL，不要包含凭据、查询参数或片段。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="334"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="377"/>
         <source>The API key must not contain line breaks.</source>
         <translation>API 密钥不能包含换行符。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="337"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="380"/>
         <source>Enter the API model ID.</source>
         <translation>请输入 API 模型 ID。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="360"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="386"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="403"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="429"/>
         <source>This model was deleted. Close this form and create a new model.</source>
         <translation>此模型已被删除。请关闭此表单并创建新模型。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="380"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="423"/>
         <source>Edit Model</source>
         <translation>编辑模型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="380"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="422"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="423"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="466"/>
         <source>Add Model</source>
         <translation>添加模型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="381"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="424"/>
         <source>Save</source>
         <translation>保存</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="382"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="408"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="425"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="452"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="390"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="433"/>
         <source>Model Name</source>
         <translation>模型名称</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="390"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="433"/>
         <source>API URL</source>
         <translation>API URL</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="390"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="433"/>
         <source>API Key</source>
         <translation>API 密钥</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="390"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="433"/>
         <source>API Model</source>
         <translation>API 模型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="391"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="398"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="434"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="441"/>
         <source>Vision Support</source>
         <translation>视觉支持</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="399"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="442"/>
+        <source>The model name displayed in Snow Shot.</source>
+        <translation>在 Snow Shot 中显示的模型名称。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="443"/>
         <source>OpenAI-compatible Chat Completions. /chat/completions is appended to this base URL.</source>
         <translation>兼容 OpenAI 的 Chat Completions。系统会在此基础 URL 后追加 /chat/completions。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="401"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="445"/>
         <source>Optional for servers that do not require authentication.</source>
         <translation>不需要身份验证的服务器可留空。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="402"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="446"/>
         <source>The model ID expected by your API provider.</source>
         <translation>API 服务提供商要求的模型 ID。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="403"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="447"/>
         <source>Allow this model to convert images to Markdown and HTML.</source>
         <translation>允许此模型将图像转换为 Markdown 和 HTML。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="406"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="450"/>
         <source>Delete Model</source>
         <translation>删除模型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="412"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="456"/>
         <source>Delete model &quot;%1&quot;? If selected, another available model will be used.</source>
         <translation>删除模型“%1”？如果当前已选中此模型，将改用其他可用模型。</translation>
     </message>
@@ -1792,7 +1802,7 @@
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="942"/>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="983"/>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1005"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1468"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1463"/>
         <source>Translation service is unavailable</source>
         <translation>翻译服务不可用</translation>
     </message>
@@ -1804,7 +1814,7 @@
     <message>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1199"/>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1270"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2395"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2390"/>
         <source>Translation failed</source>
         <translation>翻译失败</translation>
     </message>
@@ -1819,61 +1829,61 @@
         <translation>重试</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1381"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1376"/>
         <source>Source language</source>
         <translation>源语言</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1382"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1377"/>
         <source>Target language</source>
         <translation>目标语言</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1383"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1378"/>
         <source>Translation service</source>
         <translation>翻译服务</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1369"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1459"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1364"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1454"/>
         <source>General Models</source>
         <translation>通用模型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1370"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1460"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1365"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1455"/>
         <source>Translation Models</source>
         <translation>翻译模型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1393"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1388"/>
         <source>Translation settings</source>
         <translation>翻译设置</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1399"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1394"/>
         <source>OK</source>
         <translation>确定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1400"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1395"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1538"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1533"/>
         <source>Translation service request failed</source>
         <translation>翻译服务请求失败</translation>
     </message>
     <message>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="972"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1550"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1545"/>
         <source>Translation service request could not be prepared</source>
         <translation>无法准备翻译服务请求</translation>
     </message>
     <message>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="102"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1355"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1350"/>
         <source>Auto-detect language</source>
         <translation>自动检测语言</translation>
     </message>
@@ -1883,100 +1893,100 @@
         <translation>部分文字未能翻译</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1732"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1727"/>
         <source>Text recognition is unavailable for screenshots larger than 4K</source>
         <translation>超过 4K 的截图无法进行文本识别</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1770"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1765"/>
         <source>Text recognition request could not be prepared</source>
         <translation>无法准备文本识别请求</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1848"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1843"/>
         <source>Table recognition service is unavailable</source>
         <translation>表格识别服务不可用</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1870"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1865"/>
         <source>Table recognition request could not be prepared</source>
         <translation>无法准备表格识别请求</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1879"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1874"/>
         <source>Barcode recognition is unavailable</source>
         <translation>条码识别服务不可用</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1901"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1896"/>
         <source>Barcode recognition request could not be prepared</source>
         <translation>无法准备条码识别请求</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1916"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2396"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1911"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2391"/>
         <source>Text recognition failed</source>
         <translation>文本识别失败</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1960"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2397"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1955"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2392"/>
         <source>Table recognition failed</source>
         <translation>表格识别失败</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1970"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1965"/>
         <source>No table cells were recognized</source>
         <translation>未识别到表格单元格</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2007"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2002"/>
         <source>No barcode was recognized</source>
         <translation>未识别到条码</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2247"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2242"/>
         <source>Preparing text recognition components</source>
         <translation>正在准备文本识别组件</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2253"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2248"/>
         <source>Preparing text recognition components (%1%)</source>
         <translation>正在准备文本识别组件（%1%）</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2277"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2272"/>
         <source>Recognizing table</source>
         <translation>正在识别表格</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2278"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2273"/>
         <source>Recognizing barcode</source>
         <translation>正在识别条码</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2279"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2274"/>
         <source>Converting to Markdown</source>
         <translation>正在转换为 Markdown</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2280"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2275"/>
         <source>Converting to HTML</source>
         <translation>正在转换为 HTML</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2281"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2276"/>
         <source>Recognizing text</source>
         <translation>正在识别文本</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2398"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2393"/>
         <source>Barcode recognition failed</source>
         <translation>条码识别失败</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1348"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1384"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1343"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1379"/>
         <source>Original Image Translation</source>
         <translation>原图翻译</translation>
     </message>
@@ -4340,13 +4350,12 @@
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1805"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="423"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="467"/>
         <source>Custom Models</source>
         <translation>自定义模型</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1807"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="425"/>
         <source>OpenAI-compatible Chat Completions</source>
         <translation>兼容 OpenAI 的 Chat Completions</translation>
     </message>

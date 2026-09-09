@@ -14,12 +14,14 @@
 #include "widgets/input_password_edit.h"
 #include "widgets/modal.h"
 #include "widgets/switch.h"
+#include "widgets/tag.h"
 #include <QApplication>
 #include <QDir>
 #include <QFile>
 #include <QFontDatabase>
 #include <QJsonDocument>
 #include <QLabel>
+#include <QLayout>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QEventLoop>
@@ -43,6 +45,23 @@ void flush() {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QCoreApplication::processEvents();
 }
+class EditorPaintObserver final : public QObject {
+  public:
+    QList<QRect> frames;
+
+  protected:
+    bool eventFilter(QObject* object, QEvent* event) override {
+        auto* widget = qobject_cast<QWidget*>(object);
+        if (event->type() == QEvent::Paint && widget != nullptr &&
+            widget->objectName() == QStringLiteral("modelName")) {
+            const QRect frame(widget->mapTo(widget->window(), QPoint()), widget->size());
+            if (frames.isEmpty() || frames.last() != frame) {
+                frames.append(frame);
+            }
+        }
+        return false;
+    }
+};
 CustomAiModelConfiguration example() {
     return {QUuid::createUuid().toString(QUuid::WithoutBraces),
             QStringLiteral("My Model"),
@@ -146,8 +165,21 @@ void widgetContracts(QApplication& application) {
         auto* add = widget->findChild<AdButton*>(QStringLiteral("customAiModelAdd"));
         require(add != nullptr && widget->findChild<QLabel*>(QStringLiteral("customAiModelsEmpty")),
                 "empty state with add action");
+        require(add->buttonStyle() == AdButton::ButtonStyle::Dashed &&
+                    add->shape() == AdButton::Shape::Rounded && add->width() == widget->width(),
+                "add action matches the full-width rounded key configuration button");
+        require(widget->layout()->itemAt(widget->layout()->count() - 1)->widget() == add,
+                "add action follows the model list");
+        for (auto* label : widget->findChildren<QLabel*>(QString(), Qt::FindDirectChildrenOnly)) {
+            require(label->text() != QStringLiteral("OpenAI-compatible Chat Completions"),
+                    "custom model heading has no subtitle");
+        }
+        EditorPaintObserver observer;
+        application.installEventFilter(&observer);
         add->click();
         flush();
+        application.removeEventFilter(&observer);
+        require(observer.frames.size() == 1, "editor geometry is stable from its first paint");
         auto* modal = widget->findChild<AdModal*>(QStringLiteral("customAiModelEditor"));
         require(modal != nullptr, "add opens form");
         modal->acceptButton()->click();
@@ -159,9 +191,26 @@ void widgetContracts(QApplication& application) {
         auto* key = modal->contentWidget()->findChild<AdPasswordEdit*>(QStringLiteral("apiKey"));
         require(name && url && apiModel && key && !key->textVisible(),
                 "form has masked password input");
-        require(name->width() >= 400 && name->width() == apiModel->width() &&
+        const auto position = [modal](QWidget* control) {
+            return control->mapTo(modal->contentWidget(), QPoint());
+        };
+        require(name->width() >= 250 && qAbs(name->width() - url->width()) <= 1 &&
                     name->width() == key->width(),
-                "model inputs fill the form with consistent widths");
+                "model inputs have equal usable column widths");
+        require(position(name).x() == position(key).x() &&
+                    position(url).x() == position(apiModel).x() &&
+                    position(url).x() > position(name).x() &&
+                    position(key).y() > position(name).y(),
+                "editor arranges fields in two columns in reading order");
+        const auto fields = modal->contentWidget()->findChildren<AdFormItem*>();
+        require(fields.size() == 5, "editor has five labeled fields");
+        for (auto* field : fields) {
+            auto* tooltip = field->findChild<QLabel*>(QStringLiteral("ad-form-item-label-tooltip"));
+            require(!field->tooltipText().isEmpty() && field->extraText().isEmpty() &&
+                        tooltip != nullptr && !tooltip->isHidden() &&
+                        tooltip->toolTip() == field->tooltipText(),
+                    "every field exposes its description through a label tooltip");
+        }
         name->setText(QStringLiteral("Personal model"));
         url->setText(QStringLiteral("http://localhost:1234/v1/"));
         apiModel->setText(QStringLiteral("local-id"));
@@ -175,6 +224,22 @@ void widgetContracts(QApplication& application) {
         flush();
         require(session.customAiModels().size() == 1, "create persists one model");
         const auto original = session.customAiModels().first();
+        auto* row = widget->findChild<QWidget*>(QStringLiteral("customAiModelRow:") + original.id);
+        require(row != nullptr, "saved model has a list row");
+        auto* visionTag = row->findChild<AdTag*>();
+        require(visionTag != nullptr && visionTag->text() == QStringLiteral("Vision") &&
+                    visionTag->x() > row->findChild<QLabel*>()->x(),
+                "vision models display a tag to the right of the title");
+        require(add->y() > row->y() && add->width() == row->width(),
+                "add action spans the list beneath model cards");
+        for (const auto& action :
+             {QStringLiteral("edit"), QStringLiteral("delete"), QStringLiteral("copy")}) {
+            auto* button = row->findChild<AdButton*>(action + u':' + original.id);
+            require(button != nullptr && button->text().isEmpty() &&
+                        button->sizeClass() == AdButton::SizeClass::Small &&
+                        !button->toolTip().isEmpty() && !button->accessibleName().isEmpty(),
+                    "model actions are small labeled accessible icon buttons");
+        }
         require(original.apiKey == QStringLiteral("portable-secret") && original.supportsVision,
                 "key and vision persist");
         widget->findChild<AdButton*>(QStringLiteral("copy:") + original.id)->click();
@@ -187,8 +252,12 @@ void widgetContracts(QApplication& application) {
                     copied[1].name == QStringLiteral("Personal model (Copy)") &&
                     copied[2].name == QStringLiteral("Personal model (Copy 2)"),
                 "copy duplicates immediately with independent identity and name");
+        observer.frames.clear();
+        application.installEventFilter(&observer);
         widget->findChild<AdButton*>(QStringLiteral("edit:") + original.id)->click();
         flush();
+        application.removeEventFilter(&observer);
+        require(observer.frames.size() == 1, "populated editor is stable from its first paint");
         modal = widget->findChild<AdModal*>(QStringLiteral("customAiModelEditor"));
         name = modal->contentWidget()->findChild<AdLineEdit*>(QStringLiteral("modelName"));
         name->setText(copied[1].name);
@@ -196,11 +265,17 @@ void widgetContracts(QApplication& application) {
         flush();
         require(session.customAiModels().first() == original, "duplicate edit rejected");
         name->setText(QStringLiteral("Renamed model"));
+        modal->contentWidget()
+            ->findChild<AdSwitch*>(QStringLiteral("visionSupport"))
+            ->setChecked(false);
         modal->acceptButton()->click();
         flush();
         require(session.customAiModels().first().id == original.id &&
                     session.customAiModels().first().name == QStringLiteral("Renamed model"),
                 "rename preserves identity");
+        require(widget->findChild<QWidget*>(QStringLiteral("customAiModelRow:") + original.id)
+                        ->findChild<AdTag*>() == nullptr,
+                "text-only models do not display a vision tag");
         widget->findChild<AdButton*>(QStringLiteral("delete:") + copied[2].id)->click();
         flush();
         auto* deletion = widget->findChild<AdModal*>(QStringLiteral("customAiModelDeleteModal"));

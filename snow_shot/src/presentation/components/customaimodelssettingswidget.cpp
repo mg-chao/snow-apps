@@ -3,16 +3,17 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "widgets/alert.h"
 #include "widgets/button.h"
-#include "widgets/divider.h"
 #include "widgets/form.h"
 #include "widgets/input_line_edit.h"
 #include "widgets/input_password_edit.h"
 #include "widgets/modal.h"
 #include "widgets/switch.h"
+#include "widgets/tag.h"
 #include <QEvent>
 #include <QApplication>
 #include "antd_icons.h"
 #include <QLabel>
+#include <QGridLayout>
 #include <QPainter>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -23,6 +24,29 @@ using namespace snow_shot;
 namespace settings = snow_shot::presentation::settings;
 
 namespace {
+class ModelRow final : public QWidget {
+  public:
+    ModelRow(const presentation::styles::ThemeColorScheme& scheme, QWidget* parent)
+        : QWidget(parent), m_scheme(scheme) {}
+
+  protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const qreal borderWidth = m_scheme.metricAlias.lineWidth;
+        const qreal inset = borderWidth / 2.0;
+        painter.setBrush(m_scheme.map.colorBgContainer);
+        painter.setPen(borderWidth > 0 ? QPen(m_scheme.map.colorBorderSecondary, borderWidth)
+                                       : Qt::NoPen);
+        painter.drawRoundedRect(QRectF(rect()).adjusted(inset, inset, -inset, -inset),
+                                m_scheme.metricAlias.borderRadius,
+                                m_scheme.metricAlias.borderRadius);
+    }
+
+  private:
+    presentation::styles::ThemeColorScheme m_scheme;
+};
+
 class ModelNameLabel final : public QLabel {
   public:
     explicit ModelNameLabel(const QString& name, QWidget* parent) : QLabel(name, parent) {
@@ -49,16 +73,8 @@ CustomAiModelsSettingsWidget::CustomAiModelsSettingsWidget(
     setObjectName(QStringLiteral("customAiModelsSettings"));
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
-    auto* header = new QHBoxLayout;
-    auto* heading = new QVBoxLayout;
-    heading->setSpacing(4);
     m_title = new QLabel(this);
-    m_description = new QLabel(this);
-    m_description->setWordWrap(true);
-    heading->addWidget(m_title);
-    heading->addWidget(m_description);
-    header->addLayout(heading, 1);
-    layout->addLayout(header);
+    layout->addWidget(m_title);
     m_error = new AdAlert(this);
     m_error->setSeverity(AdAlert::Severity::Error);
     m_error->hide();
@@ -69,9 +85,12 @@ CustomAiModelsSettingsWidget::CustomAiModelsSettingsWidget(
     m_add = new AdButton(this);
     m_add->setObjectName(QStringLiteral("customAiModelAdd"));
     m_add->setIconRef(adqt::icons::antd::outlined::Plus());
-    m_add->setButtonStyle(AdButton::ButtonStyle::Solid);
+    m_add->setButtonStyle(AdButton::ButtonStyle::Dashed);
+    m_add->setShape(AdButton::Shape::Rounded);
+    m_add->setCursor(Qt::PointingHandCursor);
+    m_add->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_add->setAccentRole(AdButton::AccentRole::Primary);
-    header->addWidget(m_add, 0, Qt::AlignTop);
+    layout->addWidget(m_add);
     setFocusProxy(m_add);
     setFocusPolicy(Qt::StrongFocus);
     connect(m_add, &AdButton::clicked, this, [this]() { openEditor(); });
@@ -88,19 +107,18 @@ void CustomAiModelsSettingsWidget::applyTheme(
     const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
     m_scheme = scheme;
     layout()->setSpacing(scheme.metricAlias.margin);
-    m_rows->setSpacing(0);
+    m_rows->setSpacing(scheme.metricAlias.marginXS);
+    m_add->setFixedHeight(scheme.metricAlias.controlHeight);
     QFont contentFont = font();
     contentFont.setPixelSize(scheme.metricAlias.fontSize);
     setFont(contentFont);
     QFont titleFont = contentFont;
     titleFont.setWeight(QFont::DemiBold);
     m_title->setFont(titleFont);
-    QPalette secondary = palette();
-    secondary.setColor(QPalette::WindowText, scheme.map.colorTextSecondary);
-    m_description->setPalette(secondary);
     QPalette colors = palette();
     colors.setColor(QPalette::WindowText, scheme.map.colorText);
     setPalette(colors);
+    rebuild();
     update();
 }
 
@@ -121,25 +139,29 @@ void CustomAiModelsSettingsWidget::rebuild() {
         m_rows->addWidget(empty);
     }
     for (const auto& model : models) {
-        if (m_rows->count() > 0) {
-            auto* divider = new AdDivider(this);
-            divider->setSize(AdDivider::Size::Small);
-            AdDivider::ComponentTokens tokens;
-            tokens.metrics.horizontalMarginSmall = 0;
-            divider->setComponentTokens(tokens);
-            m_rows->addWidget(divider);
-        }
-        auto* row = new QWidget(this);
+        auto* row = new ModelRow(m_scheme, this);
         row->setObjectName(QStringLiteral("customAiModelRow:") + model.id);
         auto* layout = new QHBoxLayout(row);
-        layout->setContentsMargins(0, 8, 0, 8);
+        layout->setContentsMargins(12, 8, 12, 8);
         layout->setSpacing(4);
         layout->addWidget(new ModelNameLabel(model.name, row), 1);
+        if (model.supportsVision) {
+            auto* tag = new AdTag(tr("Vision"), row);
+            tag->setObjectName(QStringLiteral("customAiModelVision:") + model.id);
+            tag->setColorScheme(AdTag::ColorScheme::Blue);
+            layout->addWidget(tag);
+        }
         const QStringList labels{tr("Edit"), tr("Delete"), tr("Copy")};
         const QStringList actions{QStringLiteral("edit"), QStringLiteral("delete"),
                                   QStringLiteral("copy")};
+        const std::array icons{adqt::icons::antd::outlined::Edit(),
+                               adqt::icons::antd::outlined::IconDelete(),
+                               adqt::icons::antd::outlined::Copy()};
         for (int i = 0; i < 3; ++i) {
-            auto* button = new AdButton(labels[i], row);
+            auto* button = new AdButton(row);
+            button->setIconRef(icons[static_cast<size_t>(i)]);
+            button->setSizeClass(AdButton::SizeClass::Small);
+            button->setToolTip(labels[i]);
             button->setObjectName(actions[i] + u':' + model.id);
             button->setAccessibleName(tr("%1 model %2").arg(labels[i], model.name));
             button->setButtonStyle(AdButton::ButtonStyle::Text);
@@ -255,15 +277,20 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
     modal->setObjectName(QStringLiteral("customAiModelEditor"));
     modal->setOwnerWindow(window());
     modal->setCentered(true);
-    modal->setPreferredWidth(520);
+    modal->setPreferredWidth(760);
     modal->setCloseOnMaskClick(false);
     modal->setClosePolicy(AdModal::ClosePolicy::Manual);
     modal->setStandardButtons(AdModal::StandardButton::Ok | AdModal::StandardButton::Cancel);
     auto* body = new QWidget;
     auto* layout = new QVBoxLayout(body);
     layout->setContentsMargins(0, 0, 0, 0);
-    auto* form = new AdForm(body);
-    form->setFormLayout(AdForm::FormLayout::Vertical);
+    auto* form = new QWidget(body);
+    auto* grid = new QGridLayout(form);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setHorizontalSpacing(m_scheme.metricAlias.marginLG);
+    grid->setVerticalSpacing(0);
+    grid->setColumnStretch(0, 1);
+    grid->setColumnStretch(1, 1);
     const QStringList names{QStringLiteral("modelName"), QStringLiteral("apiUrl"),
                             QStringLiteral("apiKey"), QStringLiteral("apiModel")};
     const QStringList values{value.name, value.baseUrl, value.apiKey, value.model};
@@ -272,7 +299,11 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
         m_inputs[i]->setObjectName(names[static_cast<qsizetype>(i)]);
         m_inputs[i]->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         m_inputs[i]->setText(values[static_cast<qsizetype>(i)]);
-        m_fields[i] = form->addField(QString(), m_inputs[i], names[static_cast<qsizetype>(i)]);
+        m_fields[i] =
+            new AdFormItem(QString(), m_inputs[i], names[static_cast<qsizetype>(i)], form);
+        m_fields[i]->setItemLayout(AdFormItem::ItemLayout::Vertical);
+        grid->addWidget(m_fields[i], static_cast<int>(i / 2), static_cast<int>(i % 2),
+                        Qt::AlignTop);
         m_fields[i]->setRequired(i != 2);
         m_fields[i]->setValidateOnChange(false);
     }
@@ -280,7 +311,9 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
     m_vision = new AdSwitch(form);
     m_vision->setObjectName(QStringLiteral("visionSupport"));
     m_vision->setChecked(value.supportsVision);
-    m_fields[4] = form->addField(QString(), m_vision, QStringLiteral("visionSupport"));
+    m_fields[4] = new AdFormItem(QString(), m_vision, QStringLiteral("visionSupport"), form);
+    m_fields[4]->setItemLayout(AdFormItem::ItemLayout::Vertical);
+    grid->addWidget(m_fields[4], 2, 0, 1, 2);
     layout->addWidget(form);
     m_modalError = new AdAlert(body);
     m_modalError->setSeverity(AdAlert::Severity::Error);
@@ -306,6 +339,16 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
         });
     });
     modal->setInitialFocusWidget(m_inputs[0]);
+    // Resolve nested form size hints before the centered modal gets its first paint.
+    body->ensurePolished();
+    const auto children = body->findChildren<QWidget*>();
+    for (auto it = children.crbegin(); it != children.crend(); ++it) {
+        (*it)->ensurePolished();
+        if ((*it)->layout() != nullptr) {
+            (*it)->layout()->activate();
+        }
+    }
+    body->layout()->activate();
     modal->open();
 }
 
@@ -396,11 +439,12 @@ void CustomAiModelsSettingsWidget::translateModal() {
             }
         }
         m_vision->setAccessibleName(tr("Vision Support"));
-        m_fields[1]->setExtraText(tr(
+        m_fields[0]->setTooltipText(tr("The model name displayed in Snow Shot."));
+        m_fields[1]->setTooltipText(tr(
             "OpenAI-compatible Chat Completions. /chat/completions is appended to this base URL."));
-        m_fields[2]->setExtraText(tr("Optional for servers that do not require authentication."));
-        m_fields[3]->setExtraText(tr("The model ID expected by your API provider."));
-        m_fields[4]->setExtraText(tr("Allow this model to convert images to Markdown and HTML."));
+        m_fields[2]->setTooltipText(tr("Optional for servers that do not require authentication."));
+        m_fields[3]->setTooltipText(tr("The model ID expected by your API provider."));
+        m_fields[4]->setTooltipText(tr("Allow this model to convert images to Markdown and HTML."));
     }
     if (m_deleteModal != nullptr) {
         m_deleteModal->setWindowTitle(tr("Delete Model"));
@@ -421,8 +465,6 @@ void CustomAiModelsSettingsWidget::retranslateUi() {
         tr("Unable to save models. Check that configuration storage is writable and try again."));
     m_add->setText(tr("Add Model"));
     m_title->setText(QCoreApplication::translate("SettingsCatalog", "Custom Models"));
-    m_description->setText(
-        QCoreApplication::translate("SettingsCatalog", "OpenAI-compatible Chat Completions"));
     rebuild();
     translateModal();
     if (m_modal != nullptr &&

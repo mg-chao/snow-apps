@@ -1336,11 +1336,6 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     auto* originalImage = new adqt::widgets::AdSwitch(originalImageRow);
     originalImage->setObjectName(QStringLiteral("screenshotTranslationOriginalImage"));
     originalImage->setControlSize(adqt::widgets::AdSwitch::ControlSize::Medium);
-    adqt::widgets::AdSwitch::ComponentTokens originalImageTokens;
-    originalImageTokens.metrics.trackHeight = 28;
-    originalImageTokens.metrics.trackMinWidth = 56;
-    originalImageTokens.metrics.thumbSize = 24;
-    originalImage->setComponentTokens(originalImageTokens);
     originalImageLayout->addWidget(originalImage);
     originalImageLayout->addStretch();
     originalImage->setChecked(

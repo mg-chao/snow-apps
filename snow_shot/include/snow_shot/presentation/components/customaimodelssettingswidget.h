@@ -41,7 +41,6 @@ class CustomAiModelsSettingsWidget final : public SettingsCustomWidget {
     snow_shot::presentation::styles::ThemeColorScheme m_scheme;
     QVBoxLayout* m_rows = nullptr;
     QLabel* m_title = nullptr;
-    QLabel* m_description = nullptr;
     adqt::widgets::AdButton* m_add = nullptr;
     adqt::widgets::AdAlert* m_error = nullptr;
     QPointer<adqt::widgets::AdModal> m_modal;
