@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="460" height="340" viewBox="0 0 460 340" fill="none">
+  <title>Snow Shot capture, annotation and text recognition illustration</title>
+  <defs>
+    <linearGradient id="sky" x1="220" y1="85" x2="220" y2="265" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#DDEFFF"/><stop offset="1" stop-color="#F5F9FF"/>
+    </linearGradient>
+    <linearGradient id="mountain" x1="135" y1="154" x2="350" y2="280" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D3DEFA"/><stop offset="1" stop-color="#B7CDEF"/>
+    </linearGradient>
+    <clipPath id="scene"><rect x="88" y="85" width="294" height="170" rx="3"/></clipPath>
+  </defs>
+  <g fill="white" opacity=".9">
+    <circle cx="70" cy="40" r="3"/><circle cx="403" cy="92" r="4"/>
+    <circle cx="341" cy="25" r="2"/><circle cx="417" cy="256" r="3"/>
+    <circle cx="43" cy="164" r="2"/><circle cx="320" cy="306" r="2.5"/>
+  </g>
+    <path d="M40 91h10m-5-5v10M420 160h10m-5-5v10" stroke="#BED6EA" stroke-width="1.5"/>
+  <g>
+    <rect x="81" y="55" width="316" height="218" rx="11" fill="#8AA4BE" fill-opacity=".16"/>
+    <rect x="77" y="49" width="316" height="218" rx="11" fill="white" stroke="#D9E3EF"/>
+    <path d="M77 82h316" stroke="#EDF1F7"/>
+    <circle cx="93" cy="66" r="3" fill="#B4C1D2"/>
+    <circle cx="104" cy="66" r="3" fill="#CED8E5"/>
+    <circle cx="115" cy="66" r="3" fill="#E2E8F1"/>
+    <text x="235" y="70" fill="#6A7890" font-size="10" font-family="{{font}}" text-anchor="middle">{{product}}</text>
+    <path d="M370 64h8m-4-4v8" stroke="#A9B5C5" stroke-width="1.2"/>
+    <g clip-path="url(#scene)">
+      <rect x="88" y="85" width="294" height="170" fill="url(#sky)"/>
+      <circle cx="344" cy="110" r="26" fill="white" fill-opacity=".58"/>
+      <path d="m62 274 118-126 70 75 69-77 114 128Z" fill="url(#mountain)"/>
+      <path d="m139 192 41-44 42 45-28-10-14-14-12 19-12-6Z" fill="#F8FBFF"/>
+      <path d="m286 184 33-38 38 40-25-7-13-21-11 21Z" fill="#F8FBFF"/>
+      <path d="M78 231c50-22 73-17 117 5 76 37 126-43 200-28v68H78Z" fill="#F3F8FF"/>
+      <path d="M74 252c83-44 130 8 195 1 69-7 79-35 132-13v34H74Z" fill="white"/>
+      <g fill="white" fill-opacity=".84"><circle cx="123" cy="114" r="2"/><circle cx="285" cy="114" r="2"/><circle cx="247" cy="169" r="2"/><circle cx="362" cy="201" r="2"/></g>
+    </g>
+    <rect x="112" y="111" width="241" height="37" rx="4" fill="white" fill-opacity=".94"/>
+    <path d="M209 137h123" stroke="#E5D6FF" stroke-width="12"/>
+    <text x="124" y="137" font-size="18" font-weight="600" fill="#34384A" font-family="{{font}}">{{moment}}</text>
+    <path d="M305 196c23 0 34-9 34-30m-7 7 7-9 7 8" stroke="#9254DE" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <rect x="71" y="43" width="328" height="230" rx="3" stroke="#9254DE" stroke-opacity=".66" stroke-width="1.3"/>
+  <g fill="white" stroke="#9254DE" stroke-width="1.5">
+    <rect x="67.5" y="39.5" width="7" height="7" rx="1"/><rect x="395.5" y="39.5" width="7" height="7" rx="1"/>
+    <rect x="67.5" y="269.5" width="7" height="7" rx="1"/><rect x="395.5" y="269.5" width="7" height="7" rx="1"/>
+    <rect x="231.5" y="39.5" width="7" height="7" rx="1"/><rect x="395.5" y="154.5" width="7" height="7" rx="1"/>
+  </g>
+  <g>
+    <rect x="25" y="218" width="207" height="72" rx="10" fill="#8AA4BE" fill-opacity=".14"/>
+    <rect x="221" y="287" width="185" height="39" rx="9" fill="#8AA4BE" fill-opacity=".14"/>
+    <rect x="219" y="283" width="185" height="39" rx="9" fill="white" stroke="#E0E6EF"/>
+    <rect x="225" y="289" width="27" height="27" rx="5" fill="#F3EBFC"/>
+    <g stroke="#717B8C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="232" y="296" width="13" height="12" rx="1" stroke="#9254DE"/>
+      <path d="m268 307 12-11m-8 0h8v8M298 307l5-13 5 13m-8-4h6M324 297h10m-5-3v15m-5 0h10"/>
+      <path d="M348 294v17" stroke="#E4E7ED"/><path d="m362 302 5 5 10-11" stroke="#60AF2C" stroke-width="2"/>
+    </g>
+    <rect x="23" y="214" width="207" height="72" rx="10" fill="white" stroke="#E1E9F2"/>
+    <rect x="36" y="228" width="27" height="27" rx="7" fill="#ECF7E7"/>
+    <g stroke="#579C33" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M42 239v-5h5m10 5v-5h-5m-10 12v5h5m10-5v5h-5m-10-9h15"/>
+    </g>
+    <text x="73" y="239" fill="#57714A" font-size="12" font-family="{{font}}">{{ocr}}</text>
+    <text x="73" y="260" fill="#343C4C" font-size="13" font-weight="500" font-family="{{font}}">{{pixels}}</text>
+    <path d="m207 236 3 3 5-6" stroke="#73B84B" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <path d="m394 254 5 28 7-8 10-2Z" fill="#9254DE" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
+</svg>
