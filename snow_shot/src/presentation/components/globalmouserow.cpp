@@ -7,6 +7,7 @@
 #include "snow_shot/presentation/styles/actionrowstyle.h"
 #include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
 
+#include "widgets/form.h"
 #include "widgets/modal.h"
 #include "widgets/select.h"
 
@@ -249,11 +250,9 @@ void GlobalMouseRow::openConfigurationDialog() {
     contentLayout->setContentsMargins(0, 0, 0, 0);
     contentLayout->setSpacing(m_colorScheme.metricAlias.margin);
 
-    auto* form = new QWidget(content);
+    auto* form = new adqt::widgets::AdForm(content);
     form->setObjectName(QStringLiteral("globalMouseConfigurationForm"));
-    auto* formLayout = new QVBoxLayout(form);
-    formLayout->setContentsMargins(0, 0, 0, 0);
-    formLayout->setSpacing(m_colorScheme.metricAlias.marginXS);
+    form->setFormLayout(adqt::widgets::AdForm::FormLayout::Vertical);
     contentLayout->addWidget(form);
     const auto addSelect = [form](const QString& objectName) {
         auto* select = new adqt::widgets::AdSelect(form);
@@ -265,18 +264,17 @@ void GlobalMouseRow::openConfigurationDialog() {
 
     m_activationSelect = addSelect(QStringLiteral("globalMouseActivationKeySelect"));
     m_activationSelect->setMode(adqt::widgets::AdSelect::Mode::Multiple);
-    m_activationField = new QLabel(form);
-    m_activationField->setBuddy(m_activationSelect);
-    formLayout->addWidget(m_activationField);
-    formLayout->addWidget(m_activationSelect);
-    formLayout->addSpacing(m_colorScheme.metricAlias.marginXS);
+    m_activationField =
+        form->addField(QString(), m_activationSelect, QStringLiteral("activationKeys"));
     m_mouseButtonSelect = addSelect(QStringLiteral("globalMouseButtonSelect"));
-    m_mouseButtonField = new QLabel(form);
-    m_mouseButtonField->setBuddy(m_mouseButtonSelect);
-    formLayout->addWidget(m_mouseButtonField);
-    formLayout->addWidget(m_mouseButtonSelect);
+    // Keep validation inside the field, before AdForm's trailing item margin.
+    auto* mouseButtonEditor = new QWidget(form);
+    auto* mouseButtonLayout = new QVBoxLayout(mouseButtonEditor);
+    mouseButtonLayout->setContentsMargins(0, 0, 0, 0);
+    mouseButtonLayout->setSpacing(m_colorScheme.metricAlias.marginXS);
+    mouseButtonLayout->addWidget(m_mouseButtonSelect);
 
-    m_validationLabel = new QLabel(content);
+    m_validationLabel = new QLabel(mouseButtonEditor);
     m_validationLabel->setObjectName(QStringLiteral("globalMouseValidationMessage"));
     m_validationLabel->setWordWrap(true);
     m_validationLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
@@ -284,7 +282,9 @@ void GlobalMouseRow::openConfigurationDialog() {
     validationPolicy.setRetainSizeWhenHidden(true);
     m_validationLabel->setSizePolicy(validationPolicy);
     m_validationLabel->hide();
-    contentLayout->addWidget(m_validationLabel);
+    mouseButtonLayout->addWidget(m_validationLabel);
+    m_mouseButtonField =
+        form->addField(QString(), mouseButtonEditor, QStringLiteral("mouseButton"));
 
     const settings::SettingsGlobalMouseCombination initial =
         m_combination.isUnset()
@@ -361,10 +361,12 @@ void GlobalMouseRow::syncModalText() {
     m_modal->setAcceptText(tr("OK"));
     m_modal->setRejectText(tr("Cancel"));
     if (m_activationField != nullptr) {
-        m_activationField->setText(tr("Activation keys"));
+        m_activationField->setLabel(tr("Activation keys"));
+        m_activationSelect->setAccessibleName(m_activationField->label());
     }
     if (m_mouseButtonField != nullptr) {
-        m_mouseButtonField->setText(tr("Mouse button"));
+        m_mouseButtonField->setLabel(tr("Mouse button"));
+        m_mouseButtonSelect->setAccessibleName(m_mouseButtonField->label());
     }
     const QVariantList activation = m_activationSelect->currentValues();
     const QVariant mouseButton = m_mouseButtonSelect->currentValue();

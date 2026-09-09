@@ -15,6 +15,7 @@
 #include "icon_core.h"
 #include "widgets/button.h"
 #include "widgets/divider.h"
+#include "widgets/form.h"
 #include "widgets/modal.h"
 #include "widgets/select.h"
 
@@ -221,7 +222,7 @@ class GlobalMouseTranslator final : public QTranslator {
         const QHash<QString, QString> translations{
             {QStringLiteral("Mouse configuration for \"%1\""),
              QStringLiteral("Mauskonfiguration fuer \"%1\"")},
-            {QStringLiteral("Activation key"), QStringLiteral("Aktivierungstaste")},
+            {QStringLiteral("Activation keys"), QStringLiteral("Aktivierungstasten")},
             {QStringLiteral("Mouse button"), QStringLiteral("Maustaste")},
             {QStringLiteral("Ctrl"), QStringLiteral("Strg")},
             {QStringLiteral("None"), QStringLiteral("Keine")},
@@ -387,18 +388,16 @@ void globalMouseModalEditsOnlyOnAcceptedUniquePairs() {
                 mouseButton->currentValues().isEmpty() && !modal->acceptButton()->isEnabled(),
             "an Unset mouse modal must default only Windows and require a mouse selection");
 
-    require(activation->mode() == adqt::widgets::AdSelect::Mode::Multiple &&
-                modal->contentWidget()->findChild<QWidget*>(
-                    QStringLiteral("globalMouseConfigurationForm")) != nullptr,
-            "activation keys must be a multiple select in a form");
-    for (QLabel* label : initialContent->findChildren<QLabel*>()) {
-        if (label->buddy() == activation || label->buddy() == mouseButton) {
-            const int gap = label->buddy()->mapTo(initialContent, QPoint()).y() -
-                            label->mapTo(initialContent, QPoint()).y() - label->height();
-            require(gap == styles::ThemeManager::instance().themeColorScheme().metricAlias.marginXS,
-                    "field hints must use the compact theme gap above their selects");
-        }
-    }
+    auto* form = modal->contentWidget()->findChild<adqt::widgets::AdForm*>(
+        QStringLiteral("globalMouseConfigurationForm"));
+    require(activation->mode() == adqt::widgets::AdSelect::Mode::Multiple && form != nullptr,
+            "activation keys must be a multiple select in the unified AdForm");
+    require(form->formLayout() == adqt::widgets::AdForm::FormLayout::Vertical &&
+                form->items().size() == 2 && form->items().at(0)->controlWidget() == activation &&
+                form->items().at(0)->label() == QStringLiteral("Activation keys") &&
+                form->items().at(1)->controlWidget()->isAncestorOf(mouseButton) &&
+                form->items().at(1)->label() == QStringLiteral("Mouse button"),
+            "both mouse selectors must use labeled fields managed by the unified vertical form");
     activation->setCurrentValues({QStringLiteral("alt")});
     mouseButton->setCurrentValue(QStringLiteral("wheel_drag"));
     modal->rejectButton()->click();
@@ -442,6 +441,14 @@ void globalMouseModalEditsOnlyOnAcceptedUniquePairs() {
     flushEvents();
     require(validation != nullptr && validation->isVisible() && !modal->acceptButton()->isEnabled(),
             "a duplicate combination must show validation and disable OK");
+    const int validationGap = validation->mapTo(modal->contentWidget(), QPoint()).y() -
+                              mouseButton->mapTo(modal->contentWidget(), QPoint()).y() -
+                              mouseButton->height();
+    qInfo("Mouse validation gap: %d", validationGap);
+    require(validationGap >= 0 &&
+                validationGap <=
+                    styles::ThemeManager::instance().themeColorScheme().metricAlias.marginXS,
+            "mouse validation must sit directly below its selector with a compact theme gap");
     require(modal->contentWidget()->height() == editorHeight,
             "a wrapped validation message must not resize the displayed mouse editor");
     mouseButton->setCurrentValue(QStringLiteral("wheel_drag"));
@@ -593,6 +600,14 @@ void globalMouseLanguageAndThemeChangesRefreshOpenUi() {
     GlobalMouseTranslator translator;
     require(QApplication::installTranslator(&translator), "Global mouse translator must install");
     flushEvents();
+    auto* form = modal->contentWidget()->findChild<adqt::widgets::AdForm*>(
+        QStringLiteral("globalMouseConfigurationForm"));
+    require(form != nullptr &&
+                form->items().at(0)->label() == QStringLiteral("Aktivierungstasten") &&
+                form->items().at(1)->label() == QStringLiteral("Maustaste") &&
+                activation->accessibleName() == QStringLiteral("Aktivierungstasten") &&
+                mouseButton->accessibleName() == QStringLiteral("Maustaste"),
+            "language changes must refresh unified form labels and selector accessible names");
     require(button->text() == QStringLiteral("Strg + Rechts ziehen") &&
                 modal->windowTitle() ==
                     QStringLiteral("Mauskonfiguration fuer \"Copy to clipboard\"") &&

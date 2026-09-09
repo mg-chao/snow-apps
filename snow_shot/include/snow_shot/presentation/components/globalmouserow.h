@@ -12,6 +12,7 @@ class QLabel;
 class QEvent;
 class QMouseEvent;
 namespace adqt::widgets {
+class AdFormItem;
 class AdModal;
 class AdSelect;
 } // namespace adqt::widgets
@@ -66,8 +67,8 @@ class GlobalMouseRow final : public adqt::widgets::AdButton {
     QLabel* m_titleIcon = nullptr;
     ShortcutConfigurationButton* m_button = nullptr;
     QPointer<adqt::widgets::AdModal> m_modal;
-    QPointer<QLabel> m_activationField;
-    QPointer<QLabel> m_mouseButtonField;
+    QPointer<adqt::widgets::AdFormItem> m_activationField;
+    QPointer<adqt::widgets::AdFormItem> m_mouseButtonField;
     QPointer<QLabel> m_validationLabel;
     QPointer<adqt::widgets::AdSelect> m_activationSelect;
     QPointer<adqt::widgets::AdSelect> m_mouseButtonSelect;
