@@ -87,8 +87,47 @@ ScreenshotToolPaletteButtonMetrics buttonMetrics(qreal scale) {
 }
 } // namespace
 
+ScreenshotToolbarPanel::ScreenshotToolbarPanel(QWidget* parent) : QFrame(parent) {
+    setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    setPanelScale(1.0);
+    const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
+    connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
+            [this](const snow_shot::presentation::styles::ThemeColorScheme&) { update(); });
+}
+
+void ScreenshotToolbarPanel::setPanelScale(qreal scale) {
+    if (qFuzzyCompare(m_panelScale + 1.0, scale + 1.0)) {
+        return;
+    }
+    m_panelScale = scale;
+    m_panelRadius = scaledMetric(kPanelRadius, scale);
+    auto* shadow = qobject_cast<QGraphicsDropShadowEffect*>(graphicsEffect());
+    if (shadow == nullptr) {
+        shadow = new QGraphicsDropShadowEffect(this);
+        setGraphicsEffect(shadow);
+    }
+    shadow->setBlurRadius(kShadowBlurRadius * scale);
+    shadow->setOffset(kShadowOffsetX * scale, kShadowOffsetY * scale);
+    shadow->setColor(kShadowColor);
+    update();
+}
+
+QString ScreenshotToolbarPanel::separatorStyleSheet() {
+    return QStringLiteral("QFrame { background: %1; border: 0px; }")
+        .arg(cssColor(toolbarSeparatorColor()));
+}
+
+void ScreenshotToolbarPanel::paintEvent(QPaintEvent* event) {
+    Q_UNUSED(event);
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(toolbarSurfaceColor());
+    painter.drawRoundedRect(QRectF(rect()), m_panelRadius, m_panelRadius);
+}
+
 ScreenshotToolbarMainPanel::ScreenshotToolbarMainPanel(const Options& options, QWidget* parent)
-    : QFrame(parent) {
+    : ScreenshotToolbarPanel(parent) {
     setObjectName(QStringLiteral("screenshotToolbarMainPanel"));
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
@@ -330,21 +369,18 @@ void ScreenshotToolbarMainPanel::applyMetrics() {
     }
     referenceWidths.append(kPanelHorizontalMargin);
 
-    const int referenceWidth =
-        std::accumulate(referenceWidths.cbegin(), referenceWidths.cend(), 0);
-    const int targetWidth =
-        m_referenceSizeHint.isValid() && !m_referenceSizeHint.isEmpty()
-            ? qMax(1, qRound(m_referenceSizeHint.width() * m_physicalScale))
-            : qMax(1, qRound(referenceWidth * m_physicalScale));
+    const int referenceWidth = std::accumulate(referenceWidths.cbegin(), referenceWidths.cend(), 0);
+    const int targetWidth = m_referenceSizeHint.isValid() && !m_referenceSizeHint.isEmpty()
+                                ? qMax(1, qRound(m_referenceSizeHint.width() * m_physicalScale))
+                                : qMax(1, qRound(referenceWidth * m_physicalScale));
     const qreal cumulativeScale =
         referenceWidth > 0 ? static_cast<qreal>(targetWidth) / referenceWidth : m_physicalScale;
-    const QVector<int> scaledEdges = adqt::widgets::scaleCumulativeWidths(
-        referenceWidths, cumulativeScale, targetWidth);
+    const QVector<int> scaledEdges =
+        adqt::widgets::scaleCumulativeWidths(referenceWidths, cumulativeScale, targetWidth);
     const auto scaledWidthAt = [&scaledEdges](int index) {
         return qMax(0, scaledEdges.at(index + 1) - scaledEdges.at(index));
     };
-    m_layout->setContentsMargins(scaledWidthAt(0),
-                                 scaledMetric(kPanelMarginTop, m_physicalScale),
+    m_layout->setContentsMargins(scaledWidthAt(0), scaledMetric(kPanelMarginTop, m_physicalScale),
                                  scaledWidthAt(referenceWidths.size() - 1),
                                  scaledMetric(kPanelMarginBottom, m_physicalScale));
     for (int index = 0; index < m_layout->count(); ++index) {
@@ -376,25 +412,7 @@ void ScreenshotToolbarMainPanel::updatePanelStyle() {
         updateSeparatorStyle(separator);
     }
 
-    auto* shadow = qobject_cast<QGraphicsDropShadowEffect*>(graphicsEffect());
-    if (shadow == nullptr) {
-        shadow = new QGraphicsDropShadowEffect(this);
-        setGraphicsEffect(shadow);
-    }
-    shadow->setBlurRadius(kShadowBlurRadius * m_physicalScale);
-    shadow->setOffset(kShadowOffsetX * m_physicalScale, kShadowOffsetY * m_physicalScale);
-    shadow->setColor(kShadowColor);
-}
-
-void ScreenshotToolbarMainPanel::paintEvent(QPaintEvent* event) {
-    Q_UNUSED(event);
-
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(toolbarSurfaceColor());
-    const qreal radius = scaledMetric(kPanelRadius, m_physicalScale);
-    painter.drawRoundedRect(QRectF(rect()), radius, radius);
+    setPanelScale(m_physicalScale);
 }
 
 void ScreenshotToolbarMainPanel::updateSeparatorStyle(QFrame* separator) {
@@ -403,8 +421,7 @@ void ScreenshotToolbarMainPanel::updateSeparatorStyle(QFrame* separator) {
     }
 
     separator->setAttribute(Qt::WA_StyledBackground, true);
-    separator->setStyleSheet(QStringLiteral("QFrame { background: %1; border: 0px; }")
-                                 .arg(cssColor(toolbarSeparatorColor())));
+    separator->setStyleSheet(ScreenshotToolbarPanel::separatorStyleSheet());
 }
 
 void ScreenshotToolbarMainPanel::updateDragHandle(QWidget* handle) {

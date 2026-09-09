@@ -88,7 +88,7 @@ int runOcrLifecycleChild() {
             output.setByteOrder(QDataStream::LittleEndian);
             output << quint32(0x52434f53) << quint16(2) << quint16(2) << quint64(0) << quint32(19)
                    << quint8(1) << quint8(0) << quint32(0) << quint32(5);
-            output.writeRawData("1.0.4", 5);
+            output.writeRawData("1.0.5", 5);
             output << quint32(2);
             if (std::fwrite(ready.constData(), 1, ready.size(), stdout) != size_t(ready.size()))
                 return 4;

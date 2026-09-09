@@ -233,7 +233,7 @@ SettingsItemDefinition screenshotToolbarSizeItem() {
     SettingsSelectDefinition payload;
     payload.binding = SettingsSelectBinding::ScreenshotToolbarSize;
     payload.options = {
-        {QStringLiteral("small"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Small"))},
+        {QStringLiteral("small"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Small V6"))},
         {QStringLiteral("normal"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Normal"))},
     };
     return {QStringLiteral("interface.screenshot.toolbar-size"),
@@ -1336,9 +1336,17 @@ SettingsItemDefinition ocrModelTypeItem() {
     SettingsSelectDefinition payload;
     payload.options = {
         {QStringLiteral("extra_small"),
-         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Extra Small"))},
-        {QStringLiteral("small"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Small"))},
-        {QStringLiteral("medium"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Medium"))},
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Ultra Small V6"))},
+        {QStringLiteral("small"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Small V6"))},
+        {QStringLiteral("medium"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Medium V6"))},
+        {QStringLiteral("small_v5"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Small V5"))},
+        {QStringLiteral("medium_v5"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Medium V5"))},
+        {QStringLiteral("small_v4"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Small V4"))},
+        {QStringLiteral("medium_v4"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Medium V4"))},
     };
     payload.binding = SettingsSelectBinding::OcrModelType;
     return {
@@ -1346,7 +1354,7 @@ SettingsItemDefinition ocrModelTypeItem() {
         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Model Type")),
         settingsText(QT_TRANSLATE_NOOP(
             "SettingsCatalog",
-            "Choose the OCR model size to balance recognition speed and accuracy")),
+            "Choose the OCR model version and size to balance recognition speed and accuracy")),
         {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "OCR model"))},
         QStringLiteral("text_recognition/model_type"),
         payload,

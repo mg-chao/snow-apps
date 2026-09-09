@@ -11,6 +11,10 @@ enum class ScreenshotOcrModelType {
     ExtraSmall,
     Small,
     Medium,
+    SmallV5,
+    MediumV5,
+    SmallV4,
+    MediumV4,
 };
 
 [[nodiscard]] QString screenshotOcrModelTypeValue(ScreenshotOcrModelType type);

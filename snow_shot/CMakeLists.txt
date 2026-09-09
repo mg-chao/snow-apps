@@ -3102,6 +3102,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screenshot-tool-palette-tests --recording-controls-only
     )
     add_test(
+        NAME snow-shot-toolbar-shared-controls-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --color-control-styles-only
+    )
+    set_tests_properties(snow-shot-toolbar-shared-controls-tests PROPERTIES TIMEOUT 180)
+    add_test(
         NAME snow-shot-screenshot-toolbar-i18n-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --dynamic-i18n-only
     )
@@ -3112,6 +3117,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-screenshot-shortcut-tooltip-tests
         snow-shot-screenshot-selection-reset-tests
         snow-shot-screen-recording-toolbar-tests
+        snow-shot-toolbar-shared-controls-tests
         snow-shot-screenshot-toolbar-i18n-tests
         PROPERTIES
         ENVIRONMENT

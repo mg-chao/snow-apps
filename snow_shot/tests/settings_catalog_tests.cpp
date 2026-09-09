@@ -59,6 +59,9 @@ class CatalogTranslator final : public QTranslator {
         if (source == QStringLiteral("Dark")) {
             return QStringLiteral("Night Mode");
         }
+        if (source == QStringLiteral("Small V4")) {
+            return QStringLiteral("Localized Small V4");
+        }
         if (source == QStringLiteral("Appearance")) {
             return QStringLiteral("Visual Style");
         }
@@ -432,11 +435,23 @@ void builtInCatalogIsCompleteAndValid() {
             modelType->configurationKey == QStringLiteral("text_recognition/model_type") &&
             modelTypeSelect != nullptr &&
             modelTypeSelect->binding == settings::SettingsSelectBinding::OcrModelType &&
-            modelTypeSelect->options.size() == 3 &&
+            modelTypeSelect->options.size() == 7 &&
             modelTypeSelect->options.at(0).value == QStringLiteral("extra_small") &&
             modelTypeSelect->options.at(1).value == QStringLiteral("small") &&
-            modelTypeSelect->options.at(2).value == QStringLiteral("medium"),
+            modelTypeSelect->options.at(2).value == QStringLiteral("medium") &&
+            modelTypeSelect->options.at(3).value == QStringLiteral("small_v5") &&
+            modelTypeSelect->options.at(4).value == QStringLiteral("medium_v5") &&
+            modelTypeSelect->options.at(5).value == QStringLiteral("small_v4") &&
+            modelTypeSelect->options.at(6).value == QStringLiteral("medium_v4"),
         "System settings must expose the ordered OCR model and acceleration controls");
+    const QStringList modelLabels{QStringLiteral("Ultra Small V6"), QStringLiteral("Small V6"),
+                                  QStringLiteral("Medium V6"),      QStringLiteral("Small V5"),
+                                  QStringLiteral("Medium V5"),      QStringLiteral("Small V4"),
+                                  QStringLiteral("Medium V4")};
+    for (qsizetype index = 0; index < modelLabels.size(); ++index) {
+        require(modelTypeSelect->options.at(index).label.translated() == modelLabels.at(index),
+                "OCR model labels must distinguish model generation and size");
+    }
 
     const settings::SettingsNavigationGroupDefinition* settingsGroup = nullptr;
     for (const auto& node : catalog.navigation()) {
@@ -1205,7 +1220,7 @@ void searchIndexIsGeneratedAndRanked() {
     require(!windowElementApi.isEmpty() && windowElementApi.constFirst().location.itemId ==
                                                QStringLiteral("screenshot.window-element-api"),
             "window element API options must find the system Screenshot setting");
-    const auto ocrModel = index.search(QStringLiteral("Extra Small OCR model"));
+    const auto ocrModel = index.search(QStringLiteral("Ultra Small V6 OCR model"));
     require(!ocrModel.isEmpty() && ocrModel.constFirst().location.itemId ==
                                        QStringLiteral("text-recognition.model-type"),
             "OCR model labels and aliases must find the Model Type setting");
@@ -1241,6 +1256,10 @@ void searchIndexRebuildsLocalizedFields() {
     CatalogTranslator translator;
     require(QCoreApplication::installTranslator(&translator), "test translator must install");
     index.rebuild();
+    const auto localizedModel = index.search(QStringLiteral("Localized Small V4"));
+    require(!localizedModel.isEmpty() && localizedModel.constFirst().location.itemId ==
+                                             QStringLiteral("text-recognition.model-type"),
+            "language changes must refresh versioned OCR model options in search");
     require(!index.search(QStringLiteral("localized theme")).isEmpty() &&
                 index.search(QStringLiteral("localized theme")).constFirst().id ==
                     QStringLiteral("item:interface.theme"),

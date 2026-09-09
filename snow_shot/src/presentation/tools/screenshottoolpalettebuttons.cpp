@@ -183,8 +183,7 @@ class StyleRadioIconBinding final : public QObject {
 // color when the application theme changes.
 class StyleButtonIconBinding final : public QObject {
   public:
-    StyleButtonIconBinding(adqt::widgets::AdButton* button,
-                           const adqt::icons::IconRef& iconRef)
+    StyleButtonIconBinding(adqt::widgets::AdButton* button, const adqt::icons::IconRef& iconRef)
         : QObject(button), m_button(button), m_iconRef(iconRef) {
         const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
         connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
@@ -223,28 +222,24 @@ class StyleButtonIconBinding final : public QObject {
             return;
         }
         const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
-        const bool solid =
-            m_button->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid;
-        const bool primary =
-            m_button->accentRole() == adqt::widgets::AdButton::AccentRole::Primary;
+        const bool solid = m_button->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid;
+        const bool primary = m_button->accentRole() == adqt::widgets::AdButton::AccentRole::Primary;
         const QColor disabled = scheme.map.colorTextQuaternary;
         const QColor normal =
             m_forcedDisabled
                 ? disabled
                 : (solid && primary ? scheme.map.colorWhite
                                     : (primary ? scheme.map.colorPrimary : scheme.map.colorText));
-        const QColor active =
-            m_forcedDisabled
-                ? disabled
-                : (solid && primary
-                       ? scheme.map.colorWhite
-                       : (primary ? scheme.map.colorPrimaryHover : scheme.map.colorText));
-        const QColor selected =
-            m_forcedDisabled
-                ? disabled
-                : (solid && primary
-                       ? scheme.map.colorWhite
-                       : (primary ? scheme.map.colorPrimaryActive : scheme.map.colorText));
+        const QColor active = m_forcedDisabled
+                                  ? disabled
+                                  : (solid && primary ? scheme.map.colorWhite
+                                                      : (primary ? scheme.map.colorPrimaryHover
+                                                                 : scheme.map.colorText));
+        const QColor selected = m_forcedDisabled
+                                    ? disabled
+                                    : (solid && primary ? scheme.map.colorWhite
+                                                        : (primary ? scheme.map.colorPrimaryActive
+                                                                   : scheme.map.colorText));
 
         adqt::icons::IconStatePalette palette;
         palette.set(QIcon::Normal, QIcon::Off, adqt::icons::IconColors::primary(normal));
@@ -252,9 +247,8 @@ class StyleButtonIconBinding final : public QObject {
         palette.set(QIcon::Selected, QIcon::Off, adqt::icons::IconColors::primary(selected));
         palette.set(QIcon::Disabled, QIcon::Off, adqt::icons::IconColors::primary(disabled));
         const adqt::icons::IconRef displayedIcon =
-            m_forcedDisabled
-                ? snow_shot::presentation::icons::withPrimaryColor(m_iconRef, disabled)
-                : m_iconRef;
+            m_forcedDisabled ? snow_shot::presentation::icons::withPrimaryColor(m_iconRef, disabled)
+                             : m_iconRef;
         m_button->setIconRef(displayedIcon);
         m_button->setIcon(adqt::icons::makeIcon(displayedIcon, palette));
     }
@@ -582,7 +576,50 @@ void drawFillStylePreview(QPainter* painter, const QWidget* widget, const QColor
         drawFillStyleIcon(painter, iconRect, fillStyle, contentColor);
     }
 }
+QString strokeWidthText(double width) {
+    const double rounded = std::round(width);
+    if (qFuzzyCompare(rounded + 1.0, width + 1.0)) {
+        return QStringLiteral("%1px").arg(static_cast<int>(rounded));
+    }
+    return QStringLiteral("%1px").arg(width, 0, 'g', 3);
+}
+
+void drawStrokeWidthPreview(QPainter* painter, const QWidget* widget, double width, qreal scale,
+                            bool active, bool mixed, bool textFallback) {
+    const QColor color = strokeWidthPreviewColor(active);
+    painter->setRenderHint(QPainter::Antialiasing, true);
+    if (mixed) {
+        drawMixedValueMark(painter, QRectF(widget->rect()), color, scale);
+        return;
+    }
+    const qreal minHeight = std::max<qreal>(0.5, MIN_RECTANGLE_STROKE_WIDTH * scale);
+    const qreal maxHeight =
+        qMax<qreal>(minHeight, widget->height() - STROKE_WIDTH_PREVIEW_VERTICAL_RESERVED * scale);
+    if (textFallback && (width <= 0.0 || width > maxHeight)) {
+        drawCompactValueText(painter, widget->rect(), widget->font(), strokeWidthText(width), color,
+                             scale);
+        return;
+    }
+    const qreal previewHeight = std::clamp<qreal>(width * scale, minHeight, maxHeight);
+    const qreal inset = std::max<qreal>(1.0, STROKE_WIDTH_PREVIEW_HORIZONTAL_INSET * scale);
+    const QRectF previewRect(inset, QRectF(widget->rect()).center().y() - previewHeight / 2.0,
+                             qMax<qreal>(1.0, widget->width() - inset * 2.0), previewHeight);
+    const qreal radius = std::min<qreal>(previewHeight / 2.0, 3.0 * scale);
+    QPainterPath path;
+    path.addRoundedRect(previewRect, radius, radius);
+    painter->fillPath(path, color);
+}
 } // namespace
+
+void setScreenshotToolPaletteButtonActive(adqt::widgets::AdButton* button, bool active,
+                                          adqt::widgets::AdButton::ButtonStyle activeStyle) {
+    if (button == nullptr) {
+        return;
+    }
+    button->setButtonStyle(active ? activeStyle : adqt::widgets::AdButton::ButtonStyle::Text);
+    button->setAccentRole(active ? adqt::widgets::AdButton::AccentRole::Primary
+                                 : adqt::widgets::AdButton::AccentRole::Neutral);
+}
 
 StylePreviewButton::StylePreviewButton(QWidget* parent) : adqt::widgets::AdButton(parent) {
     setOutlined(true);
@@ -596,7 +633,7 @@ void StylePreviewButton::setOutlined(bool outlined) {
 
 StrokeWidthPreviewButton::StrokeWidthPreviewButton(QWidget* parent)
     : StylePreviewButton(parent), m_strokeWidth(DEFAULT_RECTANGLE_STROKE_WIDTH) {
-    setAccessibleDescription(strokeWidthText());
+    setAccessibleDescription(strokeWidthText(m_strokeWidth));
 }
 
 void StrokeWidthPreviewButton::setStrokeWidth(double strokeWidth) {
@@ -606,7 +643,7 @@ void StrokeWidthPreviewButton::setStrokeWidth(double strokeWidth) {
     }
     m_strokeWidth = strokeWidth;
     setAccessibleDescription(m_mixed ? QCoreApplication::translate("ScreenshotToolPalette", "Mixed")
-                                     : strokeWidthText());
+                                     : strokeWidthText(m_strokeWidth));
     update();
 }
 
@@ -624,7 +661,7 @@ void StrokeWidthPreviewButton::setMixed(bool mixed) {
     }
     m_mixed = mixed;
     setAccessibleDescription(m_mixed ? QCoreApplication::translate("ScreenshotToolPalette", "Mixed")
-                                     : strokeWidthText());
+                                     : strokeWidthText(m_strokeWidth));
     update();
 }
 
@@ -650,46 +687,9 @@ void StrokeWidthPreviewButton::setPhysicalScale(qreal scale) {
 
 void StrokeWidthPreviewButton::paintEvent(QPaintEvent* event) {
     StylePreviewButton::paintEvent(event);
-
-    const QColor lineColor = strokeWidthPreviewColor(m_active);
-
     QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    if (m_mixed) {
-        drawMixedValueMark(&painter, QRectF(rect()), lineColor, m_physicalScale);
-        return;
-    }
-    const qreal minPreviewHeight =
-        std::max<qreal>(0.5, MIN_RECTANGLE_STROKE_WIDTH * m_physicalScale);
-    const qreal maxPreviewHeight = qMax<qreal>(
-        minPreviewHeight, height() - STROKE_WIDTH_PREVIEW_VERTICAL_RESERVED * m_physicalScale);
-    if (m_textFallbackEnabled && (m_strokeWidth <= 0.0 || m_strokeWidth > maxPreviewHeight)) {
-        drawStrokeWidthText(&painter, lineColor);
-        return;
-    }
-
-    const qreal previewHeight = std::clamp<qreal>(
-        static_cast<qreal>(m_strokeWidth) * m_physicalScale, minPreviewHeight, maxPreviewHeight);
-    const qreal horizontalInset =
-        std::max<qreal>(1.0, STROKE_WIDTH_PREVIEW_HORIZONTAL_INSET * m_physicalScale);
-    const QRectF previewRect(horizontalInset, QRectF(rect()).center().y() - previewHeight / 2.0,
-                             qMax<qreal>(1.0, width() - horizontalInset * 2.0), previewHeight);
-    const qreal radius = std::min<qreal>(previewHeight / 2.0, 3.0 * m_physicalScale);
-    QPainterPath path;
-    path.addRoundedRect(previewRect, radius, radius);
-    painter.fillPath(path, lineColor);
-}
-
-QString StrokeWidthPreviewButton::strokeWidthText() const {
-    const double rounded = std::round(m_strokeWidth);
-    if (qFuzzyCompare(rounded + 1.0, m_strokeWidth + 1.0)) {
-        return QStringLiteral("%1px").arg(static_cast<int>(rounded));
-    }
-    return QStringLiteral("%1px").arg(m_strokeWidth, 0, 'g', 3);
-}
-
-void StrokeWidthPreviewButton::drawStrokeWidthText(QPainter* painter, const QColor& color) const {
-    drawCompactValueText(painter, rect(), font(), strokeWidthText(), color, m_physicalScale);
+    drawStrokeWidthPreview(&painter, this, m_strokeWidth, m_physicalScale, m_active, m_mixed,
+                           m_textFallbackEnabled);
 }
 
 NumericValuePreviewButton::NumericValuePreviewButton(QWidget* parent)
@@ -885,9 +885,13 @@ void ColorSwatchButton::setPhysicalScale(qreal scale) {
     update();
 }
 
-QColor ColorSwatchButton::swatchColor() const { return m_color; }
+QColor ColorSwatchButton::swatchColor() const {
+    return m_color;
+}
 
-qreal ColorSwatchButton::swatchPhysicalScale() const { return m_physicalScale; }
+qreal ColorSwatchButton::swatchPhysicalScale() const {
+    return m_physicalScale;
+}
 
 void ColorSwatchButton::paintEvent(QPaintEvent* event) {
     adqt::widgets::AdButton::paintEvent(event);
@@ -912,8 +916,7 @@ void ColorSwatchButton::paintEvent(QPaintEvent* event) {
     drawColorSwatch(&painter, swatchRect, m_physicalScale, swatch, border, m_swatchBorderVisible);
 }
 
-ColorPickerSamplerButton::ColorPickerSamplerButton(QWidget* parent)
-    : ColorSwatchButton(parent) {
+ColorPickerSamplerButton::ColorPickerSamplerButton(QWidget* parent) : ColorSwatchButton(parent) {
     setSizeClass(adqt::widgets::AdButton::SizeClass::Small);
     setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Outline);
     setAccentRole(adqt::widgets::AdButton::AccentRole::Neutral);
@@ -926,8 +929,7 @@ void ColorPickerSamplerButton::paintEvent(QPaintEvent* event) {
     const QColor color = swatchColor();
     const int lightness = color.isValid() && color.alpha() > 0 ? qGray(color.rgb()) : 255;
     const QColor iconColor = lightness >= 136 ? QColor(Qt::black) : QColor(Qt::white);
-    const int iconSide = qBound(10, qRound(14.0 * swatchPhysicalScale()),
-                                qMin(width(), height()));
+    const int iconSide = qBound(10, qRound(14.0 * swatchPhysicalScale()), qMin(width(), height()));
     const QRect iconRect((width() - iconSide) / 2, (height() - iconSide) / 2, iconSide, iconSide);
     const QPixmap icon = snow_shot::presentation::icons::renderTintedIconPixmap(
         snow_shot::presentation::icons::custom::outlined::ColorPicker(), iconRect.size(),
@@ -940,60 +942,81 @@ void ColorPickerSamplerButton::paintEvent(QPaintEvent* event) {
     painter.drawPixmap(iconRect, icon);
 }
 
-StrokeStylePreviewTrigger::StrokeStylePreviewTrigger(QWidget* parent)
-    : StylePreviewButton(parent) {}
-
-void StrokeStylePreviewTrigger::setStrokeColor(const QColor& color) {
-    if (m_color == color) {
-        return;
+ColorPickerTrigger::ColorPickerTrigger(Preview preview, QWidget* parent)
+    : ColorSwatchButton(parent), m_preview(preview) {
+    setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Outline);
+    setAccentRole(adqt::widgets::AdButton::AccentRole::Neutral);
+    if (preview == Preview::Width) {
+        setCursor(Qt::SplitVCursor);
     }
-    m_color = color;
-    update();
+    updateAccessibleValue();
 }
 
-void StrokeStylePreviewTrigger::setStrokeStyle(SnowCanvasStrokeStyle strokeStyle) {
-    if (m_strokeStyle == strokeStyle) {
-        return;
+void ColorPickerTrigger::setStrokeStyle(SnowCanvasStrokeStyle style) {
+    if (m_strokeStyle != style) {
+        m_strokeStyle = style;
+        update();
     }
-    m_strokeStyle = strokeStyle;
-    update();
 }
 
-void StrokeStylePreviewTrigger::setMixed(bool mixed) {
-    if (m_mixed == mixed) {
-        return;
+void ColorPickerTrigger::setFillStyle(SnowCanvasFillStyle style) {
+    if (m_fillStyle != style) {
+        m_fillStyle = style;
+        update();
     }
-    m_mixed = mixed;
-    update();
 }
 
-void StrokeStylePreviewTrigger::setPhysicalScale(qreal scale) {
-    if (!std::isfinite(scale) || scale <= 0.0) {
-        scale = 1.0;
+void ColorPickerTrigger::setStrokeWidth(double width) {
+    width = std::clamp(width, 0.0, MAX_RECTANGLE_STROKE_WIDTH);
+    if (!qFuzzyCompare(m_strokeWidth + 1.0, width + 1.0)) {
+        m_strokeWidth = width;
+        updateAccessibleValue();
+        update();
     }
-    scale = std::clamp<qreal>(scale, 0.25, 4.0);
-    if (qFuzzyCompare(m_physicalScale + 1.0, scale + 1.0)) {
-        return;
-    }
-    m_physicalScale = scale;
-    update();
 }
 
-void StrokeStylePreviewTrigger::paintEvent(QPaintEvent* event) {
-    StylePreviewButton::paintEvent(event);
+void ColorPickerTrigger::setMixed(bool mixed) {
+    if (m_mixed != mixed) {
+        m_mixed = mixed;
+        updateAccessibleValue();
+        update();
+    }
+}
 
+void ColorPickerTrigger::updateAccessibleValue() {
+    if (m_preview == Preview::Width) {
+        setAccessibleDescription(m_mixed
+                                     ? QCoreApplication::translate("ScreenshotToolPalette", "Mixed")
+                                     : strokeWidthText(m_strokeWidth));
+    }
+}
+
+void ColorPickerTrigger::paintEvent(QPaintEvent* event) {
+    if (m_preview == Preview::Swatch && !m_mixed) {
+        ColorSwatchButton::paintEvent(event);
+        return;
+    }
+    adqt::widgets::AdButton::paintEvent(event);
     QPainter painter(this);
+    const qreal scale = swatchPhysicalScale();
     painter.setRenderHint(QPainter::Antialiasing, true);
+    if (m_preview == Preview::Width) {
+        drawStrokeWidthPreview(&painter, this, m_strokeWidth, scale, true, m_mixed, true);
+        return;
+    }
     if (m_mixed) {
         const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
-        QColor color = scheme.map.colorTextSecondary;
-        if (!color.isValid()) {
-            color = QColor(QStringLiteral("#595959"));
-        }
-        drawMixedValueMark(&painter, QRectF(rect()), color, m_physicalScale);
+        const QColor color = scheme.map.colorTextSecondary.isValid()
+                                 ? scheme.map.colorTextSecondary
+                                 : QColor(QStringLiteral("#595959"));
+        drawMixedValueMark(&painter, QRectF(rect()), color, scale);
         return;
     }
-    drawStrokeStylePreview(&painter, this, m_color, m_strokeStyle, m_physicalScale, false, false);
+    if (m_preview == Preview::Stroke) {
+        drawStrokeStylePreview(&painter, this, swatchColor(), m_strokeStyle, scale, false, false);
+    } else {
+        drawFillStylePreview(&painter, this, swatchColor(), m_fillStyle, scale, false, false);
+    }
 }
 
 StrokeStylePreviewButton::StrokeStylePreviewButton(QWidget* parent)
@@ -1028,61 +1051,6 @@ void StrokeStylePreviewButton::paintEvent(QPaintEvent* event) {
                            buttonStyle() != adqt::widgets::AdButton::ButtonStyle::Text &&
                                accentRole() == adqt::widgets::AdButton::AccentRole::Primary,
                            false);
-}
-
-FillStylePreviewTrigger::FillStylePreviewTrigger(QWidget* parent) : StylePreviewButton(parent) {}
-
-void FillStylePreviewTrigger::setFillColor(const QColor& color) {
-    if (m_color == color) {
-        return;
-    }
-    m_color = color;
-    update();
-}
-
-void FillStylePreviewTrigger::setFillStyle(SnowCanvasFillStyle fillStyle) {
-    if (m_fillStyle == fillStyle) {
-        return;
-    }
-    m_fillStyle = fillStyle;
-    update();
-}
-
-void FillStylePreviewTrigger::setMixed(bool mixed) {
-    if (m_mixed == mixed) {
-        return;
-    }
-    m_mixed = mixed;
-    update();
-}
-
-void FillStylePreviewTrigger::setPhysicalScale(qreal scale) {
-    if (!std::isfinite(scale) || scale <= 0.0) {
-        scale = 1.0;
-    }
-    scale = std::clamp<qreal>(scale, 0.25, 4.0);
-    if (qFuzzyCompare(m_physicalScale + 1.0, scale + 1.0)) {
-        return;
-    }
-    m_physicalScale = scale;
-    update();
-}
-
-void FillStylePreviewTrigger::paintEvent(QPaintEvent* event) {
-    StylePreviewButton::paintEvent(event);
-
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    if (m_mixed) {
-        const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
-        QColor color = scheme.map.colorTextSecondary;
-        if (!color.isValid()) {
-            color = QColor(QStringLiteral("#595959"));
-        }
-        drawMixedValueMark(&painter, QRectF(rect()), color, m_physicalScale);
-        return;
-    }
-    drawFillStylePreview(&painter, this, m_color, m_fillStyle, m_physicalScale, false, false);
 }
 
 FillStylePreviewButton::FillStylePreviewButton(QWidget* parent) : adqt::widgets::AdButton(parent) {}
@@ -1463,11 +1431,12 @@ createScreenshotToolPaletteSelectEditor(QWidget* parent,
     editor.select->setMode(adqt::widgets::AdSelect::Mode::Single);
     editor.select->setPlaceholder(
         ScreenshotToolPaletteTranslationText(config.placeholder).translated());
-    editor.select->setControlSize(adqt::widgets::AdSelect::ControlSize::Small);
+    editor.select->setControlSize(config.compact ? adqt::widgets::AdSelect::ControlSize::Small
+                                                 : adqt::widgets::AdSelect::ControlSize::Middle);
     editor.select->setVariant(adqt::widgets::AdSelect::Variant::Borderless);
     editor.select->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
     editor.select->setSearchEnabled(config.searchEnabled);
-    editor.select->setPopupMatchSelectWidth(false);
+    editor.select->setPopupMatchSelectWidth(config.popupMatchSelectWidth);
     editor.select->setValueRole(adqt::widgets::AdSelect::DefaultValueRole);
     editor.select->setLabelRole(adqt::widgets::AdSelect::DefaultLabelRole);
     configureScreenshotToolPaletteSelectEditor(editor, metrics);
@@ -1503,7 +1472,7 @@ createScreenshotToolPaletteRadioEditor(QWidget* parent,
         editor.buttons.push_back(radio);
     }
     configureScreenshotToolPaletteStyleRadioButtonGroup(editor.group, metrics,
-                                                         config.useButtonMetrics);
+                                                        config.useButtonMetrics);
     editor.group->setCheckedId(config.initialId);
     return editor;
 }
@@ -1553,7 +1522,7 @@ ScreenshotToolPaletteOptionPopoverEditor materializeScreenshotToolPaletteOptionP
         editor.values.push_back(option.value);
         layout->addWidget(button);
         QObject::connect(button, &adqt::widgets::AdButton::clicked, receiver,
-                             [popover, activateValue, value = option.value]() {
+                         [popover, activateValue, value = option.value]() {
                              if (activateValue) {
                                  activateValue(value);
                              }
@@ -1561,8 +1530,8 @@ ScreenshotToolPaletteOptionPopoverEditor materializeScreenshotToolPaletteOptionP
                          });
     }
     popover->setContentWidget(content);
-    configureScreenshotToolPaletteOptionPopoverEditor(popover, editor.buttons,
-                                                       config.optionSpacing, metrics);
+    configureScreenshotToolPaletteOptionPopoverEditor(popover, editor.buttons, config.optionSpacing,
+                                                      metrics);
     return editor;
 }
 
@@ -1593,10 +1562,7 @@ void updateScreenshotToolPaletteOptionPopoverEditor(
             continue;
         }
         const bool active = index < values.size() && values.at(index) == activeValue;
-        button->setButtonStyle(active ? adqt::widgets::AdButton::ButtonStyle::Solid
-                                      : adqt::widgets::AdButton::ButtonStyle::Text);
-        button->setAccentRole(active ? adqt::widgets::AdButton::AccentRole::Primary
-                                     : adqt::widgets::AdButton::AccentRole::Neutral);
+        setScreenshotToolPaletteButtonActive(button, active);
     }
 }
 
@@ -1640,14 +1606,16 @@ void configureScreenshotToolPaletteSliderEditor(ScreenshotToolPaletteSliderEdito
     }
 }
 
-void configureScreenshotToolPaletteBaseButton(adqt::widgets::AdButton* button, const char* tooltip,
-                                              const ScreenshotToolPaletteButtonMetrics& metrics) {
+namespace {
+void configureToolbarButton(adqt::widgets::AdButton* button, const char* tooltip,
+                            const ScreenshotToolPaletteButtonMetrics& metrics,
+                            adqt::widgets::AdButton::SizeClass sizeClass) {
     if (!screenshotToolPaletteMetricsApplyTo(metrics, button)) {
         return;
     }
 
     applySharedButtonAccessibility(button, tooltip);
-    button->setSizeClass(adqt::widgets::AdButton::SizeClass::Medium);
+    button->setSizeClass(sizeClass);
     button->setIconSize(QSize(scaledMetric(metrics.iconSize, metrics.physicalScale),
                               scaledMetric(metrics.iconSize, metrics.physicalScale)));
     button->setFixedSize(scaledMetric(metrics.buttonSize, metrics.physicalScale),
@@ -1655,19 +1623,16 @@ void configureScreenshotToolPaletteBaseButton(adqt::widgets::AdButton* button, c
     stampScreenshotToolbarReferenceWidth(button, metrics.buttonSize);
 }
 
+} // namespace
+
+void configureScreenshotToolPaletteBaseButton(adqt::widgets::AdButton* button, const char* tooltip,
+                                              const ScreenshotToolPaletteButtonMetrics& metrics) {
+    configureToolbarButton(button, tooltip, metrics, adqt::widgets::AdButton::SizeClass::Medium);
+}
+
 void configureScreenshotToolPaletteStyleButton(adqt::widgets::AdButton* button, const char* tooltip,
                                                const ScreenshotToolPaletteButtonMetrics& metrics) {
-    if (!screenshotToolPaletteMetricsApplyTo(metrics, button)) {
-        return;
-    }
-
-    applySharedButtonAccessibility(button, tooltip);
-    button->setSizeClass(adqt::widgets::AdButton::SizeClass::Small);
-    button->setIconSize(QSize(scaledMetric(metrics.iconSize, metrics.physicalScale),
-                              scaledMetric(metrics.iconSize, metrics.physicalScale)));
-    button->setFixedSize(scaledMetric(metrics.buttonSize, metrics.physicalScale),
-                         scaledMetric(metrics.buttonSize, metrics.physicalScale));
-    stampScreenshotToolbarReferenceWidth(button, metrics.buttonSize);
+    configureToolbarButton(button, tooltip, metrics, adqt::widgets::AdButton::SizeClass::Small);
 }
 
 void configureScreenshotToolPaletteStyleRadioButtonGroup(
@@ -1694,8 +1659,8 @@ void configureScreenshotToolPaletteStyleRadioButtonGroup(
 
         QSize baseIconSize = radio->property(STYLE_RADIO_BASE_ICON_SIZE_PROPERTY).toSize();
         if (!baseIconSize.isValid()) {
-            baseIconSize = useButtonMetrics ? QSize(metrics.iconSize, metrics.iconSize)
-                                            : radio->iconSize();
+            baseIconSize =
+                useButtonMetrics ? QSize(metrics.iconSize, metrics.iconSize) : radio->iconSize();
             radio->setProperty(STYLE_RADIO_BASE_ICON_SIZE_PROPERTY, baseIconSize);
         }
 
@@ -1835,8 +1800,8 @@ createScreenshotToolPaletteColorButton(QWidget* parent, const char* tooltip, con
     return button;
 }
 
-ColorPickerSamplerButton* createScreenshotToolPaletteColorPickerSamplerButton(
-    QWidget* parent, const QColor& color) {
+ColorPickerSamplerButton* createScreenshotToolPaletteColorPickerSamplerButton(QWidget* parent,
+                                                                              const QColor& color) {
     auto* button = new ColorPickerSamplerButton(parent);
     button->setSwatchColor(color);
     button->setSwatchBorderVisible(true);
@@ -1848,11 +1813,8 @@ adqt::widgets::AdButton*
 createScreenshotToolPaletteStyleActionButton(QWidget* parent, const char* tooltip,
                                              const adqt::icons::IconRef& iconRef,
                                              const ScreenshotToolPaletteButtonMetrics& metrics) {
-    auto* button = new adqt::widgets::AdButton(parent);
-    configureScreenshotToolPaletteStyleButton(button, tooltip, metrics);
-    new StyleButtonIconBinding(button, iconRef);
-    button->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
-    button->setAccentRole(adqt::widgets::AdButton::AccentRole::Neutral);
+    auto* button = createScreenshotToolPaletteToolButton(parent, tooltip, iconRef, metrics);
+    button->setSizeClass(adqt::widgets::AdButton::SizeClass::Small);
     return button;
 }
 
@@ -1877,26 +1839,6 @@ void configureScreenshotToolPaletteIconValuePreviewTrigger(
     trigger->setPhysicalScale(metrics.physicalScale);
 }
 
-StrokeStylePreviewTrigger* createScreenshotToolPaletteStrokeStyleTrigger(
-    QWidget* parent, const char* tooltip, const QColor& color,
-    SnowCanvasStrokeStyle strokeStyle, const ScreenshotToolPaletteButtonMetrics& metrics) {
-    auto* trigger = new StrokeStylePreviewTrigger(parent);
-    trigger->setStrokeColor(color);
-    trigger->setStrokeStyle(strokeStyle);
-    configureScreenshotToolPaletteStyleButton(trigger, tooltip, metrics);
-    configureScreenshotToolPaletteStrokeStyleTrigger(trigger, metrics);
-    return trigger;
-}
-
-void configureScreenshotToolPaletteStrokeStyleTrigger(
-    StrokeStylePreviewTrigger* trigger, const ScreenshotToolPaletteButtonMetrics& metrics) {
-    if (!screenshotToolPaletteMetricsApplyTo(metrics, trigger)) {
-        return;
-    }
-    configureScreenshotToolPaletteStyleButton(trigger, nullptr, metrics);
-    trigger->setPhysicalScale(metrics.physicalScale);
-}
-
 StrokeStylePreviewButton*
 createScreenshotToolPaletteStrokeStyleButton(QWidget* parent, const char* tooltip,
                                              SnowCanvasStrokeStyle strokeStyle,
@@ -1908,27 +1850,6 @@ createScreenshotToolPaletteStrokeStyleButton(QWidget* parent, const char* toolti
     button->setStrokeStyle(strokeStyle);
     button->setPhysicalScale(metrics.physicalScale);
     return button;
-}
-
-FillStylePreviewTrigger*
-createScreenshotToolPaletteFillStyleTrigger(QWidget* parent, const char* tooltip,
-                                            const QColor& color, SnowCanvasFillStyle fillStyle,
-                                            const ScreenshotToolPaletteButtonMetrics& metrics) {
-    auto* trigger = new FillStylePreviewTrigger(parent);
-    trigger->setFillColor(color);
-    trigger->setFillStyle(fillStyle);
-    configureScreenshotToolPaletteStyleButton(trigger, tooltip, metrics);
-    configureScreenshotToolPaletteFillStyleTrigger(trigger, metrics);
-    return trigger;
-}
-
-void configureScreenshotToolPaletteFillStyleTrigger(
-    FillStylePreviewTrigger* trigger, const ScreenshotToolPaletteButtonMetrics& metrics) {
-    if (!screenshotToolPaletteMetricsApplyTo(metrics, trigger)) {
-        return;
-    }
-    configureScreenshotToolPaletteStyleButton(trigger, nullptr, metrics);
-    trigger->setPhysicalScale(metrics.physicalScale);
 }
 
 FillStylePreviewButton* createScreenshotToolPaletteFillStyleButton(
@@ -2020,19 +1941,7 @@ void IconValuePreviewTrigger::commitControlScale(
     setPhysicalScale(context.logicalScale);
 }
 
-void StrokeStylePreviewTrigger::commitControlScale(
-    const adqt::widgets::AdControlScaleContext& context) {
-    adqt::widgets::AdButton::commitControlScale(context);
-    setPhysicalScale(context.logicalScale);
-}
-
 void StrokeStylePreviewButton::commitControlScale(
-    const adqt::widgets::AdControlScaleContext& context) {
-    adqt::widgets::AdButton::commitControlScale(context);
-    setPhysicalScale(context.logicalScale);
-}
-
-void FillStylePreviewTrigger::commitControlScale(
     const adqt::widgets::AdControlScaleContext& context) {
     adqt::widgets::AdButton::commitControlScale(context);
     setPhysicalScale(context.logicalScale);
