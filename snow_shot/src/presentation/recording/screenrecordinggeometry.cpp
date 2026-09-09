@@ -15,8 +15,23 @@ qreal validScale(qreal scale) {
 } // namespace
 
 namespace snow_shot::presentation::recording {
+ScreenRecordingObservedGeometry screenRecordingObservedGeometry(const QRect& physicalClientRect,
+                                                                qreal physicalScale,
+                                                                const QMargins& physicalInsets) {
+    const QRect selected = physicalClientRect.marginsRemoved(physicalInsets);
+    if (selected.width() < 2 || selected.height() < 2) {
+        return {};
+    }
+    const qreal scale = validScale(physicalScale);
+    const QRectF selection(physicalInsets.left() / scale, physicalInsets.top() / scale,
+                           selected.width() / scale, selected.height() / scale);
+    const qreal inset = screenRecordingPhysicalFrameInset / scale;
+    return {selected, selection.adjusted(-inset, -inset, inset, inset), selection,
+            kPhysicalBorderPadding / scale};
+}
+
 ScreenRecordingAreaFrameGeometry screenRecordingAreaFrameGeometry(const QRectF& logicalRegion,
-                                                                qreal physicalScale) {
+                                                                  qreal physicalScale) {
     if (!logicalRegion.isValid() || logicalRegion.isEmpty()) {
         return {};
     }
@@ -33,11 +48,7 @@ ScreenRecordingAreaFrameGeometry screenRecordingAreaFrameGeometry(const QRectF& 
         selectionRect.adjusted(-frameInset, -frameInset, frameInset, frameInset);
 
     return ScreenRecordingAreaFrameGeometry{
-        windowGeometry,
-        frameRect,
-        selectionRect,
-        borderWidth,
-        paddingWidth,
+        windowGeometry, frameRect, selectionRect, borderWidth, paddingWidth,
     };
 }
 
@@ -68,7 +79,7 @@ ScreenRecordingAreaBorderGeometry screenRecordingAreaBorderGeometry(const QRectF
 }
 
 QRect screenRecordingCompatibleCaptureRegion(const QRect& selectedPhysicalRegion,
-                                            const QRect& physicalBounds) {
+                                             const QRect& physicalBounds) {
     if (!selectedPhysicalRegion.isValid() || selectedPhysicalRegion.isEmpty()) {
         return {};
     }
@@ -114,8 +125,7 @@ QSize screenRecordingOrientedMaximumSize(const QSize& maximumSize, const QSize& 
     const bool maximumIsPortrait = maximumSize.height() > maximumSize.width();
     const bool captureIsLandscape = captureSize.width() > captureSize.height();
     const bool captureIsPortrait = captureSize.height() > captureSize.width();
-    if ((maximumIsLandscape && captureIsPortrait) ||
-        (maximumIsPortrait && captureIsLandscape)) {
+    if ((maximumIsLandscape && captureIsPortrait) || (maximumIsPortrait && captureIsLandscape)) {
         return maximumSize.transposed();
     }
     return maximumSize;

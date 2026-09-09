@@ -10,15 +10,17 @@ namespace snow_shot::presentation::recording {
 inline void connectScreenRecordingSelection(ScreenshotToolPalette& palette,
                                             ScreenRecordingAreaWindow& area, QObject& context) {
     auto* canvas = area.canvas();
-    QObject::connect(&palette, &ScreenshotToolPalette::selectRequested, &context,
-                     [&palette, &area, canvas]() {
-                         if (palette.activeTool() == ScreenshotToolPalette::Tool::Select) {
-                             canvas->setCanvasTool(SnowCanvasTool::Select);
-                             area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
-                         } else {
-                             area.setInputMode(ScreenRecordingAreaWindow::InputMode::PassThrough);
-                         }
-                     });
+    QObject::connect(
+        &palette, &ScreenshotToolPalette::selectRequested, &context, [&palette, &area, canvas]() {
+            if (palette.activeTool() == ScreenshotToolPalette::Tool::Select) {
+                canvas->setCanvasTool(SnowCanvasTool::Select);
+                area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
+            } else {
+                area.setInputMode(palette.recordingExportSettingsVisible()
+                                      ? ScreenRecordingAreaWindow::InputMode::RegionEditing
+                                      : ScreenRecordingAreaWindow::InputMode::PassThrough);
+            }
+        });
     QObject::connect(&palette, &ScreenshotToolPalette::recordingExportSettingsVisibleChanged,
                      &context, [&area](bool visible) {
                          area.setInputMode(visible

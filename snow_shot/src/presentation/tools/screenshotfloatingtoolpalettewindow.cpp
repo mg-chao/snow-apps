@@ -113,7 +113,10 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
                     }
                     if (updatesWereEnabled) {
                         setUpdatesEnabled(true);
-                        update();
+                        // Complete the presentation transaction now. An update()
+                        // can coalesce with dirty state left by the hidden DPI
+                        // transition, leaving the old backing-store pixels on screen.
+                        repaint();
                     }
                 });
                 emit dpiScaleCommitCompleted();

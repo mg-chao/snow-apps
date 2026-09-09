@@ -17,8 +17,14 @@
 #include <QMouseEvent>
 #include <QWindow>
 #include <QScreen>
+#include <QPointer>
+#include <QTimer>
+#include <QMessageBox>
+#include "widgets/color_picker.h"
+#include <future>
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
+int recordingToolbarAcrossNativeDisplays(bool startCapture);
 #endif
 #include <atomic>
 #include <cstdlib>
@@ -29,6 +35,10 @@ namespace {
 SnowCaptureRecordingSession session;
 int starts = 0;
 std::atomic<int> exports = 0;
+std::shared_future<void> exportGate;
+std::promise<void>* exportEntered = nullptr;
+std::atomic<bool> failExport = false;
+std::atomic<int> destroyedSessions = 0;
 void require(bool condition, const char* message) {
     if (!condition) {
         std::cerr << message << '\n';
@@ -44,6 +54,97 @@ ScreenshotToolPalette* palette() {
     }
     require(false, "recording toolbar must exist");
     return nullptr;
+}
+
+class ErrorObserver final : public QObject {
+  public:
+    int shown = 0;
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() == QEvent::Show) {
+            if (auto* dialog = qobject_cast<QMessageBox*>(watched)) {
+                ++shown;
+                QTimer::singleShot(0, dialog, &QMessageBox::accept);
+            }
+        }
+        return false;
+    }
+};
+
+void waitForIdle(ScreenRecordingController& controller) {
+    QElapsedTimer deadline;
+    deadline.start();
+    while (controller.isRecording() && deadline.elapsed() < 3000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents | QEventLoop::WaitForMoreEvents, 100);
+    }
+    require(!controller.isRecording(), "controlled finalization must return to idle");
+}
+
+int recordingWindowCount() {
+    int count = 0;
+    for (auto* widget : QApplication::topLevelWidgets()) {
+        count += qobject_cast<ScreenRecordingAreaWindow*>(widget) != nullptr ||
+                 qobject_cast<ScreenRecordingToolbarWindow*>(widget) != nullptr;
+    }
+    return count;
+}
+
+void closeAndStopHaveIndependentUiLifetimes() {
+    ErrorObserver errors;
+    qApp->installEventFilter(&errors);
+    for (const bool close : {false, true}) {
+        for (const bool failure : {false, true}) {
+            ScreenRecordingController controller;
+            require(recordingWindowCount() == 0,
+                    "constructing a controller must not create windows");
+            controller.open({40, 40, 320, 240});
+            auto* toolbar = qobject_cast<ScreenRecordingToolbarWindow*>(palette()->window());
+            QPointer<ScreenRecordingToolbarWindow> previousToolbar(toolbar);
+            std::promise<void> release;
+            std::promise<void> entered;
+            auto enteredFuture = entered.get_future();
+            exportGate = release.get_future().share();
+            exportEntered = &entered;
+            failExport = failure;
+            const int previousDestroyed = destroyedSessions;
+            const int previousErrors = errors.shown;
+            controller.startRecording();
+            QCoreApplication::processEvents();
+            require(controller.isRecording(), "fake backend must start");
+            if (close) {
+                // Exercise the native close path as well as the toolbar command.
+                toolbar->close();
+            } else {
+                palette()->recordingStopRequested();
+            }
+            require(enteredFuture.wait_for(std::chrono::seconds(2)) == std::future_status::ready,
+                    "stop must reach the controlled backend");
+            require(controller.isOpen() != close, "only Close must detach the UI during export");
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            require(previousToolbar.isNull() == close && recordingWindowCount() == (close ? 0 : 2),
+                    "Close must destroy UI before backend finalization, while Stop retains it");
+            controller.open({80, 80, 320, 240});
+            require(recordingWindowCount() == (close ? 0 : 2),
+                    "busy finalization must reject reopen");
+            release.set_value();
+            waitForIdle(controller);
+            require(destroyedSessions == previousDestroyed + 1,
+                    "backend must be destroyed exactly once");
+            require(errors.shown == previousErrors + (failure ? 1 : 0),
+                    "export failure must be reported even after Close");
+            require(recordingWindowCount() == (close ? 0 : 2),
+                    "completion must not recreate closed UI");
+            if (!close) {
+                require(previousToolbar && previousToolbar->isVisible(),
+                        "Stop must keep the original UI usable");
+                palette()->recordingCloseRequested();
+                QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            }
+            exportEntered = nullptr;
+            exportGate = {};
+            failExport = false;
+        }
+    }
+    qApp->removeEventFilter(&errors);
 }
 
 void requireToolbarAboveArea(ScreenRecordingAreaWindow* area) {
@@ -77,6 +178,92 @@ void requireToolbarAboveArea(ScreenRecordingAreaWindow* area) {
     require(toolbar->windowHandle()->transientParent() == area->windowHandle(),
             "recording toolbar must retain the area as its transient owner");
     area->setInputMode(previousInputMode);
+}
+
+void recordingToolbarReconcilesFrameBeforeShowing() {
+    ScreenRecordingToolbarWindow toolbar;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "placement test requires a screen");
+    const QRect region = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+    toolbar.placeForPhysicalRegion(region);
+    toolbar.showAndActivate();
+    QCoreApplication::processEvents();
+    toolbar.hide();
+    const QSize expected = toolbar.windowSizeHint();
+    const QPoint anchor = toolbar.contentPosition();
+    // Model Windows retaining the old physical frame after a DPI transition,
+    // while the host already contains the destination display's logical layout.
+    toolbar.resize(expected.width() / 2, expected.height());
+    toolbar.showAndActivate();
+    require(toolbar.size() == expected &&
+                toolbar.rect().contains(toolbar.paletteHost()->geometry()),
+            "showing recording controls must reconcile the frame before painting");
+    require(toolbar.contentPosition() == anchor,
+            "reconciling the recording frame must preserve its content anchor");
+    toolbar.beginRegionInteraction();
+    toolbar.resize(expected.width() / 2, expected.height());
+    toolbar.endRegionInteraction(region);
+    require(toolbar.size() == expected &&
+                toolbar.rect().contains(toolbar.paletteHost()->geometry()),
+            "restoring recording controls after area interaction must reconcile the frame");
+}
+
+void recordingToolbarPlacementAcrossDisplays() {
+    ScreenRecordingAreaWindow area;
+    ScreenRecordingToolbarWindow toolbar;
+    toolbar.setTransientOwnerWindow(&area);
+    QRegion desktop;
+    for (QScreen* screen : QGuiApplication::screens()) {
+        desktop += ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+    }
+    for (QScreen* screen : QGuiApplication::screens()) {
+        const QRect bounds = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+        for (int offset : {-bounds.width() / 3, 0, bounds.width() / 3}) {
+            for (int height : {100, bounds.height() - 80}) {
+                const QRect region(bounds.left() + offset, bounds.top() + 40, bounds.width() / 2,
+                                   height);
+                // Only selections within the captured desktop can originate in the UI.
+                if (!QRegion(region).subtracted(desktop).isEmpty()) {
+                    continue;
+                }
+                area.setPhysicalRegion(region);
+                toolbar.placeForPhysicalRegion(region);
+                area.show();
+                toolbar.showAndActivate();
+                for (int pass = 0; pass < 5; ++pass) {
+                    QCoreApplication::processEvents();
+                }
+                require(toolbar.size() == toolbar.windowSizeHint() &&
+                            toolbar.rect().contains(toolbar.paletteHost()->geometry()),
+                        "cross-display placement must reconcile the frame before opening panels");
+                toolbar.palette()->setActiveTool(ScreenshotToolPalette::Tool::Shape);
+                QCoreApplication::processEvents();
+                const QPoint position = toolbar.contentPosition();
+                const QRect content = toolbar.occupiedContentRect();
+                const QRect visible = content.translated(position);
+                QScreen* target = ScreenshotGeometryMapper::screenForPhysicalRect(region);
+                const QRect logicalBounds = target->geometry();
+                require(
+                    visible.top() >= logicalBounds.top() &&
+                        visible.bottom() <= logicalBounds.bottom(),
+                    "recording rows must fit the selected display after cross-display placement");
+                if (visible.width() <= logicalBounds.width()) {
+                    require(logicalBounds.contains(visible),
+                            "recording rows must remain horizontally inside the selected display");
+                }
+                require(toolbar.rect().contains(
+                            content.translated(toolbar.contentPosition() - toolbar.pos())),
+                        "recording rows must fit the native frame after cross-display placement");
+                toolbar.placeForPhysicalRegion(region);
+                QCoreApplication::processEvents();
+                require(
+                    toolbar.contentPosition() == position &&
+                        toolbar.occupiedContentRect() == content,
+                    "repeated cross-display placement must keep the committed layout and anchor");
+                toolbar.palette()->clearActiveTool();
+            }
+        }
+    }
 }
 
 void recordingSecondaryPanelsStayOnScreen() {
@@ -155,7 +342,9 @@ snow_capture_recording_session_create_direct(const SnowCaptureDirectRecordingCon
     *result = &session;
     return SNOW_CAPTURE_RESULT_OK;
 }
-void snow_capture_recording_session_destroy(SnowCaptureRecordingSession*) {}
+void snow_capture_recording_session_destroy(SnowCaptureRecordingSession*) {
+    ++destroyedSessions;
+}
 uint8_t snow_capture_recording_session_start(SnowCaptureRecordingSession*) {
     ++starts;
     return 1;
@@ -168,7 +357,13 @@ uint8_t snow_capture_recording_session_resume(SnowCaptureRecordingSession*) {
 }
 SnowCaptureResult snow_capture_recording_session_stop(SnowCaptureRecordingSession*) {
     ++exports;
-    return SNOW_CAPTURE_RESULT_OK;
+    if (exportEntered != nullptr) {
+        exportEntered->set_value();
+    }
+    if (exportGate.valid()) {
+        exportGate.wait();
+    }
+    return failExport ? SNOW_CAPTURE_RESULT_INVALID_ARGUMENT : SNOW_CAPTURE_RESULT_OK;
 }
 uint8_t snow_capture_recording_session_state(const SnowCaptureRecordingSession*,
                                              SnowCaptureRecordingState* state) {
@@ -193,6 +388,21 @@ int main(int argc, char** argv) {
             "test output directory must be set");
     require(RecordingSettings().setHideToolbarInRecording(false),
             "capture exclusion must be disabled for fake backend");
+#ifdef Q_OS_WIN
+    if (app.arguments().contains(QStringLiteral("--native-toolbar-display-only")) ||
+        app.arguments().contains(QStringLiteral("--native-toolbar-ready-display-only"))) {
+        const int result = recordingToolbarAcrossNativeDisplays(
+            app.arguments().contains(QStringLiteral("--native-toolbar-display-only")));
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        ApplicationStorage::instance().shutdown();
+        return result;
+    }
+#endif
+    recordingToolbarReconcilesFrameBeforeShowing();
+    recordingToolbarPlacementAcrossDisplays();
+    if (app.arguments().contains(QStringLiteral("--placement-only"))) {
+        return 0;
+    }
     recordingSecondaryPanelsStayOnScreen();
     {
         ScreenRecordingController controller;
@@ -206,6 +416,28 @@ int main(int argc, char** argv) {
         }
         require(area != nullptr, "recording area must exist");
         requireToolbarAboveArea(area);
+        auto* toolbar = qobject_cast<ScreenRecordingToolbarWindow*>(palette()->window());
+        auto* picker = toolbar->palette()->findChild<adqt::widgets::AdColorPicker*>(
+            QStringLiteral("screenRecordingMouseTrailColor"));
+        require(picker != nullptr, "export settings must expose the trail color popup");
+        picker->setPopupVisible(true);
+        QCoreApplication::processEvents();
+        require(picker->popupVisible(), "test popup must open");
+        const QPoint toolbarPosition = toolbar->pos();
+        area->regionInteractionStarted();
+        require(!picker->popupVisible(), "geometry interaction must dismiss export popups");
+        require(!toolbar->isVisible(), "native interaction must hide the toolbar");
+        area->move(area->pos() + QPoint(20, 10));
+        QCoreApplication::processEvents();
+        require(!toolbar->isVisible() && toolbar->pos() == toolbarPosition,
+                "intermediate geometry must not show or reposition the toolbar");
+        area->regionInteractionFinished();
+        require(toolbar->isVisible(), "finishing interaction must restore the toolbar");
+        const QPoint finalPosition = toolbar->contentPosition();
+        toolbar->placeForPhysicalRegion(area->physicalRegion());
+        require(toolbar->contentPosition() == finalPosition,
+                "restored toolbar must use final geometry");
+        controller.open(region);
         auto* canvas = area->canvas();
         require(palette()->activateDrawingShortcut(QStringLiteral("shape")),
                 "drawing shortcut must activate the shape tool");
@@ -222,10 +454,21 @@ int main(int argc, char** argv) {
         controller.open(region);
         require(canvas->canvasHistoryState().canUndo,
                 "opening an already visible region must preserve its drawing");
+        QPointer<ScreenRecordingAreaWindow> closedArea(area);
+        QPointer<ScreenRecordingToolbarWindow> closedToolbar(
+            qobject_cast<ScreenRecordingToolbarWindow*>(palette()->window()));
         palette()->recordingCloseRequested();
+        require(!controller.isOpen(), "Close must detach the session immediately");
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        require(closedArea.isNull() && closedToolbar.isNull(), "Close must destroy both windows");
         controller.open(region);
-        require(area->isVisible() && area->canvas() == canvas,
-                "a new recording session must reuse the area and canvas");
+        for (auto* widget : QApplication::topLevelWidgets()) {
+            if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget)) {
+                area = candidate;
+            }
+        }
+        canvas = area->canvas();
+        require(area->isVisible(), "reopening must create a visible fresh session");
         requireToolbarAboveArea(area);
         require(!canvas->canvasHistoryState().canUndo && !canvas->canvasHistoryState().canRedo,
                 "a new session at the same rectangle must clear drawing and history");
@@ -252,11 +495,12 @@ int main(int argc, char** argv) {
             palette()->recordingCloseRequested();
             controller.open(QRect(80, 80, 320, 240));
         }
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         int toolbarCount = 0;
         for (auto* widget : QApplication::topLevelWidgets()) {
             toolbarCount += qobject_cast<ScreenRecordingToolbarWindow*>(widget) != nullptr;
         }
-        require(toolbarCount == 1, "reopening must reuse the controller's existing toolbar");
+        require(toolbarCount == 1, "reopening must leave only the current toolbar alive");
         controller.startRecording();
         controller.open(QRect(120, 80, 320, 240));
         QCoreApplication::processEvents();
@@ -293,6 +537,7 @@ int main(int argc, char** argv) {
     QCoreApplication::processEvents();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     require(starts == 1, "destroying the controller must cancel a queued recording start");
+    closeAndStopHaveIndependentUiLifetimes();
     ApplicationStorage::instance().shutdown();
     return 0;
 }
