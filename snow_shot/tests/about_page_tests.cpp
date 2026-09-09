@@ -29,6 +29,7 @@
 #include <QTimer>
 #include <QTranslator>
 
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 
@@ -100,6 +101,52 @@ void absentVersionDoesNotInventARelease() {
     }
 }
 
+void traySettingsAndFunctionNavigation() {
+    const auto& registry = settings::builtInSettingsRegistry();
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    settings::SettingsRuntimeSession session(registry, backend);
+    const auto left = settings::SettingsSelectBinding::TrayLeftClickAction;
+    const auto middle = settings::SettingsSelectBinding::TrayMiddleClickAction;
+    require(backend.resetSection(settings::SettingsSectionReset::TrayBehavior),
+            "reset tray settings");
+    require(backend.selectValue(left).toString() == QStringLiteral("screenshot") &&
+                backend.selectValue(middle).toString() == QStringLiteral("screenshot_fixed"),
+            "tray reset must restore distinct defaults");
+    for (const auto& action :
+         {QStringLiteral("screenshot"), QStringLiteral("show_main_window"),
+          QStringLiteral("screenshot_copy"), QStringLiteral("screenshot_fixed"),
+          QStringLiteral("open_function_settings")}) {
+        const auto previousMiddle = backend.selectValue(middle);
+        require(backend.applySelectValue(left, action) && backend.selectValue(left) == action &&
+                    backend.selectValue(middle) == previousMiddle,
+                "left-click updates must preserve the middle-click choice");
+        require(backend.applySelectValue(middle, action) && backend.selectValue(middle) == action &&
+                    backend.selectValue(left) == action,
+                "middle-click updates must preserve the left-click choice");
+    }
+    require(!backend.applySelectValue(middle, QStringLiteral("invalid")) &&
+                backend.selectValue(middle).toString() == QStringLiteral("open_function_settings"),
+            "invalid writes must preserve the last valid setting");
+    require(backend.resetSection(settings::SettingsSectionReset::TrayBehavior) &&
+                backend.selectValue(left).toString() == QStringLiteral("screenshot") &&
+                backend.selectValue(middle).toString() == QStringLiteral("screenshot_fixed"),
+            "reset must restore both modified tray settings");
+    MainWindow window(registry, session);
+    window.showInterfaceSettings();
+    window.hide();
+    window.showFunctionSettings();
+    flushEvents();
+    auto* card = window.findChild<ContentCardWidget*>();
+    auto* sidebar = window.findChild<SidebarWidget*>();
+    require(window.isVisible() && card != nullptr && sidebar != nullptr &&
+                card->currentLocation().pageId == QStringLiteral("function-settings") &&
+                card->currentLocation().sectionId == QStringLiteral("screenshot-settings") &&
+                sidebar->currentRoute() == QStringLiteral("/settings/functionSettings"),
+            "function settings action must show a hidden window and navigate from another page");
+    window.hide();
+}
+
 void mainNavigationSearchThemesAndLanguages() {
     QCoreApplication::setApplicationVersion(QStringLiteral(SNOW_SHOT_TEST_VERSION));
     const auto& registry = settings::builtInSettingsRegistry();
@@ -151,13 +198,15 @@ void mainNavigationSearchThemesAndLanguages() {
 
     const settings::SettingsSearchIndex search(registry);
     const auto results = search.search(QStringLiteral("version"));
-    require(!results.isEmpty() && results.constFirst().location.pageId == QStringLiteral("about"),
-            "version search finds About");
+    const auto aboutResult = std::find_if(results.cbegin(), results.cend(), [](const auto& result) {
+        return result.location.pageId == QStringLiteral("about");
+    });
+    require(aboutResult != results.cend(), "version search finds About");
     QPointer<AboutPageWidget> previous(page);
     card->setCurrentRoute(QStringLiteral("/settings/generalSettings"));
     flushEvents();
     require(previous.isNull(), "leaving About releases its page and connections");
-    header->locationRequested(results.constFirst().location);
+    header->locationRequested(aboutResult->location);
     flushEvents();
     page = window.findChild<AboutPageWidget*>();
     require(page != nullptr && sidebar->currentRoute() == QStringLiteral("/about"),
@@ -253,6 +302,7 @@ int main(int argc, char** argv) {
     styles::ThemeManager::instance().initialize(application);
     versionIsExactSelectableAndCopyable();
     absentVersionDoesNotInventARelease();
+    traySettingsAndFunctionNavigation();
     mainNavigationSearchThemesAndLanguages();
     storage.shutdown();
     return 0;

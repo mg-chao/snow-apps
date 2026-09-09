@@ -213,6 +213,13 @@ void MainWindow::buildUi() {
     m_contentHeader->setCurrentSection(m_contentCard->currentLocation().sectionId);
 }
 
+void MainWindow::showFunctionSettings() {
+    if (m_contentCard != nullptr) {
+        m_contentCard->showFunctionSettings();
+    }
+    showAndActivate();
+}
+
 void MainWindow::showInterfaceSettings() {
     if (m_contentCard != nullptr) {
         m_contentCard->showInterfaceSettings();

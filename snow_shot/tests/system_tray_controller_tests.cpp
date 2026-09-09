@@ -407,12 +407,60 @@ int main(int argc, char* argv[]) {
                          shortcutsDisabled = disabled;
                      });
 
+    int functionSettingsRequests = 0;
+    QObject::connect(&controller,
+                     &snow_shot::presentation::SystemTrayController::openFunctionSettingsRequested,
+                     [&functionSettingsRequests]() { ++functionSettingsRequests; });
+    require(controller.middleClickAction() == QStringLiteral("screenshot_fixed"),
+            "middle click must default to capture and pin");
+    const QStringList clickActions{QStringLiteral("screenshot"), QStringLiteral("show_main_window"),
+                                   QStringLiteral("screenshot_copy"),
+                                   QStringLiteral("screenshot_fixed"),
+                                   QStringLiteral("open_function_settings")};
+    for (const auto reason : {QSystemTrayIcon::Trigger, QSystemTrayIcon::MiddleClick}) {
+        for (const auto& action : clickActions) {
+            if (reason == QSystemTrayIcon::Trigger) {
+                controller.setLeftClickAction(action);
+            } else {
+                controller.setMiddleClickAction(action);
+            }
+            screenshotRequests = showMainWindowRequests = functionSettingsRequests = 0;
+            quickActions.clear();
+            trayIcon->activated(reason);
+            require(screenshotRequests == (action == QStringLiteral("screenshot") ? 1 : 0) &&
+                        showMainWindowRequests ==
+                            (action == QStringLiteral("show_main_window") ? 1 : 0) &&
+                        functionSettingsRequests ==
+                            (action == QStringLiteral("open_function_settings") ? 1 : 0),
+                    "each tray button must dispatch exactly the selected dedicated request");
+            QVector<snow_shot::presentation::GlobalShortcutAction> expected;
+            if (action == QStringLiteral("screenshot_copy")) {
+                expected.push_back(snow_shot::presentation::GlobalShortcutAction::ScreenshotCopy);
+            } else if (action == QStringLiteral("screenshot_fixed")) {
+                expected.push_back(snow_shot::presentation::GlobalShortcutAction::ScreenshotFixed);
+            }
+            require(quickActions == expected,
+                    "copy and pin must dispatch their existing capture commands");
+        }
+    }
+    screenshotRequests = showMainWindowRequests = functionSettingsRequests = 0;
+    quickActions.clear();
+    controller.setLeftClickAction(QStringLiteral("unsupported"));
+    controller.setMiddleClickAction(QStringLiteral("unsupported"));
+    require(controller.middleClickAction() == QStringLiteral("screenshot_fixed"),
+            "invalid middle click must fall back to capture and pin");
     trayIcon->activated(QSystemTrayIcon::Trigger);
     trayIcon->activated(QSystemTrayIcon::Context);
     trayIcon->activated(QSystemTrayIcon::DoubleClick);
     trayIcon->activated(QSystemTrayIcon::MiddleClick);
     trayIcon->activated(QSystemTrayIcon::Unknown);
     require(screenshotRequests == 1, "only a left-click trigger should request a screenshot");
+    require(quickActions ==
+                    QVector<snow_shot::presentation::GlobalShortcutAction>{
+                        snow_shot::presentation::GlobalShortcutAction::ScreenshotFixed} &&
+                showMainWindowRequests == 0 && functionSettingsRequests == 0,
+            "middle click must pin once and unrelated activation reasons must do nothing");
+    quickActions.clear();
 
     controller.setLeftClickAction(QStringLiteral("show_main_window"));
     require(controller.leftClickAction() == QStringLiteral("show_main_window"),

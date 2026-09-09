@@ -21,12 +21,10 @@ class SystemTrayController final : public QObject {
 
   public:
     explicit SystemTrayController(QObject* parent = nullptr);
-    SystemTrayController(const settings::TrayCommandManifest& manifest,
-                         QObject* parent = nullptr);
+    SystemTrayController(const settings::TrayCommandManifest& manifest, QObject* parent = nullptr);
     // Keep the historical `(manifest, nullptr)` construction unambiguous now
     // that the manager-injection overload also accepts a nullable pointer.
-    SystemTrayController(const settings::TrayCommandManifest& manifest,
-                         std::nullptr_t parent);
+    SystemTrayController(const settings::TrayCommandManifest& manifest, std::nullptr_t parent);
     SystemTrayController(const settings::TrayCommandManifest& manifest,
                          PinnedWindowGroupManager* groupManager, QObject* parent = nullptr);
     void setGroupManager(PinnedWindowGroupManager* groupManager);
@@ -44,6 +42,8 @@ class SystemTrayController final : public QObject {
     [[nodiscard]] QString customIconPath() const;
     void setLeftClickAction(const QString& action);
     [[nodiscard]] QString leftClickAction() const;
+    [[nodiscard]] QString middleClickAction() const;
+    void setMiddleClickAction(const QString& action);
     void setScreenshotDelaySeconds(int seconds);
     [[nodiscard]] int screenshotDelaySeconds() const;
     void setGlobalShortcuts(GlobalShortcutAction action, const QStringList& shortcuts);
@@ -54,6 +54,7 @@ class SystemTrayController final : public QObject {
   signals:
     void screenshotRequested();
     void showMainWindowRequested();
+    void openFunctionSettingsRequested();
     void quickActionRequested(snow_shot::presentation::GlobalShortcutAction action);
     void globalHotkeysDisabledChanged(bool disabled);
     void exitRequested();

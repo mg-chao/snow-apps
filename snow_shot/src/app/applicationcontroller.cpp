@@ -32,6 +32,7 @@ const QString kTrayEnabledKey = QStringLiteral("tray/enabled");
 const QString kTrayIconKey = QStringLiteral("tray/icon");
 const QString kTrayCustomIconKey = QStringLiteral("tray/custom_icon");
 const QString kTrayLeftClickActionKey = QStringLiteral("tray/left_click_action");
+const QString kTrayMiddleClickActionKey = QStringLiteral("tray/middle_click_action");
 const QString kTrayMenuOptionsKey = QStringLiteral("tray/menu_options");
 const QString kScreenshotDelaySecondsKey = QStringLiteral("screenshot/delay_seconds");
 const QString kOcrModelTypeKey = QStringLiteral("text_recognition/model_type");
@@ -67,6 +68,9 @@ class ApplicationController::Impl {
                          });
         QObject::connect(&systemTray, &presentation::SystemTrayController::showMainWindowRequested,
                          &q, [this]() { showMainWindow(); });
+        QObject::connect(&systemTray,
+                         &presentation::SystemTrayController::openFunctionSettingsRequested, &q,
+                         [this]() { ensureMainWindow().showFunctionSettings(); });
         QObject::connect(&systemTray, &presentation::SystemTrayController::exitRequested, &q,
                          [this]() {
                              systemTray.hide();
@@ -158,6 +162,8 @@ class ApplicationController::Impl {
         applyRuntimeConfiguration(configuration.value(kTrayCustomIconKey), kTrayCustomIconKey);
         applyRuntimeConfiguration(configuration.value(kTrayLeftClickActionKey),
                                   kTrayLeftClickActionKey);
+        applyRuntimeConfiguration(configuration.value(kTrayMiddleClickActionKey),
+                                  kTrayMiddleClickActionKey);
         applyRuntimeConfiguration(configuration.value(kTrayMenuOptionsKey), kTrayMenuOptionsKey);
         applyRuntimeConfiguration(configuration.value(kScreenshotDelaySecondsKey),
                                   kScreenshotDelaySecondsKey);
@@ -226,6 +232,8 @@ class ApplicationController::Impl {
             systemTray.setCustomIconPath(value.toString());
         } else if (key == kTrayLeftClickActionKey) {
             systemTray.setLeftClickAction(value.toString(QStringLiteral("screenshot")));
+        } else if (key == kTrayMiddleClickActionKey) {
+            systemTray.setMiddleClickAction(value.toString(QStringLiteral("screenshot_fixed")));
         } else if (key == kTrayMenuOptionsKey) {
             systemTray.setMenuOptions(stringList(value));
         } else if (key == kScreenshotDelaySecondsKey) {

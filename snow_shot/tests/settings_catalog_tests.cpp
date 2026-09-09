@@ -100,8 +100,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 34 && itemCount == 137,
-            "catalog must contain thirty-four sections and one hundred thirty-seven items");
+    require(sectionCount == 34 && itemCount == 138,
+            "catalog must contain thirty-four sections and one hundred thirty-eight items");
     const auto* history =
         catalog.section(QStringLiteral("storage-and-privacy"), QStringLiteral("history"));
     require(history != nullptr && history->items.size() >= 2 &&
@@ -296,6 +296,32 @@ void builtInCatalogIsCompleteAndValid() {
             catalog.item({QStringLiteral("function-settings"), QStringLiteral("tray-settings"),
                           QStringLiteral("tray.menu-options")}) != nullptr,
         "Function settings must own the moved Pin to screen, Drawing, and Tray controls");
+
+    const auto& traySection = functionPage->sections.at(5);
+    require(traySection.items.size() == 3 &&
+                traySection.items.at(0).id == QStringLiteral("tray.left-click-action") &&
+                traySection.items.at(1).id == QStringLiteral("tray.middle-click-action") &&
+                traySection.items.at(2).id == QStringLiteral("tray.menu-options"),
+            "middle-click action must appear immediately below left-click action");
+    const auto& leftTray =
+        std::get<settings::SettingsSelectDefinition>(traySection.items.at(0).payload);
+    const auto& middleTray =
+        std::get<settings::SettingsSelectDefinition>(traySection.items.at(1).payload);
+    require(leftTray.binding == settings::SettingsSelectBinding::TrayLeftClickAction &&
+                middleTray.binding == settings::SettingsSelectBinding::TrayMiddleClickAction &&
+                leftTray.options.size() == 5 && middleTray.options.size() == 5,
+            "tray selectors must expose independent bindings and five options");
+    const QStringList trayActionValues{
+        QStringLiteral("screenshot"), QStringLiteral("show_main_window"),
+        QStringLiteral("screenshot_copy"), QStringLiteral("screenshot_fixed"),
+        QStringLiteral("open_function_settings")};
+    for (int index = 0; index < trayActionValues.size(); ++index) {
+        require(leftTray.options.at(index).value == trayActionValues.at(index) &&
+                    middleTray.options.at(index).value == trayActionValues.at(index) &&
+                    leftTray.options.at(index).label.translated() ==
+                        middleTray.options.at(index).label.translated(),
+                "tray selectors must share ordered values and labels");
+    }
 
     const auto* pinDoubleClick =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("pin-to-screen-settings"),
@@ -1115,7 +1141,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 182 && index.search(QString()).size() == 182,
+    require(index.entries().size() == 183 && index.search(QString()).size() == 183,
             "search must generate all catalog nodes in catalog order");
     const auto selectedText = index.search(QStringLiteral("Translate Selected Text"));
     require(!selectedText.isEmpty() &&
@@ -1158,7 +1184,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 11 && sections == 34 && items == 137,
+    require(pages == 11 && sections == 34 && items == 138,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

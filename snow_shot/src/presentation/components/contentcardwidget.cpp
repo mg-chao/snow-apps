@@ -205,6 +205,10 @@ void ContentCardWidget::showTranslation(const QString& text) {
     }
 }
 
+void ContentCardWidget::showFunctionSettings() {
+    navigateTo({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"), {}});
+}
+
 void ContentCardWidget::showInterfaceSettings() {
     navigateTo({QStringLiteral("interface-settings"), QStringLiteral("general"), {}});
 }

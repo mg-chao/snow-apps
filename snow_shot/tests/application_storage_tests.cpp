@@ -254,6 +254,8 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             defaultValue("screen_recording/video_filename_format").toString() ==
                 QStringLiteral("SnowShot_Video_{YYYY-MM-DD_HH-mm-ss}") &&
             defaultValue("tray/left_click_action").toString() == QStringLiteral("screenshot") &&
+            defaultValue("tray/middle_click_action").toString() ==
+                QStringLiteral("screenshot_fixed") &&
             defaultValue("tray/menu_options").toArray() ==
                 QJsonArray{
                     QStringLiteral("quick.screenshot"), QStringLiteral("quick.screenshot-delay"),
@@ -440,7 +442,13 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
          {QStringLiteral("ultrafast"), QStringLiteral("veryfast"), QStringLiteral("medium"),
           QStringLiteral("veryslow"), QStringLiteral("placebo")}},
         {QStringLiteral("tray/left_click_action"),
-         {QStringLiteral("screenshot"), QStringLiteral("show_main_window")}},
+         {QStringLiteral("screenshot"), QStringLiteral("show_main_window"),
+          QStringLiteral("screenshot_copy"), QStringLiteral("screenshot_fixed"),
+          QStringLiteral("open_function_settings")}},
+        {QStringLiteral("tray/middle_click_action"),
+         {QStringLiteral("screenshot"), QStringLiteral("show_main_window"),
+          QStringLiteral("screenshot_copy"), QStringLiteral("screenshot_fixed"),
+          QStringLiteral("open_function_settings")}},
     };
     for (auto it = allowedStringValues.cbegin(); it != allowedStringValues.cend(); ++it) {
         const auto* entry = storage::ConfigurationSchema::entry(it.key());
@@ -1040,6 +1048,10 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             network.proxy() == QStringLiteral("system") &&
             !network.setProxy(QStringLiteral("unsupported")) &&
             network.proxy() == QStringLiteral("system") &&
+            tray.middleClickAction() == QStringLiteral("screenshot_fixed") &&
+            tray.setMiddleClickAction(QStringLiteral("screenshot_copy")) &&
+            tray.middleClickAction() == QStringLiteral("screenshot_copy") &&
+            !tray.setMiddleClickAction(QStringLiteral("unsupported")) &&
             tray.leftClickAction() == QStringLiteral("screenshot") &&
             tray.setLeftClickAction(QStringLiteral("show_main_window")) &&
             tray.leftClickAction() == QStringLiteral("show_main_window") &&
@@ -1571,6 +1583,44 @@ void applicationQuitPreservesStorageForConsumerDestruction() {
     applicationStorage.shutdown();
 }
 
+void invalidTrayClickSettingsUseIndependentDefaults() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "temporary invalid tray settings directory");
+    const QString config = temporary.filePath(QStringLiteral("config.json"));
+    writeBytes(
+        config,
+        QByteArrayLiteral(
+            R"({"storage":{"schema_version":1},"tray":{"left_click_action":"invalid","middle_click_action":"invalid"}})"));
+    storage::ConfigurationStore store(config, true, true, 60000);
+    require(store.value(QStringLiteral("tray/left_click_action")).toString() ==
+                    QStringLiteral("screenshot") &&
+                store.value(QStringLiteral("tray/middle_click_action")).toString() ==
+                    QStringLiteral("screenshot_fixed") &&
+                store.isDirty() && store.flushNow().success,
+            "invalid persisted click actions must be repaired to their independent defaults");
+}
+
+void trayClickSettingsSurviveRestart() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "temporary tray settings directory");
+    const QString executable = temporary.filePath(QStringLiteral("app"));
+    QDir().mkpath(executable);
+    auto& applicationStorage = initialize(executable, temporary.path());
+    const storage::TraySettings tray;
+    require(tray.leftClickAction() == QStringLiteral("screenshot") &&
+                tray.middleClickAction() == QStringLiteral("screenshot_fixed"),
+            "missing tray settings must use independent defaults");
+    require(tray.setLeftClickAction(QStringLiteral("screenshot_copy")) &&
+                tray.setMiddleClickAction(QStringLiteral("open_function_settings")) &&
+                applicationStorage.flushNow().success,
+            "persist distinct tray click actions");
+    static_cast<void>(initialize(executable, temporary.path()));
+    require(tray.leftClickAction() == QStringLiteral("screenshot_copy") &&
+                tray.middleClickAction() == QStringLiteral("open_function_settings"),
+            "both tray click choices must survive storage restart");
+    applicationStorage.shutdown();
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShotTests"));
@@ -1601,6 +1651,8 @@ int main(int argc, char** argv) {
     markerResolutionAndStatus();
     defaultsAndTypedRoundTrip();
     settingsSchemaDefaultsAndValidationAreComplete();
+    invalidTrayClickSettingsUseIndependentDefaults();
+    trayClickSettingsSurviveRestart();
     globalMouseCombinationSchemaIsStrictAndPersistent();
     screenshotUiSchemaRepairsStructuredValues();
     screenshotUiAdaptersRoundTripTypedValues();
