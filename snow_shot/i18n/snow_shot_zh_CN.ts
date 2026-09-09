@@ -2626,13 +2626,8 @@
         <location filename="../src/presentation/tools/screenshottoolpalettebuttons.cpp" line="745"/>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="211"/>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="1881"/>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="1671"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3178"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="1682"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3194"/>
->>>>>>> Stashed changes
         <source>Mixed</source>
         <translation>混合</translation>
     </message>
@@ -2753,68 +2748,38 @@
         <translation>重置</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="110"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5618"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="113"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5636"/>
->>>>>>> Stashed changes
         <source>Formatting</source>
         <translation>格式</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="111"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5619"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="114"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5637"/>
->>>>>>> Stashed changes
         <source>Keep line breaks</source>
         <translation>保留换行</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="112"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5620"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="115"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5638"/>
->>>>>>> Stashed changes
         <source>Remove line breaks</source>
         <translation>移除换行</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="113"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5630"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="116"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5650"/>
->>>>>>> Stashed changes
         <source>Punctuation</source>
         <translation>标点符号</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="114"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5632"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="117"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5652"/>
->>>>>>> Stashed changes
         <source>Half-width</source>
         <translation>半角</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="115"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5632"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="118"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5652"/>
->>>>>>> Stashed changes
         <source>Full-width</source>
         <translation>全角</translation>
     </message>
@@ -2829,16 +2794,12 @@
         <translation>保存为文件</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="119"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="121"/>
         <source>Quick save</source>
         <translation>快速保存</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="122"/>
->>>>>>> Stashed changes
         <source>Cancel screenshot</source>
         <translation>取消截图</translation>
     </message>
@@ -2873,28 +2834,16 @@
         <translation>继续录制</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="126"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6473"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6474"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="129"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6495"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6496"/>
->>>>>>> Stashed changes
         <source>Record microphone</source>
         <translation>录制麦克风</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="127"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6495"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6496"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="130"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6517"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6518"/>
->>>>>>> Stashed changes
         <source>Record speakers</source>
         <translation>录制系统声音</translation>
     </message>
@@ -2914,24 +2863,14 @@
         <translation>导出设置</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="131"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5108"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="134"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5126"/>
->>>>>>> Stashed changes
         <source>Mouse trail color</source>
         <translation>鼠标轨迹颜色</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="132"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5111"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="135"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5129"/>
->>>>>>> Stashed changes
         <source>Mouse click color</source>
         <translation>鼠标点击颜色</translation>
     </message>
@@ -2971,45 +2910,25 @@
         <translation>复制录制内容</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="139"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6472"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6476"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6494"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6498"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="143"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6494"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6498"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6516"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6520"/>
->>>>>>> Stashed changes
         <source>Animated recording formats do not contain audio</source>
         <translation>动画录制格式不包含音频</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="140"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3466"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3468"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="144"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3482"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3484"/>
->>>>>>> Stashed changes
         <source>Unavailable while recording</source>
         <translation>录制期间不可用</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="141"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5104"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5105"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="145"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5122"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5123"/>
->>>>>>> Stashed changes
         <source>Recording format</source>
         <translation>录制格式</translation>
     </message>
@@ -3039,9 +2958,6 @@
         <translation>黄色</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4469"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="151"/>
         <source>Drag toolbar</source>
         <translation>拖动工具栏</translation>
@@ -3078,25 +2994,16 @@
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4485"/>
->>>>>>> Stashed changes
         <source>Convert to Markdown</source>
         <translation>转换为 Markdown</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4472"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4488"/>
->>>>>>> Stashed changes
         <source>Convert to HTML</source>
         <translation>转换为 HTML</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5695"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5717"/>
->>>>>>> Stashed changes
         <source>Settings</source>
         <translation>设置</translation>
     </message>
@@ -3182,10 +3089,6 @@
         <translation>水平滚动</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3182"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6083"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="75"/>
         <source>Straight arrow</source>
         <translation>直线箭头</translation>
@@ -3203,7 +3106,6 @@
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3198"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6105"/>
->>>>>>> Stashed changes
         <source>Recording duration</source>
         <translation>录制时长</translation>
     </message>
@@ -3757,11 +3659,7 @@
         <translation>纯色序号填充</translation>
     </message>
     <message>
-<<<<<<< Updated upstream
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5756"/>
-=======
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5778"/>
->>>>>>> Stashed changes
         <source>Auto-scroll</source>
         <translation>自动滚动</translation>
     </message>
