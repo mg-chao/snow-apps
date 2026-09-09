@@ -26,6 +26,14 @@ fix. Cargo retrieves their source and original license files from that fork.
 The release collector includes the selected Rust FFI and static OCR-worker
 dependency graphs, including these Git dependencies.
 
+The optional PP-OCRv4 and PP-OCRv5 detector/recognizer models and dictionaries
+are redistributed from RapidAI/RapidOCR's ModelScope release `v3.9.2`, whose
+model card declares Apache License 2.0:
+https://www.modelscope.cn/models/RapidAI/RapidOCR/files?Revision=v3.9.2.
+Snow Shot downloads the matching mobile/server bundles from
+https://www.modelscope.cn/models/mgchao/SnowShotOCR and pins their sizes and
+SHA-256 hashes in `packaging/snow-shot-ocr-asset-manifest.json`.
+
 Local crash diagnostics use Crashpad (Apache-2.0), pinned by the vcpkg baseline
 and the repository's Crashpad overlay. The client, helper, Chromium base code,
 and their bundled notices are included in the vcpkg license collection. The
