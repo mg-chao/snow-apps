@@ -3756,6 +3756,13 @@ void clickingActiveToolbarToolReturnsToSelect() {
 void repeatingDrawingShortcutsReturnsToSelect() {
     using Tool = ScreenshotToolPalette::Tool;
     ScreenshotToolPalette::Options options;
+    options.showFreeDrawTool = true;
+    options.showHighlightTool = true;
+    options.showTextTool = true;
+    options.showSerialNumberTool = true;
+    options.showFilterTool = true;
+    options.showEraserTool = true;
+    options.showWatermarkTool = true;
     options.enableStyleToolbar = false;
     ScreenshotToolPalette palette(options);
     int selectRequests = 0;
@@ -3860,11 +3867,93 @@ void groupedToolShortcutsToggleOnlyTheRequestedTool() {
     ScreenshotToolPalette recordingPalette(options);
     require(recordingPalette.activateDrawingShortcut(QStringLiteral("shape")) &&
                 recordingPalette.activateDrawingShortcut(QStringLiteral("shape")) &&
-                recordingPalette.activeToolForTests() == Tool::Shape,
-            "recording shortcuts should retain explicit tool activation");
+                !recordingPalette.activeToolForTests().has_value(),
+            "recording shortcuts must toggle drawing off just like repeated button clicks");
     require(!recordingPalette.activateDrawingShortcut(QStringLiteral("highlight")) &&
-                recordingPalette.activeToolForTests() == Tool::Shape,
+                !recordingPalette.activeToolForTests().has_value(),
             "unavailable recording shortcuts should leave the current tool unchanged");
+}
+
+void screenshotShortcutsShareButtonCommandsAndAvailability() {
+    using Tool = ScreenshotToolPalette::Tool;
+    ScreenshotToolPalette::Options options;
+    options.showMoveTool = true;
+    options.showHistoryActions = true;
+    options.showScreenRecordButton = true;
+    options.showSaveButton = true;
+    options.showOcrTool = true;
+    options.showTextTranslationTool = true;
+    options.showTableTool = true;
+    options.showQrTool = true;
+    options.showScrollingScreenshotTool = true;
+    options.enableStyleToolbar = false;
+    options.actions = ScreenshotToolPalette::PinAction | ScreenshotToolPalette::CancelAction |
+                      ScreenshotToolPalette::CopyAction;
+    ScreenshotToolPalette palette(options);
+    struct Command {
+        const char* id;
+        const char* label;
+        void (ScreenshotToolPalette::*signal)();
+    };
+    const Command commands[] = {
+        {"pin_to_screen", "Pin to screen", &ScreenshotToolPalette::pinRequested},
+        {"save_as_file", "Save as file", &ScreenshotToolPalette::saveRequested},
+        {"video_recording", "Record screen", &ScreenshotToolPalette::screenRecordRequested},
+        {"cancel_screenshot", "Cancel screenshot", &ScreenshotToolPalette::cancelRequested},
+        {"copy_to_clipboard", "Copy to clipboard", &ScreenshotToolPalette::copyRequested},
+        {"undo", "Undo", &ScreenshotToolPalette::undoRequested},
+        {"redo", "Redo", &ScreenshotToolPalette::redoRequested},
+        {"move_tool", "Edit selection", &ScreenshotToolPalette::moveRequested},
+        {"text_recognition", "Text recognition", &ScreenshotToolPalette::ocrRequested},
+        {"text_translation", "Text translation", &ScreenshotToolPalette::textTranslationRequested},
+        {"scrolling_screenshot", "Scrolling screenshot",
+         &ScreenshotToolPalette::scrollingScreenshotRequested},
+    };
+    for (const bool scrolling : {false, true}) {
+        palette.setScrollingScreenshotMode(scrolling);
+        for (const auto& command : commands) {
+            auto* button =
+                qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, command.label));
+            require(button != nullptr, "command must have a real toolbar button");
+            int requests = 0;
+            const auto connection =
+                QObject::connect(&palette, command.signal, &palette, [&requests]() { ++requests; });
+            palette.setActiveTool(Tool::Select);
+            palette.setHistoryState({true, true});
+            button->click();
+            const auto clickedTool = palette.activeToolForTests();
+            require(requests == 1, "button must emit its command exactly once");
+            palette.setActiveTool(Tool::Select);
+            require(palette.activateScreenshotShortcut(QString::fromLatin1(command.id)) &&
+                        requests == 2 && palette.activeToolForTests() == clickedTool,
+                    "shortcut must produce the same command and active tool as a button click");
+            button->setEnabled(false);
+            button->click();
+            require(!palette.activateScreenshotShortcut(QString::fromLatin1(command.id)) &&
+                        requests == 2,
+                    "disabled button and shortcut must both reject the command");
+            button->setEnabled(true);
+            QObject::disconnect(connection);
+        }
+    }
+    palette.setTableEnabled(false);
+    palette.setQrEnabled(true);
+    require(!palette.activateScreenshotShortcut(QStringLiteral("table_recognition")) &&
+                palette.activateScreenshotShortcut(QStringLiteral("qr_code_recognition")) &&
+                palette.activeToolForTests() == Tool::Qr,
+            "shared recognition entries must respect each option's enabled state");
+    palette.setTableEnabled(true);
+    palette.setQrEnabled(false);
+    require(!palette.activateScreenshotShortcut(QStringLiteral("qr_code_recognition")) &&
+                palette.activateScreenshotShortcut(QStringLiteral("table_recognition")) &&
+                palette.activeToolForTests() == Tool::Table,
+            "the enabled recognition option must remain reachable through its shortcut");
+    palette.setTableEditingState(true, true, false, false, false, false);
+    require(palette.activateScreenshotShortcut(QStringLiteral("undo")) &&
+                !palette.activateScreenshotShortcut(QStringLiteral("redo")),
+            "recognition history shortcuts must use the toolbar's history availability");
+    require(!palette.activateScreenshotShortcut(QStringLiteral("unknown")),
+            "unknown command must not activate a toolbar action");
 }
 
 void tableToolExposesStructureActionsAndOwnHistoryState() {
@@ -8564,6 +8653,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--tool-shortcuts-only"))) {
+        screenshotShortcutsShareButtonCommandsAndAvailability();
         clickingActiveToolbarToolReturnsToSelect();
         repeatingDrawingShortcutsReturnsToSelect();
         repeatingActionShortcutsReturnsToSelect();
@@ -8723,6 +8813,7 @@ int main(int argc, char** argv) {
     ocrControlReflectsLoadingState();
     ocrToolReplacesSelectionActionToolbarContents();
     clickingActiveToolbarToolReturnsToSelect();
+    screenshotShortcutsShareButtonCommandsAndAvailability();
     repeatingDrawingShortcutsReturnsToSelect();
     repeatingActionShortcutsReturnsToSelect();
     groupedToolShortcutsToggleOnlyTheRequestedTool();

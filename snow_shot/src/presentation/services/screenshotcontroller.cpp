@@ -1307,12 +1307,6 @@ void ScreenshotController::Impl::createDisplayConfigurationObserver() {
 }
 
 void ScreenshotController::Impl::createOverlayInputPipeline() {
-    const auto activateToolShortcut = [this](ScreenshotToolPalette::Tool tool) {
-        ScreenshotToolbarWindow* toolbar =
-            m_overlayCoordinator != nullptr ? m_overlayCoordinator->toolbar() : nullptr;
-        ScreenshotToolPalette* palette = toolbar != nullptr ? toolbar->palette() : nullptr;
-        return palette != nullptr && palette->activateToolShortcut(tool);
-    };
     ScreenshotOverlayInputActions actions{
         [this](const QPoint& physicalPoint) {
             return m_selectorWorkflow->returnToSelection(physicalPoint);
@@ -1364,8 +1358,10 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
                 });
             return allowed;
         },
-        [activateToolShortcut]() {
-            return activateToolShortcut(ScreenshotToolPalette::Tool::Move);
+        [this](const QString& actionId) {
+            ScreenshotToolbarWindow* toolbar = m_overlayCoordinator->ensureToolbar();
+            ScreenshotToolPalette* palette = toolbar != nullptr ? toolbar->palette() : nullptr;
+            return palette != nullptr && palette->activateScreenshotShortcut(actionId);
         },
         [this](const QString& toolId) {
             ScreenshotToolbarWindow* toolbar =
@@ -1452,37 +1448,6 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
         },
         [this](ScreenshotOverlayWindow* overlay, const QPointF& localPosition) {
             updateCanvasColorSamplingPreview(overlay, localPosition);
-        },
-        [activateToolShortcut]() { return activateToolShortcut(ScreenshotToolPalette::Tool::Ocr); },
-        [activateToolShortcut]() {
-            return activateToolShortcut(ScreenshotToolPalette::Tool::Table);
-        },
-        [activateToolShortcut]() { return activateToolShortcut(ScreenshotToolPalette::Tool::Qr); },
-        [this]() {
-            startScreenRecording();
-            return true;
-        },
-        [activateToolShortcut]() {
-            return activateToolShortcut(ScreenshotToolPalette::Tool::ScrollingScreenshot);
-        },
-        [this]() {
-            saveSelectionToFile();
-            return true;
-        },
-        [activateToolShortcut]() {
-            return activateToolShortcut(ScreenshotToolPalette::Tool::TextTranslation);
-        },
-        [this]() {
-            pinSelectionToScreen();
-            return true;
-        },
-        [this]() {
-            undoCanvasEdit();
-            return true;
-        },
-        [this]() {
-            redoCanvasEdit();
-            return true;
         },
         [this]() { return m_physicalCursor != nullptr && m_physicalCursor->isSupported(); },
         [this](ScreenshotIntelligentSelectionTarget target) {

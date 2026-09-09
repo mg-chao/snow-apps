@@ -192,6 +192,7 @@ class ScreenshotToolPalette final : public QWidget {
     void refreshShortcutTooltips();
     [[nodiscard]] bool activateDrawingShortcut(const QString& toolId);
     [[nodiscard]] bool activateToolShortcut(Tool tool);
+    [[nodiscard]] bool activateScreenshotShortcut(const QString& actionId);
     void clearActiveTool();
     [[nodiscard]] std::optional<Tool> activeTool() const;
     void setHistoryState(const SnowCanvasHistoryState& state);
@@ -383,7 +384,7 @@ class ScreenshotToolPalette final : public QWidget {
     adqt::widgets::AdButton* drawingToolEntryButton(Tool tool) const;
     Tool rememberedDrawingMode(Tool tool) const;
     void clearDrawingToolGroups();
-    void activateToolFromToolbar(Tool tool, bool toggleVisibleButton = true);
+    bool activateToolFromToolbar(Tool tool, bool toggleVisibleButton = true);
     void activateDrawingTool(Tool tool);
     [[nodiscard]] bool isRecordingUnavailableTool(Tool tool) const;
     void refreshRecordingToolAvailability(adqt::widgets::AdButton* button, Tool tool,
@@ -396,7 +397,7 @@ class ScreenshotToolPalette final : public QWidget {
     void setRecordingExportSettingsVisible(bool visible);
     void updateRecordingExportSettingsControls();
     void refreshRecordingExportSettingsText();
-    void activateTableQrTool(Tool tool, bool toggleVisibleButton = true);
+    bool activateTableQrTool(Tool tool, bool toggleVisibleButton = true);
     void setTableQrEntryTool(Tool tool);
     void refreshTableQrTrigger();
     void selectDynamicEntryTool(Tool tool);
@@ -550,7 +551,7 @@ class ScreenshotToolPalette final : public QWidget {
         bool busy = false;
     };
     [[nodiscard]] ActionToolState actionToolState(const QString& itemId) const;
-    void activateActionTool(const QString& itemId, bool toggleVisibleButton = true);
+    bool activateActionTool(const QString& itemId, bool toggleVisibleButton = true);
     void selectActionToolGroupEntry(const QString& itemId);
     adqt::widgets::AdButton* createActionToolGroup(const QStringList& itemIds);
     void refreshActionToolGroup(int groupIndex);

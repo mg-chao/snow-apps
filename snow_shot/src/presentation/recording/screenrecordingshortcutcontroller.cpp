@@ -29,24 +29,12 @@ ScreenRecordingShortcutController::ScreenRecordingShortcutController(
                                  m_shortcutManager.addBinding(this, std::move(binding)));
     }
     for (const QString& action : {QStringLiteral("undo"), QStringLiteral("redo")}) {
-        const bool undo = action == QStringLiteral("undo");
         ShortcutManager::Binding binding;
         binding.id = QStringLiteral("recording.") + action;
         binding.priority = ShortcutManager::StandardPriority::ScreenshotShortcut;
-        binding.canActivate = [this, undo](const auto& context) {
-            if (!canActivate(context)) {
-                return false;
-            }
-            const auto history = m_area->canvas()->canvasHistoryState();
-            return undo ? history.canUndo : history.canRedo;
-        };
-        binding.activate = [this, undo](const auto&) {
-            if (undo) {
-                emit m_toolbar->palette()->undoRequested();
-            } else {
-                emit m_toolbar->palette()->redoRequested();
-            }
-            return true;
+        binding.canActivate = [this](const auto& context) { return canActivate(context); };
+        binding.activate = [this, action](const auto&) {
+            return m_toolbar->palette()->activateScreenshotShortcut(action);
         };
         m_historyBindings.insert(action, m_shortcutManager.addBinding(this, std::move(binding)));
     }

@@ -45,7 +45,10 @@ struct ScreenshotOverlayInputActions {
     std::function<void(const QString& action)> executeConfiguredCompletionAction =
         [](const QString&) {};
     std::function<bool()> localShortcutInputAllowed = []() { return true; };
-    std::function<bool()> activateMoveTool = []() { return false; };
+    // Toolbar commands dispatch through the palette's button action path.
+    std::function<bool(const QString& actionId)> activateScreenshotShortcut = [](const QString&) {
+        return false;
+    };
     std::function<bool(const QString& toolId)> activateDrawingShortcut = [](const QString&) {
         return false;
     };
@@ -94,17 +97,6 @@ struct ScreenshotOverlayInputActions {
 
     std::function<void(ScreenshotOverlayWindow* overlay, const QPointF& localPosition)>
         previewCanvasColor = [](ScreenshotOverlayWindow*, const QPointF&) {};
-
-    std::function<bool()> activateTextRecognition = []() { return false; };
-    std::function<bool()> activateTableRecognition = []() { return false; };
-    std::function<bool()> activateQrRecognition = []() { return false; };
-    std::function<bool()> startVideoRecording = []() { return false; };
-    std::function<bool()> startScrollingScreenshot = []() { return false; };
-    std::function<bool()> saveAsFile = []() { return false; };
-    std::function<bool()> activateTextTranslation = []() { return false; };
-    std::function<bool()> pinSelectionToScreen = []() { return false; };
-    std::function<bool()> undo = []() { return false; };
-    std::function<bool()> redo = []() { return false; };
 
     // Keep new actions at the end so positional test and application initializers remain valid.
     std::function<bool()> physicalCursorMovementAvailable = []() { return false; };

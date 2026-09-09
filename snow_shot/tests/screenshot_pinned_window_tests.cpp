@@ -11,6 +11,7 @@
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/presentation/screenshotselectionexportuiservices.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/storage/pinnedwindowtypes.h"
@@ -843,6 +844,52 @@ ScreenshotPinnedWindow::Config cachedOcrPinConfig(ScreenshotOcrRecognitionPort* 
     config.recognitionResults.key = QStringLiteral("cached-ocr-audit");
     config.recognitionResults.text = ScreenshotOcrRecognitionResult{presentation, {}, {}, {}};
     return config;
+}
+
+void pinnedEditingRecognitionShortcutsUsePaletteCommands() {
+    ScreenshotPinnedWindow window;
+    SnowCanvasWidget canvas;
+    snow_shot::presentation::WindowShortcutManager manager;
+    manager.addScopeWindow(&canvas);
+    ScreenshotPinnedEditController controller(window, canvas, manager);
+    canvas.show();
+    controller.setEditMode(true);
+    auto* palette = controller.toolbarWindow()->palette();
+    require(palette != nullptr, "pinned editing must expose a palette");
+    int requests = 0;
+    QObject::connect(&controller, &ScreenshotPinnedEditController::textRecognitionRequested,
+                     &controller, [&]() { ++requests; });
+    QObject::connect(&controller, &ScreenshotPinnedEditController::textTranslationRequested,
+                     &controller, [&]() { ++requests; });
+    QObject::connect(&controller, &ScreenshotPinnedEditController::tableRecognitionRequested,
+                     &controller, [&]() { ++requests; });
+    QObject::connect(&controller, &ScreenshotPinnedEditController::qrRecognitionRequested,
+                     &controller, [&]() { ++requests; });
+    const snow_shot::storage::ScreenshotShortcutSettings settings;
+    const auto original = settings.allShortcuts();
+    for (const auto& [id, tool] :
+         {std::pair{"text_recognition", ScreenshotToolPalette::Tool::Ocr},
+          std::pair{"text_translation", ScreenshotToolPalette::Tool::TextTranslation},
+          std::pair{"table_recognition", ScreenshotToolPalette::Tool::Table},
+          std::pair{"qr_code_recognition", ScreenshotToolPalette::Tool::Qr}}) {
+        auto bindings = original;
+        for (auto& keys : bindings) {
+            keys.clear();
+        }
+        bindings[QString::fromLatin1(id)] = {QStringLiteral("Ctrl+Alt+F12")};
+        require(settings.setAllShortcutsAtomic(bindings), "pinned shortcut setup failed");
+        palette->setActiveTool(ScreenshotToolPalette::Tool::Select);
+        const int before = requests;
+        sendShortcut(canvas, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier);
+        require(requests == before + 1 && palette->activeToolForTests() == tool,
+                "pinned recognition shortcut must activate and synchronize the toolbar item");
+        sendShortcut(canvas, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier);
+        require(requests == before + 1 &&
+                    palette->activeToolForTests() == ScreenshotToolPalette::Tool::Select,
+                "repeating pinned recognition must use the button's toggle-to-selection command");
+    }
+    require(settings.setAllShortcutsAtomic(original), "pinned shortcut restoration failed");
+    controller.setEditMode(false);
 }
 
 void pinnedRecognitionShortcutTogglesResults() {
@@ -5196,6 +5243,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--recognition-shortcut-only"))) {
+            pinnedEditingRecognitionShortcutsUsePaletteCommands();
             pinnedRecognitionShortcutTogglesResults();
             return 0;
         }
@@ -5278,6 +5326,7 @@ int main(int argc, char* argv[]) {
         pinnedSnapshotRetainsRecognitionBeforeDeferredSetup();
         restoredInvalidOcrDoesNotSuppressRecognition();
         pinnedRecognitionShortcutTogglesResults();
+        pinnedEditingRecognitionShortcutsUsePaletteCommands();
         cachedPinnedOcrAvailableWithoutRecognitionProvider();
         transformedPinnedOcrTracksCanvasViewport();
         pinnedTransformResetPersistsWithoutResize();
