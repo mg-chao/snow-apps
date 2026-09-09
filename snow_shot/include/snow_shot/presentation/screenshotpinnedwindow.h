@@ -232,6 +232,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void copyCurrentViewport();
     void copyOriginalContent();
     void saveAsFile();
+    void quickSave();
     void invalidatePendingCopy();
     void applyImageOperation(const QTransform& operation, int quarterTurnDelta = 0);
     void resetImageTransform();
@@ -293,6 +294,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::shared_ptr<ScreenshotExportArtifact> m_exportArtifact;
     ScreenshotExportJobHandle m_materializationJob;
     ScreenshotExportJobHandle m_fileSaveJob;
+    std::shared_ptr<ScreenshotExportArtifact> m_quickSaveArtifact;
+    bool m_quickSavePending = false;
     ScreenshotClipboardCommitHandle m_clipboardCommit;
     std::vector<MaterializationCallback> m_materializationCallbacks;
     PresentationCompletion m_presentationCompletion;

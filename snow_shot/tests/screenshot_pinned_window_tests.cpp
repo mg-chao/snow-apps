@@ -4843,6 +4843,117 @@ void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
     require(processUntilDeleted(guardedWindow, 2000),
             "pinned window was not deleted after the history test");
 }
+void pinnedQuickSaveKeepsWindowAndConfiguredOutput() {
+    const snow_shot::storage::ScreenshotSettings settings;
+    QTemporaryDir directory;
+    const QString output = directory.filePath(QStringLiteral("new/nested"));
+    require(directory.isValid() && settings.setImageSaveDirectory(output) &&
+                settings.setImageFormat(QStringLiteral("png")) &&
+                settings.setAutoSaveFilenameFormat(QStringLiteral("PinnedQuick")) &&
+                settings.setLastManualSaveDirectory(directory.path()) &&
+                settings.setLastManualSaveFormat(QStringLiteral("jpeg")),
+            "pinned quick-save settings unavailable");
+    QImage image(160, 100, QImage::Format_ARGB32_Premultiplied);
+    image.fill(QColor(25, 120, 180));
+    auto* window = new ScreenshotPinnedWindow;
+    QPointer<ScreenshotPinnedWindow> guarded(window);
+    ScreenshotPinnedWindow::Config config;
+    config.screen = QGuiApplication::primaryScreen();
+    config.nativeGeometry = physicalPinGeometry(*config.screen, QPoint(40, 40), image.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(image.size()));
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    config.automaticTextRecognition = false;
+    config.enableEditing = true;
+    require(window->present(config), "pinned quick-save source unavailable");
+    waitForUi(50);
+    auto* edit = buttonNamed(*window, QStringLiteral("Enable drawing mode"));
+    require(edit, "pinned drawing control unavailable");
+    edit->click();
+    waitForUi(50);
+    auto* controller = window->findChild<ScreenshotPinnedEditController*>();
+    auto* toolbar = controller && controller->toolbarWindow()
+                        ? controller->toolbarWindow()->palette()
+                        : nullptr;
+    require(toolbar, "pinned quick-save toolbar unavailable");
+    auto* canvas = window->findChild<SnowCanvasWidget*>();
+    require(canvas && canvas->setCanvasTool(SnowCanvasTool::Shape),
+            "pinned quick-save drawing fixture unavailable");
+    SnowCanvasShapeStyle annotation;
+    annotation.stroke = QColor(240, 20, 20);
+    annotation.strokeWidth = 4.0;
+    require(canvas->setCanvasShapeStylePatch(annotation,
+                                             SnowCanvasShapeStylePropertyStrokeColor |
+                                                 SnowCanvasShapeStylePropertyStrokeWidth,
+                                             SnowCanvasShapeKind::Rectangle),
+            "quick-save annotation style unavailable");
+    const auto pointer = [canvas](QEvent::Type type, QPointF position, Qt::MouseButton button,
+                                  Qt::MouseButtons buttons) {
+        QMouseEvent event(type, position, canvas->mapToGlobal(position.toPoint()), button, buttons,
+                          Qt::NoModifier);
+        QCoreApplication::sendEvent(canvas, &event);
+    };
+    pointer(QEvent::MouseButtonPress, QPointF(20, 20), Qt::LeftButton, Qt::LeftButton);
+    pointer(QEvent::MouseMove, QPointF(100, 70), Qt::NoButton, Qt::LeftButton);
+    pointer(QEvent::MouseButtonRelease, QPointF(100, 70), Qt::LeftButton, Qt::NoButton);
+    require(canvas->canvasHistoryState().canUndo, "quick-save annotation was not committed");
+
+    auto* quick =
+        toolbar->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotQuickSaveButton"));
+    require(quick, "pinned quick-save source button unavailable");
+    QApplication::clipboard()->setText(QStringLiteral("Keep clipboard"));
+    const auto waitForFile = [&](const QString& path) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!QFileInfo::exists(path) && timer.elapsed() < 10000)
+            waitForUi(10);
+        require(QFileInfo::exists(path), "pinned quick-save did not produce its file");
+        waitForUi(30);
+    };
+    for (const QString& dialog : {QStringLiteral("system"), QStringLiteral("snow_shot")}) {
+        require(settings.setSaveAsFileDialog(dialog), "pinned dialog setting unavailable");
+        const QString name = dialog == QStringLiteral("system")
+                                 ? QStringLiteral("PinnedQuick.png")
+                                 : QStringLiteral("PinnedQuick_1.png");
+        quick->click();
+        quick->click();
+        waitForFile(QDir(output).filePath(name));
+        const QImage saved(QDir(output).filePath(name));
+        bool hasAnnotation = false;
+        for (int y = 0; y < saved.height(); ++y) {
+            for (int x = 0; x < saved.width(); ++x) {
+                const QColor pixel = saved.pixelColor(x, y);
+                hasAnnotation =
+                    hasAnnotation || (pixel.red() > 180 && pixel.green() < 80 && pixel.blue() < 80);
+            }
+        }
+        require(hasAnnotation, "pinned Quick save must include the current annotations");
+
+        require(window->isVisible() && controller->editMode() &&
+                    !window->property("saveDialogOpen").toBool() &&
+                    !window->findChild<adqt::widgets::AdModal*>() &&
+                    QImage(QDir(output).filePath(name)).size() == image.size(),
+                "quick-save must bypass both dialogs and retain the edited pin");
+    }
+    require(
+        QDir(output).entryList(QDir::Files).size() == 2 &&
+            QApplication::clipboard()->text() == QStringLiteral("Keep clipboard") &&
+            settings.lastManualSaveDirectory() == directory.path() &&
+            settings.lastManualSaveFormat() == QStringLiteral("jpeg"),
+        "duplicate quick-save requests must coalesce without changing clipboard/manual settings");
+    require(settings.setImageSaveDirectory(QString()), "empty directory setup failed");
+    quick->click();
+    waitForUi(100);
+    require(window->isVisible() && QDir(output).entryList(QDir::Files).size() == 2,
+            "a quick-save failure must retain the pin and produce no fallback file");
+    require(settings.setImageSaveDirectory(output), "retry directory setup failed");
+    quick->click();
+    waitForFile(QDir(output).filePath(QStringLiteral("PinnedQuick_2.png")));
+    quick->click();
+    window->close();
+    require(processUntilDeleted(guarded, 2000),
+            "closing a pin must cancel pending quick-save safely");
+}
+
 void pinnedSaveDialogRoutingAndCancellation() {
     using adqt::widgets::AdLineEdit;
     using adqt::widgets::AdModal;
@@ -5022,6 +5133,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--image-conversion-only"))) {
             pinnedImageConversionsSurviveRestartWithoutProvider();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--quick-save-only"))) {
+            pinnedQuickSaveKeepsWindowAndConfiguredOutput();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--save-dialog-only"))) {

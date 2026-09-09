@@ -195,6 +195,8 @@ void ScreenshotToolbarWindow::connectActionCommands(ScreenshotToolPalette& toolP
             [this]() { m_commands.startScreenRecording(); });
     connect(&toolPalette, &ScreenshotToolPalette::pinRequested, this,
             [this]() { m_commands.pinSelectionToScreen(); });
+    connect(&toolPalette, &ScreenshotToolPalette::quickSaveRequested, this,
+            [this]() { m_commands.quickSaveSelection(); });
     connect(&toolPalette, &ScreenshotToolPalette::saveRequested, this,
             [this]() { m_commands.saveSelectionToFile(); });
     connect(&toolPalette, &ScreenshotToolPalette::cancelRequested, this,

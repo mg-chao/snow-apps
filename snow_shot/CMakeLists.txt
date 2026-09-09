@@ -2953,6 +2953,22 @@ if(SNOW_SHOT_BUILD_TESTS)
         target_link_libraries(snow-shot-export-artifact-tests PRIVATE user32)
     endif()
     add_test(NAME snow-shot-export-artifact-tests COMMAND snow-shot-export-artifact-tests)
+    add_test(NAME snow-shot-quick-save-command-tests
+        COMMAND snow-shot-floating-toolbar-drag-tests --quick-save-only -platform offscreen)
+    add_test(NAME snow-shot-quick-save-layout-storage-tests
+        COMMAND snow-shot-application-storage-tests --toolbar-layout-only)
+    add_test(NAME snow-shot-quick-save-export-tests
+        COMMAND snow-shot-export-artifact-tests --quick-save-only)
+    add_test(NAME snow-shot-pinned-quick-save-tests
+        COMMAND snow-shot-pinned-window-tests --quick-save-only -platform windows)
+    set_tests_properties(snow-shot-pinned-quick-save-tests PROPERTIES LABELS "unit;windows")
+    add_test(NAME snow-shot-quick-save-toolbar-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --quick-save-only -platform offscreen)
+    set_tests_properties(snow-shot-quick-save-export-tests snow-shot-pinned-quick-save-tests
+        snow-shot-quick-save-toolbar-tests snow-shot-quick-save-command-tests
+        snow-shot-quick-save-layout-storage-tests PROPERTIES TIMEOUT 90
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     set_tests_properties(snow-shot-export-artifact-tests PROPERTIES
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"

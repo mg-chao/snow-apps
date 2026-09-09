@@ -102,6 +102,8 @@ class ScreenshotExportArtifact final : public QObject {
                                             ScreenshotImageFileFormat format,
                                             QString filenameFormat,
                                             ScreenshotExportCoordinator::Completion callback);
+    [[nodiscard]] bool requestQuickSave(QObject* receiver,
+                                        ScreenshotExportCoordinator::Completion callback);
     void cancel();
 
     [[nodiscard]] bool isValid() const;

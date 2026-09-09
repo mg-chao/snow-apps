@@ -298,6 +298,7 @@ class ScreenshotToolPalette final : public QWidget {
     void textPunctuationRequested(const QString& value);
     void scrollingScreenshotRequested();
     void saveRequested();
+    void quickSaveRequested();
     void scrollingRecognitionModeChanged(ScreenshotScrollingRecognitionMode mode);
     void scrollingAutoScrollChanged(bool enabled);
     void screenRecordRequested();
@@ -551,6 +552,7 @@ class ScreenshotToolPalette final : public QWidget {
     [[nodiscard]] ActionToolState actionToolState(const QString& itemId) const;
     void activateActionTool(const QString& itemId, bool toggleVisibleButton = true);
     void selectActionToolGroupEntry(const QString& itemId);
+    adqt::widgets::AdButton* createActionToolGroup(const QStringList& itemIds);
     void refreshActionToolGroup(int groupIndex);
     void refreshActionToolGroups();
 
@@ -621,6 +623,7 @@ class ScreenshotToolPalette final : public QWidget {
     adqt::widgets::AdSelect* m_textPunctuationSelect = nullptr;
     adqt::widgets::AdButton* m_scrollingScreenshotButton = nullptr;
     adqt::widgets::AdButton* m_saveButton = nullptr;
+    adqt::widgets::AdButton* m_quickSaveButton = nullptr;
     QWidget* m_scrollingRecognitionControls = nullptr;
     adqt::widgets::AdButton* m_scrollingVerticalButton = nullptr;
     adqt::widgets::AdButton* m_scrollingHorizontalButton = nullptr;
