@@ -16,6 +16,7 @@
 #include "snow_shot/presentation/settings/settingsregistry.h"
 #include "widgets/button.h"
 #include "widgets/navigation_menu.h"
+#include "widgets/scroll_area.h"
 
 namespace {
 using adqt::widgets::AdNavigationMenu;
@@ -267,7 +268,10 @@ SidebarWidget::SidebarWidget(
     m_menuSelectionModel = new QItemSelectionModel(m_menuModel, m_menu);
 
     rebuildNavigationModel();
-    sidebarLayout->addWidget(m_menu, 1);
+    auto* menuScroll = new adqt::widgets::AdScrollArea(this);
+    menuScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    menuScroll->setContentWidget(m_menu);
+    sidebarLayout->addWidget(menuScroll, 1);
 
     m_collapseTrigger = new QFrame(this);
     m_collapseTrigger->setObjectName(QStringLiteral("sidebarCollapseTrigger"));

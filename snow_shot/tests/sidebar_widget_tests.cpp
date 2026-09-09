@@ -6,6 +6,7 @@
 
 #include "widgets/button.h"
 #include "widgets/navigation_menu.h"
+#include "widgets/scroll_area.h"
 
 #include <QAbstractItemModel>
 #include <QApplication>
@@ -243,6 +244,58 @@ void collapseButtonSwitchesNavigationMode() {
     settings.setSidebarCollapsed(false);
 }
 
+void overflowingNavigationRemainsScrollable() {
+    snow_shot::storage::InterfaceSettings settings;
+    settings.setSidebarCollapsed(false);
+
+    SidebarWidget sidebar(snow_shot::presentation::settings::builtInSettingsRegistry());
+    sidebar.resize(SIDEBAR_EXPANDED_WIDTH, 240);
+    sidebar.show();
+    flushEvents();
+
+    bool hasVisibleScrollBar = false;
+    for (auto* bar : sidebar.findChildren<QScrollBar*>()) {
+        hasVisibleScrollBar |= bar->orientation() == Qt::Vertical && bar->isVisible() &&
+                               bar->maximum() > bar->minimum();
+    }
+    require(hasVisibleScrollBar, "overflowing sidebar navigation must expose a vertical scrollbar");
+
+    auto* scroll = sidebar.findChild<adqt::widgets::AdScrollArea*>();
+    auto* menu = sidebar.findChild<adqt::widgets::AdNavigationMenu*>();
+    auto* trigger = sidebar.findChild<QFrame*>(QStringLiteral("sidebarCollapseTrigger"));
+    require(scroll != nullptr && menu != nullptr && trigger != nullptr,
+            "sidebar should provide scrollable navigation and a fixed collapse trigger");
+    const QRect triggerGeometry = trigger->geometry();
+    scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum());
+    flushEvents();
+    require(menu->mapTo(scroll->viewport(), menu->rect().bottomLeft()).y() <
+                scroll->viewport()->height(),
+            "scrolling to the bottom must reveal the end of the navigation content");
+    require(trigger->geometry() == triggerGeometry && trigger->isVisible() &&
+                triggerGeometry.bottom() == sidebar.contentsRect().bottom(),
+            "scrolling navigation must keep the collapse trigger at the sidebar bottom");
+    require(scroll->horizontalScrollBar()->maximum() == 0,
+            "navigation must fit the sidebar width without horizontal scrolling");
+
+    sidebar.resize(SIDEBAR_EXPANDED_WIDTH,
+                   menu->sizeHint().height() + COLLAPSE_TRIGGER_HEIGHT + 100);
+    flushEvents();
+    require(scroll->verticalScrollBar()->maximum() == 0 &&
+                !scroll->overlayVerticalScrollBar()->isVisible(),
+            "the scrollbar must disappear when the navigation fits");
+    sidebar.resize(SIDEBAR_EXPANDED_WIDTH, 240);
+    flushEvents();
+    require(scroll->verticalScrollBar()->maximum() > 0 &&
+                scroll->overlayVerticalScrollBar()->isVisible(),
+            "shrinking the sidebar must restore scrolling");
+    sidebar.setCollapsed(true);
+    flushEvents();
+    require(scroll->horizontalScrollBar()->maximum() == 0 &&
+                trigger->geometry().bottom() == sidebar.contentsRect().bottom(),
+            "collapsed navigation must fit its width and retain the bottom trigger");
+    sidebar.setCollapsed(false);
+}
+
 void collapsedSubmenuUsesNaturalPopupHeight() {
     snow_shot::storage::InterfaceSettings settings;
     settings.setSidebarCollapsed(false);
@@ -303,6 +356,7 @@ int main(int argc, char** argv) {
         {storageDirectory.path(), storageDirectory.path(), 8000}));
 
     navigationUsesAntDesignDefaultsAndCollapseTriggerStyle();
+    overflowingNavigationRemainsScrollable();
     firstTopLevelMenuAndCollapseTriggerUseThemeBackground();
     collapseButtonSwitchesNavigationMode();
     collapsedSubmenuUsesNaturalPopupHeight();

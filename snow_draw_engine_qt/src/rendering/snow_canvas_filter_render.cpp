@@ -103,8 +103,13 @@ class FilterWorkerPool {
             {
                 std::lock_guard<std::mutex> lock(task.barrier->mutex);
                 --task.barrier->remaining;
+                // wait() may return and destroy the stack barrier once this lock is released.
+                // Finish every barrier access, including notification, before unlocking.
+#ifdef SNOW_CANVAS_FILTER_TEST_BEFORE_NOTIFY
+                SNOW_CANVAS_FILTER_TEST_BEFORE_NOTIFY();
+#endif
+                task.barrier->ready.notify_one();
             }
-            task.barrier->ready.notify_one();
         }
     }
 
