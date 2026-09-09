@@ -8,6 +8,7 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QScreen>
+#include <QStyleOptionMenuItem>
 #include <QThread>
 #include <QWidget>
 #include <QWindow>
@@ -105,6 +106,45 @@ QPixmap captureCompositedWindow(const QWidget& widget) {
     return screen->grabWindow(0, globalTopLeft.x(), globalTopLeft.y(), widget.width(),
                               widget.height());
 #endif
+}
+
+void unrelatedShortcutsDoNotChangeItemElision() {
+    for (const auto direction : {Qt::LeftToRight, Qt::RightToLeft}) {
+        for (const QString& suffix : {QString(), QStringLiteral("\tF2")}) {
+            adqt::widgets::AdContextMenu menu;
+            menu.setFixedWidth(300);
+            QAction* target = menu.addItem(QStringLiteral("Show main interface") + suffix);
+            QAction* sibling = menu.addItem(QStringLiteral("Screenshot"));
+            menu.ensurePolished();
+
+            const auto renderTarget = [&]() {
+                QImage image(292, 32, QImage::Format_ARGB32_Premultiplied);
+                image.fill(Qt::transparent);
+                QPainter painter(&image);
+                QStyleOptionMenuItem option;
+                option.initFrom(&menu);
+                option.rect = image.rect();
+                option.direction = direction;
+                option.state = QStyle::State_Enabled;
+                option.menuItemType = QStyleOptionMenuItem::Normal;
+                option.text = target->text();
+                menu.style()->drawControl(QStyle::CE_MenuItem, &option, &painter, &menu);
+                return image;
+            };
+
+            const QImage baseline = renderTarget();
+            sibling->setText(QStringLiteral("Screenshot\tCtrl+Alt+Shift+F12 / Ctrl+Shift+F11"));
+            require(renderTarget() == baseline,
+                    "another item shortcut must not change this item elision");
+            sibling->setText(QStringLiteral("Screenshot"));
+            sibling->setShortcut(QKeySequence(Qt::CTRL | Qt::ALT | Qt::SHIFT | Qt::Key_F12));
+            sibling->setShortcutVisibleInContextMenu(true);
+            require(renderTarget() == baseline,
+                    "another item shortcut must not change this item elision");
+            target->setText(QStringLiteral("Show main interface\tCtrl+Alt+Shift+F12"));
+            require(renderTarget() != baseline, "the item must account for its own shortcut");
+        }
+    }
 }
 
 void dirtyRenderTargetCornersAreCleared() {
@@ -378,6 +418,7 @@ int main(int argc, char** argv) {
         constrainedPopupKeepsActionGeometryInsideSurface();
         nativePopupCornersCompositeOverTheirBackdrop();
         hiddenMenuReleasesAndRebuildsItsWindowSurface();
+        unrelatedShortcutsDoNotChangeItemElision();
         dirtyRenderTargetCornersAreCleared();
         return 0;
     } catch (const std::exception& error) {

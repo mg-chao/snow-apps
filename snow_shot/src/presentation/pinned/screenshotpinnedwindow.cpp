@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/shortcutdisplaytext.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
@@ -56,7 +57,6 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QHBoxLayout>
-#include <QKeySequence>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QMimeData>
@@ -498,24 +498,6 @@ void setActionDisplayText(QAction* action, const QString& text) {
     action->setText(shortcut.isEmpty() ? text : text + QLatin1Char('\t') + shortcut);
 }
 
-QString shortcutDisplayText(const QStringList& shortcuts) {
-    QStringList display;
-    display.reserve(shortcuts.size());
-    for (const QString& shortcut : shortcuts) {
-        QKeySequence sequence =
-            QKeySequence::fromString(shortcut.trimmed(), QKeySequence::PortableText);
-        if (sequence.isEmpty()) {
-            sequence = QKeySequence::fromString(shortcut.trimmed(), QKeySequence::NativeText);
-        }
-        const QString text =
-            sequence.isEmpty() ? shortcut.trimmed() : sequence.toString(QKeySequence::NativeText);
-        if (!text.isEmpty() && !display.contains(text)) {
-            display.push_back(text);
-        }
-    }
-    return display.join(QStringLiteral(" / "));
-}
-
 void setActionShortcutDisplay(QAction* action, const QString& shortcut) {
     if (action == nullptr) {
         return;
@@ -934,7 +916,7 @@ void ScreenshotPinnedWindow::reloadPinnedWindowShortcuts() {
         if (action.actionObjectName != nullptr) {
             setActionShortcutDisplay(
                 findChild<QAction*>(QString::fromLatin1(action.actionObjectName)),
-                shortcutDisplayText(shortcuts));
+                snow_shot::presentation::formatShortcutListDisplayText(shortcuts));
         }
     }
     m_systemMoveKeyboard->setKeyCombinations(movementCombinations);

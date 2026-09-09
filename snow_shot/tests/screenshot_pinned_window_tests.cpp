@@ -2396,6 +2396,25 @@ void pinnedControlsMatchReferenceStyle(SnowCanvasRuntime&) {
             "pinned window was not deleted after the control style test");
 }
 
+void pinnedShortcutDisplayUsesSettingsFormat() {
+    ScreenshotPinnedWindow window;
+    auto* action = window.findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction"));
+    require(action != nullptr, "the pinned menu should be available without showing a window");
+    const snow_shot::storage::PinToScreenShortcutSettings shortcuts;
+    const QStringList original = shortcuts.shortcuts(QStringLiteral("drawing_mode"));
+    require(shortcuts.setShortcuts(QStringLiteral("drawing_mode"),
+                                   {QStringLiteral("Ctrl++"), QStringLiteral("Num+1")}),
+            "the pinned shortcut should accept plus and keypad keys");
+    require(action->text().endsWith(QStringLiteral("\tCtrl+Plus / Num 1")),
+            "pinned menus must use the settings key names and alternative separator");
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(&window, &languageChange);
+    require(action->text().endsWith(QStringLiteral("\tCtrl+Plus / Num 1")),
+            "pinned key display must retain the settings format after retranslation");
+    require(shortcuts.setShortcuts(QStringLiteral("drawing_mode"), original),
+            "the pinned shortcut fixture should restore its original shortcuts");
+}
+
 void pinnedConfiguredShortcutUpdatesImmediately(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -5188,6 +5207,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--save-dialog-only"))) {
             pinnedSaveDialogRoutingAndCancellation();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--shortcut-display-only"))) {
+            pinnedShortcutDisplayUsesSettingsFormat();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--pinned-shortcut-only"))) {

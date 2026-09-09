@@ -716,6 +716,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/components/customaimodelssettingswidget.h
     include/snow_shot/presentation/components/settingscustomwidget.h
     include/snow_shot/presentation/components/settingspagewidget.h
+    include/snow_shot/presentation/shortcutdisplaytext.h
     include/snow_shot/presentation/components/shortcutkeyrow.h
     include/snow_shot/presentation/components/shortcutconfigurationbutton.h
     include/snow_shot/presentation/components/storagestatussettingswidget.h
@@ -2646,6 +2647,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests
     )
     snow_shot_import_offscreen_platform(snow-shot-pinned-window-tests)
+    add_test(NAME snow-shot-pinned-shortcut-display-tests
+        COMMAND snow-shot-pinned-window-tests --shortcut-display-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-shortcut-display-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-pinned-middle-click-tests
         COMMAND snow-shot-pinned-window-tests --middle-click-only)
     add_test(NAME snow-shot-pinned-middle-click-offscreen-tests
@@ -3046,6 +3050,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screenshot-tool-shortcut-toggle-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --tool-shortcuts-only
     )
+    add_test(NAME snow-shot-screenshot-action-shortcut-display-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --screenshot-actions-tooltips-only
+            -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-action-shortcut-display-tests PROPERTIES LABELS "unit")
     add_test(
         NAME snow-shot-screenshot-shortcut-tooltip-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --shortcut-tooltips-only

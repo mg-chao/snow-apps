@@ -17,7 +17,7 @@
 #include <QFileDevice>
 #include <QFileInfo>
 #include <QImage>
-#include <QKeySequence>
+#include <QOperatingSystemVersion>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPushButton>
@@ -260,15 +260,30 @@ int main(int argc, char* argv[]) {
     requireActionText(recordingToggleMenuAction,
                       QStringLiteral("Start screen recording / stop and copy recording"),
                       "Recording toggle should use the canonical shortcut title");
+    const QList<QPair<QString, QString>> displayCases{
+        {QStringLiteral("+"), QStringLiteral("Plus")},
+        {QStringLiteral("Shift++"), QStringLiteral("Shift+Plus")},
+        {QStringLiteral("Num+1"), QStringLiteral("Num 1")},
+        {QStringLiteral("Num++"), QStringLiteral("Num Plus")},
+        {QStringLiteral("Shift+Shift"), QStringLiteral("Shift")},
+        {QStringLiteral("Period"), QStringLiteral(".")},
+        {QStringLiteral("Comma"), QStringLiteral(",")},
+        {QStringLiteral("  Shift + F2  "), QStringLiteral("Shift+F2")},
+    };
+    for (const auto& displayCase : displayCases) {
+        controller.setGlobalShortcuts(snow_shot::presentation::GlobalShortcutAction::Screenshot,
+                                      {QString(), displayCase.first, QStringLiteral("F3")});
+        requireActionText(screenshotMenuAction,
+                          QStringLiteral("Screenshot\t") + displayCase.second +
+                              QStringLiteral(" / F3"),
+                          "tray key names and alternatives must use the settings display format");
+    }
     const QString screenshotShortcut = QStringLiteral("Ctrl+Alt+1");
     const QString alternateScreenshotShortcut = QStringLiteral("Meta+Shift+S");
-    const auto nativeShortcut = [](const QString& portableShortcut) {
-        return QKeySequence::fromString(portableShortcut, QKeySequence::PortableText)
-            .toString(QKeySequence::NativeText);
-    };
-    const QString screenshotShortcutHint = nativeShortcut(screenshotShortcut) +
-                                           QStringLiteral(" / ") +
-                                           nativeShortcut(alternateScreenshotShortcut);
+    const QString screenshotShortcutHint =
+        QOperatingSystemVersion::currentType() == QOperatingSystemVersion::MacOS
+            ? QStringLiteral("Control+Option+1 / Command+Shift+S")
+            : QStringLiteral("Ctrl+Alt+1 / Win+Shift+S");
     controller.setGlobalShortcuts(snow_shot::presentation::GlobalShortcutAction::Screenshot,
                                   {screenshotShortcut, alternateScreenshotShortcut});
     requireActionText(screenshotMenuAction, QStringLiteral("Screenshot\t") + screenshotShortcutHint,
