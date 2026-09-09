@@ -1,10 +1,8 @@
 #include "snow_shot/presentation/components/globalmouserow.h"
 
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
-#include "snow_shot/presentation/components/icons/iconrenderutils.h"
 #include "snow_shot/presentation/components/shortcutconfigurationbutton.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
-#include "snow_shot/presentation/styles/actionrowstyle.h"
 #include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
 
 #include "widgets/modal.h"
@@ -60,36 +58,16 @@ GlobalMouseRow::GlobalMouseRow(const QString& title, settings::SettingsGlobalMou
                                settings::SettingsRuntimeSession& runtimeSession,
                                const snow_shot::presentation::styles::ThemeColorScheme& colorScheme,
                                QWidget* parent)
-    : AdButton(parent), m_title(title), m_action(action), m_runtimeSession(runtimeSession),
-      m_colorScheme(colorScheme) {
+    : ActionRow({title, actionIcon(action), {}, true}, colorScheme.metricAlias,
+                snow_shot::presentation::styles::buildMainWindowComponentMetricToken(colorScheme),
+                colorScheme, parent),
+      m_title(title), m_action(action), m_runtimeSession(runtimeSession) {
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-
     const auto& metric = m_colorScheme.metricAlias;
-    setButtonStyle(AdButton::ButtonStyle::Outline);
-    setAccentRole(AdButton::AccentRole::Primary);
-    setShape(AdButton::Shape::Rounded);
-    setFixedHeight(metric.controlHeightLG + metric.paddingXXS);
-    setCursor(Qt::PointingHandCursor);
-    setFocusPolicy(Qt::NoFocus);
-    setAttribute(Qt::WA_Hover, true);
-    setAccessibleName(m_title);
-    auto* layout = new QHBoxLayout(this);
-    layout->setContentsMargins(metric.padding, metric.paddingXXS, metric.padding,
-                               metric.paddingXXS);
-    layout->setSpacing(metric.marginXS + metric.borderRadiusXS);
-
-    m_titleLabel = new QLabel(m_title, this);
     m_titleLabel->setObjectName(QStringLiteral("globalMouseActionLabel"));
-    m_titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-    m_titleLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    m_titleLabel->setWordWrap(true);
-    layout->addWidget(m_titleLabel, 0, Qt::AlignVCenter);
-
-    m_titleIcon = new QLabel(this);
-    m_titleIcon->setObjectName(QStringLiteral("globalMouseActionIcon"));
-    m_titleIcon->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-    layout->addWidget(m_titleIcon, 0, Qt::AlignVCenter);
-    layout->addStretch(1);
+    if (auto* icon = findChild<QLabel*>(QStringLiteral("actionRowTitleIcon"))) {
+        icon->setObjectName(QStringLiteral("globalMouseActionIcon"));
+    }
 
     m_button = new ShortcutConfigurationButton(metric, COMBINATION_TEXT_MAX_WIDTH,
                                                custom_outlined_icons::WheelMouse(), this);
@@ -97,8 +75,7 @@ GlobalMouseRow::GlobalMouseRow(const QString& title, settings::SettingsGlobalMou
     m_button->setFixedHeight(metric.controlHeight);
     m_button->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     m_button->setRegistrationStatusTooltipVisible(false);
-    m_button->installEventFilter(this);
-    layout->addWidget(m_button, 0, Qt::AlignRight | Qt::AlignVCenter);
+    setConfigurationButton(m_button);
     connect(m_button, &QAbstractButton::clicked, this, [this]() { openConfigurationDialog(); });
 
     setCombination(m_runtimeSession.globalMouseCombination(m_action));
@@ -125,14 +102,7 @@ ShortcutConfigurationButton* GlobalMouseRow::configurationButton() const {
 }
 
 void GlobalMouseRow::applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
-    m_colorScheme = scheme;
-    if (m_titleLabel != nullptr) {
-        syncTitleColor();
-        QFont font = m_titleLabel->font();
-        font.setPixelSize(scheme.metricAlias.fontSizeLG);
-        font.setWeight(QFont::Medium);
-        m_titleLabel->setFont(font);
-    }
+    ActionRow::applyTheme(scheme);
     if (m_validationLabel != nullptr) {
         QPalette palette = m_validationLabel->palette();
         palette.setColor(QPalette::WindowText, scheme.map.colorError);
@@ -142,61 +112,6 @@ void GlobalMouseRow::applyTheme(const snow_shot::presentation::styles::ThemeColo
         m_button->setTheme(scheme);
     }
     update();
-}
-
-void GlobalMouseRow::syncTitleColor() {
-    if (m_titleLabel == nullptr) {
-        return;
-    }
-    const bool configurationActive =
-        m_button != nullptr && (m_button->underMouse() || m_button->isDown());
-    QPalette palette = m_titleLabel->palette();
-    palette.setColor(QPalette::WindowText,
-                     snow_shot::presentation::styles::actionRowColor(
-                         {}, isDown() && !configurationActive, underMouse() && !configurationActive,
-                         m_colorScheme.map));
-    m_titleLabel->setPalette(palette);
-    if (m_titleIcon != nullptr) {
-        const int side =
-            m_colorScheme.metricAlias.fontSizeLG + m_colorScheme.metricAlias.borderRadiusXS;
-        m_titleIcon->setFixedSize(side, side);
-        m_titleIcon->setPixmap(snow_shot::presentation::icons::renderTintedIconPixmap(
-            actionIcon(m_action), QSize(side, side), devicePixelRatioF(),
-            palette.color(QPalette::WindowText)));
-    }
-}
-
-void GlobalMouseRow::paintEvent(QPaintEvent*) {
-    QPainter painter(this);
-    const auto metric =
-        snow_shot::presentation::styles::buildMainWindowComponentMetricToken(m_colorScheme);
-    const bool configurationActive =
-        m_button != nullptr && (m_button->underMouse() || m_button->isDown());
-    snow_shot::presentation::styles::paintActionRow(
-        painter, size(), m_colorScheme.map, {}, isDown() && !configurationActive,
-        underMouse() && !configurationActive, metric.cardRadius,
-        m_colorScheme.metricAlias.lineWidth, true);
-}
-
-bool GlobalMouseRow::event(QEvent* event) {
-    const bool handled = AdButton::event(event);
-    if (event->type() == QEvent::Enter || event->type() == QEvent::Leave ||
-        event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonRelease ||
-        event->type() == QEvent::DevicePixelRatioChange) {
-        syncTitleColor();
-        update();
-    }
-    return handled;
-}
-
-bool GlobalMouseRow::eventFilter(QObject* watched, QEvent* event) {
-    if (watched == m_button && (event->type() == QEvent::Enter || event->type() == QEvent::Leave ||
-                                event->type() == QEvent::MouseButtonPress ||
-                                event->type() == QEvent::MouseButtonRelease)) {
-        syncTitleColor();
-        update();
-    }
-    return AdButton::eventFilter(watched, event);
 }
 
 void GlobalMouseRow::retranslateUi() {
@@ -213,14 +128,14 @@ void GlobalMouseRow::retranslateUi() {
 }
 
 void GlobalMouseRow::changeEvent(QEvent* event) {
-    AdButton::changeEvent(event);
+    ActionRow::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
     }
 }
 
 void GlobalMouseRow::mousePressEvent(QMouseEvent* event) {
-    AdButton::mousePressEvent(event);
+    ActionRow::mousePressEvent(event);
     if (event->button() == Qt::LeftButton && isEnabled() && m_modal == nullptr &&
         rect().contains(event->position().toPoint())) {
         emit dragRequested(m_action);
