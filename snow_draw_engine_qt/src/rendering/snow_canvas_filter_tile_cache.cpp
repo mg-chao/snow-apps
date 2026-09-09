@@ -59,10 +59,9 @@ std::size_t imageBytes(const QImage& image) {
     return image.isNull() ? 0u : static_cast<std::size_t>(image.sizeInBytes());
 }
 
-void touchLocked(Cache& state, Retained& retained, const Key& key) {
-    state.lru.erase(retained.lru);
-    state.lru.push_front(key);
-    retained.lru = state.lru.begin();
+void touchLocked(Cache& state, Retained& retained) {
+    // Relink without allocating or invalidating the map entry's iterator.
+    state.lru.splice(state.lru.begin(), state.lru, retained.lru);
 }
 
 void evictLocked(Cache& state, Diagnostics* diagnostics) {
@@ -106,7 +105,7 @@ std::shared_ptr<const Entry> find(const Key& key, Diagnostics* diagnostics) {
         ++state.pending.misses;
         return {};
     }
-    touchLocked(state, found->second, key);
+    touchLocked(state, found->second);
     if (diagnostics != nullptr) {
         ++diagnostics->hits;
     }

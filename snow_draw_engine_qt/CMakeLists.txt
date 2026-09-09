@@ -263,6 +263,22 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     )
     add_test(NAME snow-canvas-state-tests COMMAND snow-canvas-state-tests)
 
+    add_executable(snow-canvas-filter-safety-tests
+        tests/snow_canvas_filter_safety_tests.cpp
+        src/rendering/snow_canvas_filter_avx2.cpp
+        src/rendering/snow_canvas_render_diagnostics.cpp
+    )
+    target_link_libraries(snow-canvas-filter-safety-tests PRIVATE Qt6::Gui)
+    add_test(NAME snow-canvas-filter-barrier-safety-tests
+        COMMAND snow-canvas-filter-safety-tests barrier)
+    add_test(NAME snow-canvas-filter-cache-safety-tests
+        COMMAND snow-canvas-filter-safety-tests cache)
+    set_tests_properties(
+        snow-canvas-filter-barrier-safety-tests snow-canvas-filter-cache-safety-tests
+        PROPERTIES TIMEOUT 30 LABELS unit
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
     add_executable(snow-canvas-filter-render-tests
         tests/snow_canvas_filter_render_tests.cpp
     )
