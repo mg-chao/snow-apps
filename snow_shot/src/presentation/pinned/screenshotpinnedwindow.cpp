@@ -679,9 +679,7 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
 
     auto& themeManager = adqt::theme::ThemeManager::instance();
     connect(&themeManager, &adqt::theme::ThemeManager::themeChanged, this, [this]() {
-        if (m_thumbnailMode && m_screenshotRenderer != nullptr) {
-            m_screenshotRenderer->setPinnedBackgroundColor(opaquePinnedBackground(this));
-        }
+        updateThumbnailPresentation();
         update();
     });
 
@@ -1089,7 +1087,7 @@ snow_shot::storage::PinnedWindowRecord ScreenshotPinnedWindow::persistenceRecord
     record.contentCanvasRect = m_backgroundCanvasRect;
     record.surfaceCanvasRect = m_resultSurfaceCanvasRect;
     record.initialPhysicalSize = m_initialPhysicalSize;
-    record.nativeGeometry = currentNativeGeometry();
+    record.nativeGeometry = intendedNativeGeometry();
     if (QScreen* current = screen()) {
         record.screenName = current->name();
         record.screenSerial = current->serialNumber();
@@ -1146,6 +1144,7 @@ void ScreenshotPinnedWindow::restorePersistentState(const Config& config) {
     if (!config.persistedCanvasSession.isEmpty()) {
         static_cast<void>(m_runtime.restoreDocumentSession(config.persistedCanvasSession));
     }
+    updateThumbnailPresentation();
 }
 
 bool ScreenshotPinnedWindow::event(QEvent* event) {
@@ -1324,10 +1323,14 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
                 const QSize minimumSize = physicalSizeAtScale(baseline, kMinimumScalePercent);
                 const QSize maximumSize =
                     physicalSizeAtScale(baseline, kMaximumScalePercent).expandedTo(minimumSize);
-                limits->ptMinTrackSize.x = minimumSize.width();
-                limits->ptMinTrackSize.y = minimumSize.height();
-                limits->ptMaxTrackSize.x = maximumSize.width();
-                limits->ptMaxTrackSize.y = maximumSize.height();
+                const auto trackLimits = resize_geometry::trackSizeLimits(
+                    minimumSize, maximumSize,
+                    m_nativeGeometryController->committedGeometry().size(),
+                    m_nativeGeometryController->targetGeometry().size());
+                limits->ptMinTrackSize.x = trackLimits.minimum.width();
+                limits->ptMinTrackSize.y = trackLimits.minimum.height();
+                limits->ptMaxTrackSize.x = trackLimits.maximum.width();
+                limits->ptMaxTrackSize.y = trackLimits.maximum.height();
                 if (result != nullptr) {
                     *result = 0;
                 }
@@ -3984,11 +3987,13 @@ void ScreenshotPinnedWindow::copyCurrentViewport() {
     if (m_resultSurfaceCanvasRect.isEmpty()) {
         return;
     }
-    const double surfaceScale =
-        m_thumbnailMode
-            ? std::min(static_cast<double>(width()) / m_resultSurfaceCanvasRect.width(),
-                       static_cast<double>(height()) / m_resultSurfaceCanvasRect.height())
-            : m_scalePercent / 100.0;
+    const QSize physicalViewport = currentNativeGeometry().size();
+    const double surfaceScale = m_thumbnailMode
+                                    ? std::min(static_cast<double>(physicalViewport.width()) /
+                                                   m_resultSurfaceCanvasRect.width(),
+                                               static_cast<double>(physicalViewport.height()) /
+                                                   m_resultSurfaceCanvasRect.height())
+                                    : m_scalePercent / 100.0;
     if (!(surfaceScale > 0.0)) {
         return;
     }
@@ -4653,8 +4658,17 @@ void ScreenshotPinnedWindow::scheduleNativeScaleAdoption() {
 }
 
 void ScreenshotPinnedWindow::adoptSettledNativeScale() {
-    if (!m_presented || m_closing || m_thumbnailMode || m_geometryAnimating ||
-        m_systemSizingActive) {
+    if (!m_presented || m_closing || m_geometryAnimating || m_systemSizingActive) {
+        return;
+    }
+    if (m_thumbnailMode) {
+        // Qt can deliver the DPR change after the native resize notification.
+        // Refresh the camera using the final DPR even if no further resize
+        // occurs. The thumbnail's scale readout still describes its saved
+        // expansion rectangle, which this DPI transition must not change.
+        updateCanvasViewport();
+        updateControlsGeometry();
+        schedulePersistence();
         return;
     }
     const QRect nativeGeometry = currentNativeGeometry();
@@ -4701,6 +4715,27 @@ void ScreenshotPinnedWindow::setOpacityPercent(int percent) {
     }
 }
 
+QRect ScreenshotPinnedWindow::intendedNativeGeometry() const {
+    // The mode flag changes before the animation starts. State that outlives
+    // an animation frame must use its destination, including close snapshots
+    // and the expansion rectangle captured when a transition is interrupted.
+    return m_geometryAnimating && m_geometryAnimation != nullptr
+               ? m_geometryAnimation->endValue().toRect()
+               : currentNativeGeometry();
+}
+
+void ScreenshotPinnedWindow::updateThumbnailPresentation() {
+    if (m_screenshotRenderer != nullptr) {
+        m_screenshotRenderer->setPinnedBackgroundColor(
+            m_thumbnailMode ? opaquePinnedBackground(this) : QColor());
+    }
+    if (m_thumbnailAction != nullptr) {
+        const QSignalBlocker blocker(m_thumbnailAction);
+        m_thumbnailAction->setChecked(m_thumbnailMode);
+    }
+    updateControlsGeometry();
+}
+
 void ScreenshotPinnedWindow::setThumbnailMode(bool enabled, bool animate) {
     if (m_closing || m_thumbnailMode == enabled) {
         return;
@@ -4711,25 +4746,18 @@ void ScreenshotPinnedWindow::setThumbnailMode(bool enabled, bool animate) {
     clearWindowDragCursor();
     if (enabled) {
         setEditMode(false);
-        m_preThumbnailNativeGeometry = currentNativeGeometry();
+        m_preThumbnailNativeGeometry = intendedNativeGeometry();
         QScreen* targetScreen =
             ScreenshotGeometryMapper::screenForPhysicalRect(m_preThumbnailNativeGeometry);
         const qreal scale = targetScreen != nullptr ? targetScreen->devicePixelRatio() : 1.0;
         const int nativeThumbnailSize = std::max(1, qRound(kThumbnailSize * scale));
-        QRect nativeTarget(m_preThumbnailNativeGeometry.topLeft(),
-                           QSize(nativeThumbnailSize, nativeThumbnailSize));
-        if (targetScreen != nullptr) {
-            const QRect bounds = ScreenshotGeometryMapper::physicalRectForScreen(*targetScreen);
-            nativeTarget.moveLeft(qBound(bounds.left(), nativeTarget.left(),
-                                         bounds.right() - nativeTarget.width() + 1));
-            nativeTarget.moveTop(qBound(bounds.top(), nativeTarget.top(),
-                                        bounds.bottom() - nativeTarget.height() + 1));
-        }
+        const QPointF nativeCursor = physicalCursorPosition().value_or(
+            nativePositionForWindowPosition(mapFromGlobal(QCursor::pos())).toPoint());
+        const QRect nativeTarget = resize_geometry::anchoredScaleRect(
+            m_preThumbnailNativeGeometry, QSize(nativeThumbnailSize, nativeThumbnailSize),
+            resize_geometry::ScaleAnchor::MousePosition, nativeCursor);
         m_thumbnailMode = true;
-        if (m_screenshotRenderer != nullptr) {
-            m_screenshotRenderer->setPinnedBackgroundColor(opaquePinnedBackground(this));
-        }
-        updateControlsGeometry();
+        updateThumbnailPresentation();
         if (animate) {
             animateGeometryTo(nativeTarget);
         } else {
@@ -4737,10 +4765,7 @@ void ScreenshotPinnedWindow::setThumbnailMode(bool enabled, bool animate) {
         }
     } else {
         m_thumbnailMode = false;
-        if (m_screenshotRenderer != nullptr) {
-            m_screenshotRenderer->setPinnedBackgroundColor({});
-        }
-        updateControlsGeometry();
+        updateThumbnailPresentation();
         if (animate) {
             animateGeometryTo(m_preThumbnailNativeGeometry);
         } else {
@@ -4753,7 +4778,10 @@ void ScreenshotPinnedWindow::setThumbnailMode(bool enabled, bool animate) {
 }
 
 void ScreenshotPinnedWindow::restoreFromThumbnailImmediately() {
-    if (!m_thumbnailMode) {
+    // Expansion clears the mode flag before its animation finishes. A scale
+    // or image command must cancel that animation too, or its remaining frames
+    // will overwrite the new geometry and the next persistence snapshot.
+    if (!m_thumbnailMode && !m_geometryAnimating) {
         return;
     }
     invalidatePendingCopy();
@@ -4762,10 +4790,7 @@ void ScreenshotPinnedWindow::restoreFromThumbnailImmediately() {
     }
     m_geometryAnimating = false;
     m_thumbnailMode = false;
-    if (m_screenshotRenderer != nullptr) {
-        m_screenshotRenderer->setPinnedBackgroundColor({});
-    }
-    updateControlsGeometry();
+    updateThumbnailPresentation();
     static_cast<void>(
         applyWindowGeometry(m_preThumbnailNativeGeometry, GeometryMutation::Thumbnail));
     refreshContextMenu();
@@ -5206,10 +5231,11 @@ void ScreenshotPinnedWindow::clearWindowDragCursor() {
 }
 
 bool ScreenshotPinnedWindow::nativeTrackSizeConstraintsEnabled() const {
-    // Drawing mode disables interactive resizing, but the existing native size
-    // remains governed by the same bounds. Dropping those bounds lets Windows
-    // clamp long pins to the work area when the edit toolbar takes ownership.
-    return !m_closing && !m_thumbnailMode && !m_geometryAnimating;
+    // Keep native limits even when interactive resizing is disabled. Otherwise
+    // Windows clamps enlarged animation frames to the work area, and both the
+    // requested geometry and its rollback fail. The limits include both ends
+    // of each mutation so a thumbnail can also be smaller than the scale minimum.
+    return !m_closing && m_nativeGeometryController != nullptr;
 }
 
 bool ScreenshotPinnedWindow::interactiveResizingEnabled() const {
