@@ -2492,9 +2492,11 @@ QMargins ScreenshotToolPalette::scaledPanelMargins(int horizontalMargin, int ver
     const int horizontal = scaledMetric(horizontalMargin);
     const int contentHeight = scaledMetric(baseContentHeight);
     const int totalHeight = scaledMetric(baseContentHeight + verticalMargin * 2);
-    const int top =
-        std::min(scaledMetric(verticalMargin), std::max(0, totalHeight - contentHeight));
-    const int bottom = std::max(0, totalHeight - contentHeight - top);
+    const int verticalSpace = std::max(0, totalHeight - contentHeight);
+    // Qt rounds the offset of shorter children down. Put an odd padding pixel
+    // above the row so those two rounding decisions do not accumulate upward.
+    const int top = (verticalSpace + 1) / 2;
+    const int bottom = verticalSpace - top;
     return QMargins(horizontal, top, horizontal, bottom);
 }
 

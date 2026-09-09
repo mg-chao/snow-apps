@@ -3606,6 +3606,16 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    add_test(
+        NAME snow-shot-toolbar-icon-centering-hidpi-tests
+        COMMAND snow-shot-toolbar-main-panel-tests --icon-centering-only
+    )
+    set_tests_properties(snow-shot-toolbar-icon-centering-hidpi-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT};QT_SCALE_FACTOR=2"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "unit;windows"
+    )
 
     add_executable(snow-shot-window-capture-exclusion-tests
         tests/window_capture_exclusion_tests.cpp
