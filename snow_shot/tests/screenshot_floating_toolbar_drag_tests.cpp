@@ -37,6 +37,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -1213,6 +1214,122 @@ void slowSeamStraddlingDragKeepsToolbarContentUnmagnified() {
 #endif
 }
 
+class ToolbarPaintExtentMonitor final : public QObject {
+  public:
+    explicit ToolbarPaintExtentMonitor(ScreenshotFloatingToolPaletteWindow& window)
+        : m_window(window) {
+        window.installEventFilter(this);
+    }
+    bool painted = false;
+    bool clipped = false;
+
+  protected:
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event->type() == QEvent::Paint) {
+            painted = true;
+            clipped |= !m_window.rect().contains(m_window.paletteHost()->geometry());
+        }
+        return false;
+    }
+
+  private:
+    ScreenshotFloatingToolPaletteWindow& m_window;
+};
+
+void dpiCommitReconcilesTheActualFrameBeforePainting() {
+    ScreenshotFloatingToolPaletteWindow window(testToolbarOptions());
+    window.prepareForDisplay();
+    window.show();
+    settleQueuedRefreshes();
+    auto* controller = window.findChild<adqt::widgets::AdDpiStableWindowController*>();
+    require(controller != nullptr, "toolbar must have a DPI controller");
+    ToolbarPaintExtentMonitor monitor(window);
+    const QSize expected = window.windowSizeHint();
+    // Model a native transition retaining an older, smaller frame while the
+    // pooled toolbar has already prepared the new capture's content extent.
+    window.resize(expected.width() / 2, expected.height());
+    controller->scaleCommitCompleted(adqt::widgets::AdControlScaleContext::fromDprs(
+                                         window.devicePixelRatioF(), window.devicePixelRatioF()),
+                                     window.size());
+    settleQueuedRefreshes();
+    require(window.size() == expected && window.rect().contains(window.paletteHost()->geometry()),
+            "a DPI commit must reconcile the actual frame with the prepared content");
+    require(monitor.painted && !monitor.clipped,
+            "the first repaint after a DPI commit must contain the complete toolbar");
+}
+
+void reusedToolbarFitsOnFirstShowAcrossScreens() {
+    QScreen* screenA = nullptr;
+    QScreen* screenB = nullptr;
+    for (QScreen* screen : QGuiApplication::screens()) {
+        if (qFuzzyCompare(screen->devicePixelRatio(), 1.5)) {
+            screenA = screen;
+        } else if (qFuzzyCompare(screen->devicePixelRatio(), 1.0)) {
+            screenB = screen;
+        }
+    }
+    require(screenA != nullptr && screenB != nullptr, "requires 150% and 100% screens");
+    require(screenB->geometry().right() + 1 == screenA->geometry().left(),
+            "requires 100% monitor B immediately left of 150% monitor A");
+    class Owner : public QWidget {
+      public:
+        void retire() {
+            hide();
+            destroy(true, true);
+        }
+    };
+    Owner ownerA;
+    Owner ownerB;
+    for (auto pair : {std::make_pair(&ownerA, screenA), std::make_pair(&ownerB, screenB)}) {
+        pair.first->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint);
+        pair.first->setWindowOpacity(0.0);
+        pair.first->winId();
+        pair.first->windowHandle()->setScreen(pair.second);
+        pair.first->setGeometry(pair.second->geometry());
+        pair.first->show();
+    }
+    NoOpToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    ToolbarPaintExtentMonitor monitor(window);
+    for (auto pair : {std::make_pair(&ownerB, screenB), std::make_pair(&ownerA, screenA),
+                      std::make_pair(&ownerB, screenB), std::make_pair(&ownerA, screenA)}) {
+        window.hide();
+        ownerA.retire();
+        ownerB.retire();
+        window.releaseNativeSurface();
+        for (auto ownerPair :
+             {std::make_pair(&ownerA, screenA), std::make_pair(&ownerB, screenB)}) {
+            ownerPair.first->winId();
+            ownerPair.first->windowHandle()->setScreen(ownerPair.second);
+            ownerPair.first->setGeometry(ownerPair.second->geometry());
+            ownerPair.first->show();
+        }
+        window.restoreNativeSurface();
+        window.resetForNewCapture();
+        // Capture preparation uses the first overlay before the selection's
+        // actual monitor is known. Omitting this step misses the regression.
+        window.setOwnerWindow(&ownerA);
+        window.prepareForDisplay();
+        settleQueuedRefreshes();
+        window.setPlacementContext(pair.second, pair.second->geometry(), QRect());
+        window.prepareForDisplay();
+        window.setOwnerWindow(pair.first);
+        window.setStyleToolbarAboveMain(false);
+        window.resetPositionForSelection(pair.second->geometry().topLeft() + QPoint(0, 300));
+        window.prepareForDisplay();
+        monitor.painted = false;
+        monitor.clipped = false;
+        window.show();
+        settleQueuedRefreshes();
+        require(window.rect().contains(window.paletteHost()->geometry()),
+                "reused toolbar must contain its host on the first show on another screen");
+        require(window.size() == window.windowSizeHint(),
+                "reused toolbar frame must match its preset on first show");
+        require(monitor.painted && !monitor.clipped,
+                "reused toolbar must not paint a clipped frame on its first show");
+    }
+}
+
 void dpiScaledSizeMessagePreservesThePhysicalWindowSize() {
 #if defined(Q_OS_WIN) || defined(_WIN32)
     ScreenshotFloatingToolPaletteWindow window(testToolbarOptions());
@@ -2055,6 +2172,14 @@ void floatingToolbarInputsAcquireKeyboardFocus() {
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     try {
+        if (app.arguments().contains(QStringLiteral("--dpi-frame-reconcile-only"))) {
+            dpiCommitReconcilesTheActualFrameBeforePainting();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--capture-screen-switch-only"))) {
+            reusedToolbarFitsOnFirstShowAcrossScreens();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--quick-save-only"))) {
             NoOpToolbarCommands commands;
             ScreenshotToolbarWindow window(commands);
