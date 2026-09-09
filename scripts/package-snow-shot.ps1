@@ -152,11 +152,11 @@ function Assert-SnowShotStaticDependencies {
     })
     $expectedFfmpegComponents = [ordered]@{
         BSF = @("AAC_ADTSTOASC", "H264_MP4TOANNEXB", "PGS_FRAME_MERGE", "VP9_SUPERFRAME")
-        DECODER = @("H264")
+        DECODER = @("APNG", "GIF", "H264", "PNG", "VP8", "WEBP", "WEBP_ANIM")
         ENCODER = @("AAC", "APNG", "GIF", "H263", "H264_MF", "LIBWEBP_ANIM", "LIBX264", "LIBX265", "MP3_MF", "MPEG4")
         HWACCEL = @("H264_D3D11VA", "H264_D3D11VA2", "H264_DXVA2")
         PARSER = @("AAC", "AC3", "H264", "MPEGAUDIO")
-        DEMUXER = @("MATROSKA")
+        DEMUXER = @("APNG", "GIF", "MATROSKA", "MOV", "WEBP_ANIM")
         MUXER = @("APNG", "AVI", "GIF", "MATROSKA", "MOV", "MP4", "WEBP")
         PROTOCOL = @("FILE")
         FILTER = @()
@@ -403,6 +403,7 @@ $allowedSystemImports = @(
     "comdlg32.dll",
     "crypt32.dll",
     "cryptbase.dll",
+    "d2d1.dll",
     "d3d9.dll",
     "d3d11.dll",
     "d3d12.dll",
@@ -515,12 +516,20 @@ $linkedFfmpegRegistrations = @(Select-String -LiteralPath $linkMapPath `
     -Pattern $ffmpegRegistrationPattern | ForEach-Object {
         $_.Matches[0].Groups["Name"].Value
     })
+# The library component audit above still requires all four configured parsers.
+# Whole-program optimization removes their unused registrations from this application.
 $expectedFfmpegRegistrations = @(
     "ff_aac_adtstoasc_bsf",
     "ff_h264_mp4toannexb_bsf",
     "ff_pgs_frame_merge_bsf",
     "ff_vp9_superframe_bsf",
+    "ff_apng_decoder",
+    "ff_gif_decoder",
     "ff_h264_decoder",
+    "ff_png_decoder",
+    "ff_vp8_decoder",
+    "ff_webp_decoder",
+    "ff_webp_anim_decoder",
     "ff_aac_encoder",
     "ff_apng_encoder",
     "ff_gif_encoder",
@@ -534,11 +543,11 @@ $expectedFfmpegRegistrations = @(
     "ff_h264_d3d11va_hwaccel",
     "ff_h264_d3d11va2_hwaccel",
     "ff_h264_dxva2_hwaccel",
-    "ff_aac_parser",
-    "ff_ac3_parser",
-    "ff_h264_parser",
-    "ff_mpegaudio_parser",
+    "ff_apng_demuxer",
+    "ff_gif_demuxer",
     "ff_matroska_demuxer",
+    "ff_mov_demuxer",
+    "ff_webp_anim_demuxer",
     "ff_apng_muxer",
     "ff_avi_muxer",
     "ff_gif_muxer",
