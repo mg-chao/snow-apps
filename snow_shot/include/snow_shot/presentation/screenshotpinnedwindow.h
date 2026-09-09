@@ -155,6 +155,7 @@ class ScreenshotPinnedWindow final : public QWidget {
 
   private:
     friend class ScreenshotPinnedEditController;
+    friend class ScreenshotPinnedWindowTestAccess;
 
     enum class GeometryMutation {
         Move,
@@ -254,6 +255,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     void removePersistence();
     [[nodiscard]] snow_shot::storage::PinnedWindowRecord persistenceRecord() const;
     void restorePersistentState(const Config& config);
+    [[nodiscard]] QRect intendedNativeGeometry() const;
+    void updateThumbnailPresentation();
     void setThumbnailMode(bool enabled, bool animate = true);
     void restoreFromThumbnailImmediately();
     void animateGeometryTo(const QRect& nativeTarget);
@@ -369,7 +372,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::unique_ptr<ScreenshotRecognitionSessionController> m_recognitionSession;
     double m_viewportZoom = 1.0;
     QPointF m_viewportCenter;
-    // Derived value: 100 * current native width / oriented initial physical
+    // Derived value: 100 * expanded native width / oriented initial physical
+    // width. In thumbnail mode the saved expansion rectangle supplies that
     // width. Never carries an externally computed or DPI-translated percent.
     double m_scalePercent = 100.0;
     QString m_mouseWheelZoomMode = QStringLiteral("mouse_position");

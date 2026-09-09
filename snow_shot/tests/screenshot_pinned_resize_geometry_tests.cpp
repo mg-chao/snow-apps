@@ -166,6 +166,22 @@ void testWheelScalePreservesCenterAndMousePosition() {
             "mouse-position wheel scaling should preserve the normalized cursor location");
 }
 
+void testThumbnailEntryPreservesCurrentMousePosition() {
+    using ScaleAnchor = resize_geometry::ScaleAnchor;
+    for (const QRect original : {QRect(100, 200, 600, 400), QRect(-1600, -300, 900, 600)}) {
+        for (const int thumbnailSize : {83, 125, 166}) {
+            const QPointF shrinkCursor(original.x() + original.width() / 3.0,
+                                       original.y() + original.height() / 4.0);
+            const QRect thumbnail =
+                resize_geometry::anchoredScaleRect(original, QSize(thumbnailSize, thumbnailSize),
+                                                   ScaleAnchor::MousePosition, shrinkCursor);
+            require(qAbs(thumbnail.x() + thumbnail.width() / 3.0 - shrinkCursor.x()) <= 0.5 &&
+                        qAbs(thumbnail.y() + thumbnail.height() / 4.0 - shrinkCursor.y()) <= 0.5,
+                    "thumbnail shrink must retain the mouse anchor within pixel rounding");
+        }
+    }
+}
+
 void testWheelScaleSettingNames() {
     using ScaleAnchor = resize_geometry::ScaleAnchor;
     require(resize_geometry::scaleAnchorFromSetting(u"top_left") == ScaleAnchor::TopLeft &&
@@ -194,6 +210,28 @@ void testInvalidInputsAreRejected() {
     require(resize_geometry::scaledSize({}, 1.0).isEmpty(),
             "an invalid baseline should not produce a scaled size");
 }
+
+void testTrackLimitsAllowEveryTransitionFrame() {
+    const QSize minimum(400, 200);
+    const QSize maximum(20000, 10000);
+    for (const QSize enlarged : {QSize(8000, 4000), QSize(24000, 12000)}) {
+        const QSize thumbnail(120, 120);
+        for (const bool shrinking : {false, true}) {
+            const QSize start = shrinking ? enlarged : thumbnail;
+            const QSize end = shrinking ? thumbnail : enlarged;
+            const auto limits = resize_geometry::trackSizeLimits(minimum, maximum, start, end);
+            for (int step = 0; step <= 100; ++step) {
+                const QSize frame = start + (end - start) * (step / 100.0);
+                require(frame.expandedTo(limits.minimum) == frame &&
+                            frame.boundedTo(limits.maximum) == frame,
+                        "native limits must allow every thumbnail and restoration frame");
+            }
+        }
+    }
+    const auto unchanged = resize_geometry::trackSizeLimits(minimum, maximum, {}, {});
+    require(unchanged.minimum == minimum && unchanged.maximum == maximum,
+            "missing transition geometry must preserve normal scale limits");
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -207,7 +245,9 @@ int main(int argc, char* argv[]) {
         testWheelScaleAnchorsUseHalfOpenEdges();
         testWheelScalePreservesCenterAndMousePosition();
         testWheelScaleSettingNames();
+        testThumbnailEntryPreservesCurrentMousePosition();
         testInvalidInputsAreRejected();
+        testTrackLimitsAllowEveryTransitionFrame();
     } catch (const std::exception& error) {
         std::cerr << "screenshot pinned resize geometry test failure: " << error.what() << '\n';
         return 1;
