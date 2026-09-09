@@ -69,7 +69,7 @@ class CatalogTranslator final : public QTranslator {
 void builtInCatalogIsCompleteAndValid() {
     const settings::SettingsCatalog& catalog = settings::builtInSettingsRegistry().catalog();
     require(catalog.validationErrors().isEmpty(), "built-in settings catalog must validate");
-    require(catalog.pages().size() == 10, "catalog must contain ten pages");
+    require(catalog.pages().size() == 11, "catalog must contain eleven pages");
 
     qsizetype sectionCount = 0;
     qsizetype itemCount = 0;
@@ -100,8 +100,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 33 && itemCount == 136,
-            "catalog must contain thirty-three sections and one hundred thirty-six items");
+    require(sectionCount == 34 && itemCount == 137,
+            "catalog must contain thirty-four sections and one hundred thirty-seven items");
     const auto* history =
         catalog.section(QStringLiteral("storage-and-privacy"), QStringLiteral("history"));
     require(history != nullptr && history->items.size() >= 2 &&
@@ -425,7 +425,9 @@ void builtInCatalogIsCompleteAndValid() {
                 settingsGroup->pages.at(1).pageId == QStringLiteral("function-settings"),
             "Function settings must appear below Interface settings in the Settings navigation");
     require(settingsGroup->title.translated() == QStringLiteral("Settings") &&
-                settingsGroup->pages.size() == 5 &&
+                settingsGroup->pages.size() == 6 &&
+                settingsGroup->pages.at(3).pageId == QStringLiteral("storage-and-privacy") &&
+                settingsGroup->pages.at(4).pageId == QStringLiteral("api-configuration") &&
                 settingsGroup->pages.at(2).pageId == QStringLiteral("application-shortcuts") &&
                 settingsGroup->pages.constLast().pageId == QStringLiteral("system-settings"),
             "Settings navigation group must expose Application shortcuts and System settings");
@@ -1113,7 +1115,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 179 && index.search(QString()).size() == 179,
+    require(index.entries().size() == 182 && index.search(QString()).size() == 182,
             "search must generate all catalog nodes in catalog order");
     const auto selectedText = index.search(QStringLiteral("Translate Selected Text"));
     require(!selectedText.isEmpty() &&
@@ -1156,7 +1158,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 10 && sections == 33 && items == 136,
+    require(pages == 11 && sections == 34 && items == 137,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

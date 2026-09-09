@@ -67,6 +67,19 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
         m_status.historyUsage.totalBytes = 128;
     }
 
+    snow_shot::CustomAiModels m_customAiModels;
+    snow_shot::CustomAiModels customAiModels() const override {
+        return m_customAiModels;
+    }
+    bool applyCustomAiModels(const snow_shot::CustomAiModels& models) override {
+        bool valid = false;
+        snow_shot::customAiModelsFromJson(snow_shot::customAiModelsToJson(models), &valid);
+        return valid && applyField(QStringLiteral("api.custom-models"), QVariant::fromValue(models),
+                                   [this](const QVariant& next) {
+                                       m_customAiModels = next.value<snow_shot::CustomAiModels>();
+                                   });
+    }
+
     QVariant selectValue(settings::SettingsSelectBinding binding) const override {
         if (binding == settings::SettingsSelectBinding::Theme) {
             return m_theme;
@@ -1238,8 +1251,38 @@ void permanentHistoryDisablesOnlyLimitControls() {
                 "disabling permanent history must restore limit controls");
 }
 
+void customModelsPreserveAcceptedStateOnRejectedWrites() {
+    FakeSettingsBackend backend;
+    const auto registry = settings::buildBuiltInSettingsRegistry();
+    settings::SettingsRuntimeSession session(registry, backend);
+    const QString field = QStringLiteral("api.custom-models");
+    snow_shot::CustomAiModelConfiguration model{QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                                QStringLiteral(" Model "),
+                                                QStringLiteral(" http://localhost:1234/v1/ "),
+                                                {},
+                                                QStringLiteral(" local "),
+                                                false};
+    backend.setMode(field, WriteMode::Reject);
+    require(!session.applyCustomAiModels({model}) && session.customAiModels().isEmpty(),
+            "rejected model save preserves accepted list");
+    require(session.state(field).dirty && !session.state(field).error.isEmpty(),
+            "rejected model draft retains error and can retry");
+    backend.setMode(field, WriteMode::Immediate);
+    require(session.retry(field), "model draft retries through runtime session");
+    model = snow_shot::normalizeCustomAiModel(model);
+    require(session.customAiModels() == snow_shot::CustomAiModels{model} &&
+                !session.state(field).dirty,
+            "retry publishes normalized accepted models");
+    backend.setMode(field, WriteMode::Reject);
+    require(!session.applyCustomAiModels({}) && session.customAiModels().size() == 1,
+            "failed deletion retains model");
+    require(session.discard(field) && !session.state(field).dirty,
+            "failed deletion draft can be discarded");
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    customModelsPreserveAcceptedStateOnRejectedWrites();
     initialStateAndNoOp();
     permanentHistoryDisablesOnlyLimitControls();
     storageUsagePropagation();

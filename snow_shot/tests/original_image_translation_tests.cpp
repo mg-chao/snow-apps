@@ -625,11 +625,13 @@ void translationSettingsSwitchKeepsReadableSize() {
     auto* toggle = modal->contentWidget()->findChild<adqt::widgets::AdSwitch*>(
         QStringLiteral("screenshotTranslationOriginalImage"));
     require(toggle != nullptr, "find original image translation switch for sizing");
+    adqt::widgets::AdSwitch standardSwitch;
     for (const bool checked : {false, true}) {
         toggle->setChecked(checked);
+        standardSwitch.setChecked(checked);
         QCoreApplication::processEvents();
-        require(toggle->sizeHint().width() >= 56 && toggle->sizeHint().height() >= 28,
-                "translation switch must request at least a 56 by 28 logical-pixel indicator");
+        require(toggle->sizeHint() == standardSwitch.sizeHint(),
+                "translation switch uses the same default dimensions as the model editor");
         require(toggle->width() >= toggle->sizeHint().width() &&
                     toggle->height() >= toggle->sizeHint().height(),
                 "translation settings layout must not shrink the switch below its size hint");

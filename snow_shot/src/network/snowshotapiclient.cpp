@@ -118,6 +118,9 @@ QString normalizedBaseUrl(QString value) {
 }
 
 QString problemDetail(const QJsonObject& object) {
+    if (object.value(QStringLiteral("error")).isObject()) {
+        return problemDetail(object.value(QStringLiteral("error")).toObject());
+    }
     const QString detail = object.value(QStringLiteral("detail")).toString().trimmed();
     if (!detail.isEmpty()) {
         return detail;
@@ -236,6 +239,9 @@ struct SnowShotApiClient::Request {
     bool hasContent = false;
     qsizetype receivedBytes = 0;
     QString model;
+    QString endpoint;
+    QByteArray apiKey;
+    bool custom = false;
     QString format;
 };
 
@@ -417,13 +423,93 @@ SnowShotApiClient::extractTable(const QImage& source, QObject* receiver, Complet
 }
 
 const QVector<SnowShotChatModel>& SnowShotApiClient::cachedChatModels() const {
-    return m_cachedChatModels;
+    return m_availableModels;
+}
+
+const snow_shot::CustomAiModelConfiguration*
+SnowShotApiClient::customModel(const QString& id) const {
+    for (const auto& model : m_customModels) {
+        if (model.selectionId() == id) {
+            return &model;
+        }
+    }
+    return nullptr;
+}
+
+bool SnowShotApiClient::isCustomModel(const QString& id) const {
+    return customModel(id) != nullptr;
+}
+bool SnowShotApiClient::hasBuiltInModels(const QString& locale) const {
+    return !m_cachedChatModels.isEmpty() && m_cachedChatModelsLocale == locale;
+}
+QString SnowShotApiClient::modelFingerprint(const QString& id) const {
+    const auto* model = customModel(id);
+    return model == nullptr ? QString() : snow_shot::customAiModelFingerprint(*model);
+}
+
+void SnowShotApiClient::rebuildAvailableModels() {
+    m_availableModels = m_cachedChatModels;
+    for (const auto& model : m_customModels) {
+        m_availableModels.push_back({model.selectionId(), model.name, false,
+                                     QStringLiteral("default"), model.supportsVision,
+                                     SnowShotModelOrigin::Custom});
+    }
+}
+
+QString SnowShotApiClient::fallbackModel(bool vision) const {
+    const auto eligible = [vision](const auto& model) {
+        return vision ? model.supportsVision : model.supportsTranslation();
+    };
+    for (const auto& model : m_cachedChatModels) {
+        if (eligible(model) && model.translationMode == QStringLiteral("default")) {
+            return model.id;
+        }
+    }
+    for (const auto& model : m_availableModels) {
+        if (eligible(model)) {
+            return model.id;
+        }
+    }
+    return {};
+}
+
+void SnowShotApiClient::setCustomModels(const snow_shot::CustomAiModels& models) {
+    bool valid = false;
+    const auto normalized =
+        snow_shot::customAiModelsFromJson(snow_shot::customAiModelsToJson(models), &valid);
+    if (!valid || normalized == m_customModels) {
+        return;
+    }
+    const auto previous = m_customModels;
+    m_customModels = normalized;
+    rebuildAvailableModels();
+    for (const auto& old : previous) {
+        const QString id = old.selectionId();
+        const auto* current = customModel(id);
+        const bool changed = current == nullptr || old.baseUrl != current->baseUrl ||
+                             old.apiKey != current->apiKey || old.model != current->model;
+        const bool vision = changed || (old.supportsVision && !current->supportsVision);
+        if (!changed && !vision) {
+            continue;
+        }
+
+        const auto tokens = m_requests.keys();
+        for (const auto token : tokens) {
+            const auto* request = m_requests.value(token);
+            if (request != nullptr && request->model == id &&
+                (changed || request->imageConversion)) {
+                cancel(token);
+            }
+        }
+        emit customModelInvalidated(id, changed, vision);
+    }
+    emit chatModelsChanged();
 }
 
 SnowShotApiClient::RequestToken
 SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
                                    ChatModelsCompletion completion) {
-    if (receiver == nullptr || !completion || m_baseUrl.isEmpty()) {
+    if (receiver == nullptr || !completion || (m_baseUrl.isEmpty() && m_customModels.isEmpty())) {
         return 0;
     }
     auto* manager = networkAccessManager();
@@ -433,6 +519,14 @@ SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
     state->chatModelsCompletion = std::move(completion);
     m_requests.insert(token, state);
 
+    if (m_baseUrl.isEmpty()) {
+        QTimer::singleShot(0, this, [this, token]() {
+            SnowShotChatModelsResult result;
+            result.models = m_availableModels;
+            finishChatModels(token, std::move(result));
+        });
+        return token;
+    }
     QNetworkRequest request(QUrl(m_baseUrl + QStringLiteral("/api/v2/chat/models")));
     request.setRawHeader("X-Request-ID",
                          QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8());
@@ -474,7 +568,8 @@ SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
                 if (parsed.translationMode.isEmpty()) {
                     parsed.translationMode = QStringLiteral("default");
                 }
-                if (!parsed.id.isEmpty() && !parsed.name.isEmpty()) {
+                if (!parsed.id.isEmpty() && !parsed.name.isEmpty() &&
+                    !parsed.id.startsWith(QStringLiteral("custom:"))) {
                     result.models.push_back(std::move(parsed));
                 }
             }
@@ -485,6 +580,12 @@ SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
                 m_cachedChatModelsLocale = locale;
             }
         }
+        rebuildAvailableModels();
+        if (!m_customModels.isEmpty()) {
+            result.models = m_availableModels;
+            result.error.clear();
+        }
+        emit chatModelsChanged();
         finishChatModels(token, std::move(result));
         reply->deleteLater();
     });
@@ -494,8 +595,11 @@ SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
 SnowShotApiClient::RequestToken
 SnowShotApiClient::streamTranslation(const SnowShotTranslationRequest& input, QObject* receiver,
                                      TranslationDelta delta, TranslationCompletion completion) {
-    if (receiver == nullptr || !delta || !completion || m_baseUrl.isEmpty() ||
-        input.model.trimmed().isEmpty() || input.text.isEmpty()) {
+    const auto* custom = customModel(input.model);
+    if ((input.model.startsWith(QStringLiteral("custom:")) && custom == nullptr) ||
+        receiver == nullptr || !delta || !completion ||
+        (custom == nullptr && m_baseUrl.isEmpty()) || input.model.trimmed().isEmpty() ||
+        input.text.isEmpty()) {
         return 0;
     }
     std::optional<QString> qwenSourceLanguage;
@@ -508,7 +612,7 @@ SnowShotApiClient::streamTranslation(const SnowShotTranslationRequest& input, QO
             return 0;
         }
     }
-    QJsonObject body{{QStringLiteral("model"), input.model},
+    QJsonObject body{{QStringLiteral("model"), custom != nullptr ? custom->model : input.model},
                      {QStringLiteral("temperature"), 0},
                      {QStringLiteral("max_tokens"), 4096}};
     if (input.translationMode == QStringLiteral("qwen-mt")) {
@@ -533,8 +637,20 @@ SnowShotApiClient::streamTranslation(const SnowShotTranslationRequest& input, QO
                     });
         body.insert(QStringLiteral("enable_thinking"), false);
     }
+    if (custom != nullptr) {
+        body.remove(QStringLiteral("temperature"));
+        body.remove(QStringLiteral("max_tokens"));
+        body.remove(QStringLiteral("enable_thinking"));
+        body.insert(QStringLiteral("stream"), true);
+    }
     const RequestToken token = ++m_nextToken;
     auto* state = new Request(Request::Kind::Translation);
+    state->model = input.model;
+    if (custom != nullptr) {
+        state->custom = true;
+        state->endpoint = custom->baseUrl + QStringLiteral("/chat/completions");
+        state->apiKey = custom->apiKey.toUtf8();
+    }
     state->receiver = receiver;
     state->translationDelta = std::move(delta);
     state->translationCompletion = std::move(completion);
@@ -546,12 +662,23 @@ SnowShotApiClient::streamTranslation(const SnowShotTranslationRequest& input, QO
 SnowShotApiClient::RequestToken SnowShotApiClient::streamImageConversion(
     const SnowShotImageConversionRequest& input, QObject* receiver, TranslationDelta delta,
     std::function<void(SnowShotImageConversionResult)> completion) {
-    if (receiver == nullptr || !delta || !completion || m_baseUrl.isEmpty() ||
-        input.model.trimmed().isEmpty() || input.image.isNull()) {
+    const auto* custom = customModel(input.model);
+    if ((input.model.startsWith(QStringLiteral("custom:")) && custom == nullptr) ||
+        receiver == nullptr || !delta || !completion ||
+        (custom == nullptr && m_baseUrl.isEmpty()) || input.model.trimmed().isEmpty() ||
+        input.image.isNull()) {
         return 0;
     }
     const RequestToken token = ++m_nextToken;
+    if (custom != nullptr && !custom->supportsVision) {
+        return 0;
+    }
     auto* state = new Request(Request::Kind::ImageConversion);
+    if (custom != nullptr) {
+        state->custom = true;
+        state->endpoint = custom->baseUrl + QStringLiteral("/chat/completions");
+        state->apiKey = custom->apiKey.toUtf8();
+    }
     state->receiver = receiver;
     state->translationDelta = std::move(delta);
     state->translationCompletion = std::move(completion);
@@ -574,29 +701,41 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamImageConversion(
     const QPointer<SnowShotApiClient> guard(this);
     // Deliver through the application event queue: all request/QPointer access stays on the
     // owning UI thread, even if the consumer is destroyed while the codec is working.
-    QThreadPool::globalInstance()->start([guard, token, input]() {
-        const QByteArray body = imageConversionBody(input);
-        QMetaObject::invokeMethod(
-            QCoreApplication::instance(),
-            [guard, token, body]() {
-                if (guard == nullptr || !guard->m_requests.contains(token)) {
-                    return;
-                }
-                if (body.isEmpty() || body.size() > kMaximumChatRequestBytes) {
-                    SnowShotTranslationResult result;
-                    result.error =
-                        body.isEmpty()
-                            ? tr("The image could not be prepared for conversion")
-                            : tr("The image is too large to convert. Select a smaller area.");
-                    result.code = body.isEmpty() ? QStringLiteral("image_encoding_failed")
-                                                 : QStringLiteral("payload_too_large");
-                    guard->finishTranslation(token, std::move(result));
-                    return;
-                }
-                guard->startChatStream(token, body);
-            },
-            Qt::QueuedConnection);
-    });
+    auto effectiveInput = input;
+    if (custom != nullptr) {
+        effectiveInput.model = custom->model;
+    }
+    QThreadPool::globalInstance()->start(
+        [guard, token, effectiveInput, isCustom = custom != nullptr]() {
+            QByteArray body = imageConversionBody(effectiveInput);
+            if (isCustom && !body.isEmpty()) {
+                auto object = QJsonDocument::fromJson(body).object();
+                object.remove(QStringLiteral("temperature"));
+                object.remove(QStringLiteral("max_tokens"));
+                object.remove(QStringLiteral("enable_thinking"));
+                body = QJsonDocument(object).toJson(QJsonDocument::Compact);
+            }
+            QMetaObject::invokeMethod(
+                QCoreApplication::instance(),
+                [guard, token, body]() {
+                    if (guard == nullptr || !guard->m_requests.contains(token)) {
+                        return;
+                    }
+                    if (body.isEmpty() || body.size() > kMaximumChatRequestBytes) {
+                        SnowShotTranslationResult result;
+                        result.error =
+                            body.isEmpty()
+                                ? tr("The image could not be prepared for conversion")
+                                : tr("The image is too large to convert. Select a smaller area.");
+                        result.code = body.isEmpty() ? QStringLiteral("image_encoding_failed")
+                                                     : QStringLiteral("payload_too_large");
+                        guard->finishTranslation(token, std::move(result));
+                        return;
+                    }
+                    guard->startChatStream(token, body);
+                },
+                Qt::QueuedConnection);
+        });
     state->receiverDestroyed =
         connect(receiver, &QObject::destroyed, deadline, [this, token]() { cancel(token); });
     return token;
@@ -607,7 +746,15 @@ void SnowShotApiClient::startChatStream(RequestToken token, const QByteArray& bo
     if (state == nullptr) {
         return;
     }
-    QNetworkRequest request(QUrl(m_baseUrl + QStringLiteral("/api/v1/chat/completions")));
+    QNetworkRequest request(QUrl(
+        state->custom ? state->endpoint : m_baseUrl + QStringLiteral("/api/v1/chat/completions")));
+    if (state->custom) {
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                             QNetworkRequest::SameOriginRedirectPolicy);
+        if (!state->apiKey.isEmpty()) {
+            request.setRawHeader("Authorization", "Bearer " + state->apiKey);
+        }
+    }
     request.setRawHeader("Content-Type", "application/json");
     request.setRawHeader("Accept", "text/event-stream");
     request.setRawHeader("X-Request-ID",
@@ -673,7 +820,7 @@ void SnowShotApiClient::startChatStream(RequestToken token, const QByteArray& bo
             QJsonParseError error{};
             const QJsonDocument document = QJsonDocument::fromJson(data, &error);
             const QJsonObject object = document.isObject() ? document.object() : QJsonObject{};
-            if (eventName == "error") {
+            if (eventName == "error" || object.value(QStringLiteral("error")).isObject()) {
                 current->streamFailed = true;
                 SnowShotTranslationResult result;
                 result.error = problemDetail(object);
@@ -748,7 +895,10 @@ void SnowShotApiClient::startChatStream(RequestToken token, const QByteArray& bo
         SnowShotTranslationResult result;
         result.httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         if (reply->error() != QNetworkReply::NoError) {
-            const QJsonObject problem = QJsonDocument::fromJson(current->streamBuffer).object();
+            QJsonObject problem = QJsonDocument::fromJson(current->streamBuffer).object();
+            if (problem.value(QStringLiteral("error")).isObject()) {
+                problem = problem.value(QStringLiteral("error")).toObject();
+            }
             result.code = problem.value(QStringLiteral("code")).toVariant().toString();
             result.error = formatFailure(result.httpStatus, {},
                                          problemDetail(problem).isEmpty() ? reply->errorString()

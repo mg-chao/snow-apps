@@ -267,6 +267,94 @@ void conversionLifecycleAndSettings() {
     controller.deactivate();
 }
 
+void customModelWorkflows() {
+    using Controller = ScreenshotImageConversionController;
+    using Format = SnowShotImageConversionFormat;
+    ConversionServer server;
+    SnowShotApiClient api(QStringLiteral("http://127.0.0.1:1"));
+    snow_shot::CustomAiModelConfiguration model{QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                                QStringLiteral("Custom Vision"),
+                                                server.url() + QStringLiteral("/v1"),
+                                                {},
+                                                QStringLiteral("local-vision"),
+                                                true};
+    auto second = model;
+    second.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    second.name = QStringLiteral("Other Model");
+    api.setCustomModels({model, second});
+    const snow_shot::storage::ScreenshotImageConversionSettings settings;
+    settings.setVisionModel(model.selectionId());
+    Controller controller;
+    controller.setProvider(&api);
+    controller.activate(QStringLiteral("custom-image"), sampleImage(), Format::Markdown);
+    until([&]() { return controller.state() == Controller::State::Completed; });
+    require(server.modelRequests == 0 && server.requests.size() == 1,
+            "selected custom model runs without builtin catalog");
+    const auto cached = controller.entries(QStringLiteral("custom-image"));
+    require(!cached.first().modelFingerprint.isEmpty(),
+            "custom conversion records connection identity");
+    model.name = QStringLiteral("Renamed Vision");
+    api.setCustomModels({model, second});
+    controller.activate(QStringLiteral("custom-image"), sampleImage(), Format::Markdown);
+    require(server.requests.size() == 1 && controller.state() == Controller::State::Completed,
+            "rename preserves completed conversion");
+    model.model = QStringLiteral("changed-provider-id");
+    api.setCustomModels({model, second});
+    require(controller.entries(QStringLiteral("custom-image")).isEmpty() && !controller.busy(),
+            "connection edit invalidates results without automatic request");
+    controller.seed(QStringLiteral("custom-image"), cached);
+    require(controller.entries(QStringLiteral("custom-image")).isEmpty(),
+            "stale restored custom result cannot be reseeded");
+    controller.retry();
+    until([&]() { return controller.state() == Controller::State::Completed; });
+    require(server.requests.size() == 2 &&
+                server.requests.last().value(QStringLiteral("model")) == model.model,
+            "retry uses edited provider model");
+    QWidget owner;
+    owner.resize(800, 700);
+    owner.show();
+    controller.openSettings(&owner);
+    auto* modal = controller.findChild<adqt::widgets::AdModal*>();
+    auto* select = modal->contentWidget()->findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotVisionModel"));
+    require(select && select->isEnabled() && select->options().size() == 2,
+            "custom conversion choices available while builtin catalog loads");
+    model.supportsVision = false;
+    api.setCustomModels({model, second});
+    require(select->options().size() == 1 && settings.visionModel() == second.selectionId(),
+            "vision removal updates open selector and shared fallback");
+    modal->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    ScreenshotRecognitionSessionActions actions;
+    actions.translationSettingsOwner = [&]() { return &owner; };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, &api, actions);
+    session.openTranslationSettings();
+    auto* translation = session.findChild<adqt::widgets::AdModal*>();
+    require(translation != nullptr, "translation settings opens with local models");
+    const auto selects = translation->contentWidget()->findChildren<adqt::widgets::AdSelect*>();
+    bool found = false;
+    for (auto* service : selects) {
+        bool hasModel = false, hasVision = false;
+        for (const auto& option : service->options()) {
+            hasModel = hasModel || option.value == model.selectionId();
+            hasVision = hasVision || option.value == second.selectionId();
+        }
+        found = found || (hasModel && hasVision);
+    }
+    require(found, "translation includes both text and vision custom models");
+    translation->reject();
+    server.hold = true;
+    Controller other;
+    other.setProvider(&api);
+    controller.activate(QStringLiteral("active-one"), sampleImage(), Format::Html);
+    other.activate(QStringLiteral("active-two"), sampleImage(), Format::Html);
+    until([&]() { return server.requests.size() == 4; });
+    api.setCustomModels({model});
+    require(!controller.busy() && !other.busy() && settings.visionModel().isEmpty(),
+            "deletion cancels all active consumers and clears unavailable vision selection");
+    settings.setVisionModel({});
+}
+
 void conversionSourceNormalization() {
     using Format = SnowShotImageConversionFormat;
     const auto check = [](const QString& input, Format format, const QString& expected) {
@@ -682,6 +770,7 @@ void runImageConversionTests() {
 #endif
     settingsInitialAvailability();
     conversionLifecycleAndSettings();
+    customModelWorkflows();
     conversionSourceNormalization();
     renderingCopyAndPersistence();
     conversionSessionRoutesSourceAndClearsOldViews();

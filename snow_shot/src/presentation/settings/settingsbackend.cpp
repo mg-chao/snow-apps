@@ -886,6 +886,13 @@ bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding) {
     return false;
 }
 
+CustomAiModels BuiltInSettingsBackend::customAiModels() const {
+    return storage::ApiConfigurationSettings().customModels();
+}
+bool BuiltInSettingsBackend::applyCustomAiModels(const CustomAiModels& models) {
+    return storage::ApiConfigurationSettings().setCustomModels(models);
+}
+
 storage::StorageStatus BuiltInSettingsBackend::storageStatus() const {
     auto status = storage::ApplicationStorage::instance().status();
     status.diagnostics.exporting = status.diagnostics.exporting || m_copyLogBusy;

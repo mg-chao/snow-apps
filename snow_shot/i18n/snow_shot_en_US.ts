@@ -76,6 +76,176 @@
     </message>
 </context>
 <context>
+    <name>CustomAiModelsSettingsWidget</name>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="136"/>
+        <source>No custom models configured</source>
+        <translation>No custom models configured</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="149"/>
+        <source>Vision</source>
+        <translation>Vision</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="154"/>
+        <source>Edit</source>
+        <translation>Edit</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="154"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="451"/>
+        <source>Delete</source>
+        <translation>Delete</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="154"/>
+        <source>Copy</source>
+        <translation>Copy</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="166"/>
+        <source>%1 model %2</source>
+        <translation>%1 model %2</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="194"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="430"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="465"/>
+        <source>Unable to save models. Check that configuration storage is writable and try again.</source>
+        <translation>Unable to save models. Check that configuration storage is writable and try again.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="211"/>
+        <source>%1 (Copy)</source>
+        <translation>%1 (Copy)</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="212"/>
+        <source>%1 (Copy %2)</source>
+        <translation>%1 (Copy %2)</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="362"/>
+        <source>Enter a model name.</source>
+        <translation>Enter a model name.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="367"/>
+        <source>A model with this name already exists.</source>
+        <translation>A model with this name already exists.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="371"/>
+        <source>Enter the base URL without /chat/completions.</source>
+        <translation>Enter the base URL without /chat/completions.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="374"/>
+        <source>Enter an HTTP or HTTPS base URL without credentials, a query, or a fragment.</source>
+        <translation>Enter an HTTP or HTTPS base URL without credentials, a query, or a fragment.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="377"/>
+        <source>The API key must not contain line breaks.</source>
+        <translation>The API key must not contain line breaks.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="380"/>
+        <source>Enter the API model ID.</source>
+        <translation>Enter the API model ID.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="403"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="429"/>
+        <source>This model was deleted. Close this form and create a new model.</source>
+        <translation>This model was deleted. Close this form and create a new model.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="423"/>
+        <source>Edit Model</source>
+        <translation>Edit Model</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="423"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="466"/>
+        <source>Add Model</source>
+        <translation>Add Model</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="424"/>
+        <source>Save</source>
+        <translation>Save</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="425"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="452"/>
+        <source>Cancel</source>
+        <translation>Cancel</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="433"/>
+        <source>Model Name</source>
+        <translation>Model Name</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="433"/>
+        <source>API URL</source>
+        <translation>API URL</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="433"/>
+        <source>API Key</source>
+        <translation>API Key</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="433"/>
+        <source>API Model</source>
+        <translation>API Model</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="434"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="441"/>
+        <source>Vision Support</source>
+        <translation>Vision Support</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="442"/>
+        <source>The model name displayed in Snow Shot.</source>
+        <translation>The model name displayed in Snow Shot.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="443"/>
+        <source>OpenAI-compatible Chat Completions. /chat/completions is appended to this base URL.</source>
+        <translation>OpenAI-compatible Chat Completions. /chat/completions is appended to this base URL.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="445"/>
+        <source>Optional for servers that do not require authentication.</source>
+        <translation>Optional for servers that do not require authentication.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="446"/>
+        <source>The model ID expected by your API provider.</source>
+        <translation>The model ID expected by your API provider.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="447"/>
+        <source>Allow this model to convert images to Markdown and HTML.</source>
+        <translation>Allow this model to convert images to Markdown and HTML.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="450"/>
+        <source>Delete Model</source>
+        <translation>Delete Model</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="456"/>
+        <source>Delete model &quot;%1&quot;? If selected, another available model will be used.</source>
+        <translation>Delete model &quot;%1&quot;? If selected, another available model will be used.</translation>
+    </message>
+</context>
+<context>
     <name>DiagnosticsService</name>
     <message>
         <location filename="../src/presentation/settings/settingsbackend.cpp" line="848"/>
@@ -242,32 +412,32 @@
         <translation>Watermark</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="55"/>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="56"/>
         <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</source>
         <translation>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="59"/>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="60"/>
         <source>Drawing toolbar preview</source>
         <translation>Drawing toolbar preview</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="60"/>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="61"/>
         <source>Hidden tools</source>
         <translation>Hidden tools</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="61"/>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="62"/>
         <source>Drag tools here to hide them from the screenshot toolbar.</source>
         <translation>Drag tools here to hide them from the screenshot toolbar.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="63"/>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="64"/>
         <source>No hidden tools</source>
         <translation>No hidden tools</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="64"/>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="65"/>
         <source>Hidden drawing toolbar tools</source>
         <translation>Hidden drawing toolbar tools</translation>
     </message>
@@ -874,17 +1044,17 @@
         <translation>Unknown recording error</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="592"/>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="594"/>
         <source>Unable to create the recording directory</source>
         <translation>Unable to create the recording directory</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="854"/>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="856"/>
         <source>Screen recording</source>
         <translation>Screen recording</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="855"/>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="857"/>
         <source>The recording operation failed</source>
         <translation>The recording operation failed</translation>
     </message>
@@ -930,97 +1100,97 @@
 <context>
     <name>ScreenshotController</name>
     <message>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2954"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4128"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4268"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4278"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2982"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4139"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4279"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4289"/>
         <source>The screenshot could not be saved: %1</source>
         <translation>The screenshot could not be saved: %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2139"/>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2198"/>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3089"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2167"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2226"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3117"/>
         <source>The scrolling screenshot could not be prepared</source>
         <translation>The scrolling screenshot could not be prepared</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2121"/>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2166"/>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2186"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2149"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2194"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2214"/>
         <source>The scrolling screenshot could not be pinned</source>
         <translation>The scrolling screenshot could not be pinned</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2381"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2409"/>
         <source>The clipboard does not contain content that can be pinned</source>
         <translation>The clipboard does not contain content that can be pinned</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2491"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2519"/>
         <source>The clipboard content could not be pinned</source>
         <translation>The clipboard content could not be pinned</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2538"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2566"/>
         <source>The clipboard content could not be pinned: %1</source>
         <translation>The clipboard content could not be pinned: %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2499"/>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2570"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2527"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2598"/>
         <source>The clipboard pin could not be presented</source>
         <translation>The clipboard pin could not be presented</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2579"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2607"/>
         <source>The clipboard pin queue is full</source>
         <translation>The clipboard pin queue is full</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2677"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2705"/>
         <source>Save screenshot</source>
         <translation>Save screenshot</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2738"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2766"/>
         <source>The screenshot could not be prepared for saving</source>
         <translation>The screenshot could not be prepared for saving</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3046"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="3946"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3074"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="3957"/>
         <source>No recognized result is available to copy</source>
         <translation>No recognized result is available to copy</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3213"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3241"/>
         <source>Automatic screenshot saving failed: %1</source>
         <translation>Automatic screenshot saving failed: %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3268"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3296"/>
         <source>The screenshot will be copied, but automatic saving could not be queued</source>
         <translation>The screenshot will be copied, but automatic saving could not be queued</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3225"/>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3246"/>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3301"/>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3322"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3253"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3274"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3329"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3350"/>
         <source>The screenshot could not be copied: %1</source>
         <translation>The screenshot could not be copied: %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3340"/>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3351"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3368"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3379"/>
         <source>The screenshot clipboard operation could not be started</source>
         <translation>The screenshot clipboard operation could not be started</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2617"/>
-        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2640"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4137"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2645"/>
+        <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2668"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4148"/>
         <source>The screenshot export queue is full</source>
         <translation>The screenshot export queue is full</translation>
     </message>
@@ -1176,63 +1346,68 @@
 <context>
     <name>ScreenshotImageConversionController</name>
     <message>
-        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="48"/>
-        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="155"/>
+        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="66"/>
+        <source>Model configuration changed. Retry to use the updated settings.</source>
+        <translation>Model configuration changed. Retry to use the updated settings.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="74"/>
+        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="187"/>
         <source>The image conversion service is unavailable</source>
         <translation>The image conversion service is unavailable</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="173"/>
-        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="179"/>
-        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="343"/>
+        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="205"/>
+        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="211"/>
+        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="380"/>
         <source>Unable to load vision models</source>
         <translation>Unable to load vision models</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="194"/>
-        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="318"/>
+        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="226"/>
+        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="354"/>
         <source>No vision models are available</source>
         <translation>No vision models are available</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="228"/>
+        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="261"/>
         <source>Image conversion failed</source>
         <translation>Image conversion failed</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="235"/>
+        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="269"/>
         <source>The model returned no usable content</source>
         <translation>The model returned no usable content</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="246"/>
+        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="280"/>
         <source>The image could not be prepared for conversion</source>
         <translation>The image could not be prepared for conversion</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="284"/>
-        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="292"/>
-        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="293"/>
+        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="318"/>
+        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="326"/>
+        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="327"/>
         <source>Vision Model</source>
         <translation>Vision Model</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="289"/>
+        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="323"/>
         <source>Image conversion settings</source>
         <translation>Image conversion settings</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="290"/>
+        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="324"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="291"/>
+        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="325"/>
         <source>Cancel</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="294"/>
+        <location filename="../src/presentation/ocr/screenshotimageconversioncontroller.cpp" line="328"/>
         <source>Retry</source>
         <translation>Retry</translation>
     </message>
@@ -1536,17 +1711,17 @@
         <translation>Group: Default</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4303"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4314"/>
         <source>The pinned image could not be copied: %1</source>
         <translation>The pinned image could not be copied: %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4618"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4629"/>
         <source>Scale: %1%</source>
         <translation>Scale: %1%</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4630"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4641"/>
         <source>Opacity: %1%</source>
         <translation>Opacity: %1%</translation>
     </message>
@@ -1566,198 +1741,199 @@
 <context>
     <name>ScreenshotRecognitionSessionController</name>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="318"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="347"/>
         <source>Unable to read the selected screenshot</source>
         <translation>Unable to read the selected screenshot</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="820"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="862"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="901"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="913"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="849"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="891"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="932"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="944"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1393"/>
         <source>Translation service is unavailable</source>
         <translation>Translation service is unavailable</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="947"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="984"/>
         <source>Translation request could not be prepared</source>
         <translation>Translation request could not be prepared</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1101"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1172"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2261"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1138"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1209"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2308"/>
         <source>Translation failed</source>
         <translation>Translation failed</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1210"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1247"/>
         <source>Unable to load translation services</source>
         <translation>Unable to load translation services</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1211"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1248"/>
         <source>Retry</source>
         <translation>Retry</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1274"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1306"/>
         <source>Source language</source>
         <translation>Source language</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1275"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1307"/>
         <source>Target language</source>
         <translation>Target language</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1276"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1308"/>
         <source>Translation service</source>
         <translation>Translation service</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1262"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1352"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1294"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1384"/>
         <source>General Models</source>
         <translation>General Models</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1263"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1353"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1295"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1385"/>
         <source>Translation Models</source>
         <translation>Translation Models</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1286"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1318"/>
         <source>Translation settings</source>
         <translation>Translation settings</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1292"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1324"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1293"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1325"/>
         <source>Cancel</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1404"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1451"/>
         <source>Translation service request failed</source>
         <translation>Translation service request failed</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="890"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1416"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="921"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1463"/>
         <source>Translation service request could not be prepared</source>
         <translation>Translation service request could not be prepared</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1248"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1280"/>
         <source>Auto-detect language</source>
         <translation>Auto-detect language</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1078"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1115"/>
         <source>Some text could not be translated</source>
         <translation>Some text could not be translated</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1598"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1645"/>
         <source>Text recognition is unavailable for screenshots larger than 4K</source>
         <translation>Text recognition is unavailable for screenshots larger than 4K</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1636"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1683"/>
         <source>Text recognition request could not be prepared</source>
         <translation>Text recognition request could not be prepared</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1714"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1761"/>
         <source>Table recognition service is unavailable</source>
         <translation>Table recognition service is unavailable</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1736"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1783"/>
         <source>Table recognition request could not be prepared</source>
         <translation>Table recognition request could not be prepared</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1745"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1792"/>
         <source>Barcode recognition is unavailable</source>
         <translation>Barcode recognition is unavailable</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1767"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1814"/>
         <source>Barcode recognition request could not be prepared</source>
         <translation>Barcode recognition request could not be prepared</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1782"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2262"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1829"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2309"/>
         <source>Text recognition failed</source>
         <translation>Text recognition failed</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1826"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2263"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1873"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2310"/>
         <source>Table recognition failed</source>
         <translation>Table recognition failed</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1836"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1883"/>
         <source>No table cells were recognized</source>
         <translation>No table cells were recognized</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1873"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1920"/>
         <source>No barcode was recognized</source>
         <translation>No barcode was recognized</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2113"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2160"/>
         <source>Preparing text recognition components</source>
         <translation>Preparing text recognition components</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2119"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2166"/>
         <source>Preparing text recognition components (%1%)</source>
         <translation>Preparing text recognition components (%1%)</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2143"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2190"/>
         <source>Recognizing table</source>
         <translation>Recognizing table</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2144"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2191"/>
         <source>Recognizing barcode</source>
         <translation>Recognizing barcode</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2145"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2192"/>
         <source>Converting to Markdown</source>
         <translation>Converting to Markdown</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2146"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2193"/>
         <source>Converting to HTML</source>
         <translation>Converting to HTML</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2147"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2194"/>
         <source>Recognizing text</source>
         <translation>Recognizing text</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2264"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="2311"/>
         <source>Barcode recognition failed</source>
         <translation>Barcode recognition failed</translation>
     </message>
     <message>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1241"/>
-        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1277"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1273"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1309"/>
         <source>Original Image Translation</source>
         <translation>Original Image Translation</translation>
     </message>
@@ -2574,37 +2750,37 @@
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="110"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5616"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5618"/>
         <source>Formatting</source>
         <translation>Formatting</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="111"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5617"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5619"/>
         <source>Keep line breaks</source>
         <translation>Keep line breaks</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="112"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5618"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5620"/>
         <source>Remove line breaks</source>
         <translation>Remove line breaks</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="113"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5628"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5630"/>
         <source>Punctuation</source>
         <translation>Punctuation</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="114"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5630"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5632"/>
         <source>Half-width</source>
         <translation>Half-width</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="115"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5630"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5632"/>
         <source>Full-width</source>
         <translation>Full-width</translation>
     </message>
@@ -2617,11 +2793,6 @@
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="117"/>
         <source>Save as file</source>
         <translation>Save as file</translation>
-    </message>
-    <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="118"/>
-        <source>Quick save</source>
-        <translation>Quick save</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="119"/>
@@ -2660,15 +2831,15 @@
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="126"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6471"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6472"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6473"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6474"/>
         <source>Record microphone</source>
         <translation>Record microphone</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="127"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6493"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6494"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6495"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6496"/>
         <source>Record speakers</source>
         <translation>Record speakers</translation>
     </message>
@@ -2689,13 +2860,13 @@
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="131"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5106"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5108"/>
         <source>Mouse trail color</source>
         <translation>Mouse trail color</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="132"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5109"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5111"/>
         <source>Mouse click color</source>
         <translation>Mouse click color</translation>
     </message>
@@ -2731,24 +2902,24 @@
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="139"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6470"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6474"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6492"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6496"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6472"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6476"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6494"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6498"/>
         <source>Animated recording formats do not contain audio</source>
         <translation>Animated recording formats do not contain audio</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="140"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3464"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3466"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3468"/>
         <source>Unavailable while recording</source>
         <translation>Unavailable while recording</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="141"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5102"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5103"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5104"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5105"/>
         <source>Recording format</source>
         <translation>Recording format</translation>
     </message>
@@ -2778,17 +2949,17 @@
         <translation>Yellow</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4467"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4469"/>
         <source>Convert to Markdown</source>
         <translation>Convert to Markdown</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4470"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4472"/>
         <source>Convert to HTML</source>
         <translation>Convert to HTML</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5693"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5695"/>
         <source>Settings</source>
         <translation>Settings</translation>
     </message>
@@ -2799,7 +2970,7 @@
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="211"/>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="1881"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="1671"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3176"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3178"/>
         <source>Mixed</source>
         <translation>Mixed</translation>
     </message>
@@ -2874,8 +3045,8 @@
         <translation>Horizontal scrolling</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3180"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6081"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3182"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6083"/>
         <source>Recording duration</source>
         <translation>Recording duration</translation>
     </message>
@@ -3429,9 +3600,14 @@
         <translation>Solid sequence number fill</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5754"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5756"/>
         <source>Auto-scroll</source>
         <translation>Auto-scroll</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="118"/>
+        <source>Quick save</source>
+        <translation>Quick save</translation>
     </message>
 </context>
 <context>
@@ -3482,44 +3658,44 @@
         <translation>Scrolling screenshot</translation>
     </message>
     <message>
-        <location filename="../include/snow_shot/presentation/screenshottoolbarlayoutmodel.h" line="180"/>
-        <source>Quick save</source>
-        <translation>Quick save</translation>
-    </message>
-    <message>
         <location filename="../include/snow_shot/presentation/screenshottoolbarlayoutmodel.h" line="182"/>
         <source>Save as file</source>
         <translation>Save as file</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="68"/>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="69"/>
         <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</source>
         <translation>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="72"/>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="73"/>
         <source>Screenshot toolbar preview</source>
         <translation>Screenshot toolbar preview</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="73"/>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="74"/>
         <source>Hidden tools</source>
         <translation>Hidden tools</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="74"/>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="75"/>
         <source>Drag tools here to hide them from the screenshot toolbar.</source>
         <translation>Drag tools here to hide them from the screenshot toolbar.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="76"/>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="77"/>
         <source>No hidden tools</source>
         <translation>No hidden tools</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="77"/>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="78"/>
         <source>Hidden screenshot toolbar tools</source>
         <translation>Hidden screenshot toolbar tools</translation>
+    </message>
+    <message>
+        <location filename="../include/snow_shot/presentation/screenshottoolbarlayoutmodel.h" line="180"/>
+        <source>Quick save</source>
+        <translation>Quick save</translation>
     </message>
 </context>
 <context>
@@ -3628,12 +3804,12 @@
         <translation>Limit how much disk space screenshot history can use</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1814"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1836"/>
         <source>System settings</source>
         <translation>System settings</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1869"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1891"/>
         <source>Shortcut keys for screenshot tools and cursor movement</source>
         <translation>Shortcut keys for screenshot tools and cursor movement</translation>
     </message>
@@ -3644,9 +3820,9 @@
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1500"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1563"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1640"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1828"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1868"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2289"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1850"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1890"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2316"/>
         <source>Screenshot</source>
         <translation>Screenshot</translation>
     </message>
@@ -3856,8 +4032,8 @@
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1539"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1600"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1745"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1896"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2324"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1918"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2351"/>
         <source>Screen recording</source>
         <translation>Screen recording</translation>
     </message>
@@ -4111,17 +4287,58 @@
         <translation>Delete</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1551"/>
-        <source>Translate text between languages</source>
-        <translation>Translate text between languages</translation>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1814"/>
+        <source>API Configuration</source>
+        <translation>API Configuration</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1917"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1816"/>
+        <source>Configure custom AI model connections</source>
+        <translation>Configure custom AI model connections</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1818"/>
+        <source>AI Model</source>
+        <translation>AI Model</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1819"/>
+        <source>Custom OpenAI-compatible models for translation and image conversion</source>
+        <translation>Custom OpenAI-compatible models for translation and image conversion</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1824"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="467"/>
+        <source>Custom Models</source>
+        <translation>Custom Models</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1826"/>
+        <source>OpenAI-compatible Chat Completions</source>
+        <translation>OpenAI-compatible Chat Completions</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1827"/>
+        <source>API URL</source>
+        <translation>API URL</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1828"/>
+        <source>API Key</source>
+        <translation>API Key</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1829"/>
+        <source>Vision Support</source>
+        <translation>Vision Support</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1939"/>
         <source>About</source>
         <translation>About</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1919"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1941"/>
         <source>Software version and license information</source>
         <translation>Software version and license information</translation>
     </message>
@@ -4141,38 +4358,38 @@
         <translation>Text recognition appearance</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1829"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1851"/>
         <source>Screen capture settings</source>
         <translation>Screen capture settings</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1836"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1858"/>
         <source>Network</source>
         <translation>Network</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1837"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1859"/>
         <source>Configure proxy use for network requests</source>
         <translation>Configure proxy use for network requests</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1845"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1867"/>
         <source>Configure text recognition models and acceleration</source>
         <translation>Configure text recognition models and acceleration</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1888"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1910"/>
         <source>Shortcut keys for pinned-to-screen windows</source>
         <translation>Shortcut keys for pinned-to-screen windows</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1897"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1919"/>
         <source>Shortcut keys for recording controls</source>
         <translation>Shortcut keys for recording controls</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2240"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2362"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2267"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2389"/>
         <source>Exit</source>
         <translation>Exit</translation>
     </message>
@@ -4395,7 +4612,7 @@
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1171"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1262"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1506"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2311"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2338"/>
         <source>Copy to clipboard</source>
         <translation>Copy to clipboard</translation>
     </message>
@@ -4414,8 +4631,8 @@
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1510"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1574"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1713"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1887"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2299"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1909"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2326"/>
         <source>Pin to screen</source>
         <translation>Pin to screen</translation>
     </message>
@@ -4479,7 +4696,7 @@
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="171"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2328"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2355"/>
         <source>Start screen recording / stop and copy recording</source>
         <translation>Start screen recording / stop and copy recording</translation>
     </message>
@@ -4751,7 +4968,7 @@
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="76"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2294"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2321"/>
         <source>Delay %1s to execute</source>
         <translation>Delay %1s to execute</translation>
     </message>
@@ -4759,8 +4976,8 @@
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="100"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1188"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1514"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1844"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2303"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1866"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2330"/>
         <source>Text recognition</source>
         <translation>Text recognition</translation>
     </message>
@@ -4768,19 +4985,19 @@
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="112"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1192"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1518"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2307"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2334"/>
         <source>Text translation</source>
         <translation>Text translation</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="136"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2315"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2342"/>
         <source>Current monitor</source>
         <translation>Current monitor</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="149"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2319"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2346"/>
         <source>Focused window</source>
         <translation>Focused window</translation>
     </message>
@@ -4788,7 +5005,7 @@
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="184"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1485"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1753"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2334"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2361"/>
         <source>Screenshot history</source>
         <translation>Screenshot history</translation>
     </message>
@@ -4883,19 +5100,8 @@
         <translation>Menu options</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="518"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2342"/>
-        <source>Translate Selected Text</source>
-        <translation>Translate Selected Text</translation>
-    </message>
-    <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="519"/>
-        <source>Capture selected text and open it in Translation</source>
-        <translation>Capture selected text and open it in Translation</translation>
-    </message>
-    <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="528"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2338"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2365"/>
         <source>Pin clipboard content to screen</source>
         <translation>Pin clipboard content to screen</translation>
     </message>
@@ -5338,14 +5544,14 @@
         <translation>App-wide storage usage, location, mode, errors, and cleanup</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2229"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2347"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2256"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2374"/>
         <source>Window grouping</source>
         <translation>Window grouping</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2237"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2357"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2264"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2384"/>
         <source>Show main interface</source>
         <translation>Show main interface</translation>
     </message>
@@ -5389,7 +5595,7 @@
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1470"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1905"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1927"/>
         <source>Other</source>
         <translation>Other</translation>
     </message>
@@ -5415,7 +5621,7 @@
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1632"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1820"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1842"/>
         <source>General</source>
         <translation>General</translation>
     </message>
@@ -5513,7 +5719,7 @@
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1591"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1704"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1878"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1900"/>
         <source>Drawing</source>
         <translation>Drawing</translation>
     </message>
@@ -5592,42 +5798,42 @@
         <translation>Recording output location and filename settings</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1821"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1843"/>
         <source>General system integration settings</source>
         <translation>General system integration settings</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1852"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1874"/>
         <source>Core</source>
         <translation>Core</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1864"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1886"/>
         <source>Configure screenshot editor shortcut keys</source>
         <translation>Configure screenshot editor shortcut keys</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1880"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1902"/>
         <source>Shortcut keys for drawing tools</source>
         <translation>Shortcut keys for drawing tools</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1906"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1928"/>
         <source>Shortcut keys for recognition and screenshot actions</source>
         <translation>Shortcut keys for recognition and screenshot actions</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1944"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1966"/>
         <source>Settings</source>
         <translation>Settings</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1816"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1838"/>
         <source>Configure application process behavior</source>
         <translation>Configure application process behavior</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1853"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1875"/>
         <source>Core application settings</source>
         <translation>Core application settings</translation>
     </message>
@@ -5728,13 +5934,13 @@
         <translation>Quick save</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1862"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1884"/>
         <source>Application shortcuts</source>
         <translation>Application shortcuts</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2233"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2352"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2260"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2379"/>
         <source>Disable global hotkeys</source>
         <translation>Disable global hotkeys</translation>
     </message>
@@ -5784,6 +5990,22 @@
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1763"/>
         <source>No automatic history cleanup</source>
         <translation>No automatic history cleanup</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1551"/>
+        <source>Translate text between languages</source>
+        <translation>Translate text between languages</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="518"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2369"/>
+        <source>Translate Selected Text</source>
+        <translation>Translate Selected Text</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="519"/>
+        <source>Capture selected text and open it in Translation</source>
+        <translation>Capture selected text and open it in Translation</translation>
     </message>
 </context>
 <context>
@@ -5915,104 +6137,104 @@ Change the shortcut and try again</translation>
 <context>
     <name>SnowShotApiClient</name>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="374"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="380"/>
         <source>Table recognition response is too large</source>
         <translation>Table recognition response is too large</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="383"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="389"/>
         <source>Table recognition request timed out</source>
         <translation>Table recognition request timed out</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="396"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="402"/>
         <source>Invalid table recognition response</source>
         <translation>Invalid table recognition response</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="402"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="408"/>
         <source>Table recognition returned no table</source>
         <translation>Table recognition returned no table</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="407"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="413"/>
         <source>Table recognition failed</source>
         <translation>Table recognition failed</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="458"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="552"/>
         <source>Translation service response is too large</source>
         <translation>Translation service response is too large</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="464"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="558"/>
         <source>Invalid translation service response</source>
         <translation>Invalid translation service response</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="482"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="577"/>
         <source>No translation services are available</source>
         <translation>No translation services are available</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="569"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="696"/>
         <source>Image conversion timed out. Try a smaller area.</source>
         <translation>Image conversion timed out. Try a smaller area.</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="589"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="728"/>
         <source>The image could not be prepared for conversion</source>
         <translation>The image could not be prepared for conversion</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="590"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="729"/>
         <source>The image is too large to convert. Select a smaller area.</source>
         <translation>The image is too large to convert. Select a smaller area.</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="629"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="776"/>
         <source>The model response is too large</source>
         <translation>The model response is too large</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="669"/>
-        <location filename="../src/network/snowshotapiclient.cpp" line="694"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="816"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="841"/>
         <source>Invalid model stream response</source>
         <translation>Invalid model stream response</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="681"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="828"/>
         <source>Image conversion failed</source>
         <translation>Image conversion failed</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="682"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="829"/>
         <source>Translation failed</source>
         <translation>Translation failed</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="695"/>
-        <location filename="../src/network/snowshotapiclient.cpp" line="757"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="842"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="907"/>
         <source>Invalid translation stream response</source>
         <translation>Invalid translation stream response</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="706"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="853"/>
         <source>Image conversion is incomplete. Try a smaller area.</source>
         <translation>Image conversion is incomplete. Try a smaller area.</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="760"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="910"/>
         <source>Image conversion stream ended unexpectedly</source>
         <translation>Image conversion stream ended unexpectedly</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="761"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="911"/>
         <source>Translation stream ended unexpectedly</source>
         <translation>Translation stream ended unexpectedly</translation>
     </message>
     <message>
-        <location filename="../src/network/snowshotapiclient.cpp" line="763"/>
+        <location filename="../src/network/snowshotapiclient.cpp" line="913"/>
         <source>The model returned no content</source>
         <translation>The model returned no content</translation>
     </message>
@@ -6589,6 +6811,14 @@ Change the shortcut and try again</translation>
         <location filename="../src/presentation/services/translationpagecontroller.cpp" line="284"/>
         <source>Translation failed: %1</source>
         <translation>Translation failed: %1</translation>
+    </message>
+</context>
+<context>
+    <name>snow_shot::storage::ConfigurationStore</name>
+    <message>
+        <location filename="../src/storage/configurationstore.cpp" line="332"/>
+        <source>Some custom AI model configurations are invalid and were ignored</source>
+        <translation>Some custom AI model configurations are invalid and were ignored</translation>
     </message>
 </context>
 </TS>

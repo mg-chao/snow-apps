@@ -885,6 +885,34 @@ bool ScreenshotController::Impl::ensureRecognitionFeature() {
     m_qrRecognition = std::make_unique<ScreenshotQrRecognitionService>(&owner);
     m_tableRecognition =
         std::make_unique<SnowShotApiClient>(SnowShotApiClient::configuredBaseUrl(), &owner);
+    m_tableRecognition->setCustomModels(
+        snow_shot::storage::ApiConfigurationSettings().customModels());
+    QObject::connect(
+        &applicationStorage.configuration(), &snow_shot::storage::ConfigurationStore::valueChanged,
+        m_tableRecognition.get(), [this](const QString& key, const QJsonValue&) {
+            if (key == QStringLiteral("api_configuration/custom_models")) {
+                m_tableRecognition->setCustomModels(
+                    snow_shot::storage::ApiConfigurationSettings().customModels());
+                auto translation =
+                    snow_shot::storage::ScreenshotTranslationSettings().configuration();
+                if (translation.modelId.startsWith(QStringLiteral("custom:")) &&
+                    !m_tableRecognition->isCustomModel(translation.modelId)) {
+                    translation.modelId = m_tableRecognition->fallbackModel(false);
+                    snow_shot::storage::ScreenshotTranslationSettings().setConfiguration(
+                        translation);
+                }
+                const auto conversion = snow_shot::storage::ScreenshotImageConversionSettings();
+                const QString visionId = conversion.visionModel();
+                if (visionId.startsWith(QStringLiteral("custom:")) &&
+                    std::none_of(m_tableRecognition->cachedChatModels().cbegin(),
+                                 m_tableRecognition->cachedChatModels().cend(),
+                                 [&visionId](const auto& model) {
+                                     return model.id == visionId && model.supportsVision;
+                                 })) {
+                    conversion.setVisionModel(m_tableRecognition->fallbackModel(true));
+                }
+            }
+        });
     m_tableRecognition->setUseSystemProxy(
         applicationStorage.configuration().value(QStringLiteral("network/proxy")).toString() ==
         QStringLiteral("system"));

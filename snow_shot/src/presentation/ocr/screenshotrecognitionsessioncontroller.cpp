@@ -155,6 +155,35 @@ void ScreenshotRecognitionSessionController::setProviders(
     if (m_tableRecognition == nullptr && tableRecognition != nullptr) {
         m_tableRecognition = tableRecognition;
         m_conversion->setProvider(tableRecognition);
+        connect(tableRecognition, &SnowShotApiClient::customModelInvalidated, this,
+                [this](const QString& id, bool translation, bool) {
+                    if (!translation) {
+                        return;
+                    }
+                    const auto active = m_textCache.constFind(
+                        m_translationKey.isEmpty() ? m_textCacheKey : m_translationKey);
+                    if (active != m_textCache.cend() &&
+                        active->translationConfiguration.modelId == id) {
+                        invalidateCurrentTranslation(false);
+                    }
+                    for (auto& entry : m_textCache) {
+                        if (entry.translationConfiguration.modelId == id) {
+                            entry.hasTranslationConfiguration = false;
+                            entry.hasSuccessfulTranslation = false;
+                            entry.translationStatus = TextCacheEntry::TranslationStatus::Absent;
+                            entry.translationText.clear();
+                            entry.successfulTranslation.clear();
+                            entry.overlayTranslation = {};
+                        }
+                    }
+                    auto settings = snow_shot::storage::ScreenshotTranslationSettings();
+                    auto configuration = settings.configuration();
+                    if (configuration.modelId == id && !m_tableRecognition->isCustomModel(id)) {
+                        configuration.modelId = m_tableRecognition->fallbackModel(false);
+                        settings.setConfiguration(configuration);
+                    }
+                    emit recognitionResultsChanged();
+                });
         connect(tableRecognition, &QObject::destroyed, this,
                 [this]() { handleRecognitionProviderDestroyed(Mode::Table); });
     }
@@ -867,7 +896,9 @@ void ScreenshotRecognitionSessionController::startTranslation() {
         content()->setTextEditorStreaming(true);
     }
     updateTextState();
-    if (!m_tableRecognition->cachedChatModels().isEmpty()) {
+    if (m_tableRecognition->isCustomModel(
+            snow_shot::storage::ScreenshotTranslationSettings().configuration().modelId) ||
+        m_tableRecognition->hasBuiltInModels(m_tableRecognition->cachedChatModelsLocale())) {
         startTranslationWithModels(m_tableRecognition->cachedChatModels());
         return;
     }
@@ -913,7 +944,13 @@ void ScreenshotRecognitionSessionController::startTranslationWithModels(
         failTranslationPreparation(tr("Translation service is unavailable"));
         return;
     }
-    settings.modelId = models.at(modelIndex).id;
+    if (settings.modelId != models.at(modelIndex).id) {
+        settings.modelId = models.at(modelIndex).id;
+        it->translationConfiguration.modelId = settings.modelId;
+        auto persisted = snow_shot::storage::ScreenshotTranslationSettings().configuration();
+        persisted.modelId = settings.modelId;
+        snow_shot::storage::ScreenshotTranslationSettings().setConfiguration(persisted);
+    }
     const auto effectiveModel = models.cbegin() + modelIndex;
     const QString key = m_translationKey;
     const quint64 generation = m_translationGeneration;
@@ -1229,11 +1266,6 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     auto* originalImage = new adqt::widgets::AdSwitch(originalImageRow);
     originalImage->setObjectName(QStringLiteral("screenshotTranslationOriginalImage"));
     originalImage->setControlSize(adqt::widgets::AdSwitch::ControlSize::Medium);
-    adqt::widgets::AdSwitch::ComponentTokens originalImageTokens;
-    originalImageTokens.metrics.trackHeight = 28;
-    originalImageTokens.metrics.trackMinWidth = 56;
-    originalImageTokens.metrics.thumbSize = 24;
-    originalImage->setComponentTokens(originalImageTokens);
     originalImageLayout->addWidget(originalImage);
     originalImageLayout->addStretch();
     originalImage->setChecked(
@@ -1254,7 +1286,7 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     }
     QVector<adqt::widgets::AdSelect::Option> serviceOptions;
     for (const SnowShotChatModel& model : models) {
-        if (model.supportsVision) {
+        if (!model.supportsTranslation()) {
             continue;
         }
         serviceOptions.push_back({model.id, model.name, false,
@@ -1307,8 +1339,8 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
                     source->currentValue().toString(), target->currentValue().toString(),
                     service->currentValue().toString(),
                     snow_shot::storage::ScreenshotTranslationSettings().layoutProcessing()};
-                if (selected.sourceLanguage.isEmpty() || selected.targetLanguage.isEmpty() ||
-                    selected.modelId.isEmpty()) {
+                if (!service->isEnabled() || selected.sourceLanguage.isEmpty() ||
+                    selected.targetLanguage.isEmpty() || selected.modelId.isEmpty()) {
                     return;
                 }
                 const snow_shot::storage::ScreenshotTranslationSettings settings;
@@ -1339,12 +1371,12 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
             });
     modal->open();
 
-    const auto applyModels = [form, service,
+    const auto applyModels = [form, service, errorAlert, modal,
                               current](const QVector<SnowShotChatModel>& availableModels) {
         QVector<adqt::widgets::AdSelect::Option> options;
         options.reserve(availableModels.size());
         for (const SnowShotChatModel& model : availableModels) {
-            if (model.supportsVision) {
+            if (!model.supportsTranslation()) {
                 continue;
             }
             options.push_back({model.id, model.name, false,
@@ -1352,21 +1384,35 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
                                    ? tr("General Models")
                                    : tr("Translation Models")});
         }
+        if (modal->acceptButton() != nullptr) {
+            modal->acceptButton()->setEnabled(!options.isEmpty());
+        }
+        errorAlert->setVisible(options.isEmpty());
         if (options.isEmpty()) {
+            service->setCurrentValue(QVariant());
+            errorAlert->setInformativeText(tr("Translation service is unavailable"));
             service->setLoading(false);
             service->setEnabled(false);
             form->hide();
             return;
         }
+        const QString selectedId = service->currentValue().toString().isEmpty()
+                                       ? current.modelId
+                                       : service->currentValue().toString();
         service->setOptions(options);
-        const int index = translationModelIndex(availableModels, current.modelId);
+        const int index = translationModelIndex(availableModels, selectedId);
         service->setCurrentValue(availableModels.at(index).id);
         service->setLoading(false);
         service->setEnabled(true);
         form->show();
     };
+    connect(m_tableRecognition, &SnowShotApiClient::chatModelsChanged, modal,
+            [this, applyModels]() { applyModels(m_tableRecognition->cachedChatModels()); });
     if (!models.isEmpty()) {
         applyModels(models);
+    }
+    if (m_tableRecognition->hasBuiltInModels(
+            snow_shot::presentation::LanguageManager::instance().currentLocale().name())) {
         return;
     }
 
@@ -1385,8 +1431,9 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
         }
         alertGuard->hide();
         retryGuard->setBusy(true);
-        serviceGuard->setLoading(true);
-        serviceGuard->setEnabled(false);
+        const bool hasLocalOptions = !m_tableRecognition->cachedChatModels().isEmpty();
+        serviceGuard->setLoading(!hasLocalOptions);
+        serviceGuard->setEnabled(hasLocalOptions);
         m_settingsModelsRequestToken = m_tableRecognition->fetchChatModels(
             snow_shot::presentation::LanguageManager::instance().currentLocale().name(), this,
             [this, modalGuard, alertGuard, retryGuard, serviceGuard, formGuard,

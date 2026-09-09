@@ -3434,6 +3434,17 @@ void ScreenshotPinnedWindow::finishDeferredPresentationSetup(quint64 generation)
         const auto found = std::find_if(
             m_recognitionResults.conversions.cbegin(), m_recognitionResults.conversions.cend(),
             [visible](const auto& entry) {
+                if (entry.model.startsWith(QStringLiteral("custom:"))) {
+                    const auto models =
+                        snow_shot::storage::ApiConfigurationSettings().customModels();
+                    if (std::none_of(models.cbegin(), models.cend(), [&entry](const auto& model) {
+                            return model.selectionId() == entry.model && model.supportsVision &&
+                                   snow_shot::customAiModelFingerprint(model) ==
+                                       entry.modelFingerprint;
+                        })) {
+                        return false;
+                    }
+                }
                 return entry.isValid() && entry.format == *visible &&
                        entry.model ==
                            snow_shot::storage::ScreenshotImageConversionSettings().visionModel();

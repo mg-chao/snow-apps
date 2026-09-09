@@ -35,6 +35,14 @@ void sharedLanguageAndModelHelpers() {
                 translationModelIndex(models.mid(0, 2), {}) == 1 &&
                 translationModelIndex(models.mid(0, 1), {}) == -1,
             "eligible services prefer saved, general, then translation, excluding vision");
+    auto customModels = models;
+    auto customVision = models.first();
+    customVision.id = QStringLiteral("custom:vision");
+    customVision.origin = SnowShotModelOrigin::Custom;
+    customModels.append(customVision);
+    require(translationModelIndex(customModels, customVision.id) == 3 &&
+                translationModelIndex({customVision}, {}) == 0,
+            "custom vision models remain eligible for saved and fallback translation selection");
 }
 
 void coalescedEditsAndCancellation(const QString& directory) {
