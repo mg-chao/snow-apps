@@ -89,7 +89,7 @@ struct ScreenshotToolPaletteColorEditorConfig {
     QString triggerObjectName;
     QVector<QColor> presetValues;
     std::function<ScreenshotToolPaletteTranslationText(const QColor& color)> presetTooltip;
-    bool alphaEnabled = false;
+    bool alphaEnabled = true;
     bool observePopup = false;
 };
 

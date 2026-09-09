@@ -3070,6 +3070,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screenshot-tool-palette-tests --action-toolbar-layout-only
     )
     add_test(
+        NAME snow-shot-toolbar-color-input-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --color-input-only -platform offscreen
+    )
+    add_test(
         NAME snow-shot-screenshot-tool-shortcut-toggle-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --tool-shortcuts-only
     )

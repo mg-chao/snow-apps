@@ -87,6 +87,7 @@ class QtToolPopupTest final : public QObject {
   void popupTriggerTooltipsRequireOptIn();
   void popupTriggerTooltipsAvoidPopoverAtScreenEdges();
   void selectReleasesAndRecreatesNativeResources();
+  void selectSurvivesPopupContainerDestructionOrder();
   void tooltipReleasesAndRecreatesNativeResources();
   void datePickerReleasesAndRecreatesNativeResources();
   void dateRangePickerReleasesAndRecreatesNativeResources();
@@ -230,6 +231,45 @@ void QtToolPopupTest::popoverReleasesAndRecreatesNativeResources() {
   QVERIFY(surface->isVisible());
   QVERIFY(surface->windowHandle());
   QVERIFY(surface->backingStore());
+}
+
+void QtToolPopupTest::selectSurvivesPopupContainerDestructionOrder() {
+  auto* host = new QWidget;
+  auto* select = new AdSelect(host);
+  select->setOptions({makeOption(QStringLiteral("hsb"), QStringLiteral("HSB"))});
+  host->show();
+  select->showPopup();
+  QPointer<QWidget> surface = selectPopupSurface(*select);
+  QVERIFY(surface);
+  QCOMPARE(surface->parentWidget(), host);
+  select->hidePopup();
+
+  // A picker reparents its format selector into a later-created panel. The
+  // original container then destroys the popup before the selector itself.
+  auto* panel = new QWidget(host);
+  select->setParent(panel);
+  QPointer<AdSelect> guardedSelect = select;
+  delete host;
+  QVERIFY(surface.isNull());
+  QVERIFY(guardedSelect.isNull());
+
+  QWidget survivingHost;
+  host = new QWidget;
+  select = new AdSelect(host);
+  select->setOptions({makeOption(QStringLiteral("rgb"), QStringLiteral("RGB"))});
+  host->show();
+  select->showPopup();
+  surface = selectPopupSurface(*select);
+  QVERIFY(surface);
+  select->hidePopup();
+  select->setParent(&survivingHost);
+  delete host;
+  QVERIFY(surface.isNull());
+  survivingHost.show();
+  select->show();
+  select->showPopup();
+  QVERIFY(selectPopupSurface(*select));
+  QVERIFY(select->popupVisible());
 }
 
 void QtToolPopupTest::selectReleasesAndRecreatesNativeResources() {
