@@ -2,10 +2,12 @@
 #include "snowimageqtcodec.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/diagnostics/diagnostics.h"
 #include <QDir>
 #include <QFileInfo>
 #include <QTemporaryDir>
 #include <QFile>
+#include <QJsonDocument>
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 
@@ -670,6 +672,68 @@ void quickSaveUsesOnlyConfiguredOutput() {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     try {
+        QTemporaryDir logs;
+        snow_shot::diagnostics::DiagnosticsOptions logging;
+        logging.directories = {logs.path()};
+        logging.enableCrashCapture = false;
+        logging.mirrorToConsole = false;
+        auto& diagnostics = snow_shot::diagnostics::DiagnosticsService::instance();
+        require(diagnostics.initialize(logging), "export diagnostics must initialize");
+        {
+            QObject receiver;
+            ScreenshotExportArtifact artifact(ScreenshotExportSource::fromImageLoader(
+                [](QObject*, std::function<void(QImage)> callback) {
+                    callback({});
+                    return true;
+                }));
+            bool finished = false;
+            require(artifact.requestImage(&receiver,
+                                          [&](ScreenshotExportImageResult result) {
+                                              require(!result.succeeded(),
+                                                      "empty export must report failure");
+                                              finished = true;
+                                          }),
+                    "failed image load must be accepted asynchronously");
+            processUntil([&] { return finished; });
+            require(diagnostics.flush(), "export diagnostics must flush");
+            QFile file(diagnostics.status().currentFile);
+            require(file.open(QIODevice::ReadOnly), "export log must be readable");
+            bool found = false;
+            for (const auto& line : file.readAll().split('\n')) {
+                const auto record = QJsonDocument::fromJson(line).object();
+                if (record.value(QStringLiteral("event")) !=
+                    QStringLiteral("export.image_finished"))
+                    continue;
+                const auto fields = record.value(QStringLiteral("fields")).toObject();
+                found = fields.value(QStringLiteral("operation")) == artifact.diagnosticId() &&
+                        fields.value(QStringLiteral("outcome")) == QStringLiteral("failed") &&
+                        !record.value(QStringLiteral("message")).toString().isEmpty();
+            }
+            require(found, "export failure must preserve its cause and correlation identifier");
+            ScreenshotExportArtifact cancelled(ScreenshotExportSource::fromImageLoader(
+                [](QObject*, std::function<void(QImage)>) { return true; }));
+            require(cancelled.requestImage(
+                        &receiver,
+                        [](ScreenshotExportImageResult) {
+                            require(false, "cancelled exports must not deliver callbacks");
+                        }),
+                    "pending cancellation fixture must accept image loading");
+            cancelled.cancel();
+            cancelled.cancel();
+            require(diagnostics.flush(), "cancellation diagnostics must flush");
+            file.seek(0);
+            int cancellations = 0;
+            for (const auto& line : file.readAll().split('\n')) {
+                const auto record = QJsonDocument::fromJson(line).object();
+                if (record.value(QStringLiteral("event")) == QStringLiteral("export.cancelled") &&
+                    record.value(QStringLiteral("fields"))
+                            .toObject()
+                            .value(QStringLiteral("operation")) == cancelled.diagnosticId())
+                    ++cancellations;
+            }
+            require(cancellations == 1, "a pending export must log cancellation exactly once");
+        }
+        diagnostics.shutdown();
         if (application.arguments().contains(QStringLiteral("--quick-save-only"))) {
             quickSaveUsesOnlyConfiguredOutput();
             return EXIT_SUCCESS;
