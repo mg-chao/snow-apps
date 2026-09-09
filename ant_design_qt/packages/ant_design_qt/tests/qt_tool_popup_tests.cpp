@@ -2,9 +2,12 @@
 #include <QCoreApplication>
 #include <QHelpEvent>
 #include <QListView>
+#include <QMouseEvent>
+#include <QProxyStyle>
 #include <QPointer>
 #include <QPushButton>
 #include <QScreen>
+#include <QSignalSpy>
 #include <QTest>
 #include <QWidget>
 
@@ -61,9 +64,10 @@ QWidget* selectPopupSurface(AdSelect& select) {
   return candidate;
 }
 
-QWidget* findSurface(const QString& objectName) {
+QWidget* findSurface(const QString& objectName, bool visibleOnly = false) {
   for (QWidget* candidate : QApplication::allWidgets()) {
-    if (candidate && candidate->objectName() == objectName) {
+    if (candidate && candidate->objectName() == objectName &&
+        (!visibleOnly || candidate->isVisible())) {
       return candidate;
     }
   }
@@ -86,6 +90,9 @@ class QtToolPopupTest final : public QObject {
   void popoverReleasesAndRecreatesNativeResources();
   void popupTriggerTooltipsRequireOptIn();
   void popupTriggerTooltipsAvoidPopoverAtScreenEdges();
+  void popupTriggerTooltipsRequireSpaceBelow();
+  void warmTooltipSurvivesGroupPopoverOpening();
+  void pendingTooltipSurvivesGroupRouteRegistration();
   void selectReleasesAndRecreatesNativeResources();
   void selectSurvivesPopupContainerDestructionOrder();
   void tooltipReleasesAndRecreatesNativeResources();
@@ -99,6 +106,7 @@ void QtToolPopupTest::popupTriggerTooltipsRequireOptIn() {
   AdTooltip::installApplicationTooltips();
   QWidget host;
   host.resize(640, 360);
+  host.move(QApplication::primaryScreen()->availableGeometry().center() - host.rect().center());
   auto* trigger = new QPushButton(QStringLiteral("Draw"), &host);
   trigger->setGeometry(24, 24, 100, 32);
   trigger->setToolTip(QStringLiteral("Draw (2)"));
@@ -106,6 +114,7 @@ void QtToolPopupTest::popupTriggerTooltipsRequireOptIn() {
   popover.setSourceWidget(trigger);
   popover.setPopupLayerMode(AdPopover::PopupLayerMode::QtTool);
   popover.setText(QStringLiteral("Drawing options"));
+  popover.setPlacement(AdPopover::Placement::Top);
   host.show();
   QCoreApplication::processEvents();
   popover.show();
@@ -130,10 +139,12 @@ void QtToolPopupTest::popupTriggerTooltipsRequireOptIn() {
 void QtToolPopupTest::popupTriggerTooltipsAvoidPopoverAtScreenEdges() {
   AdTooltip::installApplicationTooltips();
   const QRect screen = QApplication::primaryScreen()->availableGeometry();
-  for (bool nearTop : {true, false}) {
+  for (int position : {0, 1, 2}) {
     QWidget host(nullptr, Qt::FramelessWindowHint);
-    host.setGeometry(screen.center().x() - 160, nearTop ? screen.top() + 2 : screen.bottom() - 65,
-                     320, 64);
+    const int y = position == 0   ? screen.top() + 2
+                  : position == 1 ? screen.center().y()
+                                  : screen.bottom() - 41;
+    host.setGeometry(screen.center().x() - 160, y, 320, 40);
     auto* trigger = new QPushButton(QStringLiteral("Draw"), &host);
     trigger->setGeometry(100, 8, 100, 32);
     trigger->setToolTip(QStringLiteral("Draw (2)"));
@@ -147,48 +158,197 @@ void QtToolPopupTest::popupTriggerTooltipsAvoidPopoverAtScreenEdges() {
     popover.setContentWidget(content);
     host.show();
     QCoreApplication::processEvents();
+    const auto requestTooltip = [trigger]() {
+      const QPoint center = trigger->rect().center();
+      QHelpEvent help(QEvent::ToolTip, center, trigger->mapToGlobal(center));
+      QApplication::sendEvent(trigger, &help);
+      for (auto* tip : qApp->findChildren<AdTooltip*>()) {
+        if (tip->isVisible() && tip->targetWidget() == trigger) {
+          return tip;
+        }
+      }
+      return static_cast<AdTooltip*>(nullptr);
+    };
+    // Bottom-only placement applies before the group menu opens as well.
+    QCOMPARE(requestTooltip() != nullptr, position != 2);
     popover.show();
     QCoreApplication::processEvents();
     QVERIFY(popover.isVisible());
-    QWidget* popup = content->window();
-    QVERIFY(popup && popup->isVisible());
-    const QPoint center = trigger->rect().center();
-    QHelpEvent help(QEvent::ToolTip, center, trigger->mapToGlobal(center));
-    QApplication::sendEvent(trigger, &help);
-    QVERIFY(help.isAccepted());
-    QWidget* tooltip = nullptr;
-    for (QWidget* candidate : QApplication::allWidgets()) {
-      if (candidate->objectName() == QStringLiteral("adtooltip-surface") &&
-          candidate->isVisible()) {
-        tooltip = candidate;
-        break;
-      }
+    auto* popup = static_cast<adqt::widgets::detail::OverlayPopupSurface*>(content->window());
+    const QRect popupBody =
+        QRect(popup->mapToGlobal(QPoint()), popup->size()).marginsRemoved(popup->shadowMargins());
+    const QRect triggerRect(trigger->mapToGlobal(QPoint()), trigger->size());
+    QCOMPARE(popupBody.center().y() > triggerRect.center().y(), position == 0);
+    AdTooltip* tip = requestTooltip();
+    QCOMPARE(tip != nullptr, position == 1);
+    if (tip) {
+      QCOMPARE(tip->anchorWidget(), trigger);
+      QCOMPARE(tip->anchorRect(), trigger->rect());
+      QCOMPARE(tip->placement(), AdTooltip::Placement::Bottom);
+      auto* surface = static_cast<adqt::widgets::detail::OverlayPopupSurface*>(
+          findSurface(QStringLiteral("adtooltip-surface"), true));
+      QVERIFY(surface && surface->isVisible());
+      const QRect body = QRect(surface->mapToGlobal(QPoint()), surface->size())
+                             .marginsRemoved(surface->shadowMargins());
+      QVERIFY(body.top() > triggerRect.bottom());
+      QVERIFY(!body.intersects(popupBody));
+      QVERIFY(screen.contains(body));
     }
-    QVERIFY(tooltip && tooltip->isVisible());
-    const QRect tooltipRect(tooltip->mapToGlobal(QPoint()), tooltip->size());
-    const QRect popupRect(popup->mapToGlobal(QPoint()), popup->size());
-    const auto* tooltipSurface = static_cast<adqt::widgets::detail::OverlayPopupSurface*>(tooltip);
-    const auto* popupSurface = static_cast<adqt::widgets::detail::OverlayPopupSurface*>(popup);
-    // Native surface rectangles include transparent shadow padding; compare the
-    // painted popup bodies so ordinary adjacent shadows are not counted as overlap.
-    const QRect tooltipBody = tooltipRect.marginsRemoved(tooltipSurface->shadowMargins());
-    const QRect popupBody = popupRect.marginsRemoved(popupSurface->shadowMargins());
-    QVERIFY2(!tooltipBody.intersects(popupBody),
-             "trigger tooltip must remain visible without overlapping the open popover");
-    bool checkedAnchor = false;
-    for (auto* tip : qApp->findChildren<AdTooltip*>()) {
-      if (!tip->isVisible() || tip->targetWidget() != trigger) {
-        continue;
-      }
-      const QRect anchor(tip->anchorWidget()->mapToGlobal(tip->anchorRect().topLeft()),
-                         tip->anchorRect().size());
-      QCOMPARE(anchor.top(), popupBody.top());
-      QCOMPARE(anchor.bottom(), popupBody.bottom());
-      checkedAnchor = true;
-    }
-    QVERIFY(checkedAnchor);
-    QVERIFY(screen.contains(tooltipRect));
+    popover.hide();
+    QCoreApplication::processEvents();
+    QCOMPARE(requestTooltip() != nullptr, position != 2);
   }
+}
+
+void QtToolPopupTest::popupTriggerTooltipsRequireSpaceBelow() {
+  AdTooltip::installApplicationTooltips();
+  const QRect screen = QApplication::primaryScreen()->availableGeometry();
+  QWidget host(nullptr, Qt::FramelessWindowHint);
+  host.setGeometry(screen.center().x() - 100, screen.center().y(), 200, 32);
+  auto* trigger = new QPushButton(QStringLiteral("Draw"), &host);
+  trigger->setGeometry(50, 0, 100, 32);
+  trigger->setProperty(adqt::widgets::detail::kPopupTriggerTooltipEnabledProperty, true);
+  host.show();
+  QCoreApplication::processEvents();
+  AdTooltip::showText(trigger, QStringLiteral("Draw (2)"));
+  auto* surface = static_cast<adqt::widgets::detail::OverlayPopupSurface*>(
+      findSurface(QStringLiteral("adtooltip-surface"), true));
+  QVERIFY(surface && surface->isVisible());
+  const QRect body = QRect(surface->mapToGlobal(QPoint()), surface->size())
+                         .marginsRemoved(surface->shadowMargins());
+  const int requiredSpace = body.bottom() - trigger->mapToGlobal(trigger->rect().bottomLeft()).y();
+  for (int extraSpace : {0, -1, 1}) {
+    for (auto* tip : qApp->findChildren<AdTooltip*>()) {
+      tip->hide();
+    }
+    const int triggerBottom = screen.bottom() - requiredSpace - extraSpace;
+    host.move(host.x(), triggerBottom - trigger->height() + 1);
+    QCoreApplication::processEvents();
+    AdTooltip::showText(trigger, QStringLiteral("Draw (2)"));
+    bool visible = false;
+    for (auto* tip : qApp->findChildren<AdTooltip*>()) {
+      visible |= tip->isVisible() && tip->targetWidget() == trigger;
+    }
+    QCOMPARE(visible, extraSpace >= 0);
+  }
+}
+
+void QtToolPopupTest::warmTooltipSurvivesGroupPopoverOpening() {
+  AdTooltip::installApplicationTooltips();
+  QWidget host(nullptr, Qt::FramelessWindowHint);
+  host.resize(400, 100);
+  host.move(QApplication::primaryScreen()->availableGeometry().center() - host.rect().center());
+  auto* previous = new QPushButton(QStringLiteral("Previous"), &host);
+  previous->setGeometry(20, 20, 100, 32);
+  previous->setToolTip(QStringLiteral("Previous tool"));
+  auto* trigger = new QPushButton(QStringLiteral("Draw"), &host);
+  trigger->setGeometry(140, 20, 100, 32);
+  trigger->setToolTip(QStringLiteral("Draw (2)"));
+  trigger->setProperty(adqt::widgets::detail::kPopupTriggerTooltipEnabledProperty, true);
+  AdPopover popover;
+  popover.setSourceWidget(trigger);
+  popover.setPopupLayerMode(AdPopover::PopupLayerMode::QtTool);
+  popover.setPlacement(AdPopover::Placement::Top);
+  popover.setTriggers(AdPopover::Trigger::Hover);
+  auto* content = new QWidget;
+  content->setFixedSize(240, 60);
+  popover.setContentWidget(content);
+  host.show();
+  QCoreApplication::processEvents();
+
+  const auto requestTooltip = [](QWidget* target) {
+    const QPoint center = target->rect().center();
+    QHelpEvent help(QEvent::ToolTip, center, target->mapToGlobal(center));
+    QApplication::sendEvent(target, &help);
+  };
+  requestTooltip(previous);
+  AdTooltip* tip = nullptr;
+  for (auto* candidate : qApp->findChildren<AdTooltip*>()) {
+    if (candidate->isVisible() && candidate->targetWidget() == previous) {
+      tip = candidate;
+      break;
+    }
+  }
+  QVERIFY(tip);
+  QSignalSpy visibility(tip, &AdTooltip::visibleChanged);
+  QEvent leave(QEvent::Leave);
+  QApplication::sendEvent(previous, &leave);
+  requestTooltip(trigger);
+  QVERIFY(tip->isVisible());
+  QCOMPARE(tip->targetWidget(), trigger);
+  QCOMPARE(tip->text(), trigger->toolTip());
+  for (int cycle = 0; cycle < 3; ++cycle) {
+    popover.show();
+    QVERIFY(popover.isVisible());
+    const auto* surface =
+        static_cast<const adqt::widgets::detail::OverlayPopupSurface*>(content->window());
+    const QRect body = surface->rect().marginsRemoved(surface->shadowMargins());
+    QVERIFY(surface->mapToGlobal(body.bottomLeft()).y() < trigger->mapToGlobal(QPoint()).y());
+    QVERIFY2(tip->isVisible(), "opening the upper group popover must preserve its visible tip");
+    QCOMPARE(tip->targetWidget(), trigger);
+    QCOMPARE(tip->text(), trigger->toolTip());
+    popover.hide();
+    QVERIFY(tip->isVisible());
+  }
+  QCOMPARE(visibility.count(), 0);
+  tip->hide();
+}
+
+void QtToolPopupTest::pendingTooltipSurvivesGroupRouteRegistration() {
+  class TooltipDelayStyle final : public QProxyStyle {
+   public:
+    int styleHint(StyleHint hint, const QStyleOption* option = nullptr,
+                  const QWidget* widget = nullptr,
+                  QStyleHintReturn* data = nullptr) const override {
+      return hint == QStyle::SH_ToolTip_WakeUpDelay
+                 ? 100
+                 : QProxyStyle::styleHint(hint, option, widget, data);
+    }
+  };
+  AdTooltip::installApplicationTooltips();
+  QWidget host(nullptr, Qt::FramelessWindowHint);
+  host.resize(400, 100);
+  host.move(QApplication::primaryScreen()->availableGeometry().center() - host.rect().center());
+  auto* trigger = new QPushButton(QStringLiteral("Draw"), &host);
+  trigger->setGeometry(140, 20, 100, 32);
+  trigger->setToolTip(QStringLiteral("Draw (2)"));
+  trigger->setProperty(adqt::widgets::detail::kPopupTriggerTooltipEnabledProperty, true);
+  auto* style = new TooltipDelayStyle;
+  style->setParent(trigger);
+  trigger->setStyle(style);
+  // Exercise route registration separately from platform focus changes when
+  // opening native windows. The route's surface is already laid out above the button.
+  QWidget popup(nullptr, Qt::Tool | Qt::FramelessWindowHint);
+  popup.setGeometry(trigger->mapToGlobal(QPoint(0, -80)).x(),
+                    trigger->mapToGlobal(QPoint(0, -80)).y(), 180, 60);
+  host.show();
+  popup.show();
+  QCoreApplication::processEvents();
+  const QPoint center = trigger->rect().center();
+  const QPoint global = trigger->mapToGlobal(center);
+  QMouseEvent move(QEvent::MouseMove, center, global, Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+  QApplication::sendEvent(trigger, &move);
+  QHelpEvent help(QEvent::ToolTip, center, global);
+  QApplication::sendEvent(trigger, &help);
+  QVERIFY(help.isAccepted());
+  const auto visibleTip = [trigger]() -> AdTooltip* {
+    for (auto* tip : qApp->findChildren<AdTooltip*>()) {
+      if (tip->isVisible() && tip->targetWidget() == trigger) {
+        return tip;
+      }
+    }
+    return nullptr;
+  };
+  QVERIFY(!visibleTip());
+  QObject owner;
+  adqt::widgets::detail::syncTopLevelPopupTooltipRoute(&owner, trigger, &popup, true);
+  QTRY_VERIFY_WITH_TIMEOUT(visibleTip(), 1500);
+  AdTooltip* tip = visibleTip();
+  QSignalSpy visibility(tip, &AdTooltip::visibleChanged);
+  adqt::widgets::detail::syncTopLevelPopupTooltipRoute(&owner, trigger, &popup, false);
+  QVERIFY(tip->isVisible());
+  QCOMPARE(visibility.count(), 0);
+  tip->hide();
 }
 
 void QtToolPopupTest::popoverReleasesAndRecreatesNativeResources() {
@@ -445,12 +605,9 @@ void QtToolPopupTest::retainedPopupCachesFollowVisibilityAndStayComponentLocal()
   second.show();
   QTRY_VERIFY(first.isVisible() && second.isVisible());
   QTRY_VERIFY(adqt::widgets::detail::OverlayPopupSurfaceTestAccess::pathCacheValid(first));
-  QTRY_VERIFY(
-      adqt::widgets::detail::OverlayPopupSurfaceTestAccess::shadowCacheValid(first));
-  QTRY_VERIFY(
-      adqt::widgets::detail::OverlayPopupSurfaceTestAccess::pathCacheValid(second));
-  QTRY_VERIFY(
-      adqt::widgets::detail::OverlayPopupSurfaceTestAccess::shadowCacheValid(second));
+  QTRY_VERIFY(adqt::widgets::detail::OverlayPopupSurfaceTestAccess::shadowCacheValid(first));
+  QTRY_VERIFY(adqt::widgets::detail::OverlayPopupSurfaceTestAccess::pathCacheValid(second));
+  QTRY_VERIFY(adqt::widgets::detail::OverlayPopupSurfaceTestAccess::shadowCacheValid(second));
 
   first.hide();
   QTRY_VERIFY(!first.isVisible());
@@ -463,8 +620,7 @@ void QtToolPopupTest::retainedPopupCachesFollowVisibilityAndStayComponentLocal()
   first.show();
   QTRY_VERIFY(first.isVisible());
   QTRY_VERIFY(adqt::widgets::detail::OverlayPopupSurfaceTestAccess::pathCacheValid(first));
-  QTRY_VERIFY(
-      adqt::widgets::detail::OverlayPopupSurfaceTestAccess::shadowCacheValid(first));
+  QTRY_VERIFY(adqt::widgets::detail::OverlayPopupSurfaceTestAccess::shadowCacheValid(first));
 }
 
 QTEST_MAIN(QtToolPopupTest)

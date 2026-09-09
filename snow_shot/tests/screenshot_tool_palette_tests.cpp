@@ -31,6 +31,7 @@
 #include <QFont>
 #include <QFontDatabase>
 #include <QGuiApplication>
+#include <QScreen>
 #include <QGridLayout>
 #include <QHash>
 #include <QHelpEvent>
@@ -1930,6 +1931,8 @@ void groupedDrawingOptionsShowShortcutTooltips() {
     options.showSpotlightTool = true;
     options.enableStyleToolbar = false;
     ScreenshotToolPalette palette(options);
+    palette.move(QApplication::primaryScreen()->availableGeometry().center() -
+                 palette.rect().center());
     palette.show();
     QCoreApplication::processEvents();
 
@@ -2005,6 +2008,8 @@ void groupedActionOptionsShowShortcutTooltips() {
                  {QStringLiteral("scrolling-screenshot"), QStringLiteral("pin-to-screen")}}};
         }
         ScreenshotToolPalette palette(options);
+        palette.move(QApplication::primaryScreen()->availableGeometry().center() -
+                     palette.rect().center());
         palette.show();
         QCoreApplication::processEvents();
         int groupCount = 0;
@@ -2046,8 +2051,8 @@ void groupedActionOptionsShowShortcutTooltips() {
             popover->hide();
             QCoreApplication::processEvents();
         }
-        require(groupCount == (customLayout ? 3 : 1),
-                "tooltip audit should cover native recognition and all custom action groups");
+        require(groupCount == (customLayout ? 3 : 2),
+                "tooltip audit should cover recognition, save, and all custom action groups");
     }
     require(allTooltipsVisible, "grouped action tooltips must remain visible while menus are open");
 }

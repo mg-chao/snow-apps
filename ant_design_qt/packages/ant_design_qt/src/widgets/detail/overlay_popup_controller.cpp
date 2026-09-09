@@ -1488,6 +1488,12 @@ bool OverlayPopupController::syncPopupGeometry(bool prepareLayout) {
   const int arrowOffsetHorizontal = delegate_->popupArrowOffsetHorizontal();
   const int arrowOffsetVertical = delegate_->popupArrowOffsetVertical();
 
+  if (!delegate_->popupAcceptsGeometry(anchorRect, popupSize, bounds)) {
+    applyPopupVisibility(popup, false, false);
+    resetGeometrySyncSnapshot();
+    return false;
+  }
+
   const bool inputsUnchanged =
       geometrySyncSnapshotValid_ && geometrySyncParent_ == geometrySnapshotParent &&
       geometrySyncAnchorRect_ == anchorRect && geometrySyncBounds_ == bounds &&
