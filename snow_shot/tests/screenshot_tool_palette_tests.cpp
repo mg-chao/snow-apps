@@ -8379,7 +8379,7 @@ void screenshotProductStyleProfileIsComplete() {
                 exact(defaults.serialNumber.opacity, 1.0),
             "sequence-number defaults should match the Snow Shot product profile");
     require(defaults.watermark.color == QColor(0, 0, 0, 255) && defaults.watermark.text.isEmpty() &&
-                exact(defaults.watermark.fontSize, 12.0) &&
+                exact(defaults.watermark.fontSize, 16.0) &&
                 defaults.watermark.fontFamily.isEmpty() && exact(defaults.watermark.angle, 30.0) &&
                 exact(defaults.watermark.gap, 56.0) && exact(defaults.watermark.opacity, 0.16),
             "watermark defaults should match the Snow Shot product profile");
@@ -8887,6 +8887,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--canvas-style-persistence-only"))) {
+        screenshotProductStyleProfileIsComplete();
         canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;

@@ -1204,8 +1204,7 @@ void selectToolDragRendersSelectionMarquee() {
     require(snow_viewport_set_surface_size(runtimeHandle, viewport.get(), 320, 240) == SNOW_OK,
             "selection marquee viewport should accept its surface size");
     ScopedChangedViewportList toolChange;
-    require(snow_viewport_set_active_tool_ex(runtimeHandle, viewport.get(),
-                                             SNOW_ACTIVE_TOOL_SELECT,
+    require(snow_viewport_set_active_tool_ex(runtimeHandle, viewport.get(), SNOW_ACTIVE_TOOL_SELECT,
                                              toolChange.outParam()) == SNOW_OK,
             "selection marquee test should activate select tool");
 
@@ -1354,8 +1353,7 @@ void textEditorActivationPreservesSelectToolSelectionBox() {
                                       84.0) == SNOW_OK,
             "selection box consistency test should create a text element");
     ScopedChangedViewportList selectToolChange;
-    require(snow_viewport_set_active_tool_ex(runtime.get(), viewport.get(),
-                                             SNOW_ACTIVE_TOOL_SELECT,
+    require(snow_viewport_set_active_tool_ex(runtime.get(), viewport.get(), SNOW_ACTIVE_TOOL_SELECT,
                                              selectToolChange.outParam()) == SNOW_OK,
             "selection box consistency test should activate the select tool");
 
@@ -1877,8 +1875,7 @@ void longOpenPathsRenderAllCommands() {
             }
         }
     }
-    require(tailVisible,
-            "dynamic paths should render all path commands");
+    require(tailVisible, "dynamic paths should render all path commands");
     QPainter cachedPainter(&image);
     cachedPainter.setClipRect(QRect(180, 0, 60, 120));
     snow_canvas_renderer::renderSceneItems(snow_canvas_renderer::SceneRenderRequest{
@@ -2699,13 +2696,12 @@ void watermarkRendererIsViewportAnchoredAndSkipsLowAlpha() {
 
     info.camera_center_x = 1000;
     info.camera_center_y = -500;
-    info.camera_zoom = 4;
     QImage second(320, 180, QImage::Format_ARGB32_Premultiplied);
     second.fill(Qt::transparent);
     QPainter secondPainter(&second);
     snow_canvas_renderer::renderWatermark(secondPainter, info);
     secondPainter.end();
-    require(first == second, "camera pan and zoom must not move or scale the watermark");
+    require(first == second, "camera pan must not move the selection-anchored watermark");
     require(snow_canvas_renderer::watermarkLayoutCacheBuildCountForCurrentThread() ==
                 buildsAfterFirst,
             "camera changes should not rebuild viewport-anchored watermark text layout");
@@ -2898,6 +2894,106 @@ void watermarkPreviewCoalescesAndCommitCancelsQueuedPreview() {
         while (destructionWait.elapsed() < 25) {
             QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
             QThread::msleep(1);
+        }
+    }
+}
+
+void watermarkWorkerRenderingMatchesGuiWithColdCache() {
+    WatermarkDisplayInfo info{};
+    info.surface_width = 640;
+    info.surface_height = 360;
+    info.watermark_color = SnowColorRgba8{20, 80, 140, 255};
+    const QByteArray text("EXPORT");
+    std::copy(text.begin(), text.end(), info.watermark_text.begin());
+    info.watermark_text_len = static_cast<std::uint16_t>(text.size());
+    info.watermark_font_size = 72;
+    info.watermark_gap = 56;
+    info.watermark_angle = 24;
+    info.watermark_opacity = 0.5;
+
+    const auto render = [&](snow_canvas_renderer::WatermarkRenderPurpose purpose) {
+        QImage image(1280, 720, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        painter.scale(2.0, 2.0);
+        snow_canvas_renderer::WatermarkPatternRenderer::render(
+            painter, {info, QRectF(0, 0, 640, 360), QRectF(0, 0, 640, 360),
+                      QRegion(QRect(0, 0, 640, 360)), painter.deviceTransform(), purpose});
+        painter.end();
+        return image;
+    };
+    snow_canvas_renderer::resetWatermarkRenderCacheForCurrentThread();
+    const QImage expected = render(snow_canvas_renderer::WatermarkRenderPurpose::Widget);
+    snow_canvas_renderer::resetWatermarkRenderCacheForCurrentThread();
+    QImage actual;
+    std::atomic<bool> completed{false};
+    std::thread worker([&]() {
+        actual = render(snow_canvas_renderer::WatermarkRenderPurpose::ImageExport);
+        completed.store(true, std::memory_order_release);
+    });
+    while (!completed.load(std::memory_order_acquire)) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        QThread::msleep(1);
+    }
+    worker.join();
+    require(actual == expected,
+            "cold-cache worker export must preserve the GUI watermark's size and appearance");
+}
+
+void watermarkPreviewMatchesExportAtDisplayScale() {
+    WatermarkDisplayInfo info{};
+    info.watermark_color = SnowColorRgba8{20, 80, 140, 255};
+    const QByteArray text("EXPORT");
+    std::copy(text.begin(), text.end(), info.watermark_text.begin());
+    info.watermark_text_len = static_cast<std::uint16_t>(text.size());
+    info.watermark_font_size = 72;
+    info.watermark_gap = 56;
+    info.watermark_angle = 24;
+    info.watermark_opacity = 0.5;
+    const auto render = [&](double displayScale,
+                            snow_canvas_renderer::WatermarkRenderPurpose purpose, bool offset) {
+        const QRect selection(offset ? QPoint(80, 60) : QPoint(), QSize(640, 360));
+        QImage image(offset ? QSize(800, 480) : selection.size(),
+                     QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        painter.scale(displayScale, displayScale);
+        info.camera_zoom = 1.0 / displayScale;
+        const QRectF surface(0, 0, image.width() / displayScale, image.height() / displayScale);
+        const QRectF bounds(QPointF(selection.topLeft()) / displayScale,
+                            QSizeF(selection.size()) / displayScale);
+        snow_canvas_renderer::WatermarkPatternRenderer::render(
+            painter, {info, surface, bounds, QRegion(bounds.toAlignedRect()),
+                      painter.deviceTransform(), purpose});
+        painter.end();
+        return image.copy(selection);
+    };
+    for (double fontSize : {12.0, 36.0, 72.0}) {
+        info.watermark_font_size = fontSize;
+        for (double gap : {10.0, 56.0, 200.0}) {
+            info.watermark_gap = gap;
+            for (double angle : {0.0, 24.0, -48.0}) {
+                info.watermark_angle = angle;
+                for (bool offset : {false, true}) {
+                    const QImage expected = render(
+                        1.0, snow_canvas_renderer::WatermarkRenderPurpose::ImageExport, offset);
+                    if (offset && angle == 0.0) {
+                        require(
+                            expected ==
+                                render(1.0,
+                                       snow_canvas_renderer::WatermarkRenderPurpose::ImageExport,
+                                       false),
+                            "moving the selection must preserve watermark anchoring and clipping");
+                    }
+                    for (double displayScale : {0.5, 1.0, 1.25, 1.5, 2.0}) {
+                        const QImage actual =
+                            render(displayScale,
+                                   snow_canvas_renderer::WatermarkRenderPurpose::Widget, offset);
+                        require(actual == expected, "preview and export must retain watermark size "
+                                                    "and spacing across DPI and zoom");
+                    }
+                }
+            }
         }
     }
 }
@@ -3166,6 +3262,8 @@ int main(int argc, char** argv) {
     filterRendererClipsEffectAndPreservesContentAboveIt();
     filterRendererAppliesToBackgroundContent();
     watermarkRendererIsViewportAnchoredAndSkipsLowAlpha();
+    watermarkWorkerRenderingMatchesGuiWithColdCache();
+    watermarkPreviewMatchesExportAtDisplayScale();
     watermarkCacheSupportsConcurrentImagesAndGuiPixmapLifecycle();
     adjacentSameTypeFiltersShareTheirPreGroupScene();
     watermarkPreviewCoalescesAndCommitCancelsQueuedPreview();

@@ -148,7 +148,7 @@ impl Default for SnowWatermarkConfig {
             color: SnowColorRgba8::default(),
             text_utf8_len: 0,
             text_utf8: [0; SNOW_WATERMARK_TEXT_UTF8_CAPACITY],
-            font_size: 12.0,
+            font_size: 16.0,
             font_family_utf8_len: 0,
             font_family_utf8: [0; SNOW_FONT_FAMILY_UTF8_CAPACITY],
             angle: 30.0,

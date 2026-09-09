@@ -49,7 +49,7 @@ impl Default for DisplayWatermarkConfig {
             color: ColorRgba8::default(),
             text_len: 0,
             text: [0; WATERMARK_TEXT_CAPACITY],
-            font_size: 12.0,
+            font_size: 16.0,
             font_family_len: 0,
             font_family: [0; WATERMARK_FONT_FAMILY_CAPACITY],
             angle: 30.0,
