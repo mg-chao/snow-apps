@@ -72,6 +72,9 @@ namespace {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle highlight"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Vertical scrolling"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Horizontal scrolling"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Straight arrow"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Curved arrow"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Elbow arrow"),
 };
 
 namespace outlined_icons = adqt::icons::antd::outlined;
@@ -135,6 +138,7 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse click color %1"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse click color transparent"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Show cursor in recording"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Show keystrokes in recording"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Copy recording"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Animated recording formats do not contain audio"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Unavailable while recording"),
@@ -144,6 +148,13 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Green"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Blue"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Yellow"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Drag toolbar"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Send to back"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Send backward"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Bring forward"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Bring to front"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Copy selected elements"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Delete selected elements"),
 };
 constexpr int TOOLBAR_SEPARATOR_HEIGHT = 16;
 constexpr int TOOLBAR_SEPARATOR_WIDTH = 1;
@@ -2625,6 +2636,10 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
                 configureScreenshotToolPaletteStyleButton(button, tooltip.constData(), metrics);
             }
         }
+        for (adqt::widgets::AdSelect* select : {m_textFormattingSelect, m_textPunctuationSelect}) {
+            ScreenshotToolPaletteSelectEditor editor{select, TEXT_TRANSFORM_SELECT_WIDTH};
+            configureScreenshotToolPaletteSelectEditor(editor, metrics);
+        }
         for (adqt::widgets::AdButton* button :
              {m_scrollingVerticalButton, m_scrollingHorizontalButton}) {
             configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
@@ -2662,7 +2677,8 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
         m_recordExportSettingsLayout->invalidate();
     }
     if (m_recordOutputFormatSelect != nullptr) {
-        m_recordOutputFormatSelect->setFixedSize(scaledMetric(76), scaledMetric(STYLE_BUTTON_SIZE));
+        ScreenshotToolPaletteSelectEditor editor{m_recordOutputFormatSelect, 76};
+        configureScreenshotToolPaletteSelectEditor(editor, styleButtonMetrics(m_physicalScale));
     }
     for (adqt::widgets::AdColorPicker* picker :
          {m_recordMouseTrailColorPicker, m_recordMouseClickColorPicker}) {
@@ -4933,7 +4949,9 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
     m_recordOutputFormatSelect->setVariant(adqt::widgets::AdSelect::Variant::Borderless);
     m_recordOutputFormatSelect->setSearchEnabled(false);
     m_recordOutputFormatSelect->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
-    m_recordOutputFormatSelect->setFixedSize(scaledMetric(76), scaledMetric(STYLE_BUTTON_SIZE));
+    ScreenshotToolPaletteSelectEditor outputFormatEditor{m_recordOutputFormatSelect, 76};
+    configureScreenshotToolPaletteSelectEditor(outputFormatEditor,
+                                               styleButtonMetrics(m_physicalScale));
     layout->addWidget(m_recordOutputFormatSelect);
 
     const auto addSeparator = [this, layout](const QString& objectName) {
@@ -5621,8 +5639,10 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
     m_textFormattingSelect->setAllowClear(true);
     m_textFormattingSelect->setVariant(adqt::widgets::AdSelect::Variant::Borderless);
     m_textFormattingSelect->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
-    m_textFormattingSelect->setFixedWidth(scaledMetric(TEXT_TRANSFORM_SELECT_WIDTH));
-    stampScreenshotToolbarReferenceWidth(m_textFormattingSelect, TEXT_TRANSFORM_SELECT_WIDTH);
+    ScreenshotToolPaletteSelectEditor formattingEditor{m_textFormattingSelect,
+                                                       TEXT_TRANSFORM_SELECT_WIDTH};
+    configureScreenshotToolPaletteSelectEditor(formattingEditor,
+                                               actionButtonMetrics(m_physicalScale));
     m_selectActionLayout->addWidget(m_textFormattingSelect);
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     m_textPunctuationSelect = new adqt::widgets::AdSelect(m_selectActionPanel);
@@ -5633,8 +5653,10 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
     m_textPunctuationSelect->setAllowClear(true);
     m_textPunctuationSelect->setVariant(adqt::widgets::AdSelect::Variant::Borderless);
     m_textPunctuationSelect->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
-    m_textPunctuationSelect->setFixedWidth(scaledMetric(TEXT_TRANSFORM_SELECT_WIDTH));
-    stampScreenshotToolbarReferenceWidth(m_textPunctuationSelect, TEXT_TRANSFORM_SELECT_WIDTH);
+    ScreenshotToolPaletteSelectEditor punctuationEditor{m_textPunctuationSelect,
+                                                        TEXT_TRANSFORM_SELECT_WIDTH};
+    configureScreenshotToolPaletteSelectEditor(punctuationEditor,
+                                               actionButtonMetrics(m_physicalScale));
     m_selectActionLayout->addWidget(m_textPunctuationSelect);
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     m_textResetButton = addButton("Reset", outlined_icons::Reload(),

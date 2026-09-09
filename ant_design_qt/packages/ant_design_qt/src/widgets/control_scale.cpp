@@ -96,7 +96,6 @@ bool AdControlScaleScope::publishScale(const AdControlScaleContext& requested,
   }
 
   const QList<AdControlScaleParticipant*> participants = participantsInSubtree(root_);
-  const QList<QWidget*> descendants = root_->findChildren<QWidget*>();
 
   const bool updatesWereEnabled = root_->updatesEnabled();
   const QWidget* topLevel = root_->window();
@@ -120,7 +119,9 @@ bool AdControlScaleScope::publishScale(const AdControlScaleContext& requested,
     root_->resize(logicalClientExtent_);
   }
 
-  for (QWidget* widget : descendants) {
+  // Committing a select scale can rebuild its tag widgets. Enumerate the live
+  // subtree after commits so event cleanup never visits deleted children.
+  for (QWidget* widget : root_->findChildren<QWidget*>()) {
     QCoreApplication::removePostedEvents(widget, QEvent::LayoutRequest);
   }
   QCoreApplication::removePostedEvents(root_, QEvent::LayoutRequest);

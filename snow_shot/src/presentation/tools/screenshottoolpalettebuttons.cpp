@@ -1605,6 +1605,18 @@ void configureScreenshotToolPaletteSelectEditor(ScreenshotToolPaletteSelectEdito
     if (editor.select == nullptr || !screenshotToolPaletteMetricsApplyTo(metrics, editor.select)) {
         return;
     }
+    // Keep style refreshes consistent with the toolbar's reference control height.
+    auto tokens = editor.select->componentTokens();
+    if (tokens.metrics.controlHeight != metrics.buttonSize) {
+        tokens.metrics.controlHeight = metrics.buttonSize;
+        editor.select->setComponentTokens(tokens);
+    }
+    // Editors can be materialized after the host publishes its scale. Apply the
+    // current toolbar scale to their contents as well as their outer geometry.
+    auto context = adqt::widgets::controlScaleContextFor(editor.select);
+    context.logicalScale = metrics.physicalScale;
+    editor.select->prepareControlScale(context);
+    editor.select->commitControlScale(context);
     editor.select->setFixedSize(qMax(1, qRound(editor.baseWidth * metrics.physicalScale)),
                                 qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
     stampScreenshotToolbarReferenceWidth(editor.select, editor.baseWidth);

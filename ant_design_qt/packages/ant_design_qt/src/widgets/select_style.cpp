@@ -446,6 +446,56 @@ SelectVisualStyle resolveSelectVisualStyle(const SelectStyleInput& input,
   style.emptyShadowColor = compositeOn(style.emptyShadowColor, style.popupBg);
   style.emptyContentColor = compositeOn(style.emptyContentColor, style.popupBg);
 
+  // Resolve theme and component overrides in reference units, then scale once.
+  // Every style refresh must retain the same geometry and typography contract.
+  const qreal scale = AdControlScaleContext::normalizeScale(input.logicalScale);
+  auto& metrics = style.metrics;
+  for (int* metric : {&metrics.height,
+                      &metrics.borderRadius,
+                      &metrics.popupBorderRadius,
+                      &metrics.optionBorderRadius,
+                      &metrics.borderWidth,
+                      &metrics.inputPaddingHorizontalBase,
+                      &metrics.horizontalPadding,
+                      &metrics.popupPadding,
+                      &metrics.popupOffset,
+                      &metrics.popupMaxHeight,
+                      &metrics.optionHeight,
+                      &metrics.emptyStateHeight,
+                      &metrics.emptyStateIconWidth,
+                      &metrics.emptyStateIconHeight,
+                      &metrics.emptyStateMarginBlock,
+                      &metrics.emptyStateMarginInline,
+                      &metrics.emptyStateImageMarginBottom,
+                      &metrics.emptyDescriptionFontSize,
+                      &metrics.emptyDescriptionLineHeight,
+                      &metrics.optionPaddingHorizontal,
+                      &metrics.optionPaddingVertical,
+                      &metrics.tagHeight,
+                      &metrics.tagBorderRadius,
+                      &metrics.tagPaddingInlineStart,
+                      &metrics.tagPaddingInlineEnd,
+                      &metrics.tagContentGap,
+                      &metrics.tagItemMargin,
+                      &metrics.tagItemGap,
+                      &metrics.optionStateGap,
+                      &metrics.multiplePaddingInlineStart,
+                      &metrics.multiplePaddingVertical,
+                      &metrics.multipleItemPaddingHorizontal,
+                      &metrics.iconSize,
+                      &metrics.spacing}) {
+    *metric = *metric > 0 ? std::max(1, qRound(*metric * scale)) : 0;
+  }
+  metrics.focusOutlineWidth *= scale;
+  metrics.focusOutlineOffset *= scale;
+  for (QFont* font : {&metrics.selectorFont, &metrics.optionFont}) {
+    if (font->pixelSize() > 0) {
+      font->setPixelSize(std::max(1, qRound(font->pixelSize() * scale)));
+    } else if (font->pointSizeF() > 0) {
+      font->setPointSizeF(font->pointSizeF() * scale);
+    }
+  }
+
   return style;
 }
 

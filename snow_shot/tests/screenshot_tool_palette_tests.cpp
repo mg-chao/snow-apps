@@ -79,6 +79,8 @@ void require(bool condition, const char* message) {
     }
 }
 
+QWidget* controlWithTooltip(ScreenshotToolPalette& palette, const char* tooltip);
+
 QImage renderButton(QWidget& button) {
     QImage image(button.size(), QImage::Format_RGBA8888);
     image.fill(Qt::transparent);
@@ -887,6 +889,78 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
     verifyColorIconTooltips();
     require(trail->toolTip().isEmpty() && click->toolTip().isEmpty(),
             "retranslation should keep color picker tooltips on their icons");
+}
+
+void dynamicToolbarLabelsUseEveryTranslationCatalog() {
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    require(language.setLanguage(QStringLiteral("en_US")),
+            "English should be active before testing dynamic toolbar translations");
+
+    ScreenshotToolPalette::Options options;
+    options.showDragHandle = true;
+    options.showSelectTool = true;
+    options.showRecordingControls = true;
+    options.recordingDrawingMode = true;
+    ScreenshotToolPalette palette(options);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    require(palette.ensureStyleFamily(ScreenshotToolPalette::Tool::Arrow),
+            "arrow controls should materialize for translation coverage");
+
+    const QStringList objectNames{
+        QStringLiteral("screenshotToolbarDragHandle"),
+        QStringLiteral("screenRecordingShowKeyboard"),
+    };
+    QVector<QWidget*> controls;
+    for (const QString& objectName : objectNames) {
+        QWidget* control = palette.findChild<QWidget*>(objectName);
+        require(control != nullptr, "dynamic toolbar control should be present");
+        controls.push_back(control);
+    }
+    const char* sourceLabels[] = {
+        "Send to back",   "Send backward",          "Bring forward",
+        "Bring to front", "Copy selected elements", "Delete selected elements",
+        "Straight arrow", "Curved arrow",           "Elbow arrow",
+    };
+    for (const char* source : sourceLabels) {
+        QWidget* control = controlWithTooltip(palette, source);
+        require(control != nullptr, "dynamic toolbar source label should be present");
+        controls.push_back(control);
+    }
+
+    struct TranslationExpectation {
+        QString language;
+        QStringList labels;
+    };
+    const TranslationExpectation expectations[] = {
+        {QStringLiteral("zh_CN"),
+         {QStringLiteral("拖动工具栏"), QStringLiteral("在录制中显示按键"),
+          QStringLiteral("置于底层"), QStringLiteral("下移一层"), QStringLiteral("上移一层"),
+          QStringLiteral("置于顶层"), QStringLiteral("复制选中元素"),
+          QStringLiteral("删除选中元素"), QStringLiteral("直线箭头"), QStringLiteral("曲线箭头"),
+          QStringLiteral("折线箭头")}},
+        {QStringLiteral("zh_TW"),
+         {QStringLiteral("拖曳工具列"), QStringLiteral("在錄製中顯示按鍵"),
+          QStringLiteral("移至最下層"), QStringLiteral("下移一層"), QStringLiteral("上移一層"),
+          QStringLiteral("移至最上層"), QStringLiteral("複製選取的元素"),
+          QStringLiteral("刪除選取的元素"), QStringLiteral("直線箭頭"), QStringLiteral("曲線箭頭"),
+          QStringLiteral("折線箭頭")}},
+    };
+    for (const TranslationExpectation& expectation : expectations) {
+        require(language.setLanguage(expectation.language),
+                "dynamic toolbar language setup failed");
+        QCoreApplication::processEvents();
+        require(controls.size() == expectation.labels.size(),
+                "dynamic toolbar translation fixture should stay aligned");
+        for (int index = 0; index < controls.size(); ++index) {
+            require(controls.at(index)->toolTip() == expectation.labels.at(index) &&
+                        controls.at(index)->accessibleName() == expectation.labels.at(index),
+                    "dynamic toolbar labels must use the active translation catalog");
+        }
+    }
+
+    require(language.setLanguage(QStringLiteral("en_US")),
+            "English should be restorable after dynamic toolbar translations");
+    QCoreApplication::processEvents();
 }
 
 void numericStrokeWidthPreviewUsesLineWithinPreviewBounds() {
@@ -8509,6 +8583,11 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--dynamic-i18n-only"))) {
+        dynamicToolbarLabelsUseEveryTranslationCatalog();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--color-control-styles-only"))) {
         translucentColorSwatchesShowCheckerboardUnderlay();
         configurationDrivenStyleEditorsShareStructuralContracts();
@@ -8620,6 +8699,7 @@ int main(int argc, char** argv) {
     recordingControlsRemainLaidOutAcrossStateChanges();
     translucentColorSwatchesShowCheckerboardUnderlay();
     recordingExportSettingsAndDrawingAvailabilityFollowSessionState();
+    dynamicToolbarLabelsUseEveryTranslationCatalog();
     numericStrokeWidthPreviewUsesLineWithinPreviewBounds();
     secondaryControlsMaterializeOnlyForTheRequestedFamily();
     textAndHighlightStrokeWidthTriggersUseSharedPreviewButton();

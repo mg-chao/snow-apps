@@ -21,6 +21,7 @@
 #include <QImage>
 #include <QLabel>
 #include <QLayout>
+#include <QLineEdit>
 #include <QMargins>
 #include <QPainter>
 #include <QPixmap>
@@ -203,6 +204,107 @@ void toolbarControlsStayVerticallyCentered() {
         }
     }
     require(centered, "toolbar controls must remain vertically centered at every size");
+}
+
+void drawingSelectsInheritScaleWhenMaterialized() {
+    ScreenshotToolPalette toolbar(ScreenshotToolPalette::Options{});
+    adqt::widgets::AdControlScaleScope scope(&toolbar);
+    prepare(toolbar);
+    toolbar.show();
+    bool matched = true;
+    for (const qreal scale : {0.8, 1.0, 0.64, 0.8}) {
+        scope.publishScale(
+            adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(1, 1, scale));
+        toolbar.setPhysicalScale(scale);
+        for (const auto tool :
+             {ScreenshotToolPalette::Tool::Text, ScreenshotToolPalette::Tool::RectangleFilter,
+              ScreenshotToolPalette::Tool::SerialNumber, ScreenshotToolPalette::Tool::PenFilter,
+              ScreenshotToolPalette::Tool::Text}) {
+            toolbar.setActiveTool(tool);
+            flushEvents();
+            const auto selects = toolbar.stylePanel()->findChildren<adqt::widgets::AdSelect*>();
+            require(!selects.isEmpty(), "drawing tool must materialize its select editor");
+            for (auto* select : selects) {
+                if (!select->isVisible()) {
+                    continue;
+                }
+                select->setStatus(adqt::widgets::AdSelect::Status::Warning);
+                select->setStatus(adqt::widgets::AdSelect::Status::None);
+                flushEvents();
+                if (select->height() != qRound(28 * scale) ||
+                    select->lineEdit()->font().pixelSize() != qRound(14 * scale)) {
+                    matched = false;
+                    std::cerr << "tool=" << static_cast<int>(tool) << " scale=" << scale
+                              << " select=" << select->objectName().toStdString()
+                              << " height=" << select->height()
+                              << " font=" << select->lineEdit()->font().pixelSize() << '\n';
+                }
+            }
+        }
+    }
+    require(matched, "drawing selects must inherit scale on creation, reuse, and style refresh");
+}
+
+void toolbarSelectHeightSurvivesStyleRefresh() {
+    for (const int buttonSize : {28, 32}) {
+        QWidget host;
+        ScreenshotToolPaletteSelectEditorConfig config;
+        auto editor = createScreenshotToolPaletteSelectEditor(
+            &host, config, ScreenshotToolPaletteButtonMetrics{buttonSize, 18, 1.0});
+        adqt::widgets::AdControlScaleScope scope(&host);
+        for (const qreal scale : {0.8, 1.0, 0.64}) {
+            scope.publishScale(
+                adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(1, 1, scale));
+            configureScreenshotToolPaletteSelectEditor(
+                editor, ScreenshotToolPaletteButtonMetrics{buttonSize, 18, scale});
+            editor.select->setStatus(adqt::widgets::AdSelect::Status::Warning);
+            editor.select->setStatus(adqt::widgets::AdSelect::Status::None);
+            require(editor.select->height() == qRound(buttonSize * scale),
+                    "toolbar selects must retain the toolbar height after style refreshes");
+        }
+    }
+}
+
+void secondaryToolbarControlsFollowScale() {
+    ScreenshotToolPalette::Options options;
+    options.showOcrTool = true;
+    options.showTextTranslationTool = true;
+    options.showTableTool = true;
+    options.showScrollingScreenshotTool = true;
+    ScreenshotToolPalette toolbar(options);
+    adqt::widgets::AdControlScaleScope scaleScope(&toolbar);
+    prepare(toolbar);
+    toolbar.show();
+    bool matched = true;
+    for (const qreal scale : {0.8, 1.0, 0.64, 0.8 / 1.5, 1.25, 0.8, 1.0}) {
+        scaleScope.publishScale(
+            adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(1.0, 1.0, scale));
+        toolbar.setPhysicalScale(scale);
+        for (const auto tool :
+             {ScreenshotToolPalette::Tool::Select, ScreenshotToolPalette::Tool::Ocr,
+              ScreenshotToolPalette::Tool::TextTranslation, ScreenshotToolPalette::Tool::Table,
+              ScreenshotToolPalette::Tool::ScrollingScreenshot}) {
+            toolbar.setActiveTool(tool);
+            flushEvents();
+            QWidget* panel = toolbar.actionPanel();
+            require(panel != nullptr, "action tools must materialize their secondary panel");
+            for (QWidget* child : panel->findChildren<QWidget*>()) {
+                if (!child->isVisible() || child->isWindow() ||
+                    (qobject_cast<adqt::widgets::AdButton*>(child) == nullptr &&
+                     qobject_cast<adqt::widgets::AdSelect*>(child) == nullptr &&
+                     qobject_cast<adqt::widgets::AdSlider*>(child) == nullptr)) {
+                    continue;
+                }
+                if (child->height() != qRound(32 * scale)) {
+                    matched = false;
+                    std::cerr << "scale=" << scale << " child=" << child->objectName().toStdString()
+                              << " height=" << child->height() << " expected=" << qRound(32 * scale)
+                              << '\n';
+                }
+            }
+        }
+    }
+    require(matched, "all secondary action controls must follow the toolbar scale");
 }
 
 void historyButtonsFollowCanvasAvailability() {
@@ -920,6 +1022,9 @@ int main(int argc, char** argv) {
         return 0;
     }
     smallToolbarIconStaysVerticallyCentered();
+    drawingSelectsInheritScaleWhenMaterialized();
+    toolbarSelectHeightSurvivesStyleRefresh();
+    secondaryToolbarControlsFollowScale();
     toolbarControlsStayVerticallyCentered();
     historyButtonsFollowCanvasAvailability();
     toolbarSurfacesFollowThemeBackground();
