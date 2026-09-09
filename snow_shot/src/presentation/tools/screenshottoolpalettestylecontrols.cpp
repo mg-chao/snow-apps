@@ -3630,7 +3630,6 @@ void ScreenshotToolPaletteStyleControls::setPenHighlightColor(const QColor& colo
                 return false;
             }
             style.stroke = color;
-            style.stroke.setAlpha(255);
             return true;
         },
         [](const SnowCanvasShapeStyle& style, SnowCanvasShapeStyle& creation) {
@@ -3687,7 +3686,6 @@ void ScreenshotToolPaletteStyleControls::setArrowStrokeColor(const QColor& color
                                 return false;
                             }
                             style.stroke = color;
-                            style.stroke.setAlpha(255);
                             return true;
                         });
 }

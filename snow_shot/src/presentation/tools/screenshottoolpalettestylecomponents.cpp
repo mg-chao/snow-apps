@@ -549,7 +549,7 @@ void ScreenshotToolPaletteStrokeEditor::build(
         SnowCanvasStrokeStyle::Dotted,
     };
     m_picker =
-        createColorPickerShell(parent, config.accessibleName, initialColor, false, false, services);
+        createColorPickerShell(parent, config.accessibleName, initialColor, true, false, services);
     m_trigger = createScreenshotToolPaletteStrokeStyleTrigger(
         m_picker, config.accessibleName.toUtf8().constData(), initialColor, initialStyle, metrics);
     configureStylePopupTrigger(m_trigger, config.accessibleName);
@@ -911,7 +911,7 @@ void ScreenshotToolPaletteWidthColorEditor::build(
 
     m_widthValues = config.widthValues;
     m_colorValues = config.colorValues;
-    m_picker = createColorPickerShell(parent, config.accessibleName, initialColor, false,
+    m_picker = createColorPickerShell(parent, config.accessibleName, initialColor, true,
                                       config.observePopup, services);
 
     m_trigger = createScreenshotToolPaletteStrokeWidthButton(

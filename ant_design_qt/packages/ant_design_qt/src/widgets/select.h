@@ -575,7 +575,7 @@ class AdSelect final : public QWidget,
   int groupRole_ = DefaultGroupRole;
   QList<int> searchRoles_;
   QPointer<QAbstractItemDelegate> itemDelegateOverride_;
-  QWidget* popupFooterWidget_ = nullptr;
+  QPointer<QWidget> popupFooterWidget_;
   QVariantList customTagValues_;
   QVariantList currentValuesCache_;
   QVariant currentValueCache_;
@@ -610,7 +610,7 @@ class AdSelect final : public QWidget,
   QToolButton* clearButton_ = nullptr;
   QToolButton* suffixButton_ = nullptr;
 
-  QFrame* popup_ = nullptr;
+  QPointer<QFrame> popup_;
   QVBoxLayout* popupLayout_ = nullptr;
   AdScrollArea* popupScrollArea_ = nullptr;
   QListView* listView_ = nullptr;

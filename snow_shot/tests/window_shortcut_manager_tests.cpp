@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QSpinBox>
 #include <QPlainTextEdit>
 #include <QTextBrowser>
 #include <QTextEdit>
@@ -212,6 +213,12 @@ void textGuardsLeaveInputUntouched() {
 
 void readOnlyTextSurfacesRemainCommandRoutable() {
     QWidget window;
+    QSpinBox numericInput(&window);
+    require(WindowShortcutManager::focusAcceptsTextInput(&numericInput),
+            "a numeric editor owning focus must suppress window shortcuts");
+    numericInput.setReadOnly(true);
+    require(!WindowShortcutManager::focusAcceptsTextInput(&numericInput),
+            "a read-only numeric editor must remain command-routable");
     QLineEdit lineEdit(&window);
     QTextEdit textEdit(&window);
     QWidget textEditChild(&textEdit);

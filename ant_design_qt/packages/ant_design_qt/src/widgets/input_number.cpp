@@ -809,7 +809,9 @@ AdInputNumber::AdInputNumber(QWidget* parent)
     }
   });
 
-  connect(editor_, &QLineEdit::editingFinished, this, [this]() {
+  // QAbstractSpinBox consumes Return before the line edit can finish editing.
+  // Commit first so external editingFinished slots observe the entered value.
+  connect(this, &QAbstractSpinBox::editingFinished, this, [this]() {
     userTyping_ = false;
     commitFromEditor();
   });
