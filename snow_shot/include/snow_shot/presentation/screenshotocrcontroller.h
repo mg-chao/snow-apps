@@ -8,6 +8,8 @@
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/network/snowshotapiclient.h"
 
+#include "snow_shot/presentation/screenshotrecognitionimage.h"
+#include <optional>
 #include <QObject>
 #include <QPointer>
 #include <QImage>
@@ -78,6 +80,8 @@ class ScreenshotOcrController final : public QObject {
     // Invalidates the capture session and cancels all recognition work.
     void invalidateSession();
     [[nodiscard]] bool active() const;
+    [[nodiscard]] std::optional<ScreenshotRecognitionImageSnapshot>
+    imageSnapshot(const ScreenshotResultStyle& style) const;
     [[nodiscard]] Mode mode() const;
     [[nodiscard]] bool tableModeActive() const;
     [[nodiscard]] bool qrModeActive() const;
@@ -124,9 +128,8 @@ class ScreenshotOcrController final : public QObject {
     void updateOverlays() const;
     void
     applyOcrBackgroundToOverlays(const std::shared_ptr<ScreenshotOcrPresentation>& presentation,
-                                 QImage filteredImage = {},
-                                 QRectF filteredImageCanvasRect = {}) const;
-    void clearOcrBackgroundFromOverlays() const;
+                                 QImage filteredImage = {}, QRectF filteredImageCanvasRect = {});
+    void clearOcrBackgroundFromOverlays();
     void deactivateImpl(bool preserveRecognitionWindow);
     void restorePreviousToolAfterFailure();
     void showStatus(const QString& message, bool error) const;
@@ -144,6 +147,9 @@ class ScreenshotOcrController final : public QObject {
     QPointer<ScreenshotRecognitionWindow> m_recognitionWindow;
     QString m_surfaceKey;
     QImage m_surfaceImage;
+    QImage m_filteredImage;
+    QRectF m_filteredCanvasRect;
+    std::shared_ptr<ScreenshotOcrPresentation> m_backgroundPresentation;
     Mode m_mode = Mode::Text;
     bool m_active = false;
 };

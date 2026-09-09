@@ -189,6 +189,17 @@ bool setColorValue(const QString& key, const QColor& color) {
 }
 } // namespace
 
+bool TextRecognitionSettings::saveRecognitionResultAsImage() const {
+    return cache()
+        .value(QStringLiteral("text_recognition/save_recognition_result_as_image"))
+        .toBool();
+}
+
+bool TextRecognitionSettings::setSaveRecognitionResultAsImage(bool enabled) const {
+    return cache().setValue(QStringLiteral("text_recognition/save_recognition_result_as_image"),
+                            enabled);
+}
+
 QColor colorFromRgbaString(const QString& value) {
     const QString normalized = value.trimmed();
     if (normalized.size() != 9 || !normalized.startsWith(u'#')) {

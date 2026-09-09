@@ -11,6 +11,12 @@
 #include <QMetaType>
 
 namespace snow_shot::storage {
+class TextRecognitionSettings final {
+  public:
+    [[nodiscard]] bool saveRecognitionResultAsImage() const;
+    bool setSaveRecognitionResultAsImage(bool enabled) const;
+};
+
 struct ScreenshotSavePathShortcut {
     QString name;
     QString path;

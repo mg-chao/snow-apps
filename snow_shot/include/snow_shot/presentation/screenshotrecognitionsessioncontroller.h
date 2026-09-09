@@ -138,6 +138,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     [[nodiscard]] bool editing() const;
     [[nodiscard]] bool translating() const;
     [[nodiscard]] bool originalImageTranslationActive() const;
+    [[nodiscard]] bool originalImageVisible() const;
     [[nodiscard]] bool hasTextResult() const;
     [[nodiscard]] QString textDraft() const;
     [[nodiscard]] QString originalText() const;

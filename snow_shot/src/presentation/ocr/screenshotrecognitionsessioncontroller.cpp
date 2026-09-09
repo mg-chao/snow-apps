@@ -1139,6 +1139,10 @@ bool ScreenshotRecognitionSessionController::originalImageTranslationActive() co
     return m_translating && m_translationInImage;
 }
 
+bool ScreenshotRecognitionSessionController::originalImageVisible() const {
+    return m_active && m_mode == Mode::Text && !editing();
+}
+
 bool ScreenshotRecognitionSessionController::hasTextResult() const {
     const QString key = m_textCacheKey.isEmpty() ? m_target.key : m_textCacheKey;
     return !key.isEmpty() && m_textCache.contains(key);

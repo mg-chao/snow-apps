@@ -179,6 +179,8 @@ void displayedRecognitionSnapshotPreservesCachedResults() {
     ControllableOcrRecognition recognition;
     PromptRecorder recorder;
     auto controller = makeTextSession(recognition, recorder);
+    require(!controller->originalImageVisible(),
+            "inactive recognition is not an original-image view");
     auto presentation = std::make_shared<ScreenshotOcrPresentation>();
     presentation->selection = QRect(0, 0, 64, 64);
     presentation->lines.push_back(
@@ -202,9 +204,12 @@ void displayedRecognitionSnapshotPreservesCachedResults() {
                 QStringLiteral("Visible OCR"),
             "an inactive session must fall back to its cached source result");
     controller->activate(ScreenshotRecognitionSessionController::Mode::Text);
+    require(controller->originalImageVisible(), "active OCR is an original-image view");
     presentation->selectAll();
     const auto snapshot = controller->recognitionResultsSnapshot();
     controller->deactivate();
+    require(!controller->originalImageVisible(),
+            "deactivation immediately excludes recognition export");
     require(
         snapshot.text.has_value() && snapshot.text->presentation != presentation &&
             snapshot.text->presentation->lines.front().text == QStringLiteral("Visible OCR") &&
@@ -220,7 +225,7 @@ void displayedRecognitionSnapshotPreservesCachedResults() {
             "a display snapshot must preserve the session's table and QR results");
     controller->activate(ScreenshotRecognitionSessionController::Mode::Text);
     controller->beginTextEditing();
-    require(controller->editing() &&
+    require(controller->editing() && !controller->originalImageVisible() &&
                 controller->recognitionResultsSnapshot().text->presentation->lines[0].text ==
                     QStringLiteral("Visible OCR"),
             "text editor panels must snapshot cached OCR instead of transient editor content");
@@ -229,6 +234,7 @@ void displayedRecognitionSnapshotPreservesCachedResults() {
     require(controller->activateCachedTextTranslation() &&
                 controller->activateCachedTextTranslation() &&
                 controller->originalImageTranslationActive() &&
+                controller->originalImageVisible() &&
                 controller->originalText() == QStringLiteral("Visible OCR") &&
                 controller->textDraft() == QStringLiteral("Translated OCR"),
             "restoring cached translation must be idempotent and retain source OCR");

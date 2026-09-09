@@ -43,6 +43,7 @@
 #include <QFrame>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFontDatabase>
 #include <QGraphicsItem>
 #include <QGraphicsScene>
 #include <QGraphicsView>
@@ -104,6 +105,50 @@ class ScreenshotPinnedWindowTestAccess {
         static_cast<void>(window.m_nativeGeometryController->initialize(config.nativeGeometry));
         window.m_presented = true;
         window.updateCanvasViewport();
+    }
+
+    static ScreenshotRecognitionSessionController*
+    recognitionOffscreen(ScreenshotPinnedWindow& window, ScreenshotPinnedWindow::Config config) {
+        window.m_recognitionContent = new ScreenshotRecognitionWindow(
+            {}, &window, ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild);
+        ScreenshotRecognitionSessionActions actions;
+        actions.ensureContent = [&window]() { return window.m_recognitionContent; };
+        actions.applyOcrPresentation =
+            [&window](std::shared_ptr<ScreenshotOcrPresentation> presentation) {
+                window.m_ocrReady = true;
+                window.m_ocrMode = true;
+                window.m_originalOcrPresentation = std::move(presentation);
+                window.updateOcrPresentation();
+            };
+        window.m_recognitionSession = std::make_unique<ScreenshotRecognitionSessionController>(
+            nullptr, nullptr, nullptr, std::move(actions), &window);
+        auto* session = window.m_recognitionSession.get();
+        session->setTarget(
+            {config.recognitionResults.key, window.m_originalImage, window.m_canvasSourceRect});
+        session->seedRecognitionResults(config.recognitionResults);
+        session->activate(ScreenshotRecognitionSessionController::Mode::Text);
+        return session;
+    }
+    static std::shared_ptr<ScreenshotExportArtifact> fileSave(ScreenshotPinnedWindow& window) {
+        return window.fileSaveArtifact();
+    }
+    static void rotateRecognitionOffscreen(ScreenshotPinnedWindow& window) {
+        window.m_imageTransform =
+            QImage::trueMatrix(QTransform().rotate(90), window.m_originalImage.width(),
+                               window.m_originalImage.height());
+        window.m_transformedImage = window.m_originalImage.transformed(window.m_imageTransform);
+        window.m_backgroundCanvasRect.setSize(QSizeF(window.m_transformedImage.size()));
+        window.updateOcrPresentation();
+    }
+    static const ScreenshotOcrPresentation&
+    displayedRecognition(const ScreenshotPinnedWindow& window) {
+        return *window.m_displayOcrPresentation;
+    }
+    static void quickSave(ScreenshotPinnedWindow& window) {
+        window.quickSave();
+    }
+    static void saveAsFile(ScreenshotPinnedWindow& window) {
+        window.saveAsFile();
     }
 
     static void leaveViewportAtPreviousDpi(ScreenshotPinnedWindow& window, qreal ratio) {
@@ -5225,6 +5270,133 @@ void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
     require(processUntilDeleted(guardedWindow, 2000),
             "pinned window was not deleted after the history test");
 }
+void pinnedRecognitionSaveSnapshotsAndRoutesOffscreen() {
+#if defined(Q_OS_WIN)
+    require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
+            "load offscreen recognition font");
+    QApplication::setFont(QFont(QStringLiteral("Segoe UI")));
+#endif
+
+    QTemporaryDir directory;
+    const snow_shot::storage::ScreenshotSettings output;
+    const snow_shot::storage::TextRecognitionSettings settings;
+    require(directory.isValid() && output.setImageSaveDirectory(directory.path()) &&
+                output.setLastManualSaveDirectory(directory.path()) &&
+                output.setLastManualSaveFormat(QStringLiteral("png")) &&
+                output.setImageFormat(QStringLiteral("png")) &&
+                output.setAutoSaveFilenameFormat(QStringLiteral("Recognized")) &&
+                settings.setSaveRecognitionResultAsImage(true),
+            "recognition save settings");
+    ScreenshotPinnedWindow window;
+    auto config = cachedOcrPinConfig(nullptr);
+    config.recognitionResults.text->presentation->lines[0].sourceLineQuads = {
+        config.recognitionResults.text->presentation->lines[0].quad};
+    config.recognitionResults.translatedText =
+        std::make_shared<ScreenshotOcrPresentation>(*config.recognitionResults.text->presentation);
+    config.recognitionResults.translatedText->setLineText(0, QStringLiteral("Translated result"));
+    ScreenshotPinnedWindowTestAccess::restoreOffscreen(window, config);
+    auto* session = ScreenshotPinnedWindowTestAccess::recognitionOffscreen(window, config);
+    const auto pixels = [&](std::shared_ptr<ScreenshotExportArtifact> artifact) {
+        QImage result;
+        bool complete = false;
+        require(artifact &&
+                    artifact->requestImage(&window,
+                                           [&](ScreenshotExportImageResult rendered) {
+                                               require(rendered.succeeded(),
+                                                       "recognition artifact renders successfully");
+                                               result = rendered.image;
+                                               complete = true;
+                                           }),
+                "recognition artifact schedules");
+        QElapsedTimer timer;
+        timer.start();
+        while (!complete && timer.elapsed() < 10000)
+            waitForUi(5);
+        require(complete, "recognition artifact completes");
+        return result;
+    };
+    const QImage recognized = pixels(ScreenshotPinnedWindowTestAccess::fileSave(window));
+    require(recognized != config.imageSource.materializedImage, "OCR text appears in saved image");
+    require(settings.setSaveRecognitionResultAsImage(false),
+            "disable recognition saving on open pin");
+    require(pixels(ScreenshotPinnedWindowTestAccess::fileSave(window)) ==
+                config.imageSource.materializedImage,
+            "disabled option preserves ordinary image export");
+    require(settings.setSaveRecognitionResultAsImage(true), "reenable recognition saving");
+    require(session->activateCachedTextTranslation(), "activate cached original-image translation");
+    auto frozen = ScreenshotPinnedWindowTestAccess::fileSave(window);
+    const QImage translated = pixels(frozen);
+    require(translated != recognized, "current translation replaces source OCR text");
+    session->endTextEditing();
+    require(pixels(frozen) == translated,
+            "later display changes cannot alter prepared save artifact");
+    session->beginTextEditing();
+    require(pixels(ScreenshotPinnedWindowTestAccess::fileSave(window)) ==
+                config.imageSource.materializedImage,
+            "text-only editor preserves ordinary image export");
+    session->endTextEditing();
+    const auto waitFile = [&](const QString& path) {
+        QElapsedTimer timer;
+        timer.start();
+        while ((!QFileInfo::exists(path) || window.property("saveDialogOpen").toBool()) &&
+               timer.elapsed() < 10000)
+            waitForUi(10);
+        require(QFileInfo::exists(path), "recognition image file produced");
+        waitForUi(20);
+        return QImage(path).convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    };
+    ScreenshotPinnedWindowTestAccess::quickSave(window);
+    require(waitFile(directory.filePath(QStringLiteral("Recognized.png"))) == recognized,
+            "Quick Save exports recognition pixels");
+    require(output.setSaveAsFileDialog(QStringLiteral("snow_shot")), "select custom save dialog");
+    ScreenshotPinnedWindowTestAccess::saveAsFile(window);
+    auto* modal =
+        window.findChild<adqt::widgets::AdModal*>(QStringLiteral("screenshotSaveAsFileModal"));
+    require(modal, "recognition custom save dialog opens");
+    require(session->activateCachedTextTranslation(), "restore translation during save dialog");
+    QElapsedTimer ready;
+    ready.start();
+    while (!modal->acceptButton()->isEnabled() && ready.elapsed() < 10000)
+        waitForUi(5);
+    require(modal->acceptButton()->isEnabled(), "recognition preview becomes ready");
+    modal->contentWidget()
+        ->findChild<adqt::widgets::AdLineEdit*>(QStringLiteral("saveFilenameInput"))
+        ->setText(QStringLiteral("frozen.png"));
+    modal->acceptButton()->click();
+    require(waitFile(directory.filePath(QStringLiteral("frozen.png"))) == recognized,
+            "custom dialog saves activation snapshot despite later translation updates");
+    require(output.setSaveAsFileDialog(QStringLiteral("system")), "select native dialog flow");
+    const bool native = QApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
+    QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, true);
+    const auto restoreNative =
+        qScopeGuard([native] { QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, native); });
+    QTimer accept;
+    accept.setInterval(10);
+    QObject::connect(&accept, &QTimer::timeout, &window, [&] {
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (auto* dialog = qobject_cast<QFileDialog*>(widget)) {
+                session->endTextEditing();
+                dialog->selectFile(directory.filePath(QStringLiteral("native.png")));
+                QMetaObject::invokeMethod(dialog, "accept", Qt::DirectConnection);
+            }
+        }
+    });
+    accept.start();
+    ScreenshotPinnedWindowTestAccess::saveAsFile(window);
+    accept.stop();
+    require(waitFile(directory.filePath(QStringLiteral("native.png"))) == translated,
+            "native dialog also freezes recognition before modal event processing");
+    ScreenshotPinnedWindowTestAccess::leaveViewportAtPreviousDpi(window, 1.5);
+    require(pixels(ScreenshotPinnedWindowTestAccess::fileSave(window)) == recognized,
+            "window zoom and display DPI do not change exported recognition pixels");
+    ScreenshotPinnedWindowTestAccess::rotateRecognitionOffscreen(window);
+    const auto& displayed = ScreenshotPinnedWindowTestAccess::displayedRecognition(window);
+    require(displayed.lines[0].sourceLineQuads[0] == displayed.lines[0].quad &&
+                pixels(ScreenshotPinnedWindowTestAccess::fileSave(window)).size() ==
+                    QSize(180, 320),
+            "rotation maps paragraph background regions together with text and native dimensions");
+}
+
 void pinnedQuickSaveKeepsWindowAndConfiguredOutput() {
     const snow_shot::storage::ScreenshotSettings settings;
     QTemporaryDir directory;
@@ -5517,6 +5689,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--image-conversion-only"))) {
             pinnedImageConversionsSurviveRestartWithoutProvider();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--recognition-save-only"))) {
+            pinnedRecognitionSaveSnapshotsAndRoutesOffscreen();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--quick-save-only"))) {

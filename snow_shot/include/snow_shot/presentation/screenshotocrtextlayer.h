@@ -21,6 +21,9 @@ class ScreenshotOcrTextLayer final : public QGraphicsView {
 
     void setPresentation(std::shared_ptr<ScreenshotOcrPresentation> presentation);
     void clearPresentation();
+    [[nodiscard]] QColor textColor() const {
+        return m_textColor;
+    }
     void synchronize(const QTransform& canvasToViewTransform, const QRect& viewportRect);
     void updateSelection();
     void updateLineText(int lineIndex);

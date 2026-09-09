@@ -133,6 +133,24 @@ int main(int argc, char** argv) {
     {
         snow_shot::presentation::GlobalShortcutManager shortcuts;
         settings::BuiltInSettingsBackend backend(shortcuts);
+        const auto recognitionSave = settings::SettingsSwitchBinding::SaveRecognitionResultAsImage;
+        require(backend.switchValue(recognitionSave), "recognition image export defaults on");
+        require(backend.applySwitchValue(recognitionSave, false) &&
+                    !storage::TextRecognitionSettings().saveRecognitionResultAsImage(),
+                "recognition image export persists disabled setting");
+        const auto oldFill =
+            applicationStorage.configuration().value(QStringLiteral("text_recognition/fill_style"));
+        require(applicationStorage.configuration().setValue(
+                    QStringLiteral("text_recognition/fill_style"), QStringLiteral("blur")) &&
+                    backend.resetSection(settings::SettingsSectionReset::TextRecognitionBehavior) &&
+                    backend.switchValue(recognitionSave) &&
+                    applicationStorage.configuration().value(
+                        QStringLiteral("text_recognition/fill_style")) == QStringLiteral("blur"),
+                "recognition save reset restores only its own setting");
+        require(applicationStorage.configuration().setValue(
+                    QStringLiteral("text_recognition/fill_style"), oldFill),
+                "restore recognition appearance fixture");
+
         require(!applicationStorage.configuration()
                         .value(QStringLiteral("text_recognition/direct_ml_acceleration"))
                         .toBool() &&
