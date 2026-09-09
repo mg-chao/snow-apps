@@ -355,6 +355,8 @@ struct ScreenRecordingController::Impl {
         updateCaptureRegion();
         areaWindow = new ScreenRecordingAreaWindow();
         toolbarWindow = new ScreenRecordingToolbarWindow();
+        // Keep the toolbar above the area even when drawing or resizing activates the area.
+        toolbarWindow->setTransientOwnerWindow(areaWindow);
         areaWindow->setAttribute(Qt::WA_DeleteOnClose, false);
         toolbarWindow->setAttribute(Qt::WA_DeleteOnClose, false);
         areaWindow->setPhysicalRegion(region);
