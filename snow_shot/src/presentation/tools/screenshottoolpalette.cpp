@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/presentation/shortcutdisplaytext.h"
 
 #include "screenshottoolbarperfinstrumentation.h"
 
@@ -39,7 +40,6 @@
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPainter>
-#include <QOperatingSystemVersion>
 #include <QSizePolicy>
 #include <QSignalBlocker>
 #include <QSpacerItem>
@@ -612,21 +612,6 @@ QString drawingShortcutToolIdForTooltipSource(const QString& source) {
     return {};
 }
 
-QString formatDrawingShortcutForTooltip(QString shortcut) {
-    shortcut = shortcut.trimmed();
-    shortcut.replace(QStringLiteral("Period"), QStringLiteral("."));
-    shortcut.replace(QStringLiteral("Comma"), QStringLiteral(","));
-    if (QOperatingSystemVersion::currentType() == QOperatingSystemVersion::MacOS) {
-        shortcut.replace(QStringLiteral("Meta"), QStringLiteral("Command"));
-        shortcut.replace(QStringLiteral("Alt"), QStringLiteral("Option"));
-        shortcut.replace(QStringLiteral("Ctrl"), QStringLiteral("Control"));
-    } else {
-        shortcut.replace(QStringLiteral("Meta"), QStringLiteral("Win"));
-        shortcut.replace(QStringLiteral("Super"), QStringLiteral("Win"));
-    }
-    return shortcut;
-}
-
 void applyScreenshotShortcutTooltip(QWidget* widget, const QString& source,
                                     const QString& actionId) {
     if (widget == nullptr || source.isEmpty() || actionId.isEmpty()) {
@@ -637,13 +622,8 @@ void applyScreenshotShortcutTooltip(QWidget* widget, const QString& source,
     widget->setProperty("snowShotScreenshotShortcutTooltipActionId", actionId);
     const QStringList shortcuts =
         snow_shot::storage::ScreenshotShortcutSettings().shortcuts(actionId);
-    QStringList displayShortcuts;
-    for (const QString& shortcut : shortcuts) {
-        const QString displayShortcut = formatDrawingShortcutForTooltip(shortcut);
-        if (!displayShortcut.isEmpty()) {
-            displayShortcuts.push_back(displayShortcut);
-        }
-    }
+    const QString displayShortcuts =
+        snow_shot::presentation::formatShortcutListDisplayText(shortcuts);
     const QString title = ScreenshotToolPaletteTranslationText(source).translated();
     if (displayShortcuts.isEmpty()) {
         configureScreenshotToolPaletteTooltip(widget, ScreenshotToolPaletteTranslationText(source));
@@ -653,7 +633,7 @@ void applyScreenshotShortcutTooltip(QWidget* widget, const QString& source,
     configureScreenshotToolPaletteTooltip(
         widget, ScreenshotToolPaletteTranslationText(QStringLiteral("%1 (%2)"))
                     .arg(title)
-                    .arg(displayShortcuts.join(QStringLiteral(", "))));
+                    .arg(displayShortcuts));
     const QByteArray sourceUtf8 = source.toUtf8();
     setScreenshotToolPaletteAccessibleNameSource(widget, sourceUtf8.constData());
     widget->setAccessibleName(title);
@@ -667,13 +647,8 @@ void applyPinToScreenShortcutTooltip(QWidget* widget, const QString& source,
 
     const QStringList shortcuts =
         snow_shot::storage::PinToScreenShortcutSettings().shortcuts(actionId);
-    QStringList displayShortcuts;
-    for (const QString& shortcut : shortcuts) {
-        const QString displayShortcut = formatDrawingShortcutForTooltip(shortcut);
-        if (!displayShortcut.isEmpty()) {
-            displayShortcuts.push_back(displayShortcut);
-        }
-    }
+    const QString displayShortcuts =
+        snow_shot::presentation::formatShortcutListDisplayText(shortcuts);
     const QString title = ScreenshotToolPaletteTranslationText(source).translated();
     if (displayShortcuts.isEmpty()) {
         configureScreenshotToolPaletteTooltip(widget, ScreenshotToolPaletteTranslationText(source));
@@ -683,7 +658,7 @@ void applyPinToScreenShortcutTooltip(QWidget* widget, const QString& source,
     configureScreenshotToolPaletteTooltip(
         widget, ScreenshotToolPaletteTranslationText(QStringLiteral("%1 (%2)"))
                     .arg(title)
-                    .arg(displayShortcuts.join(QStringLiteral(", "))));
+                    .arg(displayShortcuts));
     setScreenshotToolPaletteAccessibleNameSource(widget, source.toUtf8().constData());
     widget->setAccessibleName(title);
 }
@@ -696,13 +671,8 @@ void applyScreenRecordingShortcutTooltip(QWidget* widget, const QString& source,
 
     const QStringList shortcuts =
         snow_shot::storage::ScreenRecordingShortcutSettings().shortcuts(actionId);
-    QStringList displayShortcuts;
-    for (const QString& shortcut : shortcuts) {
-        const QString displayShortcut = formatDrawingShortcutForTooltip(shortcut);
-        if (!displayShortcut.isEmpty()) {
-            displayShortcuts.push_back(displayShortcut);
-        }
-    }
+    const QString displayShortcuts =
+        snow_shot::presentation::formatShortcutListDisplayText(shortcuts);
     const QString title = ScreenshotToolPaletteTranslationText(source).translated();
     if (displayShortcuts.isEmpty()) {
         configureScreenshotToolPaletteTooltip(widget, ScreenshotToolPaletteTranslationText(source));
@@ -712,7 +682,7 @@ void applyScreenRecordingShortcutTooltip(QWidget* widget, const QString& source,
     configureScreenshotToolPaletteTooltip(
         widget, ScreenshotToolPaletteTranslationText(QStringLiteral("%1 (%2)"))
                     .arg(title)
-                    .arg(displayShortcuts.join(QStringLiteral(", "))));
+                    .arg(displayShortcuts));
     setScreenshotToolPaletteAccessibleNameSource(widget, source.toUtf8().constData());
     widget->setAccessibleName(title);
 }
@@ -731,19 +701,13 @@ void applyDrawingShortcutTooltip(QWidget* widget, const QString& source,
 
     widget->setProperty("snowShotDrawingShortcutTooltipSource", source);
     const QStringList shortcuts = snow_shot::storage::DrawingShortcutSettings().shortcuts(toolId);
-    QStringList displayShortcuts;
-    for (const QString& shortcut : shortcuts) {
-        const QString displayShortcut = formatDrawingShortcutForTooltip(shortcut);
-        if (!displayShortcut.isEmpty()) {
-            displayShortcuts.push_back(displayShortcut);
-        }
-    }
+    const QString displayShortcuts =
+        snow_shot::presentation::formatShortcutListDisplayText(shortcuts);
 
     const QString title = ScreenshotToolPaletteTranslationText(source).translated();
-    widget->setToolTip(
-        displayShortcuts.isEmpty()
-            ? title
-            : QStringLiteral("%1 (%2)").arg(title, displayShortcuts.join(QStringLiteral(", "))));
+    widget->setToolTip(displayShortcuts.isEmpty()
+                           ? title
+                           : QStringLiteral("%1 (%2)").arg(title, displayShortcuts));
     widget->setAccessibleName(title);
 }
 

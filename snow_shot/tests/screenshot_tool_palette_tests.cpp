@@ -1851,16 +1851,16 @@ void screenshotToolbarUsesCanonicalOrderAndSectionSeparators() {
     ScreenshotToolPalette palette(options);
     const QList<adqt::widgets::AdButton*> buttons = mainToolbarButtons(palette);
     const QStringList expected{
-        QStringLiteral("Edit selection (M, Ctrl+E)"),
+        QStringLiteral("Edit selection (M / Ctrl+E)"),
         QStringLiteral("Select elements (V)"),
         QStringLiteral("Shape (1)"),
         QStringLiteral("Arrow (2)"),
-        QStringLiteral("Pen (3, P)"),
-        QStringLiteral("Highlight (4, H)"),
-        QStringLiteral("Text (5, T)"),
-        QStringLiteral("Serial number (6, N)"),
-        QStringLiteral("Filter (7, F)"),
-        QStringLiteral("Eraser (8, E)"),
+        QStringLiteral("Pen (3 / P)"),
+        QStringLiteral("Highlight (4 / H)"),
+        QStringLiteral("Text (5 / T)"),
+        QStringLiteral("Serial number (6 / N)"),
+        QStringLiteral("Filter (7 / F)"),
+        QStringLiteral("Eraser (8 / E)"),
         QStringLiteral("Watermark (9)"),
         QStringLiteral("Table recognition (Ctrl+X)"),
         QStringLiteral("Record screen (Ctrl+R)"),
@@ -1932,7 +1932,7 @@ void groupedDrawingOptionsShowShortcutTooltips() {
     const QMap<QString, QString> expectedTooltips{
         {QStringLiteral("arrow"), QStringLiteral("Arrow (2)")},
         {QStringLiteral("line"), QStringLiteral("Line")},
-        {QStringLiteral("highlighter"), QStringLiteral("Highlight (4, H)")},
+        {QStringLiteral("highlighter"), QStringLiteral("Highlight (4 / H)")},
         {QStringLiteral("spotlight"), QStringLiteral("Spotlight")},
     };
     for (const char* triggerName : {"screenshotArrowLineButton", "screenshotHighlightButton"}) {
@@ -2078,15 +2078,15 @@ void screenshotActionTooltipsUseConfiguredShortcuts() {
 
     const snow_shot::storage::ScreenshotShortcutSettings shortcutSettings;
     const QMap<QString, QStringList> originalShortcuts = shortcutSettings.allShortcuts();
-    require(
-        shortcutSettings.setShortcuts(QStringLiteral("pin_to_screen"), {QStringLiteral("Alt+F")}),
-        "pin shortcut fixture must support a non-default mapping");
+    require(shortcutSettings.setShortcuts(QStringLiteral("pin_to_screen"),
+                                          {QStringLiteral("Ctrl++"), QStringLiteral("Num+1")}),
+            "pin shortcut fixture must support a non-default mapping");
     require(shortcutSettings.shortcuts(QStringLiteral("pin_to_screen")) ==
-                QStringList{QStringLiteral("Alt+F")},
+                QStringList{QStringLiteral("Ctrl++"), QStringLiteral("Num+1")},
             "pin shortcut fixture must expose the updated mapping immediately");
     QEvent languageChange(QEvent::LanguageChange);
     QCoreApplication::sendEvent(&palette, &languageChange);
-    require(pin->toolTip() == QStringLiteral("Pin to screen (Alt+F)"),
+    require(pin->toolTip() == QStringLiteral("Pin to screen (Ctrl+Plus / Num 1)"),
             "screenshot toolbar shortcuts must survive runtime retranslation");
     require(shortcutSettings.setAllShortcutsAtomic(originalShortcuts),
             "pin shortcut fixture must restore the original mapping");
