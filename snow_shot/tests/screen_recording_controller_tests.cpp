@@ -12,6 +12,10 @@
 #include <QElapsedTimer>
 #include <QThread>
 #include <QMouseEvent>
+#include <QWindow>
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
 #include <atomic>
 #include <cstdlib>
 #include <iostream>
@@ -36,6 +40,39 @@ ScreenshotToolPalette* palette() {
     }
     require(false, "recording toolbar must exist");
     return nullptr;
+}
+
+void requireToolbarAboveArea(ScreenRecordingAreaWindow* area) {
+    auto* toolbar = qobject_cast<ScreenRecordingToolbarWindow*>(palette()->window());
+    require(toolbar != nullptr, "recording palette must belong to the toolbar window");
+    const auto previousInputMode = area->inputMode();
+    area->setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
+    toolbar->move(area->geometry().topLeft());
+    area->raise();
+    area->activateWindow();
+    QCoreApplication::processEvents();
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        const HWND areaHandle = reinterpret_cast<HWND>(area->winId());
+        const HWND toolbarHandle = reinterpret_cast<HWND>(toolbar->winId());
+        SetActiveWindow(areaHandle);
+        QCoreApplication::processEvents();
+        require(GetActiveWindow() == areaHandle,
+                "the recording area must retain focus while the toolbar stays above it");
+        require(GetWindow(toolbarHandle, GW_OWNER) == areaHandle,
+                "the native recording toolbar must be owned by the area");
+        bool toolbarAboveArea = false;
+        for (HWND candidate = GetWindow(areaHandle, GW_HWNDPREV); candidate != nullptr;
+             candidate = GetWindow(candidate, GW_HWNDPREV)) {
+            toolbarAboveArea |= candidate == toolbarHandle;
+        }
+        require(toolbarAboveArea,
+                "activating the overlapping recording area must keep the toolbar above it");
+    }
+#endif
+    require(toolbar->windowHandle()->transientParent() == area->windowHandle(),
+            "recording toolbar must retain the area as its transient owner");
+    area->setInputMode(previousInputMode);
 }
 } // namespace
 
@@ -95,6 +132,7 @@ int main(int argc, char** argv) {
             }
         }
         require(area != nullptr, "recording area must exist");
+        requireToolbarAboveArea(area);
         auto* canvas = area->canvas();
         require(palette()->activateDrawingShortcut(QStringLiteral("shape")),
                 "drawing shortcut must activate the shape tool");
@@ -115,6 +153,7 @@ int main(int argc, char** argv) {
         controller.open(region);
         require(area->isVisible() && area->canvas() == canvas,
                 "a new recording session must reuse the area and canvas");
+        requireToolbarAboveArea(area);
         require(!canvas->canvasHistoryState().canUndo && !canvas->canvasHistoryState().canRedo,
                 "a new session at the same rectangle must clear drawing and history");
         require(canvas->canvasTool() == SnowCanvasTool::Select &&
