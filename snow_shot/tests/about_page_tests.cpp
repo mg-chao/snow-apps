@@ -11,18 +11,20 @@
 #include "snow_shot/storage/applicationstorage.h"
 
 #include "widgets/button.h"
-#include "widgets/descriptions.h"
 #include "widgets/navigation_menu.h"
 #include "widgets/scroll_area.h"
 #include "widgets/tabs.h"
 
 #include <QApplication>
+#include <QAbstractButton>
 #include <QClipboard>
 #include <QDir>
 #include <QEvent>
 #include <QFileInfo>
+#include <QImage>
 #include <QFontDatabase>
 #include <QLabel>
+#include <QKeyEvent>
 #include <QPointer>
 #include <QScrollBar>
 #include <QTemporaryDir>
@@ -30,6 +32,7 @@
 #include <QTranslator>
 
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <iostream>
 
@@ -45,8 +48,11 @@ void require(bool condition, const char* message) {
 }
 
 void flushEvents() {
-    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-    QCoreApplication::processEvents();
+    // A resize can enqueue a second layout pass after the responsive grid has changed columns.
+    for (int pass = 0; pass < 4; ++pass) {
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCoreApplication::processEvents();
+    }
 }
 
 template <typename T> T* child(QObject& parent, const char* name) {
@@ -78,6 +84,8 @@ void versionIsExactSelectableAndCopyable() {
             "version is plain text and selectable with mouse and keyboard");
     require(copy->isEnabled() && copy->focusPolicy() == Qt::StrongFocus,
             "copy action is keyboard accessible");
+    require(!child<QLabel>(page, "aboutPreviewBadge")->isHidden(),
+            "prerelease versions carry a preview badge");
     copy->click();
     require(QApplication::clipboard()->text() == version, "copy the exact displayed version");
     require(copy->text() == QStringLiteral("Copied"), "show copy feedback");
@@ -86,7 +94,7 @@ void versionIsExactSelectableAndCopyable() {
     timer->stop();
     require(QMetaObject::invokeMethod(timer, "timeout", Qt::DirectConnection),
             "simulate feedback timeout without waiting");
-    require(copy->text() == QStringLiteral("Copy version"),
+    require(copy->text() == QStringLiteral("Copy version number"),
             "restore the copy action after feedback");
 }
 
@@ -98,7 +106,176 @@ void absentVersionDoesNotInventARelease() {
                 "missing version uses a translated fallback");
         require(!child<adqt::widgets::AdButton>(page, "aboutCopyVersion")->isEnabled(),
                 "missing version cannot be copied");
+        require(child<QLabel>(page, "aboutPreviewBadge")->isHidden(),
+                "missing versions do not claim to be preview releases");
     }
+}
+
+void stableVersionsDoNotClaimToBePreviews() {
+    for (const QString& version :
+         {QStringLiteral("1.0.0"), QStringLiteral("1.0.0+build-beta.89")}) {
+        QCoreApplication::setApplicationVersion(version);
+        AboutPageWidget page;
+        require(child<QLabel>(page, "aboutPreviewBadge")->isHidden(),
+                "stable releases remain stable even with hyphens in build metadata");
+        require(child<QLabel>(page, "aboutVersionValue")->text() == version,
+                "stable releases preserve build metadata");
+    }
+}
+
+void projectLinkSurfacesMatchStandardButtons() {
+    using adqt::widgets::AdButton;
+    auto& manager = styles::ThemeManager::instance();
+    AboutPageWidget page;
+    page.resize(700, 540);
+    page.show();
+    flushEvents();
+    const auto surface = [](QWidget& widget, qreal dpr) {
+        QImage image(QSize(qRound(widget.width() * dpr), qRound(widget.height() * dpr)),
+                     QImage::Format_ARGB32_Premultiplied);
+        image.setDevicePixelRatio(dpr);
+        image.fill(Qt::transparent);
+        widget.render(&image, QPoint(), QRegion(), QWidget::DrawWindowBackground);
+        return image;
+    };
+    for (const auto appearance : {styles::ThemeAppearance::Light, styles::ThemeAppearance::Dark}) {
+        manager.setThemeAppearance(appearance);
+        flushEvents();
+        for (const char* name : {"aboutWebsite", "aboutSourceCode", "aboutFeedback"}) {
+            auto* button = child<AdButton>(page, name);
+            require(button->buttonStyle() == AdButton::ButtonStyle::Outline &&
+                        button->accentRole() == AdButton::AccentRole::Neutral,
+                    "resource links use standard neutral outline buttons");
+            AdButton reference(button->parentWidget());
+            reference.resize(button->size());
+            reference.show();
+            reference.clearFocus();
+            button->clearFocus();
+            for (const int state : {0, 1, 2, 3}) {
+                for (AdButton* target : {button, &reference}) {
+                    target->setEnabled(state != 3);
+                    target->setDown(state == 2);
+                    if (state == 1) {
+                        QEnterEvent enter(QPointF(2, 2), QPointF(2, 2), QPointF(2, 2));
+                        QCoreApplication::sendEvent(target, &enter);
+                    } else {
+                        QEvent leave(QEvent::Leave);
+                        QCoreApplication::sendEvent(target, &leave);
+                    }
+                }
+                for (const qreal dpr : {1.0, 1.25, 1.5, 1.75, 2.0}) {
+                    require(surface(*button, dpr) == surface(reference, dpr),
+                            "resource link surfaces match AdButton in both themes, all "
+                            "interaction states and fractional scales");
+                }
+            }
+            button->setEnabled(true);
+            button->setDown(false);
+        }
+    }
+    manager.setThemeAppearance(styles::ThemeAppearance::Light);
+}
+
+void projectLinksAreExplicitAccessibleAndRecoverable() {
+    QList<QUrl> opened;
+    bool canOpen = true;
+    AboutPageWidget page(nullptr, [&](const QUrl& url) {
+        opened.append(url);
+        return canOpen;
+    });
+    page.resize(700, 540);
+    page.show();
+    flushEvents();
+    require(opened.isEmpty(), "About does not open links or check for updates on construction");
+    snapshot(page, QStringLiteral("about-actions"));
+    const QString project = QStringLiteral(SNOW_SHOT_TEST_PROJECT_URL);
+    const std::array<std::pair<const char*, QUrl>, 4> links{{
+        {"aboutWebsite", QUrl(QStringLiteral(SNOW_SHOT_TEST_WEBSITE_URL))},
+        {"aboutSourceCode", QUrl(project)},
+        {"aboutFeedback", QUrl(project + QStringLiteral("/issues"))},
+        {"aboutReleaseNotes", QUrl(project + QStringLiteral("/releases"))},
+    }};
+    for (const auto& [name, url] : links) {
+        auto* button = child<QAbstractButton>(page, name);
+        require(button->focusPolicy() == Qt::StrongFocus && !button->accessibleName().isEmpty(),
+                "every project action is named and keyboard accessible");
+        require(button->toolTip() == url.toDisplayString(),
+                "project actions expose their exact destinations");
+        button->setFocus();
+        for (const auto key : {Qt::Key_Space, Qt::Key_Return}) {
+            const auto previousCount = opened.size();
+            QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
+            QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
+            QCoreApplication::sendEvent(button, &press);
+            QCoreApplication::sendEvent(button, &release);
+            require(opened.size() == previousCount + 1 && opened.back() == url,
+                    "Space and Enter open exactly the requested project destination");
+        }
+    }
+    page.resize(360, 240);
+    flushEvents();
+    canOpen = false;
+    child<QAbstractButton>(page, "aboutWebsite")->click();
+    flushEvents();
+    auto* error = child<QLabel>(page, "aboutLinkError");
+    require(!error->isHidden() && error->text().contains(links.front().second.toDisplayString()) &&
+                error->textInteractionFlags().testFlag(Qt::TextSelectableByKeyboard),
+            "failed browser launches show the selectable destination without a modal dialog");
+    auto* scroll = child<adqt::widgets::AdScrollArea>(page, "pageScrollArea");
+    require(scroll->viewport()->rect().contains(
+                QRect(error->mapTo(scroll->viewport(), QPoint()), error->size())),
+            "link failures are scrolled into view after the narrow layout has settled");
+    for (const QString& locale :
+         {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
+        QTranslator translator;
+        require(translator.load(QStringLiteral(SNOW_SHOT_TEST_TRANSLATIONS_DIR) +
+                                QStringLiteral("/snow_shot_%1.qm").arg(locale)),
+                "load link failure translation");
+        QCoreApplication::installTranslator(&translator);
+        flushEvents();
+        require(error->text() == translator
+                                     .translate("AboutPageWidget",
+                                                "Could not open the link. Open %1 in your browser.")
+                                     .arg(links.front().second.toDisplayString()),
+                "an existing link error retranslates and preserves its destination");
+        QCoreApplication::removeTranslator(&translator);
+        flushEvents();
+    }
+    canOpen = true;
+    child<QAbstractButton>(page, "aboutWebsite")->click();
+    require(error->isHidden() && error->text().isEmpty(), "successful retries clear link errors");
+    page.hide();
+}
+
+void largerTypeKeepsEveryActionReachable() {
+    auto& manager = styles::ThemeManager::instance();
+    styles::ThemeStyleConfig config;
+    config.fontSize = 20;
+    manager.setThemeStyleConfig(config);
+    QCoreApplication::setApplicationVersion(QStringLiteral("12.34.56-beta.7+build.89"));
+    AboutPageWidget page(nullptr, [](const QUrl&) { return true; });
+    page.resize(360, 360);
+    page.show();
+    flushEvents();
+    auto* scroll = child<adqt::widgets::AdScrollArea>(page, "pageScrollArea");
+    require(scroll->horizontalScrollBar()->maximum() == 0,
+            "larger fonts and a narrow page never require horizontal scrolling");
+    auto* artwork = child<QWidget>(page, "aboutArtwork");
+    require(artwork->width() <= scroll->viewport()->width() && artwork->height() > 0,
+            "artwork scales down to the available width with larger fonts");
+    for (const char* name : {"aboutCopyVersion", "aboutReleaseNotes", "aboutWebsite",
+                             "aboutSourceCode", "aboutFeedback"}) {
+        auto* button = child<QAbstractButton>(page, name);
+        scroll->ensureWidgetVisible(button);
+        flushEvents();
+        const QRect visibleButton(button->mapTo(scroll->viewport(), QPoint()), button->size());
+        require(scroll->viewport()->rect().contains(visibleButton),
+                "each action can be scrolled fully into view with larger fonts");
+    }
+    snapshot(page, QStringLiteral("about-large-type-bottom"));
+    page.hide();
+    manager.setThemeStyleConfig(styles::ThemeStyleConfig{});
+    flushEvents();
 }
 
 void traySettingsAndFunctionNavigation() {
@@ -212,6 +389,8 @@ void mainNavigationSearchThemesAndLanguages() {
     require(page != nullptr && sidebar->currentRoute() == QStringLiteral("/about"),
             "search navigation opens About and synchronizes the sidebar");
 
+    QImage previousHero;
+    QImage previousArtwork;
     for (const auto appearance : {styles::ThemeAppearance::Light, styles::ThemeAppearance::Dark}) {
         styles::ThemeManager::instance().setThemeAppearance(appearance);
         flushEvents();
@@ -224,9 +403,23 @@ void mainNavigationSearchThemesAndLanguages() {
             "About typography follows the active theme");
         require(child<QFrame>(*page, "aboutVersionPanel")
                     ->styleSheet()
-                    .contains(scheme.map.colorPrimaryBg.name(QColor::HexArgb)),
-                "version surface follows the primary theme token");
+                    .contains(scheme.map.colorBorderSecondary.name(QColor::HexArgb)),
+                "compact version surface follows the neutral theme tokens");
         require(!child<QLabel>(*page, "aboutLogo")->pixmap().isNull(), "render the Snow Shot icon");
+        auto* logo = child<QLabel>(*page, "aboutLogo");
+        require(qFuzzyCompare(logo->pixmap().devicePixelRatio(), logo->devicePixelRatioF()),
+                "the logo uses the current display pixel ratio");
+        auto* artwork = child<QWidget>(*page, "aboutArtwork");
+        const QImage hero = child<QWidget>(*page, "aboutHero")->grab().toImage();
+        const QImage renderedArtwork = artwork->grab().toImage();
+        require(!renderedArtwork.isNull() && !artwork->accessibleName().isEmpty(),
+                "the embedded artwork is rendered and has an accessible name");
+        if (!previousHero.isNull()) {
+            require(hero != previousHero && renderedArtwork != previousArtwork,
+                    "both the hero surface and artwork adapt to dark mode");
+        }
+        previousHero = hero;
+        previousArtwork = renderedArtwork;
         snapshot(window, appearance == styles::ThemeAppearance::Light
                              ? QStringLiteral("about-light")
                              : QStringLiteral("about-dark"));
@@ -248,18 +441,58 @@ void mainNavigationSearchThemesAndLanguages() {
                     QStringLiteral(SNOW_SHOT_TEST_VERSION),
                 "language changes preserve the release version");
         require(child<adqt::widgets::AdButton>(*page, "aboutCopyVersion")->text() ==
-                    translator.translate("AboutPageWidget", "Copy version"),
+                    translator.translate("AboutPageWidget", "Copy version number"),
                 "copy action retranslates");
+        require(child<QLabel>(*page, "aboutLicense")
+                    ->text()
+                    .contains(translator.translate("AboutPageWidget",
+                                                   "GNU General Public License v3.0 or later")),
+                "license details retranslate");
         require(
-            child<adqt::widgets::AdDescriptions>(*page, "aboutDetails")->itemAt(0).content ==
-                translator.translate("AboutPageWidget", "GNU General Public License v3.0 or later"),
-            "license details retranslate");
+            child<QLabel>(*page, "aboutOpenSource")->text() ==
+                    translator.translate("AboutPageWidget", "Free · Open source") &&
+                child<QLabel>(*page, "aboutDescription")->text() ==
+                    translator.translate(
+                        "AboutPageWidget",
+                        "Capture, annotate, recognize text, and record your screen,\n"
+                        "so every moment on screen can be expressed clearly and shared easily."),
+            "the new hero copy retranslates immediately");
+        require(child<QLabel>(*page, "aboutTagline")
+                    ->text()
+                    .contains(translator.translate("AboutPageWidget", "Elegant screenshots")),
+                "the two-tone headline retranslates");
+        require(child<QLabel>(*page, "aboutSlogan")->text() ==
+                    translator.translate("AboutPageWidget", "Snow Shot · Make expression clearer"),
+                "the footer slogan retranslates");
+        const std::array<const char*, 6> features{"Screenshot capture", "Easy annotation",
+                                                  "Text recognition",   "Screen recording",
+                                                  "Pin to screen",      "Screenshot history"};
+        for (size_t i = 0; i < features.size(); ++i) {
+            auto* label = page->findChild<QLabel*>(QStringLiteral("aboutFeatureLabel%1").arg(i));
+            require(label != nullptr &&
+                        label->text() == translator.translate("AboutPageWidget", features[i]),
+                    "every feature label retranslates");
+            auto* icon = page->findChild<QLabel*>(QStringLiteral("aboutFeatureIcon%1").arg(i));
+            require(icon != nullptr && !icon->pixmap().isNull(), "every feature icon renders");
+        }
+        require(child<QAbstractButton>(*page, "aboutWebsite")->accessibleName() ==
+                        translator.translate("AboutPageWidget", "Official website") &&
+                    child<QWidget>(*page, "aboutArtwork")->accessibleName() ==
+                        translator.translate(
+                            "AboutPageWidget",
+                            "Screenshot selection, annotation tools, and recognized text"),
+                "resource and illustration accessibility copy follows the active language");
         require(sidebar->currentRoute() == QStringLiteral("/about"),
                 "translated navigation preserves About selection");
         auto* scroll = page->findChild<adqt::widgets::AdScrollArea*>();
+        snapshot(window, QStringLiteral("about-%1").arg(locale));
+        if (scroll != nullptr && scroll->verticalScrollBar()->maximum() != 0) {
+            std::cerr << "Default About viewport " << scroll->viewport()->width() << 'x'
+                      << scroll->viewport()->height() << ", content height "
+                      << scroll->widget()->height() << '\n';
+        }
         require(scroll != nullptr && scroll->verticalScrollBar()->maximum() == 0,
                 "all About information fits in the default window size");
-        snapshot(window, QStringLiteral("about-%1").arg(locale));
         window.resize(512, 316);
         sidebar->setCollapsed(true);
         flushEvents();
@@ -302,8 +535,12 @@ int main(int argc, char** argv) {
     styles::ThemeManager::instance().initialize(application);
     versionIsExactSelectableAndCopyable();
     absentVersionDoesNotInventARelease();
+    stableVersionsDoNotClaimToBePreviews();
+    projectLinkSurfacesMatchStandardButtons();
+    projectLinksAreExplicitAccessibleAndRecoverable();
     traySettingsAndFunctionNavigation();
     mainNavigationSearchThemesAndLanguages();
+    largerTypeKeepsEveryActionReachable();
     storage.shutdown();
     return 0;
 }

@@ -16,6 +16,7 @@
 #include <memory>
 
 class ScreenshotScrollingSnapshot;
+struct ScreenshotRecognitionImageSnapshot;
 
 struct ScreenshotPinnedViewportExportSource final {
     QByteArray documentSession;
@@ -62,6 +63,8 @@ class ScreenshotExportSource final {
     ScreenshotExportSource() = default;
 
     [[nodiscard]] static ScreenshotExportSource fromImage(QImage image);
+    [[nodiscard]] static ScreenshotExportSource
+    fromRecognitionImage(ScreenshotRecognitionImageSnapshot snapshot);
     [[nodiscard]] static ScreenshotExportSource
     fromScrollingSnapshot(ScreenshotScrollingSnapshot snapshot);
     [[nodiscard]] static ScreenshotExportSource

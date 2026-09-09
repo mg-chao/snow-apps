@@ -3,6 +3,8 @@
 
 #include "snow_shot/presentation/screenshotselectiongeometry.h"
 #include "snow_shot/presentation/screenshotimageconversion.h"
+#include "snow_shot/presentation/screenshotrecognitionimage.h"
+#include <optional>
 
 #include <QPointF>
 #include <QRect>
@@ -89,6 +91,9 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void setOcrPresentation(std::shared_ptr<ScreenshotOcrPresentation> presentation);
     void updateOcrText(int lineIndex, const QString& text);
     void clearOcrPresentation();
+    [[nodiscard]] std::optional<ScreenshotRecognitionImageSnapshot>
+    imageSnapshot(QImage image, const QRectF& canvasRect, QImage filteredImage,
+                  const QRectF& filteredCanvasRect, const ScreenshotResultStyle& style) const;
     void showFormattedText(std::shared_ptr<QTextDocument> document);
     void clearFormattedText();
 

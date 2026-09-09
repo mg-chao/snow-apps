@@ -348,6 +348,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void restoreActivePinnedGroupWindows();
     void saveSelectionToFile() override;
     void saveSelectionWithSnowDialog();
+    [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> recognitionFileSaveArtifact() const;
     void quickSaveSelection() override;
     void saveImageToFile(QImage image, const QString& outputPath, ScreenshotImageFileFormat format,
                          quint64 generation,
@@ -2567,7 +2568,22 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
     }
 }
 
+std::shared_ptr<ScreenshotExportArtifact>
+ScreenshotController::Impl::recognitionFileSaveArtifact() const {
+    if (!snow_shot::storage::TextRecognitionSettings().saveRecognitionResultAsImage() ||
+        m_ocrController == nullptr ||
+        (m_scrollingCaptureController && m_scrollingCaptureController->active()))
+        return {};
+    const ScreenshotResultStyle style{m_selection.cornerRadius(), m_selection.shadowWidth(),
+                                      m_selection.shadowColor()};
+    auto snapshot = m_ocrController->imageSnapshot(style);
+    return snapshot ? std::make_shared<ScreenshotExportArtifact>(
+                          ScreenshotExportSource::fromRecognitionImage(std::move(*snapshot)))
+                    : nullptr;
+}
+
 void ScreenshotController::Impl::quickSaveSelection() {
+    auto recognitionArtifact = recognitionFileSaveArtifact();
     const bool scrolling = m_scrollingCaptureController && m_scrollingCaptureController->active();
     if ((!scrolling && !m_selection.hasPixelSelection()) || !ensureExportFeature() ||
         !resetCanvasEditingState()) {
@@ -2606,7 +2622,10 @@ void ScreenshotController::Impl::quickSaveSelection() {
         }
     };
     bool scheduled = false;
-    if (scrolling) {
+    if (recognitionArtifact) {
+        save(std::move(recognitionArtifact));
+        scheduled = true;
+    } else if (scrolling) {
         scheduled = m_scrollingCaptureController->requestTrimmedSnapshot(
             [save](ScreenshotScrollingSnapshot snapshot) {
                 save(std::make_shared<ScreenshotExportArtifact>(
@@ -2639,6 +2658,7 @@ void ScreenshotController::Impl::saveSelectionToFile() {
         saveSelectionWithSnowDialog();
         return;
     }
+    auto recognitionArtifact = recognitionFileSaveArtifact();
     rememberKeyboardOwner(QApplication::focusWidget());
     QPointer<ScreenshotOverlayWindow> dialogOwner(keyboardOwnerOverlay());
     const snow_shot::presentation::WindowShortcutManager::InputSuspensionHandle suspension =
@@ -2701,7 +2721,14 @@ void ScreenshotController::Impl::saveSelectionToFile() {
     };
 
     bool scheduled = false;
-    if (m_scrollingCaptureController != nullptr && m_scrollingCaptureController->active()) {
+    if (recognitionArtifact) {
+        m_saveArtifacts.push_back(recognitionArtifact);
+        scheduled = recognitionArtifact->requestImage(
+            &owner, [imageReady = imageReady,
+                     artifact = recognitionArtifact](ScreenshotExportImageResult result) mutable {
+                imageReady(std::move(result.image));
+            });
+    } else if (m_scrollingCaptureController != nullptr && m_scrollingCaptureController->active()) {
         scheduled = m_scrollingCaptureController->requestTrimmedSnapshot(
             [receiver, generation = *exportGeneration, outputPath, format, historyCandidate,
              historySource](ScreenshotScrollingSnapshot snapshot) mutable {
@@ -2733,6 +2760,7 @@ void ScreenshotController::Impl::saveSelectionWithSnowDialog() {
     if (owner.property("saveDialogOpen").toBool() || !ensureExportFeature() ||
         !resetCanvasEditingState())
         return;
+    auto recognitionArtifact = recognitionFileSaveArtifact();
     rememberKeyboardOwner(QApplication::focusWidget());
     const QPointer<ScreenshotOverlayWindow> keyboardOwner(keyboardOwnerOverlay());
     const QRectF dialogSelection =
@@ -2811,7 +2839,9 @@ void ScreenshotController::Impl::saveSelectionWithSnowDialog() {
         if (!opened)
             finished(false);
     };
-    if (m_scrollingCaptureController && m_scrollingCaptureController->active()) {
+    if (recognitionArtifact) {
+        open(std::move(recognitionArtifact));
+    } else if (m_scrollingCaptureController && m_scrollingCaptureController->active()) {
         m_scrollingCaptureController->setExportPaused(true);
         if (!m_scrollingCaptureController->requestTrimmedSnapshot(
                 [open](ScreenshotScrollingSnapshot snapshot) {

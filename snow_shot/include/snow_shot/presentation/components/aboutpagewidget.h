@@ -1,17 +1,12 @@
 #ifndef SNOW_SHOT_PRESENTATION_COMPONENTS_ABOUTPAGEWIDGET_H
 #define SNOW_SHOT_PRESENTATION_COMPONENTS_ABOUTPAGEWIDGET_H
 
+#include <QUrl>
 #include <QWidget>
 
-class QLabel;
-class QFrame;
-class QTimer;
-class QBoxLayout;
-class PageContainerWidget;
-namespace adqt::widgets {
-class AdButton;
-class AdDescriptions;
-} // namespace adqt::widgets
+#include <functional>
+#include <memory>
+
 namespace snow_shot::presentation::styles {
 struct ThemeColorScheme;
 }
@@ -20,30 +15,26 @@ class AboutPageWidget final : public QWidget {
     Q_OBJECT
 
   public:
-    explicit AboutPageWidget(QWidget* parent = nullptr);
+    using UrlOpener = std::function<bool(const QUrl&)>;
+
+    explicit AboutPageWidget(QWidget* parent = nullptr, UrlOpener urlOpener = {});
+    ~AboutPageWidget() override;
 
   protected:
     void changeEvent(QEvent* event) override;
-    void resizeEvent(QResizeEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
   private:
+    struct Ui;
     void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme);
     void retranslateUi();
+    void updateLayout();
+    void openProjectLink(const QUrl& url);
 
     const QString m_version;
-    PageContainerWidget* m_container = nullptr;
-    QLabel* m_logo = nullptr;
-    QLabel* m_productName = nullptr;
-    QLabel* m_description = nullptr;
-    QFrame* m_versionPanel = nullptr;
-    QBoxLayout* m_versionLayout = nullptr;
-    QLabel* m_versionCaption = nullptr;
-    QLabel* m_versionValue = nullptr;
-    adqt::widgets::AdButton* m_copyButton = nullptr;
-    QTimer* m_copyFeedbackTimer = nullptr;
-    adqt::widgets::AdDescriptions* m_details = nullptr;
-    QLabel* m_licenseNote = nullptr;
-    QLabel* m_copyright = nullptr;
+    const UrlOpener m_urlOpener;
+    std::unique_ptr<Ui> m_ui;
+    QUrl m_failedUrl;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_COMPONENTS_ABOUTPAGEWIDGET_H

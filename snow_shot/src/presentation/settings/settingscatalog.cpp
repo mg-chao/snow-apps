@@ -886,6 +886,16 @@ SettingsItemDefinition pinMiddleClickActionItem() {
         });
 }
 
+SettingsItemDefinition saveRecognitionResultAsImageItem() {
+    return switchItem(QStringLiteral("text-recognition.save-recognition-result-as-image"),
+                      QT_TRANSLATE_NOOP("SettingsCatalog", "Save recognition result as image"),
+                      QT_TRANSLATE_NOOP("SettingsCatalog",
+                                        "Include the displayed text recognition or original-image "
+                                        "translation result when saving an image."),
+                      QStringLiteral("text_recognition/save_recognition_result_as_image"),
+                      SettingsSwitchBinding::SaveRecognitionResultAsImage);
+}
+
 SettingsItemDefinition pinAutomaticOcrItem() {
     return switchItem(
         QStringLiteral("pin-to-screen.automatic-text-recognition"),
@@ -1605,6 +1615,14 @@ QVector<SettingsPageDefinition> builtInPages() {
                     SettingsSectionReset::PinToScreenBehavior,
                     {pinZoomModeItem(), pinDoubleClickActionItem(), pinMiddleClickActionItem(),
                      pinAutomaticOcrItem(), pinAutoResizeItem()},
+                },
+                {
+                    QStringLiteral("text-recognition-settings"),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Text Recognition")),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                                   "Text recognition image saving settings")),
+                    SettingsSectionReset::TextRecognitionBehavior,
+                    {saveRecognitionResultAsImageItem()},
                 },
                 {
                     QStringLiteral("translation-settings"),
@@ -2707,6 +2725,10 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard:
                         expectedKey = QStringLiteral("screenshot/copy_image_file_to_clipboard");
+                        break;
+                    case SettingsSwitchBinding::SaveRecognitionResultAsImage:
+                        expectedKey =
+                            QStringLiteral("text_recognition/save_recognition_result_as_image");
                         break;
                     case SettingsSwitchBinding::PinAutomaticTextRecognition:
                         expectedKey = QStringLiteral("pin_to_screen/automatic_text_recognition");

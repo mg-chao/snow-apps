@@ -93,8 +93,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void setImage(QImage image, const QRectF& canvasRect);
     void setImageSource(ScreenshotImageSource source);
     void setImageViewportPhysicalSize(const QSize& size);
-    void setPinnedResultSurface(const QRectF& contentCanvasRect,
-                                const QRectF& surfaceCanvasRect,
+    void setPinnedResultSurface(const QRectF& contentCanvasRect, const QRectF& surfaceCanvasRect,
                                 const ScreenshotResultStyle& style);
     void setPinnedBackgroundColor(const QColor& color);
     void setMaskVisible(bool visible);
@@ -108,11 +107,16 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void setSelectionToolbarHovered(bool hovered);
     void setSelectionBorderVisible(bool visible);
     void clearSelection();
-    void setOcrPresentation(
-        std::shared_ptr<ScreenshotOcrPresentation> presentation,
-        OcrPresentationMode mode = OcrPresentationMode::BackgroundAndText);
+    void setOcrPresentation(std::shared_ptr<ScreenshotOcrPresentation> presentation,
+                            OcrPresentationMode mode = OcrPresentationMode::BackgroundAndText);
     void setOcrFilteredImage(QImage image, const QRectF& canvasRect);
     void clearOcrFilteredImage();
+    [[nodiscard]] QImage ocrFilteredImage() const {
+        return m_ocrFilteredImage;
+    }
+    [[nodiscard]] QRectF ocrFilteredCanvasRect() const {
+        return m_ocrFilteredCanvasRect;
+    }
     [[nodiscard]] ScreenshotOcrTextPosition ocrTextPositionAt(const QPointF& canvasPosition,
                                                               bool useClosestLine = false) const;
     void updateOcrSelection();
