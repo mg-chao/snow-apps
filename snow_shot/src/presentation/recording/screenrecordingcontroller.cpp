@@ -271,6 +271,19 @@ void copyFileToClipboard(const QString& filePath) {
 }
 } // namespace
 
+namespace {
+// UI resources and connection contexts exist only for an open selection. Backend
+// finalization belongs to the controller and can finish after this object is retired.
+struct RecordingUiSession final : QObject {
+    explicit RecordingUiSession(QObject* parent) : QObject(parent) {}
+    std::unique_ptr<ScreenRecordingAreaWindow> area = std::make_unique<ScreenRecordingAreaWindow>();
+    std::unique_ptr<ScreenRecordingToolbarWindow> toolbar =
+        std::make_unique<ScreenRecordingToolbarWindow>();
+    std::unique_ptr<QObject> connections = std::make_unique<QObject>();
+    std::unique_ptr<ScreenRecordingShortcutController> shortcuts;
+};
+} // namespace
+
 struct ScreenRecordingController::Impl {
     explicit Impl(ScreenRecordingController& owner) : owner(owner) {
         const snow_shot::storage::RecordingSettings settings;
@@ -309,38 +322,16 @@ struct ScreenRecordingController::Impl {
             snow_capture_recording_session_destroy(recordingSession);
         }
         recordingSession = nullptr;
-        restoreToolbarCaptureVisibility();
-        if (toolbarWindow != nullptr) {
-            toolbarWindow->hide();
-            toolbarWindow->deleteLater();
-        }
-        if (areaWindow != nullptr) {
-            areaWindow->hide();
-            areaWindow->deleteLater();
-        }
+        destroyUi();
     }
 
     void open(const QRect& region) {
-        if (!region.isValid() || region.isEmpty() || busy ||
+        if (region.width() < 2 || region.height() < 2 || busy ||
             state != ScreenshotToolPalette::RecordingState::Idle) {
             return;
         }
         cancelPendingStart();
-        // Closing hides these persistent windows; reopening must not orphan
-        // another toolbar and its connections to this controller.
-        if (areaWindow != nullptr && toolbarWindow != nullptr) {
-            if (!isOpen()) {
-                // Window lifetime spans sessions, but annotations and transient
-                // editing state belong only to the session that created them.
-                auto* palette = toolbarWindow->palette();
-                palette->clearActiveTool();
-                auto* canvas = areaWindow->canvas();
-                static_cast<void>(canvas->resetEditingState());
-                static_cast<void>(canvas->clearDocument());
-                areaWindow->setInputMode(palette->recordingExportSettingsVisible()
-                                             ? ScreenRecordingAreaWindow::InputMode::RegionEditing
-                                             : ScreenRecordingAreaWindow::InputMode::PassThrough);
-            }
+        if (uiSession != nullptr) {
             physicalRegion = region;
             updateCaptureRegion();
             areaWindow->setPhysicalRegion(region);
@@ -353,8 +344,9 @@ struct ScreenRecordingController::Impl {
 
         physicalRegion = region;
         updateCaptureRegion();
-        areaWindow = new ScreenRecordingAreaWindow();
-        toolbarWindow = new ScreenRecordingToolbarWindow();
+        uiSession = new RecordingUiSession(&owner);
+        areaWindow = uiSession->area.get();
+        toolbarWindow = uiSession->toolbar.get();
         // Keep the toolbar above the area even when drawing or resizing activates the area.
         toolbarWindow->setTransientOwnerWindow(areaWindow);
         areaWindow->setAttribute(Qt::WA_DeleteOnClose, false);
@@ -362,8 +354,8 @@ struct ScreenRecordingController::Impl {
         areaWindow->setPhysicalRegion(region);
         toolbarWindow->placeForPhysicalRegion(region);
         connectToolbar();
-        shortcutController = std::make_unique<ScreenRecordingShortcutController>(
-            *areaWindow, *toolbarWindow, &owner);
+        uiSession->shortcuts =
+            std::make_unique<ScreenRecordingShortcutController>(*areaWindow, *toolbarWindow);
 
         state = ScreenshotToolPalette::RecordingState::Idle;
         durationMilliseconds = 0;
@@ -386,8 +378,8 @@ struct ScreenRecordingController::Impl {
             return;
         }
         connectDrawingToolbar(*palette);
-        QObject::connect(areaWindow, &ScreenRecordingAreaWindow::physicalRegionChanged, &owner,
-                         [this](const QRect& region) {
+        QObject::connect(areaWindow, &ScreenRecordingAreaWindow::physicalRegionChanged,
+                         uiSession->connections.get(), [this](const QRect& region) {
                              if (state != ScreenshotToolPalette::RecordingState::Idle || busy) {
                                  return;
                              }
@@ -395,56 +387,69 @@ struct ScreenRecordingController::Impl {
                              updateCaptureRegion();
                              toolbarWindow->placeForPhysicalRegion(region);
                          });
+        QObject::connect(areaWindow, &ScreenRecordingAreaWindow::regionInteractionStarted,
+                         uiSession->connections.get(),
+                         [this]() { toolbarWindow->beginRegionInteraction(); });
+        QObject::connect(areaWindow, &ScreenRecordingAreaWindow::regionInteractionFinished,
+                         uiSession->connections.get(), [this]() {
+                             if (areaWindow->isVisible()) {
+                                 toolbarWindow->endRegionInteraction(areaWindow->physicalRegion());
+                             }
+                         });
+        QObject::connect(areaWindow, &ScreenRecordingAreaWindow::closeRequested,
+                         uiSession->connections.get(), [this]() { close(); });
+        QObject::connect(toolbarWindow, &ScreenRecordingToolbarWindow::closeRequested,
+                         uiSession->connections.get(), [this]() { close(); });
         if (palette->recordingExportSettingsVisible()) {
             areaWindow->setInputMode(ScreenRecordingAreaWindow::InputMode::RegionEditing);
         }
-        QObject::connect(palette, &ScreenshotToolPalette::recordingStartRequested, &owner,
-                         [this]() { start(); });
-        QObject::connect(palette, &ScreenshotToolPalette::recordingStopRequested, &owner,
-                         [this]() { stop(false, false); });
-        QObject::connect(palette, &ScreenshotToolPalette::recordingPauseRequested, &owner,
-                         [this]() { pause(); });
-        QObject::connect(palette, &ScreenshotToolPalette::recordingResumeRequested, &owner,
-                         [this]() { resume(); });
-        QObject::connect(palette, &ScreenshotToolPalette::recordingMicrophoneToggled, &owner,
-                         [this](bool enabled) {
+        QObject::connect(palette, &ScreenshotToolPalette::recordingStartRequested,
+                         uiSession->connections.get(), [this]() { start(); });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingStopRequested,
+                         uiSession->connections.get(), [this]() { stop(false); });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingPauseRequested,
+                         uiSession->connections.get(), [this]() { pause(); });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingResumeRequested,
+                         uiSession->connections.get(), [this]() { resume(); });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingMicrophoneToggled,
+                         uiSession->connections.get(), [this](bool enabled) {
                              microphoneEnabled = enabled;
                              snow_shot::storage::RecordingSettings().setMicrophoneEnabled(enabled);
                          });
-        QObject::connect(palette, &ScreenshotToolPalette::recordingSystemAudioToggled, &owner,
-                         [this](bool enabled) {
+        QObject::connect(palette, &ScreenshotToolPalette::recordingSystemAudioToggled,
+                         uiSession->connections.get(), [this](bool enabled) {
                              systemAudioEnabled = enabled;
                              snow_shot::storage::RecordingSettings().setSystemAudioEnabled(enabled);
                          });
-        QObject::connect(palette, &ScreenshotToolPalette::recordingOpenFolderRequested, &owner,
-                         [this]() { openFolder(); });
-        QObject::connect(palette, &ScreenshotToolPalette::recordingCloseRequested, &owner,
-                         [this]() { close(); });
-        QObject::connect(palette, &ScreenshotToolPalette::recordingCopyRequested, &owner,
-                         [this]() { stop(true, false); });
-        QObject::connect(palette, &ScreenshotToolPalette::recordingOutputFormatChanged, &owner,
-                         [this](const QString& format) {
+        QObject::connect(palette, &ScreenshotToolPalette::recordingOpenFolderRequested,
+                         uiSession->connections.get(), [this]() { openFolder(); });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingCloseRequested,
+                         uiSession->connections.get(), [this]() { close(); });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingCopyRequested,
+                         uiSession->connections.get(), [this]() { stop(true); });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingOutputFormatChanged,
+                         uiSession->connections.get(), [this](const QString& format) {
                              outputFormat = format;
                              snow_shot::storage::RecordingSettings().setOutputFormat(format);
                          });
-        QObject::connect(palette, &ScreenshotToolPalette::recordingMouseTrailColorChanged, &owner,
-                         [this](const QColor& color) {
+        QObject::connect(palette, &ScreenshotToolPalette::recordingMouseTrailColorChanged,
+                         uiSession->connections.get(), [this](const QColor& color) {
                              mouseTrailColor = color;
                              snow_shot::storage::RecordingSettings().setMouseTrailColor(color);
                          });
-        QObject::connect(palette, &ScreenshotToolPalette::recordingMouseClickColorChanged, &owner,
-                         [this](const QColor& color) {
+        QObject::connect(palette, &ScreenshotToolPalette::recordingMouseClickColorChanged,
+                         uiSession->connections.get(), [this](const QColor& color) {
                              mouseClickColor = color;
                              snow_shot::storage::RecordingSettings().setMouseClickColor(color);
                          });
-        QObject::connect(palette, &ScreenshotToolPalette::recordingKeyboardVisibleChanged, &owner,
-                         [this](bool visible) {
+        QObject::connect(palette, &ScreenshotToolPalette::recordingKeyboardVisibleChanged,
+                         uiSession->connections.get(), [this](bool visible) {
                              showKeyboard = visible;
                              snow_shot::storage::RecordingSettings().setShowKeyboard(visible);
                              syncUi();
                          });
-        QObject::connect(palette, &ScreenshotToolPalette::recordingCursorVisibleChanged, &owner,
-                         [this](bool visible) {
+        QObject::connect(palette, &ScreenshotToolPalette::recordingCursorVisibleChanged,
+                         uiSession->connections.get(), [this](bool visible) {
                              showCursor = visible;
                              snow_shot::storage::RecordingSettings().setShowCursor(visible);
                          });
@@ -459,80 +464,98 @@ struct ScreenRecordingController::Impl {
             canvas->setCanvasTool(tool);
             areaWindow->setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
         };
-        snow_shot::presentation::recording::connectScreenRecordingSelection(palette, *areaWindow,
-                                                                            owner);
-        QObject::connect(&palette, &ScreenshotToolPalette::shapeRequested, &owner,
+        snow_shot::presentation::recording::connectScreenRecordingSelection(
+            palette, *areaWindow, *uiSession->connections);
+        QObject::connect(&palette, &ScreenshotToolPalette::shapeRequested,
+                         uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::Shape); });
-        QObject::connect(&palette, &ScreenshotToolPalette::arrowRequested, &owner,
+        QObject::connect(&palette, &ScreenshotToolPalette::arrowRequested,
+                         uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::Arrow); });
-        QObject::connect(&palette, &ScreenshotToolPalette::lineRequested, &owner,
+        QObject::connect(&palette, &ScreenshotToolPalette::lineRequested,
+                         uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::Line); });
-        QObject::connect(&palette, &ScreenshotToolPalette::freeDrawRequested, &owner,
+        QObject::connect(&palette, &ScreenshotToolPalette::freeDrawRequested,
+                         uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::FreeDraw); });
-        QObject::connect(&palette, &ScreenshotToolPalette::spotlightRequested, &owner,
+        QObject::connect(&palette, &ScreenshotToolPalette::spotlightRequested,
+                         uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::Spotlight); });
-        QObject::connect(&palette, &ScreenshotToolPalette::eraserRequested, &owner,
+        QObject::connect(&palette, &ScreenshotToolPalette::eraserRequested,
+                         uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::Eraser); });
-        QObject::connect(&palette, &ScreenshotToolPalette::watermarkRequested, &owner,
+        QObject::connect(&palette, &ScreenshotToolPalette::watermarkRequested,
+                         uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::Watermark); });
-        QObject::connect(&palette, &ScreenshotToolPalette::textRequested, &owner,
+        QObject::connect(&palette, &ScreenshotToolPalette::textRequested,
+                         uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::Text); });
-        QObject::connect(&palette, &ScreenshotToolPalette::serialNumberRequested, &owner,
+        QObject::connect(&palette, &ScreenshotToolPalette::serialNumberRequested,
+                         uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::SerialNumber); });
-        QObject::connect(&palette, &ScreenshotToolPalette::undoRequested, &owner,
+        QObject::connect(&palette, &ScreenshotToolPalette::undoRequested,
+                         uiSession->connections.get(),
                          [canvas]() { static_cast<void>(canvas->undo()); });
-        QObject::connect(&palette, &ScreenshotToolPalette::redoRequested, &owner,
+        QObject::connect(&palette, &ScreenshotToolPalette::redoRequested,
+                         uiSession->connections.get(),
                          [canvas]() { static_cast<void>(canvas->redo()); });
-        QObject::connect(&palette, &ScreenshotToolPalette::shapeStyleChanged, &owner,
-                         [canvas, &palette](const SnowCanvasShapeStyle& style, quint32 properties,
-                                            SnowCanvasShapeKind kind) {
-                             canvas->setCanvasShapeStylePatch(style, properties, kind);
-                             static_cast<void>(
-                                 snow_shot::presentation::persistScreenshotCanvasToolStyles(
-                                     palette.creationStyleDefaults()));
-                         });
-        QObject::connect(&palette, &ScreenshotToolPalette::textStyleChanged, &owner,
-                         [canvas, &palette](const SnowCanvasTextStyle& style) {
-                             static_cast<void>(canvas->setCanvasTextStyle(style));
-                             static_cast<void>(
-                                 snow_shot::presentation::persistScreenshotCanvasToolStyles(
-                                     palette.creationStyleDefaults()));
-                         });
-        QObject::connect(&palette, &ScreenshotToolPalette::serialNumberStyleChanged, &owner,
+        QObject::connect(
+            &palette, &ScreenshotToolPalette::shapeStyleChanged, uiSession->connections.get(),
+            [canvas, &palette](const SnowCanvasShapeStyle& style, quint32 properties,
+                               SnowCanvasShapeKind kind) {
+                canvas->setCanvasShapeStylePatch(style, properties, kind);
+                static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
+                    palette.creationStyleDefaults()));
+            });
+        QObject::connect(
+            &palette, &ScreenshotToolPalette::textStyleChanged, uiSession->connections.get(),
+            [canvas, &palette](const SnowCanvasTextStyle& style) {
+                static_cast<void>(canvas->setCanvasTextStyle(style));
+                static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
+                    palette.creationStyleDefaults()));
+            });
+        QObject::connect(&palette, &ScreenshotToolPalette::serialNumberStyleChanged,
+                         uiSession->connections.get(),
                          [canvas, &palette](const SnowCanvasSerialNumberStyle& style) {
                              static_cast<void>(canvas->setCanvasSerialNumberStyle(style));
                              static_cast<void>(
                                  snow_shot::presentation::persistScreenshotCanvasToolStyles(
                                      palette.creationStyleDefaults()));
                          });
-        QObject::connect(&palette, &ScreenshotToolPalette::watermarkConfigChanged, &owner,
+        QObject::connect(&palette, &ScreenshotToolPalette::watermarkConfigChanged,
+                         uiSession->connections.get(),
                          [canvas](const SnowCanvasWatermarkConfig& config) {
                              static_cast<void>(canvas->setCanvasWatermarkConfig(config));
                          });
-        QObject::connect(&palette, &ScreenshotToolPalette::watermarkPreviewChanged, &owner,
+        QObject::connect(&palette, &ScreenshotToolPalette::watermarkPreviewChanged,
+                         uiSession->connections.get(),
                          [canvas](const SnowCanvasWatermarkConfig& config) {
                              canvas->previewCanvasWatermarkConfig(config);
                          });
-        QObject::connect(&palette, &ScreenshotToolPalette::spotlightConfigChanged, &owner,
+        QObject::connect(&palette, &ScreenshotToolPalette::spotlightConfigChanged,
+                         uiSession->connections.get(),
                          [canvas](const SnowCanvasSpotlightConfig& config) {
                              static_cast<void>(canvas->setCanvasSpotlightConfig(config));
                          });
-        QObject::connect(&palette, &ScreenshotToolPalette::spotlightPreviewChanged, &owner,
+        QObject::connect(&palette, &ScreenshotToolPalette::spotlightPreviewChanged,
+                         uiSession->connections.get(),
                          [canvas](const SnowCanvasSpotlightConfig& config) {
                              canvas->previewCanvasSpotlightConfig(config);
                          });
-        QObject::connect(&palette, &ScreenshotToolPalette::textStylePopupInteractionBegan, &owner,
+        QObject::connect(&palette, &ScreenshotToolPalette::textStylePopupInteractionBegan,
+                         uiSession->connections.get(),
                          [canvas]() { canvas->beginTextStylePopupInteraction(); });
-        QObject::connect(&palette, &ScreenshotToolPalette::textStylePopupInteractionEnded, &owner,
+        QObject::connect(&palette, &ScreenshotToolPalette::textStylePopupInteractionEnded,
+                         uiSession->connections.get(),
                          [canvas, this]() { canvas->endTextStylePopupInteraction(toolbarWindow); });
         QObject::connect(areaWindow, &ScreenRecordingAreaWindow::drawingDeactivationRequested,
-                         &owner, [this, &palette]() {
+                         uiSession->connections.get(), [this, &palette]() {
                              palette.clearActiveTool();
                              areaWindow->setInputMode(
                                  ScreenRecordingAreaWindow::InputMode::PassThrough);
                          });
-        QObject::connect(areaWindow, &ScreenRecordingAreaWindow::drawingWheelRequested, &owner,
-                         [canvas, &palette](int direction) {
+        QObject::connect(areaWindow, &ScreenRecordingAreaWindow::drawingWheelRequested,
+                         uiSession->connections.get(), [canvas, &palette](int direction) {
                              switch (canvas->canvasTool()) {
                              case SnowCanvasTool::Shape:
                              case SnowCanvasTool::Arrow:
@@ -716,14 +739,11 @@ struct ScreenRecordingController::Impl {
         syncUi();
     }
 
-    void stop(bool copyToClipboard, bool closeAfter) {
+    void stop(bool copyToClipboard) {
         if (busy) {
             return;
         }
         if (state == ScreenshotToolPalette::RecordingState::Idle || recordingSession == nullptr) {
-            if (closeAfter) {
-                hideWindows();
-            }
             return;
         }
 
@@ -737,7 +757,6 @@ struct ScreenRecordingController::Impl {
             return std::make_pair(ok, ok ? QString() : captureError());
         });
         pendingCopyToClipboard = copyToClipboard;
-        pendingCloseAfter = closeAfter;
         finalizationPollTimer.start();
     }
 
@@ -769,9 +788,6 @@ struct ScreenRecordingController::Impl {
         if (pendingCopyToClipboard) {
             copyFileToClipboard(pendingOutputPath);
         }
-        if (pendingCloseAfter) {
-            hideWindows();
-        }
     }
 
     bool pollSessionLiveness() {
@@ -784,7 +800,7 @@ struct ScreenRecordingController::Impl {
             nativeState != SNOW_CAPTURE_RECORDING_STATE_STOPPED) {
             return false;
         }
-        stop(false, false);
+        stop(false);
         return true;
     }
 
@@ -795,22 +811,27 @@ struct ScreenRecordingController::Impl {
     }
 
     void close() {
-        if (state == ScreenshotToolPalette::RecordingState::Idle) {
-            hideWindows();
-            return;
-        }
-        stop(false, true);
+        stop(false);
+        destroyUi();
     }
 
-    void hideWindows() {
+    void destroyUi() {
         cancelPendingStart();
+        if (uiSession == nullptr) {
+            return;
+        }
+        auto* retiring = uiSession;
+        uiSession = nullptr;
+        areaWindow = nullptr;
+        toolbarWindow = nullptr;
+        // Disconnect before hiding: hide/focus events can emit canvas and geometry signals.
+        retiring->connections.reset();
+        retiring->shortcuts.reset();
+        retiring->toolbar->hide();
+        retiring->area->hide();
         restoreToolbarCaptureVisibility();
-        if (toolbarWindow != nullptr) {
-            toolbarWindow->hide();
-        }
-        if (areaWindow != nullptr) {
-            areaWindow->hide();
-        }
+        // Close can originate in a toolbar button's event handler.
+        retiring->deleteLater();
     }
 
     void excludeToolbarFromCapture() {
@@ -858,6 +879,7 @@ struct ScreenRecordingController::Impl {
     }
 
     ScreenRecordingController& owner;
+    RecordingUiSession* uiSession = nullptr;
     ScreenRecordingAreaWindow* areaWindow = nullptr;
     ScreenRecordingToolbarWindow* toolbarWindow = nullptr;
     SnowCaptureRecordingSession* recordingSession = nullptr;
@@ -881,7 +903,6 @@ struct ScreenRecordingController::Impl {
     QColor sessionMouseClickColor{0, 0, 0, 0};
     bool sessionShowCursor = true;
     bool busy = false;
-    std::unique_ptr<ScreenRecordingShortcutController> shortcutController;
     void report(const QString& event, QtMsgType level = QtInfoMsg) const {
         snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.recording"), event,
                                          {{QStringLiteral("operation"), operation},
@@ -895,7 +916,6 @@ struct ScreenRecordingController::Impl {
     bool startScheduled = false;
     quint64 startGeneration = 0;
     bool pendingCopyToClipboard = false;
-    bool pendingCloseAfter = false;
     snow_shot::presentation::WindowCaptureExclusion captureExclusion{
 #if defined(Q_OS_WIN) || defined(_WIN32)
         snow_shot::platform::windows::setWindowExcludedFromCapture
@@ -925,5 +945,5 @@ void ScreenRecordingController::startRecording() {
 }
 
 void ScreenRecordingController::stopRecordingAndCopy() {
-    m_impl->stop(true, false);
+    m_impl->stop(true);
 }
