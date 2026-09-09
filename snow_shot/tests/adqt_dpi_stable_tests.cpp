@@ -376,6 +376,28 @@ void baselineCaptureIsBlockedDuringNativeTransition() {
                                                                                      false);
 }
 
+void completionHandlersCanEstablishTheNextFrameBaseline() {
+    QWidget window;
+    window.resize(240, 80);
+    adqt::widgets::AdDpiStableWindowController controller(&window);
+    require(controller.captureBaseline(1.0), "completion test baseline capture failed");
+    adqt::widgets::AdDpiStableWindowControllerTestAccess::setNativeTransitionActive(controller,
+                                                                                    true);
+    bool completed = false;
+    QObject::connect(&controller, &adqt::widgets::AdDpiStableWindowController::scaleCommitCompleted,
+                     [&]() {
+                         completed = true;
+                         window.resize(480, 100);
+                         require(controller.captureBaseline(1.5),
+                                 "completion handler must be able to capture its new baseline");
+                         require(qFuzzyCompare(controller.referenceDpr(), 1.5),
+                                 "completion must release the old native baseline guard");
+                     });
+    adqt::widgets::AdDpiStableWindowControllerTestAccess::queueScaleCommit(controller);
+    adqt::widgets::AdDpiStableWindowControllerTestAccess::commitPendingScale(controller);
+    require(completed, "queued scale change must notify its completion handler");
+}
+
 void componentHintsFollowTheScope() {
     QWidget root;
     auto* layout = new QHBoxLayout(&root);
@@ -687,6 +709,7 @@ int main(int argc, char** argv) {
         controllerCanKeepReferenceDpiSeparateFromWindowDpi();
         staleQueuedScaleIsRejectedAfterBaselineChanges();
         baselineCaptureIsBlockedDuringNativeTransition();
+        completionHandlersCanEstablishTheNextFrameBaseline();
         componentHintsFollowTheScope();
         radioIconUsesDirectPaintingAfterScaleChanges();
         buttonExplicitIconSizeSurvivesDpiScale();

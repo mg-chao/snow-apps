@@ -3293,6 +3293,22 @@ if(SNOW_SHOT_BUILD_TESTS)
         )
     endif()
     snow_shot_import_offscreen_platform(snow-shot-floating-toolbar-drag-tests)
+    add_test(NAME snow-shot-floating-toolbar-dpi-frame-reconcile-tests
+        COMMAND snow-shot-floating-toolbar-drag-tests --dpi-frame-reconcile-only)
+    set_tests_properties(snow-shot-floating-toolbar-dpi-frame-reconcile-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    if(WIN32)
+        add_test(NAME snow-shot-floating-toolbar-capture-screen-switch-tests
+            COMMAND snow-shot-floating-toolbar-drag-tests --capture-screen-switch-only)
+        set_tests_properties(snow-shot-floating-toolbar-capture-screen-switch-tests PROPERTIES
+            RUN_SERIAL TRUE
+            LABELS "interactive;windows"
+            ENVIRONMENT "QT_QPA_PLATFORM=windows"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
     add_test(NAME snow-shot-floating-toolbar-keyboard-focus-tests
         COMMAND snow-shot-floating-toolbar-drag-tests --keyboard-focus-only)
     set_tests_properties(snow-shot-floating-toolbar-keyboard-focus-tests PROPERTIES
@@ -3404,6 +3420,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         Qt6::Widgets
         Qt6::Svg
     )
+    snow_shot_import_offscreen_platform(snow-shot-adqt-dpi-stable-tests)
     add_test(
         NAME snow-shot-adqt-dpi-stable-tests
         COMMAND snow-shot-adqt-dpi-stable-tests

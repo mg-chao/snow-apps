@@ -81,6 +81,12 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
             &ScreenshotFloatingToolPaletteWindow::registerMaterializedScope);
     connect(m_dpiController, &adqt::widgets::AdDpiStableWindowController::scaleCommitCompleted,
             this, [this](const adqt::widgets::AdControlScaleContext& context, const QSize&) {
+                // Reusing a capture toolbar can change its reference scale while
+                // Windows preserves the previous physical frame. Keep painting
+                // paused until the enclosing geometry transaction has unwound.
+                const bool updatesWereEnabled = updatesEnabled();
+                const bool preservePhysicalDragSize = m_draggingPalette;
+                setUpdatesEnabled(false);
                 m_processingNativeDpiChange = true;
                 m_committedWindowDevicePixelRatio = context.currentDpr;
                 ensureReferenceDevicePixelRatio();
@@ -98,6 +104,18 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
                 }
                 refreshGeometryForVisibleContent(true, true);
                 m_processingNativeDpiChange = false;
+                QTimer::singleShot(0, this, [this, updatesWereEnabled, preservePhysicalDragSize]() {
+                    // A native transition may have rejected the requested extent;
+                    // compare the actual frame, not just our cached geometry.
+                    if (!preservePhysicalDragSize && !m_draggingPalette &&
+                        size() != fixedWindowSizeHint()) {
+                        refreshGeometryForVisibleContent(true);
+                    }
+                    if (updatesWereEnabled) {
+                        setUpdatesEnabled(true);
+                        update();
+                    }
+                });
                 emit dpiScaleCommitCompleted();
             });
 

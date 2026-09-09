@@ -452,8 +452,10 @@ void AdDpiStableWindowController::commitPendingScale() {
   baseline_.frameGeometry = currentNativeFrameGeometry();
   diagnostics_.newDpr = dpr;
   diagnostics_.finalPhysicalGeometry = baseline_.frameGeometry;
-  emit scaleCommitCompleted(context, logicalExtent);
+  // Completion handlers own subsequent geometry and repaint decisions. Release
+  // the native resize/update guard before handing control back to them.
   finishNativeTransition();
+  emit scaleCommitCompleted(context, logicalExtent);
   syncAuxiliarySurfaces();
   ++diagnostics_.transitionCount;
   diagnostics_.queuedCommitNanoseconds = commitTimer.nsecsElapsed();
