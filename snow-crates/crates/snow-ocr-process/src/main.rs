@@ -21,7 +21,7 @@ use std::{
         mpsc::{self, Receiver, Sender},
     },
     thread::{self, JoinHandle},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 const SLOT_HEADER: usize = 32;
@@ -293,6 +293,7 @@ impl SharedImage {
 
 struct Job {
     id: u64,
+    queued_at: Instant,
     input: OcrInput,
     cancelled: Arc<std::sync::atomic::AtomicBool>,
     priority: u8,
@@ -362,6 +363,7 @@ impl Scheduler {
             position,
             Job {
                 id,
+                queued_at: Instant::now(),
                 input,
                 cancelled,
                 priority,
@@ -457,6 +459,64 @@ fn make_engine_for_models(
     )
 }
 
+fn run_unless_cancelled<T>(
+    cancelled: &AtomicBool,
+    work: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    if cancelled.load(Ordering::Acquire) {
+        Err("cancelled".to_string())
+    } else {
+        work()
+    }
+}
+
+fn worker_event(
+    event: &str,
+    id: u64,
+    stage: &str,
+    backend: &str,
+    outcome: &str,
+    elapsed: u128,
+    message: &str,
+) {
+    eprintln!(
+        "{}",
+        serde_json::json!({
+            "event": event, "message": message,
+            "fields": {"operation": id.to_string(), "stage": stage, "backend": backend,
+                       "outcome": outcome, "duration_ms": elapsed}
+        })
+    );
+}
+
+fn cpu_fallback_engine(
+    config: &Config,
+    thread_budget: usize,
+    id: u64,
+    cancelled: &AtomicBool,
+) -> Option<RapidOcr> {
+    let started = Instant::now();
+    let result = run_unless_cancelled(cancelled, || {
+        make_engine(config, false, thread_budget).map_err(|error| error.to_string())
+    });
+    worker_event(
+        "ocr.backend_fallback",
+        id,
+        "cpu_initialization",
+        "cpu",
+        if cancelled.load(Ordering::Acquire) {
+            "cancelled"
+        } else if result.is_ok() {
+            "succeeded"
+        } else {
+            "failed"
+        },
+        started.elapsed().as_millis(),
+        result.as_ref().err().map_or("", String::as_str),
+    );
+    result.ok()
+}
+
 fn worker_loop(
     queue: Arc<(Mutex<Queue>, Condvar)>,
     cancellations: Arc<Mutex<std::collections::HashMap<u64, Arc<std::sync::atomic::AtomicBool>>>>,
@@ -465,6 +525,7 @@ fn worker_loop(
     thread_budget: usize,
 ) {
     let mut engine: Option<RapidOcr> = None;
+    let mut engine_backend = "cpu";
     loop {
         let job = {
             let (state, wake) = &*queue;
@@ -478,11 +539,16 @@ fn worker_loop(
             state.jobs.pop_front().unwrap()
         };
         let cancelled = job.cancelled.load(std::sync::atomic::Ordering::Acquire);
+        let started = Instant::now();
+        let queue_ms = job.queued_at.elapsed().as_millis();
+        let mut initialization_ms = 0;
+        let mut inference_ms = 0;
         diagnostics::operation_started(job.id);
         let result = if cancelled {
             Err("cancelled".to_string())
         } else {
             if engine.is_none() {
+                let initializing = Instant::now();
                 let wants_directml =
                     config.directml && config.directml_enabled.load(Ordering::Acquire);
                 engine = match make_engine(&config, wants_directml, thread_budget) {
@@ -497,22 +563,65 @@ fn worker_loop(
                                     resolution.resolved == ResolvedExecutionProvider::DirectMl
                                 });
                         if wants_directml && !provider_ok {
-                            eprintln!("ocr.backend_fallback directml-to-cpu");
+                            worker_event(
+                                "ocr.backend_fallback",
+                                job.id,
+                                "provider_resolution",
+                                "cpu",
+                                "started",
+                                0,
+                                "DirectML was not selected",
+                            );
                             config.directml_cache.write(false);
                             config.directml_enabled.store(false, Ordering::Release);
-                            make_engine(&config, false, thread_budget).ok()
+                            cpu_fallback_engine(&config, thread_budget, job.id, &job.cancelled)
                         } else {
+                            engine_backend = if wants_directml { "directml" } else { "cpu" };
                             Some(candidate)
                         }
                     }
-                    Err(_) if wants_directml => {
+                    Err(error) if wants_directml => {
+                        worker_event(
+                            "ocr.backend_fallback",
+                            job.id,
+                            "initialization",
+                            "cpu",
+                            "started",
+                            0,
+                            &error.to_string(),
+                        );
                         config.directml_cache.write(false);
                         config.directml_enabled.store(false, Ordering::Release);
-                        make_engine(&config, false, thread_budget).ok()
+                        cpu_fallback_engine(&config, thread_budget, job.id, &job.cancelled)
                     }
-                    Err(_error) => None,
+                    Err(error) => {
+                        worker_event(
+                            "ocr.engine_ready",
+                            job.id,
+                            "initialization",
+                            "cpu",
+                            "failed",
+                            initializing.elapsed().as_millis(),
+                            &error.to_string(),
+                        );
+                        None
+                    }
                 };
+                worker_event(
+                    "ocr.engine_ready",
+                    job.id,
+                    "initialization",
+                    engine_backend,
+                    if engine.is_some() {
+                        "succeeded"
+                    } else {
+                        "failed"
+                    },
+                    initializing.elapsed().as_millis(),
+                    "",
+                );
             }
+            initialization_ms = started.elapsed().as_millis();
             let options = OcrCallOptions {
                 use_det: Some(true),
                 use_cls: Some(false),
@@ -521,35 +630,88 @@ fn worker_loop(
             };
             let input = job.input;
             let first_attempt = engine.as_mut().map(|engine| {
-                engine
-                    .run(input.clone(), options.clone())
-                    .and_then(OcrResult::try_from)
-                    .map_err(|e| e.to_string())
+                run_unless_cancelled(&job.cancelled, || {
+                    let inference_started = Instant::now();
+                    let result = engine
+                        .run(input.clone(), options.clone())
+                        .and_then(OcrResult::try_from)
+                        .map_err(|e| e.to_string());
+                    inference_ms += inference_started.elapsed().as_millis();
+                    result
+                })
             });
             match first_attempt {
                 Some(Ok(result)) => Ok(result),
-                Some(Err(error)) if config.directml_enabled.load(Ordering::Acquire) => {
+                Some(Err(error))
+                    if config.directml_enabled.load(Ordering::Acquire)
+                        && !job.cancelled.load(Ordering::Acquire) =>
+                {
                     // A provider can pass the inexpensive availability check
                     // and still fail while creating or executing a session.
                     // Persist the negative result and retry this request on
                     // CPU so one bad driver does not fail the OCR operation.
                     config.directml_cache.write(false);
                     config.directml_enabled.store(false, Ordering::Release);
-                    engine = make_engine(&config, false, thread_budget).ok();
-                    match engine.as_mut() {
-                        Some(cpu) => cpu
-                            .run(input, options)
-                            .and_then(OcrResult::try_from)
-                            .map_err(|cpu_error| {
-                                format!("{error}; CPU fallback failed: {cpu_error}")
-                            }),
+                    worker_event(
+                        "ocr.backend_fallback",
+                        job.id,
+                        "inference",
+                        "cpu",
+                        "started",
+                        0,
+                        &error,
+                    );
+                    let fallback_started = Instant::now();
+                    engine_backend = "cpu";
+                    engine = cpu_fallback_engine(&config, thread_budget, job.id, &job.cancelled);
+                    initialization_ms += fallback_started.elapsed().as_millis();
+                    let result = match engine.as_mut() {
+                        Some(cpu) => run_unless_cancelled(&job.cancelled, || {
+                            let inference_started = Instant::now();
+                            let result = cpu
+                                .run(input, options)
+                                .and_then(OcrResult::try_from)
+                                .map_err(|cpu_error| {
+                                    format!("{error}; CPU fallback failed: {cpu_error}")
+                                });
+                            inference_ms += inference_started.elapsed().as_millis();
+                            result
+                        }),
                         None => Err(format!("{error}; unable to initialize CPU fallback engine")),
-                    }
+                    };
+                    worker_event(
+                        "ocr.backend_fallback",
+                        job.id,
+                        "retry",
+                        "cpu",
+                        if job.cancelled.load(Ordering::Acquire) {
+                            "cancelled"
+                        } else if result.is_ok() {
+                            "succeeded"
+                        } else {
+                            "failed"
+                        },
+                        fallback_started.elapsed().as_millis(),
+                        result.as_ref().err().map_or("", String::as_str),
+                    );
+                    result
                 }
                 Some(Err(error)) => Err(error),
                 None => Err("unable to initialize OCR engine".to_string()),
             }
         };
+        let cancelled = job.cancelled.load(Ordering::Acquire);
+        eprintln!(
+            "{}",
+            serde_json::json!({
+                "event": "ocr.worker_finished", "fields": {
+                "operation": job.id.to_string(), "queue_ms": queue_ms,
+                "initialization_ms": initialization_ms, "inference_ms": inference_ms,
+                    "worker_ms": started.elapsed().as_millis(), "backend": engine_backend,
+                    "outcome": if cancelled { "cancelled" } else if result.is_ok() { "succeeded" } else { "failed" }
+                }
+            })
+        );
         cancellations.lock().unwrap().remove(&job.id);
         let _ = tx.send(Completion {
             id: job.id,
@@ -876,6 +1038,18 @@ fn main() -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cancellation_checkpoint_skips_expensive_work_and_preserves_results() {
+        let cancelled = std::sync::atomic::AtomicBool::new(true);
+        let result: Result<(), String> =
+            super::run_unless_cancelled(&cancelled, || panic!("cancelled inference must not run"));
+        assert_eq!(result.unwrap_err(), "cancelled");
+        cancelled.store(false, std::sync::atomic::Ordering::Release);
+        assert_eq!(super::run_unless_cancelled(&cancelled, || Ok(42)), Ok(42));
+        let error: Result<(), String> =
+            super::run_unless_cancelled(&cancelled, || Err("provider failed".into()));
+        assert_eq!(error.unwrap_err(), "provider failed");
+    }
     use super::{StartupMode, parse_startup_mode};
     use std::{ffi::OsString, io, path::PathBuf};
 

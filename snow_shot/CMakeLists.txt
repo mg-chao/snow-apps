@@ -2999,6 +2999,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/src/image"
     )
     target_link_libraries(snow-shot-export-artifact-tests PRIVATE
+        snow_shot_diagnostics
         snow_shot_image_codec
         snow_shot_storage
         snow_draw_engine_qt_canvas
@@ -3068,6 +3069,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(
         NAME snow-shot-screenshot-action-toolbar-layout-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --action-toolbar-layout-only
+    )
+    add_test(
+        NAME snow-shot-toolbar-color-input-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --color-input-only -platform offscreen
     )
     add_test(
         NAME snow-shot-screenshot-tool-shortcut-toggle-tests

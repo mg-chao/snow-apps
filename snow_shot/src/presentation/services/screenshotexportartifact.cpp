@@ -2,6 +2,7 @@
 
 #include "snowimageqtcodec.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/diagnostics/diagnostics.h"
 
 #include <QBuffer>
 #include <QCoreApplication>
@@ -10,6 +11,7 @@
 #include <QMutexLocker>
 #include <QPointer>
 #include <QThread>
+#include <QUuid>
 
 #include <snow/image/codec.h>
 #include <snow/image/format.h>
@@ -143,6 +145,7 @@ struct ScreenshotExportArtifact::Impl final {
     explicit Impl(ScreenshotExportSource value) : source(std::move(value)) {}
 
     ScreenshotExportSource source;
+    const QString diagnosticId = QUuid::createUuid().toString(QUuid::Id128);
     mutable QMutex mutex;
     bool cancelled = false;
     RequestPhase imagePhase = RequestPhase::Empty;
@@ -165,6 +168,10 @@ struct ScreenshotExportArtifact::Impl final {
 
 ScreenshotExportArtifact::ScreenshotExportArtifact(ScreenshotExportSource source, QObject* parent)
     : QObject(parent), m_impl(std::make_unique<Impl>(std::move(source))) {}
+
+QString ScreenshotExportArtifact::diagnosticId() const {
+    return m_impl->diagnosticId;
+}
 
 ScreenshotExportArtifact::~ScreenshotExportArtifact() {
     cancel();
@@ -440,6 +447,14 @@ void ScreenshotExportArtifact::completeImage(ScreenshotExportImageResult result)
         subscribers = std::move(m_impl->imageSubscribers);
         m_impl->imageSubscribers.clear();
     }
+    snow_shot::diagnostics::DiagnosticsService::instance().record(
+        result.succeeded() ? QtInfoMsg : QtWarningMsg, QStringLiteral("snow_shot.export"),
+        QStringLiteral("export.image_finished"), result.error,
+        {{QStringLiteral("operation"), diagnosticId()},
+         {QStringLiteral("outcome"),
+          result.succeeded() ? QStringLiteral("succeeded") : QStringLiteral("failed")},
+         {QStringLiteral("width"), result.image.width()},
+         {QStringLiteral("height"), result.image.height()}});
     for (auto& subscriber : subscribers) {
         if (!subscriber.receiver.isNull()) {
             ScreenshotExportImageResult delivered{result.image, result.error};
@@ -820,12 +835,16 @@ void ScreenshotExportArtifact::cancel() {
     ScreenshotExportJobHandle rowSourceJob;
     ScreenshotExportJobHandle encodingJob;
     std::vector<ScreenshotExportJobHandle> outputJobs;
+    bool pending = false;
     {
         QMutexLocker lock(&m_impl->mutex);
         if (m_impl->cancelled) {
             return;
         }
         m_impl->cancelled = true;
+        pending = m_impl->imagePhase == RequestPhase::Pending ||
+                  m_impl->rowSourcePhase == RequestPhase::Pending ||
+                  m_impl->encodingPhase == RequestPhase::Pending;
         imageJob = m_impl->imageJob;
         rowSourceJob = m_impl->rowSourceJob;
         encodingJob = m_impl->encodingJob;
@@ -833,6 +852,12 @@ void ScreenshotExportArtifact::cancel() {
         m_impl->imageSubscribers.clear();
         m_impl->rowSourceSubscribers.clear();
         m_impl->encodingSubscribers.clear();
+    }
+    if (pending) {
+        snow_shot::diagnostics::logEvent(
+            QStringLiteral("snow_shot.export"), QStringLiteral("export.cancelled"),
+            {{QStringLiteral("operation"), diagnosticId()},
+             {QStringLiteral("outcome"), QStringLiteral("cancelled")}});
     }
     imageJob.cancel();
     rowSourceJob.cancel();

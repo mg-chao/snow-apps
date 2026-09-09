@@ -4859,9 +4859,9 @@ void AdSelect::applyVisualStyle() {
       popupStyleChanged |= setLayoutSpacingIfChanged(popupLayout_, 0);
     }
 
-    static_cast<PopupFrame*>(popup_)->setVisualStyle(visualStyle_->popupBg,
-                                                     visualStyle_->popupBorderColor,
-                                                     visualStyle_->metrics.popupBorderRadius);
+    static_cast<PopupFrame*>(popup_.data())
+        ->setVisualStyle(visualStyle_->popupBg, visualStyle_->popupBorderColor,
+                         visualStyle_->metrics.popupBorderRadius);
 
     if (popupScrollArea_) {
       QPalette scrollPalette = popupScrollArea_->palette();
@@ -5295,6 +5295,16 @@ void AdSelect::ensurePopup() {
   }
 
   popup_ = new PopupFrame(selectPopupContainer(this));
+  // In-window surfaces belong to the popup container, which can destroy them
+  // before a selector reparented into another panel. Drop every child alias so
+  // teardown and a subsequent ensurePopup() cannot use the released surface.
+  connect(popup_.data(), &QObject::destroyed, this, [this]() {
+    popupLayout_ = nullptr;
+    popupScrollArea_ = nullptr;
+    listView_ = nullptr;
+    popupExtraContent_ = nullptr;
+    open_ = false;
+  });
   popup_->setAttribute(Qt::WA_DeleteOnClose, false);
   popup_->setObjectName(QStringLiteral("adselect-popup"));
   popup_->setProperty("adqt.interaction.surface", true);

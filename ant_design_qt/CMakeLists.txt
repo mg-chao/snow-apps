@@ -229,6 +229,9 @@ if(ADQT_BUILD_TESTS)
         target_link_libraries(adqt-qt-tool-popup-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)
         qt_import_plugins(adqt-qt-tool-popup-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
     endif()
+    add_test(NAME adqt-select-popup-lifetime-tests
+        COMMAND adqt-qt-tool-popup-tests selectSurvivesPopupContainerDestructionOrder
+                -platform offscreen)
     add_test(NAME adqt-qt-tool-popup-tests COMMAND adqt-qt-tool-popup-tests)
     if(WIN32)
         set_tests_properties(adqt-qt-tool-popup-tests PROPERTIES

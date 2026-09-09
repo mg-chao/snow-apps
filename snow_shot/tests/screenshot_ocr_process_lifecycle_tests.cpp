@@ -40,7 +40,7 @@ bool waitUntil(const std::function<bool()>& condition) {
     return condition();
 }
 
-QList<QJsonObject> processExits() {
+QList<QJsonObject> recordsFor(const QString& event) {
     auto& diagnostics = snow_shot::diagnostics::DiagnosticsService::instance();
     require(diagnostics.flush(), "lifecycle diagnostics must flush");
     QFile file(diagnostics.status().currentFile);
@@ -48,10 +48,13 @@ QList<QJsonObject> processExits() {
     QList<QJsonObject> result;
     for (const auto& line : file.readAll().split('\n')) {
         const auto record = QJsonDocument::fromJson(line).object();
-        if (record.value(QStringLiteral("event")) == QStringLiteral("ocr.process_exit"))
+        if (record.value(QStringLiteral("event")) == event)
             result.append(record);
     }
     return result;
+}
+QList<QJsonObject> processExits() {
+    return recordsFor(QStringLiteral("ocr.process_exit"));
 }
 } // namespace
 
@@ -78,6 +81,8 @@ int runOcrLifecycleChild() {
         if (std::fread(payload.data(), 1, size, stdin) != size)
             return 3;
         if (kind == 1) {
+            std::fputs("ONNX Runtime [Error]: fragmented \xe4", stderr);
+            std::fflush(stderr);
             QByteArray ready;
             QDataStream output(&ready, QIODevice::WriteOnly);
             output.setByteOrder(QDataStream::LittleEndian);
@@ -89,6 +94,12 @@ int runOcrLifecycleChild() {
                 return 4;
             std::fflush(stdout);
         } else if (kind == 3) {
+            std::fputs("\xb8\xad "
+                       "error\n{\"event\":\"ocr.engine_ready\",\"fields\":{\"operation\":\"1\","
+                       "\"stage\":\"initialization\",\"backend\":\"cpu\",\"outcome\":\"succeeded\","
+                       "\"duration_ms\":7}}\n",
+                       stderr);
+            std::fflush(stderr);
             QFile marker(qEnvironmentVariable("SNOW_TEST_OCR_LIFECYCLE_MARKER"));
             if (!marker.open(QIODevice::WriteOnly | QIODevice::Append))
                 return 5;
@@ -140,9 +151,28 @@ void ocrProcessLifecycleTests() {
         const auto first = submit();
         require(first != 0 && waitUntil([&] { return submitted(first); }),
                 "first inference must reach the controlled child");
+        require(
+            waitUntil([&] { return !recordsFor(QStringLiteral("ocr.engine_ready")).isEmpty(); }),
+            "worker stage events must be relayed as structured records");
+        const auto stderrRecords = recordsFor(QStringLiteral("ocr.stderr"));
+        require(stderrRecords.size() == 1 &&
+                    stderrRecords.front().value(QStringLiteral("message")) ==
+                        QString::fromUtf8("ONNX Runtime [Error]: fragmented \xe4\xb8\xad error"),
+                "stderr must preserve a UTF-8 error fragmented across pipe writes");
+        const auto submittedFields = recordsFor(QStringLiteral("ocr.submitted"))
+                                         .front()
+                                         .value(QStringLiteral("fields"))
+                                         .toObject();
+        require(submittedFields.value(QStringLiteral("width")).toInt() == 8 &&
+                    submittedFields.value(QStringLiteral("height")).toInt() == 8 &&
+                    submittedFields.contains(QStringLiteral("queue_ms")) &&
+                    submittedFields.contains(QStringLiteral("pending_count")),
+                "submission logs must retain image geometry and queue context");
         QPointer<QProcess> original = service.findChild<QProcess*>();
         service.cancel(first);
         service.cancel(first);
+        require(recordsFor(QStringLiteral("ocr.cancelled")).size() == 1,
+                "repeated cancellation must produce one request cancellation record");
         const auto second = submit();
         require(second != 0 && waitUntil([&] { return submitted(second) && original.isNull(); }),
                 "a request queued during cancellation must reach a fresh child");
@@ -164,6 +194,21 @@ void ocrProcessLifecycleTests() {
         child->kill();
         require(waitUntil([&] { return completions == 1; }),
                 "unexpected child death must complete the pending request with an error");
+        const auto failures = recordsFor(QStringLiteral("ocr.process_failed"));
+        require(failures.size() == 1 &&
+                    failures.front()
+                            .value(QStringLiteral("fields"))
+                            .toObject()
+                            .value(QStringLiteral("stage")) == QStringLiteral("process_exit"),
+                "unexpected child death must identify the failed process stage");
+        const auto finished = recordsFor(QStringLiteral("ocr.finished"));
+        require(!finished.isEmpty(), "process failure must retain request completion diagnostics");
+        const auto failedFields = finished.back().value(QStringLiteral("fields")).toObject();
+        require(failedFields.value(QStringLiteral("outcome")) == QStringLiteral("failed") &&
+                    failedFields.value(QStringLiteral("child_pid")).toInteger() > 0 &&
+                    failedFields.contains(QStringLiteral("queue_ms")) &&
+                    failedFields.contains(QStringLiteral("worker_ms")),
+                "process failure must preserve the affected request PID and timings");
         const auto allExits = processExits();
         require(allExits.size() == 2 &&
                     allExits.back().value(QStringLiteral("level")) == QStringLiteral("ERROR") &&

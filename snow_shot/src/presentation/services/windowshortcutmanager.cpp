@@ -7,6 +7,7 @@
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QLineEdit>
+#include <QAbstractSpinBox>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QSet>
@@ -478,6 +479,9 @@ WindowShortcutManager::keyCombinationsFromPortableText(const QStringList& shortc
 
 bool WindowShortcutManager::focusAcceptsTextInput(QWidget* focusWidget) {
     for (QWidget* current = focusWidget; current != nullptr; current = current->parentWidget()) {
+        if (auto* spinBox = qobject_cast<QAbstractSpinBox*>(current)) {
+            return !spinBox->isReadOnly();
+        }
         if (auto* lineEdit = qobject_cast<QLineEdit*>(current)) {
             return !lineEdit->isReadOnly();
         }

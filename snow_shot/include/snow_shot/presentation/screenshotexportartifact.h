@@ -108,6 +108,7 @@ class ScreenshotExportArtifact final : public QObject {
 
     [[nodiscard]] bool isValid() const;
     [[nodiscard]] bool isCancelled() const;
+    [[nodiscard]] QString diagnosticId() const;
 
   private:
     struct Impl;

@@ -575,7 +575,7 @@ class AdSelect final : public QWidget,
   int groupRole_ = DefaultGroupRole;
   QList<int> searchRoles_;
   QPointer<QAbstractItemDelegate> itemDelegateOverride_;
-  QWidget* popupFooterWidget_ = nullptr;
+  QPointer<QWidget> popupFooterWidget_;
   QVariantList customTagValues_;
   QVariantList currentValuesCache_;
   QVariant currentValueCache_;
@@ -610,11 +610,12 @@ class AdSelect final : public QWidget,
   QToolButton* clearButton_ = nullptr;
   QToolButton* suffixButton_ = nullptr;
 
-  QFrame* popup_ = nullptr;
-  QVBoxLayout* popupLayout_ = nullptr;
-  AdScrollArea* popupScrollArea_ = nullptr;
-  QListView* listView_ = nullptr;
-  QWidget* popupExtraContent_ = nullptr;
+  // The popup belongs to its stacking container, which can destroy it before this control.
+  QPointer<QFrame> popup_;
+  QPointer<QVBoxLayout> popupLayout_;
+  QPointer<AdScrollArea> popupScrollArea_;
+  QPointer<QListView> listView_;
+  QPointer<QWidget> popupExtraContent_;
   OptionListModel* listModel_ = nullptr;
   QVector<ModelRow> rows_;
   bool suffixSpinnerSubscribed_ = false;
