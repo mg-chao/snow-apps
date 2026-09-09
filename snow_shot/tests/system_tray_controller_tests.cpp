@@ -257,8 +257,7 @@ int main(int argc, char* argv[]) {
                       "Screenshot should use its catalog label");
     requireActionText(delayedScreenshotMenuAction, QStringLiteral("Delay 3s to execute"),
                       "Delayed screenshot should use the canonical shortcut title");
-    requireActionText(recordingToggleMenuAction,
-                      QStringLiteral("Start screen recording / stop and copy recording"),
+    requireActionText(recordingToggleMenuAction, QStringLiteral("Record/Copy Video"),
                       "Recording toggle should use the canonical shortcut title");
     const QList<QPair<QString, QString>> displayCases{
         {QStringLiteral("+"), QStringLiteral("Plus")},

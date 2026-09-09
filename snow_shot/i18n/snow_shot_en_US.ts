@@ -4757,8 +4757,8 @@
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="171"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="2355"/>
-        <source>Start screen recording / stop and copy recording</source>
-        <translation>Start screen recording / stop and copy recording</translation>
+        <source>Record/Copy Video</source>
+        <translation>Record/Copy Video</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="172"/>
