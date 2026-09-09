@@ -36,7 +36,7 @@
 
 namespace {
 constexpr auto kManifestName = "asset-manifest.json";
-constexpr auto kRuntimeVersion = "1.0.4";
+constexpr auto kRuntimeVersion = "1.0.5";
 constexpr auto kPlatform = "windows-x64";
 
 struct FileDescriptor {
@@ -82,6 +82,18 @@ ModelContract modelContract(ScreenshotOcrModelType type) {
     case ScreenshotOcrModelType::Medium:
         return {"ppocrv6-medium-f5063c6", "PP-OCRv6_det_medium.onnx", "PP-OCRv6_rec_medium.onnx",
                 "ppocrv6_dict.txt"};
+    case ScreenshotOcrModelType::SmallV5:
+        return {"ppocrv5-small-7b2a75a", "ch_PP-OCRv5_det_mobile.onnx",
+                "ch_PP-OCRv5_rec_mobile.onnx", "ppocrv5_dict.txt"};
+    case ScreenshotOcrModelType::MediumV5:
+        return {"ppocrv5-medium-7b2a75a", "ch_PP-OCRv5_det_server.onnx",
+                "ch_PP-OCRv5_rec_server.onnx", "ppocrv5_dict.txt"};
+    case ScreenshotOcrModelType::SmallV4:
+        return {"ppocrv4-small-7b2a75a", "ch_PP-OCRv4_det_mobile.onnx",
+                "ch_PP-OCRv4_rec_mobile.onnx", "ppocr_keys_v1.txt"};
+    case ScreenshotOcrModelType::MediumV4:
+        return {"ppocrv4-medium-7b2a75a", "ch_PP-OCRv4_det_server.onnx",
+                "ch_PP-OCRv4_rec_server.onnx", "ppocr_keys_v1.txt"};
     }
     return {};
 }
@@ -93,6 +105,14 @@ std::optional<ScreenshotOcrModelType> parseModelType(const QString& value) {
         return ScreenshotOcrModelType::Small;
     if (value == QStringLiteral("medium"))
         return ScreenshotOcrModelType::Medium;
+    if (value == QStringLiteral("small_v5"))
+        return ScreenshotOcrModelType::SmallV5;
+    if (value == QStringLiteral("medium_v5"))
+        return ScreenshotOcrModelType::MediumV5;
+    if (value == QStringLiteral("small_v4"))
+        return ScreenshotOcrModelType::SmallV4;
+    if (value == QStringLiteral("medium_v4"))
+        return ScreenshotOcrModelType::MediumV4;
     return std::nullopt;
 }
 
@@ -253,7 +273,7 @@ std::optional<Descriptor> loadDescriptor(const QString& root, QString* error) {
         return std::nullopt;
     }
     const QJsonArray models = rootObject.value(QStringLiteral("models")).toArray();
-    if (models.size() != 3) {
+    if (models.size() != 7) {
         if (error != nullptr)
             *error = QStringLiteral("incomplete OCR asset manifest");
         return std::nullopt;
@@ -296,7 +316,7 @@ std::optional<Descriptor> loadDescriptor(const QString& root, QString* error) {
         modelIds.insert(model.id);
         result.models.push_back(std::move(model));
     }
-    if (modelTypes.size() != 3) {
+    if (modelTypes.size() != 7) {
         if (error != nullptr)
             *error = QStringLiteral("incomplete OCR asset manifest");
         return std::nullopt;
@@ -642,6 +662,14 @@ QString screenshotOcrModelTypeValue(ScreenshotOcrModelType type) {
         return QStringLiteral("small");
     case ScreenshotOcrModelType::Medium:
         return QStringLiteral("medium");
+    case ScreenshotOcrModelType::SmallV5:
+        return QStringLiteral("small_v5");
+    case ScreenshotOcrModelType::MediumV5:
+        return QStringLiteral("medium_v5");
+    case ScreenshotOcrModelType::SmallV4:
+        return QStringLiteral("small_v4");
+    case ScreenshotOcrModelType::MediumV4:
+        return QStringLiteral("medium_v4");
     }
     return QStringLiteral("small");
 }

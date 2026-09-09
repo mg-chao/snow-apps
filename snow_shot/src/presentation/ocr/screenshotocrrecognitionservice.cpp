@@ -31,7 +31,7 @@
 namespace {
 constexpr quint32 kProtocolMagic = 0x52434f53; // "SOCR" in little endian.
 constexpr quint16 kProtocolVersion = 2;
-constexpr auto kRuntimeVersion = "1.0.4";
+constexpr auto kRuntimeVersion = "1.0.5";
 constexpr quint16 kHello = 1;
 constexpr quint16 kReady = 2;
 constexpr quint16 kSubmit = 3;
