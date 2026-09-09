@@ -32,6 +32,7 @@ class OverlayPopupControllerDelegate {
   virtual QWidget* popupEnsureSurface() = 0;
   virtual void popupPrepareToShow() = 0;
   virtual bool popupHasContent() const = 0;
+  virtual bool popupAcceptsGeometry(const QRect&, const QSize&, const QRect&) const { return true; }
   virtual std::optional<QRect> popupTriggerGlobalRect() const { return std::nullopt; }
   virtual std::optional<QRect> popupAnchorGlobalRect() const { return std::nullopt; }
   virtual OverlayPopupPlacement popupPlacement() const = 0;

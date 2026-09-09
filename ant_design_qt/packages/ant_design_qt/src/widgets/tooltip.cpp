@@ -281,6 +281,8 @@ class AdTooltipPrivate final : public QObject, private detail::OverlayPopupContr
   QWidget* popupEnsureSurface() override;
   void popupPrepareToShow() override;
   bool popupHasContent() const override;
+  bool popupAcceptsGeometry(const QRect& anchor, const QSize& size,
+                            const QRect& bounds) const override;
   std::optional<QRect> popupTriggerGlobalRect() const override;
   std::optional<QRect> popupAnchorGlobalRect() const override;
   detail::OverlayPopupPlacement popupPlacement() const override;
@@ -924,6 +926,18 @@ void AdTooltipPrivate::popupPrepareToShow() {
 }
 
 bool AdTooltipPrivate::popupHasContent() const { return hasRenderableContent(); }
+
+bool AdTooltipPrivate::popupAcceptsGeometry(const QRect& anchor, const QSize& size,
+                                            const QRect& bounds) const {
+  if (!targetWidget ||
+      !targetWidget->property(detail::kPopupTriggerTooltipEnabledProperty).toBool()) {
+    return true;
+  }
+  // Group trigger tips stay below the button or remain hidden; never flip or
+  // clamp them upward into the trigger or its popover.
+  return placement == AdTooltip::Placement::Bottom &&
+         anchor.bottom() + std::max(0, popupOffset()) + size.height() <= bounds.bottom();
+}
 
 std::optional<QRect> AdTooltipPrivate::popupTriggerGlobalRect() const {
   if (!triggerRect.has_value() || !targetWidget || !targetWidget->isVisible()) {

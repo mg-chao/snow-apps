@@ -63,6 +63,19 @@ struct PopupTooltipRoute {
   quint64 activationOrder = 0;
 };
 
+bool routeAllowsTriggerTooltip(const PopupTooltipRoute& route) {
+  if (!route.triggerRoot || !route.popupSurface ||
+      !route.triggerRoot->property(kPopupTriggerTooltipEnabledProperty).toBool()) {
+    return false;
+  }
+  QRect popupBody = route.popupSurface->rect();
+  if (const auto* surface = dynamic_cast<const OverlayPopupSurface*>(route.popupSurface.data())) {
+    popupBody = popupBody.marginsRemoved(surface->shadowMargins());
+  }
+  return route.popupSurface->mapToGlobal(popupBody.bottomLeft()).y() <
+         route.triggerRoot->mapToGlobal(QPoint()).y();
+}
+
 struct PendingTooltipRequest {
   QPointer<QObject> routeOwner;
   QPointer<QWidget> popup;
@@ -149,8 +162,8 @@ class QtTooltipBridge final : public QObject {
         std::find_if(routes_.begin(), routes_.end(),
                      [owner](const PopupTooltipRoute& route) { return route.owner == owner; });
 
-    if (!active || !owner || !triggerRoot || !popupSurface || !popupSurface->isWindow() ||
-        popupSurface->windowType() == Qt::ToolTip) {
+    if (!active || !owner || !triggerRoot || !popupSurface || !popupSurface->isVisible() ||
+        !popupSurface->isWindow() || popupSurface->windowType() == Qt::ToolTip) {
       if (existing != routes_.end()) {
         const bool activeRouteRemoved =
             activeUsesPopupRoute_ && activeRouteOwner_ == existing->owner;
@@ -181,6 +194,16 @@ class QtTooltipBridge final : public QObject {
     }
 
     QToolTip::hideText();
+    // A group tip belongs to its button, not to the popover opening above it.
+    // Preserve both a warm tip and an in-flight hover request across that opening.
+    if (routeAllowsTriggerTooltip(route) && (widgetInTree(activeTarget_, triggerRoot) ||
+                                             widgetInTree(pendingRequest_.target, triggerRoot) ||
+                                             widgetInTree(hoverTarget_, triggerRoot))) {
+      if (!widgetInTree(activeTarget_, triggerRoot)) {
+        hideActiveTooltip();
+      }
+      return;
+    }
     hideImmediately();
   }
 
@@ -434,8 +457,7 @@ class QtTooltipBridge final : public QObject {
     PopupTooltipRoute* best = nullptr;
     for (PopupTooltipRoute& route : routes_) {
       if (!route.popupSurface || !route.popupSurface->isVisible() ||
-          !widgetInTree(widget, route.triggerRoot) ||
-          route.triggerRoot->property(kPopupTriggerTooltipEnabledProperty).toBool()) {
+          !widgetInTree(widget, route.triggerRoot) || routeAllowsTriggerTooltip(route)) {
         continue;
       }
       if (!best || route.activationOrder > best->activationOrder) {
@@ -611,36 +633,17 @@ class QtTooltipBridge final : public QObject {
       return;
     }
 
-    QWidget* anchor = request.anchor;
-    QRect anchorRect = request.anchorRect;
-    AdTooltip::Placement placement = AdTooltip::Placement::Bottom;
-    for (const PopupTooltipRoute& route : routes_) {
-      if (!route.popupSurface || !route.popupSurface->isVisible() ||
-          !widgetInTree(request.target, route.triggerRoot) ||
-          !route.triggerRoot->property(kPopupTriggerTooltipEnabledProperty).toBool()) {
-        continue;
-      }
-      // Anchor outside the visible popup, excluding its shadow padding and
-      // including screen-edge flips. Keep horizontal alignment on the trigger.
-      const QPoint triggerCenter = request.target->mapToGlobal(request.target->rect().center());
-      anchor = route.popupSurface;
-      anchorRect = anchor->rect();
-      if (const auto* surface = dynamic_cast<const OverlayPopupSurface*>(anchor)) {
-        anchorRect = anchorRect.marginsRemoved(surface->shadowMargins());
-      }
-      const int centerX = anchor->mapFromGlobal(triggerCenter).x();
-      anchorRect.setLeft(centerX);
-      anchorRect.setRight(centerX);
-      placement = anchor->mapToGlobal(anchorRect.center()).y() < triggerCenter.y()
-                      ? AdTooltip::Placement::Top
-                      : AdTooltip::Placement::Bottom;
-      break;
+    if (triggerRouteFor(request.target)) {
+      hideImmediately();
+      return;
     }
     tooltip_->setTargetWidget(request.target);
-    tooltip_->setAnchorWidget(anchor);
+    tooltip_->setAnchorWidget(request.anchor);
     tooltip_->setText(request.text);
-    tooltip_->setPlacement(placement);
-    tooltip_->setAnchorRect(anchorRect);
+    tooltip_->setPlacement(AdTooltip::Placement::Bottom);
+    tooltip_->setAutoAdjustOverflow(
+        !request.target->property(kPopupTriggerTooltipEnabledProperty).toBool());
+    tooltip_->setAnchorRect(request.anchorRect);
     activeUsesPopupRoute_ = request.usesPopupRoute;
     activeRouteOwner_ = request.routeOwner;
     activePopup_ = request.popup;
@@ -672,8 +675,7 @@ class QtTooltipBridge final : public QObject {
     }
   }
 
-  void hideImmediately(bool clearHover = true) {
-    clearPendingTooltip();
+  void hideActiveTooltip() {
     expireTimer_.stop();
     hideTimer_.stop();
     if (tooltip_) {
@@ -689,6 +691,11 @@ class QtTooltipBridge final : public QObject {
     activeUsesPopupRoute_ = false;
     activeText_.clear();
     activeRect_ = QRect();
+  }
+
+  void hideImmediately(bool clearHover = true) {
+    clearPendingTooltip();
+    hideActiveTooltip();
     if (clearHover) {
       clearHoverCandidate();
     }
