@@ -103,9 +103,11 @@ void translucentColorSwatchesShowCheckerboardUnderlay() {
     for (const qreal scale : {1.0, 1.5, 2.0}) {
         const ScreenshotToolPaletteButtonMetrics metrics{qRound(30 * scale), qRound(18 * scale),
                                                          scale};
-        std::unique_ptr<FillStylePreviewTrigger> drawingTrigger(
-            createScreenshotToolPaletteFillStyleTrigger(nullptr, nullptr, Qt::transparent,
-                                                        SnowCanvasFillStyle::Solid, metrics));
+        adqt::widgets::AdColorPicker drawingPicker;
+        auto* drawingTrigger =
+            snow_shot::presentation::createScreenshotToolPaletteColorPickerTrigger(
+                &drawingPicker, QString(), Qt::transparent, metrics,
+                ColorPickerTrigger::Preview::Fill);
         const QImage triggerImage = renderButton(*drawingTrigger);
         for (const bool summary : {false, true}) {
             std::unique_ptr<ColorSwatchButton> button(createScreenshotToolPaletteColorButton(
@@ -1091,8 +1093,8 @@ void textAndHighlightStrokeWidthTriggersUseSharedPreviewButton() {
             }
         }
         require(picker != nullptr, "stroke-width picker should be present");
-        require(dynamic_cast<StrokeWidthPreviewButton*>(picker->triggerContent()) != nullptr,
-                "stroke-width trigger should reuse the shape preview button");
+        require(dynamic_cast<ColorPickerTrigger*>(picker->triggerContent()) != nullptr,
+                "stroke-width picker should use the common color picker trigger");
         pickers.append(picker);
     }
 
@@ -7124,16 +7126,14 @@ void configurationDrivenStyleEditorsShareStructuralContracts() {
                     sampler->accessibleName() == sampler->toolTip(),
                 "canvas-color samplers should use the fill-color trigger's outlined style");
     }
-    require(dynamic_cast<ColorSwatchButton*>(colorPicker->triggerContent()) != nullptr &&
-                dynamic_cast<FillStylePreviewTrigger*>(fillPicker->triggerContent()) != nullptr &&
-                dynamic_cast<StrokeStylePreviewTrigger*>(strokePicker->triggerContent()) !=
-                    nullptr &&
-                dynamic_cast<StrokeWidthPreviewButton*>(widthColorPicker->triggerContent()) !=
-                    nullptr &&
+    require(dynamic_cast<ColorPickerTrigger*>(colorPicker->triggerContent()) != nullptr &&
+                dynamic_cast<ColorPickerTrigger*>(fillPicker->triggerContent()) != nullptr &&
+                dynamic_cast<ColorPickerTrigger*>(strokePicker->triggerContent()) != nullptr &&
+                dynamic_cast<ColorPickerTrigger*>(widthColorPicker->triggerContent()) != nullptr &&
                 colorPicker->alphaChannelEnabled() && fillPicker->alphaChannelEnabled() &&
                 strokePicker->alphaChannelEnabled() && widthColorPicker->alphaChannelEnabled(),
-            "picker configuration should preserve trigger differences and enable alpha");
-    auto* fillTrigger = dynamic_cast<FillStylePreviewTrigger*>(fillPicker->triggerContent());
+            "all picker previews should use one trigger implementation and enable alpha");
+    auto* fillTrigger = dynamic_cast<ColorPickerTrigger*>(fillPicker->triggerContent());
     auto* fillSampler = dynamic_cast<ColorPickerSamplerButton*>(fillPicker->previewContent());
     require(fillTrigger != nullptr && fillSampler != nullptr &&
                 fillSampler->sizeClass() == fillTrigger->sizeClass() &&
@@ -8799,6 +8799,62 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
             "a new editor should start at one and retain the saved appearance");
 }
 
+void colorPresetEditorsPreserveCommandsAcrossRebinding() {
+    using namespace snow_shot::presentation;
+    const QVector<QColor> colors{QColor(Qt::transparent), QColor(210, 40, 70, 128)};
+    const ScreenshotToolPaletteButtonMetrics metrics{28, 18, 1.0};
+    for (bool fill : {false, true}) {
+        QWidget host;
+        QHBoxLayout layout(&host);
+        ScreenshotToolPaletteStrokeEditor strokeEditor;
+        ScreenshotToolPaletteFillEditor fillEditor;
+        ScreenshotToolPaletteStrokeEditorConfig strokeConfig;
+        ScreenshotToolPaletteFillEditorConfig fillConfig;
+        strokeConfig.colorValues = colors;
+        fillConfig.colorValues = colors;
+        int oldCommands = 0;
+        int newCommands = 0;
+        QColor committed;
+        const auto original = [&](const QColor&) { ++oldCommands; };
+        const auto rebound = [&](const QColor& color) {
+            ++newCommands;
+            committed = color;
+        };
+        if (fill) {
+            fillEditor.build(&layout, &host, &host, fillConfig, colors.last(),
+                             SnowCanvasFillStyle::Solid, original, {}, {}, metrics);
+            fillEditor.rebind(fillConfig, rebound, {});
+            fillEditor.update(colors.last(), SnowCanvasFillStyle::Solid, true, false);
+        } else {
+            strokeEditor.build(&layout, &host, &host, strokeConfig, colors.last(),
+                               SnowCanvasStrokeStyle::Solid, original, {}, {}, metrics);
+            strokeEditor.rebind(strokeConfig, rebound, {});
+            strokeEditor.update(colors.last(), SnowCanvasStrokeStyle::Solid, true, false);
+        }
+        require(oldCommands == 0 && newCommands == 0,
+                "inbound color state and rebinding must not emit edit commands");
+        auto* picker = host.findChild<adqt::widgets::AdColorPicker*>();
+        require(picker != nullptr, "color editor must expose its picker");
+        QWidget* presetHost = fill ? picker->popupContent() : strokeEditor.rootWidget();
+        QList<adqt::widgets::AdButton*> presets;
+        for (auto* button : presetHost->findChildren<adqt::widgets::AdButton*>()) {
+            if (button->toolTip() == colors.first().name() ||
+                button->toolTip() == colors.last().name()) {
+                presets.append(button);
+            }
+        }
+        require(presets.size() == colors.size(), "each color must have one preset");
+        for (int index = 0; index < presets.size(); ++index) {
+            auto* button = presets.at(index);
+            require(button->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text,
+                    "mixed colors must clear every preset's selected style");
+            button->click();
+            require(oldCommands == 0 && newCommands == index + 1 && committed == colors.at(index),
+                    "presets must emit exactly one rebound command, preserving transparency");
+        }
+    }
+}
+
 void fontFamilyListIsCachedForEditorBuilds() {
     const QStringList& first = snow_shot::presentation::screenshotToolPaletteFontFamilies();
     const QStringList& second = snow_shot::presentation::screenshotToolPaletteFontFamilies();
@@ -8876,6 +8932,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--color-control-styles-only"))) {
+        colorPresetEditorsPreserveCommandsAcrossRebinding();
         drawingColorsPreserveAlphaAcrossEditsAndToolSwitches();
         translucentColorSwatchesShowCheckerboardUnderlay();
         configurationDrivenStyleEditorsShareStructuralContracts();
@@ -8986,6 +9043,7 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    colorPresetEditorsPreserveCommandsAcrossRebinding();
     recordingControlsRemainLaidOutAcrossStateChanges();
     translucentColorSwatchesShowCheckerboardUnderlay();
     recordingExportSettingsAndDrawingAvailabilityFollowSessionState();

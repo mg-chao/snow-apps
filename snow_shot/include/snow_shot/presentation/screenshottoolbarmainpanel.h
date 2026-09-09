@@ -17,8 +17,23 @@ namespace adqt::widgets {
 class AdButton;
 }
 
+// Surface, shadow and separators shared by main and secondary toolbar rows.
+class ScreenshotToolbarPanel : public QFrame {
+  public:
+    explicit ScreenshotToolbarPanel(QWidget* parent = nullptr);
+    void setPanelScale(qreal scale);
+    static QString separatorStyleSheet();
+
+  protected:
+    void paintEvent(QPaintEvent* event) override;
+
+  private:
+    qreal m_panelRadius = 8.0;
+    qreal m_panelScale = 0.0;
+};
+
 // Shared visual shell for the screenshot and recording toolbars.
-class ScreenshotToolbarMainPanel final : public QFrame {
+class ScreenshotToolbarMainPanel final : public ScreenshotToolbarPanel {
   public:
     struct Options {
         bool showDragHandle = false;
@@ -47,7 +62,6 @@ class ScreenshotToolbarMainPanel final : public QFrame {
 
   private:
     void changeEvent(QEvent* event) override;
-    void paintEvent(QPaintEvent* event) override;
     struct SpacingItem {
         QSpacerItem* item = nullptr;
         int baseSpacing = 0;

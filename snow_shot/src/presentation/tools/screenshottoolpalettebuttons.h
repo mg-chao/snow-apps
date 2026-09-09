@@ -82,6 +82,8 @@ struct ScreenshotToolPaletteSelectEditorConfig {
     QString placeholder;
     int baseWidth = 128;
     bool searchEnabled = false;
+    bool compact = true;
+    bool popupMatchSelectWidth = false;
 };
 
 struct ScreenshotToolPaletteRadioOption {
@@ -166,6 +168,10 @@ screenshotToolPaletteMetricsApplyTo(const ScreenshotToolPaletteButtonMetrics& me
 void stampScreenshotToolbarReferenceWidth(QWidget* widget, int referenceWidth);
 [[nodiscard]] int screenshotToolbarReferenceWidth(const QWidget* widget);
 
+void setScreenshotToolPaletteButtonActive(
+    adqt::widgets::AdButton* button, bool active,
+    adqt::widgets::AdButton::ButtonStyle activeStyle = adqt::widgets::AdButton::ButtonStyle::Solid);
+
 class StylePreviewButton : public adqt::widgets::AdButton {
   public:
     explicit StylePreviewButton(QWidget* parent = nullptr);
@@ -188,9 +194,6 @@ class StrokeWidthPreviewButton final : public StylePreviewButton {
     void paintEvent(QPaintEvent* event) override;
 
   private:
-    [[nodiscard]] QString strokeWidthText() const;
-    void drawStrokeWidthText(QPainter* painter, const QColor& color) const;
-
     double m_strokeWidth;
     qreal m_physicalScale = 1.0;
     bool m_active = false;
@@ -273,23 +276,27 @@ class IconValuePreviewTrigger final : public StylePreviewButton {
     bool m_mixed = false;
 };
 
-class StrokeStylePreviewTrigger final : public StylePreviewButton {
+// One picker trigger owns the button chrome, mixed state and DPI behavior.
+// Only the preview content varies between editors.
+class ColorPickerTrigger final : public ColorSwatchButton {
   public:
-    explicit StrokeStylePreviewTrigger(QWidget* parent = nullptr);
+    enum class Preview { Swatch, Stroke, Fill, Width };
+    explicit ColorPickerTrigger(Preview preview, QWidget* parent = nullptr);
 
-    void setStrokeColor(const QColor& color);
-    void setStrokeStyle(SnowCanvasStrokeStyle strokeStyle);
+    void setStrokeStyle(SnowCanvasStrokeStyle style);
+    void setFillStyle(SnowCanvasFillStyle style);
+    void setStrokeWidth(double width);
     void setMixed(bool mixed);
-    void setPhysicalScale(qreal scale);
-    void commitControlScale(const adqt::widgets::AdControlScaleContext& context) override;
 
   protected:
     void paintEvent(QPaintEvent* event) override;
 
   private:
-    QColor m_color;
+    void updateAccessibleValue();
+    Preview m_preview;
     SnowCanvasStrokeStyle m_strokeStyle = SnowCanvasStrokeStyle::Solid;
-    qreal m_physicalScale = 1.0;
+    SnowCanvasFillStyle m_fillStyle = SnowCanvasFillStyle::Solid;
+    double m_strokeWidth = 2.0;
     bool m_mixed = false;
 };
 
@@ -307,26 +314,6 @@ class StrokeStylePreviewButton final : public adqt::widgets::AdButton {
   private:
     SnowCanvasStrokeStyle m_strokeStyle = SnowCanvasStrokeStyle::Solid;
     qreal m_physicalScale = 1.0;
-};
-
-class FillStylePreviewTrigger final : public StylePreviewButton {
-  public:
-    explicit FillStylePreviewTrigger(QWidget* parent = nullptr);
-
-    void setFillColor(const QColor& color);
-    void setFillStyle(SnowCanvasFillStyle fillStyle);
-    void setMixed(bool mixed);
-    void setPhysicalScale(qreal scale);
-    void commitControlScale(const adqt::widgets::AdControlScaleContext& context) override;
-
-  protected:
-    void paintEvent(QPaintEvent* event) override;
-
-  private:
-    QColor m_color;
-    SnowCanvasFillStyle m_fillStyle = SnowCanvasFillStyle::Solid;
-    qreal m_physicalScale = 1.0;
-    bool m_mixed = false;
 };
 
 class FillStylePreviewButton final : public adqt::widgets::AdButton {
@@ -411,8 +398,7 @@ void setScreenshotToolPaletteStyleRadioIcon(adqt::widgets::AdRadio* radio,
 void setScreenshotToolPaletteToolButtonIcon(adqt::widgets::AdButton* button,
                                             const adqt::icons::IconRef& iconRef);
 
-void setScreenshotToolPaletteToolButtonIconDisabled(adqt::widgets::AdButton* button,
-                                                    bool disabled);
+void setScreenshotToolPaletteToolButtonIconDisabled(adqt::widgets::AdButton* button, bool disabled);
 
 adqt::widgets::AdButton*
 createScreenshotToolPaletteToolButton(QWidget* parent, const char* tooltip,
@@ -433,8 +419,8 @@ createScreenshotToolPaletteColorButton(QWidget* parent, const char* tooltip, con
                                        bool summary, bool swatchBorderVisible,
                                        const ScreenshotToolPaletteButtonMetrics& metrics);
 
-ColorPickerSamplerButton* createScreenshotToolPaletteColorPickerSamplerButton(
-    QWidget* parent, const QColor& color);
+ColorPickerSamplerButton* createScreenshotToolPaletteColorPickerSamplerButton(QWidget* parent,
+                                                                              const QColor& color);
 
 adqt::widgets::AdButton*
 createScreenshotToolPaletteStyleActionButton(QWidget* parent, const char* tooltip,
@@ -453,25 +439,10 @@ IconValuePreviewTrigger* createScreenshotToolPaletteIconValuePreviewTrigger(
 void configureScreenshotToolPaletteIconValuePreviewTrigger(
     IconValuePreviewTrigger* trigger, const ScreenshotToolPaletteButtonMetrics& metrics);
 
-StrokeStylePreviewTrigger* createScreenshotToolPaletteStrokeStyleTrigger(
-    QWidget* parent, const char* tooltip, const QColor& color,
-    SnowCanvasStrokeStyle strokeStyle, const ScreenshotToolPaletteButtonMetrics& metrics);
-
-void configureScreenshotToolPaletteStrokeStyleTrigger(
-    StrokeStylePreviewTrigger* trigger, const ScreenshotToolPaletteButtonMetrics& metrics);
-
 StrokeStylePreviewButton*
 createScreenshotToolPaletteStrokeStyleButton(QWidget* parent, const char* tooltip,
                                              SnowCanvasStrokeStyle strokeStyle,
                                              const ScreenshotToolPaletteButtonMetrics& metrics);
-
-FillStylePreviewTrigger*
-createScreenshotToolPaletteFillStyleTrigger(QWidget* parent, const char* tooltip,
-                                            const QColor& color, SnowCanvasFillStyle fillStyle,
-                                            const ScreenshotToolPaletteButtonMetrics& metrics);
-
-void configureScreenshotToolPaletteFillStyleTrigger(
-    FillStylePreviewTrigger* trigger, const ScreenshotToolPaletteButtonMetrics& metrics);
 
 FillStylePreviewButton* createScreenshotToolPaletteFillStyleButton(
     QWidget* parent, const char* tooltip, const QColor& color, SnowCanvasFillStyle fillStyle,

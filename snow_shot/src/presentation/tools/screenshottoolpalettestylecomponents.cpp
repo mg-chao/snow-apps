@@ -30,14 +30,8 @@
 namespace snow_shot::presentation {
 
 void setScreenshotToolPaletteStyleButtonActive(adqt::widgets::AdButton* button, bool active) {
-    if (button == nullptr) {
-        return;
-    }
-
-    button->setButtonStyle(active ? adqt::widgets::AdButton::ButtonStyle::Tonal
-                                  : adqt::widgets::AdButton::ButtonStyle::Text);
-    button->setAccentRole(active ? adqt::widgets::AdButton::AccentRole::Primary
-                                 : adqt::widgets::AdButton::AccentRole::Neutral);
+    setScreenshotToolPaletteButtonActive(button, active,
+                                         adqt::widgets::AdButton::ButtonStyle::Tonal);
 }
 
 namespace {
@@ -231,10 +225,26 @@ void connectColorPickerChanges(adqt::widgets::AdColorPicker* picker, QObject* re
     }
 }
 
-adqt::widgets::AdColorPicker*
-createColorPickerShell(QWidget* parent, const QString& accessibleName, const QColor& initialColor,
-                       bool alphaEnabled, bool observePopup,
-                       const ScreenshotToolPaletteEditorServices& services) {
+void resetPickerPopupContent(adqt::widgets::AdColorPicker* picker,
+                             const ScreenshotToolPaletteButtonMetrics& metrics) {
+    if (picker == nullptr) {
+        return;
+    }
+    if (QWidget* content = picker->popupContent()) {
+        for (adqt::widgets::AdButton* button : content->findChildren<adqt::widgets::AdButton*>()) {
+            resetPopupButtonControlScale(button);
+        }
+    }
+    if (screenshotToolPaletteMetricsApplyTo(metrics, picker)) {
+        activateWidgetLayoutTree(picker);
+    }
+}
+
+} // namespace
+
+adqt::widgets::AdColorPicker* createScreenshotToolPaletteColorPicker(
+    QWidget* parent, const QString& accessibleName, const QColor& initialColor, bool alphaEnabled,
+    bool observePopup, const ScreenshotToolPaletteEditorServices& services) {
     if (parent == nullptr) {
         return nullptr;
     }
@@ -255,49 +265,37 @@ createColorPickerShell(QWidget* parent, const QString& accessibleName, const QCo
     picker->setPopupLayerMode(adqt::widgets::AdColorPicker::PopupLayerMode::QtTool);
     picker->setPopupContentPlacement(adqt::widgets::AdColorPicker::PopupContentPlacement::Top);
     picker->setValue(adqt::widgets::AdColorValue::solid(initialColor));
-    auto* sampler = createScreenshotToolPaletteColorPickerSamplerButton(picker, initialColor);
-    sampler->setObjectName(QStringLiteral("screenshot-color-picker-sampler"));
-    configureScreenshotToolPaletteTooltip(
-        sampler, ScreenshotToolPaletteTranslationText("Pick color from canvas"));
-    picker->setPreviewContent(sampler);
-    QObject::connect(picker, &adqt::widgets::AdColorPicker::valueChanged, sampler,
-                     [sampler](const adqt::widgets::AdColorValue& value) {
-                         if (value.isSolid() && value.solidColor.isValid()) {
-                             sampler->setSwatchColor(value.solidColor);
-                         }
-                     });
-    QObject::connect(sampler, &QAbstractButton::clicked, picker, [services, picker]() {
-        picker->setPopupVisible(false);
-        if (services.canvasColorSamplingRequested) {
-            services.canvasColorSamplingRequested(picker);
-        }
-    });
+    if (services.canvasColorSamplingRequested) {
+        auto* sampler = createScreenshotToolPaletteColorPickerSamplerButton(picker, initialColor);
+        sampler->setObjectName(QStringLiteral("screenshot-color-picker-sampler"));
+        configureScreenshotToolPaletteTooltip(
+            sampler, ScreenshotToolPaletteTranslationText("Pick color from canvas"));
+        picker->setPreviewContent(sampler);
+        QObject::connect(picker, &adqt::widgets::AdColorPicker::valueChanged, sampler,
+                         [sampler](const adqt::widgets::AdColorValue& value) {
+                             if (value.isSolid() && value.solidColor.isValid()) {
+                                 sampler->setSwatchColor(value.solidColor);
+                             }
+                         });
+        QObject::connect(sampler, &QAbstractButton::clicked, picker, [services, picker]() {
+            picker->setPopupVisible(false);
+            if (services.canvasColorSamplingRequested) {
+                services.canvasColorSamplingRequested(picker);
+            }
+        });
+    }
     return picker;
 }
 
-void resetPickerPopupContent(adqt::widgets::AdColorPicker* picker,
-                             const ScreenshotToolPaletteButtonMetrics& metrics) {
-    if (picker == nullptr) {
-        return;
+ColorPickerTrigger* createScreenshotToolPaletteColorPickerTrigger(
+    adqt::widgets::AdColorPicker* picker, const QString& accessibleName, const QColor& color,
+    const ScreenshotToolPaletteButtonMetrics& metrics, ColorPickerTrigger::Preview preview) {
+    auto* trigger = new ColorPickerTrigger(preview, picker);
+    configureScreenshotToolPaletteStyleButton(trigger, nullptr, metrics);
+    trigger->setSwatchColor(color);
+    if (preview == ColorPickerTrigger::Preview::Width) {
+        trigger->setCursor(Qt::SplitVCursor);
     }
-    if (QWidget* content = picker->popupContent()) {
-        for (adqt::widgets::AdButton* button : content->findChildren<adqt::widgets::AdButton*>()) {
-            resetPopupButtonControlScale(button);
-        }
-    }
-    if (screenshotToolPaletteMetricsApplyTo(metrics, picker)) {
-        activateWidgetLayoutTree(picker);
-    }
-}
-
-} // namespace
-
-ColorSwatchButton*
-createScreenshotToolPaletteColorPickerTrigger(adqt::widgets::AdColorPicker* picker,
-                                              const QString& accessibleName, const QColor& color,
-                                              const ScreenshotToolPaletteButtonMetrics& metrics) {
-    auto* trigger =
-        createScreenshotToolPaletteColorButton(picker, nullptr, color, true, true, metrics);
     configureStylePopupTrigger(trigger, accessibleName);
     picker->setTriggerContent(trigger);
     refreshScreenshotToolPaletteColorPickerMetrics(picker, metrics);
@@ -309,12 +307,64 @@ void refreshScreenshotToolPaletteColorPickerMetrics(
     if (picker == nullptr) {
         return;
     }
-    auto* trigger = dynamic_cast<ColorSwatchButton*>(picker->triggerContent());
+    auto* trigger = dynamic_cast<ColorPickerTrigger*>(picker->triggerContent());
     if (trigger != nullptr && screenshotToolPaletteMetricsApplyTo(metrics, trigger)) {
         configureScreenshotToolPaletteStyleButton(trigger, nullptr, metrics);
         trigger->setPhysicalScale(metrics.physicalScale);
     }
     configureColorPickerMetrics(picker, metrics);
+}
+
+void ScreenshotToolPaletteColorPresets::build(QBoxLayout* layout, QWidget* parent,
+                                              QObject* receiver, const QVector<QColor>& colors,
+                                              const Tooltip& tooltip, const QColor& initialColor,
+                                              const std::function<void(const QColor&)>& commit,
+                                              const ScreenshotToolPaletteButtonMetrics& metrics) {
+    m_colors = colors;
+    for (const QColor& color : m_colors) {
+        auto* button =
+            createScreenshotToolPaletteColorButton(parent, nullptr, color, false, true, metrics);
+        m_buttons.push_back(button);
+        layout->addWidget(button);
+        QObject::connect(button, &adqt::widgets::AdButton::clicked, receiver, [commit, color]() {
+            if (commit) {
+                commit(color);
+            }
+        });
+    }
+    retranslate(tooltip);
+    update(initialColor, false);
+}
+
+void ScreenshotToolPaletteColorPresets::update(const QColor& color, bool mixed) {
+    for (int index = 0; index < m_buttons.size(); ++index) {
+        setScreenshotToolPaletteStyleButtonActive(m_buttons.at(index),
+                                                  !mixed && m_colors.at(index) == color);
+    }
+}
+
+void ScreenshotToolPaletteColorPresets::retranslate(const Tooltip& tooltip) {
+    for (int index = 0; index < m_buttons.size(); ++index) {
+        const QColor& color = m_colors.at(index);
+        configureScreenshotToolPaletteTooltip(
+            m_buttons.at(index),
+            tooltip ? tooltip(color) : ScreenshotToolPaletteTranslationText(color.name()));
+    }
+}
+
+void ScreenshotToolPaletteColorPresets::refreshMetrics(
+    const ScreenshotToolPaletteButtonMetrics& metrics) {
+    for (ColorSwatchButton* button : m_buttons) {
+        if (screenshotToolPaletteMetricsApplyTo(metrics, button)) {
+            configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
+            button->setPhysicalScale(metrics.physicalScale);
+        }
+    }
+}
+
+void ScreenshotToolPaletteColorPresets::clear() {
+    m_buttons.clear();
+    m_colors.clear();
 }
 
 QBoxLayout* ScreenshotToolPaletteStyleEditorComponent::createRoot(QBoxLayout* layout,
@@ -388,9 +438,9 @@ void ScreenshotToolPaletteColorEditor::build(QBoxLayout* layout, QWidget* parent
     m_commitColor = std::make_shared<std::function<void(const QColor&)>>(commitColor);
     m_previewColor = std::make_shared<std::function<void(const QColor&)>>(previewColor);
 
-    m_presetValues = config.presetValues;
-    m_picker = createColorPickerShell(parent, config.accessibleName, initialColor,
-                                      config.alphaEnabled, config.observePopup, services);
+    m_picker =
+        createScreenshotToolPaletteColorPicker(parent, config.accessibleName, initialColor,
+                                               config.alphaEnabled, config.observePopup, services);
     if (!config.pickerObjectName.isEmpty()) {
         m_picker->setObjectName(config.pickerObjectName);
     }
@@ -427,23 +477,14 @@ void ScreenshotToolPaletteColorEditor::build(QBoxLayout* layout, QWidget* parent
                          }
                      });
 
-    for (const QColor& color : m_presetValues) {
-        const ScreenshotToolPaletteTranslationText tooltip =
-            config.presetTooltip ? config.presetTooltip(color)
-                                 : ScreenshotToolPaletteTranslationText(color.name());
-        auto* button =
-            createScreenshotToolPaletteColorButton(parent, nullptr, color, false, true, metrics);
-        configureScreenshotToolPaletteTooltip(button, tooltip);
-        setScreenshotToolPaletteStyleButtonActive(button, color == initialColor);
-        m_presets.push_back(button);
-        layout->addWidget(button);
-        QObject::connect(button, &adqt::widgets::AdButton::clicked, receiver,
-                         [callback = m_commitColor, color]() {
-                             if (callback != nullptr && *callback) {
-                                 (*callback)(color);
-                             }
-                         });
-    }
+    m_presets.build(
+        layout, parent, receiver, config.presetValues, config.presetTooltip, initialColor,
+        [callback = m_commitColor](const QColor& color) {
+            if (callback != nullptr && *callback) {
+                (*callback)(color);
+            }
+        },
+        metrics);
     finalizeRoot();
 }
 
@@ -455,10 +496,7 @@ void ScreenshotToolPaletteColorEditor::update(const QColor& color, bool mixed) {
     if (m_trigger != nullptr) {
         m_trigger->setSwatchColor(color);
     }
-    for (int index = 0; index < m_presets.size() && index < m_presetValues.size(); ++index) {
-        setScreenshotToolPaletteStyleButtonActive(m_presets.at(index),
-                                                  !mixed && m_presetValues.at(index) == color);
-    }
+    m_presets.update(color, mixed);
 }
 
 void ScreenshotToolPaletteColorEditor::rebind(
@@ -479,28 +517,14 @@ void ScreenshotToolPaletteColorEditor::rebind(
         configureStylePopupTrigger(m_trigger, config.accessibleName);
         m_trigger->setObjectName(config.triggerObjectName);
     }
-    for (int index = 0; index < m_presets.size() && index < m_presetValues.size(); ++index) {
-        const QColor& color = m_presetValues.at(index);
-        configureScreenshotToolPaletteTooltip(
-            m_presets.at(index), config.presetTooltip
-                                     ? config.presetTooltip(color)
-                                     : ScreenshotToolPaletteTranslationText(color.name()));
-    }
+    m_presets.retranslate(config.presetTooltip);
 }
 
 void ScreenshotToolPaletteColorEditor::refreshMetrics(
     const ScreenshotToolPaletteButtonMetrics& metrics) {
     refreshRootMetrics(metrics);
     refreshScreenshotToolPaletteColorPickerMetrics(m_picker, metrics);
-    for (adqt::widgets::AdButton* button : m_presets) {
-        if (!screenshotToolPaletteMetricsApplyTo(metrics, button)) {
-            continue;
-        }
-        configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
-        if (auto* swatch = dynamic_cast<ColorSwatchButton*>(button)) {
-            swatch->setPhysicalScale(metrics.physicalScale);
-        }
-    }
+    m_presets.refreshMetrics(metrics);
 }
 
 void ScreenshotToolPaletteColorEditor::resetPopupMetrics(
@@ -512,7 +536,6 @@ void ScreenshotToolPaletteColorEditor::release() {
     m_picker = nullptr;
     m_trigger = nullptr;
     m_presets.clear();
-    m_presetValues.clear();
     m_commitColor.reset();
     m_previewColor.reset();
     m_handlingChange = false;
@@ -542,18 +565,17 @@ void ScreenshotToolPaletteStrokeEditor::build(
     m_setStyle = std::make_shared<std::function<void(SnowCanvasStrokeStyle)>>(setStyle);
 
     const ScreenshotToolPaletteButtonMetrics popupMetrics = popupButtonMetrics(metrics);
-    m_colorValues = config.colorValues;
     m_styleValues = {
         SnowCanvasStrokeStyle::Solid,
         SnowCanvasStrokeStyle::Dashed,
         SnowCanvasStrokeStyle::Dotted,
     };
-    m_picker =
-        createColorPickerShell(parent, config.accessibleName, initialColor, true, false, services);
-    m_trigger = createScreenshotToolPaletteStrokeStyleTrigger(
-        m_picker, config.accessibleName.toUtf8().constData(), initialColor, initialStyle, metrics);
-    configureStylePopupTrigger(m_trigger, config.accessibleName);
-    m_picker->setTriggerContent(m_trigger);
+    m_picker = createScreenshotToolPaletteColorPicker(parent, config.accessibleName, initialColor,
+                                                      true, false, services);
+    m_trigger =
+        createScreenshotToolPaletteColorPickerTrigger(m_picker, config.accessibleName, initialColor,
+                                                      metrics, ColorPickerTrigger::Preview::Stroke);
+    m_trigger->setStrokeStyle(initialStyle);
 
     ColorPickerPopupLayout popupContent =
         createColorPickerPopupContent(m_picker, config.popupObjectName, popupMetrics);
@@ -589,23 +611,14 @@ void ScreenshotToolPaletteStrokeEditor::build(
                                   }
                               });
 
-    for (const QColor& color : m_colorValues) {
-        const ScreenshotToolPaletteTranslationText tooltip =
-            config.colorTooltip ? config.colorTooltip(color)
-                                : ScreenshotToolPaletteTranslationText(color.name());
-        auto* button =
-            createScreenshotToolPaletteColorButton(parent, nullptr, color, false, true, metrics);
-        configureScreenshotToolPaletteTooltip(button, tooltip);
-        setScreenshotToolPaletteStyleButtonActive(button, color == initialColor);
-        m_colorPresets.push_back(button);
-        layout->addWidget(button);
-        QObject::connect(button, &adqt::widgets::AdButton::clicked, receiver,
-                         [callback = m_setColor, color]() {
-                             if (callback != nullptr && *callback) {
-                                 (*callback)(color);
-                             }
-                         });
-    }
+    m_colorPresets.build(
+        layout, parent, receiver, config.colorValues, config.colorTooltip, initialColor,
+        [callback = m_setColor](const QColor& color) {
+            if (callback != nullptr && *callback) {
+                (*callback)(color);
+            }
+        },
+        metrics);
     finalizeRoot();
 }
 
@@ -616,14 +629,11 @@ void ScreenshotToolPaletteStrokeEditor::update(const QColor& color, SnowCanvasSt
         m_picker->setValue(adqt::widgets::AdColorValue::solid(color));
     }
     if (m_trigger != nullptr) {
-        m_trigger->setStrokeColor(color);
+        m_trigger->setSwatchColor(color);
         m_trigger->setStrokeStyle(style);
         m_trigger->setMixed(colorMixed || styleMixed);
     }
-    for (int index = 0; index < m_colorPresets.size() && index < m_colorValues.size(); ++index) {
-        setScreenshotToolPaletteStyleButtonActive(m_colorPresets.at(index),
-                                                  !colorMixed && m_colorValues.at(index) == color);
-    }
+    m_colorPresets.update(color, colorMixed);
     for (int index = 0; index < m_styleButtons.size() && index < m_styleValues.size(); ++index) {
         setScreenshotToolPaletteStyleButtonActive(m_styleButtons.at(index),
                                                   !styleMixed && m_styleValues.at(index) == style);
@@ -653,13 +663,7 @@ void ScreenshotToolPaletteStrokeEditor::rebind(
     if (m_trigger != nullptr) {
         configureStylePopupTrigger(m_trigger, config.accessibleName);
     }
-    for (int index = 0; index < m_colorPresets.size() && index < m_colorValues.size(); ++index) {
-        const QColor& color = m_colorValues.at(index);
-        configureScreenshotToolPaletteTooltip(
-            m_colorPresets.at(index), config.colorTooltip
-                                          ? config.colorTooltip(color)
-                                          : ScreenshotToolPaletteTranslationText(color.name()));
-    }
+    m_colorPresets.retranslate(config.colorTooltip);
     for (int index = 0; index < m_styleButtons.size() && index < m_styleValues.size(); ++index) {
         const SnowCanvasStrokeStyle style = m_styleValues.at(index);
         configureScreenshotToolPaletteTooltip(
@@ -673,17 +677,8 @@ void ScreenshotToolPaletteStrokeEditor::rebind(
 void ScreenshotToolPaletteStrokeEditor::refreshMetrics(
     const ScreenshotToolPaletteButtonMetrics& metrics) {
     refreshRootMetrics(metrics);
-    configureColorPickerMetrics(m_picker, metrics);
-    configureScreenshotToolPaletteStrokeStyleTrigger(m_trigger, metrics);
-    for (adqt::widgets::AdButton* button : m_colorPresets) {
-        if (!screenshotToolPaletteMetricsApplyTo(metrics, button)) {
-            continue;
-        }
-        configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
-        if (auto* swatch = dynamic_cast<ColorSwatchButton*>(button)) {
-            swatch->setPhysicalScale(metrics.physicalScale);
-        }
-    }
+    refreshScreenshotToolPaletteColorPickerMetrics(m_picker, metrics);
+    m_colorPresets.refreshMetrics(metrics);
 }
 
 void ScreenshotToolPaletteStrokeEditor::resetPopupMetrics(
@@ -695,7 +690,6 @@ void ScreenshotToolPaletteStrokeEditor::release() {
     m_picker = nullptr;
     m_trigger = nullptr;
     m_colorPresets.clear();
-    m_colorValues.clear();
     m_styleButtons.clear();
     m_styleValues.clear();
     m_setColor.reset();
@@ -727,40 +721,30 @@ void ScreenshotToolPaletteFillEditor::build(
     m_setStyle = std::make_shared<std::function<void(SnowCanvasFillStyle)>>(setStyle);
 
     const ScreenshotToolPaletteButtonMetrics popupMetrics = popupButtonMetrics(metrics);
-    m_colorValues = config.colorValues;
     m_styleValues = {
         SnowCanvasFillStyle::Solid,
         SnowCanvasFillStyle::CrossLine,
         SnowCanvasFillStyle::Line,
     };
-    m_picker = createColorPickerShell(parent, config.accessibleName, initialColor, true,
-                                      config.observePopup, services);
-    m_trigger = createScreenshotToolPaletteFillStyleTrigger(
-        m_picker, config.accessibleName.toUtf8().constData(), initialColor, initialStyle, metrics);
-    configureStylePopupTrigger(m_trigger, config.accessibleName);
-    m_picker->setTriggerContent(m_trigger);
+    m_picker = createScreenshotToolPaletteColorPicker(parent, config.accessibleName, initialColor,
+                                                      true, config.observePopup, services);
+    m_trigger = createScreenshotToolPaletteColorPickerTrigger(
+        m_picker, config.accessibleName, initialColor, metrics, ColorPickerTrigger::Preview::Fill);
+    m_trigger->setFillStyle(initialStyle);
 
     ColorPickerPopupLayout popupContent =
         createColorPickerPopupContent(m_picker, config.popupObjectName, popupMetrics);
     ColorPickerPopupLayout presetRow =
         addColorPickerPopupRow(popupContent, config.presetRowObjectName, popupMetrics);
-    for (const QColor& color : m_colorValues) {
-        const ScreenshotToolPaletteTranslationText tooltip =
-            config.colorTooltip ? config.colorTooltip(color)
-                                : ScreenshotToolPaletteTranslationText(color.name());
-        auto* button = createScreenshotToolPaletteColorButton(presetRow.widget, nullptr, color,
-                                                              false, true, popupMetrics);
-        configureScreenshotToolPaletteTooltip(button, tooltip);
-        setScreenshotToolPaletteStyleButtonActive(button, color == initialColor);
-        m_colorPresets.push_back(button);
-        presetRow.layout->addWidget(button);
-        QObject::connect(button, &adqt::widgets::AdButton::clicked, receiver,
-                         [callback = m_setColor, color]() {
-                             if (callback != nullptr && *callback) {
-                                 (*callback)(color);
-                             }
-                         });
-    }
+    m_colorPresets.build(
+        presetRow.layout, presetRow.widget, receiver, config.colorValues, config.colorTooltip,
+        initialColor,
+        [callback = m_setColor](const QColor& color) {
+            if (callback != nullptr && *callback) {
+                (*callback)(color);
+            }
+        },
+        popupMetrics);
     presetRow.layout->addStretch(1);
     m_picker->setPopupContent(popupContent.widget);
     configureColorPickerMetrics(m_picker, metrics);
@@ -801,14 +785,11 @@ void ScreenshotToolPaletteFillEditor::update(const QColor& color, SnowCanvasFill
         m_picker->setValue(adqt::widgets::AdColorValue::solid(color));
     }
     if (m_trigger != nullptr) {
-        m_trigger->setFillColor(color);
+        m_trigger->setSwatchColor(color);
         m_trigger->setFillStyle(style);
         m_trigger->setMixed(colorMixed || styleMixed);
     }
-    for (int index = 0; index < m_colorPresets.size() && index < m_colorValues.size(); ++index) {
-        setScreenshotToolPaletteStyleButtonActive(m_colorPresets.at(index),
-                                                  !colorMixed && m_colorValues.at(index) == color);
-    }
+    m_colorPresets.update(color, colorMixed);
     for (int index = 0; index < m_styleButtons.size() && index < m_styleValues.size(); ++index) {
         setScreenshotToolPaletteStyleButtonActive(m_styleButtons.at(index),
                                                   !styleMixed && m_styleValues.at(index) == style);
@@ -838,13 +819,7 @@ void ScreenshotToolPaletteFillEditor::rebind(
     if (m_trigger != nullptr) {
         configureStylePopupTrigger(m_trigger, config.accessibleName);
     }
-    for (int index = 0; index < m_colorPresets.size() && index < m_colorValues.size(); ++index) {
-        const QColor& color = m_colorValues.at(index);
-        configureScreenshotToolPaletteTooltip(
-            m_colorPresets.at(index), config.colorTooltip
-                                          ? config.colorTooltip(color)
-                                          : ScreenshotToolPaletteTranslationText(color.name()));
-    }
+    m_colorPresets.retranslate(config.colorTooltip);
     for (int index = 0; index < m_styleButtons.size() && index < m_styleValues.size(); ++index) {
         const SnowCanvasFillStyle style = m_styleValues.at(index);
         configureScreenshotToolPaletteTooltip(
@@ -858,8 +833,7 @@ void ScreenshotToolPaletteFillEditor::rebind(
 void ScreenshotToolPaletteFillEditor::refreshMetrics(
     const ScreenshotToolPaletteButtonMetrics& metrics) {
     refreshRootMetrics(metrics);
-    configureColorPickerMetrics(m_picker, metrics);
-    configureScreenshotToolPaletteFillStyleTrigger(m_trigger, metrics);
+    refreshScreenshotToolPaletteColorPickerMetrics(m_picker, metrics);
     for (FillStylePreviewButton* button : m_styleButtons) {
         if (!screenshotToolPaletteMetricsApplyTo(metrics, button)) {
             continue;
@@ -878,7 +852,6 @@ void ScreenshotToolPaletteFillEditor::release() {
     m_picker = nullptr;
     m_trigger = nullptr;
     m_colorPresets.clear();
-    m_colorValues.clear();
     m_styleButtons.clear();
     m_styleValues.clear();
     m_setColor.reset();
@@ -910,14 +883,12 @@ void ScreenshotToolPaletteWidthColorEditor::build(
     m_setColor = std::make_shared<std::function<void(const QColor&)>>(setColor);
 
     m_widthValues = config.widthValues;
-    m_colorValues = config.colorValues;
-    m_picker = createColorPickerShell(parent, config.accessibleName, initialColor, true,
-                                      config.observePopup, services);
+    m_picker = createScreenshotToolPaletteColorPicker(parent, config.accessibleName, initialColor,
+                                                      true, config.observePopup, services);
 
-    m_trigger = createScreenshotToolPaletteStrokeWidthButton(
-        m_picker, config.triggerTooltip.toUtf8().constData(), initialWidth, true, metrics);
-    configureStylePopupTrigger(m_trigger, config.accessibleName);
-    m_picker->setTriggerContent(m_trigger);
+    m_trigger = createScreenshotToolPaletteColorPickerTrigger(
+        m_picker, config.accessibleName, initialColor, metrics, ColorPickerTrigger::Preview::Width);
+    m_trigger->setStrokeWidth(initialWidth);
 
     const ScreenshotToolPaletteButtonMetrics popupMetrics = popupButtonMetrics(metrics);
     ColorPickerPopupLayout popupContent =
@@ -944,22 +915,15 @@ void ScreenshotToolPaletteWidthColorEditor::build(
 
     ColorPickerPopupLayout colorRow =
         addColorPickerPopupRow(popupContent, config.colorRowObjectName, popupMetrics);
-    for (const QColor& color : m_colorValues) {
-        const ScreenshotToolPaletteTranslationText tooltip =
-            config.colorTooltip ? config.colorTooltip(color)
-                                : ScreenshotToolPaletteTranslationText(color.name());
-        auto* button = createScreenshotToolPaletteColorButton(colorRow.widget, nullptr, color,
-                                                              false, true, popupMetrics);
-        configureScreenshotToolPaletteTooltip(button, tooltip);
-        m_colorButtons.push_back(button);
-        colorRow.layout->addWidget(button);
-        QObject::connect(button, &adqt::widgets::AdButton::clicked, receiver,
-                         [callback = m_setColor, color]() {
-                             if (callback != nullptr && *callback) {
-                                 (*callback)(color);
-                             }
-                         });
-    }
+    m_colorButtons.build(
+        colorRow.layout, colorRow.widget, receiver, config.colorValues, config.colorTooltip,
+        initialColor,
+        [callback = m_setColor](const QColor& color) {
+            if (callback != nullptr && *callback) {
+                (*callback)(color);
+            }
+        },
+        popupMetrics);
     colorRow.layout->addStretch(1);
     m_picker->setPopupContent(popupContent.widget);
     configureColorPickerMetrics(m_picker, metrics);
@@ -991,10 +955,7 @@ void ScreenshotToolPaletteWidthColorEditor::update(double width, const QColor& c
             m_widthButtons.at(index),
             !widthMixed && qFuzzyCompare(m_widthValues.at(index) + 1.0, width + 1.0));
     }
-    for (int index = 0; index < m_colorButtons.size() && index < m_colorValues.size(); ++index) {
-        setScreenshotToolPaletteStyleButtonActive(m_colorButtons.at(index),
-                                                  !colorMixed && m_colorValues.at(index) == color);
-    }
+    m_colorButtons.update(color, colorMixed);
 }
 
 void ScreenshotToolPaletteWidthColorEditor::rebind(
@@ -1031,23 +992,13 @@ void ScreenshotToolPaletteWidthColorEditor::rebind(
             config.widthTooltip ? config.widthTooltip(width)
                                 : ScreenshotToolPaletteTranslationText(QString::number(width)));
     }
-    for (int index = 0; index < m_colorButtons.size() && index < m_colorValues.size(); ++index) {
-        const QColor& color = m_colorValues.at(index);
-        configureScreenshotToolPaletteTooltip(
-            m_colorButtons.at(index), config.colorTooltip
-                                          ? config.colorTooltip(color)
-                                          : ScreenshotToolPaletteTranslationText(color.name()));
-    }
+    m_colorButtons.retranslate(config.colorTooltip);
 }
 
 void ScreenshotToolPaletteWidthColorEditor::refreshMetrics(
     const ScreenshotToolPaletteButtonMetrics& metrics) {
     refreshRootMetrics(metrics);
-    configureColorPickerMetrics(m_picker, metrics);
-    if (screenshotToolPaletteMetricsApplyTo(metrics, m_trigger)) {
-        configureScreenshotToolPaletteStyleButton(m_trigger, nullptr, metrics);
-        m_trigger->setPhysicalScale(metrics.physicalScale);
-    }
+    refreshScreenshotToolPaletteColorPickerMetrics(m_picker, metrics);
 }
 
 void ScreenshotToolPaletteWidthColorEditor::resetPopupMetrics(
@@ -1061,7 +1012,6 @@ void ScreenshotToolPaletteWidthColorEditor::release() {
     m_widthButtons.clear();
     m_widthValues.clear();
     m_colorButtons.clear();
-    m_colorValues.clear();
     m_setWidth.reset();
     m_setColor.reset();
     m_handlingChange = false;

@@ -41,6 +41,10 @@ class AdSelect;
 class AdSlider;
 } // namespace adqt::widgets
 
+namespace snow_shot::presentation {
+class ScreenshotToolPaletteColorPresets;
+}
+
 class ScreenshotToolPaletteStyleControls;
 class ScreenshotToolbarMainPanel;
 class IconNumericValuePreviewButton;
@@ -451,7 +455,6 @@ class ScreenshotToolPalette final : public QWidget {
     void initializeStyleLayoutProfiles();
     void applyCumulativeStyleLayoutMetrics(QWidget* scope);
     void updatePanelMetrics(QFrame* panel);
-    void updatePanelStyle(QFrame* panel);
     void retranslateUi();
 
     struct SpacingItem {
@@ -642,12 +645,10 @@ class ScreenshotToolPalette final : public QWidget {
     adqt::widgets::AdSelect* m_recordOutputFormatSelect = nullptr;
     adqt::widgets::AdColorPicker* m_recordMouseTrailColorPicker = nullptr;
     adqt::widgets::AdColorPicker* m_recordMouseClickColorPicker = nullptr;
-    struct RecordingColorPreset {
-        QColor color;
-        adqt::widgets::AdButton* button = nullptr;
-    };
-    QVector<RecordingColorPreset> m_recordMouseTrailColorPresets;
-    QVector<RecordingColorPreset> m_recordMouseClickColorPresets;
+    std::unique_ptr<snow_shot::presentation::ScreenshotToolPaletteColorPresets>
+        m_recordMouseTrailColorPresets;
+    std::unique_ptr<snow_shot::presentation::ScreenshotToolPaletteColorPresets>
+        m_recordMouseClickColorPresets;
     adqt::widgets::AdButton* m_recordKeyboardButton = nullptr;
     adqt::widgets::AdButton* m_recordCursorButton = nullptr;
     QLabel* m_recordMouseTrailIcon = nullptr;
