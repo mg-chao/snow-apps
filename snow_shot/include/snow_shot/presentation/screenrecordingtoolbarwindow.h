@@ -13,6 +13,11 @@ class ScreenRecordingToolbarWindow final : public ScreenshotFloatingToolPaletteW
 
     void placeForPhysicalRegion(const QRect& physicalRegion);
     void showAndActivate();
+
+  private:
+    QRect m_physicalRegion;
+    bool m_manuallyDragged = false;
+    bool m_placing = false;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENRECORDINGTOOLBARWINDOW_H

@@ -1,10 +1,13 @@
 #include "snow_shot/presentation/screenrecordingcontroller.h"
 #include "snow_shot/presentation/screenrecordingtoolbarwindow.h"
 #include "snow_shot/presentation/screenrecordingareawindow.h"
+#include "snow_shot/presentation/screenshotgeometry.h"
+#include "snow_shot/presentation/screenshottoolpalettehost.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_capture.h"
+#include "widgets/button.h"
 
 #include <QApplication>
 #include <QDir>
@@ -13,6 +16,7 @@
 #include <QThread>
 #include <QMouseEvent>
 #include <QWindow>
+#include <QScreen>
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
 #endif
@@ -74,6 +78,74 @@ void requireToolbarAboveArea(ScreenRecordingAreaWindow* area) {
             "recording toolbar must retain the area as its transient owner");
     area->setInputMode(previousInputMode);
 }
+
+void recordingSecondaryPanelsStayOnScreen() {
+    ScreenRecordingToolbarWindow toolbar;
+    auto* exportButton = toolbar.palette()->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenRecordingExportSettings"));
+    require(exportButton != nullptr, "recording toolbar must expose export settings");
+    if (toolbar.palette()->recordingExportSettingsVisible()) {
+        exportButton->click();
+    }
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "placement test requires a screen");
+    const QRect bounds = screen->geometry();
+    const QRect physicalBounds = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+    const qreal dpr = screen->devicePixelRatio();
+    const int mainHeight = toolbar.occupiedContentRect().height();
+    const QRect region(physicalBounds.left() + qRound(40 * dpr),
+                       physicalBounds.top() + qRound(40 * dpr), qRound((bounds.width() - 80) * dpr),
+                       qRound((bounds.height() - mainHeight - 60) * dpr));
+    toolbar.placeForPhysicalRegion(region);
+    toolbar.show();
+    QCoreApplication::processEvents();
+    const auto requireFits = [&](const char* message) {
+        const QRect occupied = toolbar.occupiedContentRect().translated(toolbar.contentPosition());
+        require(occupied.top() >= bounds.top() && occupied.bottom() <= bounds.bottom(), message);
+        // The default offscreen screen is narrower than the recording main row.
+        if (occupied.width() <= bounds.width()) {
+            require(bounds.contains(occupied), message);
+        }
+    };
+    const auto requireAnchored = [&]() {
+        const QPoint position = toolbar.contentPosition();
+        const QRect occupied = toolbar.occupiedContentRect();
+        toolbar.placeForPhysicalRegion(region);
+        require(
+            toolbar.contentPosition() == position && toolbar.occupiedContentRect() == occupied,
+            "content changes before dragging must match a fresh placement of the whole toolbar");
+    };
+    requireFits("the collapsed recording toolbar must initially fit on screen");
+    exportButton->click();
+    QCoreApplication::processEvents();
+    requireFits("opening recording export settings must keep all rows on screen");
+    requireAnchored();
+    exportButton->click();
+    requireAnchored();
+    toolbar.palette()->setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    QCoreApplication::processEvents();
+    requireFits("opening recording drawing styles must keep all rows on screen");
+    requireAnchored();
+
+    toolbar.palette()->clearActiveTool();
+    requireAnchored();
+    toolbar.setStyleToolbarAboveMain(false);
+    const QPoint interiorPosition = toolbar.constrainedContentPosition(
+        QPoint(bounds.left(), bounds.top() + bounds.height() / 3));
+    toolbar.moveContentTo(interiorPosition);
+    toolbar.paletteHost()->dragStarted(interiorPosition);
+    toolbar.paletteHost()->dragFinished(interiorPosition);
+    exportButton->click();
+    QCoreApplication::processEvents();
+    requireFits("recording export settings must fit at an interior position");
+    require(toolbar.contentPosition() == interiorPosition,
+            "opening a panel after dragging must preserve the user's toolbar position");
+    toolbar.placeForPhysicalRegion(region);
+    exportButton->click();
+    requireAnchored();
+    exportButton->click();
+    requireAnchored();
+}
 } // namespace
 
 extern "C" {
@@ -121,6 +193,7 @@ int main(int argc, char** argv) {
             "test output directory must be set");
     require(RecordingSettings().setHideToolbarInRecording(false),
             "capture exclusion must be disabled for fake backend");
+    recordingSecondaryPanelsStayOnScreen();
     {
         ScreenRecordingController controller;
         const QRect region(40, 40, 320, 240);
