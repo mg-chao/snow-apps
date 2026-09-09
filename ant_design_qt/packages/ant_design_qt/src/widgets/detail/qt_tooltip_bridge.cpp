@@ -1,5 +1,7 @@
 #include "qt_tooltip_bridge.h"
 
+#include "overlay_popup_surface.h"
+
 #include "../tooltip.h"
 
 #include <QAbstractItemView>
@@ -609,10 +611,36 @@ class QtTooltipBridge final : public QObject {
       return;
     }
 
+    QWidget* anchor = request.anchor;
+    QRect anchorRect = request.anchorRect;
+    AdTooltip::Placement placement = AdTooltip::Placement::Bottom;
+    for (const PopupTooltipRoute& route : routes_) {
+      if (!route.popupSurface || !route.popupSurface->isVisible() ||
+          !widgetInTree(request.target, route.triggerRoot) ||
+          !route.triggerRoot->property(kPopupTriggerTooltipEnabledProperty).toBool()) {
+        continue;
+      }
+      // Anchor outside the visible popup, excluding its shadow padding and
+      // including screen-edge flips. Keep horizontal alignment on the trigger.
+      const QPoint triggerCenter = request.target->mapToGlobal(request.target->rect().center());
+      anchor = route.popupSurface;
+      anchorRect = anchor->rect();
+      if (const auto* surface = dynamic_cast<const OverlayPopupSurface*>(anchor)) {
+        anchorRect = anchorRect.marginsRemoved(surface->shadowMargins());
+      }
+      const int centerX = anchor->mapFromGlobal(triggerCenter).x();
+      anchorRect.setLeft(centerX);
+      anchorRect.setRight(centerX);
+      placement = anchor->mapToGlobal(anchorRect.center()).y() < triggerCenter.y()
+                      ? AdTooltip::Placement::Top
+                      : AdTooltip::Placement::Bottom;
+      break;
+    }
     tooltip_->setTargetWidget(request.target);
-    tooltip_->setAnchorWidget(request.anchor);
+    tooltip_->setAnchorWidget(anchor);
     tooltip_->setText(request.text);
-    tooltip_->setAnchorRect(request.anchorRect);
+    tooltip_->setPlacement(placement);
+    tooltip_->setAnchorRect(anchorRect);
     activeUsesPopupRoute_ = request.usesPopupRoute;
     activeRouteOwner_ = request.routeOwner;
     activePopup_ = request.popup;
