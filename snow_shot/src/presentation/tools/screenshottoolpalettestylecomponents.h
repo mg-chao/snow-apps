@@ -27,10 +27,10 @@ namespace snow_shot::presentation {
 
 void setScreenshotToolPaletteStyleButtonActive(adqt::widgets::AdButton* button, bool active);
 
-ColorSwatchButton*
-createScreenshotToolPaletteColorPickerTrigger(adqt::widgets::AdColorPicker* picker,
-                                              const QString& accessibleName, const QColor& color,
-                                              const ScreenshotToolPaletteButtonMetrics& metrics);
+ColorPickerTrigger* createScreenshotToolPaletteColorPickerTrigger(
+    adqt::widgets::AdColorPicker* picker, const QString& accessibleName, const QColor& color,
+    const ScreenshotToolPaletteButtonMetrics& metrics,
+    ColorPickerTrigger::Preview preview = ColorPickerTrigger::Preview::Swatch);
 
 void refreshScreenshotToolPaletteColorPickerMetrics(
     adqt::widgets::AdColorPicker* picker, const ScreenshotToolPaletteButtonMetrics& metrics);
@@ -42,6 +42,33 @@ struct ScreenshotToolPaletteEditorServices {
     std::function<void(adqt::widgets::AdColorPicker*)> canvasColorSamplingRequested;
     std::function<void(QObject*)> popupInteractionBegan;
     std::function<void(QObject*)> popupInteractionEnded;
+};
+
+// Shared picker shell; sampling is optional for consumers without a canvas.
+adqt::widgets::AdColorPicker* createScreenshotToolPaletteColorPicker(
+    QWidget* parent, const QString& accessibleName, const QColor& initialColor, bool alphaEnabled,
+    bool observePopup, const ScreenshotToolPaletteEditorServices& services);
+
+// Non-owning group of identical color preset buttons, whether in a toolbar or popup.
+// Widget ownership remains with the supplied parent; clear() releases the bindings.
+class ScreenshotToolPaletteColorPresets final {
+  public:
+    using Tooltip = std::function<ScreenshotToolPaletteTranslationText(const QColor&)>;
+    void build(QBoxLayout* layout, QWidget* parent, QObject* receiver,
+               const QVector<QColor>& colors, const Tooltip& tooltip, const QColor& initialColor,
+               const std::function<void(const QColor&)>& commit,
+               const ScreenshotToolPaletteButtonMetrics& metrics);
+    void update(const QColor& color, bool mixed);
+    void retranslate(const Tooltip& tooltip);
+    void refreshMetrics(const ScreenshotToolPaletteButtonMetrics& metrics);
+    void clear();
+    const QVector<ColorSwatchButton*>& buttons() const {
+        return m_buttons;
+    }
+
+  private:
+    QVector<ColorSwatchButton*> m_buttons;
+    QVector<QColor> m_colors;
 };
 
 // Base protocol shared by every reusable sub-toolbar editor component. A
@@ -116,9 +143,8 @@ class ScreenshotToolPaletteColorEditor final : public ScreenshotToolPaletteStyle
 
   private:
     adqt::widgets::AdColorPicker* m_picker = nullptr;
-    ColorSwatchButton* m_trigger = nullptr;
-    QVector<adqt::widgets::AdButton*> m_presets;
-    QVector<QColor> m_presetValues;
+    ColorPickerTrigger* m_trigger = nullptr;
+    ScreenshotToolPaletteColorPresets m_presets;
     std::shared_ptr<std::function<void(const QColor&)>> m_commitColor;
     std::shared_ptr<std::function<void(const QColor&)>> m_previewColor;
     bool m_handlingChange = false;
@@ -157,9 +183,8 @@ class ScreenshotToolPaletteStrokeEditor final : public ScreenshotToolPaletteStyl
 
   private:
     adqt::widgets::AdColorPicker* m_picker = nullptr;
-    StrokeStylePreviewTrigger* m_trigger = nullptr;
-    QVector<adqt::widgets::AdButton*> m_colorPresets;
-    QVector<QColor> m_colorValues;
+    ColorPickerTrigger* m_trigger = nullptr;
+    ScreenshotToolPaletteColorPresets m_colorPresets;
     QVector<StrokeStylePreviewButton*> m_styleButtons;
     QVector<SnowCanvasStrokeStyle> m_styleValues;
     std::shared_ptr<std::function<void(const QColor&)>> m_setColor;
@@ -200,9 +225,8 @@ class ScreenshotToolPaletteFillEditor final : public ScreenshotToolPaletteStyleE
 
   private:
     adqt::widgets::AdColorPicker* m_picker = nullptr;
-    FillStylePreviewTrigger* m_trigger = nullptr;
-    QVector<adqt::widgets::AdButton*> m_colorPresets;
-    QVector<QColor> m_colorValues;
+    ColorPickerTrigger* m_trigger = nullptr;
+    ScreenshotToolPaletteColorPresets m_colorPresets;
     QVector<FillStylePreviewButton*> m_styleButtons;
     QVector<SnowCanvasFillStyle> m_styleValues;
     std::shared_ptr<std::function<void(const QColor&)>> m_setColor;
@@ -251,11 +275,10 @@ class ScreenshotToolPaletteWidthColorEditor final
 
   private:
     adqt::widgets::AdColorPicker* m_picker = nullptr;
-    StrokeWidthPreviewButton* m_trigger = nullptr;
+    ColorPickerTrigger* m_trigger = nullptr;
     QVector<adqt::widgets::AdButton*> m_widthButtons;
     QVector<double> m_widthValues;
-    QVector<adqt::widgets::AdButton*> m_colorButtons;
-    QVector<QColor> m_colorValues;
+    ScreenshotToolPaletteColorPresets m_colorButtons;
     std::shared_ptr<std::function<void(double)>> m_setWidth;
     std::shared_ptr<std::function<void(const QColor&)>> m_setColor;
     bool m_handlingChange = false;

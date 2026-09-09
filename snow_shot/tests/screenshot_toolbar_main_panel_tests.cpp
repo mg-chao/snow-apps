@@ -363,6 +363,24 @@ void historyButtonsFollowCanvasAvailability() {
     require(undoRequests == 1 && redoRequests == 1, "redo should emit once it becomes available");
 }
 
+void toolbarRowsShareShadowMetrics() {
+    ScreenshotToolPalette toolbar(ScreenshotToolPalette::Options{});
+    toolbar.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    for (qreal scale : {0.5, 1.0, 1.25, 1.5, 2.0}) {
+        toolbar.setPhysicalScale(scale);
+        auto* main =
+            qobject_cast<QGraphicsDropShadowEffect*>(toolbar.mainPanel()->graphicsEffect());
+        auto* style =
+            qobject_cast<QGraphicsDropShadowEffect*>(toolbar.stylePanel()->graphicsEffect());
+        require(main != nullptr && style != nullptr && main->blurRadius() == style->blurRadius() &&
+                    main->offset() == style->offset() && main->color() == style->color(),
+                "main and secondary rows must use identical shadow metrics at every scale");
+        require(qFuzzyCompare(main->blurRadius(), 18.0 * scale) &&
+                    main->offset() == QPointF(0.0, 3.0 * scale),
+                "shared toolbar shadows must retain fractional DPI precision");
+    }
+}
+
 void toolbarSurfacesFollowThemeBackground() {
     auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
     themeManager.setThemeAppearance(snow_shot::presentation::styles::ThemeAppearance::Light);
@@ -1028,6 +1046,7 @@ int main(int argc, char** argv) {
     toolbarControlsStayVerticallyCentered();
     historyButtonsFollowCanvasAvailability();
     toolbarSurfacesFollowThemeBackground();
+    toolbarRowsShareShadowMetrics();
     toolbarSeparatorsKeepMinimumWidthAtCompactScale();
     secondaryToolbarUsesEqualHorizontalMargins();
     cachedToolbarIconsFollowThemeColors();

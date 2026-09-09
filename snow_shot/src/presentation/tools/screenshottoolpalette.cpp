@@ -31,7 +31,6 @@
 #include <QEvent>
 #include <QFrame>
 #include <QFontMetricsF>
-#include <QGraphicsDropShadowEffect>
 #include <QBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -173,90 +172,6 @@ constexpr int STYLE_GROUP_SPACING = 8;
 constexpr int COMPACT_SLIDER_ICON_SIZE = 16;
 constexpr int COMPACT_SLIDER_WIDTH = 96;
 constexpr int TEXT_TRANSFORM_SELECT_WIDTH = 132;
-constexpr int TOOLBAR_PANEL_RADIUS = 8;
-constexpr qreal TOOLBAR_SHADOW_BLUR_RADIUS = 18.0;
-constexpr qreal TOOLBAR_SHADOW_OFFSET_X = 0.0;
-constexpr qreal TOOLBAR_SHADOW_OFFSET_Y = 3.0;
-constexpr QColor TOOLBAR_SHADOW_COLOR(0, 0, 0, 90);
-
-QColor toolbarSurfaceColor(const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
-    return scheme.map.colorBgContainer.isValid() ? scheme.map.colorBgContainer : QColor(Qt::white);
-}
-
-QColor toolbarSeparatorColor(const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
-    return scheme.map.colorBorder.isValid() ? scheme.map.colorBorder : QColor(0xd9, 0xd9, 0xd9);
-}
-
-QString cssColor(const QColor& color) {
-    if (color.alpha() == 255) {
-        return color.name(QColor::HexRgb);
-    }
-
-    return QStringLiteral("rgba(%1, %2, %3, %4)")
-        .arg(color.red())
-        .arg(color.green())
-        .arg(color.blue())
-        .arg(color.alpha());
-}
-
-QString styleToolbarSeparatorStyleSheet() {
-    return QStringLiteral("QFrame { background: %1; border: 0px; }")
-        .arg(cssColor(
-            toolbarSeparatorColor(snow_shot::presentation::styles::generateThemeColorScheme())));
-}
-
-void applyMainToolbarToolActiveStyle(adqt::widgets::AdButton* button, bool active) {
-    if (button == nullptr) {
-        return;
-    }
-
-    button->setButtonStyle(active ? adqt::widgets::AdButton::ButtonStyle::Solid
-                                  : adqt::widgets::AdButton::ButtonStyle::Text);
-    button->setAccentRole(active ? adqt::widgets::AdButton::AccentRole::Primary
-                                 : adqt::widgets::AdButton::AccentRole::Neutral);
-}
-
-class ScreenshotToolbarPanel final : public QFrame {
-  public:
-    explicit ScreenshotToolbarPanel(QWidget* parent)
-        : QFrame(parent), m_backgroundColor(toolbarSurfaceColor(
-                              snow_shot::presentation::styles::generateThemeColorScheme())) {
-        const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
-        connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
-                [this](const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
-                    const QColor background = toolbarSurfaceColor(scheme);
-                    if (m_backgroundColor == background) {
-                        return;
-                    }
-                    m_backgroundColor = background;
-                    update();
-                });
-    }
-
-    void setPanelRadius(qreal radius) {
-        radius = qMax<qreal>(0.0, radius);
-        if (qFuzzyCompare(m_radius + 1.0, radius + 1.0)) {
-            return;
-        }
-        m_radius = radius;
-        update();
-    }
-
-  protected:
-    void paintEvent(QPaintEvent* event) override {
-        Q_UNUSED(event);
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(m_backgroundColor);
-        painter.drawRoundedRect(rect(), m_radius, m_radius);
-    }
-
-  private:
-    qreal m_radius = TOOLBAR_PANEL_RADIUS;
-    QColor m_backgroundColor;
-};
-
 adqt::icons::IconRef primaryIcon(const adqt::icons::IconRef& iconRef) {
     const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
     return snow_shot::presentation::icons::withPrimaryColor(iconRef, scheme.map.colorPrimary);
@@ -267,11 +182,6 @@ QFrame* createPanel(QWidget* parent, const QString& objectName) {
     panel->setObjectName(objectName);
     panel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
-    auto* shadow = new QGraphicsDropShadowEffect(panel);
-    shadow->setBlurRadius(TOOLBAR_SHADOW_BLUR_RADIUS);
-    shadow->setOffset(TOOLBAR_SHADOW_OFFSET_X, TOOLBAR_SHADOW_OFFSET_Y);
-    shadow->setColor(TOOLBAR_SHADOW_COLOR);
-    panel->setGraphicsEffect(shadow);
     return panel;
 }
 
@@ -811,7 +721,7 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
     const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
     connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
             [this](const snow_shot::presentation::styles::ThemeColorScheme&) {
-                const QString separatorStyle = styleToolbarSeparatorStyleSheet();
+                const QString separatorStyle = ScreenshotToolbarPanel::separatorStyleSheet();
                 for (QFrame* separator : std::as_const(m_styleSeparatorFrames)) {
                     if (separator != nullptr) {
                         separator->setStyleSheet(separatorStyle);
@@ -1859,13 +1769,13 @@ ScreenshotScrollingRecognitionMode ScreenshotToolPalette::scrollingRecognitionMo
 }
 
 void ScreenshotToolPalette::updateScrollingRecognitionButtons() {
-    applyMainToolbarToolActiveStyle(m_scrollingAutoScrollButton, m_scrollingAutoScroll);
+    setScreenshotToolPaletteButtonActive(m_scrollingAutoScrollButton, m_scrollingAutoScroll);
     const auto updateButton = [this](adqt::widgets::AdButton* button,
                                      ScreenshotScrollingRecognitionMode mode) {
         if (button == nullptr) {
             return;
         }
-        applyMainToolbarToolActiveStyle(button, m_scrollingRecognitionMode == mode);
+        setScreenshotToolPaletteButtonActive(button, m_scrollingRecognitionMode == mode);
     };
     updateButton(m_scrollingVerticalButton, ScreenshotScrollingRecognitionMode::Vertical);
     updateButton(m_scrollingHorizontalButton, ScreenshotScrollingRecognitionMode::Horizontal);
@@ -1925,7 +1835,7 @@ void ScreenshotToolPalette::setTextEditingState(bool available, bool editing, bo
     m_textCanRedo = canRedo;
     if (m_textEditButton != nullptr) {
         m_textEditButton->setEnabled(available);
-        applyMainToolbarToolActiveStyle(m_textEditButton, editing);
+        setScreenshotToolPaletteButtonActive(m_textEditButton, editing);
     }
     if (m_textTranslateButton != nullptr) {
         m_textTranslateButton->setEnabled(available);
@@ -1959,11 +1869,11 @@ void ScreenshotToolPalette::setTextTranslationState(bool available, bool transla
     m_textCanReset = canReset;
     if (m_textTranslateButton != nullptr) {
         m_textTranslateButton->setEnabled(available);
-        applyMainToolbarToolActiveStyle(m_textTranslateButton, translating);
+        setScreenshotToolPaletteButtonActive(m_textTranslateButton, translating);
     }
     if (m_textEditButton != nullptr) {
-        applyMainToolbarToolActiveStyle(m_textEditButton,
-                                        available && !translating && m_textEditing);
+        setScreenshotToolPaletteButtonActive(m_textEditButton,
+                                             available && !translating && m_textEditing);
     }
     if (m_textFormattingSelect != nullptr) {
         m_textFormattingSelect->setEnabled(available && !editingLocked);
@@ -2541,30 +2451,15 @@ QFrame* ScreenshotToolPalette::createStyleToolbarSeparator(QWidget* parent) {
                             scaledMetric(TOOLBAR_SEPARATOR_HEIGHT));
     stampScreenshotToolbarReferenceWidth(separator, TOOLBAR_SEPARATOR_WIDTH);
     separator->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    separator->setStyleSheet(styleToolbarSeparatorStyleSheet());
+    separator->setStyleSheet(ScreenshotToolbarPanel::separatorStyleSheet());
     m_styleSeparatorFrames.push_back(separator);
     return separator;
 }
 
 void ScreenshotToolPalette::updatePanelMetrics(QFrame* panel) {
-    if (panel == nullptr) {
-        return;
+    if (auto* toolbarPanel = dynamic_cast<ScreenshotToolbarPanel*>(panel)) {
+        toolbarPanel->setPanelScale(m_physicalScale);
     }
-
-    updatePanelStyle(panel);
-    if (auto* shadow = qobject_cast<QGraphicsDropShadowEffect*>(panel->graphicsEffect())) {
-        shadow->setBlurRadius(scaledMetric(TOOLBAR_SHADOW_BLUR_RADIUS));
-        shadow->setOffset(scaledMetric(TOOLBAR_SHADOW_OFFSET_X),
-                          scaledMetric(TOOLBAR_SHADOW_OFFSET_Y));
-    }
-}
-
-void ScreenshotToolPalette::updatePanelStyle(QFrame* panel) {
-    auto* toolbarPanel = dynamic_cast<ScreenshotToolbarPanel*>(panel);
-    if (toolbarPanel == nullptr) {
-        return;
-    }
-    toolbarPanel->setPanelRadius(scaledMetric(TOOLBAR_PANEL_RADIUS));
 }
 
 void ScreenshotToolPalette::applyScaledToolbarMetrics() {
@@ -2650,11 +2545,11 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
                 picker, styleButtonMetrics(m_physicalScale));
         }
     }
-    for (const auto* presets : {&m_recordMouseTrailColorPresets, &m_recordMouseClickColorPresets}) {
-        for (const RecordingColorPreset& preset : *presets) {
-            configureScreenshotToolPaletteStyleButton(preset.button, nullptr,
-                                                      styleButtonMetrics(m_physicalScale));
-            static_cast<ColorSwatchButton*>(preset.button)->setPhysicalScale(m_physicalScale);
+    for (auto* presets :
+         {m_recordMouseTrailColorPresets.get(), m_recordMouseClickColorPresets.get()}) {
+        if (presets != nullptr) {
+            // Presets are owned by the persistent recording settings row.
+            presets->refreshMetrics(styleButtonMetrics(m_physicalScale));
         }
     }
     const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
@@ -3806,7 +3701,7 @@ void ScreenshotToolPalette::refreshActionToolGroup(int groupIndex) {
     }
     updateScreenshotToolPaletteOptionPopoverEditor(group.optionButtons, group.optionValues,
                                                    activeIndex);
-    applyMainToolbarToolActiveStyle(
+    setScreenshotToolPaletteButtonActive(
         group.trigger, m_activeTool.has_value() && actionTool(group.entryItemId) == m_activeTool);
 }
 
@@ -4934,15 +4829,14 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
                                                   STYLE_PANEL_VERTICAL_MARGIN, STYLE_BUTTON_SIZE));
     layout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
 
-    m_recordOutputFormatSelect = new adqt::widgets::AdSelect(m_recordExportSettingsPanel);
-    m_recordOutputFormatSelect->setObjectName(QStringLiteral("screenRecordingOutputFormat"));
-    m_recordOutputFormatSelect->setControlSize(adqt::widgets::AdSelect::ControlSize::Small);
-    m_recordOutputFormatSelect->setVariant(adqt::widgets::AdSelect::Variant::Borderless);
-    m_recordOutputFormatSelect->setSearchEnabled(false);
-    m_recordOutputFormatSelect->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
-    ScreenshotToolPaletteSelectEditor outputFormatEditor{m_recordOutputFormatSelect, 76};
-    configureScreenshotToolPaletteSelectEditor(outputFormatEditor,
-                                               styleButtonMetrics(m_physicalScale));
+    ScreenshotToolPaletteSelectEditorConfig formatConfig;
+    formatConfig.objectName = QStringLiteral("screenRecordingOutputFormat");
+    formatConfig.baseWidth = 76;
+    formatConfig.popupMatchSelectWidth = true;
+    m_recordOutputFormatSelect =
+        createScreenshotToolPaletteSelectEditor(m_recordExportSettingsPanel, formatConfig,
+                                                styleButtonMetrics(m_physicalScale))
+            .select;
     layout->addWidget(m_recordOutputFormatSelect);
 
     const auto addSeparator = [this, layout](const QString& objectName) {
@@ -4971,74 +4865,67 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
         return label;
     };
 
-    const auto configurePicker = [this, layout](adqt::widgets::AdColorPicker* picker,
-                                                const QString& objectName,
-                                                const QString& accessibleName) {
+    const auto createPicker = [this, layout](const QString& objectName,
+                                             const QString& accessibleName, const QColor& color) {
+        auto* picker = snow_shot::presentation::createScreenshotToolPaletteColorPicker(
+            m_recordExportSettingsPanel, accessibleName, color, true, false, {});
         picker->setObjectName(objectName);
         picker->setSize(adqt::widgets::AdColorPicker::Size::Middle);
-        picker->setModeOptions({adqt::widgets::AdColorPicker::Mode::Solid});
-        picker->setMode(adqt::widgets::AdColorPicker::Mode::Solid);
         picker->setFormat(adqt::widgets::AdColorPicker::Format::Hex);
-        picker->setTrigger(adqt::widgets::AdColorPicker::Trigger::Hover);
-        picker->setTriggerTextVisible(false);
-        picker->setAlphaChannelEnabled(true);
         picker->setFormatSelectorEnabled(true);
-        picker->setAllowClear(false);
-        picker->setPlacement(adqt::widgets::AdColorPicker::Placement::Bottom);
-        picker->setPopupLayerMode(adqt::widgets::AdColorPicker::PopupLayerMode::QtTool);
         snow_shot::presentation::createScreenshotToolPaletteColorPickerTrigger(
-            picker, accessibleName, QColor(0, 0, 0, 0), styleButtonMetrics(m_physicalScale));
+            picker, accessibleName, color, styleButtonMetrics(m_physicalScale));
         layout->addWidget(picker);
+        return picker;
     };
 
     const auto addPresets = [this, layout](adqt::widgets::AdColorPicker* picker, int alpha,
                                            const char* tooltipPattern,
-                                           const char* transparentTooltip,
-                                           QVector<RecordingColorPreset>& presets) {
+                                           const char* transparentTooltip) {
+        auto presets =
+            std::make_unique<snow_shot::presentation::ScreenshotToolPaletteColorPresets>();
         QVector<QColor> colors = snow_shot::presentation::style_presets::strokeColors().first(4);
         for (QColor& color : colors) {
             color.setAlpha(alpha);
         }
         colors.prepend(QColor(0, 0, 0, 0));
-        for (int index = 0; index < colors.size(); ++index) {
-            const QColor color = colors.at(index);
-            auto* button = createScreenshotToolPaletteColorButton(
-                m_recordExportSettingsPanel, nullptr, color, false, true,
-                styleButtonMetrics(m_physicalScale));
-            configureScreenshotToolPaletteTooltip(
-                button,
-                color.alpha() == 0
-                    ? ScreenshotToolPaletteTranslationText(transparentTooltip)
-                    : ScreenshotToolPaletteTranslationText(tooltipPattern).arg(color.name()));
-            button->setObjectName(picker->objectName() + QStringLiteral("Preset%1").arg(index));
-            presets.push_back({color, button});
-            layout->addWidget(button);
-            connect(button, &adqt::widgets::AdButton::clicked, this, [picker, color]() {
+        presets->build(
+            layout, m_recordExportSettingsPanel, this, colors,
+            [tooltipPattern, transparentTooltip](const QColor& color) {
+                return color.alpha() == 0
+                           ? ScreenshotToolPaletteTranslationText(transparentTooltip)
+                           : ScreenshotToolPaletteTranslationText(tooltipPattern).arg(color.name());
+            },
+            picker->value().solidColor,
+            [picker](const QColor& color) {
                 picker->commitValue(adqt::widgets::AdColorValue::solid(color));
-            });
+            },
+            styleButtonMetrics(m_physicalScale));
+        for (int index = 0; index < presets->buttons().size(); ++index) {
+            presets->buttons().at(index)->setObjectName(picker->objectName() +
+                                                        QStringLiteral("Preset%1").arg(index));
         }
+        return presets;
     };
 
     m_recordMouseTrailIcon = addIcon(QStringLiteral("screenRecordingMouseTrailIcon"),
                                      custom_outlined_icons::LaserPointer());
-    m_recordMouseTrailColorPicker = new adqt::widgets::AdColorPicker(m_recordExportSettingsPanel);
-    configurePicker(m_recordMouseTrailColorPicker, QStringLiteral("screenRecordingMouseTrailColor"),
-                    QStringLiteral("Mouse trail color"));
-    m_recordMouseTrailColorPicker->setValue(
-        adqt::widgets::AdColorValue::solid(m_recordingMouseTrailColor));
-    addPresets(m_recordMouseTrailColorPicker, 255, "Mouse trail color %1",
-               "Mouse trail color transparent", m_recordMouseTrailColorPresets);
+    m_recordMouseTrailColorPicker =
+        createPicker(QStringLiteral("screenRecordingMouseTrailColor"),
+                     QStringLiteral("Mouse trail color"), m_recordingMouseTrailColor);
+    m_recordMouseTrailColorPresets =
+        addPresets(m_recordMouseTrailColorPicker, 255, "Mouse trail color %1",
+                   "Mouse trail color transparent");
     addSeparator(QStringLiteral("screenRecordingExportTrailSeparator"));
 
     m_recordMouseClickIcon = addIcon(QStringLiteral("screenRecordingMouseClickIcon"),
                                      custom_outlined_icons::RecordingClick());
-    m_recordMouseClickColorPicker = new adqt::widgets::AdColorPicker(m_recordExportSettingsPanel);
-    configurePicker(m_recordMouseClickColorPicker, QStringLiteral("screenRecordingMouseClickColor"),
-                    QStringLiteral("Mouse click color"));
-    m_recordMouseClickColorPicker->setValue(
-        adqt::widgets::AdColorValue::solid(m_recordingMouseClickColor));
-    addPresets(m_recordMouseClickColorPicker, 128, "Mouse click color %1",
-               "Mouse click color transparent", m_recordMouseClickColorPresets);
+    m_recordMouseClickColorPicker =
+        createPicker(QStringLiteral("screenRecordingMouseClickColor"),
+                     QStringLiteral("Mouse click color"), m_recordingMouseClickColor);
+    m_recordMouseClickColorPresets =
+        addPresets(m_recordMouseClickColorPicker, 128, "Mouse click color %1",
+                   "Mouse click color transparent");
     addSeparator(QStringLiteral("screenRecordingExportClickSeparator"));
 
     m_recordCursorButton = createScreenshotToolPaletteStyleActionButton(
@@ -5140,7 +5027,7 @@ void ScreenshotToolPalette::setRecordingExportSettingsVisible(bool visible) {
     }
     m_recordExportSettingsVisible = visible;
     emit recordingExportSettingsVisibleChanged(visible);
-    applyMainToolbarToolActiveStyle(m_recordExportSettingsButton, visible);
+    setScreenshotToolPaletteButtonActive(m_recordExportSettingsButton, visible);
     if (visible) {
         static_cast<void>(setSecondaryToolbarVisibility(false, false));
     } else {
@@ -5169,24 +5056,19 @@ void ScreenshotToolPalette::updateRecordingExportSettingsControls() {
         static_cast<ColorSwatchButton*>(m_recordMouseClickColorPicker->triggerContent())
             ->setSwatchColor(m_recordingMouseClickColor);
     }
-    const auto updatePresets = [editable](const QVector<RecordingColorPreset>& presets,
-                                          const QColor& color) {
-        for (const RecordingColorPreset& preset : presets) {
-            const bool active = preset.color == color;
-            preset.button->setEnabled(editable);
-            snow_shot::presentation::setScreenshotToolPaletteStyleButtonActive(preset.button,
-                                                                               active);
-        }
-    };
-    updatePresets(m_recordMouseTrailColorPresets, m_recordingMouseTrailColor);
-    updatePresets(m_recordMouseClickColorPresets, m_recordingMouseClickColor);
+    if (m_recordMouseTrailColorPresets != nullptr) {
+        m_recordMouseTrailColorPresets->update(m_recordingMouseTrailColor, false);
+    }
+    if (m_recordMouseClickColorPresets != nullptr) {
+        m_recordMouseClickColorPresets->update(m_recordingMouseClickColor, false);
+    }
     if (m_recordCursorButton != nullptr) {
         m_recordCursorButton->setEnabled(editable);
-        applyMainToolbarToolActiveStyle(m_recordCursorButton, m_recordingCursorVisible);
+        setScreenshotToolPaletteButtonActive(m_recordCursorButton, m_recordingCursorVisible);
     }
     if (m_recordKeyboardButton != nullptr) {
         m_recordKeyboardButton->setEnabled(editable);
-        applyMainToolbarToolActiveStyle(m_recordKeyboardButton, m_recordingKeyboardVisible);
+        setScreenshotToolPaletteButtonActive(m_recordKeyboardButton, m_recordingKeyboardVisible);
     }
 }
 
@@ -5622,32 +5504,34 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
     m_textTranslateButton = addButton("Text translation", custom_outlined_icons::OcrTranslate(),
                                       QStringLiteral("screenshotOcrTextTranslateButton"));
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
-    m_textFormattingSelect = new adqt::widgets::AdSelect(m_selectActionPanel);
-    m_textFormattingSelect->setObjectName(QStringLiteral("screenshotOcrTextFormattingSelect"));
-    m_textFormattingSelect->setPlaceholder(tr("Formatting"));
+    ScreenshotToolPaletteSelectEditorConfig formattingConfig;
+    formattingConfig.objectName = QStringLiteral("screenshotOcrTextFormattingSelect");
+    formattingConfig.placeholder = QStringLiteral("Formatting");
+    formattingConfig.baseWidth = TEXT_TRANSFORM_SELECT_WIDTH;
+    formattingConfig.compact = false;
+    formattingConfig.popupMatchSelectWidth = true;
+    m_textFormattingSelect =
+        createScreenshotToolPaletteSelectEditor(m_selectActionPanel, formattingConfig,
+                                                actionButtonMetrics(m_physicalScale))
+            .select;
     m_textFormattingSelect->setOptions({{QStringLiteral("keep"), tr("Keep line breaks")},
                                         {QStringLiteral("remove"), tr("Remove line breaks")}});
     m_textFormattingSelect->setAllowClear(true);
-    m_textFormattingSelect->setVariant(adqt::widgets::AdSelect::Variant::Borderless);
-    m_textFormattingSelect->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
-    ScreenshotToolPaletteSelectEditor formattingEditor{m_textFormattingSelect,
-                                                       TEXT_TRANSFORM_SELECT_WIDTH};
-    configureScreenshotToolPaletteSelectEditor(formattingEditor,
-                                               actionButtonMetrics(m_physicalScale));
     m_selectActionLayout->addWidget(m_textFormattingSelect);
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
-    m_textPunctuationSelect = new adqt::widgets::AdSelect(m_selectActionPanel);
-    m_textPunctuationSelect->setObjectName(QStringLiteral("screenshotOcrTextPunctuationSelect"));
-    m_textPunctuationSelect->setPlaceholder(tr("Punctuation"));
+    ScreenshotToolPaletteSelectEditorConfig punctuationConfig;
+    punctuationConfig.objectName = QStringLiteral("screenshotOcrTextPunctuationSelect");
+    punctuationConfig.placeholder = QStringLiteral("Punctuation");
+    punctuationConfig.baseWidth = TEXT_TRANSFORM_SELECT_WIDTH;
+    punctuationConfig.compact = false;
+    punctuationConfig.popupMatchSelectWidth = true;
+    m_textPunctuationSelect =
+        createScreenshotToolPaletteSelectEditor(m_selectActionPanel, punctuationConfig,
+                                                actionButtonMetrics(m_physicalScale))
+            .select;
     m_textPunctuationSelect->setOptions(
         {{QStringLiteral("half"), tr("Half-width")}, {QStringLiteral("full"), tr("Full-width")}});
     m_textPunctuationSelect->setAllowClear(true);
-    m_textPunctuationSelect->setVariant(adqt::widgets::AdSelect::Variant::Borderless);
-    m_textPunctuationSelect->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
-    ScreenshotToolPaletteSelectEditor punctuationEditor{m_textPunctuationSelect,
-                                                        TEXT_TRANSFORM_SELECT_WIDTH};
-    configureScreenshotToolPaletteSelectEditor(punctuationEditor,
-                                               actionButtonMetrics(m_physicalScale));
     m_selectActionLayout->addWidget(m_textPunctuationSelect);
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     m_textResetButton = addButton("Reset", outlined_icons::Reload(),
@@ -6234,16 +6118,16 @@ void ScreenshotToolPalette::setActiveToolButton(adqt::widgets::AdButton* activeB
             continue;
         }
 
-        applyMainToolbarToolActiveStyle(button, button == activeButton);
+        setScreenshotToolPaletteButtonActive(button, button == activeButton);
     }
     for (const DrawingToolGroup& group : std::as_const(m_drawingToolGroups)) {
         if (group.trigger != nullptr) {
-            applyMainToolbarToolActiveStyle(group.trigger, group.trigger == activeButton);
+            setScreenshotToolPaletteButtonActive(group.trigger, group.trigger == activeButton);
         }
     }
     for (const ActionToolGroup& group : std::as_const(m_actionToolGroups)) {
         if (group.trigger != nullptr) {
-            applyMainToolbarToolActiveStyle(group.trigger, group.trigger == activeButton);
+            setScreenshotToolPaletteButtonActive(group.trigger, group.trigger == activeButton);
         }
     }
 
@@ -6453,8 +6337,7 @@ void ScreenshotToolPalette::updateRecordingControls() {
         // glyph becomes warning-yellow only while a recording is in progress.
         // With no explicit tint in every other state, the disabled palette
         // supplies the normal gray visual.
-        m_recordPauseButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
-        m_recordPauseButton->setAccentRole(adqt::widgets::AdButton::AccentRole::Neutral);
+        setScreenshotToolPaletteButtonActive(m_recordPauseButton, false);
         m_recordPauseButton->setIconRef(pauseEnabled
                                             ? snow_shot::presentation::icons::withPrimaryColor(
                                                   outlined_icons::Pause(), scheme.map.colorWarning)
@@ -6476,8 +6359,7 @@ void ScreenshotToolPalette::updateRecordingControls() {
         // with a green microphone icon when the setting is enabled and a
         // disabled-text icon when it is not.  Disabling interaction while
         // recording must not alter that visual state.
-        m_recordMicrophoneButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
-        m_recordMicrophoneButton->setAccentRole(adqt::widgets::AdButton::AccentRole::Neutral);
+        setScreenshotToolPaletteButtonActive(m_recordMicrophoneButton, false);
         m_recordMicrophoneButton->setIconRef(snow_shot::presentation::icons::withPrimaryColor(
             custom_outlined_icons::RecordingMicrophone(), microphoneIconColor));
         m_recordMicrophoneButton->setEnabled(microphoneControlEnabled);
@@ -6498,8 +6380,7 @@ void ScreenshotToolPalette::updateRecordingControls() {
         // Keep the system-audio toggle visually consistent with the
         // microphone toggle: no filled state, and disabling interaction must
         // not change the icon color selected by the setting.
-        m_recordSystemAudioButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
-        m_recordSystemAudioButton->setAccentRole(adqt::widgets::AdButton::AccentRole::Neutral);
+        setScreenshotToolPaletteButtonActive(m_recordSystemAudioButton, false);
         m_recordSystemAudioButton->setIconRef(snow_shot::presentation::icons::withPrimaryColor(
             outlined_icons::Sound(), systemAudioIconColor));
         m_recordSystemAudioButton->setEnabled(systemAudioControlEnabled);
@@ -6516,8 +6397,7 @@ void ScreenshotToolPalette::updateRecordingControls() {
     if (m_recordCopyButton != nullptr) {
         const bool copyEnabled = active && !m_recordingBusy;
         const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
-        m_recordCopyButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
-        m_recordCopyButton->setAccentRole(adqt::widgets::AdButton::AccentRole::Neutral);
+        setScreenshotToolPaletteButtonActive(m_recordCopyButton, false);
         m_recordCopyButton->setIconRef(copyEnabled
                                            ? snow_shot::presentation::icons::withPrimaryColor(
                                                  outlined_icons::Copy(), scheme.map.colorPrimary)
