@@ -610,11 +610,12 @@ class AdSelect final : public QWidget,
   QToolButton* clearButton_ = nullptr;
   QToolButton* suffixButton_ = nullptr;
 
+  // The popup belongs to its stacking container, which can destroy it before this control.
   QPointer<QFrame> popup_;
-  QVBoxLayout* popupLayout_ = nullptr;
-  AdScrollArea* popupScrollArea_ = nullptr;
-  QListView* listView_ = nullptr;
-  QWidget* popupExtraContent_ = nullptr;
+  QPointer<QVBoxLayout> popupLayout_;
+  QPointer<AdScrollArea> popupScrollArea_;
+  QPointer<QListView> listView_;
+  QPointer<QWidget> popupExtraContent_;
   OptionListModel* listModel_ = nullptr;
   QVector<ModelRow> rows_;
   bool suffixSpinnerSubscribed_ = false;

@@ -280,6 +280,17 @@ struct DiagnosticsService::Impl {
         QJsonObject safeFields;
         // Callers supply metadata only; deny content-bearing keys as a second boundary.
         static const QSet<QString> allowed{QStringLiteral("operation"),
+                                           QStringLiteral("stage"),
+                                           QStringLiteral("queue_ms"),
+                                           QStringLiteral("worker_ms"),
+                                           QStringLiteral("initialization_ms"),
+                                           QStringLiteral("inference_ms"),
+                                           QStringLiteral("render_ms"),
+                                           QStringLiteral("width"),
+                                           QStringLiteral("height"),
+                                           QStringLiteral("priority"),
+                                           QStringLiteral("pending_count"),
+                                           QStringLiteral("running_count"),
                                            QStringLiteral("request_kind"),
                                            QStringLiteral("duration_ms"),
                                            QStringLiteral("code"),

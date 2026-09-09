@@ -2188,10 +2188,12 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                     preloadedSource = retainedSource;
                     if (retainedSource && retainedSource->image.size() == scene.size() &&
                         retainedSource->image.format() == scene.format()) {
+                        // Cached copies have packed rows; pooled surfaces may have a wider stride.
+                        const std::size_t rowBytes =
+                            static_cast<std::size_t>(scene.width()) * sizeof(QRgb);
                         for (int row = 0; row < scene.height(); ++row) {
                             std::memcpy(scene.scanLine(row),
-                                        retainedSource->image.constScanLine(row),
-                                        static_cast<std::size_t>(scene.bytesPerLine()));
+                                        retainedSource->image.constScanLine(row), rowBytes);
                         }
                         replayStartPosition = candidatePosition;
                         reusedPreLayer = true;
@@ -2387,10 +2389,11 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                             : snow_canvas_filter_tile_cache::find(sourceKey);
                     if (retainedSource && retainedSource->image.size() == scene.size() &&
                         retainedSource->image.format() == scene.format()) {
+                        const std::size_t rowBytes =
+                            static_cast<std::size_t>(scene.width()) * sizeof(QRgb);
                         for (int row = 0; row < scene.height(); ++row) {
                             std::memcpy(scene.scanLine(row),
-                                        retainedSource->image.constScanLine(row),
-                                        static_cast<std::size_t>(scene.bytesPerLine()));
+                                        retainedSource->image.constScanLine(row), rowBytes);
                         }
                     } else {
                         snow_canvas_filter_tile_cache::store(sourceKey, scene, physicalBounds);

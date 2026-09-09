@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFileInfo>
+#include <QJsonDocument>
 #include <QMetaObject>
 #include <QProcess>
 #include <QProcessEnvironment>
@@ -326,6 +327,8 @@ class ScreenshotOcrRecognitionService::Impl final {
             m_jobs.insert(token, job);
             job->running = true;
             job->localRendering = true;
+            job->submittedAt = 0;
+            job->completedAt = 0;
             ++m_localRenderingCount;
         }
         const QPointer<ScreenshotOcrRecognitionService> service(m_owner);
@@ -366,6 +369,15 @@ class ScreenshotOcrRecognitionService::Impl final {
             if (it == m_jobs.end())
                 return;
             job = it.value();
+            if (job->cancelled.load())
+                return;
+            auto fields = jobFields(job);
+            fields.insert(QStringLiteral("outcome"), QStringLiteral("cancelled"));
+            fields.insert(QStringLiteral("stage"), job->processSubmitted ? QStringLiteral("worker")
+                                                   : job->localRendering ? QStringLiteral("render")
+                                                                         : QStringLiteral("queue"));
+            snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.ocr"),
+                                             QStringLiteral("ocr.cancelled"), fields);
             job->cancelled.store(true, std::memory_order_release);
             if (!job->running && !job->localRendering) {
                 m_pending.erase(std::remove(m_pending.begin(), m_pending.end(), job),
@@ -491,6 +503,7 @@ class ScreenshotOcrRecognitionService::Impl final {
         QElapsedTimer elapsed;
         RequestToken token = 0;
         ScreenshotOcrRequest request;
+        QSize imageSize;
         QPointer<QObject> receiver;
         Completion completion;
         QMetaObject::Connection receiverDestroyed;
@@ -498,6 +511,9 @@ class ScreenshotOcrRecognitionService::Impl final {
         bool running = false;
         bool processSubmitted = false;
         bool localRendering = false;
+        qint64 submittedAt = -1;
+        qint64 completedAt = -1;
+        qint64 childPid = 0;
         qint64 queuedAtMilliseconds = 0;
         int slot = -1;
     };
@@ -506,6 +522,7 @@ class ScreenshotOcrRecognitionService::Impl final {
                                  QObject* receiver, Completion completion) {
         auto job = std::make_shared<Job>();
         job->token = token;
+        job->imageSize = request.image.size();
         job->request = std::move(request);
         job->receiver = receiver;
         job->completion = std::move(completion);
@@ -554,6 +571,7 @@ class ScreenshotOcrRecognitionService::Impl final {
         // reopen the temporary backing file on Windows without sharing locks.
         m_shmFile->close();
         m_readBuffer.clear();
+        m_stderrBuffer.clear();
         m_slotSequences.assign(m_slots.size(), 0);
         for (int index = 0; index < static_cast<int>(m_slots.size()); ++index) {
             uchar* header = m_shmMapping + index * m_slotBytes;
@@ -568,26 +586,12 @@ class ScreenshotOcrRecognitionService::Impl final {
                 return;
             // The child reports engine/ONNX Runtime failures only on
             // stderr; relay them instead of discarding them silently.
-            const QString output =
-                QString::fromUtf8(m_process->readAllStandardError().left(8192)).trimmed();
-            if (!output.isEmpty()) {
-                const bool registered =
-                    output == QStringLiteral("snow.diagnostics: crash capture registered");
-                snow_shot::diagnostics::DiagnosticsService::instance().record(
-                    registered ? QtInfoMsg : QtWarningMsg, QStringLiteral("snow_shot.ocr"),
-                    QStringLiteral("ocr.stderr"), output,
-                    {{QStringLiteral("child_pid"), m_process->processId()}});
-            }
+            relayStderr(m_process->readAllStandardError(), m_process->processId());
         });
         connect(m_process.get(), qOverload<int, QProcess::ExitStatus>(&QProcess::finished), m_owner,
                 [this, process = m_process.get(),
                  reason = m_processStopReason](int code, QProcess::ExitStatus exitStatus) {
-                    const QByteArray remaining = process->readAllStandardError().left(8192);
-                    if (!remaining.isEmpty()) {
-                        snow_shot::diagnostics::DiagnosticsService::instance().record(
-                            QtWarningMsg, QStringLiteral("snow_shot.ocr"),
-                            QStringLiteral("ocr.stderr"), QString::fromUtf8(remaining));
-                    }
+                    relayStderr(process->readAllStandardError(), m_childPid, true);
                     const bool expected = *reason != ProcessStopReason::None;
                     const bool crashed = exitStatus == QProcess::CrashExit;
                     const QString outcome =
@@ -597,7 +601,9 @@ class ScreenshotOcrRecognitionService::Impl final {
                                                                  : QStringLiteral("exited");
                     snow_shot::diagnostics::logEvent(
                         QStringLiteral("snow_shot.ocr"), QStringLiteral("ocr.process_exit"),
-                        {{QStringLiteral("exit_code"), code}, {QStringLiteral("outcome"), outcome}},
+                        {{QStringLiteral("exit_code"), code},
+                         {QStringLiteral("outcome"), outcome},
+                         {QStringLiteral("child_pid"), m_childPid}},
                         crashed && !expected ? QtCriticalMsg : QtInfoMsg);
                     snow_shot::diagnostics::DiagnosticsService::instance().requestMaintenance();
                     bool shuttingDown = false;
@@ -626,6 +632,7 @@ class ScreenshotOcrRecognitionService::Impl final {
             m_process.reset();
             return initializationFailed();
         }
+        m_childPid = m_process->processId();
         snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.ocr"),
                                          QStringLiteral("ocr.process_started"),
                                          {{QStringLiteral("child_pid"), m_process->processId()}});
@@ -651,7 +658,7 @@ class ScreenshotOcrRecognitionService::Impl final {
                            generation == m_processGeneration;
             }
             if (timedOut)
-                processFailed();
+                processFailed("ready_timeout");
         });
         return true;
     }
@@ -703,6 +710,59 @@ class ScreenshotOcrRecognitionService::Impl final {
         return job != nullptr ? job : choose(ScreenshotOcrRequestPriority::Prefetch);
     }
 
+    void relayStderr(const QByteArray& bytes, qint64 pid, bool flush = false) {
+        // QProcess chunks can split a UTF-8 character or one ONNX error across callbacks.
+        m_stderrBuffer.append(bytes);
+        while (!m_stderrBuffer.isEmpty()) {
+            const qsizetype newline = m_stderrBuffer.indexOf('\n');
+            if (newline < 0 && m_stderrBuffer.size() < 8192 && !flush)
+                break;
+            const qsizetype length = newline >= 0 ? qMin(newline, qsizetype(8192))
+                                                  : qMin(m_stderrBuffer.size(), qsizetype(8192));
+            const QByteArray line = m_stderrBuffer.left(length);
+            m_stderrBuffer.remove(0, length + (newline == length ? 1 : 0));
+            const QString output = QString::fromUtf8(line).trimmed();
+            if (output.isEmpty())
+                continue;
+            const QJsonObject structured = QJsonDocument::fromJson(line).object();
+            const QString event = structured.value(QStringLiteral("event")).toString();
+            const bool workerEvent = event == QStringLiteral("ocr.worker_finished") ||
+                                     event == QStringLiteral("ocr.backend_fallback") ||
+                                     event == QStringLiteral("ocr.engine_ready");
+            QJsonObject fields =
+                workerEvent ? structured.value(QStringLiteral("fields")).toObject() : QJsonObject{};
+            fields.insert(QStringLiteral("child_pid"), pid);
+            const bool info =
+                workerEvent && fields.value(QStringLiteral("outcome")) != QStringLiteral("failed");
+            snow_shot::diagnostics::DiagnosticsService::instance().record(
+                info || output == QStringLiteral("snow.diagnostics: crash capture registered")
+                    ? QtInfoMsg
+                    : QtWarningMsg,
+                QStringLiteral("snow_shot.ocr"), workerEvent ? event : QStringLiteral("ocr.stderr"),
+                workerEvent ? structured.value(QStringLiteral("message")).toString() : output,
+                fields);
+        }
+    }
+
+    QJsonObject jobFields(const std::shared_ptr<Job>& job) const {
+        const qint64 now = job->elapsed.elapsed();
+        return {{QStringLiteral("operation"), QString::number(job->token)},
+                {QStringLiteral("child_pid"), job->childPid},
+                {QStringLiteral("duration_ms"), now},
+                {QStringLiteral("queue_ms"), job->submittedAt < 0 ? now : job->submittedAt},
+                {QStringLiteral("worker_ms"),
+                 job->submittedAt < 0
+                     ? 0
+                     : (job->completedAt < 0 ? now : job->completedAt) - job->submittedAt},
+                {QStringLiteral("render_ms"), job->completedAt < 0 ? 0 : now - job->completedAt},
+                {QStringLiteral("width"), job->imageSize.width()},
+                {QStringLiteral("height"), job->imageSize.height()},
+                {QStringLiteral("priority"),
+                 job->request.priority == ScreenshotOcrRequestPriority::Interactive
+                     ? QStringLiteral("interactive")
+                     : QStringLiteral("prefetch")}};
+    }
+
     void flushPending() {
         std::lock_guard lock(m_mutex);
         if (!m_ready || m_shuttingDown || m_configurationDirty)
@@ -740,7 +800,14 @@ class ScreenshotOcrRecognitionService::Impl final {
             job->slot = slot;
             job->running = true;
             job->processSubmitted = true;
+            job->submittedAt = job->elapsed.elapsed();
+            job->childPid = m_childPid;
             ++m_runningCount;
+            auto fields = jobFields(job);
+            fields.insert(QStringLiteral("pending_count"), static_cast<int>(m_pending.size()));
+            fields.insert(QStringLiteral("running_count"), m_runningCount);
+            snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.ocr"),
+                                             QStringLiteral("ocr.submitted"), fields);
             QByteArray payload;
             appendU32(payload, static_cast<quint32>(slot));
             appendU32(payload, static_cast<quint32>(image.width()));
@@ -788,7 +855,7 @@ class ScreenshotOcrRecognitionService::Impl final {
             if (!takeU64(m_readBuffer, offset, &id) || !takeU32(m_readBuffer, offset, &length) ||
                 magic != kProtocolMagic || version != kProtocolVersion ||
                 length > static_cast<quint32>(kMaximumFrameBytes)) {
-                processFailed();
+                processFailed("protocol_frame");
                 return;
             }
             if (m_readBuffer.size() < 20 + static_cast<qsizetype>(length))
@@ -815,11 +882,17 @@ class ScreenshotOcrRecognitionService::Impl final {
             !takeU32(payload, offset, &protocolVersion) || offset != payload.size() || ok == 0 ||
             runtimeVersion != QString::fromLatin1(kRuntimeVersion) ||
             protocolVersion != kProtocolVersion) {
-            processFailed();
+            processFailed("handshake");
             return;
         }
-        Q_UNUSED(directMl);
-        Q_UNUSED(provider);
+        snow_shot::diagnostics::logEvent(
+            QStringLiteral("snow_shot.ocr"), QStringLiteral("ocr.process_ready"),
+            {{QStringLiteral("backend"), provider},
+             {QStringLiteral("version"), runtimeVersion},
+             {QStringLiteral("child_pid"), m_childPid},
+             {QStringLiteral("stage"), QStringLiteral("capability_probe")},
+             {QStringLiteral("outcome"),
+              directMl ? QStringLiteral("directml_available") : QStringLiteral("cpu_only")}});
         m_ready = true;
         m_assetStatus = {m_assets.offline ? ScreenshotOcrAssetPhase::ReadyOffline
                                           : ScreenshotOcrAssetPhase::ReadyCached,
@@ -837,6 +910,7 @@ class ScreenshotOcrRecognitionService::Impl final {
             if (it == m_jobs.end())
                 return;
             job = it.value();
+            job->completedAt = job->elapsed.elapsed();
             qsizetype offset = 0;
             quint8 status = 0;
             if (!takeU8(payload, offset, &status)) {
@@ -948,14 +1022,14 @@ class ScreenshotOcrRecognitionService::Impl final {
     }
 
     void deliver(const std::shared_ptr<Job>& job, ScreenshotOcrRecognitionResult result) {
-        snow_shot::diagnostics::logEvent(
-            QStringLiteral("snow_shot.ocr"), QStringLiteral("ocr.finished"),
-            {{QStringLiteral("operation"), QString::number(job->token)},
-             {QStringLiteral("duration_ms"), job->elapsed.elapsed()},
-             {QStringLiteral("outcome"), job->cancelled.load()    ? QStringLiteral("cancelled")
-                                         : result.error.isEmpty() ? QStringLiteral("succeeded")
-                                                                  : QStringLiteral("failed")}},
-            result.error.isEmpty() || job->cancelled.load() ? QtInfoMsg : QtWarningMsg);
+        auto fields = jobFields(job);
+        fields.insert(QStringLiteral("outcome"), job->cancelled.load() ? QStringLiteral("cancelled")
+                                                 : result.error.isEmpty()
+                                                     ? QStringLiteral("succeeded")
+                                                     : QStringLiteral("failed"));
+        snow_shot::diagnostics::DiagnosticsService::instance().record(
+            result.error.isEmpty() || job->cancelled.load() ? QtInfoMsg : QtWarningMsg,
+            QStringLiteral("snow_shot.ocr"), QStringLiteral("ocr.finished"), result.error, fields);
         if (!job->cancelled.load() && job->receiver != nullptr && job->completion)
             job->completion(std::move(result));
     }
@@ -985,13 +1059,12 @@ class ScreenshotOcrRecognitionService::Impl final {
     }
 
     void failJobLocked(const std::shared_ptr<Job>& job, const QString& error) {
-        snow_shot::diagnostics::logEvent(
-            QStringLiteral("snow_shot.ocr"), QStringLiteral("ocr.failed"),
-            {{QStringLiteral("operation"), QString::number(job->token)},
-             {QStringLiteral("duration_ms"), job->elapsed.elapsed()},
-             {QStringLiteral("outcome"),
-              job->cancelled.load() ? QStringLiteral("cancelled") : QStringLiteral("failed")}},
-            job->cancelled.load() ? QtInfoMsg : QtWarningMsg);
+        auto fields = jobFields(job);
+        fields.insert(QStringLiteral("outcome"), job->cancelled.load() ? QStringLiteral("cancelled")
+                                                                       : QStringLiteral("failed"));
+        snow_shot::diagnostics::DiagnosticsService::instance().record(
+            job->cancelled.load() ? QtInfoMsg : QtWarningMsg, QStringLiteral("snow_shot.ocr"),
+            QStringLiteral("ocr.failed"), error, fields);
         m_pending.erase(std::remove(m_pending.begin(), m_pending.end(), job), m_pending.end());
         if (job->slot >= 0 && m_shmMapping != nullptr) {
             uchar* header = m_shmMapping + job->slot * m_slotBytes;
@@ -1020,17 +1093,24 @@ class ScreenshotOcrRecognitionService::Impl final {
         }
     }
 
-    void processFailed() {
+    void processFailed(const char* stage = "process_exit") {
         std::vector<std::shared_ptr<Job>> failed;
         std::unique_ptr<QProcess> process;
         {
             std::lock_guard lock(m_mutex);
             if (m_process == nullptr || m_stopping || m_shuttingDown)
                 return;
+            snow_shot::diagnostics::DiagnosticsService::instance().record(
+                QtWarningMsg, QStringLiteral("snow_shot.ocr"), QStringLiteral("ocr.process_failed"),
+                m_process->errorString(),
+                {{QStringLiteral("stage"), QString::fromLatin1(stage)},
+                 {QStringLiteral("child_pid"), m_childPid},
+                 {QStringLiteral("outcome"), QStringLiteral("failed")}});
             const bool initializationFailed = !m_ready;
             for (auto it = m_jobs.begin(); it != m_jobs.end();) {
                 const auto job = it.value();
                 if (!job->localRendering) {
+                    job->childPid = m_childPid;
                     failed.push_back(job);
                     it = m_jobs.erase(it);
                 } else {
@@ -1059,12 +1139,10 @@ class ScreenshotOcrRecognitionService::Impl final {
         }
         for (const auto& job : failed) {
             QObject::disconnect(job->receiverDestroyed);
-            if (!job->cancelled.load() && job->receiver != nullptr && job->completion) {
-                ScreenshotOcrRecognitionResult result;
-                result.error = QCoreApplication::translate("ScreenshotOcrController",
-                                                           "Text recognition failed");
-                job->completion(std::move(result));
-            }
+            ScreenshotOcrRecognitionResult result;
+            result.error =
+                QCoreApplication::translate("ScreenshotOcrController", "Text recognition failed");
+            deliver(job, std::move(result));
         }
     }
 
@@ -1184,6 +1262,8 @@ class ScreenshotOcrRecognitionService::Impl final {
     int m_runningCount = 0, m_localRenderingCount = 0;
     ScreenshotOcrBackendPreference m_backendPreference = ScreenshotOcrBackendPreference::Cpu;
     QByteArray m_readBuffer;
+    QByteArray m_stderrBuffer;
+    qint64 m_childPid = 0;
     bool m_ready = false, m_shuttingDown = false, m_stopping = false;
     bool m_configurationDirty = false;
     quint64 m_processGeneration = 0;

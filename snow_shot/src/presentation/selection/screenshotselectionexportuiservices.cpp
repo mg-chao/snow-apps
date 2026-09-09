@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotselectionexportuiservices.h"
+#include "snow_shot/diagnostics/diagnostics.h"
 
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
@@ -608,6 +609,10 @@ bool ScreenshotSelectionExportUiServices::presentPinnedArtifact(
         return false;
     }
 
+    snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.export"),
+                                     QStringLiteral("pin.started"),
+                                     {{QStringLiteral("operation"), artifact->diagnosticId()}});
+
     auto* pinnedWindow = m_windowPool != nullptr ? m_windowPool->acquire(request.screen) : nullptr;
     ScreenshotPinnedWindow::Config config;
     config.nativeGeometry = request.geometry.nativeGeometry;
@@ -658,8 +663,16 @@ bool ScreenshotSelectionExportUiServices::presentPinnedArtifact(
         m_pendingPinCoordinator->wrapLoader(config.persistenceId, std::move(loader));
     const QPointer<ScreenshotPendingPinCoordinator> coordinator(m_pendingPinCoordinator.get());
     const QString persistenceId = config.persistenceId;
-    auto synchronizedCompletion = [coordinator, persistenceId, completion = std::move(completion)](
-                                      bool success, QImage image) mutable {
+    auto synchronizedCompletion = [coordinator, persistenceId, operation = artifact->diagnosticId(),
+                                   completion = std::move(completion)](bool success,
+                                                                       QImage image) mutable {
+        snow_shot::diagnostics::logEvent(
+            QStringLiteral("snow_shot.export"), QStringLiteral("pin.finished"),
+            {{QStringLiteral("operation"), operation},
+             {QStringLiteral("stage"), QStringLiteral("first_frame")},
+             {QStringLiteral("outcome"),
+              success ? QStringLiteral("succeeded") : QStringLiteral("failed")}},
+            success ? QtInfoMsg : QtWarningMsg);
         if (completion) {
             completion(success, image);
         }
@@ -673,6 +686,12 @@ bool ScreenshotSelectionExportUiServices::presentPinnedArtifact(
     if (!presented) {
         artifact->cancel();
         m_pendingPinCoordinator->cancel(config.persistenceId);
+        snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.export"),
+                                         QStringLiteral("pin.rejected"),
+                                         {{QStringLiteral("operation"), artifact->diagnosticId()},
+                                          {QStringLiteral("stage"), QStringLiteral("presentation")},
+                                          {QStringLiteral("outcome"), QStringLiteral("failed")}},
+                                         QtWarningMsg);
         return false;
     }
     m_pendingPinCoordinator->updateSnapshot(config.persistenceId,
@@ -689,6 +708,10 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageArtifact(
         nativeGeometry.isEmpty() || fullResolutionScaleBasis.isEmpty()) {
         return false;
     }
+
+    snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.export"),
+                                     QStringLiteral("pin.started"),
+                                     {{QStringLiteral("operation"), artifact->diagnosticId()}});
 
     auto* pinnedWindow = m_windowPool != nullptr ? m_windowPool->acquire(screen) : nullptr;
     ScreenshotPinnedWindow::Config config;
@@ -730,21 +753,35 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageArtifact(
         m_pendingPinCoordinator->wrapLoader(config.persistenceId, std::move(loader));
     const QPointer<ScreenshotPendingPinCoordinator> coordinator(m_pendingPinCoordinator.get());
     const QString persistenceId = config.persistenceId;
-    auto synchronizedCompletion = [coordinator, persistenceId, completion = std::move(completion)](
-                                      bool success, QImage completedImage) mutable {
-        if (completion) {
-            completion(success, completedImage);
-        }
-        if (!coordinator.isNull()) {
-            coordinator->completeFirstFrame(persistenceId, success);
-        }
-    };
+    auto synchronizedCompletion =
+        [coordinator, persistenceId, operation = artifact->diagnosticId(),
+         completion = std::move(completion)](bool success, QImage completedImage) mutable {
+            snow_shot::diagnostics::logEvent(
+                QStringLiteral("snow_shot.export"), QStringLiteral("pin.finished"),
+                {{QStringLiteral("operation"), operation},
+                 {QStringLiteral("stage"), QStringLiteral("first_frame")},
+                 {QStringLiteral("outcome"),
+                  success ? QStringLiteral("succeeded") : QStringLiteral("failed")}},
+                success ? QtInfoMsg : QtWarningMsg);
+            if (completion) {
+                completion(success, completedImage);
+            }
+            if (!coordinator.isNull()) {
+                coordinator->completeFirstFrame(persistenceId, success);
+            }
+        };
     const bool presented = presentPinnedWindowAndSynchronize(m_windowPool.get(), pinnedWindow,
                                                              config, m_showMainWindowRequested,
                                                              std::move(synchronizedCompletion));
     if (!presented) {
         artifact->cancel();
         m_pendingPinCoordinator->cancel(config.persistenceId);
+        snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.export"),
+                                         QStringLiteral("pin.rejected"),
+                                         {{QStringLiteral("operation"), artifact->diagnosticId()},
+                                          {QStringLiteral("stage"), QStringLiteral("presentation")},
+                                          {QStringLiteral("outcome"), QStringLiteral("failed")}},
+                                         QtWarningMsg);
         return false;
     }
     m_pendingPinCoordinator->updateSnapshot(config.persistenceId,
