@@ -2036,6 +2036,79 @@ void filterSourceCacheKeepsOverlappingZBoundariesSeparate() {
 
 QStringList retainedFilterPaintWarnings;
 
+void retainedFilterCopiesPreserveScratchRowPadding() {
+    class Backdrop final : public SnowCanvasCustomRenderer {
+      public:
+        QSize surfaceSize;
+        void renderBeforeCanvas(QPainter& painter, const SnowCanvasRenderContext&) override {
+            surfaceSize = static_cast<QImage*>(painter.device())->size();
+            painter.fillRect(QRect(0, 0, 400, 400), QColor(37, 89, 143));
+        }
+    };
+    for (const qreal dpr : {1.0, 1.125, 1.25}) {
+        snow_canvas_filter_tile_cache::clear();
+        int namespaceToken = 0;
+        snow_canvas_filter_render::RenderWorkspace workspace;
+        Backdrop backdrop;
+        SnowCanvasRenderContext context;
+        SceneDisplayInfo info{};
+        info.surface_width = 263;
+        info.surface_height = 263;
+        info.camera_zoom = 1.0;
+        SnowSceneDisplayItem raw{};
+        raw.kind = SNOW_SCENE_DISPLAY_ITEM_FILTER;
+        raw.element_id = SnowElementId{1, 1};
+        raw.width = 220;
+        raw.height = 220;
+        raw.opacity = 1.0;
+        raw.filter = snow_filter_render_spec_resolve(0, 0.3);
+        const SnowCanvasSceneItem filter(raw);
+        const auto render = [&] {
+            QImage output(QSize(qCeil(263 * dpr), qCeil(263 * dpr)),
+                          QImage::Format_ARGB32_Premultiplied);
+            output.setDevicePixelRatio(dpr);
+            output.fill(Qt::transparent);
+            QPainter painter(&output);
+            snow_canvas_renderer::SceneRenderRequest request;
+            request.painter = &painter;
+            request.displayInfo = &info;
+            request.sceneItems = &filter;
+            request.sceneItemCount = 1;
+            request.exposedRegion = QRegion(QRect(0, 0, 263, 263));
+            request.backgroundRenderer = &backdrop;
+            request.backgroundContext = &context;
+            request.workspace = &workspace;
+            request.cacheNamespace = &namespaceToken;
+            request.enableFilterTileCache = true;
+            snow_canvas_renderer::renderSceneItems(request);
+            painter.end();
+            return output;
+        };
+        const QImage cold = render();
+        require(!backdrop.surfaceSize.isEmpty(), "cold filter paint must render its backdrop");
+        const auto padding = [&] {
+            const QImage& surface = workspace.sceneScratch(backdrop.surfaceSize, dpr);
+            const qsizetype activeBytes = surface.width() * qsizetype(sizeof(QRgb));
+            require(surface.bytesPerLine() > activeBytes,
+                    "cache-copy regression must exercise a padded scratch surface");
+            std::vector<uchar> bytes;
+            for (int y = 0; y < surface.height(); ++y) {
+                const uchar* row = surface.constScanLine(y);
+                bytes.insert(bytes.end(), row + activeBytes, row + surface.bytesPerLine());
+            }
+            return bytes;
+        };
+        const auto coldPadding = padding();
+        (void)snow_canvas_filter_tile_cache::takeDiagnostics();
+        require(render() == cold, "cached mosaic repaint must preserve visible pixels");
+        require(snow_canvas_filter_tile_cache::takeDiagnostics().hits > 0,
+                "padding regression must exercise a retained source cache hit");
+        require(padding() == coldPadding,
+                "cache restores must copy active pixels only, preserving scratch row padding");
+        snow_canvas_filter_tile_cache::clear();
+    }
+}
+
 void retainedFilterTilesRenderWithoutReopeningAnActivePainter() {
     const auto previousHandler = qInstallMessageHandler(
         [](QtMsgType type, const QMessageLogContext&, const QString& message) {
@@ -2260,6 +2333,7 @@ int main(int argc, char** argv) {
     QApplication application(argc, argv);
     snow_canvas_render_diagnostics::setEnabled(true);
     if (application.arguments().contains(QStringLiteral("--retained-filter-paint-only"))) {
+        retainedFilterCopiesPreserveScratchRowPadding();
         retainedFilterTilesRenderWithoutReopeningAnActivePainter();
         return 0;
     }
@@ -2298,6 +2372,7 @@ int main(int argc, char** argv) {
     adjacentLayerBatchesEffectsAndKeepsSparseComponents();
     distantSameEffectFiltersUseIndependentSpatialGroups();
     filterSourceCacheKeepsOverlappingZBoundariesSeparate();
+    retainedFilterCopiesPreserveScratchRowPadding();
     retainedFilterTilesRenderWithoutReopeningAnActivePainter();
     penFilterHoverDrawsAPathContour();
     return 0;

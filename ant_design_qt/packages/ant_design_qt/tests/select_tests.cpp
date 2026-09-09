@@ -56,6 +56,25 @@ class SelectTest final : public QObject {
   Q_OBJECT
 
  private slots:
+  void popupCanBeDestroyedBeforeItsSelectDuringHostTeardown() {
+    auto* host = new QWidget;
+    auto* toolbar = new QWidget(host);
+    auto* select = new AdSelect(toolbar);
+    select->setOptions({makeOption(QStringLiteral("mosaic"), QStringLiteral("Mosaic"))});
+    select->setPopupFooterWidget(new QWidget);
+    QWidget* popup = popupSurface(*select);
+    QVERIFY(popup);
+    QCOMPARE(popup->parentWidget(), host);
+    // Stacking changes reorder QObject children: the host can delete the popup first.
+    popup->lower();
+    QPointer<AdSelect> guardedSelect(select);
+    QPointer<QWidget> guardedPopup(popup);
+    delete host;
+    QVERIFY(guardedSelect.isNull());
+    QVERIFY(guardedPopup.isNull());
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+  }
+
   void controlScaleAppliesToContentAndSurvivesStyleRefresh() {
     for (const auto size : {AdSelect::ControlSize::Small, AdSelect::ControlSize::Middle,
                             AdSelect::ControlSize::Large}) {

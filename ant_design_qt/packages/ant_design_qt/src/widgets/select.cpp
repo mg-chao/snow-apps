@@ -4859,9 +4859,9 @@ void AdSelect::applyVisualStyle() {
       popupStyleChanged |= setLayoutSpacingIfChanged(popupLayout_, 0);
     }
 
-    static_cast<PopupFrame*>(popup_)->setVisualStyle(visualStyle_->popupBg,
-                                                     visualStyle_->popupBorderColor,
-                                                     visualStyle_->metrics.popupBorderRadius);
+    static_cast<PopupFrame*>(popup_.data())
+        ->setVisualStyle(visualStyle_->popupBg, visualStyle_->popupBorderColor,
+                         visualStyle_->metrics.popupBorderRadius);
 
     if (popupScrollArea_) {
       QPalette scrollPalette = popupScrollArea_->palette();
