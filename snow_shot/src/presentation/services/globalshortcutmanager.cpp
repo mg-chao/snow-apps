@@ -218,10 +218,8 @@ UINT virtualKeyForQtKey(Qt::Key key, bool keypad) {
         return static_cast<UINT>(value);
     }
     if (key >= Qt::Key_F1 && key <= Qt::Key_F24) {
-        // Windows reserves F12 for debuggers, so RegisterHotKey cannot own it.
-        if (key == Qt::Key_F12) {
-            return 0;
-        }
+        // Map every native function key. RegisterHotKey decides whether a particular
+        // combination is reserved or already owned, including debugger shortcuts.
         return static_cast<UINT>(VK_F1 + value - static_cast<int>(Qt::Key_F1));
     }
 
