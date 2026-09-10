@@ -18,6 +18,7 @@ if(_snow_nsis_init_position EQUAL -1)
 endif()
 string(REPLACE "${_snow_nsis_init}" [=[Function .onInit
   !insertmacro SnowShotLanguageContext
+  !insertmacro SnowShotRestoreInstallDirectory "Software\@CPACK_PACKAGE_VENDOR@\@CPACK_PACKAGE_INSTALL_REGISTRY_KEY@" "@CPACK_NSIS_INSTALL_ROOT@\@CPACK_PACKAGE_INSTALL_DIRECTORY@"
   !insertmacro MUI_LANGDLL_DISPLAY
   Push $0
   ReadRegStr $0 HKLM "Software\@CPACK_PACKAGE_VENDOR@\@CPACK_PACKAGE_INSTALL_REGISTRY_KEY@" ""
@@ -132,7 +133,10 @@ set(_snow_nsis_guard "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/RunningAp
 cmake_path(NATIVE_PATH _snow_nsis_guard NORMALIZE _snow_nsis_guard_native)
 set(_snow_nsis_localization "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/InstallerLanguages.nsh")
 cmake_path(NATIVE_PATH _snow_nsis_localization NORMALIZE _snow_nsis_localization_native)
+set(_snow_nsis_directory "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/InstallDirectory.nsh")
+cmake_path(NATIVE_PATH _snow_nsis_directory NORMALIZE _snow_nsis_directory_native)
 string(APPEND CPACK_NSIS_DEFINES "\nUnicode true\n!include \"${_snow_nsis_guard_native}\"\n"
+    "!include \"${_snow_nsis_directory_native}\"\n"
     "!include \"${_snow_nsis_localization_native}\"\n"
     "!define MUI_LANGDLL_REGISTRY_ROOT SHCTX\n"
     "!define MUI_LANGDLL_REGISTRY_KEY \"Software\\${CPACK_PACKAGE_VENDOR}\\${CPACK_PACKAGE_INSTALL_REGISTRY_KEY}\"\n"
