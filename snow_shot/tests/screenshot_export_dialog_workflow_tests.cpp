@@ -22,6 +22,7 @@
 #include "widgets/select.h"
 #include "widgets/segmented.h"
 #include "widgets/slider.h"
+#include "widgets/popover.h"
 #include "theme/theme_manager.h"
 
 #include <QApplication>
@@ -49,6 +50,7 @@
 #include <QThread>
 #include <QTimer>
 #include <QWheelEvent>
+#include <QWindow>
 #include <atomic>
 #include <algorithm>
 #include <cmath>
@@ -173,9 +175,10 @@ void snapshot(AdModal* modal, const QString& name) {
 }
 AdModal* openDialog(QWidget& owner, const QImage& image,
                     ScreenshotSaveAsFileDialog::Saved saved = {},
-                    ScreenshotSaveAsFileDialog::Finished finished = {}) {
+                    ScreenshotSaveAsFileDialog::Finished finished = {},
+                    QWidget* stackingOwner = nullptr) {
     require(ScreenshotSaveAsFileDialog::open(&owner, &owner, image, std::move(saved),
-                                             std::move(finished)),
+                                             std::move(finished), stackingOwner),
             "image dialog should open");
     auto* modal = child<AdModal>(&owner, "screenshotSaveAsFileModal");
     require(modal->mode() == AdModal::Mode::Window &&
@@ -208,6 +211,82 @@ void centersOnDisplayOverlay() {
         modal->reject();
         flush();
     }
+}
+
+void saveDialogKeepsToolbarVisible() {
+    for (const bool transientOnly : {false, true}) {
+        QWidget overlay(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+        overlay.setGeometry(QApplication::primaryScreen()->geometry());
+        overlay.show();
+        QWidget toolbar(transientOnly ? nullptr : &overlay, Qt::Tool | Qt::FramelessWindowHint |
+                                                                Qt::WindowStaysOnTopHint |
+                                                                Qt::WindowDoesNotAcceptFocus);
+        toolbar.setGeometry(QRect(overlay.geometry().center(), QSize(300, 80)));
+        toolbar.show();
+        if (transientOnly)
+            toolbar.windowHandle()->setTransientParent(overlay.windowHandle());
+        QWidget hiddenToolbar(&overlay, Qt::Tool);
+        hiddenToolbar.hide();
+        flush();
+
+        auto* modal = openDialog(overlay, fixture(), {}, {}, &toolbar);
+        QWidget* surface = modal->contentWidget()->window();
+        require(surface->windowHandle()->transientParent() == toolbar.windowHandle(),
+                "save must use its toolbar as the native stacking owner");
+        QTimer::singleShot(0, &toolbar, [&toolbar] { toolbar.raise(); });
+        flush();
+        require(toolbar.isVisible() && toolbar.windowHandle()->isVisible(),
+                "the screenshot toolbar must remain visible throughout Save as File");
+        require(!toolbar.testAttribute(Qt::WA_DontShowOnScreen),
+                "saving must not alter the toolbar's native visibility attributes");
+        if (QApplication::platformName() != QStringLiteral("offscreen")) {
+            require(QApplication::topLevelAt(toolbar.geometry().center()) == surface,
+                    "the save dialog must remain above its toolbar after a queued raise");
+        }
+        const QPoint offset = surface->geometry().center() - overlay.geometry().center();
+        require(std::abs(offset.x()) <= 1 && std::abs(offset.y()) <= 1,
+                "stacking above the toolbar must preserve centering on the capture display");
+        modal->reject();
+        flush();
+        require(toolbar.isVisible() && toolbar.windowHandle()->isVisible() &&
+                    hiddenToolbar.isHidden(),
+                "cancelling save must preserve visible and hidden toolbar states");
+    }
+}
+
+void saveDialogDoesNotResurrectPopover() {
+    QWidget overlay(nullptr, Qt::Tool | Qt::WindowStaysOnTopHint);
+    overlay.resize(1200, 800);
+    overlay.show();
+    QWidget toolbar(&overlay, Qt::Tool | Qt::WindowStaysOnTopHint);
+    toolbar.resize(300, 80);
+    AdButton saveButton(&toolbar);
+    saveButton.setText(QStringLiteral("Save as file"));
+    toolbar.show();
+    AdPopover popover(&saveButton);
+    popover.setSourceWidget(&saveButton);
+    popover.setText(QStringLiteral("Save as file"));
+    popover.setPopupLayerMode(AdPopover::PopupLayerMode::QtTool);
+    popover.setPopupLifetime(AdPopover::PopupLifetime::Retained);
+    popover.show();
+    flush();
+    QPointer<QWidget> popup;
+    for (auto* widget : QApplication::topLevelWidgets()) {
+        if (widget->objectName() == QStringLiteral("adpopover-surface") && widget->isVisible())
+            popup = widget;
+    }
+    require(popup && popover.isVisible(), "save button popover fixture must be visible");
+
+    auto* modal = openDialog(overlay, fixture(), {}, {}, &toolbar);
+    popover.hide();
+    flush();
+    modal->reject();
+    flush();
+    popover.hide();
+    flush();
+    require(!popover.isVisible() && (!popup || !popup->isVisible()) &&
+                (!popup || !popup->windowHandle() || !popup->windowHandle()->isVisible()),
+            "closing Save as File must not resurrect a popover that its controller has dismissed");
 }
 
 void persistence(const QTemporaryDir& temp) {
@@ -2108,6 +2187,8 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--placement"))) {
             centersOnDisplayOverlay();
+            saveDialogDoesNotResurrectPopover();
+            saveDialogKeepsToolbarVisible();
             ScreenshotExportCoordinator::shared().shutdown();
             storage::ApplicationStorage::instance().shutdown();
             std::cout << "Export dialog placement tests passed\n";
@@ -2186,6 +2267,8 @@ int main(int argc, char* argv[]) {
         }
         shortcutPopupInteraction(owner, temp);
         centersOnDisplayOverlay();
+        saveDialogDoesNotResurrectPopover();
+        saveDialogKeepsToolbarVisible();
         reusablePathInputsAndSettings();
         persistence(temp);
         stateRules(temp);

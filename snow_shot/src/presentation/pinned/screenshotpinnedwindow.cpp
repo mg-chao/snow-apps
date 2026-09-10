@@ -4184,13 +4184,16 @@ void ScreenshotPinnedWindow::saveAsFile() {
     const snow_shot::storage::ScreenshotSettings outputSettings;
     if (outputSettings.saveAsFileDialog() == QStringLiteral("snow_shot")) {
         setProperty("saveDialogOpen", true);
-        if (!ScreenshotSaveAsFileDialog::open(this, this, artifact, {}, [this](bool) {
-                setProperty("saveDialogOpen", false);
-                if (!m_closing) {
-                    activateWindow();
-                    setFocus();
-                }
-            }))
+        if (!ScreenshotSaveAsFileDialog::open(
+                this, this, artifact, {},
+                [this](bool) {
+                    setProperty("saveDialogOpen", false);
+                    if (!m_closing) {
+                        activateWindow();
+                        setFocus();
+                    }
+                },
+                m_editController ? m_editController->toolbarWindow() : nullptr))
             setProperty("saveDialogOpen", false);
         return;
     }

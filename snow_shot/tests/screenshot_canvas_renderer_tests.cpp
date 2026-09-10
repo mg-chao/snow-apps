@@ -2274,14 +2274,16 @@ void ocrPresentationRendersWhileCanvasContentIsHidden() {
 
 void ocrBackgroundFillSamplesRobustlyAndChoosesContrastingText() {
     QImage source(100, 100, QImage::Format_ARGB32_Premultiplied);
-    source.fill(QColor(200, 10, 150));
     const QColor background(32, 48, 64);
-    // The expanded 40 x 40 region has corners and edge midpoints at 18, 40, 62.
+    source.fill(background);
+    // Real flat panel with foreground strokes and isolated perimeter contamination.
+    {
+        QPainter painter(&source);
+        painter.fillRect(30, 25, 3, 30, QColor(200, 10, 150));
+        painter.fillRect(40, 25, 3, 30, QColor(200, 10, 150));
+    }
     const QVector<QPoint> samples{{18, 18}, {40, 18}, {62, 18}, {62, 40},
                                   {62, 62}, {40, 62}, {18, 62}, {18, 40}};
-    for (const QPoint& sample : samples) {
-        source.setPixelColor(sample, background);
-    }
     source.setPixelColor(samples[0], Qt::white);
     source.setPixelColor(samples[5], Qt::red);
     ScreenshotOcrPresentation presentation;
@@ -2291,7 +2293,7 @@ void ocrBackgroundFillSamplesRobustlyAndChoosesContrastingText() {
     presentation.lines.push_back(line);
     prepareScreenshotOcrFillColors(presentation, source, QRectF(0, 0, 100, 100), true);
     require(presentation.lines[0].backgroundFillColor == background,
-            "eight boundary samples must select the dominant color despite two outliers");
+            "the surrounding flat panel must determine the color despite text and outliers");
     require(screenshotOcrContrastingTextColor(background) == QColor(Qt::white) &&
                 screenshotOcrContrastingTextColor(QColor(240, 230, 210)) == QColor(Qt::black) &&
                 screenshotOcrContrastingTextColor(QColor(0, 0, 255)) == QColor(Qt::white) &&
@@ -2328,13 +2330,13 @@ void ocrBackgroundFillSamplesRobustlyAndChoosesContrastingText() {
         QPolygonF({QPointF(-4, -4), QPointF(104, -4), QPointF(104, 104), QPointF(-4, 104)});
     prepareScreenshotOcrFillColors(presentation, uniform, QRectF(0, 0, 100, 100), true);
     require(presentation.lines[0].backgroundFillColor == background,
-            "boundary samples must clamp to the source image");
+            "a clipped region must use valid interior evidence when its perimeter is outside");
     prepareScreenshotOcrFillColors(presentation, uniform, QRectF(0, 0, 100, 100), false);
     require(!presentation.lines[0].backgroundFillColor.isValid(),
             "returning to Blur must clear adaptive fill colors");
     prepareScreenshotOcrFillColors(presentation, {}, QRectF(0, 0, 100, 100), true);
     require(!presentation.lines[0].backgroundFillColor.isValid(),
-            "an absent source must leave the existing blur fallback available");
+            "an absent source must leave the sampled color unset");
 }
 
 void ocrSolidFillRendersAdaptiveTextPerBlock() {

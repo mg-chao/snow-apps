@@ -2835,7 +2835,7 @@ void ScreenshotController::Impl::saveSelectionWithSnowDialog() {
                                       snow_shot::storage::CaptureHistorySource::SavedToFile,
                                       artifact);
             },
-            finished);
+            finished, receiver->m_impl->m_overlayCoordinator->toolbar());
         if (!opened)
             finished(false);
     };

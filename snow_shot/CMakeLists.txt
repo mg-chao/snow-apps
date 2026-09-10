@@ -3917,6 +3917,17 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-shot-ocr-background-tests
+        tests/screenshot_ocr_background_tests.cpp
+        src/presentation/ocr/screenshotocrvisuals.cpp)
+    target_include_directories(snow-shot-ocr-background-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow-shot-ocr-background-tests PRIVATE Qt6::Gui snow_draw_engine_qt_canvas)
+    add_test(NAME snow-shot-ocr-background-tests COMMAND snow-shot-ocr-background-tests)
+    set_tests_properties(snow-shot-ocr-background-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(snow-shot-ocr-presentation-tests
         tests/screenshot_ocr_presentation_tests.cpp
         include/snow_shot/presentation/screenshotocrpresentation.h
@@ -4464,6 +4475,19 @@ function(snow_shot_configure_scrolling_replay_target target)
 endfunction()
 
 if(SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-ocr-background-performance-benchmark
+        tests/screenshot_ocr_background_performance_benchmark.cpp
+        src/presentation/ocr/screenshotocrvisuals.cpp)
+    target_include_directories(snow-shot-ocr-background-performance-benchmark PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow-shot-ocr-background-performance-benchmark PRIVATE
+        Qt6::Gui snow_draw_engine_qt_canvas)
+    add_test(NAME snow-shot-ocr-background-performance-benchmark
+        COMMAND snow-shot-ocr-background-performance-benchmark)
+    set_tests_properties(snow-shot-ocr-background-performance-benchmark PROPERTIES
+        LABELS "benchmark" TIMEOUT 120
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(snow-shot-recognition-image-performance-benchmark
         tests/screenshot_recognition_image_performance_benchmark.cpp
         ${SNOW_SHOT_RECOGNITION_IMAGE_RENDER_SOURCES})
@@ -4929,6 +4953,18 @@ if(WIN32)
         endif()
     endforeach()
     unset(_snow_shot_ffmpeg_toolbar_benchmark)
+    # The OCR background executables also reach the shared Rust bundle through the canvas.
+    foreach(_snow_shot_ocr_background_target IN ITEMS
+            snow-shot-ocr-background-tests
+            snow-shot-ocr-background-performance-benchmark)
+        if(TARGET ${_snow_shot_ocr_background_target})
+            target_link_libraries(${_snow_shot_ocr_background_target} PRIVATE
+                PkgConfig::SNOW_SHOT_FFMPEG)
+            set_property(TEST ${_snow_shot_ocr_background_target} APPEND PROPERTY
+                ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${SNOW_FFMPEG_ROOT}/bin")
+        endif()
+    endforeach()
+    unset(_snow_shot_ocr_background_target)
     if(EXISTS "${SNOW_SHOT_FFMPEG_BIN_DIR}" AND NOT SNOW_SHOT_RELEASE_STATIC)
         set(SNOW_SHOT_FFMPEG_DLL_PATTERNS
             "avcodec-*.dll"

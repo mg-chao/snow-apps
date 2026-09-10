@@ -36,10 +36,15 @@
 #include <QStandardPaths>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QWindow>
 
 #include <algorithm>
 #include <cmath>
 #include <optional>
+
+#if defined(Q_OS_WIN)
+#include <qt_windows.h>
+#endif
 
 namespace {
 using namespace adqt::widgets;
@@ -1137,13 +1142,18 @@ bool ScreenshotSaveDialogState::lossless() const {
 
 bool ScreenshotSaveAsFileDialog::open(QObject* lifetime, QWidget* owner,
                                       std::shared_ptr<ScreenshotExportArtifact> source, Saved saved,
-                                      Finished finished) {
+                                      Finished finished, QWidget* stackingOwner) {
     if (!lifetime || !owner || !source || !source->isValid())
         return false;
+    const QPointer<QWidget> stackingWindow(
+        stackingOwner && stackingOwner->isVisible() ? stackingOwner : nullptr);
     auto* modal = new AdModal(lifetime);
     modal->setObjectName(QStringLiteral("screenshotSaveAsFileModal"));
     modal->setOwnerWindow(owner);
     modal->setMode(AdModal::Mode::Window);
+    if (stackingWindow) {
+        QObject::connect(stackingWindow, &QObject::destroyed, modal, &AdModal::reject);
+    }
     modal->setWindowModality(Qt::ApplicationModal);
     modal->setCentered(true);
     modal->setMaskVisible(false);
@@ -1173,16 +1183,31 @@ bool ScreenshotSaveAsFileDialog::open(QObject* lifetime, QWidget* owner,
     if (lifetime != owner)
         QObject::connect(owner, &QObject::destroyed, modal, &AdModal::reject);
     modal->open();
+    // Preserve the display owner for centering and lifetime, while making the native dialog
+    // an owned window of the toolbar. Raising an owner cannot cover its owned dialog.
+    if (stackingWindow) {
+        QWidget* surface = content->window();
+        surface->windowHandle()->setTransientParent(stackingWindow->windowHandle());
+#if defined(Q_OS_WIN)
+        // QWidget keeps its original parent; synchronize the HWND owner as well as QWindow.
+        if (QApplication::platformName() == QStringLiteral("windows")) {
+            const auto dialogHwnd = reinterpret_cast<HWND>(surface->winId());
+            const auto toolbarHwnd = reinterpret_cast<HWND>(stackingWindow->winId());
+            SetWindowLongPtr(dialogHwnd, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(toolbarHwnd));
+        }
+#endif
+        surface->raise();
+    }
     content->installFooter();
     modal->acceptButton()->setEnabled(false);
     return true;
 }
 bool ScreenshotSaveAsFileDialog::open(QObject* lifetime, QWidget* owner, const QImage& image,
-                                      Saved saved, Finished finished) {
+                                      Saved saved, Finished finished, QWidget* stackingOwner) {
     if (image.isNull())
         return false;
     return open(
         lifetime, owner,
         std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromImage(image)),
-        std::move(saved), std::move(finished));
+        std::move(saved), std::move(finished), stackingOwner);
 }

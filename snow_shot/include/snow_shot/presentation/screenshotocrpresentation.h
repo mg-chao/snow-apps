@@ -48,6 +48,8 @@ class ScreenshotOcrPresentation final {
   public:
     QRect selection;
     QVector<ScreenshotOcrLine> lines;
+    // Explicit policy: missing color evidence must never select Blur in Background Fill mode.
+    bool solidBackgroundFill = false;
 
     void prepareForRendering();
     void setLineText(int lineIndex, const QString& text);
