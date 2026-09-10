@@ -625,7 +625,7 @@ if ($versionInfo.FileVersion -ne "$packageVersionNumeric.0" -or
     throw "Snow Shot binary version '$($versionInfo.FileVersion)'/'$($versionInfo.ProductVersion)' does not match package version '$packageVersion'."
 }
 
-$ocrRuntimeVersion = "1.0.5"
+$ocrRuntimeVersion = "1.0.6"
 $ocrPlatform = "windows-x64"
 $ocrDefaultModelType = "small"
 $ocrDefaultModelId = "ppocrv6-small-463ea9f"
@@ -905,11 +905,11 @@ $ocrRuntimeVersionInfo = (Get-Item -LiteralPath (Join-Path $runtimeWork $ocrRunt
 $expectedOcrMetadata = @{
     CompanyName = "Snow Apps"
     FileDescription = "Snow Shot OCR runtime"
-    FileVersion = "1.0.5.0"
+    FileVersion = "1.0.6.0"
     InternalName = "snow-ocr-process"
     OriginalFilename = $ocrRuntimeFileName
     ProductName = "Snow Shot OCR Runtime"
-    ProductVersion = "1.0.5"
+    ProductVersion = "1.0.6"
 }
 foreach ($property in $expectedOcrMetadata.Keys) {
     if ($ocrRuntimeVersionInfo.$property -ne $expectedOcrMetadata[$property]) {

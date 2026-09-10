@@ -15,6 +15,7 @@
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QThread>
 #include <QProcess>
 #include <QSemaphore>
 #include <QSet>
@@ -185,6 +186,64 @@ void modelInitializationFailureExposesAssetErrorAndRetries() {
         "a later OCR request should retry and report the selected model initialization failure");
 }
 
+void oneEngineIsInitializedBeforeReadyAndReused() {
+    using namespace snow_shot::diagnostics;
+    QTemporaryDir directory;
+    DiagnosticsOptions logging;
+    logging.directories = {directory.path()};
+    logging.enableCrashCapture = false;
+    logging.mirrorToConsole = false;
+    auto& diagnostics = DiagnosticsService::instance();
+    require(diagnostics.initialize(logging), "engine reuse diagnostics must initialize");
+    {
+        ScreenshotOcrRecognitionService service(sourceRuntimeOptions());
+        QObject receiver;
+        const QImage image = whiteImage();
+        int completions = 0;
+        const auto request =
+            ScreenshotOcrRequest{image, QRectF(0, 0, image.width(), image.height())};
+        service.recognize(request, &receiver, [&](ScreenshotOcrRecognitionResult first) {
+            require(first.error.isEmpty(), "first initialized-engine request must succeed");
+            ++completions;
+            service.recognize(request, &receiver, [&](ScreenshotOcrRecognitionResult second) {
+                require(second.error.isEmpty(), "reused-engine request must succeed");
+                ++completions;
+            });
+        });
+        require(waitUntil([&] { return completions == 2 && service.processId() == 0; },
+                          kRecognitionTimeoutMs),
+                "both requests must finish and release the engine");
+        require(diagnostics.flush(), "engine reuse diagnostics must flush");
+        QFile log(diagnostics.status().currentFile);
+        require(log.open(QIODevice::ReadOnly), "engine reuse log must be readable");
+        int starts = 0, initializations = 0, workers = 0;
+        int readyCount = 0;
+        for (const auto& line : log.readAll().split('\n')) {
+            const auto record = QJsonDocument::fromJson(line).object();
+            const auto event = record.value(QStringLiteral("event")).toString();
+            const auto fields = record.value(QStringLiteral("fields")).toObject();
+            if (event == QStringLiteral("ocr.process_started"))
+                ++starts;
+            if (event == QStringLiteral("ocr.engine_ready")) {
+                ++initializations;
+                require(fields.value(QStringLiteral("operation")) == QStringLiteral("0") &&
+                            fields.value(QStringLiteral("outcome")) == QStringLiteral("succeeded"),
+                        "the real engine must initialize during startup");
+            }
+            if (event == QStringLiteral("ocr.process_ready"))
+                ++readyCount;
+            if (event == QStringLiteral("ocr.worker_finished")) {
+                ++workers;
+                require(fields.value(QStringLiteral("initialization_ms")).toInteger() == 0,
+                        "requests must reuse the initialized engine");
+            }
+        }
+        require(starts == 1 && initializations == 1 && workers == 2 && readyCount == 1,
+                "one worker engine must serve both requests after successful readiness");
+    }
+    diagnostics.shutdown();
+}
+
 void diskBackedEngineCompletesThroughTheQtWorker(bool directMlEnabled,
                                                  bool managedRuntime = false) {
     QTemporaryDir cache;
@@ -193,8 +252,8 @@ void diskBackedEngineCompletesThroughTheQtWorker(bool directMlEnabled,
         managedRuntime ? ScreenshotOcrRecognitionService::Options{} : sourceRuntimeOptions();
     const QString expectedProcess =
         managedRuntime ? QDir(QCoreApplication::applicationDirPath())
-                             .filePath(QStringLiteral("assets/ocr/runtimes/1.0.5/windows-x64/"
-                                                      "snow-ocr-process-1.0.5-windows-x64.exe"))
+                             .filePath(QStringLiteral("assets/ocr/runtimes/1.0.6/windows-x64/"
+                                                      "snow-ocr-process-1.0.6-windows-x64.exe"))
                        : options.processPath;
     if (managedRuntime) {
         // Exercise the same trusted offline selection as the app, without a
@@ -220,17 +279,17 @@ void diskBackedEngineCompletesThroughTheQtWorker(bool directMlEnabled,
     });
 
     const QImage image = whiteImage();
-    const ScreenshotOcrRecognitionPort::RequestToken token = service.recognize(
-        ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))}, &loop,
-        [&](ScreenshotOcrRecognitionResult result) {
-            const auto* child = service.findChild<QProcess*>();
-            require(child != nullptr && QFileInfo(child->program()).canonicalFilePath() ==
-                                            QFileInfo(expectedProcess).canonicalFilePath(),
-                    "OCR integration must execute the selected runtime");
-            output = std::move(result);
-            completed = true;
-            loop.quit();
-        });
+    const ScreenshotOcrRecognitionPort::RequestToken token =
+        service.recognize(ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))},
+                          &loop, [&](ScreenshotOcrRecognitionResult result) {
+                              require(service.processId() != 0 &&
+                                          QFileInfo(service.processPath()).canonicalFilePath() ==
+                                              QFileInfo(expectedProcess).canonicalFilePath(),
+                                      "OCR integration must execute the selected runtime");
+                              output = std::move(result);
+                              completed = true;
+                              loop.quit();
+                          });
 
     require(token != 0, "a valid OCR image should schedule recognition");
     timeout.start(kRecognitionTimeoutMs);
@@ -443,7 +502,7 @@ void interactiveRequestsPrecedeQueuedPrefetch() {
 
     // Cold ONNX startup can exceed the scheduler's prefetch-aging threshold.
     // Queue the priority comparison while a warmed child is still alive.
-    const QImage warmup = whiteImage();
+    const QImage warmup = whiteImage(512);
     service.recognize(ScreenshotOcrRequest{warmup, QRectF(QPointF(), QSizeF(warmup.size()))},
                       &receiver, [&](ScreenshotOcrRecognitionResult result) {
                           require(result.error.isEmpty(), "priority-test engine warms up");
@@ -529,16 +588,14 @@ void modelChangeDrainsSubmittedWorkBeforeRestartingPendingWork() {
     qint64 originalProcessId = 0;
     qint64 replacementProcessId = 0;
     bool workScheduled = false;
-    const QImage warmup = whiteImage();
+    const QImage warmup = whiteImage(768);
     const auto warmupToken = service.recognize(
         ScreenshotOcrRequest{warmup, QRectF(QPointF(), QSizeF(warmup.size()))}, &receiver,
         [&](ScreenshotOcrRecognitionResult result) {
             require(result.error.isEmpty() && result.presentation != nullptr,
                     "the model-change OCR child should warm successfully");
-            auto* original = service.findChild<QProcess*>();
-            require(original != nullptr && original->state() == QProcess::Running,
-                    "the warmed OCR child should still be running");
-            originalProcessId = original->processId();
+            require(service.processId() != 0, "the warmed OCR child should still be running");
+            originalProcessId = service.processId();
 
             const QImage submitted = whiteImage(768);
             const auto submittedToken = service.recognize(
@@ -558,10 +615,9 @@ void modelChangeDrainsSubmittedWorkBeforeRestartingPendingWork() {
                 [&](ScreenshotOcrRecognitionResult pendingResult) {
                     require(pendingResult.error.isEmpty() && pendingResult.presentation != nullptr,
                             "work queued after a model change should finish successfully");
-                    auto* replacement = service.findChild<QProcess*>();
-                    require(replacement != nullptr && replacement->state() == QProcess::Running,
+                    require(service.processId() != 0,
                             "pending OCR work should run in a replacement child");
-                    replacementProcessId = replacement->processId();
+                    replacementProcessId = service.processId();
                     completionOrder.push_back(2);
                 });
             require(pendingToken != 0, "post-change OCR work should remain queued");
@@ -683,12 +739,12 @@ void writeAssetManifest(const QString& root, bool completePayload) {
     const QByteArray recognizer("recognizer");
     const QByteArray dictionary("dictionary");
     const QString runtimeDirectory =
-        QDir(root).filePath(QStringLiteral("runtimes/1.0.5/windows-x64"));
+        QDir(root).filePath(QStringLiteral("runtimes/1.0.6/windows-x64"));
     const QString modelDirectory =
         QDir(root).filePath(QStringLiteral("models/ppocrv6-small-463ea9f"));
     if (completePayload) {
         writeFixture(QDir(runtimeDirectory)
-                         .filePath(QStringLiteral("snow-ocr-process-1.0.5-windows-x64.exe")),
+                         .filePath(QStringLiteral("snow-ocr-process-1.0.6-windows-x64.exe")),
                      process);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral("DirectML.dll")), directMl);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral("runtime-manifest.json")),
@@ -699,12 +755,12 @@ void writeAssetManifest(const QString& root, bool completePayload) {
                      recognizer);
         writeFixture(QDir(modelDirectory).filePath(QStringLiteral("ppocrv6_dict.txt")), dictionary);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral(".complete.json")),
-                     R"({"schema":1,"component":"1.0.5"})");
+                     R"({"schema":1,"component":"1.0.6"})");
         writeFixture(QDir(modelDirectory).filePath(QStringLiteral(".complete.json")),
                      R"({"schema":1,"component":"ppocrv6-small-463ea9f"})");
     }
     const QJsonArray runtimeFiles{
-        assetFile(QStringLiteral("snow-ocr-process-1.0.5-windows-x64.exe"), process),
+        assetFile(QStringLiteral("snow-ocr-process-1.0.6-windows-x64.exe"), process),
         assetFile(QStringLiteral("DirectML.dll"), directMl),
         assetFile(QStringLiteral("runtime-manifest.json"), runtimeManifest)};
     const auto model = [](const QString& type, const QString& id, const QString& detectorName,
@@ -733,10 +789,10 @@ void writeAssetManifest(const QString& root, bool completePayload) {
         {QStringLiteral("schema"), 2},
         {QStringLiteral("default_model"), QStringLiteral("small")},
         {QStringLiteral("runtime"),
-         QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.5")},
+         QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.6")},
                      {QStringLiteral("platform"), QStringLiteral("windows-x64")},
                      {QStringLiteral("archive"),
-                      assetFile(QStringLiteral("snow-ocr-runtime-1.0.5-windows-x64.zip"), archive,
+                      assetFile(QStringLiteral("snow-ocr-runtime-1.0.6-windows-x64.zip"), archive,
                                 QStringLiteral("https://example.invalid/runtime"))},
                      {QStringLiteral("files"), runtimeFiles}}},
         {QStringLiteral("models"),
@@ -1262,13 +1318,11 @@ void actualOcrCrashAfterInference() {
         ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))}, &receiver,
         [&](ScreenshotOcrRecognitionResult result) {
             require(result.error.isEmpty(), "actual OCR inference succeeds before crash");
-            auto* child = service.findChild<QProcess*>();
-            require(child != nullptr && child->state() == QProcess::Running,
-                    "the test owns a running OCR child");
+            require(service.processId() != 0, "the test owns a running OCR child");
             HANDLE process =
                 OpenProcess(PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION |
                                 PROCESS_QUERY_INFORMATION | PROCESS_VM_WRITE | PROCESS_VM_READ,
-                            FALSE, static_cast<DWORD>(child->processId()));
+                            FALSE, static_cast<DWORD>(service.processId()));
             require(process != nullptr, "open the test-owned OCR child");
             void* inaccessible =
                 VirtualAllocEx(process, nullptr, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_NOACCESS);
@@ -1284,12 +1338,7 @@ void actualOcrCrashAfterInference() {
         });
     require(waitUntil([&] { return crashed; }, kRecognitionTimeoutMs),
             "actual OCR crash completes");
-    require(waitUntil(
-                [&] {
-                    const auto* child = service.findChild<QProcess*>();
-                    return child == nullptr || child->state() == QProcess::NotRunning;
-                },
-                5000),
+    require(waitUntil([&] { return service.processId() == 0; }, 5000),
             "parent observes the abnormal OCR exit");
     auto collector = makeCrashCollector();
     QString error;
@@ -1307,7 +1356,7 @@ void actualOcrCrashAfterInference() {
     const auto bytes = dump.readAll();
     dump.close();
     require(bytes.contains(diagnostics.status().sessionId.toUtf8()) &&
-                bytes.contains("ocr.operation_started") && bytes.contains("1.0.5"),
+                bytes.contains("ocr.operation_started") && bytes.contains("1.0.6"),
             "actual OCR dump retains parent session, operation and runtime version");
     require(diagnostics.flush(), "actual OCR final diagnostics flush");
     diagnostics.shutdown();
@@ -1359,6 +1408,7 @@ int main(int argc, char** argv) {
     renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine();
     diskBackedEngineCompletesThroughTheQtWorker(directMlRequested);
     if (!directMlRequested) {
+        oneEngineIsInitializedBeforeReadyAndReused();
         recognitionRenderIntentCanChangeWhileQueued();
         concurrentRequestsCompleteExactlyOnce();
         interactiveRequestsPrecedeQueuedPrefetch();
