@@ -10,6 +10,7 @@
 #include "icon_renderer.h"
 #include "widgets/button.h"
 #include "widgets/button_style.h"
+#include "widgets/divider.h"
 #include "theme/theme.h"
 #include "widgets/scroll_area.h"
 
@@ -49,6 +50,7 @@ namespace styles = snow_shot::presentation::styles;
 namespace custom = snow_shot::presentation::icons::custom;
 namespace outlined = adqt::icons::antd::outlined;
 using adqt::widgets::AdButton;
+using adqt::widgets::AdDivider;
 
 QLabel* aboutLabel(const QString& objectName, QWidget* parent) {
     auto* label = new QLabel(parent);
@@ -65,6 +67,7 @@ void styleAboutLabel(QLabel* label, int pixelSize, QFont::Weight weight, const Q
     font.setPixelSize(pixelSize);
     font.setWeight(weight);
     label->setFont(font);
+    label->setForegroundRole(QPalette::WindowText);
     QPalette palette = label->palette();
     palette.setColor(QPalette::WindowText, color);
     label->setPalette(palette);
@@ -231,8 +234,7 @@ class AboutResourceButton final : public AdButton {
                                      metric.paddingXS);
         layout()->setSpacing(metric.paddingSM);
         styleAboutLabel(m_title, metric.fontSizeSM, QFont::DemiBold, scheme.map.colorText);
-        styleAboutLabel(m_description, metric.fontSizeSM - 2, QFont::Normal,
-                        scheme.map.colorTextTertiary);
+        styleAboutLabel(m_description, metric.fontSizeSM - 2, QFont::Normal, scheme.map.colorText);
         const QSize iconSize(metric.fontSizeLG, metric.fontSizeLG);
         m_iconLabel->setFixedSize(iconSize);
         m_iconLabel->setPixmap(aboutIcon(m_icon, iconSize, this, scheme.map.colorTextSecondary));
@@ -286,8 +288,7 @@ class AboutResourceButton final : public AdButton {
             m_contentDpr = devicePixelRatioF();
             const auto& metric = m_scheme.metricAlias;
             styleAboutLabel(m_title, metric.fontSizeSM, QFont::DemiBold, state.text);
-            styleAboutLabel(m_description, metric.fontSizeSM - 2, QFont::Normal,
-                            isEnabled() ? m_scheme.map.colorTextTertiary : state.text);
+            styleAboutLabel(m_description, metric.fontSizeSM - 2, QFont::Normal, state.text);
             m_iconLabel->setPixmap(aboutIcon(m_icon, m_iconLabel->size(), this, state.text));
             m_arrow->setPixmap(aboutIcon(outlined::Export(), m_arrow->size(), this, state.text));
         }
@@ -305,12 +306,6 @@ class AboutResourceButton final : public AdButton {
     qreal m_contentDpr = 0;
     bool m_hovered = false;
 };
-
-QFrame* aboutDivider(QWidget* parent) {
-    auto* divider = new QFrame(parent);
-    divider->setFixedHeight(1);
-    return divider;
-}
 
 QUrl aboutProjectUrl(const QString& suffix = {}) {
     QUrl url(QStringLiteral(SNOW_SHOT_PROJECT_URL));
@@ -342,12 +337,12 @@ struct AboutPageWidget::Ui {
     std::array<QWidget*, 6> features{};
     std::array<QLabel*, 6> featureIcons{};
     std::array<QLabel*, 6> featureLabels{};
-    std::array<QFrame*, 6> featureSeparators{};
+    std::array<AdDivider*, 6> featureSeparators{};
     std::array<adqt::icons::IconRef, 6> featureRefs{
         custom::twotone::ScreenshotFeature(),  custom::outlined::ToolFreeDraw(),
         custom::outlined::ToolRecognizeText(), custom::outlined::RecordScreen(),
         custom::outlined::PinToScreen(),       outlined::History()};
-    QFrame* featureDivider = nullptr;
+    AdDivider* featureDivider = nullptr;
     QFrame* versionPanel = nullptr;
     QVBoxLayout* versionPanelLayout = nullptr;
     QBoxLayout* versionLayout = nullptr;
@@ -361,7 +356,7 @@ struct AboutPageWidget::Ui {
     snow_shot::update::UpdateService* updates = nullptr;
     QLabel* updateStatus = nullptr;
     QLabel* updateIcon = nullptr;
-    QFrame* updateDivider = nullptr;
+    AdDivider* updateDivider = nullptr;
     QBoxLayout* updateLayout = nullptr;
     QProgressBar* updateProgress = nullptr;
     AdButton* updateAction = nullptr;
@@ -370,7 +365,7 @@ struct AboutPageWidget::Ui {
     QGridLayout* resourceLayout = nullptr;
     std::array<AboutResourceButton*, 3> resources{};
     QLabel* linkError = nullptr;
-    QFrame* footerDivider = nullptr;
+    AdDivider* footerDivider = nullptr;
     QBoxLayout* footerLayout = nullptr;
     QLabel* community = nullptr;
     QLabel* heart = nullptr;
@@ -451,13 +446,22 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
         m_ui->featureLabels[i]->setAlignment(Qt::AlignCenter);
         featureLayout->addWidget(m_ui->featureLabels[i]);
         row->addWidget(cell, 1);
-        m_ui->featureSeparators[i] = new QFrame(feature);
-        m_ui->featureSeparators[i]->setFixedWidth(1);
-        row->addWidget(m_ui->featureSeparators[i], 0, Qt::AlignVCenter);
+        auto* separator = new AdDivider(feature);
+        separator->setObjectName(QStringLiteral("aboutFeatureSeparator%1").arg(i));
+        separator->setOrientation(AdDivider::Orientation::Vertical);
+        separator->setDividerSize(AdDivider::Size::Small);
+        // The dense feature grid keeps the minimal 3px rail box so labels keep their width.
+        AdDivider::MetricTokens separatorMetrics;
+        separatorMetrics.verticalMarginInline = 1;
+        separator->setComponentTokens({{}, separatorMetrics});
+        row->addWidget(separator, 0, Qt::AlignVCenter);
         m_ui->features[i] = feature;
+        m_ui->featureSeparators[i] = separator;
     }
     m_ui->bodyLayout->addLayout(m_ui->featureLayout);
-    m_ui->featureDivider = aboutDivider(m_ui->body);
+    m_ui->featureDivider = new AdDivider(m_ui->body);
+    m_ui->featureDivider->setObjectName(QStringLiteral("aboutFeatureDivider"));
+    m_ui->featureDivider->setDividerSize(AdDivider::Size::Small);
     m_ui->bodyLayout->addWidget(m_ui->featureDivider);
 
     m_ui->versionPanel = new QFrame(m_ui->body);
@@ -502,8 +506,9 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
     m_ui->updates =
         updates != nullptr ? updates : qApp->findChild<snow_shot::update::UpdateService*>();
     if (m_ui->updates != nullptr) {
-        m_ui->updateDivider = aboutDivider(m_ui->versionPanel);
+        m_ui->updateDivider = new AdDivider(m_ui->versionPanel);
         m_ui->updateDivider->setObjectName(QStringLiteral("aboutUpdateDivider"));
+        m_ui->updateDivider->setDividerSize(AdDivider::Size::Small);
         m_ui->versionPanelLayout->addWidget(m_ui->updateDivider);
         m_ui->updateLayout = new QBoxLayout(QBoxLayout::LeftToRight);
         auto* statusRow = new QHBoxLayout;
@@ -564,7 +569,9 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
                                              Qt::TextSelectableByKeyboard);
     m_ui->linkError->hide();
     m_ui->bodyLayout->addWidget(m_ui->linkError);
-    m_ui->footerDivider = aboutDivider(m_ui->body);
+    m_ui->footerDivider = new AdDivider(m_ui->body);
+    m_ui->footerDivider->setObjectName(QStringLiteral("aboutFooterDivider"));
+    m_ui->footerDivider->setDividerSize(AdDivider::Size::Small);
     m_ui->bodyLayout->addWidget(m_ui->footerDivider);
     m_ui->footerLayout = new QBoxLayout(QBoxLayout::LeftToRight);
     auto* footerText = new QVBoxLayout;
@@ -630,39 +637,39 @@ void AboutPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
     const auto& colors = scheme.map;
     const QColor violet(scheme.appearance == styles::ThemeAppearance::Dark ? "#b58aec" : "#7052d8");
     m_ui->hero->setTheme(scheme);
-    m_ui->heroLayout->setContentsMargins(metric.paddingLG, metric.paddingXS, metric.paddingSM,
+    m_ui->heroLayout->setContentsMargins(metric.paddingLG, metric.paddingXXS, metric.paddingSM,
                                          metric.paddingXXS);
     m_ui->heroLayout->setSpacing(metric.paddingXS);
     m_ui->heroCopy->layout()->setSpacing(metric.paddingXS);
     m_ui->identityLayout->setSpacing(metric.paddingSM);
     m_ui->bodyLayout->setContentsMargins(metric.paddingLG, metric.paddingXXS, metric.paddingLG,
-                                         metric.paddingSM);
-    m_ui->bodyLayout->setSpacing(metric.paddingXS);
+                                         metric.paddingXS);
+    // Section dividers carry the Ant Design clearance in their own margins; the body only
+    // spaces the divider-less junctions so the page keeps its default window height budget.
+    m_ui->bodyLayout->setSpacing(0);
     m_ui->featureLayout->setHorizontalSpacing(metric.paddingXS);
     m_ui->featureLayout->setVerticalSpacing(metric.paddingSM);
     m_ui->resourceLayout->setSpacing(metric.paddingSM);
+    m_ui->resourceLayout->setContentsMargins(0, metric.paddingXS, 0, 0);
+    m_ui->linkError->setContentsMargins(0, metric.paddingXS, 0, metric.paddingXS);
     m_ui->footerLayout->setSpacing(metric.paddingSM);
-    for (QFrame* divider : {m_ui->featureDivider, m_ui->footerDivider}) {
-        QPalette palette = divider->palette();
-        palette.setColor(QPalette::Window, colors.colorSplit);
-        divider->setPalette(palette);
-        divider->setAutoFillBackground(true);
-    }
-    for (auto* separator : m_ui->featureSeparators) {
-        QPalette palette = separator->palette();
-        palette.setColor(QPalette::Window, colors.colorSplit);
-        separator->setPalette(palette);
-        separator->setAutoFillBackground(true);
-    }
-    m_ui->versionPanelLayout->setContentsMargins(metric.padding, metric.paddingXS, metric.padding,
-                                                 metric.paddingXXS);
+    m_ui->versionPanelLayout->setContentsMargins(metric.padding, metric.paddingXXS, metric.padding,
+                                                 metric.paddingXS);
     m_ui->versionPanelLayout->setSpacing(metric.paddingXXS);
     m_ui->versionLayout->setSpacing(metric.paddingSM);
     m_ui->versionActions->setSpacing(metric.paddingXS);
     if (m_ui->updateStatus != nullptr) {
-        m_ui->updateDivider->setStyleSheet(
-            QStringLiteral("QFrame#aboutUpdateDivider { background-color: %1; border: none; }")
-                .arg(colors.colorBorderSecondary.name(QColor::HexArgb)));
+        // The version card's stylesheet marks the divider's palette as customized, which would
+        // reroute the rail through QPalette::Mid and fill the widget rect. Pin the theme split
+        // color and a transparent root explicitly, and budget the card's height with a
+        // half-token margin that doubles the updates module's clearance around the rail.
+        AdDivider::ComponentTokens dividerTokens;
+        dividerTokens.colors.splitColor = colors.colorSplit;
+        dividerTokens.metrics.horizontalMarginSmall = metric.paddingXXS;
+        m_ui->updateDivider->setComponentTokens(dividerTokens);
+        AdDivider::SemanticStyles dividerSemantics;
+        dividerSemantics.root.backgroundColor = Qt::transparent;
+        m_ui->updateDivider->setSemanticStyles(dividerSemantics);
         m_ui->updateLayout->setSpacing(metric.paddingSM);
         m_ui->updateLayout->itemAt(0)->layout()->setSpacing(metric.paddingXS);
         m_ui->updateActions->setSpacing(metric.paddingXS);
@@ -849,7 +856,7 @@ void AboutPageWidget::updateLayout() {
         auto* separator = m_ui->featureSeparators[static_cast<size_t>(i)];
         const bool lastInRow = featureColumns <= 1 || (i % featureColumns) == featureColumns - 1;
         separator->setVisible(!lastInRow);
-        separator->setFixedSize(1, separatorHeight);
+        separator->setFixedHeight(separatorHeight);
     }
     const int resourceColumns = wide ? 3 : 1;
     if (m_ui->resourceColumns != resourceColumns) {

@@ -12,6 +12,9 @@
 #include "snow_shot/update/updateservice.h"
 
 #include "widgets/button.h"
+#include "widgets/button_style.h"
+#include "widgets/divider.h"
+#include "theme/theme.h"
 #include "widgets/navigation_menu.h"
 #include "widgets/scroll_area.h"
 #include "widgets/tabs.h"
@@ -32,6 +35,7 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QTranslator>
+#include <QVBoxLayout>
 
 #include <algorithm>
 #include <array>
@@ -169,6 +173,25 @@ void projectLinkSurfacesMatchStandardButtons() {
                     require(surface(*button, dpr) == surface(reference, dpr),
                             "resource link surfaces match AdButton in both themes, all "
                             "interaction states and fractional scales");
+                }
+                adqt::widgets::detail::ButtonStyleInput input;
+                input.buttonStyle = reference.buttonStyle();
+                input.accentRole = reference.accentRole();
+                input.sizeClass = reference.sizeClass();
+                input.baseFont = reference.font();
+                const auto visual = adqt::widgets::detail::resolveButtonVisualStyle(
+                    input, adqt::theme::ThemeManager::instance().resolve(&reference));
+                const QColor expected = state == 3   ? visual.disabled.text
+                                        : state == 2 ? visual.active.text
+                                        : state == 1 ? visual.hover.text
+                                                     : visual.normal.text;
+                for (const auto* suffix : {"Title", "Description"}) {
+                    auto* label = button->findChild<QLabel*>(QString::fromLatin1(name) +
+                                                             QString::fromLatin1(suffix));
+                    require(label != nullptr &&
+                                label->palette().color(label->foregroundRole()) == expected,
+                            "resource link titles and descriptions follow AdButton text colors "
+                            "in both themes and every interaction state");
                 }
             }
             button->setEnabled(true);
@@ -449,6 +472,60 @@ void updateStatesFitTheVersionPanel() {
     styles::ThemeManager::instance().setThemeAppearance(styles::ThemeAppearance::Light);
 }
 
+void dividersFollowTheComponentLibraryAndUpdatesBreathe() {
+    using adqt::widgets::AdButton;
+    using adqt::widgets::AdDivider;
+    QCoreApplication::setApplicationVersion(QStringLiteral(SNOW_SHOT_TEST_VERSION));
+    snow_shot::update::UpdateService updates({});
+    const_cast<snow_shot::update::UpdateStatus&>(updates.status()).state =
+        snow_shot::update::UpdateState::Idle;
+    AboutPageWidget page(nullptr, [](const QUrl&) { return true; }, &updates);
+    page.resize(700, 540);
+    page.show();
+    flushEvents();
+    const auto scheme = styles::ThemeManager::instance().themeColorScheme();
+    const auto& metric = scheme.metricAlias;
+    for (const char* name : {"aboutFeatureDivider", "aboutUpdateDivider", "aboutFooterDivider"}) {
+        auto* divider = child<AdDivider>(page, name);
+        require(divider->orientation() == AdDivider::Orientation::Horizontal &&
+                    divider->dividerSize() == AdDivider::Size::Small,
+                "About section dividers reuse the Ant Design divider component");
+    }
+    auto* updateDivider = child<AdDivider>(page, "aboutUpdateDivider");
+    const auto dividerTokens = updateDivider->componentTokens();
+    const auto dividerSemantics = updateDivider->semanticStyles();
+    require(dividerTokens.colors.splitColor.has_value() &&
+                dividerTokens.colors.splitColor.value() == scheme.map.colorSplit &&
+                dividerSemantics.root.backgroundColor.has_value() &&
+                dividerSemantics.root.backgroundColor.value() == QColor(Qt::transparent),
+            "the in-card divider pins the theme split color and a transparent root so the "
+            "version card stylesheet cannot reroute its palette");
+    for (int i = 0; i < 6; ++i) {
+        auto* separator =
+            page.findChild<AdDivider*>(QStringLiteral("aboutFeatureSeparator%1").arg(i));
+        require(separator != nullptr &&
+                    separator->orientation() == AdDivider::Orientation::Vertical &&
+                    separator->dividerSize() == AdDivider::Size::Small &&
+                    separator->sizeHint().width() > 2,
+                "feature separators reuse vertical Ant Design dividers with inline rail margins");
+    }
+    auto* panel = child<QFrame>(page, "aboutVersionPanel");
+    const auto* panelLayout = qobject_cast<QVBoxLayout*>(panel->layout());
+    require(panelLayout != nullptr && panelLayout->contentsMargins().bottom() >= metric.paddingXS,
+            "the updates module keeps bottom breathing room inside the version card");
+    auto* value = child<QLabel>(page, "aboutVersionValue");
+    int rowBottom = value->mapTo(panel, QPoint()).y() + value->height();
+    for (const char* name : {"aboutCopyVersion", "aboutReleaseNotes"}) {
+        auto* button = child<AdButton>(page, name);
+        rowBottom = std::max(rowBottom, button->mapTo(panel, QPoint()).y() + button->height());
+    }
+    const int railCenter =
+        updateDivider->mapTo(panel, QPoint()).y() + (updateDivider->height() - 1) / 2;
+    require(railCenter - rowBottom >= metric.paddingXS,
+            "the updates module keeps clearance below the version number");
+    page.hide();
+}
+
 void traySettingsAndFunctionNavigation() {
     const auto& registry = settings::builtInSettingsRegistry();
     snow_shot::presentation::GlobalShortcutManager shortcuts;
@@ -714,6 +791,7 @@ int main(int argc, char** argv) {
     projectLinksAreExplicitAccessibleAndRecoverable();
     updatePolicyAndUnavailableCopy();
     updateStatesFitTheVersionPanel();
+    dividersFollowTheComponentLibraryAndUpdatesBreathe();
     traySettingsAndFunctionNavigation();
     mainNavigationSearchThemesAndLanguages();
     largerTypeKeepsEveryActionReachable();
