@@ -278,169 +278,180 @@ so every moment on screen can be expressed clearly and shared easily.</translati
 <context>
     <name>CustomAiModelsSettingsWidget</name>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="136"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="141"/>
         <source>No custom models configured</source>
         <translation>No custom models configured</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="149"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="154"/>
         <source>Vision</source>
         <translation>Vision</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="154"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="159"/>
         <source>Edit</source>
         <translation>Edit</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="154"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="451"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="159"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="552"/>
         <source>Delete</source>
         <translation>Delete</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="154"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="159"/>
         <source>Copy</source>
         <translation>Copy</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="166"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="171"/>
         <source>%1 model %2</source>
         <translation>%1 model %2</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="194"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="430"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="465"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="199"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="524"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="566"/>
         <source>Unable to save models. Check that configuration storage is writable and try again.</source>
         <translation>Unable to save models. Check that configuration storage is writable and try again.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="211"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="216"/>
         <source>%1 (Copy)</source>
         <translation>%1 (Copy)</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="212"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="217"/>
         <source>%1 (Copy %2)</source>
         <translation>%1 (Copy %2)</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="362"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="456"/>
         <source>Enter a model name.</source>
         <translation>Enter a model name.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="367"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="461"/>
         <source>A model with this name already exists.</source>
         <translation>A model with this name already exists.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="371"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="465"/>
         <source>Enter the base URL without /chat/completions.</source>
         <translation>Enter the base URL without /chat/completions.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="374"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="468"/>
         <source>Enter an HTTP or HTTPS base URL without credentials, a query, or a fragment.</source>
         <translation>Enter an HTTP or HTTPS base URL without credentials, a query, or a fragment.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="377"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="471"/>
         <source>The API key must not contain line breaks.</source>
         <translation>The API key must not contain line breaks.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="380"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="474"/>
         <source>Enter the API model ID.</source>
         <translation>Enter the API model ID.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="403"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="429"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="497"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="523"/>
         <source>This model was deleted. Close this form and create a new model.</source>
         <translation>This model was deleted. Close this form and create a new model.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="423"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="517"/>
         <source>Edit Model</source>
         <translation>Edit Model</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="423"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="466"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="517"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="567"/>
         <source>Add Model</source>
         <translation>Add Model</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="424"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="518"/>
         <source>Save</source>
         <translation>Save</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="425"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="452"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="519"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="553"/>
         <source>Cancel</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="433"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="527"/>
         <source>Model Name</source>
         <translation>Model Name</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="433"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="527"/>
         <source>API URL</source>
         <translation>API URL</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="433"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="527"/>
         <source>API Key</source>
         <translation>API Key</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="433"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="527"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="535"/>
         <source>API Model</source>
         <translation>API Model</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="434"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="441"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="528"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="541"/>
         <source>Vision Support</source>
         <translation>Vision Support</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="442"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="536"/>
+        <source>Enter or select a model ID</source>
+        <translation>Enter or select a model ID</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="539"/>
+        <source>Unable to fetch models. Enter a model ID or reopen the list to retry.</source>
+        <translation>Unable to fetch models. Enter a model ID or reopen the list to retry.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="542"/>
         <source>The model name displayed in Snow Shot.</source>
         <translation>The model name displayed in Snow Shot.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="443"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="543"/>
         <source>OpenAI-compatible Chat Completions. /chat/completions is appended to this base URL.</source>
         <translation>OpenAI-compatible Chat Completions. /chat/completions is appended to this base URL.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="445"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="545"/>
         <source>Optional for servers that do not require authentication.</source>
         <translation>Optional for servers that do not require authentication.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="446"/>
-        <source>The model ID expected by your API provider.</source>
-        <translation>The model ID expected by your API provider.</translation>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="547"/>
+        <source>Enter a custom model ID or open the list to fetch models from the API URL.</source>
+        <translation>Enter a custom model ID or open the list to fetch models from the API URL.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="447"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="548"/>
         <source>Allow this model to convert images to Markdown and HTML.</source>
         <translation>Allow this model to convert images to Markdown and HTML.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="450"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="551"/>
         <source>Delete Model</source>
         <translation>Delete Model</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="456"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="557"/>
         <source>Delete model &quot;%1&quot;? If selected, another available model will be used.</source>
         <translation>Delete model &quot;%1&quot;? If selected, another available model will be used.</translation>
     </message>
@@ -449,84 +460,84 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     <name>DiagnosticsService</name>
     <message>
         <location filename="../src/presentation/settings/settingsbackend.cpp" line="866"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="873"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="909"/>
         <source>The diagnostics writer stopped unexpectedly.</source>
         <translation>The diagnostics writer stopped unexpectedly.</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="373"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="409"/>
         <source>The log directory is not writable.</source>
         <translation>The log directory is not writable.</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="384"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="420"/>
         <source>The log file could not be opened.</source>
         <translation>The log file could not be opened.</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="402"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="687"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="840"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="438"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="723"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="876"/>
         <source>Writing the log file failed. Check available disk space.</source>
         <translation>Writing the log file failed. Check available disk space.</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="576"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="612"/>
         <location filename="../src/diagnostics/crashcollector.cpp" line="72"/>
         <source>The crash collector could not be started. Check the application installation.</source>
         <translation>The crash collector could not be started. Check the application installation.</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="640"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="676"/>
         <source>Some expired diagnostics could not be removed.</source>
         <translation>Some expired diagnostics could not be removed.</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="661"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="697"/>
         <source>The diagnostics storage limit has been reached.</source>
         <translation>The diagnostics storage limit has been reached.</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="705"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="741"/>
         <source>A log file could not be read.</source>
         <translation>A log file could not be read.</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="729"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="752"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="765"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="788"/>
         <source>Today&apos;s log exceeds the export limit.</source>
         <translation>Today&apos;s log exceeds the export limit.</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="767"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="803"/>
         <source>There is not enough space for a log snapshot.</source>
         <translation>There is not enough space for a log snapshot.</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="778"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="814"/>
         <source>The log snapshot directory could not be created.</source>
         <translation>The log snapshot directory could not be created.</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="788"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="795"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="1151"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="1182"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="824"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="831"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="1187"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="1218"/>
         <source>The log snapshot could not be saved.</source>
         <translation>The log snapshot could not be saved.</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="921"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="957"/>
         <source>No writable diagnostics directory is available.</source>
         <translation>No writable diagnostics directory is available.</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="927"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="963"/>
         <source>The preferred log directory is unavailable; a fallback is in use.</source>
         <translation>The preferred log directory is unavailable; a fallback is in use.</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="1139"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="1175"/>
         <source>Log export is unavailable or already running.</source>
         <translation>Log export is unavailable or already running.</translation>
     </message>
@@ -1738,7 +1749,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
 <context>
     <name>ScreenshotOverlayWindow</name>
     <message>
-        <location filename="../src/presentation/overlay/screenshotoverlaywindow.cpp" line="218"/>
+        <location filename="../src/presentation/overlay/screenshotoverlaywindow.cpp" line="220"/>
         <source>Loading screenshot history</source>
         <translation>Loading screenshot history</translation>
     </message>
@@ -3130,7 +3141,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <location filename="../src/presentation/tools/screenshottoolpalettebuttons.cpp" line="745"/>
         <location filename="../src/presentation/tools/screenshottoolpalettebuttons.cpp" line="989"/>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="211"/>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="1881"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="1895"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="1555"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3052"/>
         <source>Mixed</source>
@@ -3421,7 +3432,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="284"/>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="1878"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="1892"/>
         <source>Sequence number (scroll to adjust)</source>
         <translation>Sequence number (scroll to adjust)</translation>
     </message>
@@ -3647,7 +3658,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="222"/>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="2047"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="2061"/>
         <source>Watermark text</source>
         <translation>Watermark text</translation>
     </message>
@@ -4522,7 +4533,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1890"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="467"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="568"/>
         <source>Custom Models</source>
         <translation>Custom Models</translation>
     </message>

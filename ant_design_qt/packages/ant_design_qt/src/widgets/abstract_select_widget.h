@@ -190,6 +190,10 @@ class AdAbstractSelectWidget : public QWidget {
   QAbstractItemDelegate* itemDelegate() const;
   void setItemDelegate(QAbstractItemDelegate* delegate);
 
+  // Replaces the default empty-result row; retained when options become available.
+  QWidget* notFoundContentWidget() const;
+  void setNotFoundContentWidget(QWidget* widget);
+
   QWidget* popupFooterWidget() const;
   void setPopupFooterWidget(QWidget* widget);
 

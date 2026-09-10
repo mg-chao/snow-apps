@@ -278,169 +278,180 @@ so every moment on screen can be expressed clearly and shared easily.</source>
 <context>
     <name>CustomAiModelsSettingsWidget</name>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="136"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="141"/>
         <source>No custom models configured</source>
         <translation>尚未設定自訂模型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="149"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="154"/>
         <source>Vision</source>
         <translation>視覺</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="154"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="159"/>
         <source>Edit</source>
         <translation>編輯</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="154"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="451"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="159"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="552"/>
         <source>Delete</source>
         <translation>刪除</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="154"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="159"/>
         <source>Copy</source>
         <translation>複製</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="166"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="171"/>
         <source>%1 model %2</source>
         <translation>%1模型 %2</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="194"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="430"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="465"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="199"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="524"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="566"/>
         <source>Unable to save models. Check that configuration storage is writable and try again.</source>
         <translation>無法儲存模型。請確認設定儲存位置可寫入，然後重試。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="211"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="216"/>
         <source>%1 (Copy)</source>
         <translation>%1（複本）</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="212"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="217"/>
         <source>%1 (Copy %2)</source>
         <translation>%1（複本 %2）</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="362"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="456"/>
         <source>Enter a model name.</source>
         <translation>請輸入模型名稱。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="367"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="461"/>
         <source>A model with this name already exists.</source>
         <translation>已存在同名模型。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="371"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="465"/>
         <source>Enter the base URL without /chat/completions.</source>
         <translation>請輸入不含 /chat/completions 的基底 URL。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="374"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="468"/>
         <source>Enter an HTTP or HTTPS base URL without credentials, a query, or a fragment.</source>
         <translation>請輸入 HTTP 或 HTTPS 基底 URL，不要包含憑證、查詢參數或片段。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="377"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="471"/>
         <source>The API key must not contain line breaks.</source>
         <translation>API 金鑰不能包含換行符。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="380"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="474"/>
         <source>Enter the API model ID.</source>
         <translation>請輸入 API 模型 ID。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="403"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="429"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="497"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="523"/>
         <source>This model was deleted. Close this form and create a new model.</source>
         <translation>此模型已被刪除。請關閉此表單並建立新模型。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="423"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="517"/>
         <source>Edit Model</source>
         <translation>編輯模型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="423"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="466"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="517"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="567"/>
         <source>Add Model</source>
         <translation>新增模型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="424"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="518"/>
         <source>Save</source>
         <translation>儲存</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="425"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="452"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="519"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="553"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="433"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="527"/>
         <source>Model Name</source>
         <translation>模型名稱</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="433"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="527"/>
         <source>API URL</source>
         <translation>API URL</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="433"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="527"/>
         <source>API Key</source>
         <translation>API 金鑰</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="433"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="527"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="535"/>
         <source>API Model</source>
         <translation>API 模型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="434"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="441"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="528"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="541"/>
         <source>Vision Support</source>
         <translation>視覺支援</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="442"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="536"/>
+        <source>Enter or select a model ID</source>
+        <translation>輸入或選擇模型 ID</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="539"/>
+        <source>Unable to fetch models. Enter a model ID or reopen the list to retry.</source>
+        <translation>無法取得模型。請輸入模型 ID，或重新開啟清單重試。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="542"/>
         <source>The model name displayed in Snow Shot.</source>
         <translation>在 Snow Shot 中顯示的模型名稱。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="443"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="543"/>
         <source>OpenAI-compatible Chat Completions. /chat/completions is appended to this base URL.</source>
         <translation>相容 OpenAI 的 Chat Completions。系統會在此基底 URL 後附加 /chat/completions。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="445"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="545"/>
         <source>Optional for servers that do not require authentication.</source>
         <translation>不需要身分驗證的伺服器可留空。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="446"/>
-        <source>The model ID expected by your API provider.</source>
-        <translation>API 服務供應商要求的模型 ID。</translation>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="547"/>
+        <source>Enter a custom model ID or open the list to fetch models from the API URL.</source>
+        <translation>輸入自訂模型 ID，或開啟清單從 API URL 取得模型。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="447"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="548"/>
         <source>Allow this model to convert images to Markdown and HTML.</source>
         <translation>允許此模型將影像轉換為 Markdown 和 HTML。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="450"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="551"/>
         <source>Delete Model</source>
         <translation>刪除模型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="456"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="557"/>
         <source>Delete model &quot;%1&quot;? If selected, another available model will be used.</source>
         <translation>刪除模型「%1」？如果目前已選取此模型，將改用其他可用模型。</translation>
     </message>
@@ -449,84 +460,84 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <name>DiagnosticsService</name>
     <message>
         <location filename="../src/presentation/settings/settingsbackend.cpp" line="866"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="873"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="909"/>
         <source>The diagnostics writer stopped unexpectedly.</source>
         <translation>診斷記錄寫入執行緒意外停止。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="373"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="409"/>
         <source>The log directory is not writable.</source>
         <translation>無法寫入記錄目錄。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="384"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="420"/>
         <source>The log file could not be opened.</source>
         <translation>無法開啟記錄檔。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="402"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="687"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="840"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="438"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="723"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="876"/>
         <source>Writing the log file failed. Check available disk space.</source>
         <translation>寫入記錄檔失敗。請檢查可用磁碟空間。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="576"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="612"/>
         <location filename="../src/diagnostics/crashcollector.cpp" line="72"/>
         <source>The crash collector could not be started. Check the application installation.</source>
         <translation>無法啟動當機收集程式。請檢查應用程式安裝。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="640"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="676"/>
         <source>Some expired diagnostics could not be removed.</source>
         <translation>部分過期診斷檔案無法刪除。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="661"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="697"/>
         <source>The diagnostics storage limit has been reached.</source>
         <translation>診斷檔案儲存空間已達上限。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="705"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="741"/>
         <source>A log file could not be read.</source>
         <translation>無法讀取記錄檔。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="729"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="752"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="765"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="788"/>
         <source>Today&apos;s log exceeds the export limit.</source>
         <translation>今日記錄超過匯出大小限制。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="767"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="803"/>
         <source>There is not enough space for a log snapshot.</source>
         <translation>沒有足夠的空間儲存記錄快照。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="778"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="814"/>
         <source>The log snapshot directory could not be created.</source>
         <translation>無法建立記錄快照目錄。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="788"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="795"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="1151"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="1182"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="824"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="831"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="1187"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="1218"/>
         <source>The log snapshot could not be saved.</source>
         <translation>無法儲存記錄快照。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="921"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="957"/>
         <source>No writable diagnostics directory is available.</source>
         <translation>沒有可寫入的診斷檔案目錄。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="927"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="963"/>
         <source>The preferred log directory is unavailable; a fallback is in use.</source>
         <translation>首選記錄目錄無法使用，目前使用備用目錄。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="1139"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="1175"/>
         <source>Log export is unavailable or already running.</source>
         <translation>記錄匯出無法使用或正在進行中。</translation>
     </message>
@@ -1737,7 +1748,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
 <context>
     <name>ScreenshotOverlayWindow</name>
     <message>
-        <location filename="../src/presentation/overlay/screenshotoverlaywindow.cpp" line="218"/>
+        <location filename="../src/presentation/overlay/screenshotoverlaywindow.cpp" line="220"/>
         <source>Loading screenshot history</source>
         <translation>正在載入截圖歷史</translation>
     </message>
@@ -2744,7 +2755,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <location filename="../src/presentation/tools/screenshottoolpalettebuttons.cpp" line="745"/>
         <location filename="../src/presentation/tools/screenshottoolpalettebuttons.cpp" line="989"/>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="211"/>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="1881"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="1895"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="1555"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3052"/>
         <source>Mixed</source>
@@ -3420,7 +3431,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="284"/>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="1878"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="1892"/>
         <source>Sequence number (scroll to adjust)</source>
         <translation>序號（捲動調整）</translation>
     </message>
@@ -3646,7 +3657,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="222"/>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="2047"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="2061"/>
         <source>Watermark text</source>
         <translation>浮水印文字</translation>
     </message>
@@ -4521,7 +4532,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1890"/>
-        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="467"/>
+        <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="568"/>
         <source>Custom Models</source>
         <translation>自訂模型</translation>
     </message>

@@ -781,7 +781,7 @@ target_compile_definitions(snow_shot_settings PRIVATE
     SNOW_SHOT_WEBSITE_URL="${SNOW_SHOT_WEBSITE_URL}"
     SNOW_SHOT_PROJECT_URL="${SNOW_SHOT_PROJECT_URL}"
 )
-target_link_libraries(snow_shot_settings PRIVATE Qt6::Svg)
+target_link_libraries(snow_shot_settings PRIVATE Qt6::Svg Qt6::Network)
 add_library(snow_shot_global_mouse STATIC
     include/snow_shot/presentation/globalmousemanager.h
     include/snow_shot/presentation/globalmousegesture.h
@@ -1366,7 +1366,7 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-custom-ai-models-tests tests/custom_ai_models_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp)
-    target_link_libraries(snow-shot-custom-ai-models-tests PRIVATE snow_shot_settings ant_design_qt Qt6::Widgets)
+    target_link_libraries(snow-shot-custom-ai-models-tests PRIVATE snow_shot_settings ant_design_qt Qt6::Widgets Qt6::Network)
     snow_shot_add_translations(snow-shot-custom-ai-models-tests)
     snow_shot_import_offscreen_platform(snow-shot-custom-ai-models-tests)
     add_test(NAME snow-shot-custom-ai-models-tests COMMAND snow-shot-custom-ai-models-tests -platform offscreen)

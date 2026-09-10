@@ -324,6 +324,10 @@ class AdSelect final : public QWidget,
   QAbstractItemDelegate* itemDelegate() const;
   void setItemDelegate(QAbstractItemDelegate* delegate);
 
+  // Replaces the default empty-result row; retained when options become available.
+  QWidget* notFoundContentWidget() const;
+  void setNotFoundContentWidget(QWidget* widget);
+
   QWidget* popupFooterWidget() const;
   void setPopupFooterWidget(QWidget* widget);
 
@@ -575,6 +579,7 @@ class AdSelect final : public QWidget,
   int groupRole_ = DefaultGroupRole;
   QList<int> searchRoles_;
   QPointer<QAbstractItemDelegate> itemDelegateOverride_;
+  QPointer<QWidget> notFoundContentWidget_;
   QPointer<QWidget> popupFooterWidget_;
   QVariantList customTagValues_;
   QVariantList currentValuesCache_;

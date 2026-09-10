@@ -15,6 +15,13 @@
 #include "widgets/modal.h"
 #include "widgets/switch.h"
 #include "widgets/tag.h"
+#include "widgets/combo_box.h"
+#include "widgets/spin.h"
+#include <QLineEdit>
+#include <QListView>
+#include <QTcpServer>
+#include <QTcpSocket>
+#include <QElapsedTimer>
 #include <QApplication>
 #include <QDir>
 #include <QFile>
@@ -187,7 +194,7 @@ void widgetContracts(QApplication& application) {
         require(session.customAiModels().isEmpty(), "empty submission does not create a record");
         auto* name = modal->contentWidget()->findChild<AdLineEdit*>(QStringLiteral("modelName"));
         auto* url = modal->contentWidget()->findChild<AdLineEdit*>(QStringLiteral("apiUrl"));
-        auto* apiModel = modal->contentWidget()->findChild<AdLineEdit*>(QStringLiteral("apiModel"));
+        auto* apiModel = modal->contentWidget()->findChild<AdComboBox*>(QStringLiteral("apiModel"));
         auto* key = modal->contentWidget()->findChild<AdPasswordEdit*>(QStringLiteral("apiKey"));
         require(name && url && apiModel && key && !key->textVisible(),
                 "form has masked password input");
@@ -213,8 +220,123 @@ void widgetContracts(QApplication& application) {
         }
         name->setText(QStringLiteral("Personal model"));
         url->setText(QStringLiteral("http://localhost:1234/v1/"));
-        apiModel->setText(QStringLiteral("local-id"));
+        apiModel->lineEdit()->setText(QStringLiteral("local-id"));
+        emit apiModel->lineEdit()->textEdited(QStringLiteral("local-id"));
         key->setText(QStringLiteral("portable-secret"));
+        require(apiModel->editable() &&
+                    apiModel->currentValue().toString() == QStringLiteral("local-id"),
+                "typed custom model ID commits without selecting an option");
+        QTcpServer server;
+        require(server.listen(QHostAddress::LocalHost), "model list server listens");
+        QByteArray received;
+        QList<QTcpSocket*> requests;
+        QObject::connect(&server, &QTcpServer::newConnection, &server, [&]() {
+            auto* socket = server.nextPendingConnection();
+            QObject::connect(socket, &QTcpSocket::readyRead, &server, [&, socket]() {
+                received += socket->readAll();
+                if (received.contains("\r\n\r\n") && !requests.contains(socket)) {
+                    requests.append(socket);
+                }
+            });
+        });
+        const auto waitFor = [](auto predicate) {
+            QElapsedTimer timer;
+            timer.start();
+            while (!predicate() && timer.elapsed() < 3000) {
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+            }
+            require(predicate(), "asynchronous model list operation completes");
+        };
+        const auto respond = [](QTcpSocket* socket, const QByteArray& payload) {
+            socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +
+                          QByteArray::number(payload.size()) + "\r\nConnection: close\r\n\r\n" +
+                          payload);
+            socket->disconnectFromHost();
+        };
+        apiModel->hidePopup();
+        url->setText(QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort()));
+        apiModel->showPopup();
+        require(apiModel->loading(), "remote fetch uses the select loading effect");
+        auto* fetchContent = apiModel->notFoundContentWidget();
+        auto* fetchSpin = fetchContent->findChild<AdSpin*>(QStringLiteral("modelFetchSpin"));
+        require(fetchSpin && fetchSpin->spinning() && fetchSpin->isVisible() &&
+                    fetchSpin->sizeClass() == AdSpin::SizeClass::Small &&
+                    !apiModel->view()->isVisible(),
+                "remote fetch replaces empty results with a visible small Spin like Ant Design");
+        require(apiModel->popupFooterWidget() == nullptr,
+                "loading model popup does not reserve an empty status footer");
+        waitFor([&]() { return requests.size() == 1; });
+        require(fetchSpin->x() == fetchContent->layout()->contentsMargins().left() &&
+                    fetchSpin->width() == fetchSpin->sizeHint().width() &&
+                    fetchSpin->geometry().right() < fetchContent->width() / 2,
+                "loading Spin stays at the left content inset at its natural size");
+        require(received.startsWith("GET /v1/models HTTP/1.1") &&
+                    received.contains("Authorization: Bearer portable-secret"),
+                "models use the currently entered base URL and API key");
+        respond(requests.last(),
+                R"({"data":[{"id":"remote-model"},{"id":"remote-model"},{"id":""},{}]})");
+        waitFor([&]() { return !apiModel->loading(); });
+        require(apiModel->options().size() == 1 &&
+                    apiModel->options().first().value.toString() ==
+                        QStringLiteral("remote-model") &&
+                    apiModel->currentValue().toString() == QStringLiteral("local-id"),
+                "remote IDs are deduplicated without replacing custom input");
+        require(apiModel->notFoundContentWidget() == nullptr && !fetchSpin->spinning() &&
+                    apiModel->view()->isVisible(),
+                "completed fetch removes Spin and restores the results list");
+        require(apiModel->popupFooterWidget() == nullptr,
+                "successful model popup does not reserve an empty status footer");
+        require(apiModel->popupLayerMode() == AdComboBox::PopupLayerMode::QtTool &&
+                    apiModel->view()->window()->isWindow() &&
+                    apiModel->view()->window()->windowType() == Qt::Tool,
+                "model list opens in a native Qt tool window");
+        apiModel->setCurrentIndex(0);
+        apiModel->hidePopup();
+        require(apiModel->currentValue().toString() == QStringLiteral("remote-model"),
+                "a fetched model can be selected");
+        received.clear();
+        apiModel->showPopup();
+        require(!apiModel->loading() && apiModel->options().size() == 1 &&
+                    apiModel->currentValue().toString() == QStringLiteral("remote-model"),
+                "reopening the dropdown reuses successful results and preserves selection");
+        flush();
+        require(requests.size() == 1, "cached results do not issue another request");
+        apiModel->hidePopup();
+        key->setText(QStringLiteral("changed-secret"));
+        require(apiModel->options().isEmpty(), "changing API key invalidates cached models");
+        apiModel->showPopup();
+        waitFor([&]() { return requests.size() == 2; });
+        respond(requests.last(), "invalid json");
+        waitFor([&]() { return !apiModel->loading(); });
+        require(!qobject_cast<QLabel*>(apiModel->popupFooterWidget())->text().isEmpty(),
+                "failed model lookup displays retry and custom input guidance");
+        apiModel->hidePopup();
+        received.clear();
+        apiModel->showPopup();
+        waitFor([&]() { return requests.size() == 3; });
+        require(apiModel->popupFooterWidget() == nullptr,
+                "retry removes the previous error footer from popup geometry");
+        respond(requests.last(), R"({"data":[]})");
+        waitFor([&]() { return !apiModel->loading(); });
+        apiModel->hidePopup();
+        apiModel->showPopup();
+        require(!apiModel->loading() && apiModel->options().isEmpty(),
+                "successful empty model lists are cached too");
+        flush();
+        require(requests.size() == 3, "empty cached results do not issue another request");
+        apiModel->hidePopup();
+        url->setText(QStringLiteral("http://127.0.0.1:%1/v2/").arg(server.serverPort()));
+        apiModel->showPopup();
+        waitFor([&]() { return requests.size() == 4; });
+        url->setText(QStringLiteral("http://localhost:1234/v1/"));
+        require(!apiModel->loading() && apiModel->options().isEmpty(),
+                "changing connection cancels stale results");
+        apiModel->hidePopup();
+        key->setText(QStringLiteral("portable-secret"));
+        apiModel->lineEdit()->setText(QStringLiteral("local-id"));
+        emit apiModel->lineEdit()->textEdited(QStringLiteral("local-id"));
+        require(apiModel->currentValue().toString() == QStringLiteral("local-id"),
+                "custom input remains available after a failed lookup");
         key->setTextVisible(true);
         require(key->textVisible(), "key can be revealed");
         modal->contentWidget()
@@ -240,7 +362,8 @@ void widgetContracts(QApplication& application) {
                         !button->toolTip().isEmpty() && !button->accessibleName().isEmpty(),
                     "model actions are small labeled accessible icon buttons");
         }
-        require(original.apiKey == QStringLiteral("portable-secret") && original.supportsVision,
+        require(original.apiKey == QStringLiteral("portable-secret") && original.supportsVision &&
+                    original.model == QStringLiteral("local-id"),
                 "key and vision persist");
         widget->findChild<AdButton*>(QStringLiteral("copy:") + original.id)->click();
         flush();
@@ -259,6 +382,19 @@ void widgetContracts(QApplication& application) {
         application.removeEventFilter(&observer);
         require(observer.frames.size() == 1, "populated editor is stable from its first paint");
         modal = widget->findChild<AdModal*>(QStringLiteral("customAiModelEditor"));
+        url = modal->contentWidget()->findChild<AdLineEdit*>(QStringLiteral("apiUrl"));
+        apiModel = modal->contentWidget()->findChild<AdComboBox*>(QStringLiteral("apiModel"));
+        key = modal->contentWidget()->findChild<AdPasswordEdit*>(QStringLiteral("apiKey"));
+        url->setText(QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort()));
+        key->setText(QStringLiteral("changed-secret"));
+        apiModel->showPopup();
+        require(apiModel->loading(), "a new editor does not reuse the previous modal's cache");
+        waitFor([&]() { return requests.size() == 5; });
+        respond(requests.last(), R"({"data":[]})");
+        waitFor([&]() { return !apiModel->loading(); });
+        apiModel->hidePopup();
+        url->setText(original.baseUrl);
+        key->setText(original.apiKey);
         name = modal->contentWidget()->findChild<AdLineEdit*>(QStringLiteral("modelName"));
         name->setText(copied[1].name);
         modal->acceptButton()->click();
