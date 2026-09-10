@@ -238,7 +238,8 @@ if(ADQT_BUILD_TESTS)
         COMMAND adqt-qt-tool-popup-tests selectSurvivesPopupContainerDestructionOrder
                 -platform offscreen)
     add_test(NAME adqt-popup-hover-recovery-tests
-        COMMAND adqt-qt-tool-popup-tests siblingPopoversReopenAfterOverdueHoverTasks -platform offscreen)
+        COMMAND adqt-qt-tool-popup-tests siblingPopoversReopenAfterOverdueHoverTasks
+                siblingPopoversReopenAfterScopeRecreation -platform offscreen)
     set_tests_properties(adqt-popup-hover-recovery-tests PROPERTIES LABELS "unit")
     add_test(NAME adqt-qt-tool-popup-tests COMMAND adqt-qt-tool-popup-tests)
     if(WIN32)

@@ -520,8 +520,13 @@ void OverlayPopupController::tracePopup(const char* event, int detail) const {
                     << "scope" << (scope ? scope->objectName() : QString()) << "scope_rect"
                     << (scope ? QRect(scope->mapToGlobal(QPoint()), scope->size()) : QRect())
                     << "requested" << popupVisible_ << "actual" << (surface && surface->isVisible())
-                    << "cursor" << QCursor::pos() << "buttons" << QApplication::mouseButtons()
-                    << "grabber" << QWidget::mouseGrabber();
+                    << "disabled" << disabled_ << "has_content" << delegate_->popupHasContent()
+                    << "hover_inside" << hoverRegionInside_ << "hover_open" << openByHover_
+                    << "hover_pending" << hoverTransitionPending_ << "hover_monitor"
+                    << hoverMonitorScheduled_ << "cursor" << QCursor::pos() << "buttons"
+                    << QApplication::mouseButtons() << "grabber" << QWidget::mouseGrabber()
+                    << "active_popup" << QApplication::activePopupWidget() << "modal"
+                    << QApplication::activeModalWidget();
 }
 
 void OverlayPopupController::setPopupVisible(bool value) {
@@ -913,6 +918,7 @@ void OverlayPopupController::scheduleHoverClose() {
 }
 
 void OverlayPopupController::finishHoverOpen() {
+  tracePopup("hover.open_fired");
   hoverTransitionPending_ = false;
   if (!hasTrigger(Trigger::Hover) || disabled_ || !delegate_) {
     resetHoverInteraction();
@@ -933,6 +939,7 @@ void OverlayPopupController::finishHoverOpen() {
 }
 
 void OverlayPopupController::finishHoverClose() {
+  tracePopup("hover.close_fired");
   hoverTransitionPending_ = false;
   if (!hasTrigger(Trigger::Hover) || disabled_ || !delegate_) {
     resetHoverInteraction();

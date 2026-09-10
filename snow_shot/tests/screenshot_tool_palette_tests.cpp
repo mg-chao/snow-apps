@@ -26,6 +26,8 @@
 #include <QClipboard>
 #include <QDir>
 #include <QEnterEvent>
+#include <QCursor>
+#include <QEventLoop>
 #include <QComboBox>
 #include <QFrame>
 #include <QFont>
@@ -48,6 +50,7 @@
 #include <QStandardItemModel>
 #include <QString>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QSlider>
 #include <QSpacerItem>
 #include <QPushButton>
@@ -2529,17 +2532,35 @@ void tableBusyStatePreservesSiblingGroupPopovers() {
     auto* drawing =
         palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotArrowLineButton"));
     require(table && drawing, "recovery scenario needs recognition and drawing groups");
-    materializeLazyPopover(table);
-    materializeLazyPopover(drawing);
     auto* tablePopup = popoverForTrigger(table);
     auto* drawingPopup = popoverForTrigger(drawing);
     const auto verifyPopup = [](adqt::widgets::AdPopover* popup) {
-        require(popup && popup->contentWidget(), "group options must remain materialized");
-        popup->show();
-        require(popup->isVisible() && popup->contentWidget()->isVisible() &&
+        require(popup != nullptr, "group trigger must own a popup");
+        QWidget* trigger = popup->sourceWidget();
+        require(trigger != nullptr, "group popup must have a hover trigger");
+        const QPoint previousCursor = QCursor::pos();
+        QCursor::setPos(trigger->mapToGlobal(trigger->rect().center()));
+        QEventLoop loop;
+        QObject::connect(popup, &adqt::widgets::AdPopover::visibleChanged, &loop,
+                         [&loop](bool visible) {
+                             if (visible) {
+                                 loop.quit();
+                             }
+                         });
+        const QPoint local = trigger->rect().center();
+        QEnterEvent enter(local, trigger->mapTo(trigger->window(), local),
+                          trigger->mapToGlobal(local));
+        QApplication::sendEvent(trigger, &enter);
+        QTimer::singleShot(2000, &loop, &QEventLoop::quit);
+        if (!popup->isVisible()) {
+            loop.exec();
+        }
+        require(popup->isVisible() && popup->contentWidget() &&
+                    popup->contentWidget()->isVisible() &&
                     popup->contentWidget()->window()->isVisible(),
-                "group popup and its actual surface must remain openable");
+                "hover must open the group popup and its actual surface");
         popup->hide();
+        QCursor::setPos(previousCursor);
     };
     QObject::connect(&palette, &ScreenshotToolPalette::tableRequested, &palette,
                      [&]() { palette.setTableBusy(true); });
