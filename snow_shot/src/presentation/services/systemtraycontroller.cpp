@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/systemtraycontroller.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 
@@ -418,7 +419,10 @@ class SystemTrayController::Impl {
             for (const settings::SettingsTrayMenuOptionDefinition& option :
                  groups.at(groupIndex).options) {
                 QAction* action = actions.value(option.id);
-                const bool visible = action != nullptr && requested.contains(option.id);
+                const bool visible =
+                    action != nullptr && requested.contains(option.id) &&
+                    (option.shortcutAction != GlobalShortcutAction::TranslateSelectedText ||
+                     snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled());
                 if (action != nullptr) {
                     action->setVisible(visible);
                 }

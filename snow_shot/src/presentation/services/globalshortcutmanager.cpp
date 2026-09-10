@@ -2,6 +2,7 @@
 #include "snow_shot/diagnostics/diagnostics.h"
 #include "snow_shot/platform/windows/focusedfullscreenwindow.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/storage/applicationstorage.h"
 
 #include <QAbstractNativeEventFilter>
 #include <QCoreApplication>
@@ -627,7 +628,9 @@ class GlobalShortcutManager::Impl {
             const QString activeKey = m_registrationKeysById.value(registrationId);
             const auto active = m_activeRegistrations.constFind(activeKey);
             if (active != m_activeRegistrations.cend()) {
-                if (!m_globalHotkeysEnabled) {
+                if (!m_globalHotkeysEnabled ||
+                    (active->action == GlobalShortcutAction::TranslateSelectedText &&
+                     !snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled())) {
                     return;
                 }
                 const bool suppressionEnabled =
@@ -660,6 +663,15 @@ class GlobalShortcutManager::Impl {
             m_shortcuts[actionIndex(action)] =
                 canonicalShortcuts(persistedShortcuts(settings, action));
         }
+        QObject::connect(&snow_shot::storage::ApplicationStorage::instance().configuration(),
+                         &snow_shot::storage::ConfigurationStore::valueChanged, &q,
+                         [this](const QString& key, const QJsonValue&) {
+                             if (m_initialized &&
+                                 key ==
+                                     QStringLiteral("extended_features/translation_page_enabled")) {
+                                 reconcile();
+                             }
+                         });
         m_initialized = true;
         reconcile();
     }
@@ -710,8 +722,13 @@ class GlobalShortcutManager::Impl {
     }
 
     void reconcile() {
+        const bool translationEnabled =
+            snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled();
         QSet<QString> desiredOwnerKeys;
         for (GlobalShortcutAction action : ALL_ACTIONS) {
+            if (action == GlobalShortcutAction::TranslateSelectedText && !translationEnabled) {
+                continue;
+            }
             for (const QString& shortcut : m_shortcuts[actionIndex(action)]) {
                 desiredOwnerKeys.insert(ownerKey(action, shortcut));
             }
@@ -734,6 +751,9 @@ class GlobalShortcutManager::Impl {
             nextState.shortcuts = m_shortcuts[actionIndex(action)];
 
             for (const QString& shortcut : nextState.shortcuts) {
+                if (action == GlobalShortcutAction::TranslateSelectedText && !translationEnabled) {
+                    break;
+                }
                 GlobalShortcutBindingResult binding;
                 binding.shortcut = shortcut;
 

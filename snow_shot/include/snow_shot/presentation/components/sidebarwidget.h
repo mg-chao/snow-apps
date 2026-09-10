@@ -39,7 +39,7 @@ class SidebarWidget : public QFrame {
 
   private:
     void rebuildNavigationModel();
-    void applyRouteSelection(const QString& routeKey);
+    void applyRouteSelection(const QString& routeKey, bool revealAncestors = true);
     QString normalizeRouteKey(const QString& routeKey) const;
     void syncCollapsedPresentation();
 

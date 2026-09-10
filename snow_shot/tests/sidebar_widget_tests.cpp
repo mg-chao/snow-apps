@@ -91,8 +91,7 @@ void navigationUsesAntDesignDefaultsAndCollapseTriggerStyle() {
     const QModelIndex settings = findByStableId(menu->model(), QStringLiteral("nav.settings"));
     const QModelIndex storageAndPrivacy =
         findByStableId(menu->model(), QStringLiteral("/settings/storageAndPrivacy"));
-    require(history.isValid() &&
-                history.data(Qt::DecorationRole).isValid() &&
+    require(history.isValid() && history.data(Qt::DecorationRole).isValid() &&
                 history.data(adqt::widgets::AdNavigationMenu::StableIdRole).toString() ==
                     QStringLiteral("/history") &&
                 settings.isValid() && settings.data(Qt::DecorationRole).isValid() &&
@@ -106,12 +105,25 @@ void navigationUsesAntDesignDefaultsAndCollapseTriggerStyle() {
     require(sidebar.currentRoute() == QStringLiteral("/settings/storageAndPrivacy"),
             "storage and privacy route should be selectable");
 
+    require(!findByStableId(menu->model(), QStringLiteral("/tools/translation")).isValid(),
+            "optional translation navigation defaults hidden");
+    sidebar.setCurrentRoute(QStringLiteral("/settings/storageAndPrivacy"));
+    menu->setExpanded(findByStableId(menu->model(), QStringLiteral("nav.settings")), false);
+    require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
+            "enable optional page");
+    require(findByStableId(menu->model(), QStringLiteral("/tools/translation")).isValid() &&
+                sidebar.currentRoute() == QStringLiteral("/settings/storageAndPrivacy") &&
+                !menu->isExpanded(findByStableId(menu->model(), QStringLiteral("nav.settings"))),
+            "live enable preserves unrelated selection and collapsed settings group");
+    require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(false),
+            "disable optional page");
+    require(!findByStableId(menu->model(), QStringLiteral("/tools/translation")).isValid(),
+            "live disable hides navigation again");
     const auto menuTokens = menu->componentTokens();
     require(!menuTokens.metrics.itemHeight.has_value() &&
                 !menuTokens.metrics.itemPaddingInline.has_value() &&
                 !menuTokens.metrics.indentation.has_value() &&
-                menuTokens.metrics.rootPaddingBlockStart ==
-                    FIRST_TOP_LEVEL_MENU_TOP_SPACING &&
+                menuTokens.metrics.rootPaddingBlockStart == FIRST_TOP_LEVEL_MENU_TOP_SPACING &&
                 !menuTokens.colors.shared.itemBackground.has_value() &&
                 !menuTokens.colors.shared.itemSelectedBackground.has_value(),
             "sidebar should only override the root content top padding token");
@@ -225,8 +237,7 @@ void collapseButtonSwitchesNavigationMode() {
     require(sidebar.isCollapsed(), "collapse button should collapse the sidebar");
     require(menu->collapsed(), "collapse button should collapse the navigation menu");
     require(sidebar.width() < expandedWidth, "collapsed sidebar should be narrower");
-    require(settings.sidebarCollapsed(),
-            "collapsed sidebar state should be persisted");
+    require(settings.sidebarCollapsed(), "collapsed sidebar state should be persisted");
 
     QEvent languageChange(QEvent::LanguageChange);
     QCoreApplication::sendEvent(&sidebar, &languageChange);
@@ -304,8 +315,8 @@ void collapsedSubmenuUsesNaturalPopupHeight() {
     auto* layout = new QVBoxLayout(&window);
     layout->setContentsMargins(0, 0, 0, 0);
 
-    auto* sidebar = new SidebarWidget(
-        snow_shot::presentation::settings::builtInSettingsRegistry(), &window);
+    auto* sidebar =
+        new SidebarWidget(snow_shot::presentation::settings::builtInSettingsRegistry(), &window);
     layout->addWidget(sidebar);
     window.resize(640, 480);
     window.show();
@@ -313,8 +324,7 @@ void collapsedSubmenuUsesNaturalPopupHeight() {
 
     auto* menu = sidebar->findChild<adqt::widgets::AdNavigationMenu*>();
     require(menu != nullptr, "sidebar should expose its navigation menu");
-    const QModelIndex settingsIndex =
-        findByStableId(menu->model(), QStringLiteral("nav.settings"));
+    const QModelIndex settingsIndex = findByStableId(menu->model(), QStringLiteral("nav.settings"));
     require(settingsIndex.isValid(), "settings should be represented by a menu node");
 
     sidebar->setCollapsed(true);

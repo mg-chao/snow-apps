@@ -1938,7 +1938,7 @@ void AdFormItem::refreshLabel() {
   labelWidget_->setFont(style.metrics.labelFont);
   optionalWidget_->setFont(style.metrics.labelFont);
   colonWidget_->setFont(style.metrics.labelFont);
-  labelWidget_->setWordWrap(vertical || (form_ ? form_->labelWrap() : false));
+  labelWidget_->setWordWrap(form_ ? form_->labelWrap() : vertical);
   const Qt::Alignment horizontal =
       form_ && form_->labelAlign() == AdForm::LabelAlign::Left ? Qt::AlignLeft : Qt::AlignRight;
   const Qt::Alignment labelAlignment =

@@ -60,7 +60,7 @@ class ModelNameLabel final : public QLabel {
         setToolTip(name);
         setAccessibleName(name);
         setMinimumWidth(0);
-        setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     }
 
   protected:
@@ -150,13 +150,14 @@ void CustomAiModelsSettingsWidget::rebuild() {
         auto* layout = new QHBoxLayout(row);
         layout->setContentsMargins(12, 8, 12, 8);
         layout->setSpacing(4);
-        layout->addWidget(new ModelNameLabel(model.name, row), 1);
+        layout->addWidget(new ModelNameLabel(model.name, row));
         if (model.supportsVision) {
             auto* tag = new AdTag(tr("Vision"), row);
             tag->setObjectName(QStringLiteral("customAiModelVision:") + model.id);
             tag->setColorScheme(AdTag::ColorScheme::Blue);
             layout->addWidget(tag);
         }
+        layout->addStretch(1);
         const QStringList labels{tr("Edit"), tr("Delete"), tr("Copy")};
         const QStringList actions{QStringLiteral("edit"), QStringLiteral("delete"),
                                   QStringLiteral("copy")};

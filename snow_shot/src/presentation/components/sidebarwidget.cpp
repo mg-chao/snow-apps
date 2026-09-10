@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/components/sidebarwidget.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/storage/applicationstorage.h"
 
 #include <QEvent>
 #include <QItemSelectionModel>
@@ -83,12 +84,14 @@ void expandAncestors(AdNavigationMenu* menu, const QModelIndex& index) {
 }
 
 void selectMenuIndex(AdNavigationMenu* menu, QItemSelectionModel* selectionModel,
-                     const QModelIndex& index) {
+                     const QModelIndex& index, bool revealAncestors) {
     if (menu == nullptr || selectionModel == nullptr || !index.isValid()) {
         return;
     }
 
-    expandAncestors(menu, index);
+    if (revealAncestors) {
+        expandAncestors(menu, index);
+    }
     selectionModel->setCurrentIndex(index, QItemSelectionModel::NoUpdate);
     selectionModel->select(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
     menu->setCurrentIndex(index);
@@ -153,27 +156,39 @@ void SidebarWidget::rebuildNavigationModel() {
         return;
     }
 
+    QHash<QString, bool> expansion;
+    for (int row = 0; row < m_menuModel->rowCount(); ++row) {
+        const auto index = m_menuModel->index(row, 0);
+        if (m_menuModel->rowCount(index) > 0) {
+            expansion.insert(index.data(AdNavigationMenu::StableIdRole).toString(),
+                             m_menu->isExpanded(index));
+        }
+    }
     m_menu->collapseAll();
     m_menuModel->clear();
 
     m_leafRoutes.clear();
-    const auto appendPage = [this](QStandardItem* parent,
-                                   const snow_shot::presentation::settings::SettingsNavigationPageDefinition& navigationPage) {
-        const auto* page = m_registry.catalog().page(navigationPage.pageId);
-        if (page == nullptr) {
-            return;
-        }
-        m_leafRoutes.push_back(page->route);
-        const adqt::icons::IconRef icon =
-            parent == nullptr && navigationPage.iconFactory ? navigationPage.iconFactory()
-                                                            : adqt::icons::IconRef();
-        QStandardItem* item = createActionItem(page->route, page->title.translated(), icon);
-        if (parent != nullptr) {
-            parent->appendRow(item);
-        } else {
-            m_menuModel->appendRow(item);
-        }
-    };
+    const auto appendPage =
+        [this](QStandardItem* parent,
+               const snow_shot::presentation::settings::SettingsNavigationPageDefinition&
+                   navigationPage) {
+            const auto* page = m_registry.catalog().page(navigationPage.pageId);
+            if (page == nullptr ||
+                (page->id == QStringLiteral("translation") &&
+                 !snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled())) {
+                return;
+            }
+            m_leafRoutes.push_back(page->route);
+            const adqt::icons::IconRef icon = parent == nullptr && navigationPage.iconFactory
+                                                  ? navigationPage.iconFactory()
+                                                  : adqt::icons::IconRef();
+            QStandardItem* item = createActionItem(page->route, page->title.translated(), icon);
+            if (parent != nullptr) {
+                parent->appendRow(item);
+            } else {
+                m_menuModel->appendRow(item);
+            }
+        };
 
     for (const auto& node : m_registry.navigation()) {
         if (const auto* navigationPage =
@@ -200,10 +215,17 @@ void SidebarWidget::rebuildNavigationModel() {
     m_menu->setModel(m_menuModel);
     m_menu->setSelectionModel(m_menuSelectionModel);
     m_menu->setCurrentIndex(QModelIndex());
-    m_menu->expandAll();
+    for (int row = 0; row < m_menuModel->rowCount(); ++row) {
+        const auto index = m_menuModel->index(row, 0);
+        if (m_menuModel->rowCount(index) > 0) {
+            m_menu->setExpanded(
+                index,
+                expansion.value(index.data(AdNavigationMenu::StableIdRole).toString(), true));
+        }
+    }
 }
 
-void SidebarWidget::applyRouteSelection(const QString& routeKey) {
+void SidebarWidget::applyRouteSelection(const QString& routeKey, bool revealAncestors) {
     if (m_menu == nullptr || m_menuModel == nullptr || m_menuSelectionModel == nullptr) {
         m_currentRoute.clear();
         return;
@@ -216,7 +238,7 @@ void SidebarWidget::applyRouteSelection(const QString& routeKey) {
         return;
     }
 
-    selectMenuIndex(m_menu, m_menuSelectionModel, targetIndex);
+    selectMenuIndex(m_menu, m_menuSelectionModel, targetIndex, revealAncestors);
     m_currentRoute = resolvedRouteKey;
 }
 
@@ -247,8 +269,8 @@ void SidebarWidget::applyTheme(const snow_shot::presentation::styles::ThemeColor
     update();
 }
 
-SidebarWidget::SidebarWidget(
-    const snow_shot::presentation::settings::SettingsRegistry& registry, QWidget* parent)
+SidebarWidget::SidebarWidget(const snow_shot::presentation::settings::SettingsRegistry& registry,
+                             QWidget* parent)
     : QFrame(parent), m_registry(registry) {
     setAutoFillBackground(true);
 
@@ -321,6 +343,20 @@ SidebarWidget::SidebarWidget(
     const auto* defaultPage = catalog.page(catalog.defaultLocation().pageId);
     setCurrentRoute(defaultPage != nullptr ? defaultPage->route : QStringLiteral("/"));
     setCollapsed(snow_shot::storage::InterfaceSettings().sidebarCollapsed());
+    connect(&snow_shot::storage::ApplicationStorage::instance().configuration(),
+            &snow_shot::storage::ConfigurationStore::valueChanged, this,
+            [this](const QString& key, const QJsonValue&) {
+                if (key != QStringLiteral("extended_features/translation_page_enabled")) {
+                    return;
+                }
+                const QString route =
+                    m_currentRoute == QStringLiteral("/tools/translation") &&
+                            !snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled()
+                        ? QStringLiteral("/settings/extended-features")
+                        : m_currentRoute;
+                rebuildNavigationModel();
+                applyRouteSelection(route, route != m_currentRoute);
+            });
 }
 
 void SidebarWidget::changeEvent(QEvent* event) {

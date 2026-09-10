@@ -3,6 +3,7 @@
 #include "widgets/modal.h"
 
 #include "snow_shot/presentation/components/contentcardwidget.h"
+#include "snow_shot/presentation/components/applicationsearchwidget.h"
 #include "snow_shot/presentation/components/maincontentheaderwidget.h"
 #include "snow_shot/presentation/components/sidebarwidget.h"
 #include "snow_shot/presentation/components/translationpagewidget.h"
@@ -37,6 +38,9 @@
 #include <QInputMethodEvent>
 #include <QKeyEvent>
 #include <QMimeData>
+#include <QLayout>
+#include <QLabel>
+#include <QSet>
 #include <QScrollBar>
 #include <QTemporaryDir>
 #include <QTranslator>
@@ -126,6 +130,21 @@ void sharedServiceSelectors() {
     server.respondModels();
     waitUntil([&] { return !service.loadingModels(); }, "finish discovery for both views");
     compare();
+    QSet<QString> completedGroups;
+    QString currentGroup;
+    for (const auto& option : pageSelect->options()) {
+        if (option.group != currentGroup) {
+            require(!completedGroups.contains(option.group),
+                    "each translation model group appears only once");
+            completedGroups.insert(currentGroup);
+            currentGroup = option.group;
+        }
+    }
+    const auto options = pageSelect->options();
+    require(options.size() == 3 && options[0].value == QStringLiteral("general") &&
+                options[1].value == model.selectionId() && options[0].group == options[1].group &&
+                options[2].value == QStringLiteral("specialist"),
+            "custom models share the server general model group");
     require(service.savePreferences(
                 {QStringLiteral("en"), QStringLiteral("fr"), QStringLiteral("specialist")}),
             "change shared preferences while the settings dialog is open");
@@ -155,6 +174,78 @@ void sharedServiceSelectors() {
     require(
         snow_shot::storage::ScreenshotTranslationSettings().setConfiguration(previousPreferences),
         "restore shared preferences");
+}
+
+class SettingsGeometryObserver final : public QObject {
+  public:
+    QList<QRect> frames;
+
+  protected:
+    bool eventFilter(QObject* object, QEvent* event) override {
+        auto* widget = qobject_cast<QWidget*>(object);
+        if (widget != nullptr && event->type() == QEvent::Paint &&
+            widget->objectName() == QStringLiteral("screenshotTranslationSourceLanguage")) {
+            const QRect frame(widget->mapToGlobal(QPoint()), widget->size());
+            if (frames.isEmpty() || frames.last() != frame)
+                frames.append(frame);
+        }
+        return false;
+    }
+};
+
+void screenshotSettingsGeometry() {
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    Server server;
+    server.holdModels = true;
+    SnowShotApiClient client(server.url());
+    auto& service = snow_shot::translation::TranslationService::forClient(client, configuration,
+                                                                          QLocale::English);
+    QWidget owner;
+    owner.resize(1000, 700);
+    owner.show();
+    flushEvents();
+    for (const bool cached : {false, true}) {
+        SettingsGeometryObserver observer;
+        qApp->installEventFilter(&observer);
+        auto* modal = snow_shot::presentation::createScreenshotTranslationSettingsDialog(
+            service, &owner, &owner, {});
+        // Drain successive layout and paint requests, including requests posted by a first paint.
+        for (int i = 0; i < 8; ++i)
+            flushEvents();
+        auto* body = modal->contentWidget();
+        require(qAbs(body->height() - body->sizeHint().height()) <= 1,
+                "screenshot settings body fits its content without vertical blank space");
+        const auto labels = body->findChildren<QLabel*>(QStringLiteral("ad-form-item-label"));
+        require(labels.size() == 4, "screenshot settings has four form labels");
+        for (auto* label : labels) {
+            require(label->width() >= label->fontMetrics().horizontalAdvance(label->text()) &&
+                        label->height() >= label->fontMetrics().height(),
+                    "screenshot settings labels fit on one line without clipping");
+        }
+        require(modal->acceptButton()->isEnabled() == cached,
+                "OK is available only once translation models are ready");
+        if (!cached) {
+            waitUntil([&] { return server.modelRequests == 1; }, "request translation models");
+            server.respondModels();
+            waitUntil([&] { return !service.loadingModels(); }, "load translation models");
+            for (int i = 0; i < 8; ++i)
+                flushEvents();
+            require(modal->acceptButton()->isEnabled(), "model discovery enables OK");
+        }
+        qApp->removeEventFilter(&observer);
+        require(observer.frames.size() == 1,
+                "screenshot settings geometry is stable from first paint through model discovery");
+        const QString output = qEnvironmentVariable("SNOW_TRANSLATION_QA_DIR");
+        if (!output.isEmpty()) {
+            require(QDir().mkpath(output), "create screenshot settings preview directory");
+            require(body->window()->grab().save(
+                        QDir(output).filePath(cached ? QStringLiteral("settings-cached.png")
+                                                     : QStringLiteral("settings-discovered.png"))),
+                    "save screenshot settings preview");
+        }
+        modal->reject();
+        flushEvents();
+    }
 }
 
 void screenshotSettingsProviderLifetime() {
@@ -297,6 +388,33 @@ void selectedTextNavigation() {
     window.setAttribute(Qt::WA_DeleteOnClose, false);
     auto* card = window.findChild<ContentCardWidget*>();
     auto* sidebar = window.findChild<SidebarWidget*>();
+    require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(false),
+            "disable translation page");
+    window.showTranslation(QStringLiteral("blocked selection"));
+    auto* search = window.findChild<ApplicationSearchWidget*>();
+    require(search != nullptr, "main window exposes application search");
+    auto* searchSelect = search->findChild<AdSelect*>();
+    const auto hasSearchLabel = [&](const QString& label) {
+        for (const auto& option : searchSelect->options()) {
+            if (option.label == label)
+                return true;
+        }
+        return false;
+    };
+    searchSelect->setSearchText(QStringLiteral("Translation"));
+    require(!hasSearchLabel(QStringLiteral("Translate Selected Text")) &&
+                hasSearchLabel(QStringLiteral("Translation Page")),
+            "disabled search hides shortcut but exposes the opt-in toggle");
+    require(card->currentRoute() == QStringLiteral("/settings/extended-features") &&
+                window.findChild<TranslationPageWidget*>() == nullptr,
+            "disabled direct handoff redirects to feature settings");
+    card->setCurrentRoute(QStringLiteral("/tools/translation"));
+    require(card->currentRoute() == QStringLiteral("/settings/extended-features"),
+            "disabled direct route is guarded");
+    require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
+            "enable translation page");
+    require(hasSearchLabel(QStringLiteral("Translate Selected Text")),
+            "live enable restores selected text search result");
     window.showTranslation(QStringLiteral("first selection"));
     auto* page = window.findChild<TranslationPageWidget*>();
     require(window.isVisible() && page != nullptr &&
@@ -305,6 +423,17 @@ void selectedTextNavigation() {
                 child<AdTextEdit>(*page, "translationSourceText")->toPlainText() ==
                     QStringLiteral("first selection"),
             "hidden main window opens Translation and synchronizes navigation and source");
+    QPointer<TranslationPageWidget> oldPage(page);
+    require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(false),
+            "disable active page");
+    flushEvents();
+    require(oldPage.isNull() &&
+                card->currentRoute() == QStringLiteral("/settings/extended-features"),
+            "disabling active page disposes it and redirects");
+    require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
+            "restore page");
+    window.showTranslation(QStringLiteral("first selection"));
+    page = window.findChild<TranslationPageWidget*>();
     window.showMinimized();
     window.showTranslation(QStringLiteral("second selection"));
     require(!window.isMinimized() && window.findChild<TranslationPageWidget*>() == page &&
@@ -967,7 +1096,16 @@ int main(int argc, char** argv) {
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     require(storage.initialize({directory.path(), directory.path(), 60000}).success,
             "initialize isolated translation-page storage");
+    require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
+            "enable optional translation page for translation UI tests");
     styles::ThemeManager::instance().initialize(app);
+    if (app.arguments().contains(QStringLiteral("--screenshot-settings"))) {
+        screenshotSettingsGeometry();
+        sharedServiceSelectors();
+        screenshotSettingsProviderLifetime();
+        storage.shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--language-dropdowns"))) {
         languageDropdowns();
         storage.shutdown();
@@ -979,6 +1117,7 @@ int main(int argc, char** argv) {
     } else
 #endif
     {
+        screenshotSettingsGeometry();
         sharedServiceSelectors();
         screenshotSettingsProviderLifetime();
         selectedTextHandoff();

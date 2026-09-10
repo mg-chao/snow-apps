@@ -740,7 +740,8 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
                 &snow_shot::presentation::settings::SettingsRuntimeSession::fieldChanged, this,
                 [this](const QString& fieldId,
                        const snow_shot::presentation::settings::SettingsFieldState&) {
-                    if (fieldId == m_definition.id) {
+                    if (fieldId == m_definition.id ||
+                        fieldId == QStringLiteral("extended-features.translation-page")) {
                         syncFromRuntime();
                     }
                 });
@@ -769,6 +770,10 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
         for (auto it = m_checkboxes.cbegin(); it != m_checkboxes.cend(); ++it) {
             const QSignalBlocker blocker(it.value());
             it.value()->setChecked(selected.contains(it.key()));
+            it.value()->setVisible(
+                it.key() != QStringLiteral("quick.translate-selected-text") ||
+                m_runtimeSession.switchValue(snow_shot::presentation::settings::
+                                                 SettingsSwitchBinding::TranslationPageEnabled));
         }
         m_syncing = false;
     }

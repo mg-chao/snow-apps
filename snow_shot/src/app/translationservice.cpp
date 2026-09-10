@@ -108,6 +108,11 @@ void TranslationService::publishModels(bool resolveSelection) {
         if (model.supportsTranslation())
             m_models.append(model);
     }
+    // Select renders a header for each contiguous group. Keep custom and server general
+    // models together while preserving their order within each translation category.
+    std::stable_partition(m_models.begin(), m_models.end(), [](const auto& model) {
+        return model.translationMode == QStringLiteral("default");
+    });
     const auto reason =
         m_modelInvalidationPending ? ChangeReason::ModelInvalidated : ChangeReason::Catalog;
     const int index = translationModelIndex(m_models, m_preferences.modelId);

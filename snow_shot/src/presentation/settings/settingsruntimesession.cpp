@@ -689,6 +689,8 @@ void SettingsRuntimeSession::refreshField(const QString& fieldId,
             next.error = writeError(*descriptor);
         }
     }
+    next.visible = descriptor->id != QStringLiteral("quick.translate-selected-text") ||
+                   m_backend.switchValue(SettingsSwitchBinding::TranslationPageEnabled);
     const storage::StorageStatus currentStatus = storageStatus();
     if (descriptor->definition == nullptr) {
         next.enabled = false;
@@ -1085,6 +1087,10 @@ SettingsRuntimeSession::buildOptions(const SettingsFieldDescriptor& descriptor) 
                custom != nullptr && custom->renderer == SettingsCustomRenderer::TrayMenuOptions) {
         for (const SettingsTrayMenuGroupDefinition& group : m_registry.catalog().trayMenuGroups()) {
             for (const SettingsTrayMenuOptionDefinition& option : group.options) {
+                if (option.shortcutAction == GlobalShortcutAction::TranslateSelectedText &&
+                    !m_backend.switchValue(SettingsSwitchBinding::TranslationPageEnabled)) {
+                    continue;
+                }
                 result.values.push_back({option.id, option.label.translated()});
             }
         }
