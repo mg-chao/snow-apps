@@ -82,8 +82,8 @@ void everySnowShotEntryRenders() {
     const auto registered = icons::registerWith(renderer);
     require(registered.ok(), "Snow Shot pack registration should succeed");
     const adqt::icons::IconPack* staticPack = icons::pack().staticPack();
-    require(staticPack != nullptr && staticPack->entryCount == 87,
-            "Snow Shot pack should contain all 87 project-owned assets");
+    require(staticPack != nullptr && staticPack->entryCount == 100,
+            "Snow Shot pack should contain all 100 project-owned assets");
 
     adqt::icons::IconRenderRequest request;
     request.logicalSize = QSize(32, 32);
@@ -233,6 +233,33 @@ void scrollingIconsUseTheRequestedOrientations() {
             "scrolling mode icons should inherit their requested primary color");
 }
 
+void arrowheadIconsFaceTheirRespectiveEndpoints() {
+    namespace icons = snow_shot::presentation::icons::custom;
+    const auto* pack = icons::pack().staticPack();
+    for (const char* name : {"standard", "bar", "dot", "circle", "circle-outline", "triangle",
+                             "triangle-outline", "diamond", "diamond-outline", "crowfoot-one",
+                             "crowfoot-many", "crowfoot-one-or-many", "none"}) {
+        const std::string endName = std::string("arrowhead-") + name;
+        const std::string startName = endName + "-start";
+        for (const qreal dpr : {1.0, 1.5, 2.0}) {
+            const auto end = render(pack->icon("outlined", endName), QSize(40, 20), dpr).toImage();
+            const auto start =
+                render(pack->icon("outlined", startName), QSize(40, 20), dpr).toImage();
+            require(!alphaBounds(start).isEmpty() && !alphaBounds(end).isEmpty(),
+                    "both arrowhead endpoints should render");
+            qint64 difference = 0;
+            for (int y = 0; y < end.height(); ++y) {
+                for (int x = 0; x < end.width(); ++x) {
+                    difference += std::abs(end.pixelColor(x, y).alpha() -
+                                           start.pixelColor(end.width() - 1 - x, y).alpha());
+                }
+            }
+            require(difference <= end.width() * end.height() * 2,
+                    "start arrowhead should horizontally mirror its end arrowhead");
+        }
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -247,6 +274,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         everySnowShotEntryRenders();
+        arrowheadIconsFaceTheirRespectiveEndpoints();
         conversionIconsUseTheSuppliedProjectAssets();
         projectIconColorsAndModelsArePreserved();
         ocrTranslateIconUsesTheSuppliedProjectAsset();

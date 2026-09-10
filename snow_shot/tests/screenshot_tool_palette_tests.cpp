@@ -5820,6 +5820,19 @@ void arrowheadOptionsRetranslateInPlace() {
     auto* popover = showPopoverForTrigger(startTrigger);
     auto* noneOption = popoverButtonWithTooltip(popover, "Start arrowhead none");
     require(noneOption != nullptr, "English arrowhead option should be present");
+    auto* standardOption = popoverButtonWithTooltip(popover, "Start arrowhead standard");
+    require(standardOption != nullptr &&
+                adqt::icons::describeIcon(standardOption->iconRef()).key.name ==
+                    QStringLiteral("arrowhead-standard-start"),
+            "start arrowhead options should use the left-facing asset");
+    popover->hide();
+    auto* endPopover = showPopoverForTrigger(controlWithAccessibleName(palette, "End arrowhead"));
+    auto* endOption = popoverButtonWithTooltip(endPopover, "End arrowhead standard");
+    require(endOption != nullptr && adqt::icons::describeIcon(endOption->iconRef()).key.name ==
+                                        QStringLiteral("arrowhead-standard"),
+            "end arrowhead options should use the right-facing asset");
+    endPopover->hide();
+    popover = showPopoverForTrigger(startTrigger);
 
     require(languageManager.setLanguage(QStringLiteral("zh_CN")),
             "Simplified Chinese should load for arrowhead retranslation");
@@ -8924,6 +8937,10 @@ int main(int argc, char** argv) {
         recordingControlsRemainLaidOutAcrossStateChanges();
         recordingExportSettingsAndDrawingAvailabilityFollowSessionState();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--arrow-icons-only"))) {
+        arrowheadOptionsRetranslateInPlace();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--dynamic-i18n-only"))) {
