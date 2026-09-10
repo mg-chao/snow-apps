@@ -235,6 +235,14 @@ bool ApiConfigurationSettings::setCustomModels(const CustomAiModels& models) con
                             customAiModelsToJson(models));
 }
 
+QColor InterfaceSettings::themePrimaryColor() const {
+    return colorValue(QStringLiteral("interface/theme_primary_color"));
+}
+
+bool InterfaceSettings::setThemePrimaryColor(const QColor& color) const {
+    return setColorValue(QStringLiteral("interface/theme_primary_color"), color);
+}
+
 QString InterfaceSettings::themeMode() const {
     return cache().value(QStringLiteral("interface/theme_mode")).toString();
 }

@@ -9,6 +9,12 @@
 #include "widgets/modal.h"
 #include "widgets/switch.h"
 #include "widgets/tag.h"
+#include "widgets/combo_box.h"
+#include "widgets/spin.h"
+#include <QLineEdit>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <memory>
 #include <QEvent>
 #include <QApplication>
 #include "antd_icons.h"
@@ -307,6 +313,120 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
         m_fields[i]->setRequired(i != 2);
         m_fields[i]->setValidateOnChange(false);
     }
+    m_modelSelect = new AdComboBox(form);
+    m_modelSelect->setObjectName(QStringLiteral("apiModel"));
+    m_modelSelect->setEditable(true);
+    m_modelSelect->setPopupLayerMode(AdComboBox::PopupLayerMode::QtTool);
+    m_modelSelect->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_modelSelect->setCurrentValue(value.model);
+    // Commit typed IDs independently of the select's transient search text.
+    connect(m_modelSelect->lineEdit(), &QLineEdit::textEdited, m_modelSelect,
+            [select = m_modelSelect](const QString& text) { select->setCurrentValue(text); });
+    m_fields[3] = new AdFormItem(QString(), m_modelSelect, QStringLiteral("apiModel"), form);
+    m_fields[3]->setItemLayout(AdFormItem::ItemLayout::Vertical);
+    m_fields[3]->setRequired(true);
+    m_fields[3]->setValidateOnChange(false);
+    grid->addWidget(m_fields[3], 1, 1, Qt::AlignTop);
+    m_modelFetchStatus = new QLabel(m_modelSelect);
+    m_modelFetchStatus->setObjectName(QStringLiteral("modelFetchStatus"));
+    m_modelFetchStatus->setWordWrap(true);
+    m_modelFetchStatus->setMargin(8);
+    m_modelFetchStatus->hide();
+    auto* fetchContent = new QWidget(m_modelSelect);
+    auto* fetchLayout = new QHBoxLayout(fetchContent);
+    fetchLayout->setContentsMargins(m_scheme.metricAlias.paddingSM, 0,
+                                    m_scheme.metricAlias.paddingSM, 0);
+    auto* fetchSpin = new AdSpin(fetchContent);
+    fetchLayout->addWidget(fetchSpin, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    fetchLayout->addStretch();
+    fetchSpin->setObjectName(QStringLiteral("modelFetchSpin"));
+    fetchSpin->setSizeClass(AdSpin::SizeClass::Small);
+    fetchSpin->setSpinning(false);
+    fetchContent->hide();
+    connect(m_modelSelect, &AdComboBox::loadingChanged, m_modelSelect,
+            [select = m_modelSelect, fetchSpin, fetchContent](bool loading) {
+                fetchSpin->setSpinning(loading);
+                select->setNotFoundContentWidget(loading ? fetchContent : nullptr);
+            });
+    auto* network = new QNetworkAccessManager(body);
+    auto pending = std::make_shared<QPointer<QNetworkReply>>();
+    // Successful results belong to this editor and its current connection, even when empty.
+    auto fetched = std::make_shared<bool>(false);
+    const auto invalidate = [select = m_modelSelect, pending, fetched,
+                             status = m_modelFetchStatus]() {
+        *fetched = false;
+        if (*pending) {
+            auto* reply = pending->data();
+            *pending = nullptr;
+            reply->abort();
+        }
+        select->setLoading(false);
+        select->clearOptions();
+        status->setProperty("fetchFailed", false);
+        status->clear();
+        select->setPopupFooterWidget(nullptr);
+    };
+    connect(m_inputs[1], &AdLineEdit::textChanged, body, invalidate);
+    connect(m_inputs[2], &AdLineEdit::textChanged, body, invalidate);
+    connect(modal, &AdModal::finished, body, invalidate);
+    connect(m_modelSelect, &AdComboBox::popupVisibleChanged, body,
+            [this, network, pending, fetched, body](bool visible) {
+                if (!visible || *pending || *fetched) {
+                    return;
+                }
+                const auto connection = normalizeCustomAiModel(
+                    {{}, {}, m_inputs[1]->text(), m_inputs[2]->text(), {}, false});
+                if (customAiModelUrlError(connection.baseUrl) != CustomAiModelUrlError::None ||
+                    connection.apiKey.contains(u'\r') || connection.apiKey.contains(u'\n')) {
+                    return;
+                }
+                QNetworkRequest request(QUrl(connection.baseUrl + QStringLiteral("/models")));
+                request.setTransferTimeout(15000);
+                request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                                     QNetworkRequest::SameOriginRedirectPolicy);
+                request.setRawHeader("Accept", "application/json");
+                if (!connection.apiKey.isEmpty()) {
+                    request.setRawHeader("Authorization", "Bearer " + connection.apiKey.toUtf8());
+                }
+                m_modelFetchStatus->setProperty("fetchFailed", false);
+                m_modelFetchStatus->clear();
+                m_modelSelect->setPopupFooterWidget(nullptr);
+                m_modelSelect->clearOptions();
+                m_modelSelect->setLoading(true);
+                auto* reply = network->get(request);
+                *pending = reply;
+                connect(reply, &QNetworkReply::finished, body, [this, reply, pending, fetched]() {
+                    reply->deleteLater();
+                    if (pending->data() != reply) {
+                        return;
+                    }
+                    *pending = nullptr;
+                    const auto document = QJsonDocument::fromJson(reply->readAll());
+                    const auto data = document.object().value(QStringLiteral("data"));
+                    const bool failed = reply->error() != QNetworkReply::NoError || !data.isArray();
+                    *fetched = !failed;
+                    QVector<AdComboBox::Option> options;
+                    QSet<QString> seen;
+                    if (!failed) {
+                        for (const auto& entry : data.toArray()) {
+                            const auto id =
+                                entry.toObject().value(QStringLiteral("id")).toString().trimmed();
+                            if (id.isEmpty() || seen.contains(id)) {
+                                continue;
+                            }
+                            seen.insert(id);
+                            AdComboBox::Option option;
+                            option.value = id;
+                            option.label = id;
+                            options.append(option);
+                        }
+                    }
+                    m_modelSelect->setOptions(options);
+                    m_modelSelect->setLoading(false);
+                    m_modelFetchStatus->setProperty("fetchFailed", failed);
+                    translateModal();
+                });
+            });
     m_inputs[1]->setPlaceholderText(QStringLiteral("https://api.openai.com/v1"));
     m_vision = new AdSwitch(form);
     m_vision->setObjectName(QStringLiteral("visionSupport"));
@@ -353,9 +473,9 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
 }
 
 void CustomAiModelsSettingsWidget::submitEditor(bool saveChanges) {
-    auto value =
-        normalizeCustomAiModel({m_editId, m_inputs[0]->text(), m_inputs[1]->text(),
-                                m_inputs[2]->text(), m_inputs[3]->text(), m_vision->isChecked()});
+    auto value = normalizeCustomAiModel(
+        {m_editId, m_inputs[0]->text(), m_inputs[1]->text(), m_inputs[2]->text(),
+         m_modelSelect->currentValue().toString(), m_vision->isChecked()});
     auto models = m_session.customAiModels();
     std::array<QString, 4> errors;
     if (value.name.isEmpty()) {
@@ -385,7 +505,7 @@ void CustomAiModelsSettingsWidget::submitEditor(bool saveChanges) {
         m_fields[i]->setValidateStatus(errors[i].isEmpty() ? AdFormItem::ValidateStatus::None
                                                            : AdFormItem::ValidateStatus::Error);
         if (!errors[i].isEmpty() && firstInvalid == nullptr) {
-            firstInvalid = m_inputs[i];
+            firstInvalid = i == 3 ? static_cast<QWidget*>(m_modelSelect) : m_inputs[i];
         }
     }
     if (firstInvalid != nullptr) {
@@ -438,12 +558,22 @@ void CustomAiModelsSettingsWidget::translateModal() {
                 m_inputs[i]->setAccessibleName(labels[static_cast<qsizetype>(i)]);
             }
         }
+        m_modelSelect->setAccessibleName(tr("API Model"));
+        m_modelSelect->setPlaceholder(tr("Enter or select a model ID"));
+        m_modelFetchStatus->setText(
+            m_modelFetchStatus->property("fetchFailed").toBool()
+                ? tr("Unable to fetch models. Enter a model ID or reopen the list to retry.")
+                : QString());
+        // An attached footer contributes its size even when its label is empty.
+        m_modelSelect->setPopupFooterWidget(
+            m_modelFetchStatus->property("fetchFailed").toBool() ? m_modelFetchStatus : nullptr);
         m_vision->setAccessibleName(tr("Vision Support"));
         m_fields[0]->setTooltipText(tr("The model name displayed in Snow Shot."));
         m_fields[1]->setTooltipText(tr(
             "OpenAI-compatible Chat Completions. /chat/completions is appended to this base URL."));
         m_fields[2]->setTooltipText(tr("Optional for servers that do not require authentication."));
-        m_fields[3]->setTooltipText(tr("The model ID expected by your API provider."));
+        m_fields[3]->setTooltipText(
+            tr("Enter a custom model ID or open the list to fetch models from the API URL."));
         m_fields[4]->setTooltipText(tr("Allow this model to convert images to Markdown and HTML."));
     }
     if (m_deleteModal != nullptr) {

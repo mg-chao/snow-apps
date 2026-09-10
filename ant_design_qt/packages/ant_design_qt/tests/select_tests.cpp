@@ -197,6 +197,53 @@ class SelectTest final : public QObject {
     QVERIFY(headerColor != optionColor);
   }
 
+  void customNotFoundContentReplacesEmptyRow() {
+    for (const auto mode : {AdSelect::PopupLayerMode::InWindow, AdSelect::PopupLayerMode::QtTool}) {
+      QWidget host;
+      host.resize(800, 480);
+      AdSelect select(&host);
+      select.setGeometry(40, 40, 300, 32);
+      select.setPopupLayerMode(mode);
+      select.setSearchEnabled(true);
+      auto* content = new QWidget(&select);
+      content->setFixedHeight(32);
+      select.setNotFoundContentWidget(content);
+      host.show();
+      select.showPopup();
+      QCoreApplication::processEvents();
+      QVERIFY(content->isVisible());
+      QVERIFY(!select.view()->isVisible());
+      const int customHeight = popupSurface(select)->height();
+      select.setNotFoundContentWidget(nullptr);
+      QCoreApplication::processEvents();
+      QVERIFY(content->isHidden());
+      QVERIFY(select.view()->isVisible());
+      QVERIFY(popupSurface(select)->height() > customHeight);
+      select.setNotFoundContentWidget(content);
+      select.setOptions({makeOption(QStringLiteral("alpha"), QStringLiteral("Alpha"))});
+      QCoreApplication::processEvents();
+      QVERIFY(content->isHidden());
+      QVERIFY(select.view()->isVisible());
+      select.setSearchText(QStringLiteral("missing"));
+      QCoreApplication::processEvents();
+      QVERIFY(content->isVisible());
+      QVERIFY(!select.view()->isVisible());
+      QCOMPARE(popupSurface(select)->height(), customHeight);
+      select.hidePopup();
+      // Closing clears the transient search, so existing options are visible on reopen.
+      select.showPopup();
+      QCoreApplication::processEvents();
+      QVERIFY(content->isHidden());
+      QVERIFY(select.view()->isVisible());
+      select.hidePopup();
+      select.clearOptions();
+      select.showPopup();
+      QCoreApplication::processEvents();
+      QVERIFY(content->isVisible());
+      QCOMPARE(popupSurface(select)->height(), customHeight);
+    }
+  }
+
   void centeredPlacementSurvivesPopupGeometryRefreshes() {
     QWidget host;
     host.resize(800, 480);

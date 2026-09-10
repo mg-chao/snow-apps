@@ -96,6 +96,8 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("system"), QStringLiteral("light"), QStringLiteral("dark")}},
+    {QStringLiteral("interface/theme_primary_color"), QStringLiteral("#1677FFFF"),
+     ConfigurationValueKind::String},
     {QStringLiteral("interface/language"), QStringLiteral("system"),
      ConfigurationValueKind::String},
     {QStringLiteral("system/application_priority"),
@@ -1061,7 +1063,8 @@ ConfigurationNormalization normalizePresets(const QJsonValue& value) {
 }
 
 bool isRgbaColorKey(const QString& key) {
-    return key == QStringLiteral("screenshot_ui/selection_mask_color") ||
+    return key == QStringLiteral("interface/theme_primary_color") ||
+           key == QStringLiteral("screenshot_ui/selection_mask_color") ||
            key == QStringLiteral("screenshot_ui/cursor_guide_line_color") ||
            key == QStringLiteral("screenshot_ui/monitor_center_guide_line_color") ||
            key == QStringLiteral("screenshot_ui/color_picker_center_guide_line_color") ||

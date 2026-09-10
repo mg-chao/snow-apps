@@ -425,7 +425,7 @@ class SettingsPageWidget::Impl {
                         settings::generatedObjectName(QStringLiteral("settings-item"),
                                                       definition.id));
                     addItemWidget(runtime.anchor);
-                    connect(control, &adqt::widgets::AdColorPicker::valueChanged, &q,
+                    connect(control, &adqt::widgets::AdColorPicker::editingFinished, &q,
                             [this,
                              binding = payload.binding](const adqt::widgets::AdColorValue& value) {
                                 if (!synchronizingValues && value.isSolid() &&

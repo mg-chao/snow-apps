@@ -599,6 +599,8 @@ bool BuiltInSettingsBackend::applySliderValue(SettingsSliderBinding binding, int
 QColor BuiltInSettingsBackend::colorValue(SettingsColorBinding binding) const {
     const storage::ScreenshotUiSettings screenshot;
     switch (binding) {
+    case SettingsColorBinding::ThemePrimaryColor:
+        return storage::InterfaceSettings().themePrimaryColor();
     case SettingsColorBinding::SelectionMaskColor:
         return screenshot.selectionMaskColor();
     case SettingsColorBinding::CursorGuideLineColor:
@@ -616,6 +618,8 @@ QColor BuiltInSettingsBackend::colorValue(SettingsColorBinding binding) const {
 bool BuiltInSettingsBackend::applyColorValue(SettingsColorBinding binding, const QColor& value) {
     const storage::ScreenshotUiSettings screenshot;
     switch (binding) {
+    case SettingsColorBinding::ThemePrimaryColor:
+        return styles::ThemeManager::instance().setThemePrimaryColor(value);
     case SettingsColorBinding::SelectionMaskColor:
         return screenshot.setSelectionMaskColor(value);
     case SettingsColorBinding::CursorGuideLineColor:
@@ -992,7 +996,12 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         const bool languageAccepted = applySelectValue(
             SettingsSelectBinding::Language,
             storage::ConfigurationSchema::defaultValue(QStringLiteral("interface/language")));
-        return themeAccepted && languageAccepted;
+        const bool primaryColorAccepted = applyColorValue(
+            SettingsColorBinding::ThemePrimaryColor,
+            storage::colorFromRgbaString(storage::ConfigurationSchema::defaultValue(
+                                             QStringLiteral("interface/theme_primary_color"))
+                                             .toString()));
+        return themeAccepted && languageAccepted && primaryColorAccepted;
     }
     case SettingsSectionReset::HistoryPolicy:
         return storage::ApplicationStorage::instance().requestCaptureHistoryPolicy(

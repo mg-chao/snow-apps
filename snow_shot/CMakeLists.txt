@@ -781,7 +781,7 @@ target_compile_definitions(snow_shot_settings PRIVATE
     SNOW_SHOT_WEBSITE_URL="${SNOW_SHOT_WEBSITE_URL}"
     SNOW_SHOT_PROJECT_URL="${SNOW_SHOT_PROJECT_URL}"
 )
-target_link_libraries(snow_shot_settings PRIVATE Qt6::Svg)
+target_link_libraries(snow_shot_settings PRIVATE Qt6::Svg Qt6::Network)
 add_library(snow_shot_global_mouse STATIC
     include/snow_shot/presentation/globalmousemanager.h
     include/snow_shot/presentation/globalmousegesture.h
@@ -1369,7 +1369,7 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-custom-ai-models-tests tests/custom_ai_models_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp)
-    target_link_libraries(snow-shot-custom-ai-models-tests PRIVATE snow_shot_settings ant_design_qt Qt6::Widgets)
+    target_link_libraries(snow-shot-custom-ai-models-tests PRIVATE snow_shot_settings ant_design_qt Qt6::Widgets Qt6::Network)
     snow_shot_add_translations(snow-shot-custom-ai-models-tests)
     snow_shot_import_offscreen_platform(snow-shot-custom-ai-models-tests)
     add_test(NAME snow-shot-custom-ai-models-tests COMMAND snow-shot-custom-ai-models-tests -platform offscreen)
@@ -1658,6 +1658,43 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+
+    add_executable(snow-shot-theme-primary-color-tests
+        tests/theme_primary_color_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+    )
+    target_link_libraries(snow-shot-theme-primary-color-tests PRIVATE
+        snow_shot_settings
+        snow_shot_image_codec
+    )
+    add_test(NAME snow-shot-theme-primary-color-tests
+             COMMAND snow-shot-theme-primary-color-tests)
+    set_tests_properties(snow-shot-theme-primary-color-tests PROPERTIES
+        TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    snow_shot_import_offscreen_platform(snow-shot-theme-primary-color-tests)
+    snow_shot_add_translations(snow-shot-theme-primary-color-tests)
+
+    add_executable(snow-shot-settings-color-commit-tests
+        tests/settings_color_commit_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+    )
+    target_link_libraries(snow-shot-settings-color-commit-tests PRIVATE
+        snow_shot_settings
+        snow_shot_image_codec
+    )
+    add_test(NAME snow-shot-settings-color-commit-tests
+             COMMAND snow-shot-settings-color-commit-tests)
+    set_tests_properties(snow-shot-settings-color-commit-tests PROPERTIES
+        TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    snow_shot_import_offscreen_platform(snow-shot-settings-color-commit-tests)
 
     add_executable(snow-shot-screen-recording-shortcut-settings-tests
         tests/screen_recording_shortcut_settings_tests.cpp
