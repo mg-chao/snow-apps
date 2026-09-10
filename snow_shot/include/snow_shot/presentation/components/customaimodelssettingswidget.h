@@ -15,6 +15,7 @@ class AdModal;
 class AdFormItem;
 class AdLineEdit;
 class AdSwitch;
+class AdComboBox;
 } // namespace adqt::widgets
 
 class CustomAiModelsSettingsWidget final : public SettingsCustomWidget {
@@ -46,9 +47,11 @@ class CustomAiModelsSettingsWidget final : public SettingsCustomWidget {
     QPointer<adqt::widgets::AdModal> m_modal;
     QPointer<adqt::widgets::AdModal> m_deleteModal;
     adqt::widgets::AdAlert* m_modalError = nullptr;
-    std::array<adqt::widgets::AdLineEdit*, 4> m_inputs{};
+    std::array<adqt::widgets::AdLineEdit*, 3> m_inputs{};
     std::array<adqt::widgets::AdFormItem*, 5> m_fields{};
     adqt::widgets::AdSwitch* m_vision = nullptr;
+    adqt::widgets::AdComboBox* m_modelSelect = nullptr;
+    QLabel* m_modelFetchStatus = nullptr;
     QString m_editId;
     QString m_deleteId;
     bool m_editing = false;

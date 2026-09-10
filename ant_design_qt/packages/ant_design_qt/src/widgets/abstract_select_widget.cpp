@@ -502,6 +502,14 @@ void AdAbstractSelectWidget::setItemDelegate(QAbstractItemDelegate* delegate) {
   control_->setItemDelegate(delegate);
 }
 
+QWidget* AdAbstractSelectWidget::notFoundContentWidget() const {
+  return control_->notFoundContentWidget();
+}
+
+void AdAbstractSelectWidget::setNotFoundContentWidget(QWidget* widget) {
+  control_->setNotFoundContentWidget(widget);
+}
+
 QWidget* AdAbstractSelectWidget::popupFooterWidget() const { return control_->popupFooterWidget(); }
 
 void AdAbstractSelectWidget::setPopupFooterWidget(QWidget* widget) {

@@ -2753,6 +2753,29 @@ void AdSelect::setItemDelegate(QAbstractItemDelegate* delegate) {
   }
 }
 
+QWidget* AdSelect::notFoundContentWidget() const { return notFoundContentWidget_; }
+
+void AdSelect::setNotFoundContentWidget(QWidget* widget) {
+  if (notFoundContentWidget_ == widget) {
+    return;
+  }
+  if (notFoundContentWidget_) {
+    if (popupLayout_) {
+      popupLayout_->removeWidget(notFoundContentWidget_);
+    }
+    notFoundContentWidget_->setParent(this);
+    notFoundContentWidget_->hide();
+  }
+  notFoundContentWidget_ = widget;
+  if (widget) {
+    widget->setParent(this);
+    widget->hide();
+  }
+  if (popup_) {
+    syncPopupGeometry();
+  }
+}
+
 QWidget* AdSelect::popupFooterWidget() const { return popupFooterWidget_; }
 
 void AdSelect::setPopupFooterWidget(QWidget* widget) {
@@ -5476,6 +5499,19 @@ void AdSelect::syncPopupGeometry() {
     return;
   }
 
+  const bool customEmpty = notFoundContentWidget_ && rows_.size() == 1 && rows_.first().empty;
+  if (notFoundContentWidget_) {
+    if (notFoundContentWidget_->parentWidget() != popup_) {
+      notFoundContentWidget_->setParent(popup_);
+    }
+    if (popupLayout_->indexOf(notFoundContentWidget_) < 0) {
+      popupLayout_->insertWidget(0, notFoundContentWidget_);
+    }
+    notFoundContentWidget_->setVisible(customEmpty);
+  }
+  if (popupScrollArea_) {
+    popupScrollArea_->setVisible(!customEmpty);
+  }
   int contentHeight = 0;
   if (rows_.isEmpty()) {
     contentHeight = visualStyle_->metrics.optionHeight;
@@ -5520,7 +5556,13 @@ void AdSelect::syncPopupGeometry() {
   if (popupLayout_ && (popupScrollArea_ || listView_)) {
     const QMargins margins =
         detail::removeAntPopupShadowMarginsFromPadding(popupLayout_->contentsMargins());
-    popupH = margins.top() + targetListHeight + margins.bottom();
+    const int availableContentWidth = std::max(0, popupW - margins.left() - margins.right());
+    const int bodyHeight =
+        customEmpty
+            ? std::max(visualStyle_->metrics.optionHeight,
+                       boundedWidgetHeightHint(notFoundContentWidget_, availableContentWidth))
+            : targetListHeight;
+    popupH = margins.top() + bodyHeight + margins.bottom();
     // The popup is hidden while its opening geometry is calculated, so an
     // extra widget in the active layout is not yet visible through its parent.
     if (popupExtraContent_) {
