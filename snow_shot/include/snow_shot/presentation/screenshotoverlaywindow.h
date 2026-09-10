@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshotscrollingtypes.h"
 
 #include <QColor>
+#include <QJsonObject>
 #include <QRegion>
 #include <QWidget>
 
@@ -55,6 +56,7 @@ class ScreenshotOverlayWindow final : public QWidget {
     void resetScreenshotRendering();
     void commitInitialSelectionCursor();
     void setCanvasClearBackgroundEnabled(bool enabled);
+    [[nodiscard]] QJsonObject scrollingDiagnostics() const;
     void setInputPassThroughRect(const QRect& localRect);
     void clearInputPassThroughRect();
     void setScrollingCaptureMode(bool enabled);

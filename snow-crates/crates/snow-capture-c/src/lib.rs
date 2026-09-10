@@ -266,7 +266,8 @@ pub struct SnowCaptureStreamFrameInfo {
     pub stride_bytes: u32,
     pub is_duplicate: u8,
     pub pixel_format: u8,
-    pub reserved0: [u8; 2],
+    pub backend_kind: u8,
+    pub reserved0: [u8; 1],
     pub sequence: u64,
     pub rgba_bytes: *const u8,
     pub rgba_len: usize,
@@ -1853,7 +1854,8 @@ fn write_stream_frame_info(
             stride_bytes,
             is_duplicate: u8::from(frame.frame.metadata().is_duplicate()),
             pixel_format: pixel_format_value(frame.frame.pixel_format()),
-            reserved0: [0; 2],
+            backend_kind: capture_backend_value(frame.frame.metadata().backend_kind()),
+            reserved0: [0; 1],
             sequence: frame.frame.metadata().sequence(),
             rgba_bytes: bytes.as_ptr(),
             rgba_len: bytes.len(),
@@ -3776,6 +3778,10 @@ mod tests {
     #[test]
     fn stream_abi_layout_is_stable() {
         assert_eq!(
+            std::mem::offset_of!(SnowCaptureStreamFrameInfo, backend_kind),
+            30
+        );
+        assert_eq!(
             std::mem::size_of::<SnowCaptureStreamConfig>(),
             std::mem::size_of::<usize>() + 72
         );
@@ -3853,6 +3859,28 @@ mod tests {
     }
 
     #[test]
+    fn stream_frame_metadata_preserves_backend_and_pixels() {
+        let frame = Frame::from_rgba8(2, 3, vec![17; 24]).unwrap();
+        let expected_backend = capture_backend_value(frame.metadata().backend_kind());
+        let owned = SnowCaptureStreamFrameImpl {
+            frame: frame.into(),
+            origin_x: -100,
+            origin_y: 50,
+        };
+        let mut output = std::mem::MaybeUninit::<SnowCaptureStreamFrameInfo>::uninit();
+        write_stream_frame_info(&owned, output.as_mut_ptr()).unwrap();
+        let info = unsafe { output.assume_init() };
+        assert_eq!(info.backend_kind, expected_backend);
+        assert_eq!(info.reserved0, [0]);
+        assert_eq!((info.x, info.y, info.width, info.height), (-100, 50, 2, 3));
+        assert_eq!(info.stride_bytes, 8);
+        assert_eq!(
+            unsafe { std::slice::from_raw_parts(info.rgba_bytes, info.rgba_len) },
+            &[17; 24]
+        );
+    }
+
+    #[test]
     fn stream_abi_null_handles_fail_without_touching_output() {
         let mut event = empty_stream_event();
         assert_eq!(
@@ -3874,7 +3902,8 @@ mod tests {
             stride_bytes: 0,
             is_duplicate: 0,
             pixel_format: 0,
-            reserved0: [0; 2],
+            backend_kind: 0,
+            reserved0: [0; 1],
             sequence: 0,
             rgba_bytes: ptr::null(),
             rgba_len: 0,

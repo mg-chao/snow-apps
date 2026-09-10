@@ -171,7 +171,9 @@ typedef struct SnowCaptureStreamFrameInfo {
     uint32_t stride_bytes;
     uint8_t is_duplicate;
     uint8_t pixel_format;
-    uint8_t reserved0[2];
+    /* Actual frame backend; consumes a reserved byte without changing ABI layout. */
+    uint8_t backend_kind;
+    uint8_t reserved0[1];
     uint64_t sequence;
     const uint8_t* rgba_bytes;
     size_t rgba_len;

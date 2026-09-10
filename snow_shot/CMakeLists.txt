@@ -2460,6 +2460,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         SNOW_SHOT_BENCH_INTERNALS=1
     )
     target_link_libraries(snow-shot-screenshot-canvas-renderer-tests PRIVATE
+        snow_shot_diagnostics
         ant_design_qt
         Qt6::Widgets
         snow_shot_storage
@@ -4487,7 +4488,7 @@ function(snow_shot_configure_scrolling_replay_target target)
             SNOW_SHOT_SCROLLING_PERF_DETAIL=1 SNOW_STITCH_PERF_INSTRUMENTATION=1)
     endif()
     target_link_libraries(${target} PRIVATE
-        snow_stitch_images_c snow_shot_image_codec ant_design_qt Qt6::Widgets)
+        snow_stitch_images_c snow_shot_image_codec snow_shot_diagnostics ant_design_qt Qt6::Widgets)
     if(WIN32)
         target_link_libraries(${target} PRIVATE Ntdll Ws2_32)
         target_link_libraries(${target} PRIVATE PkgConfig::SNOW_SHOT_FFMPEG)
