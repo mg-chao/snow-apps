@@ -4,13 +4,13 @@
 <context>
     <name>AboutPageWidget</name>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="702"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="738"/>
         <source>About Snow Shot</source>
         <translation>About Snow Shot</translation>
     </message>
     <message>
         <location filename="../src/presentation/components/aboutpagewidget.cpp" line="139"/>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="703"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="739"/>
         <source>Snow Shot</source>
         <translation>Snow Shot</translation>
     </message>
@@ -21,7 +21,7 @@
     </message>
     <message>
         <location filename="../src/presentation/components/aboutpagewidget.cpp" line="143"/>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="715"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="751"/>
         <source>Text recognition</source>
         <translation>Text recognition</translation>
     </message>
@@ -31,241 +31,246 @@
         <translation>Turn pixels into usable text</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="173"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="174"/>
         <source>Screenshot selection, annotation tools, and recognized text</source>
         <translation>Screenshot selection, annotation tools, and recognized text</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="704"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="740"/>
         <source>Snow Shot logo</source>
         <translation>Snow Shot logo</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="705"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="741"/>
         <source>Free · Open source</source>
         <translation>Free · Open source</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="709"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="745"/>
         <source>Elegant screenshots</source>
         <translation>Elegant screenshots</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="710"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="746"/>
         <source>, excellent work.</source>
         <translation>, excellent work.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="712"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="748"/>
         <source>Capture, annotate, recognize text, and record your screen,
 so every moment on screen can be expressed clearly and shared easily.</source>
         <translation>Capture, annotate, recognize text, and record your screen,
 so every moment on screen can be expressed clearly and shared easily.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="714"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="750"/>
         <source>Screenshot capture</source>
         <translation>Screenshot capture</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="714"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="750"/>
         <source>Easy annotation</source>
         <translation>Easy annotation</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="715"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="751"/>
         <source>Screen recording</source>
         <translation>Screen recording</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="716"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="752"/>
         <source>Pin to screen</source>
         <translation>Pin to screen</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="716"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="752"/>
         <source>Screenshot history</source>
         <translation>Screenshot history</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="720"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="756"/>
         <source>Current version</source>
         <translation>Current version</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="721"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="757"/>
         <source>Unavailable</source>
         <translation>Unavailable</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="723"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="759"/>
         <source>Current version: %1</source>
         <translation>Current version: %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="724"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="760"/>
         <source>Preview</source>
         <translation>Preview</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="729"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="765"/>
         <source>Copied</source>
         <translation>Copied</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="730"/>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="731"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="766"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="767"/>
         <source>Copy version number</source>
         <translation>Copy version number</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="732"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="768"/>
         <source>Copy the version number to the clipboard</source>
         <translation>Copy the version number to the clipboard</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="735"/>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="736"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="771"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="772"/>
         <source>Changelog</source>
         <translation>Changelog</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="738"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="774"/>
         <source>Official website</source>
         <translation>Official website</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="739"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="775"/>
         <source>Discover more features and ways to use it</source>
         <translation>Discover more features and ways to use it</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="741"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="777"/>
         <source>GitHub</source>
         <translation>GitHub</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="741"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="777"/>
         <source>View the source and improve it together</source>
         <translation>View the source and improve it together</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="743"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="779"/>
         <source>Feedback and suggestions</source>
         <translation>Feedback and suggestions</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="744"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="780"/>
         <source>Make the next experience better</source>
         <translation>Make the next experience better</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="746"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="782"/>
         <source>Built for daily work, and growing with the community.</source>
         <translation>Built for daily work, and growing with the community.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="748"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="784"/>
         <source>%1 · %2</source>
         <translation>%1 · %2</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="755"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="791"/>
         <source>Could not open the link. Open %1 in your browser.</source>
         <translation>Could not open the link. Open %1 in your browser.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="748"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="784"/>
         <source>GNU General Public License v3.0 or later</source>
         <translation>GNU General Public License v3.0 or later</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="749"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="785"/>
         <source>Free and open-source software. Distributed without any warranty.</source>
         <translation>Free and open-source software. Distributed without any warranty.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="751"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="787"/>
         <source>Copyright © %1 %2</source>
         <translation>Copyright © %1 %2</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="752"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="788"/>
         <source>Snow Shot · Make expression clearer</source>
         <translation>Snow Shot · Make expression clearer</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="835"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="906"/>
         <source>Check for updates</source>
         <translation>Check for updates</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="838"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="909"/>
         <source>Automatic updates are unavailable for this copy.</source>
         <translation>Automatic updates are unavailable for this copy.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="841"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="912"/>
         <source>Check for a newer version of Snow Shot.</source>
         <translation>Check for a newer version of Snow Shot.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="842"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="913"/>
         <source>You are up to date.</source>
         <translation>You are up to date.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="845"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="920"/>
         <source>Checking for updates…</source>
         <translation>Checking for updates…</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="848"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="924"/>
         <source>Update available: %1</source>
         <translation>Update available: %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="849"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="925"/>
         <source>Download update</source>
         <translation>Download update</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="852"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="931"/>
         <source>Downloading %1 of %2 MB</source>
         <translation>Downloading %1 of %2 MB</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="857"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="934"/>
+        <source>Downloading update…</source>
+        <translation>Downloading update…</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="939"/>
         <source>Verifying update…</source>
         <translation>Verifying update…</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="860"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="943"/>
         <source>Ready to install %1</source>
         <translation>Ready to install %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="861"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="944"/>
         <source>Restart and update</source>
         <translation>Restart and update</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="864"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="950"/>
         <source>Preparing to restart and update…</source>
         <translation>Preparing to restart and update…</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="867"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="954"/>
         <source>Update failed: %1</source>
         <translation>Update failed: %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="880"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="984"/>
         <source>Cancel download</source>
         <translation>Cancel download</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="885"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="993"/>
         <source>Update download progress</source>
         <translation>Update download progress</translation>
     </message>
@@ -988,7 +993,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <translation>Invalid recording shortcut</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="592"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="599"/>
         <source>Please press a key</source>
         <translation>Please press a key</translation>
     </message>
@@ -1013,7 +1018,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <translation>Add key config</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="587"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="594"/>
         <source>Unsupported key</source>
         <translation>Unsupported key</translation>
     </message>
@@ -6316,99 +6321,99 @@ so every moment on screen can be expressed clearly and shared easily.</translati
 <context>
     <name>ShortcutKeyRow</name>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="847"/>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="907"/>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="932"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="857"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="917"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="942"/>
         <source>Delay: %1 seconds</source>
         <translation>Delay: %1 seconds</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="974"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="984"/>
         <source>%1 (%2 s)</source>
         <translation>%1 (%2 s)</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1036"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1046"/>
         <source>Key configuration for &quot;%1&quot;</source>
         <translation>Key configuration for &quot;%1&quot;</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1042"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1052"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1043"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1053"/>
         <source>Cancel</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1104"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1114"/>
         <source>Unset</source>
         <translation>Unset</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1117"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1127"/>
         <source>Registered</source>
         <translation>Registered</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1120"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1130"/>
         <source>Partially registered</source>
         <translation>Partially registered</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1123"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1133"/>
         <source>Registration failed</source>
         <translation>Registration failed</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1126"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1136"/>
         <source>Not configured</source>
         <translation>Not configured</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1139"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1149"/>
         <source>Global shortcut status: %1</source>
         <translation>Global shortcut status: %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1164"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1174"/>
         <source>already used by another application or action</source>
         <translation>already used by another application or action</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1167"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1177"/>
         <source>not supported as a Windows global shortcut</source>
         <translation>not supported as a Windows global shortcut</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1170"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1180"/>
         <source>global shortcuts are not supported on this platform</source>
         <translation>global shortcuts are not supported on this platform</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1174"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1184"/>
         <source>the system rejected this shortcut</source>
         <translation>the system rejected this shortcut</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1175"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1185"/>
         <source>the system rejected this shortcut (error %1)</source>
         <translation>the system rejected this shortcut (error %1)</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1179"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1189"/>
         <source>registration did not complete</source>
         <translation>registration did not complete</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1182"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1192"/>
         <source>%1: %2</source>
         <translation>%1: %2</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1187"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1197"/>
         <source>Some shortcuts are unavailable
 Available: %1
 Unavailable: %2</source>
@@ -6417,7 +6422,7 @@ Available: %1
 Unavailable: %2</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1192"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1202"/>
         <source>No configured shortcut is available
 %1
 Change the shortcut and try again</source>

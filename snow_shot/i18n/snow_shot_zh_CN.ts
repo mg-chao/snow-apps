@@ -4,13 +4,13 @@
 <context>
     <name>AboutPageWidget</name>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="702"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="738"/>
         <source>About Snow Shot</source>
         <translation>关于 Snow Shot</translation>
     </message>
     <message>
         <location filename="../src/presentation/components/aboutpagewidget.cpp" line="139"/>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="703"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="739"/>
         <source>Snow Shot</source>
         <translation>Snow Shot</translation>
     </message>
@@ -21,7 +21,7 @@
     </message>
     <message>
         <location filename="../src/presentation/components/aboutpagewidget.cpp" line="143"/>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="715"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="751"/>
         <source>Text recognition</source>
         <translation>文字识别</translation>
     </message>
@@ -31,241 +31,246 @@
         <translation>把画面变成可用文字</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="173"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="174"/>
         <source>Screenshot selection, annotation tools, and recognized text</source>
         <translation>截图选区、标注工具与识别文字</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="704"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="740"/>
         <source>Snow Shot logo</source>
         <translation>Snow Shot 标志</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="705"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="741"/>
         <source>Free · Open source</source>
         <translation>自由 · 开源</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="709"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="745"/>
         <source>Elegant screenshots</source>
         <translation>优雅截图</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="710"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="746"/>
         <source>, excellent work.</source>
         <translation>，出色工作。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="712"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="748"/>
         <source>Capture, annotate, recognize text, and record your screen,
 so every moment on screen can be expressed clearly and shared easily.</source>
         <translation>截图、标注、文字识别和录屏，
 让屏幕上的每一刻都能清晰表达、轻松分享。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="714"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="750"/>
         <source>Screenshot capture</source>
         <translation>截图捕捉</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="714"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="750"/>
         <source>Easy annotation</source>
         <translation>轻松标注</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="715"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="751"/>
         <source>Screen recording</source>
         <translation>屏幕录制</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="716"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="752"/>
         <source>Pin to screen</source>
         <translation>固定到屏幕</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="716"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="752"/>
         <source>Screenshot history</source>
         <translation>截图历史</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="720"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="756"/>
         <source>Current version</source>
         <translation>当前版本</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="721"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="757"/>
         <source>Unavailable</source>
         <translation>不可用</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="723"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="759"/>
         <source>Current version: %1</source>
         <translation>当前版本：%1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="724"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="760"/>
         <source>Preview</source>
         <translation>预览版</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="729"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="765"/>
         <source>Copied</source>
         <translation>已复制</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="730"/>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="731"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="766"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="767"/>
         <source>Copy version number</source>
         <translation>复制版本号</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="732"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="768"/>
         <source>Copy the version number to the clipboard</source>
         <translation>将版本号复制到剪贴板</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="735"/>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="736"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="771"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="772"/>
         <source>Changelog</source>
         <translation>更新日志</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="738"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="774"/>
         <source>Official website</source>
         <translation>官方网站</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="739"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="775"/>
         <source>Discover more features and ways to use it</source>
         <translation>发现更多功能与使用方式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="741"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="777"/>
         <source>GitHub</source>
         <translation>GitHub</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="741"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="777"/>
         <source>View the source and improve it together</source>
         <translation>查看源码，一起改进</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="743"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="779"/>
         <source>Feedback and suggestions</source>
         <translation>反馈与建议</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="744"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="780"/>
         <source>Make the next experience better</source>
         <translation>让下一次体验更好</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="746"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="782"/>
         <source>Built for daily work, and growing with the community.</source>
         <translation>为日常工作打造，也在社区中持续成长。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="748"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="784"/>
         <source>%1 · %2</source>
         <translation>%1 · %2</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="755"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="791"/>
         <source>Could not open the link. Open %1 in your browser.</source>
         <translation>无法打开链接。请在浏览器中打开 %1。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="748"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="784"/>
         <source>GNU General Public License v3.0 or later</source>
         <translation>GNU 通用公共许可证 v3.0 或更高版本</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="749"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="785"/>
         <source>Free and open-source software. Distributed without any warranty.</source>
         <translation>自由开源软件，不提供任何担保。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="751"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="787"/>
         <source>Copyright © %1 %2</source>
         <translation>版权所有 © %1 %2</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="752"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="788"/>
         <source>Snow Shot · Make expression clearer</source>
         <translation>Snow Shot · 让表达更清晰</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="835"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="906"/>
         <source>Check for updates</source>
         <translation>检查更新</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="838"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="909"/>
         <source>Automatic updates are unavailable for this copy.</source>
         <translation>此副本无法使用自动更新。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="841"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="912"/>
         <source>Check for a newer version of Snow Shot.</source>
         <translation>检查是否有新版 Snow Shot。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="842"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="913"/>
         <source>You are up to date.</source>
         <translation>当前已是最新版本。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="845"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="920"/>
         <source>Checking for updates…</source>
         <translation>正在检查更新…</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="848"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="924"/>
         <source>Update available: %1</source>
         <translation>发现新版本：%1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="849"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="925"/>
         <source>Download update</source>
         <translation>下载更新</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="852"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="931"/>
         <source>Downloading %1 of %2 MB</source>
         <translation>正在下载：%1 / %2 MB</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="857"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="934"/>
+        <source>Downloading update…</source>
+        <translation>正在下载更新…</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="939"/>
         <source>Verifying update…</source>
         <translation>正在验证更新…</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="860"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="943"/>
         <source>Ready to install %1</source>
         <translation>已准备好安装 %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="861"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="944"/>
         <source>Restart and update</source>
         <translation>重启并更新</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="864"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="950"/>
         <source>Preparing to restart and update…</source>
         <translation>正在准备重启并更新…</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="867"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="954"/>
         <source>Update failed: %1</source>
         <translation>更新失败：%1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="880"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="984"/>
         <source>Cancel download</source>
         <translation>取消下载</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="885"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="993"/>
         <source>Update download progress</source>
         <translation>更新下载进度</translation>
     </message>
@@ -988,7 +993,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <translation>无效的录屏快捷键</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="592"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="599"/>
         <source>Please press a key</source>
         <translation>请按下按键</translation>
     </message>
@@ -1013,7 +1018,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <translation>添加按键配置</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="587"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="594"/>
         <source>Unsupported key</source>
         <translation>不支持的按键</translation>
     </message>
@@ -6315,99 +6320,99 @@ so every moment on screen can be expressed clearly and shared easily.</source>
 <context>
     <name>ShortcutKeyRow</name>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="847"/>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="907"/>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="932"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="857"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="917"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="942"/>
         <source>Delay: %1 seconds</source>
         <translation>延时：%1 秒</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="974"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="984"/>
         <source>%1 (%2 s)</source>
         <translation>%1（%2 秒）</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1036"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1046"/>
         <source>Key configuration for &quot;%1&quot;</source>
         <translation>“%1”的按键配置</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1042"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1052"/>
         <source>OK</source>
         <translation>确定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1043"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1053"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1104"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1114"/>
         <source>Unset</source>
         <translation>未设置</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1117"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1127"/>
         <source>Registered</source>
         <translation>已注册</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1120"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1130"/>
         <source>Partially registered</source>
         <translation>部分注册</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1123"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1133"/>
         <source>Registration failed</source>
         <translation>注册失败</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1126"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1136"/>
         <source>Not configured</source>
         <translation>未配置</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1139"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1149"/>
         <source>Global shortcut status: %1</source>
         <translation>全局快捷键状态：%1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1164"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1174"/>
         <source>already used by another application or action</source>
         <translation>已被其他应用程序或操作使用</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1167"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1177"/>
         <source>not supported as a Windows global shortcut</source>
         <translation>不支持作为 Windows 全局快捷键</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1170"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1180"/>
         <source>global shortcuts are not supported on this platform</source>
         <translation>此平台不支持全局快捷键</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1174"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1184"/>
         <source>the system rejected this shortcut</source>
         <translation>系统拒绝了此快捷键</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1175"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1185"/>
         <source>the system rejected this shortcut (error %1)</source>
         <translation>系统拒绝了此快捷键（错误 %1）</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1179"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1189"/>
         <source>registration did not complete</source>
         <translation>注册未完成</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1182"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1192"/>
         <source>%1: %2</source>
         <translation>%1：%2</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1187"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1197"/>
         <source>Some shortcuts are unavailable
 Available: %1
 Unavailable: %2</source>
@@ -6416,7 +6421,7 @@ Unavailable: %2</source>
 不可用：%2</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1192"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1202"/>
         <source>No configured shortcut is available
 %1
 Change the shortcut and try again</source>

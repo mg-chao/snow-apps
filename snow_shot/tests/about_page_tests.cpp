@@ -27,6 +27,7 @@
 #include <QLabel>
 #include <QKeyEvent>
 #include <QPointer>
+#include <QProgressBar>
 #include <QScrollBar>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -254,7 +255,10 @@ void largerTypeKeepsEveryActionReachable() {
     config.fontSize = 20;
     manager.setThemeStyleConfig(config);
     QCoreApplication::setApplicationVersion(QStringLiteral("12.34.56-beta.7+build.89"));
-    AboutPageWidget page(nullptr, [](const QUrl&) { return true; });
+    snow_shot::update::UpdateService updates({});
+    const_cast<snow_shot::update::UpdateStatus&>(updates.status()) = {
+        snow_shot::update::UpdateState::Ready, QStringLiteral("12.34.56-beta.8+build.90")};
+    AboutPageWidget page(nullptr, [](const QUrl&) { return true; }, &updates);
     page.resize(360, 360);
     page.show();
     flushEvents();
@@ -264,8 +268,8 @@ void largerTypeKeepsEveryActionReachable() {
     auto* artwork = child<QWidget>(page, "aboutArtwork");
     require(artwork->width() <= scroll->viewport()->width() && artwork->height() > 0,
             "artwork scales down to the available width with larger fonts");
-    for (const char* name : {"aboutCopyVersion", "aboutReleaseNotes", "aboutWebsite",
-                             "aboutSourceCode", "aboutFeedback"}) {
+    for (const char* name : {"aboutCopyVersion", "aboutReleaseNotes", "aboutUpdateAction",
+                             "aboutWebsite", "aboutSourceCode", "aboutFeedback"}) {
         auto* button = child<QAbstractButton>(page, name);
         scroll->ensureWidgetVisible(button);
         flushEvents();
@@ -301,6 +305,148 @@ void updatePolicyAndUnavailableCopy() {
     require(child<QLabel>(page, "aboutUpdateStatus")->text() ==
                 QStringLiteral("Automatic updates are unavailable for this copy."),
             "unavailable update status explains the disabled action");
+}
+
+void updateStatesFitTheVersionPanel() {
+    using namespace snow_shot::update;
+    using adqt::widgets::AdButton;
+    UpdateService updates({});
+    // Inject presentation snapshots without networking, downloads, or restart side effects.
+    auto& status = const_cast<UpdateStatus&>(updates.status());
+    QCoreApplication::setApplicationVersion(QStringLiteral(SNOW_SHOT_TEST_VERSION));
+    AboutPageWidget page(nullptr, [](const QUrl&) { return true; }, &updates);
+    auto* panel = child<QFrame>(page, "aboutVersionPanel");
+    auto* label = child<QLabel>(page, "aboutUpdateStatus");
+    auto* action = child<AdButton>(page, "aboutUpdateAction");
+    auto* cancel = child<AdButton>(page, "aboutUpdateCancel");
+    auto* progress = child<QProgressBar>(page, "aboutUpdateProgress");
+    auto* scroll = child<adqt::widgets::AdScrollArea>(page, "pageScrollArea");
+    require(panel->isAncestorOf(label) && panel->isAncestorOf(action) &&
+                panel->isAncestorOf(cancel) && panel->isAncestorOf(progress),
+            "update feedback and actions belong to the current version surface");
+    require(action->sizeClass() == AdButton::SizeClass::Small &&
+                cancel->sizeClass() == AdButton::SizeClass::Small &&
+                action->focusPolicy() == Qt::StrongFocus &&
+                cancel->focusPolicy() == Qt::StrongFocus,
+            "update actions match the compact, keyboard accessible version controls");
+    page.show();
+    for (const auto appearance : {styles::ThemeAppearance::Light, styles::ThemeAppearance::Dark}) {
+        styles::ThemeManager::instance().setThemeAppearance(appearance);
+        const auto colors = styles::ThemeManager::instance().themeColorScheme().map;
+        for (const QString& locale :
+             {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
+            QTranslator translator;
+            require(translator.load(QStringLiteral(SNOW_SHOT_TEST_TRANSLATIONS_DIR) +
+                                    QStringLiteral("/snow_shot_%1.qm").arg(locale)),
+                    "load update UI translations");
+            QCoreApplication::installTranslator(&translator);
+            for (const int width : {660, 360}) {
+                page.resize(width, 460);
+                for (const auto state :
+                     {UpdateState::Unavailable, UpdateState::Idle, UpdateState::Checking,
+                      UpdateState::Available, UpdateState::Downloading, UpdateState::Verifying,
+                      UpdateState::Ready, UpdateState::Applying, UpdateState::Failed}) {
+                    status = {state,
+                              QStringLiteral("12.34.56-beta.7+build.89"),
+                              {},
+                              5 * 1048576,
+                              20 * 1048576};
+                    if (state == UpdateState::Failed) {
+                        status.error = QStringLiteral("The download could not be completed. "
+                                                      "Check your connection and try again.");
+                    }
+                    updates.statusChanged();
+                    flushEvents();
+                    const bool actionable =
+                        state == UpdateState::Idle || state == UpdateState::Available ||
+                        state == UpdateState::Ready || state == UpdateState::Failed;
+                    require(action->isVisible() == actionable && action->isEnabled() == actionable,
+                            "only actionable update states display a primary control");
+                    require(cancel->isVisible() == (state == UpdateState::Downloading) &&
+                                progress->isVisible() == (state == UpdateState::Downloading),
+                            "download controls are confined to the downloading state");
+                    require(action->buttonStyle() ==
+                                ((state == UpdateState::Available || state == UpdateState::Ready)
+                                     ? AdButton::ButtonStyle::Solid
+                                     : AdButton::ButtonStyle::Outline),
+                            "download and restart receive the primary visual emphasis");
+                    require(!child<QLabel>(page, "aboutUpdateIcon")->pixmap().isNull(),
+                            "every update state has a rendered status icon");
+                    require(label->textFormat() == Qt::PlainText &&
+                                label->accessibleName() == label->text(),
+                            "status remains readable as plain text and through accessibility");
+                    if (state == UpdateState::Failed) {
+                        require(label->palette().color(QPalette::WindowText) ==
+                                    colors.colorErrorText,
+                                "update errors follow the active theme's error color");
+                    }
+                    require(scroll->horizontalScrollBar()->maximum() == 0,
+                            "all update states and languages fit without horizontal scrolling");
+                    if (label->height() < label->heightForWidth(label->width())) {
+                        std::cerr << "Clipped update " << static_cast<int>(state) << ' ' << width
+                                  << ' ' << locale.toStdString() << ": " << label->width() << 'x'
+                                  << label->height() << " required "
+                                  << label->heightForWidth(label->width()) << '\n';
+                        std::cerr << "Panel width/minimum/hfw/height " << panel->width() << ' '
+                                  << panel->minimumSizeHint().width() << ' '
+                                  << panel->heightForWidth(panel->width()) << ' ' << panel->height()
+                                  << '\n';
+                        scroll->ensureWidgetVisible(label);
+                        flushEvents();
+                        snapshot(page, QStringLiteral("about-update-clipped"));
+                    }
+                    require(label->height() >= label->heightForWidth(label->width()),
+                            "wrapped update status text is not clipped");
+                    for (auto* button : {action, cancel}) {
+                        if (!button->isVisible()) {
+                            continue;
+                        }
+                        scroll->ensureWidgetVisible(button);
+                        flushEvents();
+                        require(scroll->viewport()->rect().contains(QRect(
+                                    button->mapTo(scroll->viewport(), QPoint()), button->size())),
+                                "update actions can be scrolled fully into view");
+                        const QRect statusRect(label->mapTo(panel, QPoint()), label->size());
+                        const QRect buttonRect(button->mapTo(panel, QPoint()), button->size());
+                        require(panel->rect().contains(buttonRect) &&
+                                    !statusRect.intersects(buttonRect),
+                                "update actions remain inside the card without overlapping status");
+                    }
+                    if (state == UpdateState::Downloading) {
+                        require(progress->value() == 250 && progress->maximum() == 1000 &&
+                                    progress->height() <= 8,
+                                "download progress is accurate and uses a slim track");
+                    }
+                    if (locale == QStringLiteral("en_US")) {
+                        scroll->verticalScrollBar()->setValue(0);
+                        flushEvents();
+                        snapshot(page, QStringLiteral("about-update-%1-%2-%3")
+                                           .arg(appearance == styles::ThemeAppearance::Light
+                                                    ? QStringLiteral("light")
+                                                    : QStringLiteral("dark"))
+                                           .arg(width)
+                                           .arg(static_cast<int>(state)));
+                    }
+                }
+            }
+            QCoreApplication::removeTranslator(&translator);
+        }
+    }
+    status = {UpdateState::Downloading, {}, {}, 0, 0};
+    updates.statusChanged();
+    require(progress->minimum() == 0 && progress->maximum() == 0,
+            "downloads of unknown size use indeterminate progress");
+    require(label->text() == QStringLiteral("Downloading update…"),
+            "unknown download sizes do not display a misleading zero total");
+    status = {UpdateState::Ready, QStringLiteral("1.2.3"),
+              QStringLiteral("Close the recording first.")};
+    updates.statusChanged();
+    require(action->isEnabled() && label->text().contains(status.error) &&
+                label->palette().color(QPalette::WindowText) ==
+                    styles::ThemeManager::instance().themeColorScheme().map.colorWarningText,
+            "blocked restarts keep their action and show the reason in the warning color");
+    page.hide();
+    styles::ThemeManager::instance().setThemeAppearance(styles::ThemeAppearance::Light);
 }
 
 void traySettingsAndFunctionNavigation() {
@@ -350,6 +496,9 @@ void traySettingsAndFunctionNavigation() {
 }
 
 void mainNavigationSearchThemesAndLanguages() {
+    snow_shot::update::UpdateService updates({}, qApp);
+    const_cast<snow_shot::update::UpdateStatus&>(updates.status()).state =
+        snow_shot::update::UpdateState::Idle;
     QCoreApplication::setApplicationVersion(QStringLiteral(SNOW_SHOT_TEST_VERSION));
     const auto& registry = settings::builtInSettingsRegistry();
     require(registry.isValid(), "About preserves catalog validity");
@@ -564,6 +713,7 @@ int main(int argc, char** argv) {
     projectLinkSurfacesMatchStandardButtons();
     projectLinksAreExplicitAccessibleAndRecoverable();
     updatePolicyAndUnavailableCopy();
+    updateStatesFitTheVersionPanel();
     traySettingsAndFunctionNavigation();
     mainNavigationSearchThemesAndLanguages();
     largerTypeKeepsEveryActionReachable();
