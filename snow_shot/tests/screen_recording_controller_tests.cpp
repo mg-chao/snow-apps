@@ -1,4 +1,5 @@
 #include "recording_effect_test_source.h"
+#include "../src/presentation/recording/recordingeffectstyle.h"
 #include "../src/presentation/recording/recordingeffectgeometry.h"
 #ifdef SNOW_RECORDING_EFFECTS_BENCHMARK
 #include "recording_effects_performance_benchmark.h"
@@ -1022,6 +1023,25 @@ int main(int argc, char** argv) {
     }
 #endif
     if (app.arguments().contains(QStringLiteral("--effects-preview-only"))) {
+        class KeyTranslator : public QTranslator {
+          public:
+            bool isEmpty() const override {
+                return false;
+            }
+            QString translate(const char* context, const char*, const char*, int) const override {
+                return QByteArray(context) == "RecordingKeyboard" ? QStringLiteral("translated")
+                                                                  : QString();
+            }
+        } translator;
+        const RecordingKeyboardLabels original(true);
+        require(app.installTranslator(&translator), "key translator must install");
+        const RecordingKeyboardLabels localized(true);
+        require(localized.text == original.text,
+                "all key legends must ignore application language");
+        require(localized.text.contains(QByteArray("Backspace")) &&
+                    localized.text.contains(QByteArray("Num 0")),
+                "key legends must use English names");
+        app.removeTranslator(&translator);
         effectsPreviewLifecycle();
         controllerPreviewTransitions();
         ApplicationStorage::instance().shutdown();

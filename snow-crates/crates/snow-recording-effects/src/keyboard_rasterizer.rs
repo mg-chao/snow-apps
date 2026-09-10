@@ -72,7 +72,7 @@ mod platform {
     }
 
     impl Rasterizer {
-        fn text_layout(&self, label: &str) -> windows::core::Result<IDWriteTextLayout> {
+        fn text_layout(&self, label: &str) -> windows::core::Result<(IDWriteTextLayout, u32)> {
             unsafe {
                 let format = self.write.CreateTextFormat(
                     w!("Segoe UI"),
@@ -84,47 +84,37 @@ mod platform {
                     w!(""),
                 )?;
                 format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
-                let mut text: Vec<_> = label.encode_utf16().collect();
-                let mut layout = self.write.CreateTextLayout(&text, &format, 4096.0, 256.0)?;
+                let text: Vec<_> = label.encode_utf16().collect();
+                let layout = self.write.CreateTextLayout(&text, &format, 4096.0, 256.0)?;
                 let mut metrics = DWRITE_TEXT_METRICS::default();
                 layout.GetMetrics(&mut metrics)?;
-                // Fit the complete translated label with eight pixels of padding per side.
-                // Only glyphs change size; keycap dimensions never depend on the label.
-                let available = KEYCAP_SIZE as f32 - 16.0;
-                if metrics.widthIncludingTrailingWhitespace > available {
-                    let words: Vec<_> = label.split_whitespace().collect();
-                    if words.len() > 1 {
-                        // Preserve whole words while giving labels such as "Page Down"
-                        // larger glyphs than a single line would allow.
-                        text = words.join("\n").encode_utf16().collect();
-                        layout = self.write.CreateTextLayout(&text, &format, 4096.0, 256.0)?;
-                        layout.GetMetrics(&mut metrics)?;
-                    }
-                }
-                let fit = (available / metrics.widthIncludingTrailingWhitespace.max(1.0))
-                    .min(available / metrics.height.max(1.0))
-                    .min(1.0);
-                if fit < 1.0 {
-                    layout.SetFontSize(
-                        32.0 * fit,
-                        DWRITE_TEXT_RANGE {
-                            startPosition: 0,
-                            length: text.len() as u32,
-                        },
-                    )?;
-                }
-                layout.SetMaxWidth(KEYCAP_SIZE as f32)?;
+                // Sublinear growth keeps long legends compact, with equal padding for
+                // single-character and multi-character keys. Fit glyphs into that width.
+                let measured = metrics.widthIncludingTrailingWhitespace.max(1.0);
+                let content_width = if measured <= 32.0 {
+                    measured
+                } else {
+                    32.0 * (measured / 32.0).powf(0.85)
+                };
+                layout.SetFontSize(
+                    32.0 * content_width / measured,
+                    DWRITE_TEXT_RANGE {
+                        startPosition: 0,
+                        length: text.len() as u32,
+                    },
+                )?;
+                let width = (content_width + 40.0).ceil() as u32;
+                layout.SetMaxWidth(width as f32)?;
                 layout.SetMaxHeight(KEYCAP_SIZE as f32)?;
                 layout.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
                 layout.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
-                Ok(layout)
+                Ok((layout, width))
             }
         }
 
         fn render(&self, label: &str) -> windows::core::Result<Keycap> {
             unsafe {
-                let layout = self.text_layout(label)?;
-                let width = KEYCAP_SIZE;
+                let (layout, width) = self.text_layout(label)?;
                 let height = KEYCAP_SIZE;
                 let bitmap = self.imaging.CreateBitmap(
                     width,
@@ -196,7 +186,7 @@ mod platform {
         use super::*;
 
         #[test]
-        fn native_keycaps_are_fixed_squares_and_fit_translated_labels() {
+        fn native_keycaps_fit_label_width_and_keep_fixed_height() {
             let config = KeyboardOverlayConfig {
                 background_rgba: [0, 0, 0, 255],
                 border_rgba: [20, 20, 20, 255],
@@ -204,6 +194,15 @@ mod platform {
                 labels: Default::default(),
             };
             let mut rasterizer = create(&config).unwrap();
+            let widths: Vec<_> = ["WW", "WWWW", "WWWWWW"]
+                .iter()
+                .map(|label| rasterizer.rasterize(label, 1.0).unwrap().width)
+                .collect();
+            assert!(widths[0] < widths[1] && widths[1] < widths[2]);
+            assert!(
+                widths[2] - widths[1] < widths[1] - widths[0],
+                "equal text increments must produce diminishing width growth"
+            );
             for label in [
                 "A",
                 "Ctrl",
@@ -217,16 +216,23 @@ mod platform {
                 "←",
             ] {
                 let reference = rasterizer.rasterize(label, 1.0).unwrap();
-                assert_eq!((reference.width, reference.height), (64, 64), "{label}");
-                assert_eq!(reference.pixels.len(), 64 * 64 * 4);
+                assert_eq!(reference.height, 64, "{label}");
+                assert!(reference.width > 40, "{label}");
+                if matches!(label, "A" | "←") {
+                    assert!(reference.width < 72, "short labels have no square minimum");
+                } else if matches!(label, "Backspace" | "Page Down" | "Previous Track") {
+                    assert!(reference.width > 64, "long labels must expand: {label}");
+                }
+                let width = reference.width as usize;
+                assert_eq!(reference.pixels.len(), width * 64 * 4);
                 let mut glyph_pixels = 0;
                 for (index, pixel) in reference.pixels.chunks_exact(4).enumerate() {
                     assert!(pixel[..3].iter().all(|channel| *channel <= pixel[3]));
                     if pixel[0] > 100 {
                         glyph_pixels += 1;
-                        let (x, y) = (index % 64, index / 64);
+                        let (x, y) = (index % width, index / width);
                         assert!(
-                            (6..58).contains(&x) && (6..58).contains(&y),
+                            (18..width - 18).contains(&x) && (6..58).contains(&y),
                             "{label}: {x}, {y}"
                         );
                     }
@@ -235,18 +241,22 @@ mod platform {
                 if label == "Page Down" {
                     let glyph_rows: Vec<_> = reference
                         .pixels
-                        .chunks_exact(64 * 4)
+                        .chunks_exact(width * 4)
                         .map(|row| row.chunks_exact(4).any(|p| p[0] > 100))
                         .collect();
                     let lines = glyph_rows
                         .windows(2)
                         .filter(|pair| !pair[0] && pair[1])
                         .count();
-                    assert_eq!(lines, 2, "multiword labels should use two readable lines");
+                    assert_eq!(lines, 1, "multiword labels should remain on one line");
                 }
                 for scale in [0.5, 2.0, 4.0, 8.0] {
                     let cap = rasterizer.rasterize(label, scale).unwrap();
-                    assert_eq!((cap.width, cap.height), (64, 64), "{label} at {scale}");
+                    assert_eq!(
+                        (cap.width, cap.height),
+                        (reference.width, 64),
+                        "{label} at {scale}"
+                    );
                     assert_eq!(cap.pixels, reference.pixels, "{label} at {scale}");
                 }
             }

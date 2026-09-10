@@ -7,7 +7,7 @@ use std::sync::Arc;
 pub const MOVE_MS: u64 = 180;
 pub const HOLD_MS: u64 = 1_200;
 pub const FADE_MS: u64 = 400;
-/// Native keycaps use fixed output-pixel dimensions in both video and live preview.
+/// Native keycap height in output pixels for video and live preview.
 pub const KEYCAP_SIZE: u32 = 64;
 const KEYCAP_GAP: f32 = 10.0;
 const ROW_PITCH: f32 = KEYCAP_SIZE as f32 + 12.0;
@@ -186,7 +186,7 @@ pub struct Keycap {
 
 pub trait KeycapRasterizer {
     /// The overlay requests scale 1.0 at every output resolution. The native rasterizer
-    /// retains this argument for compatibility, but always produces 64 × 64 keycaps.
+    /// retains this argument for compatibility, with 64-pixel height and label-based width.
     fn rasterize(&mut self, label: &str, scale: f32) -> Result<Keycap, String>;
 }
 
@@ -561,6 +561,56 @@ mod tests {
                         assert_eq!(columns[0] - end - 1, 10, "fixed gap at {size:?}");
                     }
                     previous_end = Some(columns[63]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn mixed_width_keycaps_keep_native_width_spacing_and_right_alignment() {
+        struct VariableWidth;
+        impl KeycapRasterizer for VariableWidth {
+            fn rasterize(&mut self, label: &str, scale: f32) -> Result<Keycap, String> {
+                assert_eq!(scale, 1.0);
+                let key: u8 = label.parse().unwrap();
+                let width = match key {
+                    65 => 64,
+                    66 => 113,
+                    _ => 187,
+                };
+                Ok(Keycap {
+                    width,
+                    height: 64,
+                    pixels: [key, 0, 0, 255].repeat(width as usize * 64),
+                })
+            }
+        }
+        for (size, margin) in [
+            ((100, 100), 5),
+            ((640, 480), 24),
+            ((1920, 1080), 48),
+            ((3840, 2160), 96),
+        ] {
+            let mut overlay = KeyboardOverlay::new(size, Box::new(VariableWidth));
+            for key in 65..=67 {
+                overlay.model.event(event(0, key, true, &[]));
+            }
+            let mut pixels = [0, 0, 0, 255].repeat(size.0 as usize * size.1 as usize);
+            overlay.draw(&mut pixels, MOVE_MS).unwrap();
+            let right = size.0 as usize - margin;
+            let rows: Vec<_> = pixels
+                .chunks_exact(size.0 as usize * 4)
+                .filter(|row| row.chunks_exact(4).any(|p| p[0] != 0))
+                .collect();
+            assert_eq!(rows.len(), 64);
+            for row in rows {
+                let mut end = right;
+                for (key, width) in [(67, 187), (66, 113), (65, 64)] {
+                    let start = end.saturating_sub(width);
+                    for (x, pixel) in row.chunks_exact(4).enumerate() {
+                        assert_eq!(pixel[0] == key, (start..end).contains(&x));
+                    }
+                    end = start.saturating_sub(10);
                 }
             }
         }
