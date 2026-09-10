@@ -81,8 +81,20 @@ void builtInCatalogIsCompleteAndValid() {
                     settings::SettingsColorBinding::ThemePrimaryColor &&
                 !std::get<settings::SettingsColorDefinition>(primary->payload).alphaChannelEnabled,
             "general settings must expose an opaque theme primary color picker");
-    require(catalog.pages().size() == 11, "catalog must contain eleven pages");
+    require(catalog.pages().size() == 12, "catalog must contain twelve pages");
 
+    const auto* extended = catalog.page(QStringLiteral("extended-features"));
+    const auto* translationToggle =
+        catalog.item({QStringLiteral("extended-features"), QStringLiteral("translation"),
+                      QStringLiteral("extended-features.translation-page")});
+    require(extended != nullptr &&
+                extended->route == QStringLiteral("/settings/extended-features") &&
+                translationToggle != nullptr &&
+                translationToggle->title.translated() == QStringLiteral("Translation Page") &&
+                !snow_shot::storage::ConfigurationSchema::defaultValue(
+                     translationToggle->configurationKey)
+                     .toBool(true),
+            "extended translation page exposes a persisted default-off toggle");
     qsizetype sectionCount = 0;
     qsizetype itemCount = 0;
     bool foundUpdates = false;
@@ -126,8 +138,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 35 && itemCount == 141 && foundUpdates,
-            "catalog must contain thirty-five sections and one hundred forty-one items");
+    require(sectionCount == 36 && itemCount == 142 && foundUpdates,
+            "catalog must contain thirty-six sections and one hundred forty-two items");
     const auto* history =
         catalog.section(QStringLiteral("storage-and-privacy"), QStringLiteral("history"));
     require(history != nullptr && history->items.size() >= 2 &&
@@ -504,9 +516,10 @@ void builtInCatalogIsCompleteAndValid() {
                 settingsGroup->pages.at(1).pageId == QStringLiteral("function-settings"),
             "Function settings must appear below Interface settings in the Settings navigation");
     require(settingsGroup->title.translated() == QStringLiteral("Settings") &&
-                settingsGroup->pages.size() == 6 &&
+                settingsGroup->pages.size() == 7 &&
                 settingsGroup->pages.at(3).pageId == QStringLiteral("storage-and-privacy") &&
                 settingsGroup->pages.at(4).pageId == QStringLiteral("api-configuration") &&
+                settingsGroup->pages.at(5).pageId == QStringLiteral("extended-features") &&
                 settingsGroup->pages.at(2).pageId == QStringLiteral("application-shortcuts") &&
                 settingsGroup->pages.constLast().pageId == QStringLiteral("system-settings"),
             "Settings navigation group must expose Application shortcuts and System settings");
@@ -1194,7 +1207,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 187 && index.search(QString()).size() == 187,
+    require(index.entries().size() == 190 && index.search(QString()).size() == 190,
             "search must generate all catalog nodes in catalog order");
     const auto updates = index.search(QStringLiteral("Software updates"));
     require(!updates.isEmpty() &&
@@ -1246,7 +1259,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 11 && sections == 35 && items == 141,
+    require(pages == 12 && sections == 36 && items == 142,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

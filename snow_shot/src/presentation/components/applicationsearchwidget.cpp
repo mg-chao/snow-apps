@@ -74,41 +74,36 @@ class SearchResultItemDelegate final : public QStyledItemDelegate {
         m_radius = scheme.metricAlias.borderRadiusSM;
         m_titleFontSize = scheme.metricAlias.fontSize;
         m_supportingFontSize = scheme.metricAlias.fontSizeSM;
-        m_rowHeight = std::max(scheme.metricAlias.controlHeightLG +
-                                   2 * scheme.metricAlias.paddingXS,
-                               52);
+        m_rowHeight =
+            std::max(scheme.metricAlias.controlHeightLG + 2 * scheme.metricAlias.paddingXS, 52);
 
         // Keep the empty row aligned with Ant Design's Select small empty state.
         m_emptyTextColor = scheme.map.colorTextTertiary;
         m_emptyBorderColor = colorOnBackground(scheme.map.colorFill, m_popupBackground);
-        m_emptyShadowColor =
-            colorOnBackground(scheme.map.colorFillTertiary, m_popupBackground);
-        m_emptyContentColor =
-            colorOnBackground(scheme.map.colorFillQuaternary, m_popupBackground);
+        m_emptyShadowColor = colorOnBackground(scheme.map.colorFillTertiary, m_popupBackground);
+        m_emptyContentColor = colorOnBackground(scheme.map.colorFillQuaternary, m_popupBackground);
         m_emptyMarginBlock = std::max(4, scheme.metricAlias.paddingXS);
         m_emptyMarginInline = std::max(4, scheme.metricAlias.paddingXS);
         m_emptyImageMarginBottom = std::max(4, scheme.metricAlias.paddingXS);
-        m_emptyIconHeight = std::max(
-            20, static_cast<int>(std::lround(scheme.metricAlias.controlHeightLG * 0.875)));
-        m_emptyIconWidth = std::max(
-            30, static_cast<int>(std::lround(m_emptyIconHeight * (64.0 / 41.0))));
+        m_emptyIconHeight =
+            std::max(20, static_cast<int>(std::lround(scheme.metricAlias.controlHeightLG * 0.875)));
+        m_emptyIconWidth =
+            std::max(30, static_cast<int>(std::lround(m_emptyIconHeight * (64.0 / 41.0))));
         m_emptyDescriptionFontSize = std::max(12, scheme.metricAlias.fontSize);
-        m_emptyDescriptionLineHeight = std::max(
-            m_emptyDescriptionFontSize + 2,
-            static_cast<int>(std::lround(m_emptyDescriptionFontSize *
-                                          scheme.metricMap.font.lineHeight)));
-        const int optionTextHeight = std::max(
-            1, static_cast<int>(std::lround(m_emptyDescriptionFontSize *
-                                            scheme.metricMap.font.lineHeight)));
+        m_emptyDescriptionLineHeight =
+            std::max(m_emptyDescriptionFontSize + 2,
+                     static_cast<int>(std::lround(m_emptyDescriptionFontSize *
+                                                  scheme.metricMap.font.lineHeight)));
+        const int optionTextHeight =
+            std::max(1, static_cast<int>(std::lround(m_emptyDescriptionFontSize *
+                                                     scheme.metricMap.font.lineHeight)));
         m_optionPaddingVertical = std::max(0, (m_rowHeight - optionTextHeight + 1) / 2);
         m_emptyStateHeight = std::max(
-            m_rowHeight,
-            m_optionPaddingVertical * 2 + m_emptyMarginBlock * 2 + m_emptyIconHeight +
-                m_emptyImageMarginBottom + m_emptyDescriptionLineHeight);
+            m_rowHeight, m_optionPaddingVertical * 2 + m_emptyMarginBlock * 2 + m_emptyIconHeight +
+                             m_emptyImageMarginBottom + m_emptyDescriptionLineHeight);
     }
 
-    QSize sizeHint(const QStyleOptionViewItem& option,
-                   const QModelIndex& index) const override {
+    QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override {
         if (!index.data(adqt::widgets::AdSelect::DefaultLabelRole).toString().isEmpty()) {
             return QSize(option.rect.width(), m_rowHeight);
         }
@@ -121,16 +116,15 @@ class SearchResultItemDelegate final : public QStyledItemDelegate {
             return;
         }
 
-        const QString title =
-            index.data(adqt::widgets::AdSelect::DefaultLabelRole).toString();
+        const QString title = index.data(adqt::widgets::AdSelect::DefaultLabelRole).toString();
         if (title.isEmpty()) {
             painter->save();
             painter->setRenderHint(QPainter::Antialiasing, true);
             painter->fillRect(option.rect, m_popupBackground);
 
-            QRect contentRect = option.rect.adjusted(m_horizontalPadding, m_optionPaddingVertical,
-                                                      -m_horizontalPadding,
-                                                      -m_optionPaddingVertical);
+            QRect contentRect =
+                option.rect.adjusted(m_horizontalPadding, m_optionPaddingVertical,
+                                     -m_horizontalPadding, -m_optionPaddingVertical);
             contentRect.adjust(m_emptyMarginInline, 0, -m_emptyMarginInline, 0);
             const int top = contentRect.top() + m_emptyMarginBlock;
             const QRectF iconRect(contentRect.left() +
@@ -141,9 +135,8 @@ class SearchResultItemDelegate final : public QStyledItemDelegate {
             const auto emptyIcon = adqt::widgets::icons::twotone::EmptySimple(emptyIconColors);
             adqt::icons::IconRenderRequest request;
             request.logicalSize = QSize(m_emptyIconWidth, m_emptyIconHeight);
-            request.devicePixelRatio = option.widget != nullptr
-                                           ? option.widget->devicePixelRatioF()
-                                           : 1.0;
+            request.devicePixelRatio =
+                option.widget != nullptr ? option.widget->devicePixelRatioF() : 1.0;
             const QPixmap iconPixmap = adqt::icons::renderIconPixmap(emptyIcon, request);
             if (!iconPixmap.isNull()) {
                 painter->drawPixmap(iconRect.topLeft(), iconPixmap);
@@ -155,11 +148,11 @@ class SearchResultItemDelegate final : public QStyledItemDelegate {
             painter->setFont(emptyFont);
             painter->setPen(m_emptyTextColor);
             const QFontMetrics emptyMetrics(emptyFont);
-            const QString emptyText = emptyMetrics.elidedText(
-                index.data(Qt::DisplayRole).toString(), Qt::ElideRight,
-                std::max(0, contentRect.width()));
-            const QRect textRect(contentRect.left(), top + m_emptyIconHeight +
-                                                           m_emptyImageMarginBottom,
+            const QString emptyText =
+                emptyMetrics.elidedText(index.data(Qt::DisplayRole).toString(), Qt::ElideRight,
+                                        std::max(0, contentRect.width()));
+            const QRect textRect(contentRect.left(),
+                                 top + m_emptyIconHeight + m_emptyImageMarginBottom,
                                  contentRect.width(), m_emptyDescriptionLineHeight);
             painter->drawText(textRect, Qt::AlignHCenter | Qt::AlignTop, emptyText);
             painter->restore();
@@ -182,15 +175,12 @@ class SearchResultItemDelegate final : public QStyledItemDelegate {
             painter->drawRoundedRect(backgroundRect, m_radius, m_radius);
         }
 
-        const QRect contentRect =
-            backgroundRect.adjusted(m_horizontalPadding, m_verticalPadding,
-                                    -m_horizontalPadding, -m_verticalPadding);
-        const int categoryWidth = category.isEmpty()
-                                      ? 0
-                                      : std::clamp(contentRect.width() * 2 / 5, 96, 180);
-        const int leftWidth =
-            std::max(0, contentRect.width() - categoryWidth -
-                            (categoryWidth > 0 ? m_columnGap : 0));
+        const QRect contentRect = backgroundRect.adjusted(m_horizontalPadding, m_verticalPadding,
+                                                          -m_horizontalPadding, -m_verticalPadding);
+        const int categoryWidth =
+            category.isEmpty() ? 0 : std::clamp(contentRect.width() * 2 / 5, 96, 180);
+        const int leftWidth = std::max(0, contentRect.width() - categoryWidth -
+                                              (categoryWidth > 0 ? m_columnGap : 0));
         const QRect leftRect(contentRect.left(), contentRect.top(), leftWidth,
                              contentRect.height());
         const QRect categoryRect(contentRect.right() - categoryWidth + 1, contentRect.top(),
@@ -203,10 +193,9 @@ class SearchResultItemDelegate final : public QStyledItemDelegate {
         painter->setPen(m_titleColor);
         const QFontMetrics titleMetrics(titleFont);
         const int titleHeight = titleMetrics.height();
-        painter->drawText(
-            QRect(leftRect.left(), leftRect.top(), leftRect.width(), titleHeight),
-            Qt::AlignLeft | Qt::AlignVCenter,
-            titleMetrics.elidedText(title, Qt::ElideRight, leftRect.width()));
+        painter->drawText(QRect(leftRect.left(), leftRect.top(), leftRect.width(), titleHeight),
+                          Qt::AlignLeft | Qt::AlignVCenter,
+                          titleMetrics.elidedText(title, Qt::ElideRight, leftRect.width()));
 
         QFont supportingFont = option.font;
         supportingFont.setPixelSize(m_supportingFontSize);
@@ -308,6 +297,10 @@ ApplicationSearchWidget::ApplicationSearchWidget(
     auto& configuration = applicationStorage.configuration();
     connect(&configuration, &snow_shot::storage::ConfigurationStore::valueChanged, this,
             [this](const QString& key, const QJsonValue& value) {
+                if (key == QStringLiteral("extended_features/translation_page_enabled")) {
+                    populateResults(query());
+                    return;
+                }
                 if (key != QLatin1String(kScreenshotDelayKey)) {
                     return;
                 }
@@ -414,13 +407,23 @@ void ApplicationSearchWidget::populateResults(const QString& queryText) {
 
     QVector<snow_shot::presentation::settings::SettingsSearchEntry> results =
         m_index.search(queryText);
+    if (!snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled()) {
+        results.erase(std::remove_if(results.begin(), results.end(),
+                                     [](const auto& entry) {
+                                         return entry.location.pageId ==
+                                                    QStringLiteral("translation") ||
+                                                entry.location.itemId ==
+                                                    QStringLiteral("quick.translate-selected-text");
+                                     }),
+                      results.end());
+    }
     if (queryText.trimmed().isEmpty()) {
         results.erase(
             std::remove_if(
                 results.begin(), results.end(),
                 [](const auto& entry) {
-                    return entry.kind != snow_shot::presentation::settings::
-                                             SettingsSearchNodeKind::Page;
+                    return entry.kind !=
+                           snow_shot::presentation::settings::SettingsSearchNodeKind::Page;
                 }),
             results.end());
     }

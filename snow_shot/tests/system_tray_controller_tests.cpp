@@ -225,6 +225,21 @@ int main(int argc, char* argv[]) {
         }
         return result;
     };
+    const QString selectedTextId = QStringLiteral("quick.translate-selected-text");
+    const QStringList translationMenu{selectedTextId, QStringLiteral("tray.exit")};
+    controller.setMenuOptions(translationMenu);
+    require(!actionForId(selectedTextId)->isVisible(),
+            "disabled translation feature hides requested tray action");
+    require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
+            "enable tray translation");
+    controller.setMenuOptions(translationMenu);
+    require(actionForId(selectedTextId)->isVisible(),
+            "enabled translation feature exposes requested tray action");
+    require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(false),
+            "disable tray translation");
+    controller.setMenuOptions(translationMenu);
+    require(!actionForId(selectedTextId)->isVisible(),
+            "disabling translation hides tray action again");
     const QStringList defaultMenuOptions = snow_shot::storage::TraySettings().menuOptions();
     controller.setMenuOptions(defaultMenuOptions);
     const QList<QAction*> defaultVisibleActions = visibleActions();

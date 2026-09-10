@@ -349,9 +349,22 @@ void widgetContracts(QApplication& application) {
         auto* row = widget->findChild<QWidget*>(QStringLiteral("customAiModelRow:") + original.id);
         require(row != nullptr, "saved model has a list row");
         auto* visionTag = row->findChild<AdTag*>();
+        auto* modelName = row->findChild<QLabel*>();
         require(visionTag != nullptr && visionTag->text() == QStringLiteral("Vision") &&
-                    visionTag->x() > row->findChild<QLabel*>()->x(),
-                "vision models display a tag to the right of the title");
+                    visionTag->x() ==
+                        modelName->geometry().right() + 1 + row->layout()->spacing() &&
+                    modelName->width() <= modelName->sizeHint().width(),
+                "vision badge sits immediately after the model name at its natural width");
+        modelName->setText(QString(200, u'W'));
+        flush();
+        require(modelName->width() < modelName->sizeHint().width() &&
+                    visionTag->geometry().right() < row->width() &&
+                    row->findChild<AdButton*>(QStringLiteral("copy:") + original.id)
+                            ->geometry()
+                            .right() < row->width(),
+                "long model names shrink to keep the vision badge and actions inside the row");
+        modelName->setText(original.name);
+        flush();
         require(add->y() > row->y() && add->width() == row->width(),
                 "add action spans the list beneath model cards");
         for (const auto& action :

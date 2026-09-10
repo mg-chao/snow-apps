@@ -364,6 +364,16 @@ bool ShortcutSettings::setOpenSettings(const QStringList& shortcuts) const {
     return setShortcutValue(QStringLiteral("global_shortcuts/open_settings"), shortcuts);
 }
 
+bool ExtendedFeaturesSettings::translationPageEnabled() const {
+    return cache()
+        .value(QStringLiteral("extended_features/translation_page_enabled"))
+        .toBool(false);
+}
+
+bool ExtendedFeaturesSettings::setTranslationPageEnabled(bool enabled) const {
+    return cache().setValue(QStringLiteral("extended_features/translation_page_enabled"), enabled);
+}
+
 QStringList ShortcutSettings::translateSelectedText() const {
     return shortcutValue(QStringLiteral("global_shortcuts/translate_selected_text"));
 }

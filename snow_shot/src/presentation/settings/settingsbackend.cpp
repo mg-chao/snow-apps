@@ -394,6 +394,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::PinToScreenSettings().automaticTextRecognition();
     case SettingsSwitchBinding::PinAutoResizeWindow:
         return storage::PinToScreenSettings().autoResizeWindow();
+    case SettingsSwitchBinding::TranslationPageEnabled:
+        return storage::ExtendedFeaturesSettings().translationPageEnabled();
     case SettingsSwitchBinding::OriginalImageTranslation:
         return storage::ScreenshotTranslationSettings().originalImageTranslationEnabled();
     case SettingsSwitchBinding::ScreenRecordingHideToolbar:
@@ -461,6 +463,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::PinAutoResizeWindow) {
         return storage::PinToScreenSettings().setAutoResizeWindow(value);
     }
+    if (binding == SettingsSwitchBinding::TranslationPageEnabled) {
+        return storage::ExtendedFeaturesSettings().setTranslationPageEnabled(value);
+    }
     if (binding == SettingsSwitchBinding::OriginalImageTranslation) {
         return storage::ScreenshotTranslationSettings().setOriginalImageTranslationEnabled(value);
     }
@@ -496,6 +501,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::SaveRecognitionResultAsImage:
     case SettingsSwitchBinding::PinAutomaticTextRecognition:
     case SettingsSwitchBinding::PinAutoResizeWindow:
+    case SettingsSwitchBinding::TranslationPageEnabled:
     case SettingsSwitchBinding::OriginalImageTranslation:
     case SettingsSwitchBinding::ScreenRecordingHideToolbar:
     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:

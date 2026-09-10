@@ -1907,6 +1907,24 @@ QVector<SettingsPageDefinition> builtInPages() {
                 SettingsCustomDefinition{SettingsCustomRenderer::CustomAiModels}}}}},
         },
         {
+            QStringLiteral("extended-features"),
+            QStringLiteral("/settings/extended-features"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Extended Features Settings")),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Extended Features Settings")),
+            {{QStringLiteral("translation"),
+              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Translation")),
+              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Translation")),
+              SettingsSectionReset::None,
+              {switchItem(
+                  QStringLiteral("extended-features.translation-page"),
+                  QT_TRANSLATE_NOOP("SettingsCatalog", "Translation Page"),
+                  QT_TRANSLATE_NOOP(
+                      "SettingsCatalog",
+                      "Enable the Translation page and the Translate Selected Text shortcut."),
+                  QStringLiteral("extended_features/translation_page_enabled"),
+                  SettingsSwitchBinding::TranslationPageEnabled)}}},
+        },
+        {
             QString::fromLatin1(SYSTEM_PAGE_ID),
             QStringLiteral("/settings/systemSettings"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "System settings")),
@@ -2066,6 +2084,11 @@ QVector<SettingsNavigationNode> builtInNavigation() {
             QStringLiteral("nav.api-configuration"),
             QStringLiteral("api-configuration"),
             []() { return outlined_icons::Setting(); },
+        },
+        {
+            QStringLiteral("nav.extended-features"),
+            QStringLiteral("extended-features"),
+            []() { return outlined_icons::Function(); },
         },
         {
             QStringLiteral("nav.system-settings"),
@@ -2768,6 +2791,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::PinAutoResizeWindow:
                         expectedKey = QStringLiteral("pin_to_screen/auto_resize_window");
+                        break;
+                    case SettingsSwitchBinding::TranslationPageEnabled:
+                        expectedKey = QStringLiteral("extended_features/translation_page_enabled");
                         break;
                     case SettingsSwitchBinding::OriginalImageTranslation:
                         expectedKey =

@@ -4,6 +4,9 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 
+#include "snow_shot/presentation/components/settingscustomwidget.h"
+
+#include <QAbstractButton>
 #include <QApplication>
 #include <QDir>
 #include <QHash>
@@ -70,6 +73,41 @@ void selectedTextShortcutSettings() {
         manager.initialize();
         require(manager.state(action).status == GlobalShortcutStatus::Unset,
                 "unassigned action does not register a native shortcut");
+        require(!storage::ExtendedFeaturesSettings().translationPageEnabled(),
+                "translation page defaults off");
+        require(!session.state(QStringLiteral("quick.translate-selected-text")).visible,
+                "selected text shortcut is hidden while disabled");
+        require(tray.setMenuOptions(menuWithTranslation),
+                "preserve selected translation tray preference");
+        QCoreApplication::processEvents();
+        const auto& registry = settings::builtInSettingsRegistry();
+        std::unique_ptr<SettingsCustomWidget> trayWidget(createSettingsCustomWidget(
+            settings::SettingsCustomRenderer::TrayMenuOptions, registry,
+            *registry.field(QStringLiteral("tray.menu-options"))->definition, session));
+        auto* translationCheckbox = trayWidget->findChild<QAbstractButton*>(
+            QStringLiteral("settings-tray-menu-option-quick.translate-selected-text"));
+        auto* screenshotCheckbox = trayWidget->findChild<QAbstractButton*>(
+            QStringLiteral("settings-tray-menu-option-quick.screenshot"));
+        require(translationCheckbox != nullptr && screenshotCheckbox != nullptr &&
+                    translationCheckbox->isHidden() && translationCheckbox->isChecked(),
+                "disabled tray customization hides translation but retains its checked preference");
+        screenshotCheckbox->setChecked(!screenshotCheckbox->isChecked());
+        require(tray.menuOptions().contains(menuId),
+                "editing another tray option preserves the hidden translation preference");
+        manager.setShortcuts(action, keys);
+        require(persisted.translateSelectedText() == keys &&
+                    !input->registrations.values().contains(keys.first()),
+                "disabled feature preserves configured keys without native registration");
+        require(
+            backend.applySwitchValue(settings::SettingsSwitchBinding::TranslationPageEnabled, true),
+            "enable translation page through settings backend");
+        QCoreApplication::processEvents();
+        require(!translationCheckbox->isHidden() && translationCheckbox->isChecked(),
+                "live enabling restores the selected tray customization checkbox");
+        require(tray.setMenuOptions(defaultMenu),
+                "restore tray configuration after feature checks");
+        require(session.state(QStringLiteral("quick.translate-selected-text")).visible,
+                "enabling feature reveals shortcut controls");
         require(session.applyShortcuts(action, keys) && persisted.translateSelectedText() == keys &&
                     manager.state(action).status == GlobalShortcutStatus::Registered,
                 "editing selected text bindings updates storage and native registrations");
@@ -77,10 +115,21 @@ void selectedTextShortcutSettings() {
         QObject::connect(
             &manager, &GlobalShortcutManager::activated, &manager,
             [&](GlobalShortcutAction activated) { activations += activated == action; });
-        const int id = input->registrations.key(keys.first());
+        int id = input->registrations.key(keys.first());
         require(id != 0, "selected text shortcut has a native registration");
         input->handler(id);
         require(activations == 1, "native activation dispatches selected text translation");
+        require(storage::ExtendedFeaturesSettings().setTranslationPageEnabled(false),
+                "disable feature live");
+        input->handler(id);
+        require(activations == 1 && !input->registrations.values().contains(keys.first()) &&
+                    persisted.translateSelectedText() == keys,
+                "disable unregisters and suppresses stale activation without deleting keys");
+        require(storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
+                "re-enable feature live");
+        require(input->registrations.values().contains(keys.first()),
+                "re-enable restores native registration");
+        id = input->registrations.key(keys.first());
         manager.setGlobalHotkeysEnabled(false);
         input->handler(id);
         require(activations == 1, "disabled global hotkeys suppress selected text translation");
@@ -264,6 +313,8 @@ int main(int argc, char** argv) {
     require(applicationStorage.initialize({executable, temporary.path(), 60000}).success &&
                 storage::PinToScreenSettings().doubleClickAction() == QStringLiteral("close"),
             "pinned double-click action must survive a storage restart");
+    require(storage::ExtendedFeaturesSettings().translationPageEnabled(),
+            "feature opt-in survives storage restart");
     require(storage::ShortcutSettings().translateSelectedText() == selectedTextKeys,
             "both selected text shortcut bindings survive a storage restart");
     require(storage::PinToScreenSettings().middleMouseButtonAction() == QStringLiteral("none"),

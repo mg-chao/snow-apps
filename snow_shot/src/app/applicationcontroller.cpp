@@ -293,6 +293,16 @@ class ApplicationController::Impl {
     }
 
     void applyRuntimeConfiguration(const QJsonValue& value, const QString& key) {
+        if (key == QStringLiteral("extended_features/translation_page_enabled")) {
+            if (!storage::ExtendedFeaturesSettings().translationPageEnabled() &&
+                selectedTextTranslationController) {
+                selectedTextTranslationController->shutdown();
+                selectedTextTranslationController.reset();
+            }
+            systemTray.setMenuOptions(
+                stringList(storage::ApplicationStorage::instance().configuration().value(
+                    kTrayMenuOptionsKey)));
+        }
         if (key == u"updates/mode" && updates != nullptr) {
             updates->setMode(value.toString());
         } else if (key == u"network/proxy" && updates != nullptr) {
@@ -426,7 +436,9 @@ class ApplicationController::Impl {
             showInterfaceSettings();
             break;
         case presentation::GlobalShortcutAction::TranslateSelectedText:
-            ensureSelectedTextTranslationController().capture();
+            if (storage::ExtendedFeaturesSettings().translationPageEnabled()) {
+                ensureSelectedTextTranslationController().capture();
+            }
             break;
         case presentation::GlobalShortcutAction::PinClipboardContent:
             if (ScreenshotController* controller = ensureScreenshotController()) {
@@ -440,10 +452,13 @@ class ApplicationController::Impl {
         if (!selectedTextTranslationController) {
             selectedTextTranslationController =
                 std::make_unique<presentation::SelectedTextTranslationController>();
-            QObject::connect(
-                selectedTextTranslationController.get(),
-                &presentation::SelectedTextTranslationController::textReady, &q,
-                [this](const QString& text) { ensureMainWindow().showTranslation(text); });
+            QObject::connect(selectedTextTranslationController.get(),
+                             &presentation::SelectedTextTranslationController::textReady, &q,
+                             [this](const QString& text) {
+                                 if (storage::ExtendedFeaturesSettings().translationPageEnabled()) {
+                                     ensureMainWindow().showTranslation(text);
+                                 }
+                             });
             QObject::connect(selectedTextTranslationController.get(),
                              &presentation::SelectedTextTranslationController::operationFailed,
                              &systemTray,

@@ -121,6 +121,7 @@ enum class SettingsSwitchBinding {
     PinAutomaticTextRecognition,
     PinAutoResizeWindow,
     OriginalImageTranslation,
+    TranslationPageEnabled,
     ScreenRecordingHideToolbar,
     DisableHotkeysOnFocusedFullscreen,
     AutoStartAtBoot,

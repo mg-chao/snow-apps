@@ -9,6 +9,9 @@
 #include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
+
 #include <QEvent>
 #include <QPainter>
 #include <QStackedWidget>
@@ -36,6 +39,20 @@ ContentCardWidget::ContentCardWidget(
 
     cardLayout->addWidget(m_stack, 1);
     navigateTo(m_registry.defaultLocation());
+    auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
+    if (!applicationStorage.isInitialized()) {
+        static_cast<void>(applicationStorage.initialize());
+    }
+    connect(&applicationStorage.configuration(),
+            &snow_shot::storage::ConfigurationStore::valueChanged, this,
+            [this](const QString& key, const QJsonValue&) {
+                if (key == QStringLiteral("extended_features/translation_page_enabled") &&
+                    m_currentLocation.pageId == QStringLiteral("translation") &&
+                    !snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled()) {
+                    navigateTo(
+                        {QStringLiteral("extended-features"), QStringLiteral("translation"), {}});
+                }
+            });
 
     const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
     connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
@@ -81,7 +98,12 @@ void ContentCardWidget::activateSection(const QString& sectionId) {
 
 void ContentCardWidget::navigateTo(
     const snow_shot::presentation::settings::SettingsLocation& requested) {
-    const auto resolved = m_registry.catalog().resolveLocation(requested);
+    auto resolved = m_registry.catalog().resolveLocation(requested);
+    if (resolved.pageId == QStringLiteral("translation") &&
+        !snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled()) {
+        resolved = m_registry.catalog().resolveLocation(
+            {QStringLiteral("extended-features"), QStringLiteral("translation"), {}});
+    }
     const auto* pageDefinition = m_registry.catalog().page(resolved.pageId);
     if (pageDefinition == nullptr || m_stack == nullptr) {
         return;

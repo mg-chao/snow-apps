@@ -11,6 +11,12 @@
 #include <QMetaType>
 
 namespace snow_shot::storage {
+class ExtendedFeaturesSettings final {
+  public:
+    [[nodiscard]] bool translationPageEnabled() const;
+    bool setTranslationPageEnabled(bool enabled) const;
+};
+
 class TextRecognitionSettings final {
   public:
     [[nodiscard]] bool saveRecognitionResultAsImage() const;

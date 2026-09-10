@@ -145,6 +145,8 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
     {QStringLiteral("screenshot_translation/model"), QString(), ConfigurationValueKind::String},
     {QStringLiteral("screenshot_conversion/vision_model"), QString(),
      ConfigurationValueKind::String},
+    {QStringLiteral("extended_features/translation_page_enabled"), false,
+     ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot_translation/original_image_translation"), true,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot_translation/layout_processing"),

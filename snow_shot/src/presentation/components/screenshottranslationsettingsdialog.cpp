@@ -234,9 +234,20 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
     });
     QObject::connect(modal, &AdModal::finished, modal, &QObject::deleteLater);
     retranslate();
-    modal->open();
     sync();
     service.refreshModels();
+    // Resolve the initial visibility and nested form hints before sizing the centered window.
+    body->ensurePolished();
+    const auto children = body->findChildren<QWidget*>();
+    for (auto it = children.crbegin(); it != children.crend(); ++it) {
+        (*it)->ensurePolished();
+        if ((*it)->layout() != nullptr)
+            (*it)->layout()->activate();
+    }
+    layout->activate();
+    modal->open();
+    if (modal->acceptButton() != nullptr)
+        modal->acceptButton()->setEnabled(!service.models().isEmpty());
     return modal;
 }
 } // namespace snow_shot::presentation
