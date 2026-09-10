@@ -1,3 +1,5 @@
+#include "snow_shot/presentation/windowshortcutmanager.h"
+#include "close_release_native_test_support.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_shot/presentation/directcapturehistory.h"
 #include "snow_shot/presentation/screenshothistoryservice.h"
@@ -79,6 +81,11 @@ QImage testRenderOcrFilteredImage(const QImage& source, const QRectF& canvasRect
 
 class NoopOverlayEventSink final : public ScreenshotOverlayEventSink {
   public:
+    ScreenshotOverlayRightClickResult rightClickResult = ScreenshotOverlayRightClickResult::Ignored;
+    std::function<void()> cancel = [] {};
+    void completeRightClickCancellation() override {
+        cancel();
+    }
     bool shouldHandleOverlayMouseEvent(const ScreenshotOverlayWindow*, const QPointF&,
                                        bool) const override {
         return false;
@@ -90,8 +97,9 @@ class NoopOverlayEventSink final : public ScreenshotOverlayEventSink {
 
     void handleOverlayMouseRelease(ScreenshotOverlayWindow*, const QPointF&) override {}
 
-    bool handleOverlayRightClick(ScreenshotOverlayWindow*, const QPointF&) override {
-        return false;
+    ScreenshotOverlayRightClickResult handleOverlayRightClick(ScreenshotOverlayWindow*,
+                                                              const QPointF&) override {
+        return rightClickResult;
     }
 
     bool handleOverlayWheel(ScreenshotOverlayWindow*, const QPointF&, const QPoint&,
@@ -3691,10 +3699,79 @@ void resettingDisplaySessionEditingStateResetsEveryCanvas() {
                 reusableCanvas->canvasTool() == SnowCanvasTool::Select,
             "resetting display editing state must include active and reusable canvases");
 }
+void overlayRightClickClosesOnRelease(bool native = false) {
+    using namespace snow_shot::presentation;
+    NoopOverlayEventSink sink;
+    sink.rightClickResult = ScreenshotOverlayRightClickResult::CancelCapture;
+    ScreenshotOverlayWindow overlay(sink, new SnowCanvasWidget);
+    overlay.resize(500, 350);
+    overlay.move(150, 150);
+    QImage background(500, 350, QImage::Format_ARGB32_Premultiplied);
+    background.fill(Qt::white);
+    overlay.setScreenshotImage(background, QRectF(background.rect()));
+    require(overlay.canvas()->setViewportCamera(250.0, 175.0, 1.0),
+            "initialize screenshot camera for native hit testing");
+    sink.cancel = [&] { overlay.hide(); };
+    overlay.show();
+    QApplication::processEvents();
+#ifdef Q_OS_WIN
+    if (native) {
+        close_release_native_test::Receiver receiver;
+        receiver.verify(overlay, Qt::RightButton);
+        overlay.show();
+        WindowShortcutManager manager;
+        manager.addScopeWindow(&overlay);
+        WindowShortcutManager::Binding cancel;
+        cancel.id = QStringLiteral("overlay.cancel.native-test");
+        cancel.keyCombinations = {QKeyCombination(Qt::NoModifier, Qt::Key_Escape)};
+        cancel.activationTrigger = WindowShortcutManager::Binding::ActivationTrigger::Release;
+        cancel.activate = [&](const auto&) {
+            overlay.hide();
+            return true;
+        };
+        require(manager.addBinding(&overlay, cancel) != 0, "register overlay native Escape");
+        receiver.verify(overlay);
+        return;
+    }
+#else
+    Q_UNUSED(native)
+#endif
+    auto* canvas = overlay.canvas();
+    QMouseEvent press(QEvent::MouseButtonPress, QPointF(50, 50), QPointF(200, 200), Qt::RightButton,
+                      Qt::RightButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &press);
+    QApplication::processEvents();
+    require(overlay.isVisible(), "right press must leave screenshot overlay visible");
+    QMouseEvent release(QEvent::MouseButtonRelease, QPointF(-10, -10), QPointF(140, 140),
+                        Qt::RightButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&overlay, &release);
+    require(overlay.isVisible(), "close must wait until release dispatch finishes");
+    QApplication::processEvents();
+    require(!overlay.isVisible(), "right release must close screenshot overlay");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+#ifdef Q_OS_WIN
+    if (close_release_native_test::receiverRequested()) {
+        return close_release_native_test::runReceiver();
+    }
+#endif
+
+    if (application.arguments().contains(QStringLiteral("--close-release-only")) ||
+        application.arguments().contains(QStringLiteral("--close-release-native"))) {
+#ifdef Q_OS_WIN
+        return close_release_native_test::run([&] {
+            overlayRightClickClosesOnRelease(
+                application.arguments().contains(QStringLiteral("--close-release-native")));
+        });
+#else
+        overlayRightClickClosesOnRelease();
+        return 0;
+#endif
+    }
     if (application.arguments().contains(QStringLiteral("--direct-capture-history-rendering"))) {
         directCaptureHistoryUsesTheEditorCoordinateSystem();
         return 0;

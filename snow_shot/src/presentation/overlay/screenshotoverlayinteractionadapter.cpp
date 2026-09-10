@@ -46,12 +46,19 @@ void ScreenshotOverlayEventAdapter::handleOverlayMouseRelease(ScreenshotOverlayW
     }
 }
 
-bool ScreenshotOverlayEventAdapter::handleOverlayRightClick(ScreenshotOverlayWindow* overlay,
-                                                            const QPointF& localPosition) {
+ScreenshotOverlayRightClickResult
+ScreenshotOverlayEventAdapter::handleOverlayRightClick(ScreenshotOverlayWindow* overlay,
+                                                       const QPointF& localPosition) {
     if (m_inputHandler == nullptr) {
-        return false;
+        return ScreenshotOverlayRightClickResult::Ignored;
     }
     return m_inputHandler->handleRightClick(overlay, localPosition);
+}
+
+void ScreenshotOverlayEventAdapter::completeRightClickCancellation() {
+    if (m_inputHandler) {
+        m_inputHandler->completeRightClickCancellation();
+    }
 }
 
 void ScreenshotOverlayEventAdapter::handleUnhandledLeftDoubleClick() {

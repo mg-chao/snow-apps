@@ -859,7 +859,8 @@ void historyKeysOnlyWorkDuringSelectionStates() {
     require(selectionConfirmedCount == 1,
             "confirming manual selection did not notify post-selection actions");
 
-    require(handler.handleRightClick(nullptr, QPointF(4, 4)),
+    require((handler.handleRightClick(nullptr, QPointF(4, 4)) ==
+             ScreenshotOverlayRightClickResult::Handled),
             "right-click did not handle manual selection");
     require(returnToCurrentCount == 1,
             "right-click did not check for an active historical screenshot");
@@ -867,7 +868,8 @@ void historyKeysOnlyWorkDuringSelectionStates() {
             "ordinary right-click did not return to intelligent selection");
 
     hasCurrentScreenshot = true;
-    require(handler.handleRightClick(nullptr, QPointF(4, 4)),
+    require((handler.handleRightClick(nullptr, QPointF(4, 4)) ==
+             ScreenshotOverlayRightClickResult::Handled),
             "right-click did not handle historical selection");
     require(returnToCurrentCount == 2,
             "historical right-click did not return to the current screenshot");
@@ -1052,7 +1054,8 @@ void manualSelectionUsesSharedMarqueeTransaction() {
     handler.handleMousePress(nullptr, QPointF(10, 10));
     handler.handleMouseMove(nullptr, QPointF(30, 40));
     handler.handleMouseRelease(nullptr, QPointF(30, 40));
-    require(handler.handleRightClick(nullptr, {}) && handler.handleWheel(nullptr, {}, {0, 120}, {}),
+    require((handler.handleRightClick(nullptr, {}) == ScreenshotOverlayRightClickResult::Handled) &&
+                handler.handleWheel(nullptr, {}, {0, 120}, {}),
             "external drags must consume ordinary right-click and wheel commands");
     handler.handleUnhandledMiddleClick();
     handler.handleUnhandledLeftDoubleClick();
@@ -1820,6 +1823,7 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
     ScreenshotInteractionState interaction;
     interaction.confirmSelection();
     QWidget shortcutWindow;
+    shortcutWindow.show();
     QWidget colorPickerToolWindow;
     snow_shot::presentation::WindowShortcutManager shortcutManager;
     shortcutManager.addScopeWindow(&shortcutWindow);
@@ -1945,6 +1949,7 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
 
     require(dispatchShortcut(shortcutWindow, Qt::Key_F, Qt::ControlModifier) &&
                 dispatchShortcut(shortcutWindow, Qt::Key_Escape) &&
+                dispatchShortcutRelease(shortcutWindow, Qt::Key_Escape) &&
                 dispatchShortcut(shortcutWindow, Qt::Key_C, Qt::ControlModifier) &&
                 dispatchShortcut(shortcutWindow, Qt::Key_Z, Qt::ControlModifier) &&
                 dispatchShortcut(shortcutWindow, Qt::Key_Y, Qt::ControlModifier) &&
@@ -2007,12 +2012,13 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
             "custom toolbar bindings must remove every default shortcut");
     require(dispatchShortcut(shortcutWindow, Qt::Key_F, Qt::AltModifier) &&
                 dispatchShortcut(shortcutWindow, Qt::Key_Escape, Qt::AltModifier) &&
+                dispatchShortcutRelease(shortcutWindow, Qt::Key_Escape) &&
                 dispatchShortcut(shortcutWindow, Qt::Key_C, Qt::AltModifier) &&
                 dispatchShortcut(shortcutWindow, Qt::Key_Z, Qt::AltModifier) &&
                 dispatchShortcut(shortcutWindow, Qt::Key_Y, Qt::AltModifier) &&
                 pinActivations == 2 && cancelActivations == 2 && copyActivations == 2 &&
                 undoActivations == 2 && redoActivations == 2,
-            "custom toolbar bindings must invoke the same commands immediately");
+            "custom toolbar bindings must invoke commands at their configured phase");
 
     // Recognition presents an independent top-level surface, but it remains
     // part of the screenshot session. Screenshot and drawing commands must
@@ -2030,6 +2036,7 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
     shortcutManager.addScopeWindow(&recognitionWindow);
     require(dispatchShortcut(recognitionWindow, Qt::Key_F, Qt::AltModifier) &&
                 dispatchShortcut(recognitionWindow, Qt::Key_Escape, Qt::AltModifier) &&
+                dispatchShortcutRelease(recognitionWindow, Qt::Key_Escape) &&
                 dispatchShortcut(recognitionWindow, Qt::Key_C, Qt::AltModifier) &&
                 pinActivations == 3 && cancelActivations == 3 && copyActivations == 3,
             "screenshot commands must remain available from a focused recognition surface");
@@ -2047,6 +2054,31 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
             "restored cursor shortcut was not handled");
     require(cursorMoves == QVector<PhysicalCursorDirection>{PhysicalCursorDirection::Up},
             "restored cursor shortcut must use the persisted configuration");
+}
+
+void rightClickSeparatesDismissalFromSelectionChanges() {
+    ScreenshotCaptureState captureState;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    interaction.enterOverlayVisible(true);
+    int cancels = 0;
+    ScreenshotOverlayInputActions actions;
+    actions.cancelCapture = [&] { ++cancels; };
+    ScreenshotOverlayInputHandler handler(
+        {captureState, interaction, selection, intelligent, geometry, displays, actions});
+    require(handler.handleRightClick(nullptr, {}) ==
+                    ScreenshotOverlayRightClickResult::CancelCapture &&
+                cancels == 0,
+            "intelligent selection right press must only request deferred cancellation");
+    handler.completeRightClickCancellation();
+    require(cancels == 1, "release completion must execute capture cancellation");
+    handler.armCanvasColorSampling();
+    require(handler.handleRightClick(nullptr, {}) == ScreenshotOverlayRightClickResult::Handled &&
+                cancels == 1,
+            "color sampling cancellation must not dismiss the overlay");
 }
 
 void scrollingCaptureRoutesEveryToolbarShortcut() {
@@ -2074,6 +2106,7 @@ void scrollingCaptureRoutesEveryToolbarShortcut() {
     ScreenshotIntelligentSelectionModel intelligent;
     ScreenshotInteractionState interaction;
     QWidget window;
+    window.show();
     snow_shot::presentation::WindowShortcutManager manager;
     manager.addScopeWindow(&window);
     QStringList dispatched;
@@ -2101,12 +2134,25 @@ void scrollingCaptureRoutesEveryToolbarShortcut() {
         require(settings.setAllShortcutsAtomic(shortcuts), "failed to bind toolbar command");
         interaction.enterScrollingCapture();
         dispatched.clear();
-        require(dispatchShortcut(window, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier) &&
-                    dispatched == QStringList{command},
+        require(dispatchShortcut(window, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier),
+                "toolbar command must accept its trigger");
+        if (command == QStringLiteral("cancel_screenshot")) {
+            require(dispatched.isEmpty(), "screenshot cancel must wait for release");
+            require(dispatchShortcutRelease(window, Qt::Key_F12),
+                    "cancel release must be consumed");
+        }
+        require(dispatched == QStringList{command},
                 "every scrolling toolbar shortcut must invoke the common command exactly once");
         commandEnabled = false;
-        require(!dispatchShortcut(window, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier) &&
-                    dispatched.size() == 1,
+        const bool accepted =
+            dispatchShortcut(window, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier);
+        if (command == QStringLiteral("cancel_screenshot")) {
+            require(accepted && dispatchShortcutRelease(window, Qt::Key_F12),
+                    "a reserved release stays consumed even when the action declines");
+        } else {
+            require(!accepted, "a declined press action must remain unhandled");
+        }
+        require(dispatched.size() == 1,
                 "a declined toolbar command must not be replaced by a shortcut implementation");
         commandEnabled = true;
         inputAllowed = false;
@@ -2353,8 +2399,9 @@ void canvasColorSamplingConsumesOneCanvasClick() {
     handler.resetTransientShortcuts();
 
     handler.armCanvasColorSampling();
-    require(handler.handleRightClick(nullptr, QPointF(12, 16)) && sampleCount == 1 &&
-                cancelCount == 1,
+    require((handler.handleRightClick(nullptr, QPointF(12, 16)) ==
+             ScreenshotOverlayRightClickResult::Handled) &&
+                sampleCount == 1 && cancelCount == 1,
             "right-click must cancel an armed canvas sampler without sampling");
     handler.armCanvasColorSampling();
     handler.resetTransientShortcuts();
@@ -2417,6 +2464,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (QCoreApplication::arguments().contains(QStringLiteral("--shortcut-input-only"))) {
+        rightClickSeparatesDismissalFromSelectionChanges();
         scrollingCaptureRoutesEveryToolbarShortcut();
         externalSelectionSupportsHeldShortcuts();
         colorCopyEndsCaptureOnlyAfterSuccessfulCopy();

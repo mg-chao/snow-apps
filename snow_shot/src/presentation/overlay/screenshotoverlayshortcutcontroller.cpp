@@ -170,6 +170,9 @@ struct ScreenshotOverlayShortcutController::Impl {
         for (const QString& actionId : screenshotIds) {
             ShortcutManager::Binding binding;
             binding.id = QStringLiteral("screenshot.configured.") + actionId;
+            if (actionId == QStringLiteral("cancel_screenshot")) {
+                binding.activationTrigger = ShortcutManager::Binding::ActivationTrigger::Release;
+            }
             binding.priority = ShortcutManager::StandardPriority::ScreenshotShortcut;
             binding.autoRepeat = actionId.startsWith(QStringLiteral("move_cursor_"));
             binding.canActivate = [this, actionId](const auto&) {

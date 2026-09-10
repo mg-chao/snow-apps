@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTOVERLAYINPUTHANDLER_H
 
 #include "snow_shot/platform/physicalcursor.h"
+#include "snow_shot/presentation/screenshotoverlayeventsink.h"
 #include "snow_shot/presentation/screenshotselectiongeometry.h"
 
 #include <QPoint>
@@ -141,8 +142,9 @@ class ScreenshotOverlayInputHandler final {
                                               bool leftButtonActive) const;
     void handleMouseMove(ScreenshotOverlayWindow* overlay, const QPointF& localPosition);
     void handleMouseRelease(ScreenshotOverlayWindow* overlay, const QPointF& localPosition);
-    [[nodiscard]] bool handleRightClick(ScreenshotOverlayWindow* overlay,
-                                        const QPointF& localPosition);
+    void completeRightClickCancellation();
+    [[nodiscard]] ScreenshotOverlayRightClickResult
+    handleRightClick(ScreenshotOverlayWindow* overlay, const QPointF& localPosition);
     void handleUnhandledLeftDoubleClick();
     void handleUnhandledMiddleClick();
     [[nodiscard]] bool handleWheel(ScreenshotOverlayWindow* overlay, const QPointF& localPosition,

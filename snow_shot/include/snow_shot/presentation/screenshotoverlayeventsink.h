@@ -7,6 +7,8 @@
 
 class ScreenshotOverlayWindow;
 
+enum class ScreenshotOverlayRightClickResult { Ignored, Handled, CancelCapture };
+
 class ScreenshotOverlayEventSink {
   public:
     virtual ~ScreenshotOverlayEventSink() = default;
@@ -20,8 +22,9 @@ class ScreenshotOverlayEventSink {
                                         const QPointF& localPosition) = 0;
     virtual void handleOverlayMouseRelease(ScreenshotOverlayWindow* overlay,
                                            const QPointF& localPosition) = 0;
-    [[nodiscard]] virtual bool handleOverlayRightClick(ScreenshotOverlayWindow* overlay,
-                                                       const QPointF& localPosition) = 0;
+    [[nodiscard]] virtual ScreenshotOverlayRightClickResult
+    handleOverlayRightClick(ScreenshotOverlayWindow* overlay, const QPointF& localPosition) = 0;
+    virtual void completeRightClickCancellation() {}
     // Optional completion-gesture notifications. Lightweight event sinks can
     // keep the defaults when they only handle the mouse and keyboard surface.
     virtual void handleUnhandledLeftDoubleClick() {}

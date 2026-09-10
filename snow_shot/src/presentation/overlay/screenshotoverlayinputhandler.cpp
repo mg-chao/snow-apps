@@ -425,39 +425,43 @@ void ScreenshotOverlayInputHandler::finishSelectionDrag(ScreenshotOverlayWindow*
     m_context.actions.updateColorPickerForOverlay(overlay, localPosition);
 }
 
-bool ScreenshotOverlayInputHandler::handleRightClick(ScreenshotOverlayWindow* overlay,
-                                                     const QPointF& localPosition) {
+ScreenshotOverlayRightClickResult
+ScreenshotOverlayInputHandler::handleRightClick(ScreenshotOverlayWindow* overlay,
+                                                const QPointF& localPosition) {
     if (m_externalDragActive)
-        return true;
+        return ScreenshotOverlayRightClickResult::Handled;
     if (m_canvasColorSamplingArmed) {
         cancelCanvasColorSampling();
-        return true;
+        return ScreenshotOverlayRightClickResult::Handled;
     }
     if (recognitionTool(m_context.interaction.activeTool())) {
-        return true;
+        return ScreenshotOverlayRightClickResult::Handled;
     }
     if (!m_context.interaction.moveToolActive()) {
-        return false;
+        return ScreenshotOverlayRightClickResult::Ignored;
     }
 
     const QPointF virtualPosition = virtualPositionForOverlay(overlay, localPosition);
     const QPoint physicalPoint = physicalPositionForCanvasPoint(virtualPosition);
     if (m_context.interaction.intelligentSelecting()) {
-        resetTransientShortcuts();
-        m_context.actions.cancelCapture();
-        return true;
+        return ScreenshotOverlayRightClickResult::CancelCapture;
     }
 
     if (m_context.interaction.manualSelecting() || m_context.interaction.movingSelection()) {
         resetTransientShortcuts();
         if (m_context.actions.returnToCurrentScreenshot()) {
-            return true;
+            return ScreenshotOverlayRightClickResult::Handled;
         }
         m_context.actions.returnToIntelligentSelection(physicalPoint);
-        return true;
+        return ScreenshotOverlayRightClickResult::Handled;
     }
 
-    return false;
+    return ScreenshotOverlayRightClickResult::Ignored;
+}
+
+void ScreenshotOverlayInputHandler::completeRightClickCancellation() {
+    resetTransientShortcuts();
+    m_context.actions.cancelCapture();
 }
 
 bool ScreenshotOverlayInputHandler::handleWheel(ScreenshotOverlayWindow* overlay,

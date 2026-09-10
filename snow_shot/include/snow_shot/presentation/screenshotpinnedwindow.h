@@ -11,6 +11,8 @@
 #include "snow_shot/storage/pinnedwindowtypes.h"
 
 #include <QByteArray>
+#include "snow_shot/presentation/mousereleaseactioncontroller.h"
+
 #include <QColor>
 #include <QImage>
 #include <QMap>
@@ -293,6 +295,7 @@ class ScreenshotPinnedWindow final : public QWidget {
 
     SnowCanvasRuntime m_runtime;
     std::unique_ptr<snow_shot::presentation::WindowShortcutManager> m_shortcutManager;
+    snow_shot::presentation::MouseReleaseActionController m_mouseReleaseAction;
     std::unique_ptr<screenshot_pinned_window_native::SystemMoveKeyboard> m_systemMoveKeyboard;
     std::unique_ptr<snow_shot::platform::PhysicalCursor> m_physicalCursor;
     QMap<QString, quint64> m_pinnedShortcutBindings;

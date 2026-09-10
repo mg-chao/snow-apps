@@ -43,6 +43,9 @@ ScreenRecordingShortcutController::ScreenRecordingShortcutController(
     for (auto action = recordingShortcuts.cbegin(); action != recordingShortcuts.cend(); ++action) {
         ShortcutManager::Binding binding;
         binding.id = QStringLiteral("recording.control.") + action.key();
+        if (action.key() == QStringLiteral("end_recording")) {
+            binding.activationTrigger = ShortcutManager::Binding::ActivationTrigger::Release;
+        }
         binding.priority = ShortcutManager::StandardPriority::WindowCommand;
         binding.canActivate = [this, actionId = action.key()](const auto& context) {
             return canActivate(context) &&

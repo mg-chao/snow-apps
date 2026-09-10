@@ -568,6 +568,10 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
     QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(cellEditor, &escape);
     processEditorClose();
+    QKeyEvent escapeRepeat(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier, QString(), true);
+    QApplication::sendEvent(editor, &escapeRepeat);
+    QKeyEvent escapeRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(editor, &escapeRelease);
     require(!editor->isEditingCell() && recognitionCancelCalls == 0,
             "Escape should cancel an active cell edit before reaching screenshot cancellation");
 
@@ -1057,7 +1061,11 @@ void qrContentsUseStrictRichTextLinksAndPreserveOrder() {
 
     QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(browser, &escape);
-    require(escape.isAccepted() && recognitionCancelCalls == 1,
+    require(escape.isAccepted() && recognitionCancelCalls == 0,
+            "Escape press must leave the recognition window open");
+    QKeyEvent escapeRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(browser, &escapeRelease);
+    require(escapeRelease.isAccepted() && recognitionCancelCalls == 1,
             "Escape should remain available while QR results have focus");
 
     window.clearQrContents();

@@ -555,16 +555,29 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     cancel.id = QStringLiteral("recognition.cancel");
     cancel.keyCombinations = {QKeyCombination(Qt::NoModifier, Qt::Key_Escape)};
     cancel.priority = ShortcutManager::StandardPriority::WindowCommand;
+    cancel.activationTrigger = ShortcutManager::Binding::ActivationTrigger::Release;
     cancel.canActivate = [this](const ShortcutManager::ActivationContext& context) {
-        return context.scopeWindow == this && isVisible();
+        return context.scopeWindow == this && isVisible() &&
+               (m_tableEditor == nullptr || !m_tableEditor->isEditingCell());
     };
     cancel.activate = [this](const auto&) {
-        if (m_tableEditor == nullptr || !m_tableEditor->cancelActiveEdit()) {
-            m_actions.handleCancel();
-        }
+        m_actions.handleCancel();
         return true;
     };
     static_cast<void>(m_shortcutManager->addBinding(this, std::move(cancel)));
+
+    ShortcutManager::Binding cancelEdit;
+    cancelEdit.id = QStringLiteral("recognition.cancel_edit");
+    cancelEdit.keyCombinations = {QKeyCombination(Qt::NoModifier, Qt::Key_Escape)};
+    cancelEdit.priority = ShortcutManager::StandardPriority::WindowCommand + 1;
+    cancelEdit.canActivate = [this](const auto& context) {
+        return context.scopeWindow == this && isVisible() && m_tableEditor &&
+               m_tableEditor->isEditingCell();
+    };
+    cancelEdit.activate = [this](const auto&) { return m_tableEditor->cancelActiveEdit(); };
+    cancelEdit.release = [](const auto&) { return true; };
+    cancelEdit.cancel = [] {};
+    static_cast<void>(m_shortcutManager->addBinding(this, std::move(cancelEdit)));
 
     const auto recognitionCommandsAllowed =
         [this](const ShortcutManager::ActivationContext& context) {
