@@ -90,12 +90,12 @@ function(snow_workspace_configure_options)
         if(_snow_workspace_qt_gui_text MATCHES
            "add_library\\(Qt6::Gui STATIC IMPORTED\\)")
             if(NOT _snow_workspace_qt_gui_text MATCHES
-               "QT_ENABLED_PRIVATE_FEATURES [^\"]*system_png")
+               "QT_ENABLED_PRIVATE_FEATURES \"[^\"]*system_png")
                 set(SNOW_IMAGE_LINK_PNG_DEPENDENCIES OFF CACHE BOOL
                     "Link the PNG dependency into the static Snow Image target." FORCE)
             endif()
             if(NOT _snow_workspace_qt_gui_text MATCHES
-               "QT_ENABLED_PRIVATE_FEATURES [^\"]*system_jpeg")
+               "QT_ENABLED_PRIVATE_FEATURES \"[^\"]*system_jpeg")
                 set(SNOW_IMAGE_LINK_JPEG_DEPENDENCIES OFF CACHE BOOL
                     "Link JPEG dependencies into the static Snow Image target." FORCE)
             endif()
