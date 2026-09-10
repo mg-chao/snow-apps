@@ -57,6 +57,42 @@ void selectionResizeModalUsesApplicationModality(ScreenshotSelectionResizeWorkfl
     flushEvents();
 }
 
+void resizingDoesNotReplacePreviousScreenshotSelection(
+    ScreenshotSelectionResizeWorkflow& workflow, ScreenshotSelectionSettingsStore& settingsStore) {
+    for (const bool hasPrevious : {false, true}) {
+        settingsStore.clear();
+        ScreenshotSelectionParams previous;
+        previous.selection = QRect(5, 10, 100, 80);
+        if (hasPrevious) {
+            settingsStore.setPreviousSelectionParams(previous);
+        }
+        QWidget owner;
+        ScreenshotSelectionResizeRequest request;
+        request.currentParams.selection = QRect(20, 30, 320, 180);
+        request.selectionBounds = QRect(0, 0, 1920, 1080);
+        request.ownerWindow = &owner;
+        bool applied = false;
+        require(workflow.open(&owner, request,
+                              [&](const ScreenshotSelectionParams& params) {
+                                  applied = params.selection == request.currentParams.selection;
+                              }),
+                "resize should open for an unexported selection");
+        auto* modal = owner.findChild<adqt::widgets::AdModal*>();
+        require(modal != nullptr && modal->acceptButton() != nullptr,
+                "resize should expose its confirmation action");
+        modal->acceptButton()->click();
+        flushEvents();
+        require(applied, "confirming resize should apply the current selection");
+        require(settingsStore.hasPreviousSelectionParams() == hasPrevious,
+                "resizing must not create a previous screenshot selection");
+        if (hasPrevious) {
+            require(settingsStore.previousSelectionParams() == previous,
+                    "resizing must preserve the previous exported selection");
+        }
+    }
+    settingsStore.clear();
+}
+
 void confirmedPresetCreationPersistsBeforeResizeCloses(
     ScreenshotSelectionResizeWorkflow& workflow, ScreenshotSelectionSettingsStore& settingsStore) {
     QWidget owner;
@@ -180,6 +216,7 @@ int main(int argc, char* argv[]) {
     ScreenshotSelectionResizeWorkflow workflow(settingsStore);
 
     selectionResizeModalUsesApplicationModality(workflow);
+    resizingDoesNotReplacePreviousScreenshotSelection(workflow, settingsStore);
     confirmedPresetCreationPersistsBeforeResizeCloses(workflow, settingsStore);
     presetCreateModalRetranslatesInPlace(workflow, settingsStore);
 

@@ -665,6 +665,8 @@ void ScreenshotHistoryService::scheduleWrite(ScreenshotHistoryEntry entry) {
     const QString id = draft.id;
     m_entries.prepend(placeholderRecord(draft));
     m_pendingWrites.push_back(PendingWrite{id, m_validationQueue->submit(std::move(draft))});
+    // Remember the exported snapshot, even if the live editor has since changed or closed.
+    m_context.selectionCommitted(entry.selection);
 }
 
 void ScreenshotHistoryService::reapCompletedWrites() {

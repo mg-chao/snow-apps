@@ -27,6 +27,8 @@ struct ScreenshotHistoryServiceContext {
     std::function<void()> presentationChanged = []() {};
     std::function<void(bool)> loadingStateChanged = [](bool) {};
     std::function<void()> intelligentSelectionRequested = []() {};
+    std::function<void(const ScreenshotSelectionParams&)> selectionCommitted =
+        [](const ScreenshotSelectionParams&) {};
 };
 
 class ScreenshotHistoryService final : public QObject {

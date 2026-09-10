@@ -378,11 +378,11 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
         std::shared_ptr<ScreenshotExportArtifact> artifact, quint64 generation,
         bool copyFileToClipboard, snow_shot::storage::CaptureHistorySource historySource,
         std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate, bool scrolling);
-    void copyArtifactToClipboard(
-        std::shared_ptr<ScreenshotExportArtifact> artifact, quint64 generation,
-        snow_shot::storage::CaptureHistorySource historySource,
-        std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate, bool scrolling,
-        std::optional<ScreenshotSelectionParams> selectionToPersist = std::nullopt);
+    void
+    copyArtifactToClipboard(std::shared_ptr<ScreenshotExportArtifact> artifact, quint64 generation,
+                            snow_shot::storage::CaptureHistorySource historySource,
+                            std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate,
+                            bool scrolling);
     void completeCopyExport(bool success, quint64 generation,
                             snow_shot::storage::CaptureHistorySource historySource,
                             std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate,
@@ -682,6 +682,11 @@ void ScreenshotController::Impl::createHistoryService() {
                 }
                 static_cast<void>(m_selectorWorkflow->updateSelectionAt(
                     m_geometry.physicalPositionForLogicalPoint(m_displaySession, QCursor::pos())));
+            },
+            [this](const ScreenshotSelectionParams& selection) {
+                if (m_selectionSettings != nullptr) {
+                    m_selectionSettings->setPreviousSelectionParams(selection);
+                }
             },
         },
         snow_shot::storage::ApplicationStorage::instance().captureHistory());
@@ -2260,20 +2265,15 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
                     });
             }));
     const QPointer<ScreenshotController> receiver(&owner);
-    const ScreenshotSelectionParams savedSelection = m_selection.params(
-        ScreenshotHalfOpenRect::fromRectF(m_geometry.canvasBounds()).toAlignedQRect());
     const bool presented = m_selectionExportUiServices->presentPinnedArtifact(
         *request, artifact,
-        [receiver, artifact, historyCandidate, savedSelection,
-         generation = *exportGeneration](bool success, QImage) mutable {
+        [receiver, artifact, historyCandidate, generation = *exportGeneration](bool success,
+                                                                               QImage) mutable {
             SNOW_SHOT_PIN_PERF_SCOPE("controller.pin_result_callback");
             SNOW_SHOT_PIN_PERF_FINISH(success);
             if (receiver.isNull() || receiver->m_impl == nullptr ||
                 !receiver->m_impl->finishImageExport(generation)) {
                 return;
-            }
-            if (success && receiver->m_impl->m_selectionSettings != nullptr) {
-                receiver->m_impl->m_selectionSettings->setPreviousSelectionParams(savedSelection);
             }
             if (success && historyCandidate != nullptr && historyCandidate->has_value()) {
                 const bool encodingStarted = artifact->requestCanonicalPng(
@@ -3152,25 +3152,18 @@ void ScreenshotController::Impl::copySelectionToClipboardWithSource(
     }
     const ScreenshotResultStyle style{m_selection.cornerRadius(), m_selection.shadowWidth(),
                                       m_selection.shadowColor()};
-    const QRect selectionBounds =
-        ScreenshotHalfOpenRect::fromRectF(m_geometry.canvasBounds()).toAlignedQRect();
-    const std::optional<ScreenshotSelectionParams> savedSelection =
-        selectionBounds.isEmpty()
-            ? std::nullopt
-            : std::optional<ScreenshotSelectionParams>(m_selection.params(selectionBounds));
     const bool scheduled = m_exportService->requestSelectionResult(
         m_selection.pixelSelection(), style, &owner,
-        [receiver, generation = *exportGeneration, historyCandidate, historySource,
-         savedSelection](QImage image) mutable {
+        [receiver, generation = *exportGeneration, historyCandidate,
+         historySource](QImage image) mutable {
             if (receiver.isNull() || receiver->m_impl == nullptr ||
                 !receiver->m_impl->imageExportCurrent(generation)) {
                 return;
             }
             auto artifact = std::make_shared<ScreenshotExportArtifact>(
                 ScreenshotExportSource::fromImage(std::move(image)));
-            receiver->m_impl->copyArtifactToClipboard(std::move(artifact), generation,
-                                                      historySource, std::move(historyCandidate),
-                                                      false, savedSelection);
+            receiver->m_impl->copyArtifactToClipboard(
+                std::move(artifact), generation, historySource, std::move(historyCandidate), false);
         });
     if (!scheduled) {
         static_cast<void>(finishImageExport(*exportGeneration));
@@ -3295,8 +3288,7 @@ void ScreenshotController::Impl::saveArtifactForCopy(
 void ScreenshotController::Impl::copyArtifactToClipboard(
     std::shared_ptr<ScreenshotExportArtifact> artifact, quint64 generation,
     snow_shot::storage::CaptureHistorySource historySource,
-    std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate, bool scrolling,
-    std::optional<ScreenshotSelectionParams> selectionToPersist) {
+    std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate, bool scrolling) {
     const QPointer<ScreenshotController> receiver(&owner);
     if (artifact == nullptr || !artifact->isValid()) {
         completeCopyExport(false, generation, historySource, std::move(historyCandidate), scrolling,
@@ -3304,9 +3296,8 @@ void ScreenshotController::Impl::copyArtifactToClipboard(
         return;
     }
     const bool started = artifact->requestClipboard(
-        &owner, [receiver, artifact, generation, historySource, historyCandidate, scrolling,
-                 selectionToPersist = std::move(selectionToPersist)](
-                    ScreenshotExportClipboardResult result) mutable {
+        &owner, [receiver, artifact, generation, historySource, historyCandidate,
+                 scrolling](ScreenshotExportClipboardResult result) mutable {
             if (receiver.isNull() || receiver->m_impl == nullptr ||
                 !receiver->m_impl->imageExportCurrent(generation)) {
                 return;
@@ -3325,9 +3316,8 @@ void ScreenshotController::Impl::copyArtifactToClipboard(
             }
             receiver->m_impl->m_clipboardCommit = ScreenshotClipboardService::commit(
                 QApplication::clipboard(), receiver, std::move(result.payload),
-                [receiver, artifact, generation, historySource, historyCandidate, scrolling,
-                 selectionToPersist = std::move(selectionToPersist)](
-                    ScreenshotClipboardCommitResult commit) mutable {
+                [receiver, artifact, generation, historySource, historyCandidate,
+                 scrolling](ScreenshotClipboardCommitResult commit) mutable {
                     if (receiver.isNull() || receiver->m_impl == nullptr ||
                         !receiver->m_impl->imageExportCurrent(generation)) {
                         return;
@@ -3339,11 +3329,6 @@ void ScreenshotController::Impl::copyArtifactToClipboard(
                             QCoreApplication::translate("ScreenshotController",
                                                         "The screenshot could not be copied: %1")
                                 .arg(commit.errorString()));
-                    }
-                    if (commit.succeeded() && selectionToPersist.has_value() &&
-                        receiver->m_impl->m_selectionSettings != nullptr) {
-                        receiver->m_impl->m_selectionSettings->setPreviousSelectionParams(
-                            *selectionToPersist);
                     }
                     receiver->m_impl->completeCopyExport(commit.succeeded(), generation,
                                                          historySource, historyCandidate, scrolling,

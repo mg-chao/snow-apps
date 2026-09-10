@@ -14,18 +14,6 @@
 
 #include <utility>
 
-namespace {
-void persistPreviousSelectionParams(ScreenshotSelectionSettingsStore& settingsStore,
-                                    const ScreenshotSelectionParams& params, const QRect& bounds) {
-    if (bounds.isEmpty()) {
-        settingsStore.setPreviousSelectionParams(params);
-        return;
-    }
-
-    settingsStore.setPreviousSelectionParams(clampScreenshotSelectionParams(params, bounds));
-}
-} // namespace
-
 ScreenshotSelectionResizeWorkflow::ScreenshotSelectionResizeWorkflow(
     ScreenshotSelectionSettingsStore& settingsStore)
     : m_settingsStore(settingsStore) {}
@@ -86,11 +74,10 @@ bool ScreenshotSelectionResizeWorkflow::open(QObject* modalParent,
                          QCoreApplication::sendEvent(content, &languageChange);
                      });
 
-    const QRect selectionBounds = request.selectionBounds;
     QObject::connect(
         modal, &adqt::widgets::AdModal::closeRequested, modal,
-        [modal, contentGuard, applySelection = std::move(applySelection), settingsStore,
-         selectionBounds](adqt::widgets::AdModal::CloseReason reason) {
+        [modal, contentGuard, applySelection = std::move(applySelection),
+         settingsStore](adqt::widgets::AdModal::CloseReason reason) {
             if (reason != adqt::widgets::AdModal::CloseReason::OkAction) {
                 modal->reject();
                 return;
@@ -115,7 +102,6 @@ bool ScreenshotSelectionResizeWorkflow::open(QObject* modalParent,
             }
             if (result == ScreenshotSelectionResizeModalContent::CommitResult::ApplySelection) {
                 applySelection(params);
-                persistPreviousSelectionParams(*settingsStore, params, selectionBounds);
             }
             modal->accept();
         });
