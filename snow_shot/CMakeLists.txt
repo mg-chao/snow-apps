@@ -1624,6 +1624,21 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    get_target_property(_main_window_font_sources snow-shot-about-page-tests SOURCES)
+    list(REMOVE_ITEM _main_window_font_sources tests/about_page_tests.cpp)
+    add_executable(snow-shot-main-window-font-tests
+        tests/main_window_font_tests.cpp
+        ${_main_window_font_sources}
+    )
+    target_link_libraries(snow-shot-main-window-font-tests PRIVATE
+        snow_shot_settings snow_shot_image_codec snow_shot_updates)
+    snow_shot_import_offscreen_platform(snow-shot-main-window-font-tests)
+    add_test(NAME snow-shot-main-window-font-tests COMMAND snow-shot-main-window-font-tests)
+    set_tests_properties(snow-shot-main-window-font-tests PROPERTIES
+        LABELS "unit"
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT};QT_SCALE_FACTOR=1.5"
+    )
+
     add_executable(snow-shot-settings-catalog-tests
         tests/settings_catalog_tests.cpp
     )
