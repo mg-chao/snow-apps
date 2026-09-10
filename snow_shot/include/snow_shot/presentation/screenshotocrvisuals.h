@@ -13,6 +13,8 @@
 struct ScreenshotImageSource;
 class ScreenshotOcrPresentation;
 
+// Bounded interior/perimeter sampling selects an opaque dominant color, including split
+// backgrounds. Disabling fill selects the separate Blur policy and clears every cached estimate.
 void prepareScreenshotOcrFillColors(ScreenshotOcrPresentation& presentation, const QImage& source,
                                     const QRectF& canvasRect, bool backgroundFill);
 
@@ -25,12 +27,12 @@ void prepareScreenshotOcrFillColors(ScreenshotOcrPresentation& presentation, con
                                                           const QSize& pixelSize,
                                                           const QRect& filteredPixels);
 
-// Renders the OCR background, using per-line solid colors when prepared. The result is a
-// cropped sub-image covering only the text regions plus the blur support margin;
-// filteredPixels (image pixel coordinates within source) reports that crop. When
-// no text region exists the source itself is returned and the crop is the whole
-// image. scratch, when provided, pools the engine's reduced-resolution buffers
-// across calls.
+// Background Fill always paints opaque colors; missing estimates use the supplied background or
+// white. Explicit Blur retains blur/tint. Prepared solid colors paint in line order. The result is
+// a cropped sub-image covering only the text regions plus the blur support margin; filteredPixels
+// (image pixel coordinates within source) reports that crop. When no text region exists the source
+// itself is returned and the crop is the whole image. scratch, when provided, pools the engine's
+// reduced-resolution buffers across calls.
 [[nodiscard]] QImage renderScreenshotOcrFilteredImage(
     const QImage& source, const QRectF& canvasRect, const ScreenshotOcrPresentation& presentation,
     const QColor& backgroundColor, qreal devicePixelRatio = 1.0, QRect* filteredPixels = nullptr,

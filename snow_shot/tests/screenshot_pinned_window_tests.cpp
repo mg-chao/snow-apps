@@ -5598,10 +5598,21 @@ void pinnedSaveDialogRoutingAndCancellation() {
     require(settings.setLastManualSaveFormat(QStringLiteral("png")) &&
                 settings.setSaveAsFileDialog(QStringLiteral("snow_shot")),
             "Snow Shot routing setup failed");
+    auto* editButton = buttonNamed(*window, QStringLiteral("Enable drawing mode"));
+    require(editButton, "pinned save test drawing button missing");
+    editButton->click();
+    waitForUi(30);
+    auto* editController = window->findChild<ScreenshotPinnedEditController*>();
+    auto* toolbar = editController ? editController->toolbarWindow() : nullptr;
+    require(toolbar && toolbar->isVisible(), "pinned save test toolbar must be visible");
     action->trigger();
     auto* modal = window->findChild<AdModal*>(QStringLiteral("screenshotSaveAsFileModal"));
     require(modal && modal->mode() == AdModal::Mode::Window,
             "pinned save must open Snow Shot dialog");
+    require(toolbar->isVisible() &&
+                modal->contentWidget()->window()->windowHandle()->transientParent() ==
+                    toolbar->windowHandle(),
+            "pinned save must stay above its visible editing toolbar");
     modal->rejectButton()->click();
     waitForUi(30);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);

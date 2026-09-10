@@ -37,11 +37,15 @@ class ScreenshotSaveAsFileDialog final {
   public:
     using Saved = std::function<void(const QString& path)>;
     using Finished = std::function<void(bool saved)>;
+    // owner selects the display/centering; stackingOwner optionally keeps a floating toolbar
+    // below the dialog without changing the toolbar's visibility.
     [[nodiscard]] static bool open(QObject* lifetime, QWidget* owner,
                                    std::shared_ptr<ScreenshotExportArtifact> source,
-                                   Saved saved = {}, Finished finished = {});
+                                   Saved saved = {}, Finished finished = {},
+                                   QWidget* stackingOwner = nullptr);
     [[nodiscard]] static bool open(QObject* lifetime, QWidget* owner, const QImage& image,
-                                   Saved saved = {}, Finished finished = {});
+                                   Saved saved = {}, Finished finished = {},
+                                   QWidget* stackingOwner = nullptr);
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTSAVEASFILEDIALOG_H
