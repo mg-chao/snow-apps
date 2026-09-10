@@ -11,6 +11,7 @@
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 
 #include <QEvent>
+#include <QFont>
 #include <QHBoxLayout>
 #include <QLinearGradient>
 #include <QMenuBar>
@@ -69,6 +70,12 @@ MainWindow::MainWindow(const snow_shot::presentation::settings::SettingsRegistry
     setMinimumSize(MAIN_WINDOW_MIN_WIDTH, MAIN_WINDOW_MIN_HEIGHT);
     setMouseTracking(true);
     setAttribute(Qt::WA_DeleteOnClose);
+
+    // DirectWrite's default hinting can retain grid fitting even at fractional DPI.
+    // Let all main-interface labels inherit smooth outlines before setting their sizes.
+    QFont interfaceFont = font();
+    interfaceFont.setHintingPreference(QFont::PreferNoHinting);
+    setFont(interfaceFont);
 
     menuBar()->hide();
     statusBar()->hide();

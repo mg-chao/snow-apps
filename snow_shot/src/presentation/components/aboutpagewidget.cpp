@@ -170,6 +170,7 @@ class AboutArtwork final : public QWidget {
             svg.replace("fill=\"white\"", "fill=\"#263246\"");
         }
         m_renderer.load(svg);
+        m_renderer.setAspectRatioMode(Qt::KeepAspectRatio);
         setAccessibleName(QCoreApplication::translate(
             "AboutPageWidget", "Screenshot selection, annotation tools, and recognized text"));
         update();
@@ -595,10 +596,12 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
     connect(&themeManager, &styles::ThemeManager::themeChanged, this, &AboutPageWidget::applyTheme);
     applyTheme(m_ui->scheme);
     content->installEventFilter(this);
+    m_ui->container->scrollArea()->viewport()->installEventFilter(this);
 }
 
 AboutPageWidget::~AboutPageWidget() {
     m_ui->container->contentWidget()->removeEventFilter(this);
+    m_ui->container->scrollArea()->viewport()->removeEventFilter(this);
 }
 
 void AboutPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
@@ -770,7 +773,6 @@ void AboutPageWidget::updateLayout() {
     const int artWidth =
         std::min(availableWidth,
                  qRound((wide ? std::clamp(width / scale * 0.29, 170.0, 218.0) : 210.0) * scale));
-    m_ui->artwork->setFixedSize(artWidth, qRound(artWidth * 340.0 / 460.0));
     const bool tiny = width < qRound(350 * scale);
     m_ui->identityLayout->setDirection(tiny ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
     m_ui->versionLayout->setDirection(wide ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
@@ -810,6 +812,23 @@ void AboutPageWidget::updateLayout() {
         }
         m_ui->resourceColumns = resourceColumns;
     }
+
+    int artHeight = qRound(artWidth * 340.0 / 460.0);
+    if (wide) {
+        // The scroll area uses the content's preferred height. Budget decorative artwork
+        // against the viewport so changes in text metrics do not force unnecessary scrolling.
+        const int bodyHeight = m_ui->body->hasHeightForWidth() ? m_ui->body->heightForWidth(width)
+                                                               : m_ui->body->sizeHint().height();
+        const int copyWidth = qMax(1, availableWidth - artWidth - m_ui->heroLayout->spacing());
+        const int copyHeight = m_ui->heroCopy->hasHeightForWidth()
+                                   ? m_ui->heroCopy->heightForWidth(copyWidth)
+                                   : m_ui->heroCopy->sizeHint().height();
+        const auto margins = m_ui->heroLayout->contentsMargins();
+        const int availableHeight = m_ui->container->scrollArea()->viewport()->height() -
+                                    bodyHeight - margins.top() - margins.bottom();
+        artHeight = qMin(artHeight, qMax(copyHeight, availableHeight));
+    }
+    m_ui->artwork->setFixedSize(artWidth, artHeight);
 }
 
 void AboutPageWidget::openProjectLink(const QUrl& url) {
@@ -895,7 +914,9 @@ void AboutPageWidget::changeEvent(QEvent* event) {
 }
 
 bool AboutPageWidget::eventFilter(QObject* watched, QEvent* event) {
-    if (watched == m_ui->container->contentWidget() && event->type() == QEvent::Resize) {
+    if ((watched == m_ui->container->contentWidget() ||
+         watched == m_ui->container->scrollArea()->viewport()) &&
+        event->type() == QEvent::Resize) {
         updateLayout();
     }
     return QWidget::eventFilter(watched, event);
