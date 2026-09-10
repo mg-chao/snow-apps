@@ -778,6 +778,49 @@ void multipleValidEntriesCanBeTraversed(const QString& root) {
             "direct return did not restore the live endpoint");
 }
 
+void committedSelectionFollowsHistory(const QString& root) {
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(display(QStringLiteral("A"), QStringLiteral("Primary"),
+                                   QRect(0, 0, 200, 100),
+                                   solidImage(QSize(200, 100), qRgba(255, 0, 0, 255))));
+    SnowCanvasRuntime runtime;
+    ScreenshotSelectionModel selection;
+    ScreenshotInteractionState interaction;
+    ScreenshotIntelligentSelectionModel intelligent;
+    QVector<ScreenshotSelectionParams> committed;
+    ScreenshotHistoryServiceContext context{displays, runtime, selection, interaction, intelligent};
+    context.selectionCommitted = [&](const ScreenshotSelectionParams& params) {
+        committed.push_back(params);
+    };
+    ScreenshotHistoryService history(std::move(context), root);
+    for (const auto source : {storage::CaptureHistorySource::CopiedToClipboard,
+                              storage::CaptureHistorySource::SavedToFile,
+                              storage::CaptureHistorySource::PinnedToScreen}) {
+        const qsizetype before = committed.size();
+        selection.setSelectionRect(QRect(10 + static_cast<int>(before), 20, 80, 50));
+        auto entry = takeSnapshot(history.snapshotCurrent(true), "history snapshot failed");
+        const ScreenshotSelectionParams exported = entry.selection;
+        require(before == committed.size(), "snapshotting must not remember the selection");
+        selection.setSelectionRect(QRect(100, 5, 30, 20));
+        entry.source = source;
+        history.commit(std::move(entry));
+        require(committed.size() == before + 1 && committed.constLast() == exported,
+                "history commit must remember the exported snapshot for every destination");
+        history.drainPendingWrites();
+    }
+    const auto exportedSelections = committed;
+    auto abandoned = history.snapshotCurrent(true);
+    require(abandoned.has_value(), "abandoned export should have a valid snapshot");
+    history.commit(ScreenshotHistoryEntry{});
+    require(committed == exportedSelections,
+            "uncommitted exports and invalid history must not replace the previous selection");
+    require(history.navigatePrevious(), "history navigation should start");
+    waitForNavigation(history, "history navigation timed out");
+    require(history.returnToCurrentScreenshot(), "live screenshot should be restored");
+    require(committed == exportedSelections,
+            "browsing history must not replace the previous exported selection");
+}
+
 void historyKeysOnlyWorkDuringSelectionStates() {
     ScreenshotCaptureState captureState;
     ScreenshotDisplaySession displays;
@@ -2477,6 +2520,8 @@ int main(int argc, char** argv) {
         storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    committedSelectionFollowsHistory(
+        QDir(temporary.path()).filePath(QStringLiteral("committed-selection")));
     navigationMatchesDisplaysAndRestoresLiveEndpoint(
         QDir(temporary.path()).filePath(QStringLiteral("navigation")));
     directCaptureRetainsTheWholeDesktop(QDir(temporary.path()).filePath(QStringLiteral("desktop")));
