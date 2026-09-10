@@ -349,6 +349,7 @@ struct AboutPageWidget::Ui {
         custom::outlined::PinToScreen(),       outlined::History()};
     QFrame* featureDivider = nullptr;
     QFrame* versionPanel = nullptr;
+    QVBoxLayout* versionPanelLayout = nullptr;
     QBoxLayout* versionLayout = nullptr;
     QLabel* versionCaption = nullptr;
     QLabel* versionValue = nullptr;
@@ -359,6 +360,9 @@ struct AboutPageWidget::Ui {
     QTimer* copyFeedbackTimer = nullptr;
     snow_shot::update::UpdateService* updates = nullptr;
     QLabel* updateStatus = nullptr;
+    QLabel* updateIcon = nullptr;
+    QFrame* updateDivider = nullptr;
+    QBoxLayout* updateLayout = nullptr;
     QProgressBar* updateProgress = nullptr;
     AdButton* updateAction = nullptr;
     AdButton* updateCancel = nullptr;
@@ -458,7 +462,9 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
 
     m_ui->versionPanel = new QFrame(m_ui->body);
     m_ui->versionPanel->setObjectName(QStringLiteral("aboutVersionPanel"));
-    m_ui->versionLayout = new QBoxLayout(QBoxLayout::LeftToRight, m_ui->versionPanel);
+    m_ui->versionPanelLayout = new QVBoxLayout(m_ui->versionPanel);
+    m_ui->versionLayout = new QBoxLayout(QBoxLayout::LeftToRight);
+    m_ui->versionPanelLayout->addLayout(m_ui->versionLayout);
     auto* versionText = new QVBoxLayout;
     versionText->setSpacing(2);
     m_ui->versionCaption = aboutLabel(QStringLiteral("aboutVersionCaption"), m_ui->versionPanel);
@@ -496,23 +502,37 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
     m_ui->updates =
         updates != nullptr ? updates : qApp->findChild<snow_shot::update::UpdateService*>();
     if (m_ui->updates != nullptr) {
-        m_ui->updateStatus = aboutLabel(QStringLiteral("aboutUpdateStatus"), m_ui->body);
-        m_ui->bodyLayout->addWidget(m_ui->updateStatus);
-        m_ui->updateProgress = new QProgressBar(m_ui->body);
+        m_ui->updateDivider = aboutDivider(m_ui->versionPanel);
+        m_ui->updateDivider->setObjectName(QStringLiteral("aboutUpdateDivider"));
+        m_ui->versionPanelLayout->addWidget(m_ui->updateDivider);
+        m_ui->updateLayout = new QBoxLayout(QBoxLayout::LeftToRight);
+        auto* statusRow = new QHBoxLayout;
+        m_ui->updateIcon = new QLabel(m_ui->versionPanel);
+        m_ui->updateIcon->setObjectName(QStringLiteral("aboutUpdateIcon"));
+        statusRow->addWidget(m_ui->updateIcon, 0, Qt::AlignVCenter);
+        m_ui->updateStatus = aboutLabel(QStringLiteral("aboutUpdateStatus"), m_ui->versionPanel);
+        statusRow->addWidget(m_ui->updateStatus, 1);
+        m_ui->updateLayout->addLayout(statusRow, 1);
+        m_ui->versionPanelLayout->addLayout(m_ui->updateLayout);
+        m_ui->updateProgress = new QProgressBar(m_ui->versionPanel);
         m_ui->updateProgress->setObjectName(QStringLiteral("aboutUpdateProgress"));
         m_ui->updateProgress->setRange(0, 1000);
         m_ui->updateProgress->setTextVisible(false);
-        m_ui->bodyLayout->addWidget(m_ui->updateProgress);
+        m_ui->versionPanelLayout->addWidget(m_ui->updateProgress);
         m_ui->updateActions = new QBoxLayout(QBoxLayout::LeftToRight);
         auto* actions = m_ui->updateActions;
-        m_ui->updateAction = new adqt::widgets::AdButton(m_ui->body);
+        m_ui->updateAction = new AdButton(m_ui->versionPanel);
         m_ui->updateAction->setObjectName(QStringLiteral("aboutUpdateAction"));
-        m_ui->updateCancel = new adqt::widgets::AdButton(m_ui->body);
+        m_ui->updateCancel = new AdButton(m_ui->versionPanel);
         m_ui->updateCancel->setObjectName(QStringLiteral("aboutUpdateCancel"));
         actions->addWidget(m_ui->updateAction);
         actions->addWidget(m_ui->updateCancel);
-        actions->addStretch();
-        m_ui->bodyLayout->addLayout(actions);
+        for (auto* button : {m_ui->updateAction, m_ui->updateCancel}) {
+            button->setButtonStyle(AdButton::ButtonStyle::Outline);
+            button->setSizeClass(AdButton::SizeClass::Small);
+            button->setFocusPolicy(Qt::StrongFocus);
+        }
+        m_ui->updateLayout->addLayout(actions);
         connect(m_ui->updates, &snow_shot::update::UpdateService::statusChanged, this,
                 &AboutPageWidget::refreshUpdateStatus);
         connect(m_ui->updateCancel, &adqt::widgets::AdButton::clicked, m_ui->updates,
@@ -634,14 +654,27 @@ void AboutPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
         separator->setPalette(palette);
         separator->setAutoFillBackground(true);
     }
-    m_ui->versionLayout->setContentsMargins(metric.padding, metric.paddingXS, metric.padding,
-                                            metric.paddingXS);
+    m_ui->versionPanelLayout->setContentsMargins(metric.padding, metric.paddingXS, metric.padding,
+                                                 metric.paddingXXS);
+    m_ui->versionPanelLayout->setSpacing(metric.paddingXXS);
     m_ui->versionLayout->setSpacing(metric.paddingSM);
     m_ui->versionActions->setSpacing(metric.paddingXS);
     if (m_ui->updateStatus != nullptr) {
-        styleAboutLabel(m_ui->updateStatus, metric.fontSizeSM, QFont::Normal,
-                        colors.colorTextSecondary);
+        m_ui->updateDivider->setStyleSheet(
+            QStringLiteral("QFrame#aboutUpdateDivider { background-color: %1; border: none; }")
+                .arg(colors.colorBorderSecondary.name(QColor::HexArgb)));
+        m_ui->updateLayout->setSpacing(metric.paddingSM);
+        m_ui->updateLayout->itemAt(0)->layout()->setSpacing(metric.paddingXS);
         m_ui->updateActions->setSpacing(metric.paddingXS);
+        const int progressHeight = qMax(4, metric.paddingXXS);
+        m_ui->updateProgress->setFixedHeight(progressHeight);
+        m_ui->updateProgress->setStyleSheet(
+            QStringLiteral("QProgressBar#aboutUpdateProgress { background: %1; border: none; "
+                           "border-radius: %3px; } QProgressBar#aboutUpdateProgress::chunk { "
+                           "background: %2; border-radius: %3px; }")
+                .arg(colors.colorFillSecondary.name(QColor::HexArgb),
+                     colors.colorPrimary.name(QColor::HexArgb))
+                .arg(progressHeight / 2));
     }
     const QColor versionBackground =
         blendAboutColor(colors.colorBgLayout, colors.colorBgContainer, 0.8);
@@ -776,8 +809,23 @@ void AboutPageWidget::updateLayout() {
     const bool tiny = width < qRound(350 * scale);
     m_ui->identityLayout->setDirection(tiny ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
     m_ui->versionLayout->setDirection(wide ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
-    m_ui->versionActions->setDirection(tiny ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+    const int versionWidth = width - m_ui->bodyLayout->contentsMargins().left() -
+                             m_ui->bodyLayout->contentsMargins().right() -
+                             m_ui->versionPanelLayout->contentsMargins().left() -
+                             m_ui->versionPanelLayout->contentsMargins().right();
+    const int versionActionsWidth = m_ui->releaseNotes->sizeHint().width() +
+                                    m_ui->copyButton->sizeHint().width() +
+                                    m_ui->versionActions->spacing();
+    // An oversized minimum width makes Qt calculate wrapped text heights at the wrong width.
+    // Stack the version actions before they can force the shared card wider than its viewport.
+    m_ui->versionActions->setDirection(tiny || versionWidth < versionActionsWidth
+                                           ? QBoxLayout::TopToBottom
+                                           : QBoxLayout::LeftToRight);
     if (m_ui->updateActions != nullptr) {
+        const bool stackUpdate =
+            tiny || versionWidth < m_ui->updateActions->sizeHint().width() + qRound(220 * scale);
+        m_ui->updateLayout->setDirection(stackUpdate ? QBoxLayout::TopToBottom
+                                                     : QBoxLayout::LeftToRight);
         m_ui->updateActions->setDirection(tiny ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
     }
     m_ui->footerLayout->setDirection(wide ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
@@ -850,6 +898,10 @@ void AboutPageWidget::refreshUpdateStatus() {
     }
     using snow_shot::update::UpdateState;
     const auto& status = m_ui->updates->status();
+    const auto& colors = m_ui->scheme.map;
+    QColor statusColor = colors.colorTextSecondary;
+    auto statusIcon = outlined::InfoCircle();
+    auto actionIcon = outlined::Sync();
     QString text;
     QString action = tr("Check for updates");
     switch (status.state) {
@@ -859,49 +911,87 @@ void AboutPageWidget::refreshUpdateStatus() {
     case UpdateState::Idle:
         text = status.version.isEmpty() ? tr("Check for a newer version of Snow Shot.")
                                         : tr("You are up to date.");
+        if (!status.version.isEmpty()) {
+            statusIcon = outlined::CheckCircle();
+            statusColor = colors.colorSuccessText;
+        }
         break;
     case UpdateState::Checking:
         text = tr("Checking for updates…");
+        statusIcon = outlined::Sync();
         break;
     case UpdateState::Available:
         text = tr("Update available: %1").arg(status.version);
         action = tr("Download update");
+        statusIcon = outlined::CloudDownload();
+        actionIcon = outlined::Download();
+        statusColor = colors.colorInfoText;
         break;
     case UpdateState::Downloading:
-        text = tr("Downloading %1 of %2 MB")
-                   .arg(status.received / 1048576)
-                   .arg(status.total / 1048576);
+        text = status.total > 0 ? tr("Downloading %1 of %2 MB")
+                                      .arg(status.received / 1048576)
+                                      .arg(status.total / 1048576)
+                                : tr("Downloading update…");
+        statusIcon = outlined::CloudDownload();
+        statusColor = colors.colorInfoText;
         break;
     case UpdateState::Verifying:
         text = tr("Verifying update…");
+        statusIcon = outlined::SafetyCertificate();
         break;
     case UpdateState::Ready:
         text = tr("Ready to install %1").arg(status.version);
         action = tr("Restart and update");
+        statusIcon = outlined::CheckCircle();
+        actionIcon = outlined::Reload();
+        statusColor = colors.colorSuccessText;
         break;
     case UpdateState::Applying:
         text = tr("Preparing to restart and update…");
+        statusIcon = outlined::Sync();
         break;
     case UpdateState::Failed:
         text = tr("Update failed: %1").arg(status.error);
+        statusIcon = outlined::ExclamationCircle();
+        statusColor = colors.colorErrorText;
         break;
     }
     if (!status.error.isEmpty() && status.state == UpdateState::Ready) {
         text += u'\n' + status.error;
+        statusIcon = outlined::ExclamationCircle();
+        statusColor = colors.colorWarningText;
     }
+    styleAboutLabel(m_ui->updateStatus, m_ui->scheme.metricAlias.fontSizeSM, QFont::Normal,
+                    statusColor);
+    const int iconSize = m_ui->scheme.metricAlias.fontSize;
+    m_ui->updateIcon->setFixedSize(iconSize, iconSize);
+    m_ui->updateIcon->setPixmap(aboutIcon(statusIcon, m_ui->updateIcon->size(), this, statusColor));
     m_ui->updateStatus->setText(text);
     m_ui->updateStatus->setAccessibleName(text);
     m_ui->updateAction->setText(action);
     m_ui->updateAction->setAccessibleName(action);
+    m_ui->updateAction->setIconRef(actionIcon);
+    const bool primaryAction =
+        status.state == UpdateState::Available || status.state == UpdateState::Ready;
+    m_ui->updateAction->setButtonStyle(primaryAction ? AdButton::ButtonStyle::Solid
+                                                     : AdButton::ButtonStyle::Outline);
+    m_ui->updateAction->setAccentRole(primaryAction ? AdButton::AccentRole::Primary
+                                                    : AdButton::AccentRole::Neutral);
     m_ui->updateAction->setEnabled(
         status.state == UpdateState::Idle || status.state == UpdateState::Failed ||
         status.state == UpdateState::Available || status.state == UpdateState::Ready);
+    m_ui->updateAction->setVisible(m_ui->updateAction->isEnabled());
     m_ui->updateCancel->setText(tr("Cancel download"));
     m_ui->updateCancel->setVisible(status.state == UpdateState::Downloading);
     m_ui->updateProgress->setVisible(status.state == UpdateState::Downloading);
+    m_ui->updateProgress->setRange(0, status.total > 0 ? 1000 : 0);
     m_ui->updateProgress->setValue(
-        status.total > 0 ? static_cast<int>(status.received * 1000 / status.total) : 0);
+        status.total > 0
+            ? qRound(std::clamp(static_cast<double>(status.received) / status.total, 0.0, 1.0) *
+                     1000)
+            : 0);
     m_ui->updateProgress->setAccessibleName(tr("Update download progress"));
+    updateLayout();
 }
 
 void AboutPageWidget::changeEvent(QEvent* event) {
