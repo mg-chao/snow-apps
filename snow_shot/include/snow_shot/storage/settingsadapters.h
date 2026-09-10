@@ -54,6 +54,8 @@ class ApiConfigurationSettings final {
 
 class InterfaceSettings final {
   public:
+    [[nodiscard]] QColor themePrimaryColor() const;
+    bool setThemePrimaryColor(const QColor& color) const;
     [[nodiscard]] QString themeMode() const;
     bool setThemeMode(const QString& mode) const;
     [[nodiscard]] QString language() const;

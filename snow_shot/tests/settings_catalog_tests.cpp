@@ -72,6 +72,15 @@ class CatalogTranslator final : public QTranslator {
 void builtInCatalogIsCompleteAndValid() {
     const settings::SettingsCatalog& catalog = settings::builtInSettingsRegistry().catalog();
     require(catalog.validationErrors().isEmpty(), "built-in settings catalog must validate");
+    const auto* primary =
+        catalog.item({QStringLiteral("interface-settings"), QStringLiteral("general"),
+                      QStringLiteral("interface.theme-primary-color")});
+    require(primary != nullptr &&
+                primary->configurationKey == QStringLiteral("interface/theme_primary_color") &&
+                std::get<settings::SettingsColorDefinition>(primary->payload).binding ==
+                    settings::SettingsColorBinding::ThemePrimaryColor &&
+                !std::get<settings::SettingsColorDefinition>(primary->payload).alphaChannelEnabled,
+            "general settings must expose an opaque theme primary color picker");
     require(catalog.pages().size() == 11, "catalog must contain eleven pages");
 
     qsizetype sectionCount = 0;
@@ -117,8 +126,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 35 && itemCount == 140 && foundUpdates,
-            "catalog must contain thirty-five sections and one hundred forty items");
+    require(sectionCount == 35 && itemCount == 141 && foundUpdates,
+            "catalog must contain thirty-five sections and one hundred forty-one items");
     const auto* history =
         catalog.section(QStringLiteral("storage-and-privacy"), QStringLiteral("history"));
     require(history != nullptr && history->items.size() >= 2 &&
@@ -1185,7 +1194,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 186 && index.search(QString()).size() == 186,
+    require(index.entries().size() == 187 && index.search(QString()).size() == 187,
             "search must generate all catalog nodes in catalog order");
     const auto updates = index.search(QStringLiteral("Software updates"));
     require(!updates.isEmpty() &&
@@ -1237,7 +1246,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 11 && sections == 35 && items == 140,
+    require(pages == 11 && sections == 35 && items == 141,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));
