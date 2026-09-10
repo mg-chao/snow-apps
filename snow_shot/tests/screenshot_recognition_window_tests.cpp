@@ -25,6 +25,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPlainTextEdit>
+#include <QPointer>
 #include <QPainter>
 #include <QScrollBar>
 #include <QScreen>
@@ -1143,6 +1144,101 @@ void imageSnapshotTracksOnlyOriginalImageAndOwnsItsResult() {
     require(snapshot && snapshot->lines.isEmpty(),
             "pending OCR snapshots the current image without waiting");
 }
+void selectionResizeCompletionCanReplaceWindow() {
+    QPointer<ScreenshotRecognitionWindow> window;
+    bool finished = false;
+    ScreenshotRecognitionWindowActions actions;
+    actions.selectionResizeDragMode = [](const QPointF&) {
+        return ScreenshotSelectionDragMode::Right;
+    };
+    actions.beginSelectionResize = [](const QPointF&) { return true; };
+    actions.finishSelectionResize = [&](const QPointF&) {
+        require(QWidget::mouseGrabber() != window.data(),
+                "completion must release capture before deleting the recognition window");
+        delete window.data();
+    };
+    actions.selectionResizeFinished = [&]() { finished = true; };
+    window = new ScreenshotRecognitionWindow(std::move(actions));
+    require(window->present({QGuiApplication::primaryScreen(), nullptr, QRect(50, 50, 240, 120),
+                             QRectF(0, 0, 240, 120)}),
+            "completion regression should present the recognition surface");
+    const QPointF position(238, 60);
+    QMouseEvent press(QEvent::MouseButtonPress, position, position, Qt::LeftButton, Qt::LeftButton,
+                      Qt::NoModifier);
+    QApplication::sendEvent(window.data(), &press);
+    QMouseEvent release(QEvent::MouseButtonRelease, position, position, Qt::LeftButton,
+                        Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(window.data(), &release);
+    require(window.isNull() && finished,
+            "resize completion must finish safely when its callback deletes the window");
+}
+
+void selectionResizeKeepsMouseCaptureWhenContentIsCleared() {
+    for (const bool table : {false, true}) {
+        for (const bool acceptResize : {false, true}) {
+            ScreenshotRecognitionWindow* surface = nullptr;
+            int updates = 0;
+            int finishes = 0;
+            ScreenshotRecognitionWindowActions actions;
+            actions.selectionResizeDragMode = [](const QPointF&) {
+                return ScreenshotSelectionDragMode::Right;
+            };
+            actions.beginSelectionResize = [&](const QPointF&) {
+                require(
+                    QWidget::mouseGrabber() == surface,
+                    "resize must own mouse capture before recognition clears the pressed child");
+                if (acceptResize) {
+                    surface->clearTableSession();
+                    surface->clearQrContents();
+                }
+                return acceptResize;
+            };
+            actions.updateSelectionResize = [&](const QPointF&) { ++updates; };
+            actions.finishSelectionResize = [&](const QPointF&) {
+                require(QWidget::mouseGrabber() != surface,
+                        "resize must release capture before completion can replace its window");
+                ++finishes;
+            };
+            ScreenshotRecognitionWindow window(std::move(actions));
+            surface = &window;
+            require(window.present({QGuiApplication::primaryScreen(), nullptr,
+                                    QRect(50, 50, 240, 120), QRectF(0, 0, 240, 120)}),
+                    "resize regression should present the recognition surface");
+            QWidget* viewport = nullptr;
+            if (table) {
+                window.setTableSession(std::make_shared<ScreenshotTableEditingSession>(
+                    ScreenshotTableDocument::fromPlainText(QStringLiteral("A\tB\nC\tD"))));
+                viewport = window.findChild<ScreenshotTableEditor*>()->viewport();
+            } else {
+                window.showQrContents({QStringLiteral("https://example.com")});
+                viewport = window.findChild<QTextBrowser*>()->viewport();
+            }
+            QApplication::processEvents();
+            const QPointF position(2, 2);
+            QMouseEvent press(QEvent::MouseButtonPress, position,
+                              QPointF(viewport->mapToGlobal(position.toPoint())), Qt::LeftButton,
+                              Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(viewport, &press);
+            require((QWidget::mouseGrabber() == &window) == acceptResize,
+                    "only an accepted resize should retain mouse capture");
+            QMouseEvent move(QEvent::MouseMove, position, position, Qt::NoButton, Qt::LeftButton,
+                             Qt::NoModifier);
+            QApplication::sendEvent(&window, &move);
+            require(updates == (acceptResize ? 1 : 0),
+                    "accepted resize must update while the button is held");
+            QMouseEvent release(QEvent::MouseButtonRelease, position, position, Qt::LeftButton,
+                                Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(&window, &release);
+            require(finishes == (acceptResize ? 1 : 0) && QWidget::mouseGrabber() != &window,
+                    "release must finish the resize and relinquish mouse capture");
+            QMouseEvent hover(QEvent::MouseMove, position, position, Qt::NoButton, Qt::NoButton,
+                              Qt::NoModifier);
+            QApplication::sendEvent(&window, &hover);
+            require(updates == (acceptResize ? 1 : 0),
+                    "mouse movement after release must not continue resizing");
+        }
+    }
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1153,6 +1249,11 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    selectionResizeKeepsMouseCaptureWhenContentIsCleared();
+    selectionResizeCompletionCanReplaceWindow();
+    if (application.arguments().contains(QStringLiteral("--selection-resize-only"))) {
+        return 0;
+    }
     embeddedRecognitionWindowPreservesParentSurfaceWithVisibleTextLayer();
     recognitionWindowCanExtendBeyondItsDpiScreen();
     recognitionWindowUsesOrdinaryQtWindowBehavior();
