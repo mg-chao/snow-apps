@@ -1,3 +1,4 @@
+#include "../src/presentation/capture/screenshotscrollingdiagnostics.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 
 #include <QCoreApplication>
@@ -40,6 +41,49 @@ DiagnosticsOptions optionsFor(const QString& directory) {
     options.mirrorToConsole = false;
     return options;
 }
+void scrollingMetadataAndReportCadence() {
+    using snow_shot::capture_detail::ScrollingCaptureDiagnostics;
+    using namespace std::chrono_literals;
+    ScrollingCaptureDiagnostics counters;
+    const auto start = counters.started;
+    require(!counters.reportDue(start + 4999ms), "no premature progress report");
+    require(counters.reportDue(start + 5s), "first stalled-stream report after five seconds");
+    require(!counters.reportDue(start + 34s), "progress reports must be rate limited");
+    require(counters.reportDue(start + 35s), "long capture retains periodic diagnostics");
+    counters.received = 4;
+    counters.accepted = 1;
+    counters.duplicates = 1;
+    counters.invalid = 2;
+    counters.timeouts = 9;
+    auto fields = counters.fields(start + 35s);
+    fields.insert(QStringLiteral("hole_rect"), QStringLiteral("0,0 1920x1080"));
+    fields.insert(QStringLiteral("full_hole"), true);
+    fields.insert(QStringLiteral("mask_empty"), true);
+    fields.insert(QStringLiteral("native_region_type"), 0);
+    fields.insert(QStringLiteral("thumbnail_visible"), false);
+    fields.insert(QStringLiteral("backend"), 3);
+    fields.insert(QStringLiteral("operation"), QStringLiteral("7"));
+    fields.insert(QStringLiteral("window_title"), QStringLiteral("private title"));
+    QTemporaryDir directory;
+    DiagnosticsService service;
+    require(service.initialize(optionsFor(directory.path())), "scrolling diagnostic logger");
+    service.record(QtWarningMsg, QStringLiteral("snow_shot.scrolling"),
+                   QStringLiteral("scrolling.capture_progress"), {}, fields);
+    require(service.flush(), "scrolling metadata flush");
+    bool found = false;
+    for (const auto& line : read(service.status().currentFile).split('\n')) {
+        const auto record = QJsonDocument::fromJson(line).object();
+        if (record.value(QStringLiteral("event")) != QStringLiteral("scrolling.capture_progress"))
+            continue;
+        const auto actual = record.value(QStringLiteral("fields")).toObject();
+        fields.remove(QStringLiteral("window_title"));
+        require(actual == fields,
+                "scrolling metadata survives export while content keys stay excluded");
+        found = true;
+    }
+    require(found, "scrolling progress event must be persisted");
+}
+
 void concurrentRecordsAndSnapshots() {
     QTemporaryDir directory;
     DiagnosticsService service;
@@ -361,6 +405,7 @@ void handlerLifecycleAndMissingCollector() {
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     try {
+        scrollingMetadataAndReportCadence();
         concurrentRecordsAndSnapshots();
         retentionAndRollover();
         fallbackPrivacyAndFailures();

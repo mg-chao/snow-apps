@@ -79,7 +79,13 @@ void nativeWheelMessagesReachTheSelection() {
     require(target.waitForStarted(10000), "native target process must start");
     require(target.waitForReadyRead(10000) && target.readAllStandardOutput().contains("ready"),
             "native target must be ready before scrolling");
-    snow_shot::platform::windows::sendScrollingWheelStep(nativeSelection, QPoint(0, -120));
+    using namespace snow_shot::platform::windows;
+    require(sendScrollingWheelStep({}, QPoint(0, -120)).status ==
+                ScrollInputResult::Status::InvalidRequest,
+            "invalid automatic scroll requests must be distinguishable from delivery failures");
+    require(sendScrollingWheelStep(nativeSelection, QPoint(0, -120)).status ==
+                ScrollInputResult::Status::Posted,
+            "successful wheel posting must be reported");
     snow_shot::platform::windows::sendScrollingWheelStep(nativeSelection, QPoint(120, 0));
     require(target.waitForFinished(10000) && target.exitStatus() == QProcess::NormalExit &&
                 target.exitCode() == 0,

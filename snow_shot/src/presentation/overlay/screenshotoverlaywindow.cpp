@@ -8,6 +8,8 @@
 #include "snow_shot/presentation/screenshotscrollingthumbnailwidget.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include <QEvent>
+#include <QGuiApplication>
+#include "../capture/screenshotscrollingdiagnostics.h"
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
@@ -246,6 +248,46 @@ void ScreenshotOverlayWindow::setCanvasClearBackgroundEnabled(bool enabled) {
     }
 
     m_canvas->setClearBackgroundEnabled(enabled);
+}
+
+QJsonObject ScreenshotOverlayWindow::scrollingDiagnostics() const {
+    using snow_shot::capture_detail::scrollingRect;
+    const QRect hole = m_inputPassThroughRect.intersected(rect());
+    QJsonObject fields{{QStringLiteral("overlay_rect"), scrollingRect(geometry())},
+                       {QStringLiteral("hole_rect"), scrollingRect(hole)},
+                       {QStringLiteral("full_hole"), !hole.isEmpty() && hole == rect()},
+                       {QStringLiteral("mask_empty"), mask().isEmpty()},
+                       {QStringLiteral("dpr"), devicePixelRatioF()},
+                       {QStringLiteral("thumbnail_visible"),
+                        m_scrollingThumbnail != nullptr && m_scrollingThumbnail->isVisible()}};
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (QGuiApplication::platformName() == QStringLiteral("windows") && internalWinId() != 0) {
+        const auto hwnd = reinterpret_cast<HWND>(internalWinId());
+        const HRGN region = CreateRectRgn(0, 0, 0, 0);
+        if (region != nullptr) {
+            const int type = GetWindowRgn(hwnd, region);
+            fields.insert(QStringLiteral("native_region_type"), type);
+            if (type != ERROR && !hole.isEmpty()) {
+                const QPoint center = hole.center();
+                fields.insert(QStringLiteral("native_hole_contains_center"),
+                              PtInRegion(region, qRound(center.x() * devicePixelRatioF()),
+                                         qRound(center.y() * devicePixelRatioF())) != FALSE);
+            }
+            DeleteObject(region);
+        }
+        DWORD affinity = 0;
+        if (GetWindowDisplayAffinity(hwnd, &affinity))
+            fields.insert(QStringLiteral("code"), static_cast<qint64>(affinity));
+        DWORD captureProcess = 0;
+        GetWindowThreadProcessId(GetCapture(), &captureProcess);
+        fields.insert(QStringLiteral("capture_is_self"), captureProcess == GetCurrentProcessId());
+        UINT routing = 0;
+        if (SystemParametersInfoW(SPI_GETMOUSEWHEELROUTING, 0, &routing, 0))
+            fields.insert(QStringLiteral("inactive_scroll_enabled"),
+                          routing == MOUSEWHEEL_ROUTING_MOUSE_POS);
+    }
+#endif
+    return fields;
 }
 
 void ScreenshotOverlayWindow::setInputPassThroughRect(const QRect& localRect) {

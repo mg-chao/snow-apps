@@ -48,8 +48,8 @@ class ScrollingFrameSource {
 };
 
 using ScrollingSourceFactory = std::function<std::unique_ptr<ScrollingFrameSource>()>;
-[[nodiscard]] ScrollingSourceFactory nativeScrollingSource(QRect physicalSelection,
-                                                           bool restoreOriginalColors);
+[[nodiscard]] ScrollingSourceFactory
+nativeScrollingSource(QRect physicalSelection, bool restoreOriginalColors, quint64 generation = 0);
 
 struct ScrollingPipelineFrame {
     quint64 generation = 0;

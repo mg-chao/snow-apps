@@ -2860,6 +2860,17 @@ void scrollingModeClearsPassThroughMaskBeforeRestoringRenderer() {
             "scrolling capture should install a selection pass-through mask");
     overlay.setScrollingCaptureMode(true);
     QApplication::processEvents();
+    const auto partial = overlay.scrollingDiagnostics();
+    require(!partial.value(QStringLiteral("full_hole")).toBool() &&
+                !partial.value(QStringLiteral("mask_empty")).toBool(),
+            "diagnostics distinguish a partial input hole with an applied mask");
+    overlay.setInputPassThroughRect(overlay.rect());
+    const auto full = overlay.scrollingDiagnostics();
+    require(full.value(QStringLiteral("full_hole")).toBool() &&
+                full.value(QStringLiteral("mask_empty")).toBool() &&
+                !full.value(QStringLiteral("thumbnail_visible")).toBool(),
+            "diagnostics expose a full display hole with the mask cleared before preview");
+    overlay.setInputPassThroughRect(QRect(20, 20, 40, 40));
 
     CanvasPaintObserver paintObserver(overlay);
     canvas->installEventFilter(&paintObserver);

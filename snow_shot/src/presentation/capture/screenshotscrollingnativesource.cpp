@@ -1,4 +1,5 @@
 #include "screenshotscrollingpipeline.h"
+#include "screenshotscrollingdiagnostics.h"
 #include "snow_capture.h"
 
 #include <limits>
@@ -7,7 +8,8 @@ namespace snow_shot::capture_detail {
 namespace {
 class NativeScrollingSource final : public ScrollingFrameSource {
   public:
-    explicit NativeScrollingSource(SnowCaptureStream* stream) : m_stream(stream) {}
+    explicit NativeScrollingSource(SnowCaptureStream* stream, quint64 generation)
+        : m_stream(stream), m_generation(generation) {}
     ~NativeScrollingSource() override {
         stop();
         snow_capture_stream_destroy(m_stream);
@@ -35,6 +37,13 @@ class NativeScrollingSource final : public ScrollingFrameSource {
                 result.kind = ScrollingSourceEvent::Kind::Error;
                 result.error = QStringLiteral("capture stream returned an invalid frame");
                 return result;
+            }
+            if (m_backend != info.backend_kind) {
+                m_backend = info.backend_kind;
+                logScrollingEvent("scrolling.backend_selected", m_generation,
+                                  {{QStringLiteral("backend"), m_backend},
+                                   {QStringLiteral("width"), static_cast<qint64>(info.width)},
+                                   {QStringLiteral("height"), static_cast<qint64>(info.height)}});
             }
             result.kind = ScrollingSourceEvent::Kind::Frame;
             result.frame.duplicate = info.is_duplicate != 0;
@@ -81,11 +90,15 @@ class NativeScrollingSource final : public ScrollingFrameSource {
   private:
     SnowCaptureStream* m_stream;
     int m_targetFps = 30;
+    int m_backend = -1;
+    quint64 m_generation;
 };
 } // namespace
 
-ScrollingSourceFactory nativeScrollingSource(QRect selection, bool restoreOriginalColors) {
-    return [selection, restoreOriginalColors]() -> std::unique_ptr<ScrollingFrameSource> {
+ScrollingSourceFactory nativeScrollingSource(QRect selection, bool restoreOriginalColors,
+                                             quint64 generation) {
+    return [selection, restoreOriginalColors,
+            generation]() -> std::unique_ptr<ScrollingFrameSource> {
         if (selection.isEmpty())
             return {};
         SnowCaptureStreamConfig config{};
@@ -107,13 +120,17 @@ ScrollingSourceFactory nativeScrollingSource(QRect selection, bool restoreOrigin
         config.adaptive_fps = 1;
         config.include_cursor = 0;
         config.restore_original_colors = restoreOriginalColors ? 1 : 0;
+        logScrollingEvent("scrolling.native_create", generation,
+                          {{QStringLiteral("physical_selection"), scrollingRect(selection)},
+                           {QStringLiteral("backend"), static_cast<int>(config.capture_backend)},
+                           {QStringLiteral("mode"), static_cast<int>(config.wgc_update_mode)}});
         auto* stream = snow_capture_stream_create_region(&config);
         if (!stream) {
             qWarning("Failed to create continuous scrolling stream: %s",
                      snow_capture_last_error_message());
             return {};
         }
-        return std::make_unique<NativeScrollingSource>(stream);
+        return std::make_unique<NativeScrollingSource>(stream, generation);
     };
 }
 } // namespace snow_shot::capture_detail

@@ -1,4 +1,5 @@
 #include "screenshotscrollingpipeline.h"
+#include "screenshotscrollingdiagnostics.h"
 #include "latestbridgemailbox.h"
 #include "../pinned/screenshotpintoperfinstrumentation.h"
 #include "snow_stitch_images.h"
@@ -406,12 +407,17 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
         m_cadence = AdaptiveScrollCadence(config);
         m_pool = snow_stitch_frame_pool_create(static_cast<std::uint32_t>(viewport.width()),
                                                static_cast<std::uint32_t>(viewport.height()), 6);
+        logScrollingEvent("scrolling.source_initializing", generation,
+                          {{QStringLiteral("width"), viewport.width()},
+                           {QStringLiteral("height"), viewport.height()}});
+        m_diagnostics = {};
         m_source = factory();
         if (!m_pool || !m_source) {
             m_callback({generation, false, false, true,
                         QStringLiteral("could not initialize scrolling frame source or pool")});
             return;
         }
+        logScrollingEvent("scrolling.source_ready", generation, m_diagnostics.fields());
         m_active.store(true);
         m_consumer = std::thread([this, generation]() { consume(generation); });
     }
@@ -453,6 +459,10 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
     void consume(quint64 generation) {
         while (m_active.load()) {
             auto event = m_source->receive(100);
+            if (m_diagnostics.reportDue(ScrollClock::now())) {
+                logScrollingEvent("scrolling.capture_progress", generation, m_diagnostics.fields(),
+                                  m_diagnostics.accepted == 0 ? QtWarningMsg : QtInfoMsg);
+            }
             if (!m_active.load()) {
                 SNOW_SCROLL_TRACE(event.frame.trace,
                                   event.frame.trace->disposition = "source_cancelled");
@@ -465,6 +475,7 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
                 consumeFrame(generation, std::move(event.frame), result);
                 break;
             case ScrollingSourceEvent::Kind::Dropped:
+                ++m_diagnostics.droppedEvents;
                 result.streamPressure = true;
                 break;
             case ScrollingSourceEvent::Kind::Error:
@@ -475,6 +486,7 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
                                           : event.error;
                 break;
             case ScrollingSourceEvent::Kind::Timeout:
+                ++m_diagnostics.timeouts;
                 continue;
             }
             const bool fatal = result.fatalError;
@@ -483,9 +495,19 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
             if (fatal)
                 break;
         }
+        logScrollingEvent("scrolling.capture_summary", generation, m_diagnostics.fields());
     }
     void consumeFrame(quint64 generation, ScrollingSourceFrame source,
                       ScrollCaptureResult& result) {
+        if (++m_diagnostics.received == 1) {
+            logScrollingEvent(
+                "scrolling.first_frame", generation,
+                {{QStringLiteral("width"), source.image.width()},
+                 {QStringLiteral("height"), source.image.height()},
+                 {QStringLiteral("pixel_format"), static_cast<int>(source.image.format())},
+                 {QStringLiteral("stride_bytes"), source.image.bytesPerLine()},
+                 {QStringLiteral("duplicate"), source.duplicate}});
+        }
         const auto trace = source.trace;
         SNOW_SCROLL_TRACE(trace, trace->record(scrolling_perf::Stage::SourceQueueWait,
                                                scrolling_perf::now() - trace->publishedAt));
@@ -497,6 +519,23 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
         const bool capacity = m_mailbox->hasPendingCapacity();
         SNOW_SCROLL_TRACE(trace, trace->queueDepth = m_mailbox->pendingDepth());
         if (!valid || source.duplicate || !capacity) {
+            if (!valid) {
+                if (++m_diagnostics.invalid == 1) {
+                    logScrollingEvent(
+                        "scrolling.frame_rejected", generation,
+                        {{QStringLiteral("width"), source.image.width()},
+                         {QStringLiteral("height"), source.image.height()},
+                         {QStringLiteral("expected_width"), m_viewport.width()},
+                         {QStringLiteral("expected_height"), m_viewport.height()},
+                         {QStringLiteral("pixel_format"), static_cast<int>(source.image.format())},
+                         {QStringLiteral("stride_bytes"), source.image.bytesPerLine()}},
+                        QtWarningMsg);
+                }
+            } else if (source.duplicate) {
+                ++m_diagnostics.duplicates;
+            } else {
+                ++m_diagnostics.mailboxDropped;
+            }
             result.streamPressure = !capacity;
             SNOW_SCROLL_TRACE(trace, trace->disposition = !valid             ? "invalid"
                                                           : source.duplicate ? "duplicate"
@@ -515,6 +554,7 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
                               input.height == static_cast<std::uint32_t>(m_viewport.height()) &&
                               input.stride_bytes == input.width * 4;
         if (!acquired) {
+            ++m_diagnostics.poolUnavailable;
             if (frame)
                 snow_stitch_frame_buffer_destroy(frame);
             SNOW_SCROLL_TRACE(trace, trace->disposition = "pool_unavailable");
@@ -524,6 +564,7 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
             SNOW_SCROLL_SCOPE(trace, RgbaCopy);
             std::memcpy(input.rgba_bytes, source.image.constBits(), expected);
         }
+        ++m_diagnostics.accepted;
         OwnedScrollFrame owned(frame);
         owned.trace = trace;
         SNOW_SCROLL_TRACE(trace, trace->publishedAt = scrolling_perf::now());
@@ -538,6 +579,7 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
     std::unique_ptr<ScrollingFrameSource> m_source;
     SnowStitchFramePool* m_pool = nullptr;
     QSize m_viewport;
+    ScrollingCaptureDiagnostics m_diagnostics;
     quint64 m_generation = 0;
     AdaptiveScrollCadence m_cadence;
     std::atomic_bool m_active = false;
@@ -661,6 +703,16 @@ struct ScreenshotScrollingPipeline::Impl {
             SNOW_SCROLL_TRACE(result.trace, result.trace->disposition = "cancelled");
             return;
         }
+        if (++processedFrames == 1 || result.fatalError) {
+            logScrollingEvent("scrolling.stitch_result", generation,
+                              {{QStringLiteral("count"), processedFrames},
+                               {QStringLiteral("code"), result.event},
+                               {QStringLiteral("changed"), result.changed},
+                               {QStringLiteral("fatal"), result.fatalError},
+                               {QStringLiteral("width"), result.sourceSize.width()},
+                               {QStringLiteral("height"), result.sourceSize.height()}},
+                              result.fatalError ? QtWarningMsg : QtInfoMsg);
+        }
         auto trace = result.trace;
         Q_UNUSED(trace);
         SNOW_SCROLL_TRACE(trace, trace->record(scrolling_perf::Stage::ReturnQueueWait,
@@ -691,6 +743,7 @@ struct ScreenshotScrollingPipeline::Impl {
     quint64 generation = 0;
     bool active = false;
     bool busy = false;
+    qint64 processedFrames = 0;
 };
 
 ScreenshotScrollingPipeline::ScreenshotScrollingPipeline(FrameCallback frames, ErrorCallback errors,
@@ -714,6 +767,7 @@ void ScreenshotScrollingPipeline::reset(quint64 generation) {
     m_impl->active = false;
     m_impl->generation = generation;
     m_impl->busy = false;
+    m_impl->processedFrames = 0;
     m_impl->mailbox->reset(generation);
     QMetaObject::invokeMethod(
         m_impl->producer, [target = m_impl->producer, generation]() { target->reset(generation); },

@@ -9,6 +9,12 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QTemporaryFile>
+#include <QTemporaryDir>
+#include <QFile>
+#include <QJsonDocument>
+#include "snow_shot/diagnostics/diagnostics.h"
+#include <condition_variable>
+#include <mutex>
 #include <QTimer>
 
 #include <iostream>
@@ -421,6 +427,106 @@ void interruptedThumbnailDragTest() {
     }
 }
 
+void pipelineDiagnosticsTest() {
+    using namespace snow_shot::diagnostics;
+    class Source final : public ScrollingFrameSource {
+      public:
+        ScrollingSourceEvent receive(int timeoutMilliseconds) override {
+            ScrollingSourceEvent event;
+            if (step == 0) {
+                ++step;
+                return event;
+            }
+            if (step <= 3) {
+                event.kind = ScrollingSourceEvent::Kind::Frame;
+                event.frame.image = QImage(step == 1 ? 31 : 32, 32, QImage::Format_RGBA8888);
+                event.frame.image.fill(Qt::white);
+                event.frame.duplicate = step == 2;
+                ++step;
+                return event;
+            }
+            std::unique_lock lock(mutex);
+            wake.wait_for(lock, std::chrono::milliseconds(timeoutMilliseconds),
+                          [this] { return stopped; });
+            return event;
+        }
+        void setTargetFps(int) override {}
+        ScrollingSourceStats stats() const override {
+            return {};
+        }
+        void stop() override {
+            std::lock_guard lock(mutex);
+            stopped = true;
+            wake.notify_all();
+        }
+
+      private:
+        int step = 0;
+        bool stopped = false;
+        std::mutex mutex;
+        std::condition_variable wake;
+    };
+    QTemporaryDir directory;
+    DiagnosticsOptions options;
+    options.directories = {directory.path()};
+    options.enableCrashCapture = false;
+    options.installMessageHandler = false;
+    options.mirrorToConsole = false;
+    auto& service = DiagnosticsService::instance();
+    require(service.initialize(options), "initialize pipeline diagnostics");
+    QEventLoop loop;
+    QTimer timeout;
+    timeout.setSingleShot(true);
+    QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+    bool preview = false;
+    bool failed = false;
+    {
+        ScreenshotScrollingPipeline pipeline(
+            [&](ScrollingPipelineFrame frame) {
+                preview = frame.changed && !frame.previewImage.isNull();
+                loop.quit();
+            },
+            [&](quint64, QString) {
+                failed = true;
+                loop.quit();
+            });
+        pipeline.begin(71, QSize(32, 32), ScreenshotScrollingRecognitionMode::Vertical,
+                       [] { return std::make_unique<Source>(); });
+        timeout.start(5000);
+        loop.exec();
+    }
+    require(preview && !failed,
+            "diagnostics must preserve first preview delivery after rejected frames");
+    require(service.flush(), "pipeline diagnostics flush");
+    QFile file(service.status().currentFile);
+    require(file.open(QIODevice::ReadOnly), "read pipeline diagnostics");
+    QJsonObject summary;
+    int rejected = 0;
+    int firstFrames = 0;
+    for (const auto& line : file.readAll().split('\n')) {
+        const auto record = QJsonDocument::fromJson(line).object();
+        const auto fields = record.value(QStringLiteral("fields")).toObject();
+        if (fields.value(QStringLiteral("operation")) != QStringLiteral("71"))
+            continue;
+        const auto event = record.value(QStringLiteral("event")).toString();
+        if (event == QStringLiteral("scrolling.capture_summary"))
+            summary = fields;
+        if (event == QStringLiteral("scrolling.frame_rejected"))
+            ++rejected;
+        if (event == QStringLiteral("scrolling.first_frame"))
+            ++firstFrames;
+    }
+    require(summary.value(QStringLiteral("frames_received")).toInt() == 3 &&
+                summary.value(QStringLiteral("frames_accepted")).toInt() == 1 &&
+                summary.value(QStringLiteral("invalid_frames")).toInt() == 1 &&
+                summary.value(QStringLiteral("duplicate_frames")).toInt() == 1 &&
+                summary.value(QStringLiteral("receive_timeouts")).toInt() >= 1,
+            "capture summary must distinguish invalid, duplicate, accepted and missing frames");
+    require(rejected == 1 && firstFrames == 1, "frame milestones must be emitted once per stream");
+    file.close();
+    service.shutdown();
+}
+
 void sourceFailureTest() {
     QEventLoop loop;
     QTimer timeout;
@@ -458,6 +564,7 @@ int main(int argc, char** argv) {
         overloadTest();
         replaySourceTest();
         sourceFailureTest();
+        pipelineDiagnosticsTest();
         std::cout << "scrolling image replay tests passed\n";
         return 0;
     } catch (const std::exception& error) {
