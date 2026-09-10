@@ -58,7 +58,7 @@ function Assert-PdbIdentity {
             $stream.Position = [long]$infoBlock * $blockSize + 8
             $pdbAge = $reader.ReadUInt32()
             $pdbSignature = [guid]::new($reader.ReadBytes(16))
-            if ($pdbSignature -ne [guid]$Signature -or $pdbAge -ne [Convert]::ToUInt32($Age, 16)) {
+            if ($pdbSignature -ne [guid]$Signature -or $pdbAge -ne [Convert]::ToUInt32($Age, 10)) {
                 throw "PDB does not match the binary RSDS identity: $Path"
             }
         }
@@ -96,7 +96,7 @@ foreach ($binary in Get-ChildItem -LiteralPath (Join-Path $installRoot "bin") -F
         age = $null
     }
     foreach ($line in $headers) {
-        if ($line -match 'Format:\s+RSDS,\s+\{(?<signature>[0-9A-Fa-f-]+)\},\s+(?<age>[0-9A-Fa-f]+),\s+(?<path>.+\.pdb)\s*$') {
+        if ($line -match 'Format:\s+RSDS,\s+\{(?<signature>[0-9A-Fa-f-]+)\},\s+(?<age>[0-9]+),\s+(?<path>.+\.pdb)\s*$') {
             $record.signature = $Matches.signature
             $record.age = $Matches.age
             $pdb = $Matches.path.Trim()

@@ -11,6 +11,34 @@ $null = Set-SnowBuildEnvironment -Preset 'snow-shot-msvc-release'
 & cl /nologo /std:c++20 /O2 /MT /Zi "/Fd:$root/compile.pdb" "/Fo:$root/fixture.obj" "/Fe:$bin/snow_shot.exe" `
     (Join-Path $repo 'snow_shot/tests/update_helper_fixture.cpp') /link /DEBUG "/PDB:$root/fixture.pdb" advapi32.lib
 if ($LASTEXITCODE -ne 0) { throw 'Symbol fixture compilation failed.' }
+# dumpbin reports the RSDS age in decimal. Raise the freshly linked pair's age
+# to a multi-digit value so a hex misreading of the dumpbin field fails here.
+$fixtureExe = [IO.File]::ReadAllBytes((Join-Path $bin 'snow_shot.exe'))
+$rsdsOffset = -1
+for ($i = 0; $i -lt $fixtureExe.Length - 16; $i++) {
+    if ($fixtureExe[$i] -eq 0x52 -and $fixtureExe[$i + 1] -eq 0x53 -and
+        $fixtureExe[$i + 2] -eq 0x44 -and $fixtureExe[$i + 3] -eq 0x53) { $rsdsOffset = $i; break }
+}
+if ($rsdsOffset -lt 0) { throw 'Fixture executable has no RSDS record.' }
+[BitConverter]::GetBytes([uint32]10).CopyTo($fixtureExe, $rsdsOffset + 20)
+[IO.File]::WriteAllBytes((Join-Path $bin 'snow_shot.exe'), $fixtureExe)
+$fixturePdbPath = Join-Path $root 'fixture.pdb'
+$fixturePdb = [IO.File]::ReadAllBytes($fixturePdbPath)
+$guidBytes = [byte[]]::new(16)
+[Array]::Copy($fixtureExe, $rsdsOffset + 4, $guidBytes, 0, 16)
+$pdbAgeOffsets = @()
+for ($i = 4; $i -le $fixturePdb.Length - 20; $i++) {
+    $matchesGuid = $true
+    for ($j = 0; $j -lt 16; $j++) {
+        if ($fixturePdb[$i + $j] -ne $guidBytes[$j]) { $matchesGuid = $false; break }
+    }
+    if ($matchesGuid) { $pdbAgeOffsets += ($i - 4) }
+}
+if ($pdbAgeOffsets.Count -lt 1) { throw 'Fixture PDB identity stream was not found.' }
+foreach ($pdbAgeOffset in $pdbAgeOffsets) {
+    [BitConverter]::GetBytes([uint32]10).CopyTo($fixturePdb, $pdbAgeOffset)
+}
+[IO.File]::WriteAllBytes($fixturePdbPath, $fixturePdb)
 Copy-Item -LiteralPath (Join-Path $bin 'snow_shot.exe') -Destination (Join-Path $bin 'snow-shot-updater.exe')
 Copy-Item -LiteralPath (Join-Path $bin 'snow_shot.exe') -Destination (Join-Path $bin 'snow-ocr-process.exe')
 foreach ($external in @($false, $true)) {
