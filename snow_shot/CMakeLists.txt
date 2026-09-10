@@ -1916,6 +1916,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
     target_link_libraries(snow-shot-shortcut-key-row-tests PRIVATE
+        snow_shot_window_shortcuts
         adqt_icon_core
         ant_design_icons_qt
         ant_design_qt
@@ -3422,6 +3423,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         )
     endif()
     snow_shot_import_offscreen_platform(snow-shot-floating-toolbar-drag-tests)
+    add_test(NAME snow-shot-interrupted-toolbar-drag-tests
+        COMMAND snow-shot-floating-toolbar-drag-tests --interrupted-drag-only -platform offscreen)
+    set_tests_properties(snow-shot-interrupted-toolbar-drag-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-floating-toolbar-dpi-frame-reconcile-tests
         COMMAND snow-shot-floating-toolbar-drag-tests --dpi-frame-reconcile-only)
     set_tests_properties(snow-shot-floating-toolbar-dpi-frame-reconcile-tests PROPERTIES
@@ -4493,6 +4497,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-scrolling-image-replay-tests tests/scrolling_image_replay_tests.cpp)
     snow_shot_configure_scrolling_replay_target(snow-shot-scrolling-image-replay-tests)
     add_test(NAME snow-shot-scrolling-image-replay-tests COMMAND snow-shot-scrolling-image-replay-tests)
+    add_test(NAME snow-shot-scrolling-thumbnail-drag-tests
+        COMMAND snow-shot-scrolling-image-replay-tests --thumbnail-drag-only)
+    set_tests_properties(snow-shot-scrolling-thumbnail-drag-tests PROPERTIES LABELS "unit")
     set_tests_properties(snow-shot-scrolling-image-replay-tests PROPERTIES
         LABELS "unit" ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")

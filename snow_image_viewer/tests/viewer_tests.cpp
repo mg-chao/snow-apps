@@ -19,6 +19,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QEventLoop>
+#include <QProcess>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTemporaryFile>
 #include <QTimer>
@@ -38,6 +40,11 @@
 #include <span>
 #include <string_view>
 #include <vector>
+
+#ifdef Q_OS_WIN
+#include <fcntl.h>
+#include <io.h>
+#endif
 
 namespace {
 
@@ -1936,8 +1943,8 @@ void testCancelAfterArtifactPublication(const QString& directory) {
                                          QFileInfo::exists(artifactPath) && !controller.isBusy();
                          }
                      });
-    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::exactReady,
-                     &loop, [&](const snow::image_viewer::ExactEditResult& result) {
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::exactReady, &loop,
+                     [&](const snow::image_viewer::ExactEditResult& result) {
                          if (result.requestId != recoveryRequest)
                              return;
                          recovered = recovered && result.displayPreview.has_value() &&
@@ -2185,6 +2192,77 @@ void testJxlWorkerRetirement(const QString& directory) {
             "JPEG XL jobs use a fresh worker after a completed encode");
 }
 
+void testMissingWorkerDoesNotRestartWithoutWork(const QString& directory) {
+    snow::image_viewer::EditPipelineOptions options;
+    options.workerExecutablePath = directory + QStringLiteral("/missing-export-worker.exe");
+    snow::image_viewer::EditPipelineController controller(options, nullptr);
+    auto* worker = controller.findChild<QProcess*>();
+    require(worker != nullptr, "controller creates its initial worker");
+    QSignalSpy error(worker, &QProcess::errorOccurred);
+    require(worker->error() == QProcess::FailedToStart || error.wait(5000),
+            "missing worker must report a startup error");
+    require(controller.workerRestartCount() == 0,
+            "failed startup must not cause an endless idle worker restart loop");
+}
+
+void testWorkerStartupFailureCompletes(const QString& directory, const QByteArray& mode) {
+    const QByteArray previous = qgetenv("SNOW_VIEWER_TEST_WORKER_STARTUP");
+    const QByteArray previousGate = qgetenv("SNOW_VIEWER_TEST_WORKER_GATE");
+    const QString gatePath = directory + QStringLiteral("/worker-startup-gate");
+    QFile::remove(gatePath);
+    qputenv("SNOW_VIEWER_TEST_WORKER_STARTUP", mode);
+    qputenv("SNOW_VIEWER_TEST_WORKER_GATE", gatePath.toUtf8());
+    {
+        snow::image_viewer::EditPipelineOptions options;
+        options.workerExecutablePath = QCoreApplication::applicationFilePath();
+        options.workerTimeoutMs = 1000;
+        snow::image_viewer::EditPipelineController controller(options, nullptr);
+        snow::image_viewer::EditExportSettings settings;
+        settings.sourceSize = QSize(64, 32);
+        settings.width = 32;
+        settings.height = 16;
+        settings.format = settings.encode.format = snow::image::Format::png;
+        QEventLoop loop;
+        QString failure;
+        QObject::connect(&controller, &snow::image_viewer::EditPipelineController::sourceReady,
+                         &loop, [&]() { controller.requestEdit(settings); });
+        QObject::connect(
+            &controller, &snow::image_viewer::EditPipelineController::exactRasterRequested, &loop,
+            [&](quint64 id, const auto& requested) {
+                QImage image(requested.width, requested.height, QImage::Format_RGBA8888);
+                image.fill(Qt::cyan);
+                controller.submitGpuResizeResult(id, gpuReadback(std::move(image)));
+                // Let the helper handshake only once there is an active job,
+                // so eager prewarming cannot race this regression.
+                QFile gate(gatePath);
+                require(gate.open(QIODevice::WriteOnly), "open worker startup gate");
+            });
+        QObject::connect(&controller, &snow::image_viewer::EditPipelineController::failed, &loop,
+                         [&](const QString& message) {
+                             failure = message;
+                             loop.quit();
+                         });
+        QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+        controller.setGpuSource(directory + QStringLiteral("/sample.png"));
+        loop.exec();
+        require(!controller.isBusy() &&
+                    failure.contains(mode == "stall" ? QStringLiteral("timed out")
+                                                     : QStringLiteral("protocol")),
+                "startup stalls and protocol mismatches must complete the edit with an error");
+        require(controller.workerRestartCount() == 0,
+                "a failed worker must wait for a new request before starting again");
+    }
+    if (previous.isNull())
+        qunsetenv("SNOW_VIEWER_TEST_WORKER_STARTUP");
+    else
+        qputenv("SNOW_VIEWER_TEST_WORKER_STARTUP", previous);
+    if (previousGate.isNull())
+        qunsetenv("SNOW_VIEWER_TEST_WORKER_GATE");
+    else
+        qputenv("SNOW_VIEWER_TEST_WORKER_GATE", previousGate);
+    QFile::remove(gatePath);
+}
+
 void testWorkerFailureModes(const QString& directory) {
     const auto runMode = [&](const QString& mode, bool expectReady, const QString& expectedFailure,
                              int workerTimeoutMs) {
@@ -2226,6 +2304,18 @@ void testWorkerFailureModes(const QString& directory) {
         require(ready == expectReady &&
                     (expectReady ? failure.isEmpty() : failure.contains(expectedFailure)),
                 "worker fault mode produces the expected current-job outcome");
+        if (mode == QStringLiteral("crash")) {
+            failure.clear();
+            settings.width = 16;
+            settings.height = 8;
+            controller.requestEdit(settings);
+            loop.exec();
+            require(ready && failure.isEmpty() && !controller.isBusy() &&
+                        controller.encodedArtifact() &&
+                        controller.encodedArtifact()->byteSize() > 0 &&
+                        controller.workerRestartCount() == 1,
+                    "a new edit after a worker crash must restart once and publish its artifact");
+        }
     };
 
     runMode(QStringLiteral("stale-result"), true, {}, 2000);
@@ -2571,6 +2661,46 @@ void testJpegNativePreviewAndArtifactReuse(const QString& directory) {
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    const QByteArray startupMode = qgetenv("SNOW_VIEWER_TEST_WORKER_STARTUP");
+    if (!startupMode.isEmpty()) {
+#ifdef Q_OS_WIN
+        _setmode(_fileno(stdout), _O_BINARY);
+#endif
+        QTimer handshake;
+        if (startupMode == "incompatible") {
+            QObject::connect(&handshake, &QTimer::timeout, &application, [&]() {
+                if (!QFileInfo::exists(QString::fromUtf8(qgetenv("SNOW_VIEWER_TEST_WORKER_GATE"))))
+                    return;
+                handshake.stop();
+                const auto bytes = snow::image_viewer::worker_protocol::encodeFrame(
+                    snow::image_viewer::worker_protocol::MessageType::ready,
+                    {{QStringLiteral("protocolVersion"), -1}});
+                std::cout.write(bytes.constData(), bytes.size());
+                std::cout.flush();
+            });
+            handshake.start(10);
+        }
+        QTimer::singleShot(10'000, &application, &QCoreApplication::quit);
+        return application.exec();
+    }
+    if (application.arguments().contains(QStringLiteral("--worker-lifecycle-only"))) {
+        QTemporaryDir directory;
+        require(directory.isValid(), "create worker lifecycle test directory");
+        testMissingWorkerDoesNotRestartWithoutWork(directory.path());
+        testWorkerStartupFailureCompletes(directory.path(), "stall");
+        testWorkerStartupFailureCompletes(directory.path(), "incompatible");
+        testWorkerFailureModes(directory.path());
+        testNonCooperativeCancellation(directory.path());
+        testCooperativeCancellation(directory.path());
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--worker-startup-only"))) {
+        QTemporaryDir directory;
+        require(directory.isValid(), "create worker startup test directory");
+        testWorkerStartupFailureCompletes(directory.path(), "stall");
+        testWorkerStartupFailureCompletes(directory.path(), "incompatible");
+        return 0;
+    }
     if (argc > 1) {
         const QString path = QString::fromLocal8Bit(argv[1]);
         const snow::image_viewer::DecodeResult decoded =
@@ -2615,6 +2745,9 @@ int main(int argc, char** argv) {
     testCooperativeCancellation(directory.path());
     testJxlWorkerRetirement(directory.path());
     testWorkerFailureModes(directory.path());
+    testMissingWorkerDoesNotRestartWithoutWork(directory.path());
+    testWorkerStartupFailureCompletes(directory.path(), "stall");
+    testWorkerStartupFailureCompletes(directory.path(), "incompatible");
     testSharedMemoryAttachRetry(directory.path());
     testExportKeyNormalization();
     testWebpNativeRoutingAndArtifactReuse(directory.path());

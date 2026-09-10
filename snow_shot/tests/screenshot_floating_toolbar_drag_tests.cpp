@@ -2198,9 +2198,79 @@ void floatingToolbarInputsAcquireKeyboardFocus() {
     snow_shot::storage::ApplicationStorage::instance().shutdown();
 }
 
+void interruptedToolbarDragStopsMoving() {
+    for (const bool trailing : {false, true}) {
+        for (const auto interruption :
+             {QEvent::UngrabMouse, QEvent::WindowDeactivate, QEvent::MouseMove, QEvent::Hide}) {
+            auto options = testToolbarOptions();
+            options.showTrailingDragHandle = true;
+            ScreenshotFloatingToolPaletteWindow window(options);
+            window.show();
+            QApplication::processEvents();
+            auto* handle =
+                trailing ? window.palette()->trailingDragHandle() : window.palette()->dragHandle();
+            require(handle != nullptr, "toolbar drag handle must exist");
+            const QPoint local = handle->rect().center();
+            const QPoint global = handle->mapToGlobal(local);
+            QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton,
+                              Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(handle, &press);
+            require(QWidget::mouseGrabber() == handle, "toolbar drag must own mouse capture");
+            if (interruption != QEvent::MouseMove) {
+                QEvent event(interruption);
+                QApplication::sendEvent(interruption == QEvent::WindowDeactivate
+                                            ? static_cast<QWidget*>(&window)
+                                            : handle,
+                                        &event);
+            }
+            const QPoint previous = window.contentPosition();
+            QMouseEvent move(QEvent::MouseMove, local, global + QPoint(80, 40), Qt::NoButton,
+                             Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(handle, &move);
+            if (QWidget::mouseGrabber() == handle || window.contentPosition() != previous ||
+                window.physicalDragActive()) {
+                std::cerr << "interruption=" << interruption
+                          << " grabbed=" << (QWidget::mouseGrabber() == handle)
+                          << " physical=" << window.physicalDragActive()
+                          << " before=" << previous.x() << ',' << previous.y()
+                          << " after=" << window.contentPosition().x() << ','
+                          << window.contentPosition().y() << '\n';
+            }
+            require(QWidget::mouseGrabber() != handle && window.contentPosition() == previous &&
+                        !window.physicalDragActive(),
+                    "lost capture, deactivation and missing releases must end toolbar dragging");
+            QMouseEvent nextPress(QEvent::MouseButtonPress, local, global, Qt::LeftButton,
+                                  Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(handle, &nextPress);
+            require(QWidget::mouseGrabber() == handle,
+                    "an interrupted toolbar drag must allow a fresh drag");
+            int dragMoves = 0;
+            QObject::connect(window.paletteHost(), &ScreenshotToolPaletteHost::dragMoved, &window,
+                             [&]() { ++dragMoves; });
+            QMouseEvent nextMove(QEvent::MouseMove, local, global + QPoint(20, 10), Qt::NoButton,
+                                 Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(handle, &nextMove);
+            // Synthetic events do not move the Windows physical cursor used by
+            // native positioning. Verify that the new drag dispatches movement.
+            require(dragMoves == 1,
+                    "a fresh toolbar drag must dispatch movement after interruption");
+            QMouseEvent release(QEvent::MouseButtonRelease, local, global + QPoint(20, 10),
+                                Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(handle, &release);
+            require(QWidget::mouseGrabber() != handle && !window.physicalDragActive(),
+                    "a fresh toolbar drag must finish normally");
+        }
+    }
+    snow_shot::storage::ApplicationStorage::instance().shutdown();
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     try {
+        if (app.arguments().contains(QStringLiteral("--interrupted-drag-only"))) {
+            interruptedToolbarDragStopsMoving();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--dpi-frame-reconcile-only"))) {
             dpiCommitReconcilesTheActualFrameBeforePainting();
             dpiCommitPresentsContentWhenUpdatesResume();

@@ -38,7 +38,6 @@
 
 ## Commit & Pull Request Guidelines
 - Conventional Commits, lowercase imperative: `fix(screenshot): stop cursor flicker during smart frame selection`. Types in use: `feat`, `fix`, `refactor`, `perf`, `test`, `style`, `build`. Scopes mirror features (`recording`, `pinned`, `dpi`, `ocr`, `toolbar`).
-- Work on `feat/YYYYMMDD_main_NN` branches; release tags `v*_snow-shot` trigger `.github/workflows/snow-shot-release.yml`.
 - PRs: state motivation, list affected presets/targets, link issues, and confirm format, lint, and related tests pass. Do not run the full suite for a PR unless the user explicitly asks.
 
 ## Licensing & Configuration

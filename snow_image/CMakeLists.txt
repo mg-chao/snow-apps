@@ -275,11 +275,18 @@ function(snow_image_configure_target target_name linkage)
         list(REMOVE_ITEM _snow_image_target_libraries PNG::PNG)
     endif()
     if(linkage STREQUAL "STATIC" AND NOT SNOW_IMAGE_LINK_JPEG_DEPENDENCIES)
-        # Static Qt kits without system_jpeg provide the JPEG implementation
-        # through Qt's image plugin. Avoid pulling a second libjpeg archive
-        # into the same executable.
+        # The bundled Qt library and its headers must be selected together.
+        # Compiling with vcpkg's libjpeg-62 headers and resolving those symbols
+        # to Qt's libjpeg-80 fails at jpeg_create_compress (the structs differ).
+        find_package(Qt6 REQUIRED COMPONENTS Core BundledLibjpeg)
+        find_path(_snow_image_qt_jpeg_include NAMES jpeglib.h
+            PATHS ${Qt6Core_INCLUDE_DIRS} PATH_SUFFIXES QtJpeg
+            NO_DEFAULT_PATH NO_CACHE REQUIRED)
+        target_include_directories(${target_name} BEFORE PRIVATE
+            "${_snow_image_qt_jpeg_include}")
         list(FILTER _snow_image_target_libraries EXCLUDE
             REGEX "TARGET_EXISTS:libjpeg-turbo::jpeg>")
+        list(PREPEND _snow_image_target_libraries Qt6::BundledLibjpeg)
     endif()
     target_link_libraries(${target_name} PRIVATE ${_snow_image_target_libraries})
     unset(_snow_image_target_libraries)

@@ -41,6 +41,7 @@ class ScreenshotScrollingThumbnailWidget final : public QWidget {
 #endif
 
   protected:
+    bool event(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void leaveEvent(QEvent* event) override;
@@ -81,6 +82,7 @@ class ScreenshotScrollingThumbnailWidget final : public QWidget {
     void updateScrollBarGeometry();
     void updateCursorForPosition(int position);
     void updateTrimFromPosition(int position);
+    void cancelDrag();
     void drawTrimHandle(QPainter& painter, int position, bool head) const;
     void replacePreview(const QImage& image);
     void discardPreviewBack(int rows);

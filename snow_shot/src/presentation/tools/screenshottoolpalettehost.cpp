@@ -41,21 +41,22 @@ ScreenshotToolPaletteHost::ScreenshotToolPaletteHost(const ScreenshotToolPalette
     m_palette->setShadowMargins(defaultShadowMargins());
     m_palette->move(0, 0);
     if (m_palette->dragHandle() != nullptr) {
+        m_palette->dragHandle()->setMouseTracking(true);
         m_palette->dragHandle()->installEventFilter(this);
     }
     if (m_palette->trailingDragHandle() != nullptr) {
+        m_palette->trailingDragHandle()->setMouseTracking(true);
         m_palette->trailingDragHandle()->installEventFilter(this);
     }
     m_palette->installWheelFilters(this);
 
     connect(m_palette, &ScreenshotToolPalette::visibleContentChanged, this,
             &ScreenshotToolPaletteHost::handlePaletteVisibleContentChanged);
-    connect(m_palette, &ScreenshotToolPalette::materializedScope, this,
-            [this](QWidget* scope) {
-                if (m_palette != nullptr) {
-                    m_palette->installWheelFilters(this, scope);
-                }
-            });
+    connect(m_palette, &ScreenshotToolPalette::materializedScope, this, [this](QWidget* scope) {
+        if (m_palette != nullptr) {
+            m_palette->installWheelFilters(this, scope);
+        }
+    });
 
     applyHostSize();
 }
@@ -108,9 +109,9 @@ QRect ScreenshotToolPaletteHost::mainToolbarContentRect() const {
 }
 
 ScreenshotToolbarPlacementSnapshot ScreenshotToolPaletteHost::placementSnapshot() const {
-    ScreenshotToolbarPlacementSnapshot snapshot =
-        m_palette != nullptr ? m_palette->placementSnapshot()
-                             : ScreenshotToolbarPlacementSnapshot{};
+    ScreenshotToolbarPlacementSnapshot snapshot = m_palette != nullptr
+                                                      ? m_palette->placementSnapshot()
+                                                      : ScreenshotToolbarPlacementSnapshot{};
     snapshot.contentOffset = contentOffset();
     return snapshot;
 }
@@ -156,8 +157,7 @@ void ScreenshotToolPaletteHost::resetStyleState() {
     }
 }
 
-void ScreenshotToolPaletteHost::setCreationStyleDefaults(
-    const SnowCanvasStyleDefaults& defaults) {
+void ScreenshotToolPaletteHost::setCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults) {
     if (m_palette != nullptr) {
         m_palette->setCreationStyleDefaults(defaults);
     }
@@ -288,6 +288,7 @@ void ScreenshotToolPaletteHost::cancelDrag() {
             m_palette->trailingDragHandle()->releaseMouse();
         }
     }
+    emit dragCancelled();
 }
 
 bool ScreenshotToolPaletteHost::eventFilter(QObject* watched, QEvent* event) {
@@ -299,6 +300,10 @@ bool ScreenshotToolPaletteHost::eventFilter(QObject* watched, QEvent* event) {
     if (m_palette != nullptr &&
         (watched == m_palette->dragHandle() || watched == m_palette->trailingDragHandle()) &&
         event != nullptr) {
+        if (event->type() == QEvent::Hide || event->type() == QEvent::UngrabMouse ||
+            event->type() == QEvent::WindowDeactivate) {
+            cancelDrag();
+        }
         if (event->type() == QEvent::MouseButtonPress) {
             auto* mouseEvent = static_cast<QMouseEvent*>(event);
             if (mouseEvent->button() == Qt::LeftButton) {
@@ -315,6 +320,10 @@ bool ScreenshotToolPaletteHost::eventFilter(QObject* watched, QEvent* event) {
 
         if (event->type() == QEvent::MouseMove && m_dragging) {
             auto* mouseEvent = static_cast<QMouseEvent*>(event);
+            if (!mouseEvent->buttons().testFlag(Qt::LeftButton)) {
+                cancelDrag();
+                return QWidget::eventFilter(watched, event);
+            }
             emit dragMoved(globalMousePosition(mouseEvent));
             mouseEvent->accept();
             return true;
@@ -376,9 +385,8 @@ void ScreenshotToolPaletteHost::syncHostSize() {
         return;
     }
 
-    const QSize targetSize = m_frameSize.isValid() && !m_frameSize.isEmpty()
-                                 ? m_frameSize
-                                 : m_palette->size();
+    const QSize targetSize =
+        m_frameSize.isValid() && !m_frameSize.isEmpty() ? m_frameSize : m_palette->size();
     if (size() != targetSize) {
         setFixedSize(targetSize);
         SNOW_SHOT_TOOLBAR_PERF_COUNTER("host.size_sync");

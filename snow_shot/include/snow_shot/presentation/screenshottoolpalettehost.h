@@ -62,6 +62,7 @@ class ScreenshotToolPaletteHost final : public QWidget {
     void dragStarted(const QPoint& globalPosition);
     void dragMoved(const QPoint& globalPosition);
     void dragFinished(const QPoint& globalPosition);
+    void dragCancelled();
 
   private:
     bool eventFilter(QObject* watched, QEvent* event) override;

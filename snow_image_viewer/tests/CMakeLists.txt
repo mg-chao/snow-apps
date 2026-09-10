@@ -21,6 +21,9 @@ if(MSVC)
 endif()
 
 add_test(NAME snow_image_viewer_tests COMMAND snow_image_viewer_tests)
+add_test(NAME snow_image_viewer_worker_lifecycle_tests
+    COMMAND snow_image_viewer_tests --worker-lifecycle-only)
+set_tests_properties(snow_image_viewer_worker_lifecycle_tests PROPERTIES LABELS "unit" TIMEOUT 30)
 
 add_executable(snow_image_viewer_generated_icon_pack_tests
     generated_icon_pack_tests.cpp

@@ -73,13 +73,7 @@ ScreenshotScrollingThumbnailWidget::ScreenshotScrollingThumbnailWidget(QWidget& 
 }
 
 void ScreenshotScrollingThumbnailWidget::reset() {
-    if (m_dragHandle != DragHandle::None) {
-        m_dragHandle = DragHandle::None;
-        if (QWidget::mouseGrabber() == this) {
-            releaseMouse();
-        }
-    }
-    unsetCursor();
+    cancelDrag();
     m_previewTiles.clear();
     m_previewExtent = 0;
     m_tileDirection = TileDirection::None;
@@ -95,6 +89,24 @@ void ScreenshotScrollingThumbnailWidget::reset() {
     }
     updateWidgetMetrics();
     update();
+}
+
+void ScreenshotScrollingThumbnailWidget::cancelDrag() {
+    if (m_dragHandle != DragHandle::None) {
+        m_dragHandle = DragHandle::None;
+        if (QWidget::mouseGrabber() == this) {
+            releaseMouse();
+        }
+    }
+    unsetCursor();
+}
+
+bool ScreenshotScrollingThumbnailWidget::event(QEvent* event) {
+    if (event->type() == QEvent::Hide || event->type() == QEvent::WindowDeactivate ||
+        event->type() == QEvent::UngrabMouse) {
+        cancelDrag();
+    }
+    return QWidget::event(event);
 }
 
 void ScreenshotScrollingThumbnailWidget::setRecognitionMode(
@@ -597,6 +609,9 @@ void ScreenshotScrollingThumbnailWidget::mouseMoveEvent(QMouseEvent* event) {
         return;
     }
     const int position = previewPosition(event->position());
+    if (m_dragHandle != DragHandle::None && !event->buttons().testFlag(Qt::LeftButton)) {
+        cancelDrag();
+    }
     updateCursorForPosition(position);
     if (m_dragHandle == DragHandle::None) {
         QWidget::mouseMoveEvent(event);
