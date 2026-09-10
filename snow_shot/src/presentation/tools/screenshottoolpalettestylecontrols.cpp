@@ -367,36 +367,50 @@ adqt::icons::IconRef textAlignmentIcon(SnowCanvasTextHorizontalAlign alignment) 
     return outlined_icons::AlignLeft();
 }
 
-adqt::icons::IconRef arrowheadIcon(SnowCanvasArrowhead arrowhead) {
+adqt::icons::IconRef arrowheadIcon(SnowCanvasArrowhead arrowhead, bool start) {
     switch (arrowhead) {
     case SnowCanvasArrowhead::None:
-        return custom_outlined_icons::ArrowheadNone();
+        return start ? custom_outlined_icons::ArrowheadNoneStart()
+                     : custom_outlined_icons::ArrowheadNone();
     case SnowCanvasArrowhead::Arrow:
-        return custom_outlined_icons::ArrowheadStandard();
+        return start ? custom_outlined_icons::ArrowheadStandardStart()
+                     : custom_outlined_icons::ArrowheadStandard();
     case SnowCanvasArrowhead::Bar:
-        return custom_outlined_icons::ArrowheadBar();
+        return start ? custom_outlined_icons::ArrowheadBarStart()
+                     : custom_outlined_icons::ArrowheadBar();
     case SnowCanvasArrowhead::Dot:
-        return custom_outlined_icons::ArrowheadDot();
+        return start ? custom_outlined_icons::ArrowheadDotStart()
+                     : custom_outlined_icons::ArrowheadDot();
     case SnowCanvasArrowhead::Circle:
-        return custom_outlined_icons::ArrowheadCircle();
+        return start ? custom_outlined_icons::ArrowheadCircleStart()
+                     : custom_outlined_icons::ArrowheadCircle();
     case SnowCanvasArrowhead::CircleOutline:
-        return custom_outlined_icons::ArrowheadCircleOutline();
+        return start ? custom_outlined_icons::ArrowheadCircleOutlineStart()
+                     : custom_outlined_icons::ArrowheadCircleOutline();
     case SnowCanvasArrowhead::Triangle:
-        return custom_outlined_icons::ArrowheadTriangle();
+        return start ? custom_outlined_icons::ArrowheadTriangleStart()
+                     : custom_outlined_icons::ArrowheadTriangle();
     case SnowCanvasArrowhead::TriangleOutline:
-        return custom_outlined_icons::ArrowheadTriangleOutline();
+        return start ? custom_outlined_icons::ArrowheadTriangleOutlineStart()
+                     : custom_outlined_icons::ArrowheadTriangleOutline();
     case SnowCanvasArrowhead::Diamond:
-        return custom_outlined_icons::ArrowheadDiamond();
+        return start ? custom_outlined_icons::ArrowheadDiamondStart()
+                     : custom_outlined_icons::ArrowheadDiamond();
     case SnowCanvasArrowhead::DiamondOutline:
-        return custom_outlined_icons::ArrowheadDiamondOutline();
+        return start ? custom_outlined_icons::ArrowheadDiamondOutlineStart()
+                     : custom_outlined_icons::ArrowheadDiamondOutline();
     case SnowCanvasArrowhead::CrowfootOne:
-        return custom_outlined_icons::ArrowheadCrowfootOne();
+        return start ? custom_outlined_icons::ArrowheadCrowfootOneStart()
+                     : custom_outlined_icons::ArrowheadCrowfootOne();
     case SnowCanvasArrowhead::CrowfootMany:
-        return custom_outlined_icons::ArrowheadCrowfootMany();
+        return start ? custom_outlined_icons::ArrowheadCrowfootManyStart()
+                     : custom_outlined_icons::ArrowheadCrowfootMany();
     case SnowCanvasArrowhead::CrowfootOneOrMany:
-        return custom_outlined_icons::ArrowheadCrowfootOneOrMany();
+        return start ? custom_outlined_icons::ArrowheadCrowfootOneOrManyStart()
+                     : custom_outlined_icons::ArrowheadCrowfootOneOrMany();
     }
-    return custom_outlined_icons::ArrowheadNone();
+    return start ? custom_outlined_icons::ArrowheadNoneStart()
+                 : custom_outlined_icons::ArrowheadNone();
 }
 
 const char* arrowheadOptionTooltipSource(bool start, SnowCanvasArrowhead arrowhead) {
@@ -1324,7 +1338,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildArrowFamily(
             config.options.push_back({
                 static_cast<int>(arrowhead),
                 arrowheadOptionTooltipSource(start, arrowhead),
-                arrowheadIcon(arrowhead),
+                arrowheadIcon(arrowhead, start),
             });
         }
         const SnowCanvasArrowhead currentArrowhead =

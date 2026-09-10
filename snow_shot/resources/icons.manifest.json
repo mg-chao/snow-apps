@@ -64,6 +64,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ArrowheadBarStart",
+      "name": "arrowhead-bar-start",
+      "source": "../src/presentation/components/icons/resources/arrowhead-bar-start.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "ArrowheadCircle",
       "name": "arrowhead-circle",
       "source": "../src/presentation/components/icons/resources/arrowhead-circle.svg",
@@ -80,9 +88,33 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ArrowheadCircleOutlineStart",
+      "name": "arrowhead-circle-outline-start",
+      "source": "../src/presentation/components/icons/resources/arrowhead-circle-outline-start.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ArrowheadCircleStart",
+      "name": "arrowhead-circle-start",
+      "source": "../src/presentation/components/icons/resources/arrowhead-circle-start.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "ArrowheadCrowfootMany",
       "name": "arrowhead-crowfoot-many",
       "source": "../src/presentation/components/icons/resources/arrowhead-crowfoot-many.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ArrowheadCrowfootManyStart",
+      "name": "arrowhead-crowfoot-many-start",
+      "source": "../src/presentation/components/icons/resources/arrowhead-crowfoot-many-start.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },
@@ -104,6 +136,22 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ArrowheadCrowfootOneOrManyStart",
+      "name": "arrowhead-crowfoot-one-or-many-start",
+      "source": "../src/presentation/components/icons/resources/arrowhead-crowfoot-one-or-many-start.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ArrowheadCrowfootOneStart",
+      "name": "arrowhead-crowfoot-one-start",
+      "source": "../src/presentation/components/icons/resources/arrowhead-crowfoot-one-start.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "ArrowheadDiamond",
       "name": "arrowhead-diamond",
       "source": "../src/presentation/components/icons/resources/arrowhead-diamond.svg",
@@ -120,9 +168,33 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ArrowheadDiamondOutlineStart",
+      "name": "arrowhead-diamond-outline-start",
+      "source": "../src/presentation/components/icons/resources/arrowhead-diamond-outline-start.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ArrowheadDiamondStart",
+      "name": "arrowhead-diamond-start",
+      "source": "../src/presentation/components/icons/resources/arrowhead-diamond-start.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "ArrowheadDot",
       "name": "arrowhead-dot",
       "source": "../src/presentation/components/icons/resources/arrowhead-dot.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ArrowheadDotStart",
+      "name": "arrowhead-dot-start",
+      "source": "../src/presentation/components/icons/resources/arrowhead-dot-start.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },
@@ -136,9 +208,25 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ArrowheadNoneStart",
+      "name": "arrowhead-none-start",
+      "source": "../src/presentation/components/icons/resources/arrowhead-none-start.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "ArrowheadStandard",
       "name": "arrowhead-standard",
       "source": "../src/presentation/components/icons/resources/arrowhead-standard.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ArrowheadStandardStart",
+      "name": "arrowhead-standard-start",
+      "source": "../src/presentation/components/icons/resources/arrowhead-standard-start.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },
@@ -155,6 +243,22 @@
       "symbol": "ArrowheadTriangleOutline",
       "name": "arrowhead-triangle-outline",
       "source": "../src/presentation/components/icons/resources/arrowhead-triangle-outline.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ArrowheadTriangleOutlineStart",
+      "name": "arrowhead-triangle-outline-start",
+      "source": "../src/presentation/components/icons/resources/arrowhead-triangle-outline-start.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ArrowheadTriangleStart",
+      "name": "arrowhead-triangle-start",
+      "source": "../src/presentation/components/icons/resources/arrowhead-triangle-start.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },
