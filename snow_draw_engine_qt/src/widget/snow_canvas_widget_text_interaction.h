@@ -137,7 +137,8 @@ class SnowCanvasWidgetTextInteraction final {
                                          const SnowCanvasDisplayCache& displayCache);
 
     CommitResult commit(SnowRuntime runtime, SnowViewport viewport, bool hasViewport,
-                        SnowCanvasDisplayCache& displayCache, bool refocusWidget = true);
+                        SnowCanvasDisplayCache& displayCache, bool refocusWidget = true,
+                        bool deleteElement = false);
     SelectionRestoreResult restoreFinishedExistingSelection(SnowRuntime runtime,
                                                             SnowViewport viewport,
                                                             const FinishedExistingEdit& edit);

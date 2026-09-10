@@ -16,6 +16,7 @@ enum class EventCommand {
     None,
     Commit,
     Cancel,
+    DeleteElement,
 };
 
 struct KeyResult {

@@ -221,6 +221,24 @@ void keyCommandsInsertTextAndReportEditorCommands() {
             "escape should request cancel");
 }
 
+void deleteRequestsElementRemovalWhileBackspaceEditsCharacters() {
+    SnowCanvasTextDraft draft;
+    draft.begin(QStringLiteral("abc"));
+    draft.setCursorPosition(2);
+    QKeyEvent backspace(QEvent::KeyPress, Qt::Key_Backspace, Qt::NoModifier);
+    const auto backspaceResult =
+        snow_canvas_text_editor_input::handleKeyPress(&backspace, draft, {});
+    require(backspaceResult.changed && draft.text() == QStringLiteral("ac"),
+            "Backspace continues deleting the previous character");
+    QKeyEvent remove(QEvent::KeyPress, Qt::Key_Delete, Qt::NoModifier);
+    const auto deleteResult = snow_canvas_text_editor_input::handleKeyPress(&remove, draft, {});
+    require(deleteResult.handled && !deleteResult.changed &&
+                deleteResult.command == snow_canvas_text_editor_input::EventCommand::DeleteElement,
+            "Delete requests element removal rather than a character edit");
+    require(draft.text() == QStringLiteral("ac"),
+            "Delete leaves draft mutation to lifecycle handling");
+}
+
 void keyCommandsDelegateCursorMovement() {
     SnowCanvasTextDraft draft;
     draft.begin(QStringLiteral("abc"));
@@ -3211,6 +3229,7 @@ int main(int argc, char** argv) {
     inputMethodPreeditDoesNotCommitUntilCommitString();
     inputMethodCommitReplacementUsesCursorRelativeRange();
     keyCommandsInsertTextAndReportEditorCommands();
+    deleteRequestsElementRemovalWhileBackspaceEditsCharacters();
     keyCommandsDelegateCursorMovement();
     keyCommandsReportNoChangeForNoopEdits();
     finishedEditCommitPolicyRequiresViewportAndContent();
