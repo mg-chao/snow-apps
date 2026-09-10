@@ -36,6 +36,7 @@ class SnowCanvasTextEditorSession final {
         None,
         Commit,
         Cancel,
+        DeleteElement,
     };
 
     struct KeyResult {

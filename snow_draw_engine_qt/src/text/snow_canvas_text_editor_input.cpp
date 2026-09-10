@@ -84,7 +84,7 @@ KeyResult handleKeyPress(QKeyEvent* event, SnowCanvasTextDraft& draft,
         result.changed = draft.deletePreviousCharacter();
         return result;
     case Qt::Key_Delete:
-        result.changed = draft.deleteNextCharacter();
+        result.command = EventCommand::DeleteElement;
         return result;
     case Qt::Key_Left:
         if (moveCursor) {

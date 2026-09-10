@@ -298,6 +298,9 @@ SnowCanvasTextEditorSession::handleKeyPress(QKeyEvent* event, const QFont& baseF
     case snow_canvas_text_editor_input::EventCommand::Commit:
         result.command = EventCommand::Commit;
         break;
+    case snow_canvas_text_editor_input::EventCommand::DeleteElement:
+        result.command = EventCommand::DeleteElement;
+        break;
     case snow_canvas_text_editor_input::EventCommand::Cancel:
         result.command = EventCommand::Cancel;
         break;

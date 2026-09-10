@@ -83,6 +83,75 @@ void openLabel(SnowCanvasWidget& canvas) {
             "arrow draft exposes text style controls");
 }
 
+void deleteKeyRemovesEditedText() {
+    for (const bool attached : {false, true}) {
+        for (const bool existing : {false, true}) {
+            for (const bool selected : {false, true}) {
+                SnowCanvasRuntime runtime;
+                SnowCanvasWidget canvas(runtime);
+                canvas.resize(600, 360);
+                canvas.show();
+                QApplication::processEvents();
+                if (attached) {
+                    createArrow(canvas, runtime);
+                    openLabel(canvas);
+                } else {
+                    require(canvas.setCanvasTool(SnowCanvasTool::Text), "activate text tool");
+                    mouse(canvas, QEvent::MouseButtonPress, {280.0, 180.0}, Qt::LeftButton,
+                          Qt::LeftButton);
+                    mouse(canvas, QEvent::MouseButtonRelease, {280.0, 180.0}, Qt::LeftButton,
+                          Qt::NoButton);
+                }
+                key(canvas, Qt::Key_A, Qt::NoModifier, QStringLiteral("abc"));
+                if (existing) {
+                    key(canvas, Qt::Key_Return, Qt::ControlModifier);
+                    require(records(runtime, QStringLiteral("Text")).size() == 1,
+                            "commit creates text before reopening");
+                    if (attached) {
+                        openLabel(canvas);
+                    } else {
+                        mouse(canvas, QEvent::MouseButtonPress, {280.0, 180.0}, Qt::LeftButton,
+                              Qt::LeftButton);
+                        mouse(canvas, QEvent::MouseButtonRelease, {280.0, 180.0}, Qt::LeftButton,
+                              Qt::NoButton);
+                    }
+                }
+                require(canvas.hasActiveTextEditing(), "text editor is active before Delete");
+                key(canvas, Qt::Key_Home);
+                key(canvas, Qt::Key_Right);
+                if (selected) {
+                    key(canvas, Qt::Key_A, Qt::ControlModifier);
+                }
+                QInputMethodEvent preedit(QStringLiteral("pending"), {});
+                QApplication::sendEvent(&canvas, &preedit);
+                key(canvas, Qt::Key_Delete);
+                require(!canvas.hasActiveTextEditing(), "Delete ends text editing");
+                require(!canvas.testAttribute(Qt::WA_InputMethodEnabled),
+                        "Delete disables text input methods");
+                require(records(runtime, QStringLiteral("Text")).isEmpty(),
+                        "Delete removes the entire text regardless of caret or selection");
+                if (attached) {
+                    require(records(runtime, QStringLiteral("Arrow")).size() == 1,
+                            "deleting label preserves its arrow");
+                }
+                if (existing) {
+                    require(canvas.undo(), "text deletion is undoable");
+                    require(payload(runtime, QStringLiteral("Text"))
+                                    .value(QStringLiteral("text"))
+                                    .toString() == QStringLiteral("abc"),
+                            "one undo restores the original text");
+                    require(canvas.redo(), "text deletion is redoable");
+                    require(records(runtime, QStringLiteral("Text")).isEmpty(),
+                            "redo removes text again");
+                } else if (!attached) {
+                    require(!canvas.canvasHistoryState().canUndo,
+                            "deleting a new draft does not create a history entry");
+                }
+            }
+        }
+    }
+}
+
 void widgetLifecycle() {
     SnowCanvasRuntime runtime;
     SnowCanvasWidget canvas(runtime);
@@ -410,6 +479,7 @@ int main(int argc, char** argv) {
     }
 #endif
     QApplication app(argc, argv);
+    deleteKeyRemovesEditedText();
     widgetLifecycle();
     wrappingAndFinalPointerPosition();
     gapPreservesBackground();

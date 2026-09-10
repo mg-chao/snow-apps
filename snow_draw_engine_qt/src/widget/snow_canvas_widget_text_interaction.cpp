@@ -567,15 +567,20 @@ SnowCanvasWidgetTextInteraction::applyActiveResizeMeasurementIfNeeded(
 SnowCanvasWidgetTextInteraction::CommitResult
 SnowCanvasWidgetTextInteraction::commit(SnowRuntime runtime, SnowViewport viewport,
                                         bool hasViewport, SnowCanvasDisplayCache& displayCache,
-                                        bool refocusWidget) {
+                                        bool refocusWidget, bool deleteElement) {
     CommitResult commitResult;
     if (!m_session.isActive()) {
         return commitResult;
     }
 
-    commitInputMethod();
+    if (!deleteElement) {
+        commitInputMethod();
+    }
     QRegion updateRegion = editingRegion(displayCache, m_widget.font());
-    const SnowCanvasTextEditorSession::FinishedEdit edit = m_session.finish(m_widget.font());
+    SnowCanvasTextEditorSession::FinishedEdit edit = m_session.finish(m_widget.font());
+    if (deleteElement) {
+        edit.text.clear();
+    }
     setInputMethodEnabled(false);
     stopCaretBlink();
     m_selectionDragging = false;
@@ -745,8 +750,11 @@ SnowCanvasWidgetTextInteraction::handleKeyPress(QKeyEvent* event, SnowRuntime ru
         event->accept();
     }
     switch (keyResult.command) {
+    case SnowCanvasTextEditorSession::EventCommand::DeleteElement:
     case SnowCanvasTextEditorSession::EventCommand::Commit: {
-        CommitResult commitResult = commit(runtime, viewport, hasViewport, displayCache);
+        CommitResult commitResult =
+            commit(runtime, viewport, hasViewport, displayCache, true,
+                   keyResult.command == SnowCanvasTextEditorSession::EventCommand::DeleteElement);
         result.finishedExistingEdit = commitResult.finishedExistingEdit;
         result.changedViewports = std::move(commitResult.changedViewports);
         result.sessionEnded = commitResult.sessionEnded;
