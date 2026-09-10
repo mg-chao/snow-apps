@@ -1,3 +1,4 @@
+#include "close_release_native_test_support.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include "../src/presentation/pinned/screenshotpinnedwindownative.h"
@@ -257,6 +258,13 @@ void waitForUi(int milliseconds) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
         QThread::msleep(1);
     }
+}
+
+void releaseCloseGesture(QWidget& receiver, Qt::MouseButton button) {
+    const QPoint point = receiver.rect().center();
+    QMouseEvent release(QEvent::MouseButtonRelease, QPointF(point),
+                        QPointF(receiver.mapToGlobal(point)), button, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(&receiver, &release);
 }
 
 void sendShortcut(QWidget& receiver, Qt::Key key, Qt::KeyboardModifiers modifiers = Qt::NoModifier,
@@ -3186,6 +3194,8 @@ void pinnedMiddleClickActions() {
     {
         press(canvas);
     }
+    require(guarded && guarded->isVisible(), "middle-click press must keep the pin open");
+    releaseCloseGesture(*window, Qt::MiddleButton);
     require(processUntilDeleted(guarded, 2000), "middle-click Close must delete the pin");
     require(offscreen || removed, "middle-click Close must use the persistence removal lifecycle");
 }
@@ -3225,6 +3235,8 @@ void pinnedOffscreenDoubleClickActions() {
     require(guarded && !thumbnail->isChecked(), "offscreen None must leave the window unchanged");
     require(settings.setDoubleClickAction(QStringLiteral("close")), "configure offscreen Close");
     send(canvas);
+    require(guarded && guarded->isVisible(), "double-click must wait for its second release");
+    releaseCloseGesture(*window, Qt::LeftButton);
     require(processUntilDeleted(guarded, 2000), "offscreen Close must delete the clicked window");
 }
 
@@ -3308,6 +3320,8 @@ void pinnedOcrDoubleClickUsesDragRegion(bool middleClick = false) {
                                       QPointF(content->mapToGlobal(background)), button, button,
                                       Qt::NoModifier);
     QCoreApplication::sendEvent(content, &backgroundDoubleClick);
+    require(guarded && window->isVisible(), "OCR background close must wait for button release");
+    releaseCloseGesture(*window, button);
     require(processUntilDeleted(guarded, 2000), "double-clicking OCR drag background must close");
 }
 
@@ -3498,6 +3512,8 @@ void pinnedDoubleClickActions() {
                      [&removed](const auto&, bool remove) { removed = remove; });
     require(settings.setDoubleClickAction(QStringLiteral("close")), "configure Close on thumbnail");
     send(canvas, canvas->rect().center());
+    require(guarded && guarded->isVisible(), "close double-click must leave the thumbnail visible");
+    releaseCloseGesture(*window, Qt::LeftButton);
     require(processUntilDeleted(guarded, 2000) && removed && otherGuard && other->isVisible(),
             "Close must remove only the clicked thumbnail through the user-close lifecycle");
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -3509,6 +3525,15 @@ void pinnedDoubleClickActions() {
 #endif
     {
         send(other, other->rect().center());
+    }
+    require(otherGuard && otherGuard->isVisible(), "native double-click must wait for release");
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (QGuiApplication::platformName() != QStringLiteral("offscreen")) {
+        SendMessageW(toNativeHwnd(other->winId()), WM_NCLBUTTONUP, HTCAPTION, 0);
+    } else
+#endif
+    {
+        releaseCloseGesture(*other, Qt::LeftButton);
     }
     require(processUntilDeleted(otherGuard, 2000), "Close must also close a normal-sized pin");
 }
@@ -3726,18 +3751,26 @@ void pinnedEscapeBurst(bool nativeKeys = false) {
                 canvas->setFocus();
                 require(QApplication::focusWidget() == canvas, "Escape canvas must own focus");
                 // Exercise the Windows key mapper without global input injection.
-                // The key-up is deliberately lost outside this process after close.
+                // The pin must retain input ownership until the native key-up.
                 const LPARAM keyData =
                     1 | (static_cast<LPARAM>(MapVirtualKeyW(VK_ESCAPE, MAPVK_VK_TO_VSC)) << 16);
                 require(PostMessageW(toNativeHwnd((*it)->winId()), WM_KEYDOWN, VK_ESCAPE,
                                      keyData) != FALSE,
                         "native Escape press failed");
+                waitForUi(30);
+                require(*it && (*it)->isVisible(), "native Escape down must not close the pin");
+                require(PostMessageW(toNativeHwnd((*it)->winId()), WM_KEYUP, VK_ESCAPE,
+                                     keyData | (LPARAM(3) << 30)) != FALSE,
+                        "native Escape release failed");
                 require(processUntilDeleted(*it, 2000),
-                        "one native Escape press must close the active pin");
+                        "native Escape release must close the active pin");
 #endif
             } else {
                 sendShortcut(*canvas, Qt::Key_Escape);
                 sendShortcut(*canvas, Qt::Key_Escape, Qt::NoModifier, true);
+                require(*it && (*it)->isVisible(), "Escape repeats must keep the pin open");
+                QKeyEvent release(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+                QCoreApplication::sendEvent(canvas, &release);
             }
             if (batch % 2 != 0) {
                 require(processUntilDeleted(*it, 2000), "sequential Escape must delete its pin");
@@ -5685,10 +5718,43 @@ void pinnedSaveDialogRoutingAndCancellation() {
     window->close();
     require(processUntilDeleted(guarded, 2000), "pinned save fixture did not close");
 }
+#ifdef Q_OS_WIN
+void pinnedCloseReleaseNative() {
+    close_release_native_test::Receiver receiver;
+    const snow_shot::storage::PinToScreenSettings settings;
+    require(settings.setMiddleMouseButtonAction(QStringLiteral("close")),
+            "configure native middle close");
+    require(settings.setDoubleClickAction(QStringLiteral("close")),
+            "configure native double close");
+    for (const auto button : {Qt::NoButton, Qt::MiddleButton, Qt::LeftButton}) {
+        QImage image(500, 350, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::white);
+        auto* window = new ScreenshotPinnedWindow;
+        QPointer<ScreenshotPinnedWindow> guarded(window);
+        ScreenshotPinnedWindow::Config config;
+        config.nativeGeometry = QRect(150, 150, 500, 350);
+        config.canvasSourceRect = QRectF(image.rect());
+        config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+        config.screen = QGuiApplication::primaryScreen();
+        config.automaticTextRecognition = false;
+        require(window->present(config), "present native close test pin");
+        waitForUi(100);
+        receiver.verify(*window, button, button == Qt::LeftButton, button != Qt::NoButton);
+        require(processUntilDeleted(guarded, 2000), "native release must retire the last pin");
+    }
+}
+#endif
+
 } // namespace
 
 int main(int argc, char* argv[]) {
     PinnedWindowTestApplication app(argc, argv);
+#ifdef Q_OS_WIN
+    if (close_release_native_test::receiverRequested()) {
+        return close_release_native_test::runReceiver();
+    }
+#endif
+
     QApplication::setQuitOnLastWindowClosed(false);
 
     try {
@@ -5696,6 +5762,12 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+#ifdef Q_OS_WIN
+        if (app.arguments().contains(QStringLiteral("--close-release-native"))) {
+            pinnedCloseReleaseNative();
+            return 0;
+        }
+#endif
         SnowCanvasRuntime sourceRuntime;
         require(sourceRuntime.isValid(), "source runtime creation failed");
         if (app.arguments().contains(QStringLiteral("--scale-readout-only"))) {

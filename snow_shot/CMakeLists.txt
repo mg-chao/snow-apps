@@ -621,6 +621,8 @@ target_compile_definitions(snow_shot_translation PRIVATE
 )
 
 add_library(snow_shot_window_shortcuts STATIC
+    include/snow_shot/presentation/mousereleaseactioncontroller.h
+    src/presentation/services/mousereleaseactioncontroller.cpp
     include/snow_shot/presentation/windowshortcutmanager.h
     src/presentation/services/windowshortcutmanager.cpp
 )
@@ -1935,6 +1937,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-window-shortcut-manager-tests
         tests/window_shortcut_manager_tests.cpp
     )
+    add_executable(snow-shot-mouse-release-action-tests tests/mouse_release_action_tests.cpp)
+    target_link_libraries(snow-shot-mouse-release-action-tests PRIVATE snow_shot_window_shortcuts)
+    snow_shot_import_offscreen_platform(snow-shot-mouse-release-action-tests)
+    add_test(NAME snow-shot-mouse-release-action-tests
+        COMMAND snow-shot-mouse-release-action-tests -platform offscreen)
+    set_tests_properties(snow-shot-mouse-release-action-tests PROPERTIES LABELS "unit")
     target_link_libraries(snow-shot-window-shortcut-manager-tests PRIVATE
         snow_shot_window_shortcuts
         Qt6::Widgets
@@ -2513,6 +2521,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-direct-capture-history-rendering-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --direct-capture-history-rendering)
+    add_test(NAME snow-shot-overlay-close-release-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --close-release-only -platform offscreen)
     set_tests_properties(snow-shot-direct-capture-history-rendering-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
@@ -3441,6 +3451,21 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     add_test(NAME snow-shot-screen-recording-shortcut-tests
         COMMAND snow-shot-screen-recording-shortcut-tests)
+    if(WIN32)
+        foreach(_close_release_pair IN ITEMS
+                "overlay|snow-shot-screenshot-canvas-renderer-tests"
+                "pinned|snow-shot-pinned-window-tests"
+                "recording|snow-shot-screen-recording-shortcut-tests")
+            string(REPLACE "|" ";" _close_release_parts "${_close_release_pair}")
+            list(GET _close_release_parts 0 _close_release_name)
+            list(GET _close_release_parts 1 _close_release_target)
+            add_test(NAME snow-shot-${_close_release_name}-close-release-native-tests
+                COMMAND ${_close_release_target} --close-release-native -platform windows)
+            set_tests_properties(snow-shot-${_close_release_name}-close-release-native-tests
+                PROPERTIES LABELS "interactive;e2e;windows" RUN_SERIAL TRUE TIMEOUT 60
+                ENVIRONMENT "QT_QPA_PLATFORM=windows")
+        endforeach()
+    endif()
     set_tests_properties(snow-shot-screen-recording-shortcut-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"

@@ -59,11 +59,11 @@ void priorityAndFallthroughAreDeterministic() {
     high.canActivate = [&highEnabled](const auto&) { return highEnabled; };
     require(manager.addBinding(&window, std::move(high)) != 0,
             "high-priority binding registration failed");
-    require(manager.addBinding(&window,
-                               binding(QStringLiteral("low"), Qt::Key_K, 100, [&]() {
-                                   ++lowCount;
-                                   return true;
-                               })) != 0,
+    require(manager.addBinding(&window, binding(QStringLiteral("low"), Qt::Key_K, 100,
+                                                [&]() {
+                                                    ++lowCount;
+                                                    return true;
+                                                })) != 0,
             "low-priority binding registration failed");
 
     require(sendKey(&child, QEvent::ShortcutOverride, Qt::Key_K),
@@ -82,16 +82,16 @@ void priorityAndFallthroughAreDeterministic() {
 
     int firstEqualCount = 0;
     int secondEqualCount = 0;
-    require(manager.addBinding(&window,
-                               binding(QStringLiteral("equal-first"), Qt::Key_J, 150, [&]() {
-                                   ++firstEqualCount;
-                                   return false;
-                               })) != 0 &&
-                manager.addBinding(&window,
-                                   binding(QStringLiteral("equal-second"), Qt::Key_J, 150, [&]() {
-                                       ++secondEqualCount;
-                                       return true;
-                                   })) != 0,
+    require(manager.addBinding(&window, binding(QStringLiteral("equal-first"), Qt::Key_J, 150,
+                                                [&]() {
+                                                    ++firstEqualCount;
+                                                    return false;
+                                                })) != 0 &&
+                manager.addBinding(&window, binding(QStringLiteral("equal-second"), Qt::Key_J, 150,
+                                                    [&]() {
+                                                        ++secondEqualCount;
+                                                        return true;
+                                                    })) != 0,
             "equal-priority binding registration failed");
     require(sendKey(&child, QEvent::KeyPress, Qt::Key_J) && firstEqualCount == 1 &&
                 secondEqualCount == 1,
@@ -114,11 +114,9 @@ void scopeRepeatUpdatesAndLifetimeAreEnforced() {
     const auto handle = manager.addBinding(owner, std::move(repeatBinding));
     require(handle != 0, "repeat binding registration failed");
     sendKey(&otherWindow, QEvent::KeyPress, Qt::Key_R);
-    require(count == 0,
-            "shortcut must not escape its window scope");
+    require(count == 0, "shortcut must not escape its window scope");
     sendKey(&scopedChild, QEvent::KeyPress, Qt::Key_R, Qt::NoModifier, true);
-    require(count == 0,
-            "auto-repeat must be disabled by default");
+    require(count == 0, "auto-repeat must be disabled by default");
 
     auto enabledRepeatBinding = binding(QStringLiteral("enabled-repeat"), Qt::Key_U, 100, [&]() {
         ++count;
@@ -130,19 +128,16 @@ void scopeRepeatUpdatesAndLifetimeAreEnforced() {
     require(sendKey(&scopedChild, QEvent::KeyPress, Qt::Key_U, Qt::NoModifier, true) && count == 1,
             "binding with auto-repeat enabled must handle repeated key presses");
 
-    require(manager.setKeyCombinations(handle,
-                                       {QKeyCombination(Qt::NoModifier, Qt::Key_T)}),
+    require(manager.setKeyCombinations(handle, {QKeyCombination(Qt::NoModifier, Qt::Key_T)}),
             "binding update failed");
     sendKey(&scopedChild, QEvent::KeyPress, Qt::Key_R);
-    require(count == 1,
-            "replaced shortcut must stop matching its old key");
+    require(count == 1, "replaced shortcut must stop matching its old key");
     require(sendKey(&scopedChild, QEvent::KeyPress, Qt::Key_T) && count == 2,
             "updated shortcut must match immediately");
 
     delete owner;
     sendKey(&scopedChild, QEvent::KeyPress, Qt::Key_T);
-    require(count == 2,
-            "destroying an owner must unregister its shortcuts");
+    require(count == 2, "destroying an owner must unregister its shortcuts");
 }
 
 void bindingsCanExplicitlyHandleTransientToolWindows() {
@@ -260,21 +255,21 @@ void dispatchSurvivesBindingRemovalFromCallbacks() {
     manager.addScopeWindow(&window);
 
     int lowCount = 0;
-    require(manager.addBinding(&window,
-                               binding(QStringLiteral("removal-low"), Qt::Key_X, 100, [&]() {
-                                   ++lowCount;
-                                   return true;
-                               })) != 0,
+    require(manager.addBinding(&window, binding(QStringLiteral("removal-low"), Qt::Key_X, 100,
+                                                [&]() {
+                                                    ++lowCount;
+                                                    return true;
+                                                })) != 0,
             "low-priority removal binding registration failed");
 
     QObject* transientOwner = new QObject;
-    require(manager.addBinding(
-                transientOwner,
-                binding(QStringLiteral("removal-high"), Qt::Key_X, 200, [&transientOwner]() {
-                    QObject* owner = std::exchange(transientOwner, nullptr);
-                    delete owner;
-                    return false;
-                })) != 0,
+    require(manager.addBinding(transientOwner,
+                               binding(QStringLiteral("removal-high"), Qt::Key_X, 200,
+                                       [&transientOwner]() {
+                                           QObject* owner = std::exchange(transientOwner, nullptr);
+                                           delete owner;
+                                           return false;
+                                       })) != 0,
             "self-removing binding registration failed");
 
     require(sendKey(&window, QEvent::KeyPress, Qt::Key_X) && lowCount == 1 &&
@@ -306,15 +301,13 @@ void heldBindingsReleaseByTriggerKey() {
         ++releaseCount;
         return true;
     };
-    require(manager.addBinding(&window, std::move(held)) != 0,
-            "held chord registration failed");
+    require(manager.addBinding(&window, std::move(held)) != 0, "held chord registration failed");
 
     require(sendKey(&window, QEvent::KeyPress, Qt::Key_Space, Qt::ControlModifier) &&
                 activationCount == 1,
             "modified held shortcut did not activate");
     sendKey(&window, QEvent::KeyRelease, Qt::Key_Space, Qt::ControlModifier, true);
-    require(releaseCount == 0,
-            "an auto-repeat release must not end a physically held shortcut");
+    require(releaseCount == 0, "an auto-repeat release must not end a physically held shortcut");
     sendKey(&window, QEvent::KeyRelease, Qt::Key_Control, Qt::NoModifier);
     require(releaseCount == 0,
             "releasing a chord modifier must not impersonate the physical trigger release");
@@ -325,8 +318,8 @@ void heldBindingsReleaseByTriggerKey() {
     require(releaseCount == 1, "a repeated key release invoked the held callback twice");
 
     int declinedReleaseCount = 0;
-    auto declined = binding(QStringLiteral("declined-held"), Qt::Key_D, 100,
-                            []() { return false; });
+    auto declined =
+        binding(QStringLiteral("declined-held"), Qt::Key_D, 100, []() { return false; });
     declined.cancel = [] {};
     declined.release = [&declinedReleaseCount](const auto&) {
         ++declinedReleaseCount;
@@ -341,8 +334,8 @@ void heldBindingsReleaseByTriggerKey() {
 
     int destroyedReleaseCount = 0;
     auto* owner = new QObject;
-    auto destroyed = binding(QStringLiteral("destroyed-held"), Qt::Key_L, 100,
-                             []() { return true; });
+    auto destroyed =
+        binding(QStringLiteral("destroyed-held"), Qt::Key_L, 100, []() { return true; });
     destroyed.cancel = [] {};
     destroyed.release = [&destroyedReleaseCount](const auto&) {
         ++destroyedReleaseCount;
@@ -400,23 +393,20 @@ void heldModifierParsingAndAdditionalModifiersAreScoped() {
     move.allowedAdditionalModifiers = Qt::ShiftModifier;
     require(manager.addBinding(&window, std::move(move)) != 0,
             "Shift-compatible Space binding registration failed");
-    require(sendKey(&window, QEvent::KeyPress, Qt::Key_Space, Qt::ShiftModifier) &&
-                moveCount == 1,
+    require(sendKey(&window, QEvent::KeyPress, Qt::Key_Space, Qt::ShiftModifier) && moveCount == 1,
             "Shift followed by Space did not activate the contextual held shortcut");
     sendKey(&window, QEvent::KeyPress, Qt::Key_Space, Qt::ControlModifier);
-    require(moveCount == 1,
-            "a contextual binding accepted an undeclared additional modifier");
+    require(moveCount == 1, "a contextual binding accepted an undeclared additional modifier");
 
     int exactCount = 0;
-    require(manager.addBinding(&window,
-                               binding(QStringLiteral("exact-key"), Qt::Key_K, 100, [&]() {
-                                   ++exactCount;
-                                   return true;
-                               })) != 0,
+    require(manager.addBinding(&window, binding(QStringLiteral("exact-key"), Qt::Key_K, 100,
+                                                [&]() {
+                                                    ++exactCount;
+                                                    return true;
+                                                })) != 0,
             "exact binding registration failed");
     sendKey(&window, QEvent::KeyPress, Qt::Key_K, Qt::ShiftModifier);
-    require(exactCount == 0,
-            "ordinary bare shortcuts must retain exact modifier matching");
+    require(exactCount == 0, "ordinary bare shortcuts must retain exact modifier matching");
 }
 
 void inputSuspensionBlocksDispatchAndClearsHeldState() {
@@ -469,11 +459,11 @@ void childWindowOwnershipFallbackKeepsToolbarScope() {
     manager.addScopeWindow(&overlay);
 
     int count = 0;
-    require(manager.addBinding(&overlay,
-                               binding(QStringLiteral("toolbar-child"), Qt::Key_T, 100, [&]() {
-                                   ++count;
-                                   return true;
-                               })) != 0,
+    require(manager.addBinding(&overlay, binding(QStringLiteral("toolbar-child"), Qt::Key_T, 100,
+                                                 [&]() {
+                                                     ++count;
+                                                     return true;
+                                                 })) != 0,
             "toolbar-child binding registration failed");
     require(sendKey(&toolbar, QEvent::KeyPress, Qt::Key_T) && count == 1,
             "a toolbar child did not resolve to its overlay scope");
@@ -505,8 +495,7 @@ void transientToolWindowOwnershipKeepsScope() {
         resolvedScope = context.scopeWindow;
         return true;
     };
-    require(manager.addBinding(&overlay,
-                               std::move(scopedBinding)) != 0,
+    require(manager.addBinding(&overlay, std::move(scopedBinding)) != 0,
             "transient-tool binding registration failed");
     require(sendKey(&popup, QEvent::KeyPress, Qt::Key_P) && count == 1,
             "nested transient tool window did not resolve to its overlay scope");
@@ -533,11 +522,11 @@ void lostKeyReleaseDoesNotSwallowTheNextPress() {
     manager.addScopeWindow(&window);
 
     int count = 0;
-    require(manager.addBinding(&window,
-                               binding(QStringLiteral("completion"), Qt::Key_C, 100, [&]() {
-                                   ++count;
-                                   return true;
-                               })) != 0,
+    require(manager.addBinding(&window, binding(QStringLiteral("completion"), Qt::Key_C, 100,
+                                                [&]() {
+                                                    ++count;
+                                                    return true;
+                                                })) != 0,
             "completion binding registration failed");
 
     require(sendKey(&child, QEvent::KeyPress, Qt::Key_C) && count == 1,
@@ -814,6 +803,179 @@ void cancellationSurvivesBindingRemovalFromCallbacks() {
     sendKey(&window, QEvent::KeyRelease, Qt::Key_F11);
 }
 
+void releaseActivationOwnsTheWholeSequence() {
+    QWidget window;
+    window.show();
+    WindowShortcutManager manager;
+    manager.addScopeWindow(&window);
+    int closes = 0;
+    auto item = binding(QStringLiteral("close-on-release"), Qt::Key_Escape, 100, [&] {
+        ++closes;
+        return true;
+    });
+    item.activationTrigger = WindowShortcutManager::Binding::ActivationTrigger::Release;
+    const auto handle = manager.addBinding(&window, item);
+    require(handle != 0, "release binding must register");
+    require(sendKey(&window, QEvent::KeyPress, Qt::Key_Escape) && closes == 0,
+            "press must reserve closing without executing it");
+    for (int repeat = 0; repeat != 3; ++repeat) {
+        require(sendKey(&window, QEvent::ShortcutOverride, Qt::Key_Escape, Qt::NoModifier, true),
+                "reserved shortcut overrides must be consumed");
+        sendKey(&window, QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier, true);
+        sendKey(&window, QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier, true);
+    }
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Return);
+    require(closes == 0, "repeat and unrelated releases must not close");
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Escape);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Escape);
+    require(closes == 1, "physical release must close exactly once");
+
+    window.activateWindow();
+    window.setFocus();
+    QApplication::processEvents();
+    sendKey(window.windowHandle(), QEvent::KeyPress, Qt::Key_Escape);
+    require(closes == 1, "native QWindow forwarding must reserve the widget's close");
+    sendKey(window.windowHandle(), QEvent::KeyRelease, Qt::Key_Escape);
+    require(closes == 2, "native QWindow release must reach the widget's reserved action");
+
+    require(manager.setKeyCombinations(handle, {QKeyCombination(Qt::ControlModifier, Qt::Key_W)}),
+            "close chord must configure");
+    sendKey(&window, QEvent::KeyPress, Qt::Key_W, Qt::ControlModifier);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Control);
+    require(closes == 2, "modifier release must not execute the trigger action");
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_W);
+    require(closes == 3, "trigger release must work after its modifiers were released");
+
+    item.release = [](const auto&) { return true; };
+    item.cancel = [] {};
+    require(manager.addBinding(&window, item) == 0,
+            "release activation cannot also implement a held control");
+}
+
+void interruptedReleaseActivationNeverClosesLater() {
+    for (int scenario = 0; scenario != 6; ++scenario) {
+        QWidget window;
+        window.show();
+        WindowShortcutManager manager;
+        manager.addScopeWindow(&window);
+        QObject owner;
+        bool eligible = true;
+        int closes = 0;
+        auto item = binding(QStringLiteral("cancel-close"), Qt::Key_Escape, 100, [&] {
+            ++closes;
+            return true;
+        });
+        item.activationTrigger = WindowShortcutManager::Binding::ActivationTrigger::Release;
+        item.canActivate = [&](const auto&) { return eligible; };
+        const auto handle = manager.addBinding(&owner, item);
+        sendKey(&window, QEvent::KeyPress, Qt::Key_Escape);
+        switch (scenario) {
+        case 0: {
+            const auto token = manager.suspendInput();
+            manager.resumeInput(token);
+            break;
+        }
+        case 1:
+            manager.removeScopeWindow(&window);
+            break;
+        case 2:
+            require(manager.removeBinding(handle), "binding must remove");
+            break;
+        case 3:
+            require(manager.setKeyCombinations(handle, item.keyCombinations),
+                    "binding must update");
+            break;
+        case 4: {
+            QEvent deactivate(QEvent::ApplicationDeactivate);
+            QCoreApplication::sendEvent(qApp, &deactivate);
+            break;
+        }
+        case 5:
+            eligible = false;
+            break;
+        }
+        sendKey(&window, QEvent::KeyRelease, Qt::Key_Escape);
+        require(closes == 0, "interrupted or ineligible pending close must be discarded");
+    }
+}
+
+void releaseActivationSurvivesToolbarFocusAndManagerDestruction() {
+    QWidget window;
+    QWidget toolbar(&window, Qt::Tool);
+    window.show();
+    toolbar.show();
+    auto manager = std::make_unique<WindowShortcutManager>();
+    manager->addScopeWindow(&window);
+    int closes = 0;
+    auto item = binding(QStringLiteral("destroy-on-release"), Qt::Key_Escape, 100, [&] {
+        ++closes;
+        manager.reset();
+        return true;
+    });
+    item.activationTrigger = WindowShortcutManager::Binding::ActivationTrigger::Release;
+    require(manager->addBinding(&window, item) != 0, "destructive release action must register");
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Escape);
+    toolbar.activateWindow();
+    QApplication::processEvents();
+    sendKey(&toolbar, QEvent::KeyRelease, Qt::Key_Escape);
+    require(closes == 1 && !manager, "toolbar release may safely destroy its shortcut manager");
+}
+
+void contextualCancellationDoesNotEscalateDuringTheSameHold() {
+    QWidget window;
+    window.show();
+    WindowShortcutManager manager;
+    manager.addScopeWindow(&window);
+    bool editing = true;
+    int closes = 0;
+    auto edit = binding(QStringLiteral("cancel-edit"), Qt::Key_Escape, 200, [&] {
+        editing = false;
+        return true;
+    });
+    edit.canActivate = [&](const auto&) { return editing; };
+    edit.release = [](const auto&) { return true; };
+    edit.cancel = [] {};
+    require(manager.addBinding(&window, edit) != 0, "edit cancellation must register");
+    auto close = binding(QStringLiteral("close"), Qt::Key_Escape, 100, [&] {
+        ++closes;
+        return true;
+    });
+    close.activationTrigger = WindowShortcutManager::Binding::ActivationTrigger::Release;
+    require(manager.addBinding(&window, close) != 0, "parent close must register");
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Escape);
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier, true);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Escape);
+    require(!editing && closes == 0, "canceling editing must not also close its parent");
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Escape);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Escape);
+    require(closes == 1, "a fresh close gesture must work after editing ends");
+}
+
+void canceledCloseDoesNotStealAnotherManagersFreshPress() {
+    QWidget first;
+    QWidget second;
+    first.show();
+    second.show();
+    WindowShortcutManager firstManager;
+    WindowShortcutManager secondManager;
+    firstManager.addScopeWindow(&first);
+    secondManager.addScopeWindow(&second);
+    int closes = 0;
+    auto item = binding(QStringLiteral("close"), Qt::Key_Escape, 100, [&] {
+        ++closes;
+        return true;
+    });
+    item.activationTrigger = WindowShortcutManager::Binding::ActivationTrigger::Release;
+    auto owner = std::make_unique<QObject>();
+    require(firstManager.addBinding(owner.get(), item) != 0, "first close must register");
+    require(secondManager.addBinding(&second, item) != 0, "second close must register");
+    sendKey(&first, QEvent::KeyPress, Qt::Key_Escape);
+    owner.reset();
+    sendKey(&second, QEvent::KeyPress, Qt::Key_Escape);
+    sendKey(&second, QEvent::KeyRelease, Qt::Key_Escape);
+    require(closes == 1, "canceled ownership must not steal another window's fresh gesture");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -821,6 +983,11 @@ int main(int argc, char** argv) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
     }
     QApplication application(argc, argv);
+    canceledCloseDoesNotStealAnotherManagersFreshPress();
+    releaseActivationOwnsTheWholeSequence();
+    interruptedReleaseActivationNeverClosesLater();
+    releaseActivationSurvivesToolbarFocusAndManagerDestruction();
+    contextualCancellationDoesNotEscalateDuringTheSameHold();
     cancellationSurvivesBindingRemovalFromCallbacks();
     heldBindingsRequireCancellationAndHandleReentrantSuspension();
     interruptedInputLifecycleIsBalanced();

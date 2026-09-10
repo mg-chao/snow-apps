@@ -789,6 +789,7 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
 
     ShortcutManager::Binding closeWindow;
     closeWindow.id = QStringLiteral("pinned.close");
+    closeWindow.activationTrigger = ShortcutManager::Binding::ActivationTrigger::Release;
     closeWindow.priority = ShortcutManager::StandardPriority::WindowCommand + 1;
     closeWindow.canActivate = localCommandsAllowed;
     closeWindow.activate = [this](const auto&) {
@@ -1168,6 +1169,9 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
 
 bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* message,
                                          qintptr* result) {
+    if (m_mouseReleaseAction.handleNativeEvent(message, result)) {
+        return true;
+    }
     if (m_closing) {
         return QWidget::nativeEvent(eventType, message, result);
     }
@@ -5147,7 +5151,8 @@ bool ScreenshotPinnedWindow::handleDoubleClick(const QPoint& position) {
     if (action == QStringLiteral("thumbnail_mode")) {
         setThumbnailMode(!m_thumbnailMode);
     } else if (action == QStringLiteral("close")) {
-        requestUserClose();
+        static_cast<void>(
+            m_mouseReleaseAction.arm(this, Qt::LeftButton, [this] { requestUserClose(); }));
     }
     return true;
 }
@@ -5167,7 +5172,8 @@ bool ScreenshotPinnedWindow::handleMiddleClick(const QPoint& position) {
     } else if (action == QStringLiteral("thumbnail_mode")) {
         setThumbnailMode(!m_thumbnailMode);
     } else if (action == QStringLiteral("close")) {
-        requestUserClose();
+        static_cast<void>(
+            m_mouseReleaseAction.arm(this, Qt::MiddleButton, [this] { requestUserClose(); }));
     }
     return true;
 }

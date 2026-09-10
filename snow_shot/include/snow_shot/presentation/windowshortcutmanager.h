@@ -37,15 +37,21 @@ class WindowShortcutManager final : public QObject {
     };
 
     struct Binding {
+        enum class ActivationTrigger { Press, Release };
+
         QString id;
         QList<QKeyCombination> keyCombinations;
         int priority = 0;
         bool autoRepeat = false;
+        // Release actions reserve the initial press and execute only after its
+        // physical release. They cannot also define held-control callbacks.
+        ActivationTrigger activationTrigger = ActivationTrigger::Press;
         // Held contextual shortcuts may tolerate a narrowly scoped extra
         // modifier (for example Shift followed by Space during a resize).
         Qt::KeyboardModifiers allowedAdditionalModifiers = Qt::NoModifier;
-        std::function<bool(const ActivationContext&)> canActivate =
-            [](const ActivationContext&) { return true; };
+        std::function<bool(const ActivationContext&)> canActivate = [](const ActivationContext&) {
+            return true;
+        };
         std::function<bool(const ActivationContext&)> activate;
         // Optional key-release action. It is used by held local modifiers
         // whose state must end before the mouse gesture is released.

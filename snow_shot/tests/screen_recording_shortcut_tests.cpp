@@ -1,3 +1,4 @@
+#include "close_release_native_test_support.h"
 #include "snow_shot/presentation/screenrecordingareawindow.h"
 #include "snow_shot/presentation/screenrecordingshortcutcontroller.h"
 #include "snow_shot/presentation/screenrecordingtoolbarwindow.h"
@@ -339,6 +340,16 @@ void recordingControlShortcutsFollowButtonsAndSettings() {
     area.show();
     toolbar.show();
     focus(toolbar);
+    QKeyEvent closePress(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(&toolbar, &closePress);
+    require(ends == 0 && toolbar.isVisible(), "recording must stay open while Escape is held");
+    QKeyEvent closeRepeat(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier, QString(), true);
+    QApplication::sendEvent(&toolbar, &closeRepeat);
+    require(ends == 0, "held Escape must not end recording");
+    QKeyEvent closeRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(&toolbar, &closeRelease);
+    require(ends == 1, "Escape release must end recording once");
+    ends = 0;
     pressAll(toolbar);
     require(starts == 1 && ends == 1 && exports == 0 && copies == 0 && pauses == 0 && resumes == 0,
             "idle shortcuts must only start or end the recording session");
@@ -654,6 +665,12 @@ void recordingShortcutsFollowBothWindowsAndConfiguredKeys() {
 
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
+#ifdef Q_OS_WIN
+    if (close_release_native_test::receiverRequested()) {
+        return close_release_native_test::runReceiver();
+    }
+#endif
+
     QTemporaryDir temporary;
     require(temporary.isValid(), "isolated test storage must be available");
     const QString executableDirectory = QDir(temporary.path()).filePath(QStringLiteral("bin"));
@@ -661,6 +678,29 @@ int main(int argc, char* argv[]) {
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     require(storage.initialize({executableDirectory, temporary.path(), 60000}).success,
             "isolated recording shortcut settings must initialize");
+#ifdef Q_OS_WIN
+    if (app.arguments().contains(QStringLiteral("--close-release-native"))) {
+        const int result = close_release_native_test::run([&] {
+            close_release_native_test::Receiver receiver;
+            ScreenRecordingAreaWindow area;
+            ScreenRecordingToolbarWindow toolbar;
+            area.setPhysicalRegion(QRect(150, 150, 500, 350));
+            auto controller = std::make_unique<ScreenRecordingShortcutController>(area, toolbar);
+            QObject::connect(toolbar.palette(), &ScreenshotToolPalette::recordingCloseRequested,
+                             &area, [&] {
+                                 controller.reset();
+                                 toolbar.hide();
+                                 area.hide();
+                             });
+            area.show();
+            toolbar.showAndActivate();
+            receiver.verify(toolbar);
+            require(!controller && !area.isVisible(), "recording teardown must follow release");
+        });
+        storage.shutdown();
+        return result;
+    }
+#endif
     recordingToolbarTakesFocusWhenOpenedOrStarted();
     recordingToolbarKeepsFocusAfterEditingAndSurfaceRestoration();
     recordingSelectionEditsAnnotationsAndPreservesPassThrough();

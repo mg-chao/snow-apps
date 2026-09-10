@@ -513,6 +513,9 @@ void ScreenshotOverlayWindow::keyPressEvent(QKeyEvent* event) {
 
 bool ScreenshotOverlayWindow::nativeEvent(const QByteArray& eventType, void* message,
                                           qintptr* result) {
+    if (m_mouseReleaseAction.handleNativeEvent(message, result)) {
+        return true;
+    }
 #if defined(Q_OS_WIN) || defined(_WIN32)
     Q_UNUSED(eventType);
     if (message == nullptr || result == nullptr) {
@@ -694,10 +697,16 @@ bool ScreenshotOverlayWindow::handleCanvasMouseEvent(QMouseEvent* event) {
         return false;
     }
 
-    if (event->type() == QEvent::MouseButtonPress && event->button() == Qt::RightButton &&
-        m_eventSink.handleOverlayRightClick(this, event->position())) {
-        event->accept();
-        return true;
+    if (event->type() == QEvent::MouseButtonPress && event->button() == Qt::RightButton) {
+        const auto action = m_eventSink.handleOverlayRightClick(this, event->position());
+        if (action == ScreenshotOverlayRightClickResult::CancelCapture) {
+            static_cast<void>(m_mouseReleaseAction.arm(
+                this, Qt::RightButton, [this] { m_eventSink.completeRightClickCancellation(); }));
+        }
+        if (action != ScreenshotOverlayRightClickResult::Ignored) {
+            event->accept();
+            return true;
+        }
     }
 
     if (event->type() == QEvent::MouseMove && !event->buttons().testFlag(Qt::LeftButton)) {

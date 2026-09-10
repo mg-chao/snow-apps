@@ -3,6 +3,8 @@
 
 #include "snow_shot/presentation/screenshotscrollingtypes.h"
 
+#include "snow_shot/presentation/mousereleaseactioncontroller.h"
+
 #include <QColor>
 #include <QJsonObject>
 #include <QRegion>
@@ -100,6 +102,7 @@ class ScreenshotOverlayWindow final : public QWidget {
     void updateWindowMask();
 
     ScreenshotOverlayEventSink& m_eventSink;
+    snow_shot::presentation::MouseReleaseActionController m_mouseReleaseAction;
     SnowCanvasWidget* m_canvas = nullptr;
     ScreenshotScrollingThumbnailWidget* m_scrollingThumbnail = nullptr;
     std::unique_ptr<ScreenshotOverlayFramePresenter> m_framePresenter;
