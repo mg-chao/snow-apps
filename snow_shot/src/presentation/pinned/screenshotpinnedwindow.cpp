@@ -3436,8 +3436,7 @@ void ScreenshotPinnedWindow::finishDeferredPresentationSetup(quint64 generation)
         if (found != m_recognitionResults.conversions.cend()) {
             const auto entry = *found;
             requestMaterializedImage([this, generation, entry](bool succeeded) {
-                if (succeeded && generation == m_presentationGeneration && !m_closing &&
-                    imageConversionFingerprint(m_originalImage) == entry.imageFingerprint) {
+                if (succeeded && generation == m_presentationGeneration && !m_closing) {
                     activateRecognitionMode(
                         static_cast<int>(
                             entry.format == SnowShotImageConversionFormat::Markdown
