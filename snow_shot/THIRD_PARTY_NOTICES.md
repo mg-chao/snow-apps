@@ -46,6 +46,12 @@ existing Microsoft windows-rs dependency (MIT OR Apache-2.0) for UI Automation,
 native edit controls, and clipboard interoperability. Their resolved notices
 are included in the generated Rust dependency bundle.
 
+Mouse and keyboard effect rendering and its C bridge (`snow-recording-effects`
+and `snow-recording-effects-c`) are Apache-2.0 code under `snow-crates/`. They
+reuse crossbeam-channel (MIT OR Apache-2.0) and Microsoft windows-rs (MIT OR
+Apache-2.0) for bounded input observation and native font rendering. Their
+resolved licenses are included in the generated Rust dependency bundle.
+
 The generated bundle is authoritative for a particular binary because its
 contents are produced from that build environment. Dependency licenses and
 copyright notices remain the property of their respective owners.

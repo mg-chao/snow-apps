@@ -136,6 +136,7 @@ if(SNOW_APPS_BUILD_SNOW_SHOT)
     )
     foreach(_snow_rust_ffi_target IN ITEMS
             snow_capture_c
+            snow_recording_effects_c
             snow_ui_selector_c
             snow_selected_text_c
             snow_stitch_images_c
@@ -145,6 +146,8 @@ if(SNOW_APPS_BUILD_SNOW_SHOT)
             snow_shot_rust_ffi_bundle)
     endforeach()
     unset(_snow_rust_ffi_target)
+    target_include_directories(snow_recording_effects_c INTERFACE
+        "${CMAKE_CURRENT_SOURCE_DIR}/snow-crates/crates/snow-recording-effects-c/include")
     target_include_directories(snow_selected_text_c INTERFACE
         "${CMAKE_CURRENT_SOURCE_DIR}/snow-crates/crates/snow-selected-text-c/include")
 endif()

@@ -35,8 +35,12 @@ class ScreenRecordingAreaWindow final : public QWidget {
     [[nodiscard]] InputMode inputMode() const;
     void setDrawingBlocked(bool blocked);
     [[nodiscard]] bool drawingBlocked() const;
+    [[nodiscard]] QColor inputSurfaceColor() const;
     [[nodiscard]] SnowCanvasWidget* canvas() const;
     [[nodiscard]] QRect canvasGeometry() const;
+    [[nodiscard]] QRectF selectionRect() const {
+        return m_selectionRect;
+    }
 
   signals:
     void physicalRegionChanged(const QRect& region);

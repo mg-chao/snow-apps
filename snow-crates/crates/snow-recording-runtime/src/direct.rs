@@ -29,11 +29,12 @@ use crate::error::{Result, ScreenRecorderError};
 use crate::keyboard_hook::KeyboardInput;
 use crate::keyboard_overlay::{KeyEvent, KeyboardOverlay, KeyboardOverlayConfig};
 use crate::laser_trail::LaserTrail;
-use crate::mouse_hook::{MouseClickObservation, MouseHookObserver, ObservedMouseButton};
+use crate::mouse_hook::{MouseClickObservation, MouseHookObserver};
 use crate::recording::RecordingState;
 
-const CLICK_ANIMATION_MS: u64 = 450;
-const CLICK_QUEUE_DEPTH: usize = 128;
+use snow_recording_effects::mouse_effects::{
+    CLICK_ANIMATION_MS, CLICK_QUEUE_DEPTH, RenderClick, draw_clicks, scale_coordinate, scale_point,
+};
 const AUDIO_SAMPLE_RATE: u32 = 48_000;
 const AUDIO_CHANNELS: u16 = 2;
 const AUDIO_SLOT_MS: u64 = 10;
@@ -950,14 +951,6 @@ fn drain_click_observations(
     }
 }
 
-#[derive(Clone, Copy)]
-struct RenderClick {
-    timestamp_ms: u64,
-    x: i32,
-    y: i32,
-    button: ObservedMouseButton,
-}
-
 struct VisualCompositor {
     output_size: (u32, u32),
     trail: LaserTrail,
@@ -1096,55 +1089,6 @@ fn resize_rgba(source: &[u8], source_size: (u32, u32), output_size: (u32, u32)) 
     output
 }
 
-fn scale_point(x: i32, y: i32, source_size: (u32, u32), output_size: (u32, u32)) -> (i32, i32) {
-    (
-        scale_coordinate(x, source_size.0, output_size.0),
-        scale_coordinate(y, source_size.1, output_size.1),
-    )
-}
-
-fn scale_coordinate(value: i32, source_extent: u32, output_extent: u32) -> i32 {
-    if source_extent == 0 {
-        return value;
-    }
-    ((i64::from(value) * i64::from(output_extent) + i64::from(source_extent) / 2)
-        / i64::from(source_extent))
-    .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
-}
-
-fn draw_clicks(
-    rgba: &mut [u8],
-    output_size: (u32, u32),
-    clicks: &VecDeque<RenderClick>,
-    timestamp_ms: u64,
-    color: [u8; 4],
-    source_size: (u32, u32),
-) {
-    for click in clicks {
-        let age = timestamp_ms.saturating_sub(click.timestamp_ms);
-        if age > CLICK_ANIMATION_MS {
-            continue;
-        }
-        let progress = age as f32 / CLICK_ANIMATION_MS as f32;
-        let radius = 7 + (progress * 25.0).round() as i32;
-        let alpha = (f32::from(color[3]) * (1.0 - progress)).round() as u8;
-        let (x, y) = scale_point(click.x, click.y, source_size, output_size);
-        let thickness = match click.button {
-            ObservedMouseButton::Left => 3,
-            ObservedMouseButton::Right | ObservedMouseButton::Middle => 2,
-        };
-        draw_circle_outline_rgba(
-            rgba,
-            output_size,
-            x,
-            y,
-            radius,
-            [color[0], color[1], color[2], alpha],
-            thickness,
-        );
-    }
-}
-
 fn draw_cursor(
     rgba: &mut [u8],
     output_size: (u32, u32),
@@ -1237,28 +1181,6 @@ fn composite_cursor_pixel(
     }
 }
 
-fn draw_circle_outline_rgba(
-    rgba: &mut [u8],
-    size: (u32, u32),
-    center_x: i32,
-    center_y: i32,
-    radius: i32,
-    color: [u8; 4],
-    thickness: i32,
-) {
-    let inner = radius.saturating_sub(thickness).max(0);
-    let outer_squared = radius * radius;
-    let inner_squared = inner * inner;
-    for y in -radius..=radius {
-        for x in -radius..=radius {
-            let distance = x * x + y * y;
-            if distance <= outer_squared && distance >= inner_squared {
-                blend_pixel(rgba, size, center_x + x, center_y + y, color);
-            }
-        }
-    }
-}
-
 fn blend_pixel(rgba: &mut [u8], size: (u32, u32), x: i32, y: i32, color: [u8; 4]) {
     if x < 0 || y < 0 || x as u32 >= size.0 || y as u32 >= size.1 || color[3] == 0 {
         return;
@@ -1280,6 +1202,7 @@ fn blend_pixel(rgba: &mut [u8], size: (u32, u32), x: i32, y: i32, color: [u8; 4]
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mouse_hook::ObservedMouseButton;
     use snow_cursor::CursorShapeId;
 
     fn config() -> DirectRecordingConfig {

@@ -1019,209 +1019,217 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     </message>
 </context>
 <context>
+    <name>RecordingEffectPreview</name>
+    <message>
+        <location filename="../src/presentation/recording/recordingeffectpreview.cpp" line="300"/>
+        <source>Motion Preview in Progress</source>
+        <translation>動效預覽中</translation>
+    </message>
+</context>
+<context>
     <name>RecordingKeyboard</name>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="62"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="30"/>
         <source>Backspace</source>
         <translation>退格</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="63"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="31"/>
         <source>Tab</source>
         <translation>Tab</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="64"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="32"/>
         <source>Clear</source>
         <translation>清除</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="65"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="33"/>
         <source>Enter</source>
         <translation>Enter</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="66"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="34"/>
         <source>Shift</source>
         <translation>Shift</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="67"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="35"/>
         <source>Ctrl</source>
         <translation>Ctrl</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="68"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="36"/>
         <source>Alt</source>
         <translation>Alt</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="69"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="37"/>
         <source>Pause</source>
         <translation>暫停</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="70"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="38"/>
         <source>Caps Lock</source>
         <translation>大寫鎖定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="71"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="39"/>
         <source>Esc</source>
         <translation>Esc</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="72"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="40"/>
         <source>Space</source>
         <translation>空白鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="73"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="41"/>
         <source>Page Up</source>
         <translation>上翻頁</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="74"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="42"/>
         <source>Page Down</source>
         <translation>下翻頁</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="75"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="43"/>
         <source>End</source>
         <translation>End</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="76"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="44"/>
         <source>Home</source>
         <translation>Home</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="77"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="45"/>
         <source>Left</source>
         <translation>←</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="78"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="46"/>
         <source>Up</source>
         <translation>↑</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="79"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="47"/>
         <source>Right</source>
         <translation>→</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="80"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="48"/>
         <source>Down</source>
         <translation>↓</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="81"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="49"/>
         <source>Print Screen</source>
         <translation>Print Screen</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="82"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="50"/>
         <source>Insert</source>
         <translation>Insert</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="83"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="51"/>
         <source>Delete</source>
         <translation>Delete</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="84"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="52"/>
         <source>Win</source>
         <translation>Win</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="85"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="53"/>
         <source>Menu</source>
         <translation>選單</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="86"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="54"/>
         <source>Num *</source>
         <translation>數字鍵盤 *</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="87"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="55"/>
         <source>Num +</source>
         <translation>數字鍵盤 +</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="88"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="56"/>
         <source>Num Separator</source>
         <translation>數字鍵盤分隔符</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="89"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="57"/>
         <source>Num -</source>
         <translation>數字鍵盤 -</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="90"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="58"/>
         <source>Num .</source>
         <translation>數字鍵盤 .</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="91"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="59"/>
         <source>Num /</source>
         <translation>數字鍵盤 /</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="92"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="60"/>
         <source>Num Lock</source>
         <translation>數字鎖定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="93"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="61"/>
         <source>Scroll Lock</source>
         <translation>捲動鎖定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="94"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="62"/>
         <source>AltGr</source>
         <translation>AltGr</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="95"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="63"/>
         <source>Mute</source>
         <translation>靜音</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="96"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="64"/>
         <source>Volume Down</source>
         <translation>降低音量</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="97"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="65"/>
         <source>Volume Up</source>
         <translation>提高音量</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="98"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="66"/>
         <source>Next Track</source>
         <translation>下一曲</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="99"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="67"/>
         <source>Previous Track</source>
         <translation>上一曲</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="100"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="68"/>
         <source>Stop</source>
         <translation>停止</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="101"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="69"/>
         <source>Play/Pause</source>
         <translation>播放/暫停</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="109"/>
+        <location filename="../src/presentation/recording/recordingeffectstyle.h" line="77"/>
         <source>Num %1</source>
         <translation>數字鍵盤 %1</translation>
     </message>
@@ -1229,27 +1237,32 @@ so every moment on screen can be expressed clearly and shared easily.</source>
 <context>
     <name>ScreenRecordingController</name>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="252"/>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="186"/>
         <source>Keyboard recording failed: %1</source>
         <translation>鍵盤錄製失敗：%1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="257"/>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="191"/>
         <source>Unknown recording error</source>
         <translation>未知錄製錯誤</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="617"/>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="295"/>
+        <source>Motion preview unavailable: %1</source>
+        <translation>無法預覽動效：%1</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="572"/>
         <source>Unable to create the recording directory</source>
         <translation>無法建立錄製目錄</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="877"/>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="859"/>
         <source>Screen recording</source>
         <translation>螢幕錄製</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="878"/>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="860"/>
         <source>The recording operation failed</source>
         <translation>錄製作業失敗</translation>
     </message>
@@ -1296,9 +1309,9 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <name>ScreenshotController</name>
     <message>
         <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2971"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4147"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4273"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4283"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4142"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4268"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4278"/>
         <source>The screenshot could not be saved: %1</source>
         <translation>無法儲存截圖：%1</translation>
     </message>
@@ -1354,7 +1367,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     </message>
     <message>
         <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3063"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="3947"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="3942"/>
         <source>No recognized result is available to copy</source>
         <translation>沒有可複製的辨識結果</translation>
     </message>
@@ -1385,7 +1398,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <message>
         <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2620"/>
         <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2646"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4156"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4151"/>
         <source>The screenshot export queue is full</source>
         <translation>擷取畫面匯出佇列已滿</translation>
     </message>
@@ -1740,22 +1753,22 @@ so every moment on screen can be expressed clearly and shared easily.</source>
 <context>
     <name>ScreenshotPinnedWindow</name>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2990"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2988"/>
         <source>Group: %1</source>
         <translation>群組：%1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2985"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2983"/>
         <source>Default</source>
         <translation>預設</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="3006"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="3004"/>
         <source>New Group</source>
         <translation>新增群組</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="3010"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="3008"/>
         <source>Delete Empty Groups</source>
         <translation>刪除空群組</translation>
     </message>
@@ -1766,7 +1779,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     </message>
     <message>
         <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="316"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2720"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2718"/>
         <source>Save as file</source>
         <translation>另存為檔案</translation>
     </message>
@@ -1791,143 +1804,145 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <translation>無法開始儲存已釘選的影像</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2708"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2706"/>
         <source>Copy to clipboard</source>
         <translation>複製到剪貼簿</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2714"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2712"/>
         <source>Copy original content</source>
         <translation>複製原始內容</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2726"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2933"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2724"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2931"/>
         <source>Recognizing text</source>
         <translation>正在辨識文字</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2790"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2788"/>
         <source>Opacity</source>
         <translation>透明度</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2796"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2818"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2794"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2816"/>
         <source>%1%</source>
         <translation>%1%</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2811"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2809"/>
         <source>Scale</source>
         <translation>縮放</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2807"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2829"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2953"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2968"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2805"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2827"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2951"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2966"/>
         <source>Current: %1%</source>
         <translation>目前：%1%</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2742"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2740"/>
         <source>Drawing mode</source>
         <translation>繪製模式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2749"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2747"/>
         <source>Process image</source>
         <translation>處理影像</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2754"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2752"/>
         <source>Rotate clockwise</source>
         <translation>順時針旋轉</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2762"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2760"/>
         <source>Rotate counterclockwise</source>
         <translation>逆時針旋轉</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2769"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2767"/>
         <source>Flip horizontally</source>
         <translation>水平翻轉</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2777"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2775"/>
         <source>Flip vertically</source>
         <translation>垂直翻轉</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2785"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2783"/>
         <source>Reset transform</source>
         <translation>重設變換</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2842"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2840"/>
         <source>Thumbnail mode</source>
         <translation>縮圖模式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2849"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2847"/>
         <source>Focus mode</source>
         <translation>專注模式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2852"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2850"/>
         <source>Show all windows</source>
         <translation>顯示所有視窗</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2857"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2855"/>
         <source>Hide other windows</source>
         <translation>隱藏其他視窗</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2862"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2860"/>
         <source>Close other windows</source>
         <translation>關閉其他視窗</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2866"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2864"/>
         <source>Close all windows</source>
         <translation>關閉所有視窗</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2873"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2871"/>
         <source>Show main interface</source>
         <translation>顯示主介面</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2934"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2932"/>
         <source>Display text recognition results</source>
         <translation>顯示文字辨識結果</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2984"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2982"/>
         <source>Group: Default</source>
         <translation>群組：預設</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4308"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4303"/>
         <source>The pinned image could not be copied: %1</source>
         <translation>無法複製已釘選的影像：%1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4623"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="1630"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4619"/>
         <source>Scale: %1%</source>
         <translation>縮放：%1%</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4635"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="1629"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4632"/>
         <source>Opacity: %1%</source>
         <translation>透明度：%1%</translation>
     </message>
     <message>
         <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="315"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2879"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2877"/>
         <source>Close</source>
         <translation>關閉</translation>
     </message>

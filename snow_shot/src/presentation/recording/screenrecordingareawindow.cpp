@@ -168,6 +168,13 @@ bool ScreenRecordingAreaWindow::drawingBlocked() const {
     return m_drawingBlocked;
 }
 
+QColor ScreenRecordingAreaWindow::inputSurfaceColor() const {
+    const bool interactive =
+        (m_inputMode == InputMode::Drawing && !m_drawingBlocked) || regionEditingEnabled();
+    // Windows passes mouse input through zero-alpha pixels in layered windows.
+    return interactive ? QColor(0, 0, 0, 2) : QColor(Qt::transparent);
+}
+
 SnowCanvasWidget* ScreenRecordingAreaWindow::canvas() const {
     return m_canvas;
 }
@@ -250,6 +257,7 @@ void ScreenRecordingAreaWindow::applyInputMode() {
     if (m_canvas != nullptr) {
         m_canvas->setInteractionEnabled(drawing);
         m_canvas->setFocusPolicy(drawing ? Qt::StrongFocus : Qt::NoFocus);
+        m_canvas->update();
     }
     applyNativePassThrough(!interactive);
     update();
@@ -546,11 +554,7 @@ void ScreenRecordingAreaWindow::paintEvent(QPaintEvent* event) {
     QPainter painter(this);
     painter.setCompositionMode(QPainter::CompositionMode_Source);
     painter.fillRect(rect(), Qt::transparent);
-    if ((m_inputMode == InputMode::Drawing && !m_drawingBlocked) ||
-        (m_inputMode == InputMode::RegionEditing && regionEditingEnabled())) {
-        // Windows passes mouse input through zero-alpha pixels in layered windows.
-        painter.fillRect(m_selectionRect, QColor(0, 0, 0, 2));
-    }
+    painter.fillRect(m_selectionRect, inputSurfaceColor());
     painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
     painter.setRenderHint(QPainter::Antialiasing, false);
     const auto border = snow_shot::presentation::recording::screenRecordingAreaBorderGeometry(
