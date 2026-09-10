@@ -104,6 +104,27 @@ snow_shot_nsis_replace([=[CreateShortCut "$SMPROGRAMS\$STARTMENU_FOLDER\$(SnowSh
   CreateShortCut "$SMPROGRAMS\$STARTMENU_FOLDER\$(SnowShotUninstallShortcut).lnk"]=])
 snow_shot_nsis_replace([=[Delete "$SMPROGRAMS\$MUI_TEMP\Uninstall.lnk"]=]
     [=[!insertmacro SnowShotDeleteUninstallShortcuts "$SMPROGRAMS\$MUI_TEMP"]=])
+# Future self-updates can add files that this uninstaller did not know at build time.
+# Run a copy of the installed helper before CPack's original file deletion list.
+snow_shot_nsis_replace("@CPACK_NSIS_DELETE_FILES@" [=[
+  Push "$INSTDIR\bin\snow_shot.exe"
+  Call un.SnowShotEnsureAppClosed
+  Push "$INSTDIR\bin\crashpad_handler.exe"
+  Call un.SnowShotEnsureAppClosed
+  IfFileExists "$INSTDIR\snow-shot-installation.json" 0 snowOwnedDone
+    InitPluginsDir
+    ClearErrors
+    CopyFiles /SILENT "$INSTDIR\bin\snow-shot-updater.exe" "$PLUGINSDIR\snow-shot-updater.exe"
+    IfErrors snowOwnedFailed
+    ExecWait '"$PLUGINSDIR\snow-shot-updater.exe" --uninstall --target "$INSTDIR"' $0
+    IfErrors snowOwnedFailed
+    StrCmp $0 0 snowOwnedDone
+snowOwnedFailed:
+    SetErrorLevel 12
+    Quit
+snowOwnedDone:
+@CPACK_NSIS_DELETE_FILES@
+]=])
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/snow-shot-nsis")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/snow-shot-nsis/NSIS.template.in" "${_snow_nsis_template}")
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_BINARY_DIR}/snow-shot-nsis")

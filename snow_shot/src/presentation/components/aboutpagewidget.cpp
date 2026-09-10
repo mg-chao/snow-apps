@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
 #include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
 #include "snow_shot/presentation/styles/thememanager.h"
+#include "snow_shot/update/updateservice.h"
 
 #include "antd_icons.h"
 #include "icon_renderer.h"
@@ -22,6 +23,7 @@
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QProgressBar>
 #include <QPainter>
 #include <QPainterPath>
 #include <QRegularExpression>
@@ -354,6 +356,12 @@ struct AboutPageWidget::Ui {
     AdButton* releaseNotes = nullptr;
     AdButton* copyButton = nullptr;
     QTimer* copyFeedbackTimer = nullptr;
+    snow_shot::update::UpdateService* updates = nullptr;
+    QLabel* updateStatus = nullptr;
+    QProgressBar* updateProgress = nullptr;
+    AdButton* updateAction = nullptr;
+    AdButton* updateCancel = nullptr;
+    QBoxLayout* updateActions = nullptr;
     QGridLayout* resourceLayout = nullptr;
     std::array<AboutResourceButton*, 3> resources{};
     QLabel* linkError = nullptr;
@@ -368,7 +376,8 @@ struct AboutPageWidget::Ui {
     int resourceColumns = 0;
 };
 
-AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener)
+AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
+                                 snow_shot::update::UpdateService* updates)
     : QWidget(parent), m_version(QCoreApplication::applicationVersion()),
       m_urlOpener(urlOpener ? std::move(urlOpener) : QDesktopServices::openUrl),
       m_ui(std::make_unique<Ui>()) {
@@ -483,6 +492,46 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener)
     m_ui->versionLayout->addLayout(m_ui->versionActions);
     m_ui->bodyLayout->addWidget(m_ui->versionPanel);
 
+    m_ui->updates =
+        updates != nullptr ? updates : qApp->findChild<snow_shot::update::UpdateService*>();
+    if (m_ui->updates != nullptr) {
+        m_ui->updateStatus = aboutLabel(QStringLiteral("aboutUpdateStatus"), m_ui->body);
+        m_ui->bodyLayout->addWidget(m_ui->updateStatus);
+        m_ui->updateProgress = new QProgressBar(m_ui->body);
+        m_ui->updateProgress->setObjectName(QStringLiteral("aboutUpdateProgress"));
+        m_ui->updateProgress->setRange(0, 1000);
+        m_ui->updateProgress->setTextVisible(false);
+        m_ui->bodyLayout->addWidget(m_ui->updateProgress);
+        m_ui->updateActions = new QBoxLayout(QBoxLayout::LeftToRight);
+        auto* actions = m_ui->updateActions;
+        m_ui->updateAction = new adqt::widgets::AdButton(m_ui->body);
+        m_ui->updateAction->setObjectName(QStringLiteral("aboutUpdateAction"));
+        m_ui->updateCancel = new adqt::widgets::AdButton(m_ui->body);
+        m_ui->updateCancel->setObjectName(QStringLiteral("aboutUpdateCancel"));
+        actions->addWidget(m_ui->updateAction);
+        actions->addWidget(m_ui->updateCancel);
+        actions->addStretch();
+        m_ui->bodyLayout->addLayout(actions);
+        connect(m_ui->updates, &snow_shot::update::UpdateService::statusChanged, this,
+                &AboutPageWidget::refreshUpdateStatus);
+        connect(m_ui->updateCancel, &adqt::widgets::AdButton::clicked, m_ui->updates,
+                &snow_shot::update::UpdateService::cancel);
+        connect(m_ui->updateAction, &adqt::widgets::AdButton::clicked, this, [this] {
+            using snow_shot::update::UpdateState;
+            switch (m_ui->updates->status().state) {
+            case UpdateState::Available:
+                m_ui->updates->download();
+                break;
+            case UpdateState::Ready:
+                m_ui->updates->requestRestart();
+                break;
+            default:
+                m_ui->updates->check();
+                break;
+            }
+        });
+    }
+
     m_ui->resourceLayout = new QGridLayout;
     m_ui->resources = {
         new AboutResourceButton(QStringLiteral("aboutWebsite"), outlined::Global(), m_ui->body),
@@ -586,6 +635,11 @@ void AboutPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
                                             metric.paddingXS);
     m_ui->versionLayout->setSpacing(metric.paddingSM);
     m_ui->versionActions->setSpacing(metric.paddingXS);
+    if (m_ui->updateStatus != nullptr) {
+        styleAboutLabel(m_ui->updateStatus, metric.fontSizeSM, QFont::Normal,
+                        colors.colorTextSecondary);
+        m_ui->updateActions->setSpacing(metric.paddingXS);
+    }
     const QColor versionBackground =
         blendAboutColor(colors.colorBgLayout, colors.colorBgContainer, 0.8);
     m_ui->versionPanel->setStyleSheet(
@@ -643,6 +697,7 @@ void AboutPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
 }
 
 void AboutPageWidget::retranslateUi() {
+    refreshUpdateStatus();
     const bool hasVersion = !m_version.trimmed().isEmpty();
     setAccessibleName(tr("About Snow Shot"));
     m_ui->productName->setText(tr("Snow Shot"));
@@ -720,6 +775,9 @@ void AboutPageWidget::updateLayout() {
     m_ui->identityLayout->setDirection(tiny ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
     m_ui->versionLayout->setDirection(wide ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
     m_ui->versionActions->setDirection(tiny ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+    if (m_ui->updateActions != nullptr) {
+        m_ui->updateActions->setDirection(tiny ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+    }
     m_ui->footerLayout->setDirection(wide ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
     m_ui->copyright->setWordWrap(!wide);
     m_ui->slogan->setWordWrap(!wide);
@@ -765,6 +823,66 @@ void AboutPageWidget::openProjectLink(const QUrl& url) {
             }
         });
     }
+}
+
+void AboutPageWidget::refreshUpdateStatus() {
+    if (m_ui->updates == nullptr || m_ui->updateStatus == nullptr) {
+        return;
+    }
+    using snow_shot::update::UpdateState;
+    const auto& status = m_ui->updates->status();
+    QString text;
+    QString action = tr("Check for updates");
+    switch (status.state) {
+    case UpdateState::Unavailable:
+        text = tr("Automatic updates are unavailable for this copy.");
+        break;
+    case UpdateState::Idle:
+        text = status.version.isEmpty() ? tr("Check for a newer version of Snow Shot.")
+                                        : tr("You are up to date.");
+        break;
+    case UpdateState::Checking:
+        text = tr("Checking for updates…");
+        break;
+    case UpdateState::Available:
+        text = tr("Update available: %1").arg(status.version);
+        action = tr("Download update");
+        break;
+    case UpdateState::Downloading:
+        text = tr("Downloading %1 of %2 MB")
+                   .arg(status.received / 1048576)
+                   .arg(status.total / 1048576);
+        break;
+    case UpdateState::Verifying:
+        text = tr("Verifying update…");
+        break;
+    case UpdateState::Ready:
+        text = tr("Ready to install %1").arg(status.version);
+        action = tr("Restart and update");
+        break;
+    case UpdateState::Applying:
+        text = tr("Preparing to restart and update…");
+        break;
+    case UpdateState::Failed:
+        text = tr("Update failed: %1").arg(status.error);
+        break;
+    }
+    if (!status.error.isEmpty() && status.state == UpdateState::Ready) {
+        text += u'\n' + status.error;
+    }
+    m_ui->updateStatus->setText(text);
+    m_ui->updateStatus->setAccessibleName(text);
+    m_ui->updateAction->setText(action);
+    m_ui->updateAction->setAccessibleName(action);
+    m_ui->updateAction->setEnabled(
+        status.state == UpdateState::Idle || status.state == UpdateState::Failed ||
+        status.state == UpdateState::Available || status.state == UpdateState::Ready);
+    m_ui->updateCancel->setText(tr("Cancel download"));
+    m_ui->updateCancel->setVisible(status.state == UpdateState::Downloading);
+    m_ui->updateProgress->setVisible(status.state == UpdateState::Downloading);
+    m_ui->updateProgress->setValue(
+        status.total > 0 ? static_cast<int>(status.received * 1000 / status.total) : 0);
+    m_ui->updateProgress->setAccessibleName(tr("Update download progress"));
 }
 
 void AboutPageWidget::changeEvent(QEvent* event) {

@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$BuildDirectory,
-    [Parameter(Mandatory = $true)][string]$InstallDirectory
+    [Parameter(Mandatory = $true)][string]$InstallDirectory,
+    [string]$OcrAssetManifest
 )
 
 $ErrorActionPreference = "Stop"
@@ -73,8 +74,14 @@ $manifest = [ordered]@{
     revision = (& git -C $PSScriptRoot rev-parse HEAD).Trim()
     binaries = @()
 }
+if ($OcrAssetManifest) {
+    # Application releases consume an immutable runtime built by its separate release.
+    # Record its identity, never label this build's development OCR PDB as matching it.
+    $manifest.externalOcrRuntime = (Get-Content -LiteralPath $OcrAssetManifest -Raw | ConvertFrom-Json).runtime
+}
 foreach ($binary in Get-ChildItem -LiteralPath (Join-Path $installRoot "bin") -File) {
     if ($binary.Extension -notin @(".exe", ".dll")) { continue }
+    if ($OcrAssetManifest -and $binary.Name -eq 'snow-ocr-process.exe') { continue }
     $headers = @(& $dumpbin /nologo /headers $binary.FullName 2>&1)
     if ($LASTEXITCODE -ne 0) { throw "Unable to inspect $($binary.FullName)" }
     $destination = Join-Path $symbolRoot $binary.BaseName
@@ -104,7 +111,7 @@ foreach ($binary in Get-ChildItem -LiteralPath (Join-Path $installRoot "bin") -F
             break
         }
     }
-    if ($binary.Name -in @("snow_shot.exe", "snow-ocr-process.exe") -and -not $record.pdb) {
+    if ($binary.Name -in @("snow_shot.exe", "snow-shot-updater.exe", "snow-ocr-process.exe") -and -not $record.pdb) {
         throw "The matching PDB is missing for $($binary.Name); release symbols are incomplete."
     }
     $manifest.binaries += $record

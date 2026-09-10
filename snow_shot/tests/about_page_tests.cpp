@@ -9,6 +9,7 @@
 #include "snow_shot/presentation/settings/settingssearchindex.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/update/updateservice.h"
 
 #include "widgets/button.h"
 #include "widgets/navigation_menu.h"
@@ -278,6 +279,30 @@ void largerTypeKeepsEveryActionReachable() {
     flushEvents();
 }
 
+void updatePolicyAndUnavailableCopy() {
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    const auto binding = settings::SettingsSelectBinding::UpdateMode;
+    require(backend.selectValue(binding).toString() == QStringLiteral("download"),
+            "automatic download is the default update policy");
+    for (const QString& value :
+         {QStringLiteral("manual"), QStringLiteral("check"), QStringLiteral("download")}) {
+        require(backend.applySelectValue(binding, value) &&
+                    backend.selectValue(binding).toString() == value,
+                "update policy round-trips through the settings backend");
+    }
+    require(!backend.applySelectValue(binding, QStringLiteral("invalid")) &&
+                backend.selectValue(binding).toString() == QStringLiteral("download"),
+            "invalid update policy preserves the previous value");
+    snow_shot::update::UpdateService updates({});
+    AboutPageWidget page(nullptr, {}, &updates);
+    require(!child<adqt::widgets::AdButton>(page, "aboutUpdateAction")->isEnabled(),
+            "development copies cannot overwrite themselves");
+    require(child<QLabel>(page, "aboutUpdateStatus")->text() ==
+                QStringLiteral("Automatic updates are unavailable for this copy."),
+            "unavailable update status explains the disabled action");
+}
+
 void traySettingsAndFunctionNavigation() {
     const auto& registry = settings::builtInSettingsRegistry();
     snow_shot::presentation::GlobalShortcutManager shortcuts;
@@ -538,6 +563,7 @@ int main(int argc, char** argv) {
     stableVersionsDoNotClaimToBePreviews();
     projectLinkSurfacesMatchStandardButtons();
     projectLinksAreExplicitAccessibleAndRecoverable();
+    updatePolicyAndUnavailableCopy();
     traySettingsAndFunctionNavigation();
     mainNavigationSearchThemesAndLanguages();
     largerTypeKeepsEveryActionReachable();

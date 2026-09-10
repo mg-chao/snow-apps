@@ -1,0 +1,2 @@
+#pragma once
+inline constexpr char snowShotUpdateKeys[] = R"keys(@SNOW_SHOT_UPDATE_KEYS_JSON@)keys";

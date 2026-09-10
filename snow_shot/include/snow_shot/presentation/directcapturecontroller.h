@@ -13,6 +13,7 @@ class DirectCaptureController final : public QObject {
     void captureFocusedWindow();
     void captureCurrentMonitor();
     void shutdown();
+    [[nodiscard]] bool blocksApplicationUpdate() const;
 
   signals:
     void operationFailed(const QString& message, bool warning);

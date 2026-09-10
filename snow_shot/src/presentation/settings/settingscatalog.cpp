@@ -435,6 +435,26 @@ SettingsItemDefinition proxyItem() {
     };
 }
 
+SettingsItemDefinition updateModeItem() {
+    SettingsSelectDefinition payload;
+    payload.binding = SettingsSelectBinding::UpdateMode;
+    payload.options = {
+        {QStringLiteral("manual"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Manual"))},
+        {QStringLiteral("check"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Check automatically"))},
+        {QStringLiteral("download"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Download automatically"))},
+    };
+    return {
+        QStringLiteral("updates.mode"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Updates")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog", "Download new versions automatically and ask before restarting")),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Software updates"))},
+        QStringLiteral("updates/mode"),
+        payload};
+}
+
 SettingsItemDefinition screenshotApiModeItem() {
     SettingsSelectDefinition payload;
     payload.binding = SettingsSelectBinding::ScreenshotApiMode;
@@ -1889,7 +1909,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                                    "General system integration settings")),
                     SettingsSectionReset::SystemGeneral,
-                    {autoStartItem()},
+                    {autoStartItem(), updateModeItem()},
                 },
                 {
                     QStringLiteral("screenshot-capture"),
@@ -2578,6 +2598,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSelectBinding::Proxy:
                         expectedKey = QStringLiteral("network/proxy");
+                        break;
+                    case SettingsSelectBinding::UpdateMode:
+                        expectedKey = QStringLiteral("updates/mode");
                         break;
                     case SettingsSelectBinding::OcrModelType:
                         expectedKey = QStringLiteral("text_recognition/model_type");
