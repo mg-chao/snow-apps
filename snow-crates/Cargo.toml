@@ -18,6 +18,8 @@ members = [
     "crates/rapid-ocr-rs",
     "crates/snow-recording-model",
     "crates/snow-recording-runtime",
+    "crates/snow-recording-effects",
+    "crates/snow-recording-effects-c",
     "crates/snow-recording-export",
     "crates/snow-screen-recorder",
 ]

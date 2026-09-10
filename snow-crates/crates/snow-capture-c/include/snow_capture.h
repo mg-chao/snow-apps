@@ -80,14 +80,14 @@ typedef struct SnowCaptureMonitorSessionConfig {
     uint8_t reserved[31];
 } SnowCaptureMonitorSessionConfig;
 
-SnowCaptureMonitorSession* snow_capture_monitor_session_create(
-    const SnowCaptureMonitorSessionConfig* config);
+SnowCaptureMonitorSession*
+snow_capture_monitor_session_create(const SnowCaptureMonitorSessionConfig* config);
 void snow_capture_monitor_session_destroy(SnowCaptureMonitorSession* session);
-uint8_t snow_capture_monitor_session_capture(
-    SnowCaptureMonitorSession* session, SnowCaptureFrameInfo* out_info);
+uint8_t snow_capture_monitor_session_capture(SnowCaptureMonitorSession* session,
+                                             SnowCaptureFrameInfo* out_info);
 /* Retained pixels survive the next capture and session destruction. */
-SnowCaptureFrameLease* snow_capture_monitor_session_frame_retain(
-    const SnowCaptureMonitorSession* session);
+SnowCaptureFrameLease*
+snow_capture_monitor_session_frame_retain(const SnowCaptureMonitorSession* session);
 
 typedef struct SnowCaptureRegionSessionConfig {
     int32_t x;
@@ -357,22 +357,21 @@ typedef struct SnowCaptureDirectRecordingConfig {
     uint32_t keyboard_reserved;
 } SnowCaptureDirectRecordingConfig;
 
-SnowCaptureDesktopSession* snow_capture_desktop_session_create(
-    const SnowCaptureDesktopSessionConfig* config);
+SnowCaptureDesktopSession*
+snow_capture_desktop_session_create(const SnowCaptureDesktopSessionConfig* config);
 void snow_capture_desktop_session_destroy(SnowCaptureDesktopSession* session);
 
 uint8_t snow_capture_desktop_session_prepare(SnowCaptureDesktopSession* session);
-uint8_t snow_capture_desktop_session_state(
-    SnowCaptureDesktopSession* session,
-    SnowCaptureDesktopSessionState* out_state);
+uint8_t snow_capture_desktop_session_state(SnowCaptureDesktopSession* session,
+                                           SnowCaptureDesktopSessionState* out_state);
 uint8_t snow_capture_desktop_session_refresh_layout(SnowCaptureDesktopSession* session);
 uint8_t snow_capture_desktop_session_reset_to_prepared(SnowCaptureDesktopSession* session);
 /* Captures every display and, when focused_window is nonzero, the requested
  * window as one all-or-nothing transaction. The returned result owns its
  * frame buffers and must be destroyed by the caller. */
-SnowCaptureScreenshotResult* snow_capture_desktop_session_capture(
-    SnowCaptureDesktopSession* session,
-    const SnowCaptureScreenshotRequest* request);
+SnowCaptureScreenshotResult*
+snow_capture_desktop_session_capture(SnowCaptureDesktopSession* session,
+                                     const SnowCaptureScreenshotRequest* request);
 
 /* Cancellation may be signaled from another thread. The token must remain
  * alive until every capture call that references it has returned. */
@@ -383,63 +382,51 @@ void snow_capture_cancellation_token_destroy(SnowCaptureCancellationToken* token
 /* Pointers returned through frame-info structures remain valid until the
  * result is destroyed. Retaining the corresponding frame lease extends the
  * pixel-buffer lifetime beyond result destruction. */
-size_t snow_capture_screenshot_result_display_count(
-    const SnowCaptureScreenshotResult* result);
-uint8_t snow_capture_screenshot_result_display_info(
-    const SnowCaptureScreenshotResult* result,
-    size_t index,
-    SnowCaptureFrameInfo* out_info);
-SnowCaptureFrameLease* snow_capture_screenshot_result_display_retain(
-    const SnowCaptureScreenshotResult* result,
-    size_t index);
-uint8_t snow_capture_screenshot_result_focused_window_info(
-    const SnowCaptureScreenshotResult* result,
-    SnowCaptureWindowFrameInfo* out_info);
-SnowCaptureFrameLease* snow_capture_screenshot_result_focused_window_retain(
-    const SnowCaptureScreenshotResult* result);
+size_t snow_capture_screenshot_result_display_count(const SnowCaptureScreenshotResult* result);
+uint8_t snow_capture_screenshot_result_display_info(const SnowCaptureScreenshotResult* result,
+                                                    size_t index, SnowCaptureFrameInfo* out_info);
+SnowCaptureFrameLease*
+snow_capture_screenshot_result_display_retain(const SnowCaptureScreenshotResult* result,
+                                              size_t index);
+uint8_t
+snow_capture_screenshot_result_focused_window_info(const SnowCaptureScreenshotResult* result,
+                                                   SnowCaptureWindowFrameInfo* out_info);
+SnowCaptureFrameLease*
+snow_capture_screenshot_result_focused_window_retain(const SnowCaptureScreenshotResult* result);
 void snow_capture_screenshot_result_destroy(SnowCaptureScreenshotResult* result);
 
-SnowCaptureRegionSession* snow_capture_region_session_create(
-    const SnowCaptureRegionSessionConfig* config);
+SnowCaptureRegionSession*
+snow_capture_region_session_create(const SnowCaptureRegionSessionConfig* config);
 void snow_capture_region_session_destroy(SnowCaptureRegionSession* session);
 uint8_t snow_capture_region_session_prepare(SnowCaptureRegionSession* session);
 /* The returned pixel pointer remains valid until the next capture or destroy. */
-uint8_t snow_capture_region_session_capture(
-    SnowCaptureRegionSession* session,
-    SnowCaptureRegionFrameInfo* out_info);
+uint8_t snow_capture_region_session_capture(SnowCaptureRegionSession* session,
+                                            SnowCaptureRegionFrameInfo* out_info);
 
 /* Starts a continuous region stream. Frames are delivered as explicit leases;
  * a frame event must be released with snow_capture_stream_frame_release(). */
-SnowCaptureStream* snow_capture_stream_create_region(
-    const SnowCaptureStreamConfig* config);
+SnowCaptureStream* snow_capture_stream_create_region(const SnowCaptureStreamConfig* config);
 void snow_capture_stream_destroy(SnowCaptureStream* stream);
 uint8_t snow_capture_stream_stop(SnowCaptureStream* stream);
-uint8_t snow_capture_stream_set_target_fps(
-    SnowCaptureStream* stream,
-    uint32_t target_fps);
+uint8_t snow_capture_stream_set_target_fps(SnowCaptureStream* stream, uint32_t target_fps);
 /* A timeout is a successful receive with kind TIMEOUT. The function only
  * returns zero for invalid arguments or an internal API error. */
-uint8_t snow_capture_stream_receive(
-    SnowCaptureStream* stream,
-    uint32_t timeout_ms,
-    SnowCaptureStreamEvent* out_event);
-uint8_t snow_capture_stream_frame_info(
-    const SnowCaptureStreamFrame* frame,
-    SnowCaptureStreamFrameInfo* out_info);
+uint8_t snow_capture_stream_receive(SnowCaptureStream* stream, uint32_t timeout_ms,
+                                    SnowCaptureStreamEvent* out_event);
+uint8_t snow_capture_stream_frame_info(const SnowCaptureStreamFrame* frame,
+                                       SnowCaptureStreamFrameInfo* out_info);
 void snow_capture_stream_frame_release(SnowCaptureStreamFrame* frame);
-uint8_t snow_capture_stream_stats(
-    const SnowCaptureStream* stream,
-    SnowCaptureStreamStats* out_stats);
+uint8_t snow_capture_stream_stats(const SnowCaptureStream* stream,
+                                  SnowCaptureStreamStats* out_stats);
 
-SnowCaptureWindowSession* snow_capture_window_session_create(
-    const SnowCaptureWindowSessionConfig* config);
+SnowCaptureWindowSession*
+snow_capture_window_session_create(const SnowCaptureWindowSessionConfig* config);
 void snow_capture_window_session_destroy(SnowCaptureWindowSession* session);
 uint8_t snow_capture_window_session_prepare(SnowCaptureWindowSession* session);
-uint8_t snow_capture_window_session_capture(
-    SnowCaptureWindowSession* session,
-    SnowCaptureWindowFrameInfo* out_info);
-SnowCaptureFrameLease* snow_capture_window_session_frame_retain(
-    const SnowCaptureWindowSession* session);
+uint8_t snow_capture_window_session_capture(SnowCaptureWindowSession* session,
+                                            SnowCaptureWindowFrameInfo* out_info);
+SnowCaptureFrameLease*
+snow_capture_window_session_frame_retain(const SnowCaptureWindowSession* session);
 /* Clears the session-owned frame and restores the prepared state. Retained
  * frame leases remain valid; pointers obtained from frame-info calls are
  * invalid after this function returns. */
@@ -447,21 +434,26 @@ uint8_t snow_capture_window_session_release_frame(SnowCaptureWindowSession* sess
 
 void snow_capture_frame_lease_release(SnowCaptureFrameLease* lease);
 
-SnowCaptureRecordingSession* snow_capture_recording_session_create(
-    const SnowCaptureRecordingConfig* config);
-SnowCaptureResult snow_capture_recording_session_create_direct(
-    const SnowCaptureDirectRecordingConfig* config,
-    SnowCaptureRecordingSession** out_session);
+SnowCaptureRecordingSession*
+snow_capture_recording_session_create(const SnowCaptureRecordingConfig* config);
+/* Pure output sizing shared by recording and effects preview. Zero maximums mean uncapped. */
+int32_t snow_capture_recording_output_dimensions(uint32_t width, uint32_t height,
+                                                 uint32_t maximum_width, uint32_t maximum_height,
+                                                 uint32_t format, uint32_t* output_width,
+                                                 uint32_t* output_height);
+
+SnowCaptureResult
+snow_capture_recording_session_create_direct(const SnowCaptureDirectRecordingConfig* config,
+                                             SnowCaptureRecordingSession** out_session);
 void snow_capture_recording_session_destroy(SnowCaptureRecordingSession* session);
 uint8_t snow_capture_recording_session_start(SnowCaptureRecordingSession* session);
 uint8_t snow_capture_recording_session_pause(SnowCaptureRecordingSession* session);
 uint8_t snow_capture_recording_session_resume(SnowCaptureRecordingSession* session);
-uint8_t snow_capture_recording_session_state(
-    const SnowCaptureRecordingSession* session,
-    SnowCaptureRecordingState* out_state);
-uint8_t snow_capture_recording_session_stop_and_export(
-    SnowCaptureRecordingSession* session,
-    const SnowCaptureRecordingExportConfig* config);
+uint8_t snow_capture_recording_session_state(const SnowCaptureRecordingSession* session,
+                                             SnowCaptureRecordingState* out_state);
+uint8_t
+snow_capture_recording_session_stop_and_export(SnowCaptureRecordingSession* session,
+                                               const SnowCaptureRecordingExportConfig* config);
 SnowCaptureResult snow_capture_recording_session_stop(SnowCaptureRecordingSession* session);
 
 const char* snow_capture_last_error_message(void);

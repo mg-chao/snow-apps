@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/canvasstatusreadout.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
@@ -272,7 +273,6 @@ constexpr int kControlsMinimumNativeDimension = 383;
 constexpr int kThumbnailSize = 83;
 constexpr int kThumbnailAnimationDurationMs = 150;
 constexpr int kResizeHitWidth = 6;
-constexpr int kScaleReadoutInset = 8;
 constexpr int kScaleReadoutDurationMs = 1000;
 constexpr int kMinimumScalePercent = 10;
 constexpr int kMaximumScalePercent = 500;
@@ -1624,6 +1624,12 @@ void ScreenshotPinnedWindow::changeEvent(QEvent* event) {
 }
 
 void ScreenshotPinnedWindow::retranslateUi() {
+    if (m_scaleLabel != nullptr && m_scaleLabel->isVisible()) {
+        m_scaleLabel->setText(m_scaleReadoutShowsOpacity
+                                  ? tr("Opacity: %1%").arg(m_opacityPercent)
+                                  : tr("Scale: %1%").arg(qRound(m_scalePercent)));
+        m_scaleLabel->layoutIn(rect());
+    }
     const auto updateWidget = [](QWidget* widget) {
         if (widget == nullptr) {
             return;
@@ -2660,16 +2666,8 @@ void ScreenshotPinnedWindow::createUi() {
     updatePinnedBorderGeometry(*m_borderFrame, rect());
     m_borderFrame->raise();
 
-    m_scaleLabel = new QLabel(this);
-    m_scaleLabel->setAttribute(Qt::WA_NativeWindow, false);
+    m_scaleLabel = new CanvasStatusReadout(this);
     m_scaleLabel->setObjectName(QStringLiteral("screenshotPinnedScaleLabel"));
-    m_scaleLabel->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-    m_scaleLabel->setAlignment(Qt::AlignCenter);
-    m_scaleLabel->setStyleSheet(
-        QStringLiteral("QLabel#screenshotPinnedScaleLabel { "
-                       "color: white; background-color: rgba(0, 0, 0, 150); "
-                       "padding: 3px 6px; border-radius: 4px; }"));
-    m_scaleLabel->hide();
 
     m_controlsPanel = new QFrame(this);
     m_controlsPanel->setAttribute(Qt::WA_NativeWindow, false);
@@ -3071,10 +3069,7 @@ void ScreenshotPinnedWindow::updateControlsGeometry() {
         return;
     }
     if (m_scaleLabel != nullptr) {
-        m_scaleLabel->adjustSize();
-        m_scaleLabel->move(kScaleReadoutInset,
-                           std::max(0, height() - m_scaleLabel->height() - kScaleReadoutInset));
-        m_scaleLabel->raise();
+        m_scaleLabel->layoutIn(rect());
     }
     if (m_controlsPanel == nullptr) {
         return;
@@ -4620,8 +4615,9 @@ void ScreenshotPinnedWindow::showScaleReadout() {
     if (m_scaleLabel == nullptr || m_scaleLabelTimer == nullptr) {
         return;
     }
+    m_scaleReadoutShowsOpacity = false;
     m_scaleLabel->setText(tr("Scale: %1%").arg(qRound(m_scalePercent)));
-    m_scaleLabel->adjustSize();
+    m_scaleLabel->layoutIn(rect());
     updateControlsGeometry();
     m_scaleLabel->show();
     m_scaleLabel->raise();
@@ -4632,8 +4628,9 @@ void ScreenshotPinnedWindow::showOpacityReadout() {
     if (m_scaleLabel == nullptr || m_scaleLabelTimer == nullptr) {
         return;
     }
+    m_scaleReadoutShowsOpacity = true;
     m_scaleLabel->setText(tr("Opacity: %1%").arg(m_opacityPercent));
-    m_scaleLabel->adjustSize();
+    m_scaleLabel->layoutIn(rect());
     updateControlsGeometry();
     m_scaleLabel->show();
     m_scaleLabel->raise();

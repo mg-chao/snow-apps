@@ -1062,6 +1062,9 @@ set(PROJECT_CXX_SOURCES
     src/presentation/toolbar/screenshottoolbarwindow.cpp
     src/presentation/recording/screenrecordingareawindow.cpp
     src/presentation/recording/screenrecordingcontroller.cpp
+        src/presentation/recording/recordingeffectpreview.cpp
+        src/presentation/recording/recordingeffectpreview.h
+        src/presentation/recording/recordingeffectstyle.h
     src/presentation/recording/screenrecordingshortcutcontroller.cpp
     src/presentation/recording/screenrecordinggeometry.cpp
     src/presentation/recording/screenrecordingtoolbarwindow.cpp
@@ -1655,6 +1658,43 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+
+    add_executable(snow-shot-theme-primary-color-tests
+        tests/theme_primary_color_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+    )
+    target_link_libraries(snow-shot-theme-primary-color-tests PRIVATE
+        snow_shot_settings
+        snow_shot_image_codec
+    )
+    add_test(NAME snow-shot-theme-primary-color-tests
+             COMMAND snow-shot-theme-primary-color-tests)
+    set_tests_properties(snow-shot-theme-primary-color-tests PROPERTIES
+        TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    snow_shot_import_offscreen_platform(snow-shot-theme-primary-color-tests)
+    snow_shot_add_translations(snow-shot-theme-primary-color-tests)
+
+    add_executable(snow-shot-settings-color-commit-tests
+        tests/settings_color_commit_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+    )
+    target_link_libraries(snow-shot-settings-color-commit-tests PRIVATE
+        snow_shot_settings
+        snow_shot_image_codec
+    )
+    add_test(NAME snow-shot-settings-color-commit-tests
+             COMMAND snow-shot-settings-color-commit-tests)
+    set_tests_properties(snow-shot-settings-color-commit-tests PROPERTIES
+        TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    snow_shot_import_offscreen_platform(snow-shot-settings-color-commit-tests)
 
     add_executable(snow-shot-screen-recording-shortcut-settings-tests
         tests/screen_recording_shortcut_settings_tests.cpp
@@ -2913,6 +2953,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --escape-burst-only)
     add_test(NAME snow-shot-pinned-tool-rotation-tests
         COMMAND snow-shot-pinned-window-tests --tool-rotation-only)
+    add_test(NAME snow-shot-pinned-scale-readout-tests
+        COMMAND snow-shot-pinned-window-tests --scale-readout-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-scale-readout-tests PROPERTIES
+        LABELS "unit" TIMEOUT 90
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-pinned-passive-geometry-tests
         COMMAND snow-shot-pinned-window-tests --passive-geometry-only)
     set_tests_properties(snow-shot-pinned-passive-geometry-tests PROPERTIES
@@ -3816,6 +3862,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshotfloatingtoolpalettewindow.h
         include/snow_shot/presentation/screenshottoolpalettehost.h
         src/presentation/recording/screenrecordingcontroller.cpp
+        src/presentation/recording/recordingeffectpreview.cpp
+        src/presentation/recording/recordingeffectpreview.h
+        src/presentation/recording/recordingeffectstyle.h
         include/snow_shot/presentation/screenrecordingshortcutcontroller.h
         src/presentation/recording/screenrecordingshortcutcontroller.cpp
         src/presentation/recording/screenrecordingareawindow.cpp
@@ -3833,7 +3882,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
     target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE
         adqt_icon_core ant_design_icons_qt ant_design_qt snow_draw_engine_qt_canvas
-        snow_shot_storage snow_shot_image_codec snow_shot_window_shortcuts Qt6::Widgets)
+        snow_shot_storage snow_shot_image_codec snow_shot_window_shortcuts Qt6::Widgets snow_recording_effects_c snow_capture_c)
     target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE SNOW_SHOT_TEST_HOOKS=1)
     # Override only the test executable: exercise the real controller without
     # opening capture devices, recording the desktop, or exporting media.
@@ -3861,6 +3910,20 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     add_test(NAME snow-shot-screen-recording-controller-tests
         COMMAND snow-shot-screen-recording-controller-tests)
+    if(WIN32)
+        add_test(NAME snow-shot-recording-effects-preview-native-tests
+            COMMAND snow-shot-screen-recording-controller-tests --effects-preview-native -platform windows)
+        set_tests_properties(snow-shot-recording-effects-preview-native-tests PROPERTIES
+            LABELS "interactive;e2e;windows" RUN_SERIAL TRUE TIMEOUT 90
+            ENVIRONMENT "QT_QPA_PLATFORM=windows"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${SNOW_FFMPEG_ROOT}/bin")
+    endif()
+    add_test(NAME snow-shot-recording-effects-preview-tests
+        COMMAND snow-shot-screen-recording-controller-tests --effects-preview-only)
+    set_tests_properties(snow-shot-recording-effects-preview-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60)
     snow_shot_import_offscreen_platform(snow-shot-screen-recording-controller-tests)
     set_tests_properties(snow-shot-screen-recording-controller-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
@@ -4730,6 +4793,7 @@ target_precompile_headers(snow_shot PRIVATE
 
 target_link_libraries(
     snow_shot PRIVATE
+        snow_recording_effects_c
         adqt_icon_core
         ant_design_icons_qt
         ant_design_qt
@@ -4782,6 +4846,33 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         USES_TERMINAL
         VERBATIM
     )
+
+    add_custom_target(snow-shot-recording-effects-performance-benchmark
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
+            "${CARGO_EXECUTABLE}" build --locked --release
+            --target x86_64-pc-windows-msvc
+            --package snow-recording-effects --example effects_benchmark
+        WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
+        USES_TERMINAL VERBATIM)
+    if(WIN32 AND TARGET snow-shot-screen-recording-controller-tests)
+        target_sources(snow-shot-screen-recording-controller-tests PRIVATE
+            tests/recording_effects_performance_benchmark.cpp)
+        target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
+            SNOW_RECORDING_EFFECTS_BENCHMARK=1)
+        add_dependencies(snow-shot-recording-effects-performance-benchmark
+            snow-shot-screen-recording-controller-tests)
+        add_test(NAME snow-shot-recording-effects-presentation-benchmark
+            COMMAND snow-shot-screen-recording-controller-tests --effects-preview-performance -platform windows)
+        set_tests_properties(snow-shot-recording-effects-presentation-benchmark PROPERTIES
+            LABELS "benchmark;interactive;windows" RUN_SERIAL TRUE TIMEOUT 90
+            ENVIRONMENT "QT_QPA_PLATFORM=windows"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${SNOW_FFMPEG_ROOT}/bin")
+        add_test(NAME snow-shot-recording-effects-rasterization-benchmark
+            COMMAND "${SNOW_RUST_CARGO_TARGET_DIR}/x86_64-pc-windows-msvc/release/examples/effects_benchmark.exe")
+        set_tests_properties(snow-shot-recording-effects-rasterization-benchmark PROPERTIES
+            LABELS "benchmark;windows" RUN_SERIAL TRUE TIMEOUT 90)
+    endif()
 
     add_custom_target(snow-shot-keyboard-recording-performance-benchmark
         COMMAND "${CMAKE_COMMAND}" -E env
@@ -4964,6 +5055,11 @@ if(WIN32)
     set(ENV{PKG_CONFIG_PATH} "${_SNOW_SHOT_SAVED_PKG_CONFIG_PATH}")
     unset(_SNOW_SHOT_SAVED_PKG_CONFIG_PATH)
     target_link_libraries(snow_shot PRIVATE PkgConfig::SNOW_SHOT_FFMPEG)
+    if(TARGET snow-shot-screen-recording-controller-tests)
+        target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE PkgConfig::SNOW_SHOT_FFMPEG)
+        set_property(TEST snow-shot-screen-recording-controller-tests snow-shot-recording-effects-preview-tests APPEND PROPERTY
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${SNOW_FFMPEG_ROOT}/bin")
+    endif()
     if(TARGET snow-shot-screenshot-canvas-renderer-tests)
         target_link_libraries(snow-shot-screenshot-canvas-renderer-tests PRIVATE
             PkgConfig::SNOW_SHOT_FFMPEG

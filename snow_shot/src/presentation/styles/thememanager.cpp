@@ -211,6 +211,7 @@ ThemeManager::ThemeManager(QObject* parent)
                            adqt::theme::ThemeManager::instance().config()))),
       m_scheme(generateThemeColorScheme(m_config)),
       m_mode(decodeThemeMode(snow_shot::storage::InterfaceSettings().themeMode())) {
+    m_config.colorPrimary = storage::InterfaceSettings().themePrimaryColor();
     auto& adqtThemeManager = adqt::theme::ThemeManager::instance();
     adqtThemeManager.setConfig(toAdqtThemeConfig(m_config));
     m_config = toThemeStyleConfig(adqt::theme::makeResolvedTheme(adqtThemeManager.config()));
@@ -254,6 +255,18 @@ void ThemeManager::setThemeStyleConfig(const ThemeStyleConfig& config) {
     adqtThemeManager.setConfig(toAdqtThemeConfig(config));
     m_config = toThemeStyleConfig(adqt::theme::makeResolvedTheme(adqtThemeManager.config()));
     rebuildScheme();
+}
+
+bool ThemeManager::setThemePrimaryColor(const QColor& color) {
+    if (!color.isValid() || !storage::InterfaceSettings().setThemePrimaryColor(color)) {
+        return false;
+    }
+    if (m_config.colorPrimary != color) {
+        auto config = m_config;
+        config.colorPrimary = color;
+        setThemeStyleConfig(config);
+    }
+    return true;
 }
 
 void ThemeManager::setThemeMode(ThemeMode mode) {

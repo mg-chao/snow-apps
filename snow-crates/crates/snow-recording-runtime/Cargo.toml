@@ -6,6 +6,7 @@ license.workspace = true
 build = "build.rs"
 
 [dependencies]
+snow-recording-effects = { path = "../snow-recording-effects" }
 snow-core = { path = "../snow-core" }
 snow-pipeline = { path = "../snow-pipeline" }
 snow-capture = { path = "../snow-capture" }

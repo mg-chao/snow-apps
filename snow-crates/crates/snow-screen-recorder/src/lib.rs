@@ -4,6 +4,7 @@ pub use snow_recording_export::{
     ExportResult, ExportRuntimeReport, ExportStage, ExportStageDurationsMs, ExportTask,
     MouseEditConfig, RecordingExportError, SoftwareH264Priority, StreamingAudioConfig,
     StreamingEncoder, StreamingEncoderConfig, StreamingEncoderReport, VideoCodec,
+    scaled_output_dimensions,
 };
 pub use snow_recording_model::{
     AudioSampleFormat, AudioTrackManifest, AudioTrackRole, ClickEventRecord, CursorFrameRecord,

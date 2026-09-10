@@ -26,3 +26,7 @@ pub mod ui_selector {
 pub mod selected_text {
     pub use snow_selected_text_c::*;
 }
+
+pub mod recording_effects {
+    pub use snow_recording_effects_c::*;
+}
