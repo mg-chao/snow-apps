@@ -209,6 +209,16 @@ SettingsItemDefinition themeItem() {
     };
 }
 
+SettingsItemDefinition themePrimaryColorItem() {
+    return {QStringLiteral("interface.theme-primary-color"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Theme Primary Color")),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                           "Choose the primary color used throughout the theme")),
+            {},
+            QStringLiteral("interface/theme_primary_color"),
+            SettingsColorDefinition{SettingsColorBinding::ThemePrimaryColor, false}};
+}
+
 SettingsItemDefinition languageItem() {
     SettingsSelectDefinition payload;
     payload.binding = SettingsSelectBinding::Language;
@@ -1699,7 +1709,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(
                         QT_TRANSLATE_NOOP("SettingsCatalog", "Appearance and language settings")),
                     SettingsSectionReset::GeneralSettings,
-                    {themeItem(), languageItem()},
+                    {themeItem(), themePrimaryColorItem(), languageItem()},
                 },
                 {
                     QStringLiteral("interface-screenshot"),
@@ -2944,6 +2954,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         std::get_if<SettingsColorDefinition>(&itemDefinition.payload)) {
                     QString expectedKey;
                     switch (color->binding) {
+                    case SettingsColorBinding::ThemePrimaryColor:
+                        expectedKey = QStringLiteral("interface/theme_primary_color");
+                        break;
                     case SettingsColorBinding::SelectionMaskColor:
                         expectedKey = QStringLiteral("screenshot_ui/selection_mask_color");
                         break;
@@ -2964,7 +2977,8 @@ QStringList SettingsCatalog::validationErrors() const {
                     }
                     if (itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||
                         schemaEntry->valueKind != storage::ConfigurationValueKind::String ||
-                        !color->alphaChannelEnabled) {
+                        color->alphaChannelEnabled !=
+                            (color->binding != SettingsColorBinding::ThemePrimaryColor)) {
                         errors.push_back(QStringLiteral("color binding is incompatible: %1")
                                              .arg(itemDefinition.id));
                     }

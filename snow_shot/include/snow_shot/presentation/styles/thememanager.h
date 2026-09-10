@@ -22,6 +22,7 @@ class ThemeManager : public QObject {
 
   public slots:
     void setThemeStyleConfig(const ThemeStyleConfig& config);
+    bool setThemePrimaryColor(const QColor& color);
     void setThemeMode(ThemeMode mode);
     void setThemeAppearance(ThemeAppearance appearance);
     void setThemePreset(ThemePreset preset);
