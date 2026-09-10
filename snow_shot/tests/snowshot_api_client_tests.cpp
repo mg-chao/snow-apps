@@ -16,9 +16,23 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QPointer>
+#include <QSemaphore>
+#include <QThreadPool>
+#include <QThread>
 
 #include <cstdlib>
 #include <iostream>
+
+class SnowShotApiClientTestAccess {
+  public:
+    static void prepare(SnowShotApiClient& client,
+                        std::function<QByteArray(const QImage&)> callback) {
+        client.m_tableImagePreparation = std::move(callback);
+    }
+    static void timeout(SnowShotApiClient& client, int milliseconds) {
+        client.m_tableTimeoutMs = milliseconds;
+    }
+};
 
 namespace {
 void require(bool condition, const char* message) {
@@ -62,6 +76,99 @@ QByteArray waitForHttpRequest(QTcpServer& server, const QByteArray& response) {
     loop.exec();
     require(timeout.isActive(), "local API test server timed out waiting for a request");
     return request;
+}
+
+void tablePreparationIsAsynchronousAndLifetimeSafe() {
+    for (int scenario = 0; scenario < 6; ++scenario) {
+        QTcpServer server;
+        require(server.listen(QHostAddress::LocalHost), "table lifecycle server listens");
+        auto* client =
+            new SnowShotApiClient(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+        auto* receiver = new QObject;
+        QSemaphore entered, release;
+        bool workerThread = false;
+        SnowShotApiClientTestAccess::prepare(*client, [&](const QImage&) {
+            workerThread = QThread::currentThread() != QCoreApplication::instance()->thread();
+            entered.release();
+            release.acquire();
+            return QByteArray();
+        });
+        if (scenario == 4) {
+            SnowShotApiClientTestAccess::timeout(*client, 1);
+        }
+        int completions = 0;
+        QEventLoop timeoutLoop;
+        QImage image(16, 16, QImage::Format_RGBA8888);
+        image.fill(Qt::white);
+        const auto token = client->extractTable(image, receiver, [&](SnowShotTableResult result) {
+            require(!result.succeeded(), "empty preparation or timeout must fail");
+            ++completions;
+            timeoutLoop.quit();
+            if (scenario == 5) {
+                delete client;
+                client = nullptr;
+            }
+        });
+        require(token != 0 && completions == 0, "table returns token before preparation completes");
+        require(entered.tryAcquire(1, 5000) && workerThread, "table encoding runs off UI thread");
+        bool heartbeat = false;
+        QEventLoop heartbeatLoop;
+        QTimer::singleShot(0, &heartbeatLoop, [&]() {
+            heartbeat = true;
+            heartbeatLoop.quit();
+        });
+        heartbeatLoop.exec();
+        require(heartbeat, "UI dispatch continues while encoder is blocked");
+        if (scenario == 1) {
+            client->cancel(token);
+        }
+        if (scenario == 2) {
+            delete receiver;
+            receiver = nullptr;
+        }
+        if (scenario == 3) {
+            delete client;
+            client = nullptr;
+        }
+        if (scenario == 4 && completions == 0) {
+            QTimer::singleShot(5000, &timeoutLoop, &QEventLoop::quit);
+            timeoutLoop.exec();
+            require(completions == 1, "deadline includes blocked preparation");
+        }
+        release.release();
+        require(QThreadPool::globalInstance()->waitForDone(5000), "table worker settles");
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        require(completions == ((scenario == 0 || scenario == 4 || scenario == 5) ? 1 : 0),
+                "cancelled or destroyed consumers receive no late callback");
+        require(!server.hasPendingConnections(), "failed or cancelled preparation never uploads");
+        delete receiver;
+        delete client;
+    }
+    QTcpServer server;
+    require(server.listen(QHostAddress::LocalHost), "table upload server listens");
+    SnowShotApiClient client(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+    QImage image(16, 16, QImage::Format_RGBA8888);
+    image.fill(Qt::white);
+    int completions = 0;
+    QEventLoop completionLoop;
+    const auto token = client.extractTable(image, &client, [&](SnowShotTableResult result) {
+        require(result.succeeded(), "table response succeeds");
+        ++completions;
+        completionLoop.quit();
+    });
+    require(token != 0, "valid table request accepted");
+    const QByteArray body = R"({"data":{"html":"<table><tr><td>1</td></tr></table>"}})";
+    const QByteArray request = waitForHttpRequest(
+        server, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +
+                    QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+    if (completions == 0) {
+        QTimer::singleShot(5000, &completionLoop, &QEventLoop::quit);
+        completionLoop.exec();
+    }
+    require(completions == 1 && request.contains("/api/v1/table/extract") &&
+                request.contains("image/webp") && request.contains("RIFF") &&
+                request.contains("WEBP"),
+            "table preserves multipart WebP contract and completes once");
 }
 
 void failedRequestsIdentifyTheirKindWithoutContent() {
@@ -842,6 +949,7 @@ int main(int argc, char** argv) {
     require(SnowShotApiClient::formatFailure(0, {}, QStringLiteral("  Connection\nfailed ")) ==
                 QStringLiteral("Connection failed"),
             "transport failures without a code should remain concise");
+    tablePreparationIsAsynchronousAndLifetimeSafe();
     customModelsUseIndependentOpenAiConnections();
     apiClientUsesModelCatalogAndStreamingChatContracts();
     translationPromptPreservesEditorContract();

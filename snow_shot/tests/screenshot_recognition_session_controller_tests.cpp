@@ -4,6 +4,14 @@
 #include "snow_shot/storage/configurationstore.h"
 
 #include "widgets/modal.h"
+#include "widgets/popover.h"
+#include "widgets/detail/overlay_popup_controller.h"
+#include <QTcpServer>
+#include <QTcpSocket>
+#include <QPushButton>
+#include <QSemaphore>
+#include <QThreadPool>
+#include <atomic>
 #include "widgets/select.h"
 #include "widgets/switch.h"
 
@@ -25,6 +33,14 @@
 void runOriginalImageTranslationTests();
 void runImageConversionTests();
 
+class SnowShotApiClientTestAccess {
+  public:
+    static void prepare(SnowShotApiClient& client,
+                        std::function<QByteArray(const QImage&)> callback) {
+        client.m_tableImagePreparation = std::move(callback);
+    }
+};
+
 namespace {
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -37,6 +53,109 @@ void processFor(int durationMs) {
     QEventLoop loop;
     QTimer::singleShot(durationMs, &loop, &QEventLoop::quit);
     loop.exec();
+}
+
+void tablePreparationPreservesSessionAndSiblingPopovers() {
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    for (int scenario = 0; scenario < 5; ++scenario) {
+        QTcpServer server;
+        require(server.listen(QHostAddress::LocalHost), "session HTTP server listens");
+        SnowShotApiClient client(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+        QObject::connect(&server, &QTcpServer::newConnection, &server, [&]() {
+            auto* socket = server.nextPendingConnection();
+            QObject::connect(socket, &QTcpSocket::readyRead, socket, [socket]() {
+                socket->readAll();
+                const QByteArray body = R"({"data":{"html":"<table><tr><td>1</td></tr></table>"}})";
+                socket->write(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +
+                    QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+                socket->disconnectFromHost();
+            });
+        });
+        QSemaphore entered, release;
+        std::atomic<int> preparations = 0;
+        SnowShotApiClientTestAccess::prepare(client, [&](const QImage& image) {
+            ++preparations;
+            entered.release();
+            release.acquire();
+            return scenario == 4 ? SnowShotApiClient::encodeWebp(image) : QByteArray();
+        });
+        QEventLoop completionLoop;
+        bool tableBusy = false;
+        int errors = 0;
+        ScreenshotRecognitionSessionActions actions;
+        actions.ensureContent = []() -> ScreenshotRecognitionWindow* { return nullptr; };
+        actions.setBusyState = [&](bool, bool table, bool) {
+            tableBusy = table;
+            if (!table) {
+                completionLoop.quit();
+            }
+        };
+        actions.showStatus = [&](const QString&, bool error) { errors += error ? 1 : 0; };
+        ScreenshotRecognitionSessionController session(nullptr, nullptr, &client, actions);
+        QImage image(32, 32, QImage::Format_RGBA8888);
+        image.fill(Qt::white);
+        session.setTarget({QStringLiteral("first"), image, QRectF(0, 0, 32, 32)});
+        QWidget host;
+        host.resize(640, 360);
+        QPushButton first(QStringLiteral("Table"), &host), second(QStringLiteral("Sibling"), &host);
+        first.setGeometry(50, 100, 100, 32);
+        second.setGeometry(180, 100, 100, 32);
+        adqt::widgets::AdPopover firstPopup, secondPopup;
+        firstPopup.setSourceWidget(&first);
+        secondPopup.setSourceWidget(&second);
+        firstPopup.setText(QStringLiteral("Table options"));
+        secondPopup.setText(QStringLiteral("Sibling options"));
+        host.show();
+        const auto verifyPopup = [&](adqt::widgets::AdPopover& popup) {
+            popup.show();
+            require(popup.isVisible(), "sibling popup remains logically openable");
+            auto* controller = popup.findChild<adqt::widgets::detail::OverlayPopupController*>();
+            auto* surface = controller ? controller->delegate()->popupSurfaceWidget() : nullptr;
+            require(surface && surface->isVisible(),
+                    "requested popup surface must actually display");
+            popup.hide();
+        };
+        verifyPopup(firstPopup);
+        QObject::connect(&first, &QPushButton::clicked, &session,
+                         [&]() { session.activate(Mode::Table); });
+        first.click();
+        require(tableBusy && session.busy(Mode::Table),
+                "table becomes busy before encoding completes");
+        require(entered.tryAcquire(1, 5000), "table worker starts");
+        session.activate(Mode::Table);
+        require(preparations == 1, "repeated activation does not duplicate pending preparation");
+        verifyPopup(secondPopup);
+        if (scenario == 1) {
+            session.invalidate();
+        }
+        if (scenario == 2) {
+            session.setTarget({QStringLiteral("second"), image, QRectF(0, 0, 32, 32)});
+        }
+        if (scenario == 3) {
+            ScreenshotRecognitionResults cached;
+            cached.key = QStringLiteral("first");
+            cached.qr = ScreenshotQrRecognitionResult{{QStringLiteral("Cached QR")}, {}};
+            session.seedRecognitionResults(cached);
+            session.activate(Mode::Qr);
+        }
+        release.release();
+        require(QThreadPool::globalInstance()->waitForDone(5000), "session worker settles");
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        if (session.busy(Mode::Table)) {
+            QTimer::singleShot(5000, &completionLoop, &QEventLoop::quit);
+            completionLoop.exec();
+        }
+        if (scenario == 4) {
+            require(session.cachedRecognitionResults().table.has_value(),
+                    "successful table result is retained");
+        }
+        require(!session.busy(Mode::Table), "terminal preparation clears table busy state");
+        require(errors == (scenario == 0 ? 1 : 0),
+                "stale or inactive failures do not affect current UI");
+        verifyPopup(firstPopup);
+        verifyPopup(secondPopup);
+    }
 }
 
 // Recognition port stand-in whose asset readiness and download phase are
@@ -461,6 +580,11 @@ int main(int argc, char** argv) {
                 .initialize({executable, temporary.path(), 60000})
                 .success,
             "initialize recognition test storage");
+    if (application.arguments().contains(QStringLiteral("--table-only"))) {
+        tablePreparationPreservesSessionAndSiblingPopovers();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--image-conversion-only"))) {
         runImageConversionTests();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -471,6 +595,7 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    tablePreparationPreservesSessionAndSiblingPopovers();
     cachedRecognitionUsesTheSelectedFillStyle();
     translationLanguageSelectsUseCodePrefixGroups();
     displayedRecognitionSnapshotPreservesCachedResults();

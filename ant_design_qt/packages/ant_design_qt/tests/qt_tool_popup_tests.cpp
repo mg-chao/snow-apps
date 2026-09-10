@@ -87,6 +87,7 @@ class QtToolPopupTest final : public QObject {
   Q_OBJECT
 
  private slots:
+  void siblingPopoversReopenAfterOverdueHoverTasks();
   void popoverReleasesAndRecreatesNativeResources();
   void popupTriggerTooltipsRequireOptIn();
   void popupTriggerTooltipsAvoidPopoverAtScreenEdges();
@@ -349,6 +350,43 @@ void QtToolPopupTest::pendingTooltipSurvivesGroupRouteRegistration() {
   QVERIFY(tip->isVisible());
   QCOMPARE(visibility.count(), 0);
   tip->hide();
+}
+
+void QtToolPopupTest::siblingPopoversReopenAfterOverdueHoverTasks() {
+  QWidget host;
+  host.resize(640, 360);
+  QPushButton first(QStringLiteral("First"), &host), second(QStringLiteral("Second"), &host);
+  first.setGeometry(50, 150, 100, 32);
+  second.setGeometry(220, 150, 100, 32);
+  AdPopover firstPopup, secondPopup;
+  firstPopup.setSourceWidget(&first);
+  secondPopup.setSourceWidget(&second);
+  for (auto* popup : {&firstPopup, &secondPopup}) {
+    popup->setPopupLayerMode(AdPopover::PopupLayerMode::QtTool);
+    popup->setTriggers(AdPopover::Trigger::Hover);
+    popup->setHoverOpenDelayMs(10);
+    popup->setHoverCloseDelayMs(10);
+    auto* content = new QWidget;
+    content->setFixedSize(100, 30);
+    popup->setContentWidget(content);
+  }
+  host.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&host));
+  host.raise();
+  for (int cycle = 0; cycle < 3; ++cycle) {
+    QTest::mouseMove(&host, QPoint(400, 280));
+    QTRY_VERIFY(!firstPopup.isVisible() && !secondPopup.isVisible());
+    QTest::mouseMove(&first, first.rect().center());
+    // Let hover deadlines become overdue without dispatching GUI events.
+    QTest::qSleep(40);
+    QTRY_VERIFY(firstPopup.isVisible());
+    QTRY_VERIFY(firstPopup.contentWidget()->window()->isVisible());
+    QTest::mouseMove(&second, second.rect().center());
+    QTest::qSleep(40);
+    QTRY_VERIFY(secondPopup.isVisible());
+    QTRY_VERIFY(secondPopup.contentWidget()->window()->isVisible());
+    QTRY_VERIFY(!firstPopup.isVisible());
+  }
 }
 
 void QtToolPopupTest::popoverReleasesAndRecreatesNativeResources() {

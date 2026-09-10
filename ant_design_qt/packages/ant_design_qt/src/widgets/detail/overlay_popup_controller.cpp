@@ -310,12 +310,14 @@ void applyPopupVisibility(QWidget* popup, bool shouldShow, bool raiseWhenShowing
 
   if (!shouldShow) {
     if (popup->isVisible()) {
+      qCDebug(popupLog) << "surface.hide" << popup->objectName();
       popup->hide();
     }
     return;
   }
 
   if (!popup->isVisible()) {
+    qCDebug(popupLog) << "surface.show" << popup->objectName() << popup->geometry();
     popup->show();
   }
   if (raiseWhenShowing) {
@@ -505,7 +507,25 @@ void OverlayPopupController::setVisibilityMode(VisibilityMode value) {
   }
 }
 
+void OverlayPopupController::tracePopup(const char* event, int detail) const {
+  if (!popupLog().isDebugEnabled() || !delegate_) {
+    return;
+  }
+  const auto* anchor = delegate_->popupAnchorWidget();
+  const auto* scope = delegate_->popupScopeWindow();
+  const auto* surface = delegate_->popupSurfaceWidget();
+  qCDebug(popupLog) << event << "detail" << detail << "anchor"
+                    << (anchor ? anchor->objectName() : QString()) << "anchor_rect"
+                    << (anchor ? QRect(anchor->mapToGlobal(QPoint()), anchor->size()) : QRect())
+                    << "scope" << (scope ? scope->objectName() : QString()) << "scope_rect"
+                    << (scope ? QRect(scope->mapToGlobal(QPoint()), scope->size()) : QRect())
+                    << "requested" << popupVisible_ << "actual" << (surface && surface->isVisible())
+                    << "cursor" << QCursor::pos() << "buttons" << QApplication::mouseButtons()
+                    << "grabber" << QWidget::mouseGrabber();
+}
+
 void OverlayPopupController::setPopupVisible(bool value) {
+  tracePopup("visibility.request", value);
   if (visibilityMode_ == VisibilityMode::External) {
     clearAllOpenReasons();
     if (!value) {
@@ -863,6 +883,7 @@ void OverlayPopupController::reconcileHoverFromCursor() {
 }
 
 void OverlayPopupController::scheduleHoverOpen() {
+  tracePopup("hover.open_deadline", mouseEnterDelayMs_);
   cancelTimingTask(this, QString::fromLatin1(kHoverTransitionTaskKey));
   hoverTransitionPending_ = true;
   refreshHoverMonitor();
@@ -877,6 +898,7 @@ void OverlayPopupController::scheduleHoverOpen() {
 }
 
 void OverlayPopupController::scheduleHoverClose() {
+  tracePopup("hover.close_deadline", mouseLeaveDelayMs_);
   cancelTimingTask(this, QString::fromLatin1(kHoverTransitionTaskKey));
   hoverTransitionPending_ = true;
   refreshHoverMonitor();
@@ -1324,6 +1346,7 @@ void OverlayPopupController::setPopupVisibleInternal(bool visible, bool emitSign
     return;
   }
 
+  tracePopup("visibility.transition", visible);
   popupVisible_ = visible;
   setPopupInteractionHostOpen(this, popupVisible_);
   refreshAnchorScrollBarWatchers();
@@ -1350,6 +1373,7 @@ void OverlayPopupController::setPopupVisibleInternal(bool visible, bool emitSign
   if (emitSignal) {
     emit popupVisibleChanged(popupVisible_);
   }
+  tracePopup("visibility.applied");
   syncPopupTooltipRoute();
   finishPopupVisibilityUpdate();
 }
@@ -1426,7 +1450,14 @@ bool OverlayPopupController::syncPopupGeometry(bool prepareLayout) {
     setPopupInteractionHostOpen(this, true);
     applyPopupVisibility(popup, wasVisible, true);
   }
+  const auto rejectGeometry = [this](int reason) {
+    if (geometryRejection_ != reason) {
+      tracePopup("geometry.rejected", reason);
+    }
+    geometryRejection_ = reason;
+  };
   if (!useTopLevelToolLayer && !popupParent) {
+    rejectGeometry(1);  // Missing in-window parent.
     applyPopupVisibility(popup, false, false);
     resetGeometrySyncSnapshot();
     return false;
@@ -1461,6 +1492,7 @@ bool OverlayPopupController::syncPopupGeometry(bool prepareLayout) {
             : widgetRectIfEffectivelyVisibleInAncestorSpace(popupAnchorWidget(), popupParent);
   }
   if (!anchorRect.isValid()) {
+    rejectGeometry(2);  // Anchor is hidden or clipped out.
     applyPopupVisibility(popup, false, false);
     resetGeometrySyncSnapshot();
     return false;
@@ -1489,10 +1521,16 @@ bool OverlayPopupController::syncPopupGeometry(bool prepareLayout) {
   const int arrowOffsetVertical = delegate_->popupArrowOffsetVertical();
 
   if (!delegate_->popupAcceptsGeometry(anchorRect, popupSize, bounds)) {
+    rejectGeometry(3);  // Component-specific bounds policy.
     applyPopupVisibility(popup, false, false);
     resetGeometrySyncSnapshot();
     return false;
   }
+
+  if (geometryRejection_ != 0) {
+    tracePopup("geometry.recovered");
+  }
+  geometryRejection_ = 0;
 
   const bool inputsUnchanged =
       geometrySyncSnapshotValid_ && geometrySyncParent_ == geometrySnapshotParent &&
@@ -1767,7 +1805,10 @@ void OverlayPopupController::handleTriggerFocusOutDeferred() {
   });
 }
 
-void OverlayPopupController::handleTriggerHoverEnter() { reconcileHoverFromCursor(); }
+void OverlayPopupController::handleTriggerHoverEnter() {
+  tracePopup("trigger.enter");
+  reconcileHoverFromCursor();
+}
 
 void OverlayPopupController::handleTriggerHoverLeave() { reconcileHoverFromCursor(); }
 
@@ -1899,7 +1940,7 @@ bool OverlayPopupController::popupContainsGlobalPos(const QPoint& globalPos) con
 }
 
 void OverlayPopupController::popupCloseFromHost(PopupCloseReason reason) {
-  Q_UNUSED(reason)
+  tracePopup("host.close", static_cast<int>(reason));
   if (closingFromHost_) {
     return;
   }

@@ -7,6 +7,8 @@
 
 namespace adqt::widgets::detail {
 
+Q_LOGGING_CATEGORY(popupLog, "adqt.popup", QtWarningMsg)
+
 void syncTopLevelToolTransientParent(QWidget* toolWindow, QWidget* ownerWindow) {
   if (!toolWindow || !ownerWindow || !toolWindow->isWindow()) {
     return;
@@ -23,7 +25,11 @@ void syncTopLevelToolTransientParent(QWidget* toolWindow, QWidget* ownerWindow) 
   }
 
   ownerTopLevel->winId();
+  const bool creating = !toolWindow->windowHandle();
   toolWindow->winId();
+  if (creating) {
+    qCDebug(popupLog) << "native.create" << toolWindow->objectName();
+  }
   QWindow* ownerHandle = ownerTopLevel->windowHandle();
   QWindow* toolHandle = toolWindow->windowHandle();
   if (ownerHandle && toolHandle && toolHandle->transientParent() != ownerHandle) {
@@ -47,6 +53,7 @@ void releaseTopLevelToolResourcesOnHide(QWidget* toolWindow) {
         auto* resourceReleaser =
             dynamic_cast<TopLevelToolResourceReleaser*>(guardedToolWindow.data());
         if (resourceReleaser) {
+          qCDebug(popupLog) << "native.release" << guardedToolWindow->objectName();
           resourceReleaser->releaseTopLevelToolResources();
         }
       },

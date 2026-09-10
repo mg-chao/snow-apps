@@ -3197,6 +3197,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screenshot-tool-palette-tests
         COMMAND snow-shot-screenshot-tool-palette-tests
     )
+    add_test(NAME snow-shot-toolbar-popup-recovery-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --popup-recovery-only -platform offscreen)
+    set_tests_properties(snow-shot-toolbar-popup-recovery-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(
         NAME snow-shot-screenshot-action-toolbar-layout-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --action-toolbar-layout-only
@@ -4300,6 +4304,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "QT_QPA_PLATFORM=windows"
         LABELS "unit;windows"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-table-recognition-session-tests
+        COMMAND snow-shot-recognition-session-controller-tests --table-only -platform offscreen)
+    set_tests_properties(snow-shot-table-recognition-session-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     snow_shot_import_offscreen_platform(snow-shot-recognition-session-controller-tests)
 
     add_executable(snow-shot-qr-recognition-service-tests
@@ -4392,6 +4401,16 @@ if(SNOW_SHOT_BUILD_TESTS)
              COMMAND snow-shot-translation-page-streaming-tests)
     set_tests_properties(snow-shot-translation-page-streaming-tests PROPERTIES
         LABELS "unit" ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+
+    if(SNOW_APPS_BUILD_BENCHMARKS)
+        add_executable(snow-shot-table-preparation-benchmark
+            tests/table_preparation_performance_benchmark.cpp)
+        target_include_directories(snow-shot-table-preparation-benchmark PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        target_link_libraries(snow-shot-table-preparation-benchmark PRIVATE
+            snow_shot_translation snow_shot_diagnostics Qt6::Core Qt6::Gui Qt6::Network
+            snow_shot_image_codec)
+    endif()
 
     add_executable(snow-shot-api-client-tests
         tests/snowshot_api_client_tests.cpp
@@ -5093,6 +5112,7 @@ if(WIN32)
     # The toolbar benchmarks link the canvas engine, which pulls the Rust FFI
     # bundle and with it the FFmpeg import libraries.
     foreach(_snow_shot_ffmpeg_toolbar_benchmark IN ITEMS
+            snow-shot-table-preparation-benchmark
             snow-shot-screenshot-toolbar-render-benchmark
             snow-shot-screenshot-toolbar-display-benchmark)
         if(TARGET ${_snow_shot_ffmpeg_toolbar_benchmark})

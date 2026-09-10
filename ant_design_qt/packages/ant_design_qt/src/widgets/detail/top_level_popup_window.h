@@ -1,8 +1,11 @@
 #pragma once
+#include <QLoggingCategory>
 
 class QWidget;
 
 namespace adqt::widgets::detail {
+
+Q_DECLARE_LOGGING_CATEGORY(popupLog)
 
 class TopLevelToolResourceReleaser {
  public:

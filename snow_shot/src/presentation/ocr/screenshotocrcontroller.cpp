@@ -17,6 +17,8 @@
 
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 
+#include "snow_shot/diagnostics/diagnostics.h"
+#include <QElapsedTimer>
 #include <QApplication>
 #include <QClipboard>
 #include <QDesktopServices>
@@ -353,9 +355,18 @@ void ScreenshotOcrController::activateMode(Mode mode) {
     }
 
     const QString key = currentCacheKey();
+    QElapsedTimer composition;
+    composition.start();
     QImage source = m_surfaceKey == key
                         ? m_surfaceImage
                         : composeScreenshotSourceSelection(m_context.displaySession, selection);
+    if (mode == Mode::Table) {
+        snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.capture"),
+                                         QStringLiteral("table.source_prepared"),
+                                         {{QStringLiteral("composition_ms"), composition.elapsed()},
+                                          {QStringLiteral("width"), source.width()},
+                                          {QStringLiteral("height"), source.height()}});
+    }
     if (source.isNull()) {
         showStatus(tr("Unable to read the selected screenshot"), true);
         restorePreviousToolAfterFailure();

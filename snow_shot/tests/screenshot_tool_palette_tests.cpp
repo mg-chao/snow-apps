@@ -2511,6 +2511,53 @@ void arrowAndLineUseConfiguredPopoverGroup() {
             "clicking the active replaced group trigger should return to selection");
 }
 
+void tableBusyStatePreservesSiblingGroupPopovers() {
+    ScreenshotToolPalette::Options options;
+    options.showShapeTool = false;
+    options.showLineTool = true;
+    options.showTableTool = true;
+    options.showQrTool = true;
+    options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
+        {{QStringLiteral("arrow"), QStringLiteral("line")}}, {}};
+    options.actionToolsLayout = snow_shot::storage::ScreenshotToolbarLayout{
+        {{QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition")}}, {}};
+    ScreenshotToolPalette palette(options);
+    palette.resize(palette.contentSizeHint());
+    palette.show();
+    auto* table =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotTableQrButton"));
+    auto* drawing =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotArrowLineButton"));
+    require(table && drawing, "recovery scenario needs recognition and drawing groups");
+    materializeLazyPopover(table);
+    materializeLazyPopover(drawing);
+    auto* tablePopup = popoverForTrigger(table);
+    auto* drawingPopup = popoverForTrigger(drawing);
+    const auto verifyPopup = [](adqt::widgets::AdPopover* popup) {
+        require(popup && popup->contentWidget(), "group options must remain materialized");
+        popup->show();
+        require(popup->isVisible() && popup->contentWidget()->isVisible() &&
+                    popup->contentWidget()->window()->isVisible(),
+                "group popup and its actual surface must remain openable");
+        popup->hide();
+    };
+    QObject::connect(&palette, &ScreenshotToolPalette::tableRequested, &palette,
+                     [&]() { palette.setTableBusy(true); });
+    verifyPopup(tablePopup);
+    auto* option = popoverButtonWithTooltip(tablePopup, "Table recognition");
+    require(option, "recognition group contains table option");
+    option->click();
+    require(table->busy(), "table action starts loading on the real group trigger");
+    verifyPopup(drawingPopup);
+    verifyPopup(tablePopup);
+    palette.setTableBusy(false);
+    verifyPopup(tablePopup);
+    verifyPopup(drawingPopup);
+    palette.clearActiveTool();
+    verifyPopup(tablePopup);
+    verifyPopup(drawingPopup);
+}
+
 void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
     require(snow_shot::storage::ScreenshotToolbarSettings().setTableQrTool(QStringLiteral("qr")),
             "the remembered recognition mode should differ from the configured bottom tool");
@@ -9091,6 +9138,11 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--popup-recovery-only"))) {
+        tableBusyStatePreservesSiblingGroupPopovers();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--selection-reset-only"))) {
         selectionResetRemainsAvailableWithoutSelection();
         selectToolExposesDedicatedActionToolbar();
@@ -9213,6 +9265,7 @@ int main(int argc, char** argv) {
         actionStacksKeepEnabledAlternativesReachable();
         drawingGroupClicksActivateOnceAfterPointerReentry();
         tableRecognitionClickActivatesOnceAfterPointerReentry();
+        tableBusyStatePreservesSiblingGroupPopovers();
         tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode();
         sharedToolbarLayoutModelOperationsAreDeterministic();
         configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement();
@@ -9258,6 +9311,7 @@ int main(int argc, char** argv) {
     repeatingActionShortcutsReturnsToSelect();
     groupedToolShortcutsToggleOnlyTheRequestedTool();
     tableToolExposesStructureActionsAndOwnHistoryState();
+    tableBusyStatePreservesSiblingGroupPopovers();
     tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode();
     tableRecognitionClickActivatesOnceAfterPointerReentry();
     drawingGroupClicksActivateOnceAfterPointerReentry();
