@@ -276,6 +276,14 @@ class RecordingSettings final {
     bool setAnimatedImageFrameRate(int frameRate) const;
     [[nodiscard]] QString outputFormat() const;
     bool setOutputFormat(const QString& format) const;
+    [[nodiscard]] int mouseTrailDurationMs() const;
+    bool setMouseTrailDurationMs(int duration) const;
+    [[nodiscard]] int keyboardSize() const;
+    bool setKeyboardSize(int size) const;
+    [[nodiscard]] QColor keyboardBackgroundColor() const;
+    bool setKeyboardBackgroundColor(const QColor& color) const;
+    [[nodiscard]] QColor keyboardForegroundColor() const;
+    bool setKeyboardForegroundColor(const QColor& color) const;
     [[nodiscard]] QColor mouseTrailColor() const;
     bool setMouseTrailColor(const QColor& color) const;
     [[nodiscard]] QColor mouseClickColor() const;

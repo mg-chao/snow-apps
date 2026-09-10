@@ -55,7 +55,7 @@ mod platform {
         native()
             .and_then(|value| {
                 // Validate the complete rendering path before recording startup reports success.
-                value.render("M")?;
+                value.render("M", config.keycap_size as f32 / KEYCAP_SIZE as f32)?;
                 Ok(value)
             })
             .map(|value| Box::new(value) as Box<dyn KeycapRasterizer>)
@@ -112,10 +112,12 @@ mod platform {
             }
         }
 
-        fn render(&self, label: &str) -> windows::core::Result<Keycap> {
+        fn render(&self, label: &str, scale: f32) -> windows::core::Result<Keycap> {
             unsafe {
                 let (layout, width) = self.text_layout(label)?;
-                let height = KEYCAP_SIZE;
+                let logical_width = width;
+                let width = (width as f32 * scale).ceil() as u32;
+                let height = (KEYCAP_SIZE as f32 * scale).round() as u32;
                 let bitmap = self.imaging.CreateBitmap(
                     width,
                     height,
@@ -130,8 +132,8 @@ mod platform {
                             format: DXGI_FORMAT_B8G8R8A8_UNORM,
                             alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
                         },
-                        dpiX: 96.0,
-                        dpiY: 96.0,
+                        dpiX: 96.0 * scale,
+                        dpiY: 96.0 * scale,
                         ..Default::default()
                     },
                 )?;
@@ -147,8 +149,8 @@ mod platform {
                     rect: D2D_RECT_F {
                         left: 1.0,
                         top: 1.0,
-                        right: width as f32 - 1.0,
-                        bottom: height as f32 - 1.0,
+                        right: logical_width as f32 - 1.0,
+                        bottom: KEYCAP_SIZE as f32 - 1.0,
                     },
                     radiusX: 12.0,
                     radiusY: 12.0,
@@ -176,8 +178,9 @@ mod platform {
         }
     }
     impl KeycapRasterizer for Rasterizer {
-        fn rasterize(&mut self, label: &str, _: f32) -> Result<Keycap, String> {
-            self.render(label).map_err(|e| e.to_string())
+        fn rasterize(&mut self, label: &str, scale: f32) -> Result<Keycap, String> {
+            self.render(label, scale.clamp(0.5, 2.0))
+                .map_err(|e| e.to_string())
         }
     }
 
@@ -188,12 +191,19 @@ mod platform {
         #[test]
         fn native_keycaps_fit_label_width_and_keep_fixed_height() {
             let config = KeyboardOverlayConfig {
+                keycap_size: 64,
                 background_rgba: [0, 0, 0, 255],
                 border_rgba: [20, 20, 20, 255],
                 text_rgba: [255, 255, 255, 255],
                 labels: Default::default(),
             };
             let mut rasterizer = create(&config).unwrap();
+            for size in [32, 64, 96, 128] {
+                let cap = rasterizer.rasterize("Ctrl", size as f32 / 64.0).unwrap();
+                assert_eq!(cap.height, size);
+                assert_eq!(cap.pixels.len(), (cap.width * cap.height * 4) as usize);
+                assert!(cap.pixels.chunks_exact(4).any(|p| p[0] > 100));
+            }
             let widths: Vec<_> = ["WW", "WWWW", "WWWWWW"]
                 .iter()
                 .map(|label| rasterizer.rasterize(label, 1.0).unwrap().width)
@@ -254,10 +264,13 @@ mod platform {
                     let cap = rasterizer.rasterize(label, scale).unwrap();
                     assert_eq!(
                         (cap.width, cap.height),
-                        (reference.width, 64),
+                        (
+                            (reference.width as f32 * scale.clamp(0.5, 2.0)).ceil() as u32,
+                            (64.0 * scale.clamp(0.5, 2.0)) as u32
+                        ),
                         "{label} at {scale}"
                     );
-                    assert_eq!(cap.pixels, reference.pixels, "{label} at {scale}");
+                    assert_eq!(cap.pixels.len(), (cap.width * cap.height * 4) as usize);
                 }
             }
         }

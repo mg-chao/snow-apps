@@ -17,6 +17,7 @@ const MAX_CACHE_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyboardOverlayConfig {
+    pub keycap_size: u32,
     pub background_rgba: [u8; 4],
     pub text_rgba: [u8; 4],
     pub border_rgba: [u8; 4],
@@ -185,8 +186,7 @@ pub struct Keycap {
 }
 
 pub trait KeycapRasterizer {
-    /// The overlay requests scale 1.0 at every output resolution. The native rasterizer
-    /// retains this argument for compatibility, with 64-pixel height and label-based width.
+    /// Scale is relative to the default 64-pixel keycap height.
     fn rasterize(&mut self, label: &str, scale: f32) -> Result<Keycap, String>;
 }
 
@@ -197,6 +197,7 @@ pub struct KeyboardOverlay {
     cache_bytes: usize,
     cache_clock: u64,
     output: (u32, u32),
+    scale: f32,
 }
 
 impl KeyboardOverlay {
@@ -208,7 +209,13 @@ impl KeyboardOverlay {
             cache_bytes: 0,
             cache_clock: 0,
             output,
+            scale: 1.0,
         }
+    }
+
+    pub fn with_keycap_size(mut self, size: u32) -> Self {
+        self.scale = size.clamp(32, 128) as f32 / KEYCAP_SIZE as f32;
+        self
     }
 
     fn keycap(&mut self, label: &str) -> Result<Arc<Keycap>, String> {
@@ -217,7 +224,7 @@ impl KeyboardOverlay {
             *used = self.cache_clock;
             return Ok(Arc::clone(cap));
         }
-        let cap = Arc::new(self.rasterizer.rasterize(label, 1.0)?);
+        let cap = Arc::new(self.rasterizer.rasterize(label, self.scale)?);
         let bytes = cap.pixels.len();
         if bytes <= MAX_CACHE_BYTES {
             while !self.cache.is_empty()
@@ -251,11 +258,14 @@ impl KeyboardOverlay {
 
     pub fn draw_to(&mut self, surface: &mut impl Surface, now: u64) -> Result<(), String> {
         self.model.advance(now);
-        // Preserve the recording overlay's inset while keeping keys and spacing fixed.
+        let row_pitch = ROW_PITCH * self.scale;
+        let keycap_size = KEYCAP_SIZE as f32 * self.scale;
+        let gap = KEYCAP_GAP * self.scale;
+        // Preserve the recording overlay inset at each configured key size.
         let margin = (48.0 * (self.output.1 as f32 / 1080.0).clamp(0.5, 4.0))
             .min(self.output.0.min(self.output.1) as f32 * 0.05);
-        let row_limit = ((self.output.1 as f32 - 2.0 * margin + ROW_PITCH - KEYCAP_SIZE as f32)
-            / ROW_PITCH)
+        let row_limit = ((self.output.1 as f32 - 2.0 * margin + row_pitch - keycap_size)
+            / row_pitch)
             .floor()
             .max(1.0) as usize;
         for index in (0..self.model.rows.len()).rev().take(row_limit) {
@@ -271,14 +281,14 @@ impl KeyboardOverlay {
                 .map(|label| self.keycap(label))
                 .collect::<Result<_, _>>()?;
             let width = caps.iter().map(|cap| cap.width as f32).sum::<f32>()
-                + KEYCAP_GAP * caps.len().saturating_sub(1) as f32;
+                + gap * caps.len().saturating_sub(1) as f32;
             // Keep the most recent key at the right edge. Narrow outputs clip the chord
             // through the surface instead of shrinking every key below its fixed size.
             let mut x = self.output.0 as f32 - margin - width;
-            let bottom = self.output.1 as f32 - margin - row_y * ROW_PITCH;
+            let bottom = self.output.1 as f32 - margin - row_y * row_pitch;
             for cap in caps {
                 blend_keycap_to(surface, &cap, x, bottom - cap.height as f32, 1.0, opacity);
-                x += cap.width as f32 + KEYCAP_GAP;
+                x += cap.width as f32 + gap;
             }
         }
         Ok(())

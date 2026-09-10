@@ -13,7 +13,7 @@ typedef struct SnowRecordingEffectsKeyLabel {
     const char* label_utf8;
 } SnowRecordingEffectsKeyLabel;
 
-#define SNOW_RECORDING_EFFECTS_CONFIG_VERSION 1u
+#define SNOW_RECORDING_EFFECTS_CONFIG_VERSION 3u
 typedef struct SnowRecordingEffectsConfig {
     uint32_t version;
     uint32_t struct_size;
@@ -25,8 +25,11 @@ typedef struct SnowRecordingEffectsConfig {
     uint32_t keyboard_background_rgba, keyboard_text_rgba, keyboard_border_rgba;
     const SnowRecordingEffectsKeyLabel* labels;
     uint32_t label_count;
-    uint32_t reserved;
+    /* Version 1 reserved this field as zero (500 ms lifetime). */
+    uint32_t trail_duration_ms;
     uint64_t generation;
+    /* Version 3: keycap height in pixels (32..128). */
+    uint32_t keyboard_size;
 } SnowRecordingEffectsConfig;
 
 typedef struct SnowRecordingEffectsTile {

@@ -18,6 +18,7 @@ pub struct PreviewConfig {
     pub region: (i32, i32, u32, u32),
     pub output: (u32, u32),
     pub trail: [u8; 4],
+    pub trail_duration_ms: u64,
     pub click: [u8; 4],
     pub keyboard: Option<KeyboardOverlayConfig>,
     pub generation: u64,
@@ -25,6 +26,9 @@ pub struct PreviewConfig {
 
 impl PreviewConfig {
     pub fn validate(&self) -> Result<(), String> {
+        if !(100..=2000).contains(&self.trail_duration_ms) {
+            return Err("trail duration must be between 100 and 2000 ms".into());
+        }
         if [self.region.2, self.region.3, self.output.0, self.output.1]
             .into_iter()
             .any(|v| v == 0 || v > 32768)
@@ -80,12 +84,18 @@ pub struct EffectsPreview {
 impl EffectsPreview {
     pub fn new(config: PreviewConfig, rasterizer: Option<Box<dyn KeycapRasterizer>>) -> Self {
         let output = config.output;
+        let trail = LaserTrail::new(config.trail_duration_ms);
         let keyboard_output = (config.region.2, config.region.3);
+        let keycap_size = config
+            .keyboard
+            .as_ref()
+            .map_or(64, |style| style.keycap_size);
         Self {
             config,
-            trail: LaserTrail::default(),
+            trail,
             clicks: VecDeque::new(),
-            keyboard: rasterizer.map(|r| KeyboardOverlay::new(keyboard_output, r)),
+            keyboard: rasterizer
+                .map(|r| KeyboardOverlay::new(keyboard_output, r).with_keycap_size(keycap_size)),
             surface: TileSurface::new(output),
             keyboard_surface: TileSurface::new(keyboard_output),
             position: None,
@@ -419,6 +429,7 @@ mod tests {
             region: (-400, -200, 1920, 1080),
             output: (1920, 1080),
             trail: [255, 0, 0, 128],
+            trail_duration_ms: 500,
             click: [0, 255, 0, 128],
             keyboard: None,
             generation: 7,
@@ -591,16 +602,17 @@ mod tests {
     }
     #[test]
     fn tiled_alpha_matches_video_composition_for_clicks_and_keyboard() {
-        for button in [
-            ObservedMouseButton::Left,
-            ObservedMouseButton::Right,
-            ObservedMouseButton::Middle,
+        for (button, duration) in [
+            (ObservedMouseButton::Left, 100),
+            (ObservedMouseButton::Right, 500),
+            (ObservedMouseButton::Middle, 2000),
         ] {
             let mut value = config();
+            value.trail_duration_ms = duration;
             value.output = (256, 128);
             value.region = (-500, 20, 256, 128);
             let mut preview = EffectsPreview::new(value.clone(), Some(Box::new(Solid)));
-            let mut video_trail = LaserTrail::default();
+            let mut video_trail = LaserTrail::new(duration);
             for (index, point) in [(120, 96), (130, 100), (140, 96)].into_iter().enumerate() {
                 preview.observe(Some(point), index as u64 * 50);
                 video_trail.observe(Some(point), value.output, value.output, index as u64 * 50);

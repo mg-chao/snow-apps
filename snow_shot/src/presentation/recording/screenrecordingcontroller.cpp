@@ -228,6 +228,10 @@ struct ScreenRecordingController::Impl {
         systemAudioEnabled = settings.systemAudioEnabled();
         outputFormat = settings.outputFormat();
         mouseTrailColor = settings.mouseTrailColor();
+        mouseTrailDurationMs = settings.mouseTrailDurationMs();
+        keyboardSize = settings.keyboardSize();
+        keyboardBackgroundColor = settings.keyboardBackgroundColor();
+        keyboardForegroundColor = settings.keyboardForegroundColor();
         mouseClickColor = settings.mouseClickColor();
         showCursor = settings.showCursor();
         showKeyboard = settings.showKeyboard();
@@ -326,7 +330,14 @@ struct ScreenRecordingController::Impl {
         if (palette == nullptr) {
             return;
         }
+        palette->setRecordingSettingsOwnerWindow(areaWindow);
         connectDrawingToolbar(*palette);
+        QObject::connect(palette, &ScreenshotToolPalette::recordingKeyboardSizeChanged,
+                         uiSession->connections.get(), [this](int value) {
+                             keyboardSize = value;
+                             snow_shot::storage::RecordingSettings().setKeyboardSize(value);
+                             syncPreview();
+                         });
         QObject::connect(areaWindow, &ScreenRecordingAreaWindow::physicalRegionChanged,
                          uiSession->connections.get(), [this](const QRect& region) {
                              if (state != ScreenshotToolPalette::RecordingState::Idle || busy) {
@@ -381,6 +392,26 @@ struct ScreenRecordingController::Impl {
                          uiSession->connections.get(), [this](const QString& format) {
                              outputFormat = format;
                              snow_shot::storage::RecordingSettings().setOutputFormat(format);
+                             syncPreview();
+                         });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingMouseTrailDurationMsChanged,
+                         uiSession->connections.get(), [this](int value) {
+                             mouseTrailDurationMs = value;
+                             snow_shot::storage::RecordingSettings().setMouseTrailDurationMs(value);
+                             syncPreview();
+                         });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingKeyboardBackgroundColorChanged,
+                         uiSession->connections.get(), [this](const QColor& value) {
+                             keyboardBackgroundColor = value;
+                             snow_shot::storage::RecordingSettings().setKeyboardBackgroundColor(
+                                 value);
+                             syncPreview();
+                         });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingKeyboardForegroundColorChanged,
+                         uiSession->connections.get(), [this](const QColor& value) {
+                             keyboardForegroundColor = value;
+                             snow_shot::storage::RecordingSettings().setKeyboardForegroundColor(
+                                 value);
                              syncPreview();
                          });
         QObject::connect(palette, &ScreenshotToolPalette::recordingMouseTrailColorChanged,
@@ -582,7 +613,8 @@ struct ScreenRecordingController::Impl {
             pendingOutputPath = recordingFilePath(sessionOutputSettings.extension);
             const QByteArray outputUtf8 = QDir::toNativeSeparators(pendingOutputPath).toUtf8();
             const RecordingKeyboardLabels keyboardLabels(showKeyboard);
-            const RecordingKeyboardTheme keyboardTheme;
+            const RecordingKeyboardTheme keyboardTheme(keyboardBackgroundColor,
+                                                       keyboardForegroundColor);
             const SnowCaptureDirectRecordingConfig config{
                 SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION,
                 sizeof(SnowCaptureDirectRecordingConfig),
@@ -616,7 +648,8 @@ struct ScreenRecordingController::Impl {
                 packedRgba(keyboardTheme.border),
                 keyboardLabels.entries.constData(),
                 static_cast<uint32_t>(keyboardLabels.entries.size()),
-                0,
+                static_cast<uint32_t>(mouseTrailDurationMs),
+                static_cast<uint32_t>(keyboardSize),
             };
             const SnowCaptureResult createResult =
                 snow_capture_recording_session_create_direct(&config, &recordingSession);
@@ -818,9 +851,10 @@ struct ScreenRecordingController::Impl {
             uiSession->preview->setEligible(false);
             return;
         }
-        uiSession->preview->configure(captureRegion,
-                                      QSize(static_cast<int>(width), static_cast<int>(height)),
-                                      mouseTrailColor, mouseClickColor, showKeyboard);
+        uiSession->preview->configure(
+            captureRegion, QSize(static_cast<int>(width), static_cast<int>(height)),
+            mouseTrailColor, mouseClickColor, showKeyboard, mouseTrailDurationMs,
+            keyboardBackgroundColor, keyboardForegroundColor, keyboardSize);
         uiSession->preview->setEligible(true);
     }
 
@@ -839,6 +873,10 @@ struct ScreenRecordingController::Impl {
             palette->setRecordingSystemAudioEnabled(systemAudioEnabled);
             palette->setRecordingOutputFormat(outputFormat);
             palette->setRecordingMouseTrailColor(mouseTrailColor);
+            palette->setRecordingMouseTrailDurationMs(mouseTrailDurationMs);
+            palette->setRecordingKeyboardSize(keyboardSize);
+            palette->setRecordingKeyboardBackgroundColor(keyboardBackgroundColor);
+            palette->setRecordingKeyboardForegroundColor(keyboardForegroundColor);
             palette->setRecordingMouseClickColor(mouseClickColor);
             palette->setRecordingCursorVisible(showCursor);
             palette->setRecordingKeyboardVisible(showKeyboard);
@@ -877,6 +915,10 @@ struct ScreenRecordingController::Impl {
     bool microphoneEnabled = false;
     bool systemAudioEnabled = true;
     QString outputFormat = QStringLiteral("mp4");
+    int mouseTrailDurationMs = 500;
+    int keyboardSize = 64;
+    QColor keyboardBackgroundColor{0, 0, 0, 204};
+    QColor keyboardForegroundColor{Qt::white};
     QColor mouseTrailColor{0, 0, 0, 0};
     QColor mouseClickColor{0, 0, 0, 0};
     bool showCursor = true;

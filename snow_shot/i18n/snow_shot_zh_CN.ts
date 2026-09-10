@@ -449,84 +449,84 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <name>DiagnosticsService</name>
     <message>
         <location filename="../src/presentation/settings/settingsbackend.cpp" line="866"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="873"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="909"/>
         <source>The diagnostics writer stopped unexpectedly.</source>
         <translation>诊断日志写入线程意外停止。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="373"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="409"/>
         <source>The log directory is not writable.</source>
         <translation>无法写入日志目录。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="384"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="420"/>
         <source>The log file could not be opened.</source>
         <translation>无法打开日志文件。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="402"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="687"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="840"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="438"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="723"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="876"/>
         <source>Writing the log file failed. Check available disk space.</source>
         <translation>写入日志文件失败。请检查可用磁盘空间。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="576"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="612"/>
         <location filename="../src/diagnostics/crashcollector.cpp" line="72"/>
         <source>The crash collector could not be started. Check the application installation.</source>
         <translation>无法启动崩溃收集程序。请检查应用安装。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="640"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="676"/>
         <source>Some expired diagnostics could not be removed.</source>
         <translation>部分过期诊断文件无法删除。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="661"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="697"/>
         <source>The diagnostics storage limit has been reached.</source>
         <translation>诊断文件存储空间已达到上限。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="705"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="741"/>
         <source>A log file could not be read.</source>
         <translation>无法读取日志文件。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="729"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="752"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="765"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="788"/>
         <source>Today&apos;s log exceeds the export limit.</source>
         <translation>今日日志超过导出大小限制。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="767"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="803"/>
         <source>There is not enough space for a log snapshot.</source>
         <translation>没有足够的空间保存日志快照。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="778"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="814"/>
         <source>The log snapshot directory could not be created.</source>
         <translation>无法创建日志快照目录。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="788"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="795"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="1151"/>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="1182"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="824"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="831"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="1187"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="1218"/>
         <source>The log snapshot could not be saved.</source>
         <translation>无法保存日志快照。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="921"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="957"/>
         <source>No writable diagnostics directory is available.</source>
         <translation>没有可写入的诊断文件目录。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="927"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="963"/>
         <source>The preferred log directory is unavailable; a fallback is in use.</source>
         <translation>首选日志目录不可用，正在使用备用目录。</translation>
     </message>
     <message>
-        <location filename="../src/diagnostics/diagnostics.cpp" line="1139"/>
+        <location filename="../src/diagnostics/diagnostics.cpp" line="1175"/>
         <source>Log export is unavailable or already running.</source>
         <translation>日志导出不可用或正在进行中。</translation>
     </message>
@@ -1026,7 +1026,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
 <context>
     <name>RecordingEffectPreview</name>
     <message>
-        <location filename="../src/presentation/recording/recordingeffectpreview.cpp" line="300"/>
+        <location filename="../src/presentation/recording/recordingeffectpreview.cpp" line="319"/>
         <source>Motion Preview in Progress</source>
         <translation>动效预览中</translation>
     </message>
@@ -1044,22 +1044,22 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <translation>未知录制错误</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="295"/>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="299"/>
         <source>Motion preview unavailable: %1</source>
         <translation>无法预览动效：%1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="572"/>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="603"/>
         <source>Unable to create the recording directory</source>
         <translation>无法创建录制目录</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="859"/>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="897"/>
         <source>Screen recording</source>
         <translation>屏幕录制</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="860"/>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="898"/>
         <source>The recording operation failed</source>
         <translation>录制操作失败</translation>
     </message>
@@ -1542,7 +1542,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
 <context>
     <name>ScreenshotOverlayWindow</name>
     <message>
-        <location filename="../src/presentation/overlay/screenshotoverlaywindow.cpp" line="218"/>
+        <location filename="../src/presentation/overlay/screenshotoverlaywindow.cpp" line="220"/>
         <source>Loading screenshot history</source>
         <translation>正在加载截图历史</translation>
     </message>
@@ -2525,23 +2525,23 @@ so every moment on screen can be expressed clearly and shared easily.</source>
 <context>
     <name>ScreenshotToolPalette</name>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="88"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="97"/>
         <source>Arrow</source>
         <translation>箭头</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="89"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="98"/>
         <source>Line</source>
         <translation>直线</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="91"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="100"/>
         <source>Highlight</source>
         <translation>高亮</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="280"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="92"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="101"/>
         <source>Pen highlight</source>
         <translation>画笔高亮</translation>
     </message>
@@ -2551,485 +2551,525 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <location filename="../src/presentation/tools/screenshottoolpalettebuttons.cpp" line="745"/>
         <location filename="../src/presentation/tools/screenshottoolpalettebuttons.cpp" line="989"/>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="211"/>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="1881"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="1555"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3052"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="1895"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="1564"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3123"/>
         <source>Mixed</source>
         <translation>混合</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="85"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="94"/>
         <source>Edit selection</source>
         <translation>编辑选区</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="273"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="64"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="73"/>
         <source>Gaussian blur</source>
         <translation>高斯模糊</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="86"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="95"/>
         <source>Select elements</source>
         <translation>选择元素</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="87"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="96"/>
         <source>Shape</source>
         <translation>图形</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="90"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="99"/>
         <source>Pen</source>
         <translation>画笔</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="94"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="103"/>
         <source>Text</source>
         <translation>文本</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="95"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="104"/>
         <source>Serial number</source>
         <translation>序号</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="96"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="105"/>
         <source>Filter</source>
         <translation>滤镜</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="97"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="106"/>
         <source>Eraser</source>
         <translation>橡皮擦</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="98"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="107"/>
         <source>Watermark</source>
         <translation>水印</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="99"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="108"/>
         <source>Undo</source>
         <translation>撤销</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="100"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="109"/>
         <source>Redo</source>
         <translation>重做</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="101"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="110"/>
         <source>Record screen</source>
         <translation>录制屏幕</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="102"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="111"/>
         <source>Pin to screen</source>
         <translation>固定到屏幕</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="103"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="112"/>
         <source>Text recognition</source>
         <translation>文本识别</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="104"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="113"/>
         <source>Table recognition</source>
         <translation>表格识别</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="105"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="114"/>
         <source>Barcode recognition</source>
         <translation>条码识别</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="106"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="115"/>
         <source>Edit</source>
         <translation>编辑</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="107"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="116"/>
         <source>Text translation</source>
         <translation>文本翻译</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="108"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="117"/>
         <source>Translation settings</source>
         <translation>翻译设置</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="109"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="118"/>
         <source>Merge cells</source>
         <translation>合并单元格</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="110"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="119"/>
         <source>Split cells</source>
         <translation>拆分单元格</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="111"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="120"/>
         <source>Reset</source>
         <translation>重置</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="112"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="121"/>
         <source>Formatting</source>
         <translation>格式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="113"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5517"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="122"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5757"/>
         <source>Keep line breaks</source>
         <translation>保留换行</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="114"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5518"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="123"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5758"/>
         <source>Remove line breaks</source>
         <translation>移除换行</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="115"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="124"/>
         <source>Punctuation</source>
         <translation>标点符号</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="116"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5533"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="125"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5773"/>
         <source>Half-width</source>
         <translation>半角</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="117"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5533"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="126"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5773"/>
         <source>Full-width</source>
         <translation>全角</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="118"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="127"/>
         <source>Scrolling screenshot</source>
         <translation>滚动截图</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="119"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="128"/>
         <source>Save as file</source>
         <translation>保存为文件</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="120"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="129"/>
         <source>Quick save</source>
         <translation>快速保存</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="121"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="130"/>
         <source>Cancel screenshot</source>
         <translation>取消截图</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="122"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="131"/>
         <source>Copy to clipboard</source>
         <translation>复制到剪贴板</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="123"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="132"/>
         <source>Confirm edit</source>
         <translation>确认编辑</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="124"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="133"/>
         <source>Start recording</source>
         <translation>开始录制</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="125"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="134"/>
         <source>Stop recording</source>
         <translation>停止录制</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="126"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="135"/>
         <source>Pause recording</source>
         <translation>暂停录制</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="127"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="136"/>
         <source>Resume recording</source>
         <translation>继续录制</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="128"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6368"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6369"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="137"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6608"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6609"/>
         <source>Record microphone</source>
         <translation>录制麦克风</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="129"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6389"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6390"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="138"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6629"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6630"/>
         <source>Record speakers</source>
         <translation>录制系统声音</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="130"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="139"/>
         <source>Open recording folder</source>
         <translation>打开录制文件夹</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="131"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="140"/>
         <source>Close recording</source>
         <translation>关闭录制</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="132"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="141"/>
         <source>Export Settings</source>
         <translation>导出设置</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="133"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5004"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="142"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5233"/>
         <source>Mouse trail color</source>
         <translation>鼠标轨迹颜色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="134"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5007"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="143"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5236"/>
         <source>Mouse click color</source>
         <translation>鼠标点击颜色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="135"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="144"/>
         <source>Mouse trail color %1</source>
         <translation>鼠标轨迹颜色 %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="136"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="145"/>
         <source>Mouse trail color transparent</source>
         <translation>鼠标轨迹颜色 透明</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="137"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="146"/>
         <source>Mouse click color %1</source>
         <translation>鼠标点击颜色 %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="138"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="147"/>
         <source>Mouse click color transparent</source>
         <translation>鼠标点击颜色 透明</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="139"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="148"/>
         <source>Show cursor in recording</source>
         <translation>在录制中显示光标</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="140"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="149"/>
         <source>Show keystrokes in recording</source>
         <translation>在录制中显示按键</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="141"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="150"/>
         <source>Copy recording</source>
         <translation>复制录制内容</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="142"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6367"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6371"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6388"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6392"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="151"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6607"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6611"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6628"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6632"/>
         <source>Animated recording formats do not contain audio</source>
         <translation>动画录制格式不包含音频</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="143"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3340"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3342"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="152"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3411"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3413"/>
         <source>Unavailable while recording</source>
         <translation>录制期间不可用</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="144"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5000"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5001"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="153"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5229"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5230"/>
         <source>Recording format</source>
         <translation>录制格式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="145"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="154"/>
         <source>Transparent</source>
         <translation>透明</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="146"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="155"/>
         <source>Red</source>
         <translation>红色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="147"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="156"/>
         <source>Green</source>
         <translation>绿色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="148"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="157"/>
         <source>Blue</source>
         <translation>蓝色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="149"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="158"/>
         <source>Yellow</source>
         <translation>黄色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="150"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="159"/>
         <source>Drag toolbar</source>
         <translation>拖动工具栏</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="151"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="160"/>
         <source>Send to back</source>
         <translation>置于底层</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="152"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="161"/>
         <source>Send backward</source>
         <translation>下移一层</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="153"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="162"/>
         <source>Bring forward</source>
         <translation>上移一层</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="154"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="163"/>
         <source>Bring to front</source>
         <translation>置于顶层</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="155"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="164"/>
         <source>Copy selected elements</source>
         <translation>复制选中元素</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="156"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="165"/>
         <source>Delete selected elements</source>
         <translation>删除选中元素</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4347"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4418"/>
         <source>Convert to Markdown</source>
         <translation>转换为 Markdown</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4350"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4421"/>
         <source>Convert to HTML</source>
         <translation>转换为 HTML</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5592"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5062"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5207"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5211"/>
+        <source>Mouse Trail Duration</source>
+        <translation>鼠标轨迹持续时间</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5074"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5201"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5203"/>
+        <source>Keyboard Size</source>
+        <translation>键盘大小</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5102"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5208"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5213"/>
+        <source>Keyboard Background Color</source>
+        <translation>键盘背景颜色</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5110"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5209"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5215"/>
+        <source>Keyboard Foreground Color</source>
+        <translation>键盘前景颜色</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5202"/>
+        <source>px</source>
+        <translation>px</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5204"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5205"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5832"/>
         <source>Settings</source>
         <translation>设置</translation>
     </message>
     <message>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5206"/>
+        <source>ms</source>
+        <translation>毫秒</translation>
+    </message>
+    <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="278"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="60"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="69"/>
         <source>Pen filter</source>
         <translation>画笔滤镜</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="279"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="61"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="70"/>
         <source>Rectangle filter</source>
         <translation>矩形滤镜</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="269"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="69"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="78"/>
         <source>Opacity</source>
         <translation>透明度</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="270"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="70"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="79"/>
         <source>Adjust opacity</source>
         <translation>调整透明度</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="93"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="102"/>
         <source>Spotlight</source>
         <translation>聚光灯</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="271"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="62"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="71"/>
         <source>Filter type</source>
         <translation>滤镜类型</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="272"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="63"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="72"/>
         <source>Mosaic</source>
         <translation>马赛克</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="274"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="65"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="74"/>
         <source>Grayscale</source>
         <translation>灰度</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="275"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="66"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="75"/>
         <source>Inversion</source>
         <translation>反相</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="276"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="67"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="76"/>
         <source>Filter intensity</source>
         <translation>滤镜强度</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="277"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="68"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="77"/>
         <source>Adjust filter intensity</source>
         <translation>调整滤镜强度</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="281"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="71"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="80"/>
         <source>Rectangle highlight</source>
         <translation>矩形高亮</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="72"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="81"/>
         <source>Vertical scrolling</source>
         <translation>垂直滚动</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="73"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="82"/>
         <source>Horizontal scrolling</source>
         <translation>水平滚动</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="74"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="83"/>
         <source>Straight arrow</source>
         <translation>直线箭头</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="75"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="84"/>
         <source>Curved arrow</source>
         <translation>曲线箭头</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="76"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="85"/>
         <source>Elbow arrow</source>
         <translation>折线箭头</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3056"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5980"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3127"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6220"/>
         <source>Recording duration</source>
         <translation>录制时长</translation>
     </message>
@@ -3227,7 +3267,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="284"/>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="1878"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="1892"/>
         <source>Sequence number (scroll to adjust)</source>
         <translation>序号（滚动调整）</translation>
     </message>
@@ -3453,7 +3493,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="222"/>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="2047"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="2061"/>
         <source>Watermark text</source>
         <translation>水印文本</translation>
     </message>
@@ -3583,7 +3623,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <translation>纯色序号填充</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5653"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5893"/>
         <source>Auto-scroll</source>
         <translation>自动滚动</translation>
     </message>

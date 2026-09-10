@@ -36,6 +36,9 @@ namespace adqt::widgets {
 class AdButton;
 class AdColorPicker;
 class AdPopover;
+class AdModal;
+class AdForm;
+class AdInputNumber;
 class AdRadioButtonGroup;
 class AdSelect;
 class AdSlider;
@@ -221,6 +224,15 @@ class ScreenshotToolPalette final : public QWidget {
     void setRecordingBusy(bool busy);
     void setRecordingOutputFormat(const QString& format);
     [[nodiscard]] QString recordingOutputFormat() const;
+    void setRecordingMouseTrailDurationMs(int value);
+    [[nodiscard]] int recordingMouseTrailDurationMs() const;
+    void setRecordingSettingsOwnerWindow(QWidget* owner);
+    void setRecordingKeyboardSize(int value);
+    [[nodiscard]] int recordingKeyboardSize() const;
+    void setRecordingKeyboardBackgroundColor(const QColor& value);
+    [[nodiscard]] QColor recordingKeyboardBackgroundColor() const;
+    void setRecordingKeyboardForegroundColor(const QColor& value);
+    [[nodiscard]] QColor recordingKeyboardForegroundColor() const;
     void setRecordingMouseTrailColor(const QColor& color);
     [[nodiscard]] QColor recordingMouseTrailColor() const;
     void setRecordingMouseClickColor(const QColor& color);
@@ -345,6 +357,10 @@ class ScreenshotToolPalette final : public QWidget {
     void recordingCloseRequested();
     void recordingCopyRequested();
     void recordingOutputFormatChanged(const QString& format);
+    void recordingMouseTrailDurationMsChanged(int value);
+    void recordingKeyboardSizeChanged(int value);
+    void recordingKeyboardBackgroundColorChanged(const QColor& value);
+    void recordingKeyboardForegroundColorChanged(const QColor& value);
     void recordingMouseTrailColorChanged(const QColor& color);
     void recordingMouseClickColorChanged(const QColor& color);
     void recordingKeyboardVisibleChanged(bool visible);
@@ -650,6 +666,15 @@ class ScreenshotToolPalette final : public QWidget {
     std::unique_ptr<snow_shot::presentation::ScreenshotToolPaletteColorPresets>
         m_recordMouseClickColorPresets;
     adqt::widgets::AdButton* m_recordKeyboardButton = nullptr;
+    adqt::widgets::AdButton* m_recordSettingsButton = nullptr;
+    adqt::widgets::AdModal* m_recordSettingsModal = nullptr;
+    adqt::widgets::AdForm* m_recordSettingsForm = nullptr;
+    adqt::widgets::AdInputNumber* m_recordTrailDurationInput = nullptr;
+    QPointer<QWidget> m_recordSettingsOwnerWindow;
+    adqt::widgets::AdInputNumber* m_recordKeyboardSizeInput = nullptr;
+    int m_recordingKeyboardSize = 64;
+    adqt::widgets::AdColorPicker* m_recordKeyboardBackgroundPicker = nullptr;
+    adqt::widgets::AdColorPicker* m_recordKeyboardForegroundPicker = nullptr;
     adqt::widgets::AdButton* m_recordCursorButton = nullptr;
     QLabel* m_recordMouseTrailIcon = nullptr;
     QLabel* m_recordMouseClickIcon = nullptr;
@@ -700,6 +725,9 @@ class ScreenshotToolPalette final : public QWidget {
     bool m_recordingBusy = false;
     bool m_recordExportSettingsVisible = false;
     QString m_recordingOutputFormat = QStringLiteral("mp4");
+    int m_recordingMouseTrailDurationMs = 500;
+    QColor m_recordingKeyboardBackgroundColor = QColor(0, 0, 0, 204);
+    QColor m_recordingKeyboardForegroundColor = QColor(Qt::white);
     QColor m_recordingMouseTrailColor = QColor(0, 0, 0, 0);
     QColor m_recordingMouseClickColor = QColor(0, 0, 0, 0);
     bool m_recordingKeyboardVisible = false;

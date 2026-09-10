@@ -60,6 +60,8 @@
 #include "widgets/control_scale.h"
 #include "widgets/input_line_edit.h"
 #include "widgets/input_number.h"
+#include "widgets/form.h"
+#include "widgets/modal.h"
 #include "widgets/popover.h"
 #include "widgets/radio.h"
 #include "widgets/radio_button_group.h"
@@ -307,6 +309,168 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
                      [&]() { ++startRequests; });
     buttons.constFirst()->click();
     require(startRequests == 1, "the visible start button should request recording");
+}
+
+void recordingEffectSettingsModal() {
+    ScreenshotToolPalette::Options options;
+    options.showShapeTool = true;
+    options.showRecordingControls = true;
+    options.recordingDrawingMode = true;
+    options.enableStyleToolbar = true;
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    palette.prepareForDisplay();
+    QCoreApplication::processEvents();
+    auto* button = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenRecordingEffectSettings"));
+    auto* keyboard =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingShowKeyboard"));
+    auto* separator =
+        palette.findChild<QFrame*>(QStringLiteral("screenRecordingExportSettingsSeparator"));
+    auto* modal = palette.findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenRecordingEffectSettingsModal"));
+    require(button && keyboard && separator && modal,
+            "recording settings must expose a button and separator");
+    require(button->text().isEmpty() && button->accessibleName() == QStringLiteral("Settings") &&
+                separator->x() > keyboard->x() && button->x() > separator->x(),
+            "settings must follow the keyboard toggle at the right edge");
+    const auto click = [](QWidget* widget) {
+        const QPointF local = widget->rect().center();
+        const QPointF global = widget->mapToGlobal(local.toPoint());
+        QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton, Qt::LeftButton,
+                          Qt::NoModifier);
+        QMouseEvent release(QEvent::MouseButtonRelease, local, global, Qt::LeftButton, Qt::NoButton,
+                            Qt::NoModifier);
+        QCoreApplication::sendEvent(widget, &press);
+        QCoreApplication::sendEvent(widget, &release);
+        QCoreApplication::processEvents();
+    };
+    QWidget recordingOwner;
+    recordingOwner.setGeometry(40, 40, 600, 500);
+    recordingOwner.show();
+    palette.setRecordingSettingsOwnerWindow(&recordingOwner);
+    click(button);
+    require(modal->isOpen(), "clicking Settings must open the modal");
+    require(modal->mode() == adqt::widgets::AdModal::Mode::Window &&
+                modal->windowModality() == Qt::ApplicationModal && modal->centered() &&
+                !modal->maskVisible() && !modal->closeOnMaskClick() &&
+                modal->ownerWindow() == &recordingOwner &&
+                modal->windowTitle() == QStringLiteral("Settings") &&
+                modal->standardButtons() == adqt::widgets::AdModal::StandardButton::Ok,
+            "settings must use the selection editor's Windows-style modal conventions");
+    auto* form = qobject_cast<adqt::widgets::AdForm*>(modal->contentWidget());
+    require(form != nullptr, "settings must use the Ant Design form");
+    require((modal->contentWidget()->window()->frameGeometry().center() -
+             recordingOwner.frameGeometry().center())
+                    .manhattanLength() <= 4,
+            "settings must be centered on the recording owner window");
+    auto* duration = form->findChild<adqt::widgets::AdInputNumber*>(
+        QStringLiteral("screenRecordingMouseTrailDuration"));
+    auto* keyboardSize = form->findChild<adqt::widgets::AdInputNumber*>(
+        QStringLiteral("screenRecordingKeyboardSize"));
+    require(keyboardSize && keyboardSize->value() == 64 && keyboardSize->minimum() == 32 &&
+                keyboardSize->maximum() == 128,
+            "keyboard size must expose pixel bounds and default");
+    int sizeChanges = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingKeyboardSizeChanged, &palette,
+                     [&](int value) {
+                         require(value == 96, "size edit signal");
+                         ++sizeChanges;
+                     });
+    keyboardSize->setValue(96);
+    require(sizeChanges == 1 && palette.recordingKeyboardSize() == 96,
+            "size edits apply immediately");
+    palette.setRecordingKeyboardSize(48);
+    require(keyboardSize->value() == 48 && sizeChanges == 1,
+            "size restoration must not emit edits");
+    for (auto* picker : palette.findChildren<adqt::widgets::AdColorPicker*>()) {
+        if (picker->objectName().startsWith(QStringLiteral("screenRecording"))) {
+            require(picker->popupLayerMode() ==
+                        adqt::widgets::AdColorPicker::PopupLayerMode::QtTool,
+                    "recording color pickers must use Qt Tool windows");
+        }
+    }
+    auto* background = form->findChild<adqt::widgets::AdColorPicker*>(
+        QStringLiteral("screenRecordingKeyboardBackgroundColor"));
+    auto* foreground = form->findChild<adqt::widgets::AdColorPicker*>(
+        QStringLiteral("screenRecordingKeyboardForegroundColor"));
+    require(duration && background && foreground && duration->minimum() == 100 &&
+                duration->maximum() == 2000 && duration->singleStep() == 100 &&
+                duration->value() == 500 && !duration->suffixText().isEmpty(),
+            "duration must show its unit and configured bounds, step and default");
+    const QString snapshotPath = qEnvironmentVariable("SNOW_RECORDING_SETTINGS_SNAPSHOT");
+    if (!snapshotPath.isEmpty()) {
+        require(form->window()->grab().save(snapshotPath), "settings snapshot must save");
+    }
+    const QRect first = form->field(QStringLiteral("duration"))->geometry();
+    const QRect left = form->field(QStringLiteral("background"))->geometry();
+    const QRect right = form->field(QStringLiteral("foreground"))->geometry();
+    require(first.width() == form->width() && left.top() > first.top() &&
+                left.top() == right.top() && left.width() == right.width() &&
+                right.left() - left.right() - 1 == 16 && left.width() == 218 &&
+                form->width() == 452 && duration->width() == 218,
+            "settings must use the selection editor's field widths, single-column number input and "
+            "16px gutter");
+    for (const auto& key : {QStringLiteral("background"), QStringLiteral("foreground")}) {
+        auto* field = form->field(key);
+        auto* labelHost = field->findChild<QWidget*>(QStringLiteral("ad-form-item-label-host"));
+        auto* controlHost = field->findChild<QWidget*>(QStringLiteral("ad-form-item-control"));
+        require(labelHost && controlHost && labelHost->height() == 30 && controlHost->y() == 30 &&
+                    controlHost->height() == 32 && field->height() == 86,
+                "keyboard colors must use the selection editor's 30px label row and 32px controls "
+                "without extra vertical space");
+    }
+    require(background->width() == 154 && foreground->width() == 154 &&
+                background->triggerTextVisible() && foreground->triggerTextVisible() &&
+                background->size() == adqt::widgets::AdColorPicker::Size::Middle &&
+                foreground->size() == adqt::widgets::AdColorPicker::Size::Middle,
+            "color fields must use the selection editor's full-size swatch and value triggers");
+    require(background->value().solidColor == QColor(0, 0, 0, 204) &&
+                foreground->value().solidColor == QColor(Qt::white),
+            "keyboard defaults must preserve alpha");
+    int changes = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingMouseTrailDurationMsChanged,
+                     &palette, [&](int value) {
+                         require(value == 1200, "duration signal must carry the edit");
+                         ++changes;
+                     });
+    duration->setValue(1200);
+    require(changes == 1 && palette.recordingMouseTrailDurationMs() == 1200,
+            "duration edits apply immediately");
+    background->setPopupVisible(true);
+    QCoreApplication::processEvents();
+    require(background->popupVisible() && modal->isOpen(),
+            "nested color picker must keep settings open");
+    background->commitValue(adqt::widgets::AdColorValue::solid(QColor(40, 80, 120, 128)));
+    require(palette.recordingKeyboardBackgroundColor() == QColor(40, 80, 120, 128) &&
+                modal->isOpen(),
+            "color edits must preserve alpha without dismissing settings");
+    background->setPopupVisible(false);
+    form->window()->activateWindow();
+    duration->setFocus();
+    QCoreApplication::processEvents();
+    QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QCoreApplication::sendEvent(QApplication::focusWidget(), &escape);
+    QCoreApplication::processEvents();
+    require(!modal->isOpen(), "Escape must dismiss settings");
+    click(button);
+    require(modal->isOpen(), "settings must reopen");
+    click(keyboard);
+    require(modal->isOpen(), "outside clicks must not dismiss the modal");
+    modal->accept();
+    QCoreApplication::processEvents();
+    require(!modal->isOpen() && palette.recordingMouseTrailDurationMs() == 1200,
+            "OK closes the modal and retains applied settings");
+    click(button);
+    palette.setRecordingState(ScreenshotToolPalette::RecordingState::Recording);
+    require(!modal->isOpen() && !button->isEnabled() && form->disabled(),
+            "recording locks and closes settings");
+    palette.setRecordingState(ScreenshotToolPalette::RecordingState::Idle);
+    click(button);
+    require(palette.activateDrawingShortcut(QStringLiteral("shape")),
+            "drawing must hide export settings");
+    QCoreApplication::processEvents();
+    require(!modal->isOpen(), "hiding the export toolbar closes settings");
 }
 
 void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
@@ -8934,6 +9098,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--recording-controls-only"))) {
+        recordingEffectSettingsModal();
         recordingControlsRemainLaidOutAcrossStateChanges();
         recordingExportSettingsAndDrawingAvailabilityFollowSessionState();
         snow_shot::storage::ApplicationStorage::instance().shutdown();

@@ -2,7 +2,6 @@
 #define SNOW_SHOT_RECORDINGEFFECTSTYLE_H
 #include "snow_capture.h"
 #include "snow_recording_effects.h"
-#include "snow_shot/presentation/styles/themecolorscheme.h"
 #include <QString>
 #include <QVector>
 #include <QByteArray>
@@ -84,13 +83,13 @@ struct RecordingKeyboardTheme {
     QColor background;
     QColor text;
     QColor border;
-    RecordingKeyboardTheme() {
-        const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
-        background = scheme.map.colorBgElevated;
-        background.setAlpha(204);
-        text = scheme.map.colorText;
-        border = scheme.map.colorBorder;
-        border.setAlpha(100);
+    RecordingKeyboardTheme(const QColor& backgroundColor = QColor(0, 0, 0, 204),
+                           const QColor& foregroundColor = QColor(Qt::white))
+        : background(backgroundColor), text(foregroundColor) {
+        const int target = qGray(background.rgb()) < 128 ? 255 : 0;
+        const auto blend = [target](int channel) { return qRound(channel * 0.75 + target * 0.25); };
+        border = QColor(blend(background.red()), blend(background.green()),
+                        blend(background.blue()), background.alpha());
     }
 };
 #endif

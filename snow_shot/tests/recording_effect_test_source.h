@@ -8,6 +8,11 @@ struct RecordingEffectTestState {
     quint64 generation = 0;
     quint64 revision = 0;
     QSize output;
+    uint32_t keyboardSize = 0;
+    uint32_t trailDurationMs = 0;
+    uint32_t keyboardBackground = 0;
+    uint32_t keyboardForeground = 0;
+    uint32_t keyboardBorder = 0;
     bool fail = false;
     std::function<void()> notify;
     std::shared_ptr<RecordingEffectsFrame> frame;
@@ -44,6 +49,11 @@ class RecordingEffectTestSource final : public RecordingEffectsSource {
             return false;
         }
         state->generation = config.generation;
+        state->keyboardSize = config.keyboard_size;
+        state->trailDurationMs = config.trail_duration_ms;
+        state->keyboardBackground = config.keyboard_background_rgba;
+        state->keyboardForeground = config.keyboard_text_rgba;
+        state->keyboardBorder = config.keyboard_border_rgba;
         state->output =
             QSize(static_cast<int>(config.output_width), static_cast<int>(config.output_height));
         state->publish();

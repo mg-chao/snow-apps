@@ -10,6 +10,7 @@
 #include "snow_shot/presentation/screenshotselectionresizemodalcontent.h"
 
 #include <QApplication>
+#include <QLabel>
 #include <QAbstractItemModel>
 #include <QCoreApplication>
 #include <QCursor>
@@ -187,6 +188,39 @@ void inlineFormPreservesAntItemLayoutPrecedence() {
             "vertical label row should match Ant Design's 22px line height plus 8px padding");
     require(control->geometry() == QRect(0, 30, 452, 32),
             "vertical control should immediately follow the 30px label row");
+}
+
+void verticalLabelsUseAvailableColumnWidth() {
+    AdForm form;
+    form.setFormLayout(AdForm::FormLayout::Inline);
+    int columnWidth = 240;
+    for (const QString& text : {QStringLiteral("Keyboard Background Color"),
+                                QStringLiteral("Keyboard Foreground Color")}) {
+        auto* item = form.addField(text, fixedControl());
+        item->setItemLayout(AdFormItem::ItemLayout::Vertical);
+        auto* label = item->findChild<QLabel*>(QStringLiteral("ad-form-item-label"));
+        require(label != nullptr, "form field must expose its label");
+        columnWidth = qMax(columnWidth, label->fontMetrics().horizontalAdvance(text) + 16);
+    }
+    for (auto* item : form.items()) {
+        item->setFixedWidth(columnWidth);
+    }
+    auto* shortItem = form.addField(QStringLiteral("Color"), fixedControl());
+    shortItem->setItemLayout(AdFormItem::ItemLayout::Vertical);
+    shortItem->setFixedWidth(columnWidth);
+    layoutForm(form, columnWidth * 2);
+    const int controlTop = itemPart(shortItem, "ad-form-item-control")->y();
+    for (auto* item : form.items()) {
+        require(item->height() == shortItem->height() &&
+                    itemPart(item, "ad-form-item-control")->y() == controlTop,
+                "labels that fit their column must use the same row height and control offset "
+                "regardless of text length");
+        auto* label = item->findChild<QLabel*>(QStringLiteral("ad-form-item-label"));
+        require(
+            label != nullptr &&
+                label->width() >= label->fontMetrics().horizontalAdvance(label->text()),
+            "vertical labels must use available width instead of clipping a wrapped final word");
+    }
 }
 
 void inlineItemEndMarginParticipatesInWrapping() {
@@ -653,6 +687,7 @@ int main(int argc, char* argv[]) {
     flushEvents();
     nestedFormsRestoreExplicitControlEnabledState();
     inlineFormPreservesAntItemLayoutPrecedence();
+    verticalLabelsUseAvailableColumnWidth();
     inlineItemEndMarginParticipatesInWrapping();
     verticalColumnsExpandInputNumberControls();
     selectionResizeModalUsesTwoColumnGutter();

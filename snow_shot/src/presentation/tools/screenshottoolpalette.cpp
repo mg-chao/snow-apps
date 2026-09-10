@@ -26,6 +26,9 @@
 #include "widgets/select.h"
 #include "widgets/slider.h"
 #include "widgets/popover.h"
+#include "widgets/form.h"
+#include "widgets/modal.h"
+#include "widgets/input_number.h"
 
 #include <QColor>
 #include <QEvent>
@@ -56,6 +59,12 @@
 #include <utility>
 
 namespace {
+// Match the selection-area editor's modal and two-column form dimensions.
+constexpr int kRecordingSettingsModalWidth = 500;
+constexpr int kRecordingSettingsContentWidth = 452;
+constexpr int kRecordingSettingsColumnWidth = 218;
+constexpr int kRecordingSettingsColumnGap = 16;
+constexpr int kRecordingSettingsColorPickerWidth = 154;
 [[maybe_unused]] constexpr const char* kScreenshotToolPaletteTranslations[] = {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle filter"),
@@ -1677,6 +1686,65 @@ QString ScreenshotToolPalette::recordingOutputFormat() const {
     return m_recordingOutputFormat;
 }
 
+void ScreenshotToolPalette::setRecordingMouseTrailDurationMs(int value) {
+    value = std::clamp(value, 100, 2000);
+    m_recordingMouseTrailDurationMs = value;
+    if (m_recordTrailDurationInput != nullptr) {
+        const QSignalBlocker blocker(m_recordTrailDurationInput);
+        m_recordTrailDurationInput->setValue(value);
+    }
+}
+
+int ScreenshotToolPalette::recordingMouseTrailDurationMs() const {
+    return m_recordingMouseTrailDurationMs;
+}
+
+void ScreenshotToolPalette::setRecordingSettingsOwnerWindow(QWidget* owner) {
+    m_recordSettingsOwnerWindow = owner;
+}
+
+void ScreenshotToolPalette::setRecordingKeyboardSize(int value) {
+    m_recordingKeyboardSize = std::clamp(value, 32, 128);
+    if (m_recordKeyboardSizeInput != nullptr) {
+        const QSignalBlocker blocker(m_recordKeyboardSizeInput);
+        m_recordKeyboardSizeInput->setValue(m_recordingKeyboardSize);
+    }
+}
+
+int ScreenshotToolPalette::recordingKeyboardSize() const {
+    return m_recordingKeyboardSize;
+}
+
+void ScreenshotToolPalette::setRecordingKeyboardBackgroundColor(const QColor& value) {
+    if (!value.isValid()) {
+        return;
+    }
+    m_recordingKeyboardBackgroundColor = value;
+    if (m_recordKeyboardBackgroundPicker != nullptr) {
+        const QSignalBlocker blocker(m_recordKeyboardBackgroundPicker);
+        m_recordKeyboardBackgroundPicker->setValue(adqt::widgets::AdColorValue::solid(value));
+    }
+}
+
+QColor ScreenshotToolPalette::recordingKeyboardBackgroundColor() const {
+    return m_recordingKeyboardBackgroundColor;
+}
+
+void ScreenshotToolPalette::setRecordingKeyboardForegroundColor(const QColor& value) {
+    if (!value.isValid()) {
+        return;
+    }
+    m_recordingKeyboardForegroundColor = value;
+    if (m_recordKeyboardForegroundPicker != nullptr) {
+        const QSignalBlocker blocker(m_recordKeyboardForegroundPicker);
+        m_recordKeyboardForegroundPicker->setValue(adqt::widgets::AdColorValue::solid(value));
+    }
+}
+
+QColor ScreenshotToolPalette::recordingKeyboardForegroundColor() const {
+    return m_recordingKeyboardForegroundColor;
+}
+
 void ScreenshotToolPalette::setRecordingMouseTrailColor(const QColor& color) {
     const QColor value = color.isValid() ? color : QColor(0, 0, 0, 0);
     if (m_recordingMouseTrailColor == value) {
@@ -2463,6 +2531,9 @@ void ScreenshotToolPalette::updatePanelMetrics(QFrame* panel) {
 }
 
 void ScreenshotToolPalette::applyScaledToolbarMetrics() {
+    if (m_recordSettingsButton != nullptr) {
+        m_recordSettingsButton->setFixedHeight(scaledMetric(STYLE_BUTTON_SIZE));
+    }
     SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.apply_scaled_toolbar_metrics");
     m_shadowMargins = scaledMargins(m_baseShadowMargins.left(), m_baseShadowMargins.top(),
                                     m_baseShadowMargins.right(), m_baseShadowMargins.bottom());
@@ -4870,6 +4941,7 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
         auto* picker = snow_shot::presentation::createScreenshotToolPaletteColorPicker(
             m_recordExportSettingsPanel, accessibleName, color, true, false, {});
         picker->setObjectName(objectName);
+        picker->setPopupLayerMode(adqt::widgets::AdColorPicker::PopupLayerMode::QtTool);
         picker->setSize(adqt::widgets::AdColorPicker::Size::Middle);
         picker->setFormat(adqt::widgets::AdColorPicker::Format::Hex);
         picker->setFormatSelectorEnabled(true);
@@ -4938,6 +5010,144 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
         custom_outlined_icons::RecordingKeyboard(), styleButtonMetrics(m_physicalScale));
     m_recordKeyboardButton->setObjectName(QStringLiteral("screenRecordingShowKeyboard"));
     layout->addWidget(m_recordKeyboardButton);
+    addSeparator(QStringLiteral("screenRecordingExportSettingsSeparator"));
+    m_recordSettingsButton = createScreenshotToolPaletteStyleActionButton(
+        m_recordExportSettingsPanel, "Settings", outlined_icons::Setting(),
+        styleButtonMetrics(m_physicalScale));
+    m_recordSettingsButton->setObjectName(QStringLiteral("screenRecordingEffectSettings"));
+    m_recordSettingsButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
+    layout->addWidget(m_recordSettingsButton);
+    m_recordSettingsModal = new adqt::widgets::AdModal(this);
+    m_recordSettingsModal->setObjectName(QStringLiteral("screenRecordingEffectSettingsModal"));
+    m_recordSettingsModal->setMode(adqt::widgets::AdModal::Mode::Window);
+    m_recordSettingsModal->setWindowModality(Qt::ApplicationModal);
+    m_recordSettingsModal->setCentered(true);
+    m_recordSettingsModal->setPreferredWidth(kRecordingSettingsModalWidth);
+    m_recordSettingsModal->setMaskVisible(false);
+    m_recordSettingsModal->setCloseOnMaskClick(false);
+    m_recordSettingsModal->setStandardButtons(adqt::widgets::AdModal::StandardButton::Ok);
+    connect(m_recordSettingsButton, &adqt::widgets::AdButton::clicked, this, [this]() {
+        m_recordSettingsModal->setOwnerWindow(
+            m_recordSettingsOwnerWindow ? m_recordSettingsOwnerWindow.data() : window());
+        m_recordSettingsModal->open();
+    });
+    connect(m_recordSettingsModal, &adqt::widgets::AdModal::finished, this,
+            [this](adqt::widgets::AdModal::DialogCode) {
+                m_recordKeyboardBackgroundPicker->setPopupVisible(false);
+                m_recordKeyboardForegroundPicker->setPopupVisible(false);
+            });
+    m_recordSettingsForm = new adqt::widgets::AdForm;
+    m_recordSettingsForm->setObjectName(QStringLiteral("screenRecordingEffectSettingsForm"));
+    m_recordSettingsForm->setFormLayout(adqt::widgets::AdForm::FormLayout::Inline);
+    m_recordSettingsForm->setLabelAlign(adqt::widgets::AdForm::LabelAlign::Left);
+    m_recordSettingsForm->setRequiredMark(adqt::widgets::AdForm::RequiredMark::Hidden);
+    m_recordSettingsForm->setControlSize(adqt::widgets::AdForm::ControlSize::Medium);
+    m_recordSettingsForm->setVariant(adqt::widgets::AdForm::Variant::Outlined);
+    m_recordSettingsForm->setColon(false);
+    m_recordSettingsForm->setScrollToFirstError(true);
+    m_recordTrailDurationInput = new adqt::widgets::AdInputNumber;
+    m_recordTrailDurationInput->setObjectName(QStringLiteral("screenRecordingMouseTrailDuration"));
+    m_recordTrailDurationInput->setMinimum(100);
+    m_recordTrailDurationInput->setMaximum(2000);
+    m_recordTrailDurationInput->setSingleStep(100);
+    m_recordTrailDurationInput->setDecimals(0);
+    m_recordTrailDurationInput->setControlSize(adqt::widgets::AdInputNumber::ControlSize::Medium);
+    m_recordTrailDurationInput->setVariant(adqt::widgets::AdInputNumber::Variant::Outlined);
+    m_recordTrailDurationInput->setStepButtonLayout(
+        adqt::widgets::AdInputNumber::StepButtonLayout::Compact);
+    m_recordTrailDurationInput->setWheelStepEnabled(true);
+    // Reserve the complete first row, with the input occupying one normal form column.
+    m_recordTrailDurationInput->setFixedWidth(kRecordingSettingsColumnWidth);
+    m_recordTrailDurationInput->setValue(m_recordingMouseTrailDurationMs);
+    m_recordSettingsForm->addField(tr("Mouse Trail Duration"), m_recordTrailDurationInput,
+                                   QStringLiteral("duration"));
+    m_recordKeyboardSizeInput = new adqt::widgets::AdInputNumber;
+    m_recordKeyboardSizeInput->setObjectName(QStringLiteral("screenRecordingKeyboardSize"));
+    m_recordKeyboardSizeInput->setMinimum(32);
+    m_recordKeyboardSizeInput->setMaximum(128);
+    m_recordKeyboardSizeInput->setSingleStep(8);
+    m_recordKeyboardSizeInput->setDecimals(0);
+    m_recordKeyboardSizeInput->setFixedWidth(kRecordingSettingsColumnWidth);
+    m_recordKeyboardSizeInput->setValue(m_recordingKeyboardSize);
+    m_recordKeyboardSizeInput->setStepButtonLayout(
+        adqt::widgets::AdInputNumber::StepButtonLayout::Compact);
+    m_recordSettingsForm
+        ->addField(tr("Keyboard Size"), m_recordKeyboardSizeInput, QStringLiteral("keyboardSize"))
+        ->setFixedWidth(kRecordingSettingsContentWidth);
+    connect(m_recordKeyboardSizeInput, &adqt::widgets::AdInputNumber::valueChanged, this,
+            [this](double value) {
+                const int previous = m_recordingKeyboardSize;
+                setRecordingKeyboardSize(qRound(value));
+                if (previous != m_recordingKeyboardSize) {
+                    emit recordingKeyboardSizeChanged(m_recordingKeyboardSize);
+                }
+            });
+    const auto addKeyboardPicker = [this](const QString& name, const QString& label,
+                                          const QString& key, const QColor& color) {
+        auto* picker = new adqt::widgets::AdColorPicker(m_recordSettingsForm);
+        picker->setObjectName(name);
+        picker->setPopupLayerMode(adqt::widgets::AdColorPicker::PopupLayerMode::QtTool);
+        picker->setAccessibleName(label);
+        picker->setSize(adqt::widgets::AdColorPicker::Size::Middle);
+        picker->setModeOptions({adqt::widgets::AdColorPicker::Mode::Solid});
+        picker->setMode(adqt::widgets::AdColorPicker::Mode::Solid);
+        picker->setAlphaChannelEnabled(true);
+        picker->setTriggerTextVisible(true);
+        picker->setFixedWidth(kRecordingSettingsColorPickerWidth);
+        picker->setValue(adqt::widgets::AdColorValue::solid(color));
+        m_recordSettingsForm->addField(label, picker, key);
+        return picker;
+    };
+    m_recordKeyboardBackgroundPicker = addKeyboardPicker(
+        QStringLiteral("screenRecordingKeyboardBackgroundColor"), tr("Keyboard Background Color"),
+        QStringLiteral("background"), m_recordingKeyboardBackgroundColor);
+    auto* columnSpacer = new QWidget(m_recordSettingsForm);
+    columnSpacer->setFixedSize(kRecordingSettingsColumnGap, 1);
+    auto* spacerItem = m_recordSettingsForm->addField(QString(), columnSpacer);
+    spacerItem->setNoStyle(true);
+    spacerItem->setFixedWidth(kRecordingSettingsColumnGap);
+    m_recordKeyboardForegroundPicker = addKeyboardPicker(
+        QStringLiteral("screenRecordingKeyboardForegroundColor"), tr("Keyboard Foreground Color"),
+        QStringLiteral("foreground"), m_recordingKeyboardForegroundColor);
+    for (auto* item : m_recordSettingsForm->items()) {
+        item->setItemLayout(adqt::widgets::AdFormItem::ItemLayout::Vertical);
+    }
+    m_recordSettingsButton->setFixedHeight(scaledMetric(STYLE_BUTTON_SIZE));
+    m_recordSettingsForm->setFixedWidth(kRecordingSettingsContentWidth);
+    m_recordSettingsForm->field(QStringLiteral("duration"))
+        ->setFixedWidth(kRecordingSettingsContentWidth);
+    m_recordSettingsForm->field(QStringLiteral("background"))
+        ->setFixedWidth(kRecordingSettingsColumnWidth);
+    m_recordSettingsForm->field(QStringLiteral("foreground"))
+        ->setFixedWidth(kRecordingSettingsColumnWidth);
+    m_recordSettingsModal->setContentWidget(m_recordSettingsForm);
+    m_recordSettingsModal->setInitialFocusWidget(m_recordTrailDurationInput);
+    connect(m_recordTrailDurationInput, &adqt::widgets::AdInputNumber::valueChanged, this,
+            [this](double value) {
+                const int previous = m_recordingMouseTrailDurationMs;
+                setRecordingMouseTrailDurationMs(qRound(value));
+                if (previous != m_recordingMouseTrailDurationMs) {
+                    emit recordingMouseTrailDurationMsChanged(m_recordingMouseTrailDurationMs);
+                }
+            });
+    connect(m_recordKeyboardBackgroundPicker, &adqt::widgets::AdColorPicker::valueChanged, this,
+            [this](const adqt::widgets::AdColorValue& value) {
+                if (value.isSolid() && value.solidColor.isValid() &&
+                    value.solidColor != m_recordingKeyboardBackgroundColor) {
+                    setRecordingKeyboardBackgroundColor(value.solidColor);
+                    emit recordingKeyboardBackgroundColorChanged(
+                        m_recordingKeyboardBackgroundColor);
+                }
+            });
+    connect(m_recordKeyboardForegroundPicker, &adqt::widgets::AdColorPicker::valueChanged, this,
+            [this](const adqt::widgets::AdColorValue& value) {
+                if (value.isSolid() && value.solidColor.isValid() &&
+                    value.solidColor != m_recordingKeyboardForegroundColor) {
+                    setRecordingKeyboardForegroundColor(value.solidColor);
+                    emit recordingKeyboardForegroundColorChanged(
+                        m_recordingKeyboardForegroundColor);
+                }
+            });
     connect(m_recordKeyboardButton, &adqt::widgets::AdButton::clicked, this, [this]() {
         setRecordingKeyboardVisible(!m_recordingKeyboardVisible);
         emit recordingKeyboardVisibleChanged(m_recordingKeyboardVisible);
@@ -4986,6 +5196,25 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
 }
 
 void ScreenshotToolPalette::refreshRecordingExportSettingsText() {
+    if (m_recordSettingsButton != nullptr) {
+        configureScreenshotToolPaletteTooltip(m_recordSettingsButton, "Settings");
+        m_recordKeyboardSizeInput->setAccessibleName(tr("Keyboard Size"));
+        m_recordKeyboardSizeInput->setSuffixText(tr("px"));
+        m_recordSettingsForm->field(QStringLiteral("keyboardSize"))->setLabel(tr("Keyboard Size"));
+        m_recordSettingsModal->setWindowTitle(tr("Settings"));
+        m_recordSettingsButton->setAccessibleName(tr("Settings"));
+        m_recordTrailDurationInput->setSuffixText(tr("ms"));
+        m_recordTrailDurationInput->setAccessibleName(tr("Mouse Trail Duration"));
+        m_recordKeyboardBackgroundPicker->setAccessibleName(tr("Keyboard Background Color"));
+        m_recordKeyboardForegroundPicker->setAccessibleName(tr("Keyboard Foreground Color"));
+        m_recordSettingsForm->field(QStringLiteral("duration"))
+            ->setLabel(tr("Mouse Trail Duration"));
+        m_recordSettingsForm->field(QStringLiteral("background"))
+            ->setLabel(tr("Keyboard Background Color"));
+        m_recordSettingsForm->field(QStringLiteral("foreground"))
+            ->setLabel(tr("Keyboard Foreground Color"));
+    }
+
     if (m_recordOutputFormatSelect == nullptr) {
         return;
     }
@@ -5018,6 +5247,9 @@ void ScreenshotToolPalette::refreshRecordingExportSettingsText() {
 }
 
 void ScreenshotToolPalette::setRecordingExportSettingsVisible(bool visible) {
+    if (!visible && m_recordSettingsModal != nullptr) {
+        m_recordSettingsModal->close();
+    }
     if (visible && m_options.recordingDrawingMode && m_activeTool.has_value()) {
         clearActiveTool();
         emit selectRequested();
@@ -5040,6 +5272,14 @@ void ScreenshotToolPalette::setRecordingExportSettingsVisible(bool visible) {
 
 void ScreenshotToolPalette::updateRecordingExportSettingsControls() {
     const bool editable = m_recordingState == RecordingState::Idle && !m_recordingBusy;
+    if (m_recordSettingsForm != nullptr) {
+        m_recordSettingsForm->setDisabled(!editable);
+        if (!editable) {
+            m_recordKeyboardBackgroundPicker->setPopupVisible(false);
+            m_recordKeyboardForegroundPicker->setPopupVisible(false);
+            m_recordSettingsModal->close();
+        }
+    }
     if (m_recordExportSettingsPanel != nullptr) {
         m_recordExportSettingsPanel->setEnabled(editable);
     }
