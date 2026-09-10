@@ -3520,6 +3520,12 @@ void test_jxl_opaque_progressive_preview(Service& service) {
 } // namespace
 
 int main(int argc, char* argv[]) {
+    if (argc == 2 && std::string_view(argv[1]) == "--jpeg-only") {
+        Service service;
+        test_jpeg_round_trip(service);
+        std::cout << "snow_image JPEG tests passed\n";
+        return 0;
+    }
     if (argc == 2 && std::string_view(argv[1]) == "--heif-only") {
         Service service;
         test_heif_family(service);

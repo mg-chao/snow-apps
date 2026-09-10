@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/shortcutkeyrow.h"
+#include "snow_shot/presentation/windowshortcutmanager.h"
 
 #include "snow_shot/presentation/components/infotooltipicon.h"
 #include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
@@ -30,6 +31,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <utility>
 
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
@@ -470,8 +472,9 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
     modal->acceptButton()->click();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QApplication::processEvents();
-    require(shortcutButton->text() == QStringLiteral("Shift"),
-            "the outer shortcut control must display a committed bare Shift key without duplication");
+    require(
+        shortcutButton->text() == QStringLiteral("Shift"),
+        "the outer shortcut control must display a committed bare Shift key without duplication");
 }
 
 void printScreenReleaseRecordsModifiers() {
@@ -511,13 +514,14 @@ void printScreenReleaseRecordsModifiers() {
 
 class PrintScreenRecordingSession {
   public:
-    explicit PrintScreenRecordingSession(
-        ShortcutKeyRowConfig::ValidationScope scope =
-            ShortcutKeyRowConfig::ValidationScope::GlobalShortcut) {
+    explicit PrintScreenRecordingSession(ShortcutKeyRowConfig::ValidationScope scope =
+                                             ShortcutKeyRowConfig::ValidationScope::GlobalShortcut,
+                                         const QStringList& initialShortcuts = {}) {
         const auto scheme = styles::ThemeManager::instance().themeColorScheme();
         ShortcutKeyRowConfig config;
         config.title = QStringLiteral("Screenshot");
         config.validationScope = scope;
+        config.shortcuts = initialShortcuts;
         config.shortcutValidator = [this](const QString& shortcut) {
             validated.push_back(shortcut);
             return shortcuts::GlobalShortcutValidationResult{
@@ -918,6 +922,73 @@ void printScreenHookRecordsBeforeRegisteredHotkeys() {
 #endif
 }
 
+void cancellingDuplicateScreenshotShortcutReleasesKeyboard() {
+    PrintScreenRecordingSession session(ShortcutKeyRowConfig::ValidationScope::ScreenshotShortcut,
+                                        {QStringLiteral("F3")});
+    session.row->findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigKeyButton"))
+        ->click();
+    session.supported = false;
+    session.key(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier);
+    session.key(QEvent::KeyRelease, Qt::Key_A, Qt::NoModifier);
+    session.flush();
+    require(!session.modal->acceptButton()->isEnabled(),
+            "a duplicate screenshot shortcut must not be accepted");
+    require(QWidget::keyboardGrabber() == session.content,
+            "the shortcut editor must own keyboard input while recording");
+    session.modal->rejectButton()->click();
+    require(session.saved.isEmpty(), "cancelling a duplicate must not save the attempted shortcut");
+    require(QWidget::keyboardGrabber() == nullptr,
+            "Cancel must release keyboard input before another screenshot can start");
+    QWidget screenshotWindow;
+    shortcuts::WindowShortcutManager manager;
+    manager.addScopeWindow(&screenshotWindow);
+    int activations = 0;
+    for (const Qt::Key key : {Qt::Key_F3, Qt::Key_A, Qt::Key_Escape}) {
+        shortcuts::WindowShortcutManager::Binding binding;
+        binding.keyCombinations = {QKeyCombination(Qt::NoModifier, key)};
+        binding.activate = [&activations](const auto&) {
+            ++activations;
+            return true;
+        };
+        require(manager.addBinding(&screenshotWindow, std::move(binding)) != 0,
+                "screenshot shortcut bindings must register");
+        QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
+        QCoreApplication::sendEvent(&screenshotWindow, &press);
+        QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
+        QCoreApplication::sendEvent(&screenshotWindow, &release);
+    }
+    require(activations == 3,
+            "pin, drawing and Escape shortcuts must dispatch after cancelling the duplicate");
+    session.flush();
+    require(QWidget::keyboardGrabber() == nullptr,
+            "deferred editor cleanup must leave screenshot keyboard input available");
+    session.open();
+    require(
+        session.row->findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigKeyButton"))
+                ->text() == QStringLiteral("F3"),
+        "cancelling a duplicate must preserve the original pin shortcut");
+}
+
+void closedShortcutEditorCannotReacquireKeyboard() {
+    const auto scheme = styles::ThemeManager::instance().themeColorScheme();
+    ShortcutKeyRowConfig config;
+    config.validationScope = ShortcutKeyRowConfig::ValidationScope::ScreenshotShortcut;
+    ShortcutKeyRow row(config, scheme.metricAlias,
+                       styles::buildMainWindowComponentMetricToken(scheme));
+    row.show();
+    QApplication::processEvents();
+    row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutKeyButton"))->click();
+    auto* content = row.findChild<QWidget*>(QStringLiteral("shortcutConfigContent"));
+    auto* modal = row.findChild<adqt::widgets::AdModal*>();
+    require(content != nullptr && modal != nullptr, "the shortcut editor must open");
+    modal->rejectButton()->click();
+    // Run the queued initial-focus callback while the closed content still exists.
+    QCoreApplication::sendPostedEvents(content, QEvent::MetaCall);
+    require(QWidget::keyboardGrabber() == nullptr,
+            "queued initial focus must not grab input for a closed shortcut editor");
+    PrintScreenRecordingSession::flush();
+}
+
 void drawingRecorderUsesLocalValidationLanguage() {
     const styles::ThemeColorScheme scheme = styles::ThemeManager::instance().themeColorScheme();
     const auto mainWindowMetric = styles::buildMainWindowComponentMetricToken(scheme);
@@ -957,16 +1028,16 @@ void drawingRecorderUsesLocalValidationLanguage() {
         row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigKeyButton"));
     auto* validationInfo =
         row.findChild<InfoTooltipIcon*>(QStringLiteral("shortcutConfigValidationTooltipTrigger"));
-    require(keyButton != nullptr && validationInfo != nullptr &&
-                keyButton->property("shortcutValidationState").toString() ==
-                    QStringLiteral("invalid") &&
-                validationInfo->accessibleName() == QStringLiteral("Invalid drawing shortcut") &&
-                validationInfo->tooltipText().contains(
-                    QStringLiteral("already assigned to another drawing tool")) &&
-                !validationInfo->tooltipText().contains(
-                    QStringLiteral("Windows global shortcut")) &&
-                keyButton->accessibleDescription() == validationInfo->tooltipText(),
-            "drawing shortcut conflicts must use local validation and accessibility wording");
+    require(
+        keyButton != nullptr && validationInfo != nullptr &&
+            keyButton->property("shortcutValidationState").toString() ==
+                QStringLiteral("invalid") &&
+            validationInfo->accessibleName() == QStringLiteral("Invalid drawing shortcut") &&
+            validationInfo->tooltipText().contains(
+                QStringLiteral("already assigned to another drawing tool")) &&
+            !validationInfo->tooltipText().contains(QStringLiteral("Windows global shortcut")) &&
+            keyButton->accessibleDescription() == validationInfo->tooltipText(),
+        "drawing shortcut conflicts must use local validation and accessibility wording");
     require(keyButton->busy(),
             "a conflicting drawing shortcut must keep the busy recording indicator while editing");
 }
@@ -997,10 +1068,8 @@ void compactTitleAndKeyButtonStylesMatchReference() {
                 row.cursor().shape() == Qt::ArrowCursor && row.layout() != nullptr &&
                 row.layout()->contentsMargins() == QMargins() &&
                 row.layout()->spacing() == scheme.metricAlias.marginXS &&
-                shortcutButton->buttonStyle() ==
-                    adqt::widgets::AdButton::ButtonStyle::Outline &&
-                shortcutButton->accentRole() ==
-                    adqt::widgets::AdButton::AccentRole::Neutral &&
+                shortcutButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Outline &&
+                shortcutButton->accentRole() == adqt::widgets::AdButton::AccentRole::Neutral &&
                 shortcutButton->height() == scheme.metricAlias.controlHeight &&
                 shortcutButton->text() == QStringLiteral("Ctrl+Shift+S"),
             "compact shortcut titles and key buttons must match the reference presentation");
@@ -1017,8 +1086,7 @@ void compactTitleAndKeyButtonStylesMatchReference() {
     row.setRegistrationState({});
     QApplication::processEvents();
     require(shortcutButton->text().isEmpty() &&
-                shortcutButton->accentRole() ==
-                    adqt::widgets::AdButton::AccentRole::Danger &&
+                shortcutButton->accentRole() == adqt::widgets::AdButton::AccentRole::Danger &&
                 shortcutButton->property("registrationStatus").toInt() ==
                     static_cast<int>(shortcuts::GlobalShortcutStatus::Unset),
             "unset compact shortcuts must use the reference icon-only danger button");
@@ -1065,8 +1133,7 @@ void adjustableDelayUsesWheelAndClampsRange() {
         }
     }
     require(shortcutButton != nullptr && delayTitleLabel != nullptr && delayTitleWrap != nullptr &&
-                delayUnderline != nullptr &&
-                row.delaySeconds() == 3 && titleShowsDefaultDelay &&
+                delayUnderline != nullptr && row.delaySeconds() == 3 && titleShowsDefaultDelay &&
                 row.toolTip() == QStringLiteral("Delay: 3 seconds") &&
                 row.cursor().shape() == Qt::PointingHandCursor &&
                 delayTitleLabel->cursor().shape() == Qt::SplitVCursor &&
@@ -1077,8 +1144,8 @@ void adjustableDelayUsesWheelAndClampsRange() {
     const auto sendWheel = [](QWidget* target, int angleDelta) {
         const QPoint localPoint = target->rect().center();
         QWheelEvent event(QPointF(localPoint), QPointF(target->mapToGlobal(localPoint)), QPoint(),
-                          QPoint(0, angleDelta), Qt::NoButton, Qt::NoModifier,
-                          Qt::NoScrollPhase, false);
+                          QPoint(0, angleDelta), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase,
+                          false);
         QCoreApplication::sendEvent(target, &event);
         return event.isAccepted();
     };
@@ -1089,17 +1156,16 @@ void adjustableDelayUsesWheelAndClampsRange() {
             "scrolling outside the delay title must not change the configured delay");
 
     sendWheel(delayTitleWrap, 120);
-    require(row.delaySeconds() == 3 && persistedDelay == 3 && setterCalls == 0 &&
-                changeSignals == 0,
-            "scrolling over the title container outside its text must not change the configured delay");
+    require(
+        row.delaySeconds() == 3 && persistedDelay == 3 && setterCalls == 0 && changeSignals == 0,
+        "scrolling over the title container outside its text must not change the configured delay");
 
     sendWheel(shortcutButton, 120);
     require(row.delaySeconds() == 3 && persistedDelay == 3 && setterCalls == 0 &&
                 changeSignals == 0,
             "scrolling over the shortcut button must not change the configured delay");
 
-    require(sendWheel(delayTitleLabel, 120),
-            "the delay title must consume handled wheel events");
+    require(sendWheel(delayTitleLabel, 120), "the delay title must consume handled wheel events");
     require(row.delaySeconds() == 4 && persistedDelay == 4 && setterCalls == 1 &&
                 changeSignals == 1,
             "scrolling over the delay title must persist and publish a one-second increment");
@@ -1140,6 +1206,7 @@ void adjustableDelayUsesWheelAndClampsRange() {
 int main(int argc, char** argv) {
     bool titleAndKeyButtonOnly = false;
     bool nativePrintScreenOnly = false;
+    bool shortcutCancelOnly = false;
     for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex) {
         if (QString::fromLocal8Bit(argv[argumentIndex]) ==
             QStringLiteral("--title-and-key-button-only")) {
@@ -1149,9 +1216,18 @@ int main(int argc, char** argv) {
             QStringLiteral("--native-print-screen-only")) {
             nativePrintScreenOnly = true;
         }
+        if (QString::fromLocal8Bit(argv[argumentIndex]) ==
+            QStringLiteral("--shortcut-cancel-only")) {
+            shortcutCancelOnly = true;
+        }
     }
 
     QApplication application(argc, argv);
+    if (shortcutCancelOnly) {
+        cancellingDuplicateScreenshotShortcutReleasesKeyboard();
+        closedShortcutEditorCannotReacquireKeyboard();
+        return 0;
+    }
     if (nativePrintScreenOnly) {
         printScreenHookRecordsBeforeRegisteredHotkeys();
         return 0;
@@ -1171,6 +1247,8 @@ int main(int argc, char** argv) {
     recordingShortcutRecorderAcceptsControlKeysAndEscape();
     nativePrintScreenRecordingPreservesModifiers();
     drawingRecorderUsesLocalValidationLanguage();
+    cancellingDuplicateScreenshotShortcutReleasesKeyboard();
+    closedShortcutEditorCannotReacquireKeyboard();
     compactTitleAndKeyButtonStylesMatchReference();
     adjustableDelayUsesWheelAndClampsRange();
     return 0;

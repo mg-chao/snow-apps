@@ -429,11 +429,12 @@ EditPipelineController::EditPipelineController(EditPipelineOptions options, QObj
         const bool wasCancelling = activeWorkerJob_->cancelling;
         if (wasCancelling)
             activeWorkerJob_->cooperative = false;
-        cancelActiveWorker(true);
+        cancelActiveWorker(wasCancelling);
         if (!wasCancelling && request.requestId == latestRequestId_) {
             setState(EditPipelineState::Failed);
             emit failed(QStringLiteral("The image export worker timed out."));
         }
+        startPendingExact();
     });
     artifactDirectory_ = std::make_shared<QTemporaryDir>(
         QDir::temp().filePath(QStringLiteral("snow-image-edit-XXXXXX")));
@@ -1373,6 +1374,9 @@ void EditPipelineController::dispatchWorker(PendingExact request,
     activeWorkerJob_->previewPath =
         artifactDirectory_->filePath(QStringLiteral("%1.preview.raster").arg(baseName));
     activeWorkerJob_->timer.start();
+    // Readiness is part of the job deadline: a process can start successfully
+    // without ever completing the protocol handshake.
+    workerTimeout_.start(options_.workerTimeoutMs);
     if (!worker_ || worker_->state() == QProcess::NotRunning)
         startWorker();
     sendActiveWorkerJob();
@@ -1417,6 +1421,7 @@ void EditPipelineController::dispatchPreviewWorker(PendingExact request,
     activeWorkerJob_->previewPath = artifactDirectory_->filePath(
         QStringLiteral("%1.preview-recovery-%2.raster").arg(activeWorkerJob_->nonce, uuidHex()));
     activeWorkerJob_->timer.start();
+    workerTimeout_.start(options_.workerTimeoutMs);
     if (!worker_ || worker_->state() == QProcess::NotRunning)
         startWorker();
     sendActiveWorkerJob();
@@ -1557,7 +1562,7 @@ void EditPipelineController::handleWorkerOutput() {
             if (!frameError.isEmpty()) {
                 const bool affected =
                     activeWorkerJob_ && activeWorkerJob_->request.requestId == latestRequestId_;
-                cancelActiveWorker(true);
+                cancelActiveWorker(false);
                 if (affected) {
                     setState(EditPipelineState::Failed);
                     emit failed(frameError);
@@ -1569,7 +1574,13 @@ void EditPipelineController::handleWorkerOutput() {
         if (frame.type == worker_protocol::MessageType::ready) {
             if (object.value(QStringLiteral("protocolVersion")).toInt() !=
                 static_cast<int>(worker_protocol::kVersion)) {
+                const bool affected =
+                    activeWorkerJob_ && activeWorkerJob_->request.requestId == latestRequestId_;
                 cancelActiveWorker(false);
+                if (affected) {
+                    setState(EditPipelineState::Failed);
+                    emit failed(tr("The image export worker uses an incompatible protocol."));
+                }
                 return;
             }
             workerStartupNanoseconds_ =
@@ -1891,7 +1902,9 @@ void EditPipelineController::handleWorkerExit(int exitCode) {
             emit failed(QStringLiteral("The image export worker exited unexpectedly."));
         }
     }
-    startWorker();
+    // Start another process only when queued or newly requested work needs it.
+    // FailedToStart may be emitted synchronously, so unconditional restarting
+    // here can recurse until the application crashes.
     startPendingExact();
 }
 
@@ -1912,7 +1925,7 @@ void EditPipelineController::cancelActiveWorker(bool restart) {
     workerTimeout_.stop();
     QElapsedTimer cancellation;
     cancellation.start();
-    if (activeWorkerJob_ && !activeWorkerJob_->sent) {
+    if (activeWorkerJob_ && !activeWorkerJob_->sent && restart) {
         activeWorkerJob_->request.cancellation->request_stop();
         activeWorkerCount_ = std::max(0, activeWorkerCount_ - 1);
         reservedWorkerBytes_ -=

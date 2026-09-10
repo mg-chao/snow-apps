@@ -128,6 +128,8 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
             [this](const QPoint& pos) { updatePaletteDrag(pos); });
     connect(m_paletteHost, &ScreenshotToolPaletteHost::dragFinished, this,
             [this](const QPoint&) { finishPaletteDrag(true); });
+    connect(m_paletteHost, &ScreenshotToolPaletteHost::dragCancelled, this,
+            [this]() { finishPaletteDrag(true); });
     connect(m_paletteHost, &ScreenshotToolPaletteHost::visibleContentChanged, this,
             &ScreenshotFloatingToolPaletteWindow::handlePaletteContentChange);
 
@@ -458,6 +460,9 @@ ScreenshotFloatingToolPaletteWindow::dpiTransitionDiagnostics() const {
 }
 
 bool ScreenshotFloatingToolPaletteWindow::event(QEvent* event) {
+    if (event != nullptr && event->type() == QEvent::WindowDeactivate) {
+        finishPaletteDrag(true);
+    }
     const bool devicePixelRatioChanged =
         event != nullptr && event->type() == QEvent::DevicePixelRatioChange;
     if (event != nullptr) {

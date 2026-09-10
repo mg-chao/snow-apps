@@ -496,6 +496,13 @@ class ShortcutKeyConfigContent final : public QWidget {
     std::function<void(bool)> acceptanceAvailabilityChanged;
 
   protected:
+    void hideEvent(QHideEvent* event) override {
+        // Closing the modal hides its content before deferred deletion. A hidden
+        // recorder must no longer own input intended for the next window.
+        releaseInputCapture();
+        QWidget::hideEvent(event);
+    }
+
     bool event(QEvent* event) override {
         // A key being recorded belongs to this editor, including the modal's Escape shortcut.
         if (event->type() == QEvent::ShortcutOverride && m_recordingConfigIndex >= 0) {
@@ -663,13 +670,16 @@ class ShortcutKeyConfigContent final : public QWidget {
         rebuildKeyConfigRows();
     }
 
-    void stopRecording() {
+    void releaseInputCapture() {
         m_printScreenRecorder.reset();
         if (m_keyboardGrabbed) {
             releaseKeyboard();
             m_keyboardGrabbed = false;
         }
+    }
 
+    void stopRecording() {
+        releaseInputCapture();
         m_recordingConfigIndex = -1;
         m_pendingShortcut.clear();
         m_rejectedShortcut.clear();
@@ -677,7 +687,7 @@ class ShortcutKeyConfigContent final : public QWidget {
     }
 
     void ensureKeyboardGrabbed() {
-        if (m_recordingConfigIndex < 0) {
+        if (m_recordingConfigIndex < 0 || !isVisible()) {
             return;
         }
 

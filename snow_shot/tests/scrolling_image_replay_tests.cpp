@@ -6,6 +6,7 @@
 #include <QApplication>
 #include <QEventLoop>
 #include <QJsonArray>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QTemporaryFile>
 #include <QTimer>
@@ -374,6 +375,52 @@ void replaySourceTest() {
             "adaptive skip accounting");
 }
 
+void interruptedThumbnailDragTest() {
+    for (const auto mode : {ScreenshotScrollingRecognitionMode::Vertical,
+                            ScreenshotScrollingRecognitionMode::Horizontal}) {
+        for (const auto interruption :
+             {QEvent::Hide, QEvent::WindowDeactivate, QEvent::UngrabMouse, QEvent::MouseMove}) {
+            QWidget parent;
+            ScreenshotScrollingThumbnailWidget thumbnail(parent);
+            thumbnail.setRecognitionMode(mode);
+            const bool horizontal = mode == ScreenshotScrollingRecognitionMode::Horizontal;
+            const QSize size = horizontal ? QSize(256, 128) : QSize(128, 256);
+            QImage image(size, QImage::Format_RGBA8888);
+            image.fill(Qt::white);
+            thumbnail.setStitchedImage(image, size, ScreenshotScrollingStitchChange::Initial, 0);
+            parent.show();
+            QApplication::processEvents();
+            const auto sendMouse = [&](QEvent::Type type, int position, Qt::MouseButton button,
+                                       Qt::MouseButtons buttons) {
+                const QPointF point = horizontal ? QPointF(position, 64) : QPointF(64, position);
+                QMouseEvent event(type, point, thumbnail.mapToGlobal(point.toPoint()), button,
+                                  buttons, Qt::NoModifier);
+                QApplication::sendEvent(&thumbnail, &event);
+            };
+            sendMouse(QEvent::MouseButtonPress, 0, Qt::LeftButton, Qt::LeftButton);
+            sendMouse(QEvent::MouseMove, 30, Qt::NoButton, Qt::LeftButton);
+            require(thumbnail.trimTop() == 30, "trim handle must respond to an active drag");
+            if (interruption == QEvent::Hide) {
+                thumbnail.hide();
+                require(QWidget::mouseGrabber() != &thumbnail,
+                        "a hidden thumbnail must immediately release mouse capture");
+                thumbnail.show();
+            } else if (interruption != QEvent::MouseMove) {
+                QEvent event(interruption);
+                QApplication::sendEvent(&thumbnail, &event);
+            }
+            sendMouse(QEvent::MouseMove, 90, Qt::NoButton, Qt::NoButton);
+            require(thumbnail.trimTop() == 30,
+                    "interrupted drags must not crop more content on subsequent mouse movement");
+            sendMouse(QEvent::MouseButtonPress, 30, Qt::LeftButton, Qt::LeftButton);
+            sendMouse(QEvent::MouseMove, 50, Qt::NoButton, Qt::LeftButton);
+            sendMouse(QEvent::MouseButtonRelease, 50, Qt::LeftButton, Qt::NoButton);
+            require(thumbnail.trimTop() == 50 && QWidget::mouseGrabber() != &thumbnail,
+                    "a fresh trim drag must work after interruption");
+        }
+    }
+}
+
 void sourceFailureTest() {
     QEventLoop loop;
     QTimer timeout;
@@ -398,6 +445,11 @@ int main(int argc, char** argv) {
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QApplication application(argc, argv);
     try {
+        if (application.arguments().contains(QStringLiteral("--thumbnail-drag-only"))) {
+            interruptedThumbnailDragTest();
+            return 0;
+        }
+        interruptedThumbnailDragTest();
         scheduleTests();
         std::cerr << "schedule and input validation passed\n";
         pipelineTest(ScreenshotScrollingRecognitionMode::Vertical);
