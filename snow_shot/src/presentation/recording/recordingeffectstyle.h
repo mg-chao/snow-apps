@@ -2,8 +2,7 @@
 #define SNOW_SHOT_RECORDINGEFFECTSTYLE_H
 #include "snow_capture.h"
 #include "snow_recording_effects.h"
-#include "snow_shot/presentation/styles/themecolorscheme.h"
-#include <QCoreApplication>
+#include <QString>
 #include <QVector>
 #include <QByteArray>
 #include <QColor>
@@ -23,58 +22,56 @@ struct RecordingKeyboardLabels {
             entries.push_back({key, reinterpret_cast<const uint8_t*>(text.back().constData()),
                                static_cast<uint32_t>(text.back().size())});
         };
-        const auto keyText = [](const char* source) {
-            return QCoreApplication::translate("RecordingKeyboard", source);
-        };
+        // Recording key legends are intentionally independent of the application language.
         const std::pair<uint32_t, const char*> names[] = {
-            {0x08, QT_TRANSLATE_NOOP("RecordingKeyboard", "Backspace")},
-            {0x09, QT_TRANSLATE_NOOP("RecordingKeyboard", "Tab")},
-            {0x0C, QT_TRANSLATE_NOOP("RecordingKeyboard", "Clear")},
-            {0x0D, QT_TRANSLATE_NOOP("RecordingKeyboard", "Enter")},
-            {0x10, QT_TRANSLATE_NOOP("RecordingKeyboard", "Shift")},
-            {0x11, QT_TRANSLATE_NOOP("RecordingKeyboard", "Ctrl")},
-            {0x12, QT_TRANSLATE_NOOP("RecordingKeyboard", "Alt")},
-            {0x13, QT_TRANSLATE_NOOP("RecordingKeyboard", "Pause")},
-            {0x14, QT_TRANSLATE_NOOP("RecordingKeyboard", "Caps Lock")},
-            {0x1B, QT_TRANSLATE_NOOP("RecordingKeyboard", "Esc")},
-            {0x20, QT_TRANSLATE_NOOP("RecordingKeyboard", "Space")},
-            {0x21, QT_TRANSLATE_NOOP("RecordingKeyboard", "Page Up")},
-            {0x22, QT_TRANSLATE_NOOP("RecordingKeyboard", "Page Down")},
-            {0x23, QT_TRANSLATE_NOOP("RecordingKeyboard", "End")},
-            {0x24, QT_TRANSLATE_NOOP("RecordingKeyboard", "Home")},
-            {0x25, QT_TRANSLATE_NOOP("RecordingKeyboard", "Left")},
-            {0x26, QT_TRANSLATE_NOOP("RecordingKeyboard", "Up")},
-            {0x27, QT_TRANSLATE_NOOP("RecordingKeyboard", "Right")},
-            {0x28, QT_TRANSLATE_NOOP("RecordingKeyboard", "Down")},
-            {0x2C, QT_TRANSLATE_NOOP("RecordingKeyboard", "Print Screen")},
-            {0x2D, QT_TRANSLATE_NOOP("RecordingKeyboard", "Insert")},
-            {0x2E, QT_TRANSLATE_NOOP("RecordingKeyboard", "Delete")},
-            {0x5B, QT_TRANSLATE_NOOP("RecordingKeyboard", "Win")},
-            {0x5D, QT_TRANSLATE_NOOP("RecordingKeyboard", "Menu")},
-            {0x6A, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num *")},
-            {0x6B, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num +")},
-            {0x6C, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num Separator")},
-            {0x6D, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num -")},
-            {0x6E, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num .")},
-            {0x6F, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num /")},
-            {0x90, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num Lock")},
-            {0x91, QT_TRANSLATE_NOOP("RecordingKeyboard", "Scroll Lock")},
-            {0xA5, QT_TRANSLATE_NOOP("RecordingKeyboard", "AltGr")},
-            {0xAD, QT_TRANSLATE_NOOP("RecordingKeyboard", "Mute")},
-            {0xAE, QT_TRANSLATE_NOOP("RecordingKeyboard", "Volume Down")},
-            {0xAF, QT_TRANSLATE_NOOP("RecordingKeyboard", "Volume Up")},
-            {0xB0, QT_TRANSLATE_NOOP("RecordingKeyboard", "Next Track")},
-            {0xB1, QT_TRANSLATE_NOOP("RecordingKeyboard", "Previous Track")},
-            {0xB2, QT_TRANSLATE_NOOP("RecordingKeyboard", "Stop")},
-            {0xB3, QT_TRANSLATE_NOOP("RecordingKeyboard", "Play/Pause")},
+            {0x08, "Backspace"},
+            {0x09, "Tab"},
+            {0x0C, "Clear"},
+            {0x0D, "Enter"},
+            {0x10, "Shift"},
+            {0x11, "Ctrl"},
+            {0x12, "Alt"},
+            {0x13, "Pause"},
+            {0x14, "Caps Lock"},
+            {0x1B, "Esc"},
+            {0x20, "Space"},
+            {0x21, "Page Up"},
+            {0x22, "Page Down"},
+            {0x23, "End"},
+            {0x24, "Home"},
+            {0x25, "Left"},
+            {0x26, "Up"},
+            {0x27, "Right"},
+            {0x28, "Down"},
+            {0x2C, "Print Screen"},
+            {0x2D, "Insert"},
+            {0x2E, "Delete"},
+            {0x5B, "Win"},
+            {0x5D, "Menu"},
+            {0x6A, "Num *"},
+            {0x6B, "Num +"},
+            {0x6C, "Num Separator"},
+            {0x6D, "Num -"},
+            {0x6E, "Num ."},
+            {0x6F, "Num /"},
+            {0x90, "Num Lock"},
+            {0x91, "Scroll Lock"},
+            {0xA5, "AltGr"},
+            {0xAD, "Mute"},
+            {0xAE, "Volume Down"},
+            {0xAF, "Volume Up"},
+            {0xB0, "Next Track"},
+            {0xB1, "Previous Track"},
+            {0xB2, "Stop"},
+            {0xB3, "Play/Pause"},
         };
         text.reserve(64);
         entries.reserve(64);
         for (const auto& [key, label] : names) {
-            add(key, keyText(label));
+            add(key, QString::fromLatin1(label));
         }
         for (uint32_t key = 0x60; key <= 0x69; ++key) {
-            add(key, keyText(QT_TRANSLATE_NOOP("RecordingKeyboard", "Num %1")).arg(key - 0x60));
+            add(key, QStringLiteral("Num %1").arg(key - 0x60));
         }
         for (const auto& entry : entries) {
             previewEntries.push_back({entry.key_code, reinterpret_cast<const char*>(entry.utf8)});
@@ -86,13 +83,13 @@ struct RecordingKeyboardTheme {
     QColor background;
     QColor text;
     QColor border;
-    RecordingKeyboardTheme() {
-        const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
-        background = scheme.map.colorBgElevated;
-        background.setAlpha(204);
-        text = scheme.map.colorText;
-        border = scheme.map.colorBorder;
-        border.setAlpha(100);
+    RecordingKeyboardTheme(const QColor& backgroundColor = QColor(0, 0, 0, 204),
+                           const QColor& foregroundColor = QColor(Qt::white))
+        : background(backgroundColor), text(foregroundColor) {
+        const int target = qGray(background.rgb()) < 128 ? 255 : 0;
+        const auto blend = [target](int channel) { return qRound(channel * 0.75 + target * 0.25); };
+        border = QColor(blend(background.red()), blend(background.green()),
+                        blend(background.blue()), background.alpha());
     }
 };
 #endif

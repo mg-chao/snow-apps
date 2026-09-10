@@ -1249,6 +1249,18 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("screen_recording/mouse_click_color"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/mouse_click_color"))},
+            {QStringLiteral("screen_recording/mouse_trail_duration_ms"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/mouse_trail_duration_ms"))},
+            {QStringLiteral("screen_recording/keyboard_size"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/keyboard_size"))},
+            {QStringLiteral("screen_recording/keyboard_background_color"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/keyboard_background_color"))},
+            {QStringLiteral("screen_recording/keyboard_foreground_color"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/keyboard_foreground_color"))},
             {QStringLiteral("screen_recording/show_keyboard"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/show_keyboard"))},

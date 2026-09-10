@@ -16,6 +16,7 @@ use std::time::Instant;
 
 fn style(dark: bool) -> KeyboardOverlayConfig {
     KeyboardOverlayConfig {
+        keycap_size: 64,
         background_rgba: if dark {
             [31, 31, 31, 204]
         } else {

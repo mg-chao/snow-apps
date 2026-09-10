@@ -313,7 +313,7 @@ typedef struct SnowCaptureRecordingExportConfig {
     uint8_t reserved[32];
 } SnowCaptureRecordingExportConfig;
 
-#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 2u
+#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 4u
 
 /* Strings are bounded UTF-8 key names, copied during session creation. */
 typedef struct SnowCaptureKeyboardLabel {
@@ -354,7 +354,10 @@ typedef struct SnowCaptureDirectRecordingConfig {
     uint32_t keyboard_border_rgba;
     const SnowCaptureKeyboardLabel* keyboard_labels;
     uint32_t keyboard_label_count;
-    uint32_t keyboard_reserved;
+    /* Versions 1/2 use the legacy 500 ms trail lifetime. */
+    uint32_t mouse_trail_duration_ms;
+    /* Version 4: keycap height in pixels (32..128). */
+    uint32_t keyboard_size;
 } SnowCaptureDirectRecordingConfig;
 
 SnowCaptureDesktopSession*

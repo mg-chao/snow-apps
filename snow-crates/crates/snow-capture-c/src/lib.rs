@@ -565,7 +565,8 @@ pub struct SnowCaptureDirectRecordingConfig {
     keyboard_border_rgba: u32,
     keyboard_labels: *const SnowCaptureKeyboardLabel,
     keyboard_label_count: u32,
-    keyboard_reserved: u32,
+    mouse_trail_duration_ms: u32,
+    keyboard_size: u32,
 }
 
 #[repr(C)]
@@ -575,7 +576,7 @@ struct SnowCaptureDirectRecordingConfigHeader {
     struct_size: u32,
 }
 
-pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 2;
+pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 4;
 const DIRECT_RECORDING_CONFIG_V1_FIELDS_SIZE: usize =
     std::mem::offset_of!(SnowCaptureDirectRecordingConfig, show_keyboard);
 // The original structure has pointer alignment and may contain tail padding. Validate its
@@ -588,6 +589,7 @@ const DIRECT_RECORDING_CONFIG_V1_SIZE: u32 = (DIRECT_RECORDING_CONFIG_V1_FIELDS_
 fn direct_config_size(version: u32) -> Result<u32, String> {
     match version {
         1 => Ok(DIRECT_RECORDING_CONFIG_V1_SIZE),
+        2 | 3 => Ok(std::mem::offset_of!(SnowCaptureDirectRecordingConfig, keyboard_size) as u32),
         DIRECT_RECORDING_CONFIG_VERSION => Ok(DIRECT_RECORDING_CONFIG_SIZE),
         _ => Err(format!(
             "unsupported direct recording config version: {version}"
@@ -2740,7 +2742,8 @@ fn parse_keyboard_config(
         return Ok(None);
     }
     if config.show_keyboard > 1
-        || config.keyboard_reserved != 0
+        || (config.version == 2 && config.mouse_trail_duration_ms != 0)
+        || (config.version >= 4 && !(32..=128).contains(&config.keyboard_size))
         || config.keyboard_label_count > 256
     {
         return Err("invalid keyboard recording options".into());
@@ -2774,6 +2777,11 @@ fn parse_keyboard_config(
         }
     }
     Ok(Some(snow_screen_recorder::KeyboardOverlayConfig {
+        keycap_size: if config.version < 4 {
+            64
+        } else {
+            config.keyboard_size
+        },
         background_rgba: packed_rgba(config.keyboard_background_rgba),
         text_rgba: packed_rgba(config.keyboard_text_rgba),
         border_rgba: packed_rgba(config.keyboard_border_rgba),
@@ -2860,6 +2868,11 @@ fn parse_direct_recording_config(
         show_cursor: config.show_cursor != 0,
         keyboard: parse_keyboard_config(config)?,
         mouse_trail_rgba: packed_rgba(config.mouse_trail_rgba),
+        mouse_trail_duration_ms: if config.version < 3 {
+            500
+        } else {
+            u64::from(config.mouse_trail_duration_ms)
+        },
         mouse_click_rgba: packed_rgba(config.mouse_click_rgba),
     };
     direct.validate()?;
@@ -3418,6 +3431,54 @@ mod tests {
         assert!(unsafe { read_recording_export_config(config) }.is_err());
     }
 
+    #[test]
+    fn direct_duration_versions_and_bounds() {
+        let output = CString::new("recording.mp4").unwrap();
+        let mut raw = direct_config(&output);
+        for duration in [100, 500, 2000] {
+            raw.mouse_trail_duration_ms = duration;
+            assert_eq!(
+                parse_direct_recording_config(&raw)
+                    .unwrap()
+                    .mouse_trail_duration_ms,
+                u64::from(duration)
+            );
+        }
+        for duration in [0, 99, 2001] {
+            raw.mouse_trail_duration_ms = duration;
+            assert!(parse_direct_recording_config(&raw).is_err());
+        }
+        for version in [1, 2] {
+            raw.version = version;
+            raw.mouse_trail_duration_ms = 0;
+            assert_eq!(
+                parse_direct_recording_config(&raw)
+                    .unwrap()
+                    .mouse_trail_duration_ms,
+                500
+            );
+        }
+    }
+
+    #[test]
+    fn keyboard_size_round_trips_and_legacy_configs_default() {
+        let output = CString::new("keyboard-size.mp4").unwrap();
+        let mut raw = direct_config(&output);
+        raw.show_keyboard = 1;
+        raw.keyboard_size = 96;
+        assert_eq!(
+            parse_keyboard_config(&raw).unwrap().unwrap().keycap_size,
+            96
+        );
+        raw.keyboard_size = 129;
+        assert!(parse_keyboard_config(&raw).is_err());
+        raw.version = 3;
+        assert_eq!(
+            parse_keyboard_config(&raw).unwrap().unwrap().keycap_size,
+            64
+        );
+    }
+
     fn direct_config(output: &CStr) -> SnowCaptureDirectRecordingConfig {
         SnowCaptureDirectRecordingConfig {
             version: DIRECT_RECORDING_CONFIG_VERSION,
@@ -3449,7 +3510,8 @@ mod tests {
             keyboard_border_rgba: 0,
             keyboard_labels: std::ptr::null(),
             keyboard_label_count: 0,
-            keyboard_reserved: 0,
+            mouse_trail_duration_ms: 500,
+            keyboard_size: 64,
         }
     }
 

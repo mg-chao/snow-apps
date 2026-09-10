@@ -292,6 +292,14 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      ConfigurationValueKind::String},
     {QStringLiteral("screen_recording/mouse_click_color"), QStringLiteral("#00000000"),
      ConfigurationValueKind::String},
+    {QStringLiteral("screen_recording/mouse_trail_duration_ms"), 500,
+     ConfigurationValueKind::Integer, ConfigurationIntegerRange{100, 2000, 100}},
+    {QStringLiteral("screen_recording/keyboard_size"), 64, ConfigurationValueKind::Integer,
+     ConfigurationIntegerRange{32, 128, 8}},
+    {QStringLiteral("screen_recording/keyboard_background_color"), QStringLiteral("#000000CC"),
+     ConfigurationValueKind::String},
+    {QStringLiteral("screen_recording/keyboard_foreground_color"), QStringLiteral("#FFFFFFFF"),
+     ConfigurationValueKind::String},
     {QStringLiteral("screen_recording/show_keyboard"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("screen_recording/show_cursor"), true, ConfigurationValueKind::Boolean},
     {QStringLiteral("screen_recording/encoder"),
@@ -1062,7 +1070,9 @@ bool isRgbaColorKey(const QString& key) {
            key == QStringLiteral("screenshot_ui/color_picker_center_guide_line_color") ||
            key == QStringLiteral("pin_to_screen/border_color") ||
            key == QStringLiteral("screen_recording/mouse_trail_color") ||
-           key == QStringLiteral("screen_recording/mouse_click_color");
+           key == QStringLiteral("screen_recording/mouse_click_color") ||
+           key == QStringLiteral("screen_recording/keyboard_background_color") ||
+           key == QStringLiteral("screen_recording/keyboard_foreground_color");
 }
 
 ConfigurationNormalization normalizeRgbaColor(const QJsonValue& value) {

@@ -138,7 +138,15 @@ int FlowLayout::doLayout(const QRect& rect, bool testOnly) const {
       continue;
     }
 
-    const QSize itemSize = item->sizeHint();
+    QSize itemSize = item->sizeHint();
+    // Wrapped form labels can fit on one line at their assigned column width.
+    // Use that width's height instead of reserving sizeHint's speculative extra lines.
+    if (item->hasHeightForWidth()) {
+      const int height = item->heightForWidth(itemSize.width());
+      if (height >= 0) {
+        itemSize.setHeight(height);
+      }
+    }
     const int itemEndSpacing =
         itemEndSpacingProvider_ ? std::max(0, itemEndSpacingProvider_(item)) : 0;
     const int outerWidth = itemSize.width() + itemEndSpacing;

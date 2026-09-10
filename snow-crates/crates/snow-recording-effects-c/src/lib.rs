@@ -35,8 +35,9 @@ pub struct SnowRecordingEffectsConfig {
     pub keyboard_border_rgba: u32,
     pub labels: *const SnowRecordingEffectsKeyLabel,
     pub label_count: u32,
-    pub reserved: u32,
+    pub trail_duration_ms: u32,
     pub generation: u64,
+    pub keyboard_size: u32,
 }
 #[repr(C)]
 pub struct SnowRecordingEffectsTile {
@@ -75,14 +76,23 @@ unsafe fn config(raw: *const SnowRecordingEffectsConfig) -> Result<PreviewConfig
     }
     // Read the fixed header before accessing the rest of a potentially older structure.
     let header = raw.cast::<u32>();
-    if unsafe { *header } != 1
-        || unsafe { *header.add(1) } != std::mem::size_of::<SnowRecordingEffectsConfig>() as u32
-    {
+    let version = unsafe { *header };
+    let size = match version {
+        1 | 2 => std::mem::offset_of!(SnowRecordingEffectsConfig, keyboard_size),
+        3 => std::mem::size_of::<SnowRecordingEffectsConfig>(),
+        _ => return Err("unsupported effects configuration version".into()),
+    };
+    if unsafe { *header.add(1) } != size as u32 {
         return Err("unsupported effects configuration version or size".into());
     }
-    let raw = unsafe { &*raw };
+    let mut value: SnowRecordingEffectsConfig = unsafe { std::mem::zeroed() };
+    unsafe {
+        std::ptr::copy_nonoverlapping(raw.cast::<u8>(), (&raw mut value).cast::<u8>(), size);
+    }
+    let raw = &value;
     if raw.show_keyboard > 1
-        || raw.reserved != 0
+        || (raw.version == 1 && raw.trail_duration_ms != 0)
+        || (raw.version >= 3 && !(32..=128).contains(&raw.keyboard_size))
         || raw.label_count > 256
         || (raw.label_count != 0 && raw.labels.is_null())
     {
@@ -106,9 +116,19 @@ unsafe fn config(raw: *const SnowRecordingEffectsConfig) -> Result<PreviewConfig
         region: (raw.x, raw.y, raw.width, raw.height),
         output: (raw.output_width, raw.output_height),
         trail: raw.trail_rgba.to_be_bytes(),
+        trail_duration_ms: if raw.version == 1 {
+            500
+        } else {
+            u64::from(raw.trail_duration_ms)
+        },
         click: raw.click_rgba.to_be_bytes(),
         generation: raw.generation,
         keyboard: (raw.show_keyboard != 0).then_some(KeyboardOverlayConfig {
+            keycap_size: if raw.version < 3 {
+                64
+            } else {
+                raw.keyboard_size
+            },
             background_rgba: raw.keyboard_background_rgba.to_be_bytes(),
             text_rgba: raw.keyboard_text_rgba.to_be_bytes(),
             border_rgba: raw.keyboard_border_rgba.to_be_bytes(),
@@ -310,9 +330,30 @@ pub extern "C" fn snow_recording_effects_last_error() -> *const c_char {
 mod tests {
     use super::*;
     use std::time::Duration;
+    #[test]
+    fn duration_versions_and_bounds() {
+        let mut raw = valid();
+        assert_eq!(unsafe { config(&raw) }.unwrap().trail_duration_ms, 500);
+        raw.version = 2;
+        raw.struct_size = std::mem::offset_of!(SnowRecordingEffectsConfig, keyboard_size) as u32;
+        for duration in [100, 500, 2000] {
+            raw.trail_duration_ms = duration;
+            assert_eq!(
+                unsafe { config(&raw) }.unwrap().trail_duration_ms,
+                u64::from(duration)
+            );
+        }
+        for duration in [0, 99, 2001] {
+            raw.trail_duration_ms = duration;
+            assert!(unsafe { config(&raw) }.is_err());
+        }
+        raw.version = 1;
+        assert!(unsafe { config(&raw) }.is_err());
+    }
+
     fn valid() -> SnowRecordingEffectsConfig {
         SnowRecordingEffectsConfig {
-            version: 1,
+            version: 3,
             struct_size: std::mem::size_of::<SnowRecordingEffectsConfig>() as u32,
             x: -1920,
             y: -100,
@@ -328,8 +369,9 @@ mod tests {
             keyboard_border_rgba: 0,
             labels: std::ptr::null(),
             label_count: 0,
-            reserved: 0,
+            trail_duration_ms: 500,
             generation: 12,
+            keyboard_size: 64,
         }
     }
     #[test]
@@ -357,6 +399,37 @@ mod tests {
         let keyboard = copied.keyboard.unwrap();
         assert_eq!(keyboard.labels[&0x11], "Control");
         assert_eq!(keyboard.text_rgba, [0x12, 0x34, 0x56, 0x78]);
+    }
+
+    #[test]
+    fn keyboard_size_is_validated_and_old_configs_keep_default_size() {
+        let mut raw = valid();
+        raw.show_keyboard = 1;
+        for size in [32, 64, 96, 128] {
+            raw.keyboard_size = size;
+            assert_eq!(
+                unsafe { config(&raw) }
+                    .unwrap()
+                    .keyboard
+                    .unwrap()
+                    .keycap_size,
+                size
+            );
+        }
+        for size in [0, 31, 129] {
+            raw.keyboard_size = size;
+            assert!(unsafe { config(&raw) }.is_err());
+        }
+        raw.version = 2;
+        raw.struct_size = std::mem::offset_of!(SnowRecordingEffectsConfig, keyboard_size) as u32;
+        assert_eq!(
+            unsafe { config(&raw) }
+                .unwrap()
+                .keyboard
+                .unwrap()
+                .keycap_size,
+            64
+        );
     }
 
     unsafe extern "C" fn notify(context: *mut c_void) {

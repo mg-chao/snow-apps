@@ -58,11 +58,15 @@ pub struct DirectRecordingConfig {
     pub show_cursor: bool,
     pub keyboard: Option<KeyboardOverlayConfig>,
     pub mouse_trail_rgba: [u8; 4],
+    pub mouse_trail_duration_ms: u64,
     pub mouse_click_rgba: [u8; 4],
 }
 
 impl DirectRecordingConfig {
     pub fn validate(&self) -> std::result::Result<(), String> {
+        if !(100..=2000).contains(&self.mouse_trail_duration_ms) {
+            return Err("trail duration must be between 100 and 2000 ms".into());
+        }
         if self.region.width == 0 || self.region.height == 0 {
             return Err("direct recording region must have non-zero dimensions".to_string());
         }
@@ -240,10 +244,10 @@ impl DirectRecordingSession {
                     if let Some(style) = config.keyboard.as_ref() {
                         match crate::keyboard_rasterizer::create(style) {
                             Ok(rasterizer) => {
-                                compositor.keyboard = Some(KeyboardOverlay::new(
-                                    config.output_dimensions(),
-                                    rasterizer,
-                                ))
+                                compositor.keyboard = Some(
+                                    KeyboardOverlay::new(config.output_dimensions(), rasterizer)
+                                        .with_keycap_size(style.keycap_size),
+                                )
                             }
                             Err(error) => {
                                 let message = format!("keyboard recording: {error}");
@@ -978,6 +982,7 @@ impl VisualCompositor {
         frame: &CapturedFrame,
         timestamp_ms: u64,
     ) -> Result<Vec<u8>> {
+        self.trail.set_lifetime_ms(config.mouse_trail_duration_ms);
         let source_size = frame.dimensions();
         let mut rgba = resize_rgba(frame.as_rgba_bytes(), source_size, self.output_size);
         let cursor = frame.metadata().cursor().cloned();
@@ -1223,6 +1228,7 @@ mod tests {
             show_cursor: true,
             keyboard: None,
             mouse_trail_rgba: [0, 0, 0, 0],
+            mouse_trail_duration_ms: 500,
             mouse_click_rgba: [0, 0, 0, 0],
         }
     }

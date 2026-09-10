@@ -7,7 +7,7 @@
 use crate::surface::{RgbaSurface, Surface, TILE_SIZE};
 use std::collections::{HashMap, HashSet, VecDeque};
 
-const LIFETIME_MS: u64 = 500;
+const DEFAULT_LIFETIME_MS: u64 = 500;
 const MAX_POINTS: usize = 50;
 const RADIUS: f32 = 2.0;
 
@@ -36,15 +36,35 @@ impl Vertex {
     }
 }
 
-#[derive(Default)]
 pub struct LaserTrail {
+    lifetime_ms: u64,
     points: VecDeque<Sample>,
     last_position: Option<(i32, i32)>,
     coverage: Coverage,
     was_visible: bool,
 }
 
+impl Default for LaserTrail {
+    fn default() -> Self {
+        Self::new(DEFAULT_LIFETIME_MS)
+    }
+}
+
 impl LaserTrail {
+    pub fn new(lifetime_ms: u64) -> Self {
+        Self {
+            lifetime_ms: lifetime_ms.max(1),
+            points: VecDeque::new(),
+            last_position: None,
+            coverage: Coverage::default(),
+            was_visible: false,
+        }
+    }
+
+    pub fn set_lifetime_ms(&mut self, lifetime_ms: u64) {
+        self.lifetime_ms = lifetime_ms.max(1);
+    }
+
     pub fn clear(&mut self) {
         self.points.clear();
         self.last_position = None;
@@ -60,15 +80,13 @@ impl LaserTrail {
     ) {
         // Keep one expired predecessor for a continuous taper at the time boundary.
         while self.points.len() > 1
-            && timestamp_ms.saturating_sub(self.points[1].timestamp_ms) >= LIFETIME_MS
+            && timestamp_ms.saturating_sub(self.points[1].timestamp_ms) >= self.lifetime_ms
         {
             self.points.pop_front();
         }
-        if self
-            .points
-            .back()
-            .is_some_and(|point| timestamp_ms.saturating_sub(point.timestamp_ms) >= LIFETIME_MS)
-        {
+        if self.points.back().is_some_and(|point| {
+            timestamp_ms.saturating_sub(point.timestamp_ms) >= self.lifetime_ms
+        }) {
             self.points.clear();
         }
         let previous_position = self.last_position;
@@ -98,14 +116,15 @@ impl LaserTrail {
         // skips over the exact expiry time. A lone initial observation is invisible.
         self.was_visible
             || self.points.iter().skip(1).any(|point| {
-                point.connected && timestamp_ms.saturating_sub(point.timestamp_ms) < LIFETIME_MS
+                point.connected
+                    && timestamp_ms.saturating_sub(point.timestamp_ms) < self.lifetime_ms
             })
     }
 
     fn vertex(&self, index: usize, timestamp_ms: u64) -> Vertex {
         let point = self.points[index];
         let age = timestamp_ms.saturating_sub(point.timestamp_ms);
-        let elapsed = age.min(LIFETIME_MS) as f32 / LIFETIME_MS as f32;
+        let elapsed = age.min(self.lifetime_ms) as f32 / self.lifetime_ms as f32;
         let length = 1.0 - (self.points.len() - index) as f32 / MAX_POINTS as f32;
         // Lose width earlier than Excalidraw's quartic time curve while preserving
         // its smooth spatial taper and full-width leading end during movement.
@@ -367,6 +386,23 @@ mod tests {
             .chunks_exact(4)
             .map(|pixel| u64::from(pixel[0]))
             .sum()
+    }
+
+    #[test]
+    fn configured_lifetime_controls_decay_and_final_cleanup() {
+        for lifetime in [100, 500, 2000] {
+            let mut trail = LaserTrail::new(lifetime);
+            observe(&mut trail, Some((10, 50)), 0);
+            observe(&mut trail, Some((100, 50)), 10);
+            let initial = red_sum(&render(&mut trail, 10));
+            let faded = red_sum(&render(&mut trail, 10 + lifetime / 2));
+            assert!(initial > faded && faded > 0);
+            assert!(trail.has_active_animation(10 + lifetime));
+            assert_eq!(red_sum(&render(&mut trail, 10 + lifetime)), 0);
+            assert!(!trail.has_active_animation(10 + lifetime));
+            observe(&mut trail, None, 10 + lifetime);
+            assert!(trail.points.is_empty());
+        }
     }
 
     #[test]

@@ -48,7 +48,9 @@ class RecordingEffectPreview final : public QObject, public SnowCanvasCustomRend
                            std::unique_ptr<RecordingEffectsSource> source = {});
     ~RecordingEffectPreview() override;
     void configure(const QRect& capture, const QSize& output, const QColor& trail,
-                   const QColor& click, bool keyboard);
+                   const QColor& click, bool keyboard, int trailDurationMs = 500,
+                   const QColor& keyboardBackground = QColor(0, 0, 0, 204),
+                   const QColor& keyboardForeground = QColor(Qt::white), int keyboardSize = 64);
     void setEligible(bool eligible);
     void stopAndClear(bool present = false);
     [[nodiscard]] bool active() const;
@@ -76,6 +78,10 @@ class RecordingEffectPreview final : public QObject, public SnowCanvasCustomRend
     QSize m_output;
     QColor m_trail;
     QColor m_click;
+    int m_trailDurationMs = 500;
+    QColor m_keyboardBackground{0, 0, 0, 204};
+    QColor m_keyboardForeground{Qt::white};
+    int m_keyboardSize = 64;
     bool m_keyboard = false;
     bool m_eligible = false;
     bool m_running = false;

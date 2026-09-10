@@ -1064,6 +1064,38 @@ bool RecordingSettings::setOutputFormat(const QString& format) const {
     return cache().setValue(QStringLiteral("screen_recording/output_format"), format);
 }
 
+int RecordingSettings::mouseTrailDurationMs() const {
+    return cache().value(QStringLiteral("screen_recording/mouse_trail_duration_ms")).toInt();
+}
+
+bool RecordingSettings::setMouseTrailDurationMs(int duration) const {
+    return cache().setValue(QStringLiteral("screen_recording/mouse_trail_duration_ms"), duration);
+}
+
+int RecordingSettings::keyboardSize() const {
+    return cache().value(QStringLiteral("screen_recording/keyboard_size")).toInt();
+}
+
+bool RecordingSettings::setKeyboardSize(int size) const {
+    return cache().setValue(QStringLiteral("screen_recording/keyboard_size"), size);
+}
+
+QColor RecordingSettings::keyboardBackgroundColor() const {
+    return colorValue(QStringLiteral("screen_recording/keyboard_background_color"));
+}
+
+bool RecordingSettings::setKeyboardBackgroundColor(const QColor& color) const {
+    return setColorValue(QStringLiteral("screen_recording/keyboard_background_color"), color);
+}
+
+QColor RecordingSettings::keyboardForegroundColor() const {
+    return colorValue(QStringLiteral("screen_recording/keyboard_foreground_color"));
+}
+
+bool RecordingSettings::setKeyboardForegroundColor(const QColor& color) const {
+    return setColorValue(QStringLiteral("screen_recording/keyboard_foreground_color"), color);
+}
+
 QColor RecordingSettings::mouseTrailColor() const {
     return colorValue(QStringLiteral("screen_recording/mouse_trail_color"));
 }

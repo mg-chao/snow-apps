@@ -1,4 +1,5 @@
 #include "recording_effect_test_source.h"
+#include "../src/presentation/recording/recordingeffectstyle.h"
 #include "../src/presentation/recording/recordingeffectgeometry.h"
 #ifdef SNOW_RECORDING_EFFECTS_BENCHMARK
 #include "recording_effects_performance_benchmark.h"
@@ -60,6 +61,7 @@ std::unique_ptr<RecordingEffectsSource> testEffectsSource() {
 
 SnowCaptureRecordingSession session;
 int starts = 0;
+SnowCaptureDirectRecordingConfig lastDirectConfig{};
 std::atomic<int> exports = 0;
 std::shared_future<void> exportGate;
 std::promise<void>* exportEntered = nullptr;
@@ -559,15 +561,56 @@ void effectsPreviewLifecycle() {
     require(state->active, "a fresh activation must recover after preview failure");
 }
 
+void recordingKeyboardColorsFollowBackground() {
+    const RecordingKeyboardTheme defaults;
+    require(defaults.background == QColor(0, 0, 0, 204) && defaults.text == QColor(Qt::white),
+            "keyboard defaults must be 80% black with white text");
+    for (const auto& pair : {std::pair{QColor(0, 0, 0, 204), QColor(64, 64, 64, 204)},
+                             std::pair{QColor(255, 255, 255), QColor(191, 191, 191)},
+                             std::pair{QColor(40, 80, 120, 128), QColor(94, 124, 154, 128)},
+                             std::pair{QColor(0, 0, 0, 0), QColor(64, 64, 64, 0)}}) {
+        require(RecordingKeyboardTheme(pair.first, Qt::red).border == pair.second &&
+                    RecordingKeyboardTheme(pair.first, Qt::green).border == pair.second,
+                "border must blend background toward contrast and preserve its alpha");
+    }
+}
+
 void controllerPreviewTransitions() {
     using snow_shot::storage::RecordingSettings;
     RecordingSettings().setMouseTrailColor(Qt::red);
     RecordingSettings().setShowKeyboard(true);
+    require(RecordingSettings().keyboardSize() == 64 &&
+                RecordingSettings().mouseTrailDurationMs() == 500 &&
+                RecordingSettings().keyboardBackgroundColor() == QColor(0, 0, 0, 204) &&
+                RecordingSettings().keyboardForegroundColor() == QColor(Qt::white),
+            "new effect settings must have stable defaults");
+    require(!RecordingSettings().setKeyboardSize(31) && !RecordingSettings().setKeyboardSize(129) &&
+                !RecordingSettings().setMouseTrailDurationMs(99) &&
+                !RecordingSettings().setMouseTrailDurationMs(2001),
+            "duration settings must reject out-of-range values");
     ScreenRecordingController controller(testEffectsSource);
     controller.open({40, 40, 320, 240});
     pumpPreview();
     auto state = effectSources.back().lock();
     require(state && state->active, "idle controller must enable preview");
+    require(state->keyboardSize == 64 && state->trailDurationMs == 500 &&
+                state->keyboardBackground == 0x000000cc &&
+                state->keyboardForeground == 0xffffffff && state->keyboardBorder == 0x404040cc,
+            "preview must receive default effect settings");
+    palette()->recordingKeyboardSizeChanged(96);
+    palette()->recordingMouseTrailDurationMsChanged(2000);
+    palette()->recordingKeyboardBackgroundColorChanged(QColor(40, 80, 120, 128));
+    palette()->recordingKeyboardForegroundColorChanged(QColor(240, 230, 220, 200));
+    pumpPreview();
+    require(state->keyboardSize == 96 && state->trailDurationMs == 2000 &&
+                state->keyboardBackground == 0x28507880 &&
+                state->keyboardForeground == 0xf0e6dcc8 && state->keyboardBorder == 0x5e7c9a80,
+            "controller edits must immediately configure preview colors and duration");
+    require(RecordingSettings().keyboardSize() == 96 &&
+                RecordingSettings().mouseTrailDurationMs() == 2000 &&
+                RecordingSettings().keyboardBackgroundColor() == QColor(40, 80, 120, 128) &&
+                RecordingSettings().keyboardForegroundColor() == QColor(240, 230, 220, 200),
+            "controller edits must persist with color alpha");
     ScreenRecordingAreaWindow* area = nullptr;
     for (QWidget* widget : QApplication::topLevelWidgets()) {
         if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget);
@@ -626,6 +669,9 @@ void controllerPreviewTransitions() {
     require(!state->active, "closing must join the preview source");
     RecordingSettings().setMouseTrailColor(Qt::transparent);
     RecordingSettings().setShowKeyboard(false);
+    RecordingSettings().setMouseTrailDurationMs(500);
+    RecordingSettings().setKeyboardBackgroundColor(QColor(0, 0, 0, 204));
+    RecordingSettings().setKeyboardForegroundColor(Qt::white);
 }
 #ifdef Q_OS_WIN
 int nativeEffectsPreviewCapture() {
@@ -919,8 +965,9 @@ int nativeEffectsPreviewCapture() {
 
 extern "C" {
 SnowCaptureResult
-snow_capture_recording_session_create_direct(const SnowCaptureDirectRecordingConfig*,
+snow_capture_recording_session_create_direct(const SnowCaptureDirectRecordingConfig* config,
                                              SnowCaptureRecordingSession** result) {
+    lastDirectConfig = *config;
     for (const auto& weak : effectSources) {
         if (const auto source = weak.lock()) {
             require(!source->active, "native creation must follow preview observer shutdown");
@@ -1022,7 +1069,27 @@ int main(int argc, char** argv) {
     }
 #endif
     if (app.arguments().contains(QStringLiteral("--effects-preview-only"))) {
+        class KeyTranslator : public QTranslator {
+          public:
+            bool isEmpty() const override {
+                return false;
+            }
+            QString translate(const char* context, const char*, const char*, int) const override {
+                return QByteArray(context) == "RecordingKeyboard" ? QStringLiteral("translated")
+                                                                  : QString();
+            }
+        } translator;
+        const RecordingKeyboardLabels original(true);
+        require(app.installTranslator(&translator), "key translator must install");
+        const RecordingKeyboardLabels localized(true);
+        require(localized.text == original.text,
+                "all key legends must ignore application language");
+        require(localized.text.contains(QByteArray("Backspace")) &&
+                    localized.text.contains(QByteArray("Num 0")),
+                "key legends must use English names");
+        app.removeTranslator(&translator);
         effectsPreviewLifecycle();
+        recordingKeyboardColorsFollowBackground();
         controllerPreviewTransitions();
         ApplicationStorage::instance().shutdown();
         return 0;
@@ -1137,10 +1204,19 @@ int main(int argc, char** argv) {
         controller.startRecording();
         palette()->recordingCloseRequested();
         controller.open(QRect(80, 80, 320, 240));
+        palette()->recordingKeyboardSizeChanged(96);
+        palette()->recordingMouseTrailDurationMsChanged(2000);
+        palette()->recordingKeyboardBackgroundColorChanged(QColor(40, 80, 120, 128));
+        palette()->recordingKeyboardForegroundColorChanged(QColor(240, 230, 220, 200));
         controller.startRecording();
         controller.startRecording();
         QCoreApplication::processEvents();
         require(starts == 1 && controller.isRecording(), "a fresh request must start exactly once");
+        require(lastDirectConfig.mouse_trail_duration_ms == 2000 &&
+                    lastDirectConfig.keyboard_background_rgba == 0x28507880 &&
+                    lastDirectConfig.keyboard_text_rgba == 0xf0e6dcc8 &&
+                    lastDirectConfig.keyboard_border_rgba == 0x5e7c9a80,
+                "recording must snapshot the same duration and keyboard style as preview");
         palette()->recordingPauseRequested();
         require(controller.isRecording(),
                 "paused recording must remain stoppable by the global toggle");

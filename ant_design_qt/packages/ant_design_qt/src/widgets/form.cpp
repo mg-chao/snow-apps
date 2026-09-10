@@ -1944,7 +1944,9 @@ void AdFormItem::refreshLabel() {
   const Qt::Alignment labelAlignment =
       (vertical ? Qt::AlignLeft : horizontal) | (vertical ? Qt::AlignTop : Qt::AlignVCenter);
   labelWidget_->setAlignment(labelAlignment);
-  labelLayout_->setAlignment(labelAlignment);
+  // A horizontal layout alignment constrains wrapped labels to QLabel's heuristic
+  // sizeHint width, even when the vertical form row has room for the complete text.
+  labelLayout_->setAlignment(vertical ? Qt::AlignTop : labelAlignment);
   labelLayout_->setSpacing(0);
 
   const AdForm::RequiredMark requiredMark =
