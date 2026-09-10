@@ -26,12 +26,13 @@ pub struct ArrowheadRenderPrimitivesInput {
 }
 
 pub fn get_arrowhead_size(arrowhead: Arrowhead) -> f64 {
-    match arrowhead {
+    let size = match arrowhead {
         Arrowhead::Arrow => 25.0,
         Arrowhead::Diamond | Arrowhead::DiamondOutline | Arrowhead::Square => 12.0,
         Arrowhead::CrowfootMany | Arrowhead::CrowfootOne | Arrowhead::CrowfootOneOrMany => 20.0,
         _ => 15.0,
-    }
+    };
+    size * 1.25
 }
 
 pub fn get_arrowhead_angle(arrowhead: Arrowhead) -> f64 {
@@ -131,7 +132,10 @@ pub fn get_arrowhead_points(input: &ArrowheadPointsInput) -> Option<ArrowheadPoi
     };
     let sample_point = point_at_bezier(0.3, p0, p1, p2, p3);
     let direction = normalize_direction(sample_point, endpoint)?;
-    let size = get_arrowhead_size(input.arrowhead);
+    // The endpoint styles are sized for a two-pixel stroke. Square-root growth
+    // gives thicker strokes more detail spacing without oversized endpoints.
+    let stroke_scale = (input.stroke_width / 2.0).max(1.0).sqrt();
+    let size = get_arrowhead_size(input.arrowhead) * stroke_scale;
     let length = get_segment_length(arrow_points, input.position);
     let length_multiplier = if matches!(
         input.arrowhead,
@@ -151,7 +155,7 @@ pub fn get_arrowhead_points(input: &ArrowheadPointsInput) -> Option<ArrowheadPoi
         input.arrowhead,
         Arrowhead::Dot | Arrowhead::Circle | Arrowhead::CircleOutline
     ) {
-        let diameter = (ys - y2).hypot(xs - x2) + input.stroke_width - 2.0;
+        let diameter = (ys - y2).hypot(xs - x2) + input.stroke_width.min(2.0) - 2.0;
         return Some(vec![x2, y2, diameter]);
     }
 
