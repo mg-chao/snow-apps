@@ -47,6 +47,7 @@ class QAction;
 class QActionGroup;
 class QFrame;
 class QLabel;
+class CanvasStatusReadout;
 class QCloseEvent;
 class QContextMenuEvent;
 class QEvent;
@@ -317,8 +318,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::unique_ptr<ScreenshotCanvasRenderer> m_screenshotRenderer;
     QFrame* m_borderFrame = nullptr;
     QFrame* m_controlsPanel = nullptr;
-    QLabel* m_scaleLabel = nullptr;
+    CanvasStatusReadout* m_scaleLabel = nullptr;
     QTimer* m_scaleLabelTimer = nullptr;
+    bool m_scaleReadoutShowsOpacity = false;
     QTimer* m_nativeScaleSettleTimer = nullptr;
     ScreenshotPinnedEditController* m_editController = nullptr;
     adqt::widgets::AdButton* m_editButton = nullptr;

@@ -902,6 +902,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "snow-recording-effects"
+version = "0.1.0"
+dependencies = [
+ "crossbeam-channel",
+ "windows",
+]
+
+[[package]]
+name = "snow-recording-effects-c"
+version = "0.1.0"
+dependencies = [
+ "snow-recording-effects",
+]
+
+[[package]]
 name = "snow-recording-export"
 version = "0.1.0"
 dependencies = [
@@ -941,6 +956,7 @@ dependencies = [
  "snow-core",
  "snow-cursor",
  "snow-pipeline",
+ "snow-recording-effects",
  "snow-recording-export",
  "snow-recording-model",
  "thiserror",
@@ -978,6 +994,7 @@ dependencies = [
  "snow-capture-c",
  "snow-diagnostics",
  "snow-draw-engine-c",
+ "snow-recording-effects-c",
  "snow-selected-text-c",
  "snow-stitch-images-c",
  "snow-ui-selector-c",

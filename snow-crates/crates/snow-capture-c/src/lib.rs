@@ -2900,6 +2900,45 @@ unsafe fn read_direct_recording_config(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_recording_output_dimensions(
+    width: u32,
+    height: u32,
+    maximum_width: u32,
+    maximum_height: u32,
+    format: u32,
+    output_width: *mut u32,
+    output_height: *mut u32,
+) -> i32 {
+    if width == 0
+        || height == 0
+        || output_width.is_null()
+        || output_height.is_null()
+        || (maximum_width == 0) != (maximum_height == 0)
+    {
+        return 0;
+    }
+    let format = match format {
+        0 => ExportFormat::Mp4,
+        1 => ExportFormat::Gif,
+        2 => ExportFormat::Apng,
+        3 => ExportFormat::Webp,
+        _ => return 0,
+    };
+    let (w, h) = snow_screen_recorder::scaled_output_dimensions(
+        width,
+        height,
+        (maximum_width != 0).then_some(maximum_width),
+        (maximum_height != 0).then_some(maximum_height),
+        format,
+    );
+    unsafe {
+        *output_width = w;
+        *output_height = h;
+    }
+    1
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_capture_recording_session_create_direct(
     config: *const SnowCaptureDirectRecordingConfig,
     out_session: *mut *mut SnowCaptureRecordingSessionImpl,
@@ -3168,6 +3207,77 @@ pub extern "C" fn snow_capture_last_error_message() -> *const c_char {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn recording_preview_output_dimensions_match_export_formats() {
+        for format in 0..=3 {
+            let mut width = 0;
+            let mut height = 0;
+            assert_eq!(
+                unsafe {
+                    super::snow_capture_recording_output_dimensions(
+                        129,
+                        131,
+                        0,
+                        0,
+                        format,
+                        &mut width,
+                        &mut height,
+                    )
+                },
+                1
+            );
+            assert_eq!(
+                (width, height),
+                if format == 0 { (128, 130) } else { (129, 131) }
+            );
+        }
+        let mut width = 0;
+        let mut height = 0;
+        assert_eq!(
+            unsafe {
+                super::snow_capture_recording_output_dimensions(
+                    3840,
+                    2160,
+                    1920,
+                    1080,
+                    0,
+                    &mut width,
+                    &mut height,
+                )
+            },
+            1
+        );
+        assert_eq!((width, height), (1920, 1080));
+        assert_eq!(
+            unsafe {
+                super::snow_capture_recording_output_dimensions(
+                    100,
+                    100,
+                    1920,
+                    0,
+                    0,
+                    &mut width,
+                    &mut height,
+                )
+            },
+            0
+        );
+        assert_eq!(
+            unsafe {
+                super::snow_capture_recording_output_dimensions(
+                    100,
+                    100,
+                    0,
+                    0,
+                    9,
+                    &mut width,
+                    &mut height,
+                )
+            },
+            0
+        );
+    }
+
     use super::*;
 
     fn test_entry() -> MonitorEntry {

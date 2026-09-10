@@ -1,3 +1,6 @@
+#include "recordingeffectpreview.h"
+#include "widgets/message.h"
+#include "recordingeffectstyle.h"
 #include "snow_shot/presentation/screenrecordingcontroller.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include <QUuid>
@@ -41,75 +44,6 @@
 
 namespace {
 constexpr int kDurationTickMilliseconds = 100;
-
-struct RecordingKeyboardLabels {
-    QVector<QByteArray> text;
-    QVector<SnowCaptureKeyboardLabel> entries;
-
-    explicit RecordingKeyboardLabels(bool enabled) {
-        if (!enabled) {
-            return;
-        }
-        const auto add = [this](uint32_t key, const QString& label) {
-            text.push_back(label.toUtf8());
-            entries.push_back({key, reinterpret_cast<const uint8_t*>(text.back().constData()),
-                               static_cast<uint32_t>(text.back().size())});
-        };
-        const auto keyText = [](const char* source) {
-            return QCoreApplication::translate("RecordingKeyboard", source);
-        };
-        const std::pair<uint32_t, const char*> names[] = {
-            {0x08, QT_TRANSLATE_NOOP("RecordingKeyboard", "Backspace")},
-            {0x09, QT_TRANSLATE_NOOP("RecordingKeyboard", "Tab")},
-            {0x0C, QT_TRANSLATE_NOOP("RecordingKeyboard", "Clear")},
-            {0x0D, QT_TRANSLATE_NOOP("RecordingKeyboard", "Enter")},
-            {0x10, QT_TRANSLATE_NOOP("RecordingKeyboard", "Shift")},
-            {0x11, QT_TRANSLATE_NOOP("RecordingKeyboard", "Ctrl")},
-            {0x12, QT_TRANSLATE_NOOP("RecordingKeyboard", "Alt")},
-            {0x13, QT_TRANSLATE_NOOP("RecordingKeyboard", "Pause")},
-            {0x14, QT_TRANSLATE_NOOP("RecordingKeyboard", "Caps Lock")},
-            {0x1B, QT_TRANSLATE_NOOP("RecordingKeyboard", "Esc")},
-            {0x20, QT_TRANSLATE_NOOP("RecordingKeyboard", "Space")},
-            {0x21, QT_TRANSLATE_NOOP("RecordingKeyboard", "Page Up")},
-            {0x22, QT_TRANSLATE_NOOP("RecordingKeyboard", "Page Down")},
-            {0x23, QT_TRANSLATE_NOOP("RecordingKeyboard", "End")},
-            {0x24, QT_TRANSLATE_NOOP("RecordingKeyboard", "Home")},
-            {0x25, QT_TRANSLATE_NOOP("RecordingKeyboard", "Left")},
-            {0x26, QT_TRANSLATE_NOOP("RecordingKeyboard", "Up")},
-            {0x27, QT_TRANSLATE_NOOP("RecordingKeyboard", "Right")},
-            {0x28, QT_TRANSLATE_NOOP("RecordingKeyboard", "Down")},
-            {0x2C, QT_TRANSLATE_NOOP("RecordingKeyboard", "Print Screen")},
-            {0x2D, QT_TRANSLATE_NOOP("RecordingKeyboard", "Insert")},
-            {0x2E, QT_TRANSLATE_NOOP("RecordingKeyboard", "Delete")},
-            {0x5B, QT_TRANSLATE_NOOP("RecordingKeyboard", "Win")},
-            {0x5D, QT_TRANSLATE_NOOP("RecordingKeyboard", "Menu")},
-            {0x6A, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num *")},
-            {0x6B, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num +")},
-            {0x6C, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num Separator")},
-            {0x6D, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num -")},
-            {0x6E, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num .")},
-            {0x6F, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num /")},
-            {0x90, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num Lock")},
-            {0x91, QT_TRANSLATE_NOOP("RecordingKeyboard", "Scroll Lock")},
-            {0xA5, QT_TRANSLATE_NOOP("RecordingKeyboard", "AltGr")},
-            {0xAD, QT_TRANSLATE_NOOP("RecordingKeyboard", "Mute")},
-            {0xAE, QT_TRANSLATE_NOOP("RecordingKeyboard", "Volume Down")},
-            {0xAF, QT_TRANSLATE_NOOP("RecordingKeyboard", "Volume Up")},
-            {0xB0, QT_TRANSLATE_NOOP("RecordingKeyboard", "Next Track")},
-            {0xB1, QT_TRANSLATE_NOOP("RecordingKeyboard", "Previous Track")},
-            {0xB2, QT_TRANSLATE_NOOP("RecordingKeyboard", "Stop")},
-            {0xB3, QT_TRANSLATE_NOOP("RecordingKeyboard", "Play/Pause")},
-        };
-        text.reserve(64);
-        entries.reserve(64);
-        for (const auto& [key, label] : names) {
-            add(key, keyText(label));
-        }
-        for (uint32_t key = 0x60; key <= 0x69; ++key) {
-            add(key, keyText(QT_TRANSLATE_NOOP("RecordingKeyboard", "Num %1")).arg(key - 0x60));
-        }
-    }
-};
 
 struct DirectRecordingSettings {
     SnowCaptureRecordingOutputFormat format = SNOW_CAPTURE_RECORDING_OUTPUT_FORMAT_MP4;
@@ -281,11 +215,14 @@ struct RecordingUiSession final : QObject {
         std::make_unique<ScreenRecordingToolbarWindow>();
     std::unique_ptr<QObject> connections = std::make_unique<QObject>();
     std::unique_ptr<ScreenRecordingShortcutController> shortcuts;
+    std::unique_ptr<RecordingEffectPreview> preview;
 };
 } // namespace
 
 struct ScreenRecordingController::Impl {
-    explicit Impl(ScreenRecordingController& owner) : owner(owner) {
+    explicit Impl(ScreenRecordingController& owner,
+                  ScreenRecordingController::EffectsSourceFactory factory = {})
+        : owner(owner), effectsSourceFactory(std::move(factory)) {
         const snow_shot::storage::RecordingSettings settings;
         microphoneEnabled = settings.microphoneEnabled();
         systemAudioEnabled = settings.systemAudioEnabled();
@@ -335,6 +272,7 @@ struct ScreenRecordingController::Impl {
             physicalRegion = region;
             updateCaptureRegion();
             areaWindow->setPhysicalRegion(region);
+            syncUi();
             toolbarWindow->placeForPhysicalRegion(region);
             areaWindow->show();
             areaWindow->raise();
@@ -346,6 +284,17 @@ struct ScreenRecordingController::Impl {
         updateCaptureRegion();
         uiSession = new RecordingUiSession(&owner);
         areaWindow = uiSession->area.get();
+        uiSession->preview = std::make_unique<RecordingEffectPreview>(
+            *areaWindow, effectsSourceFactory ? effectsSourceFactory() : nullptr);
+        uiSession->preview->reportError = [this](const QString& error) {
+            if (toolbarWindow == nullptr) {
+                return;
+            }
+            adqt::widgets::AdMessage::Request request;
+            request.key = QStringLiteral("screen-recording-preview-error");
+            request.content = tr("Motion preview unavailable: %1").arg(error);
+            adqt::widgets::AdMessageService::warning(std::move(request), toolbarWindow);
+        };
         toolbarWindow = uiSession->toolbar.get();
         // Keep the toolbar above the area even when drawing or resizing activates the area.
         toolbarWindow->setTransientOwnerWindow(areaWindow);
@@ -385,6 +334,7 @@ struct ScreenRecordingController::Impl {
                              }
                              physicalRegion = region;
                              updateCaptureRegion();
+                             syncPreview();
                              toolbarWindow->placeForPhysicalRegion(region);
                          });
         QObject::connect(areaWindow, &ScreenRecordingAreaWindow::regionInteractionStarted,
@@ -431,16 +381,19 @@ struct ScreenRecordingController::Impl {
                          uiSession->connections.get(), [this](const QString& format) {
                              outputFormat = format;
                              snow_shot::storage::RecordingSettings().setOutputFormat(format);
+                             syncPreview();
                          });
         QObject::connect(palette, &ScreenshotToolPalette::recordingMouseTrailColorChanged,
                          uiSession->connections.get(), [this](const QColor& color) {
                              mouseTrailColor = color;
                              snow_shot::storage::RecordingSettings().setMouseTrailColor(color);
+                             syncPreview();
                          });
         QObject::connect(palette, &ScreenshotToolPalette::recordingMouseClickColorChanged,
                          uiSession->connections.get(), [this](const QColor& color) {
                              mouseClickColor = color;
                              snow_shot::storage::RecordingSettings().setMouseClickColor(color);
+                             syncPreview();
                          });
         QObject::connect(palette, &ScreenshotToolPalette::recordingKeyboardVisibleChanged,
                          uiSession->connections.get(), [this](bool visible) {
@@ -594,6 +547,8 @@ struct ScreenRecordingController::Impl {
             return;
         }
         startScheduled = true;
+        syncPreview();
+        uiSession->preview->stopAndClear(true);
         operation = QUuid::createUuid().toString(QUuid::Id128);
         operationTimer.start();
         const quint64 generation = startGeneration;
@@ -627,11 +582,7 @@ struct ScreenRecordingController::Impl {
             pendingOutputPath = recordingFilePath(sessionOutputSettings.extension);
             const QByteArray outputUtf8 = QDir::toNativeSeparators(pendingOutputPath).toUtf8();
             const RecordingKeyboardLabels keyboardLabels(showKeyboard);
-            const auto keyboardTheme = snow_shot::presentation::styles::generateThemeColorScheme();
-            QColor keyboardBackground = keyboardTheme.map.colorBgElevated;
-            keyboardBackground.setAlpha(204);
-            QColor keyboardBorder = keyboardTheme.map.colorBorder;
-            keyboardBorder.setAlpha(100);
+            const RecordingKeyboardTheme keyboardTheme;
             const SnowCaptureDirectRecordingConfig config{
                 SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION,
                 sizeof(SnowCaptureDirectRecordingConfig),
@@ -660,9 +611,9 @@ struct ScreenRecordingController::Impl {
                 packedRgba(sessionMouseClickColor),
                 {},
                 static_cast<uint32_t>(showKeyboard),
-                packedRgba(keyboardBackground),
-                packedRgba(keyboardTheme.map.colorText),
-                packedRgba(keyboardBorder),
+                packedRgba(keyboardTheme.background),
+                packedRgba(keyboardTheme.text),
+                packedRgba(keyboardTheme.border),
                 keyboardLabels.entries.constData(),
                 static_cast<uint32_t>(keyboardLabels.entries.size()),
                 0,
@@ -825,6 +776,8 @@ struct ScreenRecordingController::Impl {
         areaWindow = nullptr;
         toolbarWindow = nullptr;
         // Disconnect before hiding: hide/focus events can emit canvas and geometry signals.
+        retiring->preview->setEligible(false);
+        retiring->preview->stopAndClear();
         retiring->connections.reset();
         retiring->shortcuts.reset();
         retiring->toolbar->hide();
@@ -843,7 +796,36 @@ struct ScreenRecordingController::Impl {
         captureExclusion.restore();
     }
 
+    void syncPreview() {
+        if (uiSession == nullptr) {
+            return;
+        }
+        const bool eligible = state == ScreenshotToolPalette::RecordingState::Idle && !busy &&
+                              !startScheduled && recordingSession == nullptr;
+        if (!eligible) {
+            uiSession->preview->setEligible(false);
+            return;
+        }
+        const auto output = directRecordingSettings(outputFormat, captureRegion.size());
+        uint32_t width = 0;
+        uint32_t height = 0;
+        if (snow_capture_recording_output_dimensions(
+                static_cast<uint32_t>(captureRegion.width()),
+                static_cast<uint32_t>(captureRegion.height()),
+                static_cast<uint32_t>(output.maximumSize.width()),
+                static_cast<uint32_t>(output.maximumSize.height()),
+                static_cast<uint32_t>(output.format), &width, &height) == 0) {
+            uiSession->preview->setEligible(false);
+            return;
+        }
+        uiSession->preview->configure(captureRegion,
+                                      QSize(static_cast<int>(width), static_cast<int>(height)),
+                                      mouseTrailColor, mouseClickColor, showKeyboard);
+        uiSession->preview->setEligible(true);
+    }
+
     void syncUi() {
+        syncPreview();
         if (areaWindow != nullptr) {
             areaWindow->setRecordingState(state);
             areaWindow->setDrawingBlocked(busy);
@@ -879,6 +861,7 @@ struct ScreenRecordingController::Impl {
     }
 
     ScreenRecordingController& owner;
+    ScreenRecordingController::EffectsSourceFactory effectsSourceFactory;
     RecordingUiSession* uiSession = nullptr;
     ScreenRecordingAreaWindow* areaWindow = nullptr;
     ScreenRecordingToolbarWindow* toolbarWindow = nullptr;
@@ -925,6 +908,9 @@ struct ScreenRecordingController::Impl {
 
 ScreenRecordingController::ScreenRecordingController(QObject* parent)
     : QObject(parent), m_impl(std::make_unique<Impl>(*this)) {}
+
+ScreenRecordingController::ScreenRecordingController(EffectsSourceFactory factory, QObject* parent)
+    : QObject(parent), m_impl(std::make_unique<Impl>(*this, std::move(factory))) {}
 
 ScreenRecordingController::~ScreenRecordingController() = default;
 

@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/canvasstatusreadout.h"
 #include "../src/presentation/pinned/screenshotpinnedwindownative.h"
 #include "../src/presentation/pinned/screenshotpinnednativegeometrycontroller.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
@@ -85,6 +86,16 @@ void runPinnedOriginalImageTranslationTests();
 // installing the Windows HWND hooks required by present().
 class ScreenshotPinnedWindowTestAccess {
   public:
+    static QTimer* showReadout(ScreenshotPinnedWindow& window, bool opacity) {
+        window.m_scalePercent = 125;
+        window.m_opacityPercent = 80;
+        if (opacity) {
+            window.showOpacityReadout();
+        } else {
+            window.showScaleReadout();
+        }
+        return window.m_scaleLabelTimer;
+    }
     static void restoreOffscreen(ScreenshotPinnedWindow& window,
                                  const ScreenshotPinnedWindow::Config& config) {
         window.setAttribute(Qt::WA_DeleteOnClose, false);
@@ -3784,6 +3795,33 @@ void closePinnedWindow(SnowCanvasRuntime&, bool enableEditing, bool enterEditMod
               << " editMode=" << enterEditMode << " closed\n";
 }
 
+void pinnedReadoutOffscreen() {
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    window.resize(640, 480);
+    window.show();
+    auto* label = window.findChild<QLabel*>(QStringLiteral("screenshotPinnedScaleLabel"));
+    require(label != nullptr && dynamic_cast<CanvasStatusReadout*>(label) != nullptr,
+            "pinned scale label must use the shared canvas readout and retain its object name");
+    for (const bool opacity : {false, true}) {
+        auto* timer = ScreenshotPinnedWindowTestAccess::showReadout(window, opacity);
+        const QString text =
+            opacity ? QStringLiteral("Opacity: 80%") : QStringLiteral("Scale: 125%");
+        require(label->isVisible() && label->text() == text && label->toolTip() == text &&
+                    label->accessibleName() == text && label->x() == 8 &&
+                    label->y() + label->height() == window.height() - 8,
+                "scale and opacity readouts must retain their copy and eight-pixel inset");
+        require(label->testAttribute(Qt::WA_TransparentForMouseEvents) &&
+                    label->focusPolicy() == Qt::NoFocus && timer->isSingleShot() &&
+                    timer->interval() == 1000 && timer->isActive(),
+                "readout must be passive and retain its one-second timeout");
+        require(QMetaObject::invokeMethod(timer, "timeout", Qt::DirectConnection),
+                "controlled scheduler must deliver the readout timeout");
+        require(label->isHidden(), "readout timeout must hide the shared label");
+        timer->stop();
+    }
+}
+
 void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -5660,6 +5698,10 @@ int main(int argc, char* argv[]) {
         IsolatedPinnedStorage processStorage;
         SnowCanvasRuntime sourceRuntime;
         require(sourceRuntime.isValid(), "source runtime creation failed");
+        if (app.arguments().contains(QStringLiteral("--scale-readout-only"))) {
+            pinnedReadoutOffscreen();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--passive-geometry-only"))) {
             pinnedGeometryQueriesDoNotCreateNativeWindows();
             return 0;

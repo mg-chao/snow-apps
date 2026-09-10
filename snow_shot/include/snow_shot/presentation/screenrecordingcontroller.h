@@ -7,12 +7,17 @@
 #include <QRect>
 
 #include <memory>
+#include <functional>
+
+class RecordingEffectsSource;
 
 class ScreenRecordingController final : public QObject {
     Q_OBJECT
 
   public:
     explicit ScreenRecordingController(QObject* parent = nullptr);
+    using EffectsSourceFactory = std::function<std::unique_ptr<RecordingEffectsSource>()>;
+    ScreenRecordingController(EffectsSourceFactory effectsSourceFactory, QObject* parent = nullptr);
     ~ScreenRecordingController() override;
 
     void open(const QRect& physicalRegion);
