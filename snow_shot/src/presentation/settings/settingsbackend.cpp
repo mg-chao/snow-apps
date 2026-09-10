@@ -195,6 +195,11 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
     }
     case SettingsSelectBinding::Proxy:
         return storage::NetworkSettings().proxy();
+    case SettingsSelectBinding::UpdateMode:
+        return storage::ApplicationStorage::instance()
+            .configuration()
+            .value(QStringLiteral("updates/mode"))
+            .toString();
     case SettingsSelectBinding::OcrModelType:
         return storage::ApplicationStorage::instance()
             .configuration()
@@ -302,6 +307,9 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
     }
     case SettingsSelectBinding::Proxy:
         return storage::NetworkSettings().setProxy(value.toString());
+    case SettingsSelectBinding::UpdateMode:
+        return storage::ApplicationStorage::instance().configuration().setValue(
+            QStringLiteral("updates/mode"), value.toString());
     case SettingsSelectBinding::OcrModelType:
         return storage::ApplicationStorage::instance().configuration().setValue(
             QStringLiteral("text_recognition/model_type"), value.toString());
@@ -1263,9 +1271,10 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                 QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window"))
                 .toBool());
     case SettingsSectionReset::SystemGeneral:
-        return applyAutoStartAtBoot(
-            storage::ConfigurationSchema::defaultValue(QStringLiteral("system/auto_start_at_boot"))
-                .toBool());
+        return applySelectValue(SettingsSelectBinding::UpdateMode, QStringLiteral("download")) &&
+               applyAutoStartAtBoot(storage::ConfigurationSchema::defaultValue(
+                                        QStringLiteral("system/auto_start_at_boot"))
+                                        .toBool());
     case SettingsSectionReset::ScreenshotCapture:
         return storage::ApplicationStorage::instance().configuration().setValues({
             {QStringLiteral("screenshot/api_mode"),

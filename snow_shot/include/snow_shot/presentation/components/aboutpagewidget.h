@@ -7,6 +7,9 @@
 #include <functional>
 #include <memory>
 
+namespace snow_shot::update {
+class UpdateService;
+}
 namespace snow_shot::presentation::styles {
 struct ThemeColorScheme;
 }
@@ -17,7 +20,8 @@ class AboutPageWidget final : public QWidget {
   public:
     using UrlOpener = std::function<bool(const QUrl&)>;
 
-    explicit AboutPageWidget(QWidget* parent = nullptr, UrlOpener urlOpener = {});
+    explicit AboutPageWidget(QWidget* parent = nullptr, UrlOpener urlOpener = {},
+                             snow_shot::update::UpdateService* updates = nullptr);
     ~AboutPageWidget() override;
 
   protected:
@@ -28,6 +32,7 @@ class AboutPageWidget final : public QWidget {
     struct Ui;
     void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme);
     void retranslateUi();
+    void refreshUpdateStatus();
     void updateLayout();
     void openProjectLink(const QUrl& url);
 

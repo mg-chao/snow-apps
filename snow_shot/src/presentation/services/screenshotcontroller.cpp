@@ -3990,6 +3990,15 @@ bool ScreenshotController::captureAvailable() const {
     return m_impl->canBeginCapture();
 }
 
+bool ScreenshotController::blocksApplicationUpdate() const {
+    return !m_impl->canBeginCapture() || !m_impl->m_activeImageExports.isEmpty() ||
+           static_cast<bool>(m_impl->m_cancelSaveDialog) ||
+           ScreenshotExportCoordinator::shared().pendingJobCount() > 0 ||
+           (m_impl->m_screenRecordingController != nullptr &&
+            (m_impl->m_screenRecordingController->isOpen() ||
+             m_impl->m_screenRecordingController->isRecording()));
+}
+
 bool ScreenshotController::beginGlobalMouseCapture(
     snow_shot::presentation::settings::SettingsGlobalMouseAction action, quint64 gestureId,
     const QPoint& physicalStart) {

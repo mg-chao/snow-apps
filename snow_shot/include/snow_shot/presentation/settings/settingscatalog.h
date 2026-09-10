@@ -73,6 +73,7 @@ enum class SettingsSelectBinding {
     Language,
     ApplicationPriority,
     Proxy,
+    UpdateMode,
     OcrModelType,
     ScreenshotApiMode,
     WindowElementApi,

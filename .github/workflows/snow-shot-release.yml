@@ -82,22 +82,45 @@ jobs:
         shell: pwsh
         run: .\scripts\stage-snow-shot-release.ps1
 
+      - name: Verify focused updater and installer behavior
+        shell: pwsh
+        run: |
+          python scripts/test-snow-shot-publisher.py
+          if ($LASTEXITCODE -ne 0) { throw "Publisher tests failed." }
+          & scripts/test-snow-shot-ocr-release-runtime.ps1
+          & scripts/test-snow-shot-release-symbols.ps1 -ReleaseHelperPath build/snow-shot-msvc-release/snow_shot/Release/snow-shot-updater.exe
+          & scripts/test-snow-shot-installer.ps1
+          & scripts/test-snow-shot-installer-i18n.ps1
+          . scripts/snow-build-environment.ps1
+          $null = Set-SnowBuildEnvironment -Preset 'snow-shot-msvc-release'
+          cmake --preset snow-shot-msvc-release -DSNOW_SHOT_BUILD_UPDATE_TESTS=ON
+          if ($LASTEXITCODE -ne 0) { throw "Updater test configuration failed." }
+          cmake --build --preset build-snow-shot-msvc-release --target snow-shot-update-tests snow-shot-update-about-tests snow-shot-update-settings-tests --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw "Updater test build failed." }
+          ctest --test-dir build/snow-shot-msvc-release/snow_shot -C Release -R '^snow-shot-update-(tests|about-tests|settings-tests)$' --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw "Updater tests failed." }
+          & scripts/test-snow-shot-update-helper.ps1
+
       - name: Verify tag and locate package
         id: package
         shell: pwsh
         run: |
-          if ($env:GITHUB_REF_NAME -notmatch '^v.+_snow-shot$') {
+          $version = [regex]::Match((Get-Content -Raw CMakeLists.txt), 'set\(SNOW_SHOT_VERSION "([^"]+)"\)').Groups[1].Value
+          if ($env:GITHUB_REF_NAME -cne "v${version}_snow-shot") {
             throw "Unexpected release tag: $env:GITHUB_REF_NAME"
           }
-          $packages = @(Get-ChildItem build\snow-shot-msvc-release -File |
-            Where-Object {
-              $_.Name -match '^snow-shot-.+-windows-x64-(?:online|offline)\.exe(?:\.sha256)?$' -or
-              $_.Name -match '^snow-shot-.+-windows-x64-portable\.zip(?:\.sha256)?$' -or
-              $_.Name -match '^snow-shot-.+-windows-x64-(?:online|offline|portable)\.manifest\.json$' -or
-              $_.Name -match '^snow-ocr-runtime-.+-windows-x64\.zip(?:\.sha256)?$' -or
-              $_.Name -match '^snow-ocr-runtime-.+-windows-x64\.manifest\.json$'
-            })
-          if ($packages.Count -lt 12) { throw "The installers, portable package, and OCR runtime upload artifacts were not produced." }
+          $names = @()
+          foreach ($variant in @('online', 'offline')) {
+            $base = "snow-shot-$version-windows-x64-$variant"
+            $names += @("$base.exe", "$base.exe.sha256", "$base.manifest.json",
+              "$base-update.zip", "$base-update.zip.sha256", "$base-update.manifest.json")
+          }
+          $base = "snow-shot-$version-windows-x64-portable"
+          $names += @("$base.zip", "$base.zip.sha256", "$base.manifest.json")
+          $runtime = (Get-Content -Raw snow_shot/packaging/snow-shot-ocr-asset-manifest.json | ConvertFrom-Json).runtime.version
+          $base = "snow-ocr-runtime-$runtime-windows-x64"
+          $names += @("$base.zip", "$base.zip.sha256", "$base.manifest.json")
+          $packages = @($names | ForEach-Object { Get-Item -LiteralPath "build/snow-shot-msvc-release/$_" -ErrorAction Stop })
           $assets = ($packages | ForEach-Object { $_.FullName }) -join "`n"
           "assets<<SNOW_ASSETS" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
           $assets | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
@@ -119,8 +142,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $assets = "${{ steps.package.outputs.assets }}" -split "`n" | Where-Object { $_ }
+          $version = [regex]::Match((Get-Content -Raw CMakeLists.txt), 'set\(SNOW_SHOT_VERSION "([^"]+)"\)').Groups[1].Value
+          $releaseFlags = @()
+          if (($version -split '\+')[0].Contains('-')) { $releaseFlags += '--prerelease' }
           gh release create $env:GITHUB_REF_NAME @assets `
             --draft `
-            --prerelease `
+            @releaseFlags `
             --generate-notes `
             --title "Snow Shot $env:GITHUB_REF_NAME"

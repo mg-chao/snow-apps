@@ -1,4 +1,10 @@
 #include "snow_shot/app/applicationcontroller.h"
+#include "snow_shot/update/updatetransaction.h"
+#include <QTemporaryDir>
+#include <QProcess>
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <QUuid>
 #include "snow_shot/app/singleinstancecoordinator.h"
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
@@ -26,6 +32,10 @@
 #include <QStandardPaths>
 #include <QSysInfo>
 
+#ifdef Q_OS_WIN
+#include <Windows.h>
+#endif
+
 extern "C" void snow_diagnostics_install_panic_hook(void (*callback)(const unsigned char*, size_t));
 
 int main(int argc, char* argv[]) {
@@ -50,6 +60,73 @@ int main(int argc, char* argv[]) {
     }
     QCoreApplication::setApplicationName(applicationName);
     QCoreApplication::setApplicationVersion(QStringLiteral(SNOW_DIAGNOSTICS_VERSION));
+    // A probe runs before diagnostics, singleton acquisition, or any live user-state access.
+    if (argc == 3 && QString::fromLocal8Bit(argv[1]) == u"--update-probe") {
+        if (QString::fromLocal8Bit(argv[2]) != QCoreApplication::applicationVersion()) {
+            return 3;
+        }
+        qputenv("QT_QPA_PLATFORM", "offscreen");
+        QApplication probe(argc, argv);
+        QTemporaryDir directory;
+        if (!directory.isValid()) {
+            return 4;
+        }
+        auto& storage = snow_shot::storage::ApplicationStorage::instance();
+        if (!storage.initialize({directory.path(), directory.path(), 8000}).success) {
+            return 5;
+        }
+        snow_shot::presentation::LanguageManager::instance().initialize();
+        snow_shot::presentation::styles::ThemeManager::instance().initialize(probe);
+        storage.shutdown();
+        return 0;
+    }
+    QString executablePath = QString::fromLocal8Bit(argv[0]);
+#ifdef Q_OS_WIN
+    wchar_t modulePath[32768]{};
+    const DWORD moduleLength = GetModuleFileNameW(nullptr, modulePath, 32768);
+    if (moduleLength > 0 && moduleLength < 32768) {
+        executablePath = QString::fromWCharArray(modulePath, static_cast<int>(moduleLength));
+    }
+#endif
+    const QString updateRoot =
+        snow_shot::update::installationRoot(QFileInfo(executablePath).absolutePath());
+    if (snow_shot::update::transactionPending(updateRoot)) {
+        QCoreApplication recovery(argc, argv);
+        const QString root =
+            snow_shot::update::installationRoot(QCoreApplication::applicationDirPath());
+        const QString pipe =
+            QStringLiteral("snow-shot-recover-") + QUuid::createUuid().toString(QUuid::Id128);
+        QLocalServer server;
+        server.setSocketOptions(QLocalServer::UserAccessOption);
+        if (!server.listen(pipe)) {
+            return 6;
+        }
+        const QString result = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                                   .filePath(pipe + QStringLiteral(".txt"));
+        const QStringList args{
+            QStringLiteral("--launch"), QStringLiteral("--recovery"),
+            QStringLiteral("--target"), root,
+            QStringLiteral("--parent"), QString::number(QCoreApplication::applicationPid()),
+            QStringLiteral("--pipe"),   pipe,
+            QStringLiteral("--result"), result};
+        if (!QProcess::startDetached(
+                QDir(root).filePath(QStringLiteral("bin/snow-shot-updater.exe")), args)) {
+            return 6;
+        }
+        if (!server.waitForNewConnection(180000)) {
+            return 6;
+        }
+        auto* socket = server.nextPendingConnection();
+        if (!socket->canReadLine() && !socket->waitForReadyRead(10000)) {
+            return 6;
+        }
+        if (socket->readLine().trimmed() != "ready") {
+            return 6;
+        }
+        socket->write("go\n");
+        socket->waitForBytesWritten(5000);
+        return 0;
+    }
     auto& diagnostics = snow_shot::diagnostics::DiagnosticsService::instance();
     struct DiagnosticsLifetime {
         ~DiagnosticsLifetime() {

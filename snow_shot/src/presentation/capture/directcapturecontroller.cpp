@@ -229,6 +229,10 @@ void DirectCaptureController::shutdown() {
     m_impl->shutdown();
 }
 
+bool DirectCaptureController::blocksApplicationUpdate() const {
+    return m_impl->workflow.pendingCount() > 0;
+}
+
 void DirectCaptureController::captureFocusedWindow() {
     auto request = m_impl->request(DirectCaptureTarget::FocusedWindow);
 #if defined(Q_OS_WIN)

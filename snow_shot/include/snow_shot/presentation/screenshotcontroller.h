@@ -25,6 +25,7 @@ class ScreenshotController : public QObject {
         SnowShotApiClient* sharedApiClient = nullptr);
     ~ScreenshotController() override;
     [[nodiscard]] bool captureAvailable() const;
+    [[nodiscard]] bool blocksApplicationUpdate() const;
     [[nodiscard]] bool
     beginGlobalMouseCapture(snow_shot::presentation::settings::SettingsGlobalMouseAction action,
                             quint64 gestureId, const QPoint& physicalStart);

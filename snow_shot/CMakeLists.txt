@@ -648,6 +648,8 @@ function(snow_shot_add_translations target)
             snow_shot_global_mouse
             snow_shot_translation
             snow_shot_diagnostics
+            snow_shot_updates
+            snow_shot_update_core
         )
     else()
         set(_lupdate_target "${target}_update_translations")
@@ -1112,6 +1114,7 @@ target_link_libraries(snow_shot PRIVATE
     snow_shot_image_codec
     MINIZIP::minizip-ng
 )
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotUpdates.cmake")
 target_compile_definitions(snow_shot PRIVATE
     QT_MESSAGELOGCONTEXT
     SNOW_DIAGNOSTICS_VERSION="${SNOW_SHOT_VERSION}"
@@ -1615,6 +1618,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_dependencies(snow-shot-about-page-tests snow_shot_release_translations)
     snow_shot_import_offscreen_platform(snow-shot-about-page-tests)
     add_test(NAME snow-shot-about-page-tests COMMAND snow-shot-about-page-tests)
+    target_link_libraries(snow-shot-about-page-tests PRIVATE snow_shot_updates)
     set_tests_properties(snow-shot-about-page-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
@@ -4818,6 +4822,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
 endif()
 
 snow_shot_add_translations(snow_shot)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotUpdateUiTests.cmake")
 
 if(WIN32)
     # These DLLs are consumed by the standalone OCR process that is staged

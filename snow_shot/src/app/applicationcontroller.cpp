@@ -1,6 +1,12 @@
 #include "snow_shot/app/applicationcontroller.h"
 #include "snow_shot/translation/translationservice.h"
 #include "snow_shot/presentation/languagemanager.h"
+#include "snow_shot/update/updateservice.h"
+#include "snow_shot/update/updatetransaction.h"
+#include "snow_shot/presentation/screenshotexportcoordinator.h"
+#include <QStandardPaths>
+#include <QCryptographicHash>
+#include <QMessageBox>
 
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/globalmousemanager.h"
@@ -168,6 +174,64 @@ class ApplicationController::Impl {
         ocrRecognition =
             std::make_unique<ScreenshotOcrRecognitionService>(ocrOptions, backendPreference, &q);
         auto& configuration = applicationStorage.configuration();
+        update::UpdateService::Options updateOptions;
+        updateOptions.root = update::installationRoot(QCoreApplication::applicationDirPath());
+        const QString updateId = QString::fromLatin1(
+            QCryptographicHash::hash(updateOptions.root.toUtf8(), QCryptographicHash::Sha256)
+                .toHex()
+                .left(24));
+        updateOptions.cacheDirectory =
+            QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation))
+                .filePath(QStringLiteral("updates/") + updateId);
+        updateOptions.baseUrl = QUrl(QStringLiteral(SNOW_SHOT_API_BASE_URL));
+        updates = new update::UpdateService(std::move(updateOptions), &app);
+        updates->setMode(configuration.value(QStringLiteral("updates/mode")).toString());
+        updates->setSystemProxy(configuration.value(QStringLiteral("network/proxy")).toString() ==
+                                u"system");
+        QObject::connect(updates, &update::UpdateService::updateReady, &q, [this] {
+            systemTray.showCaptureMessage(
+                ApplicationController::tr(
+                    "An update is ready. Open About to restart and update Snow Shot."),
+                false);
+        });
+        QObject::connect(updates, &update::UpdateService::restartRequested, &q, [this] {
+            if ((screenshotController != nullptr &&
+                 screenshotController->blocksApplicationUpdate()) ||
+                (directCaptureController != nullptr &&
+                 directCaptureController->blocksApplicationUpdate())) {
+                updates->reportBlocked(ApplicationController::tr(
+                    "Finish capturing, recording, or exporting before updating."));
+                return;
+            }
+            const auto answer = QMessageBox::question(
+                mainWindow, ApplicationController::tr("Restart and update"),
+                ApplicationController::tr(
+                    "Snow Shot will close and restart to install the update. Continue?"),
+                QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+            if (answer != QMessageBox::Yes) {
+                return;
+            }
+            if (!storage::ApplicationStorage::instance().flushNow().success) {
+                updates->reportBlocked(ApplicationController::tr(
+                    "Your settings could not be saved. Please retry before updating."));
+                return;
+            }
+            updates->beginApply();
+        });
+        QObject::connect(updates, &update::UpdateService::handoffReady, &q, [this] {
+            if ((screenshotController != nullptr &&
+                 screenshotController->blocksApplicationUpdate()) ||
+                (directCaptureController != nullptr &&
+                 directCaptureController->blocksApplicationUpdate()) ||
+                !storage::ApplicationStorage::instance().flushNow().success) {
+                updates->reportBlocked(ApplicationController::tr(
+                    "Finish capturing, recording, or exporting before updating."));
+                return;
+            }
+            globalShortcutManager.setGlobalHotkeysEnabled(false);
+            globalMouseManager.shutdown();
+            QApplication::quit();
+        });
         applyRuntimeConfiguration(configuration.value(kPinBorderColorKey), kPinBorderColorKey);
         applyRuntimeConfiguration(configuration.value(kTrayEnabledKey), kTrayEnabledKey);
         applyRuntimeConfiguration(configuration.value(kTrayIconKey), kTrayIconKey);
@@ -197,6 +261,7 @@ class ApplicationController::Impl {
             return;
         }
         started = true;
+        updates->start();
 
         systemTray.show();
         globalShortcutManager.initialize();
@@ -228,7 +293,11 @@ class ApplicationController::Impl {
     }
 
     void applyRuntimeConfiguration(const QJsonValue& value, const QString& key) {
-        if (key == kPinBorderColorKey) {
+        if (key == u"updates/mode" && updates != nullptr) {
+            updates->setMode(value.toString());
+        } else if (key == u"network/proxy" && updates != nullptr) {
+            updates->setSystemProxy(value.toString() == u"system");
+        } else if (key == kPinBorderColorKey) {
             QColor color = storage::colorFromRgbaString(value.toString());
             if (!color.isValid()) {
                 color = QColor(219, 219, 219, 255);
@@ -435,6 +504,7 @@ class ApplicationController::Impl {
         selectedTextTranslationController;
     QPointer<MainWindow> mainWindow;
     bool started = false;
+    update::UpdateService* updates = nullptr;
 };
 
 ApplicationController::ApplicationController(QApplication& application, QObject* parent)

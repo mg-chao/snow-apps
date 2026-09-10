@@ -76,6 +76,7 @@ void builtInCatalogIsCompleteAndValid() {
 
     qsizetype sectionCount = 0;
     qsizetype itemCount = 0;
+    bool foundUpdates = false;
     QSet<QString> objectNames;
     for (const auto& page : catalog.pages()) {
         sectionCount += page.sections.size();
@@ -100,11 +101,24 @@ void builtInCatalogIsCompleteAndValid() {
                     require(storage::ConfigurationSchema::entry(item.configurationKey) != nullptr,
                             "catalog persistence keys must resolve through ConfigurationSchema");
                 }
+                if (item.configurationKey == QStringLiteral("updates/mode")) {
+                    const auto& select = std::get<settings::SettingsSelectDefinition>(item.payload);
+                    require(
+                        select.binding == settings::SettingsSelectBinding::UpdateMode &&
+                            select.options.size() == 3 &&
+                            select.options[0].value == QStringLiteral("manual") &&
+                            select.options[1].value == QStringLiteral("check") &&
+                            select.options[2].value == QStringLiteral("download") &&
+                            storage::ConfigurationSchema::defaultValue(item.configurationKey) ==
+                                QStringLiteral("download"),
+                        "update policy exposes all three modes with automatic download default");
+                    foundUpdates = true;
+                }
             }
         }
     }
-    require(sectionCount == 35 && itemCount == 139,
-            "catalog must contain thirty-five sections and one hundred thirty-nine items");
+    require(sectionCount == 35 && itemCount == 140 && foundUpdates,
+            "catalog must contain thirty-five sections and one hundred forty items");
     const auto* history =
         catalog.section(QStringLiteral("storage-and-privacy"), QStringLiteral("history"));
     require(history != nullptr && history->items.size() >= 2 &&
@@ -1171,8 +1185,12 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 185 && index.search(QString()).size() == 185,
+    require(index.entries().size() == 186 && index.search(QString()).size() == 186,
             "search must generate all catalog nodes in catalog order");
+    const auto updates = index.search(QStringLiteral("Software updates"));
+    require(!updates.isEmpty() &&
+                updates.constFirst().location.itemId == QStringLiteral("updates.mode"),
+            "update policy is directly discoverable through settings search");
     const auto selectedText = index.search(QStringLiteral("Translate Selected Text"));
     require(!selectedText.isEmpty() &&
                 selectedText.constFirst().location ==
@@ -1219,7 +1237,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 11 && sections == 35 && items == 139,
+    require(pages == 11 && sections == 35 && items == 140,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));
