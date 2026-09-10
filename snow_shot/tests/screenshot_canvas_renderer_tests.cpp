@@ -42,6 +42,7 @@
 #include <QPointer>
 #include <QRegion>
 #include <QScrollBar>
+#include <QTextBoundaryFinder>
 #include <QWheelEvent>
 
 #include <algorithm>
@@ -2575,6 +2576,125 @@ void ocrTextAspectFitUsesWidthConstraintWithoutVerticalStretch() {
     canvas.setCustomRenderer(nullptr);
 }
 
+void mergedParagraphUsesSourceRows() {
+    SnowCanvasWidget canvas;
+    canvas.resize(360, 160);
+    canvas.setClearBackgroundEnabled(false);
+    require(canvas.setViewportCamera(0, 0, 1), "set source row test camera");
+    ScreenshotCanvasRenderer renderer(canvas);
+    canvas.setCustomRenderer(&renderer);
+    canvas.show();
+    QApplication::processEvents();
+    QImage screenshot(360, 160, QImage::Format_RGBA8888);
+    screenshot.fill(QColor(0, 80, 240));
+    renderer.setImage(screenshot, QRectF(-180, -80, 360, 160));
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = QRect(-180, -80, 360, 160);
+    ScreenshotOcrLine line;
+    line.text = QString(31, QChar(0x7530));
+    line.paragraph = true;
+    line.quad = QPolygonF(QRectF(-150, -50, 300, 96));
+    line.quad.removeLast();
+    for (const QRectF& row :
+         {QRectF(-150, -50, 300, 24), QRectF(-150, -14, 300, 24), QRectF(-150, 22, 180, 24)}) {
+        QPolygonF quad(row);
+        quad.removeLast();
+        line.sourceLineQuads.push_back(quad);
+    }
+    presentation->lines.push_back(line);
+    renderer.setOcrPresentation(presentation);
+    for (const QString& sample :
+         {QString(25, QChar(0x7530)), QString(31, QChar(0x7530)),
+          QStringLiteral("e\u0301\u7530").repeated(15),
+          QStringLiteral("These words should fill the original rows with readable spacing")}) {
+        presentation->setLineText(0, sample);
+        renderer.setOcrPresentation(presentation);
+        const QImage output = renderCanvas(canvas);
+        int previousPosition = -1;
+        for (const QRect& row :
+             {QRect(30, 30, 300, 24), QRect(30, 66, 300, 24), QRect(30, 102, 180, 24)}) {
+            const QRect ink = paintedInkBounds(output, row, 80);
+            if (ink.width() < row.width() * 0.9 || ink.height() < row.height() * 0.65) {
+                std::cerr << "Source row " << row.y() << " for " << sample.toStdString()
+                          << " painted " << ink.width() << 'x' << ink.height() << '\n';
+            }
+            require(ink.width() >= row.width() * 0.9 && ink.height() >= row.height() * 0.65,
+                    "merged OCR must fill each source row, including the shorter final row");
+            const auto position =
+                renderer.ocrTextPositionAt(QPointF(ink.left() + 1 - 180, ink.center().y() - 80));
+            require(position.valid() && position.characterIndex > previousPosition,
+                    "source row hit testing must follow the rendered text");
+            previousPosition = position.characterIndex;
+            QTextBoundaryFinder boundaries(QTextBoundaryFinder::Grapheme, sample);
+            for (int x = row.left(); x <= row.right(); x += 3) {
+                const auto cursor =
+                    renderer.ocrTextPositionAt(QPointF(x - 180, ink.center().y() - 80));
+                boundaries.setPosition(cursor.characterIndex);
+                require(cursor.valid() && boundaries.isAtBoundary(),
+                        "fitted row cursor positions must not split a grapheme");
+            }
+        }
+        require(paintedInkBounds(output, QRect(30, 56, 300, 8), 80).isEmpty() &&
+                    paintedInkBounds(output, QRect(30, 92, 300, 8), 80).isEmpty(),
+                "source row fitting must preserve the OCR line gaps");
+        require(paintedInkBounds(output, QRect(212, 102, 118, 24), 80).isEmpty(),
+                "the short final row must not expand to the paragraph width");
+    }
+
+    presentation->setLineText(0, line.text);
+    renderer.setOcrPresentation(presentation);
+    const auto original = renderCanvas(canvas);
+    // Same-row fragments and input order must not change the visual row count or text placement.
+    auto& quads = presentation->lines[0].sourceLineQuads;
+    quads.removeFirst();
+    for (const QRectF& box : {QRectF(-150, -50, 140, 24), QRectF(0, -50, 150, 24)}) {
+        QPolygonF quad(box);
+        quad.removeLast();
+        quads.push_back(quad);
+    }
+    std::reverse(quads.begin(), quads.end());
+    renderer.setOcrPresentation(presentation);
+    require(renderCanvas(canvas) == original,
+            "source word boxes must reconstruct the same visual rows regardless of input order");
+    presentation->selectAll();
+    renderer.setOcrPresentation(presentation);
+    const auto selected = renderCanvas(canvas);
+    require(presentation->selectedText() == line.text && selected != original,
+            "fitted rows must paint selection without changing the selected paragraph text");
+    require(selected.copy(QRect(30, 55, 300, 10)) == original.copy(QRect(30, 55, 300, 10)),
+            "selection backgrounds must stay within the source rows");
+    presentation->clearTextSelection();
+    renderer.setOcrPresentation(presentation);
+    require(renderCanvas(canvas) == original, "clearing selection must restore fitted text");
+
+    require(canvas.setViewportCamera(0, 0, 0.75), "zoom source row test");
+    const auto zoomed = renderCanvas(canvas);
+    require(paintedInkBounds(zoomed, QRect(68, 43, 224, 17), 80).width() >= 210,
+            "source row fitting must retain width occupancy at fractional zoom");
+    const auto last = renderer.ocrTextPositionAt(QPointF(29, 34));
+    require(last.valid() && last.characterIndex == line.text.size(),
+            "zoomed final row hit testing must reach the end of the text");
+    require(canvas.setViewportCamera(0, 0, 1), "restore source row test zoom");
+    presentation->lines[0].sourceLineQuads = line.sourceLineQuads;
+    auto indented = QPolygonF(QRectF(-120, -14, 270, 24));
+    indented.removeLast();
+    presentation->lines[0].sourceLineQuads[1] = indented;
+    renderer.setOcrPresentation(presentation);
+    const auto shifted = renderCanvas(canvas);
+    require(paintedInkBounds(shifted, QRect(30, 66, 28, 24), 80).isEmpty() &&
+                paintedInkBounds(shifted, QRect(60, 66, 270, 24), 80).width() >= 250,
+            "updated source geometry must preserve a row's indentation");
+
+    presentation->lines[0].sourceLineQuads.clear();
+    renderer.setOcrPresentation(presentation);
+    const auto fallback = renderCanvas(canvas);
+    presentation->lines[0].sourceLineQuads = {line.quad, line.sourceLineQuads[1]};
+    renderer.setOcrPresentation(presentation);
+    require(renderCanvas(canvas) == fallback,
+            "ambiguous overlapping source rows must use the ordinary paragraph fallback");
+    canvas.setCustomRenderer(nullptr);
+}
+
 void mergedParagraphWrapsAndFillsAnalyzedRegion() {
     SnowCanvasWidget canvas;
     canvas.resize(240, 160);
@@ -3623,6 +3743,7 @@ int main(int argc, char** argv) {
             "the vertical OCR renderer test requires a system CJK font");
 #endif
     if (application.arguments().contains(QStringLiteral("--ocr-presentation"))) {
+        mergedParagraphUsesSourceRows();
         ocrBackgroundFillSamplesRobustlyAndChoosesContrastingText();
         ocrSolidFillRendersAdaptiveTextPerBlock();
         mergedParagraphWrapsAndFillsAnalyzedRegion();

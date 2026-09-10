@@ -91,6 +91,52 @@ void layoutModesAndTransformsRenderOnWorkers() {
         }
     }
 }
+void sourceRowsSurviveImageExportOnWorkers() {
+    auto snapshot = fixture();
+    snapshot.image = QImage(360, 160, QImage::Format_ARGB32_Premultiplied);
+    snapshot.image.fill(Qt::white);
+    snapshot.canvasRect = QRectF(-180, -80, 360, 160);
+    auto& line = snapshot.lines[0];
+    line.text = QString(31, QChar(0x7530));
+    line.paragraph = true;
+    line.quad = QPolygonF(QRectF(-150, -50, 300, 96));
+    line.quad.removeLast();
+    for (const QRectF& row :
+         {QRectF(-150, -50, 300, 24), QRectF(-150, -14, 300, 24), QRectF(-150, 22, 180, 24)}) {
+        QPolygonF quad(row);
+        quad.removeLast();
+        line.sourceLineQuads.push_back(quad);
+    }
+    const QImage expected = renderScreenshotRecognitionImage(snapshot);
+    auto worker = std::async(std::launch::async,
+                             [snapshot]() { return renderScreenshotRecognitionImage(snapshot); });
+    require(worker.get() == expected, "source row export is deterministic on a worker thread");
+    const auto inkBounds = [&](const QRect& region) {
+        QRect bounds;
+        for (int y = region.top(); y <= region.bottom(); ++y) {
+            for (int x = region.left(); x <= region.right(); ++x) {
+                if (expected.pixelColor(x, y).red() < 80)
+                    bounds = bounds.united(QRect(x, y, 1, 1));
+            }
+        }
+        return bounds;
+    };
+    for (const QRect& row :
+         {QRect(30, 30, 300, 24), QRect(30, 66, 300, 24), QRect(30, 102, 180, 24)}) {
+        const QRect ink = inkBounds(row);
+        require(ink.width() >= row.width() * 0.9 && ink.height() >= row.height() * 0.65,
+                "image export preserves the full source rows and shorter final row");
+    }
+    require(inkBounds(QRect(30, 56, 300, 8)).isEmpty() &&
+                inkBounds(QRect(30, 92, 300, 8)).isEmpty() &&
+                inkBounds(QRect(212, 102, 118, 24)).isEmpty(),
+            "image export preserves source line gaps and the shorter final row boundary");
+    line.sourceLineQuads.clear();
+    const QImage fallback = renderScreenshotRecognitionImage(snapshot);
+    line.sourceLineQuads = {line.quad, line.quad};
+    require(renderScreenshotRecognitionImage(snapshot) == fallback,
+            "image export falls back to paragraph layout for overlapping source rows");
+}
 void cancellationAndInvalidInputNeverPublishPartialImages() {
     auto snapshot = fixture();
     int polls = 0;
@@ -118,6 +164,7 @@ int main(int argc, char** argv) {
         rendersNativeCoordinatesAndPreservesSource();
         displayedBackgroundAndEffectsAreAppliedOnce();
         layoutModesAndTransformsRenderOnWorkers();
+        sourceRowsSurviveImageExportOnWorkers();
         cancellationAndInvalidInputNeverPublishPartialImages();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

@@ -30,6 +30,11 @@ QGraphicsItem and recognition exporter use the same layout and quad fitting. Sel
 is an explicit input and is empty for export. The snapshot retains the background patch actually
 shown, including its canvas coordinates; saving never starts recognition or background filtering.
 
+Merged horizontal paragraphs share source-row fitting between the canvas and export. Valid OCR
+rows retain their indentation, gaps, and shorter final row with bounded spacing and uniform glyph
+scaling. Overlapping rows or translations that cannot fit readably use ordinary paragraph layout.
+The canvas keeps selection and grapheme-safe hit testing; export renders without selection.
+
 Screenshot selection captures through its OCR controller. Pinned saving uses the transformed
 recognition window and canvas background. Both use the session's original-image visibility rule.
 The configuration schema supplies the default for existing installations without migrating data.
@@ -43,7 +48,7 @@ Disabling the setting restores the previous image-save path.
 | R2–R3 | recognition session visibility; offscreen recognition window snapshot excludes editor/QR pages and owns copied values |
 | R2–R4 | offscreen pinned recognition save integration: enabled/disabled, OCR/translation/editor, Quick Save, both dialogs, dialog-time changes, zoom, rotated paragraph source regions |
 | R3–R5 | recognition image tests: native pixels, unchanged source buffers, displayed background crop, effects, mixed Unicode, paragraph/vertical/perspective text, independent worker equality, cancellation and invalid input |
-| R4–R5 | existing OCR/canvas renderer, export artifact, Quick Save, and save-dialog regressions |
+| R4–R5 | `mergedParagraphUsesSourceRows`: row geometry, Unicode hit testing, selection, zoom, cache invalidation and fallback; `sourceRowsSurviveImageExportOnWorkers`: row occupancy, gaps, shorter final row, worker equality and overlap fallback; existing export artifact, Quick Save, and save-dialog regressions |
 
 The standalone renderer tests and the performance target disable unused default Qt plugins and
 load Windows test fonts explicitly for deterministic offscreen shaping. Test providers use cached
