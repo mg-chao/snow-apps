@@ -24,7 +24,12 @@ int main(int argc, char** argv) {
             QImage image(size * scale, size * scale, QImage::Format_ARGB32_Premultiplied);
             image.fill(Qt::transparent);
             QPainter painter(&image);
-            renderer.render(&painter);
+            // Legacy macOS iconsets include their own transparent canvas margin. Keep the
+            // square artwork within an 824 px frame on the 1024 px canvas so it aligns with
+            // neighboring Dock icons instead of filling their shadow/decorative space.
+            const qreal inset = static_cast<qreal>(image.width()) * 100.0 / 1024.0;
+            renderer.render(&painter, QRectF(inset, inset, image.width() - 2.0 * inset,
+                                             image.height() - 2.0 * inset));
             painter.end();
             const QString name = QStringLiteral("icon_%1x%1%2.png")
                                      .arg(size)

@@ -5521,7 +5521,11 @@ qt_finalize_executable(snow_shot)
 
 if(APPLE)
     enable_language(OBJCXX)
-    target_sources(snow_shot PRIVATE src/platform/macos/windowcaptureexclusion.mm)
+    target_sources(snow_shot PRIVATE
+        src/platform/macos/windowcaptureexclusion.mm
+        src/platform/macos/applicationreopenhandler.mm)
+    set_source_files_properties(src/platform/macos/applicationreopenhandler.mm
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc" SKIP_PRECOMPILE_HEADERS ON)
     configure_file(resources/macos-info.plist.in
         "${CMAKE_CURRENT_BINARY_DIR}/generated/macos-info.plist" @ONLY)
     set_target_properties(snow_shot PROPERTIES MACOSX_BUNDLE_INFO_PLIST
@@ -5580,6 +5584,21 @@ if(APPLE)
 endif()
 
 if(APPLE AND SNOW_SHOT_BUILD_MACOS_TESTS)
+    add_executable(snow-shot-macos-application-launch-tests
+        tests/macos_application_launch_tests.mm
+        src/platform/macos/applicationreopenhandler.mm)
+    set_source_files_properties(tests/macos_application_launch_tests.mm
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    target_include_directories(snow-shot-macos-application-launch-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow-shot-macos-application-launch-tests PRIVATE Qt6::Widgets "-framework AppKit")
+    add_test(NAME snow-shot-macos-application-launch-tests COMMAND snow-shot-macos-application-launch-tests)
+    set_tests_properties(snow-shot-macos-application-launch-tests PROPERTIES LABELS "unit" TIMEOUT 30)
+    add_executable(snow-shot-macos-icon-tests tests/macos_icon_tests.cpp "${_snow_macos_icon}")
+    target_link_libraries(snow-shot-macos-icon-tests PRIVATE Qt6::Gui)
+    add_test(NAME snow-shot-macos-icon-tests COMMAND snow-shot-macos-icon-tests
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/snow-shot.iconset")
+    set_tests_properties(snow-shot-macos-icon-tests PROPERTIES LABELS "unit" TIMEOUT 30)
     add_executable(snow-shot-macos-shortcut-tests tests/macos_shortcut_tests.cpp)
     target_link_libraries(snow-shot-macos-shortcut-tests PRIVATE snow_shot_macos_shortcuts "-framework Carbon")
     add_test(NAME snow-shot-macos-shortcut-tests COMMAND snow-shot-macos-shortcut-tests)
