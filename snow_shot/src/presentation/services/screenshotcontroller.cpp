@@ -1334,15 +1334,6 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
         [this](int delta) { return m_overlayCoordinator->stepToolbarPenFilterStrokeWidth(delta); },
         [this](int delta) { return m_overlayCoordinator->stepToolbarWatermarkFontSize(delta); },
         [this]() { copySelectionToClipboard(); },
-        [this](const QString& action) {
-            if (action == QStringLiteral("copy")) {
-                copySelectionToClipboard();
-            } else if (action == QStringLiteral("save")) {
-                saveSelectionToFile();
-            } else if (action == QStringLiteral("pin")) {
-                pinSelectionToScreen();
-            }
-        },
         [this]() {
             QWidget* focus = QApplication::focusWidget();
             if (snow_shot::presentation::WindowShortcutManager::focusAcceptsTextInput(focus)) {

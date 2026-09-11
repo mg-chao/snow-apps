@@ -677,27 +677,35 @@ void ScreenshotOverlayInputHandler::confirmSelection() {
 }
 
 void ScreenshotOverlayInputHandler::handleUnhandledLeftDoubleClick() {
-    if (m_externalDragActive)
-        return;
-    if (!(m_context.interaction.movingSelection() || m_context.interaction.editing()) ||
-        !m_context.selection.hasPixelSelection() ||
-        !screenshotCompletionGestureTool(m_context.interaction.activeTool())) {
-        return;
-    }
-    m_context.actions.executeConfiguredCompletionAction(
-        snow_shot::storage::ScreenshotSettings().doubleClickAction());
+    executeConfiguredCompletionAction(snow_shot::storage::ScreenshotSettings().doubleClickAction());
 }
 
 void ScreenshotOverlayInputHandler::handleUnhandledMiddleClick() {
+    executeConfiguredCompletionAction(
+        snow_shot::storage::ScreenshotSettings().middleMouseButtonAction());
+}
+
+void ScreenshotOverlayInputHandler::executeConfiguredCompletionAction(const QString& action) {
     if (m_externalDragActive)
         return;
-    if (!(m_context.interaction.movingSelection() || m_context.interaction.editing()) ||
+    if (!(m_context.interaction.movingSelection() || m_context.interaction.editing() ||
+          m_context.interaction.scrollingCapture()) ||
         !m_context.selection.hasPixelSelection() ||
         !screenshotCompletionGestureTool(m_context.interaction.activeTool())) {
         return;
     }
-    m_context.actions.executeConfiguredCompletionAction(
-        snow_shot::storage::ScreenshotSettings().middleMouseButtonAction());
+
+    QString actionId;
+    if (action == QStringLiteral("copy")) {
+        actionId = QStringLiteral("copy_to_clipboard");
+    } else if (action == QStringLiteral("save")) {
+        actionId = QStringLiteral("save_as_file");
+    } else if (action == QStringLiteral("pin")) {
+        actionId = QStringLiteral("pin_to_screen");
+    } else {
+        return;
+    }
+    static_cast<void>(m_context.actions.activateScreenshotShortcut(actionId));
 }
 
 void ScreenshotOverlayInputHandler::updateGuideLines(ScreenshotOverlayWindow* overlay,

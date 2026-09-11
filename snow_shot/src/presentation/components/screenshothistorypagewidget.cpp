@@ -898,6 +898,30 @@ class HistoryEntryWidget final : public QFrame {
     }
 
   protected:
+    void mouseDoubleClickEvent(QMouseEvent* event) override {
+        if (event != nullptr && event->button() == Qt::LeftButton) {
+            if (m_editRequested) {
+                m_editRequested();
+            }
+            event->accept();
+            return;
+        }
+        QFrame::mouseDoubleClickEvent(event);
+    }
+
+    void mousePressEvent(QMouseEvent* event) override {
+        if (event != nullptr && event->button() == Qt::MiddleButton) {
+            if (m_copyRequested && m_copyButton != nullptr && m_copyButton->isEnabled() &&
+                m_copyButton->isVisible()) {
+                m_copyButton->setEnabled(false);
+                m_copyRequested();
+            }
+            event->accept();
+            return;
+        }
+        QFrame::mousePressEvent(event);
+    }
+
     void resizeEvent(QResizeEvent* event) override {
         QFrame::resizeEvent(event);
         updateResponsiveLayout();
