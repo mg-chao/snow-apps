@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$Destination,
     [Parameter(Mandatory = $true)][string]$AllowedRoot,
-    [Parameter(Mandatory = $true)][string]$VcpkgPrefix,
+    [string]$VcpkgPrefix,
+    [string]$NativeLicenseRoot,
     [Parameter(Mandatory = $true)][string]$QtPrefix,
     [Parameter(Mandatory = $true)][string[]]$CargoManifest,
     [hashtable]$CargoOptions = @{},
@@ -54,8 +55,16 @@ if (-not $destinationPath.StartsWith(
     throw "The license bundle destination must be below the allowed output root '$allowedRootPath': $destinationPath"
 }
 
-$vcpkgPrefixPath = Resolve-ExistingPath -Path $VcpkgPrefix -Description "vcpkg package prefix"
-$qtPrefixPath = Resolve-ExistingPath -Path $QtPrefix -Description "static Qt prefix"
+if ([string]::IsNullOrWhiteSpace($VcpkgPrefix) -eq [string]::IsNullOrWhiteSpace($NativeLicenseRoot)) {
+    throw "Specify exactly one of VcpkgPrefix or NativeLicenseRoot."
+}
+$vcpkgPrefixPath = if ($VcpkgPrefix) {
+    Resolve-ExistingPath -Path $VcpkgPrefix -Description "vcpkg package prefix"
+} else { "" }
+$nativeLicenseRootPath = if ($NativeLicenseRoot) {
+    Resolve-ExistingPath -Path $NativeLicenseRoot -Description "native dependency license bundle"
+} else { "" }
+$qtPrefixPath = Resolve-ExistingPath -Path $QtPrefix -Description "Qt prefix"
 $cargoManifestPaths = @($CargoManifest | ForEach-Object {
     Resolve-ExistingPath -Path $_ -Description "Cargo manifest" -PathType Leaf
 })
@@ -112,26 +121,45 @@ function Copy-LicenseNotice {
     })
 }
 
-$vcpkgShare = Join-Path $vcpkgPrefixPath "share"
-$vcpkgCopyrights = @(Get-ChildItem -LiteralPath $vcpkgShare -Directory |
-    ForEach-Object {
-        $copyright = Join-Path $_.FullName "copyright"
-        if (Test-Path -LiteralPath $copyright -PathType Leaf) {
-            Get-Item -LiteralPath $copyright
+$vcpkgCopyrights = @()
+$nativePackages = @()
+if ($vcpkgPrefixPath) {
+    $vcpkgShare = Join-Path $vcpkgPrefixPath "share"
+    $vcpkgCopyrights = @(Get-ChildItem -LiteralPath $vcpkgShare -Directory |
+        ForEach-Object {
+            $copyright = Join-Path $_.FullName "copyright"
+            if (Test-Path -LiteralPath $copyright -PathType Leaf) {
+                Get-Item -LiteralPath $copyright
+            }
+        } | Sort-Object DirectoryName)
+    if ($vcpkgCopyrights.Count -eq 0) {
+        throw "The vcpkg prefix contains no package copyright files: $vcpkgShare"
+    }
+    foreach ($copyright in $vcpkgCopyrights) {
+        Copy-LicenseNotice -Category "vcpkg" -Package $copyright.Directory.Name `
+            -DeclaredLicense "See collected package copyright" -Source $copyright.FullName `
+            -RelativeName "copyright.txt"
+    }
+} else {
+    # The macOS packager collects notices from the exact Homebrew Cellar revisions
+    # whose libraries it bundles, plus locally built native dependencies.
+    $nativePackages = @(Get-ChildItem -LiteralPath $nativeLicenseRootPath -Directory | Sort-Object Name)
+    if ($nativePackages.Count -eq 0) { throw "The native dependency license bundle is empty." }
+    foreach ($package in $nativePackages) {
+        $notices = @(Get-ChildItem -LiteralPath $package.FullName -Recurse -File | Sort-Object FullName)
+        if ($notices.Count -eq 0) { throw "No notices collected for native dependency $($package.Name)." }
+        foreach ($notice in $notices) {
+            $relative = [System.IO.Path]::GetRelativePath($package.FullName, $notice.FullName)
+            Copy-LicenseNotice -Category "native" -Package $package.Name `
+                -DeclaredLicense "See collected package notices and provenance" `
+                -Source $notice.FullName -RelativeName ($relative -replace '[\\/]', '__')
         }
-    } | Sort-Object DirectoryName)
-if ($vcpkgCopyrights.Count -eq 0) {
-    throw "The vcpkg prefix contains no package copyright files: $vcpkgShare"
-}
-foreach ($copyright in $vcpkgCopyrights) {
-    Copy-LicenseNotice -Category "vcpkg" -Package $copyright.Directory.Name `
-        -DeclaredLicense "See collected package copyright" -Source $copyright.FullName `
-        -RelativeName "copyright.txt"
+    }
 }
 
 $qtLicenseRoot = Join-Path $qtPrefixPath "share\snow-apps\qt-licenses"
 if (-not (Test-Path -LiteralPath $qtLicenseRoot -PathType Container)) {
-    throw "The audited static Qt kit has no installed license bundle: $qtLicenseRoot. Rebuild it with scripts/build-static-qt.ps1."
+    throw "The Qt kit has no installed license bundle: $qtLicenseRoot. Run the platform's Qt bootstrap script."
 }
 $qtLicenseFiles = @(Get-ChildItem -LiteralPath $qtLicenseRoot -Recurse -File | Sort-Object FullName)
 if ($qtLicenseFiles.Count -eq 0) {
@@ -259,7 +287,7 @@ $sortedRecords = @($records | Sort-Object Category, Package, Notice)
 $indexLines = [System.Collections.Generic.List[string]]::new()
 $indexLines.Add("# Snow Shot Third-Party License Index")
 $indexLines.Add("")
-$indexLines.Add("This bundle was generated from the release build's resolved, non-development Rust dependency graph, installed vcpkg prefix, audited static Qt kit, and repository attribution notices.")
+$indexLines.Add("This bundle was generated from the release build's resolved, non-development Rust dependency graph, collected native dependency and Qt licenses, and repository attribution notices.")
 $indexLines.Add("")
 $indexLines.Add("| Source | Package | Declared license | Notice file |")
 $indexLines.Add("| --- | --- | --- | --- |")
@@ -280,6 +308,7 @@ $indexLines | Set-Content -LiteralPath (Join-Path $destinationPath "INDEX.md") -
     ReachableRustPackages = $reachable.Count
     ExternalRustPackages = $externalCargoPackages.Count
     VcpkgPackages = $vcpkgCopyrights.Count
+    NativePackages = $nativePackages.Count
     QtLicenseFiles = $qtLicenseFiles.Count
     Notices = $sortedRecords
 } | ConvertTo-Json -Depth 5 | Set-Content `

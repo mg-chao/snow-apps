@@ -15,6 +15,14 @@ share/snow-shot/licenses/third-party/
 license file. The bundle includes the Ant Design Icons MIT notice from
 `ant_design_qt/THIRD_PARTY_NOTICES.md`.
 
+macOS app bundles place the same index under
+`Contents/Resources/licenses/third-party/`. Their native notices are collected
+from the exact Homebrew Cellar revisions included in the bundle, the pinned
+zlib-ng source, and the matching Qt release's REUSE metadata and license texts.
+The macOS capture bridge (`snow-macos`, Apache-2.0) uses Apple's system frameworks
+and the existing `cc` build dependency (MIT OR Apache-2.0); Apple system
+frameworks are not redistributed in the app.
+
 Screen color restoration uses nalgebra (Apache-2.0) for fixed-size matrix
 inversion and validation. Its license and resolved dependencies are included
 in the generated Rust dependency notice bundle.

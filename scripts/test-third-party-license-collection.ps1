@@ -49,7 +49,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not stage dependency fixture' }
 git -C $dependencyRepository -c user.name=Fixture -c user.email=fixture@example.invalid `
     commit --quiet -m 'Create dependency fixture'
 if ($LASTEXITCODE -ne 0) { throw 'Could not commit dependency fixture' }
-$dependencyUrl = ([Uri]$dependencyRepository).AbsoluteUri
+$dependencyUrl = ([UriBuilder]::new('file', '', -1, $dependencyRepository)).Uri.AbsoluteUri
 
 $manifests = @()
 $cargoOptions = @{}
@@ -110,3 +110,19 @@ if ($cargoDirectories.Count -ne 3) {
     throw 'Collect only the selected packages: exclude unshipped workspace features and private roots'
 }
 Write-Output 'License collection regression passed: selected packages, multiple roots, and Git dependencies.'
+
+Write-Fixture 'native/codec-1.0/COPYING' 'Native macOS license fixture'
+$nativeDestination = Join-Path $fixtureRoot 'macos/third-party'
+& (Join-Path $PSScriptRoot 'collect-third-party-licenses.ps1') `
+    -Destination $nativeDestination -AllowedRoot $fixtureRoot `
+    -NativeLicenseRoot (Join-Path $fixtureRoot 'native') -QtPrefix (Join-Path $fixtureRoot 'qt') `
+    -CargoManifest $manifests -CargoOptions $cargoOptions -CargoTarget aarch64-apple-darwin `
+    -AntDesignNotice (Join-Path $fixtureRoot 'ant-notice.md') `
+    -FallbackLicenseDirectory (Join-Path $fixtureRoot 'fallback')
+$nativeManifest = Get-Content (Join-Path $nativeDestination 'manifest.json') -Raw | ConvertFrom-Json
+if ($nativeManifest.NativePackages -ne 1 -or $nativeManifest.VcpkgPackages -ne 0 -or
+    $nativeManifest.ExternalRustPackages -ne 3 -or
+    !(Test-Path (Join-Path $nativeDestination 'native/codec-1.0/COPYING'))) {
+    throw 'macOS collection must preserve native notices and the selected Cargo dependency graph'
+}
+Write-Output 'macOS license collection regression passed.'
