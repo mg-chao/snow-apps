@@ -11,6 +11,7 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/settings/applicationpriority.h"
 #include "snow_shot/platform/windows/autostartregistration.h"
+#include "snow_shot/presentation/components/screenshothistorypagewidget.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include "diagnosticsbridge.h"
@@ -196,6 +197,14 @@ int main(int argc, char* argv[]) {
             snow_shot::storage::ApplicationStorage::instance().shutdown();
         }
     } storageLifetime;
+    // Declared after storageLifetime so reverse-order destruction drains the
+    // history executor while the storage singleton it reads is still alive and
+    // rejects straggler submissions; no history task runs after main returns.
+    struct HistoryTaskDrain {
+        ~HistoryTaskDrain() {
+            shutdownScreenshotHistoryTasks();
+        }
+    } historyTaskDrain;
     if (snow_shot::platform::windows::AutoStartRegistration::isSupported()) {
         const bool enabled = snow_shot::storage::SystemSettings().autoStartAtBoot();
         QString error;

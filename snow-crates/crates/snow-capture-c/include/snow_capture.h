@@ -458,6 +458,8 @@ uint8_t
 snow_capture_recording_session_stop_and_export(SnowCaptureRecordingSession* session,
                                                const SnowCaptureRecordingExportConfig* config);
 SnowCaptureResult snow_capture_recording_session_stop(SnowCaptureRecordingSession* session);
+/* Live recording sessions created and not yet destroyed; for leak diagnostics in tests. */
+size_t snow_capture_recording_session_live_count(void);
 
 const char* snow_capture_last_error_message(void);
 
