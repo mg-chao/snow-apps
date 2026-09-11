@@ -8,6 +8,7 @@
 #include <Qt>
 
 #include <memory>
+#include <optional>
 
 namespace screenshot_pinned_window_native {
 class SystemMoveKeyboard final {
@@ -38,6 +39,16 @@ enum class PaintSynchronization {
 applyClientGeometry(WId windowId, const QRect& geometry,
                     GeometryUpdate update = GeometryUpdate::PreserveClientPixels);
 [[nodiscard]] QRect currentClientGeometry(WId windowId);
+// The complete native window frame, which is wider than the client area on
+// Windows because the pinned surface re-applies WS_THICKFRAME. Falls back to
+// the client geometry when the window rect cannot be read.
+[[nodiscard]] QRect currentWindowGeometry(WId windowId);
+// Reports whether the live cursor is inside the window's complete native
+// frame, which is wider than the client area on Windows because the pinned
+// surface re-applies WS_THICKFRAME. Returns std::nullopt when the cursor or
+// the window rect cannot be read so callers can fall back to event-derived
+// pointer presence.
+[[nodiscard]] std::optional<bool> pointerInsideWindow(WId windowId);
 [[nodiscard]] bool applySystemResizeStyle(WId windowId);
 [[nodiscard]] bool activateWindow(WId windowId);
 [[nodiscard]] bool installSynchronizedResize(WId windowId, const bool* interactiveResizeActive);
