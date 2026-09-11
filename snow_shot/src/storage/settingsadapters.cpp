@@ -1290,6 +1290,14 @@ bool PinToScreenSettings::setBorderColor(const QColor& color) const {
     return setColorValue(QStringLiteral("pin_to_screen/border_color"), color);
 }
 
+QColor PinToScreenSettings::borderActiveColor() const {
+    return colorValue(QStringLiteral("pin_to_screen/border_active_color"));
+}
+
+bool PinToScreenSettings::setBorderActiveColor(const QColor& color) const {
+    return setColorValue(QStringLiteral("pin_to_screen/border_active_color"), color);
+}
+
 QString PinToScreenSettings::mouseWheelZoomMode() const {
     return cache().value(QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode")).toString();
 }

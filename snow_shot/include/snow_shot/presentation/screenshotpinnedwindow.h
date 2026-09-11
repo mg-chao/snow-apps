@@ -149,6 +149,7 @@ class ScreenshotPinnedWindow final : public QWidget {
 
   public:
     static void setRuntimeBorderColor(const QColor& color);
+    static void setRuntimeBorderActiveColor(const QColor& color);
     static void setRuntimeTrayEnabled(bool enabled);
 
   signals:
@@ -413,6 +414,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_windowDragActive = false;
     bool m_windowDragCursorSet = false;
     bool m_pointerInside = false;
+    bool m_windowActive = false;
     bool m_passiveGeometryReconciliationActive = false;
     WId m_synchronizedResizeWindowId = 0;
 };

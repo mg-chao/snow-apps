@@ -347,6 +347,17 @@ SettingsItemDefinition pinBorderColorItem() {
         {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pinned window border"))});
 }
 
+SettingsItemDefinition pinBorderActiveColorItem() {
+    return screenshotColorItem(
+        QStringLiteral("interface.pin-to-screen.border-active-color"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Border active color"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Set the border color of pinned screenshots while they have focus"),
+        QStringLiteral("pin_to_screen/border_active_color"),
+        SettingsColorBinding::PinBorderActiveColor,
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pinned window active border"))});
+}
+
 SettingsItemDefinition trayEnabledItem() {
     return {QStringLiteral("interface.tray.enabled"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Enable tray")),
@@ -1809,7 +1820,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                                    "Pinned screenshot window appearance settings")),
                     SettingsSectionReset::PinToScreen,
-                    {pinBorderColorItem()},
+                    {pinBorderColorItem(), pinBorderActiveColorItem()},
                 },
                 {
                     QStringLiteral("tray"),
@@ -3024,6 +3035,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsColorBinding::PinBorderColor:
                         expectedKey = QStringLiteral("pin_to_screen/border_color");
+                        break;
+                    case SettingsColorBinding::PinBorderActiveColor:
+                        expectedKey = QStringLiteral("pin_to_screen/border_active_color");
                         break;
                     }
                     if (itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||

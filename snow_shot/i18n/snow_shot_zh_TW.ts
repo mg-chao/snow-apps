@@ -459,7 +459,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
 <context>
     <name>DiagnosticsService</name>
     <message>
-        <location filename="../src/presentation/settings/settingsbackend.cpp" line="876"/>
+        <location filename="../src/presentation/settings/settingsbackend.cpp" line="880"/>
         <location filename="../src/diagnostics/diagnostics.cpp" line="911"/>
         <source>The diagnostics writer stopped unexpectedly.</source>
         <translation>診斷記錄寫入執行緒意外停止。</translation>
@@ -1117,9 +1117,9 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <name>ScreenshotController</name>
     <message>
         <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3036"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4155"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4281"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4291"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4179"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4305"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4315"/>
         <source>The screenshot could not be saved: %1</source>
         <translation>無法儲存截圖：%1</translation>
     </message>
@@ -1175,7 +1175,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     </message>
     <message>
         <location filename="../src/presentation/services/screenshotcontroller.cpp" line="3128"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="3955"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="3979"/>
         <source>No recognized result is available to copy</source>
         <translation>沒有可複製的辨識結果</translation>
     </message>
@@ -1206,7 +1206,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <message>
         <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2685"/>
         <location filename="../src/presentation/services/screenshotcontroller.cpp" line="2711"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4164"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4188"/>
         <source>The screenshot export queue is full</source>
         <translation>擷取畫面匯出佇列已滿</translation>
     </message>
@@ -1561,196 +1561,196 @@ so every moment on screen can be expressed clearly and shared easily.</source>
 <context>
     <name>ScreenshotPinnedWindow</name>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="3002"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="3016"/>
         <source>Group: %1</source>
         <translation>群組：%1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2997"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="3011"/>
         <source>Default</source>
         <translation>預設</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="3018"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="3032"/>
         <source>New Group</source>
         <translation>新增群組</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="3022"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="3036"/>
         <source>Delete Empty Groups</source>
         <translation>刪除空群組</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="314"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="315"/>
         <source>Enable drawing mode</source>
         <translation>啟用繪製模式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="316"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2732"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="317"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2745"/>
         <source>Save as file</source>
         <translation>另存為檔案</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="317"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="318"/>
         <source>Image size is too large.</source>
         <translation>影像尺寸過大。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="318"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="319"/>
         <source>The pinned image could not be prepared</source>
         <translation>無法準備已釘選的影像</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="319"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="320"/>
         <source>The pinned image copy could not be started</source>
         <translation>無法開始複製已釘選的影像</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="320"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="321"/>
         <source>The pinned image save could not be started</source>
         <translation>無法開始儲存已釘選的影像</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2720"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2733"/>
         <source>Copy to clipboard</source>
         <translation>複製到剪貼簿</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2726"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2739"/>
         <source>Copy original content</source>
         <translation>複製原始內容</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2738"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2945"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2751"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2959"/>
         <source>Recognizing text</source>
         <translation>正在辨識文字</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2802"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2815"/>
         <source>Opacity</source>
         <translation>透明度</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2808"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2830"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2821"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2843"/>
         <source>%1%</source>
         <translation>%1%</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2823"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2836"/>
         <source>Scale</source>
         <translation>縮放</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2819"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2841"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2965"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2980"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2832"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2854"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2979"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2994"/>
         <source>Current: %1%</source>
         <translation>目前：%1%</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2754"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2767"/>
         <source>Drawing mode</source>
         <translation>繪製模式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2761"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2774"/>
         <source>Process image</source>
         <translation>處理影像</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2766"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2779"/>
         <source>Rotate clockwise</source>
         <translation>順時針旋轉</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2774"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2787"/>
         <source>Rotate counterclockwise</source>
         <translation>逆時針旋轉</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2781"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2794"/>
         <source>Flip horizontally</source>
         <translation>水平翻轉</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2789"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2802"/>
         <source>Flip vertically</source>
         <translation>垂直翻轉</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2797"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2810"/>
         <source>Reset transform</source>
         <translation>重設變換</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2854"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2867"/>
         <source>Thumbnail mode</source>
         <translation>縮圖模式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2861"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2874"/>
         <source>Focus mode</source>
         <translation>專注模式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2864"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2877"/>
         <source>Show all windows</source>
         <translation>顯示所有視窗</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2869"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2882"/>
         <source>Hide other windows</source>
         <translation>隱藏其他視窗</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2874"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2887"/>
         <source>Close other windows</source>
         <translation>關閉其他視窗</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2878"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2891"/>
         <source>Close all windows</source>
         <translation>關閉所有視窗</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2885"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2898"/>
         <source>Show main interface</source>
         <translation>顯示主介面</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2946"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2960"/>
         <source>Display text recognition results</source>
         <translation>顯示文字辨識結果</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2996"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="3010"/>
         <source>Group: Default</source>
         <translation>群組：預設</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4316"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4340"/>
         <source>The pinned image could not be copied: %1</source>
         <translation>無法複製已釘選的影像：%1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="1644"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4632"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="1657"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4656"/>
         <source>Scale: %1%</source>
         <translation>縮放：%1%</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="1643"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4645"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="1656"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="4669"/>
         <source>Opacity: %1%</source>
         <translation>透明度：%1%</translation>
     </message>
     <message>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="315"/>
-        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2891"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="316"/>
+        <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="2904"/>
         <source>Close</source>
         <translation>關閉</translation>
     </message>
@@ -3789,7 +3789,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
 <context>
     <name>SettingsBackend</name>
     <message>
-        <location filename="../src/presentation/settings/settingsbackend.cpp" line="900"/>
+        <location filename="../src/presentation/settings/settingsbackend.cpp" line="904"/>
         <source>The clipboard is unavailable.</source>
         <translation>剪貼簿無法使用。</translation>
     </message>
@@ -3802,99 +3802,99 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <translation>頁面</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1159"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1170"/>
         <source>Set up to two keys for this screenshot action</source>
         <translation>為此截圖操作設定最多兩個按鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1170"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1181"/>
         <source>Screenshot shortcut</source>
         <translation>截圖快速鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1182"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1193"/>
         <source>Edit selection</source>
         <translation>編輯選取範圍</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1185"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1363"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1196"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1374"/>
         <source>Move cursor up</source>
         <translation>向上移動游標</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1189"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1367"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1200"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1378"/>
         <source>Move cursor down</source>
         <translation>向下移動游標</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1193"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1371"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1204"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1382"/>
         <source>Move cursor left</source>
         <translation>向左移動游標</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1197"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1375"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1208"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1386"/>
         <source>Move cursor right</source>
         <translation>向右移動游標</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1827"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1838"/>
         <source>Storage and privacy</source>
         <translation>儲存與隱私</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1828"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1839"/>
         <source>Storage and privacy settings page</source>
         <translation>儲存與隱私設定頁面</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1849"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1860"/>
         <source>Screenshot history retention and cleanup settings</source>
         <translation>截圖歷史保留和清理設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1865"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1876"/>
         <source>Delete screenshots after they reach this age</source>
         <translation>截圖達到此保留期限後將被刪除</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1874"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1885"/>
         <source>Remove the oldest screenshots when this limit is exceeded</source>
         <translation>超過此限制時移除最早的截圖</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1880"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1891"/>
         <source>Screenshot count</source>
         <translation>截圖數量</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1885"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1896"/>
         <source>Limit how much disk space screenshot history can use</source>
         <translation>限制截圖歷史可使用的磁碟空間</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1949"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1960"/>
         <source>System settings</source>
         <translation>系統設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2004"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2015"/>
         <source>Shortcut keys for screenshot tools and cursor movement</source>
         <translation>截圖工具與游標移動的快速鍵</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="40"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="977"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1528"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1587"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1650"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1735"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1963"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2003"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2436"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="988"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1539"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1598"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1661"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1746"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1974"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2014"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2447"/>
         <source>Screenshot</source>
         <translation>截圖</translation>
     </message>
@@ -3915,13 +3915,13 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="197"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="365"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="376"/>
         <source>Light</source>
         <translation>淺色</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="198"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="367"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="378"/>
         <source>Dark</source>
         <translation>深色</translation>
     </message>
@@ -3962,22 +3962,22 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <translation>堆疊繪圖工具</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1530"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1541"/>
         <source>Screenshot shortcuts and actions</source>
         <translation>截圖快速鍵和操作</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1557"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1568"/>
         <source>Other application shortcuts and actions</source>
         <translation>其他應用程式快速鍵和操作</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1573"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1584"/>
         <source>Preview and manage saved screenshot history</source>
         <translation>預覽和管理已儲存的截圖歷史</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1729"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1740"/>
         <source>Appearance and language settings</source>
         <translation>外觀和語言設定</translation>
     </message>
@@ -4098,14 +4098,14 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="161"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1545"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1621"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1622"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1626"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1695"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1840"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2031"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2471"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1556"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1632"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1633"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1637"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1706"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1851"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2042"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2482"/>
         <source>Screen recording</source>
         <translation>螢幕錄製</translation>
     </message>
@@ -4147,10 +4147,10 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="236"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1637"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1678"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1934"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1935"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1648"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1689"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1945"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1946"/>
         <source>Translation</source>
         <translation>翻譯</translation>
     </message>
@@ -4260,528 +4260,528 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <translation>釘選視窗邊框</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="352"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="363"/>
         <source>Enable tray</source>
         <translation>啟用系統匣</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="353"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="364"/>
         <source>Show the application icon and menu in the system tray</source>
         <translation>在系統匣中顯示應用程式圖示與選單</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="355"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="366"/>
         <source>System tray</source>
         <translation>系統匣</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="373"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="384"/>
         <source>Snowflake light</source>
         <translation>雪花淺色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="376"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="387"/>
         <source>Snowflake dark</source>
         <translation>雪花深色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="432"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="443"/>
         <source>No proxy</source>
         <translation>不使用代理</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="434"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="445"/>
         <source>Use system proxy</source>
         <translation>使用系統代理</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="439"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="450"/>
         <source>Proxy</source>
         <translation>代理</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="440"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="451"/>
         <source>Choose whether network requests use the system proxy</source>
         <translation>選擇網路請求是否使用系統代理</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="442"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="453"/>
         <source>Network proxy</source>
         <translation>網路代理</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="500"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="511"/>
         <source>API used to control obtaining child elements of the window</source>
         <translation>用於控制取得視窗子元素的 API</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="537"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="548"/>
         <source>Choose the functions shown in the system tray menu</source>
         <translation>選擇系統匣選單中顯示的功能</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="539"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="550"/>
         <source>Tray menu</source>
         <translation>系統匣選單</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="968"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="979"/>
         <source>Original Image Translation</source>
         <translation>原圖翻譯</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="969"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="980"/>
         <source>Display translated text in the original image</source>
         <translation>在原始影像中顯示翻譯後的文字</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1167"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1178"/>
         <source>Set up to two keys for this pinned window action</source>
         <translation>為此釘選視窗操作設定最多兩個快速鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1273"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1284"/>
         <source>Undo</source>
         <translation>復原</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1276"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1287"/>
         <source>Redo</source>
         <translation>重做</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1496"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1507"/>
         <source>Delete</source>
         <translation>刪除</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1671"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1682"/>
         <source>Text recognition image saving settings</source>
         <translation>文字辨識圖片儲存設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1909"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1920"/>
         <source>API Configuration</source>
         <translation>API 設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1911"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1922"/>
         <source>Configure custom AI model connections</source>
         <translation>設定自訂 AI 模型連線</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1913"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1924"/>
         <source>AI Model</source>
         <translation>AI 模型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1914"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1925"/>
         <source>Custom OpenAI-compatible models for translation and image conversion</source>
         <translation>用於翻譯和影像轉換的自訂 OpenAI 相容模型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1919"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1930"/>
         <location filename="../src/presentation/components/customaimodelssettingswidget.cpp" line="598"/>
         <source>Custom Models</source>
         <translation>自訂模型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1921"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1932"/>
         <source>OpenAI-compatible Chat Completions</source>
         <translation>相容 OpenAI 的 Chat Completions</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1922"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1933"/>
         <source>API URL</source>
         <translation>API URL</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1923"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1934"/>
         <source>API Key</source>
         <translation>API 金鑰</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1924"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1935"/>
         <source>Vision Support</source>
         <translation>視覺支援</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1931"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1932"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1942"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1943"/>
         <source>Extended Features Settings</source>
         <translation>擴充功能設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1939"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1950"/>
         <source>Translation Page</source>
         <translation>翻譯頁面</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1940"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1951"/>
         <source>Enable the Translation page and the Translate Selected Text shortcut.</source>
         <translation>啟用翻譯頁面和「翻譯選取文字」快捷鍵。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2052"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2063"/>
         <source>About</source>
         <translation>關於</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2054"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2065"/>
         <source>Software version and license information</source>
         <translation>軟體版本與授權資訊</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1680"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1691"/>
         <source>Screenshot translation settings</source>
         <translation>螢幕截圖翻譯設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1670"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1782"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1681"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1793"/>
         <source>Text Recognition</source>
         <translation>文字辨識</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1784"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1795"/>
         <source>Text recognition appearance</source>
         <translation>文字辨識外觀</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1964"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1975"/>
         <source>Screen capture settings</source>
         <translation>螢幕擷取設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1971"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1982"/>
         <source>Network</source>
         <translation>網路</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1972"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1983"/>
         <source>Configure proxy use for network requests</source>
         <translation>設定網路請求的代理使用方式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1980"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1991"/>
         <source>Configure text recognition models and acceleration</source>
         <translation>設定文字辨識模型與加速</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2023"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2034"/>
         <source>Shortcut keys for pinned-to-screen windows</source>
         <translation>釘選視窗的快速鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2032"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2043"/>
         <source>Shortcut keys for recording controls</source>
         <translation>錄影控制快捷鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2387"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2512"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2398"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2523"/>
         <source>Exit</source>
         <translation>結束</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="363"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="374"/>
         <source>Default</source>
         <translation>預設</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="370"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="381"/>
         <source>Snowflake</source>
         <translation>雪花</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="380"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="391"/>
         <source>Icon</source>
         <translation>圖示</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="381"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="392"/>
         <source>Choose the bundled icon used in the system tray</source>
         <translation>選擇系統匣使用的內建圖示</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="383"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="394"/>
         <source>Tray appearance</source>
         <translation>系統匣外觀</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="391"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="402"/>
         <source>Custom icon</source>
         <translation>自訂圖示</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="392"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="403"/>
         <source>Enter or browse to a PNG or ICO file; invalid files use the selected bundled icon</source>
         <translation>輸入或瀏覽選取 PNG 或 ICO 檔案；無效檔案將使用所選的內建圖示</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="395"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="406"/>
         <source>Tray icon path</source>
         <translation>系統匣圖示路徑</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="399"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="625"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="410"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="636"/>
         <source>Browse</source>
         <translation>瀏覽</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="400"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="411"/>
         <source>Select tray icon</source>
         <translation>選擇系統匣圖示</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="401"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="412"/>
         <source>Image files (*.png *.ico);;PNG images (*.png);;Icon files (*.ico)</source>
         <translation>影像檔案 (*.png *.ico);;PNG 影像 (*.png);;圖示檔案 (*.ico)</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="514"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="525"/>
         <source>Save history</source>
         <translation>儲存歷史記錄</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="524"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="535"/>
         <source>Select child elements within a window while taking a screenshot</source>
         <translation>擷取螢幕畫面時選取視窗中的子元素</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="502"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="526"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="513"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="537"/>
         <source>Child elements</source>
         <translation>子元素</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="494"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="527"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="505"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="538"/>
         <source>MSAA</source>
         <translation>MSAA</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="562"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="573"/>
         <source>Clipboard content</source>
         <translation>剪貼簿內容</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="563"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="574"/>
         <source>Pin clipboard</source>
         <translation>釘選剪貼簿</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="642"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="653"/>
         <source>Image format</source>
         <translation>影像格式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="643"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="654"/>
         <source>Choose the format used for automatically saved screenshot files</source>
         <translation>選擇自動儲存的截圖檔案所使用的格式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="646"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="657"/>
         <source>PNG</source>
         <translation>PNG</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="647"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="658"/>
         <source>JPEG</source>
         <translation>JPEG</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="650"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="661"/>
         <source>JPEG XL</source>
         <translation>JPEG XL</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="651"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="662"/>
         <source>AVIF</source>
         <translation>AVIF</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="682"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="693"/>
         <source>Image save directory</source>
         <translation>影像儲存目錄</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="683"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="694"/>
         <source>Choose where images are written for automatic save and copy-file actions</source>
         <translation>選擇自動儲存和複製檔案操作寫入影像的位置</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="688"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="699"/>
         <source>Select image save directory</source>
         <translation>選擇影像儲存目錄</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="692"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="703"/>
         <source>Manual save screenshot filename format</source>
         <translation>手動儲存截圖檔名格式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="693"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="704"/>
         <source>Set the generated filename used when saving a screenshot as a file</source>
         <translation>設定將截圖另存為檔案時使用的自動產生檔名</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="699"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="710"/>
         <source>Auto-save screenshot filename format</source>
         <translation>自動儲存截圖檔名格式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="700"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="711"/>
         <source>Set the generated filename used by automatic screenshot file saves</source>
         <translation>設定自動儲存截圖檔案時使用的自動產生檔名</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="711"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="722"/>
         <source>Video save directory</source>
         <translation>影片儲存目錄</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="712"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="723"/>
         <source>Choose where recording output files are written</source>
         <translation>選擇錄製輸出檔案的儲存位置</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="715"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="726"/>
         <source>Select video save directory</source>
         <translation>選擇影片儲存目錄</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="718"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="729"/>
         <source>Video filename format</source>
         <translation>影片檔名格式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="719"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="730"/>
         <source>Set the generated filename used for recording output files</source>
         <translation>設定錄製輸出檔案使用的自動產生檔名</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="729"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="740"/>
         <source>Auto execute after text recognition</source>
         <translation>文字辨識後自動執行</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="730"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="741"/>
         <source>Choose what happens automatically when text recognition completes</source>
         <translation>選擇文字辨識完成後自動執行的動作</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="736"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="747"/>
         <source>No action</source>
         <translation>不執行動作</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="738"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="749"/>
         <source>Copy text</source>
         <translation>複製文字</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="740"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="751"/>
         <source>Copy text and end screenshot</source>
         <translation>複製文字並結束截圖</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="747"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="758"/>
         <source>Enable edit mode</source>
         <translation>啟用編輯模式</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="124"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="754"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1249"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1340"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1593"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2458"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="765"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1260"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1351"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1604"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2469"/>
         <source>Copy to clipboard</source>
         <translation>複製到剪貼簿</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="756"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1241"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1347"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1609"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="767"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1252"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1358"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1620"/>
         <source>Save as file</source>
         <translation>另存為檔案</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="88"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="760"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1228"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1597"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1661"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1808"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2022"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2446"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="771"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1239"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1608"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1672"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1819"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2033"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2457"/>
         <source>Pin to screen</source>
         <translation>釘選到螢幕</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="761"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="908"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="925"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="772"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="919"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="936"/>
         <source>None</source>
         <translation>無</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="768"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="779"/>
         <source>Double-click action</source>
         <translation>按兩下動作</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="769"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="780"/>
         <source>Choose the action for double-clicking while moving or drawing in a screenshot</source>
         <translation>選擇在截圖中移動或繪圖時按兩下所執行的動作</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="779"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="790"/>
         <source>Middle mouse button action</source>
         <translation>滑鼠中鍵動作</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="780"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="791"/>
         <source>Choose the action for middle-clicking while moving or drawing in a screenshot</source>
         <translation>選擇在截圖中移動或繪圖時按一下滑鼠中鍵所執行的動作</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="820"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="831"/>
         <source>Auto save after copy</source>
         <translation>複製後自動儲存</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="821"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="832"/>
         <source>Save a PNG file automatically whenever a screenshot is copied</source>
         <translation>每次複製截圖時自動儲存 PNG 檔案</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="830"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="841"/>
         <source>Copy image file to clipboard</source>
         <translation>將圖片檔案複製到剪貼簿</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="831"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="842"/>
         <source>Write the screenshot to a file and copy that file to the clipboard</source>
         <translation>將截圖寫入檔案並將該檔案複製到剪貼簿</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1284"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1295"/>
         <source>Select tool</source>
         <translation>選取</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="840"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1287"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="851"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1298"/>
         <source>Shape tool</source>
         <translation>圖形</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="171"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2475"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2486"/>
         <source>Record/Copy Video</source>
         <translation>錄製/複製影片</translation>
     </message>
@@ -4792,305 +4792,305 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="174"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1327"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1338"/>
         <source>Copy recording</source>
         <translation>複製錄製內容</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="841"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1290"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="852"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1301"/>
         <source>Arrow</source>
         <translation>箭頭</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="842"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="853"/>
         <source>Line</source>
         <translation>直線</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="845"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="856"/>
         <source>Rectangle highlight</source>
         <translation>矩形醒目提示</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="847"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="858"/>
         <source>Pen highlight</source>
         <translation>畫筆醒目提示</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="849"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="860"/>
         <source>Spotlight</source>
         <translation>聚光燈</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="851"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="862"/>
         <source>Rectangle filter</source>
         <translation>矩形濾鏡</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="853"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="864"/>
         <source>Pen filter</source>
         <translation>畫筆濾鏡</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="854"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1299"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="865"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1310"/>
         <source>Text</source>
         <translation>文字</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="856"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1302"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="867"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1313"/>
         <source>Serial number</source>
         <translation>序號</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="857"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1308"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="868"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1319"/>
         <source>Eraser</source>
         <translation>橡皮擦</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="859"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1311"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="870"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1322"/>
         <source>Watermark</source>
         <translation>浮水印</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="863"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="874"/>
         <source>Tools that forbid quick selection of same-type elements</source>
         <translation>禁止快速選取相同類型元素的工具</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="865"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="876"/>
         <source>Prevent left-click selection of matching elements while these tools are active</source>
         <translation>使用這些工具時，禁止用滑鼠左鍵選取相同類型的元素</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="868"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="879"/>
         <source>Quick selection</source>
         <translation>快速選取</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="877"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="888"/>
         <source>Mouse wheel zoom mode</source>
         <translation>滑鼠滾輪縮放模式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="878"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="889"/>
         <source>Choose the fixed point used when zooming a pinned screenshot</source>
         <translation>選擇縮放釘選截圖時使用的固定點</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="884"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="895"/>
         <source>Center on mouse position</source>
         <translation>以滑鼠位置為中心</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="886"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="897"/>
         <source>Fix top-left corner</source>
         <translation>固定左上角</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="888"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="899"/>
         <source>Fix top-right corner</source>
         <translation>固定右上角</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="890"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="901"/>
         <source>Fix bottom-left corner</source>
         <translation>固定左下角</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="892"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="903"/>
         <source>Fix bottom-right corner</source>
         <translation>固定右下角</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="894"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="905"/>
         <source>Fix center point</source>
         <translation>固定中心點</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="947"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="958"/>
         <source>Automatic text recognition</source>
         <translation>自動文字辨識</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="948"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="959"/>
         <source>Recognize text automatically when a pinned screenshot is created</source>
         <translation>建立釘選截圖時自動辨識文字</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="957"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="968"/>
         <source>Auto resize window</source>
         <translation>自動調整視窗大小</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="958"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="969"/>
         <source>Resize scrolling screenshots automatically to remain inside the monitor</source>
         <translation>自動調整捲動截圖視窗大小，使其保持在螢幕範圍內</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="992"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1003"/>
         <source>Left-click action</source>
         <translation>按一下滑鼠左鍵動作</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="993"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1004"/>
         <source>Choose what left-clicking the tray icon does</source>
         <translation>選擇按一下系統匣圖示時執行的動作</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="979"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="990"/>
         <source>Show main window</source>
         <translation>顯示主視窗</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1025"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1036"/>
         <source>4K</source>
         <translation>4K</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1027"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1038"/>
         <source>2K</source>
         <translation>2K</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1030"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1041"/>
         <source>1080p</source>
         <translation>1080p</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1032"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1043"/>
         <source>720p</source>
         <translation>720p</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1034"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1045"/>
         <source>480p</source>
         <translation>480p</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1044"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1055"/>
         <source>83</source>
         <translation>83</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1045"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1056"/>
         <source>120</source>
         <translation>120</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1046"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1057"/>
         <source>60</source>
         <translation>60</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1047"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1058"/>
         <source>30</source>
         <translation>30</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1048"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1059"/>
         <source>24</source>
         <translation>24</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1049"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1060"/>
         <source>15</source>
         <translation>15</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1050"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1061"/>
         <source>10</source>
         <translation>10</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1059"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1070"/>
         <source>Screen recording clarity</source>
         <translation>螢幕錄製清晰度</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1060"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1071"/>
         <source>Scale recordings that exceed the selected maximum resolution</source>
         <translation>縮放超過所選最大解析度的錄製螢幕</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1065"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1076"/>
         <source>Frame rate</source>
         <translation>畫面播放速率</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1066"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1077"/>
         <source>Set the screen recording frame rate</source>
         <translation>設定螢幕錄製畫面播放速率</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1071"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1082"/>
         <source>Animated image clarity</source>
         <translation>動態圖片清晰度</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1072"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1083"/>
         <source>Set the maximum resolution of exported animated images</source>
         <translation>設定匯出動態圖片的最大解析度</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1078"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1089"/>
         <source>Animated image frame rate</source>
         <translation>動態圖片畫面播放速率</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1079"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1090"/>
         <source>Set the frame rate of exported animated images</source>
         <translation>設定匯出動態圖片的畫面播放速率</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="649"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="660"/>
         <source>WebP</source>
         <translation>WebP</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="76"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2441"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2452"/>
         <source>Delay %1s to execute</source>
         <translation>延遲 %1 秒執行</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="100"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1266"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1601"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1979"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2450"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1277"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1612"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1990"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2461"/>
         <source>Text recognition</source>
         <translation>文字辨識</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="112"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1270"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1605"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2454"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1281"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1616"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2465"/>
         <source>Text translation</source>
         <translation>文字翻譯</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="136"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2462"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2473"/>
         <source>Current monitor</source>
         <translation>目前顯示器</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="149"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2466"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2477"/>
         <source>Focused window</source>
         <translation>焦點視窗</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="184"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1572"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1848"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2480"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1583"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1859"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2491"/>
         <source>Screenshot history</source>
         <translation>截圖歷史</translation>
     </message>
@@ -5106,7 +5106,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="246"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1398"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1409"/>
         <source>Small V6</source>
         <translation>小型 V6</translation>
     </message>
@@ -5131,1087 +5131,1102 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <translation>堆疊截圖工具</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="472"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="353"/>
+        <source>Border active color</source>
+        <translation>邊框作用中色彩</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="354"/>
+        <source>Set the border color of pinned screenshots while they have focus</source>
+        <translation>設定釘選截圖取得焦點時的邊框色彩</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="358"/>
+        <source>Pinned window active border</source>
+        <translation>釘選視窗作用中邊框</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="483"/>
         <source>Auto</source>
         <translation>自動</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="473"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="484"/>
         <source>DXGI</source>
         <translation>DXGI</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="474"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="485"/>
         <source>WGC</source>
         <translation>WGC</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="475"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="486"/>
         <source>GDI</source>
         <translation>GDI</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="479"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="490"/>
         <source>API Mode</source>
         <translation>API 模式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="480"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="491"/>
         <source>Choose the preferred API for normal screenshots; Auto uses DXGI on HDR displays and GDI otherwise</source>
         <translation>選擇一般螢幕擷取的偏好 API；自動模式在 HDR 顯示器上使用 DXGI，其他情況使用 GDI</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="483"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="494"/>
         <source>Screenshot API</source>
         <translation>螢幕擷取 API</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="484"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="495"/>
         <source>Capture backend</source>
         <translation>擷取後端</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="495"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="506"/>
         <source>UIA</source>
         <translation>UIA</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="499"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="510"/>
         <source>Window Element API</source>
         <translation>視窗元素 API</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="511"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="522"/>
         <source>Persistent screenshot history</source>
         <translation>持久化截圖歷史</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="512"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="523"/>
         <source>Keep screenshots available after the application closes</source>
         <translation>關閉應用程式後仍保留可用的截圖</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="523"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="534"/>
         <source>Smart selection</source>
         <translation>智慧選取</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="536"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="547"/>
         <source>Menu options</source>
         <translation>選單選項</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="558"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2484"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="569"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2495"/>
         <source>Pin clipboard content to screen</source>
         <translation>固定剪貼簿內容到螢幕</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="559"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="570"/>
         <source>Pin images, image files, formatted text, or HTML from the clipboard to the screen</source>
         <translation>將剪貼簿中的影像、影像檔案、格式化文字或 HTML 貼到螢幕</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="572"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2488"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="583"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2499"/>
         <source>Pin Selected Files to Screen</source>
         <translation>將選取的檔案貼到螢幕</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="573"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="584"/>
         <source>Pin selected image files from File Explorer or the desktop to the screen</source>
         <translation>將檔案總管或桌面中選取的影像檔案貼到螢幕</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="648"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="659"/>
         <source>BMP</source>
         <translation>BMP</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="657"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="668"/>
         <source>Fill Style</source>
         <translation>填充樣式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="658"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="669"/>
         <source>Choose how the area behind recognized text is filled</source>
         <translation>選擇辨識文字後方區域的填充方式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="661"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="672"/>
         <source>Blur</source>
         <translation>模糊</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="663"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="674"/>
         <source>Background Fill</source>
         <translation>背景填充</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="669"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="680"/>
         <source>Save as file dialog</source>
         <translation>儲存為檔案對話框</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="670"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="681"/>
         <source>Choose the dialog used for manual screenshot saves</source>
         <translation>選擇手動儲存擷取畫面時使用的對話框</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="673"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="684"/>
         <source>System</source>
         <translation>系統</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="675"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="686"/>
         <source>Snow Shot</source>
         <translation>Snow Shot</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="790"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="801"/>
         <source>Restore original screen colors</source>
         <translation>還原螢幕原始色彩</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="791"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="802"/>
         <source>Reverse supported full-screen color filters in screenshots.</source>
         <translation>在螢幕擷取中還原支援的全螢幕色彩濾鏡效果。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="800"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="811"/>
         <source>Capture cursor</source>
         <translation>擷取游標</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="801"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="812"/>
         <source>Include the mouse cursor in normal screenshots.</source>
         <translation>在一般截圖中包含滑鼠游標。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="809"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="820"/>
         <source>Shutter Sound Notification</source>
         <translation>快門聲音通知</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="810"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="821"/>
         <source>Play a shutter sound when capturing the focused window or current display.</source>
         <translation>擷取焦點視窗或目前顯示器時播放快門聲音。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="843"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1293"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="854"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1304"/>
         <source>Pen</source>
         <translation>畫筆</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="936"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="947"/>
         <source>Save recognition result as image</source>
         <translation>將辨識結果儲存為圖片</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="937"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="948"/>
         <source>Include the displayed text recognition or original-image translation result when saving an image.</source>
         <translation>儲存圖片時包含目前顯示的文字辨識或原圖翻譯結果。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="981"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="992"/>
         <source>Copy to Clipboard</source>
         <translation>複製到剪貼簿</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="983"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="994"/>
         <source>Pin to Screen</source>
         <translation>釘選到螢幕</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="985"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="996"/>
         <source>Open Function Settings</source>
         <translation>開啟功能設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1001"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1012"/>
         <source>Scroll-wheel click action</source>
         <translation>滾輪點擊操作</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1002"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1013"/>
         <source>Choose what clicking the tray icon with the scroll wheel does</source>
         <translation>選擇使用滾輪點擊系統匣圖示時執行的操作</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1011"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1022"/>
         <source>Layout Processing</source>
         <translation>排版處理</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1012"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1023"/>
         <source>Group recognized text before translating</source>
         <translation>翻譯前整理辨識出的文字</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1016"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1027"/>
         <source>Smart Merge</source>
         <translation>智慧合併</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1018"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1029"/>
         <source>Original</source>
         <translation>原始</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1084"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1095"/>
         <source>Encoder</source>
         <translation>編碼器</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1085"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1096"/>
         <source>Choose the video encoder</source>
         <translation>選擇影片編碼器</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1089"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1100"/>
         <source>H.264 (Hardware)</source>
         <translation>H.264（硬體）</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1090"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1101"/>
         <source>H.264</source>
         <translation>H.264</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1092"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1103"/>
         <source>H.265</source>
         <translation>H.265</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1095"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1106"/>
         <source>Encoding preset</source>
         <translation>編碼預設</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1096"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1107"/>
         <source>Balance encoding speed against compression efficiency</source>
         <translation>平衡編碼速度與壓縮效率</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1101"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1112"/>
         <source>Ultra fast</source>
         <translation>極速</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1103"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1114"/>
         <source>Very fast</source>
         <translation>非常快</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1105"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1116"/>
         <source>Medium</source>
         <translation>中等</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1107"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1118"/>
         <source>Very slow</source>
         <translation>非常慢</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1109"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1120"/>
         <source>Maximum compression</source>
         <translation>極致壓縮</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1111"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1122"/>
         <source>Hide toolbar in recording</source>
         <translation>錄製時隱藏工具列</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1112"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1123"/>
         <source>Exclude the screen recording toolbar from captured video</source>
         <translation>錄製螢幕時不擷取螢幕錄製工具列</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1122"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1133"/>
         <source>Automatically disable when a focused fullscreen window exists</source>
         <translation>存在焦點全螢幕視窗時自動停用</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1124"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1135"/>
         <source>Ignore global hotkeys while the focused window occupies an entire monitor</source>
         <translation>焦點視窗占滿整個螢幕時忽略全域快速鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1133"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1144"/>
         <source>Auto start at boot</source>
         <translation>開機時自動啟動</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1134"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1145"/>
         <source>Start Snow Shot in the background when Windows starts</source>
         <translation>Windows 啟動時在背景啟動 Snow Shot</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1162"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1173"/>
         <source>Set up to two keys for this screenshot drawing tool</source>
         <translation>為此截圖繪圖工具設定最多兩個按鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1165"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1176"/>
         <source>Set up to two keys for this recording action</source>
         <translation>為此錄影操作設定最多兩個快捷鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1171"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1182"/>
         <source>Drawing shortcut</source>
         <translation>繪圖快速鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1172"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1183"/>
         <source>Screen recording shortcut</source>
         <translation>錄影快捷鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1173"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1184"/>
         <source>Pin to screen shortcut</source>
         <translation>釘選到螢幕快速鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1201"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1212"/>
         <source>Move entire selection</source>
         <translation>移動整個選取區</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1206"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1217"/>
         <source>Keep selection width and height consistent</source>
         <translation>保持選取區寬高一致</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1210"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1221"/>
         <source>Select window/window sub-element</source>
         <translation>選擇視窗/視窗子元素</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1214"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1225"/>
         <source>Previous screenshot history</source>
         <translation>上一筆截圖歷史</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1218"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1229"/>
         <source>Next screenshot history</source>
         <translation>下一筆截圖歷史</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1222"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1233"/>
         <source>Select previously selected area</source>
         <translation>選取先前選取的區域</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1225"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1236"/>
         <source>Copy color</source>
         <translation>複製色彩</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1231"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1242"/>
         <source>Video recording</source>
         <translation>影片錄製</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1235"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1246"/>
         <source>Scrolling screenshot</source>
         <translation>捲動截圖</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1245"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1256"/>
         <source>Cancel screenshot</source>
         <translation>取消截圖</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1258"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1269"/>
         <source>Table recognition</source>
         <translation>表格辨識</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1262"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1273"/>
         <source>Barcode recognition</source>
         <translation>條碼辨識</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1296"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1307"/>
         <source>Highlight</source>
         <translation>醒目提示</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1305"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1316"/>
         <source>Filter</source>
         <translation>濾鏡</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1319"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1330"/>
         <source>Export recording</source>
         <translation>匯出錄影</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1323"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1334"/>
         <source>Start/pause/resume recording</source>
         <translation>開始/暫停/繼續錄影</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1331"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1342"/>
         <source>End recording</source>
         <translation>結束錄影</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1344"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1355"/>
         <source>Copy original content</source>
         <translation>複製原始內容</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1351"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1362"/>
         <source>Show text recognition results</source>
         <translation>顯示文字辨識結果</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1354"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1365"/>
         <source>Drawing mode</source>
         <translation>繪製模式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1357"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1368"/>
         <source>Thumbnail mode</source>
         <translation>縮圖模式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1360"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1371"/>
         <source>Close window</source>
         <translation>關閉視窗</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1383"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1394"/>
         <source>DirectML acceleration</source>
         <translation>DirectML 加速</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1384"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1395"/>
         <source>Use DirectML for GPU-accelerated text recognition when available</source>
         <translation>可用時使用 DirectML 透過 GPU 加速文字辨識</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1397"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1408"/>
         <source>Ultra Small V6</source>
         <translation>超小型 V6</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1399"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1410"/>
         <source>Medium V6</source>
         <translation>中型 V6</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1401"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1412"/>
         <source>Small V5</source>
         <translation>小型 V5</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1403"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1414"/>
         <source>Medium V5</source>
         <translation>中型 V5</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1412"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1423"/>
         <source>Model Type</source>
         <translation>模型類型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1405"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1416"/>
         <source>Small V4</source>
         <translation>小型 V4</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1407"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1418"/>
         <source>Medium V4</source>
         <translation>中型 V4</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1416"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1427"/>
         <source>OCR model</source>
         <translation>OCR 模型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1413"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1424"/>
         <source>Choose the OCR model version and size to balance recognition speed and accuracy</source>
         <translation>選擇 OCR 模型版本和大小，以平衡辨識速度和準確率</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1433"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1473"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1444"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1484"/>
         <source>Clear</source>
         <translation>清除</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1440"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1451"/>
         <source>Clear history</source>
         <translation>清除歷史</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1459"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1470"/>
         <source>App-wide storage usage breakdown, location, mode, and latest errors</source>
         <translation>整個應用程式的儲存用量明細、位置、模式與最近錯誤</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1484"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1495"/>
         <source>Clear thumbnail cache</source>
         <translation>清除縮圖快取</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1476"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1487"/>
         <source>Clear the thumbnail cache?</source>
         <translation>清除縮圖快取？</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1477"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1488"/>
         <source>Cached history thumbnails will be removed and rebuilt on demand</source>
         <translation>已快取的歷史縮圖將被刪除，並在需要時重新產生</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1479"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1490"/>
         <source>Clear cache</source>
         <translation>清除快取</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1486"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1497"/>
         <source>Remove cached screenshot-history thumbnails</source>
         <translation>刪除已快取的截圖歷史縮圖</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1487"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1498"/>
         <source>Thumbnail cache</source>
         <translation>縮圖快取</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1508"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1519"/>
         <source>Delete temporary recording files</source>
         <translation>刪除螢幕錄製暫存檔案</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1499"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1510"/>
         <source>Delete temporary recording files?</source>
         <translation>刪除螢幕錄製暫存檔案？</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1500"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1511"/>
         <source>Leftover working files from finished or interrupted recordings will be removed</source>
         <translation>已完成或中斷的螢幕錄製所遺留的工作檔案將被刪除</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1503"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1514"/>
         <source>Delete files</source>
         <translation>刪除檔案</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1510"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1521"/>
         <source>Remove leftover recording working files that are no longer needed</source>
         <translation>刪除不再需要的螢幕錄製遺留工作檔案</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1512"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1523"/>
         <source>Recording temporary files</source>
         <translation>螢幕錄製暫存檔案</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1898"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1909"/>
         <source>App-wide storage usage, location, mode, errors, and cleanup</source>
         <translation>整個應用程式的儲存用量、位置、模式、錯誤與清理</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2376"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2497"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2387"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2508"/>
         <source>Window grouping</source>
         <translation>視窗分組</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2384"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2507"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2395"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2518"/>
         <source>Show main interface</source>
         <translation>顯示主介面</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1441"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1480"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1504"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1452"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1491"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1515"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1448"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1459"/>
         <source>Delete history</source>
         <translation>刪除歷史記錄</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1458"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1897"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1469"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1908"/>
         <source>Storage status</source>
         <translation>儲存狀態</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1462"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1473"/>
         <source>Disk usage</source>
         <translation>磁碟用量</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1463"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1474"/>
         <source>Storage location</source>
         <translation>儲存位置</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1464"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1475"/>
         <source>Storage error</source>
         <translation>儲存錯誤</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1546"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1557"/>
         <source>Screen recording shortcuts and actions</source>
         <translation>螢幕錄製快速鍵和操作</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1556"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2040"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1567"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2051"/>
         <source>Other</source>
         <translation>其他</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1646"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1657"/>
         <source>Configure screenshot behavior</source>
         <translation>設定截圖行為</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1652"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1663"/>
         <source>Screenshot selection behavior</source>
         <translation>截圖選取行為</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1696"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1707"/>
         <source>Screen recording and animated image export settings</source>
         <translation>螢幕錄製與動態圖片匯出設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1713"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1724"/>
         <source>Global hotkey activation behavior</source>
         <translation>全域快速鍵啟用行為</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1727"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1955"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1738"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1966"/>
         <source>General</source>
         <translation>一般</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1736"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1747"/>
         <source>Screenshot interface and visual guidance settings</source>
         <translation>截圖介面與視覺輔助設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1790"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1801"/>
         <source>Toolbar</source>
         <translation>工具列</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1791"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1802"/>
         <source>Configure the screenshot, pinned, and recording toolbars</source>
         <translation>設定截圖、釘選與螢幕錄製工具列</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1744"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1755"/>
         <source>Selection mask color</source>
         <translation>選取範圍遮罩色彩</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1437"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1448"/>
         <source>Clear screenshot history?</source>
         <translation>清除截圖歷史？</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1445"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1456"/>
         <source>Clear screenshot history</source>
         <translation>清除截圖歷史</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1449"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1460"/>
         <source>Remove screenshots</source>
         <translation>移除截圖</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1645"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1656"/>
         <source>Function settings</source>
         <translation>功能設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1523"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1711"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1534"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1722"/>
         <source>Global hotkeys</source>
         <translation>全域快速鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1722"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1733"/>
         <source>Interface settings</source>
         <translation>介面設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1723"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1734"/>
         <source>Interface settings page</source>
         <translation>介面設定頁面</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1745"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1756"/>
         <source>Set the color and opacity outside the screenshot selection</source>
         <translation>設定截圖選取範圍外區域的色彩與透明度</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1753"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1764"/>
         <source>Cursor guide line color</source>
         <translation>游標輔助線色彩</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1754"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1765"/>
         <source>Draw a dashed crosshair at the pointer while selecting</source>
         <translation>選取時在滑鼠指標處繪製虛線十字輔助線</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1761"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1772"/>
         <source>Monitor center guide line color</source>
         <translation>顯示器中央輔助線色彩</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1762"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1773"/>
         <source>Draw a solid crosshair at the active monitor center while selecting</source>
         <translation>選取時在目前顯示器中央繪製實線十字輔助線</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1770"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1781"/>
         <source>Color picker center guide line color</source>
         <translation>色彩選擇器中央輔助線色彩</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1772"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1783"/>
         <source>Draw four guide segments around the sampled center pixel</source>
         <translation>在取樣的中央像素周圍繪製四段輔助線</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1686"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1799"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2013"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1697"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1810"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2024"/>
         <source>Drawing</source>
         <translation>繪圖</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1687"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1800"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1698"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1811"/>
         <source>Configure drawing tools and the screenshot drawing toolbar</source>
         <translation>設定繪圖工具和截圖繪圖工具列</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1662"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1809"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1673"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1820"/>
         <source>Pinned screenshot window appearance settings</source>
         <translation>釘選截圖視窗外觀設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1703"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1816"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1714"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1827"/>
         <source>Tray</source>
         <translation>系統匣</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1704"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1817"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1715"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1828"/>
         <source>System tray availability and icon settings</source>
         <translation>系統匣可用性與圖示設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1864"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1875"/>
         <source>Retention period</source>
         <translation>保留期限</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1869"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1880"/>
         <source> days</source>
         <translation> 天</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1870"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1881"/>
         <source>Age</source>
         <translation>期限</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1873"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1884"/>
         <source>Maximum entries</source>
         <translation>最大項目數</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1884"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1895"/>
         <source>Maximum disk usage</source>
         <translation>最大磁碟用量</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1890"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1901"/>
         <source> MiB</source>
         <translation> MiB</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1891"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1902"/>
         <source>Disk limit</source>
         <translation>磁碟限制</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1832"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1843"/>
         <source>Screenshots</source>
         <translation>截圖</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1833"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1844"/>
         <source>Screenshot output locations, formats, and filenames</source>
         <translation>截圖輸出位置、格式和檔名</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1841"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1852"/>
         <source>Recording output location and filename settings</source>
         <translation>錄製輸出位置和檔名設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1956"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1967"/>
         <source>General system integration settings</source>
         <translation>一般系統整合設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1987"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1998"/>
         <source>Core</source>
         <translation>核心</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1999"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2010"/>
         <source>Configure screenshot editor shortcut keys</source>
         <translation>設定截圖編輯器快速鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2015"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2026"/>
         <source>Shortcut keys for drawing tools</source>
         <translation>繪圖工具快速鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2041"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2052"/>
         <source>Shortcut keys for recognition and screenshot actions</source>
         <translation>辨識和截圖操作的快速鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2079"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2090"/>
         <source>Settings</source>
         <translation>設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1951"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1962"/>
         <source>Configure application process behavior</source>
         <translation>設定應用程式處理程序行為</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1988"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1999"/>
         <source>Core application settings</source>
         <translation>核心應用程式設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="419"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="430"/>
         <source>Application priority</source>
         <translation>應用程式優先順序</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="420"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="431"/>
         <source>Choose how much execution time the application receives</source>
         <translation>選擇應用程式取得的執行時間</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="422"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="433"/>
         <source>Process priority</source>
         <translation>處理程序優先順序</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="423"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="434"/>
         <source>Execution order</source>
         <translation>執行順序</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="247"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="409"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="420"/>
         <source>Normal</source>
         <translation>正常</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="411"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="422"/>
         <source>Above normal</source>
         <translation>高於正常</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="412"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="423"/>
         <source>High</source>
         <translation>高</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="414"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="425"/>
         <source>Real-time</source>
         <translation>即時</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1386"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1397"/>
         <source>DirectML</source>
         <translation>DirectML</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1387"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1398"/>
         <source>GPU acceleration</source>
         <translation>GPU 加速</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1439"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1450"/>
         <source>All screenshot history will be removed</source>
         <translation>所有截圖歷史都將被移除</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1447"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1458"/>
         <source>Permanently remove all saved screenshots</source>
         <translation>永久移除所有已儲存的截圖</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="742"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="753"/>
         <source>Copy text (Global)</source>
         <translation>複製文字（全域）</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="745"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="756"/>
         <source>Copy text and end screenshot (Global)</source>
         <translation>複製文字並結束截圖（全域）</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1524"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1535"/>
         <source>Global hotkeys page</source>
         <translation>全域快速鍵頁面</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1581"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1592"/>
         <source>Global mouse</source>
         <translation>全域滑鼠</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1582"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1593"/>
         <source>Configure mouse combinations for screenshot actions</source>
         <translation>設定螢幕截圖操作的滑鼠組合</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1588"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1599"/>
         <source>Mouse combinations for screenshot actions</source>
         <translation>螢幕截圖操作的滑鼠組合</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="758"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1238"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1613"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="769"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1249"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1624"/>
         <source>Quick save</source>
         <translation>快速儲存</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1997"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2008"/>
         <source>Application shortcuts</source>
         <translation>應用快捷鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2380"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2502"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2391"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2513"/>
         <source>Disable global hotkeys</source>
         <translation>停用全域快速鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="901"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="912"/>
         <source>Double-click Action</source>
         <translation>按兩下操作</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="902"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="913"/>
         <source>Choose the action for double-clicking a draggable area of a pinned screenshot</source>
         <translation>選擇按兩下貼圖可拖曳區域時執行的操作</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="910"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="929"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="921"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="940"/>
         <source>Thumbnail Mode</source>
         <translation>縮圖模式</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="911"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="930"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="922"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="941"/>
         <source>Close</source>
         <translation>關閉</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="918"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="929"/>
         <source>Middle Mouse Button Action</source>
         <translation>滑鼠中鍵操作</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="919"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="930"/>
         <source>Choose the action for middle-clicking a draggable area of a pinned screenshot</source>
         <translation>選擇在釘選截圖可拖曳區域按一下滑鼠中鍵時執行的操作</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="927"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="938"/>
         <source>Reset Zoom</source>
         <translation>重設縮放</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1856"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1867"/>
         <source>Keep records permanently</source>
         <translation>永久保留記錄</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1858"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1869"/>
         <source>No automatic history cleanup</source>
         <translation>不自動清理歷史記錄</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1638"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1649"/>
         <source>Translate text between languages</source>
         <translation>在不同語言之間翻譯文字</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="548"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2492"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="559"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2503"/>
         <source>Translate Selected Text</source>
         <translation>翻譯選取文字</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="549"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="560"/>
         <source>Capture selected text and open it in Translation</source>
         <translation>擷取選取文字並在翻譯頁面中開啟</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="452"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="463"/>
         <source>Manual</source>
         <translation>手動</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="454"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="465"/>
         <source>Check automatically</source>
         <translation>自動檢查</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="456"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="467"/>
         <source>Download automatically</source>
         <translation>自動下載</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="460"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="471"/>
         <source>Updates</source>
         <translation>更新</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="461"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="472"/>
         <source>Download new versions automatically and ask before restarting</source>
         <translation>自動下載新版本，並在重新啟動前詢問</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="463"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="474"/>
         <source>Software updates</source>
         <translation>軟體更新</translation>
     </message>
@@ -7427,28 +7442,28 @@ Change the shortcut and try again</source>
 <context>
     <name>snow_shot::app::ApplicationController</name>
     <message>
-        <location filename="../src/app/applicationcontroller.cpp" line="193"/>
+        <location filename="../src/app/applicationcontroller.cpp" line="194"/>
         <source>An update is ready. Open About to restart and update Snow Shot.</source>
         <translation>更新已準備就緒。請開啟「關於」頁面，重新啟動並更新 Snow Shot。</translation>
     </message>
     <message>
-        <location filename="../src/app/applicationcontroller.cpp" line="201"/>
-        <location filename="../src/app/applicationcontroller.cpp" line="226"/>
+        <location filename="../src/app/applicationcontroller.cpp" line="202"/>
+        <location filename="../src/app/applicationcontroller.cpp" line="227"/>
         <source>Finish capturing, recording, or exporting before updating.</source>
         <translation>請先完成擷取、錄影或匯出，再進行更新。</translation>
     </message>
     <message>
-        <location filename="../src/app/applicationcontroller.cpp" line="206"/>
+        <location filename="../src/app/applicationcontroller.cpp" line="207"/>
         <source>Restart and update</source>
         <translation>重新啟動並更新</translation>
     </message>
     <message>
-        <location filename="../src/app/applicationcontroller.cpp" line="207"/>
+        <location filename="../src/app/applicationcontroller.cpp" line="208"/>
         <source>Snow Shot will close and restart to install the update. Continue?</source>
         <translation>Snow Shot 將關閉並重新啟動以安裝更新。是否繼續？</translation>
     </message>
     <message>
-        <location filename="../src/app/applicationcontroller.cpp" line="214"/>
+        <location filename="../src/app/applicationcontroller.cpp" line="215"/>
         <source>Your settings could not be saved. Please retry before updating.</source>
         <translation>無法儲存設定。請重試儲存後再更新。</translation>
     </message>

@@ -138,8 +138,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 36 && itemCount == 144 && foundUpdates,
-            "catalog must contain thirty-six sections and one hundred forty-four items");
+    require(sectionCount == 36 && itemCount == 145 && foundUpdates,
+            "catalog must contain thirty-six sections and one hundred forty-five items");
     const auto* history =
         catalog.section(QStringLiteral("storage-and-privacy"), QStringLiteral("history"));
     require(history != nullptr && history->items.size() >= 2 &&
@@ -734,6 +734,20 @@ void builtInCatalogIsCompleteAndValid() {
             std::get<settings::SettingsRadioDefinition>(trayIcon->payload).options.size() == 6,
         "new Interface settings controls must retain their schema contracts");
 
+    const auto& pinSection = interfacePage->sections.at(5);
+    const auto* pinBorderActiveColor =
+        catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
+                      QStringLiteral("interface.pin-to-screen.border-active-color")});
+    require(
+        pinSection.items.size() == 2 && pinBorderActiveColor != nullptr &&
+            pinBorderActiveColor->configurationKey ==
+                QStringLiteral("pin_to_screen/border_active_color") &&
+            std::get<settings::SettingsColorDefinition>(pinBorderActiveColor->payload).binding ==
+                settings::SettingsColorBinding::PinBorderActiveColor &&
+            storage::ConfigurationSchema::defaultValue(pinBorderActiveColor->configurationKey) ==
+                QStringLiteral("#4096FFFF"),
+        "pin to screen must expose a border active color defaulting to #4096ff");
+
     const auto* retention =
         storage::ConfigurationSchema::entry(QStringLiteral("capture_history/retention_days"));
     const auto* shortcuts =
@@ -1214,7 +1228,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 192 && index.search(QString()).size() == 192,
+    require(index.entries().size() == 193 && index.search(QString()).size() == 193,
             "search must generate all catalog nodes in catalog order");
     const auto selectedFiles = index.search(QStringLiteral("Pin Selected Files to Screen"));
     require(!selectedFiles.isEmpty() &&
@@ -1270,7 +1284,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 36 && items == 144,
+    require(pages == 12 && sections == 36 && items == 145,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

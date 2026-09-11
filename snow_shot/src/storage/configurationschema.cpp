@@ -700,6 +700,8 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      QStringLiteral("#00000000"), ConfigurationValueKind::String},
     {QStringLiteral("pin_to_screen/border_color"), QStringLiteral("#DBDBDBFF"),
      ConfigurationValueKind::String},
+    {QStringLiteral("pin_to_screen/border_active_color"), QStringLiteral("#4096FFFF"),
+     ConfigurationValueKind::String},
     {QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"),
      QStringLiteral("mouse_position"),
      ConfigurationValueKind::String,
@@ -1083,6 +1085,7 @@ bool isRgbaColorKey(const QString& key) {
            key == QStringLiteral("screenshot_ui/monitor_center_guide_line_color") ||
            key == QStringLiteral("screenshot_ui/color_picker_center_guide_line_color") ||
            key == QStringLiteral("pin_to_screen/border_color") ||
+           key == QStringLiteral("pin_to_screen/border_active_color") ||
            key == QStringLiteral("screen_recording/mouse_trail_color") ||
            key == QStringLiteral("screen_recording/mouse_click_color") ||
            key == QStringLiteral("screen_recording/keyboard_background_color") ||
