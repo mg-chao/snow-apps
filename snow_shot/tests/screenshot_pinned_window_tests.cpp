@@ -1631,6 +1631,11 @@ void setPinnedWindowHovered(ScreenshotPinnedWindow& window, bool hovered) {
     QCoreApplication::sendEvent(&window, &leave);
 }
 
+void setPinnedWindowActive(ScreenshotPinnedWindow& window, bool active) {
+    QEvent activation(active ? QEvent::WindowActivate : QEvent::WindowDeactivate);
+    QCoreApplication::sendEvent(&window, &activation);
+}
+
 void pinnedLargeImageRemainsOpenWhenEnteringDrawingMode(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -2479,6 +2484,9 @@ void pinnedControlsMatchReferenceStyle(SnowCanvasRuntime&) {
     require(panel->geometry().topRight() == QPoint(pinnedWindow->width() - 17, 16),
             "pinned controls should use the reference 16 pixel top-right inset");
 
+    // Pinning activates the window on window managers that grant focus, so drive the
+    // activation state explicitly to keep the border assertions platform-independent.
+    setPinnedWindowActive(*pinnedWindow, false);
     const QImage pinnedWindowImage = renderWidget(*pinnedWindow);
     const int middleY = pinnedWindowImage.height() / 2;
     const QColor borderColor(QStringLiteral("#DBDBDB"));
@@ -2497,6 +2505,29 @@ void pinnedControlsMatchReferenceStyle(SnowCanvasRuntime&) {
     requireColorNear(recoloredPinnedWindow.pixelColor(0, middleY), liveBorderColor, 0,
                      "a live border-color update should repaint the pinned border");
     ScreenshotPinnedWindow::setRuntimeBorderColor(borderColor);
+
+    const QColor defaultActiveBorderColor(QStringLiteral("#4096FF"));
+    setPinnedWindowActive(*pinnedWindow, true);
+    require(border->property("borderColor").value<QColor>() == defaultActiveBorderColor,
+            "an activated pinned window should draw the active border color");
+    const QImage activatedPinnedWindow = renderWidget(*pinnedWindow);
+    requireColorNear(activatedPinnedWindow.pixelColor(0, middleY), defaultActiveBorderColor, 0,
+                     "an activated pinned window should repaint with the active border color");
+    const QColor liveActiveBorderColor(QStringLiteral("#276EF1"));
+    ScreenshotPinnedWindow::setRuntimeBorderActiveColor(liveActiveBorderColor);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    require(border->property("borderColor").value<QColor>() == liveActiveBorderColor,
+            "a live active border-color update should reach an activated pinned window");
+    const QImage activeRecoloredPinnedWindow = renderWidget(*pinnedWindow);
+    requireColorNear(activeRecoloredPinnedWindow.pixelColor(0, middleY), liveActiveBorderColor, 0,
+                     "a live active border-color update should repaint the pinned border");
+    setPinnedWindowActive(*pinnedWindow, false);
+    require(border->property("borderColor").value<QColor>() == borderColor,
+            "a deactivated pinned window should return to the regular border color");
+    const QImage deactivatedPinnedWindow = renderWidget(*pinnedWindow);
+    requireColorNear(deactivatedPinnedWindow.pixelColor(0, middleY), borderColor, 0,
+                     "a deactivated pinned window should repaint with the regular border color");
+    ScreenshotPinnedWindow::setRuntimeBorderActiveColor(defaultActiveBorderColor);
 
     const QColor mask = adqt::theme::ThemeManager::instance().resolveTheme(editButton).colorBgMask;
     const QImage editNormal = renderWidget(*editButton);
