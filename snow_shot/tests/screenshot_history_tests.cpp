@@ -1457,6 +1457,7 @@ void completionGesturesRequireAConfirmedSelectionAndSupportedTool() {
     const std::pair<QString, QString> commands[] = {
         {QStringLiteral("copy"), QStringLiteral("copy_to_clipboard")},
         {QStringLiteral("save"), QStringLiteral("save_as_file")},
+        {QStringLiteral("quick_save"), QStringLiteral("quick_save")},
         {QStringLiteral("pin"), QStringLiteral("pin_to_screen")},
         {QStringLiteral("none"), QString()},
     };

@@ -340,6 +340,9 @@ QString actionToolShortcutId(const QString& itemId) {
     if (itemId == QStringLiteral("save-as-file")) {
         return QStringLiteral("save_as_file");
     }
+    if (itemId == QStringLiteral("quick-save")) {
+        return QStringLiteral("quick_save");
+    }
     return {};
 }
 
@@ -4492,6 +4495,8 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
 
     if (options.showSaveButton && !options.saveButtonWithResultActions) {
         m_quickSaveButton = addActionButton("Quick save", custom_outlined_icons::QuickSave());
+        applyScreenshotShortcutTooltip(m_quickSaveButton, QStringLiteral("Quick save"),
+                                       QStringLiteral("quick_save"));
         m_quickSaveButton->setObjectName(QStringLiteral("screenshotQuickSaveButton"));
         m_quickSaveButton->hide();
         connect(m_quickSaveButton, &adqt::widgets::AdButton::clicked, this,
@@ -4567,6 +4572,7 @@ bool ScreenshotToolPalette::activateScreenshotShortcut(const QString& actionId) 
         {QStringLiteral("text_translation"), QStringLiteral("text-translation")},
         {QStringLiteral("video_recording"), QStringLiteral("record-screen")},
         {QStringLiteral("scrolling_screenshot"), QStringLiteral("scrolling-screenshot")},
+        {QStringLiteral("quick_save"), QStringLiteral("quick-save")},
         {QStringLiteral("save_as_file"), QStringLiteral("save-as-file")},
         {QStringLiteral("pin_to_screen"), QStringLiteral("pin-to-screen")},
     };
@@ -4618,6 +4624,8 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
 
     if (options.showSaveButton && options.saveButtonWithResultActions) {
         m_quickSaveButton = addActionButton("Quick save", custom_outlined_icons::QuickSave());
+        applyScreenshotShortcutTooltip(m_quickSaveButton, QStringLiteral("Quick save"),
+                                       QStringLiteral("quick_save"));
         m_quickSaveButton->setObjectName(QStringLiteral("screenshotQuickSaveButton"));
         m_quickSaveButton->hide();
         connect(m_quickSaveButton, &adqt::widgets::AdButton::clicked, this,

@@ -215,6 +215,10 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             defaultValue("screenshot/double_click_action").toString() == QStringLiteral("copy") &&
             defaultValue("screenshot/middle_mouse_button_action").toString() ==
                 QStringLiteral("pin") &&
+            defaultValue("screenshot_shortcuts/quick_save").toArray() ==
+                QJsonArray{QStringLiteral("Ctrl+Shift+S")} &&
+            defaultValue("screenshot_shortcuts/save_as_file").toArray() ==
+                QJsonArray{QStringLiteral("Ctrl+S")} &&
             !defaultValue("screenshot/auto_save_after_copy").toBool() &&
             !defaultValue("screenshot/copy_image_file_to_clipboard").toBool() &&
             defaultValue("screenshot/image_save_directory").toString() ==
@@ -419,11 +423,11 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
           QStringLiteral("quick_copy_text_and_end_screenshot"),
           QStringLiteral("enable_edit_mode")}},
         {QStringLiteral("screenshot/double_click_action"),
-         {QStringLiteral("copy"), QStringLiteral("save"), QStringLiteral("pin"),
-          QStringLiteral("none")}},
+         {QStringLiteral("copy"), QStringLiteral("save"), QStringLiteral("quick_save"),
+          QStringLiteral("pin"), QStringLiteral("none")}},
         {QStringLiteral("screenshot/middle_mouse_button_action"),
-         {QStringLiteral("copy"), QStringLiteral("save"), QStringLiteral("pin"),
-          QStringLiteral("none")}},
+         {QStringLiteral("copy"), QStringLiteral("save"), QStringLiteral("quick_save"),
+          QStringLiteral("pin"), QStringLiteral("none")}},
         {QStringLiteral("screenshot/image_format"),
          {QStringLiteral("png"), QStringLiteral("jpeg"), QStringLiteral("bmp"),
           QStringLiteral("webp"), QStringLiteral("jxl"), QStringLiteral("avif")}},
@@ -1073,7 +1077,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     const storage::ScreenshotShortcutSettings screenshotShortcuts;
     const QMap<QString, QStringList> screenshotDefaults = screenshotShortcuts.allShortcuts();
     require(
-        screenshotDefaults.size() == 24 &&
+        screenshotDefaults.size() == 25 &&
             screenshotShortcuts.moveTool() ==
                 QStringList{QStringLiteral("M"), QStringLiteral("Ctrl+E")} &&
             screenshotShortcuts.moveCursorUp() ==
@@ -1096,6 +1100,10 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             screenshotShortcuts.copyColor() == QStringList{QStringLiteral("C")} &&
             screenshotDefaults.value(QStringLiteral("pin_to_screen")) ==
                 QStringList{QStringLiteral("Ctrl+F")} &&
+            screenshotDefaults.value(QStringLiteral("quick_save")) ==
+                QStringList{QStringLiteral("Ctrl+Shift+S")} &&
+            screenshotDefaults.value(QStringLiteral("save_as_file")) ==
+                QStringList{QStringLiteral("Ctrl+S")} &&
             screenshotDefaults.value(QStringLiteral("cancel_screenshot")) ==
                 QStringList{QStringLiteral("Esc")} &&
             screenshotDefaults.value(QStringLiteral("copy_to_clipboard")) ==
