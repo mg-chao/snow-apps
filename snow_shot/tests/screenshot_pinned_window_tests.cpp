@@ -2587,8 +2587,7 @@ void pinnedControlsMatchReferenceStyle(SnowCanvasRuntime&) {
                 canvas->testAttribute(Qt::WA_NoSystemBackground),
             "pinned result widgets should use per-pixel transparency");
     require(border->geometry() == pinnedWindow->rect() && border->isVisible() &&
-                border->testAttribute(Qt::WA_TransparentForMouseEvents) &&
-                !border->mask().contains(border->rect().center()),
+                border->testAttribute(Qt::WA_TransparentForMouseEvents) && border->mask().isEmpty(),
             "the pinned border should cover the edges without obstructing the canvas");
     require(editButton->shape() == adqt::widgets::AdButton::Shape::Circle &&
                 closeButton->shape() == adqt::widgets::AdButton::Shape::Circle &&
@@ -2670,6 +2669,124 @@ void pinnedControlsMatchReferenceStyle(SnowCanvasRuntime&) {
     closeButton->click();
     require(processUntilDeleted(guardedWindow, 2000),
             "pinned window was not deleted after the control style test");
+}
+
+void pinnedBorderUsesTwoPhysicalPixels(SnowCanvasRuntime&) {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+
+    const QColor borderColor(QStringLiteral("#DBDBDB"));
+    ScreenshotPinnedWindow::setRuntimeBorderColor(borderColor);
+
+    const auto presentWindow = [&screen](int physicalSide) {
+        QImage background(physicalSide, physicalSide, QImage::Format_ARGB32_Premultiplied);
+        background.fill(QColor(42, 84, 126));
+        auto* pinnedWindow = new ScreenshotPinnedWindow();
+        ScreenshotPinnedWindow::Config config;
+        config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), background.size());
+        config.canvasSourceRect = QRectF(QPointF(0.0, 0.0), QSizeF(background.size()));
+        config.imageSource = ScreenshotImageSource::fromImage(background, config.canvasSourceRect);
+        config.screen = screen;
+        config.enableEditing = false;
+        require(pinnedWindow->present(config), "pinned window presentation failed");
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        setPinnedWindowActive(*pinnedWindow, false);
+        return pinnedWindow;
+    };
+    const auto renderAtScale = [](ScreenshotPinnedWindow& pinnedWindow, qreal deviceScale) {
+        // The image mirrors the paint surface the border frame anchors to:
+        // the window's device extent with each edge qRound-ed, the same
+        // convention the border frame uses.
+        QImage rendered(qRound(pinnedWindow.width() * deviceScale),
+                        qRound(pinnedWindow.height() * deviceScale),
+                        QImage::Format_ARGB32_Premultiplied);
+        rendered.setDevicePixelRatio(deviceScale);
+        rendered.fill(Qt::transparent);
+        {
+            QPainter painter(&rendered);
+            pinnedWindow.render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
+        }
+        rendered.setDevicePixelRatio(1.0);
+        return rendered;
+    };
+
+    // Scales at or below unity keep the synthetic surface within the window's
+    // native client on every screen, so the assertions below hold regardless
+    // of the monitor's scale factor.
+    const qreal renderScales[]{1.0, 0.8, 0.75};
+    for (const qreal renderScale : renderScales) {
+        auto* pinnedWindow = presentWindow(400);
+        QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
+        const QImage rendered = renderAtScale(*pinnedWindow, renderScale);
+
+        const int lastColumn = rendered.width() - 1;
+        const int lastRow = rendered.height() - 1;
+        const int middleX = rendered.width() / 2;
+        const int middleY = rendered.height() / 2;
+        for (int inset = 0; inset < 2; ++inset) {
+            requireColorNear(rendered.pixelColor(inset, middleY), borderColor, 0,
+                             "the pinned border left edge must cover two full device pixels");
+            requireColorNear(rendered.pixelColor(lastColumn - inset, middleY), borderColor, 0,
+                             "the pinned border right edge must cover two full device pixels");
+            requireColorNear(rendered.pixelColor(middleX, inset), borderColor, 0,
+                             "the pinned border top edge must cover two full device pixels");
+            requireColorNear(rendered.pixelColor(middleX, lastRow - inset), borderColor, 0,
+                             "the pinned border bottom edge must cover two full device pixels");
+        }
+        require(rendered.pixelColor(2, middleY) != borderColor &&
+                    rendered.pixelColor(lastColumn - 2, middleY) != borderColor &&
+                    rendered.pixelColor(middleX, 2) != borderColor &&
+                    rendered.pixelColor(middleX, lastRow - 2) != borderColor,
+                qPrintable(
+                    QStringLiteral("the pinned border must stop after two device pixels (scale %1)")
+                        .arg(renderScale)));
+
+        pinnedWindow->close();
+        require(processUntilDeleted(guardedWindow, 2000), "physical border pin was not deleted");
+    }
+
+    // The pinned window preserves physical pixel counts, so at fractional
+    // scale factors Qt's integer logical size maps one device row past the
+    // native client edge and the backing store is one pixel wider than the
+    // client. The border must hug the client edge, not the store edge.
+    const qreal screenScale = screen->devicePixelRatio();
+    if (qFuzzyCompare(screenScale, 1.0)) {
+        return;
+    }
+    for (int physicalSide = 400; physicalSide <= 412; ++physicalSide) {
+        auto* pinnedWindow = presentWindow(physicalSide);
+        QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
+        const int clientWidth = pinnedWindow->currentNativeGeometry().width();
+        const QImage store = renderAtScale(*pinnedWindow, screenScale);
+        const bool overshoots = clientWidth < store.width();
+        if (!overshoots) {
+            pinnedWindow->close();
+            require(processUntilDeleted(guardedWindow, 2000),
+                    "physical border pin was not deleted");
+            continue;
+        }
+
+        const int middleX = store.width() / 2;
+        const int middleY = store.height() / 2;
+        requireColorNear(store.pixelColor(clientWidth - 1, middleY), borderColor, 0,
+                         "the border must end at the native client edge, not the store edge");
+        requireColorNear(store.pixelColor(clientWidth - 2, middleY), borderColor, 0,
+                         "the border must be two device pixels wide at the native client edge");
+        require(store.pixelColor(clientWidth - 3, middleY) != borderColor,
+                "the border must stop after two device pixels before the client edge");
+        require(store.pixelColor(clientWidth, middleY) != borderColor,
+                "the store overshoot column past the client edge must stay border-free");
+        requireColorNear(store.pixelColor(middleX, clientWidth - 1), borderColor, 0,
+                         "the bottom border must end at the native client edge");
+        requireColorNear(store.pixelColor(middleX, clientWidth - 2), borderColor, 0,
+                         "the bottom border must be two device pixels wide at the client edge");
+        requireColorNear(store.pixelColor(0, middleY), borderColor, 0,
+                         "the left border must stay anchored at the client origin");
+
+        pinnedWindow->close();
+        require(processUntilDeleted(guardedWindow, 2000), "client-edge border pin was not deleted");
+        return;
+    }
 }
 
 void pinnedShortcutDisplayUsesSettingsFormat() {
@@ -6232,6 +6349,7 @@ int main(int argc, char* argv[]) {
         }
         pinnedContextMenuPreservesNativeGeometry(sourceRuntime);
         pinnedPhysicalPixelsFillClientArea(sourceRuntime);
+        pinnedBorderUsesTwoPhysicalPixels(sourceRuntime);
         pinnedScalingAndAspectLockedResizing(sourceRuntime);
         pinnedSettledWheelScalingAdvancesPastRoundedLevel(sourceRuntime);
         pinnedWheelScalingUsesConfiguredAnchor(sourceRuntime);
