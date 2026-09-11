@@ -8,7 +8,7 @@ struct ScreenshotImageConversionEntry {
     QString model;
     QString source;
     int promptVersion = 1;
-    QString modelFingerprint;
+    QString modelFingerprint{};
 
     [[nodiscard]] bool isValid() const {
         return !model.isEmpty() && model.size() <= 256 && !source.trimmed().isEmpty() &&

@@ -11,7 +11,6 @@
 namespace snow_canvas_render_geometry {
 namespace {
 
-constexpr double kRadiansToDegrees = 180.0 / 3.14159265358979323846;
 constexpr double kTextLineHeightPerFontSize = 1.2;
 constexpr double kTextBackgroundHorizontalPaddingPerLineHeight = 0.32;
 constexpr double kTextBackgroundVerticalPaddingPerLineHeight = 0.1;

@@ -23,12 +23,6 @@ constexpr std::array<std::byte, 8> kPngSignature{std::byte{0x89}, std::byte{'P'}
                                                  std::byte{'G'},  std::byte{0x0D}, std::byte{0x0A},
                                                  std::byte{0x1A}, std::byte{0x0A}};
 
-Status png_error(const png_image& image, ErrorCode code) {
-    const std::string detail =
-        image.message[0] == '\0' ? "libpng operation failed." : image.message;
-    return Status::error(code, detail, "libpng");
-}
-
 Result<std::pair<png_uint_32, int>> output_png_format(const ImageView& view) {
     if (view.format.sample_type != SampleType::unsigned_integer ||
         (view.format.bits_per_channel != 8 && view.format.bits_per_channel != 16)) {

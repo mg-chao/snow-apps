@@ -1109,11 +1109,12 @@ Result<EncodedArtifactReceipt> WebpCodec::encode_raster_to_sink(const RasterSour
             for (std::uint32_t row = 0; row < plane.height; ++row) {
                 if (stop.stop_requested())
                     return cancelled_status();
-                std::memcpy(destinations[index] +
-                                static_cast<std::size_t>(row) * destination_strides[index],
-                            planes.pointers[index] +
-                                static_cast<std::size_t>(row) * planes.strides[index],
-                            plane.width);
+                std::memcpy(
+                    destinations[index] + static_cast<std::size_t>(row) *
+                                              static_cast<std::size_t>(destination_strides[index]),
+                    planes.pointers[index] + static_cast<std::size_t>(row) *
+                                                 static_cast<std::size_t>(planes.strides[index]),
+                    plane.width);
             }
         }
     } else {

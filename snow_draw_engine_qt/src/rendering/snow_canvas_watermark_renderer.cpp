@@ -559,7 +559,8 @@ void planPlacements(const UnitEntry& entry, const QRectF& localBounds, double ho
                                   static_cast<double>(entry.physicalSize.width()) / scaleX,
                                   static_cast<double>(entry.physicalSize.height()) / scaleY);
             if (!unitRect.intersects(localBounds)) {
-                g_diagnostics.culledFragmentCount += entry.alphaChunks.size();
+                g_diagnostics.culledFragmentCount +=
+                    static_cast<std::uint64_t>(entry.alphaChunks.size());
                 continue;
             }
             g_workspace.placements.push_back(Placement{inkTopLeft});

@@ -81,9 +81,9 @@ QColor screenshotOcrContrastingTextColor(const QColor& background) {
     const auto linear = [](double channel) {
         return channel <= 0.04045 ? channel / 12.92 : std::pow((channel + 0.055) / 1.055, 2.4);
     };
-    const double luminance = 0.2126 * linear(background.redF()) +
-                             0.7152 * linear(background.greenF()) +
-                             0.0722 * linear(background.blueF());
+    const double luminance = 0.2126 * linear(static_cast<double>(background.redF())) +
+                             0.7152 * linear(static_cast<double>(background.greenF())) +
+                             0.0722 * linear(static_cast<double>(background.blueF()));
     return QColor((luminance + 0.05) / 0.05 >= 1.05 / (luminance + 0.05) ? Qt::black : Qt::white);
 }
 

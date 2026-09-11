@@ -231,11 +231,11 @@ class SettingsRuntimeSession final : public QObject {
     bool m_hasStorageStatus = false;
 };
 
-Q_DECLARE_METATYPE(SettingsWritePhase)
-Q_DECLARE_METATYPE(SettingsFieldState)
-Q_DECLARE_METATYPE(SettingsOptions)
-Q_DECLARE_METATYPE(SettingsCommandState)
-
 } // namespace snow_shot::presentation::settings
+
+Q_DECLARE_METATYPE(snow_shot::presentation::settings::SettingsWritePhase)
+Q_DECLARE_METATYPE(snow_shot::presentation::settings::SettingsFieldState)
+Q_DECLARE_METATYPE(snow_shot::presentation::settings::SettingsOptions)
+Q_DECLARE_METATYPE(snow_shot::presentation::settings::SettingsCommandState)
 
 #endif // SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSRUNTIMESESSION_H

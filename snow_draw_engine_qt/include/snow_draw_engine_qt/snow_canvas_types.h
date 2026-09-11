@@ -433,7 +433,7 @@ inline bool operator!=(const SnowCanvasStyleDefaults& lhs, const SnowCanvasStyle
 
 struct SnowCanvasRuntimeConfig {
     std::optional<SnowCanvasStyleDefaults> styleDefaults;
-    QSet<SnowCanvasTool> quickSelectionDisabledTools;
+    QSet<SnowCanvasTool> quickSelectionDisabledTools{};
 };
 
 struct SnowCanvasStyleToolbarState {

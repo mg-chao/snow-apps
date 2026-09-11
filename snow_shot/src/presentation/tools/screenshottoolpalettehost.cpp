@@ -23,9 +23,6 @@ QPoint globalMousePosition(const QMouseEvent* event) {
     return event->globalPosition().toPoint();
 }
 
-QRect expandedForShadow(const QRect& rect, const QMargins& margins) {
-    return rect.adjusted(-margins.left(), -margins.top(), margins.right(), margins.bottom());
-}
 } // namespace
 
 ScreenshotToolPaletteHost::ScreenshotToolPaletteHost(const ScreenshotToolPalette::Options& options,

@@ -845,8 +845,9 @@ ShortcutKeyRow::ShortcutKeyRow(
                 parent),
       m_baseTitle(config.title), m_registrationState(config.registrationState),
       m_maxShortcutCount(std::max(1, config.maxShortcutCount)),
-      m_shortcutValidator(config.shortcutValidator), m_adjustableDelay(config.adjustableDelay),
-      m_delaySeconds(std::clamp(config.delaySeconds, 1, 10)), m_delaySetter(config.delaySetter) {
+      m_adjustableDelay(config.adjustableDelay),
+      m_delaySeconds(std::clamp(config.delaySeconds, 1, 10)), m_delaySetter(config.delaySetter),
+      m_shortcutValidator(config.shortcutValidator) {
     m_showRegistrationStatus = config.showRegistrationStatus;
     m_validationScope = config.validationScope;
     if (m_registrationState.shortcuts.isEmpty() && !config.shortcuts.isEmpty()) {
@@ -1013,9 +1014,9 @@ void ShortcutKeyRow::syncDelayUnderline() {
 
     const QString secondsText = QString::number(m_delaySeconds);
     const QString displayTitle = m_titleLabel->text();
-    const int delayTextStart = m_baseTitle.contains(QStringLiteral("%1"))
-                                   ? m_baseTitle.indexOf(QStringLiteral("%1"))
-                                   : displayTitle.lastIndexOf(secondsText);
+    const qsizetype delayTextStart = m_baseTitle.contains(QStringLiteral("%1"))
+                                         ? m_baseTitle.indexOf(QStringLiteral("%1"))
+                                         : displayTitle.lastIndexOf(secondsText);
     if (delayTextStart < 0 || secondsText.isEmpty()) {
         m_delayUnderline->hide();
         return;

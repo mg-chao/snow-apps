@@ -533,10 +533,11 @@ void AdTag::paintEvent(QPaintEvent* event) {
 
     QPalette palette = this->palette();
     palette.setColor(QPalette::ButtonText, visualStyle.contentColor);
-    QWidget::style()->drawItemText(&painter, textRect.toAlignedRect(),
-                                   Qt::AlignVCenter | (rtl ? Qt::AlignRight : Qt::AlignLeft) |
-                                       Qt::TextSingleLine | Qt::TextShowMnemonic,
-                                   palette, isEnabled(), text(), QPalette::ButtonText);
+    QWidget::style()->drawItemText(
+        &painter, textRect.toAlignedRect(),
+        static_cast<int>(Qt::AlignVCenter | (rtl ? Qt::AlignRight : Qt::AlignLeft) |
+                         Qt::TextSingleLine | Qt::TextShowMnemonic),
+        palette, isEnabled(), text(), QPalette::ButtonText);
   }
 }
 

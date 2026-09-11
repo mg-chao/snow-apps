@@ -194,10 +194,14 @@ QColor colorOnBackground(const QColor& foreground, const QColor& background) {
     if (!background.isValid() || foreground.alpha() >= 255) {
         return foreground;
     }
-    const qreal alpha = foreground.alphaF();
-    return QColor::fromRgbF(foreground.redF() * alpha + background.redF() * (1.0 - alpha),
-                            foreground.greenF() * alpha + background.greenF() * (1.0 - alpha),
-                            foreground.blueF() * alpha + background.blueF() * (1.0 - alpha));
+    const qreal alpha = static_cast<qreal>(foreground.alphaF());
+    const auto blend = [alpha](float front, float back) {
+        return static_cast<float>(static_cast<qreal>(front) * alpha +
+                                  static_cast<qreal>(back) * (1.0 - alpha));
+    };
+    return QColor::fromRgbF(blend(foreground.redF(), background.redF()),
+                            blend(foreground.greenF(), background.greenF()),
+                            blend(foreground.blueF(), background.blueF()));
 }
 
 adqt::widgets::AdSelect::Option sourceOption(const QString& value, const QString& label) {
@@ -1216,7 +1220,7 @@ void ScreenshotHistoryPageWidget::rebuildFilteredRecords(bool resetPage) {
     if (resetPage) {
         m_pagination->setCurrentPage(1);
     }
-    m_pagination->setTotal(m_filteredRecords.size());
+    m_pagination->setTotal(static_cast<int>(m_filteredRecords.size()));
     m_updatingPagination = false;
     updateHeader();
     rebuildEntries();
@@ -1432,7 +1436,7 @@ void ScreenshotHistoryPageWidget::updateEmptyStateMinimumHeight() {
 
 void ScreenshotHistoryPageWidget::updateHeader() {
     if (m_countLabel != nullptr) {
-        m_countLabel->setText(tr("%n screenshot(s)", nullptr, m_records.size()));
+        m_countLabel->setText(tr("%n screenshot(s)", nullptr, static_cast<int>(m_records.size())));
     }
     const auto status = storage::ApplicationStorage::instance().status();
     const bool canClear =

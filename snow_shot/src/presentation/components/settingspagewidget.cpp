@@ -195,7 +195,7 @@ class SettingsPageWidget::Impl {
         runtimeSection.header->setResetVisible(reset != settings::SettingsSectionReset::None);
         contentLayout->addWidget(runtimeSection.header);
         sections.push_back(runtimeSection);
-        sectionIndexes.insert(sectionDefinition.id, sections.size() - 1);
+        sectionIndexes.insert(sectionDefinition.id, static_cast<int>(sections.size() - 1));
 
         auto* list = new QWidget(contentWidget);
         list->setObjectName(settings::generatedObjectName(
@@ -744,7 +744,7 @@ class SettingsPageWidget::Impl {
             runtime.anchor->setProperty("settingsProviderId", descriptor->providerId);
         }
         items.push_back(runtime);
-        itemIndexes.insert(definition.id, items.size() - 1);
+        itemIndexes.insert(definition.id, static_cast<int>(items.size() - 1));
     }
 
     void connectServices() {
@@ -1036,7 +1036,8 @@ class SettingsPageWidget::Impl {
                     std::get_if<settings::SettingsRadioDefinition>(&runtime.definition->payload);
                 if (definition != nullptr) {
                     const QVariant current = runtimeSession.radioValue(definition->binding);
-                    runtime.radioGroup->setCheckedId(runtime.radioValues.indexOf(current));
+                    runtime.radioGroup->setCheckedId(
+                        static_cast<int>(runtime.radioValues.indexOf(current)));
                 }
                 for (adqt::widgets::AdRadio* button : std::as_const(runtime.radioButtons)) {
                     button->setEnabled(fieldEnabled);
@@ -1306,7 +1307,7 @@ class SettingsPageWidget::Impl {
         int activeIndex = 0;
         if (scrollBar->maximum() > scrollBar->minimum() &&
             scrollBar->value() >= scrollBar->maximum()) {
-            activeIndex = sections.size() - 1;
+            activeIndex = static_cast<int>(sections.size() - 1);
         } else {
             const int activationLine = scrollBar->value() + sectionViewportInset() + 1;
             for (int index = 1; index < sections.size(); ++index) {

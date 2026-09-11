@@ -84,9 +84,10 @@ QPixmap aboutIcon(const adqt::icons::IconRef& icon, const QSize& size, const QWi
 }
 
 QColor blendAboutColor(const QColor& foreground, const QColor& background, qreal amount) {
-    return QColor::fromRgbF(foreground.redF() * amount + background.redF() * (1 - amount),
-                            foreground.greenF() * amount + background.greenF() * (1 - amount),
-                            foreground.blueF() * amount + background.blueF() * (1 - amount));
+    const float blend = static_cast<float>(amount);
+    return QColor::fromRgbF(foreground.redF() * blend + background.redF() * (1.0f - blend),
+                            foreground.greenF() * blend + background.greenF() * (1.0f - blend),
+                            foreground.blueF() * blend + background.blueF() * (1.0f - blend));
 }
 
 class AboutHeroSurface final : public QFrame {

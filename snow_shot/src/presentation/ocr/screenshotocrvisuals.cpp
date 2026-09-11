@@ -38,12 +38,14 @@ std::array<float, 3> perceptualColor(QRgb rgb) {
         std::array<float, 256> values{};
         for (int i = 0; i < 256; ++i) {
             const float value = static_cast<float>(i) / 255.0f;
-            values[i] =
+            values[static_cast<std::size_t>(i)] =
                 value <= 0.04045f ? value / 12.92f : std::pow((value + 0.055f) / 1.055f, 2.4f);
         }
         return values;
     }();
-    const float r = linear[qRed(rgb)], g = linear[qGreen(rgb)], b = linear[qBlue(rgb)];
+    const float r = linear[static_cast<std::size_t>(qRed(rgb))],
+                g = linear[static_cast<std::size_t>(qGreen(rgb))],
+                b = linear[static_cast<std::size_t>(qBlue(rgb))];
     // OKLab separates perceptual lightness from chroma, including dark and saturated panels.
     const float l = std::cbrt(0.4122214708f * r + 0.5363325363f * g + 0.0514459929f * b);
     const float m = std::cbrt(0.2119034982f * r + 0.6806995451f * g + 0.1073969566f * b);
@@ -112,7 +114,7 @@ bool quadIntersectsImage(const QPolygonF& quad, const QSize& size) {
 class TextRegionIndex {
   public:
     TextRegionIndex(const QVector<QPolygonF>& quads, const QRect& imageRect) : m_quads(quads) {
-        m_entries.reserve(quads.size());
+        m_entries.reserve(static_cast<std::size_t>(quads.size()));
         for (qsizetype i = 0; i < quads.size(); ++i) {
             const QRectF bounds = quads[i].boundingRect().intersected(QRectF(imageRect));
             if (!bounds.isEmpty()) {
@@ -229,8 +231,8 @@ QRgb dominantColor(const BackgroundSample* samples, int count, const BackgroundS
     for (int i = 0; i < count; ++i) {
         const auto& entry = samples[i];
         const QRgb rgb = entry.rgb;
-        auto& bin =
-            histogram[((qRed(rgb) >> 4) << 8) | ((qGreen(rgb) >> 4) << 4) | (qBlue(rgb) >> 4)];
+        auto& bin = histogram[static_cast<std::size_t>(
+            ((qRed(rgb) >> 4) << 8) | ((qGreen(rgb) >> 4) << 4) | (qBlue(rgb) >> 4))];
         bin.weight += entry.weight;
         bin.r += qRed(rgb) * entry.weight;
         bin.g += qGreen(rgb) * entry.weight;
@@ -238,15 +240,19 @@ QRgb dominantColor(const BackgroundSample* samples, int count, const BackgroundS
     }
     std::array<int, 4> seeds{-1, -1, -1, -1};
     for (int i = 0; i < static_cast<int>(histogram.size()); ++i) {
-        if (histogram[i].weight == 0) {
+        if (histogram[static_cast<std::size_t>(i)].weight == 0) {
             continue;
         }
         for (int rank = 0; rank < 4; ++rank) {
-            if (seeds[rank] < 0 || histogram[i].weight > histogram[seeds[rank]].weight) {
+            if (seeds[static_cast<std::size_t>(rank)] < 0 ||
+                histogram[static_cast<std::size_t>(i)].weight >
+                    histogram[static_cast<std::size_t>(seeds[static_cast<std::size_t>(rank)])]
+                        .weight) {
                 for (int move = 3; move > rank; --move) {
-                    seeds[move] = seeds[move - 1];
+                    seeds[static_cast<std::size_t>(move)] =
+                        seeds[static_cast<std::size_t>(move - 1)];
                 }
-                seeds[rank] = i;
+                seeds[static_cast<std::size_t>(rank)] = i;
                 break;
             }
         }
@@ -257,7 +263,7 @@ QRgb dominantColor(const BackgroundSample* samples, int count, const BackgroundS
         if (seed < 0) {
             break;
         }
-        const auto& bin = histogram[seed];
+        const auto& bin = histogram[static_cast<std::size_t>(seed)];
         auto lab =
             perceptualColor(qRgb(bin.r / bin.weight, bin.g / bin.weight, bin.b / bin.weight));
         // Fixed mean-shift steps merge compression noise across quantization boundaries.
@@ -346,7 +352,7 @@ QColor estimateBackground(const QImage& source, const QPolygonF& quad,
             previousRgb = rgb;
             previousLab = perceptualColor(rgb);
         }
-        samples[count++] = {rgb, previousLab, flat ? 4 : 1};
+        samples[static_cast<std::size_t>(count++)] = {rgb, previousLab, flat ? 4 : 1};
     };
     const QPointF center = (quad[0] + quad[1] + quad[2] + quad[3]) / 4.0;
     qreal shortEdge = std::numeric_limits<qreal>::max();

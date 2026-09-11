@@ -109,7 +109,7 @@ struct SceneRenderRequest {
     // Direct renderer callers keep the uncached path by leaving this disabled.
     bool enableFilterTileCache = false;
     std::uint64_t filterTileContentKey = 0;
-    QPoint filterTileCoordinate;
+    QPoint filterTileCoordinate{};
     bool clearBackgroundEnabled = true;
 };
 

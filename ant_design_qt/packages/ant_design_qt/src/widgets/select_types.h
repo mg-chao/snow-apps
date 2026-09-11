@@ -33,8 +33,8 @@ class AdSelectTypes {
     QVariant value;
     QString label;
     bool disabled = false;
-    QString group;
-    QVariantMap metadata;
+    QString group{};
+    QVariantMap metadata{};
   };
 
   using Item = Option;

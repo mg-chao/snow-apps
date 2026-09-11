@@ -2889,7 +2889,7 @@ class DatePickerLineEdit final : public AdLineEdit {
     painter->setPen(hasText ? textColor : placeholderColor);
     const Qt::Alignment horizontal =
         layoutDirection() == Qt::RightToLeft ? Qt::AlignRight : Qt::AlignLeft;
-    painter->drawText(rect, Qt::AlignVCenter | horizontal, displayText);
+    painter->drawText(rect, static_cast<int>(Qt::AlignVCenter | horizontal), displayText);
   }
 
   void drawRangeSeparator(QPainter* painter, const QRect& rect, const InputVisualStyle& style,

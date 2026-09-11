@@ -14,7 +14,9 @@
 #endif
 
 namespace {
+#if defined(Q_OS_WIN) || defined(_WIN32)
 constexpr auto kRevealStrategyEnvironment = "SNOW_SHOT_CAPTURE_REVEAL_STRATEGY";
+#endif
 
 class ShowPaintSuppression final : public QObject {
   public:

@@ -136,8 +136,8 @@ struct FrameInfo final {
     PixelFormat native_format;
     bool has_alpha = false;
     std::optional<std::array<std::uint32_t, 2>> cursor_hotspot;
-    ColorEncoding color;
-    Metadata metadata;
+    ColorEncoding color{};
+    Metadata metadata{};
     FrameBlend blend = FrameBlend::source;
     FrameDisposal disposal = FrameDisposal::keep;
 };

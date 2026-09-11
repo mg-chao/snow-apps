@@ -168,7 +168,7 @@ class ADQT_ICON_CORE_EXPORT IconRef final {
   const IconDescriptor* descriptor_ = nullptr;
   IconColors colors_;
 
-  friend class IconPack;
+  friend struct IconPack;
   friend class ExternalIconPack;
   friend class IconRenderer;
   friend struct detail::IconRefAccess;
@@ -245,7 +245,7 @@ struct IconRenderRequest final {
   qreal devicePixelRatio = 0.0;
   QIcon::Mode mode = QIcon::Normal;
   QIcon::State state = QIcon::Off;
-  std::optional<IconFit> fit;
+  std::optional<IconFit> fit{};
   Qt::Alignment alignment = Qt::AlignCenter;
 };
 

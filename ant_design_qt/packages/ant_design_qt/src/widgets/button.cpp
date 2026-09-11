@@ -958,7 +958,8 @@ void AdButton::paintEvent(QPaintEvent* event) {
       painter.drawText(layout.textRect.left() + firstWidth + spacingPx, baseline,
                        QString(layout.text.at(1)));
     } else {
-      painter.drawText(layout.textRect, Qt::AlignLeft | Qt::AlignVCenter | textFlags, layout.text);
+      painter.drawText(layout.textRect,
+                       static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter) | textFlags, layout.text);
     }
   }
 
@@ -974,7 +975,7 @@ QSize AdButton::sizeHint() const {
   const detail::ButtonVisualStyle style = resolvedStyle();
 
   const QString textToMeasure = option.text;
-  const quint64 fallbackIconKey = QAbstractButton::icon().cacheKey();
+  const quint64 fallbackIconKey = static_cast<quint64>(QAbstractButton::icon().cacheKey());
   const bool hasMenu = option.features.testFlag(QStyleOptionButton::HasMenu);
   if (d_->sizeHintCacheValid && d_->sizeHintStyleRevision == d_->resolvedStyleRevision &&
       d_->sizeHintText == textToMeasure && iconRefsEqual(d_->sizeHintIconRef, d_->iconRef) &&
@@ -1334,7 +1335,7 @@ detail::ButtonVisualStyle AdButton::resolvedStyle() const {
   const detail::ButtonStyleInput input = buildStyleInput();
   const auto& themeManager = adqt::theme::ThemeManager::instance();
   const quint64 themeRevision = themeManager.themeRevision();
-  const quint64 paletteKey = palette().cacheKey();
+  const quint64 paletteKey = static_cast<quint64>(palette().cacheKey());
   if (d_->resolvedStyleCache.has_value() && d_->resolvedStyleThemeRevision == themeRevision &&
       d_->resolvedStylePaletteKey == paletteKey &&
       buttonStyleInputsEqual(d_->resolvedStyleInput, input)) {

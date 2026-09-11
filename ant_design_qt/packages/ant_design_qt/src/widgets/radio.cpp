@@ -425,9 +425,10 @@ void drawStyledText(const QWidget* widget, QPainter* painter, const QRectF& rect
 
   QPalette palette = widget->palette();
   palette.setColor(role, color);
-  widget->style()->drawItemText(painter, rect.toAlignedRect(),
-                                alignment | Qt::TextShowMnemonic | Qt::TextSingleLine, palette,
-                                widget->isEnabled(), text, role);
+  widget->style()->drawItemText(
+      painter, rect.toAlignedRect(),
+      static_cast<int>(alignment | Qt::TextShowMnemonic | Qt::TextSingleLine), palette,
+      widget->isEnabled(), text, role);
 }
 
 void drawButtonIcon(const AdRadio* radio, QPainter* painter, const QRectF& rect,
@@ -786,7 +787,7 @@ const detail::RadioVisualStyle& AdRadio::resolvedRadioStyle() const {
   const detail::RadioStyleInput input = buildStyleInput();
   const auto& themeManager = adqt::theme::ThemeManager::instance();
   const quint64 themeRevision = themeManager.themeRevision();
-  const quint64 paletteKey = palette().cacheKey();
+  const quint64 paletteKey = static_cast<quint64>(palette().cacheKey());
   if (!styleCache_->radioStyle.has_value() || styleCache_->radioThemeRevision != themeRevision ||
       styleCache_->radioPaletteKey != paletteKey ||
       !radioStyleInputsEqual(styleCache_->radioInput, input)) {
@@ -805,7 +806,7 @@ const detail::RadioButtonVisualStyle& AdRadio::resolvedRadioButtonStyle() const 
   const detail::RadioButtonStyleInput input = buildButtonStyleInput();
   const auto& themeManager = adqt::theme::ThemeManager::instance();
   const quint64 themeRevision = themeManager.themeRevision();
-  const quint64 paletteKey = palette().cacheKey();
+  const quint64 paletteKey = static_cast<quint64>(palette().cacheKey());
   if (!styleCache_->buttonStyle.has_value() || styleCache_->buttonThemeRevision != themeRevision ||
       styleCache_->buttonPaletteKey != paletteKey ||
       !radioButtonStyleInputsEqual(styleCache_->buttonInput, input)) {

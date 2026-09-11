@@ -517,7 +517,8 @@ void drawStrokeStylePreview(QPainter* painter, const QWidget* widget, const QCol
         contentColor = QColor(QStringLiteral("#595959"));
     }
     if (!widget->isEnabled()) {
-        contentColor.setAlphaF(static_cast<float>(contentColor.alphaF() * 0.45));
+        contentColor.setAlphaF(
+            static_cast<float>(static_cast<double>(contentColor.alphaF()) * 0.45));
     }
 
     const qreal inset = std::max<qreal>(1.0, 4.0 * physicalScale);
@@ -553,7 +554,8 @@ void drawFillStylePreview(QPainter* painter, const QWidget* widget, const QColor
         contentColor = QColor(QStringLiteral("#595959"));
     }
     if (!widget->isEnabled()) {
-        contentColor.setAlphaF(static_cast<float>(contentColor.alphaF() * 0.45));
+        contentColor.setAlphaF(
+            static_cast<float>(static_cast<double>(contentColor.alphaF()) * 0.45));
     }
 
     const qreal inset = std::max<qreal>(1.0, 4.0 * physicalScale);
@@ -1179,7 +1181,8 @@ void IconNumericValuePreviewButton::paintEvent(QPaintEvent* event) {
         contentColor = QColor(QStringLiteral("#262626"));
     }
     if (!isEnabled()) {
-        contentColor.setAlphaF(static_cast<float>(contentColor.alphaF() * 0.45));
+        contentColor.setAlphaF(
+            static_cast<float>(static_cast<double>(contentColor.alphaF()) * 0.45));
     }
 
     QPainter painter(this);

@@ -71,7 +71,7 @@ SettingsRegistryBuilder& SettingsRegistryBuilder::addProvider(const SettingsProv
 
 SettingsRegistryBuilder& SettingsRegistryBuilder::addCatalog(SettingsCatalog catalog,
                                                              QString providerId) {
-    const int index = m_contributions.size();
+    const int index = static_cast<int>(m_contributions.size());
     const QString normalizedId = providerName(providerId, index);
     if (providerId.trimmed().isEmpty()) {
         m_validationErrors.push_back(QStringLiteral("settings provider id must not be empty"));
@@ -228,9 +228,8 @@ void SettingsRegistry::compile(const QVector<QString>& pageProviderIds,
         m_compilationValidationErrors.push_back(
             QStringLiteral("duplicate %1: %2").arg(kind, value));
     };
-    const auto insertStringIndex = [this, &duplicate](QHash<QString, int>& index,
-                                                      const QString& key, int value,
-                                                      const QString& kind) {
+    const auto insertStringIndex = [&duplicate](QHash<QString, int>& index, const QString& key,
+                                                int value, const QString& kind) {
         if (key.isEmpty()) {
             return;
         }
@@ -240,8 +239,8 @@ void SettingsRegistry::compile(const QVector<QString>& pageProviderIds,
         }
         index.insert(key, value);
     };
-    const auto insertIntegerIndex = [this, &duplicate](QHash<int, int>& index, int key, int value,
-                                                       const QString& kind) {
+    const auto insertIntegerIndex = [&duplicate](QHash<int, int>& index, int key, int value,
+                                                 const QString& kind) {
         if (index.contains(key)) {
             duplicate(kind, QString::number(key));
             return;
@@ -264,7 +263,7 @@ void SettingsRegistry::compile(const QVector<QString>& pageProviderIds,
         if (m_pagePlanIndexById.contains(plan.id)) {
             duplicate(QStringLiteral("settings page plan id"), plan.id);
         } else {
-            m_pagePlanIndexById.insert(plan.id, m_pagePlans.size());
+            m_pagePlanIndexById.insert(plan.id, static_cast<int>(m_pagePlans.size()));
         }
 
         for (int sectionIndex = 0; sectionIndex < page.sections.size(); ++sectionIndex) {

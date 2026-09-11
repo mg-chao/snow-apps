@@ -35,7 +35,7 @@ struct ScreenshotShortcutHintRow {
     QString label;
     QString shortcut;
     ScreenshotShortcutHintInput input = ScreenshotShortcutHintInput::Keyboard;
-    QStringList shortcutChips;
+    QStringList shortcutChips{};
 };
 
 // These strings are translated through runtime-selected source text below, so
@@ -72,7 +72,7 @@ struct ScreenshotShortcutHintContext {
     ScreenshotActiveTool activeTool = ScreenshotActiveTool::Move;
     ScreenshotCaptureMode captureMode = ScreenshotCaptureMode::Inactive;
     QSet<SnowCanvasTool> quickSelectionDisabledTools;
-    std::optional<QMap<QString, QStringList>> configuredShortcuts;
+    std::optional<QMap<QString, QStringList>> configuredShortcuts{};
     bool smartSelectionEnabled = true;
 };
 
@@ -104,9 +104,9 @@ screenshotShortcutHintSelectionModeForContext(const ScreenshotShortcutHintContex
     return QCoreApplication::translate("ScreenshotShortcutHintsWidget", source);
 }
 
-[[nodiscard]] inline int screenshotShortcutHintSeparatorIndex(const QString& text) {
-    const int asciiSeparator = text.indexOf(QLatin1Char(':'));
-    const int fullWidthSeparator = text.indexOf(QChar(0xFF1A));
+[[nodiscard]] inline qsizetype screenshotShortcutHintSeparatorIndex(const QString& text) {
+    const qsizetype asciiSeparator = text.indexOf(QLatin1Char(':'));
+    const qsizetype fullWidthSeparator = text.indexOf(QChar(0xFF1A));
     if (asciiSeparator < 0) {
         return fullWidthSeparator;
     }
@@ -119,7 +119,7 @@ screenshotShortcutHintSelectionModeForContext(const ScreenshotShortcutHintContex
 [[nodiscard]] inline ScreenshotShortcutHintRow screenshotFixedShortcutHintRow(
     const char* source, ScreenshotShortcutHintInput input = ScreenshotShortcutHintInput::Keyboard) {
     const QString text = screenshotShortcutHintText(source);
-    const int separator = screenshotShortcutHintSeparatorIndex(text);
+    const qsizetype separator = screenshotShortcutHintSeparatorIndex(text);
     if (separator < 0) {
         return {text, {}, input};
     }

@@ -63,14 +63,9 @@ class NativeGlobalMouseBackend final : public GlobalMouseBackend {
         if (worker == nullptr) {
             return;
         }
-        QMetaObject::invokeMethod(
-            worker,
-            [this]() {
 #ifdef Q_OS_WIN
-                unhook();
+        QMetaObject::invokeMethod(worker, [this]() { unhook(); }, Qt::BlockingQueuedConnection);
 #endif
-            },
-            Qt::BlockingQueuedConnection);
         thread.quit();
         thread.wait();
         worker = nullptr;

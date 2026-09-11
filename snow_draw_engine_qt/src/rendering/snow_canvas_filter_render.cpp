@@ -180,7 +180,8 @@ std::array<int, 3> gaussianBoxRadii(double sigma) {
     const int lowerPasses = qBound(0, qRound(numerator / denominator), passCount);
     std::array<int, 3> radii{};
     for (int index = 0; index < passCount; ++index) {
-        radii[index] = ((index < lowerPasses) ? lowerWidth : upperWidth) / 2;
+        radii[static_cast<std::size_t>(index)] =
+            ((index < lowerPasses) ? lowerWidth : upperWidth) / 2;
     }
     return radii;
 }
@@ -201,8 +202,9 @@ BoxAverage boxAverage(int count) {
         return {};
     }
     constexpr std::uint32_t scale = 1u << 24;
-    return {count,
-            static_cast<std::uint32_t>((static_cast<std::uint64_t>(scale) + count / 2) / count)};
+    return {count, static_cast<std::uint32_t>(
+                       (static_cast<std::uint64_t>(scale) + static_cast<std::uint64_t>(count / 2)) /
+                       static_cast<std::uint64_t>(count))};
 }
 
 inline QRgb averagePixel(int alpha, int red, int green, int blue, const BoxAverage& average) {
@@ -245,8 +247,8 @@ void collectMosaicSamples(const ConstImageView& source, const MosaicGrid& grid, 
             const int column = firstColumn + localColumn;
             const int sampleX =
                 qBound(0, grid.firstX + column * grid.block + grid.block / 2, source.width - 1);
-            samples[static_cast<std::size_t>(localRow) * columnCount + localColumn] =
-                sampleLine[sampleX];
+            samples[static_cast<std::size_t>(localRow) * static_cast<std::size_t>(columnCount) +
+                    static_cast<std::size_t>(localColumn)] = sampleLine[sampleX];
         }
     }
 }
@@ -297,7 +299,8 @@ std::size_t horizontalBoxBlur(const QImage& source, QImage& destination, int rad
     const int width = source.width();
     const int height = source.height();
     if (radius <= 0) {
-        std::memcpy(destination.bits(), source.constBits(), source.sizeInBytes());
+        std::memcpy(destination.bits(), source.constBits(),
+                    static_cast<std::size_t>(source.sizeInBytes()));
         return 0;
     }
     return parallelRows(height, width, singleThreaded, [&](int begin, int end) {
@@ -333,7 +336,8 @@ std::size_t verticalBoxBlur(const QImage& source, QImage& destination, int radiu
     const int width = source.width();
     const int height = source.height();
     if (radius <= 0) {
-        std::memcpy(destination.bits(), source.constBits(), source.sizeInBytes());
+        std::memcpy(destination.bits(), source.constBits(),
+                    static_cast<std::size_t>(source.sizeInBytes()));
         return 0;
     }
     return parallelRows(height, width, singleThreaded, [&](int begin, int end) {
@@ -388,7 +392,7 @@ std::size_t downsample(const QImage& source, const QRect& sourcePixels, QImage& 
                 for (int y = begin; y < end; ++y) {
                     std::memcpy(destination.scanLine(y),
                                 source.constScanLine(sourcePixels.top() + y) +
-                                    static_cast<qsizetype>(sourcePixels.left()) * sizeof(QRgb),
+                                    static_cast<std::size_t>(sourcePixels.left()) * sizeof(QRgb),
                                 rowBytes);
                 }
             });
@@ -577,7 +581,8 @@ std::size_t upsampleBilinearImpl(const QImage& source, QImage& destination, bool
 std::size_t upsampleBilinear(const QImage& source, QImage& destination, int factor,
                              bool singleThreaded, bool useAvx2, bool* avx2Executed) {
     if (factor <= 1) {
-        std::memcpy(destination.bits(), source.constBits(), destination.sizeInBytes());
+        std::memcpy(destination.bits(), source.constBits(),
+                    static_cast<std::size_t>(destination.sizeInBytes()));
         return 0;
     }
     switch (factor) {
@@ -754,7 +759,7 @@ GaussianBlurPlan makeGaussianBlurPlan(const Parameters& parameters) {
     plan.passCount = 3;
     const std::array<int, 3> radii = gaussianBoxRadii(sigma / factor);
     for (int index = 0; index < plan.passCount; ++index) {
-        plan.radii[index] = radii[index];
+        plan.radii[static_cast<std::size_t>(index)] = radii[static_cast<std::size_t>(index)];
     }
     const int reducedSupport = plan.radii[0] + plan.radii[1] + plan.radii[2];
     // One reduced pixel covers the bilinear neighbor and one covers the farthest
@@ -791,7 +796,7 @@ bool blur(QImage& image, const Parameters& parameters, RenderWorkspace& workspac
         }
         measureStage(instrument, diagnostics.reducedBlurNanoseconds, [&] {
             for (int index = 0; index < plan.passCount; ++index) {
-                const int radius = plan.radii[index];
+                const int radius = plan.radii[static_cast<std::size_t>(index)];
                 if (radius <= 0) {
                     continue;
                 }
@@ -818,11 +823,12 @@ bool blur(QImage& image, const Parameters& parameters, RenderWorkspace& workspac
         diagnostics.parallelJobs +=
             downsample(image, a, factor, options.singleThreaded, useAvx2, &downsampleAvx2Executed);
     });
-    diagnostics.copiedBytes += image.sizeInBytes() + a.sizeInBytes();
+    diagnostics.copiedBytes +=
+        static_cast<std::size_t>(image.sizeInBytes()) + static_cast<std::size_t>(a.sizeInBytes());
 
     measureStage(instrument, diagnostics.reducedBlurNanoseconds, [&] {
         for (int index = 0; index < plan.passCount; ++index) {
-            const int radius = plan.radii[index];
+            const int radius = plan.radii[static_cast<std::size_t>(index)];
             if (radius <= 0) {
                 continue;
             }
@@ -838,7 +844,7 @@ bool blur(QImage& image, const Parameters& parameters, RenderWorkspace& workspac
         diagnostics.parallelJobs += upsampleBilinear(a, image, factor, options.singleThreaded,
                                                      useAvx2, &reconstructionAvx2Executed);
     });
-    diagnostics.copiedBytes += image.sizeInBytes();
+    diagnostics.copiedBytes += static_cast<std::size_t>(image.sizeInBytes());
     if (downsampleAvx2Executed) {
         ++diagnostics.gaussianDownsampleAvx2Executions;
     }
@@ -904,10 +910,10 @@ bool blurMasked(const QImage& source, QImage& destination, AlphaView mask, const
     });
     diagnostics.copiedBytes += static_cast<std::size_t>(sourcePixels.width()) *
                                    static_cast<std::size_t>(sourcePixels.height()) * sizeof(QRgb) +
-                               a.sizeInBytes();
+                               static_cast<std::size_t>(a.sizeInBytes());
     measureStage(instrument, diagnostics.reducedBlurNanoseconds, [&] {
         for (int index = 0; index < plan.passCount; ++index) {
-            const int radius = plan.radii[index];
+            const int radius = plan.radii[static_cast<std::size_t>(index)];
             if (radius <= 0) {
                 continue;
             }
@@ -946,19 +952,21 @@ bool blurMasked(const QImage& source, QImage& destination, AlphaView mask, const
 std::size_t mosaic(QImage& image, const Parameters& parameters, RenderWorkspace& workspace,
                    bool singleThreaded) {
     const MosaicGrid grid = mosaicGrid(image.size(), parameters);
-    std::vector<QRgb>& samples =
-        workspace.mosaicSampleScratch(static_cast<std::size_t>(grid.columnCount) * grid.rowCount);
+    std::vector<QRgb>& samples = workspace.mosaicSampleScratch(
+        static_cast<std::size_t>(grid.columnCount) * static_cast<std::size_t>(grid.rowCount));
     collectMosaicSamples(view(static_cast<const QImage&>(image)), grid, 0, grid.columnCount, 0,
                          grid.rowCount, samples);
     return parallelRows(image.height(), image.width(), singleThreaded, [&](int begin, int end) {
         for (int py = begin; py < end; ++py) {
             auto* line = reinterpret_cast<QRgb*>(image.scanLine(py));
             const int row = (py - grid.firstY) / grid.block;
-            const std::size_t sampleOffset = static_cast<std::size_t>(row) * grid.columnCount;
+            const std::size_t sampleOffset =
+                static_cast<std::size_t>(row) * static_cast<std::size_t>(grid.columnCount);
             for (int column = 0; column < grid.columnCount; ++column) {
                 const int left = qMax(0, grid.firstX + column * grid.block);
                 const int right = qMin(image.width(), grid.firstX + (column + 1) * grid.block);
-                std::fill(line + left, line + right, samples[sampleOffset + column]);
+                std::fill(line + left, line + right,
+                          samples[sampleOffset + static_cast<std::size_t>(column)]);
             }
         }
     });
@@ -1088,7 +1096,7 @@ QImage& RenderWorkspace::ensureImage(QImage& image, PoolEntry*& entry, int lease
             if (storage.isNull()) {
                 return image;
             }
-            m_diagnostics.allocatedBytes += storage.sizeInBytes();
+            m_diagnostics.allocatedBytes += static_cast<std::size_t>(storage.sizeInBytes());
             m_pool.push_back(PoolEntry{std::move(storage), format, ++m_poolClock, lease});
             entry = &m_pool.back();
         } else {
@@ -1356,7 +1364,7 @@ bool applyMasked(const QImage& source, QImage& destination, const QImage& mask,
         const int sampleColumnCount = lastColumn - firstColumn + 1;
         const int sampleRowCount = lastRow - firstRow + 1;
         std::vector<QRgb>& samples = activeWorkspace.mosaicSampleScratch(
-            static_cast<std::size_t>(sampleColumnCount) * sampleRowCount);
+            static_cast<std::size_t>(sampleColumnCount) * static_cast<std::size_t>(sampleRowCount));
         collectMosaicSamples(sourceView, grid, firstColumn, sampleColumnCount, firstRow,
                              sampleRowCount, samples);
         const std::size_t jobs = parallelRows(
@@ -1369,8 +1377,8 @@ bool applyMasked(const QImage& source, QImage& destination, const QImage& mask,
                         maskView.data +
                         static_cast<qsizetype>(y - maskOriginPixels.y()) * maskView.stride;
                     const int sampleRow = (y - grid.firstY) / grid.block - firstRow;
-                    const std::size_t sampleOffset =
-                        static_cast<std::size_t>(sampleRow) * sampleColumnCount;
+                    const std::size_t sampleOffset = static_cast<std::size_t>(sampleRow) *
+                                                     static_cast<std::size_t>(sampleColumnCount);
                     int column = firstColumn;
                     int x = pixels.left();
                     while (x <= pixels.right()) {
@@ -1557,8 +1565,9 @@ bool applyMaskedSparse(const QImage& source, QImage& destination, const QImage& 
             const int lastRow = (pixels.bottom() - grid.firstY) / grid.block;
             const int sampleColumnCount = lastColumn - firstColumn + 1;
             const int sampleRowCount = lastRow - firstRow + 1;
-            std::vector<QRgb>& samples = activeWorkspace.mosaicSampleScratch(
-                static_cast<std::size_t>(sampleColumnCount) * sampleRowCount);
+            std::vector<QRgb>& samples =
+                activeWorkspace.mosaicSampleScratch(static_cast<std::size_t>(sampleColumnCount) *
+                                                    static_cast<std::size_t>(sampleRowCount));
             collectMosaicSamples(sourceView, grid, firstColumn, sampleColumnCount, firstRow,
                                  sampleRowCount, samples);
             for (const MaskSpan& span : spans) {
@@ -1573,11 +1582,12 @@ bool applyMaskedSparse(const QImage& source, QImage& destination, const QImage& 
                     maskView.data +
                     static_cast<qsizetype>(span.y - maskOriginPixels.y()) * maskView.stride;
                 const int sampleRow = (span.y - grid.firstY) / grid.block - firstRow;
-                const std::size_t sampleOffset =
-                    static_cast<std::size_t>(sampleRow) * sampleColumnCount;
+                const std::size_t sampleOffset = static_cast<std::size_t>(sampleRow) *
+                                                 static_cast<std::size_t>(sampleColumnCount);
                 for (int x = begin; x < end; ++x) {
                     const int sampleColumn = (x - grid.firstX) / grid.block - firstColumn;
-                    const QRgb sample = samples[sampleOffset + sampleColumn];
+                    const QRgb sample =
+                        samples[sampleOffset + static_cast<std::size_t>(sampleColumn)];
                     const int mix = alphaLine[x - maskOriginPixels.x()];
                     destinationLine[x] =
                         mix == 255 ? sample : blendPremultiplied(destinationLine[x], sample, mix);
@@ -1762,7 +1772,8 @@ void blendOverSource(QImage& filtered, const QImage& source, double opacity,
         });
     if (diagnostics != nullptr) {
         diagnostics->parallelJobs += jobs;
-        diagnostics->copiedBytes += filtered.sizeInBytes() + source.sizeInBytes();
+        diagnostics->copiedBytes += static_cast<std::size_t>(filtered.sizeInBytes()) +
+                                    static_cast<std::size_t>(source.sizeInBytes());
     }
 }
 

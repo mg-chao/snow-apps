@@ -1282,7 +1282,7 @@ class AdSelect::OptionListDelegate final : public QStyledItemDelegate {
     const QFontMetrics metrics(textFont);
     const QString text =
         metrics.elidedText(itemOption.text, Qt::ElideRight, std::max(0, textRect.width()));
-    painter->drawText(textRect, textAlignment, text);
+    painter->drawText(textRect, static_cast<int>(textAlignment), text);
 
     if (showSelectedIcon) {
       const QRect stateRect(
