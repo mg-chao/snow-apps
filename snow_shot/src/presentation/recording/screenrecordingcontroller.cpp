@@ -21,6 +21,8 @@
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include "snow_shot/platform/windows/windowchrome.h"
+#elif defined(Q_OS_MACOS)
+#include "snow_shot/platform/macos/windowcaptureexclusion.h"
 #endif
 
 #include "snow_capture.h"
@@ -1019,7 +1021,12 @@ struct ScreenRecordingController::Impl {
                                          {{QStringLiteral("operation"), operation},
                                           {QStringLiteral("duration_ms"),
                                            operationTimer.isValid() ? operationTimer.elapsed() : 0},
-                                          {QStringLiteral("backend"), QStringLiteral("wgc")}},
+                                          {QStringLiteral("backend"),
+#if defined(Q_OS_MACOS)
+                                           QStringLiteral("screencapturekit")}},
+#else
+                                           QStringLiteral("auto")}},
+#endif
                                          level);
     }
     QString operation;
@@ -1030,6 +1037,8 @@ struct ScreenRecordingController::Impl {
     snow_shot::presentation::WindowCaptureExclusion captureExclusion{
 #if defined(Q_OS_WIN) || defined(_WIN32)
         snow_shot::platform::windows::setWindowExcludedFromCapture
+#elif defined(Q_OS_MACOS)
+        snow_shot::platform::macos::setWindowExcludedFromCapture
 #endif
     };
 };

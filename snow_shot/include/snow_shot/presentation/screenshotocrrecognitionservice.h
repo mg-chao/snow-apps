@@ -97,8 +97,9 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     struct Options {
         // Maximum concurrent workers in the OCR child process.
         int workerCount = 1;
-        // Packaged descriptor/offline payload and writable online component cache.
+        // Packaged descriptor/offline payload. Empty uses the platform's bundle layout.
         QString offlineRoot;
+        // Writable online component cache, separate from the installed bundle.
         QString cacheRoot;
         // Resolved HTTP(S) proxy URL for component downloads. Empty means direct access.
         QString proxyUrl;
@@ -109,6 +110,8 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
         QString recognizerModelPath;
         QString dictionaryPath;
         QString stateDirectory;
+        // Overrides Contents/MacOS for native bundle integration tests.
+        QString bundledRuntimeDirectory{};
     };
 
     explicit ScreenshotOcrRecognitionService(QObject* parent = nullptr);

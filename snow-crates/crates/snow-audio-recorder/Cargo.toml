@@ -26,6 +26,9 @@ windows = { workspace = true, features = [
     "Win32_UI_Shell_PropertiesSystem",
 ] }
 
+[build-dependencies]
+cc = "1"
+
 [dev-dependencies]
 criterion = "0.5"
 proptest = "1.11.0"

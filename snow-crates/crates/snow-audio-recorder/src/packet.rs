@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use crate::format::AudioFormat;
 use snow_core::event::{DeliveryLane, StreamEvent};
 use snow_core::timestamp::StreamTimestamp;
-#[cfg(any(windows, test))]
+#[cfg(any(windows, target_os = "macos", test))]
 use snow_core::timestamp::TickFormat;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,7 +24,7 @@ pub struct AudioPacketMetadata {
 }
 
 impl AudioPacketMetadata {
-    #[cfg(any(windows, test))]
+    #[cfg(any(windows, target_os = "macos", test))]
     pub(crate) fn set_timing(
         &mut self,
         capture_time: Option<Instant>,

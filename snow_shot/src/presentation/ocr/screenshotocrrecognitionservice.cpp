@@ -362,14 +362,24 @@ class ScreenshotOcrRecognitionService::Impl final {
             m_assets.stateDirectory = options.stateDirectory;
             m_assetStatus = {ScreenshotOcrAssetPhase::ReadyCached, QStringLiteral("assets")};
         } else {
-            const QString offlineRoot = options.offlineRoot.trimmed().isEmpty()
-                                            ? QDir(QCoreApplication::applicationDirPath())
-                                                  .filePath(QStringLiteral("assets/ocr"))
-                                            : options.offlineRoot;
-            m_assetManager = std::make_unique<ScreenshotOcrAssets>(
-                ScreenshotOcrAssets::Options{offlineRoot, options.cacheRoot, options.proxyUrl,
-                                             options.modelType},
-                owner);
+            const QDir applicationDirectory(QCoreApplication::applicationDirPath());
+#ifdef Q_OS_MACOS
+            const QString defaultAssetRoot =
+                applicationDirectory.filePath(QStringLiteral("../Resources/assets/ocr"));
+#else
+            const QString defaultAssetRoot =
+                applicationDirectory.filePath(QStringLiteral("assets/ocr"));
+#endif
+            const QString offlineRoot =
+                options.offlineRoot.trimmed().isEmpty() ? defaultAssetRoot : options.offlineRoot;
+            ScreenshotOcrAssets::Options assetOptions{offlineRoot, options.cacheRoot,
+                                                      options.proxyUrl, options.modelType};
+#ifdef Q_OS_MACOS
+            assetOptions.bundledRuntimeDirectory = options.bundledRuntimeDirectory.isEmpty()
+                                                       ? applicationDirectory.absolutePath()
+                                                       : options.bundledRuntimeDirectory;
+#endif
+            m_assetManager = std::make_unique<ScreenshotOcrAssets>(std::move(assetOptions), owner);
             connect(m_assetManager.get(), &ScreenshotOcrAssets::statusChanged, owner,
                     [this](const ScreenshotOcrAssetStatus& status) { m_assetStatus = status; });
             connect(m_assetManager.get(), &ScreenshotOcrAssets::ready, owner,
@@ -766,6 +776,8 @@ class ScreenshotOcrRecognitionService::Impl final {
             m_transportThread.start();
         const auto& diagnostics = snow_shot::diagnostics::DiagnosticsService::instance();
         auto environment = QProcessEnvironment::systemEnvironment();
+        if (!m_assets.onnxRuntimePath.isEmpty())
+            environment.insert(QStringLiteral("ORT_DYLIB_PATH"), m_assets.onnxRuntimePath);
         environment.insert(QStringLiteral("SNOW_SHOT_CRASHPAD_PIPE"), diagnostics.crashPipeName());
         environment.insert(QStringLiteral("SNOW_SHOT_DIAGNOSTICS_SESSION"),
                            diagnostics.status().sessionId);

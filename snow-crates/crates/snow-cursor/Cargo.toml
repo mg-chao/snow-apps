@@ -12,3 +12,6 @@ windows = { version = "0.62.2", features = [
     "Win32_Graphics_Gdi",
     "Win32_UI_WindowsAndMessaging",
 ] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+snow-macos = { path = "../snow-macos" }

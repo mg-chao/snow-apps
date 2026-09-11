@@ -283,6 +283,11 @@ Copy-LicenseNotice -Category "project-notices" -Package "snow-shot-attributions"
     -Source (Join-Path $PSScriptRoot "../snow_shot/THIRD_PARTY_NOTICES.md") `
     -RelativeName "THIRD_PARTY_NOTICES.md"
 
+Copy-LicenseNotice -Category "models" -Package "rapidocr" `
+    -DeclaredLicense "Apache-2.0" `
+    -Source (Join-Path $PSScriptRoot "../snow_shot/packaging/ocr-model-LICENSE") `
+    -RelativeName "LICENSE"
+
 $sortedRecords = @($records | Sort-Object Category, Package, Notice)
 $indexLines = [System.Collections.Generic.List[string]]::new()
 $indexLines.Add("# Snow Shot Third-Party License Index")

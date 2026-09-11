@@ -86,13 +86,60 @@ def native_closure(executables, frameworks):
     return visited
 
 
+def collect_local_ffmpeg_notices(prefix, destination):
+    notices = prefix / "share/snow-apps/ffmpeg"
+    manifest = notices / "source-build.json"
+    if not manifest.is_file():
+        raise RuntimeError(f"Local FFmpeg has no source and license metadata: {manifest}")
+    metadata = json.loads(manifest.read_text())
+    version = metadata.get("version", "")
+    archive_name = metadata.get("source_archive", "")
+    configuration = metadata.get("configure_args", [])
+    if (not isinstance(version, str) or not re.fullmatch(r"[A-Za-z0-9._+-]+", version)
+            or not isinstance(archive_name, str) or not archive_name
+            or Path(archive_name).name != archive_name or "\\" in archive_name
+            or not isinstance(configuration, list) or not configuration
+            or not all(isinstance(option, str) for option in configuration)
+            or not isinstance(metadata.get("source_url"), str)
+            or not metadata["source_url"].startswith("https://")
+            or not isinstance(metadata.get("patches"), list)):
+        raise RuntimeError(f"Incomplete local FFmpeg source metadata: {manifest}")
+    archive = notices / archive_name
+    if (not archive.is_file()
+            or hashlib.sha256(archive.read_bytes()).hexdigest() != metadata.get("source_sha256")):
+        raise RuntimeError(f"Local FFmpeg source archive failed SHA-256 verification: {archive}")
+    if "--enable-nonfree" in configuration:
+        raise RuntimeError("Cannot redistribute an FFmpeg build configured with --enable-nonfree")
+    gpl = "--enable-gpl" in configuration
+    version3 = "--enable-version3" in configuration
+    license_name = ("GPL-3.0-or-later" if version3 else "GPL-2.0-or-later") if gpl else (
+        "LGPL-3.0-or-later" if version3 else "LGPL-2.1-or-later")
+    license_file = ("COPYING.GPLv3" if version3 else "COPYING.GPLv2") if gpl else (
+        "COPYING.LGPLv3" if version3 else "COPYING.LGPLv2.1")
+    if metadata.get("license") != license_name or not (notices / license_file).is_file():
+        raise RuntimeError(f"Local FFmpeg license does not match its build configuration: {manifest}")
+    for patch in metadata["patches"]:
+        if (not isinstance(patch, str) or Path(patch).name != patch or "\\" in patch
+                or not (notices / patch).is_file()):
+            raise RuntimeError(f"Local FFmpeg is missing its recorded source patch: {patch}")
+    # Keep the corresponding source archive and build instructions alongside the
+    # license texts; the shared native collector preserves every file verbatim.
+    shutil.copytree(notices, destination / ("ffmpeg-" + version))
+
+
 def collect_native_notices(libraries, destination):
     cellar = Path(run("brew", "--cellar")).resolve()
     packages = set()
+    local_ffmpeg = set()
     for library in libraries:
         if library.is_relative_to(cellar):
             parts = library.relative_to(cellar).parts
             packages.add(cellar / parts[0] / parts[1])
+        elif re.fullmatch(r"lib(?:avcodec|avdevice|avfilter|avformat|avutil|swresample|swscale)"
+                          r"(?:\.[0-9]+)*\.dylib", library.name):
+            local_ffmpeg.add(library.parent.parent)
+    for prefix in sorted(local_ffmpeg):
+        collect_local_ffmpeg_notices(prefix, destination)
     for package in sorted(packages):
         output = destination / (package.parent.name + "-" + package.name)
         output.mkdir(parents=True)
@@ -272,6 +319,11 @@ def main():
                 continue  # Signing the bundle below also signs its main executable.
             run("codesign", "--force", "--sign", "-", "--timestamp=none", binary)
         run("codesign", "--force", "--deep", "--sign", "-", "--timestamp=none", app)
+        # The manifest pins the final signed helper and ONNX library. Seal nested code first,
+        # then sign only the outer bundle so these hashes cannot be changed by deep signing.
+        run("python3", ROOT / "scripts/stage-macos-ocr.py", "--app", app,
+            "--offline-model", "small")
+        run("codesign", "--force", "--sign", "-", "--timestamp=none", app)
         run("codesign", "--verify", "--deep", "--strict", app)
         verify_startup(app, version)
         (volume / "Applications").symlink_to("/Applications")

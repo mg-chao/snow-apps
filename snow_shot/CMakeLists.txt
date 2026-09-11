@@ -5520,6 +5520,8 @@ endforeach()
 qt_finalize_executable(snow_shot)
 
 if(APPLE)
+    enable_language(OBJCXX)
+    target_sources(snow_shot PRIVATE src/platform/macos/windowcaptureexclusion.mm)
     configure_file(resources/macos-info.plist.in
         "${CMAKE_CURRENT_BINARY_DIR}/generated/macos-info.plist" @ONLY)
     set_target_properties(snow_shot PROPERTIES MACOSX_BUNDLE_INFO_PLIST
@@ -5551,9 +5553,30 @@ if(APPLE)
     target_link_libraries(snow_shot PRIVATE
         "-framework AppKit" "-framework CoreGraphics" "-framework ScreenCaptureKit" "-framework Foundation")
     find_package(PkgConfig REQUIRED)
+    # FindPkgConfig caches absolute library paths independently of PKG_CONFIG_PATH.
+    # Refresh them when reconfiguring a checkout with a different local FFmpeg prefix.
+    unset(__pkg_config_checked_SNOW_MACOS_FFMPEG CACHE)
+    foreach(_library avformat avcodec swresample swscale avutil)
+        unset(pkgcfg_lib_SNOW_MACOS_FFMPEG_${_library} CACHE)
+    endforeach()
+    set(_SNOW_MACOS_SAVED_PKG_CONFIG_PATH "$ENV{PKG_CONFIG_PATH}")
+    set(ENV{PKG_CONFIG_PATH} "${SNOW_FFMPEG_ROOT}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
     pkg_check_modules(SNOW_MACOS_FFMPEG REQUIRED IMPORTED_TARGET
         libavformat libavcodec libswresample libswscale libavutil)
-    target_link_libraries(snow_shot_rust_ffi_bundle INTERFACE PkgConfig::SNOW_MACOS_FFMPEG)
+    set(ENV{PKG_CONFIG_PATH} "${_SNOW_MACOS_SAVED_PKG_CONFIG_PATH}")
+    unset(_SNOW_MACOS_SAVED_PKG_CONFIG_PATH)
+    target_link_libraries(snow_shot_rust_ffi_bundle INTERFACE PkgConfig::SNOW_MACOS_FFMPEG
+        "-framework AppKit" "-framework CoreGraphics" "-framework ScreenCaptureKit" "-framework Foundation"
+        "-framework CoreMedia" "-framework CoreVideo" "-framework AVFoundation"
+        "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreText" "-framework Carbon")
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    find_library(SNOW_MACOS_ONNXRUNTIME_LIBRARY NAMES onnxruntime
+        HINTS "$ENV{SNOW_MACOS_BREW_PREFIX}/opt/onnxruntime/lib" REQUIRED)
+    add_custom_command(TARGET snow_shot POST_BUILD
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/stage-macos-ocr.py"
+            --app "$<TARGET_BUNDLE_DIR:snow_shot>"
+            --onnx-runtime "${SNOW_MACOS_ONNXRUNTIME_LIBRARY}"
+        VERBATIM)
 endif()
 
 if(APPLE AND SNOW_SHOT_BUILD_MACOS_TESTS)
@@ -5564,12 +5587,41 @@ if(APPLE AND SNOW_SHOT_BUILD_MACOS_TESTS)
     enable_language(OBJC)
     add_executable(snow-shot-macos-capture-smoke-test
         tests/macos_capture_smoke_test.m
-        ../snow-crates/crates/snow-macos/src/native.m)
+        ../snow-crates/crates/snow-macos/src/native.m
+        ../snow-crates/crates/snow-macos/src/stream.m)
     target_include_directories(snow-shot-macos-capture-smoke-test PRIVATE
         ../snow-crates/crates/snow-macos/src)
     target_compile_options(snow-shot-macos-capture-smoke-test PRIVATE -fobjc-arc -fblocks)
     target_link_libraries(snow-shot-macos-capture-smoke-test PRIVATE
-        "-framework AppKit" "-framework CoreGraphics" "-framework ScreenCaptureKit" "-framework Foundation")
+        "-framework AppKit" "-framework CoreGraphics" "-framework ScreenCaptureKit" "-framework Foundation"
+        "-framework CoreMedia" "-framework CoreVideo")
     add_test(NAME snow-shot-macos-capture-smoke-test COMMAND snow-shot-macos-capture-smoke-test)
     set_tests_properties(snow-shot-macos-capture-smoke-test PROPERTIES LABELS "interactive" TIMEOUT 60)
+
+    add_executable(snow-shot-macos-ocr-tests
+        tests/macos_ocr_tests.cpp
+        include/snow_shot/presentation/screenshotocrpresentation.h
+        include/snow_shot/presentation/screenshotocrrecognitionservice.h
+        include/snow_shot/presentation/screenshotocrassets.h
+        src/presentation/ocr/screenshotocrpresentation.cpp
+        src/presentation/ocr/screenshotocrrecognitionservice.cpp
+        src/presentation/ocr/screenshotocrassets.cpp
+        src/presentation/ocr/screenshotocrvisuals.cpp)
+    target_include_directories(snow-shot-macos-ocr-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include" "${SNOW_DRAW_ENGINE_SOURCE_DIR}/include")
+    target_compile_definitions(snow-shot-macos-ocr-tests PRIVATE
+        SNOW_TEST_OCR_MANIFEST="${CMAKE_CURRENT_SOURCE_DIR}/packaging/snow-shot-ocr-asset-manifest.json")
+    target_link_libraries(snow-shot-macos-ocr-tests PRIVATE
+        snow_shot_diagnostics snow_draw_engine_qt_canvas Qt6::Core Qt6::Gui Qt6::Network MINIZIP::minizip-ng)
+    add_test(NAME snow-shot-macos-ocr-tests COMMAND snow-shot-macos-ocr-tests)
+    set_tests_properties(snow-shot-macos-ocr-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_executable(snow-shot-macos-recording-smoke-test tests/macos_recording_smoke_test.cpp)
+    target_include_directories(snow-shot-macos-recording-smoke-test PRIVATE
+        ../snow-crates/crates/snow-capture-c/include)
+    target_link_libraries(snow-shot-macos-recording-smoke-test PRIVATE
+        snow_shot_rust_ffi_bundle Qt6::Widgets)
+    add_test(NAME snow-shot-macos-recording-smoke-test COMMAND snow-shot-macos-recording-smoke-test
+        "${CMAKE_CURRENT_BINARY_DIR}/macos-recording-smoke.mp4")
+    set_tests_properties(snow-shot-macos-recording-smoke-test PROPERTIES LABELS "interactive" TIMEOUT 60)
 endif()

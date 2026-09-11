@@ -2,7 +2,9 @@
 //! Screenshot calls must run on a worker thread while the main event loop is running.
 #![cfg(target_os = "macos")]
 
+use std::ffi::c_void;
 use std::ffi::{CStr, c_char};
+use std::ptr::NonNull;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -49,6 +51,9 @@ impl Window {
 }
 
 unsafe extern "C" {
+    fn snow_macos_display_generation() -> u64;
+    fn snow_macos_pointer(cursor: *mut CursorInfo) -> i32;
+    fn snow_macos_cursor(cursor: *mut CursorInfo, rgba: *mut u8, capacity: usize) -> i32;
     fn snow_macos_displays(displays: *mut NativeDisplay, capacity: usize, count: *mut usize)
     -> i32;
     fn snow_macos_windows(windows: *mut Window, capacity: usize, count: *mut usize) -> i32;
@@ -63,6 +68,141 @@ unsafe extern "C" {
         error: *mut c_char,
         error_size: usize,
     ) -> i32;
+    fn snow_macos_stream_start(
+        display_id: u32,
+        window_id: u32,
+        source_x: u32,
+        source_y: u32,
+        width: u32,
+        height: u32,
+        error: *mut c_char,
+        error_size: usize,
+    ) -> *mut c_void;
+    fn snow_macos_stream_read(
+        handle: *mut c_void,
+        bgra: u8,
+        pixels: *mut u8,
+        length: usize,
+        sequence: *mut u64,
+        error: *mut c_char,
+        error_size: usize,
+    ) -> i32;
+    fn snow_macos_stream_stop(handle: *mut c_void);
+}
+
+/// Changes when native display geometry/configuration changes, including the desktop scale.
+pub fn display_generation() -> u64 {
+    unsafe { snow_macos_display_generation() }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CursorInfo {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub hotspot_x: u32,
+    pub hotspot_y: u32,
+    pub buttons: u8,
+}
+
+/// Read pointer position and button state without allocating or accessing cursor artwork.
+pub fn pointer() -> Result<CursorInfo, String> {
+    let mut info = CursorInfo::default();
+    if unsafe { snow_macos_pointer(&mut info) } == 0 {
+        return Err("Failed to sample the macOS pointer".into());
+    }
+    Ok(info)
+}
+
+/// Read the current system cursor into caller-owned scratch space (at least 256 * 256 * 4).
+pub fn cursor(rgba: &mut [u8]) -> Result<CursorInfo, String> {
+    let mut info = CursorInfo::default();
+    if unsafe { snow_macos_cursor(&mut info, rgba.as_mut_ptr(), rgba.len()) } == 0 {
+        return Err("Failed to sample the macOS cursor".into());
+    }
+    if image_length(info.width, info.height)? > rgba.len() {
+        return Err("Invalid macOS cursor dimensions".into());
+    }
+    Ok(info)
+}
+
+/// A bounded continuous ScreenCaptureKit stream. Use on a worker with a running main event loop.
+/// Coordinates and dimensions are backing pixels relative to the selected source.
+pub struct VideoStream {
+    handle: NonNull<c_void>,
+    length: usize,
+}
+
+// Calls require exclusive access; native callback state is protected by an NSCondition.
+unsafe impl Send for VideoStream {}
+
+impl VideoStream {
+    pub fn start(
+        display_id: u32,
+        window_id: u32,
+        source_x: u32,
+        source_y: u32,
+        width: u32,
+        height: u32,
+    ) -> Result<Self, String> {
+        let length = image_length(width, height)?;
+        let mut error = [0 as c_char; 2048];
+        let handle = unsafe {
+            snow_macos_stream_start(
+                display_id,
+                window_id,
+                source_x,
+                source_y,
+                width,
+                height,
+                error.as_mut_ptr(),
+                error.len(),
+            )
+        };
+        NonNull::new(handle)
+            .map(|handle| Self { handle, length })
+            .ok_or_else(|| {
+                unsafe { CStr::from_ptr(error.as_ptr()) }
+                    .to_string_lossy()
+                    .into_owned()
+            })
+    }
+
+    /// Copy the newest complete surface; equal sequence numbers identify duplicate frames.
+    /// Only the first read waits for a frame (at most five seconds).
+    pub fn read(&mut self, bgra: bool, pixels: &mut [u8]) -> Result<u64, String> {
+        if pixels.len() != self.length {
+            return Err("Invalid recording buffer size".into());
+        }
+        let mut error = [0 as c_char; 2048];
+        let mut sequence = 0;
+        let success = unsafe {
+            snow_macos_stream_read(
+                self.handle.as_ptr(),
+                u8::from(bgra),
+                pixels.as_mut_ptr(),
+                pixels.len(),
+                &mut sequence,
+                error.as_mut_ptr(),
+                error.len(),
+            )
+        };
+        if success == 0 {
+            Err(unsafe { CStr::from_ptr(error.as_ptr()) }
+                .to_string_lossy()
+                .into_owned())
+        } else {
+            Ok(sequence)
+        }
+    }
+}
+
+impl Drop for VideoStream {
+    fn drop(&mut self) {
+        unsafe { snow_macos_stream_stop(self.handle.as_ptr()) };
+    }
 }
 
 pub fn displays() -> Result<Vec<Display>, String> {

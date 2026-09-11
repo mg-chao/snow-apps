@@ -874,8 +874,6 @@ bool ScreenshotController::Impl::ensureRecognitionFeature() {
         screenshotOcrModelTypeFromValue(applicationStorage.configuration()
                                             .value(QStringLiteral("text_recognition/model_type"))
                                             .toString());
-    ocrOptions.offlineRoot =
-        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("assets/ocr"));
     if (applicationStorage.isInitialized() &&
         !applicationStorage.configurationDirectory().trimmed().isEmpty()) {
         ocrOptions.cacheRoot = QDir(applicationStorage.configurationDirectory())

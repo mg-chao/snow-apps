@@ -6,7 +6,9 @@ use std::time::Instant;
 #[cfg(windows)]
 use crate::keyboard_overlay::modifier;
 use crate::keyboard_overlay::{KeyEvent, KeyboardOverlayConfig};
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::Receiver;
+#[cfg(not(target_os = "macos"))]
+use crossbeam_channel::Sender;
 
 #[derive(Clone)]
 pub struct KeyObservation {
@@ -18,6 +20,8 @@ pub struct KeyObservation {
     pub pressed: [u8; 256],
     pub alt_gr: bool,
     pub generation: u64,
+    #[cfg(target_os = "macos")]
+    pub printable: Option<String>,
     #[cfg(test)]
     pub extra_info: usize,
 }
@@ -492,7 +496,11 @@ mod platform {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+#[path = "keyboard_hook_macos.rs"]
+mod platform;
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod platform {
     use super::*;
     pub struct Observer;
@@ -532,6 +540,8 @@ mod tests {
             pressed: [0; 256],
             alt_gr: true,
             generation: 0,
+            #[cfg(target_os = "macos")]
+            printable: None,
             extra_info: 0,
         };
         event.pressed[0xa2] = 128;

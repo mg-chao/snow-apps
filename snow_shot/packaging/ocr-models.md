@@ -92,3 +92,41 @@ Initialization-only checks (`--validate-model-set`) are also required but do not
 replace recognition tests. DirectML requests retain the existing CPU fallback
 when acceleration is unavailable. Model payloads are not committed or downloaded
 by deterministic unit tests.
+
+## macOS managed assets
+
+macOS ships the native `snow-ocr-process` helper in `Contents/MacOS` and ONNX
+Runtime in `Contents/Frameworks`. The trusted schema 3 manifest lives in
+`Contents/Resources/assets/ocr`; it records the architecture and the size and
+SHA-256 of both native files. Unlike Windows schema 2, it does not refer to a
+separately downloaded runtime archive. Invalid bundled code requires repairing
+the app installation and is rejected before model downloads begin.
+
+`scripts/stage-macos-ocr.py --app <app> --offline-model small` stages the same
+pinned Small V6 payload and model license used by Windows. Run staging again
+after deployment, architecture thinning and nested code signing, then sign the
+outer app bundle so that its resource seal covers the final manifest. Development
+builds additionally pass `--onnx-runtime <dylib>` to copy the native runtime.
+
+The seven model contracts, download URLs and hashes remain identical on both
+platforms. Other selections are installed on demand into the writable user cache,
+with SHA-256 verification, a completion marker and serialized atomic activation.
+The OCR child receives the absolute path of the verified ONNX library, avoiding
+dependence on the user's Homebrew installation or dynamic loader search paths.
+macOS currently uses the CPU provider.
+
+The focused `snow-shot-macos-ocr-tests` executable checks offline resolution,
+managed download, cache reuse/repair, concurrent acquisition and rejection of
+modified native files or models. Real inference can be run independently:
+
+```sh
+snow-shot-macos-ocr-tests --write-fixture /tmp/ocr-fixture.png
+snow-shot-macos-ocr-tests --recognize-image /tmp/ocr-fixture.png \
+  --offline-root '<app>/Contents/Resources/assets/ocr' \
+  --runtime-root '<app>/Contents/MacOS' --cache-root /tmp/ocr-test-cache \
+  --model small --expect 'Snow Shot'
+```
+
+The generated fixture includes English and Chinese text. Repeat with
+`--model extra_small` and an empty isolated cache to exercise the actual managed
+HTTPS installation rather than a pre-staged model.

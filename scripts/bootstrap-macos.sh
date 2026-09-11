@@ -14,6 +14,8 @@ xcrun --find clang >/dev/null
 # Keep the FFmpeg API compatible with the repository's Rust bindings.
 HOMEBREW_NO_AUTO_UPDATE=1 brew install cmake ninja pkg-config ffmpeg@8 zxing-cpp minizip-ng \
     jpeg-xl libheif webp onnxruntime
+# Homebrew supplies the codec libraries; our pinned FFmpeg also enables WebP.
+"$root/scripts/build-macos-ffmpeg.sh"
 qt_version=6.11.1
 if [[ ! -x "$root/.tools/qt/$qt_version/macos/bin/qmake" ]]; then
     python3 -m venv "$root/.tools/python"

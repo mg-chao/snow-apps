@@ -755,6 +755,7 @@ name = "snow-audio-recorder"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cc",
  "snow-core",
  "snow-recording-model",
  "windows",
@@ -803,6 +804,7 @@ name = "snow-cursor"
 version = "0.1.0"
 dependencies = [
  "snow-core",
+ "snow-macos",
  "windows",
 ]
 
@@ -913,7 +915,9 @@ dependencies = [
 name = "snow-recording-effects"
 version = "0.1.0"
 dependencies = [
+ "cc",
  "crossbeam-channel",
+ "snow-macos",
  "windows",
 ]
 

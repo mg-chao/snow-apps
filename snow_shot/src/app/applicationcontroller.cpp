@@ -154,8 +154,6 @@ class ApplicationController::Impl {
         // instances receive a consumer of this service instead of creating a
         // second child process for each controller.
         ScreenshotOcrRecognitionService::Options ocrOptions;
-        ocrOptions.offlineRoot =
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("assets/ocr"));
         if (applicationStorage.isInitialized() &&
             !applicationStorage.configurationDirectory().trimmed().isEmpty()) {
             ocrOptions.cacheRoot = QDir(applicationStorage.configurationDirectory())

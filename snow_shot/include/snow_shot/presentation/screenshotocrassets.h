@@ -43,6 +43,7 @@ struct ScreenshotOcrResolvedAssets {
     QString runtimeVersion;
     QString runtimeDirectory;
     QString processPath;
+    QString onnxRuntimePath;
     QString detectorModelPath;
     QString recognizerModelPath;
     QString dictionaryPath;
@@ -69,6 +70,8 @@ class ScreenshotOcrAssets final : public QObject {
             downloadOverride{};
         std::function<bool(const QString& archive, const QString& destination, QString* error)>
             extractOverride{};
+        // macOS keeps executable code in Contents/MacOS, outside Resources.
+        QString bundledRuntimeDirectory{};
     };
 
     explicit ScreenshotOcrAssets(Options options, QObject* parent = nullptr);
