@@ -17,6 +17,7 @@
 
 namespace {
 constexpr int kMaximumPendingJobs = 16;
+constexpr int kDefaultShutdownTimeoutMilliseconds = 5000;
 
 ScreenshotExportTaskResult cancelledResult() {
     return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Cancelled,
@@ -58,11 +59,12 @@ bool ScreenshotExportJobHandle::isCancellationRequested() const {
 }
 
 struct ScreenshotExportCoordinator::Impl final {
-    explicit Impl(ScreenshotExportCoordinator& ownerValue) : owner(ownerValue) {
+    Impl(ScreenshotExportCoordinator& ownerValue, int shutdownTimeoutMsValue)
+        : owner(ownerValue), shutdownTimeoutMs(shutdownTimeoutMsValue) {
         const int ideal = QThread::idealThreadCount();
-        pool.setMaxThreadCount(std::clamp(ideal, 1, 2));
-        pool.setExpiryTimeout(-1);
-        pool.setObjectName(QStringLiteral("snow-shot-export"));
+        pool->setMaxThreadCount(std::clamp(ideal, 1, 2));
+        pool->setExpiryTimeout(-1);
+        pool->setObjectName(QStringLiteral("snow-shot-export"));
     }
 
     bool reservePending() {
@@ -84,7 +86,8 @@ struct ScreenshotExportCoordinator::Impl final {
     }
 
     ScreenshotExportCoordinator& owner;
-    QThreadPool pool;
+    const int shutdownTimeoutMs;
+    std::unique_ptr<QThreadPool> pool = std::make_unique<QThreadPool>();
     std::atomic_int pending{0};
     std::atomic_bool shuttingDown{false};
     QMutex mutex;
@@ -92,7 +95,12 @@ struct ScreenshotExportCoordinator::Impl final {
 };
 
 ScreenshotExportCoordinator::ScreenshotExportCoordinator(QObject* parent)
-    : QObject(parent), m_impl(std::make_unique<Impl>(*this)) {}
+    : ScreenshotExportCoordinator(kDefaultShutdownTimeoutMilliseconds, parent) {}
+
+ScreenshotExportCoordinator::ScreenshotExportCoordinator(int shutdownTimeoutMilliseconds,
+                                                         QObject* parent)
+    : QObject(parent),
+      m_impl(std::make_unique<Impl>(*this, std::max(1, shutdownTimeoutMilliseconds))) {}
 
 ScreenshotExportCoordinator::~ScreenshotExportCoordinator() {
     shutdown();
@@ -160,7 +168,7 @@ ScreenshotExportJobHandle ScreenshotExportCoordinator::submit(QObject* receiver,
                 Qt::QueuedConnection));
         });
     runnable->setAutoDelete(true);
-    m_impl->pool.start(runnable, priority == Priority::Foreground ? 1 : -1);
+    m_impl->pool->start(runnable, priority == Priority::Foreground ? 1 : -1);
     return ScreenshotExportJobHandle(std::move(cancellation));
 }
 
@@ -181,5 +189,12 @@ void ScreenshotExportCoordinator::shutdown() {
         }
         m_impl->cancellations.clear();
     }
-    m_impl->pool.waitForDone();
+    // Deleting the pool would wait for stragglers unconditionally; orphan it
+    // past the deadline so in-flight runnables finish against their QPointer
+    // guards instead of stalling teardown.
+    if (!m_impl->pool->waitForDone(m_impl->shutdownTimeoutMs)) {
+        qWarning("Screenshot export workers did not stop within %d milliseconds; abandoning them",
+                 m_impl->shutdownTimeoutMs);
+        static_cast<void>(m_impl->pool.release());
+    }
 }

@@ -203,6 +203,43 @@ void shutdownCancelsAndDrains() {
             "coordinator admitted work after shutdown");
 }
 
+void shutdownAbandonsAWorkerThatIgnoresCancellation() {
+    ScreenshotExportCoordinator coordinator(150);
+    QObject receiver;
+    std::atomic_bool entered{false};
+    std::atomic_bool release{false};
+    int completionCount = 0;
+    require(coordinator
+                .submit(
+                    &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+                    [&entered, &release](const ScreenshotExportCancellation&) {
+                        entered.store(true, std::memory_order_release);
+                        while (!release.load(std::memory_order_acquire)) {
+                            QThread::msleep(2);
+                        }
+                        return ScreenshotExportTaskResult{};
+                    },
+                    [&completionCount](ScreenshotExportTaskResult) { ++completionCount; })
+                .isValid(),
+            "shutdown abandon job was not admitted");
+    require(processUntil([&entered]() { return entered.load(std::memory_order_acquire); }),
+            "shutdown abandon job did not start");
+    QElapsedTimer timer;
+    timer.start();
+    coordinator.shutdown();
+    require(timer.elapsed() < 2000,
+            "shutdown blocked on a worker that ignores its cancellation token");
+    release.store(true, std::memory_order_release);
+    require(processUntil([&coordinator]() { return coordinator.pendingJobCount() == 0; }),
+            "the abandoned export worker did not finish after release");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    require(completionCount == 1, "the abandoned worker's completion was not delivered");
+    QElapsedTimer secondShutdown;
+    secondShutdown.start();
+    coordinator.shutdown();
+    require(secondShutdown.elapsed() < 100, "a second shutdown did not return immediately");
+}
+
 void clipboardCommitCancellationIsAsynchronous() {
     QObject receiver;
     QImage image(QSize(2, 2), QImage::Format_RGBA8888);
@@ -284,6 +321,7 @@ int main(int argc, char** argv) {
         destroyedReceiverSuppressesCompletion();
         queueAndWorkerBoundsAreEnforced();
         shutdownCancelsAndDrains();
+        shutdownAbandonsAWorkerThatIgnoresCancellation();
         clipboardCommitCancellationIsAsynchronous();
 #if defined(Q_OS_WIN) || defined(_WIN32)
         clipboardCommitRetriesTransientContention();

@@ -17,6 +17,7 @@
 #ifdef Q_OS_WIN
 void globalMouseNativeActivationKeyTests();
 void globalMouseNativePerformanceTests();
+void globalMouseNativeStopFromWorkerThreadTests();
 #endif
 
 namespace {
@@ -623,6 +624,7 @@ int main(int argc, char** argv) {
 #ifdef Q_OS_WIN
     globalMouseNativeActivationKeyTests();
     globalMouseNativePerformanceTests();
+    globalMouseNativeStopFromWorkerThreadTests();
 #endif
     multipleKeysMustBeHeldTogetherOnlyAtActivation();
     directButtonDragPreservesQtInputAndLatchesAction();

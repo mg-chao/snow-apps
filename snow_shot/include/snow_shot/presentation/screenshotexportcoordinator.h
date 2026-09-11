@@ -68,6 +68,9 @@ class ScreenshotExportCoordinator final : public QObject {
     using Completion = std::function<void(ScreenshotExportTaskResult)>;
 
     explicit ScreenshotExportCoordinator(QObject* parent = nullptr);
+    // The deadline bounds how long shutdown() waits for workers that ignore
+    // their cancellation tokens; tests shrink it to exercise abandonment.
+    ScreenshotExportCoordinator(int shutdownTimeoutMilliseconds, QObject* parent = nullptr);
     ~ScreenshotExportCoordinator() override;
 
     [[nodiscard]] static ScreenshotExportCoordinator& shared();

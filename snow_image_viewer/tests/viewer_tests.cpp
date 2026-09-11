@@ -1278,6 +1278,36 @@ void testProgressiveEditController(const QString& directory) {
             "progressive controller validates the PNG receipt without decoding it");
 }
 
+void testDestructionBoundedWhileDecodeInFlight(const QString& directory) {
+    snow::image::Document document;
+    document.format = snow::image::Format::png;
+    document.canvas_width = 2400;
+    document.canvas_height = 1600;
+    snow::image::Frame frame;
+    frame.image = sampleImage(std::byte{0x5A}, document.canvas_width, document.canvas_height);
+    document.frames.push_back(std::move(frame));
+    const QString path = directory + QStringLiteral("/large-decode.png");
+    snow::image::Service service;
+    snow::image::EncodeOptions options;
+    options.format = snow::image::Format::png;
+    {
+        auto output = take(snow::image::file_output(nativePath(path)), "open PNG output");
+        require(service.encode(document, output, options).has_value(),
+                "encode bounded-teardown PNG fixture");
+    }
+
+    snow::image_viewer::EditPipelineOptions pipelineOptions;
+    pipelineOptions.shutdownTimeoutMs = 1;
+    QElapsedTimer timer;
+    {
+        snow::image_viewer::EditPipelineController controller(pipelineOptions, nullptr);
+        controller.setSource(path);
+        timer.start();
+    }
+    require(timer.elapsed() < 2000,
+            "edit pipeline destruction stalled on an in-flight source decode");
+}
+
 void testGpuResidentImageState() {
     snow::image_viewer::DecodedImage image;
     image.filePath = QStringLiteral("C:/test/static.png");
@@ -2732,6 +2762,7 @@ int main(int argc, char** argv) {
     testEffectiveEditCache(directory.path());
     testGpuRasterPreviewRecovery(directory.path());
     testProgressiveEditController(directory.path());
+    testDestructionBoundedWhileDecodeInFlight(directory.path());
     testGpuResidentImageState();
     testAnimation(directory.path());
     testAnimatedExportCacheIsolation(directory.path());

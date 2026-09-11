@@ -12,6 +12,8 @@
 
 namespace snow_shot::presentation {
 namespace {
+constexpr unsigned long kStopTimeoutMilliseconds = 2000;
+
 class NativeGlobalMouseBackend final : public GlobalMouseBackend {
   public:
 #ifdef Q_OS_WIN
@@ -60,19 +62,40 @@ class NativeGlobalMouseBackend final : public GlobalMouseBackend {
     }
 
     void stop() override {
-        if (worker == nullptr) {
+        if (worker == nullptr && !thread.isRunning()) {
             return;
         }
-        QMetaObject::invokeMethod(
-            worker,
-            [this]() {
+        if (QThread::currentThread() == &thread) {
+            // Low-level hook callbacks execute on this thread; a blocking
+            // queued invocation back to ourselves would deadlock, so retire
+            // the hooks inline and let the event loop exit afterwards.
 #ifdef Q_OS_WIN
-                unhook();
+            unhook();
 #endif
-            },
-            Qt::BlockingQueuedConnection);
+            thread.quit();
+            worker = nullptr;
+            onEvent = {};
+            onFailure = {};
+            return;
+        }
+        if (worker != nullptr) {
+            QMetaObject::invokeMethod(
+                worker,
+                [this]() {
+#ifdef Q_OS_WIN
+                    unhook();
+#endif
+                },
+                Qt::BlockingQueuedConnection);
+        }
         thread.quit();
-        thread.wait();
+        if (!thread.wait(kStopTimeoutMilliseconds)) {
+            qWarning("Global mouse worker thread did not stop within %lu milliseconds",
+                     kStopTimeoutMilliseconds);
+            // A running QThread must never be destroyed, so keep waiting past
+            // the deadline once the stall is visible in diagnostics.
+            thread.wait();
+        }
         worker = nullptr;
         onEvent = {};
         onFailure = {};
