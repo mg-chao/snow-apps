@@ -1215,52 +1215,26 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
         // The pinned image surface is exposed as HTCAPTION so a press can
         // start physical window capture. That changes the normal client hover
         // path into non-client mouse messages, and USER32's leave tracking,
-        // like Qt's synthesized Enter/Leave, follows the client area. Resolve
-        // every mouse message against the complete HWND bounds so presence
-        // tracks the real pointer; the queued Qt events re-resolve the same
-        // way in event() via applyNativePointerPresence().
-        const auto updateNativePointerPresence = [&](UINT message) {
-            const bool pointerMove = message == WM_MOUSEMOVE || message == WM_NCMOUSEMOVE;
-            const bool pointerLeave = message == WM_MOUSELEAVE || message == WM_NCMOUSELEAVE;
-            if (!pointerMove && !pointerLeave) {
-                return;
-            }
-
-            POINT pointer{};
-            bool havePointerPosition = false;
-            if (message == WM_NCMOUSEMOVE) {
-                pointer.x = GET_X_LPARAM(nativeMessage->lParam);
-                pointer.y = GET_Y_LPARAM(nativeMessage->lParam);
-                havePointerPosition = true;
-            } else if (message == WM_MOUSEMOVE) {
-                pointer.x = GET_X_LPARAM(nativeMessage->lParam);
-                pointer.y = GET_Y_LPARAM(nativeMessage->lParam);
-                havePointerPosition = ClientToScreen(pinnedHwnd, &pointer) != FALSE;
-            } else {
-                havePointerPosition = GetCursorPos(&pointer) != FALSE;
-            }
-
-            const QRect nativeGeometry =
-                native::currentWindowGeometry(reinterpret_cast<WId>(pinnedHwnd));
-            const bool inside = havePointerPosition && nativeGeometry.isValid() &&
-                                nativeGeometry.contains(QPoint(pointer.x, pointer.y));
-            if (inside != m_pointerInside) {
-                m_pointerInside = inside;
-                updateControlsGeometry();
-            }
-
+        // like Qt's synthesized Enter/Leave, follows the client area. Mouse
+        // messages only arm leave tracking; presence always re-resolves from
+        // the live cursor through applyNativePointerPresence().
+        const UINT pointerMessage = nativeMessage->message;
+        const bool pointerMove = pointerMessage == WM_MOUSEMOVE || pointerMessage == WM_NCMOUSEMOVE;
+        const bool pointerLeave =
+            pointerMessage == WM_MOUSELEAVE || pointerMessage == WM_NCMOUSELEAVE;
+        if (pointerMove || pointerLeave) {
+            static_cast<void>(applyNativePointerPresence());
             if (pointerMove) {
                 TRACKMOUSEEVENT tracking{};
                 tracking.cbSize = sizeof(tracking);
                 tracking.dwFlags = TME_LEAVE;
-                if (message == WM_NCMOUSEMOVE) {
+                if (pointerMessage == WM_NCMOUSEMOVE) {
                     tracking.dwFlags |= TME_NONCLIENT;
                 }
                 tracking.hwndTrack = pinnedHwnd;
                 TrackMouseEvent(&tracking);
             }
-        };
-        updateNativePointerPresence(nativeMessage->message);
+        }
 
         // Qt and USER32 release capture while handing off a pending drag.
         // WM_EXITSIZEMOVE and mouse release still finish the transaction.

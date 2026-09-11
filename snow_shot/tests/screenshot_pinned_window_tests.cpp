@@ -1702,19 +1702,32 @@ QImage waitForClipboardImage(const std::function<bool(const QImage&)>& predicate
 
 void setPinnedWindowHovered(ScreenshotPinnedWindow& window, bool hovered) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    // Pointer presence resolves inside nativeEvent from the mouse message
-    // position against the window frame, so the native backend simulates the
-    // production hover path with an NC mouse move inside or outside the
-    // window. The offscreen backend has no native window and keeps the
-    // event-driven simulation.
+    // Presence resolves from the live cursor, so the native backend places the
+    // system pointer and then delivers the production NC mouse move. Message
+    // coordinates are not a second source of truth. The offscreen backend has
+    // no native window and keeps the event-driven simulation.
     if (QGuiApplication::platformName() == QStringLiteral("windows") &&
         window.internalWinId() != 0) {
-        const HWND hwnd = reinterpret_cast<HWND>(window.internalWinId());
+        const HWND hwnd = toNativeHwnd(window.internalWinId());
         const QRect nativeGeometry = window.currentNativeGeometry();
         require(nativeGeometry.isValid() && !nativeGeometry.isEmpty(),
                 "hover simulation requires a presented pinned window");
-        const QPoint position =
-            hovered ? nativeGeometry.center() : nativeGeometry.topLeft() - QPoint(1000, 1000);
+        QPoint position = nativeGeometry.center();
+        if (!hovered) {
+            QScreen* screen = window.screen();
+            if (screen == nullptr) {
+                screen = QGuiApplication::primaryScreen();
+            }
+            require(screen != nullptr, "hover simulation requires a screen");
+            position = ScreenshotGeometryMapper::physicalRectForScreen(*screen).bottomRight() -
+                       QPoint(8, 8);
+            if (nativeGeometry.contains(position)) {
+                position = nativeGeometry.topLeft() - QPoint(64, 64);
+            }
+            require(!nativeGeometry.contains(position),
+                    "hover-leave simulation needs a point outside the window");
+        }
+        setSystemCursorPosition(position);
         SendMessageW(
             hwnd, WM_NCMOUSEMOVE, HTCAPTION,
             MAKELPARAM(static_cast<short>(position.x()), static_cast<short>(position.y())));
@@ -3868,6 +3881,14 @@ void pinnedControlsPresenceFollowsLiveCursor() {
     settleInto([&] { return controlsPanel->isVisible(); },
                "hovering inside the window must reveal the controls");
 
+    const HWND hwnd = toNativeHwnd(window.internalWinId());
+    require(hwnd != nullptr, "the pointer presence fixture needs a native window");
+    SendMessageW(
+        hwnd, WM_NCMOUSEMOVE, HTCAPTION,
+        MAKELPARAM(static_cast<short>(outsidePoint.x()), static_cast<short>(outsidePoint.y())));
+    require(controlsPanel->isVisible(),
+            "stale mouse-message coordinates must not hide controls while the cursor is inside");
+
     // A queued leave delivered while the cursor still rests inside the window
     // (the observed instability) must not hide the controls.
     QEvent leave(QEvent::Leave);
@@ -3879,6 +3900,12 @@ void pinnedControlsPresenceFollowsLiveCursor() {
     setSystemCursorPosition(outsidePoint);
     settleInto([&] { return !controlsPanel->isVisible(); },
                "leaving the window must hide the controls");
+
+    SendMessageW(hwnd, WM_NCMOUSEMOVE, HTCAPTION,
+                 MAKELPARAM(static_cast<short>(nativeGeometry.center().x()),
+                            static_cast<short>(nativeGeometry.center().y())));
+    require(!controlsPanel->isVisible(),
+            "stale mouse-message coordinates must not reveal controls while the cursor is outside");
 
     // A queued enter delivered after the pointer already left must not show them.
     QEnterEvent enter(QPointF(10, 10), QPointF(10, 10), QPointF(10, 10));
@@ -4325,12 +4352,10 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
             "ordinary image content should hit the single pinned surface as a caption");
     {
         const CursorPositionRestorer restoreCursorPosition;
-        QCursor::setPos(pinnedWindow->mapToGlobal(pinnedWindow->rect().center()));
-        waitForUi(20);
-
         setPinnedWindowHovered(*pinnedWindow, false);
         require(controlsPanel->isHidden(),
                 "the native caption hover test should start with hidden controls");
+        setSystemCursorPosition(hitTestCenter);
         SendMessage(
             pinnedHwnd, WM_NCMOUSEMOVE, HTCAPTION,
             MAKELPARAM(static_cast<WORD>(hitTestCenter.x()), static_cast<WORD>(hitTestCenter.y())));
