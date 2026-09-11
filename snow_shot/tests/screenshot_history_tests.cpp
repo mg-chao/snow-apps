@@ -1391,6 +1391,12 @@ void recognitionAndScrollingToolsResizeSelectionBorder() {
 }
 
 void completionGesturesRequireAConfirmedSelectionAndSupportedTool() {
+    const storage::ScreenshotSettings settings;
+    const QString originalDoubleClick = settings.doubleClickAction();
+    const QString originalMiddleClick = settings.middleMouseButtonAction();
+    require(settings.setDoubleClickAction(QStringLiteral("copy")) &&
+                settings.setMiddleMouseButtonAction(QStringLiteral("save")),
+            "failed to configure completion gestures");
     ScreenshotCaptureState captureState;
     ScreenshotDisplaySession displays;
     ScreenshotGeometryMapper geometry;
@@ -1399,9 +1405,18 @@ void completionGesturesRequireAConfirmedSelectionAndSupportedTool() {
     ScreenshotInteractionState interaction;
     interaction.enterOverlayVisible(true);
 
-    int actionCount = 0;
+    QStringList dispatched;
+    bool commandEnabled = true;
+    int directCopies = 0;
     ScreenshotOverlayInputActions actions;
-    actions.executeConfiguredCompletionAction = [&actionCount](const QString&) { ++actionCount; };
+    actions.activateScreenshotShortcut = [&](const QString& actionId) {
+        if (!commandEnabled) {
+            return false;
+        }
+        dispatched.append(actionId);
+        return true;
+    };
+    actions.copySelectionToClipboard = [&]() { ++directCopies; };
     ScreenshotOverlayInputHandler handler({
         captureState,
         interaction,
@@ -1414,24 +1429,87 @@ void completionGesturesRequireAConfirmedSelectionAndSupportedTool() {
 
     handler.handleUnhandledLeftDoubleClick();
     handler.handleUnhandledMiddleClick();
-    require(actionCount == 0,
+    require(dispatched.isEmpty(),
             "completion gestures must not run while the initial selection is active");
 
     selection.setSelectionRect(QRectF(1, 2, 20, 21));
     interaction.confirmSelection();
     handler.handleUnhandledLeftDoubleClick();
-    require(actionCount == 1, "double-click must run for the confirmed Move tool");
+    require(dispatched == QStringList{QStringLiteral("copy_to_clipboard")},
+            "double-click must use the Copy toolbar command for the confirmed Move tool");
 
     interaction.setCanvasTool(ScreenshotActiveTool::Shape);
     handler.handleUnhandledMiddleClick();
-    require(actionCount == 2, "middle-click must run for a drawing tool");
+    require(dispatched ==
+                QStringList{QStringLiteral("copy_to_clipboard"), QStringLiteral("save_as_file")},
+            "middle-click must use its configured toolbar command for a drawing tool");
 
-    interaction.setCanvasTool(ScreenshotActiveTool::Select);
+    dispatched.clear();
+    for (const auto tool : {ScreenshotActiveTool::Select, ScreenshotActiveTool::Ocr,
+                            ScreenshotActiveTool::Table, ScreenshotActiveTool::Qr}) {
+        interaction.setCanvasTool(tool);
+        handler.handleUnhandledLeftDoubleClick();
+        handler.handleUnhandledMiddleClick();
+        require(dispatched.isEmpty(),
+                "completion gestures must leave Select and recognition input unchanged");
+    }
+
+    const std::pair<QString, QString> commands[] = {
+        {QStringLiteral("copy"), QStringLiteral("copy_to_clipboard")},
+        {QStringLiteral("save"), QStringLiteral("save_as_file")},
+        {QStringLiteral("pin"), QStringLiteral("pin_to_screen")},
+        {QStringLiteral("none"), QString()},
+    };
+    for (const auto& [setting, command] : commands) {
+        require(settings.setDoubleClickAction(setting) &&
+                    settings.setMiddleMouseButtonAction(setting),
+                "failed to configure toolbar completion action");
+        for (int mode = 0; mode < 3; ++mode) {
+            if (mode == 0) {
+                interaction.setMoveTool(true, false);
+            } else if (mode == 1) {
+                interaction.setCanvasTool(ScreenshotActiveTool::Shape);
+            } else {
+                interaction.enterScrollingCapture();
+            }
+            for (const bool middleClick : {false, true}) {
+                const auto trigger = [&]() {
+                    if (middleClick) {
+                        handler.handleUnhandledMiddleClick();
+                    } else {
+                        handler.handleUnhandledLeftDoubleClick();
+                    }
+                };
+                dispatched.clear();
+                trigger();
+                require(dispatched == (command.isEmpty() ? QStringList{} : QStringList{command}),
+                        "each completion gesture must dispatch its toolbar command exactly once, "
+                        "including during scrolling capture; None must do nothing");
+                dispatched.clear();
+                commandEnabled = false;
+                trigger();
+                require(dispatched.isEmpty() && directCopies == 0,
+                        "a disabled toolbar action must not fall back to a direct completion");
+                commandEnabled = true;
+                handler.setExternalDragActive(true);
+                trigger();
+                require(dispatched.isEmpty(),
+                        "an external drag must suppress both completion gestures");
+                handler.setExternalDragActive(false);
+            }
+        }
+    }
+
+    require(settings.setDoubleClickAction(QStringLiteral("copy")) &&
+                settings.setMiddleMouseButtonAction(QStringLiteral("copy")),
+            "failed to configure empty selection regression");
+    selection.clearSelection();
     handler.handleUnhandledLeftDoubleClick();
-    interaction.enterScrollingCapture();
     handler.handleUnhandledMiddleClick();
-    require(actionCount == 2,
-            "completion gestures must ignore Select and scrolling screenshot modes");
+    require(dispatched.isEmpty(), "scrolling completion requires a nonempty selection");
+    require(settings.setDoubleClickAction(originalDoubleClick) &&
+                settings.setMiddleMouseButtonAction(originalMiddleClick),
+            "failed to restore completion gesture settings");
 }
 
 void colorCopyEndsCaptureOnlyAfterSuccessfulCopy() {
@@ -2485,6 +2563,11 @@ int main(int argc, char** argv) {
     };
     require(storage::ApplicationStorage::instance().initialize(storageOptions).success,
             "failed to initialize isolated shortcut settings");
+    if (QCoreApplication::arguments().contains(QStringLiteral("--completion-gestures-only"))) {
+        completionGesturesRequireAConfirmedSelectionAndSupportedTool();
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (QCoreApplication::arguments().contains(QStringLiteral("--direct-capture-only"))) {
         directCaptureRetainsTheWholeDesktop(
             QDir(temporary.path()).filePath(QStringLiteral("desktop")));

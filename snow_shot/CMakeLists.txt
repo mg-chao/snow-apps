@@ -2363,7 +2363,14 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screenshot-history-tests --direct-capture-only
     )
     snow_shot_import_offscreen_platform(snow-shot-screenshot-history-tests)
-    set_tests_properties(snow-shot-direct-capture-history-tests PROPERTIES
+    add_test(
+        NAME snow-shot-screenshot-completion-gesture-tests
+        COMMAND snow-shot-screenshot-history-tests --completion-gestures-only
+    )
+    set_tests_properties(
+        snow-shot-direct-capture-history-tests
+        snow-shot-screenshot-completion-gesture-tests
+        PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
