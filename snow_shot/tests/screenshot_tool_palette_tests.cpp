@@ -195,6 +195,63 @@ int longestHorizontalColorRun(const QImage& image, const QColor& color) {
     return longestRun;
 }
 
+ScreenshotToolPalette::RecordingSessionStatus
+recordingSessionFor(ScreenshotToolPalette::RecordingState state,
+                    ScreenshotToolPalette::RecordingBusyOperation operation) {
+    using Status = ScreenshotToolPalette::RecordingSessionStatus;
+    using State = ScreenshotToolPalette::RecordingState;
+    using BusyOp = ScreenshotToolPalette::RecordingBusyOperation;
+    if (operation == BusyOp::None) {
+        return Status::fromState(state);
+    }
+    if (operation == BusyOp::Starting) {
+        return Status::starting();
+    }
+    if (operation == BusyOp::Stopping) {
+        return state == State::Paused ? Status::pausedStopping() : Status::stopping();
+    }
+    return state == State::Paused ? Status::pausedCopying() : Status::copying();
+}
+
+void recordingSessionStatusMakesInvalidCombinationsUnrepresentable() {
+    using Status = ScreenshotToolPalette::RecordingSessionStatus;
+    using State = ScreenshotToolPalette::RecordingState;
+    using BusyOp = ScreenshotToolPalette::RecordingBusyOperation;
+    const Status valid[] = {Status::idle(),    Status::starting(),     Status::recording(),
+                            Status::paused(),  Status::stopping(),     Status::pausedStopping(),
+                            Status::copying(), Status::pausedCopying()};
+    for (const auto& status : valid) {
+        const bool starting = status.busyOperation() == BusyOp::Starting;
+        const bool finishing =
+            status.busyOperation() == BusyOp::Stopping || status.busyOperation() == BusyOp::Copying;
+        require((starting && status.state() == State::Idle) ||
+                    (finishing && status.state() != State::Idle) || !status.busy(),
+                "every constructible recording session must pair busy work with a valid phase");
+    }
+    require(Status::starting().state() == State::Idle &&
+                Status::copying().state() == State::Recording &&
+                Status::pausedCopying().state() == State::Paused,
+            "named factories must pin start and copy to their session phases");
+    require(Status::idle().finishing(true) == Status::idle() &&
+                Status::recording().finishing(true) == Status::copying() &&
+                Status::paused().finishing(false) == Status::pausedStopping() &&
+                Status::copying().finishing(false) == Status::copying(),
+            "finishing must keep idle and in-flight sessions unchanged");
+
+    ScreenshotToolPalette::Options options;
+    options.showRecordingControls = true;
+    options.enableStyleToolbar = false;
+    ScreenshotToolPalette palette(options);
+    palette.prepareForDisplay();
+    palette.setRecordingSession(Status::copying());
+    require(palette.recordingSession() == Status::copying() &&
+                palette.recordingBusyOperation() == BusyOp::Copying,
+            "copying must be published as a session, not a boolean busy flag");
+    palette.setRecordingState(State::Idle);
+    require(palette.recordingSession() == Status::idle() && !palette.recordingBusy(),
+            "changing the recording phase must drop any leftover copy or stop spinner");
+}
+
 void recordingControlsRemainLaidOutAcrossStateChanges() {
     ScreenshotToolPalette::Options options;
     options.showDragHandle = true;
@@ -227,13 +284,14 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
     require(duration != nullptr, "recording duration should be created");
 
     using State = ScreenshotToolPalette::RecordingState;
-    const auto verify = [&](State state, bool busy) {
-        palette.setRecordingState(state);
-        palette.setRecordingBusy(busy);
+    using BusyOp = ScreenshotToolPalette::RecordingBusyOperation;
+    const auto verify = [&](State state, BusyOp operation) {
+        palette.setRecordingSession(recordingSessionFor(state, operation));
         palette.prepareForDisplay();
         QCoreApplication::processEvents();
         const bool idle = state == State::Idle;
         const bool paused = state == State::Paused;
+        const bool busy = operation != BusyOp::None;
         const bool visible[] = {idle, !idle, !paused, paused, true, true, true, true, true};
         const bool enabled[] = {idle && !busy,
                                 !idle && !busy,
@@ -244,9 +302,16 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
                                 true,
                                 !busy,
                                 !idle && !busy};
-        // Only the start and stop/copy actions show a spinner while busy.
-        const bool spinning[] = {idle && busy, !idle && busy, false, false,        false,
-                                 false,        false,         false, !idle && busy};
+        // Only the initiating start, stop, or copy action shows a spinner.
+        const bool spinning[] = {operation == BusyOp::Starting,
+                                 operation == BusyOp::Stopping,
+                                 false,
+                                 false,
+                                 false,
+                                 false,
+                                 false,
+                                 false,
+                                 operation == BusyOp::Copying};
         const QLayout* layout = palette.mainPanel()->layout();
         QRect previous;
         for (int index = 0; index < buttons.size(); ++index) {
@@ -255,15 +320,16 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
                     "every recording control must remain in the main toolbar layout");
             if (button->isVisible() != visible[index]) {
                 std::cerr << "visibility mismatch for " << sources[index] << " in state "
-                          << static_cast<int>(state) << " busy=" << busy << ": expected "
-                          << visible[index] << ", actual " << button->isVisible() << '\n';
+                          << static_cast<int>(state) << " busy=" << static_cast<int>(operation)
+                          << ": expected " << visible[index] << ", actual " << button->isVisible()
+                          << '\n';
             }
             require(button->isVisible() == visible[index],
                     "recording control visibility should follow recording state");
             require(button->isEnabled() == enabled[index],
                     "recording control availability should follow recording and busy state");
             require(button->busy() == spinning[index],
-                    "recording control busy indicator should follow recording and busy state");
+                    "recording busy indicators must stay on the initiating action");
             if (visible[index]) {
                 require(!button->visibleRegion().isEmpty() &&
                             palette.mainPanel()->rect().contains(button->geometry()),
@@ -278,14 +344,27 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
                 "recording duration must remain visible inside the toolbar layout");
     };
 
-    verify(State::Idle, false);
+    verify(State::Idle, BusyOp::None);
     for (State state : {State::Recording, State::Paused, State::Idle}) {
-        verify(state, false);
-        verify(state, true);
+        verify(state, BusyOp::None);
     }
+    verify(State::Idle, BusyOp::Starting);
+    for (State state : {State::Recording, State::Paused}) {
+        verify(state, BusyOp::Stopping);
+        verify(state, BusyOp::Copying);
+    }
+    palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::stopping());
+    require(palette.recordingSession() ==
+                    ScreenshotToolPalette::RecordingSessionStatus::stopping() &&
+                buttons.at(1)->busy() && !buttons.last()->busy(),
+            "stopping must spin stop without spinning copy");
+    palette.setRecordingState(State::Idle);
+    require(palette.recordingSession() == ScreenshotToolPalette::RecordingSessionStatus::idle() &&
+                !buttons.at(1)->busy() && !buttons.last()->busy(),
+            "returning to idle must clear every recording busy indicator");
     palette.setToolbarLayout({});
     palette.setActionToolsLayout({});
-    verify(State::Idle, false);
+    verify(State::Idle, BusyOp::None);
     palette.setRecordingDuration(65000);
     require(duration->text() == QStringLiteral("00:01:05"),
             "visible recording duration should update");
@@ -957,9 +1036,9 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
         verifyPresetsEditable(editable);
     };
     const int visibilityChangesBeforeRecording = exportVisibilityChanges;
-    palette.setRecordingBusy(true);
+    palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::starting());
     verifyExportSettingsSelected(false);
-    palette.setRecordingBusy(false);
+    palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::idle());
     verifyExportSettingsSelected(true);
 
     adqt::widgets::AdButton* microphone = nullptr;
@@ -9177,6 +9256,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--recording-controls-only"))) {
+        recordingSessionStatusMakesInvalidCombinationsUnrepresentable();
         recordingEffectSettingsModal();
         recordingControlsRemainLaidOutAcrossStateChanges();
         recordingExportSettingsAndDrawingAvailabilityFollowSessionState();
@@ -9306,6 +9386,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     colorPresetEditorsPreserveCommandsAcrossRebinding();
+    recordingSessionStatusMakesInvalidCombinationsUnrepresentable();
     recordingControlsRemainLaidOutAcrossStateChanges();
     translucentColorSwatchesShowCheckerboardUnderlay();
     recordingExportSettingsAndDrawingAvailabilityFollowSessionState();

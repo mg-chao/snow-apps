@@ -126,6 +126,72 @@ int recordingWindowCount() {
     return count;
 }
 
+adqt::widgets::AdButton* recordingToolbarButton(const char* accessibleName) {
+    for (auto* button : palette()->mainPanel()->findChildren<adqt::widgets::AdButton*>()) {
+        if (button->accessibleName() == QLatin1String(accessibleName)) {
+            return button;
+        }
+    }
+    return nullptr;
+}
+
+void joinHeldExport(std::promise<void>& release, int previousExports) {
+    release.set_value();
+    exportEntered = nullptr;
+    exportGate = {};
+    QElapsedTimer elapsed;
+    elapsed.start();
+    while (exports.load() == previousExports && elapsed.elapsed() < 2000) {
+        QThread::msleep(1);
+    }
+    require(exports.load() == previousExports + 1,
+            "controlled finalization must finish the backend stop");
+}
+
+void stopAndCopyBusyIndicatorsStayOnTheInitiatingControl() {
+    for (const bool copy : {false, true}) {
+        ScreenRecordingController controller(testEffectsSource);
+        std::promise<void> release;
+        std::promise<void> entered;
+        auto enteredFuture = entered.get_future();
+        exportGate = release.get_future().share();
+        exportEntered = &entered;
+        const int previousExports = exports.load();
+        controller.open({40, 40, 320, 240});
+        controller.startRecording();
+        waitForRecording(controller);
+        auto* startButton = recordingToolbarButton("Start recording");
+        auto* stopButton = recordingToolbarButton("Stop recording");
+        auto* copyButton = recordingToolbarButton("Copy recording");
+        require(startButton != nullptr && stopButton != nullptr && copyButton != nullptr,
+                "recording start, stop, and copy controls must exist");
+        if (copy) {
+            palette()->recordingCopyRequested();
+        } else {
+            palette()->recordingStopRequested();
+        }
+        require(enteredFuture.wait_for(std::chrono::seconds(2)) == std::future_status::ready,
+                "finalization must reach the controlled backend");
+        QCoreApplication::processEvents();
+        require(palette()->recordingBusyOperation() ==
+                    (copy ? ScreenshotToolPalette::RecordingBusyOperation::Copying
+                          : ScreenshotToolPalette::RecordingBusyOperation::Stopping),
+                "finalization must publish the initiating busy operation");
+        require(stopButton->busy() == !copy && copyButton->busy() == copy && !startButton->busy(),
+                "only the initiating stop or copy control may show a loading indicator");
+        require(!stopButton->isEnabled() && !copyButton->isEnabled(),
+                "busy finalization must lock stop and copy");
+        joinHeldExport(release, previousExports);
+        if (!copy) {
+            waitForIdle(controller);
+            require(palette()->recordingBusyOperation() ==
+                            ScreenshotToolPalette::RecordingBusyOperation::None &&
+                        !stopButton->busy() && !copyButton->busy(),
+                    "a completed stop must clear every recording busy indicator");
+        }
+    }
+}
+
 void closeAndStopHaveIndependentUiLifetimes() {
     ErrorObserver errors;
     qApp->installEventFilter(&errors);
@@ -1260,6 +1326,7 @@ int main(int argc, char** argv) {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     require(starts == 1, "destroying the controller must cancel a queued recording start");
     closeAndStopHaveIndependentUiLifetimes();
+    stopAndCopyBusyIndicatorsStayOnTheInitiatingControl();
     ApplicationStorage::instance().shutdown();
     return 0;
 }
