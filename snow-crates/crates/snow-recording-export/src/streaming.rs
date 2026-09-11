@@ -136,11 +136,6 @@ pub struct StreamingVideoStageTimings {
     pub mux_write: Duration,
 }
 
-struct PendingFrame {
-    pts: i64,
-    rgba: Vec<u8>,
-}
-
 struct StreamingAudioState {
     encoder: ffmpeg::encoder::audio::Encoder,
     stream_index: usize,
@@ -167,8 +162,10 @@ pub struct StreamingEncoder {
     width: u32,
     height: u32,
     fps: u32,
-    pending: Option<PendingFrame>,
-    spare_rgba: Vec<u8>,
+    /// Presentation timestamp of the frame currently held in `encode_frame`.
+    /// Pixels are converted into `encode_frame` at push time, so no caller
+    /// buffer needs to be retained between pushes.
+    pending_pts: Option<i64>,
     pending_packet_durations: VecDeque<i64>,
     audio: Option<StreamingAudioState>,
     staging_path: Option<PathBuf>,
@@ -374,8 +371,7 @@ impl StreamingEncoder {
             width: config.width,
             height: config.height,
             fps,
-            pending: None,
-            spare_rgba: Vec::new(),
+            pending_pts: None,
             pending_packet_durations: VecDeque::new(),
             audio,
             staging_path: None,
@@ -394,6 +390,11 @@ impl StreamingEncoder {
         })
     }
 
+    /// Queue one frame for encoding. The pixels are copied into the encoder's
+    /// staging frame and converted immediately, so `rgba` only needs to stay
+    /// valid for the duration of this call. A push whose timestamp maps to a
+    /// presentation timestamp that is not newer than the pending one replaces
+    /// the pending frame's pixels (coalescing) instead of emitting two frames.
     pub fn push_rgba_frame(&mut self, timestamp_ms: u64, rgba: &[u8]) -> Result<()> {
         let expected = self.width as usize * self.height as usize * 4;
         if rgba.len() != expected {
@@ -404,21 +405,21 @@ impl StreamingEncoder {
         }
         let pts = ((u128::from(timestamp_ms) * u128::from(self.fps) + 500) / 1_000)
             .min(i64::MAX as u128) as i64;
-        if let Some(pending) = self.pending.as_mut() {
-            if pts <= pending.pts {
-                pending.rgba.copy_from_slice(rgba);
+        match self.pending_pts.take() {
+            None => {}
+            Some(pending_pts) if pts <= pending_pts => {
+                self.pending_pts = Some(pending_pts);
+                self.convert_frame(rgba)?;
                 self.report.coalesced_frames = self.report.coalesced_frames.saturating_add(1);
                 return Ok(());
             }
-            let duration = pts.saturating_sub(pending.pts).max(1);
-            self.encode_pending(duration)?;
+            Some(pending_pts) => {
+                let duration = pts.saturating_sub(pending_pts).max(1);
+                self.send_converted(pending_pts, duration)?;
+            }
         }
-        let mut owned = std::mem::take(&mut self.spare_rgba);
-        if owned.len() != expected {
-            owned.resize(expected, 0);
-        }
-        owned.copy_from_slice(rgba);
-        self.pending = Some(PendingFrame { pts, rgba: owned });
+        self.convert_frame(rgba)?;
+        self.pending_pts = Some(pts);
         Ok(())
     }
 
@@ -439,7 +440,9 @@ impl StreamingEncoder {
     }
 
     pub fn finish(mut self) -> Result<StreamingEncoderReport> {
-        self.encode_pending(1)?;
+        if let Some(pending_pts) = self.pending_pts.take() {
+            self.send_converted(pending_pts, 1)?;
+        }
         if let Some(audio) = self.audio.as_mut() {
             let output = self.output.as_mut().ok_or_else(|| {
                 RecordingExportError::Encode("streaming output is already closed".to_string())
@@ -486,13 +489,13 @@ impl StreamingEncoder {
         Ok(self.report.clone())
     }
 
-    fn encode_pending(&mut self, duration: i64) -> Result<()> {
-        let Some(pending) = self.pending.take() else {
-            return Ok(());
-        };
+    /// Copy `rgba` into the staging frame and convert it into `encode_frame`.
+    /// The converted frame's presentation timestamp is assigned later, when
+    /// the next push reveals its duration.
+    fn convert_frame(&mut self, rgba: &[u8]) -> Result<()> {
         #[cfg(feature = "stage-timing")]
         let stage_started = std::time::Instant::now();
-        copy_rgba_into_frame(&mut self.rgba_frame, self.width, &pending.rgba);
+        copy_rgba_into_frame(&mut self.rgba_frame, self.width, rgba);
         #[cfg(feature = "stage-timing")]
         {
             self.report.video_stage_timings.copy += stage_started.elapsed();
@@ -507,13 +510,19 @@ impl StreamingEncoder {
                     "failed to convert streaming RGBA frame: {error}"
                 ))
             })?;
-        self.encode_frame.set_pts(Some(pending.pts));
         #[cfg(feature = "stage-timing")]
         {
             self.report.video_stage_timings.convert += stage_started.elapsed();
         }
+        Ok(())
+    }
+
+    /// Submit the frame currently held in `encode_frame` to the encoder and
+    /// drain whatever packets become available.
+    fn send_converted(&mut self, pts: i64, duration: i64) -> Result<()> {
         #[cfg(feature = "stage-timing")]
         let stage_started = std::time::Instant::now();
+        self.encode_frame.set_pts(Some(pts));
         self.encoder
             .send_frame(&self.encode_frame)
             .map_err(|error| {
@@ -548,7 +557,6 @@ impl StreamingEncoder {
         {
             self.report.video_stage_timings.drain_and_mux += stage_started.elapsed();
         }
-        self.spare_rgba = pending.rgba;
         self.report.encoded_frames = self.report.encoded_frames.saturating_add(1);
         Ok(())
     }
@@ -1065,6 +1073,32 @@ mod tests {
             .unwrap();
         assert_eq!(cleanup_stale_staging_files(directory.path()).unwrap(), 0);
         assert!(ordinary.exists());
+    }
+
+    #[test]
+    fn duplicate_pts_push_coalesces_instead_of_encoding_twice() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("recording.mp4");
+        let mut encoder =
+            StreamingEncoder::create(encoder_config(path.clone(), ExportFormat::Mp4)).unwrap();
+        let mut first = vec![0u8; 16 * 16 * 4];
+        let mut second = vec![0u8; 16 * 16 * 4];
+        for pixel in first.chunks_exact_mut(4) {
+            pixel.copy_from_slice(&[20, 40, 180, 255]);
+        }
+        for pixel in second.chunks_exact_mut(4) {
+            pixel.copy_from_slice(&[220, 120, 30, 255]);
+        }
+        // The second push shares the first push's presentation timestamp and
+        // must replace its pixels without emitting an extra frame.
+        encoder.push_rgba_frame(0, &first).unwrap();
+        encoder.push_rgba_frame(40, &second).unwrap();
+        encoder.push_rgba_frame(100, &second).unwrap();
+        let report = encoder.finish().unwrap();
+        assert_eq!(report.encoded_frames, 2);
+        assert_eq!(report.coalesced_frames, 1);
+        let (decoded, _, _) = decoded_video_frame_count(&path);
+        assert_eq!(decoded, 2);
     }
 
     #[test]

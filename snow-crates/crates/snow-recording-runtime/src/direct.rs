@@ -576,8 +576,8 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                 && let Some(frame) = latest_frame.as_ref()
             {
                 let timestamp_ms = monotonic_timestamp(&mut last_timestamp_ms, timestamp_ms);
-                let rgba = compositor.compose(&config, frame, timestamp_ms)?;
-                encoder.push_rgba_frame(timestamp_ms, &rgba)?;
+                let composed = compositor.compose(&config, frame, timestamp_ms)?;
+                encoder.push_rgba_frame(timestamp_ms, composed.as_slice())?;
                 next_overlay_frame_ms = timestamp_ms.saturating_add(output_interval_ms);
             }
         }
@@ -905,8 +905,8 @@ fn process_capture_event(event: CaptureEvent, context: CaptureEventContext<'_>) 
                 .unwrap_or_else(Instant::now);
             let timestamp_ms =
                 monotonic_timestamp(last_timestamp_ms, clock.active_elapsed_ms(instant));
-            let rgba = compositor.compose(config, &frame, timestamp_ms)?;
-            encoder.push_rgba_frame(timestamp_ms, &rgba)?;
+            let composed = compositor.compose(config, &frame, timestamp_ms)?;
+            encoder.push_rgba_frame(timestamp_ms, composed.as_slice())?;
             *latest_frame = Some(frame);
         }
         CaptureEvent::FramesDropped { count, .. } => {
@@ -959,6 +959,23 @@ fn drain_click_observations(
     }
 }
 
+/// Pixels produced by the compositor for one output frame. `Source` borrows
+/// the captured frame directly when no overlay needs to draw and no resize is
+/// required; `Owned` holds pixels the compositor drew into.
+enum ComposedPixels<'a> {
+    Source(&'a [u8]),
+    Owned(Vec<u8>),
+}
+
+impl ComposedPixels<'_> {
+    fn as_slice(&self) -> &[u8] {
+        match self {
+            ComposedPixels::Source(bytes) => bytes,
+            ComposedPixels::Owned(bytes) => bytes,
+        }
+    }
+}
+
 struct VisualCompositor {
     output_size: (u32, u32),
     trail: LaserTrail,
@@ -980,20 +997,65 @@ impl VisualCompositor {
         }
     }
 
-    fn compose(
+    fn compose<'a>(
         &mut self,
         config: &DirectRecordingConfig,
-        frame: &CapturedFrame,
+        frame: &'a CapturedFrame,
         timestamp_ms: u64,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<ComposedPixels<'a>> {
         self.trail.set_lifetime_ms(config.mouse_trail_duration_ms);
         let source_size = frame.dimensions();
-        let mut rgba = resize_rgba(frame.as_rgba_bytes(), source_size, self.output_size);
         let cursor = frame.metadata().cursor().cloned();
+        self.maintain_overlay_state(config, cursor.as_ref(), source_size, timestamp_ms);
+        if !self.overlays_required(config, cursor.as_ref(), source_size) {
+            return Ok(ComposedPixels::Source(frame.as_rgba_bytes()));
+        }
+        let mut rgba = resize_rgba(frame.as_rgba_bytes(), source_size, self.output_size);
+        self.draw_overlays(
+            config,
+            cursor.as_ref(),
+            &mut rgba,
+            source_size,
+            timestamp_ms,
+        )?;
+        Ok(ComposedPixels::Owned(rgba))
+    }
+
+    /// Compose with an explicit cursor sample; the deterministic benchmark
+    /// replays synthetic captures whose cursors are not in frame metadata.
+    /// Mirrors `compose`; keep the two in sync.
+    #[cfg_attr(not(any(test, feature = "recording-benchmark")), allow(dead_code))]
+    fn compose_with_cursor<'a>(
+        &mut self,
+        config: &DirectRecordingConfig,
+        frame: &'a CapturedFrame,
+        cursor: Option<&AttachedCursorSample>,
+        timestamp_ms: u64,
+    ) -> Result<ComposedPixels<'a>> {
+        self.trail.set_lifetime_ms(config.mouse_trail_duration_ms);
+        let source_size = frame.dimensions();
+        self.maintain_overlay_state(config, cursor, source_size, timestamp_ms);
+        if !self.overlays_required(config, cursor, source_size) {
+            return Ok(ComposedPixels::Source(frame.as_rgba_bytes()));
+        }
+        let mut rgba = resize_rgba(frame.as_rgba_bytes(), source_size, self.output_size);
+        self.draw_overlays(config, cursor, &mut rgba, source_size, timestamp_ms)?;
+        Ok(ComposedPixels::Owned(rgba))
+    }
+
+    /// Advance non-pixel overlay state (trail history, click eviction, queued
+    /// keyboard events) exactly as the drawing path does, so a borrowed
+    /// passthrough frame cannot diverge from composed output.
+    fn maintain_overlay_state(
+        &mut self,
+        config: &DirectRecordingConfig,
+        cursor: Option<&AttachedCursorSample>,
+        source_size: (u32, u32),
+        timestamp_ms: u64,
+    ) {
         if config.mouse_trail_rgba[3] != 0 {
             self.trail.observe(
                 cursor
-                    .as_ref()
                     .filter(|cursor| cursor.visible)
                     .map(|cursor| (cursor.x, cursor.y)),
                 source_size,
@@ -1007,36 +1069,6 @@ impl VisualCompositor {
             timestamp_ms.saturating_sub(click.timestamp_ms) > CLICK_ANIMATION_MS
         }) {
             self.clicks.pop_front();
-        }
-
-        if config.mouse_trail_rgba[3] != 0 {
-            self.trail.draw(
-                &mut rgba,
-                self.output_size,
-                timestamp_ms,
-                config.mouse_trail_rgba,
-            );
-        }
-        if config.mouse_click_rgba[3] != 0 {
-            draw_clicks(
-                &mut rgba,
-                self.output_size,
-                &self.clicks,
-                timestamp_ms,
-                config.mouse_click_rgba,
-                source_size,
-            );
-        }
-        if config.show_cursor
-            && let Some(cursor) = cursor.as_ref()
-        {
-            draw_cursor(
-                &mut rgba,
-                self.output_size,
-                source_size,
-                cursor,
-                &mut self.cursor_shapes,
-            );
         }
         if let Some(keyboard) = self.keyboard.as_mut() {
             while self
@@ -1048,48 +1080,35 @@ impl VisualCompositor {
                     .model
                     .event(self.pending_keys.pop_front().expect("pending key"));
             }
-            keyboard.draw(&mut rgba, timestamp_ms).map_err(|error| {
-                ScreenRecorderError::Encode(format!("keyboard recording: {error}"))
-            })?;
         }
-        Ok(rgba)
     }
 
-    /// Compose with an explicit cursor sample; the deterministic benchmark
-    /// replays synthetic captures whose cursors are not in frame metadata.
-    /// Mirrors `compose`; keep the two in sync.
-    #[cfg(feature = "recording-benchmark")]
-    fn compose_with_cursor(
+    /// Whether any overlay would change pixels for this frame. When false the
+    /// captured pixels can be passed through without copying.
+    fn overlays_required(
+        &self,
+        config: &DirectRecordingConfig,
+        cursor: Option<&AttachedCursorSample>,
+        source_size: (u32, u32),
+    ) -> bool {
+        source_size != self.output_size
+            || config.mouse_trail_rgba[3] != 0
+            || config.mouse_click_rgba[3] != 0
+            || self.keyboard.is_some()
+            || (config.show_cursor && cursor.is_some_and(|cursor| cursor.visible))
+    }
+
+    fn draw_overlays(
         &mut self,
         config: &DirectRecordingConfig,
-        frame: &CapturedFrame,
         cursor: Option<&AttachedCursorSample>,
+        rgba: &mut [u8],
+        source_size: (u32, u32),
         timestamp_ms: u64,
-    ) -> Result<Vec<u8>> {
-        self.trail.set_lifetime_ms(config.mouse_trail_duration_ms);
-        let source_size = frame.dimensions();
-        let mut rgba = resize_rgba(frame.as_rgba_bytes(), source_size, self.output_size);
-        if config.mouse_trail_rgba[3] != 0 {
-            self.trail.observe(
-                cursor
-                    .filter(|cursor| cursor.visible)
-                    .map(|cursor| (cursor.x, cursor.y)),
-                source_size,
-                self.output_size,
-                timestamp_ms,
-            );
-        } else {
-            self.trail.clear();
-        }
-        while self.clicks.front().is_some_and(|click| {
-            timestamp_ms.saturating_sub(click.timestamp_ms) > CLICK_ANIMATION_MS
-        }) {
-            self.clicks.pop_front();
-        }
-
+    ) -> Result<()> {
         if config.mouse_trail_rgba[3] != 0 {
             self.trail.draw(
-                &mut rgba,
+                rgba,
                 self.output_size,
                 timestamp_ms,
                 config.mouse_trail_rgba,
@@ -1097,7 +1116,7 @@ impl VisualCompositor {
         }
         if config.mouse_click_rgba[3] != 0 {
             draw_clicks(
-                &mut rgba,
+                rgba,
                 self.output_size,
                 &self.clicks,
                 timestamp_ms,
@@ -1109,7 +1128,7 @@ impl VisualCompositor {
             && let Some(cursor) = cursor
         {
             draw_cursor(
-                &mut rgba,
+                rgba,
                 self.output_size,
                 source_size,
                 cursor,
@@ -1117,20 +1136,11 @@ impl VisualCompositor {
             );
         }
         if let Some(keyboard) = self.keyboard.as_mut() {
-            while self
-                .pending_keys
-                .front()
-                .is_some_and(|event| event.at_ms <= timestamp_ms)
-            {
-                keyboard
-                    .model
-                    .event(self.pending_keys.pop_front().expect("pending key"));
-            }
-            keyboard.draw(&mut rgba, timestamp_ms).map_err(|error| {
+            keyboard.draw(rgba, timestamp_ms).map_err(|error| {
                 ScreenRecorderError::Encode(format!("keyboard recording: {error}"))
             })?;
         }
-        Ok(rgba)
+        Ok(())
     }
 
     fn has_active_animation(&self, config: &DirectRecordingConfig, timestamp_ms: u64) -> bool {
@@ -1316,6 +1326,59 @@ mod tests {
     }
 
     #[test]
+    fn compose_passes_captured_pixels_through_when_nothing_draws() {
+        let mut value = config();
+        value.show_cursor = false;
+        let size = (320u32, 180u32);
+        let original = [20u8, 40, 60, 255].repeat((size.0 * size.1) as usize);
+        let frame: CapturedFrame =
+            snow_capture::frame::Frame::from_rgba8(size.0, size.1, original.clone())
+                .unwrap()
+                .into();
+        let mut compositor = VisualCompositor::new(size);
+        // Trail and click colors are transparent and no cursor is attached:
+        // the captured buffer must be borrowed, not copied.
+        match compositor.compose(&value, &frame, 250).unwrap() {
+            ComposedPixels::Source(bytes) => assert_eq!(bytes, &original[..]),
+            ComposedPixels::Owned(_) => panic!("expected zero-copy passthrough"),
+        }
+        // A visible cursor forces the drawing path but must not change the
+        // untouched background pixels of an opaque cursor-free frame.
+        let mut with_cursor = value.clone();
+        with_cursor.show_cursor = true;
+        let cursor_frame: CapturedFrame =
+            snow_capture::frame::Frame::from_rgba8(size.0, size.1, original.clone())
+                .unwrap()
+                .into();
+        // Frames built via from_rgba8 carry no cursor sample, so attach one
+        // through metadata by compositing the explicit-cursor variant.
+        let shape = CursorShape::from_rgba(
+            0,
+            0,
+            1,
+            1,
+            CursorCompositionMode::AlphaBlend,
+            vec![255, 0, 0, 255],
+        );
+        let sample = AttachedCursorSample {
+            x: 1,
+            y: 1,
+            visible: true,
+            shape: CursorShapeState::Embedded(shape),
+        };
+        match compositor
+            .compose_with_cursor(&with_cursor, &cursor_frame, Some(&sample), 250)
+            .unwrap()
+        {
+            ComposedPixels::Owned(pixels) => {
+                assert_eq!(pixels.len(), original.len());
+                assert_ne!(pixels, original, "cursor must draw into the frame");
+            }
+            _ => panic!("a visible cursor must take the drawing path"),
+        }
+    }
+
+    #[test]
     fn direct_config_rejects_incomplete_caps_and_wrong_extension() {
         let mut value = config();
         value.maximum_width = Some(1920);
@@ -1369,9 +1432,15 @@ mod tests {
             });
         }
         assert!(!compositor.has_active_animation(&config, 50));
-        assert_eq!(compositor.compose(&config, &frame, 50).unwrap(), original);
+        assert_eq!(
+            compositor.compose(&config, &frame, 50).unwrap().as_slice(),
+            &original
+        );
         assert!(compositor.has_active_animation(&config, 100));
-        assert_ne!(compositor.compose(&config, &frame, 300).unwrap(), original);
+        assert_ne!(
+            compositor.compose(&config, &frame, 300).unwrap().as_slice(),
+            &original
+        );
         assert!(
             !compositor.has_active_animation(&config, 1000),
             "retention is stationary"
@@ -1384,7 +1453,13 @@ mod tests {
             compositor.has_active_animation(&config, 1800),
             "expiration still owes a clean frame"
         );
-        assert_eq!(compositor.compose(&config, &frame, 1800).unwrap(), original);
+        assert_eq!(
+            compositor
+                .compose(&config, &frame, 1800)
+                .unwrap()
+                .as_slice(),
+            &original
+        );
         assert!(!compositor.has_active_animation(&config, 1800));
     }
 
@@ -1427,10 +1502,19 @@ mod tests {
         let active = clock.active_elapsed_ms(started + Duration::from_millis(5300));
         assert_eq!(active, 300);
         assert_ne!(
-            compositor.compose(&config, &frame, active).unwrap(),
-            original
+            compositor
+                .compose(&config, &frame, active)
+                .unwrap()
+                .as_slice(),
+            &original
         );
-        assert_eq!(compositor.compose(&config, &frame, 1800).unwrap(), original);
+        assert_eq!(
+            compositor
+                .compose(&config, &frame, 1800)
+                .unwrap()
+                .as_slice(),
+            &original
+        );
     }
 
     #[test]

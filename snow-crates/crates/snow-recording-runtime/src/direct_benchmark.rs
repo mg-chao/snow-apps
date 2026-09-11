@@ -266,23 +266,23 @@ pub fn run(
         // The production worker composes every accepted capture, then
         // recomposes the latest capture at output cadence while an overlay
         // animation is active.
-        let rgba = compositor.compose_with_cursor(
+        let composed = compositor.compose_with_cursor(
             &config,
             &sample.frame,
             sample.cursor.as_ref(),
             timestamp,
         )?;
-        encoder.push_rgba_frame(timestamp, &rgba)?;
+        encoder.push_rgba_frame(timestamp, composed.as_slice())?;
         compositions += 1;
         if timestamp >= next_overlay_frame_ms && compositor.has_active_animation(&config, timestamp)
         {
-            let rgba = compositor.compose_with_cursor(
+            let composed = compositor.compose_with_cursor(
                 &config,
                 &sample.frame,
                 sample.cursor.as_ref(),
                 timestamp,
             )?;
-            encoder.push_rgba_frame(timestamp, &rgba)?;
+            encoder.push_rgba_frame(timestamp, composed.as_slice())?;
             compositions += 1;
             next_overlay_frame_ms = timestamp.saturating_add(output_interval_ms);
         }
