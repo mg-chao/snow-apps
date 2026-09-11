@@ -7,6 +7,8 @@ use ffmpeg_next as ffmpeg;
 use snow_recording_model::{VideoCodec, VideoEncodeConfig};
 use uuid::Uuid;
 
+mod convert;
+
 use crate::config::{ExportExecutionMode, ExportFormat, SoftwareH264Priority};
 use crate::editing::{
     choose_audio_channel_layout, choose_audio_codec, choose_audio_sample_format,
@@ -18,6 +20,7 @@ use crate::editing::{
 use crate::error::{RecordingExportError, Result};
 use crate::ffmpeg_util::{copy_rgba_into_frame, ensure_ffmpeg_initialized};
 use crate::video_quality::smart_quality_bitrate_bps;
+use convert::{ConversionMode, RgbOrder};
 
 pub const DIRECT_STAGING_PREFIX: &str = ".snow-recording-direct-";
 const STALE_STAGING_AGE: Duration = Duration::from_secs(24 * 60 * 60);
@@ -156,9 +159,18 @@ pub struct StreamingEncoder {
     encoder: ffmpeg::encoder::video::Encoder,
     stream_index: usize,
     stream_time_base: ffmpeg::Rational,
+    /// Swscale fallback (formats the parallel kernel does not cover).
     scaler: ffmpeg::software::scaling::Context,
-    rgba_frame: ffmpeg::frame::Video,
+    /// Packed RGBA staging frame for the swscale fallback; allocated lazily
+    /// so the kernel path never reserves it.
+    rgba_frame: Option<ffmpeg::frame::Video>,
     encode_frame: ffmpeg::frame::Video,
+    /// Input byte order accepted by `push_rgba_frame`; the kernel converts
+    /// both orders natively, the fallback swizzles through the scaler.
+    source_order: RgbOrder,
+    /// Whether `encode_frame` is NV12/YUV420P and converts via the parallel
+    /// kernel instead of swscale.
+    use_kernel_conversion: bool,
     width: u32,
     height: u32,
     fps: u32,
@@ -355,6 +367,7 @@ impl StreamingEncoder {
         .map_err(|error| {
             RecordingExportError::Encode(format!("failed to create streaming RGBA scaler: {error}"))
         })?;
+        let encode_frame = ffmpeg::frame::Video::new(pixel_format, config.width, config.height);
 
         Ok(Self {
             output: Some(output),
@@ -362,12 +375,13 @@ impl StreamingEncoder {
             stream_index,
             stream_time_base,
             scaler,
-            rgba_frame: ffmpeg::frame::Video::new(
-                ffmpeg::format::Pixel::RGBA,
-                config.width,
-                config.height,
+            rgba_frame: None,
+            encode_frame,
+            source_order: RgbOrder::Rgba,
+            use_kernel_conversion: matches!(
+                pixel_format,
+                ffmpeg::format::Pixel::NV12 | ffmpeg::format::Pixel::YUV420P
             ),
-            encode_frame: ffmpeg::frame::Video::new(pixel_format, config.width, config.height),
             width: config.width,
             height: config.height,
             fps,
@@ -495,7 +509,25 @@ impl StreamingEncoder {
     fn convert_frame(&mut self, rgba: &[u8]) -> Result<()> {
         #[cfg(feature = "stage-timing")]
         let stage_started = std::time::Instant::now();
-        copy_rgba_into_frame(&mut self.rgba_frame, self.width, rgba);
+        if self.use_kernel_conversion {
+            ensure_video_frame_writable(&mut self.encode_frame)?;
+            let planes =
+                convert::yuv420_planes_from_frame(&mut self.encode_frame).ok_or_else(|| {
+                    RecordingExportError::Encode(
+                        "streaming encode frame does not expose YUV 4:2:0 planes".to_string(),
+                    )
+                })?;
+            convert::convert_rgb_to_yuv420(rgba, self.source_order, planes, ConversionMode::Auto);
+            #[cfg(feature = "stage-timing")]
+            {
+                self.report.video_stage_timings.convert += stage_started.elapsed();
+            }
+            return Ok(());
+        }
+        let rgba_frame = self.rgba_frame.get_or_insert_with(|| {
+            ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGBA, self.width, self.height)
+        });
+        copy_rgba_into_frame(rgba_frame, self.width, rgba);
         #[cfg(feature = "stage-timing")]
         {
             self.report.video_stage_timings.copy += stage_started.elapsed();
@@ -504,7 +536,7 @@ impl StreamingEncoder {
         let stage_started = std::time::Instant::now();
         ensure_video_frame_writable(&mut self.encode_frame)?;
         self.scaler
-            .run(&self.rgba_frame, &mut self.encode_frame)
+            .run(rgba_frame, &mut self.encode_frame)
             .map_err(|error| {
                 RecordingExportError::Encode(format!(
                     "failed to convert streaming RGBA frame: {error}"
