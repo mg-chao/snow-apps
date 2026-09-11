@@ -89,6 +89,87 @@ class ScreenshotToolPalette final : public QWidget {
         Paused,
     };
 
+    enum class RecordingBusyOperation {
+        None,
+        Starting,
+        Stopping,
+        Copying,
+    };
+
+    class RecordingSessionStatus {
+      public:
+        [[nodiscard]] static RecordingSessionStatus idle() {
+            return RecordingSessionStatus(RecordingState::Idle, RecordingBusyOperation::None);
+        }
+        [[nodiscard]] static RecordingSessionStatus starting() {
+            return RecordingSessionStatus(RecordingState::Idle, RecordingBusyOperation::Starting);
+        }
+        [[nodiscard]] static RecordingSessionStatus recording() {
+            return RecordingSessionStatus(RecordingState::Recording, RecordingBusyOperation::None);
+        }
+        [[nodiscard]] static RecordingSessionStatus paused() {
+            return RecordingSessionStatus(RecordingState::Paused, RecordingBusyOperation::None);
+        }
+        [[nodiscard]] static RecordingSessionStatus stopping() {
+            return RecordingSessionStatus(RecordingState::Recording,
+                                          RecordingBusyOperation::Stopping);
+        }
+        [[nodiscard]] static RecordingSessionStatus pausedStopping() {
+            return RecordingSessionStatus(RecordingState::Paused, RecordingBusyOperation::Stopping);
+        }
+        [[nodiscard]] static RecordingSessionStatus copying() {
+            return RecordingSessionStatus(RecordingState::Recording,
+                                          RecordingBusyOperation::Copying);
+        }
+        [[nodiscard]] static RecordingSessionStatus pausedCopying() {
+            return RecordingSessionStatus(RecordingState::Paused, RecordingBusyOperation::Copying);
+        }
+        [[nodiscard]] static RecordingSessionStatus fromState(RecordingState state) {
+            switch (state) {
+            case RecordingState::Recording:
+                return recording();
+            case RecordingState::Paused:
+                return paused();
+            case RecordingState::Idle:
+                return idle();
+            }
+            return idle();
+        }
+
+        [[nodiscard]] RecordingSessionStatus finishing(bool copyToClipboard) const {
+            if (m_state == RecordingState::Idle || busy()) {
+                return *this;
+            }
+            if (copyToClipboard) {
+                return m_state == RecordingState::Paused ? pausedCopying() : copying();
+            }
+            return m_state == RecordingState::Paused ? pausedStopping() : stopping();
+        }
+
+        [[nodiscard]] RecordingState state() const {
+            return m_state;
+        }
+        [[nodiscard]] RecordingBusyOperation busyOperation() const {
+            return m_busyOperation;
+        }
+        [[nodiscard]] bool busy() const {
+            return m_busyOperation != RecordingBusyOperation::None;
+        }
+        [[nodiscard]] bool operator==(const RecordingSessionStatus& other) const {
+            return m_state == other.m_state && m_busyOperation == other.m_busyOperation;
+        }
+        [[nodiscard]] bool operator!=(const RecordingSessionStatus& other) const {
+            return !(*this == other);
+        }
+
+      private:
+        explicit RecordingSessionStatus(RecordingState state, RecordingBusyOperation busyOperation)
+            : m_state(state), m_busyOperation(busyOperation) {}
+
+        RecordingState m_state;
+        RecordingBusyOperation m_busyOperation;
+    };
+
     enum class ActionFamily {
         Selection,
         TextRecognition,
@@ -218,10 +299,13 @@ class ScreenshotToolPalette final : public QWidget {
     [[nodiscard]] bool canActivateRecordingShortcut(const QString& actionId) const;
     bool activateRecordingShortcut(const QString& actionId);
     void setRecordingState(RecordingState state);
+    void setRecordingSession(RecordingSessionStatus status);
+    [[nodiscard]] RecordingSessionStatus recordingSession() const;
+    [[nodiscard]] RecordingBusyOperation recordingBusyOperation() const;
+    [[nodiscard]] bool recordingBusy() const;
     void setRecordingDuration(qint64 durationMilliseconds);
     void setRecordingMicrophoneEnabled(bool enabled);
     void setRecordingSystemAudioEnabled(bool enabled);
-    void setRecordingBusy(bool busy);
     void setRecordingOutputFormat(const QString& format);
     [[nodiscard]] QString recordingOutputFormat() const;
     void setRecordingMouseTrailDurationMs(int value);
@@ -719,10 +803,9 @@ class ScreenshotToolPalette final : public QWidget {
     adqt::widgets::AdButton* m_scrollingAutoScrollButton = nullptr;
     ScreenshotScrollingRecognitionMode m_scrollingRecognitionMode =
         ScreenshotScrollingRecognitionMode::Vertical;
-    RecordingState m_recordingState = RecordingState::Idle;
+    RecordingSessionStatus m_recordingSession = RecordingSessionStatus::idle();
     bool m_recordingMicrophoneEnabled = false;
     bool m_recordingSystemAudioEnabled = true;
-    bool m_recordingBusy = false;
     bool m_recordExportSettingsVisible = false;
     QString m_recordingOutputFormat = QStringLiteral("mp4");
     int m_recordingMouseTrailDurationMs = 500;
