@@ -989,6 +989,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/services/screenshotexportcoordinator.cpp
     src/presentation/services/screenshotmessageservice.cpp
     src/presentation/services/screenshothistoryservice.cpp
+    src/presentation/services/screenshothistoryimageeditor.cpp
     src/presentation/services/screenshotdisplayconfigurationobserver.cpp
     src/presentation/services/screenshotexportservice.cpp
     src/presentation/services/screenshotexportartifact.cpp
@@ -2674,6 +2675,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
 
     add_executable(snow-shot-pinned-window-tests
+        src/presentation/services/screenshothistoryimageeditor.cpp
         tests/screenshot_pinned_window_tests.cpp
         tests/original_image_translation_tests.cpp
         include/snow_shot/presentation/components/pathinput.h
@@ -2786,6 +2788,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     snow_shot_import_offscreen_platform(snow-shot-pinned-window-tests)
     if(APPLE)
         target_link_libraries(snow-shot-pinned-window-tests PRIVATE "-framework CoreGraphics")
+        add_test(NAME snow-shot-macos-history-image-editor-tests
+            COMMAND snow-shot-pinned-window-tests --history-image-editor-only -platform offscreen)
+        set_tests_properties(snow-shot-macos-history-image-editor-tests PROPERTIES LABELS "unit" TIMEOUT 30)
         add_test(NAME snow-shot-macos-pinned-move-tests
             COMMAND snow-shot-pinned-window-tests --macos-system-move-only -platform offscreen)
         set_tests_properties(snow-shot-macos-pinned-move-tests PROPERTIES LABELS "unit" TIMEOUT 30)
@@ -5569,12 +5574,18 @@ if(APPLE)
     add_library(snow_shot_macos_shortcuts STATIC src/platform/macos/globalshortcutbackend.cpp)
     target_include_directories(snow_shot_macos_shortcuts PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
     target_link_libraries(snow_shot_macos_shortcuts PUBLIC Qt6::Gui PRIVATE "-framework Carbon")
+    add_library(snow_shot_macos_png_mime STATIC src/platform/macos/pngmimeconverter.cpp)
+    target_include_directories(snow_shot_macos_png_mime PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow_shot_macos_png_mime PUBLIC Qt6::Gui)
     # Link every host of the shared manager, including its focused unit tests.
     get_property(_snow_macos_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
     foreach(_snow_macos_target IN LISTS _snow_macos_targets)
         get_target_property(_snow_macos_sources "${_snow_macos_target}" SOURCES)
         if("src/presentation/services/globalshortcutmanager.cpp" IN_LIST _snow_macos_sources)
             target_link_libraries("${_snow_macos_target}" PRIVATE snow_shot_macos_shortcuts)
+        endif()
+        if("src/presentation/services/screenshotclipboardservice.cpp" IN_LIST _snow_macos_sources)
+            target_link_libraries("${_snow_macos_target}" PRIVATE snow_shot_macos_png_mime)
         endif()
     endforeach()
     target_link_libraries(snow_shot PRIVATE
@@ -5607,6 +5618,26 @@ if(APPLE)
 endif()
 
 if(APPLE AND SNOW_SHOT_BUILD_MACOS_TESTS)
+    add_executable(snow-shot-macos-settings-tests tests/macos_settings_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-macos-settings-tests PRIVATE
+        snow_shot_settings snow_shot_macos_png_mime Qt6::Widgets)
+    add_test(NAME snow-shot-macos-settings-tests COMMAND snow-shot-macos-settings-tests -platform offscreen)
+    set_tests_properties(snow-shot-macos-settings-tests PROPERTIES LABELS "unit" TIMEOUT 30)
+    add_test(NAME snow-shot-macos-bundle-localizations-tests
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/test-macos-bundle-localizations.py" -v)
+    set_tests_properties(snow-shot-macos-bundle-localizations-tests PROPERTIES LABELS "unit" TIMEOUT 30)
+    add_executable(snow-shot-macos-clipboard-tests
+        tests/macos_clipboard_tests.mm
+        src/presentation/services/screenshotclipboardservice.cpp)
+    set_source_files_properties(tests/macos_clipboard_tests.mm
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc" SKIP_PRECOMPILE_HEADERS ON)
+    target_include_directories(snow-shot-macos-clipboard-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include" "${CMAKE_CURRENT_SOURCE_DIR}/src/image")
+    target_link_libraries(snow-shot-macos-clipboard-tests PRIVATE
+        snow_shot_macos_png_mime snow_shot_image_codec snow_shot_diagnostics Qt6::Gui "-framework AppKit")
+    add_test(NAME snow-shot-macos-clipboard-tests COMMAND snow-shot-macos-clipboard-tests -platform offscreen)
+    set_tests_properties(snow-shot-macos-clipboard-tests PROPERTIES LABELS "unit" TIMEOUT 30)
     add_executable(snow-shot-macos-image-conversion-tests tests/macos_image_conversion_tests.cpp)
     target_link_libraries(snow-shot-macos-image-conversion-tests PRIVATE Qt6::Gui
         "-framework CoreGraphics" "-framework CoreFoundation")

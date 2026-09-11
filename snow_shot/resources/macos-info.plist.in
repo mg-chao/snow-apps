@@ -6,6 +6,13 @@
     <key>CFBundleIdentifier</key><string>com.snowshot.snow_shot</string>
     <key>CFBundleName</key><string>Snow Shot</string>
     <key>CFBundleDisplayName</key><string>Snow Shot</string>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>zh-Hans</string>
+        <string>zh-Hant</string>
+    </array>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleIconFile</key><string>snow-shot.icns</string>
     <key>CFBundleVersion</key><string>@SNOW_SHOT_VERSION_NUMERIC@</string>

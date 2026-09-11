@@ -27,6 +27,9 @@
 #include "widgets/modal.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshothistoryservice.h"
+#ifdef Q_OS_MACOS
+#include "snow_shot/presentation/screenshothistoryimageeditor.h"
+#endif
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistorytypes.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -1262,11 +1265,18 @@ void ScreenshotController::Impl::startHistoryEdit(const QString& recordId) {
     }
 
     resetPendingCaptureRequest();
+#ifdef Q_OS_MACOS
+    static_cast<void>(openScreenshotHistoryImageEditor(
+        snow_shot::storage::ApplicationStorage::instance().captureHistory(), recordId,
+        QGuiApplication::screenAt(QCursor::pos()), &owner,
+        [this](const QString& message) { emit owner.captureFailed(message); }));
+#else
     m_pendingHistoryEditRecordId = recordId;
     invalidateRecognitionSession();
     m_historyService->resetCaptureNavigation();
     emit owner.captureAvailabilityChanged(false);
     m_captureWorkflow->startCapture();
+#endif
 }
 
 void ScreenshotController::Impl::handleCapturePresented() {

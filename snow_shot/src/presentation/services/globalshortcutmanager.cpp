@@ -28,6 +28,15 @@
 
 namespace snow_shot::presentation {
 namespace {
+
+bool selectedTextShortcutEnabled() {
+#ifdef Q_OS_MACOS
+    return false;
+#else
+    return snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled();
+#endif
+}
+
 constexpr int MAX_SHORTCUTS_PER_ACTION = 2;
 constexpr int FIRST_REGISTRATION_ID = 0x2200;
 constexpr int LAST_REGISTRATION_ID = 0xBFFF;
@@ -636,7 +645,7 @@ class GlobalShortcutManager::Impl {
             if (active != m_activeRegistrations.cend()) {
                 if (!m_globalHotkeysEnabled ||
                     (active->action == GlobalShortcutAction::TranslateSelectedText &&
-                     !snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled())) {
+                     !selectedTextShortcutEnabled())) {
                     return;
                 }
                 const bool suppressionEnabled =
@@ -728,8 +737,7 @@ class GlobalShortcutManager::Impl {
     }
 
     void reconcile() {
-        const bool translationEnabled =
-            snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled();
+        const bool translationEnabled = selectedTextShortcutEnabled();
         QSet<QString> desiredOwnerKeys;
         for (GlobalShortcutAction action : ALL_ACTIONS) {
             if (action == GlobalShortcutAction::TranslateSelectedText && !translationEnabled) {

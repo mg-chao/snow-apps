@@ -634,11 +634,17 @@ QStringList ScreenshotShortcutSettings::copyColor() const {
 }
 
 QString ScreenshotSettings::apiMode() const {
+#ifdef Q_OS_MACOS
+    // Imported Windows preferences must not select an unavailable native backend.
+    // Preserve the stored value so the same configuration still works on Windows.
+    return QStringLiteral("auto");
+#else
     const QString value = cache().value(QStringLiteral("screenshot/api_mode")).toString();
     return value == QStringLiteral("dxgi") || value == QStringLiteral("wgc") ||
                    value == QStringLiteral("gdi")
                ? value
                : QStringLiteral("auto");
+#endif
 }
 
 bool ScreenshotSettings::setApiMode(const QString& mode) const {

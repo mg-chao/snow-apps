@@ -272,6 +272,16 @@ def verify_startup(app, version):
     print("Bundled startup probe passed with isolated Qt and dyld search paths")
 
 
+def verify_localizations(info):
+    # Qt catalogs are embedded resources, so AppKit needs this declaration to
+    # select the same supported languages for native save panels and menus.
+    languages = info.get("CFBundleLocalizations")
+    if not isinstance(languages, list) or set(languages) != {"en", "zh-Hans", "zh-Hant"}:
+        raise RuntimeError("Bundle must declare English, Simplified Chinese and Traditional Chinese")
+    if info.get("CFBundleDevelopmentRegion") != "en":
+        raise RuntimeError("Bundle development language must match the English source language")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=Path, default=ROOT / "build/macos-arm64")
@@ -306,6 +316,7 @@ def main():
                     CFBundleShortVersionString=version.split("-")[0],
                     CFBundleVersion=version.split("-")[0], LSMinimumSystemVersion=minimum,
                     NSHighResolutionCapable=True)
+        verify_localizations(info)
         info_path.write_bytes(plistlib.dumps(info))
         provenance = {
             "version": version, "architecture": "arm64", "minimum_macos": minimum,

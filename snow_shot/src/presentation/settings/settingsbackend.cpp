@@ -270,6 +270,14 @@ BuiltInSettingsBackend::dynamicSelectOptions(SettingsSelectBinding binding) cons
 
 bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
                                               const QVariant& value) {
+#ifdef Q_OS_MACOS
+    if (binding == SettingsSelectBinding::ApplicationPriority ||
+        binding == SettingsSelectBinding::UpdateMode ||
+        binding == SettingsSelectBinding::ScreenshotApiMode ||
+        binding == SettingsSelectBinding::WindowElementApi) {
+        return false;
+    }
+#endif
     switch (binding) {
     case SettingsSelectBinding::TranslationLayoutProcessing:
         return storage::ScreenshotTranslationSettings().setLayoutProcessing(value.toString());
@@ -409,6 +417,13 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
 }
 
 bool BuiltInSettingsBackend::switchEnabled(SettingsSwitchBinding binding) const {
+#ifdef Q_OS_MACOS
+    if (binding == SettingsSwitchBinding::SmartSelection ||
+        binding == SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors ||
+        binding == SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen) {
+        return false;
+    }
+#endif
     if (binding == SettingsSwitchBinding::AutoStartAtBoot) {
         return snow_shot::platform::windows::AutoStartRegistration::isSupported();
     }
@@ -417,6 +432,9 @@ bool BuiltInSettingsBackend::switchEnabled(SettingsSwitchBinding binding) const 
 }
 
 bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, bool value) {
+    if (!switchEnabled(binding)) {
+        return false;
+    }
     if (binding == SettingsSwitchBinding::ScreenshotShutterSoundNotification) {
         return storage::ScreenshotSettings().setShutterSoundNotification(value);
     }
@@ -937,6 +955,14 @@ void BuiltInSettingsBackend::refreshStorageStatusIfStale() {
 }
 
 bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
+#ifdef Q_OS_MACOS
+    if (reset == SettingsSectionReset::GlobalMouse ||
+        reset == SettingsSectionReset::GlobalHotkeys ||
+        reset == SettingsSectionReset::SystemGeneral ||
+        reset == SettingsSectionReset::SystemSettings) {
+        return true;
+    }
+#endif
     switch (reset) {
     case SettingsSectionReset::ScreenshotShortcuts: {
         bool accepted = true;
@@ -989,8 +1015,10 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         };
         resetShortcut(GlobalShortcutAction::OpenCaptureHistory,
                       QStringLiteral("global_shortcuts/open_capture_history"));
+#ifndef Q_OS_MACOS
         resetShortcut(GlobalShortcutAction::TranslateSelectedText,
                       QStringLiteral("global_shortcuts/translate_selected_text"));
+#endif
         resetShortcut(GlobalShortcutAction::PinClipboardContent,
                       QStringLiteral("global_shortcuts/pin_clipboard_content"));
         return accepted;
@@ -1013,33 +1041,36 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         return storage::ApplicationStorage::instance().requestCaptureHistoryPolicy(
             defaultHistoryPolicy());
     case SettingsSectionReset::ScreenshotSettings:
-        return storage::ApplicationStorage::instance().requestSmartSelection(
-                   storage::ConfigurationSchema::defaultValue(
-                       QStringLiteral("screenshot_selection/smart_selection"))
-                       .toBool()) &&
-               storage::ApplicationStorage::instance().configuration().setValues({
-                   {QStringLiteral("screenshot/save_as_file_dialog"),
-                    storage::ConfigurationSchema::defaultValue(
-                        QStringLiteral("screenshot/save_as_file_dialog"))},
-                   {QStringLiteral("screenshot/shutter_sound_notification"),
-                    storage::ConfigurationSchema::defaultValue(
-                        QStringLiteral("screenshot/shutter_sound_notification"))},
-                   {QStringLiteral("screenshot/auto_execute_after_text_recognition"),
-                    storage::ConfigurationSchema::defaultValue(
-                        QStringLiteral("screenshot/auto_execute_after_text_recognition"))},
-                   {QStringLiteral("screenshot/double_click_action"),
-                    storage::ConfigurationSchema::defaultValue(
-                        QStringLiteral("screenshot/double_click_action"))},
-                   {QStringLiteral("screenshot/middle_mouse_button_action"),
-                    storage::ConfigurationSchema::defaultValue(
-                        QStringLiteral("screenshot/middle_mouse_button_action"))},
-                   {QStringLiteral("screenshot/auto_save_after_copy"),
-                    storage::ConfigurationSchema::defaultValue(
-                        QStringLiteral("screenshot/auto_save_after_copy"))},
-                   {QStringLiteral("screenshot/copy_image_file_to_clipboard"),
-                    storage::ConfigurationSchema::defaultValue(
-                        QStringLiteral("screenshot/copy_image_file_to_clipboard"))},
-               });
+        return
+#ifndef Q_OS_MACOS
+            storage::ApplicationStorage::instance().requestSmartSelection(
+                storage::ConfigurationSchema::defaultValue(
+                    QStringLiteral("screenshot_selection/smart_selection"))
+                    .toBool()) &&
+#endif
+            storage::ApplicationStorage::instance().configuration().setValues({
+                {QStringLiteral("screenshot/save_as_file_dialog"),
+                 storage::ConfigurationSchema::defaultValue(
+                     QStringLiteral("screenshot/save_as_file_dialog"))},
+                {QStringLiteral("screenshot/shutter_sound_notification"),
+                 storage::ConfigurationSchema::defaultValue(
+                     QStringLiteral("screenshot/shutter_sound_notification"))},
+                {QStringLiteral("screenshot/auto_execute_after_text_recognition"),
+                 storage::ConfigurationSchema::defaultValue(
+                     QStringLiteral("screenshot/auto_execute_after_text_recognition"))},
+                {QStringLiteral("screenshot/double_click_action"),
+                 storage::ConfigurationSchema::defaultValue(
+                     QStringLiteral("screenshot/double_click_action"))},
+                {QStringLiteral("screenshot/middle_mouse_button_action"),
+                 storage::ConfigurationSchema::defaultValue(
+                     QStringLiteral("screenshot/middle_mouse_button_action"))},
+                {QStringLiteral("screenshot/auto_save_after_copy"),
+                 storage::ConfigurationSchema::defaultValue(
+                     QStringLiteral("screenshot/auto_save_after_copy"))},
+                {QStringLiteral("screenshot/copy_image_file_to_clipboard"),
+                 storage::ConfigurationSchema::defaultValue(
+                     QStringLiteral("screenshot/copy_image_file_to_clipboard"))},
+            });
     case SettingsSectionReset::ScreenshotOutput:
         return storage::ApplicationStorage::instance().configuration().setValues({
             {QStringLiteral("screenshot/image_save_directory"),
@@ -1122,6 +1153,12 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
               QStringLiteral("pin_to_screen"), QStringLiteral("video_recording"),
               QStringLiteral("scrolling_screenshot"), QStringLiteral("save_as_file"),
               QStringLiteral("cancel_screenshot"), QStringLiteral("copy_to_clipboard")}) {
+#ifdef Q_OS_MACOS
+            if (actionId ==
+                QStringLiteral("switch_selection_between_window_and_window_sub_element")) {
+                continue;
+            }
+#endif
             defaults.insert(actionId,
                             stringListDefault(QStringLiteral("screenshot_shortcuts/") + actionId));
         }
@@ -1304,6 +1341,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                                         .toBool());
     case SettingsSectionReset::ScreenshotCapture:
         return storage::ApplicationStorage::instance().configuration().setValues({
+#ifndef Q_OS_MACOS
             {QStringLiteral("screenshot/api_mode"),
              storage::ConfigurationSchema::defaultValue(QStringLiteral("screenshot/api_mode"))},
             {QStringLiteral("screenshot/window_element_api"),
@@ -1312,6 +1350,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("screenshot/restore_original_screen_colors"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot/restore_original_screen_colors"))},
+#endif
             {QStringLiteral("screenshot/capture_cursor"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot/capture_cursor"))},
@@ -1350,9 +1389,11 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("text_recognition/model_type"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("text_recognition/model_type"))},
+#ifndef Q_OS_MACOS
             {QStringLiteral("text_recognition/direct_ml_acceleration"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("text_recognition/direct_ml_acceleration"))},
+#endif
         });
         if (accepted) {
             emit synchronized();

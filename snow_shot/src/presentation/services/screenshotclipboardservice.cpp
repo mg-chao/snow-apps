@@ -5,6 +5,10 @@
 #include "screenshotclipboardperfinstrumentation.h"
 #include "snowimageqtcodec.h"
 
+#ifdef Q_OS_MACOS
+#include "snow_shot/platform/macos/pngmimeconverter.h"
+#endif
+
 #include <QClipboard>
 #include <QCoreApplication>
 #include <QDebug>
@@ -430,6 +434,12 @@ ScreenshotClipboardService::commit(QClipboard* clipboard, QObject* receiver,
         if (!sharedPayload->isValid()) {
             return ClipboardPublishAttempt{ScreenshotClipboardCommitFailure::InvalidPayload, 0};
         }
+#ifdef Q_OS_MACOS
+        if (!snow_shot::platform::macos::ensurePngMimeConverter()) {
+            return ClipboardPublishAttempt{ScreenshotClipboardCommitFailure::ClipboardUnavailable,
+                                           0};
+        }
+#endif
         auto* mime = new QMimeData();
         mime->setData(QStringLiteral("image/png"), sharedPayload->m_pngBytes);
         guardedClipboard->setMimeData(mime, QClipboard::Clipboard);
@@ -478,6 +488,13 @@ ScreenshotClipboardService::commitMimeData(QClipboard* clipboard, QObject* recei
         if (*holder == nullptr) {
             return ClipboardPublishAttempt{ScreenshotClipboardCommitFailure::InvalidPayload, 0};
         }
+#ifdef Q_OS_MACOS
+        if ((*holder)->hasFormat(QStringLiteral("image/png")) &&
+            !snow_shot::platform::macos::ensurePngMimeConverter()) {
+            return ClipboardPublishAttempt{ScreenshotClipboardCommitFailure::ClipboardUnavailable,
+                                           0};
+        }
+#endif
         if (!fileUrls.isEmpty()) {
             // Qt owns each attempted MIME object, including failed native publications.
             auto* attemptMime = new QMimeData();
@@ -508,6 +525,12 @@ bool ScreenshotClipboardService::publish(QClipboard* clipboard,
         qWarning("Screenshot clipboard is unavailable");
         return false;
     }
+#ifdef Q_OS_MACOS
+    if (!snow_shot::platform::macos::ensurePngMimeConverter()) {
+        qWarning("Screenshot clipboard requires the GUI application thread");
+        return false;
+    }
+#endif
     auto* mime = new QMimeData();
     mime->setData(QStringLiteral("image/png"), payload.m_pngBytes);
     clipboard->setMimeData(mime, QClipboard::Clipboard);

@@ -47,6 +47,50 @@ class FakeTranslationHotkeyBackend final : public snow_shot::presentation::Globa
 };
 
 void selectedTextShortcutSettings() {
+#ifdef Q_OS_MACOS
+    using namespace snow_shot::presentation;
+    namespace storage = snow_shot::storage;
+    const auto action = GlobalShortcutAction::TranslateSelectedText;
+    const QString menuId = QStringLiteral("quick.translate-selected-text");
+    const QStringList keys{QStringLiteral("Ctrl+Alt+T")};
+    const storage::TraySettings tray;
+    auto menu = tray.menuOptions();
+    menu.append(menuId);
+    require(tray.setMenuOptions(menu), "retain an imported selected-text tray preference");
+    auto native = std::make_unique<FakeTranslationHotkeyBackend>();
+    auto* input = native.get();
+    GlobalShortcutManager manager(std::move(native), nullptr, [] { return false; });
+    settings::BuiltInSettingsBackend backend(manager);
+    const auto& registry = settings::builtInSettingsRegistry();
+    settings::SettingsRuntimeSession session(registry, backend);
+    manager.initialize();
+    require(registry.fieldForShortcut(action) == nullptr,
+            "macOS must not expose unsupported selected-text shortcut controls");
+    std::unique_ptr<SettingsCustomWidget> trayWidget(createSettingsCustomWidget(
+        settings::SettingsCustomRenderer::TrayMenuOptions, registry,
+        *registry.field(QStringLiteral("tray.menu-options"))->definition, session));
+    require(trayWidget->findChild<QAbstractButton*>(QStringLiteral(
+                "settings-tray-menu-option-quick.translate-selected-text")) == nullptr,
+            "macOS tray customization must not expose selected-text capture");
+    auto* screenshot = trayWidget->findChild<QAbstractButton*>(
+        QStringLiteral("settings-tray-menu-option-quick.screenshot"));
+    require(screenshot != nullptr, "supported tray actions must remain editable");
+    screenshot->setChecked(!screenshot->isChecked());
+    require(tray.menuOptions().contains(menuId),
+            "editing supported tray actions must retain inactive cross-platform preferences");
+    manager.setShortcuts(action, keys);
+    require(backend.applySwitchValue(settings::SettingsSwitchBinding::TranslationPageEnabled, true),
+            "the translation page remains available on macOS");
+    QCoreApplication::processEvents();
+    require(
+        !input->registrations.values().contains(keys.first()) &&
+            storage::ShortcutSettings().translateSelectedText() == keys,
+        "enabling translation must retain imported keys without registering selected-text capture");
+    require(session.reset(settings::SettingsSectionReset::OtherShortcuts) &&
+                storage::ShortcutSettings().translateSelectedText() == keys,
+            "resetting supported shortcuts must retain inactive selected-text bindings");
+#else
+
     using namespace snow_shot::presentation;
     namespace storage = snow_shot::storage;
     const auto action = GlobalShortcutAction::TranslateSelectedText;
@@ -164,6 +208,7 @@ void selectedTextShortcutSettings() {
                 "a recreated shortcut manager loads both persisted selected text bindings");
         reloaded.setShortcuts(action, {});
     }
+#endif
 }
 } // namespace
 
@@ -295,11 +340,20 @@ int main(int argc, char** argv) {
                         QStringLiteral("text_recognition/direct_ml_acceleration"), true) &&
                     backend.resetSection(settings::SettingsSectionReset::TextRecognition) &&
                     backend.selectValue(settings::SettingsSelectBinding::OcrModelType).toString() ==
-                        QStringLiteral("small") &&
-                    !applicationStorage.configuration()
-                         .value(QStringLiteral("text_recognition/direct_ml_acceleration"))
-                         .toBool(),
-                "reset Text Recognition should restore Small and disable DirectML acceleration");
+                        QStringLiteral("small"),
+                "reset Text Recognition must restore the Small model");
+#ifdef Q_OS_MACOS
+        require(applicationStorage.configuration()
+                        .value(QStringLiteral("text_recognition/direct_ml_acceleration"))
+                        .toBool() &&
+                    !backend.switchValue(settings::SettingsSwitchBinding::DirectMlAcceleration),
+                "macOS reset must preserve the inactive DirectML preference while using CPU OCR");
+#else
+        require(!applicationStorage.configuration()
+                     .value(QStringLiteral("text_recognition/direct_ml_acceleration"))
+                     .toBool(),
+                "Windows reset must disable DirectML acceleration");
+#endif
     }
     require(storage::PinToScreenSettings().setDoubleClickAction(QStringLiteral("close")),
             "save pinned double-click action before restart");

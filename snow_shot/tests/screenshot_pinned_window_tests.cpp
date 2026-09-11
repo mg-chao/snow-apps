@@ -1,5 +1,7 @@
 #include "close_release_native_test_support.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/screenshothistoryimageeditor.h"
+#include "snow_shot/storage/capturehistoryrepository.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include "../src/presentation/pinned/screenshotpinnedwindownative.h"
 #include "../src/presentation/pinned/screenshotpinnednativegeometrycontroller.h"
@@ -40,6 +42,7 @@
 #include <QDataStream>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QEnterEvent>
 #include <QEvent>
 #include <QFrame>
@@ -87,6 +90,13 @@ void runPinnedOriginalImageTranslationTests();
 // installing the Windows HWND hooks required by present().
 class ScreenshotPinnedWindowTestAccess {
   public:
+    static bool imageEditing(const ScreenshotPinnedWindow& window) {
+        return window.m_editController != nullptr && window.m_editController->editMode();
+    }
+
+    static QImage originalImage(const ScreenshotPinnedWindow& window) {
+        return window.m_originalImage;
+    }
 #ifdef Q_OS_MACOS
     static bool beginSystemMove(ScreenshotPinnedWindow& window) {
         window.m_windowDragActive = window.m_nativeGeometryController->beginMove(QCursor::pos());
@@ -5829,6 +5839,98 @@ void pinnedMacosSystemMovesKeepTheirDestination() {
     }
     window.close();
 }
+
+void savedHistoryOpensAnIndependentImageEditor() {
+    using namespace snow_shot::storage;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "history editing requires a screen");
+    auto& repository = ApplicationStorage::instance().captureHistory();
+    QImage saved(320, 180, QImage::Format_ARGB32);
+    saved.fill(QColor(180, 30, 90));
+    QImage desktop(saved.size(), saved.format());
+    desktop.fill(Qt::blue);
+    SnowCanvasRuntime runtime;
+    CaptureHistoryDraft draft;
+    draft.contentKind = CaptureHistoryContentKind::Image;
+    draft.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    draft.createdUtc = QDateTime::currentDateTimeUtc();
+    draft.canvasBounds = QRect(-8000, -4000, saved.width(), saved.height());
+    draft.selection.rectangle = draft.canvasBounds;
+    draft.selection.shadowColor = Qt::black;
+    draft.canvasHistory = runtime.serializeDocumentHistory();
+    draft.displays.push_back({QStringLiteral("disconnected-display"), QStringLiteral("Old display"),
+                              desktop, draft.canvasBounds.topLeft()});
+    draft.resultImage = saved;
+    const auto publication = repository.publish(draft).get();
+    require(publication.storage.success, "history fixture publication must succeed");
+
+    QObject lifetime;
+    QString error;
+    QPointer<ScreenshotPinnedWindow> editor =
+        openScreenshotHistoryImageEditor(repository, publication.record.id, screen, &lifetime,
+                                         [&error](const QString& message) { error = message; });
+    require(editor != nullptr, "a saved result must open without a desktop capture");
+    QElapsedTimer elapsed;
+    elapsed.start();
+    while (editor != nullptr && !ScreenshotPinnedWindowTestAccess::imageEditing(*editor) &&
+           elapsed.elapsed() < 5000) {
+        waitForUi(10);
+    }
+    require(error.isEmpty() && editor != nullptr &&
+                ScreenshotPinnedWindowTestAccess::imageEditing(*editor),
+            "history must enter drawing mode after the saved image loads");
+    require(ScreenshotPinnedWindowTestAccess::originalImage(*editor).convertToFormat(
+                QImage::Format_ARGB32) == saved,
+            "history editing must use the saved result, not display pixels or another capture");
+    require(screen->availableGeometry().contains(editor->frameGeometry()) &&
+                editor->persistenceSnapshot().nativeGeometry.topLeft() !=
+                    publication.record.selection.rectangle.topLeft(),
+            "the editor must fit the current screen, independent of the old capture position");
+    require(repository.records().size() == 1,
+            "opening an editor must not publish or replace a history record");
+    editor->close();
+    require(processUntilDeleted(editor, 2000), "the history editor must close normally");
+    for (int closeMode = 0; closeMode < 3; ++closeMode) {
+        draft.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        const auto broken = repository.publish(draft).get();
+        require(broken.storage.success, "failure fixture publication must succeed");
+        const auto assets = repository.displayAssets(broken.record);
+        require(assets && assets->result &&
+                    QFile::remove(assets->result->localFileUrl.toLocalFile()),
+                "the isolated saved image must be removed to simulate a failed load");
+        auto temporaryLifetime = std::make_unique<QObject>();
+        error.clear();
+        editor = openScreenshotHistoryImageEditor(
+            repository, broken.record.id, screen, temporaryLifetime.get(),
+            [&error](const QString& message) { error = message; });
+        require(editor != nullptr, "a load failure must be reported asynchronously");
+        elapsed.restart();
+        // Let the worker finish, keeping its completion queued until after close/destruction.
+        while (ScreenshotExportCoordinator::shared().pendingJobCount() != 0 &&
+               elapsed.elapsed() < 5000) {
+            QThread::msleep(5);
+        }
+        require(ScreenshotExportCoordinator::shared().pendingJobCount() == 0,
+                "the isolated image load must finish before tearing down its storage");
+        if (closeMode == 1) {
+            editor->close();
+        } else if (closeMode == 2) {
+            temporaryLifetime.reset();
+        }
+        require(processUntilDeleted(editor, 2000),
+                "failed or cancelled history editors must close");
+        waitForUi(20);
+        require(closeMode == 0 ? !error.isEmpty() : error.isEmpty(),
+                "only a live editor may report a failed load; closed owners ignore late results");
+        repository.drain();
+    }
+    error.clear();
+    require(openScreenshotHistoryImageEditor(
+                repository, QStringLiteral("missing"), screen, &lifetime,
+                [&error](const QString& message) { error = message; }) == nullptr &&
+                !error.isEmpty(),
+            "unavailable history must report an error instead of starting another capture");
+}
 } // namespace
 #endif
 
@@ -5858,6 +5960,10 @@ int main(int argc, char* argv[]) {
 #ifdef Q_OS_MACOS
         if (app.arguments().contains(QStringLiteral("--macos-system-move-only"))) {
             pinnedMacosSystemMovesKeepTheirDestination();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--history-image-editor-only"))) {
+            savedHistoryOpensAnIndependentImageEditor();
             return 0;
         }
 #endif

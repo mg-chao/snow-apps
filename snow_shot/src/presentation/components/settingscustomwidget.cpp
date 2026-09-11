@@ -783,12 +783,21 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
             return;
         }
         QVariantList values;
+        QSet<QString> represented;
         for (const auto& group : m_registry.catalog().trayMenuGroups()) {
             for (const auto& option : group.options) {
+                represented.insert(option.id);
                 const auto* checkbox = m_checkboxes.value(option.id);
                 if (checkbox != nullptr && checkbox->isChecked()) {
                     values.push_back(option.id);
                 }
+            }
+        }
+        // Preferences for unavailable platform actions are kept for configuration portability.
+        for (const auto& value : m_runtimeSession.multiSelectValue(
+                 snow_shot::presentation::settings::SettingsMultiSelectBinding::TrayMenuOptions)) {
+            if (!represented.contains(value.toString()) && !values.contains(value)) {
+                values.push_back(value);
             }
         }
         if (!m_runtimeSession.applyMultiSelectValue(

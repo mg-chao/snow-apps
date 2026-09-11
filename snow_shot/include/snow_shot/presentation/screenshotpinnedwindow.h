@@ -143,6 +143,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     }
 
   public slots:
+    void setEditMode(bool enabled);
     void setGroupId(const QString& id);
     void closeForInactiveGroup();
     void cancelDeferredInactiveGroupClose();
@@ -212,7 +213,6 @@ class ScreenshotPinnedWindow final : public QWidget {
     void commitClipboardPayload(ScreenshotClipboardPayload payload);
     void ensureEditController();
     void configureEditToolbar(ScreenshotFloatingToolPaletteWindow* toolbarWindow);
-    void setEditMode(bool enabled);
     void stopRecognition();
     void updateOcrPresentation();
     void updateRecognitionContentGeometry();
