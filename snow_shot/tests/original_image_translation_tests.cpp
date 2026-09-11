@@ -225,7 +225,7 @@ class TranslationServer final : public QObject {
         streams.push_back(
             {socket, body, messages.last().toObject().value(QStringLiteral("content")).toString()});
         if (!holdStreamHeaders)
-            startStream(streams.size() - 1);
+            startStream(static_cast<int>(streams.size() - 1));
     }
 
     QTcpServer server;
@@ -282,9 +282,12 @@ struct SessionProbe {
         source->selection = QRect(0, 0, 160, 240);
         for (int index = 0; index < boxes; ++index) {
             const qreal top = index * 25.0;
-            source->lines.push_back({QStringLiteral("source %1").arg(index), 0.95,
-                                     QPolygonF{QPointF(0, top), QPointF(150, top),
-                                               QPointF(150, top + 20), QPointF(0, top + 20)}});
+            ScreenshotOcrLine line;
+            line.text = QStringLiteral("source %1").arg(index);
+            line.confidence = 0.95;
+            line.quad = QPolygonF{QPointF(0, top), QPointF(150, top), QPointF(150, top + 20),
+                                  QPointF(0, top + 20)};
+            source->lines.push_back(std::move(line));
         }
         source->prepareForRendering();
         ScreenshotRecognitionTarget target;

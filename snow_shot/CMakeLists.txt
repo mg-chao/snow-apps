@@ -2784,6 +2784,16 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests
     )
     snow_shot_import_offscreen_platform(snow-shot-pinned-window-tests)
+    if(APPLE)
+        target_link_libraries(snow-shot-pinned-window-tests PRIVATE "-framework CoreGraphics")
+        add_test(NAME snow-shot-macos-pinned-move-tests
+            COMMAND snow-shot-pinned-window-tests --macos-system-move-only -platform offscreen)
+        set_tests_properties(snow-shot-macos-pinned-move-tests PROPERTIES LABELS "unit" TIMEOUT 30)
+        add_test(NAME snow-shot-macos-pinned-move-retina-tests
+            COMMAND snow-shot-pinned-window-tests --macos-system-move-only -platform offscreen)
+        set_tests_properties(snow-shot-macos-pinned-move-retina-tests PROPERTIES
+            LABELS "unit" TIMEOUT 30 ENVIRONMENT "QT_SCALE_FACTOR=2")
+    endif()
     add_test(NAME snow-shot-pinned-shortcut-display-tests
         COMMAND snow-shot-pinned-window-tests --shortcut-display-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-shortcut-display-tests PROPERTIES LABELS "unit")

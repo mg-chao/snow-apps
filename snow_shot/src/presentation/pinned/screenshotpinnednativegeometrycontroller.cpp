@@ -149,6 +149,18 @@ QRect ScreenshotPinnedNativeGeometryController::updateMove(const QRect& proposed
     return m_targetGeometry;
 }
 
+bool ScreenshotPinnedNativeGeometryController::adoptSystemMoveTarget(const QRect& observed) {
+    if ((m_phase != Phase::MovePending && m_phase != Phase::Moving) || !validGeometry(observed)) {
+        return false;
+    }
+    m_targetGeometry = observed;
+    if (observed != m_transactionStartGeometry) {
+        m_phase = Phase::Moving;
+        m_acceptedInteractiveGeometry = true;
+    }
+    return true;
+}
+
 std::optional<QRect> ScreenshotPinnedNativeGeometryController::updateResize(
     const QRect& proposed, screenshot_pinned_resize_geometry::DragHandle handle,
     const QSize& baseline, double minimumScale, double maximumScale) {

@@ -12,6 +12,14 @@
 
 #include <algorithm>
 
+#ifdef Q_OS_MACOS
+#include <CoreGraphics/CoreGraphics.h>
+
+bool screenshot_pinned_window_native::leftMouseButtonPressed() {
+    return CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonLeft);
+}
+#endif
+
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include <qpa/qplatformnativeinterface.h>
 #include <qpa/qwindowsysteminterface.h>

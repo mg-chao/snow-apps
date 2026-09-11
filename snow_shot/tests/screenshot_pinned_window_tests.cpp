@@ -87,6 +87,32 @@ void runPinnedOriginalImageTranslationTests();
 // installing the Windows HWND hooks required by present().
 class ScreenshotPinnedWindowTestAccess {
   public:
+#ifdef Q_OS_MACOS
+    static bool beginSystemMove(ScreenshotPinnedWindow& window) {
+        window.m_windowDragActive = window.m_nativeGeometryController->beginMove(QCursor::pos());
+        if (window.m_windowDragActive) {
+            // Keep real button state out of this deterministic test; inject it below.
+            window.m_windowMoveSettleTimer->start(60000);
+        }
+        return window.m_windowDragActive;
+    }
+
+    static void observeMoveButton(ScreenshotPinnedWindow& window, bool pressed) {
+        window.finishWindowMoveIfReleased(pressed);
+    }
+
+    static bool moveActive(const ScreenshotPinnedWindow& window) {
+        return window.m_windowDragActive || window.m_windowMoveSettleTimer->isActive();
+    }
+
+    static QRect committedGeometry(const ScreenshotPinnedWindow& window) {
+        return window.m_nativeGeometryController->committedGeometry();
+    }
+
+    static void scale(ScreenshotPinnedWindow& window, int percent) {
+        window.applyScale(percent);
+    }
+#endif
     static QTimer* showReadout(ScreenshotPinnedWindow& window, bool opacity) {
         window.m_scalePercent = 125;
         window.m_opacityPercent = 80;
@@ -514,7 +540,7 @@ void groupMenuActionsExposeIconsAndCleanupState() {
         QStringLiteral("screenshotPinnedContextMenu"));
     require(contextMenu != nullptr, "the pinned window should own its context menu");
     const QList<QAction*> contextActions = contextMenu->actions();
-    const int groupIndex = contextActions.indexOf(groupHeader);
+    const qsizetype groupIndex = contextActions.indexOf(groupHeader);
     require(groupIndex >= 0 && groupIndex + 1 < contextActions.size() &&
                 contextActions.at(groupIndex + 1)->objectName() ==
                     QStringLiteral("screenshotPinnedThumbnailAction"),
@@ -4314,11 +4340,11 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
                 reinterpret_cast<LPARAM>(&disabledThumbnailNative));
     require(qRectForNativeRect(disabledThumbnailNative) == disabledThumbnailProposal,
             "thumbnail mode should leave WM_SIZING proposals unchanged");
-#endif
     sendWheel(canvas->rect().center(), QPoint(), QPoint(0, 120));
     require(!thumbnailAction->isChecked() &&
                 pinnedWindow->currentNativeGeometry().size() == expectedSize(110, true),
             "thumbnail wheel input should restore the pin and apply cursor scaling");
+#endif
 
     menu->actions().constLast()->trigger();
     require(processUntilDeleted(guardedWindow, 2000),
@@ -5745,6 +5771,67 @@ void pinnedCloseReleaseNative() {
 
 } // namespace
 
+#ifdef Q_OS_MACOS
+namespace {
+void pinnedMacosSystemMovesKeepTheirDestination() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a screen is required for the pinned move regression");
+    QImage image(320, 180, QImage::Format_ARGB32_Premultiplied);
+    image.fill(QColor(42, 84, 126));
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    ScreenshotPinnedWindow::Config config;
+    config.screen = screen;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(100, 100), image.size());
+    config.canvasSourceRect = QRectF(QPointF(), image.size());
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    config.automaticTextRecognition = false;
+    require(window.present(config), "the pinned move fixture must present");
+    QApplication::processEvents();
+
+    for (int iteration = 0; iteration < 5; ++iteration) {
+        if (iteration == 2) {
+            ScreenshotPinnedWindowTestAccess::scale(window, 150);
+            QApplication::processEvents();
+        }
+        require(ScreenshotPinnedWindowTestAccess::beginSystemMove(window),
+                "a new drag must be available after the preceding drag or scale");
+        // Model the native window server's geometry notification without synthesizing OS input.
+        const QPoint initialPosition = window.pos();
+        if (iteration != 3) {
+            window.move(window.pos() + (iteration == 1 ? QPoint(1, 2) : QPoint(80, 40)));
+        }
+        if (iteration == 4) {
+            window.move(initialPosition);
+        }
+        QApplication::processEvents();
+        const QRect destination = window.currentNativeGeometry();
+        ScreenshotPinnedWindowTestAccess::observeMoveButton(window, true);
+        require(ScreenshotPinnedWindowTestAccess::moveActive(window),
+                "a held pointer must not finish the system move");
+        if (iteration == 0) {
+            const QPoint position(40, 40);
+            QMouseEvent release(QEvent::MouseButtonRelease, QPointF(position),
+                                QPointF(window.mapToGlobal(position)), Qt::LeftButton, Qt::NoButton,
+                                Qt::NoModifier);
+            QApplication::sendEvent(&window, &release);
+        } else {
+            // AppKit may consume mouse-up; the release observer must finish it too.
+            ScreenshotPinnedWindowTestAccess::observeMoveButton(window, false);
+        }
+        QApplication::processEvents();
+        require(window.currentNativeGeometry() == destination &&
+                    ScreenshotPinnedWindowTestAccess::committedGeometry(window) == destination &&
+                    window.persistenceSnapshot().nativeGeometry == destination,
+                "releasing a macOS pinned drag must keep and commit its actual destination");
+        require(!ScreenshotPinnedWindowTestAccess::moveActive(window),
+                "finishing a drag must clear its state and stop release polling");
+    }
+    window.close();
+}
+} // namespace
+#endif
+
 int main(int argc, char* argv[]) {
     PinnedWindowTestApplication app(argc, argv);
 #ifdef Q_OS_WIN
@@ -5768,6 +5855,12 @@ int main(int argc, char* argv[]) {
 #endif
         SnowCanvasRuntime sourceRuntime;
         require(sourceRuntime.isValid(), "source runtime creation failed");
+#ifdef Q_OS_MACOS
+        if (app.arguments().contains(QStringLiteral("--macos-system-move-only"))) {
+            pinnedMacosSystemMovesKeepTheirDestination();
+            return 0;
+        }
+#endif
         if (app.arguments().contains(QStringLiteral("--scale-readout-only"))) {
             pinnedReadoutOffscreen();
             return 0;

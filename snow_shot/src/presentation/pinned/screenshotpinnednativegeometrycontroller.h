@@ -63,6 +63,9 @@ class ScreenshotPinnedNativeGeometryController final {
     [[nodiscard]] QRect constrainWindowPos(const QRect& proposed, bool moveRequested,
                                            bool sizeRequested) const;
     [[nodiscard]] QRect updateMove(const QRect& proposed, const QPoint& nativeCursorPosition);
+    // Adopt geometry already applied by a system-managed drag. Unlike a proposed
+    // Windows move, this observation needs no physical cursor delta correction.
+    [[nodiscard]] bool adoptSystemMoveTarget(const QRect& observed);
     [[nodiscard]] std::optional<QRect>
     updateResize(const QRect& proposed, screenshot_pinned_resize_geometry::DragHandle handle,
                  const QSize& baseline, double minimumScale, double maximumScale);

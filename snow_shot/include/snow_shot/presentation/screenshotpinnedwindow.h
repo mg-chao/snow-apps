@@ -279,6 +279,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool moveCursorOnePixel(snow_shot::platform::PhysicalCursorDirection direction);
     bool startWindowMove();
     void finishWindowMove();
+#ifdef Q_OS_MACOS
+    void finishWindowMoveIfReleased(bool buttonPressed);
+#endif
     bool windowDragEnabled() const;
     bool windowDragEnabledAt(const QPoint& position) const;
     bool handleDoubleClick(const QPoint& position);
@@ -325,6 +328,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     QTimer* m_scaleLabelTimer = nullptr;
     bool m_scaleReadoutShowsOpacity = false;
     QTimer* m_nativeScaleSettleTimer = nullptr;
+#ifdef Q_OS_MACOS
+    QTimer* m_windowMoveSettleTimer = nullptr;
+#endif
     ScreenshotPinnedEditController* m_editController = nullptr;
     adqt::widgets::AdButton* m_editButton = nullptr;
     adqt::widgets::AdButton* m_closeButton = nullptr;

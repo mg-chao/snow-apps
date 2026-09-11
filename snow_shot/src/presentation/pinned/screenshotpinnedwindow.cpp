@@ -2528,6 +2528,12 @@ void ScreenshotPinnedWindow::moveEvent(QMoveEvent* event) {
     const QPoint logicalDelta = event != nullptr ? event->pos() - event->oldPos() : QPoint();
 
     QWidget::moveEvent(event);
+#ifdef Q_OS_MACOS
+    if (m_windowDragActive && m_nativeGeometryController != nullptr) {
+        static_cast<void>(
+            m_nativeGeometryController->adoptSystemMoveTarget(currentNativeGeometry()));
+    }
+#endif
     bool passiveMismatch = false;
     if (m_nativeGeometryController != nullptr) {
         const auto phase = m_nativeGeometryController->phase();
@@ -2629,6 +2635,14 @@ void ScreenshotPinnedWindow::createUi() {
     m_nativeScaleSettleTimer->setInterval(0);
     connect(m_nativeScaleSettleTimer, &QTimer::timeout, this,
             &ScreenshotPinnedWindow::adoptSettledNativeScale);
+#ifdef Q_OS_MACOS
+    // AppKit's performWindowDragWithEvent returns immediately and may consume
+    // mouse-up. Observe release only while a system move owns the pointer.
+    m_windowMoveSettleTimer = new QTimer(this);
+    m_windowMoveSettleTimer->setInterval(16);
+    connect(m_windowMoveSettleTimer, &QTimer::timeout, this,
+            [this] { finishWindowMoveIfReleased(native::leftMouseButtonPressed()); });
+#endif
     auto* layout = new QVBoxLayout(this);
     layout->setSizeConstraint(QLayout::SetNoConstraint);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -4876,6 +4890,10 @@ bool ScreenshotPinnedWindow::finishNativeGeometryInteraction() {
         return false;
     }
 
+#ifdef Q_OS_MACOS
+    const bool systemMove =
+        m_nativeGeometryController->adoptSystemMoveTarget(currentNativeGeometry());
+#endif
     const QRect target = m_nativeGeometryController->finishInteractiveTarget();
     if (!target.isValid() || target.isEmpty()) {
         m_nativeGeometryController->cancelPendingInteraction();
@@ -4893,10 +4911,21 @@ bool ScreenshotPinnedWindow::finishNativeGeometryInteraction() {
         static_cast<void>(restoreCommittedNativeGeometry());
         return false;
     }
+#elif defined(Q_OS_MACOS)
+    // AppKit has already placed the window. Reapplying a rounded logical
+    // rectangle here can shift it, particularly across displays with different DPRs.
+    if (!systemMove) {
+        setGeometry(logicalRectForNativeRect(target));
+    }
 #else
     setGeometry(logicalRectForNativeRect(target));
 #endif
     const auto change = m_nativeGeometryController->commitTarget();
+#ifdef Q_OS_MACOS
+    if (change.positionChanged) {
+        schedulePersistence();
+    }
+#endif
     if (change.sizeChanged || change.dpiChanged) {
         m_preserveScaleForSettledGeometry = false;
         scheduleNativeScaleAdoption();
@@ -5102,6 +5131,9 @@ bool ScreenshotPinnedWindow::startWindowMove() {
         m_windowDragActive = true;
         setWindowDragCursor(Qt::ClosedHandCursor);
         static_cast<void>(m_systemMoveKeyboard->start());
+#ifdef Q_OS_MACOS
+        m_windowMoveSettleTimer->start();
+#endif
         return true;
     }
     finishWindowMove();
@@ -5110,6 +5142,9 @@ bool ScreenshotPinnedWindow::startWindowMove() {
 }
 
 void ScreenshotPinnedWindow::finishWindowMove() {
+#ifdef Q_OS_MACOS
+    m_windowMoveSettleTimer->stop();
+#endif
     m_systemMoveKeyboard->stop();
     const bool wasActive = m_windowDragActive;
     m_windowDragActive = false;
@@ -5117,6 +5152,15 @@ void ScreenshotPinnedWindow::finishWindowMove() {
         updateWindowDragCursor(mapFromGlobal(QCursor::pos()));
     }
 }
+
+#ifdef Q_OS_MACOS
+void ScreenshotPinnedWindow::finishWindowMoveIfReleased(bool buttonPressed) {
+    if (m_windowDragActive && !buttonPressed) {
+        static_cast<void>(finishNativeGeometryInteraction());
+        finishWindowMove();
+    }
+}
+#endif
 
 bool ScreenshotPinnedWindow::windowDragEnabled() const {
     if (m_closing || m_geometryAnimating || windowHandle() == nullptr) {

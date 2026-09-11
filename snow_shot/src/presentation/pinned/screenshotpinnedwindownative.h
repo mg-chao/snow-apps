@@ -40,6 +40,9 @@ applyClientGeometry(WId windowId, const QRect& geometry,
 [[nodiscard]] QRect currentClientGeometry(WId windowId);
 [[nodiscard]] bool applySystemResizeStyle(WId windowId);
 [[nodiscard]] bool activateWindow(WId windowId);
+#ifdef Q_OS_MACOS
+[[nodiscard]] bool leftMouseButtonPressed();
+#endif
 [[nodiscard]] bool installSynchronizedResize(WId windowId, const bool* interactiveResizeActive);
 void removeSynchronizedResize(WId windowId);
 [[nodiscard]] bool applyCursor(Qt::CursorShape shape);
