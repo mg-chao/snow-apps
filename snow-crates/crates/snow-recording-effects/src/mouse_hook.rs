@@ -237,7 +237,9 @@ mod platform {
                 crossbeam_channel::Receiver<MouseMovement>,
             )>,
         ) -> Result<Self, String> {
-            Err("native mouse observation requires Windows".into())
+            // Degrade like `start`: recording must not fail on platforms
+            // without the hook; the channels simply stay silent.
+            Ok(Self)
         }
     }
 }

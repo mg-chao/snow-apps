@@ -272,6 +272,17 @@ pub fn run(
             let wall = epoch + Duration::from_millis(timestamp + if pause_done { 250 } else { 0 });
             assert_eq!(clock.active_elapsed_ms(wall), timestamp);
         }
+        // The production worker drains mouse-hook movements at the top of each
+        // loop iteration; replay that before composing so the trail advances
+        // from the sampled event stream rather than the frame cadence.
+        if scenario == "effects" {
+            let position = sample
+                .cursor
+                .as_ref()
+                .filter(|cursor| cursor.visible)
+                .map(|cursor| (cursor.x, cursor.y));
+            compositor.observe_movement(position, 0, timestamp, (width, height));
+        }
         // The production worker composes every accepted capture, then
         // recomposes the latest capture at output cadence while an overlay
         // animation is active. When the recomposition fires for the same

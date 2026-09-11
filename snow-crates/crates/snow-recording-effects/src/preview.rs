@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use crate::keyboard_hook::KeyboardInput;
 use crate::keyboard_overlay::{KeyboardOverlay, KeyboardOverlayConfig, KeycapRasterizer};
-use crate::laser_trail::LaserTrail;
+use crate::laser_trail::{LaserTrail, MOVEMENT_QUEUE_DEPTH, TrailSampler};
 use crate::mouse_effects::{CLICK_ANIMATION_MS, CLICK_QUEUE_DEPTH, RenderClick, draw_clicks_to};
 use crate::mouse_hook::{MouseClickObservation, MouseHookObserver, MouseMovement};
 use crate::surface::{Tile, TileSurface};
@@ -75,10 +75,10 @@ pub struct EffectsPreview {
     pub trail: LaserTrail,
     pub clicks: VecDeque<RenderClick>,
     pub keyboard: Option<KeyboardOverlay>,
+    movement: TrailSampler,
     surface: TileSurface,
     keyboard_surface: TileSurface,
     position: Option<(i32, i32)>,
-    continuity: u64,
 }
 
 impl EffectsPreview {
@@ -94,12 +94,12 @@ impl EffectsPreview {
             config,
             trail,
             clicks: VecDeque::new(),
+            movement: TrailSampler::default(),
             keyboard: rasterizer
                 .map(|r| KeyboardOverlay::new(keyboard_output, r).with_keycap_size(keycap_size)),
             surface: TileSurface::new(output),
             keyboard_surface: TileSurface::new(keyboard_output),
             position: None,
-            continuity: 0,
         }
     }
     pub fn observe(&mut self, position: Option<(i32, i32)>, at: u64) {
@@ -113,13 +113,23 @@ impl EffectsPreview {
             );
         }
     }
-    /// Preserve a path break when the observer coalesced an exit and re-entry.
+    /// Feed one native mouse-hook movement. The sampler decimates the event
+    /// stream onto the same fixed grid the video compositor uses, so both
+    /// render identical trail geometry; superseded sub-interval positions must
+    /// not leak into `position`, which render re-observes at tick cadence.
     pub fn observe_input(&mut self, position: Option<(i32, i32)>, at: u64, continuity: u64) {
-        if self.continuity != continuity {
-            self.observe(None, at);
-            self.continuity = continuity;
+        if self.config.trail[3] != 0
+            && self.movement.observe_event(
+                &mut self.trail,
+                position,
+                continuity,
+                (self.config.region.2, self.config.region.3),
+                self.config.output,
+                at,
+            )
+        {
+            self.position = position;
         }
-        self.observe(position, at);
     }
     pub fn click(&mut self, click: RenderClick) {
         if self.clicks.len() == CLICK_QUEUE_DEPTH {
@@ -250,7 +260,7 @@ fn initialize(config: &PreviewConfig) -> Result<(Input, EffectsPreview), String>
         .map(|_| KeyboardInput::start())
         .transpose()?;
     let (click_tx, clicks) = bounded(CLICK_QUEUE_DEPTH);
-    let (move_tx, mouse) = bounded(1);
+    let (move_tx, mouse) = bounded(MOVEMENT_QUEUE_DEPTH);
     let observer = if config.trail[3] != 0 || config.click[3] != 0 {
         Some(MouseHookObserver::start_with_movement(
             config.region,
@@ -329,17 +339,9 @@ fn run(
         let mut dirty = true;
         let mut next_frame = elapsed(Instant::now());
         let mut keyboard_generation = 0;
-        let mut pending_position: Option<MouseMovement> = None;
         loop {
             let now = elapsed(Instant::now());
             if dirty && now >= next_frame {
-                if let Some(movement) = pending_position.take() {
-                    effects.observe_input(
-                        movement.position,
-                        elapsed(movement.at),
-                        movement.continuity,
-                    );
-                }
                 revision += 1;
                 let result = effects.render(now);
                 let failed = result.is_err();
@@ -381,7 +383,14 @@ fn run(
                     _ => return,
                 },
                 recv(mouse) -> event => if let Ok(event) = event {
-                    pending_position = Some(event);
+                    // Observe every event immediately: the sampler, not the
+                    // render cadence, decides which positions become trail
+                    // points, exactly as the video compositor drains them.
+                    effects.observe_input(
+                        event.position,
+                        elapsed(event.at),
+                        event.continuity,
+                    );
                     dirty = true;
                 },
                 recv(clicks) -> event => if let Ok(event) = event {
@@ -659,6 +668,73 @@ mod tests {
             assert!(actual.iter().zip(expected).all(|(a, b)| a.abs_diff(b) <= 1));
         }
     }
+    #[test]
+    fn trail_geometry_matches_the_video_compositor_for_the_same_movements() {
+        let mut value = config();
+        value.output = (256, 128);
+        value.region = (-500, 20, 256, 128);
+        value.trail_duration_ms = 500;
+        let mut preview = EffectsPreview::new(value.clone(), None);
+        let mut video_trail = LaserTrail::new(value.trail_duration_ms);
+        let mut video_sampler = TrailSampler::default();
+        // A dense (125 Hz) wiggle with a region exit, as the mouse hook
+        // delivers it. Both consumers must turn this into the same geometry.
+        let events = vec![
+            (Some((10, 60)), 0, 0),
+            (Some((14, 62)), 0, 8),
+            (Some((18, 64)), 0, 16),
+            (Some((34, 70)), 0, 24),
+            (Some((120, 90)), 0, 40),
+            (None, 1, 42),
+            (Some((140, 96)), 1, 45),
+            (Some((170, 100)), 1, 80),
+            (Some((200, 108)), 1, 95),
+        ];
+        for (position, continuity, at) in events {
+            preview.observe_input(position, at, continuity);
+            video_sampler.observe_event(
+                &mut video_trail,
+                position,
+                continuity,
+                (value.region.2, value.region.3),
+                value.output,
+                at,
+            );
+            // The preview re-observes at its ~60 Hz render cadence between
+            // hook events; that must not add or shift trail points.
+            preview.render(at + 7).unwrap();
+        }
+        let frame = preview.render(200).unwrap();
+        let mut expected = [20, 40, 60, 255].repeat(256 * 128);
+        video_trail.draw_to(
+            &mut RgbaSurface {
+                pixels: &mut expected,
+                dimensions: value.output,
+            },
+            200,
+            value.trail,
+        );
+        let mut actual = [20, 40, 60, 255].repeat(256 * 128);
+        for tile in frame.mouse {
+            for y in 0..TILE_SIZE.min(128 - tile.y) {
+                for x in 0..TILE_SIZE.min(256 - tile.x) {
+                    let src = &tile.pixels[((y * TILE_SIZE + x) * 4) as usize..][..4];
+                    let dst = &mut actual[(((tile.y + y) * 256 + tile.x + x) * 4) as usize..][..4];
+                    for channel in 0..3 {
+                        dst[channel] = (u32::from(src[channel])
+                            + (u32::from(dst[channel]) * (255 - u32::from(src[3])) + 127) / 255)
+                            .min(255) as u8;
+                    }
+                }
+            }
+        }
+        assert!(actual.iter().zip(expected).all(|(a, b)| a.abs_diff(b) <= 1));
+        assert!(
+            actual.chunks_exact(4).any(|pixel| pixel[0] > 40),
+            "the parity scenario must actually draw a trail"
+        );
+    }
+
     #[test]
     fn repeated_clicks_and_stationary_input_remain_bounded() {
         let mut preview = EffectsPreview::new(config(), None);

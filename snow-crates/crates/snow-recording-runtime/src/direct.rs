@@ -31,8 +31,8 @@ use crate::config::{CaptureBackendKind, RecordingRegion, RecordingTarget};
 use crate::error::{Result, ScreenRecorderError};
 use crate::keyboard_hook::KeyboardInput;
 use crate::keyboard_overlay::{KeyEvent, KeyboardOverlay, KeyboardOverlayConfig};
-use crate::laser_trail::LaserTrail;
-use crate::mouse_hook::{MouseClickObservation, MouseHookObserver};
+use crate::laser_trail::{LaserTrail, MOVEMENT_QUEUE_DEPTH, TrailSampler};
+use crate::mouse_hook::{MouseClickObservation, MouseHookObserver, MouseMovement};
 use crate::recording::RecordingState;
 
 #[cfg(feature = "recording-benchmark")]
@@ -355,13 +355,13 @@ impl DirectRecordingSession {
             }
             _ => (None, None),
         };
-        let (capture_stream, mouse_hook, click_rx, gpu_encoder) = match gpu_attempt {
+        let (capture_stream, mouse_hook, click_rx, movement_rx, gpu_encoder) = match gpu_attempt {
             Some(parts) => {
                 // Overlay effects are gated off on the GPU lane, so the
                 // mouse hook has nothing to observe.
                 let (click_tx, click_rx) = crossbeam_channel::bounded(CLICK_QUEUE_DEPTH);
                 drop(click_tx);
-                (parts.stream, None, click_rx, Some(parts.encoder))
+                (parts.stream, None, click_rx, None, Some(parts.encoder))
             }
             None => {
                 let capture_system = CaptureSystem::builder()
@@ -392,7 +392,12 @@ impl DirectRecordingSession {
                     },
                 )?;
                 let (click_tx, click_rx) = crossbeam_channel::bounded(CLICK_QUEUE_DEPTH);
-                let mouse_hook = MouseHookObserver::start(
+                // The trail follows the same mouse-hook movement stream the
+                // live preview renders from, sampled onto the same fixed grid,
+                // so the recorded effect matches what the preview showed.
+                let trail_enabled = self.config.mouse_trail_rgba[3] != 0;
+                let (movement_tx, movement_rx) = crossbeam_channel::bounded(MOVEMENT_QUEUE_DEPTH);
+                let mouse_hook = MouseHookObserver::start_with_movement(
                     (
                         self.config.region.x,
                         self.config.region.y,
@@ -400,9 +405,16 @@ impl DirectRecordingSession {
                         self.config.region.height,
                     ),
                     click_tx,
+                    trail_enabled.then(|| (movement_tx, movement_rx.clone())),
                 )
                 .map_err(ScreenRecorderError::Encode)?;
-                (capture_stream, Some(mouse_hook), click_rx, None)
+                (
+                    capture_stream,
+                    Some(mouse_hook),
+                    click_rx,
+                    trail_enabled.then_some(movement_rx),
+                    None,
+                )
             }
         };
         let keyboard_input = self
@@ -423,6 +435,11 @@ impl DirectRecordingSession {
             .spawn(move || {
                 let result = (|| {
                     let mut compositor = VisualCompositor::new(config.output_dimensions());
+                    // The movement drain can run before the first compose; the
+                    // configured lifetime must gate expiry from the start.
+                    compositor
+                        .trail
+                        .set_lifetime_ms(config.mouse_trail_duration_ms);
                     if let Some(style) = config.keyboard.as_ref() {
                         match crate::keyboard_rasterizer::create(style) {
                             Ok(rasterizer) => {
@@ -485,6 +502,7 @@ impl DirectRecordingSession {
                         capture_stream,
                         mouse_hook,
                         click_rx,
+                        movement_rx,
                         keyboard_input,
                         compositor,
                         control_rx,
@@ -635,6 +653,9 @@ struct DirectWorkerInputs {
     capture_stream: CaptureStream,
     mouse_hook: Option<MouseHookObserver>,
     click_rx: Receiver<MouseClickObservation>,
+    /// Mouse-hook movements for the trail; `None` when the trail is disabled
+    /// or effects are gated off on the GPU lane.
+    movement_rx: Option<Receiver<MouseMovement>>,
     keyboard_input: Option<KeyboardInput>,
     compositor: VisualCompositor,
     control_rx: Receiver<ControlCommand>,
@@ -760,6 +781,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         capture_stream,
         mouse_hook,
         click_rx,
+        movement_rx,
         mut keyboard_input,
         mut compositor,
         control_rx,
@@ -833,6 +855,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
             }
         }
         drain_click_observations(&click_rx, &clock, paused, &mut compositor);
+        drain_movement_observations(&movement_rx, &clock, &config, paused, &mut compositor);
         if let (Some(input), Some(style)) = (keyboard_input.as_ref(), config.keyboard.as_ref()) {
             let generation = input.generation.load(Ordering::Acquire);
             if keyboard_generation != generation {
@@ -1289,20 +1312,13 @@ fn process_capture_event(event: CaptureEvent, context: CaptureEventContext<'_>) 
             monotonic_timestamp(last_timestamp_ms, clock.active_elapsed_ms(instant));
             if !suppress_push {
                 let timestamp_ms = last_timestamp_ms.unwrap_or(0);
-                let source_size = frame.dimensions();
-                let cursor = frame.metadata().cursor().cloned();
                 if should_skip_duplicate_push(
                     frame.metadata().is_duplicate(),
                     compositor.has_active_animation(config, timestamp_ms),
                 ) {
                     // The pixels match the previous frame; keep overlay
                     // state advancing without composing or encoding.
-                    compositor.maintain_overlay_state(
-                        config,
-                        cursor.as_ref(),
-                        source_size,
-                        timestamp_ms,
-                    );
+                    compositor.maintain_overlay_state(config, timestamp_ms);
                 } else {
                     let composed = compositor.compose(config, &frame, timestamp_ms)?;
                     encoder.push_rgba_frame(timestamp_ms, composed.as_slice())?;
@@ -1371,6 +1387,33 @@ fn drain_click_observations(
     }
 }
 
+/// Feed mouse-hook movements into the trail sampler. The live preview drains
+/// the same hook stream through the same sampler, so both render identical
+/// trail geometry regardless of this worker's frame cadence.
+fn drain_movement_observations(
+    receiver: &Option<Receiver<MouseMovement>>,
+    clock: &RecordingClock,
+    config: &DirectRecordingConfig,
+    paused: bool,
+    compositor: &mut VisualCompositor,
+) {
+    let Some(receiver) = receiver else {
+        return;
+    };
+    let source_size = (config.region.width, config.region.height);
+    while let Ok(event) = receiver.try_recv() {
+        if paused {
+            continue;
+        }
+        compositor.observe_movement(
+            event.position,
+            event.continuity,
+            clock.active_elapsed_ms(event.at),
+            source_size,
+        );
+    }
+}
+
 /// Pixels produced by the compositor for one output frame. `Source` borrows
 /// the captured frame directly when no overlay needs to draw and no resize is
 /// required; `Owned` holds pixels the compositor drew into.
@@ -1406,6 +1449,7 @@ fn ordered_color(color: [u8; 4], order: PixelOrder) -> [u8; 4] {
 struct VisualCompositor {
     output_size: (u32, u32),
     trail: LaserTrail,
+    movement: TrailSampler,
     clicks: VecDeque<RenderClick>,
     cursor_shapes: HashMap<u64, CursorShape>,
     keyboard: Option<KeyboardOverlay>,
@@ -1417,11 +1461,31 @@ impl VisualCompositor {
         Self {
             output_size,
             trail: LaserTrail::default(),
+            movement: TrailSampler::default(),
             clicks: VecDeque::new(),
             cursor_shapes: HashMap::new(),
             keyboard: None,
             pending_keys: VecDeque::new(),
         }
+    }
+
+    /// Feed one mouse-hook movement into the trail. Region-relative positions
+    /// scale through the region size, mirroring the live preview.
+    fn observe_movement(
+        &mut self,
+        position: Option<(i32, i32)>,
+        continuity: u64,
+        timestamp_ms: u64,
+        source_size: (u32, u32),
+    ) {
+        self.movement.observe_event(
+            &mut self.trail,
+            position,
+            continuity,
+            source_size,
+            self.output_size,
+            timestamp_ms,
+        );
     }
 
     fn compose<'a>(
@@ -1434,7 +1498,7 @@ impl VisualCompositor {
         self.trail.set_lifetime_ms(config.mouse_trail_duration_ms);
         let source_size = frame.dimensions();
         let cursor = frame.metadata().cursor().cloned();
-        self.maintain_overlay_state(config, cursor.as_ref(), source_size, timestamp_ms);
+        self.maintain_overlay_state(config, timestamp_ms);
         if !self.overlays_required(config, cursor.as_ref(), source_size) {
             return Ok(ComposedPixels::Source(frame.as_rgba_bytes()));
         }
@@ -1464,7 +1528,7 @@ impl VisualCompositor {
         let order = pixel_order_of(frame.pixel_format());
         self.trail.set_lifetime_ms(config.mouse_trail_duration_ms);
         let source_size = frame.dimensions();
-        self.maintain_overlay_state(config, cursor, source_size, timestamp_ms);
+        self.maintain_overlay_state(config, timestamp_ms);
         if !self.overlays_required(config, cursor, source_size) {
             return Ok(ComposedPixels::Source(frame.as_rgba_bytes()));
         }
@@ -1473,26 +1537,14 @@ impl VisualCompositor {
         Ok(ComposedPixels::Owned(rgba))
     }
 
-    /// Advance non-pixel overlay state (trail history, click eviction, queued
+    /// Advance non-pixel overlay state (trail reset, click eviction, queued
     /// keyboard events) exactly as the drawing path does, so a borrowed
-    /// passthrough frame cannot diverge from composed output.
-    fn maintain_overlay_state(
-        &mut self,
-        config: &DirectRecordingConfig,
-        cursor: Option<&AttachedCursorSample>,
-        source_size: (u32, u32),
-        timestamp_ms: u64,
-    ) {
-        if config.mouse_trail_rgba[3] != 0 {
-            self.trail.observe(
-                cursor
-                    .filter(|cursor| cursor.visible)
-                    .map(|cursor| (cursor.x, cursor.y)),
-                source_size,
-                self.output_size,
-                timestamp_ms,
-            );
-        } else {
+    /// passthrough frame cannot diverge from composed output. The trail's
+    /// points advance through `observe_movement` from the mouse hook instead:
+    /// sampling them from per-frame cursor metadata made the recorded trail's
+    /// geometry depend on the capture frame rate and diverge from the preview.
+    fn maintain_overlay_state(&mut self, config: &DirectRecordingConfig, timestamp_ms: u64) {
+        if config.mouse_trail_rgba[3] == 0 {
             self.trail.clear();
         }
         while self.clicks.front().is_some_and(|click| {
@@ -2507,6 +2559,151 @@ mod tests {
         });
         assert!(compositor.has_active_animation(&value, 950));
         assert!(!compositor.has_active_animation(&value, 951));
+    }
+
+    #[test]
+    fn trail_composition_is_independent_of_capture_frame_cadence() {
+        let mut value = config();
+        value.region = RecordingRegion::new(0, 0, 320, 180);
+        value.mouse_trail_rgba = [255, 0, 0, 255];
+        value.show_cursor = false;
+        let size = (320u32, 180u32);
+        let original = [11u8, 22, 33, 255].repeat((size.0 * size.1) as usize);
+        let frame: CapturedFrame =
+            snow_capture::frame::Frame::from_rgba8(size.0, size.1, original.clone())
+                .unwrap()
+                .into();
+        // A dense burst of hook movements; compositors composing at different
+        // frame rates must render the same trail geometry from it.
+        let movements: Vec<(i32, i32, u64)> = (0..25i32)
+            .map(|index| {
+                (
+                    10 + index * 9,
+                    40 + (index % 7) * 6,
+                    u64::try_from(index).unwrap() * 4,
+                )
+            })
+            .collect();
+        let mut fast = VisualCompositor::new(size);
+        let mut slow = VisualCompositor::new(size);
+        for &(x, y, at) in &movements {
+            for compositor in [&mut fast, &mut slow] {
+                compositor.observe_movement(Some((x, y)), 0, at, size);
+            }
+            if at % 33 == 0 {
+                fast.compose(&value, &frame, at).unwrap();
+            }
+            if at % 66 == 0 {
+                slow.compose(&value, &frame, at).unwrap();
+            }
+        }
+        let fast_pixels = fast.compose(&value, &frame, 120).unwrap();
+        let slow_pixels = slow.compose(&value, &frame, 120).unwrap();
+        assert_eq!(fast_pixels.as_slice(), slow_pixels.as_slice());
+        assert_ne!(
+            fast_pixels.as_slice(),
+            &original[..],
+            "the scenario must draw a trail"
+        );
+    }
+
+    #[test]
+    fn captured_cursor_metadata_does_not_feed_the_trail() {
+        let mut value = config();
+        value.region = RecordingRegion::new(0, 0, 64, 48);
+        value.mouse_trail_rgba = [255, 0, 0, 255];
+        value.show_cursor = false;
+        let size = (64u32, 48u32);
+        let original = [7u8, 8, 9, 255].repeat((size.0 * size.1) as usize);
+        let frame: CapturedFrame =
+            snow_capture::frame::Frame::from_rgba8(size.0, size.1, original.clone())
+                .unwrap()
+                .into();
+        let shape = CursorShape::from_rgba(
+            0,
+            0,
+            1,
+            1,
+            CursorCompositionMode::AlphaBlend,
+            vec![255, 0, 0, 255],
+        );
+        let mut compositor = VisualCompositor::new(size);
+        // A metadata cursor sweeping across the frames must not create trail
+        // points; only mouse-hook movements sampled by the shared grid do.
+        for x in 0..16i32 {
+            let cursor = AttachedCursorSample {
+                x,
+                y: 24,
+                visible: true,
+                shape: CursorShapeState::Embedded(shape.clone()),
+            };
+            compositor
+                .compose_with_cursor(
+                    &value,
+                    &frame,
+                    Some(&cursor),
+                    u64::try_from(x).unwrap() * 33,
+                )
+                .unwrap();
+        }
+        let pixels = compositor
+            .compose_with_cursor(&value, &frame, None, 600)
+            .unwrap();
+        assert_eq!(pixels.as_slice(), &original[..]);
+    }
+
+    #[test]
+    fn movement_drain_uses_recording_clock_and_skips_paused_input() {
+        let started = Instant::now();
+        let clock = RecordingClock::new(started);
+        let (sender, receiver) = crossbeam_channel::bounded(MOVEMENT_QUEUE_DEPTH);
+        let mut value = config();
+        value.region = RecordingRegion::new(0, 0, 8, 8);
+        value.mouse_trail_rgba = [255, 0, 0, 255];
+        let mut compositor = VisualCompositor::new((8, 8));
+        // Movements while paused must not advance the trail.
+        for (x, at) in [(1, 10), (2, 30)] {
+            sender
+                .send(MouseMovement {
+                    at: started + Duration::from_millis(at),
+                    position: Some((x, 1)),
+                    continuity: 0,
+                })
+                .unwrap();
+        }
+        drain_movement_observations(
+            &Some(receiver.clone()),
+            &clock,
+            &value,
+            true,
+            &mut compositor,
+        );
+        // Committed paused movements would keep the trail active here.
+        assert!(!compositor.has_active_animation(&value, 60));
+        clock
+            .controller()
+            .mark_pause(started + Duration::from_millis(40));
+        clock
+            .controller()
+            .mark_resume(started + Duration::from_millis(2000));
+        // After resuming, timestamps map through active time: frozen while
+        // paused, so wall-clock 2010/2060 land at active 50/100.
+        for (x, at) in [(3, 2010), (5, 2060)] {
+            sender
+                .send(MouseMovement {
+                    at: started + Duration::from_millis(at),
+                    position: Some((x, 1)),
+                    continuity: 0,
+                })
+                .unwrap();
+        }
+        drain_movement_observations(&Some(receiver), &clock, &value, false, &mut compositor);
+        // The events committed at active timestamps 50/100 (wall clock was
+        // 2010/2060): the trail must still animate just before the 500 ms
+        // lifetime expires past 100 and be done right after it.
+        assert!(compositor.has_active_animation(&value, 100));
+        assert!(compositor.has_active_animation(&value, 599));
+        assert!(!compositor.has_active_animation(&value, 600));
     }
 
     #[test]

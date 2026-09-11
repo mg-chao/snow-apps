@@ -11,6 +11,18 @@ const DEFAULT_LIFETIME_MS: u64 = 500;
 const MAX_POINTS: usize = 50;
 const RADIUS: f32 = 2.0;
 
+/// Fixed spacing between committed trail points. The live preview and the
+/// video compositor both feed the same mouse-hook event stream through
+/// [`TrailSampler`], so the recorded trail keeps the previewed geometry
+/// regardless of the preview's ~60 Hz render cadence, the video's
+/// capture/output frame rate, or the mouse's hardware report rate.
+pub const TRAIL_SAMPLE_INTERVAL_MS: u64 = 16;
+
+/// Bounded movement-channel depth shared by the preview and video workers.
+/// The hook drops the oldest event when full; the sampler discards
+/// sub-interval events anyway.
+pub const MOVEMENT_QUEUE_DEPTH: usize = 64;
+
 #[derive(Clone, Copy)]
 struct Sample {
     x: f32,
@@ -182,6 +194,53 @@ impl LaserTrail {
             start = end;
         }
         self.was_visible = self.coverage.blend::<DENSE>(surface, color);
+    }
+}
+
+/// Decimates raw mouse-hook movements onto the fixed
+/// [`TRAIL_SAMPLE_INTERVAL_MS`] grid so the shared renderer produces the same
+/// trail geometry in the live preview and in recorded video. Position commits
+/// take the first event after each interval; path breaks (a continuity change
+/// or a position outside the recorded region) pass through immediately and
+/// re-arm the next commit.
+#[derive(Default)]
+pub struct TrailSampler {
+    last_commit_ms: Option<u64>,
+    continuity: u64,
+}
+
+impl TrailSampler {
+    /// Observe one hook movement. Returns whether the observation reached the
+    /// trail, so callers that mirror the newest position for bookkeeping can
+    /// skip superseded updates instead of committing them later.
+    pub fn observe_event(
+        &mut self,
+        trail: &mut LaserTrail,
+        position: Option<(i32, i32)>,
+        continuity: u64,
+        source_size: (u32, u32),
+        output_size: (u32, u32),
+        timestamp_ms: u64,
+    ) -> bool {
+        if self.continuity != continuity {
+            self.continuity = continuity;
+            trail.observe(None, source_size, output_size, timestamp_ms);
+            self.last_commit_ms = None;
+        }
+        let Some(position) = position else {
+            trail.observe(None, source_size, output_size, timestamp_ms);
+            self.last_commit_ms = None;
+            return true;
+        };
+        if self
+            .last_commit_ms
+            .is_some_and(|last| timestamp_ms.saturating_sub(last) < TRAIL_SAMPLE_INTERVAL_MS)
+        {
+            return false;
+        }
+        self.last_commit_ms = Some(timestamp_ms);
+        trail.observe(Some(position), source_size, output_size, timestamp_ms);
+        true
     }
 }
 
@@ -536,6 +595,75 @@ mod tests {
                 "visibility gap must not connect"
             );
         }
+    }
+
+    #[test]
+    fn sampler_commits_the_first_event_of_each_interval() {
+        let mut trail = LaserTrail::default();
+        let mut sampler = TrailSampler::default();
+        // A 1 kHz burst: only the first event after each 16 ms interval commits.
+        for at in (0..50).map(|index| index as u64 * 2) {
+            sampler.observe_event(&mut trail, Some((at as i32, 50)), 0, SIZE, SIZE, at);
+        }
+        // Positions are streamlined by the renderer; the sampling contract is
+        // which events commit, i.e. the committed timestamps.
+        let committed: Vec<u64> = trail
+            .points
+            .iter()
+            .map(|point| point.timestamp_ms)
+            .collect();
+        assert_eq!(committed, vec![0, 16, 32, 48, 64, 80, 96]);
+    }
+
+    #[test]
+    fn sampler_passes_region_exits_through_and_re_arms_the_next_path() {
+        let mut trail = LaserTrail::default();
+        let mut sampler = TrailSampler::default();
+        assert!(sampler.observe_event(&mut trail, Some((10, 10)), 0, SIZE, SIZE, 0));
+        assert!(!sampler.observe_event(&mut trail, Some((30, 10)), 0, SIZE, SIZE, 5));
+        // Leaving and re-entering the region inside one interval still breaks
+        // the path and anchors the new one immediately.
+        assert!(sampler.observe_event(&mut trail, None, 1, SIZE, SIZE, 8));
+        assert!(sampler.observe_event(&mut trail, Some((120, 10)), 1, SIZE, SIZE, 9));
+        assert_eq!(trail.points.len(), 2);
+        assert!(
+            !trail.points[1].connected,
+            "re-entry must start a separate path"
+        );
+    }
+
+    #[test]
+    fn sampler_output_is_independent_of_consumer_cadence() {
+        let events = vec![
+            (Some((10, 50)), 0, 0),
+            (Some((14, 52)), 0, 3),
+            (Some((18, 54)), 0, 7),
+            (Some((34, 60)), 0, 16),
+            (Some((120, 80)), 0, 40),
+            (None, 1, 42),
+            (Some((140, 90)), 1, 45),
+            (Some((170, 94)), 1, 80),
+            (Some((200, 60)), 1, 95),
+        ];
+        let mut dense = (LaserTrail::default(), TrailSampler::default());
+        let mut lazy = (LaserTrail::default(), TrailSampler::default());
+        for (position, continuity, at) in &events {
+            dense
+                .1
+                .observe_event(&mut dense.0, *position, *continuity, SIZE, SIZE, *at);
+            lazy.1
+                .observe_event(&mut lazy.0, *position, *continuity, SIZE, SIZE, *at);
+            // The lazy consumer re-observes its newest position at render time,
+            // as the preview's render tick does; dropped sub-interval events
+            // must not leak through that path.
+            lazy.0.observe(lazy.0.last_position, SIZE, SIZE, at + 7);
+        }
+        let mut dense_pixels = vec![0u8; (SIZE.0 * SIZE.1 * 4) as usize];
+        let mut lazy_pixels = dense_pixels.clone();
+        dense.0.draw(&mut dense_pixels, SIZE, 200, COLOR);
+        lazy.0.draw(&mut lazy_pixels, SIZE, 200, COLOR);
+        assert_eq!(dense_pixels, lazy_pixels);
+        assert!(red_sum(&dense_pixels) > 0);
     }
 
     #[test]
