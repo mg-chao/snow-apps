@@ -12,17 +12,19 @@ use snow_audio_recorder::{
 };
 use snow_capture::{
     CaptureEvent, CaptureOptions, CapturePixelFormat, CaptureStream, CaptureStreamConfig,
-    CaptureSystem, CaptureWorkload, CapturedFrame,
+    CaptureSystem, CaptureWorkload, CapturedFrame, SurfaceDelivery,
 };
 use snow_core::recording_clock::RecordingClock;
 use snow_cursor::{AttachedCursorSample, CursorCompositionMode, CursorShape, CursorShapeState};
 use snow_recording_effects::surface::PixelOrder;
 use snow_recording_export::{
-    ExportExecutionMode, ExportFormat, SoftwareH264Priority, StreamingAudioConfig,
-    StreamingEncoder, StreamingEncoderConfig, StreamingEncoderReport, StreamingPixelOrder,
-    VideoCodec, scaled_output_dimensions,
+    ExportExecutionMode, ExportFormat, ExternalVideoTrack, SoftwareH264Priority,
+    StreamingAudioConfig, StreamingEncoder, StreamingEncoderConfig, StreamingEncoderReport,
+    StreamingPixelOrder, VideoCodec, scaled_output_dimensions,
 };
 use snow_recording_model::{VideoEncodeConfig, VideoEncodingSpeed};
+
+use snow_recording_gpu::GpuH264Encoder;
 
 use crate::adapter::video::resolve_capture_target;
 use crate::config::{CaptureBackendKind, RecordingRegion, RecordingTarget};
@@ -154,9 +156,129 @@ pub struct DirectRecordingReport {
     pub dropped_capture_frames: u64,
     pub video_encoder: String,
     pub used_hardware_video_encoder: bool,
+    /// Whether the GPU zero-copy pipeline (capture textures -> video
+    /// processor -> Media Foundation encoder) produced this recording.
+    pub used_gpu_pipeline: bool,
+    /// Why a GPU-eligible recording fell back to the CPU pipeline.
+    pub gpu_fallback_reason: Option<String>,
     pub encoded_audio_frames: u64,
     pub inserted_silence_frames: u64,
     pub dropped_audio_frames: u64,
+}
+
+/// Whether the GPU zero-copy pipeline may serve this recording. Decided
+/// from existing configuration only: MP4 + H.264 + hardware preference +
+/// WGC-capable backend, and no overlay effects that need CPU pixels
+/// (mouse trail/click ripples/keyboard). The cursor is baked in by WGC's
+/// native cursor capture instead of the CPU compositor, and scaling runs
+/// on the video processor, so neither disqualifies.
+fn gpu_zero_copy_eligible(config: &DirectRecordingConfig) -> bool {
+    config.format == ExportFormat::Mp4
+        && config.codec == VideoCodec::H264
+        && config.prefer_hardware_encoder
+        && matches!(
+            config.capture_backend,
+            CaptureBackendKind::Auto | CaptureBackendKind::WindowsGraphicsCapture
+        )
+        && config.keyboard.is_none()
+        && config.mouse_trail_rgba[3] == 0
+        && config.mouse_click_rgba[3] == 0
+}
+
+/// Capture options for the GPU surface lane.
+fn gpu_surface_options(config: &DirectRecordingConfig) -> CaptureOptions {
+    CaptureOptions {
+        workload: CaptureWorkload::Continuous,
+        output_pixel_format: CapturePixelFormat::Bgra8,
+        output_surface: SurfaceDelivery::GpuTexture {
+            native_cursor: config.show_cursor,
+        },
+        ..CaptureOptions::default()
+    }
+}
+
+struct GpuCaptureParts {
+    stream: CaptureStream,
+    encoder: GpuH264Encoder,
+}
+
+/// Assemble the GPU surface lane: a pinned WGC surface session plus the
+/// video-processor/MFT encoder on the capture device. Any failure returns
+/// `Some(reason)` for the report and the caller falls back to the CPU
+/// pipeline with the user's original backend.
+fn try_assemble_gpu_capture(
+    config: &DirectRecordingConfig,
+) -> std::result::Result<GpuCaptureParts, String> {
+    let capture_system = CaptureSystem::builder()
+        .with_backend_kind(CaptureBackendKind::WindowsGraphicsCapture)
+        .build()
+        .map_err(|error| format!("wgc capture system: {error}"))?;
+    let mut session = capture_system
+        .open_session(
+            resolve_capture_target(&crate::config::RecordingTarget::Region(config.region))
+                .map_err(|error| format!("capture target: {error}"))?,
+            gpu_surface_options(config),
+        )
+        .map_err(|error| format!("wgc surface session: {error}"))?;
+    // One probe frame validates the whole lane (WGC support, SDR target,
+    // single-monitor region) and yields the device and geometry needed to
+    // build the encoder before recording starts.
+    let probe = session
+        .capture_surface()
+        .map_err(|error| format!("wgc surface probe: {error}"))?;
+    let device = probe
+        .d3d11_device()
+        .ok_or_else(|| "surface frame carries no D3D11 device".to_string())?;
+    let context = unsafe { device.GetImmediateContext() }
+        .map_err(|error| format!("capture device context: {error}"))?;
+    let (texture_width, texture_height) = probe.texture_dimensions();
+    let (output_width, output_height) = config.output_dimensions();
+    let bitrate = snow_recording_export::video_quality::smart_quality_bitrate_bps(
+        output_width,
+        output_height,
+        config.output_fps,
+        &VideoEncodeConfig {
+            quality: 80,
+            speed: config.preset,
+        },
+        false,
+    );
+    let encoder = GpuH264Encoder::new(
+        &device,
+        &context,
+        texture_width,
+        texture_height,
+        output_width,
+        output_height,
+        config.output_fps,
+        bitrate,
+    )
+    .map_err(|error| format!("gpu encoder: {error}"))?;
+    drop(probe);
+    let stream = CaptureStream::spawn(
+        session,
+        CaptureStreamConfig {
+            target_fps: config.capture_fps,
+            min_fps: config.output_fps.min(config.capture_fps).max(1),
+            buffer_depth: 8,
+            max_consecutive_errors: 30,
+            adaptive_fps: false,
+            pause_on_resolution_change: false,
+            // The cursor is baked into the textures by WGC; the CPU
+            // cursor attachment would only stall the surface lane.
+            include_cursor: false,
+        },
+    )
+    .map_err(|error| format!("wgc surface stream: {error}"))?;
+    Ok(GpuCaptureParts { stream, encoder })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GpuAvailability {
+    Auto,
+    /// Test seam: simulate GPU initialization failure.
+    #[cfg(test)]
+    ForceUnavailable,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -191,50 +313,81 @@ impl DirectRecordingSession {
     }
 
     pub fn start(&mut self) -> Result<()> {
+        self.start_with_gpu_availability(GpuAvailability::Auto)
+    }
+
+    /// Test seam over the GPU zero-copy pipeline: `ForceUnavailable`
+    /// simulates any GPU initialization failure and exercises the CPU
+    /// fallback deterministically.
+    fn start_with_gpu_availability(&mut self, gpu: GpuAvailability) -> Result<()> {
         if self.state() != RecordingState::Created {
             return Err(ScreenRecorderError::InvalidConfig(
                 "direct recording can only start from Created state".to_string(),
             ));
         }
 
-        let capture_system = CaptureSystem::builder()
-            .with_backend_kind(self.config.capture_backend)
-            .build()?;
-        // The recording compositor and encoder both handle the desktop's
-        // native BGRA order, so the capture-side channel swizzle is skipped
-        // entirely. HDR captures pay one extra in-place swap; SDR recording
-        // is the norm.
-        let capture_session = capture_system.open_session(
-            resolve_capture_target(&RecordingTarget::Region(self.config.region))?,
-            CaptureOptions {
-                workload: CaptureWorkload::Continuous,
-                output_pixel_format: CapturePixelFormat::Bgra8,
-                ..CaptureOptions::default()
-            },
-        )?;
-        let capture_stream = CaptureStream::spawn(
-            capture_session,
-            CaptureStreamConfig {
-                target_fps: self.config.capture_fps,
-                min_fps: self.config.output_fps.min(self.config.capture_fps).max(1),
-                buffer_depth: 8,
-                max_consecutive_errors: 30,
-                adaptive_fps: false,
-                pause_on_resolution_change: false,
-                include_cursor: true,
-            },
-        )?;
-        let (click_tx, click_rx) = crossbeam_channel::bounded(CLICK_QUEUE_DEPTH);
-        let mouse_hook = MouseHookObserver::start(
-            (
-                self.config.region.x,
-                self.config.region.y,
-                self.config.region.width,
-                self.config.region.height,
-            ),
-            click_tx,
-        )
-        .map_err(ScreenRecorderError::Encode)?;
+        // GPU-first assembly: any failure (WGC unavailable, HDR target,
+        // multi-monitor region, no video processor or hardware encoder)
+        // falls back to the CPU pipeline with the configured backend.
+        let (gpu_attempt, gpu_fallback_reason) = match gpu {
+            GpuAvailability::Auto if gpu_zero_copy_eligible(&self.config) => {
+                match try_assemble_gpu_capture(&self.config) {
+                    Ok(parts) => (Some(parts), None),
+                    Err(reason) => (None, Some(reason)),
+                }
+            }
+            _ => (None, None),
+        };
+        let (capture_stream, mouse_hook, click_rx, gpu_encoder) = match gpu_attempt {
+            Some(parts) => {
+                // Overlay effects are gated off on the GPU lane, so the
+                // mouse hook has nothing to observe.
+                let (click_tx, click_rx) = crossbeam_channel::bounded(CLICK_QUEUE_DEPTH);
+                drop(click_tx);
+                (parts.stream, None, click_rx, Some(parts.encoder))
+            }
+            None => {
+                let capture_system = CaptureSystem::builder()
+                    .with_backend_kind(self.config.capture_backend)
+                    .build()?;
+                // The recording compositor and encoder both handle the
+                // desktop's native BGRA order, so the capture-side channel
+                // swizzle is skipped entirely. HDR captures pay one extra
+                // in-place swap; SDR recording is the norm.
+                let capture_session = capture_system.open_session(
+                    resolve_capture_target(&RecordingTarget::Region(self.config.region))?,
+                    CaptureOptions {
+                        workload: CaptureWorkload::Continuous,
+                        output_pixel_format: CapturePixelFormat::Bgra8,
+                        ..CaptureOptions::default()
+                    },
+                )?;
+                let capture_stream = CaptureStream::spawn(
+                    capture_session,
+                    CaptureStreamConfig {
+                        target_fps: self.config.capture_fps,
+                        min_fps: self.config.output_fps.min(self.config.capture_fps).max(1),
+                        buffer_depth: 8,
+                        max_consecutive_errors: 30,
+                        adaptive_fps: false,
+                        pause_on_resolution_change: false,
+                        include_cursor: true,
+                    },
+                )?;
+                let (click_tx, click_rx) = crossbeam_channel::bounded(CLICK_QUEUE_DEPTH);
+                let mouse_hook = MouseHookObserver::start(
+                    (
+                        self.config.region.x,
+                        self.config.region.y,
+                        self.config.region.width,
+                        self.config.region.height,
+                    ),
+                    click_tx,
+                )
+                .map_err(ScreenRecorderError::Encode)?;
+                (capture_stream, Some(mouse_hook), click_rx, None)
+            }
+        };
         let keyboard_input = self
             .config
             .keyboard
@@ -268,20 +421,41 @@ impl DirectRecordingSession {
                             }
                         }
                     }
-                    let encoder = match StreamingEncoder::create(config.streaming_config()) {
-                        Ok(encoder) => {
-                            let _ = ready_tx.send(Ok(()));
-                            encoder
+                    let pipeline = match gpu_encoder {
+                        Some(encoder) => {
+                            let mut streaming_config = config.streaming_config();
+                            streaming_config.external_video = Some(ExternalVideoTrack {
+                                extradata: encoder.extradata(),
+                                encoder_name: "h264_mf_gpu".into(),
+                            });
+                            match StreamingEncoder::create(streaming_config) {
+                                Ok(muxer) => {
+                                    let _ = ready_tx.send(Ok(()));
+                                    VideoPipeline::Gpu { encoder, muxer }
+                                }
+                                Err(error) => {
+                                    let message = error.to_string();
+                                    let _ = ready_tx.send(Err(message));
+                                    return Err(ScreenRecorderError::from(error));
+                                }
+                            }
                         }
-                        Err(error) => {
-                            let message = error.to_string();
-                            let _ = ready_tx.send(Err(message));
-                            return Err(ScreenRecorderError::from(error));
-                        }
+                        None => match StreamingEncoder::create(config.streaming_config()) {
+                            Ok(encoder) => {
+                                let _ = ready_tx.send(Ok(()));
+                                VideoPipeline::Cpu { encoder }
+                            }
+                            Err(error) => {
+                                let message = error.to_string();
+                                let _ = ready_tx.send(Err(message));
+                                return Err(ScreenRecorderError::from(error));
+                            }
+                        },
                     };
                     run_direct_worker(DirectWorkerInputs {
                         config,
-                        encoder,
+                        gpu_encoder: None,
+                        gpu_fallback_reason,
                         capture_stream,
                         mouse_hook,
                         click_rx,
@@ -290,6 +464,7 @@ impl DirectRecordingSession {
                         control_rx,
                         clock,
                         audio_stream,
+                        gpu_pipeline: pipeline,
                     })
                 })();
                 worker_state.store(state_to_u8(RecordingState::Stopped), Ordering::Release);
@@ -429,21 +604,107 @@ fn state_from_u8(value: u8) -> RecordingState {
 
 struct DirectWorkerInputs {
     config: DirectRecordingConfig,
-    encoder: StreamingEncoder,
+    gpu_encoder: Option<GpuH264Encoder>,
+    gpu_fallback_reason: Option<String>,
     capture_stream: CaptureStream,
-    mouse_hook: MouseHookObserver,
+    mouse_hook: Option<MouseHookObserver>,
     click_rx: Receiver<MouseClickObservation>,
     keyboard_input: Option<KeyboardInput>,
     compositor: VisualCompositor,
     control_rx: Receiver<ControlCommand>,
     clock: RecordingClock,
     audio_stream: Option<AudioStreamHandle>,
+    gpu_pipeline: VideoPipeline,
+}
+
+/// The worker's video sink: the in-process CPU encoder fed BGRA pixels, or
+/// the GPU encoder whose finished packets mux through the streaming
+/// encoder's external-video mode. Audio flows through the shared
+/// `StreamingEncoder` in both lanes.
+enum VideoPipeline {
+    Cpu {
+        encoder: StreamingEncoder,
+    },
+    Gpu {
+        encoder: GpuH264Encoder,
+        muxer: StreamingEncoder,
+    },
+}
+
+impl VideoPipeline {
+    fn audio_target(&mut self) -> &mut StreamingEncoder {
+        match self {
+            Self::Cpu { encoder } | Self::Gpu { muxer: encoder, .. } => encoder,
+        }
+    }
+
+    fn has_audio(&self) -> bool {
+        match self {
+            Self::Cpu { encoder } | Self::Gpu { muxer: encoder, .. } => encoder.has_audio(),
+        }
+    }
+
+    /// Flush the GPU encoder (if any), drain audio, and finalize the muxer.
+    fn finish(self) -> Result<StreamingEncoderReport> {
+        match self {
+            Self::Cpu { encoder } => encoder.finish().map_err(ScreenRecorderError::from),
+            Self::Gpu {
+                mut encoder,
+                mut muxer,
+            } => {
+                for packet in encoder.finish().map_err(|error| {
+                    ScreenRecorderError::Encode(format!("gpu encoder drain: {error}"))
+                })? {
+                    muxer.push_encoded_video_packet(
+                        packet.timestamp_ms,
+                        packet.is_keyframe,
+                        &packet.data,
+                    )?;
+                }
+                muxer.finish().map_err(ScreenRecorderError::from)
+            }
+        }
+    }
+
+    /// Submit one GPU surface frame and mux whatever packets appear.
+    fn push_surface_frame(
+        &mut self,
+        frame: &snow_capture::GpuSurfaceFrame,
+        timestamp_ms: u64,
+    ) -> Result<()> {
+        let Self::Gpu { encoder, muxer } = self else {
+            return Err(ScreenRecorderError::Encode(
+                "surface frames require the GPU pipeline".to_string(),
+            ));
+        };
+        let texture = frame.d3d11_texture().ok_or_else(|| {
+            ScreenRecorderError::Encode("surface frame carries no D3D11 texture".to_string())
+        })?;
+        let crop = frame.crop().map(|rect| snow_recording_gpu::SourceRect {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+        });
+        let packets = encoder
+            .submit(&texture, crop, timestamp_ms)
+            .map_err(|error| ScreenRecorderError::Encode(format!("gpu encode submit: {error}")))?;
+        for packet in packets {
+            muxer.push_encoded_video_packet(
+                packet.timestamp_ms,
+                packet.is_keyframe,
+                &packet.data,
+            )?;
+        }
+        Ok(())
+    }
 }
 
 fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport> {
     let DirectWorkerInputs {
         config,
-        mut encoder,
+        gpu_encoder: _gpu_encoder_placeholder,
+        gpu_fallback_reason,
         capture_stream,
         mouse_hook,
         click_rx,
@@ -452,7 +713,9 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         control_rx,
         clock,
         mut audio_stream,
+        mut gpu_pipeline,
     } = inputs;
+    let gpu_pipeline_active = matches!(gpu_pipeline, VideoPipeline::Gpu { .. });
     let _mouse_hook = mouse_hook;
     let clock_controller = clock.controller();
     // Initialization can take time; keys used before the worker is ready are not recording input.
@@ -467,7 +730,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
     let mut latest_frame = None;
     let output_interval_ms = (1_000 / u64::from(config.output_fps.max(1))).max(1);
     let mut next_overlay_frame_ms = 0u64;
-    let mut audio_mixer = encoder
+    let mut audio_mixer = gpu_pipeline
         .has_audio()
         .then(|| LiveAudioMixer::new(config.enable_system_audio, config.enable_microphone));
 
@@ -555,7 +818,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
             mixer.emit_ready(
                 clock.active_elapsed_duration(Instant::now()),
                 false,
-                &mut encoder,
+                gpu_pipeline.audio_target(),
             )?;
         }
         if stopping || canceled {
@@ -565,12 +828,29 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         // recomposition will emit a frame for this iteration. When it will,
         // pushing the freshly captured frame would land on the same
         // presentation timestamp and be replaced pixel-for-pixel by the
-        // recomposition, so the capture push is skipped outright.
-        let overlay_due = !paused && {
+        // recomposition, so the capture push is skipped outright. Overlay
+        // recomposition never applies to the GPU lane (effects are gated
+        // off there).
+        let overlay_due = !paused && !gpu_pipeline_active && {
             let now = clock.active_elapsed_ms(Instant::now());
             now >= next_overlay_frame_ms && compositor.has_active_animation(&config, now)
         };
         match capture_stream.recv_timeout(Duration::from_millis(20)) {
+            Ok(CaptureEvent::Surface(frame)) if gpu_pipeline_active => {
+                let instant = frame
+                    .metadata()
+                    .stream_timestamp()
+                    .map(|timestamp| timestamp.instant)
+                    .unwrap_or_else(Instant::now);
+                let now = clock.active_elapsed_ms(instant);
+                let timestamp_ms = monotonic_timestamp(&mut last_timestamp_ms, now);
+                // Duplicate desktop content repeats the previous output
+                // bit-for-bit; skipping keeps output timing correct because
+                // the muxer derives packet durations from timestamp gaps.
+                if !frame.is_duplicate() {
+                    gpu_pipeline.push_surface_frame(&frame, timestamp_ms)?;
+                }
+            }
             Ok(event) => process_capture_event(
                 event,
                 CaptureEventContext {
@@ -580,7 +860,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                     latest_frame: &mut latest_frame,
                     dropped_capture_frames: &mut dropped_capture_frames,
                     compositor: &mut compositor,
-                    encoder: &mut encoder,
+                    encoder: gpu_pipeline.audio_target(),
                     suppress_push: overlay_due,
                 },
             )?,
@@ -591,7 +871,9 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
             let now = clock.active_elapsed_ms(Instant::now());
             let timestamp_ms = monotonic_timestamp(&mut last_timestamp_ms, now);
             let composed = compositor.compose(&config, frame, timestamp_ms)?;
-            encoder.push_rgba_frame(timestamp_ms, composed.as_slice())?;
+            gpu_pipeline
+                .audio_target()
+                .push_rgba_frame(timestamp_ms, composed.as_slice())?;
             next_overlay_frame_ms = timestamp_ms.saturating_add(output_interval_ms);
         }
     }
@@ -607,19 +889,35 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
     }
 
     for event in capture_stream.stop_and_drain() {
-        process_capture_event(
-            event,
-            CaptureEventContext {
-                config: &config,
-                clock: &clock,
-                last_timestamp_ms: &mut last_timestamp_ms,
-                latest_frame: &mut latest_frame,
-                dropped_capture_frames: &mut dropped_capture_frames,
-                compositor: &mut compositor,
-                encoder: &mut encoder,
-                suppress_push: false,
-            },
-        )?;
+        match event {
+            CaptureEvent::Surface(frame) if gpu_pipeline_active => {
+                let instant = frame
+                    .metadata()
+                    .stream_timestamp()
+                    .map(|timestamp| timestamp.instant)
+                    .unwrap_or_else(Instant::now);
+                let timestamp_ms =
+                    monotonic_timestamp(&mut last_timestamp_ms, clock.active_elapsed_ms(instant));
+                if !frame.is_duplicate() {
+                    gpu_pipeline.push_surface_frame(&frame, timestamp_ms)?;
+                }
+            }
+            event => {
+                process_capture_event(
+                    event,
+                    CaptureEventContext {
+                        config: &config,
+                        clock: &clock,
+                        last_timestamp_ms: &mut last_timestamp_ms,
+                        latest_frame: &mut latest_frame,
+                        dropped_capture_frames: &mut dropped_capture_frames,
+                        compositor: &mut compositor,
+                        encoder: gpu_pipeline.audio_target(),
+                        suppress_push: false,
+                    },
+                )?;
+            }
+        }
     }
     let final_at = Instant::now();
     clock_controller.finalize(final_at);
@@ -631,15 +929,21 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         }
     }
     if let Some(mixer) = audio_mixer.as_mut() {
-        mixer.emit_ready(clock.active_elapsed_duration(final_at), true, &mut encoder)?;
+        mixer.emit_ready(
+            clock.active_elapsed_duration(final_at),
+            true,
+            gpu_pipeline.audio_target(),
+        )?;
     }
     audio_frames_dropped = audio_frames_dropped
         .saturating_add(audio_mixer.as_ref().map_or(0, |mixer| mixer.dropped_frames));
-    let report = encoder.finish()?;
+    let report = gpu_pipeline.finish()?;
     Ok(report_from_encoder(
         report,
         dropped_capture_frames,
         audio_frames_dropped,
+        gpu_pipeline_active,
+        gpu_fallback_reason,
     ))
 }
 
@@ -647,6 +951,8 @@ fn report_from_encoder(
     report: StreamingEncoderReport,
     dropped_capture_frames: u64,
     audio_frames_dropped: u64,
+    used_gpu_pipeline: bool,
+    gpu_fallback_reason: Option<String>,
 ) -> DirectRecordingReport {
     DirectRecordingReport {
         encoded_frames: report.encoded_frames,
@@ -654,6 +960,8 @@ fn report_from_encoder(
         dropped_capture_frames,
         video_encoder: report.video_encoder,
         used_hardware_video_encoder: report.used_hardware_video_encoder,
+        used_gpu_pipeline,
+        gpu_fallback_reason,
         encoded_audio_frames: report.encoded_audio_frames,
         inserted_silence_frames: report.inserted_silence_frames,
         dropped_audio_frames: report
@@ -2165,6 +2473,260 @@ mod tests {
         assert_eq!(
             compositor.clicks.front().map(|click| click.x),
             Some((CLICK_QUEUE_DEPTH * 2) as i32)
+        );
+    }
+
+    // ---- GPU zero-copy gating ----
+
+    #[test]
+    fn gpu_zero_copy_eligibility_matrix() {
+        let mut value = config();
+        value.prefer_hardware_encoder = true;
+        assert!(
+            gpu_zero_copy_eligible(&value),
+            "MP4 + H264 + hardware + auto backend + no overlays is eligible"
+        );
+
+        let mut value = config();
+        value.prefer_hardware_encoder = true;
+        value.format = ExportFormat::Gif;
+        assert!(!gpu_zero_copy_eligible(&value), "non-MP4 output");
+
+        let mut value = config();
+        value.prefer_hardware_encoder = true;
+        value.codec = VideoCodec::H265;
+        assert!(!gpu_zero_copy_eligible(&value), "non-H264 codec");
+
+        let mut value = config();
+        value.format = ExportFormat::Mp4;
+        value.codec = VideoCodec::H264;
+        value.prefer_hardware_encoder = false;
+        assert!(!gpu_zero_copy_eligible(&value), "software preference");
+
+        let mut value = config();
+        value.prefer_hardware_encoder = true;
+        value.capture_backend = CaptureBackendKind::DxgiDuplication;
+        assert!(!gpu_zero_copy_eligible(&value), "pinned non-WGC backend");
+
+        let mut value = config();
+        value.prefer_hardware_encoder = true;
+        value.capture_backend = CaptureBackendKind::Gdi;
+        assert!(!gpu_zero_copy_eligible(&value), "pinned GDI backend");
+
+        let mut value = config();
+        value.prefer_hardware_encoder = true;
+        value.keyboard = Some(crate::keyboard_overlay::KeyboardOverlayConfig {
+            keycap_size: 64,
+            background_rgba: [0, 0, 0, 204],
+            text_rgba: [255, 255, 255, 255],
+            border_rgba: [255, 255, 255, 80],
+            labels: Default::default(),
+        });
+        assert!(
+            !gpu_zero_copy_eligible(&value),
+            "keyboard overlay needs CPU pixels"
+        );
+
+        let mut value = config();
+        value.prefer_hardware_encoder = true;
+        value.mouse_trail_rgba = [20, 40, 60, 255];
+        assert!(!gpu_zero_copy_eligible(&value), "mouse trail effect");
+
+        let mut value = config();
+        value.prefer_hardware_encoder = true;
+        value.mouse_click_rgba = [20, 40, 60, 90];
+        assert!(!gpu_zero_copy_eligible(&value), "click ripple effect");
+
+        // The cursor itself stays eligible: WGC bakes it into the texture.
+        let mut value = config();
+        value.prefer_hardware_encoder = true;
+        value.show_cursor = true;
+        assert!(gpu_zero_copy_eligible(&value));
+
+        // Scaling stays eligible: the video processor scales on the GPU.
+        let mut value = config();
+        value.prefer_hardware_encoder = true;
+        value.maximum_width = Some(1280);
+        value.maximum_height = Some(720);
+        assert!(gpu_zero_copy_eligible(&value));
+    }
+
+    #[test]
+    fn gpu_surface_options_bake_cursor_flag() {
+        let mut value = config();
+        value.show_cursor = true;
+        assert_eq!(
+            gpu_surface_options(&value).output_surface,
+            SurfaceDelivery::GpuTexture {
+                native_cursor: true
+            }
+        );
+        value.show_cursor = false;
+        assert_eq!(
+            gpu_surface_options(&value).output_surface,
+            SurfaceDelivery::GpuTexture {
+                native_cursor: false
+            }
+        );
+    }
+
+    #[test]
+    fn report_marks_gpu_pipeline_usage() {
+        let report = report_from_encoder(
+            StreamingEncoderReport {
+                encoded_frames: 7,
+                video_encoder: "h264_mf_gpu".into(),
+                used_hardware_video_encoder: true,
+                ..StreamingEncoderReport::default()
+            },
+            0,
+            0,
+            true,
+            None,
+        );
+        assert!(report.used_gpu_pipeline);
+        assert_eq!(report.video_encoder, "h264_mf_gpu");
+        assert!(report.used_hardware_video_encoder);
+        assert!(report.gpu_fallback_reason.is_none());
+
+        let report = report_from_encoder(
+            StreamingEncoderReport::default(),
+            0,
+            0,
+            false,
+            Some("no hardware encoder".into()),
+        );
+        assert!(!report.used_gpu_pipeline);
+        assert_eq!(
+            report.gpu_fallback_reason.as_deref(),
+            Some("no hardware encoder")
+        );
+    }
+
+    fn decoded_frames_and_seconds(path: &std::path::Path) -> (usize, f64) {
+        use ffmpeg_next as ffmpeg;
+        let mut input = ffmpeg::format::input(path).unwrap();
+        let stream = input.streams().best(ffmpeg::media::Type::Video).unwrap();
+        let stream_index = stream.index();
+        let time_base = stream.time_base();
+        let mut decoder = ffmpeg::codec::context::Context::from_parameters(stream.parameters())
+            .unwrap()
+            .decoder()
+            .video()
+            .unwrap();
+        let mut decoded = ffmpeg::frame::Video::empty();
+        let mut count = 0usize;
+        let mut last_pts = None;
+        let mut first_pts = None;
+        for (stream, packet) in input.packets() {
+            if stream.index() != stream_index {
+                continue;
+            }
+            decoder.send_packet(&packet).unwrap();
+            while decoder.receive_frame(&mut decoded).is_ok() {
+                if let Some(pts) = decoded.pts() {
+                    first_pts.get_or_insert(pts);
+                    last_pts = Some(pts);
+                }
+                count += 1;
+            }
+        }
+        decoder.send_eof().unwrap();
+        while decoder.receive_frame(&mut decoded).is_ok() {
+            if let Some(pts) = decoded.pts() {
+                first_pts.get_or_insert(pts);
+                last_pts = Some(pts);
+            }
+            count += 1;
+        }
+        let seconds = match (first_pts, last_pts) {
+            (Some(first), Some(last)) => {
+                (last - first) as f64 * f64::from(time_base.numerator())
+                    / f64::from(time_base.denominator())
+            }
+            _ => 0.0,
+        };
+        (count, seconds)
+    }
+
+    fn desktop_region(width: u32, height: u32) -> RecordingRegion {
+        RecordingRegion::new(0, 0, width, height)
+    }
+
+    #[test]
+    #[ignore = "requires an interactive desktop"]
+    fn forced_gpu_unavailability_records_via_cpu_pipeline() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut value = config();
+        value.region = desktop_region(320, 240);
+        value.output_path = directory.path().join("cpu-fallback.mp4");
+        value.capture_fps = 30;
+        value.output_fps = 30;
+        value.prefer_hardware_encoder = true;
+        assert!(gpu_zero_copy_eligible(&value));
+
+        let mut session = DirectRecordingSession::create(value).unwrap();
+        session
+            .start_with_gpu_availability(GpuAvailability::ForceUnavailable)
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(900));
+        let report = session.stop().unwrap();
+
+        assert!(!report.used_gpu_pipeline, "forced failure must fall back");
+        assert!(report.encoded_frames > 0);
+        assert!(
+            report.gpu_fallback_reason.is_none(),
+            "forced unavailability carries no reason"
+        );
+        let (frames, _seconds) =
+            decoded_frames_and_seconds(&directory.path().join("cpu-fallback.mp4"));
+        // A quiet desktop legitimately collapses to one non-duplicate frame;
+        // the fallback's decodable output is what this test verifies.
+        assert!(frames > 0, "CPU fallback recording must decode");
+    }
+
+    #[test]
+    #[ignore = "requires an interactive desktop, WGC, and a hardware H.264 encoder"]
+    fn gpu_session_records_with_pause_and_resume() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut value = config();
+        value.region = desktop_region(640, 360);
+        value.output_path = directory.path().join("gpu-recording.mp4");
+        value.capture_fps = 30;
+        value.output_fps = 30;
+        value.prefer_hardware_encoder = true;
+
+        let mut session = DirectRecordingSession::create(value).unwrap();
+        session.start().unwrap();
+        std::thread::sleep(Duration::from_millis(1_100));
+        if let Err(error) = session.pause() {
+            let state = session.state();
+            let report = session.stop();
+            panic!("pause failed (state {state:?}, stop {report:?}): {error}");
+        }
+        std::thread::sleep(Duration::from_millis(500));
+        session.resume().unwrap();
+        std::thread::sleep(Duration::from_millis(700));
+        let report = session.stop().unwrap();
+
+        assert!(
+            report.used_gpu_pipeline,
+            "eligible session must use the GPU lane: {report:?}"
+        );
+        assert_eq!(report.video_encoder, "h264_mf_gpu");
+        assert!(report.encoded_frames > 0);
+
+        let path = directory.path().join("gpu-recording.mp4");
+        let (frames, seconds) = decoded_frames_and_seconds(&path);
+        assert!(
+            frames > 20,
+            "expected a real recording, got {frames} frames"
+        );
+        // ~1.8 s of active recording; the paused half second must not
+        // appear in the output timeline.
+        assert!(
+            seconds > 1.0 && seconds < 2.6,
+            "active duration after pause should be ~1.8s, got {seconds}"
         );
     }
 }

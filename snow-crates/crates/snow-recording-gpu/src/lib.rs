@@ -69,6 +69,13 @@ pub struct GpuH264Encoder {
     timings: GpuStageTimings,
 }
 
+// SAFETY: the encoder wraps D3D11 and Media Foundation interfaces from the
+// capture device, which is created without `D3D11_CREATE_DEVICE_SINGLETHREADED`;
+// the runtime serializes cross-thread access internally. The recording
+// worker thread owns the encoder while the capture worker publishes
+// textures through the same device, exactly like the CPU readback lane.
+unsafe impl Send for GpuH264Encoder {}
+
 impl GpuH264Encoder {
     /// Create the converter and encoder on `device`.
     ///

@@ -13,8 +13,8 @@ use std::time::Instant;
 use anyhow::Context;
 use crossbeam_channel::{Receiver, Sender};
 use windows::Win32::Graphics::Direct3D11::{
-    D3D11_BIND_SHADER_RESOURCE, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, ID3D11Device,
-    ID3D11DeviceContext, ID3D11Resource, ID3D11Texture2D,
+    D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, ID3D11Device, ID3D11DeviceContext, ID3D11Resource,
+    ID3D11Texture2D,
 };
 use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT, DXGI_SAMPLE_DESC};
 use windows::core::Interface;
@@ -110,7 +110,10 @@ impl SurfaceDeliveryPipeline {
                 Quality: 0,
             },
             Usage: D3D11_USAGE_DEFAULT,
-            BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
+            // No bind flags: consumers create video-processor input views,
+            // and some drivers reject those on shader-resource-bound
+            // textures.
+            BindFlags: 0,
             CPUAccessFlags: 0,
             MiscFlags: 0,
         };

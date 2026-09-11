@@ -20,6 +20,7 @@ pub use export::{
     ExportStageDurationsMs, ExportTask,
 };
 pub use streaming::{
-    StreamingAudioConfig, StreamingEncoder, StreamingEncoderConfig, StreamingEncoderReport,
-    StreamingPixelOrder, cleanup_stale_staging_files, scaled_output_dimensions,
+    ExternalVideoTrack, StreamingAudioConfig, StreamingEncoder, StreamingEncoderConfig,
+    StreamingEncoderReport, StreamingPixelOrder, cleanup_stale_staging_files,
+    scaled_output_dimensions,
 };

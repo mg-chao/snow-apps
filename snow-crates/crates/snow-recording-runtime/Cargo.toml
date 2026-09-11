@@ -17,6 +17,7 @@ snow-cursor = { path = "../snow-cursor" }
 snow-audio-recorder = { path = "../snow-audio-recorder" }
 snow-recording-model = { path = "../snow-recording-model" }
 snow-recording-export = { path = "../snow-recording-export" }
+snow-recording-gpu = { path = "../snow-recording-gpu" }
 crossbeam-channel.workspace = true
 ffmpeg-next.workspace = true
 rayon.workspace = true
@@ -33,6 +34,7 @@ windows = { workspace = true, features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_Direct3D11",
     "Win32_Graphics_Direct2D",
     "Win32_Graphics_Direct2D_Common",
     "Win32_Graphics_Dxgi_Common",
