@@ -15,6 +15,7 @@ fn main() {
         .compile("snow_macos_native");
     for framework in [
         "AppKit",
+        "ApplicationServices",
         "CoreGraphics",
         "CoreMedia",
         "CoreVideo",

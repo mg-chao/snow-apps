@@ -3,8 +3,9 @@
 #include <QStringList>
 
 namespace snow_shot::app {
-inline bool shouldShowMainWindowOnStartup(const QStringList& arguments) {
-    if (arguments.contains(QStringLiteral("--autostart"))) {
+inline bool shouldShowMainWindowOnStartup(const QStringList& arguments,
+                                          bool launchedAtLogin = false) {
+    if (launchedAtLogin || arguments.contains(QStringLiteral("--autostart"))) {
         return false;
     }
 #ifdef Q_OS_MACOS

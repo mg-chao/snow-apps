@@ -8,6 +8,8 @@
 
 #ifdef Q_OS_WIN
 #include "globalmousebackend_p.h"
+#elif defined(Q_OS_MACOS)
+#include "snow_shot/platform/macos/globalmousebackend.h"
 #endif
 
 namespace snow_shot::presentation {
@@ -401,6 +403,10 @@ detail::createGlobalMouseBackend(detail::GlobalMouseNativeApi api) {
 #endif
 
 std::unique_ptr<GlobalMouseBackend> createGlobalMouseBackend() {
+#ifdef Q_OS_MACOS
+    return snow_shot::platform::macos::createGlobalMouseBackend();
+#else
     return std::make_unique<NativeGlobalMouseBackend>();
+#endif
 }
 } // namespace snow_shot::presentation

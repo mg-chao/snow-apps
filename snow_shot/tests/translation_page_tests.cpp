@@ -37,6 +37,7 @@
 #include <QFontDatabase>
 #include <QInputMethodEvent>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QMimeData>
 #include <QLayout>
 #include <QLabel>
@@ -453,6 +454,55 @@ void selectedTextNavigation() {
     qunsetenv("SNOW_SHOT_API_BASE_URL");
 }
 
+void nativeCopyShortcutsMatchTheirActions() {
+    Server server;
+    SnowShotApiClient client(server.url());
+    CloseTrackingWindow owner;
+    auto* page = new TranslationPageWidget(&owner, &client, 0);
+    QObject::connect(page, &TranslationPageWidget::closeWindowRequested, &owner, &QWidget::close);
+    owner.show();
+    auto* source = child<AdTextEdit>(*page, "translationSourceText");
+    auto* result = child<AdTextEdit>(*page, "translationResultText");
+    const QKeySequence copyKeys(QKeySequence::Copy);
+    const QKeySequence copyCloseKeys(QKeyCombination(Qt::ControlModifier, Qt::Key_Q));
+    for (const auto& locale :
+         {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
+        QTranslator translator;
+        require(translator.load(QStringLiteral("snow_shot_%1.qm").arg(locale),
+                                QStringLiteral(SNOW_SHOT_TEST_TRANSLATIONS_DIR)),
+                "load Copy shortcut translations");
+        QCoreApplication::installTranslator(&translator);
+        flushEvents();
+        require(child<QAction>(*page, "translationCopy")->text() ==
+                        translator.translate("TranslationPageWidget", "Copy (%1)")
+                            .arg(copyKeys.toString(QKeySequence::NativeText)) &&
+                    child<QAction>(*page, "translationCopyAndClose")->text() ==
+                        translator.translate("TranslationPageWidget", "Copy and Close (%1)")
+                            .arg(copyCloseKeys.toString(QKeySequence::NativeText)),
+                "all translated Copy labels must match the native action keys");
+        QCoreApplication::removeTranslator(&translator);
+    }
+    source->setPlainText(QStringLiteral("source text"));
+    waitUntil([&] { return server.streams.size() == 1; }, "start Copy shortcut fixture");
+    server.delta(0, QStringLiteral("translated result"));
+    waitUntil([&] { return result->toPlainText() == QStringLiteral("translated result"); },
+              "show Copy shortcut result");
+    source->selectAll();
+    key(source, copyKeys[0].key(), copyKeys[0].keyboardModifiers());
+    require(QApplication::clipboard()->text() == source->toPlainText(),
+            "the displayed native Copy shortcut copies selected source text");
+    QTextCursor cursor = source->textCursor();
+    cursor.clearSelection();
+    source->setTextCursor(cursor);
+    key(source, copyKeys[0].key(), copyKeys[0].keyboardModifiers());
+    require(QApplication::clipboard()->text() == result->toPlainText(),
+            "the displayed native Copy shortcut copies the result without a selection");
+    key(source, copyCloseKeys[0].key(), copyCloseKeys[0].keyboardModifiers());
+    require(owner.closeCount == 1 && !owner.isVisible() &&
+                QApplication::clipboard()->text() == result->toPlainText(),
+            "the displayed native Copy and Close shortcut copies the result and closes its owner");
+}
+
 void editorAndShortcutBehavior() {
     Server server;
     SnowShotApiClient client(server.url());
@@ -468,6 +518,14 @@ void editorAndShortcutBehavior() {
     require(!spin->spinning() && spin->isHidden(), "idle translation has no loading indicator");
     auto* copy = child<QAction>(*page, "translationCopy");
     auto* copyClose = child<QAction>(*page, "translationCopyAndClose");
+    require(copy->text() ==
+                    QStringLiteral("Copy (%1)")
+                        .arg(QKeySequence(QKeySequence::Copy).toString(QKeySequence::NativeText)) &&
+                copyClose->text() ==
+                    QStringLiteral("Copy and Close (%1)")
+                        .arg(QKeySequence(QKeyCombination(Qt::ControlModifier, Qt::Key_Q))
+                                 .toString(QKeySequence::NativeText)),
+            "action labels must display the native keys that the event filter actually matches");
     auto* floating = child<AdButton>(*page, "translationActions");
     auto* menu = child<AdContextMenu>(*page, "translationActionsMenu");
     require(!menu->actionIcon(copy).isValid() && !menu->actionIcon(copyClose).isValid(),
@@ -800,10 +858,11 @@ void navigationThemesLanguagesAndGeometry() {
                         "load complete translation catalog");
                 QCoreApplication::installTranslator(&translator);
                 flushEvents();
-                require(
-                    child<QAction>(*page, "translationCopyAndClose")->text() ==
-                        translator.translate("TranslationPageWidget", "Copy and Close (Ctrl+Q)"),
-                    "floating actions retranslate immediately");
+                require(child<QAction>(*page, "translationCopyAndClose")->text() ==
+                            translator.translate("TranslationPageWidget", "Copy and Close (%1)")
+                                .arg(QKeySequence(QKeyCombination(Qt::ControlModifier, Qt::Key_Q))
+                                         .toString(QKeySequence::NativeText)),
+                        "floating actions retranslate immediately");
                 for (const bool collapsed : {false, true}) {
                     sidebar->setCollapsed(collapsed);
                     for (const QSize size : {QSize(900, 556), QSize(512, 316), QSize(1200, 900)}) {
@@ -1099,6 +1158,11 @@ int main(int argc, char** argv) {
     require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
             "enable optional translation page for translation UI tests");
     styles::ThemeManager::instance().initialize(app);
+    if (app.arguments().contains(QStringLiteral("--copy-shortcuts-only"))) {
+        nativeCopyShortcutsMatchTheirActions();
+        storage.shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--screenshot-settings"))) {
         screenshotSettingsGeometry();
         sharedServiceSelectors();
@@ -1125,6 +1189,7 @@ int main(int argc, char** argv) {
         editorContentGeometry();
         languageDropdowns();
         selectorContentGeometry();
+        nativeCopyShortcutsMatchTheirActions();
         editorAndShortcutBehavior();
         navigationThemesLanguagesAndGeometry();
     }

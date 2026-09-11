@@ -5,6 +5,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 
 #ifdef Q_OS_MACOS
+#include "snow_shot/platform/macos/focusedfullscreenwindow.h"
 #include "snow_shot/platform/macos/globalshortcutbackend.h"
 #endif
 
@@ -30,10 +31,14 @@ namespace snow_shot::presentation {
 namespace {
 
 bool selectedTextShortcutEnabled() {
-#ifdef Q_OS_MACOS
-    return false;
-#else
     return snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled();
+}
+
+bool platformFocusedFullscreenWindowExists() {
+#ifdef Q_OS_MACOS
+    return snow_shot::platform::macos::focusedFullscreenWindowExists();
+#else
+    return snow_shot::platform::windows::focusedFullscreenWindowExists();
 #endif
 }
 
@@ -631,8 +636,7 @@ class GlobalShortcutManager::Impl {
           m_focusedFullscreenDetector(
               focusedFullscreenDetector
                   ? std::move(focusedFullscreenDetector)
-                  : std::function<bool()>(
-                        &snow_shot::platform::windows::focusedFullscreenWindowExists)) {
+                  : std::function<bool()>(&platformFocusedFullscreenWindowExists)) {
         for (GlobalShortcutAction action : ALL_ACTIONS) {
             GlobalShortcutRegistrationState initialState;
             initialState.action = action;

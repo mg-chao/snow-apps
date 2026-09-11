@@ -1835,6 +1835,15 @@ ScreenshotScrollingRecognitionMode ScreenshotToolPalette::scrollingRecognitionMo
     return m_scrollingRecognitionMode;
 }
 
+void ScreenshotToolPalette::setScrollingAutoScroll(bool enabled) {
+    enabled = enabled && m_scrollingScreenshotMode;
+    if (m_scrollingAutoScroll == enabled)
+        return;
+    m_scrollingAutoScroll = enabled;
+    updateScrollingRecognitionButtons();
+    emit scrollingAutoScrollChanged(enabled);
+}
+
 void ScreenshotToolPalette::updateScrollingRecognitionButtons() {
     setScreenshotToolPaletteButtonActive(m_scrollingAutoScrollButton, m_scrollingAutoScroll);
     const auto updateButton = [this](adqt::widgets::AdButton* button,
@@ -5907,11 +5916,8 @@ void ScreenshotToolPalette::createScrollingRecognitionActionFamily() {
                                          actionButtonMetrics(1.0).buttonSize * 3 +
                                              STYLE_GROUP_SPACING * 4 + STYLE_ITEM_SPACING +
                                              TOOLBAR_SEPARATOR_WIDTH);
-    connect(m_scrollingAutoScrollButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-        m_scrollingAutoScroll = !m_scrollingAutoScroll;
-        updateScrollingRecognitionButtons();
-        emit scrollingAutoScrollChanged(m_scrollingAutoScroll);
-    });
+    connect(m_scrollingAutoScrollButton, &adqt::widgets::AdButton::clicked, this,
+            [this]() { setScrollingAutoScroll(!m_scrollingAutoScroll); });
     connect(m_scrollingVerticalButton, &adqt::widgets::AdButton::clicked, this, [this]() {
         setScrollingRecognitionMode(ScreenshotScrollingRecognitionMode::Vertical);
     });

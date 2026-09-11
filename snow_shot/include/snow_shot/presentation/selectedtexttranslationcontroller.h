@@ -13,6 +13,7 @@ enum class SelectedTextStatus {
     Selected,
     NoSelection,
     Unsupported,
+    PermissionDenied,
     Busy,
     TimedOut,
     Failed
@@ -46,6 +47,7 @@ class SelectedTextTranslationController final : public QObject {
   signals:
     void textReady(const QString& text);
     void operationFailed(const QString& message);
+    void permissionRequired();
 
   private:
     void acceptResult(const SelectedTextCaptureResult& result);

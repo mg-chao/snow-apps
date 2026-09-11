@@ -204,6 +204,7 @@ class ScreenshotToolPalette final : public QWidget {
     [[nodiscard]] std::optional<Tool> activeTool() const;
     void setHistoryState(const SnowCanvasHistoryState& state);
     void setScrollingScreenshotMode(bool enabled);
+    void setScrollingAutoScroll(bool enabled);
     [[nodiscard]] bool scrollingScreenshotMode() const;
     void setScrollingRecognitionMode(ScreenshotScrollingRecognitionMode mode);
     [[nodiscard]] ScreenshotScrollingRecognitionMode scrollingRecognitionMode() const;

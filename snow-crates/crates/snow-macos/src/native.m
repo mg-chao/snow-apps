@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#import <ApplicationServices/ApplicationServices.h>
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
 
 #include "native.h"
@@ -144,6 +145,89 @@ int snow_macos_windows(SnowMacWindow* windows, size_t capacity, size_t* count) {
         }
         *count = total;
         return total <= capacity;
+    }
+}
+
+// Query the captured window's application, not the system-wide AX root: the
+// screenshot overlay must never become the hit-test target. Permission denial,
+// unsupported app controls and timed-out applications all fall back to the window.
+int snow_macos_window_element(uint32_t window_id, int32_t x, int32_t y, SnowMacWindow* element) {
+    @autoreleasepool {
+        if (element == NULL || window_id == 0 || !AXIsProcessTrusted())
+            return 0;
+        NSArray* windows = CFBridgingRelease(
+            CGWindowListCopyWindowInfo(kCGWindowListOptionIncludingWindow, window_id));
+        NSDictionary* window = windows.firstObject;
+        if (window == nil ||
+            [window[(__bridge NSString*)kCGWindowNumber] unsignedIntValue] != window_id)
+            return 0;
+        const pid_t pid = [window[(__bridge NSString*)kCGWindowOwnerPID] intValue];
+        CGRect bounds;
+        if (pid <= 0 || pid == getpid() ||
+            !CGRectMakeWithDictionaryRepresentation(
+                (__bridge CFDictionaryRef)window[(__bridge NSString*)kCGWindowBounds], &bounds))
+            return 0;
+        CGDirectDisplayID display = CGMainDisplayID();
+        uint32_t found = 0;
+        CGGetDisplaysWithPoint(bounds.origin, 1, &display, &found);
+        const CGRect displayBounds = CGDisplayBounds(display);
+        const double scale = display_scale(display);
+        const double desktopScale = desktop_scale();
+        const CGPoint point = CGPointMake(
+            displayBounds.origin.x + ((double)x - displayBounds.origin.x * desktopScale) / scale,
+            displayBounds.origin.y + ((double)y - displayBounds.origin.y * desktopScale) / scale);
+        if (!CGRectContainsPoint(bounds, point))
+            return 0;
+        AXUIElementRef application = AXUIElementCreateApplication(pid);
+        if (AXUIElementSetMessagingTimeout(application, 0.03f) != kAXErrorSuccess) {
+            CFRelease(application);
+            return 0;
+        }
+        AXUIElementRef hit = NULL;
+        const AXError status =
+            AXUIElementCopyElementAtPosition(application, (float)point.x, (float)point.y, &hit);
+        CFRelease(application);
+        if (status != kAXErrorSuccess || hit == NULL) {
+            if (hit != NULL)
+                CFRelease(hit);
+            return 0;
+        }
+        if (AXUIElementSetMessagingTimeout(hit, 0.03f) != kAXErrorSuccess) {
+            CFRelease(hit);
+            return 0;
+        }
+        CFTypeRef position = NULL;
+        CFTypeRef size = NULL;
+        CGPoint origin = CGPointZero;
+        CGSize extent = CGSizeZero;
+        const bool valid =
+            AXUIElementCopyAttributeValue(hit, kAXPositionAttribute, &position) ==
+                kAXErrorSuccess &&
+            AXUIElementCopyAttributeValue(hit, kAXSizeAttribute, &size) == kAXErrorSuccess &&
+            position != NULL && size != NULL && CFGetTypeID(position) == AXValueGetTypeID() &&
+            CFGetTypeID(size) == AXValueGetTypeID() &&
+            AXValueGetValue((AXValueRef)position, kAXValueCGPointType, &origin) &&
+            AXValueGetValue((AXValueRef)size, kAXValueCGSizeType, &extent);
+        if (position != NULL)
+            CFRelease(position);
+        if (size != NULL)
+            CFRelease(size);
+        CFRelease(hit);
+        if (!valid || !isfinite(origin.x) || !isfinite(origin.y) || !isfinite(extent.width) ||
+            !isfinite(extent.height))
+            return 0;
+        const CGRect clipped = CGRectIntersection(bounds, (CGRect){origin, extent});
+        if (CGRectIsEmpty(clipped) || CGRectIsNull(clipped) || !CGRectContainsPoint(clipped, point))
+            return 0;
+        *element =
+            (SnowMacWindow){window_id,
+                            (int32_t)lround(displayBounds.origin.x * desktopScale +
+                                            (clipped.origin.x - displayBounds.origin.x) * scale),
+                            (int32_t)lround(displayBounds.origin.y * desktopScale +
+                                            (clipped.origin.y - displayBounds.origin.y) * scale),
+                            (uint32_t)lround(clipped.size.width * scale),
+                            (uint32_t)lround(clipped.size.height * scale)};
+        return element->width > 0 && element->height > 0;
     }
 }
 

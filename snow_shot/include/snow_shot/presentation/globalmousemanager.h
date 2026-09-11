@@ -31,6 +31,7 @@ class GlobalMouseManager final : public QObject {
     ~GlobalMouseManager() override;
     void initialize();
     void shutdown();
+    void retryInitialization();
     void setCaptureAvailable(bool available);
     void cancelGesture(quint64 id);
     void beginButtonDrag(settings::SettingsGlobalMouseAction action);
@@ -38,6 +39,7 @@ class GlobalMouseManager final : public QObject {
   signals:
     void dragEvent(const snow_shot::presentation::GlobalMouseDragEvent& event);
     void operationFailed(const QString& message);
+    void inputPermissionRequired(const QString& message);
 
   private:
     struct Impl;

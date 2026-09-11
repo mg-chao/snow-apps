@@ -195,11 +195,20 @@ shortcutValidationMessage(const snow_shot::presentation::GlobalShortcutValidatio
     }
 
     if (!displayShortcut.isEmpty()) {
+#ifdef Q_OS_MACOS
+        return QObject::tr("%1 cannot be registered as a global shortcut, try another key")
+            .arg(displayShortcut);
+#else
         return QObject::tr("%1 cannot be registered as a Windows global shortcut, try another key")
             .arg(displayShortcut);
+#endif
     }
+#ifdef Q_OS_MACOS
+    return QObject::tr("This key cannot be registered as a global shortcut, try another key");
+#else
     return QObject::tr(
         "This key cannot be registered as a Windows global shortcut, try another key");
+#endif
 }
 
 class ShortcutConfigInfoButton final : public adqt::widgets::AdButton {
@@ -1175,7 +1184,11 @@ QString ShortcutKeyRow::registrationTooltipText() const {
             reason = tr("already used by another application or action");
             break;
         case snow_shot::presentation::GlobalShortcutFailureReason::InvalidShortcut:
+#ifdef Q_OS_MACOS
+            reason = tr("not supported as a global shortcut");
+#else
             reason = tr("not supported as a Windows global shortcut");
+#endif
             break;
         case snow_shot::presentation::GlobalShortcutFailureReason::UnsupportedPlatform:
             reason = tr("global shortcuts are not supported on this platform");

@@ -76,22 +76,76 @@ impl ElementRegionService {
     pub(crate) fn hit_test_point(
         &mut self,
         point: ScreenPoint,
-        _mode: HitTestMode,
+        mode: HitTestMode,
     ) -> Result<Option<Vec<ElementRect>>, String> {
-        // This first macOS backend snaps to windows. Element-level AX traversal is a separate
-        // capability; UIA/MSAA preferences retain their stored values for Windows portability.
-        Ok(self
+        let Some(window) = self
             .windows
             .iter()
             .find(|window| window.contains(point.x, point.y))
             .copied()
-            .map(|window| vec![ElementRect(window)]))
+        else {
+            return Ok(None);
+        };
+        let child = match mode {
+            HitTestMode::UiElement => snow_macos::window_element(window.id, point.x, point.y),
+            HitTestMode::Window => None,
+        };
+        Ok(Some(selection_regions(window, child)))
     }
+}
+
+fn selection_regions(
+    window: snow_macos::Window,
+    child: Option<snow_macos::Window>,
+) -> Vec<ElementRect> {
+    let mut regions = Vec::new();
+    if let Some(child) = child
+        && child.width > 0
+        && child.height > 0
+        && (child.x, child.y, child.width, child.height)
+            != (window.x, window.y, window.width, window.height)
+    {
+        regions.push(ElementRect(child));
+    }
+    regions.push(ElementRect(window));
+    regions
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn accessible_control_precedes_window_and_missing_control_falls_back() {
+        let window = snow_macos::Window {
+            id: 5,
+            x: -100,
+            y: 0,
+            width: 800,
+            height: 600,
+        };
+        let control = snow_macos::Window {
+            x: 30,
+            y: 40,
+            width: 90,
+            height: 30,
+            ..window
+        };
+        let regions = selection_regions(window, Some(control));
+        assert_eq!(regions.len(), 2);
+        assert_eq!(
+            (
+                regions[0].left(),
+                regions[0].top(),
+                regions[0].right(),
+                regions[0].bottom()
+            ),
+            (30, 40, 120, 70)
+        );
+        assert_eq!(regions[1].left(), -100);
+        assert_eq!(selection_regions(window, None).len(), 1);
+        assert_eq!(selection_regions(window, Some(window)).len(), 1);
+    }
 
     #[test]
     fn window_selection_preserves_front_to_back_order() {
@@ -117,7 +171,7 @@ mod tests {
             .unwrap();
         assert_eq!(hit[0].0.id, 42);
         let hit = service
-            .hit_test_point(ScreenPoint { x: 100, y: 50 }, HitTestMode::UiElement)
+            .hit_test_point(ScreenPoint { x: 100, y: 50 }, HitTestMode::Window)
             .unwrap()
             .unwrap();
         assert_eq!(hit[0].0.id, 43);

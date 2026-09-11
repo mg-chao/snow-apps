@@ -64,6 +64,10 @@ class StableHeightObserver final : public QObject {
   protected:
     bool eventFilter(QObject*, QEvent* event) override {
         if (event->type() == QEvent::Resize) {
+            if (static_cast<QResizeEvent*>(event)->size().height() != m_height) {
+                std::cerr << "Mouse editor height: " << m_height << " -> "
+                          << static_cast<QResizeEvent*>(event)->size().height() << '\n';
+            }
             require(static_cast<QResizeEvent*>(event)->size().height() == m_height,
                     "the displayed mouse editor must not resize even transiently");
         }
@@ -229,6 +233,7 @@ class GlobalMouseTranslator final : public QTranslator {
             {QStringLiteral("Activation keys"), QStringLiteral("Aktivierungstasten")},
             {QStringLiteral("Mouse button"), QStringLiteral("Maustaste")},
             {QStringLiteral("Ctrl"), QStringLiteral("Strg")},
+            {QStringLiteral("Control"), QStringLiteral("Strg")},
             {QStringLiteral("None"), QStringLiteral("Keine")},
             {QStringLiteral("Right-button drag"), QStringLiteral("Rechts ziehen")},
         };
@@ -380,6 +385,12 @@ void globalMouseModalEditsOnlyOnAcceptedUniquePairs() {
                 modal->contentWidget()->findChild<QWidget*>(
                     QStringLiteral("shortcutConfigKeyButton")) == nullptr,
             "mouse configuration must contain exactly two selects and no key recorder");
+#ifdef Q_OS_MACOS
+    require(activation->options().at(0).label == QStringLiteral("Command") &&
+                activation->options().at(1).label == QStringLiteral("Control") &&
+                activation->options().at(2).label == QStringLiteral("Option"),
+            "macOS mouse configuration must use native physical modifier names");
+#endif
     require(optionValues(*activation) == QStringList{QStringLiteral("windows"),
                                                      QStringLiteral("ctrl"), QStringLiteral("alt"),
                                                      QStringLiteral("shift")} &&
@@ -423,7 +434,12 @@ void globalMouseModalEditsOnlyOnAcceptedUniquePairs() {
     const Combination saved{{QStringLiteral("ctrl"), QStringLiteral("shift")},
                             QStringLiteral("right_drag")};
     require(session.globalMouseCombination(Action::ScreenshotCopy) == saved &&
-                copyButton->text() == QStringLiteral("Ctrl + Shift + Right-button drag"),
+                copyButton->text() ==
+#ifdef Q_OS_MACOS
+                    QStringLiteral("Control + Shift + Right-button drag"),
+#else
+                    QStringLiteral("Ctrl + Shift + Right-button drag"),
+#endif
             "OK must persist the structured pair and refresh the button label");
 
     GlobalMouseRow* fixedRow = rowForTitle(page, QStringLiteral("Pin to screen"));

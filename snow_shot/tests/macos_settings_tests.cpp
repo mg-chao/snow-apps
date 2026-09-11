@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
+#include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/settings/settingssearchindex.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationschema.h"
@@ -53,83 +54,53 @@ class FakeShortcutBackend final : public presentation::GlobalShortcutBackend {
 void catalogExposesOnlyAvailableIntegrations() {
     const auto& registry = settings::builtInSettingsRegistry();
     const auto& catalog = registry.catalog();
-    require(catalog.validationErrors().isEmpty(), "the filtered macOS catalog must validate");
-    require(catalog.page(QStringLiteral("global-mouse")) == nullptr,
-            "the unavailable global mouse page must not appear in navigation");
+    require(catalog.validationErrors().isEmpty(), "macOS catalog must validate");
+    require(catalog.page(QStringLiteral("global-mouse")) != nullptr,
+            "global mouse settings must remain discoverable on macOS");
     for (const auto& key :
-         {"system/application_priority", "system/auto_start_at_boot", "updates/mode",
-          "screenshot/api_mode", "screenshot/window_element_api",
-          "screenshot/restore_original_screen_colors", "screenshot_selection/smart_selection",
-          "text_recognition/direct_ml_acceleration",
+         {"system/application_priority", "updates/mode", "screenshot/api_mode",
+          "screenshot/window_element_api", "screenshot/restore_original_screen_colors",
+          "text_recognition/direct_ml_acceleration"}) {
+        const auto* field = registry.fieldForConfigurationKey(QString::fromLatin1(key));
+        require(field != nullptr && !field->definition->platformAvailable &&
+                    !field->definition->description.translated().isEmpty(),
+                "unavailable platform controls must stay visible with an explanation");
+    }
+    for (const auto& key :
+         {"system/auto_start_at_boot", "screenshot_selection/smart_selection",
           "global_shortcuts/disable_on_focused_fullscreen_window",
-          "global_shortcuts/translate_selected_text",
+          "global_shortcuts/translate_selected_text", "global_mouse/screenshot_copy",
+          "global_mouse/screenshot_fixed", "global_mouse/screenshot_ocr",
+          "global_mouse/screenshot_translation", "global_mouse/screenshot_save",
+          "global_mouse/screenshot_quick_save", "global_mouse/screen_recording",
           "screenshot_shortcuts/switch_selection_between_window_and_window_sub_element",
-          "global_mouse/screenshot_copy", "global_mouse/screenshot_fixed",
-          "global_mouse/screenshot_ocr", "global_mouse/screenshot_translation",
-          "global_mouse/screenshot_save", "global_mouse/screenshot_quick_save",
-          "global_mouse/screen_recording"}) {
-        const auto configurationKey = QString::fromLatin1(key);
-        require(storage::ConfigurationSchema::entry(configurationKey) != nullptr,
-                "inactive Windows settings must remain portable schema entries");
-        require(registry.fieldForConfigurationKey(configurationKey) == nullptr,
-                "unsupported integrations must not generate settings controls");
-    }
-    for (const auto& page : catalog.pages()) {
-        require(page.kind != settings::SettingsPageKind::GeneratedSettings ||
-                    !page.sections.isEmpty(),
-                "filtering must remove empty generated pages");
-        for (const auto& section : page.sections) {
-            require(!section.items.isEmpty(),
-                    "filtering must remove empty sections and reset buttons");
-        }
-    }
-    for (const auto& key :
-         {"screenshot/capture_cursor", "text_recognition/model_type", "global_shortcuts/screenshot",
-          "global_shortcuts/screen_record", "extended_features/translation_page_enabled",
-          "capture_history/enabled"}) {
-        require(
-            registry.fieldForConfigurationKey(QString::fromLatin1(key)) != nullptr,
-            "supported screenshot, recording, OCR, translation and history settings must remain");
+          "text_recognition/model_type", "capture_history/enabled"}) {
+        const auto* field = registry.fieldForConfigurationKey(QString::fromLatin1(key));
+        require(field != nullptr && field->definition->platformAvailable,
+                "implemented macOS features must expose an available control");
     }
     settings::SettingsSearchIndex index(registry);
-    for (const auto& query : {"Windows starts", "DXGI", "UIA", "MSAA", "DirectML",
-                              "Translate Selected Text", "Software updates"}) {
-        require(index.search(QString::fromLatin1(query)).isEmpty(),
-                "search must not expose unavailable platform settings or stale Windows wording");
+    for (const auto& query : {"Software updates", "DirectML", "Translate Selected Text"}) {
+        require(!index.search(QString::fromLatin1(query)).isEmpty(),
+                "capabilities and their limitations must remain searchable");
     }
-    require(registry.fieldForSwitch(settings::SettingsSwitchBinding::TranslationPageEnabled)
-                    ->definition->description.translated() ==
-                QStringLiteral("Enable the Translation page."),
-            "the supported translation page must not advertise unsupported selected-text capture");
-    const auto manifest = settings::buildBuiltInTrayCommandManifest();
-    require(
-        manifest.shortcutActionTitle(presentation::GlobalShortcutAction::TranslateSelectedText, 3)
-            .isEmpty(),
-        "the compact tray manifest must not expose selected-text capture");
-    require(catalog.trayMenuGroups().size() == manifest.groups.size(),
-            "compact and settings tray projections must stay consistent");
+    const auto* login =
+        registry.fieldForConfigurationKey(QStringLiteral("system/auto_start_at_boot"));
+    require(login->definition->title.translated() == QStringLiteral("Launch at login") &&
+                login->definition->description.translated().contains(QStringLiteral("macOS")) &&
+                !login->definition->description.translated().contains(QStringLiteral("Windows")),
+            "login item controls must use native platform terminology");
 }
 
 void resetPreservesInactivePreferences(settings::BuiltInSettingsBackend& backend) {
     auto& configuration = storage::ApplicationStorage::instance().configuration();
     QMap<QString, QJsonValue> inactive{
         {QStringLiteral("system/application_priority"), QStringLiteral("real_time")},
-        {QStringLiteral("system/auto_start_at_boot"), true},
         {QStringLiteral("updates/mode"), QStringLiteral("manual")},
         {QStringLiteral("screenshot/api_mode"), QStringLiteral("wgc")},
         {QStringLiteral("screenshot/window_element_api"), QStringLiteral("uia")},
         {QStringLiteral("screenshot/restore_original_screen_colors"), true},
-        {QStringLiteral("screenshot_selection/smart_selection"), false},
         {QStringLiteral("text_recognition/direct_ml_acceleration"), true},
-        {QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window"), true},
-        {QStringLiteral("global_mouse/screenshot_copy"),
-         QJsonObject{{QStringLiteral("activation_key"), QStringLiteral("ctrl")},
-                     {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}}},
-        {QStringLiteral("global_shortcuts/translate_selected_text"),
-         QJsonArray{QStringLiteral("Ctrl+F18")}},
-        {QStringLiteral(
-             "screenshot_shortcuts/switch_selection_between_window_and_window_sub_element"),
-         QJsonArray{QStringLiteral("F18")}},
     };
     require(configuration.setValues(inactive), "seed portable Windows preferences");
     require(configuration.setValue(QStringLiteral("screenshot/capture_cursor"), true),
@@ -139,7 +110,6 @@ void resetPreservesInactivePreferences(settings::BuiltInSettingsBackend& backend
             "seed a supported OCR model setting");
     for (const auto reset : {settings::SettingsSectionReset::GlobalMouse,
                              settings::SettingsSectionReset::GlobalHotkeys,
-                             settings::SettingsSectionReset::SystemGeneral,
                              settings::SettingsSectionReset::SystemSettings,
                              settings::SettingsSectionReset::ScreenshotCapture,
                              settings::SettingsSectionReset::ScreenshotSettings,
@@ -159,10 +129,7 @@ void resetPreservesInactivePreferences(settings::BuiltInSettingsBackend& backend
                 "reset must still restore available settings to defaults");
     }
     for (const auto binding :
-         {settings::SettingsSwitchBinding::SmartSelection,
-          settings::SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors,
-          settings::SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen,
-          settings::SettingsSwitchBinding::AutoStartAtBoot,
+         {settings::SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors,
           settings::SettingsSwitchBinding::DirectMlAcceleration}) {
         require(!backend.switchEnabled(binding) && !backend.applySwitchValue(binding, true),
                 "unsupported switches must reject stale UI writes");
@@ -186,8 +153,8 @@ void resetPreservesInactivePreferences(settings::BuiltInSettingsBackend& backend
     }
 }
 
-void selectedTextShortcutNeverRegisters(presentation::GlobalShortcutManager& manager,
-                                        FakeShortcutBackend& native) {
+void selectedTextShortcutRegisters(presentation::GlobalShortcutManager& manager,
+                                   FakeShortcutBackend& native) {
     require(storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
             "the supported translation page can be enabled");
     manager.setShortcuts(presentation::GlobalShortcutAction::TranslateSelectedText,
@@ -195,10 +162,10 @@ void selectedTextShortcutNeverRegisters(presentation::GlobalShortcutManager& man
     manager.setShortcuts(presentation::GlobalShortcutAction::Screenshot,
                          {QStringLiteral("Ctrl+F19")});
     QCoreApplication::processEvents();
-    require(!native.registrations.values().contains(QStringLiteral("Ctrl+F18")) &&
-                manager.state(presentation::GlobalShortcutAction::TranslateSelectedText)
-                    .bindings.isEmpty(),
-            "enabling Translation must never register unavailable selected-text capture");
+    require(native.registrations.values().contains(QStringLiteral("Ctrl+F18")) &&
+                !manager.state(presentation::GlobalShortcutAction::TranslateSelectedText)
+                     .bindings.isEmpty(),
+            "enabling Translation must register the macOS selected-text shortcut");
     require(native.registrations.values().contains(QStringLiteral("Ctrl+F19")),
             "ordinary screenshot shortcuts must still register");
     int activated = 0;
@@ -227,8 +194,21 @@ int main(int argc, char** argv) {
                                                       [] { return false; });
         shortcuts.initialize();
         settings::BuiltInSettingsBackend backend(shortcuts);
+        settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
+        for (const auto& key :
+             {"system/application_priority", "updates/mode", "screenshot/api_mode",
+              "screenshot/window_element_api", "screenshot/restore_original_screen_colors",
+              "text_recognition/direct_ml_acceleration"}) {
+            const auto* field = settings::builtInSettingsRegistry().fieldForConfigurationKey(
+                QString::fromLatin1(key));
+            const auto state = session.state(field->id);
+            require(state.visible && !state.enabled,
+                    "unavailable settings must remain visible but reject editing");
+            require(!session.submitDraft(field->id, state.acceptedValue),
+                    "unavailable controls must reject writes through the runtime session");
+        }
         resetPreservesInactivePreferences(backend);
-        selectedTextShortcutNeverRegisters(shortcuts, *nativePointer);
+        selectedTextShortcutRegisters(shortcuts, *nativePointer);
     }
     appStorage.shutdown();
     std::cout << "macOS settings capabilities, portable resets and shortcut registration passed\n";

@@ -107,6 +107,33 @@ void failuresNeverHandOffText() {
     require(failures == 1, "an empty selection must not clear the translation page");
 }
 
+void permissionRequestsRemainRetryableWithoutDuplicateErrors() {
+    auto state = std::make_shared<CaptureState>();
+    state->initial = {SelectedTextStatus::PermissionDenied, {}};
+    SelectedTextTranslationController controller(std::make_unique<FakeCaptureBackend>(state));
+    int permissions = 0;
+    int failures = 0;
+    int deliveries = 0;
+    QObject::connect(&controller, &SelectedTextTranslationController::permissionRequired,
+                     &controller, [&] { ++permissions; });
+    QObject::connect(&controller, &SelectedTextTranslationController::operationFailed, &controller,
+                     [&] { ++failures; });
+    QObject::connect(&controller, &SelectedTextTranslationController::textReady, &controller,
+                     [&] { ++deliveries; });
+    controller.capture();
+    controller.capture();
+    require(permissions == 2 && failures == 0 && deliveries == 0,
+            "each explicit permission retry must open guidance without a duplicate error toast");
+    state->initial = {};
+    state->result = {SelectedTextStatus::PermissionDenied, {}};
+    controller.capture();
+    waitUntil([&] { return permissions == 3; }, "permission revoked during a read is reported");
+    state->initial = {SelectedTextStatus::Selected, QStringLiteral("recovered")};
+    controller.capture();
+    require(permissions == 3 && failures == 0 && deliveries == 1,
+            "granting permission must allow a successful retry without restarting the controller");
+}
+
 void shutdownCancelsWithoutLateDelivery() {
     auto state = std::make_shared<CaptureState>();
     int deliveries = 0;
@@ -141,6 +168,7 @@ int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     captureOnlyHandsOffCompletedText();
     failuresNeverHandOffText();
+    permissionRequestsRemainRetryableWithoutDuplicateErrors();
     shutdownCancelsWithoutLateDelivery();
     return 0;
 }

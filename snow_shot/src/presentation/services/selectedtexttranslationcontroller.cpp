@@ -1,9 +1,14 @@
 #include "snow_shot/presentation/selectedtexttranslationcontroller.h"
 
+#ifdef Q_OS_MACOS
+#include "snow_shot/platform/macos/selectedtextcapturebackend.h"
+#else
 #include "snow_selected_text.h"
+#endif
 
 namespace snow_shot::presentation {
 namespace {
+#ifndef Q_OS_MACOS
 SelectedTextStatus errorStatus(uint32_t kind) {
     switch (kind) {
     case SNOW_SELECTED_TEXT_ERROR_BUSY:
@@ -90,11 +95,19 @@ class NativeSelectedTextCaptureBackend final : public SelectedTextCaptureBackend
     std::unique_ptr<SnowSelectedTextRequest, decltype(&snow_selected_text_request_destroy)>
         m_request{nullptr, snow_selected_text_request_destroy};
 };
+#endif
+
+std::unique_ptr<SelectedTextCaptureBackend> createNativeSelectedTextCaptureBackend() {
+#ifdef Q_OS_MACOS
+    return platform::macos::createSelectedTextCaptureBackend();
+#else
+    return std::make_unique<NativeSelectedTextCaptureBackend>();
+#endif
+}
 } // namespace
 
 SelectedTextTranslationController::SelectedTextTranslationController(QObject* parent)
-    : SelectedTextTranslationController(std::make_unique<NativeSelectedTextCaptureBackend>(),
-                                        parent) {}
+    : SelectedTextTranslationController(createNativeSelectedTextCaptureBackend(), parent) {}
 
 SelectedTextTranslationController::SelectedTextTranslationController(
     std::unique_ptr<SelectedTextCaptureBackend> backend, QObject* parent)
@@ -143,6 +156,9 @@ void SelectedTextTranslationController::acceptResult(const SelectedTextCaptureRe
         break;
     case SelectedTextStatus::Unsupported:
         emit operationFailed(tr("Selected text capture is not supported here."));
+        break;
+    case SelectedTextStatus::PermissionDenied:
+        emit permissionRequired();
         break;
     case SelectedTextStatus::Busy:
         emit operationFailed(tr("Selected text capture is busy. Please try again."));

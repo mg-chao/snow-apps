@@ -24,6 +24,7 @@
 #include <QHideEvent>
 #include <QInputMethodEvent>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
 #include <QScopedValueRollback>
@@ -477,8 +478,11 @@ void TranslationPageWidget::retranslateUi() {
     m_floating->setAccessibleName(tr("Translation actions"));
     m_resultCopy->setAccessibleName(tr("Copy translated text"));
     m_resultCopy->setToolTip(tr("Copy translated text"));
-    m_copy->setText(tr("Copy (Ctrl+C)"));
-    m_copyClose->setText(tr("Copy and Close (Ctrl+Q)"));
+    m_copy->setText(
+        tr("Copy (%1)").arg(QKeySequence(QKeySequence::Copy).toString(QKeySequence::NativeText)));
+    m_copyClose->setText(tr("Copy and Close (%1)")
+                             .arg(QKeySequence(QKeyCombination(Qt::ControlModifier, Qt::Key_Q))
+                                      .toString(QKeySequence::NativeText)));
     m_retry->setText(tr("Retry"));
     m_controller->setLocale(translation::LanguageManager::instance().currentLocale());
     syncState();

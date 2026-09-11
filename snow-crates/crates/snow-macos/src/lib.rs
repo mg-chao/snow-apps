@@ -56,6 +56,7 @@ unsafe extern "C" {
     fn snow_macos_cursor(cursor: *mut CursorInfo, rgba: *mut u8, capacity: usize) -> i32;
     fn snow_macos_displays(displays: *mut NativeDisplay, capacity: usize, count: *mut usize)
     -> i32;
+    fn snow_macos_window_element(window_id: u32, x: i32, y: i32, element: *mut Window) -> i32;
     fn snow_macos_windows(windows: *mut Window, capacity: usize, count: *mut usize) -> i32;
     fn snow_macos_capture(
         display_id: u32,
@@ -247,6 +248,14 @@ pub fn displays() -> Result<Vec<Display>, String> {
         capacity = count;
     }
     Err("Failed to enumerate macOS displays".into())
+}
+
+/// Query an accessible control in a captured application window. None means
+/// permission was denied or the target application does not expose that control.
+pub fn window_element(window_id: u32, x: i32, y: i32) -> Option<Window> {
+    let mut element = Window::default();
+    let success = unsafe { snow_macos_window_element(window_id, x, y, &mut element) };
+    (success != 0).then_some(element)
 }
 
 /// Front-to-back visible application windows. The current process and desktop are excluded.

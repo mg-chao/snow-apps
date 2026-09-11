@@ -11,7 +11,7 @@
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/settings/applicationpriority.h"
-#include "snow_shot/platform/windows/autostartregistration.h"
+#include "snow_shot/platform/autostartregistration.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include "diagnosticsbridge.h"
@@ -203,15 +203,16 @@ int main(int argc, char* argv[]) {
             snow_shot::storage::ApplicationStorage::instance().shutdown();
         }
     } storageLifetime;
-    if (snow_shot::platform::windows::AutoStartRegistration::isSupported()) {
+#ifndef Q_OS_MACOS
+    if (snow_shot::platform::AutoStartRegistration::isSupported()) {
         const bool enabled = snow_shot::storage::SystemSettings().autoStartAtBoot();
         QString error;
-        if ((!enabled ||
-             !snow_shot::platform::windows::AutoStartRegistration::matchesExpectedCommand()) &&
-            !snow_shot::platform::windows::AutoStartRegistration::setEnabled(enabled, &error)) {
+        if ((!enabled || !snow_shot::platform::AutoStartRegistration::matchesExpectedCommand()) &&
+            !snow_shot::platform::AutoStartRegistration::setEnabled(enabled, &error)) {
             qWarning().noquote() << error;
         }
     }
+#endif
     static_cast<void>(snow_shot::presentation::settings::applyConfiguredApplicationPriority());
     QApplication::setQuitOnLastWindowClosed(false);
 #ifndef Q_OS_MACOS
@@ -237,8 +238,16 @@ int main(int argc, char* argv[]) {
     applicationController.start();
     snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.app"),
                                      QStringLiteral("application.ready"));
+#ifdef Q_OS_MACOS
+    reopenHandler.setStartupHandler(&applicationController, [&applicationController](bool atLogin) {
+        if (snow_shot::app::shouldShowMainWindowOnStartup(QApplication::arguments(), atLogin)) {
+            applicationController.showMainWindow();
+        }
+    });
+#else
     if (snow_shot::app::shouldShowMainWindowOnStartup(QApplication::arguments())) {
         applicationController.showMainWindow();
     }
+#endif
     return QApplication::exec();
 }

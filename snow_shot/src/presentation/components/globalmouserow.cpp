@@ -207,6 +207,18 @@ void GlobalMouseRow::openConfigurationDialog() {
             : m_combination;
     modal->setContentWidget(content);
     syncModalText();
+    // Resolve the hidden form at its eventual width before adding modifier tags. Otherwise
+    // wider native key labels can wrap at the select's temporary construction width, making
+    // the modal shrink by one tag line immediately after it is displayed.
+    content->ensurePolished();
+    content->resize(CONFIGURATION_MODAL_WIDTH - 2 * m_colorScheme.metricAlias.paddingLG,
+                    content->sizeHint().height());
+    contentLayout->activate();
+    for (auto* child : content->findChildren<QWidget*>()) {
+        child->ensurePolished();
+        if (child->layout() != nullptr)
+            child->layout()->activate();
+    }
     QVariantList initialKeys;
     for (const QString& key : initial.activationKeys) {
         initialKeys.push_back(key);
@@ -285,10 +297,11 @@ void GlobalMouseRow::syncModalText() {
     }
     const QVariantList activation = m_activationSelect->currentValues();
     const QVariant mouseButton = m_mouseButtonSelect->currentValue();
-    m_activationSelect->setOptions({option(QStringLiteral("windows"), tr("Windows")),
-                                    option(QStringLiteral("ctrl"), tr("Ctrl")),
-                                    option(QStringLiteral("alt"), tr("Alt")),
-                                    option(QStringLiteral("shift"), tr("Shift"))});
+    m_activationSelect->setOptions(
+        {option(QStringLiteral("windows"), activationKeyLabel(QStringLiteral("windows"))),
+         option(QStringLiteral("ctrl"), activationKeyLabel(QStringLiteral("ctrl"))),
+         option(QStringLiteral("alt"), activationKeyLabel(QStringLiteral("alt"))),
+         option(QStringLiteral("shift"), activationKeyLabel(QStringLiteral("shift")))});
     m_mouseButtonSelect->setOptions(
         {option(QStringLiteral("left_drag"), tr("Left-button drag")),
          option(QStringLiteral("right_drag"), tr("Right-button drag")),
@@ -360,13 +373,25 @@ settings::SettingsGlobalMouseCombination GlobalMouseRow::modalCombination() cons
 
 QString GlobalMouseRow::activationKeyLabel(const QString& value) const {
     if (value == QStringLiteral("windows")) {
+#ifdef Q_OS_MACOS
+        return tr("Command");
+#else
         return tr("Windows");
+#endif
     }
     if (value == QStringLiteral("ctrl")) {
+#ifdef Q_OS_MACOS
+        return tr("Control");
+#else
         return tr("Ctrl");
+#endif
     }
     if (value == QStringLiteral("alt")) {
+#ifdef Q_OS_MACOS
+        return tr("Option");
+#else
         return tr("Alt");
+#endif
     }
     return value == QStringLiteral("shift") ? tr("Shift") : value;
 }

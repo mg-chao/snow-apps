@@ -459,7 +459,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
 <context>
     <name>DiagnosticsService</name>
     <message>
-        <location filename="../src/presentation/settings/settingsbackend.cpp" line="894"/>
+        <location filename="../src/presentation/settings/settingsbackend.cpp" line="910"/>
         <location filename="../src/diagnostics/diagnostics.cpp" line="911"/>
         <source>The diagnostics writer stopped unexpectedly.</source>
         <translation>診斷記錄寫入執行緒意外停止。</translation>
@@ -661,114 +661,125 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <translation>為%1設定滑鼠組合</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="263"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="275"/>
         <source>Unset</source>
         <translation>未設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="264"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="276"/>
         <source>%1 + %2</source>
         <translation>%1 + %2</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="275"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="287"/>
         <source>Mouse configuration for &quot;%1&quot;</source>
         <translation>「%1」的滑鼠設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="276"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="288"/>
         <source>OK</source>
         <translation>確定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="277"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="289"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="279"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="291"/>
         <source>Activation keys</source>
         <translation>啟用按鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="283"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="295"/>
         <source>Mouse button</source>
         <translation>滑鼠按鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="288"/>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="363"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="377"/>
+        <source>Command</source>
+        <translation>Command</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="379"/>
         <source>Windows</source>
         <translation>Windows</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="289"/>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="366"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="384"/>
+        <source>Control</source>
+        <translation>Control</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="386"/>
         <source>Ctrl</source>
         <translation>Ctrl</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="290"/>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="369"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="391"/>
+        <source>Option</source>
+        <translation>Option</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="393"/>
         <source>Alt</source>
         <translation>Alt</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="291"/>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="371"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="396"/>
         <source>Shift</source>
         <translation>Shift</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="293"/>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="376"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="306"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="401"/>
         <source>Left-button drag</source>
         <translation>按住左鍵拖曳</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="294"/>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="379"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="307"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="404"/>
         <source>Right-button drag</source>
         <translation>按住右鍵拖曳</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="295"/>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="382"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="308"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="407"/>
         <source>Wheel drag</source>
         <translation>按住滾輪拖曳</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="296"/>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="385"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="309"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="410"/>
         <source>Side button 1 (Back) drag</source>
         <translation>按住側鍵 1（返回）拖曳</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="297"/>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="387"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="310"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="412"/>
         <source>Side button 2 (Forward) drag</source>
         <translation>按住側鍵 2（前進）拖曳</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="298"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="311"/>
         <source>None</source>
         <translation>無</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="308"/>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="333"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="321"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="346"/>
         <source>Select at least one activation key.</source>
         <translation>請至少選擇一個啟用按鍵。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="308"/>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="335"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="321"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="348"/>
         <source>Select a mouse button.</source>
         <translation>請選擇一個滑鼠按鍵。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="309"/>
-        <location filename="../src/presentation/components/globalmouserow.cpp" line="336"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="322"/>
+        <location filename="../src/presentation/components/globalmouserow.cpp" line="349"/>
         <source>This mouse combination is already assigned to another action. Choose a different combination.</source>
         <translation>此滑鼠組合已指派給其他操作。請選擇不同的組合。</translation>
     </message>
@@ -889,6 +900,34 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     </message>
 </context>
 <context>
+    <name>MacosAccessibilityPermissionMessage</name>
+    <message>
+        <location filename="../src/platform/macos/accessibilitypermissionmessage.cpp" line="72"/>
+        <source>Accessibility permission required</source>
+        <translation>需要輔助使用權限</translation>
+    </message>
+    <message>
+        <location filename="../src/platform/macos/accessibilitypermissionmessage.cpp" line="80"/>
+        <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Accessibility to use global mouse gestures. After granting access, click Retry or restart Snow Shot.</source>
+        <translation>請在「系統設定 &gt; 隱私權與安全性 &gt; 輔助使用」中允許 Snow Shot 使用全域滑鼠手勢。授權後，點擊「重試」或重新啟動 Snow Shot。</translation>
+    </message>
+    <message>
+        <location filename="../src/platform/macos/accessibilitypermissionmessage.cpp" line="84"/>
+        <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Accessibility to read selected text. Then return to the original application, select text and use the shortcut again.</source>
+        <translation>請在「系統設定 &gt; 隱私權與安全性 &gt; 輔助使用」中允許 Snow Shot 讀取選取文字。授權後，請回到原本的應用程式，選取文字並再次按下快速鍵。</translation>
+    </message>
+    <message>
+        <location filename="../src/platform/macos/accessibilitypermissionmessage.cpp" line="90"/>
+        <source>Open System Settings</source>
+        <translation>開啟系統設定</translation>
+    </message>
+    <message>
+        <location filename="../src/platform/macos/accessibilitypermissionmessage.cpp" line="92"/>
+        <source>Retry</source>
+        <translation>重試</translation>
+    </message>
+</context>
+<context>
     <name>MacosCaptureFailureMessage</name>
     <message>
         <location filename="../src/platform/macos/capturefailuremessage.cpp" line="65"/>
@@ -946,7 +985,7 @@ If it is already enabled, quit and reopen Snow Shot. After an update, you may ne
         <translation>%1 不能用作截圖快速鍵，請嘗試其他按鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="215"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="224"/>
         <source>Invalid screenshot shortcut</source>
         <translation>無效的截圖快速鍵</translation>
     </message>
@@ -1016,47 +1055,57 @@ If it is already enabled, quit and reopen Snow Shot. After an update, you may ne
         <translation>此平台不支援全域快速鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="198"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="199"/>
+        <source>%1 cannot be registered as a global shortcut, try another key</source>
+        <translation>無法將 %1 註冊為全域快速鍵，請嘗試其他按鍵</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="202"/>
         <source>%1 cannot be registered as a Windows global shortcut, try another key</source>
         <translation>無法將 %1 註冊為 Windows 全域快速鍵，請嘗試其他按鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="201"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="207"/>
+        <source>This key cannot be registered as a global shortcut, try another key</source>
+        <translation>無法將此按鍵註冊為全域快速鍵，請嘗試其他按鍵</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="209"/>
         <source>This key cannot be registered as a Windows global shortcut, try another key</source>
         <translation>無法將此按鍵註冊為 Windows 全域快速鍵，請嘗試其他按鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="221"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="230"/>
         <source>Invalid recording shortcut</source>
         <translation>無效的錄影快捷鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="599"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="608"/>
         <source>Please press a key</source>
         <translation>請按下按鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="217"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="226"/>
         <source>Invalid drawing shortcut</source>
         <translation>無效的繪圖快速鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="219"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="228"/>
         <source>Invalid pinned window shortcut</source>
         <translation>無效的釘選視窗快速鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="223"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="232"/>
         <source>Invalid global shortcut</source>
         <translation>無效的全域快速鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="430"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="439"/>
         <source>Add key config</source>
         <translation>新增按鍵設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="594"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="603"/>
         <source>Unsupported key</source>
         <translation>不支援的按鍵</translation>
     </message>
@@ -1261,12 +1310,12 @@ If it is already enabled, quit and reopen Snow Shot. After an update, you may ne
 <context>
     <name>ScreenshotHistoryImageEditor</name>
     <message>
-        <location filename="../src/presentation/services/screenshothistoryimageeditor.cpp" line="22"/>
+        <location filename="../src/presentation/services/screenshothistoryimageeditor.cpp" line="31"/>
         <source>The saved screenshot could not be opened</source>
         <translation>無法開啟已儲存的截圖</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/screenshothistoryimageeditor.cpp" line="78"/>
+        <location filename="../src/presentation/services/screenshothistoryimageeditor.cpp" line="91"/>
         <source>Edit screenshot</source>
         <translation>編輯截圖</translation>
     </message>
@@ -2604,7 +2653,7 @@ If it is already enabled, quit and reopen Snow Shot. After an update, you may ne
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="211"/>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="1895"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="1563"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3122"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3131"/>
         <source>Mixed</source>
         <translation>混合</translation>
     </message>
@@ -2731,13 +2780,13 @@ If it is already enabled, quit and reopen Snow Shot. After an update, you may ne
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="122"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5756"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5765"/>
         <source>Keep line breaks</source>
         <translation>保留換行</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="123"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5757"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5766"/>
         <source>Remove line breaks</source>
         <translation>移除換行</translation>
     </message>
@@ -2748,13 +2797,13 @@ If it is already enabled, quit and reopen Snow Shot. After an update, you may ne
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="125"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5772"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5781"/>
         <source>Half-width</source>
         <translation>半形</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="126"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5772"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5781"/>
         <source>Full-width</source>
         <translation>全形</translation>
     </message>
@@ -2810,15 +2859,15 @@ If it is already enabled, quit and reopen Snow Shot. After an update, you may ne
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="137"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6617"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6618"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6623"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6624"/>
         <source>Record microphone</source>
         <translation>錄製麥克風</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="138"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6638"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6639"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6644"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6645"/>
         <source>Record speakers</source>
         <translation>錄製系統音效</translation>
     </message>
@@ -2839,13 +2888,13 @@ If it is already enabled, quit and reopen Snow Shot. After an update, you may ne
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="142"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5232"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5241"/>
         <source>Mouse trail color</source>
         <translation>滑鼠軌跡顏色</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="143"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5235"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5244"/>
         <source>Mouse click color</source>
         <translation>滑鼠點擊顏色</translation>
     </message>
@@ -2886,24 +2935,24 @@ If it is already enabled, quit and reopen Snow Shot. After an update, you may ne
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="151"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6616"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6620"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6637"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6641"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6622"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6626"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6643"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6647"/>
         <source>Animated recording formats do not contain audio</source>
         <translation>動畫錄製格式不包含音訊</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="152"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3410"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3412"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3419"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3421"/>
         <source>Unavailable while recording</source>
         <translation>錄製期間無法使用</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="153"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5228"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5229"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5237"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5238"/>
         <source>Recording format</source>
         <translation>錄製格式</translation>
     </message>
@@ -2968,57 +3017,57 @@ If it is already enabled, quit and reopen Snow Shot. After an update, you may ne
         <translation>刪除選取的元素</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4417"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4426"/>
         <source>Convert to Markdown</source>
         <translation>轉換為 Markdown</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4420"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4429"/>
         <source>Convert to HTML</source>
         <translation>轉換為 HTML</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5061"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5206"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5210"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5070"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5215"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5219"/>
         <source>Mouse Trail Duration</source>
         <translation>滑鼠軌跡持續時間</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5074"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5200"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5202"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5083"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5209"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5211"/>
         <source>Keyboard Size</source>
         <translation>鍵盤大小</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5101"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5207"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5212"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5110"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5216"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5221"/>
         <source>Keyboard Background Color</source>
         <translation>鍵盤背景顏色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5109"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5208"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5214"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5118"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5217"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5223"/>
         <source>Keyboard Foreground Color</source>
         <translation>鍵盤前景顏色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5201"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5210"/>
         <source>px</source>
         <translation>px</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5203"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5204"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5831"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5212"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5213"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5840"/>
         <source>Settings</source>
         <translation>設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5205"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5214"/>
         <source>ms</source>
         <translation>毫秒</translation>
     </message>
@@ -3119,8 +3168,8 @@ If it is already enabled, quit and reopen Snow Shot. After an update, you may ne
         <translation>折線箭頭</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3126"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6225"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3135"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6231"/>
         <source>Recording duration</source>
         <translation>錄製時間</translation>
     </message>
@@ -3674,7 +3723,7 @@ If it is already enabled, quit and reopen Snow Shot. After an update, you may ne
         <translation>純色序號填充</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5892"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5901"/>
         <source>Auto-scroll</source>
         <translation>自動捲動</translation>
     </message>
@@ -3829,7 +3878,7 @@ If it is already enabled, quit and reopen Snow Shot. After an update, you may ne
 <context>
     <name>SettingsBackend</name>
     <message>
-        <location filename="../src/presentation/settings/settingsbackend.cpp" line="918"/>
+        <location filename="../src/presentation/settings/settingsbackend.cpp" line="934"/>
         <source>The clipboard is unavailable.</source>
         <translation>剪貼簿無法使用。</translation>
     </message>
@@ -5648,14 +5697,54 @@ If it is already enabled, quit and reopen Snow Shot. After an update, you may ne
         <translation>模型類型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="3243"/>
-        <source>Configure text recognition models</source>
-        <translation>設定文字辨識模型</translation>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="3212"/>
+        <source>These process priority classes are specific to Windows. macOS schedules work with quality-of-service policies and does not provide equivalent process classes.</source>
+        <translation>這些程序優先順序屬於 Windows 專有機制。macOS 使用服務品質策略排程工作，沒有對應的程序優先順序類別。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="3217"/>
+        <source>Automatic updates are not yet implemented for macOS. This version uses a Windows-only update feed and installer; install new macOS versions from a DMG.</source>
+        <translation>macOS 自動更新尚未實作。目前更新來源與安裝程式僅適用於 Windows；請透過 DMG 安裝 macOS 新版本。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="3222"/>
+        <source>macOS uses ScreenCaptureKit. DXGI, WGC and GDI are Windows APIs and cannot be selected on macOS.</source>
+        <translation>macOS 使用 ScreenCaptureKit 擷取畫面。DXGI、WGC 和 GDI 屬於 Windows 介面，無法在 macOS 上選取。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="3225"/>
+        <source>macOS uses Accessibility for window elements. Allow Accessibility access to select controls; MSAA and UIA are Windows APIs.</source>
+        <translation>macOS 使用輔助使用介面識別視窗元素。允許輔助使用權限後即可選取控制項；MSAA 和 UIA 屬於 Windows 介面。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="3229"/>
+        <source>This macOS build captures in sRGB. Original display color restoration is not yet implemented for this capture path; the Windows gamma restoration setting does not apply.</source>
+        <translation>此 macOS 版本使用 sRGB 擷取畫面。此擷取方式尚未實作顯示器原始色彩還原；Windows 伽瑪還原設定不適用於此方式。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="3234"/>
+        <source>DirectML is a Windows-only acceleration API. This macOS build runs text recognition on the CPU.</source>
+        <translation>DirectML 是 Windows 專有的加速介面。此 macOS 版本使用 CPU 進行文字辨識。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="3247"/>
+        <source>Launch at login</source>
+        <translation>登入時自動啟動</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="3248"/>
-        <source>Enable the Translation page.</source>
-        <translation>啟用翻譯頁面。</translation>
+        <source>Start Snow Shot in the background when you log in to macOS. If approval is required, allow Snow Shot in System Settings &gt; General &gt; Login Items.</source>
+        <translation>登入 macOS 時在背景啟動 Snow Shot。如需核准，請在「系統設定 &gt; 一般 &gt; 登入項目」中允許 Snow Shot。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="3255"/>
+        <source>ScreenCaptureKit</source>
+        <translation>ScreenCaptureKit</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="3259"/>
+        <source>macOS Accessibility</source>
+        <translation>macOS 輔助使用</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1387"/>
@@ -6256,99 +6345,104 @@ If it is already enabled, quit and reopen Snow Shot. After an update, you may ne
 <context>
     <name>ShortcutKeyRow</name>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="858"/>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="918"/>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="943"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="867"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="927"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="952"/>
         <source>Delay: %1 seconds</source>
         <translation>延遲：%1 秒</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="985"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="994"/>
         <source>%1 (%2 s)</source>
         <translation>%1（%2 秒）</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1047"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1056"/>
         <source>Key configuration for &quot;%1&quot;</source>
         <translation>「%1」的按鍵設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1053"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1062"/>
         <source>OK</source>
         <translation>確定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1054"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1063"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1115"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1124"/>
         <source>Unset</source>
         <translation>未設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1128"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1137"/>
         <source>Registered</source>
         <translation>已註冊</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1131"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1140"/>
         <source>Partially registered</source>
         <translation>部分已註冊</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1134"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1143"/>
         <source>Registration failed</source>
         <translation>註冊失敗</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1137"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1146"/>
         <source>Not configured</source>
         <translation>未設定</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1150"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1159"/>
         <source>Global shortcut status: %1</source>
         <translation>全域快速鍵狀態：%1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1175"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1184"/>
         <source>already used by another application or action</source>
         <translation>已被其他應用程式或動作使用</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1178"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1188"/>
+        <source>not supported as a global shortcut</source>
+        <translation>不支援作為全域快速鍵</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1190"/>
         <source>not supported as a Windows global shortcut</source>
         <translation>不支援作為 Windows 全域快速鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1181"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1194"/>
         <source>global shortcuts are not supported on this platform</source>
         <translation>此平台不支援全域快速鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1185"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1198"/>
         <source>the system rejected this shortcut</source>
         <translation>系統拒絕了此快速鍵</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1186"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1199"/>
         <source>the system rejected this shortcut (error %1)</source>
         <translation>系統拒絕了此快速鍵（錯誤 %1）</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1190"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1203"/>
         <source>registration did not complete</source>
         <translation>註冊未完成</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1193"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1206"/>
         <source>%1: %2</source>
         <translation>%1：%2</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1198"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1211"/>
         <source>Some shortcuts are unavailable
 Available: %1
 Unavailable: %2</source>
@@ -6357,7 +6451,7 @@ Unavailable: %2</source>
 不可用：%2</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1203"/>
+        <location filename="../src/presentation/components/shortcutkeyrow.cpp" line="1216"/>
         <source>No configured shortcut is available
 %1
 Change the shortcut and try again</source>
@@ -6808,94 +6902,94 @@ Change the shortcut and try again</source>
 <context>
     <name>TranslationPageWidget</name>
     <message>
-        <location filename="../src/presentation/components/translationpagewidget.cpp" line="443"/>
+        <location filename="../src/presentation/components/translationpagewidget.cpp" line="444"/>
         <source>Loading translation services…</source>
         <translation>正在載入翻譯服務…</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/translationpagewidget.cpp" line="474"/>
+        <location filename="../src/presentation/components/translationpagewidget.cpp" line="475"/>
         <source>Translating…</source>
         <translation>正在翻譯…</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/translationpagewidget.cpp" line="452"/>
+        <location filename="../src/presentation/components/translationpagewidget.cpp" line="453"/>
         <source>Translation</source>
         <translation>翻譯</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/translationpagewidget.cpp" line="453"/>
+        <location filename="../src/presentation/components/translationpagewidget.cpp" line="454"/>
         <source>Source language</source>
         <translation>來源語言</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/translationpagewidget.cpp" line="453"/>
+        <location filename="../src/presentation/components/translationpagewidget.cpp" line="454"/>
         <source>Target language</source>
         <translation>目標語言</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/translationpagewidget.cpp" line="453"/>
+        <location filename="../src/presentation/components/translationpagewidget.cpp" line="454"/>
         <source>Translation service</source>
         <translation>翻譯服務</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/translationpagewidget.cpp" line="458"/>
+        <location filename="../src/presentation/components/translationpagewidget.cpp" line="459"/>
         <source>Auto Detect</source>
         <translation>自動偵測</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/translationpagewidget.cpp" line="469"/>
+        <location filename="../src/presentation/components/translationpagewidget.cpp" line="470"/>
         <source>Select a service</source>
         <translation>選擇翻譯服務</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/translationpagewidget.cpp" line="470"/>
+        <location filename="../src/presentation/components/translationpagewidget.cpp" line="471"/>
         <source>Enter text to translate</source>
         <translation>輸入要翻譯的文字</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/translationpagewidget.cpp" line="471"/>
+        <location filename="../src/presentation/components/translationpagewidget.cpp" line="472"/>
         <source>Source text</source>
         <translation>原文</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/translationpagewidget.cpp" line="472"/>
+        <location filename="../src/presentation/components/translationpagewidget.cpp" line="473"/>
         <source>Translation appears here</source>
         <translation>譯文將顯示在這裡</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/translationpagewidget.cpp" line="473"/>
+        <location filename="../src/presentation/components/translationpagewidget.cpp" line="474"/>
         <source>Translated text</source>
         <translation>譯文</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/translationpagewidget.cpp" line="475"/>
         <location filename="../src/presentation/components/translationpagewidget.cpp" line="476"/>
+        <location filename="../src/presentation/components/translationpagewidget.cpp" line="477"/>
         <source>Swap languages</source>
         <translation>交換語言</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/translationpagewidget.cpp" line="477"/>
+        <location filename="../src/presentation/components/translationpagewidget.cpp" line="478"/>
         <source>Translation actions</source>
         <translation>翻譯操作</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/translationpagewidget.cpp" line="478"/>
         <location filename="../src/presentation/components/translationpagewidget.cpp" line="479"/>
+        <location filename="../src/presentation/components/translationpagewidget.cpp" line="480"/>
         <source>Copy translated text</source>
         <translation>複製譯文</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/translationpagewidget.cpp" line="480"/>
-        <source>Copy (Ctrl+C)</source>
-        <translation>複製 (Ctrl+C)</translation>
-    </message>
-    <message>
-        <location filename="../src/presentation/components/translationpagewidget.cpp" line="481"/>
-        <source>Copy and Close (Ctrl+Q)</source>
-        <translation>複製並關閉 (Ctrl+Q)</translation>
-    </message>
-    <message>
         <location filename="../src/presentation/components/translationpagewidget.cpp" line="482"/>
+        <source>Copy (%1)</source>
+        <translation>複製（%1）</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/translationpagewidget.cpp" line="483"/>
+        <source>Copy and Close (%1)</source>
+        <translation>複製並關閉（%1）</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/translationpagewidget.cpp" line="486"/>
         <source>Retry</source>
         <translation>重試</translation>
     </message>
@@ -7464,28 +7558,28 @@ Change the shortcut and try again</source>
 <context>
     <name>snow_shot::app::ApplicationController</name>
     <message>
-        <location filename="../src/app/applicationcontroller.cpp" line="193"/>
+        <location filename="../src/app/applicationcontroller.cpp" line="203"/>
         <source>An update is ready. Open About to restart and update Snow Shot.</source>
         <translation>更新已準備就緒。請開啟「關於」頁面，重新啟動並更新 Snow Shot。</translation>
     </message>
     <message>
-        <location filename="../src/app/applicationcontroller.cpp" line="201"/>
-        <location filename="../src/app/applicationcontroller.cpp" line="226"/>
+        <location filename="../src/app/applicationcontroller.cpp" line="211"/>
+        <location filename="../src/app/applicationcontroller.cpp" line="236"/>
         <source>Finish capturing, recording, or exporting before updating.</source>
         <translation>請先完成擷取、錄影或匯出，再進行更新。</translation>
     </message>
     <message>
-        <location filename="../src/app/applicationcontroller.cpp" line="206"/>
+        <location filename="../src/app/applicationcontroller.cpp" line="216"/>
         <source>Restart and update</source>
         <translation>重新啟動並更新</translation>
     </message>
     <message>
-        <location filename="../src/app/applicationcontroller.cpp" line="207"/>
+        <location filename="../src/app/applicationcontroller.cpp" line="217"/>
         <source>Snow Shot will close and restart to install the update. Continue?</source>
         <translation>Snow Shot 將關閉並重新啟動以安裝更新。是否繼續？</translation>
     </message>
     <message>
-        <location filename="../src/app/applicationcontroller.cpp" line="214"/>
+        <location filename="../src/app/applicationcontroller.cpp" line="224"/>
         <source>Your settings could not be saved. Please retry before updating.</source>
         <translation>無法儲存設定。請重試儲存後再更新。</translation>
     </message>
@@ -7522,7 +7616,12 @@ Change the shortcut and try again</source>
 <context>
     <name>snow_shot::presentation::GlobalMouseManager</name>
     <message>
-        <location filename="../src/presentation/services/globalmousemanager.cpp" line="186"/>
+        <location filename="../src/presentation/services/globalmousemanager.cpp" line="207"/>
+        <source>Global mouse gestures require Accessibility access. Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Accessibility, then retry.</source>
+        <translation>全域滑鼠手勢需要輔助使用權限。請在「系統設定 &gt; 隱私權與安全性 &gt; 輔助使用」中允許 Snow Shot，然後重試。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/services/globalmousemanager.cpp" line="214"/>
         <source>Global mouse input is unavailable (error %1).</source>
         <translation>全域滑鼠輸入無法使用（錯誤 %1）。</translation>
     </message>
@@ -7575,27 +7674,27 @@ Change the shortcut and try again</source>
 <context>
     <name>snow_shot::presentation::SelectedTextTranslationController</name>
     <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="142"/>
+        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="155"/>
         <source>No selected text was found.</source>
         <translation>找不到選取的文字。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="145"/>
+        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="158"/>
         <source>Selected text capture is not supported here.</source>
         <translation>此處不支援擷取選取文字。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="148"/>
+        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="164"/>
         <source>Selected text capture is busy. Please try again.</source>
         <translation>正在擷取選取文字，請再試一次。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="151"/>
+        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="167"/>
         <source>Selected text capture timed out. Please try again.</source>
         <translation>擷取選取文字逾時，請再試一次。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="154"/>
+        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="170"/>
         <source>Could not capture the selected text. Please try again.</source>
         <translation>無法擷取選取文字，請再試一次。</translation>
     </message>

@@ -65,6 +65,9 @@ class GlobalMouseGesture final {
     [[nodiscard]] bool needsMouseInput() const {
         return active() || m_consumedButtons != Qt::NoButton;
     }
+    [[nodiscard]] bool hasConsumedPress(Qt::MouseButton button) const {
+        return button != Qt::NoButton && m_consumedButtons.testFlag(button);
+    }
     void reset() {
         const quint64 nextId = m_nextId;
         *this = {};

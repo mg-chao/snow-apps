@@ -25,6 +25,7 @@ typedef struct {
 int snow_macos_displays(SnowMacDisplay* displays, size_t capacity, size_t* count);
 uint64_t snow_macos_display_generation(void);
 int snow_macos_windows(SnowMacWindow* windows, size_t capacity, size_t* count);
+int snow_macos_window_element(uint32_t window_id, int32_t x, int32_t y, SnowMacWindow* element);
 int snow_macos_capture(uint32_t display_id, uint32_t window_id, uint32_t width, uint32_t height,
                        uint8_t bgra, uint8_t* pixels, size_t length, char* error,
                        size_t error_size);

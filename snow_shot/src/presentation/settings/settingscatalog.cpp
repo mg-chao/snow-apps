@@ -2489,16 +2489,6 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
            GlobalShortcutAction::Screenshot,
            []() { return custom_outlined_icons::Exit(); }}}}};
 
-#ifdef Q_OS_MACOS
-    for (auto& group : manifest.groups) {
-        group.options.removeIf([](const SettingsTrayMenuOptionDefinition& option) {
-            return option.kind == SettingsTrayMenuOptionKind::QuickAction &&
-                   option.shortcutAction == GlobalShortcutAction::TranslateSelectedText;
-        });
-    }
-    manifest.shortcutAdjustments.remove(
-        static_cast<int>(GlobalShortcutAction::TranslateSelectedText));
-#endif
     return manifest;
 }
 
@@ -3214,66 +3204,66 @@ QStringList SettingsCatalog::validationErrors() const {
 
 SettingsCatalog buildBuiltInSettingsCatalog() {
     auto pages = builtInPages();
-    auto navigation = builtInNavigation();
 #ifdef Q_OS_MACOS
-    // Keep Windows preferences in the schema for portable configurations, but do
-    // not advertise controls whose platform integration is unavailable.
-    const QSet<QString> unsupportedKeys = {
-        QStringLiteral("system/application_priority"),
-        QStringLiteral("system/auto_start_at_boot"),
-        QStringLiteral("updates/mode"),
-        QStringLiteral("screenshot/api_mode"),
-        QStringLiteral("screenshot/window_element_api"),
-        QStringLiteral("screenshot/restore_original_screen_colors"),
-        QStringLiteral("screenshot_selection/smart_selection"),
-        QStringLiteral("text_recognition/direct_ml_acceleration"),
-        QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window"),
-        QStringLiteral("global_shortcuts/translate_selected_text"),
-        QStringLiteral(
-            "screenshot_shortcuts/switch_selection_between_window_and_window_sub_element"),
+    // Keep every setting discoverable. Platform-specific integrations describe
+    // their native equivalent or explain why the control is unavailable.
+    const QMap<QString, const char*> unavailable = {
+        {QStringLiteral("system/application_priority"),
+         QT_TRANSLATE_NOOP(
+             "SettingsCatalog",
+             "These process priority classes are specific to Windows. macOS schedules work with "
+             "quality-of-service policies and does not provide equivalent process classes.")},
+        {QStringLiteral("updates/mode"),
+         QT_TRANSLATE_NOOP(
+             "SettingsCatalog",
+             "Automatic updates are not yet implemented for macOS. This version uses a "
+             "Windows-only update feed and installer; install new macOS versions from a DMG.")},
+        {QStringLiteral("screenshot/api_mode"),
+         QT_TRANSLATE_NOOP("SettingsCatalog", "macOS uses ScreenCaptureKit. DXGI, WGC and GDI are "
+                                              "Windows APIs and cannot be selected on macOS.")},
+        {QStringLiteral("screenshot/window_element_api"),
+         QT_TRANSLATE_NOOP("SettingsCatalog",
+                           "macOS uses Accessibility for window elements. Allow Accessibility "
+                           "access to select controls; MSAA and UIA are Windows APIs.")},
+        {QStringLiteral("screenshot/restore_original_screen_colors"),
+         QT_TRANSLATE_NOOP("SettingsCatalog",
+                           "This macOS build captures in sRGB. Original display color restoration "
+                           "is not yet implemented for this capture path; the Windows gamma "
+                           "restoration setting does not apply.")},
+        {QStringLiteral("text_recognition/direct_ml_acceleration"),
+         QT_TRANSLATE_NOOP("SettingsCatalog", "DirectML is a Windows-only acceleration API. This "
+                                              "macOS build runs text recognition on the CPU.")},
     };
     for (auto& page : pages) {
         for (auto& section : page.sections) {
-            section.items.removeIf([&unsupportedKeys](const SettingsItemDefinition& item) {
-                return unsupportedKeys.contains(item.configurationKey) ||
-                       item.configurationKey.startsWith(QStringLiteral("global_mouse/"));
-            });
-            if (section.reset == SettingsSectionReset::TextRecognition) {
-                section.searchDescription = settingsText(
-                    QT_TRANSLATE_NOOP("SettingsCatalog", "Configure text recognition models"));
-            }
             for (auto& item : section.items) {
-                if (item.id == QStringLiteral("extended-features.translation-page")) {
-                    item.description = settingsText(
-                        QT_TRANSLATE_NOOP("SettingsCatalog", "Enable the Translation page."));
+                const auto reason = unavailable.constFind(item.configurationKey);
+                if (reason != unavailable.cend()) {
+                    item.platformAvailable = false;
+                    item.description = settingsText(*reason);
+                }
+                if (item.configurationKey == QStringLiteral("system/auto_start_at_boot")) {
+                    item.title =
+                        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Launch at login"));
+                    item.description = settingsText(QT_TRANSLATE_NOOP(
+                        "SettingsCatalog", "Start Snow Shot in the background when you log in to "
+                                           "macOS. If approval is required, allow Snow Shot in "
+                                           "System Settings > General > Login Items."));
+                }
+                if (item.configurationKey == QStringLiteral("screenshot/api_mode")) {
+                    std::get<SettingsSelectDefinition>(item.payload).options.front().label =
+                        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "ScreenCaptureKit"));
+                }
+                if (item.configurationKey == QStringLiteral("screenshot/window_element_api")) {
+                    std::get<SettingsSelectDefinition>(item.payload).options.front().label =
+                        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "macOS Accessibility"));
                 }
             }
         }
-        page.sections.removeIf(
-            [](const SettingsSectionDefinition& section) { return section.items.isEmpty(); });
     }
-    pages.removeIf([](const SettingsPageDefinition& page) {
-        return page.kind == SettingsPageKind::GeneratedSettings && page.sections.isEmpty();
-    });
-    const auto pageAvailable = [&pages](const SettingsNavigationPageDefinition& entry) {
-        return std::any_of(pages.cbegin(), pages.cend(),
-                           [&entry](const auto& page) { return page.id == entry.pageId; });
-    };
-    for (auto& node : navigation) {
-        if (auto* group = std::get_if<SettingsNavigationGroupDefinition>(&node)) {
-            group->pages.removeIf(
-                [&pageAvailable](const auto& page) { return !pageAvailable(page); });
-        }
-    }
-    navigation.removeIf([&pageAvailable](const SettingsNavigationNode& node) {
-        if (const auto* page = std::get_if<SettingsNavigationPageDefinition>(&node)) {
-            return !pageAvailable(*page);
-        }
-        return std::get<SettingsNavigationGroupDefinition>(node).pages.isEmpty();
-    });
 #endif
     return {std::move(pages),
-            std::move(navigation),
+            builtInNavigation(),
             {QString::fromLatin1(GLOBAL_HOTKEYS_PAGE_ID), QStringLiteral("screenshot"),
              QStringLiteral("quick.screenshot")}};
 }

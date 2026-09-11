@@ -725,6 +725,9 @@ void SettingsRuntimeSession::refreshField(const QString& fieldId,
             next.enabled = next.enabled && m_backend.switchEnabled(switchDefinition->binding);
         }
     }
+    if (descriptor->definition != nullptr) {
+        next.enabled = next.enabled && descriptor->definition->platformAvailable;
+    }
     if (next.phase == SettingsWritePhase::Pending && !next.busy && next.dirty) {
         next.phase = SettingsWritePhase::Failed;
     }
@@ -1042,7 +1045,7 @@ bool SettingsRuntimeSession::valuesEqual(const SettingsFieldDescriptor& descript
 }
 
 bool SettingsRuntimeSession::isReadOnly(const SettingsFieldDescriptor& descriptor) const {
-    if (descriptor.definition == nullptr) {
+    if (descriptor.definition == nullptr || !descriptor.definition->platformAvailable) {
         return true;
     }
     if (std::holds_alternative<SettingsActionDefinition>(descriptor.definition->payload)) {

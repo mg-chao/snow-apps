@@ -1,13 +1,18 @@
 # Snow Shot on macOS
 
 The Apple Silicon port targets the Qt/Rust application. It adds native display
-and window capture through ScreenCaptureKit, window snapping, global keyboard
-shortcuts, region recording, and managed OCR. Annotation, export, and history
-use the shared Qt code.
+and window capture through ScreenCaptureKit, window/control selection through
+Accessibility, global keyboard shortcuts and mouse gestures, automatic scrolling,
+selected-text translation, login items, region recording, and managed OCR.
+Annotation, export, and history use the shared Qt code.
 
-Windows UIA/MSAA element selection, global mouse gestures, automatic updates,
-and login-item registration remain separate platform work. The image viewer
-is not included in this preset.
+Settings remain discoverable on macOS. Windows-only capture APIs, process
+priority classes, and DirectML are disabled with platform-specific explanations;
+OCR uses the CPU. Automatic updates still require a macOS update feed, verifier,
+and installer. Original display color restoration is not yet implemented for the
+sRGB capture path. These incomplete ports are identified as such in settings,
+not described as operating-system limitations. The image viewer is not included
+in this preset.
 
 ## Build
 
@@ -47,6 +52,31 @@ depending on the keyboard's function-key setting, this may require Fn+F1.
 Allow screen recording in System Settings when macOS requests it. Keyboard
 shortcuts use Carbon hot-key registration and do not require an input-monitoring
 event tap. Qt's portable `Ctrl` modifier corresponds to Command by default.
+
+“Launch at login” registers the installed app using `SMAppService.mainAppService`.
+If macOS requires approval, Snow Shot opens General > Login Items and reflects
+whether registration is actually enabled. Disabling the OS login item is respected
+on subsequent launches. The startup decision waits for AppKit's login Apple event;
+login launches do not open the main window or an Accessibility permission alert.
+
+Global mouse gestures use a session event tap and require Accessibility access.
+Command, Control, and Option labels match physical keys, while the stored
+configuration remains portable to Windows. Cancelled gestures retain paired
+mouse-down/up suppression; synthetic input is excluded. Missing permission is
+reported when the main window is opened, and changing a mouse binding or using
+its drag button can retry initialization after a failed permission check.
+
+Selected-text translation reads the original foreground application's AX selected
+text on a worker with a timeout, without replacing the clipboard. Applications
+that do not expose selected text through Accessibility cannot provide it through
+this path. Control-level screenshot selection falls back to the containing window
+when permission or an AX control is unavailable. Fullscreen hotkey suppression
+checks the foreground application's window against each display.
+
+Automatic scrolling sends wheel events to the external window beneath the
+selection without moving the pointer. Permission, target, and dispatch failures
+stop automatic scrolling and show a message; manual scrolling remains available.
+Quartz does not acknowledge whether the target application consumed an event.
 
 Capture failures display a native macOS alert. Permission failures also offer
 a button to open Screen Recording settings. Dismissing an alert does not suppress
@@ -108,6 +138,24 @@ cargo test --manifest-path snow-crates/Cargo.toml -p snow-capture --lib convert:
 cargo clippy --manifest-path snow-crates/Cargo.toml \
     -p snow-macos -p snow-capture -p snow-ui-selector-c --lib -- -D warnings
 ```
+
+The deterministic settings, login, gesture, AX-context, and permission-dialog
+checks can be built and run separately:
+
+```sh
+cmake --build --preset build-macos-arm64 --parallel 2 --target \
+    snow-shot-macos-settings-tests snow-shot-macos-autostart-tests \
+    snow-shot-macos-application-launch-tests snow-shot-macos-global-mouse-tests \
+    snow-shot-macos-capture-context-tests snow-shot-macos-accessibility-permission-tests \
+    snow-shot-macos-scroll-input-tests
+ctest --test-dir build/macos-arm64 --output-on-failure \
+    -R '^snow-shot-macos-(settings|autostart|application-launch|global-mouse|capture-context|accessibility-permission|scroll-input)-tests$'
+```
+
+These tests use injected login/AX/input boundaries and do not modify login items,
+read other apps' selected text, post mouse events, or prove physical input delivery.
+Validate actual login/logout, permission changes, mouse gestures, AX controls, and
+automatic scrolling with the installed signed app in a desktop session.
 
 The shortcut test covers mapping, native registration, application event
 dispatch, and releasing registrations. It does not synthesize physical keystrokes.

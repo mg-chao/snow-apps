@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QOperatingSystemVersion>
+#include <QCoreApplication>
 #include <QRegularExpression>
 #include <QString>
 #include <QStringList>
@@ -35,9 +36,14 @@ inline QString formatShortcutDisplayText(const QString& shortcut) {
     }
 
     if (QOperatingSystemVersion::currentType() == QOperatingSystemVersion::MacOS) {
-        displayText.replace(QStringLiteral("Meta"), QStringLiteral("Command"));
+        const bool swap = !QCoreApplication::testAttribute(Qt::AA_MacDontSwapCtrlAndMeta);
+        displayText.replace(QStringLiteral("Meta"),
+                            swap ? QStringLiteral("Control") : QStringLiteral("Command"));
+        displayText.replace(QStringLiteral("Super"),
+                            swap ? QStringLiteral("Control") : QStringLiteral("Command"));
         displayText.replace(QStringLiteral("Alt"), QStringLiteral("Option"));
-        displayText.replace(QStringLiteral("Ctrl"), QStringLiteral("Control"));
+        displayText.replace(QStringLiteral("Ctrl"),
+                            swap ? QStringLiteral("Command") : QStringLiteral("Control"));
     } else {
         displayText.replace(QStringLiteral("Meta"), QStringLiteral("Win"));
         displayText.replace(QStringLiteral("Super"), QStringLiteral("Win"));

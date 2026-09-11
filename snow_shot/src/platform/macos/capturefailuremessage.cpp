@@ -88,6 +88,7 @@ void CaptureFailureMessage::updateText() {
         setDefaultButton(m_settingsButton);
     } else {
         removeButton(m_settingsButton);
+        m_settingsButton->setParent(this);
         m_settingsButton->hide();
         setDefaultButton(QMessageBox::Close);
     }
