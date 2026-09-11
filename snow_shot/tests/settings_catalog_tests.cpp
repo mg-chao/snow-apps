@@ -138,8 +138,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 36 && itemCount == 142 && foundUpdates,
-            "catalog must contain thirty-six sections and one hundred forty-two items");
+    require(sectionCount == 36 && itemCount == 143 && foundUpdates,
+            "catalog must contain thirty-six sections and one hundred forty-three items");
     const auto* history =
         catalog.section(QStringLiteral("storage-and-privacy"), QStringLiteral("history"));
     require(history != nullptr && history->items.size() >= 2 &&
@@ -588,9 +588,10 @@ void builtInCatalogIsCompleteAndValid() {
         {13, "screenshot-shortcut.video_recording", "screenshot_shortcuts/video_recording"},
         {14, "screenshot-shortcut.scrolling_screenshot",
          "screenshot_shortcuts/scrolling_screenshot"},
-        {15, "screenshot-shortcut.save_as_file", "screenshot_shortcuts/save_as_file"},
-        {16, "screenshot-shortcut.cancel_screenshot", "screenshot_shortcuts/cancel_screenshot"},
-        {17, "screenshot-shortcut.copy_to_clipboard", "screenshot_shortcuts/copy_to_clipboard"},
+        {15, "screenshot-shortcut.quick_save", "screenshot_shortcuts/quick_save"},
+        {16, "screenshot-shortcut.save_as_file", "screenshot_shortcuts/save_as_file"},
+        {17, "screenshot-shortcut.cancel_screenshot", "screenshot_shortcuts/cancel_screenshot"},
+        {18, "screenshot-shortcut.copy_to_clipboard", "screenshot_shortcuts/copy_to_clipboard"},
     };
     bool newScreenshotShortcutContractsMatch = screenshotShortcuts != nullptr;
     for (const ScreenshotShortcutContract& contract : newScreenshotShortcutContracts) {
@@ -604,7 +605,7 @@ void builtInCatalogIsCompleteAndValid() {
     require(
         applicationShortcutsPage != nullptr && applicationShortcutsPage->sections.size() == 5 &&
             everyHotkeySectionUsesTwoColumns && screenshotShortcuts != nullptr &&
-            screenshotShortcuts->items.size() == 18 &&
+            screenshotShortcuts->items.size() == 19 &&
             screenshotShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
             screenshotShortcuts->items.constFirst().id ==
                 QStringLiteral("screenshot-shortcut.move_tool") &&
@@ -629,11 +630,12 @@ void builtInCatalogIsCompleteAndValid() {
                 QStringLiteral("Video recording") &&
             screenshotShortcuts->items.at(14).title.translated() ==
                 QStringLiteral("Scrolling screenshot") &&
-            screenshotShortcuts->items.at(15).title.translated() ==
-                QStringLiteral("Save as file") &&
+            screenshotShortcuts->items.at(15).title.translated() == QStringLiteral("Quick save") &&
             screenshotShortcuts->items.at(16).title.translated() ==
-                QStringLiteral("Cancel screenshot") &&
+                QStringLiteral("Save as file") &&
             screenshotShortcuts->items.at(17).title.translated() ==
+                QStringLiteral("Cancel screenshot") &&
+            screenshotShortcuts->items.at(18).title.translated() ==
                 QStringLiteral("Copy to clipboard") &&
             newScreenshotShortcutContractsMatch &&
             std::get<settings::SettingsLocalShortcutDefinition>(
@@ -1207,7 +1209,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 190 && index.search(QString()).size() == 190,
+    require(index.entries().size() == 191 && index.search(QString()).size() == 191,
             "search must generate all catalog nodes in catalog order");
     const auto updates = index.search(QStringLiteral("Software updates"));
     require(!updates.isEmpty() &&
@@ -1259,7 +1261,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 36 && items == 142,
+    require(pages == 12 && sections == 36 && items == 143,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));
