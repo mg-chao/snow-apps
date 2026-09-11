@@ -1213,8 +1213,18 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
                 havePointerPosition = GetCursorPos(&pointer) != FALSE;
             }
 
-            const QRect nativeGeometry =
-                native::currentClientGeometry(reinterpret_cast<WId>(pinnedHwnd));
+            // Track presence against the complete window frame.  The image surface is
+            // exposed as non-client HTCAPTION, so USER32 sends WM_NCMOUSELEAVE while
+            // crossing between the frame and the client-side controls.  Using only the
+            // client rect briefly reports the pointer as outside and hides the controls.
+            RECT windowRect{};
+            const bool haveWindowRect = GetWindowRect(pinnedHwnd, &windowRect) != FALSE;
+            const QRect nativeGeometry = haveWindowRect
+                                             ? QRect(QPoint(windowRect.left, windowRect.top),
+                                                     QPoint(windowRect.right - 1,
+                                                            windowRect.bottom - 1))
+                                             : native::currentClientGeometry(
+                                                   reinterpret_cast<WId>(pinnedHwnd));
             const bool inside = havePointerPosition && nativeGeometry.isValid() &&
                                 nativeGeometry.contains(QPoint(pointer.x, pointer.y));
             if (inside != m_pointerInside) {
