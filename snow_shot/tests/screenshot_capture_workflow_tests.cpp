@@ -1020,9 +1020,15 @@ void externalDragBypassesSelectorAndPreparesBeforeReveal() {
         const auto result = successfulResult(state.sessionId, snapshot);
         runtime.eventSink->handleCaptureFinished(result);
         runtime.eventSink->handleCaptureFinished(result);
+        const bool framePacedReveal =
+            !cancelBeforeReveal && runtime.showOverlayModes.size() == 1 &&
+            runtime.showOverlayModes.first() == ScreenshotOverlayShowMode::CapturedImageFramePaced;
         require(prepared == 1 && presented == (cancelBeforeReveal ? 0 : 1) &&
-                    runtime.capturedImageShowCalls == (cancelBeforeReveal ? 0 : 1),
-                "external capture must present once, or remain hidden after cancellation");
+                    runtime.showOverlayCalls == (cancelBeforeReveal ? 0 : 1) &&
+                    (cancelBeforeReveal || framePacedReveal),
+                "external capture must present once frame-paced, or stay hidden after cancel");
+        require(runtime.capturedImageShowCalls == 0,
+                "frame-paced external reveals must not take the synchronous reveal path");
         require(runtime.startWorkflowRefreshCalls == 0,
                 "external capture presentation must not launch a late selector refresh");
         if (!cancelBeforeReveal) {

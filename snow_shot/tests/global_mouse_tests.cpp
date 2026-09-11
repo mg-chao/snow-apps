@@ -232,6 +232,28 @@ void selectionRetainsThePhysicalAnchorUntilReady() {
             "cancelled sessions cannot be revived");
 }
 
+void revealRefreshCatchesUpToLiveCursorOnlyWhileDragging() {
+    ScreenshotGlobalMouseDrag drag;
+    drag.begin(7, {100, 100});
+    require(drag.update(7, {200, 200}) && !drag.ready(),
+            "a pending drag must buffer paced movement before readiness");
+    drag.setReady();
+    drag.refreshEndFromLivePosition(QPoint(319, 407));
+    require(drag.start() == QPoint(100, 100) && drag.end() == QPoint(319, 407) && !drag.released(),
+            "activation must adopt the live cursor instead of the last paced event");
+    drag.refreshEndFromLivePosition(std::nullopt);
+    require(drag.end() == QPoint(319, 407),
+            "an unavailable cursor position must keep the buffered end point");
+    require(drag.update(7, {400, 400}, true), "a release after activation must buffer normally");
+    drag.refreshEndFromLivePosition(QPoint(900, 900));
+    require(drag.end() == QPoint(400, 400) && drag.released(),
+            "a buffered release must never be overridden by the live cursor");
+    ScreenshotGlobalMouseDrag inactive;
+    inactive.refreshEndFromLivePosition(QPoint(5, 5));
+    require(!inactive.active() && inactive.end() == QPoint(),
+            "a reset drag must ignore live-cursor refreshes");
+}
+
 class FakeBackend final : public GlobalMouseBackend {
   public:
     void start(Handler callback, FailureHandler error) override {
@@ -630,6 +652,7 @@ int main(int argc, char** argv) {
     directButtonDragPreservesQtInputAndLatchesAction();
     suppressionAndCancellationPreserveInputPairs();
     selectionRetainsThePhysicalAnchorUntilReady();
+    revealRefreshCatchesUpToLiveCursorOnlyWhileDragging();
     hotkeySuppressionNeverDisablesMouseGestures();
     managerLoadsLiveSettingsAndCoalescesOnlyMovement();
     managerPacesSustainedMovementAndDeliversTerminalEventsImmediately();

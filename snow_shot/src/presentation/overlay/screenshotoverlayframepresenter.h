@@ -26,7 +26,7 @@ class ScreenshotOverlayFramePresenter final {
     explicit ScreenshotOverlayFramePresenter(QWidget& window);
 
     void warmPresentationSurface();
-    void presentPreparedFrame();
+    void presentPreparedFrame(bool deferFirstPaint = false);
 
     [[nodiscard]] static ScreenshotOverlayRevealStrategy
     strategyForName(const QByteArray& name, ScreenshotOverlayRevealStrategy fallback);
@@ -38,6 +38,7 @@ class ScreenshotOverlayFramePresenter final {
 #endif
 
   private:
+    void presentFramePaced();
     void commitPreparedSurface(const ScreenshotOverlayRevealPlan& plan);
     void repaintSurface();
     void sendPostedUpdate();

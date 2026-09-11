@@ -202,10 +202,15 @@ void ScreenshotOverlayFramePresenter::warmPresentationSurface() {
 #endif
 }
 
-void ScreenshotOverlayFramePresenter::presentPreparedFrame() {
+void ScreenshotOverlayFramePresenter::presentPreparedFrame(bool deferFirstPaint) {
     SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.sync_reveal");
     SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.windows_shown", 1);
     recordStrategy(m_strategy);
+
+    if (deferFirstPaint) {
+        presentFramePaced();
+        return;
+    }
 
     const ScreenshotOverlayRevealPlan plan = planFor(m_strategy);
     const bool alreadyVisible = m_window.isVisible();
@@ -257,6 +262,31 @@ void ScreenshotOverlayFramePresenter::presentPreparedFrame() {
         m_window.setWindowOpacity(1.0);
     }
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.opacity_restored");
+}
+
+void ScreenshotOverlayFramePresenter::presentFramePaced() {
+    SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.frame_paced_reveal");
+    const bool alreadyVisible = m_window.isVisible();
+    if (alreadyVisible) {
+        // A warmed surface re-enables widget updates; the queued UpdateRequest
+        // publishes the prepared frame at the next event-loop pass.
+        enableWidgetTreeUpdates(m_window);
+        if (qFuzzyIsNull(m_window.windowOpacity())) {
+            SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.opacity_restore");
+            m_window.setWindowOpacity(1.0);
+        }
+        SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.frame_paced_warmed");
+        return;
+    }
+    // A fresh translucent layered surface stays invisible until its first
+    // paint, and the freshly captured frame mirrors the desktop beneath it,
+    // so showing without a synchronous commit costs at most a transparent
+    // frame while the queued first paint interleaves with drag input.
+    {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.show");
+        m_window.show();
+    }
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.frame_paced_shown");
 }
 
 #if defined(SNOW_SHOT_BENCH_INTERNALS)
