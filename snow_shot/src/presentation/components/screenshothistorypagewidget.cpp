@@ -232,10 +232,10 @@ QString formattedBytes(qint64 bytes) {
         return ScreenshotHistoryPageWidget::tr("%1 B").arg(bytes);
     }
     if (bytes < 1024 * 1024) {
-        return ScreenshotHistoryPageWidget::tr("%1 KB").arg(static_cast<double>(bytes) / 1024.0, 0,
-                                                            'f', 1);
+        return ScreenshotHistoryPageWidget::tr("%1 KiB").arg(static_cast<double>(bytes) / 1024.0, 0,
+                                                             'f', 1);
     }
-    return ScreenshotHistoryPageWidget::tr("%1 MB").arg(
+    return ScreenshotHistoryPageWidget::tr("%1 MiB").arg(
         static_cast<double>(bytes) / (1024.0 * 1024.0), 0, 'f', 1);
 }
 
@@ -685,7 +685,7 @@ class HistoryEntryWidget final : public QFrame {
         detailsLayout->addWidget(m_sourceLabel, 0, Qt::AlignLeft);
 
         const QRect selection = record.selection.rectangle;
-        m_summaryLabel = new QLabel(HistoryEntryWidget::tr("%1 x %2 px  ·  %3 display(s)")
+        m_summaryLabel = new QLabel(HistoryEntryWidget::tr("%1 x %2 px  ·  %3 source display(s)")
                                         .arg(selection.width())
                                         .arg(selection.height())
                                         .arg(record.displays.size()),
@@ -693,7 +693,7 @@ class HistoryEntryWidget final : public QFrame {
         m_summaryLabel->setObjectName(QStringLiteral("screenshotHistoryEntrySummary"));
         detailsLayout->addWidget(m_summaryLabel);
 
-        m_metaLabel = new QLabel(HistoryEntryWidget::tr("Position %1, %2  ·  %3")
+        m_metaLabel = new QLabel(HistoryEntryWidget::tr("Position %1, %2  ·  History storage: %3")
                                      .arg(selection.x())
                                      .arg(selection.y())
                                      .arg(formattedBytes(record.totalBytes)),

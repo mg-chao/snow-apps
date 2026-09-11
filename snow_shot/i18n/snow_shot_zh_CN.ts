@@ -787,16 +787,6 @@ so every moment on screen can be expressed clearly and shared easily.</source>
 <context>
     <name>HistoryEntryWidget</name>
     <message>
-        <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="688"/>
-        <source>%1 x %2 px  ·  %3 display(s)</source>
-        <translation>%1 x %2 像素  ·  %3 个显示器</translation>
-    </message>
-    <message>
-        <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="696"/>
-        <source>Position %1, %2  ·  %3</source>
-        <translation>位置 %1、%2  ·  %3</translation>
-    </message>
-    <message>
         <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="754"/>
         <source>Screenshot display</source>
         <translation>截图显示器</translation>
@@ -826,6 +816,16 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="882"/>
         <source>Edit screenshot history entry</source>
         <translation>编辑截图历史记录</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="688"/>
+        <source>%1 x %2 px  ·  %3 source display(s)</source>
+        <translation>%1 x %2 像素  ·  含 %3 屏原始截图</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="696"/>
+        <source>Position %1, %2  ·  History storage: %3</source>
+        <translation>位置 %1, %2  ·  历史占用：%3</translation>
     </message>
     <message>
         <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="865"/>
@@ -1328,16 +1328,6 @@ If it is already enabled, quit and reopen Snow Shot. After an update, you may ne
         <translation>%1 B</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="235"/>
-        <source>%1 KB</source>
-        <translation>%1 KB</translation>
-    </message>
-    <message>
-        <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="238"/>
-        <source>%1 MB</source>
-        <translation>%1 MB</translation>
-    </message>
-    <message>
         <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="1074"/>
         <source>%1-%2 of %3</source>
         <translation>%1-%2 / %3</translation>
@@ -1394,6 +1384,16 @@ If it is already enabled, quit and reopen Snow Shot. After an update, you may ne
         <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="1463"/>
         <source>All sources</source>
         <translation>所有来源</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="235"/>
+        <source>%1 KiB</source>
+        <translation>%1 KiB</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="238"/>
+        <source>%1 MiB</source>
+        <translation>%1 MiB</translation>
     </message>
     <message>
         <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="1472"/>
