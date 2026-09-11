@@ -37,6 +37,7 @@ use crate::convert::HdrFrameContext;
 use crate::error::{CaptureError, CaptureResult};
 use crate::frame::{CapturePixelFormat, Frame};
 use crate::monitor::MonitorId;
+use crate::surface::{BackendSurfaceFrame, SurfaceDelivery};
 use crate::timing::stage_mark;
 #[cfg(feature = "stage-timing")]
 use crate::timing::{
@@ -50,10 +51,12 @@ use super::gpu_tonemap::{GpuF16Converter, GpuTonemapper};
 use super::monitor::{HdrMonitorMetadata, MonitorResolver, hdr_to_sdr_params};
 
 mod readback;
+mod surface_delivery;
 mod transport;
 mod update;
 
 use readback::{DeliveredGeneration, ReadbackPipeline, ReadbackTarget};
+use surface_delivery::SurfaceDeliveryPipeline;
 use transport::{DrainPolicy, FramePacket, FrameTransport};
 use update::{ApplyOutcome, CanonicalFrameMetadata, CanonicalSurface};
 
@@ -218,6 +221,9 @@ enum WorkerCommand {
         format: CapturePixelFormat,
         response: Sender<CaptureResult<()>>,
     },
+    CaptureSurface {
+        response: Sender<CaptureResult<BackendSurfaceFrame>>,
+    },
     #[cfg(feature = "stage-timing")]
     SetRecordStageTimings {
         enabled: bool,
@@ -232,12 +238,16 @@ struct WindowsGraphicsCaptureCapturer {
 }
 
 impl WindowsGraphicsCaptureCapturer {
-    fn spawn(target: WorkerTarget, startup_timeout: Duration) -> CaptureResult<Self> {
+    fn spawn(
+        target: WorkerTarget,
+        startup_timeout: Duration,
+        surface_delivery: SurfaceDelivery,
+    ) -> CaptureResult<Self> {
         let (command_tx, command_rx) = crossbeam_channel::bounded(WGC_COMMAND_CAPACITY);
         let (startup_tx, startup_rx) = crossbeam_channel::bounded(1);
         let join = thread::Builder::new()
             .name("snow-wgc".into())
-            .spawn(move || match WgcWorker::new(target) {
+            .spawn(move || match WgcWorker::new(target, surface_delivery) {
                 Ok(mut worker) => {
                     let _ = startup_tx.send(Ok(()));
                     worker.run(command_rx);
@@ -330,6 +340,16 @@ impl WindowsGraphicsCaptureCapturer {
         self.configure(|response| WorkerCommand::SetOutputPixelFormat { format, response })
     }
 
+    fn capture_surface(&mut self) -> CaptureResult<BackendSurfaceFrame> {
+        let (response_tx, response_rx) = crossbeam_channel::bounded(1);
+        self.commands
+            .send(WorkerCommand::CaptureSurface {
+                response: response_tx,
+            })
+            .map_err(|_| CaptureError::WorkerDead)?;
+        response_rx.recv().map_err(|_| CaptureError::WorkerDead)?
+    }
+
     #[cfg(feature = "stage-timing")]
     fn set_record_stage_timings(&mut self, enabled: bool) -> CaptureResult<()> {
         self.configure(|response| WorkerCommand::SetRecordStageTimings { enabled, response })
@@ -355,6 +375,7 @@ struct PreparedWgcCapturer {
     hdr_tonemap_lut_enabled: bool,
     update_mode: WgcUpdateMode,
     output_pixel_format: CapturePixelFormat,
+    surface_delivery: SurfaceDelivery,
     #[cfg(feature = "stage-timing")]
     record_stage_timings: bool,
 }
@@ -369,6 +390,7 @@ impl PreparedWgcCapturer {
             hdr_tonemap_lut_enabled: true,
             update_mode: WgcUpdateMode::Auto,
             output_pixel_format: CapturePixelFormat::Rgba8,
+            surface_delivery: SurfaceDelivery::CpuPixels,
             #[cfg(feature = "stage-timing")]
             record_stage_timings: false,
         }
@@ -381,7 +403,11 @@ impl PreparedWgcCapturer {
             } else {
                 WGC_WORKER_START_TIMEOUT
             };
-            let mut active = WindowsGraphicsCaptureCapturer::spawn(self.target, startup_timeout)?;
+            let mut active = WindowsGraphicsCaptureCapturer::spawn(
+                self.target,
+                startup_timeout,
+                self.surface_delivery,
+            )?;
             active.set_wgc_update_mode(self.update_mode)?;
             active.set_gpu_hdr_conversion(self.gpu_hdr_conversion_enabled)?;
             active.set_hdr_tonemap_lut(self.hdr_tonemap_lut_enabled)?;
@@ -427,6 +453,30 @@ impl PreparedWgcCapturer {
             active.set_output_pixel_format(format)?;
         }
         Ok(())
+    }
+
+    /// Surface delivery must be configured before the worker spawns: the
+    /// WGC session bakes the cursor at creation time and the delivery ring
+    /// is built into the worker, so a live worker cannot switch modes.
+    fn set_surface_delivery(&mut self, delivery: SurfaceDelivery) -> CaptureResult<()> {
+        if delivery != SurfaceDelivery::CpuPixels {
+            if self.target.hdr_to_sdr().is_some() {
+                return Err(CaptureError::UnsupportedFormat(
+                    "GPU surface delivery does not support HDR targets".into(),
+                ));
+            }
+            if self.active.is_some() {
+                return Err(CaptureError::InvalidConfig(
+                    "GPU surface delivery must be configured before capture starts".into(),
+                ));
+            }
+        }
+        self.surface_delivery = delivery;
+        Ok(())
+    }
+
+    fn capture_surface(&mut self) -> CaptureResult<BackendSurfaceFrame> {
+        self.ensure_active()?.capture_surface()
     }
 
     fn set_gpu_hdr_conversion(&mut self, enabled: bool) -> CaptureResult<()> {
@@ -549,6 +599,8 @@ struct WgcWorker {
     dirty_regions_supported: bool,
     canonical: CanonicalSurface,
     readback: ReadbackPipeline,
+    surface_delivery: Option<SurfaceDeliveryPipeline>,
+    last_surface_generation: Option<u64>,
     capture_mode: CaptureMode,
     output_pixel_format: CapturePixelFormat,
     hdr_to_sdr: Option<HdrFrameContext>,
@@ -566,7 +618,7 @@ struct WgcWorker {
 }
 
 impl WgcWorker {
-    fn new(target: WorkerTarget) -> CaptureResult<Self> {
+    fn new(target: WorkerTarget, surface_delivery: SurfaceDelivery) -> CaptureResult<Self> {
         let com = CoInitGuard::init_multithreaded().map_err(CaptureError::platform)?;
         let hdr_to_sdr = target.hdr_to_sdr();
         let (device, context, item) = match target {
@@ -618,7 +670,15 @@ impl WgcWorker {
             .CreateCaptureSession(&item)
             .context("Direct3D11CaptureFramePool::CreateCaptureSession failed")
             .map_err(CaptureError::platform)?;
-        let _ = session.SetIsCursorCaptureEnabled(false);
+        // CPU delivery composites the cursor itself; GPU delivery can bake
+        // it into the captured texture with WGC's own cursor capture.
+        let native_cursor = matches!(
+            surface_delivery,
+            SurfaceDelivery::GpuTexture {
+                native_cursor: true
+            }
+        );
+        let _ = session.SetIsCursorCaptureEnabled(native_cursor);
         let _ = session.SetIsBorderRequired(false);
         let dirty_regions_supported =
             match session.SetDirtyRegionMode(GraphicsCaptureDirtyRegionMode::ReportOnly) {
@@ -662,6 +722,12 @@ impl WgcWorker {
             .context("GraphicsCaptureSession::StartCapture failed")
             .map_err(CaptureError::platform)?;
 
+        let surface_pipeline = if surface_delivery == SurfaceDelivery::CpuPixels {
+            None
+        } else {
+            Some(SurfaceDeliveryPipeline::new(&device))
+        };
+
         Ok(Self {
             device,
             context,
@@ -681,6 +747,8 @@ impl WgcWorker {
             dirty_regions_supported,
             canonical: CanonicalSurface::new(),
             readback: ReadbackPipeline::new(),
+            surface_delivery: surface_pipeline,
+            last_surface_generation: None,
             capture_mode: CaptureMode::Snapshot,
             output_pixel_format: CapturePixelFormat::Rgba8,
             hdr_to_sdr,
@@ -789,6 +857,14 @@ impl WgcWorker {
                 self.output_pixel_format = format;
                 self.readback.set_output_pixel_format(format);
                 let _ = response.send(Ok(()));
+            }
+            WorkerCommand::CaptureSurface { response } => {
+                let result = self
+                    .terminal_error
+                    .clone()
+                    .map_or_else(|| self.capture_surface(), Err);
+                let _ = response
+                    .send(result.map_err(|error| normalize_device_error(&self.device, error)));
             }
             #[cfg(feature = "stage-timing")]
             WorkerCommand::SetRecordStageTimings { enabled, response } => {
@@ -1033,7 +1109,17 @@ impl WgcWorker {
         )?;
         match outcome {
             ApplyOutcome::Updated(metadata) => {
-                self.prefetch_current(&metadata)?;
+                let Some(pipeline) = self.surface_delivery.as_mut() else {
+                    self.prefetch_current(&metadata)?;
+                    return Ok(FrameProcessing::Updated);
+                };
+                let canonical = self
+                    .canonical
+                    .resource()
+                    .cloned()
+                    .ok_or(CaptureError::Timeout)?;
+                let desc = self.canonical.desc().ok_or(CaptureError::Timeout)?;
+                pipeline.publish(&self.context, &canonical, &desc, &metadata)?;
                 Ok(FrameProcessing::Updated)
             }
             ApplyOutcome::Duplicate => Ok(FrameProcessing::Ignored),
@@ -1356,6 +1442,83 @@ impl WgcWorker {
         })
     }
 
+    /// Deliver the current canonical frame as a GPU texture.
+    ///
+    /// Mirrors `acquire_current`'s freshness policy: the first pull waits
+    /// for a baseline, later pulls wait briefly for a new publication and
+    /// otherwise re-deliver the previous one marked as a duplicate.
+    fn capture_surface(&mut self) -> CaptureResult<BackendSurfaceFrame> {
+        if self.surface_delivery.is_none() {
+            return Err(CaptureError::InvalidConfig(
+                "WGC worker is not in surface delivery mode".into(),
+            ));
+        }
+        self.pump_frames()?;
+        if self.closed {
+            return Err(CaptureError::MonitorLost);
+        }
+
+        let published_generation = |worker: &Self| {
+            worker
+                .surface_delivery
+                .as_ref()
+                .and_then(|p| p.published_generation())
+        };
+        let initial_publication = published_generation(self);
+        let wait_for = if !self.canonical.has_baseline() {
+            WGC_FRAME_TIMEOUT
+        } else if initial_publication.is_some() {
+            WGC_CONTINUOUS_FRESH_WAIT
+        } else {
+            WGC_FRAME_TIMEOUT
+        };
+
+        if !wait_for.is_zero() {
+            let deadline = Instant::now() + wait_for;
+            loop {
+                if self.canonical.has_baseline()
+                    && published_generation(self) != initial_publication
+                {
+                    break;
+                }
+                let now = Instant::now();
+                if now >= deadline {
+                    break;
+                }
+                match self
+                    .frame_notifications
+                    .recv_timeout(deadline.duration_since(now))
+                {
+                    Ok(()) => self.pump_frames()?,
+                    Err(crossbeam_channel::RecvTimeoutError::Timeout) => break,
+                    Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                        return Err(CaptureError::WorkerDead);
+                    }
+                }
+                if self.closed {
+                    return Err(CaptureError::MonitorLost);
+                }
+            }
+        }
+
+        let published = self
+            .surface_delivery
+            .as_mut()
+            .and_then(|pipeline| pipeline.take())
+            .ok_or(CaptureError::Timeout)?;
+        let is_duplicate = Some(published.generation) == self.last_surface_generation;
+        self.last_surface_generation = Some(published.generation);
+        Ok(BackendSurfaceFrame {
+            texture_width: published.width,
+            texture_height: published.height,
+            is_duplicate,
+            capture_time: published.capture_time,
+            system_relative_time_hns: published.system_relative_time_hns,
+            backend_kind: CaptureBackendKind::WindowsGraphicsCapture,
+            payload: Some(published.payload),
+        })
+    }
+
     fn same_delivered_generation(
         &self,
         target: ReadbackTarget,
@@ -1473,6 +1636,14 @@ impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
         self.inner.set_output_pixel_format(format)
     }
 
+    fn set_surface_delivery(&mut self, delivery: SurfaceDelivery) -> CaptureResult<()> {
+        self.inner.set_surface_delivery(delivery)
+    }
+
+    fn capture_surface(&mut self) -> CaptureResult<BackendSurfaceFrame> {
+        self.inner.capture_surface()
+    }
+
     #[cfg(feature = "stage-timing")]
     fn set_record_stage_timings(&mut self, enabled: bool) -> CaptureResult<()> {
         self.inner.set_record_stage_timings(enabled)
@@ -1554,6 +1725,14 @@ impl crate::backend::MonitorCapturer for WindowsWindowCapturer {
 
     fn set_output_pixel_format(&mut self, format: CapturePixelFormat) -> CaptureResult<()> {
         self.inner.set_output_pixel_format(format)
+    }
+
+    fn set_surface_delivery(&mut self, delivery: SurfaceDelivery) -> CaptureResult<()> {
+        self.inner.set_surface_delivery(delivery)
+    }
+
+    fn capture_surface(&mut self) -> CaptureResult<BackendSurfaceFrame> {
+        self.inner.capture_surface()
     }
 
     #[cfg(feature = "stage-timing")]

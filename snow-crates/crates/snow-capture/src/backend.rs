@@ -241,6 +241,36 @@ pub(crate) trait MonitorCapturer: Send {
         Ok(())
     }
 
+    /// Select how captured frames leave the pipeline: CPU pixels (default)
+    /// or GPU textures without readback.
+    ///
+    /// Backends that cannot deliver GPU surfaces must fail with a
+    /// fallback-eligible error (e.g. `BackendUnavailable`) when asked for
+    /// anything other than [`SurfaceDelivery::CpuPixels`]; callers treat
+    /// that as "open a CPU-pixel session instead".
+    fn set_surface_delivery(
+        &mut self,
+        delivery: crate::surface::SurfaceDelivery,
+    ) -> CaptureResult<()> {
+        if delivery != crate::surface::SurfaceDelivery::CpuPixels {
+            return Err(CaptureError::BackendUnavailable(
+                "backend does not support GPU surface delivery".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Capture the current frame as a GPU texture, without CPU readback.
+    ///
+    /// Only meaningful after [`Self::set_surface_delivery`] accepted a
+    /// `GpuTexture` mode; the default implementation fails with a
+    /// fallback-eligible error.
+    fn capture_surface(&mut self) -> CaptureResult<crate::surface::BackendSurfaceFrame> {
+        Err(CaptureError::BackendUnavailable(
+            "backend does not support GPU surface capture".into(),
+        ))
+    }
+
     /// Select the WGC source update contract. Other backends ignore this.
     fn set_wgc_update_mode(&mut self, _mode: WgcUpdateMode) -> CaptureResult<()> {
         Ok(())

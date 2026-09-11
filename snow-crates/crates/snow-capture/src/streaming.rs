@@ -243,10 +243,11 @@ impl CaptureStream {
         let queue = Arc::new(StreamQueue::new(buffer_depth));
         let recycle_depth = (buffer_depth * 3).max(8);
         let initial_target_info = capture.target_info().ok();
+        let surface_mode = capture.output_surface() != crate::surface::SurfaceDelivery::CpuPixels;
         let (recycle_tx, recycle_rx) = mpsc::bounded::<Frame>(recycle_depth);
         let recycler = FrameRecycleSender::new(recycle_tx.clone());
 
-        if let Some(target_info) = initial_target_info {
+        if let (Some(target_info), false) = (initial_target_info, surface_mode) {
             // Tag recycled buffers with the session's output format so
             // backends that validate reuse frames by pixel format (DXGI)
             // accept them instead of allocating fresh buffers mid-stream.
@@ -295,6 +296,7 @@ impl CaptureStream {
                     &pause,
                     &stats_clone,
                     &requested_target,
+                    surface_mode,
                 );
                 worker_queue.close();
             })
@@ -472,6 +474,7 @@ fn stream_loop(
     pause: &AtomicBool,
     stats: &CaptureStreamStats,
     requested_target: &AtomicU32,
+    surface_mode: bool,
 ) {
     let min_interval = if config.adaptive_fps && config.min_fps > 0 {
         Some(Duration::from_secs_f64(1.0 / config.min_fps as f64))
@@ -545,16 +548,26 @@ fn stream_loop(
         }
 
         let reuse = reuse_frame.take();
-        let capture_result = if config.include_cursor {
-            capture.capture_with_cursor(reuse)
+        enum StreamCapture {
+            Pixels(Frame, Option<crate::capture_session::CursorAttachOutcome>),
+            Surface(crate::surface::GpuSurfaceFrame),
+        }
+        let capture_result = if surface_mode {
+            capture.capture_surface().map(StreamCapture::Surface)
+        } else if config.include_cursor {
+            capture
+                .capture_with_cursor(reuse)
+                .map(|(frame, cursor_outcome)| StreamCapture::Pixels(frame, cursor_outcome))
         } else {
-            capture.capture_frame(reuse).map(|frame| (frame, None))
+            capture
+                .capture_frame(reuse)
+                .map(|frame| StreamCapture::Pixels(frame, None))
         };
 
         let capture_elapsed = frame_start.elapsed();
 
         match capture_result {
-            Ok((frame, cursor_outcome)) => {
+            Ok(StreamCapture::Pixels(frame, cursor_outcome)) => {
                 consecutive_errors = 0;
 
                 #[cfg(feature = "stage-timing")]
@@ -600,13 +613,7 @@ fn stream_loop(
                     .store(latency_avg_ns.to_bits(), Ordering::Relaxed);
 
                 let (w, h) = frame.dimensions();
-                if last_width != 0 && last_height != 0 && (w != last_width || h != last_height) {
-                    let event = CaptureEvent::ResolutionChanged {
-                        old_width: last_width,
-                        old_height: last_height,
-                        new_width: w,
-                        new_height: h,
-                    };
+                if let Some(event) = resolution_changed_event(last_width, last_height, w, h) {
                     store_queue_fill(stats, queue.push(event).data_len);
 
                     if config.pause_on_resolution_change {
@@ -664,6 +671,57 @@ fn stream_loop(
                     window_total = 0;
                 }
             }
+            Ok(StreamCapture::Surface(frame)) => {
+                consecutive_errors = 0;
+
+                let sample_ns = capture_elapsed.as_nanos() as f64;
+                latency_avg_ns = LATENCY_ALPHA * sample_ns + (1.0 - LATENCY_ALPHA) * latency_avg_ns;
+                stats
+                    .capture_latency_avg_ns
+                    .store(latency_avg_ns.to_bits(), Ordering::Relaxed);
+
+                let (w, h) = frame.dimensions();
+                if let Some(event) = resolution_changed_event(last_width, last_height, w, h) {
+                    store_queue_fill(stats, queue.push(event).data_len);
+
+                    if config.pause_on_resolution_change {
+                        pause.store(true, Ordering::Release);
+                    }
+                }
+                last_width = w;
+                last_height = h;
+
+                stats.frames_captured.fetch_add(1, Ordering::Relaxed);
+
+                let outcome = queue.push(CaptureEvent::Surface(frame));
+                store_queue_fill(stats, outcome.data_len);
+                let was_dropped = match outcome.dropped {
+                    // Dropping the evicted event releases its surface
+                    // delivery slot back to the capture worker.
+                    Some(CaptureEvent::Surface(dropped)) => {
+                        stats.frames_dropped.fetch_add(1, Ordering::Relaxed);
+                        store_queue_fill(
+                            stats,
+                            queue
+                                .push(CaptureEvent::FramesDropped { count: 1 })
+                                .data_len,
+                        );
+                        drop(dropped);
+                        true
+                    }
+                    Some(_) => false,
+                    None => false,
+                };
+
+                if was_dropped {
+                    window_drops += 1;
+                }
+                window_total += 1;
+                if config.adaptive_fps && window_total >= ADAPTIVE_WINDOW {
+                    window_drops = 0;
+                    window_total = 0;
+                }
+            }
             Err(ref e) if e.is_retryable() => {
                 consecutive_errors += 1;
                 stats.errors_recovered.fetch_add(1, Ordering::Relaxed);
@@ -711,6 +769,23 @@ fn stream_loop(
 
 fn target_interval(target_fps: u32) -> Option<Duration> {
     (target_fps > 0).then(|| Duration::from_secs_f64(1.0 / target_fps as f64))
+}
+
+/// Resolution-change notification for a frame whose dimensions differ
+/// from the previously delivered frame. `None` on the first frame.
+fn resolution_changed_event(
+    last_width: u32,
+    last_height: u32,
+    new_width: u32,
+    new_height: u32,
+) -> Option<CaptureEvent> {
+    (last_width != 0 && last_height != 0 && (new_width != last_width || new_height != last_height))
+        .then(|| CaptureEvent::ResolutionChanged {
+            old_width: last_width,
+            old_height: last_height,
+            new_width,
+            new_height,
+        })
 }
 
 /// Upper bound for blocking on the recycle channel. The wait shares the

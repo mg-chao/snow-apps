@@ -993,6 +993,9 @@ fn new_recording_worker(
                     CaptureEvent::StreamEnded => {
                         video_ended = true;
                     }
+                    // CPU sessions never emit surface frames; the GPU
+                    // recording pipeline handles them.
+                    CaptureEvent::Surface(_) => {}
                     CaptureEvent::Error(err) => {
                         handle_source_error(
                             &err,
@@ -1065,6 +1068,9 @@ fn new_recording_worker(
                 CaptureEvent::StreamEnded => {
                     video_ended = true;
                 }
+                // CPU sessions never emit surface frames; the GPU
+                // recording pipeline handles them.
+                CaptureEvent::Surface(_) => {}
                 CaptureEvent::Error(err) => {
                     handle_source_error(
                         &err,

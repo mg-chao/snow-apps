@@ -136,6 +136,8 @@ pub(crate) struct CaptureSessionConfig {
     pub(crate) hdr_tonemap_lut: bool,
     /// Packed output layout requested by the caller.
     pub(crate) output_pixel_format: CapturePixelFormat,
+    /// CPU pixel readback versus GPU texture delivery.
+    pub(crate) output_surface: crate::surface::SurfaceDelivery,
     /// WGC complete-surface versus ordered-delta policy.
     pub(crate) wgc_update_mode: WgcUpdateMode,
     /// Record per-stage capture timings onto frame metadata.
@@ -153,6 +155,7 @@ impl Default for CaptureSessionConfig {
             gpu_hdr_conversion: true,
             hdr_tonemap_lut: true,
             output_pixel_format: CapturePixelFormat::Rgba8,
+            output_surface: crate::surface::SurfaceDelivery::default(),
             wgc_update_mode: WgcUpdateMode::Auto,
             #[cfg(feature = "stage-timing")]
             record_stage_timings: false,
@@ -170,6 +173,7 @@ impl From<CaptureOptions> for CaptureSessionConfig {
             gpu_hdr_conversion: value.gpu_hdr_conversion,
             hdr_tonemap_lut: value.hdr_tonemap_lut,
             output_pixel_format: value.output_pixel_format,
+            output_surface: value.output_surface,
             wgc_update_mode: value.wgc_update_mode,
             #[cfg(feature = "stage-timing")]
             record_stage_timings: value.record_stage_timings,
@@ -482,6 +486,7 @@ where
                 capturer.set_gpu_hdr_conversion(config.gpu_hdr_conversion)?;
                 capturer.set_hdr_tonemap_lut(config.hdr_tonemap_lut)?;
                 capturer.set_output_pixel_format(config.output_pixel_format)?;
+                capturer.set_surface_delivery(config.output_surface)?;
                 capturer.set_capture_mode(config.mode)?;
                 capturer.set_screen_color_transform(config.screen_color_transform)?;
                 #[cfg(feature = "stage-timing")]
@@ -999,6 +1004,116 @@ impl CaptureSession {
     pub(crate) fn capture_frame(&mut self, reuse: Option<Frame>) -> CaptureResult<Frame> {
         self.warmup_runtime();
         self.do_capture(reuse)
+    }
+
+    /// Output surface delivery mode the session was configured with.
+    pub(crate) fn output_surface(&self) -> crate::surface::SurfaceDelivery {
+        self.config.output_surface
+    }
+
+    /// Capture the current frame as a GPU texture, without CPU readback.
+    ///
+    /// Only valid on sessions opened with
+    /// [`SurfaceDelivery::GpuTexture`](crate::surface::SurfaceDelivery).
+    /// Preparing the capturer on an unsupported backend fails with a
+    /// fallback-eligible error, so callers can open a CPU-pixel session
+    /// instead.
+    pub fn capture_surface(&mut self) -> CaptureResult<crate::surface::GpuSurfaceFrame> {
+        if self.config.output_surface == crate::surface::SurfaceDelivery::CpuPixels {
+            return Err(CaptureError::InvalidConfig(
+                "capture_surface requires SurfaceDelivery::GpuTexture".into(),
+            ));
+        }
+        self.warmup_runtime();
+
+        let (backend_frame, crop) = match self.target.clone() {
+            CaptureTarget::PrimaryMonitor | CaptureTarget::Monitor(_) => {
+                let monitor = self.resolve_monitor_target()?;
+                let backend = Arc::clone(&self.backend);
+                let config = self.config;
+                let capturer = self
+                    .monitor_runtime_mut()
+                    .get_or_create_capturer(backend, config, &monitor)?;
+                let backend_kind = capturer.backend_kind();
+                let mut frame = capturer.capture_surface()?;
+                frame.backend_kind = backend_kind;
+                (frame, None)
+            }
+            CaptureTarget::Window(window) => {
+                let backend = Arc::clone(&self.backend);
+                let config = self.config;
+                let capturer = self
+                    .window_runtime_mut()
+                    .get_or_create_capturer(backend, config, &window)?;
+                let backend_kind = capturer.backend_kind();
+                let mut frame = capturer.capture_surface()?;
+                frame.backend_kind = backend_kind;
+                (frame, None)
+            }
+            CaptureTarget::Region(region) => {
+                // GPU delivery covers regions fully contained in one
+                // monitor; multi-monitor stitching stays on the CPU path.
+                let (plan, _rebuild) = {
+                    let backend = Arc::clone(&self.backend);
+                    self.region_runtime_mut().prepare_plan(&backend, &region)?
+                };
+                if plan.entries.len() != 1 || !plan.region_fully_covered {
+                    return Err(CaptureError::BackendUnavailable(
+                        "GPU surface delivery requires a region fully covered by one monitor"
+                            .into(),
+                    ));
+                }
+                let entry = plan.entries.iter().next().expect("validated single entry");
+                let crop = crate::surface::SurfaceCropRect {
+                    x: entry.blit.src_x,
+                    y: entry.blit.src_y,
+                    width: entry.blit.width,
+                    height: entry.blit.height,
+                };
+                let monitor = entry.monitor.clone();
+                let backend = Arc::clone(&self.backend);
+                let config = self.config;
+                let capturer = self
+                    .region_runtime_mut()
+                    .get_or_create_capturer(backend, config, &monitor)?;
+                let backend_kind = capturer.backend_kind();
+                let mut frame = capturer.capture_surface()?;
+                frame.backend_kind = backend_kind;
+                (frame, Some(crop))
+            }
+        };
+
+        self.sequence = self.sequence.wrapping_add(1).max(1);
+        let backend_kind = backend_frame.backend_kind;
+        let is_duplicate = backend_frame.is_duplicate;
+        let capture_time = backend_frame.capture_time;
+        let system_relative_time_hns = backend_frame.system_relative_time_hns;
+        let texture_width = backend_frame.texture_width;
+        let texture_height = backend_frame.texture_height;
+        let payload = backend_frame.payload;
+        let mut metadata = crate::frame::FrameMetadata {
+            sequence: self.sequence,
+            is_duplicate,
+            backend_kind,
+            ..crate::frame::FrameMetadata::default()
+        };
+        metadata.set_timing_with_format(
+            Some(capture_time),
+            (system_relative_time_hns != 0).then_some(system_relative_time_hns),
+            TickFormat::Hns100,
+        );
+        let (width, height) = crop
+            .map(|rect| (rect.width, rect.height))
+            .unwrap_or((texture_width, texture_height));
+        Ok(crate::surface::GpuSurfaceFrame::new(
+            width,
+            height,
+            texture_width,
+            texture_height,
+            crop,
+            metadata,
+            payload,
+        ))
     }
 
     /// Returns the active capture workload.
@@ -2953,6 +3068,259 @@ mod tests {
 
         assert_eq!(*desktop_calls.lock().unwrap(), 0);
         assert_eq!(*region_calls.lock().unwrap(), 1);
+        Ok(())
+    }
+
+    // ---- GPU surface delivery ----
+
+    use crate::CaptureWorkload as TestWorkload;
+    use crate::backend::CaptureBackendKind as TestBackendKind;
+
+    #[derive(Default)]
+    struct SurfaceState {
+        accepted_delivery: Option<crate::surface::SurfaceDelivery>,
+        surface_calls: usize,
+        duplicates: Vec<bool>,
+    }
+
+    struct SurfaceBackend {
+        layout: MonitorLayout,
+        primary: MonitorId,
+        state: Arc<Mutex<SurfaceState>>,
+    }
+
+    struct SurfaceCapturer {
+        state: Arc<Mutex<SurfaceState>>,
+    }
+
+    impl MonitorCapturer for SurfaceCapturer {
+        fn backend_kind(&self) -> TestBackendKind {
+            TestBackendKind::WindowsGraphicsCapture
+        }
+
+        fn capture(&mut self, _reuse: Option<Frame>) -> CaptureResult<Frame> {
+            Err(CaptureError::BackendUnavailable(
+                "surface capturer has no CPU pixel path".into(),
+            ))
+        }
+
+        fn set_surface_delivery(
+            &mut self,
+            delivery: crate::surface::SurfaceDelivery,
+        ) -> CaptureResult<()> {
+            self.state.lock().unwrap().accepted_delivery = Some(delivery);
+            Ok(())
+        }
+
+        fn capture_surface(&mut self) -> CaptureResult<crate::surface::BackendSurfaceFrame> {
+            let mut state = self.state.lock().unwrap();
+            let is_duplicate = state
+                .duplicates
+                .get(
+                    state
+                        .surface_calls
+                        .min(state.duplicates.len().saturating_sub(1)),
+                )
+                .copied()
+                .unwrap_or(false);
+            state.surface_calls += 1;
+            Ok(crate::surface::BackendSurfaceFrame {
+                texture_width: 1920,
+                texture_height: 1080,
+                is_duplicate,
+                capture_time: Instant::now(),
+                system_relative_time_hns: 123_456,
+                backend_kind: TestBackendKind::WindowsGraphicsCapture,
+                payload: None,
+            })
+        }
+    }
+
+    impl CaptureBackend for SurfaceBackend {
+        fn enumerate_monitors(&self) -> CaptureResult<Vec<MonitorId>> {
+            Ok(self
+                .layout
+                .monitors
+                .iter()
+                .map(|entry| entry.monitor.clone())
+                .collect())
+        }
+
+        fn monitor_layout(&self) -> CaptureResult<MonitorLayout> {
+            Ok(self.layout.clone())
+        }
+
+        fn primary_monitor(&self) -> CaptureResult<MonitorId> {
+            Ok(self.primary.clone())
+        }
+
+        fn create_monitor_capturer(
+            &self,
+            _monitor: &MonitorId,
+        ) -> CaptureResult<Box<dyn MonitorCapturer>> {
+            Ok(Box::new(SurfaceCapturer {
+                state: Arc::clone(&self.state),
+            }))
+        }
+    }
+
+    fn surface_session(
+        target: CaptureTarget,
+        delivery: crate::surface::SurfaceDelivery,
+        layout: MonitorLayout,
+        state: Arc<Mutex<SurfaceState>>,
+    ) -> CaptureResult<CaptureSession> {
+        let backend: Arc<dyn CaptureBackend> = Arc::new(SurfaceBackend {
+            primary: layout.monitors[0].monitor.clone(),
+            layout,
+            state,
+        });
+        CaptureSession::builder()
+            .target(target)
+            .with_backend(backend)
+            .with_options(CaptureOptions {
+                workload: TestWorkload::Continuous,
+                output_surface: delivery,
+                ..CaptureOptions::default()
+            })
+            .build()
+    }
+
+    #[test]
+    fn capture_surface_rejects_cpu_pixel_sessions() -> CaptureResult<()> {
+        let state = Arc::new(Mutex::new(SurfaceState::default()));
+        let monitor = MonitorId::from_parts(7, 9, 0, "surface-monitor", true);
+        let mut session = surface_session(
+            CaptureTarget::PrimaryMonitor,
+            crate::surface::SurfaceDelivery::CpuPixels,
+            mock_layout(&monitor, 0, 0, 1920, 1080),
+            state,
+        )?;
+        assert!(matches!(
+            session.capture_surface(),
+            Err(CaptureError::InvalidConfig(_))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn capture_surface_rejects_backends_without_surface_support() -> CaptureResult<()> {
+        // The lifecycle capturer keeps the default `set_surface_delivery`,
+        // which refuses GPU texture mode.
+        let state = Arc::new(Mutex::new(LifecycleState::default()));
+        let backend: Arc<dyn CaptureBackend> = Arc::new(LifecycleBackend {
+            monitor: MonitorId::from_parts(41, 43, 0, "lifecycle-monitor", true),
+            state,
+        });
+        let mut session = CaptureSession::builder()
+            .target(CaptureTarget::PrimaryMonitor)
+            .with_backend(backend)
+            .with_options(CaptureOptions {
+                workload: TestWorkload::Continuous,
+                output_surface: crate::surface::SurfaceDelivery::GpuTexture {
+                    native_cursor: true,
+                },
+                ..CaptureOptions::default()
+            })
+            .build()?;
+        assert!(matches!(
+            session.capture_surface(),
+            Err(CaptureError::BackendUnavailable(_))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn capture_surface_maps_region_crop_and_metadata() -> CaptureResult<()> {
+        let state = Arc::new(Mutex::new(SurfaceState {
+            duplicates: vec![false, true],
+            ..SurfaceState::default()
+        }));
+        let monitor = MonitorId::from_parts(7, 9, 0, "surface-monitor", true);
+        let mut session = surface_session(
+            CaptureTarget::Region(CaptureRegion::new(1100, 600, 640, 360)?),
+            crate::surface::SurfaceDelivery::GpuTexture {
+                native_cursor: true,
+            },
+            mock_layout(&monitor, 100, 50, 1920, 1080),
+            Arc::clone(&state),
+        )?;
+        session.prepare_target()?;
+
+        let first = session.capture_surface()?;
+        assert_eq!(first.dimensions(), (640, 360));
+        assert_eq!(first.texture_dimensions(), (1920, 1080));
+        assert_eq!(
+            first.crop(),
+            Some(crate::surface::SurfaceCropRect {
+                x: 1000,
+                y: 550,
+                width: 640,
+                height: 360,
+            })
+        );
+        assert_eq!(
+            first.metadata().backend_kind(),
+            TestBackendKind::WindowsGraphicsCapture
+        );
+        assert!(!first.is_duplicate());
+        assert_eq!(first.metadata().sequence, 1);
+        assert!(first.metadata().stream_timestamp().is_some());
+
+        let second = session.capture_surface()?;
+        assert!(second.is_duplicate());
+        assert_eq!(second.metadata().sequence, 2);
+
+        let state = state.lock().unwrap();
+        assert_eq!(
+            state.accepted_delivery,
+            Some(crate::surface::SurfaceDelivery::GpuTexture {
+                native_cursor: true
+            })
+        );
+        assert_eq!(state.surface_calls, 2);
+        Ok(())
+    }
+
+    #[test]
+    fn capture_surface_rejects_regions_spanning_monitors() -> CaptureResult<()> {
+        let state = Arc::new(Mutex::new(SurfaceState::default()));
+        let first = MonitorId::from_parts(7, 9, 0, "left-monitor", true);
+        let second = MonitorId::from_parts(11, 13, 0, "right-monitor", false);
+        let layout = MonitorLayout {
+            monitors: vec![
+                crate::region::MonitorGeometry {
+                    monitor: first,
+                    x: 0,
+                    y: 0,
+                    width: 1920,
+                    height: 1080,
+                },
+                crate::region::MonitorGeometry {
+                    monitor: second,
+                    x: 1920,
+                    y: 0,
+                    width: 1920,
+                    height: 1080,
+                },
+            ],
+            virtual_left: 0,
+            virtual_top: 0,
+            virtual_width: 3840,
+            virtual_height: 1080,
+        };
+        let mut session = surface_session(
+            CaptureTarget::Region(CaptureRegion::new(100, 100, 2200, 800)?),
+            crate::surface::SurfaceDelivery::GpuTexture {
+                native_cursor: false,
+            },
+            layout,
+            state,
+        )?;
+        assert!(matches!(
+            session.capture_surface(),
+            Err(CaptureError::BackendUnavailable(_))
+        ));
         Ok(())
     }
 }

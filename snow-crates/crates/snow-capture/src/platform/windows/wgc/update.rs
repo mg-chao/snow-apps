@@ -179,6 +179,14 @@ impl CanonicalSurface {
             .filter(|_| self.continuity.baseline_valid)
     }
 
+    /// The canonical texture viewed through its `ID3D11Resource` base
+    /// interface, for whole-texture GPU copies.
+    pub fn resource(&self) -> Option<&ID3D11Resource> {
+        self.resource
+            .as_ref()
+            .filter(|_| self.continuity.baseline_valid)
+    }
+
     pub fn desc(&self) -> Option<D3D11_TEXTURE2D_DESC> {
         self.desc.filter(|_| self.continuity.baseline_valid)
     }

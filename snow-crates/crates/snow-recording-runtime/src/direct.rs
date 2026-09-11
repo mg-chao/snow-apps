@@ -952,6 +952,9 @@ fn process_capture_event(event: CaptureEvent, context: CaptureEventContext<'_>) 
         | CaptureEvent::Resumed { .. }
         | CaptureEvent::ResolutionChanged { .. }
         | CaptureEvent::StreamEnded => {}
+        // CPU sessions never emit surface frames; the GPU recording
+        // pipeline handles them.
+        CaptureEvent::Surface(_) => {}
     }
     Ok(())
 }

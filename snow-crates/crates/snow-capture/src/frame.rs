@@ -715,6 +715,12 @@ impl std::fmt::Debug for CapturedFrame {
 pub enum CaptureEvent {
     /// A new frame is available.
     Frame(CapturedFrame),
+    /// A new GPU surface frame is available (no CPU readback happened).
+    ///
+    /// Only sessions opened with
+    /// [`SurfaceDelivery::GpuTexture`](crate::surface::SurfaceDelivery)
+    /// emit this variant; see [`GpuSurfaceFrame`](crate::surface::GpuSurfaceFrame).
+    Surface(crate::surface::GpuSurfaceFrame),
     /// The capture source resolution changed. A recorder should
     /// reconfigure its encoder with the new dimensions.
     ResolutionChanged {
@@ -765,7 +771,7 @@ impl StreamEvent for CaptureEvent {
 
     fn delivery_lane(&self) -> DeliveryLane {
         match self {
-            CaptureEvent::Frame(_) => DeliveryLane::Data,
+            CaptureEvent::Frame(_) | CaptureEvent::Surface(_) => DeliveryLane::Data,
             CaptureEvent::ResolutionChanged { .. }
             | CaptureEvent::FramesDropped { .. }
             | CaptureEvent::Paused { .. }
@@ -778,6 +784,7 @@ impl StreamEvent for CaptureEvent {
     fn timestamp(&self) -> Option<&StreamTimestamp> {
         match self {
             CaptureEvent::Frame(frame) => frame.metadata().stream_timestamp(),
+            CaptureEvent::Surface(frame) => frame.metadata().stream_timestamp(),
             _ => None,
         }
     }

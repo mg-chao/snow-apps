@@ -2069,6 +2069,13 @@ pub unsafe extern "C" fn snow_capture_stream_receive(
             clear_last_error();
             1
         },
+        // GPU surface frames have no C ABI representation; CPU-pixel
+        // streams never emit them. Surface events surface to C consumers
+        // as a quiet poll result, like a timeout.
+        Ok(CaptureEvent::Surface(_)) => {
+            clear_last_error();
+            1
+        }
         Ok(CaptureEvent::Error(error)) => unsafe {
             set_last_error(error.to_string());
             (*out_event).kind = SnowCaptureStreamEventKind::Error;

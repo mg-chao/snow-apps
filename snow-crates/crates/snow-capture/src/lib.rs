@@ -11,6 +11,7 @@ pub mod monitor;
 mod platform;
 pub mod region;
 pub mod streaming;
+pub mod surface;
 pub mod system;
 pub mod timing;
 pub mod window;
@@ -48,6 +49,7 @@ pub use region::{CaptureRegion, MonitorLayout};
 pub use streaming::{
     CaptureStream, CaptureStreamConfig, CaptureStreamStats, CaptureStreamStatsSnapshot,
 };
+pub use surface::{GpuSurfaceFrame, SurfaceCropRect, SurfaceDelivery};
 pub use system::{CaptureOptions, CaptureSystem, CaptureSystemBuilder};
 #[cfg(feature = "stage-timing")]
 pub use timing::StageTiming;

@@ -28,6 +28,15 @@ pub struct CaptureOptions {
     /// and backpressure behavior, while this option selects the WGC surface
     /// correctness contract.
     pub wgc_update_mode: WgcUpdateMode,
+    /// Controls whether frames are read back to CPU pixels (default) or
+    /// delivered as D3D11 textures without readback (WGC only).
+    ///
+    /// Surface delivery sessions produce
+    /// [`CaptureEvent::Surface`](crate::CaptureEvent::Surface) events
+    /// instead of CPU frames. Unsupported combinations fail while the
+    /// session prepares its capturer, so callers can fall back to a CPU
+    /// session.
+    pub output_surface: crate::surface::SurfaceDelivery,
     /// Record a per-stage timing breakdown inside participating backends and
     /// attach it to each frame's metadata (`FrameMetadata::stage_timings`).
     ///
@@ -50,6 +59,7 @@ impl Default for CaptureOptions {
             hdr_tonemap_lut: true,
             output_pixel_format: CapturePixelFormat::Rgba8,
             wgc_update_mode: WgcUpdateMode::Auto,
+            output_surface: crate::surface::SurfaceDelivery::default(),
             #[cfg(feature = "stage-timing")]
             record_stage_timings: false,
         }
