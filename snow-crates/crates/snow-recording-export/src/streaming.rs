@@ -68,6 +68,23 @@ impl StreamingPixelOrder {
     }
 }
 
+/// Description of a pre-encoded H.264 track muxed by a streaming encoder.
+///
+/// `StreamingEncoder` skips in-process video encoding and instead accepts
+/// finished packets through `push_encoded_video_packet`, while audio,
+/// container handling, staging-file publication, and reports stay
+/// unchanged.
+#[derive(Clone, Debug)]
+pub struct ExternalVideoTrack {
+    /// avcC record (SPS/PPS in length-prefixed form) describing the
+    /// bitstream. Written into the stream's codec parameters before the
+    /// container header; when empty the muxer derives the sample
+    /// description from the first keyframe packet.
+    pub extradata: Vec<u8>,
+    /// Name reported as `video_encoder` in the streaming report.
+    pub encoder_name: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct StreamingEncoderConfig {
     pub output_path: PathBuf,
@@ -85,6 +102,10 @@ pub struct StreamingEncoderConfig {
     /// Byte order of the pixels passed to `push_rgba_frame`. BGRA avoids the
     /// capture-side channel swizzle for recording streams.
     pub pixel_order: StreamingPixelOrder,
+    /// Mux externally encoded H.264 packets instead of encoding raw pixels
+    /// in-process. Requires MP4 output and the H.264 codec; packet timing
+    /// semantics mirror `push_rgba_frame` (durations from timestamp gaps).
+    pub external_video: Option<ExternalVideoTrack>,
 }
 
 pub fn scaled_output_dimensions(
@@ -101,6 +122,59 @@ pub fn scaled_output_dimensions(
         maximum_height,
         format.requires_even_dimensions(),
     )
+}
+
+/// Map a millisecond presentation timestamp onto encoder ticks at `fps`.
+/// Shared by the pixel and external-packet push paths so both lanes derive
+/// identical durations from timestamp gaps.
+fn pts_from_timestamp_ms(timestamp_ms: u64, fps: u32) -> i64 {
+    ((u128::from(timestamp_ms) * u128::from(fps) + 500) / 1_000).min(i64::MAX as u128) as i64
+}
+
+/// Attach an avcC record to a muxer stream's codec parameters.
+///
+/// ffmpeg-next exposes no extradata setter, so this writes the bytes into
+/// the stream's `AVCodecParameters` directly; the container header then
+/// carries the bitstream description. Must run before `write_header`.
+///
+/// # Safety
+///
+/// `stream` must belong to a live output context and must not be used
+/// concurrently.
+unsafe fn attach_stream_extradata(
+    stream: &mut ffmpeg::format::stream::StreamMut<'_>,
+    extradata: &[u8],
+) -> Result<()> {
+    use ffmpeg::ffi::{AV_INPUT_BUFFER_PADDING_SIZE, av_free, av_malloc};
+    if extradata.is_empty() {
+        return Ok(());
+    }
+    unsafe {
+        let avstream = stream.as_mut_ptr();
+        let parameters = (*avstream).codecpar;
+        if parameters.is_null() {
+            return Err(RecordingExportError::Encode(
+                "streaming video track has no codec parameters".into(),
+            ));
+        }
+        if !(*parameters).extradata.is_null() {
+            av_free((*parameters).extradata.cast());
+            (*parameters).extradata = std::ptr::null_mut();
+            (*parameters).extradata_size = 0;
+        }
+        let padding = AV_INPUT_BUFFER_PADDING_SIZE as usize;
+        let buffer = av_malloc(extradata.len() + padding).cast::<u8>();
+        if buffer.is_null() {
+            return Err(RecordingExportError::Encode(
+                "failed to allocate external video extradata".into(),
+            ));
+        }
+        std::ptr::copy_nonoverlapping(extradata.as_ptr(), buffer, extradata.len());
+        std::ptr::write_bytes(buffer.add(extradata.len()), 0, padding);
+        (*parameters).extradata = buffer.cast();
+        (*parameters).extradata_size = extradata.len() as i32;
+        Ok(())
+    }
 }
 
 impl StreamingEncoderConfig {
@@ -132,9 +206,14 @@ impl StreamingEncoderConfig {
         }
         if let Some(audio) = &self.audio {
             if self.format.is_animated_image() {
-                return Err("animated streaming formats do not support audio".to_string());
+                return Err("animated streaming formats do not support audio".into());
             }
             audio.validate()?;
+        }
+        if self.external_video.is_some()
+            && (self.format != ExportFormat::Mp4 || self.codec != VideoCodec::H264)
+        {
+            return Err("external video packets require MP4 output with the H.264 codec".into());
         }
         self.video.validate("video")?;
         Ok(())
@@ -181,9 +260,17 @@ struct StreamingAudioState {
     next_encoder_pts: i64,
 }
 
+struct PendingExternalPacket {
+    pts: i64,
+    is_keyframe: bool,
+    data: Vec<u8>,
+}
+
 pub struct StreamingEncoder {
     output: Option<ffmpeg::format::context::Output>,
-    encoder: ffmpeg::encoder::video::Encoder,
+    /// In-process video encoder; `None` when the video track muxes
+    /// externally encoded packets instead.
+    encoder: Option<ffmpeg::encoder::video::Encoder>,
     stream_index: usize,
     stream_time_base: ffmpeg::Rational,
     /// Swscale fallback (formats the parallel kernel does not cover).
@@ -215,6 +302,12 @@ pub struct StreamingEncoder {
     coalesced_pixels: Vec<u8>,
     pending_coalesced: bool,
     pending_packet_durations: VecDeque<i64>,
+    /// Whether the video track muxes externally encoded packets instead of
+    /// feeding the in-process encoder.
+    external: bool,
+    /// Externally encoded packet awaiting its duration (the next packet's
+    /// presentation-timestamp gap). External-video mode only.
+    pending_external: Option<PendingExternalPacket>,
     audio: Option<StreamingAudioState>,
     staging_path: Option<PathBuf>,
     final_path: PathBuf,
@@ -263,89 +356,120 @@ impl StreamingEncoder {
         let fps = config.fps.min(i32::MAX as u32);
         let video_time_base = ffmpeg::Rational(1, fps as i32);
         let video_frame_rate = ffmpeg::Rational(fps as i32, 1);
-        let mut video_codec = select_video_codec(
-            &output,
-            &staging_path,
-            config.format,
-            config.codec,
-            config.prefer_hardware_h264,
-            config.execution_mode,
-            config.software_h264_priority,
-        )?;
-        let mut pixel_format = choose_video_pixel_format(
-            config.format,
-            video_codec.video().map_err(|error| {
-                RecordingExportError::Encode(format!(
-                    "selected streaming codec is not a video encoder: {error}"
-                ))
-            })?,
-            None,
-            config.execution_mode,
-        );
+        let external_track = config.external_video.clone();
         let effective_video = effective_video_config(&config.video);
-        let make_encoder = |codec: ffmpeg::Codec,
-                            pixel: ffmpeg::format::Pixel|
-         -> Result<ffmpeg::encoder::video::Encoder> {
-            let mut encoder = ffmpeg::codec::context::Context::new_with_codec(codec)
+        // External-video mode: an unopened context only feeds the stream's
+        // codec parameters; packets arrive pre-encoded via
+        // `push_encoded_video_packet`.
+        let mut external_parameters: Option<ffmpeg::encoder::video::Video> = None;
+        let (encoder, video_codec, pixel_format) = if external_track.is_some() {
+            let codec = ffmpeg::encoder::find(ffmpeg::codec::Id::H264).ok_or_else(|| {
+                RecordingExportError::Encode(
+                    "no H.264 codec is registered for external video muxing".into(),
+                )
+            })?;
+            let mut parameters = ffmpeg::codec::context::Context::new_with_codec(codec)
                 .encoder()
                 .video()
                 .map_err(|error| {
                     RecordingExportError::Encode(format!(
-                        "failed to create streaming video encoder: {error}"
+                        "failed to create external video stream parameters: {error}"
                     ))
                 })?;
-            encoder.set_width(config.width);
-            encoder.set_height(config.height);
-            encoder.set_format(pixel);
-            encoder.set_time_base(video_time_base);
-            encoder.set_frame_rate(Some(video_frame_rate));
-            configure_codec_threads(
-                &mut encoder,
-                config.encode_threads,
-                ffmpeg::codec::threading::Type::Frame,
-            );
-            if !config.format.is_animated_image() {
-                encoder.set_bit_rate(smart_quality_bitrate_bps(
-                    config.width,
-                    config.height,
-                    config.fps,
-                    &effective_video,
-                    false,
-                ));
-            }
+            parameters.set_width(config.width);
+            parameters.set_height(config.height);
+            parameters.set_format(ffmpeg::format::Pixel::NV12);
+            parameters.set_time_base(video_time_base);
+            parameters.set_frame_rate(Some(video_frame_rate));
             if global_header {
-                encoder.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
+                parameters.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
             }
-            open_video_encoder(encoder, &codec, &effective_video)
-        };
-
-        let encoder = match make_encoder(video_codec, pixel_format) {
-            Ok(encoder) => encoder,
-            Err(primary_error)
-                if config.prefer_hardware_h264 && is_hardware_h264_encoder(&video_codec) =>
-            {
-                video_codec = select_video_codec(
-                    &output,
-                    &staging_path,
-                    config.format,
-                    config.codec,
-                    false,
-                    ExportExecutionMode::SoftwareOnly,
-                    config.software_h264_priority,
-                )?;
-                pixel_format = choose_video_pixel_format(
-                    config.format,
-                    video_codec.video().map_err(|error| {
+            external_parameters = Some(parameters);
+            (None, codec, ffmpeg::format::Pixel::NV12)
+        } else {
+            let make_encoder = |codec: ffmpeg::Codec,
+                                pixel: ffmpeg::format::Pixel|
+             -> Result<ffmpeg::encoder::video::Encoder> {
+                let mut encoder = ffmpeg::codec::context::Context::new_with_codec(codec)
+                    .encoder()
+                    .video()
+                    .map_err(|error| {
                         RecordingExportError::Encode(format!(
-                            "fallback streaming codec is not a video encoder: {error}"
+                            "failed to create streaming video encoder: {error}"
                         ))
-                    })?,
-                    None,
-                    ExportExecutionMode::SoftwareOnly,
+                    })?;
+                encoder.set_width(config.width);
+                encoder.set_height(config.height);
+                encoder.set_format(pixel);
+                encoder.set_time_base(video_time_base);
+                encoder.set_frame_rate(Some(video_frame_rate));
+                configure_codec_threads(
+                    &mut encoder,
+                    config.encode_threads,
+                    ffmpeg::codec::threading::Type::Frame,
                 );
-                make_encoder(video_codec, pixel_format).map_err(|_| primary_error)?
-            }
-            Err(error) => return Err(error),
+                if !config.format.is_animated_image() {
+                    encoder.set_bit_rate(smart_quality_bitrate_bps(
+                        config.width,
+                        config.height,
+                        config.fps,
+                        &effective_video,
+                        false,
+                    ));
+                }
+                if global_header {
+                    encoder.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
+                }
+                open_video_encoder(encoder, &codec, &effective_video)
+            };
+            let mut video_codec = select_video_codec(
+                &output,
+                &staging_path,
+                config.format,
+                config.codec,
+                config.prefer_hardware_h264,
+                config.execution_mode,
+                config.software_h264_priority,
+            )?;
+            let mut pixel_format = choose_video_pixel_format(
+                config.format,
+                video_codec.video().map_err(|error| {
+                    RecordingExportError::Encode(format!(
+                        "selected streaming codec is not a video encoder: {error}"
+                    ))
+                })?,
+                None,
+                config.execution_mode,
+            );
+            let encoder = match make_encoder(video_codec, pixel_format) {
+                Ok(encoder) => encoder,
+                Err(primary_error)
+                    if config.prefer_hardware_h264 && is_hardware_h264_encoder(&video_codec) =>
+                {
+                    video_codec = select_video_codec(
+                        &output,
+                        &staging_path,
+                        config.format,
+                        config.codec,
+                        false,
+                        ExportExecutionMode::SoftwareOnly,
+                        config.software_h264_priority,
+                    )?;
+                    pixel_format = choose_video_pixel_format(
+                        config.format,
+                        video_codec.video().map_err(|error| {
+                            RecordingExportError::Encode(format!(
+                                "fallback streaming codec is not a video encoder: {error}"
+                            ))
+                        })?,
+                        None,
+                        ExportExecutionMode::SoftwareOnly,
+                    );
+                    make_encoder(video_codec, pixel_format).map_err(|_| primary_error)?
+                }
+                Err(error) => return Err(error),
+            };
+            (Some(encoder), video_codec, pixel_format)
         };
 
         let stream_index = {
@@ -357,7 +481,20 @@ impl StreamingEncoder {
             stream.set_time_base(video_time_base);
             stream.set_rate(video_frame_rate);
             stream.set_avg_frame_rate(video_frame_rate);
-            stream.set_parameters(&encoder);
+            match (encoder.as_ref(), external_parameters.as_ref()) {
+                (Some(encoder), _) => stream.set_parameters(encoder),
+                (_, Some(parameters)) => stream.set_parameters(parameters),
+                (None, None) => unreachable!("video mode produced no parameter source"),
+            }
+            if let Some(track) = external_track
+                .as_ref()
+                .filter(|track| !track.extradata.is_empty())
+            {
+                // SAFETY: `stream` is a freshly added stream of this output
+                // context and the parameters pointer is valid; the write
+                // happens before the header is written.
+                unsafe { attach_stream_extradata(&mut stream, &track.extradata)? };
+            }
             stream.index()
         };
         let mut audio = create_audio_state(
@@ -428,12 +565,18 @@ impl StreamingEncoder {
             coalesced_pixels: Vec::new(),
             pending_coalesced: false,
             pending_packet_durations: VecDeque::new(),
+            external: external_track.is_some(),
+            pending_external: None,
             audio,
             staging_path: None,
             final_path: config.output_path,
             report: StreamingEncoderReport {
-                video_encoder: video_codec.name().to_string(),
-                used_hardware_video_encoder: is_hardware_h264_encoder(&video_codec),
+                video_encoder: external_track
+                    .as_ref()
+                    .map(|track| track.encoder_name.clone())
+                    .unwrap_or_else(|| video_codec.name().to_string()),
+                used_hardware_video_encoder: external_track.is_some()
+                    || is_hardware_h264_encoder(&video_codec),
                 audio_encoder: config
                     .audio
                     .as_ref()
@@ -459,8 +602,7 @@ impl StreamingEncoder {
                 rgba.len()
             )));
         }
-        let pts = ((u128::from(timestamp_ms) * u128::from(self.fps) + 500) / 1_000)
-            .min(i64::MAX as u128) as i64;
+        let pts = pts_from_timestamp_ms(timestamp_ms, self.fps);
         match self.pending_pts.take() {
             None => {}
             Some(pending_pts) if pts <= pending_pts => {
@@ -489,6 +631,90 @@ impl StreamingEncoder {
         Ok(())
     }
 
+    /// Write one externally encoded H.264 packet (Annex-B byte stream).
+    ///
+    /// Mirrors `push_rgba_frame`'s timing semantics: packet durations come
+    /// from presentation-timestamp gaps, and `finish` flushes the final
+    /// packet with a single-tick duration. A push repeating the pending
+    /// timestamp is dropped (counted as coalesced) rather than replacing
+    /// the pending packet: unlike pixels, encoded packets cannot be
+    /// substituted without breaking reference chains. Only valid on
+    /// encoders configured with `external_video`.
+    pub fn push_encoded_video_packet(
+        &mut self,
+        timestamp_ms: u64,
+        is_keyframe: bool,
+        data: &[u8],
+    ) -> Result<()> {
+        if !self.external {
+            return Err(RecordingExportError::InvalidConfig(
+                "push_encoded_video_packet requires external video configuration".into(),
+            ));
+        }
+        if data.is_empty() {
+            return Err(RecordingExportError::InvalidConfig(
+                "encoded video packet must not be empty".into(),
+            ));
+        }
+        let pts = pts_from_timestamp_ms(timestamp_ms, self.fps);
+        match self.pending_external.take() {
+            Some(pending) if pts <= pending.pts => {
+                self.pending_external = Some(pending);
+                self.report.coalesced_frames = self.report.coalesced_frames.saturating_add(1);
+            }
+            Some(pending) => {
+                let duration = pts.saturating_sub(pending.pts).max(1);
+                self.write_external_packet(
+                    pending.pts,
+                    duration,
+                    pending.is_keyframe,
+                    &pending.data,
+                )?;
+                self.pending_external = Some(PendingExternalPacket {
+                    pts,
+                    is_keyframe,
+                    data: data.to_vec(),
+                });
+            }
+            None => {
+                self.pending_external = Some(PendingExternalPacket {
+                    pts,
+                    is_keyframe,
+                    data: data.to_vec(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Write one external packet into the output, rescaling presentation
+    /// timestamp and duration onto the video stream's time base.
+    fn write_external_packet(
+        &mut self,
+        pts: i64,
+        duration: i64,
+        is_keyframe: bool,
+        data: &[u8],
+    ) -> Result<()> {
+        let mut packet = ffmpeg::Packet::copy(data);
+        packet.set_stream(self.stream_index);
+        packet.set_pts(Some(pts));
+        packet.set_dts(Some(pts));
+        packet.set_duration(duration);
+        if is_keyframe {
+            packet.set_flags(ffmpeg::packet::Flags::KEY);
+        }
+        packet.rescale_ts(ffmpeg::Rational(1, self.fps as i32), self.stream_time_base);
+        let output = self.output.as_mut().ok_or_else(|| {
+            RecordingExportError::Encode("streaming output is already closed".into())
+        })?;
+        packet.write_interleaved(output).map_err(|error| {
+            RecordingExportError::Encode(format!("failed to write external video packet: {error}"))
+        })?;
+        self.report.encoded_frames = self.report.encoded_frames.saturating_add(1);
+        Ok(())
+    }
+
     pub fn push_audio_pcm_i16(&mut self, timestamp_ms: u64, samples: &[i16]) -> Result<()> {
         let audio = self.audio.as_mut().ok_or_else(|| {
             RecordingExportError::InvalidConfig(
@@ -506,7 +732,11 @@ impl StreamingEncoder {
     }
 
     pub fn finish(mut self) -> Result<StreamingEncoderReport> {
-        if let Some(pending_pts) = self.pending_pts.take() {
+        if self.external {
+            if let Some(pending) = self.pending_external.take() {
+                self.write_external_packet(pending.pts, 1, pending.is_keyframe, &pending.data)?;
+            }
+        } else if let Some(pending_pts) = self.pending_pts.take() {
             if self.pending_coalesced {
                 let staged = std::mem::take(&mut self.coalesced_pixels);
                 self.convert_frame(&staged)?;
@@ -521,17 +751,30 @@ impl StreamingEncoder {
             })?;
             audio.finish(output, &mut self.report)?;
         }
-        self.encoder.send_eof().map_err(|error| {
-            RecordingExportError::Encode(format!(
-                "failed to flush streaming video encoder: {error}"
-            ))
-        })?;
-        {
+        if !self.external {
+            self.encoder
+                .as_mut()
+                .ok_or_else(|| {
+                    RecordingExportError::Encode(
+                        "streaming encoder is missing its video encoder".to_string(),
+                    )
+                })?
+                .send_eof()
+                .map_err(|error| {
+                    RecordingExportError::Encode(format!(
+                        "failed to flush streaming video encoder: {error}"
+                    ))
+                })?;
             let output = self.output.as_mut().ok_or_else(|| {
                 RecordingExportError::Encode("streaming output is already closed".to_string())
             })?;
+            let encoder = self.encoder.as_mut().ok_or_else(|| {
+                RecordingExportError::Encode(
+                    "streaming encoder is missing its video encoder".to_string(),
+                )
+            })?;
             drain_video_packets_with_durations_timed(
-                &mut self.encoder,
+                encoder,
                 output,
                 self.stream_index,
                 self.stream_time_base,
@@ -543,6 +786,11 @@ impl StreamingEncoder {
                     &mut self.report.video_stage_timings.mux_write,
                 )),
             )?;
+        }
+        {
+            let output = self.output.as_mut().ok_or_else(|| {
+                RecordingExportError::Encode("streaming output is already closed".to_string())
+            })?;
             output.write_trailer().map_err(|error| {
                 RecordingExportError::Encode(format!(
                     "failed to write streaming output trailer: {error}"
@@ -613,13 +861,12 @@ impl StreamingEncoder {
         #[cfg(feature = "stage-timing")]
         let stage_started = std::time::Instant::now();
         self.encode_frame.set_pts(Some(pts));
-        self.encoder
-            .send_frame(&self.encode_frame)
-            .map_err(|error| {
-                RecordingExportError::Encode(format!(
-                    "failed to send streaming video frame: {error}"
-                ))
-            })?;
+        let encoder = self.encoder.as_mut().ok_or_else(|| {
+            RecordingExportError::Encode("streaming encoder is missing its video encoder".into())
+        })?;
+        encoder.send_frame(&self.encode_frame).map_err(|error| {
+            RecordingExportError::Encode(format!("failed to send streaming video frame: {error}"))
+        })?;
         #[cfg(feature = "stage-timing")]
         {
             self.report.video_stage_timings.send += stage_started.elapsed();
@@ -630,8 +877,11 @@ impl StreamingEncoder {
         let output = self.output.as_mut().ok_or_else(|| {
             RecordingExportError::Encode("streaming output is already closed".to_string())
         })?;
+        let encoder = self.encoder.as_mut().ok_or_else(|| {
+            RecordingExportError::Encode("streaming encoder is missing its video encoder".into())
+        })?;
         drain_video_packets_with_durations_timed(
-            &mut self.encoder,
+            encoder,
             output,
             self.stream_index,
             self.stream_time_base,
@@ -1095,6 +1345,7 @@ mod tests {
             encode_threads: 1,
             audio: None,
             pixel_order: StreamingPixelOrder::Rgba,
+            external_video: None,
         }
     }
 
@@ -1307,5 +1558,244 @@ mod tests {
                     .to_string_lossy()
                     .starts_with(DIRECT_STAGING_PREFIX))
         );
+    }
+
+    // ---- external video packet muxing ----
+
+    #[test]
+    fn pts_mapping_rounds_half_up() {
+        assert_eq!(pts_from_timestamp_ms(0, 10), 0);
+        assert_eq!(pts_from_timestamp_ms(100, 10), 1);
+        assert_eq!(pts_from_timestamp_ms(149, 10), 1);
+        assert_eq!(pts_from_timestamp_ms(150, 10), 2);
+        assert_eq!(pts_from_timestamp_ms(1_000, 60), 60);
+        assert_eq!(pts_from_timestamp_ms(16, 60), 1);
+    }
+
+    #[test]
+    fn external_video_requires_mp4_h264_output() {
+        let mut config = encoder_config(PathBuf::from("recording.gif"), ExportFormat::Gif);
+        config.external_video = Some(ExternalVideoTrack {
+            extradata: Vec::new(),
+            encoder_name: "external".into(),
+        });
+        assert!(config.validate().is_err());
+
+        let mut config = encoder_config(PathBuf::from("recording.mp4"), ExportFormat::Mp4);
+        config.codec = VideoCodec::H265;
+        config.external_video = Some(ExternalVideoTrack {
+            extradata: Vec::new(),
+            encoder_name: "external".into(),
+        });
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn external_pushes_are_rejected_without_external_configuration() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("recording.mp4");
+        let mut encoder =
+            StreamingEncoder::create(encoder_config(path.clone(), ExportFormat::Mp4)).unwrap();
+        assert!(
+            encoder
+                .push_encoded_video_packet(0, true, &[0, 0, 0, 1])
+                .is_err()
+        );
+        let _ = encoder.finish().unwrap();
+    }
+
+    /// Encode synthetic YUV frames with libx264 and collect the Annex-B
+    /// packets plus (optionally) the encoder's avcC extradata.
+    type X264Packet = (i64, bool, Vec<u8>);
+
+    #[allow(clippy::too_many_arguments)]
+    fn x264_annexb_packets(
+        width: u32,
+        height: u32,
+        fps: u32,
+        frames: usize,
+        global_header: bool,
+        all_intra: bool,
+    ) -> (Vec<X264Packet>, Vec<u8>) {
+        let codec = ffmpeg::encoder::find_by_name("libx264")
+            .expect("libx264 must be available for external packet tests");
+        let mut encoder = ffmpeg::codec::context::Context::new_with_codec(codec)
+            .encoder()
+            .video()
+            .unwrap();
+        encoder.set_width(width);
+        encoder.set_height(height);
+        encoder.set_format(ffmpeg::format::Pixel::YUV420P);
+        encoder.set_time_base(ffmpeg::Rational(1, fps as i32));
+        encoder.set_frame_rate(Some(ffmpeg::Rational(fps as i32, 1)));
+        if global_header {
+            encoder.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
+        }
+        let mut options = ffmpeg::Dictionary::new();
+        options.set("preset", "ultrafast");
+        options.set("tune", "zerolatency");
+        if all_intra {
+            options.set("x264-params", "keyint=1");
+        }
+        let mut encoder = encoder.open_with(options).unwrap();
+
+        let mut packets = Vec::new();
+        for index in 0..frames {
+            let mut frame =
+                ffmpeg::frame::Video::new(ffmpeg::format::Pixel::YUV420P, width, height);
+            crate::editing::ensure_video_frame_writable(&mut frame).unwrap();
+            for plane in 0..3 {
+                let value = if plane == 0 { (index * 40) as u8 } else { 128 };
+                let plane_width = frame.plane_width(plane).max(1) as usize;
+                for row in 0..frame.plane_height(plane).max(1) {
+                    let stride = frame.stride(plane);
+                    let row_start = row as usize * stride;
+                    let data = frame.data_mut(plane);
+                    data[row_start..row_start + plane_width].fill(value);
+                }
+            }
+            frame.set_pts(Some(index as i64));
+            encoder.send_frame(&frame).unwrap();
+            let mut packet = ffmpeg::Packet::empty();
+            while encoder.receive_packet(&mut packet).is_ok() {
+                packets.push((
+                    packet.pts().unwrap_or(i64::MAX),
+                    packet.is_key(),
+                    packet.data().map(<[u8]>::to_vec).unwrap_or_default(),
+                ));
+            }
+        }
+        encoder.send_eof().unwrap();
+        let mut packet = ffmpeg::Packet::empty();
+        while encoder.receive_packet(&mut packet).is_ok() {
+            packets.push((
+                packet.pts().unwrap_or(i64::MAX),
+                packet.is_key(),
+                packet.data().map(<[u8]>::to_vec).unwrap_or_default(),
+            ));
+        }
+
+        let extradata = unsafe {
+            let context = encoder.as_mut_ptr();
+            let size = (*context).extradata_size;
+            if size > 0 && !(*context).extradata.is_null() {
+                std::slice::from_raw_parts((*context).extradata.cast::<u8>(), size as usize)
+                    .to_vec()
+            } else {
+                Vec::new()
+            }
+        };
+        (packets, extradata)
+    }
+
+    /// Decoded presentation times in milliseconds, so assertions do not
+    /// depend on the muxer's chosen track timescale.
+    fn decoded_video_pts_ms(path: &Path) -> Vec<i64> {
+        let mut input = ffmpeg::format::input(path).unwrap();
+        let stream = input.streams().best(ffmpeg::media::Type::Video).unwrap();
+        let stream_index = stream.index();
+        let time_base = stream.time_base();
+        let mut decoder = ffmpeg::codec::context::Context::from_parameters(stream.parameters())
+            .unwrap()
+            .decoder()
+            .video()
+            .unwrap();
+        let mut decoded = ffmpeg::frame::Video::empty();
+        let mut pts = Vec::new();
+        for (stream, packet) in input.packets() {
+            if stream.index() != stream_index {
+                continue;
+            }
+            decoder.send_packet(&packet).unwrap();
+            while decoder.receive_frame(&mut decoded).is_ok() {
+                pts.push(decoded.pts().unwrap_or(i64::MIN));
+            }
+        }
+        decoder.send_eof().unwrap();
+        while decoder.receive_frame(&mut decoded).is_ok() {
+            pts.push(decoded.pts().unwrap_or(i64::MIN));
+        }
+        pts.iter()
+            .map(|ticks| {
+                ticks * 1_000 * i64::from(time_base.numerator())
+                    / i64::from(time_base.denominator())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn external_packets_mux_to_decodable_mp4() {
+        // Both with in-band parameters (no extradata) and with the avcC
+        // extradata attached to the stream, externally encoded packets must
+        // round-trip through the muxer with pixel-push timing semantics.
+        for global_header in [false, true] {
+            let (packets, extradata) = x264_annexb_packets(32, 32, 10, 4, global_header, false);
+            assert_eq!(
+                packets.len(),
+                4,
+                "zerolatency x264 emits one packet per frame"
+            );
+
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("recording.mp4");
+            let mut config = encoder_config(path.clone(), ExportFormat::Mp4);
+            config.external_video = Some(ExternalVideoTrack {
+                extradata: extradata.clone(),
+                encoder_name: "test-external".into(),
+            });
+            let mut encoder = StreamingEncoder::create(config).unwrap();
+            // Presentation times 0, 100, 300, 500 ms at 10 fps -> ticks
+            // 0, 1, 3, 5 with durations 1, 2, 2, 1 (final flush).
+            for (ticks, (_, keyframe, data)) in [0i64, 1, 3, 5].into_iter().zip(&packets) {
+                encoder
+                    .push_encoded_video_packet((ticks * 100) as u64, *keyframe, data)
+                    .unwrap();
+            }
+            let report = encoder.finish().unwrap();
+            assert_eq!(report.encoded_frames, 4);
+            assert_eq!(report.coalesced_frames, 0);
+            assert_eq!(report.video_encoder, "test-external");
+            assert!(report.used_hardware_video_encoder);
+
+            let (decoded, width, height) = decoded_video_frame_count(&path);
+            assert_eq!((width, height), (32, 32));
+            assert_eq!(decoded, 4, "global_header={global_header}");
+            assert_eq!(decoded_video_pts_ms(&path), vec![0, 100, 300, 500]);
+        }
+    }
+
+    #[test]
+    fn external_packet_repeating_pts_drops_new_packet() {
+        // All-intra frames so any subset of packets decodes independently.
+        let (packets, _extradata) = x264_annexb_packets(32, 32, 10, 3, false, true);
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("recording.mp4");
+        let mut config = encoder_config(path.clone(), ExportFormat::Mp4);
+        config.external_video = Some(ExternalVideoTrack {
+            extradata: Vec::new(),
+            encoder_name: "test-external".into(),
+        });
+        let mut encoder = StreamingEncoder::create(config).unwrap();
+        let mut ticks = [0i64, 1, 2].into_iter().zip(&packets);
+        let (_, (_, keyframe, data)) = ticks.next().unwrap();
+        encoder
+            .push_encoded_video_packet(0, *keyframe, data)
+            .unwrap();
+        // A push repeating the pending presentation timestamp must not
+        // replace the already scheduled packet.
+        let (_, (_, keyframe, data)) = ticks.next().unwrap();
+        encoder
+            .push_encoded_video_packet(0, *keyframe, data)
+            .unwrap();
+        let (_, (_, keyframe, data)) = ticks.next().unwrap();
+        encoder
+            .push_encoded_video_packet((2 * 100) as u64, *keyframe, data)
+            .unwrap();
+        let report = encoder.finish().unwrap();
+        assert_eq!(report.encoded_frames, 2);
+        assert_eq!(report.coalesced_frames, 1);
+        let (decoded, _, _) = decoded_video_frame_count(&path);
+        assert_eq!(decoded, 2);
+        assert_eq!(decoded_video_pts_ms(&path), vec![0, 200]);
     }
 }

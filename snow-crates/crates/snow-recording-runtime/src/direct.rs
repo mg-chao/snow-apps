@@ -135,6 +135,7 @@ impl DirectRecordingConfig {
             },
             encode_threads: 0,
             pixel_order: StreamingPixelOrder::Bgra,
+            external_video: None,
             audio: (self.format == ExportFormat::Mp4
                 && (self.enable_microphone || self.enable_system_audio))
                 .then_some(StreamingAudioConfig {

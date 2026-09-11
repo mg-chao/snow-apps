@@ -5757,6 +5757,7 @@ where
             encode_threads: perf_config.encode_threads,
             audio: None,
             pixel_order: StreamingPixelOrder::Rgba,
+            external_video: None,
         })?;
         let rgba_len = width as usize * height as usize * 4;
         let mut rgba = vec![0u8; rgba_len];

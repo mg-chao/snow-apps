@@ -86,6 +86,7 @@ fn streaming_system_audio_does_not_add_noise_to_the_source() {
             video: VideoEncodeConfig::default(),
             encode_threads: 1,
             pixel_order: StreamingPixelOrder::Rgba,
+            external_video: None,
             audio: Some(StreamingAudioConfig {
                 sample_rate_hz,
                 channels: source.channels,

@@ -253,6 +253,7 @@ fn run_sample(config: &Config, scenario: Scenario, sample: usize) -> Result<Benc
         },
         encode_threads: 0,
         pixel_order: StreamingPixelOrder::Rgba,
+        external_video: None,
         audio: scenario.audio.then_some(StreamingAudioConfig {
             sample_rate_hz: AUDIO_SAMPLE_RATE,
             channels: AUDIO_CHANNELS,

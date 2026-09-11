@@ -141,6 +141,7 @@ fn encode_fixture(output: &Path, format: ExportFormat) -> Result<(), String> {
         },
         encode_threads: 2,
         pixel_order: StreamingPixelOrder::Rgba,
+        external_video: None,
         audio: None,
     })
     .map_err(|e| e.to_string())?;
