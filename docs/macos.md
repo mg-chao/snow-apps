@@ -22,7 +22,7 @@ scripts/bootstrap-macos.sh
 scripts/build-macos.sh
 ```
 
-The bootstrap keeps Qt 6.11.1, the pinned zlib-ng 2.3.3 build, FFmpeg 8.1.2, and the
+The bootstrap keeps Qt 6.11.2, the pinned zlib-ng 2.3.3 build, FFmpeg 8.1.2, and the
 license collector runtime in `.tools/`. FFmpeg is built from a checksum-verified
 source archive under `.tools/ffmpeg-8.1.2`, with `libwebp` enabled for animated WebP
 recording. Its codec libraries and other native dependencies use Homebrew. The
@@ -31,17 +31,27 @@ Rust uses the repository's pinned toolchain. The preset uses two build jobs and
 disables unity builds so independent translation units also compile correctly.
 Override concurrency with `SNOW_BUILD_JOBS` and `CARGO_BUILD_JOBS` when needed.
 
+macOS pins Qt 6.11.2 to fix [QTBUG-147602](https://bugreports.qt.io/browse/QTBUG-147602),
+a color-space lifetime bug in `QImage::toCGImage()` that can crash native cursor
+changes. The Windows Qt pin remains unchanged.
+
 Run the development app with:
 
 ```sh
 build/macos-arm64/snow_shot/snow_shot.app/Contents/MacOS/snow_shot --show-main-window
 ```
 
-The app normally lives in the menu bar. The default screenshot shortcut is F1;
+Opening the app manually shows the main window; opening it again restores that
+window. `--autostart` starts in the menu bar. The default screenshot shortcut is F1;
 depending on the keyboard's function-key setting, this may require Fn+F1.
 Allow screen recording in System Settings when macOS requests it. Keyboard
 shortcuts use Carbon hot-key registration and do not require an input-monitoring
 event tap. Qt's portable `Ctrl` modifier corresponds to Command by default.
+
+Capture failures display a reusable error window. Permission failures also offer
+a link to Screen Recording settings. Replacing an ad-hoc signed build changes its
+code identity: if macOS still denies capture while the switch is on, add the current
+`/Applications/Snow Shot.app` in that settings pane and choose Quit & Reopen.
 
 ## Recording and OCR
 

@@ -7,6 +7,9 @@
 #include <QStandardPaths>
 #include <QCryptographicHash>
 #include <QMessageBox>
+#ifdef Q_OS_MACOS
+#include "snow_shot/platform/macos/capturefailuremessage.h"
+#endif
 
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/globalmousemanager.h"
@@ -284,6 +287,16 @@ class ApplicationController::Impl {
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::globalMouseCaptureEnded, &globalMouseManager,
                              &presentation::GlobalMouseManager::cancelGesture);
+#ifdef Q_OS_MACOS
+            QObject::connect(screenshotController.get(), &ScreenshotController::captureFailed, &q,
+                             [this](const QString& message) {
+                                 if (!captureFailureMessage) {
+                                     captureFailureMessage =
+                                         std::make_unique<platform::macos::CaptureFailureMessage>();
+                                 }
+                                 captureFailureMessage->present(message);
+                             });
+#endif
         }
         return screenshotController.get();
     }
@@ -514,6 +527,9 @@ class ApplicationController::Impl {
     std::unique_ptr<presentation::SelectedTextTranslationController>
         selectedTextTranslationController;
     QPointer<MainWindow> mainWindow;
+#ifdef Q_OS_MACOS
+    std::unique_ptr<platform::macos::CaptureFailureMessage> captureFailureMessage;
+#endif
     bool started = false;
     update::UpdateService* updates = nullptr;
 };

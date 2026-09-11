@@ -131,7 +131,7 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_OSX_ARCHITECTURES": "arm64",
         "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0",
-        "CMAKE_PREFIX_PATH": "${sourceDir}/.tools/macos-deps;${sourceDir}/.tools/qt/6.11.1/macos;$env{SNOW_MACOS_BREW_PREFIX}",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/.tools/macos-deps;${sourceDir}/.tools/qt/6.11.2/macos;$env{SNOW_MACOS_BREW_PREFIX}",
         "ZLIB_INCLUDE_DIR": "${sourceDir}/.tools/macos-deps/include",
         "ZLIB_LIBRARY_RELEASE": "${sourceDir}/.tools/macos-deps/lib/libz.dylib",
         "VCPKG_TARGET_TRIPLET": "arm64-osx",

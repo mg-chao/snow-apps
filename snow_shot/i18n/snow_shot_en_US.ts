@@ -7636,4 +7636,22 @@ Change the shortcut and try again</translation>
         <translation>The update helper did not respond. Please retry.</translation>
     </message>
 </context>
+<context>
+    <name>MacosCaptureFailureMessage</name>
+    <message>
+        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="58"/>
+        <source>Screen capture failed</source>
+        <translation>Screen capture failed</translation>
+    </message>
+    <message>
+        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="63"/>
+        <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Screen &amp; System Audio Recording. If it is already enabled, quit and reopen Snow Shot. After an update, you may need to remove Snow Shot from this list and add it again.</source>
+        <translation>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Screen &amp; System Audio Recording. If it is already enabled, quit and reopen Snow Shot. After an update, you may need to remove Snow Shot from this list and add it again.</translation>
+    </message>
+    <message>
+        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="69"/>
+        <source>Open Screen Recording Settings</source>
+        <translation>Open Screen Recording Settings</translation>
+    </message>
+</context>
 </TS>

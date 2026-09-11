@@ -41,6 +41,7 @@ struct ScreenshotCaptureWorkflowContext {
     std::function<ScreenshotIntelligentSelectionTarget()> preferredSelectionTarget = []() {
         return ScreenshotIntelligentSelectionTarget::WindowSubElement;
     };
+    std::function<void(const QString&)> captureFailed = [](const QString&) {};
 };
 
 class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink {

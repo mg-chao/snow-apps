@@ -1244,6 +1244,7 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
             []() { return snow_shot::storage::ScreenshotSettings().restoreOriginalScreenColors(); },
             []() { return snow_shot::storage::ScreenshotSettings().captureCursor(); },
             [this]() { return m_selectionSettings->selectionTarget(); },
+            [this](const QString& message) { emit owner.captureFailed(message); },
         });
 }
 

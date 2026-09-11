@@ -9,14 +9,14 @@ command -v brew >/dev/null || { echo "Install Homebrew before running this scrip
 command -v cargo >/dev/null || { echo "Install Rust with rustup before running this script." >&2; exit 1; }
 xcrun --find clang >/dev/null
 
-# Qt is kept at the exact version used by the Windows builds. The smaller set of
-# codec dependencies comes from Homebrew; no vcpkg Windows overlay is applied.
+# macOS requires Qt 6.11.2 for the native cursor lifetime fix (QTBUG-147602).
+# Codec dependencies come from Homebrew; no vcpkg Windows overlay is applied.
 # Keep the FFmpeg API compatible with the repository's Rust bindings.
 HOMEBREW_NO_AUTO_UPDATE=1 brew install cmake ninja pkg-config ffmpeg@8 zxing-cpp minizip-ng \
     jpeg-xl libheif webp onnxruntime
 # Homebrew supplies the codec libraries; our pinned FFmpeg also enables WebP.
 "$root/scripts/build-macos-ffmpeg.sh"
-qt_version=6.11.1
+qt_version=6.11.2
 if [[ ! -x "$root/.tools/qt/$qt_version/macos/bin/qmake" ]]; then
     python3 -m venv "$root/.tools/python"
     "$root/.tools/python/bin/python" -m pip install 'aqtinstall==3.3.0'
@@ -25,7 +25,7 @@ fi
 
 # Keep the exact Qt release's REUSE metadata beside the binary kit for packaging.
 for component in qtbase qtsvg; do
-    source="$root/.tools/$component-licenses"
+    source="$root/.tools/$component-$qt_version-licenses"
     if [[ ! -d "$source/.git" ]]; then
         git clone --depth 1 --branch "v$qt_version" --filter=blob:none --sparse \
             "https://github.com/qt/$component.git" "$source"

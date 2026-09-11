@@ -7635,4 +7635,22 @@ Change the shortcut and try again</source>
         <translation>更新程序未响应。请重试。</translation>
     </message>
 </context>
+<context>
+    <name>MacosCaptureFailureMessage</name>
+    <message>
+        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="58"/>
+        <source>Screen capture failed</source>
+        <translation>屏幕截图失败</translation>
+    </message>
+    <message>
+        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="63"/>
+        <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Screen &amp; System Audio Recording. If it is already enabled, quit and reopen Snow Shot. After an update, you may need to remove Snow Shot from this list and add it again.</source>
+        <translation>请在“系统设置 &gt; 隐私与安全性 &gt; 屏幕与系统音频录制”中允许 Snow Shot。如果已启用，请退出并重新打开 Snow Shot。更新版本后，可能需要从此列表移除 Snow Shot，再重新添加。</translation>
+    </message>
+    <message>
+        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="69"/>
+        <source>Open Screen Recording Settings</source>
+        <translation>打开屏幕录制设置</translation>
+    </message>
+</context>
 </TS>

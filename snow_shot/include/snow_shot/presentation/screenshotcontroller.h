@@ -52,6 +52,7 @@ class ScreenshotController : public QObject {
     void showMainWindowRequested();
     void captureAvailabilityChanged(bool available);
     void globalMouseCaptureEnded(quint64 gestureId);
+    void captureFailed(const QString& message);
 
   private:
     struct Impl;

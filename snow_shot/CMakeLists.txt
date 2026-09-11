@@ -42,7 +42,13 @@ if(SNOW_SHOT_ENABLE_STRICT_COMPILE)
 endif()
 snow_enable_clang_tidy()
 
-find_package(Qt6 6.11.1 EXACT REQUIRED COMPONENTS Widgets LinguistTools Svg Network)
+if(APPLE)
+    # QTBUG-147602: Qt 6.11.1 releases a CGColorSpace before QImage::toCGImage
+    # consumes it, causing native cursor changes to crash on macOS.
+    find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Widgets LinguistTools Svg Network)
+else()
+    find_package(Qt6 6.11.1 EXACT REQUIRED COMPONENTS Widgets LinguistTools Svg Network)
+endif()
 include(SnowTestCliGuard)
 include(SnowQtOffscreenTest)
 
@@ -5523,7 +5529,9 @@ if(APPLE)
     enable_language(OBJCXX)
     target_sources(snow_shot PRIVATE
         src/platform/macos/windowcaptureexclusion.mm
-        src/platform/macos/applicationreopenhandler.mm)
+        src/platform/macos/applicationreopenhandler.mm
+        include/snow_shot/platform/macos/capturefailuremessage.h
+        src/platform/macos/capturefailuremessage.cpp)
     set_source_files_properties(src/platform/macos/applicationreopenhandler.mm
         PROPERTIES COMPILE_OPTIONS "-fobjc-arc" SKIP_PRECOMPILE_HEADERS ON)
     configure_file(resources/macos-info.plist.in
@@ -5584,6 +5592,20 @@ if(APPLE)
 endif()
 
 if(APPLE AND SNOW_SHOT_BUILD_MACOS_TESTS)
+    add_executable(snow-shot-macos-image-conversion-tests tests/macos_image_conversion_tests.cpp)
+    target_link_libraries(snow-shot-macos-image-conversion-tests PRIVATE Qt6::Gui
+        "-framework CoreGraphics" "-framework CoreFoundation")
+    add_test(NAME snow-shot-macos-image-conversion-tests COMMAND snow-shot-macos-image-conversion-tests)
+    set_tests_properties(snow-shot-macos-image-conversion-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30 ENVIRONMENT "MallocScribble=1")
+    add_executable(snow-shot-macos-capture-failure-tests
+        tests/macos_capture_failure_tests.cpp
+        src/platform/macos/capturefailuremessage.cpp)
+    target_include_directories(snow-shot-macos-capture-failure-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow-shot-macos-capture-failure-tests PRIVATE Qt6::Widgets)
+    add_test(NAME snow-shot-macos-capture-failure-tests COMMAND snow-shot-macos-capture-failure-tests)
+    set_tests_properties(snow-shot-macos-capture-failure-tests PROPERTIES LABELS "unit" TIMEOUT 30)
     add_executable(snow-shot-macos-application-launch-tests
         tests/macos_application_launch_tests.mm
         src/platform/macos/applicationreopenhandler.mm)

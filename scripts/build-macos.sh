@@ -13,7 +13,7 @@ export PKG_CONFIG_PATH="$SNOW_MACOS_FFMPEG_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH
     -f "$SNOW_MACOS_FFMPEG_PREFIX/lib/libavcodec.dylib" ]] || {
     echo "Run scripts/bootstrap-macos.sh to build FFmpeg with WebP support." >&2; exit 1;
 }
-[[ -x "$root/.tools/qt/6.11.1/macos/bin/qmake" ]] || {
+[[ -x "$root/.tools/qt/6.11.2/macos/bin/qmake" ]] || {
     echo "Run scripts/bootstrap-macos.sh first." >&2; exit 1;
 }
 cmake --preset macos-arm64 "$@"

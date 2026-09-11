@@ -409,6 +409,7 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
             qWarning("Screenshot capture failed: %s", qPrintable(result.errorMessage));
         }
         cancelCapture();
+        m_context.captureFailed(result.errorMessage);
         return;
     }
 
@@ -419,6 +420,7 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
 
     if (!m_context.displaySession.hasActiveDisplays()) {
         cancelCapture();
+        m_context.captureFailed(result.errorMessage);
         return;
     }
     m_context.geometry.rebuild(m_context.displaySession);

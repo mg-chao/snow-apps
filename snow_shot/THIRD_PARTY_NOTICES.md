@@ -23,6 +23,8 @@ REUSE metadata and license texts. Local FFmpeg notices include its matching
 source archive, SHA-256, build configuration, source patches (if any), and the
 license selected by that configuration. The GPL-enabled macOS FFmpeg build
 includes libwebp support for animated WebP recording exports.
+The macOS kit uses Qt 6.11.2; its Qt Base and Qt SVG notices are collected from
+the corresponding upstream release tags.
 The macOS capture bridge (`snow-macos`, Apache-2.0) uses Apple's system frameworks
 and the existing `cc` build dependency (MIT OR Apache-2.0); Apple system
 frameworks are not redistributed in the app.

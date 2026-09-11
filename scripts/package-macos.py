@@ -15,7 +15,7 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-QT = ROOT / ".tools/qt/6.11.1/macos"
+QT = ROOT / ".tools/qt/6.11.2/macos"
 MACHO_MAGIC = {b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf"}
 
 
@@ -311,7 +311,7 @@ def main():
             "version": version, "architecture": "arm64", "minimum_macos": minimum,
             "revision": run("git", "-C", ROOT, "rev-parse", "HEAD"),
             "source_modified": bool(run("git", "-C", ROOT, "status", "--porcelain")),
-            "qt_version": "6.11.1", "signing": "ad-hoc, not notarized",
+            "qt_version": "6.11.2", "signing": "ad-hoc, not notarized",
         }
         (app / "Contents/Resources/build-info.json").write_text(json.dumps(provenance, indent=2) + "\n")
         for binary in reversed(list(macho_files(app))):
