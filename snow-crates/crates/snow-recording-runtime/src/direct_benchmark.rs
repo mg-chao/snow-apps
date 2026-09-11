@@ -108,6 +108,7 @@ struct Sample {
     frame: CapturedFrame,
     cursor: Option<AttachedCursorSample>,
     timestamp_ms: u64,
+    duplicate: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -168,7 +169,7 @@ pub fn run(
     // The production recording path captures BGRA; replay the same order so
     // the benchmark exercises the compositor and encoder transport the app
     // uses.
-    let sources: Vec<CapturedFrame> = (0..4)
+    let sources: Vec<snow_capture::frame::Frame> = (0..4)
         .map(|phase| {
             let mut pixels = vec![0; width as usize * height as usize * 4];
             for (index, pixel) in pixels.chunks_exact_mut(4).enumerate() {
@@ -180,9 +181,7 @@ pub fn run(
                 };
                 pixel.copy_from_slice(&[v, v, v, 255]);
             }
-            snow_capture::frame::Frame::from_bgra8(width, height, pixels)
-                .unwrap()
-                .into()
+            snow_capture::frame::Frame::from_bgra8(width, height, pixels).unwrap()
         })
         .collect();
     let shape = CursorShape::from_rgba(
@@ -196,8 +195,15 @@ pub fn run(
     let samples: Vec<_> = (0..frames)
         .map(|index| {
             let moving = matches!(scenario, "motion" | "resize" | "animated" | "audio");
+            // The static scenario replays an unchanged desktop: backends
+            // report those captures as duplicates, which the worker skips.
+            let mut frame = sources[if moving { index as usize % 4 } else { 0 }].clone();
+            if scenario == "static" && index > 0 {
+                frame.mark_duplicate_for_tests();
+            }
             Sample {
-                frame: sources[if moving { index as usize % 4 } else { 0 }].clone(),
+                duplicate: frame.metadata().is_duplicate(),
+                frame: frame.into(),
                 timestamp_ms: index * 1000 / u64::from(fps),
                 cursor: Some(AttachedCursorSample {
                     x: if matches!(scenario, "cursor" | "effects") {
@@ -270,10 +276,13 @@ pub fn run(
         // recomposes the latest capture at output cadence while an overlay
         // animation is active. When the recomposition fires for the same
         // iteration it replaces the capture push, so the worker skips the
-        // capture push entirely (decided once, before the event).
+        // capture push entirely (decided once, before the event). Duplicate
+        // captures are skipped as well unless an animation is redrawing.
         let overlay_due = timestamp >= next_overlay_frame_ms
             && compositor.has_active_animation(&config, timestamp);
-        if !overlay_due {
+        let skip_duplicate =
+            sample.duplicate && !compositor.has_active_animation(&config, timestamp);
+        if !overlay_due && !skip_duplicate {
             let composed = compositor.compose_with_cursor(
                 &config,
                 &sample.frame,

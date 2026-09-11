@@ -491,6 +491,14 @@ impl Frame {
         self.as_mut_bytes()
     }
 
+    /// Test and benchmark support: mark synthetic frames as content
+    /// duplicates, mirroring what capture backends report for unchanged
+    /// desktops. Production code paths never call this.
+    #[doc(hidden)]
+    pub fn mark_duplicate_for_tests(&mut self) {
+        self.metadata.is_duplicate = true;
+    }
+
     pub fn metadata(&self) -> &FrameMetadata {
         &self.metadata
     }

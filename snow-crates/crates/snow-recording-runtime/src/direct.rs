@@ -923,8 +923,24 @@ fn process_capture_event(event: CaptureEvent, context: CaptureEventContext<'_>) 
             monotonic_timestamp(last_timestamp_ms, clock.active_elapsed_ms(instant));
             if !suppress_push {
                 let timestamp_ms = last_timestamp_ms.unwrap_or(0);
-                let composed = compositor.compose(config, &frame, timestamp_ms)?;
-                encoder.push_rgba_frame(timestamp_ms, composed.as_slice())?;
+                let source_size = frame.dimensions();
+                let cursor = frame.metadata().cursor().cloned();
+                if should_skip_duplicate_push(
+                    frame.metadata().is_duplicate(),
+                    compositor.has_active_animation(config, timestamp_ms),
+                ) {
+                    // The pixels match the previous frame; keep overlay
+                    // state advancing without composing or encoding.
+                    compositor.maintain_overlay_state(
+                        config,
+                        cursor.as_ref(),
+                        source_size,
+                        timestamp_ms,
+                    );
+                } else {
+                    let composed = compositor.compose(config, &frame, timestamp_ms)?;
+                    encoder.push_rgba_frame(timestamp_ms, composed.as_slice())?;
+                }
             }
             *latest_frame = Some(frame);
         }
@@ -938,6 +954,14 @@ fn process_capture_event(event: CaptureEvent, context: CaptureEventContext<'_>) 
         | CaptureEvent::StreamEnded => {}
     }
     Ok(())
+}
+
+/// Backends mark frames whose desktop content is unchanged. When no overlay
+/// animation would redraw pixels, encoding such a frame repeats the previous
+/// output frame bit-for-bit; skipping it keeps output timing correct because
+/// the encoder derives frame durations from presentation-timestamp gaps.
+fn should_skip_duplicate_push(is_duplicate: bool, overlay_animation_active: bool) -> bool {
+    is_duplicate && !overlay_animation_active
 }
 
 fn monotonic_timestamp(last: &mut Option<u64>, candidate: u64) -> u64 {
@@ -1381,6 +1405,72 @@ mod tests {
             mouse_trail_duration_ms: 500,
             mouse_click_rgba: [0, 0, 0, 0],
         }
+    }
+
+    #[test]
+    fn duplicate_decision_requires_duplicate_and_inactive_animation() {
+        assert!(should_skip_duplicate_push(true, false));
+        assert!(!should_skip_duplicate_push(true, true));
+        assert!(!should_skip_duplicate_push(false, false));
+        assert!(!should_skip_duplicate_push(false, true));
+    }
+
+    #[test]
+    fn duplicate_capture_events_skip_composition_and_encoder_pushes() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut value = config();
+        value.region = RecordingRegion::new(0, 0, 16, 16);
+        value.output_path = directory.path().join("recording.mp4");
+        let mut encoder = StreamingEncoder::create(value.streaming_config()).unwrap();
+        let clock = RecordingClock::new(Instant::now());
+        let mut last_timestamp_ms = None;
+        let mut latest_frame = None;
+        let mut dropped = 0u64;
+        let mut compositor = VisualCompositor::new(value.output_dimensions());
+        let mut push_frame =
+            |index: u64,
+             duplicate: bool,
+             encoder: &mut StreamingEncoder,
+             latest_frame: &mut Option<CapturedFrame>| {
+                let mut frame =
+                    snow_capture::frame::Frame::from_bgra8(16, 16, vec![40u8; 16 * 16 * 4])
+                        .unwrap();
+                if duplicate {
+                    frame.mark_duplicate_for_tests();
+                }
+                let frame: CapturedFrame = frame.into();
+                process_capture_event(
+                    CaptureEvent::Frame(frame),
+                    CaptureEventContext {
+                        config: &value,
+                        clock: &clock,
+                        last_timestamp_ms: &mut last_timestamp_ms,
+                        latest_frame,
+                        dropped_capture_frames: &mut dropped,
+                        compositor: &mut compositor,
+                        encoder,
+                        suppress_push: false,
+                    },
+                )
+                .unwrap();
+                let _ = index;
+            };
+        // Space the events past one output frame interval so each accepted
+        // push lands on a distinct presentation timestamp; real capture
+        // streams deliver at this cadence.
+        push_frame(0, false, &mut encoder, &mut latest_frame);
+        std::thread::sleep(Duration::from_millis(35));
+        push_frame(1, true, &mut encoder, &mut latest_frame);
+        std::thread::sleep(Duration::from_millis(35));
+        push_frame(2, true, &mut encoder, &mut latest_frame);
+        std::thread::sleep(Duration::from_millis(35));
+        push_frame(3, false, &mut encoder, &mut latest_frame);
+        assert!(
+            latest_frame.is_some(),
+            "duplicates must still refresh the latest frame"
+        );
+        let report = encoder.finish().unwrap();
+        assert_eq!(report.encoded_frames, 2, "duplicate pushes must not encode");
     }
 
     #[test]
