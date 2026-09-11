@@ -295,6 +295,7 @@ pub struct EditorViewState {
 pub struct EditorStrokeCursor {
     pub position: Point<f64>,
     pub stroke_width: f64,
+    pub stroke_color: Option<ColorRgba8>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
