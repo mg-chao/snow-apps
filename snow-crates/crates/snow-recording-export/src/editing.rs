@@ -8237,20 +8237,54 @@ pub(crate) fn drain_video_packets_with_durations(
     draining: bool,
     pending_packet_durations: &mut VecDeque<i64>,
 ) -> Result<()> {
+    drain_video_packets_with_durations_timed(
+        encoder,
+        output,
+        stream_index,
+        stream_time_base,
+        draining,
+        pending_packet_durations,
+        #[cfg(feature = "stage-timing")]
+        None,
+    )
+}
+
+pub(crate) fn drain_video_packets_with_durations_timed(
+    encoder: &mut ffmpeg::encoder::video::Encoder,
+    output: &mut ffmpeg::format::context::Output,
+    stream_index: usize,
+    stream_time_base: ffmpeg::Rational,
+    draining: bool,
+    pending_packet_durations: &mut VecDeque<i64>,
+    #[cfg(feature = "stage-timing")] mut timings: Option<(&mut Duration, &mut Duration)>,
+) -> Result<()> {
     loop {
         let mut packet = ffmpeg::Packet::empty();
-        match encoder.receive_packet(&mut packet) {
+        #[cfg(feature = "stage-timing")]
+        let started = Instant::now();
+        let received = encoder.receive_packet(&mut packet);
+        #[cfg(feature = "stage-timing")]
+        if let Some((receive, _)) = timings.as_mut() {
+            **receive += started.elapsed();
+        }
+        match received {
             Ok(()) => {
                 if let Some(duration) = pending_packet_durations.pop_front() {
                     packet.set_duration(duration);
                 }
                 packet.set_stream(stream_index);
                 packet.rescale_ts(encoder.time_base(), stream_time_base);
+                #[cfg(feature = "stage-timing")]
+                let started = Instant::now();
                 packet.write_interleaved(output).map_err(|err| {
                     ScreenRecorderError::Export(format!(
                         "failed to write encoded video packet: {err}"
                     ))
                 })?;
+                #[cfg(feature = "stage-timing")]
+                if let Some((_, mux)) = timings.as_mut() {
+                    **mux += started.elapsed();
+                }
             }
             Err(ffmpeg::Error::Eof) => break,
             Err(err) if is_eagain(&err) && !draining => break,

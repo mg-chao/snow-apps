@@ -5,6 +5,9 @@ edition = "2024"
 license.workspace = true
 build = "build.rs"
 
+[features]
+recording-benchmark = ["snow-recording-export/stage-timing"]
+
 [dependencies]
 snow-recording-effects = { path = "../snow-recording-effects" }
 snow-core = { path = "../snow-core" }
@@ -26,6 +29,7 @@ uuid.workspace = true
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_Graphics_DirectWrite",
@@ -37,5 +41,10 @@ windows = { workspace = true, features = [
 ] }
 
 [dev-dependencies]
+anyhow.workspace = true
 proptest = "1.11.0"
 tempfile.workspace = true
+
+[[example]]
+name = "recording_runtime_benchmark"
+required-features = ["recording-benchmark"]

@@ -32,6 +32,10 @@ use crate::laser_trail::LaserTrail;
 use crate::mouse_hook::{MouseClickObservation, MouseHookObserver};
 use crate::recording::RecordingState;
 
+#[cfg(feature = "recording-benchmark")]
+#[path = "direct_benchmark.rs"]
+pub mod benchmark;
+
 use snow_recording_effects::mouse_effects::{
     CLICK_ANIMATION_MS, CLICK_QUEUE_DEPTH, RenderClick, draw_clicks, scale_coordinate, scale_point,
 };
@@ -1025,6 +1029,84 @@ impl VisualCompositor {
         }
         if config.show_cursor
             && let Some(cursor) = cursor.as_ref()
+        {
+            draw_cursor(
+                &mut rgba,
+                self.output_size,
+                source_size,
+                cursor,
+                &mut self.cursor_shapes,
+            );
+        }
+        if let Some(keyboard) = self.keyboard.as_mut() {
+            while self
+                .pending_keys
+                .front()
+                .is_some_and(|event| event.at_ms <= timestamp_ms)
+            {
+                keyboard
+                    .model
+                    .event(self.pending_keys.pop_front().expect("pending key"));
+            }
+            keyboard.draw(&mut rgba, timestamp_ms).map_err(|error| {
+                ScreenRecorderError::Encode(format!("keyboard recording: {error}"))
+            })?;
+        }
+        Ok(rgba)
+    }
+
+    /// Compose with an explicit cursor sample; the deterministic benchmark
+    /// replays synthetic captures whose cursors are not in frame metadata.
+    /// Mirrors `compose`; keep the two in sync.
+    #[cfg(feature = "recording-benchmark")]
+    fn compose_with_cursor(
+        &mut self,
+        config: &DirectRecordingConfig,
+        frame: &CapturedFrame,
+        cursor: Option<&AttachedCursorSample>,
+        timestamp_ms: u64,
+    ) -> Result<Vec<u8>> {
+        self.trail.set_lifetime_ms(config.mouse_trail_duration_ms);
+        let source_size = frame.dimensions();
+        let mut rgba = resize_rgba(frame.as_rgba_bytes(), source_size, self.output_size);
+        if config.mouse_trail_rgba[3] != 0 {
+            self.trail.observe(
+                cursor
+                    .filter(|cursor| cursor.visible)
+                    .map(|cursor| (cursor.x, cursor.y)),
+                source_size,
+                self.output_size,
+                timestamp_ms,
+            );
+        } else {
+            self.trail.clear();
+        }
+        while self.clicks.front().is_some_and(|click| {
+            timestamp_ms.saturating_sub(click.timestamp_ms) > CLICK_ANIMATION_MS
+        }) {
+            self.clicks.pop_front();
+        }
+
+        if config.mouse_trail_rgba[3] != 0 {
+            self.trail.draw(
+                &mut rgba,
+                self.output_size,
+                timestamp_ms,
+                config.mouse_trail_rgba,
+            );
+        }
+        if config.mouse_click_rgba[3] != 0 {
+            draw_clicks(
+                &mut rgba,
+                self.output_size,
+                &self.clicks,
+                timestamp_ms,
+                config.mouse_click_rgba,
+                source_size,
+            );
+        }
+        if config.show_cursor
+            && let Some(cursor) = cursor
         {
             draw_cursor(
                 &mut rgba,

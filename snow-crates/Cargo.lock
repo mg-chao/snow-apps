@@ -2831,6 +2831,7 @@ dependencies = [
  "rustc-hash",
  "snow-core",
  "snow-cursor",
+ "snow-recording-export",
  "windows",
 ]
 
@@ -2951,6 +2952,7 @@ dependencies = [
 name = "snow-recording-runtime"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "crossbeam-channel",
  "ffmpeg-next",
  "num_cpus",

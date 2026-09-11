@@ -11,7 +11,7 @@ use crate::config::{ExportExecutionMode, ExportFormat, SoftwareH264Priority};
 use crate::editing::{
     choose_audio_channel_layout, choose_audio_codec, choose_audio_sample_format,
     choose_audio_sample_rate, choose_video_pixel_format, configure_codec_threads,
-    drain_audio_packets_with_callback, drain_video_packets_with_durations,
+    drain_audio_packets_with_callback, drain_video_packets_with_durations_timed,
     effective_audio_bitrate_kbps, effective_video_config, ensure_video_frame_writable,
     is_hardware_h264_encoder, open_audio_encoder, open_video_encoder, select_video_codec,
 };
@@ -113,6 +113,8 @@ impl StreamingEncoderConfig {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct StreamingEncoderReport {
+    #[cfg(feature = "stage-timing")]
+    pub video_stage_timings: StreamingVideoStageTimings,
     pub encoded_frames: u64,
     pub coalesced_frames: u64,
     pub video_encoder: String,
@@ -121,6 +123,17 @@ pub struct StreamingEncoderReport {
     pub encoded_audio_frames: u64,
     pub inserted_silence_frames: u64,
     pub dropped_audio_frames: u64,
+}
+
+#[cfg(feature = "stage-timing")]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct StreamingVideoStageTimings {
+    pub copy: Duration,
+    pub convert: Duration,
+    pub send: Duration,
+    pub drain_and_mux: Duration,
+    pub packet_receive: Duration,
+    pub mux_write: Duration,
 }
 
 struct PendingFrame {
@@ -442,13 +455,18 @@ impl StreamingEncoder {
             let output = self.output.as_mut().ok_or_else(|| {
                 RecordingExportError::Encode("streaming output is already closed".to_string())
             })?;
-            drain_video_packets_with_durations(
+            drain_video_packets_with_durations_timed(
                 &mut self.encoder,
                 output,
                 self.stream_index,
                 self.stream_time_base,
                 true,
                 &mut self.pending_packet_durations,
+                #[cfg(feature = "stage-timing")]
+                Some((
+                    &mut self.report.video_stage_timings.packet_receive,
+                    &mut self.report.video_stage_timings.mux_write,
+                )),
             )?;
             output.write_trailer().map_err(|error| {
                 RecordingExportError::Encode(format!(
@@ -472,7 +490,15 @@ impl StreamingEncoder {
         let Some(pending) = self.pending.take() else {
             return Ok(());
         };
+        #[cfg(feature = "stage-timing")]
+        let stage_started = std::time::Instant::now();
         copy_rgba_into_frame(&mut self.rgba_frame, self.width, &pending.rgba);
+        #[cfg(feature = "stage-timing")]
+        {
+            self.report.video_stage_timings.copy += stage_started.elapsed();
+        }
+        #[cfg(feature = "stage-timing")]
+        let stage_started = std::time::Instant::now();
         ensure_video_frame_writable(&mut self.encode_frame)?;
         self.scaler
             .run(&self.rgba_frame, &mut self.encode_frame)
@@ -482,6 +508,12 @@ impl StreamingEncoder {
                 ))
             })?;
         self.encode_frame.set_pts(Some(pending.pts));
+        #[cfg(feature = "stage-timing")]
+        {
+            self.report.video_stage_timings.convert += stage_started.elapsed();
+        }
+        #[cfg(feature = "stage-timing")]
+        let stage_started = std::time::Instant::now();
         self.encoder
             .send_frame(&self.encode_frame)
             .map_err(|error| {
@@ -489,18 +521,33 @@ impl StreamingEncoder {
                     "failed to send streaming video frame: {error}"
                 ))
             })?;
+        #[cfg(feature = "stage-timing")]
+        {
+            self.report.video_stage_timings.send += stage_started.elapsed();
+        }
+        #[cfg(feature = "stage-timing")]
+        let stage_started = std::time::Instant::now();
         self.pending_packet_durations.push_back(duration.max(1));
         let output = self.output.as_mut().ok_or_else(|| {
             RecordingExportError::Encode("streaming output is already closed".to_string())
         })?;
-        drain_video_packets_with_durations(
+        drain_video_packets_with_durations_timed(
             &mut self.encoder,
             output,
             self.stream_index,
             self.stream_time_base,
             false,
             &mut self.pending_packet_durations,
+            #[cfg(feature = "stage-timing")]
+            Some((
+                &mut self.report.video_stage_timings.packet_receive,
+                &mut self.report.video_stage_timings.mux_write,
+            )),
         )?;
+        #[cfg(feature = "stage-timing")]
+        {
+            self.report.video_stage_timings.drain_and_mux += stage_started.elapsed();
+        }
         self.spare_rgba = pending.rgba;
         self.report.encoded_frames = self.report.encoded_frames.saturating_add(1);
         Ok(())
