@@ -700,6 +700,8 @@ void ScreenshotOverlayInputHandler::executeConfiguredCompletionAction(const QStr
         actionId = QStringLiteral("copy_to_clipboard");
     } else if (action == QStringLiteral("save")) {
         actionId = QStringLiteral("save_as_file");
+    } else if (action == QStringLiteral("quick_save")) {
+        actionId = QStringLiteral("quick_save");
     } else if (action == QStringLiteral("pin")) {
         actionId = QStringLiteral("pin_to_screen");
     } else {

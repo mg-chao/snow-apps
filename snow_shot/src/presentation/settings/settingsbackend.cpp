@@ -1122,8 +1122,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
               QStringLiteral("next_screenshot_history"),
               QStringLiteral("select_previously_selected_area"), QStringLiteral("copy_color"),
               QStringLiteral("pin_to_screen"), QStringLiteral("video_recording"),
-              QStringLiteral("scrolling_screenshot"), QStringLiteral("save_as_file"),
-              QStringLiteral("cancel_screenshot"), QStringLiteral("copy_to_clipboard")}) {
+              QStringLiteral("scrolling_screenshot"), QStringLiteral("quick_save"),
+              QStringLiteral("save_as_file"), QStringLiteral("cancel_screenshot"),
+              QStringLiteral("copy_to_clipboard")}) {
             defaults.insert(actionId,
                             stringListDefault(QStringLiteral("screenshot_shortcuts/") + actionId));
         }

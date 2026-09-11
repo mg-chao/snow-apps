@@ -4152,6 +4152,7 @@ void screenshotShortcutsShareButtonCommandsAndAvailability() {
     const Command commands[] = {
         {"pin_to_screen", "Pin to screen", &ScreenshotToolPalette::pinRequested},
         {"save_as_file", "Save as file", &ScreenshotToolPalette::saveRequested},
+        {"quick_save", "Quick save", &ScreenshotToolPalette::quickSaveRequested},
         {"video_recording", "Record screen", &ScreenshotToolPalette::screenRecordRequested},
         {"cancel_screenshot", "Cancel screenshot", &ScreenshotToolPalette::cancelRequested},
         {"copy_to_clipboard", "Copy to clipboard", &ScreenshotToolPalette::copyRequested},
