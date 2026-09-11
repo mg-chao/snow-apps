@@ -6,11 +6,17 @@ use snow_recording_effects::surface::TILE_SIZE;
 use std::cell::RefCell;
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 thread_local! { static ERROR: RefCell<CString> = RefCell::new(CString::default()); }
 fn error(message: String) {
     ERROR.with(|e| *e.borrow_mut() = CString::new(message.replace('\0', " ")).unwrap());
 }
+
+// Makes the exactly-once destroy contract observable: a missed destroy leaves the
+// count above its baseline and a repeated destroy wraps it far below, so tests
+// can fail loudly instead of leaking native observers silently.
+static LIVE_HANDLES: AtomicUsize = AtomicUsize::new(0);
 
 #[repr(C)]
 pub struct SnowRecordingEffectsKeyLabel {
@@ -160,6 +166,7 @@ pub unsafe extern "C" fn snow_recording_effects_create(
             }
         }
     });
+    LIVE_HANDLES.fetch_add(1, Ordering::Relaxed);
     Box::into_raw(Box::new(SnowRecordingEffects {
         config,
         notify,
@@ -226,7 +233,14 @@ pub unsafe extern "C" fn snow_recording_effects_stop(handle: *mut SnowRecordingE
 pub unsafe extern "C" fn snow_recording_effects_destroy(handle: *mut SnowRecordingEffects) {
     if !handle.is_null() {
         drop(unsafe { Box::from_raw(handle) });
+        LIVE_HANDLES.fetch_sub(1, Ordering::Relaxed);
     }
+}
+
+/// Live handles created by `snow_recording_effects_create` and not yet destroyed.
+#[unsafe(no_mangle)]
+pub extern "C" fn snow_recording_effects_live_handle_count() -> usize {
+    LIVE_HANDLES.load(Ordering::Relaxed)
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_recording_effects_acquire_frame(
@@ -436,8 +450,36 @@ mod tests {
         let sender = unsafe { &*context.cast::<std::sync::mpsc::Sender<()>>() };
         let _ = sender.send(());
     }
+
+    // Both tests below hold native handles concurrently; the count assertions are
+    // exact, so the handle-holding tests must not overlap.
+    static HANDLE_TESTS: std::sync::Mutex<()> = const { std::sync::Mutex::new(()) };
+
+    #[test]
+    fn live_handle_count_tracks_create_and_destroy_exactly_once() {
+        let _serial = HANDLE_TESTS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let baseline = snow_recording_effects_live_handle_count();
+        let raw = valid();
+        let first = unsafe { snow_recording_effects_create(&raw, None, std::ptr::null_mut()) };
+        let second = unsafe { snow_recording_effects_create(&raw, None, std::ptr::null_mut()) };
+        assert!(!first.is_null());
+        assert!(!second.is_null());
+        assert_eq!(snow_recording_effects_live_handle_count(), baseline + 2);
+        // A null destroy must not disturb the count; destroy pairs with create once.
+        unsafe { snow_recording_effects_destroy(std::ptr::null_mut()) };
+        assert_eq!(snow_recording_effects_live_handle_count(), baseline + 2);
+        unsafe { snow_recording_effects_destroy(first) };
+        assert_eq!(snow_recording_effects_live_handle_count(), baseline + 1);
+        unsafe { snow_recording_effects_destroy(second) };
+        assert_eq!(snow_recording_effects_live_handle_count(), baseline);
+    }
     #[test]
     fn idle_session_is_quiet_and_frame_lease_survives_join_and_destroy() {
+        let _serial = HANDLE_TESTS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let (sender, receiver) = std::sync::mpsc::channel::<()>();
         let raw = valid();
         let handle = unsafe {

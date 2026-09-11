@@ -75,25 +75,53 @@ class ScreenshotHistoryTaskExecutor final {
         m_pool.setExpiryTimeout(0);
     }
 
+    // Drains queued and active jobs, then rejects every later submission so no
+    // task can execute once application teardown begins. Call from the shutdown
+    // path, before the storage the jobs read is torn down; submissions and
+    // shutdown both happen on the GUI thread, so no new work can race in after
+    // the stopped flag is observed.
+    void shutdown() {
+        bool running = false;
+        if (!m_stopped.compare_exchange_strong(running, true)) {
+            return;
+        }
+        m_pool.waitForDone();
+    }
+
     template <typename Function> void submit(Function&& function, bool persistence = false) {
+        if (m_stopped.load(std::memory_order_acquire)) {
+            return;
+        }
         m_pendingJobs.fetch_add(1, std::memory_order_relaxed);
         if (persistence) {
             m_pendingPersistenceJobs.fetch_add(1, std::memory_order_relaxed);
             m_submittedPersistenceJobs.fetch_add(1, std::memory_order_relaxed);
         }
-        m_pool.start([this, function = std::forward<Function>(function), persistence]() mutable {
-            struct Completion final {
-                ScreenshotHistoryTaskExecutor* executor;
-                bool persistence;
-                ~Completion() {
-                    executor->complete(persistence);
-                }
-            } completion{this, persistence};
+        try {
+            m_pool.start(
+                [this, function = std::forward<Function>(function), persistence]() mutable {
+                    struct Completion final {
+                        ScreenshotHistoryTaskExecutor* executor;
+                        bool persistence;
+                        ~Completion() {
+                            executor->complete(persistence);
+                        }
+                    } completion{this, persistence};
+                    if (persistence) {
+                        m_activePersistenceJobs.fetch_add(1, std::memory_order_relaxed);
+                    }
+                    function();
+                });
+        } catch (...) {
+            // The runnable never started, so mirror complete()'s counter
+            // updates to keep pendingJobs() converging to zero.
             if (persistence) {
-                m_activePersistenceJobs.fetch_add(1, std::memory_order_relaxed);
+                m_pendingPersistenceJobs.fetch_sub(1, std::memory_order_relaxed);
+                m_submittedPersistenceJobs.fetch_sub(1, std::memory_order_relaxed);
             }
-            function();
-        });
+            m_pendingJobs.fetch_sub(1, std::memory_order_release);
+            throw;
+        }
     }
 
     [[nodiscard]] int pendingJobs() const {
@@ -131,21 +159,30 @@ class ScreenshotHistoryTaskExecutor final {
             m_persistenceKeys.insert(key);
             m_retainedBytes += bytes;
         }
-        submit(
-            [this, key, bytes, image = std::move(image), function = std::move(function)]() mutable {
-                struct Release {
-                    ScreenshotHistoryTaskExecutor* executor;
-                    QString key;
-                    qint64 bytes;
-                    ~Release() {
-                        std::lock_guard lock(executor->m_persistenceMutex);
-                        executor->m_persistenceKeys.remove(key);
-                        executor->m_retainedBytes -= bytes;
-                    }
-                } release{this, key, bytes};
-                function(std::move(image));
-            },
-            true);
+        try {
+            submit(
+                [this, key, bytes, image = std::move(image),
+                 function = std::move(function)]() mutable {
+                    struct Release {
+                        ScreenshotHistoryTaskExecutor* executor;
+                        QString key;
+                        qint64 bytes;
+                        ~Release() {
+                            std::lock_guard lock(executor->m_persistenceMutex);
+                            executor->m_persistenceKeys.remove(key);
+                            executor->m_retainedBytes -= bytes;
+                        }
+                    } release{this, key, bytes};
+                    function(std::move(image));
+                },
+                true);
+        } catch (...) {
+            // The job never started, so its reservation must not leak.
+            std::lock_guard lock(m_persistenceMutex);
+            m_persistenceKeys.remove(key);
+            m_retainedBytes -= bytes;
+            throw;
+        }
     }
 
     quint64 skippedPersistenceJobs() const {
@@ -173,12 +210,14 @@ class ScreenshotHistoryTaskExecutor final {
     std::atomic_int m_activePersistenceJobs{0};
     std::atomic<quint64> m_submittedPersistenceJobs{0};
     std::atomic<quint64> m_completedPersistenceJobs{0};
+    std::atomic_bool m_stopped{false};
     mutable std::mutex m_persistenceMutex;
     QSet<QString> m_persistenceKeys;
     qint64 m_retainedBytes = 0;
     std::atomic<quint64> m_skippedPersistenceJobs{0};
-    // Declare the pool last so it is destroyed first and waits while the
-    // diagnostic counters are still alive during process shutdown.
+    // Declare the pool last so it is destroyed first: shutdown() drains it
+    // while the diagnostic counters are still alive, and process-exit
+    // destruction then only has to join already-idle workers.
     QThreadPool m_pool;
 };
 
@@ -635,6 +674,10 @@ int screenshotHistoryWorkerCount() {
 
 int screenshotHistoryWorkerExpiryTimeout() {
     return historyTaskExecutor().expiryTimeout();
+}
+
+void shutdownScreenshotHistoryTasks() {
+    historyTaskExecutor().shutdown();
 }
 
 namespace {

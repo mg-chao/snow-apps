@@ -196,6 +196,74 @@ void imageFailuresRespectCacheFallbackAndCancellation() {
             "original read failure was not reported exactly once");
     QFile::remove(cache);
 }
+
+QString thumbnailCachePath(const storage::CaptureHistoryRecord& record, const QUrl& source,
+                           const adqt::widgets::AdImageLoadOptions& options) {
+    QString key = record.id + u'|' + QDir::fromNativeSeparators(source.toLocalFile());
+    key += QStringLiteral("|%1x%2|%3|%4")
+               .arg(options.targetPixelSize.width())
+               .arg(options.targetPixelSize.height())
+               .arg(static_cast<int>(options.aspectRatioMode))
+               .arg(options.allowUpscale ? 1 : 0);
+    return QDir(storage::StorageUsageTracker::defaultThumbnailCacheDirectory())
+        .filePath(QString::fromLatin1(
+                      QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Sha256).toHex()) +
+                  QStringLiteral(".png"));
+}
+
+// Must run last: shutdownScreenshotHistoryTasks() parks the process-wide
+// history executor for the remainder of the test binary.
+void shutdownDrainsBacklogThenRejectsNewWork() {
+    QTemporaryDir temporary;
+    storage::CaptureHistoryRecord record;
+    record.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    MutableHistoryDataSource dataSource;
+    auto* loader = createScreenshotHistoryImageLoader(record, &dataSource, &dataSource);
+    adqt::widgets::AdImageLoadOptions options;
+    options.targetPixelSize = QSize(260, 156);
+
+    constexpr int kBacklogSources = 12;
+    QVector<adqt::widgets::AdImageReply*> replies;
+    for (int index = 0; index < kBacklogSources; ++index) {
+        const QString source = temporary.filePath(QStringLiteral("drain_%1.png").arg(index));
+        QImage image(512, 512, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::green);
+        require(image.save(source), "failed to write drain fixture");
+        replies.push_back(loader->load(QUrl::fromLocalFile(source), options, &dataSource));
+    }
+    waitUntil(
+        [&]() {
+            for (adqt::widgets::AdImageReply* reply : replies) {
+                if (!reply->isFinished()) {
+                    return false;
+                }
+            }
+            return true;
+        },
+        "drain fixture loads must finish");
+
+    shutdownScreenshotHistoryTasks();
+    require(screenshotHistoryPendingJobCount() == 0,
+            "shutdown must return only after queued and active history jobs finish");
+    for (int index = 0; index < kBacklogSources; ++index) {
+        const QString source = temporary.filePath(QStringLiteral("drain_%1.png").arg(index));
+        require(QFile::exists(thumbnailCachePath(record, QUrl::fromLocalFile(source), options)),
+                "shutdown must drain queued thumbnail persistence jobs, not drop them");
+    }
+
+    const QString rejectedSource = temporary.filePath(QStringLiteral("rejected.png"));
+    QImage image(512, 512, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::blue);
+    require(image.save(rejectedSource), "failed to write rejection fixture");
+    auto* rejected = loader->load(QUrl::fromLocalFile(rejectedSource), options, &dataSource);
+    waitUntil([&]() { return rejected->isFinished(); }, "post-shutdown load must still finish");
+    flushEvents();
+    require(screenshotHistoryPendingJobCount() == 0,
+            "submissions after shutdown must be rejected instead of queued");
+    require(
+        !QFile::exists(thumbnailCachePath(record, QUrl::fromLocalFile(rejectedSource), options)),
+        "rejected submissions must not execute after shutdown");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -208,6 +276,7 @@ int main(int argc, char** argv) {
             "isolated application storage must initialize");
     emptyStateRemainsVisibleAfterFilteringEmptyHistory();
     imageFailuresRespectCacheFallbackAndCancellation();
+    shutdownDrainsBacklogThenRejectsNewWork();
     storage::ApplicationStorage::instance().shutdown();
     return 0;
 }

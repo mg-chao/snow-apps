@@ -165,4 +165,9 @@ createScreenshotHistoryImageLoader(const snow_shot::storage::CaptureHistoryRecor
 [[nodiscard]] int screenshotHistoryWorkerCount();
 [[nodiscard]] int screenshotHistoryWorkerExpiryTimeout();
 
+// Drains the shared history executor and rejects every later submission, so no
+// history task can run once application teardown begins. Call during shutdown,
+// before the storage those tasks read is torn down.
+void shutdownScreenshotHistoryTasks();
+
 #endif // SNOW_SHOT_PRESENTATION_COMPONENTS_SCREENSHOTHISTORYPAGEWIDGET_H

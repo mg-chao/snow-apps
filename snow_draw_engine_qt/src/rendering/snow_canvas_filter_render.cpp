@@ -14,6 +14,7 @@
 #include <cstring>
 #include <cstdint>
 #include <deque>
+#include <exception>
 #include <limits>
 #include <mutex>
 #include <new>
@@ -38,6 +39,9 @@ class FilterWorkerPool {
         std::mutex mutex;
         std::condition_variable ready;
         int remaining = 0;
+        // First kernel failure, guarded by mutex. Stored instead of unwinding
+        // so the submitter can rethrow it after wait() completes.
+        std::exception_ptr failure;
     };
 
     struct Task {
@@ -99,9 +103,20 @@ class FilterWorkerPool {
                 task = m_tasks.front();
                 m_tasks.pop_front();
             }
-            task.invoke(task.context, task.begin, task.end);
+            std::exception_ptr failure;
+            try {
+                task.invoke(task.context, task.begin, task.end);
+            } catch (...) {
+                // A kernel must never unwind through the pool loop: that would
+                // terminate the worker and strand the barrier. Capture the
+                // failure and hand it to the joining caller instead.
+                failure = std::current_exception();
+            }
             {
                 std::lock_guard<std::mutex> lock(task.barrier->mutex);
+                if (failure && task.barrier->failure == nullptr) {
+                    task.barrier->failure = failure;
+                }
                 --task.barrier->remaining;
                 // wait() may return and destroy the stack barrier once this lock is released.
                 // Finish every barrier access, including notification, before unlocking.
@@ -120,6 +135,11 @@ class FilterWorkerPool {
     bool m_stopping = false;
 };
 
+// Process-lifetime worker pool for the synchronous row kernels. Every dispatch
+// joins its jobs through wait() before returning, so the task queue is empty
+// whenever no rendering call is on the stack and the destructor (which runs at
+// process exit) only wakes and joins idle workers. Keep this contract: never
+// dispatch filter work from static destructors or other post-main code.
 FilterWorkerPool& workerPool() {
     static FilterWorkerPool pool;
     return pool;
@@ -151,14 +171,48 @@ std::size_t parallelRows(int rowCount, int width, bool singleThreaded, Function&
     const auto invoke = [](void* context, int begin, int end) {
         (*static_cast<FunctionType*>(context))(begin, end);
     };
+    std::exception_ptr failure;
+    int submitted = 0;
     for (int job = 0; job + 1 < jobCount; ++job) {
         const int begin = job * rowsPerJob;
         const int end = std::min(rowCount, begin + rowsPerJob);
-        pool.submit(FilterWorkerPool::Task{&function, invoke, begin, end, &barrier});
+        try {
+            pool.submit(FilterWorkerPool::Task{&function, invoke, begin, end, &barrier});
+            ++submitted;
+        } catch (...) {
+            if (failure == nullptr) {
+                failure = std::current_exception();
+            }
+            break;
+        }
     }
-    const int callerBegin = (jobCount - 1) * rowsPerJob;
-    function(callerBegin, rowCount);
+    if (submitted == jobCount - 1) {
+        const int callerBegin = (jobCount - 1) * rowsPerJob;
+        try {
+            function(callerBegin, rowCount);
+        } catch (...) {
+            if (failure == nullptr) {
+                failure = std::current_exception();
+            }
+        }
+    } else {
+        // Jobs that were never submitted will never reach the barrier; account
+        // for them so the unconditional wait below cannot block forever.
+        std::lock_guard<std::mutex> lock(barrier.mutex);
+        barrier.remaining -= jobCount - 1 - submitted;
+    }
+    // Always join: submitted jobs still reference the stack barrier and the
+    // caller's data, so returning without waiting would race the unwind.
     pool.wait(barrier);
+    {
+        std::lock_guard<std::mutex> lock(barrier.mutex);
+        if (failure == nullptr) {
+            failure = barrier.failure;
+        }
+    }
+    if (failure != nullptr) {
+        std::rethrow_exception(failure);
+    }
     return static_cast<std::size_t>(jobCount - 1);
 }
 
@@ -1493,8 +1547,7 @@ bool applyMaskedSparse(const QImage& source, QImage& destination, const QImage& 
                 QRegion blocks;
                 QRect expandedBounds;
             };
-            const int support =
-                makeGaussianBlurPlan(parameters).physicalSupportRadius;
+            const int support = makeGaussianBlurPlan(parameters).physicalSupportRadius;
             std::vector<Cluster> clusters;
             for (const QRect& block : occupiedBlocks) {
                 Cluster next{
