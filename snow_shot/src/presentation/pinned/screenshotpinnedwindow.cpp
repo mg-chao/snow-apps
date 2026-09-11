@@ -283,7 +283,9 @@ constexpr int kMaximumOpacityPercent = 100;
 constexpr int kWheelOpacityStep = 5;
 const QColor kDefaultPinnedBorderColor(219, 219, 219, 255);
 const QColor kDefaultPinnedBorderActiveColor(105, 177, 255, 255);
+constexpr int kPinnedBorderDevicePixels = 2;
 constexpr auto kTranslationSourceProperty = "screenshotPinnedTranslationSource";
+constexpr auto kPinnedBorderColorProperty = "borderColor";
 constexpr auto kShortcutDisplayProperty = "screenshotPinnedShortcutDisplay";
 constexpr auto kRecognitionMessageKey = "screenshot-pinned-recognition-status";
 constexpr auto kModelDownloadMessageKey = "screenshot-pinned-model-download-status";
@@ -353,16 +355,11 @@ void setWidgetTranslationSource(QWidget* widget, const char* source) {
 }
 
 void updatePinnedBorderGeometry(QFrame& border, const QRect& geometry) {
-    constexpr int borderWidth = 2;
+    // No widget mask: the frame paints only its rim in physical device
+    // pixels, so the interior never covers the canvas. A mask would have to
+    // track every paint-surface scale factor and would clip the rim band
+    // whenever its logical inset mapped below the band's device thickness.
     border.setGeometry(geometry);
-
-    QRegion borderRegion(border.rect());
-    const QRect innerRect =
-        border.rect().adjusted(borderWidth, borderWidth, -borderWidth, -borderWidth);
-    if (innerRect.isValid() && !innerRect.isEmpty()) {
-        borderRegion = borderRegion.subtracted(QRegion(innerRect));
-    }
-    border.setMask(borderRegion);
 }
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -539,6 +536,83 @@ QTransform normalizedImageTransform(const QTransform& transform, const QSize& so
                          transform.dy() - bounds.top(), transform.m33());
     return normalized;
 }
+
+// Paints the pinned window border in physical device pixels. A style sheet
+// border is sized in logical pixels, which land on fractional device-pixel
+// positions on fractional-scale screens and rasterize with uneven
+// anti-aliased edges. Snapping each side to the device grid keeps the border
+// exactly kPinnedBorderDevicePixels physical pixels wide at every scale
+// factor, anchored to the window's true native client edges.
+class PinnedBorderFrame final : public QFrame {
+  public:
+    explicit PinnedBorderFrame(QWidget* parent = nullptr) : QFrame(parent) {}
+
+  protected:
+    void paintEvent(QPaintEvent*) override {
+        QColor color = property(kPinnedBorderColorProperty).value<QColor>();
+        if (!color.isValid()) {
+            color = kDefaultPinnedBorderColor;
+        }
+
+        QPainter painter(this);
+        const QTransform surfaceTransform = painter.combinedTransform();
+        // The frame spans its window. Map its logical rect through the
+        // combined transform (device pixel ratio included) and round each
+        // edge with qRound, the same convention QHighDpi uses, to get the
+        // physical extent in painter device units. On Windows the pinned
+        // window preserves arbitrary physical sizes, so Qt's integer logical
+        // size can map one device row past the native client edge at
+        // fractional scale factors; the backing store is then wider than the
+        // client and USER32 drops the overshoot column at flush. Only the
+        // client edge is the window's true outer edge, so it wins the
+        // intersection and keeps the border two full device pixels wide on
+        // every side.
+        const QRectF mappedExtent = surfaceTransform.mapRect(QRectF(rect()));
+        QRect deviceRect(
+            qRound(mappedExtent.left()), qRound(mappedExtent.top()),
+            qRound(mappedExtent.left() + mappedExtent.width()) - qRound(mappedExtent.left()),
+            qRound(mappedExtent.top() + mappedExtent.height()) - qRound(mappedExtent.top()));
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        if (const QWidget* root = window(); root != nullptr && root->internalWinId() != 0) {
+            const QRect client = native::currentClientGeometry(root->internalWinId());
+            if (client.isValid() && !client.isEmpty()) {
+                deviceRect = deviceRect.intersected(QRect(QPoint(), client.size()));
+            }
+        }
+#endif
+        if (deviceRect.width() < 2 * kPinnedBorderDevicePixels ||
+            deviceRect.height() < 2 * kPinnedBorderDevicePixels) {
+            return;
+        }
+
+        // Neutralize the whole combined transform (world transform plus the
+        // paint device's scale, e.g. a backing store or QImage device pixel
+        // ratio) so painter units become physical pixels of the paint device
+        // and the integer fills below align exactly to the device grid.
+        bool invertible = false;
+        const QTransform toSurface = surfaceTransform.inverted(&invertible);
+        if (!invertible) {
+            return;
+        }
+        painter.setTransform(painter.transform() * toSurface);
+        const int left = deviceRect.left();
+        const int top = deviceRect.top();
+        const int right = deviceRect.right();
+        const int bottom = deviceRect.bottom();
+        const int sideHeight = bottom - top + 1 - 2 * kPinnedBorderDevicePixels;
+        painter.fillRect(QRect(left, top, right - left + 1, kPinnedBorderDevicePixels), color);
+        painter.fillRect(QRect(left, bottom - kPinnedBorderDevicePixels + 1, right - left + 1,
+                               kPinnedBorderDevicePixels),
+                         color);
+        painter.fillRect(
+            QRect(left, top + kPinnedBorderDevicePixels, kPinnedBorderDevicePixels, sideHeight),
+            color);
+        painter.fillRect(QRect(right - kPinnedBorderDevicePixels + 1,
+                               top + kPinnedBorderDevicePixels, kPinnedBorderDevicePixels,
+                               sideHeight),
+                         color);
+    }
+};
 
 class PinnedControlButton final : public adqt::widgets::AdButton {
   public:
@@ -1177,6 +1251,10 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
     if (scaleMayHaveChanged) {
         m_preserveScaleForSettledGeometry = false;
         scheduleNativeScaleAdoption();
+        if (m_borderFrame != nullptr) {
+            updatePinnedBorderGeometry(*m_borderFrame, rect());
+            m_borderFrame->update();
+        }
     }
     if (nativeGeometryMayHaveSettled) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -2664,7 +2742,7 @@ void ScreenshotPinnedWindow::createUi() {
             &ScreenshotPinnedWindow::invalidatePendingCopy);
     layout->addWidget(m_canvas);
 
-    m_borderFrame = new QFrame(this);
+    m_borderFrame = new PinnedBorderFrame(this);
     m_borderFrame->setObjectName(QStringLiteral("screenshotPinnedBorder"));
     m_borderFrame->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     applyRuntimeBorderColor();
@@ -2894,14 +2972,7 @@ void ScreenshotPinnedWindow::applyRuntimeBorderColor() {
     }
     const QColor color =
         m_windowActive ? configuredPinnedBorderActiveColor() : configuredPinnedBorderColor();
-    m_borderFrame->setProperty("borderColor", color);
-    m_borderFrame->setStyleSheet(QStringLiteral("QFrame#screenshotPinnedBorder { "
-                                                "border: 2px solid rgba(%1, %2, %3, %4); "
-                                                "background: transparent; }")
-                                     .arg(color.red())
-                                     .arg(color.green())
-                                     .arg(color.blue())
-                                     .arg(color.alpha()));
+    m_borderFrame->setProperty(kPinnedBorderColorProperty, color);
     m_borderFrame->update();
 }
 
