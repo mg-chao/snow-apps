@@ -11,6 +11,7 @@ bench-internals = []
 snow-core = { path = "../snow-core" }
 snow-recording-model = { path = "../snow-recording-model" }
 anyhow.workspace = true
+[target.'cfg(windows)'.dependencies]
 windows-core.workspace = true
 windows = { workspace = true, features = [
     "Win32_Devices_FunctionDiscovery",

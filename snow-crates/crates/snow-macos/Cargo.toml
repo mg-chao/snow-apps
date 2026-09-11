@@ -1,0 +1,8 @@
+[package]
+name = "snow-macos"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[target.'cfg(target_os = "macos")'.build-dependencies]
+cc = "1"

@@ -54,8 +54,10 @@ ScreenshotApiMode resolveAutoScreenshotApiMode() noexcept {
                 }
             }
         }
+        return ScreenshotApiMode::Gdi;
+#else
+        return ScreenshotApiMode::Auto;
 #endif
-    return ScreenshotApiMode::Gdi;
     }();
     return resolved;
 }

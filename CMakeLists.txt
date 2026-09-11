@@ -34,6 +34,7 @@ option(SNOW_APPS_BUILD_DRAW_ENGINE_DEMO "Build the Snow Draw Engine Qt demo." OF
 option(SNOW_APPS_BUILD_IMAGE_VIEWER "Build Snow Image Viewer." ON)
 option(SNOW_APPS_BUILD_SNOW_SHOT "Build Snow Shot." ON)
 option(SNOW_APPS_BUILD_TESTS "Build tests for all enabled projects." ON)
+option(SNOW_SHOT_BUILD_MACOS_TESTS "Build focused macOS port tests." OFF)
 option(SNOW_APPS_BUILD_BENCHMARKS "Build opt-in benchmark targets." OFF)
 option(SNOW_SHOT_SCROLLING_PERF_DETAIL "Compile detailed scrolling C++ and Rust timings." OFF)
 option(SNOW_APPS_STRICT_COMPILE "Enable strict warnings for all projects." ON)
@@ -118,7 +119,7 @@ unset(_snow_image_codec_value)
 unset(_snow_workspace_all_image_codecs)
 unset(_snow_workspace_image_codecs)
 
-if(SNOW_APPS_BUILD_TESTS)
+if(SNOW_APPS_BUILD_TESTS OR (APPLE AND SNOW_SHOT_BUILD_MACOS_TESTS))
     enable_testing()
 endif()
 

@@ -35,4 +35,5 @@ pub(crate) use active::{
 };
 
 #[cfg(not(feature = "stage-timing"))]
+#[cfg(windows)]
 pub(crate) use inert::{stage_checkpoint, stage_mark, stage_record_since};

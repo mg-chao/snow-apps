@@ -298,6 +298,10 @@ if(WIN32)
         "SNOW_CRASHPAD_LINK_FILE=${CMAKE_CURRENT_BINARY_DIR}/generated/snow-ocr-crash-$<CONFIG>.rsp"
         "CARGO_PROFILE_RELEASE_DEBUG=2" "CARGO_PROFILE_RELEASE_FAST_DEBUG=2")
 endif()
+if(APPLE)
+    set(SNOW_SHOT_OCR_PROCESS_NO_DEFAULT_FEATURES NO_DEFAULT_FEATURES)
+    set(SNOW_SHOT_OCR_PROCESS_FEATURES dynamic-onnx-runtime)
+endif()
 snow_add_rust_executable(snow_ocr_process
     PACKAGE snow-ocr-process
     MANIFEST_DIR "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
@@ -1072,13 +1076,19 @@ set(PROJECT_CXX_SOURCES
     src/presentation/recording/screenrecordingtoolbarwindow.cpp
 )
 
-if(MSVC)
+set(_snow_clipboard_arch "${CMAKE_SYSTEM_PROCESSOR}")
+if(APPLE AND CMAKE_OSX_ARCHITECTURES)
+    set(_snow_clipboard_arch "${CMAKE_OSX_ARCHITECTURES}")
+endif()
+if(MSVC AND _snow_clipboard_arch MATCHES "^(AMD64|amd64|x86_64|i.86)$")
     set_source_files_properties(src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
         PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND
+       _snow_clipboard_arch MATCHES "^(AMD64|amd64|x86_64|i.86)$")
     set_source_files_properties(src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
         PROPERTIES COMPILE_OPTIONS "-mavx2")
 endif()
+unset(_snow_clipboard_arch)
 
 set(PROJECT_RCC_SOURCES)
 
@@ -1136,7 +1146,7 @@ if(MSVC)
     target_link_options(snow_shot PRIVATE $<$<CONFIG:Release>:/DEBUG:FULL>)
 endif()
 
-if(EXISTS "${SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE}")
+if(WIN32 AND EXISTS "${SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE}")
     add_custom_command(TARGET snow_shot POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E make_directory
             "$<TARGET_FILE_DIR:snow_shot>/audios"
@@ -1146,7 +1156,7 @@ if(EXISTS "${SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE}")
         COMMENT "Staging the camera shutter audio"
         VERBATIM
     )
-else()
+elseif(WIN32)
     message(WARNING
         "Camera shutter audio was not found: ${SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE}")
 endif()
@@ -5207,7 +5217,6 @@ if(SNOW_SHOT_ENABLE_STRICT_COMPILE)
             -Wconversion
             -Wdouble-promotion
             -Wextra-semi
-            -Wfloat-equal
             -Wformat=2
             -Wimplicit-fallthrough
             -Wmissing-declarations
@@ -5218,12 +5227,15 @@ if(SNOW_SHOT_ENABLE_STRICT_COMPILE)
             -Wredundant-decls
             -Wshadow
             -Wsign-conversion
-            -Wswitch-default
-            -Wswitch-enum
             -Wundef
             -Wunreachable-code
             -Wzero-as-null-pointer-constant
         )
+        if(NOT APPLE)
+            target_compile_options(snow_shot PRIVATE -Wfloat-equal -Wswitch-default -Wswitch-enum)
+        endif()
+        # Apple Clang uses -Wswitch from -Wall: Qt event filters have intentional
+        # catch-all cases, and cache identities compare floating-point values exactly.
     endif()
 
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -5506,3 +5518,58 @@ foreach(_conversion_controller_target IN ITEMS snow_shot
 endforeach()
 
 qt_finalize_executable(snow_shot)
+
+if(APPLE)
+    configure_file(resources/macos-info.plist.in
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/macos-info.plist" @ONLY)
+    set_target_properties(snow_shot PROPERTIES MACOSX_BUNDLE_INFO_PLIST
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/macos-info.plist")
+    add_executable(snow-shot-macos-icon-generator tools/macosicongenerator.cpp)
+    target_link_libraries(snow-shot-macos-icon-generator PRIVATE Qt6::Gui Qt6::Svg)
+    set(_snow_macos_icon "${CMAKE_CURRENT_BINARY_DIR}/generated/snow-shot.icns")
+    add_custom_command(OUTPUT "${_snow_macos_icon}"
+        COMMAND snow-shot-macos-icon-generator
+            "${CMAKE_CURRENT_SOURCE_DIR}/resources/app-icon.svg"
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/snow-shot.iconset"
+        COMMAND iconutil -c icns -o "${_snow_macos_icon}"
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/snow-shot.iconset"
+        DEPENDS snow-shot-macos-icon-generator resources/app-icon.svg
+        VERBATIM)
+    set_source_files_properties("${_snow_macos_icon}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(snow_shot PRIVATE "${_snow_macos_icon}")
+    add_library(snow_shot_macos_shortcuts STATIC src/platform/macos/globalshortcutbackend.cpp)
+    target_include_directories(snow_shot_macos_shortcuts PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow_shot_macos_shortcuts PUBLIC Qt6::Gui PRIVATE "-framework Carbon")
+    # Link every host of the shared manager, including its focused unit tests.
+    get_property(_snow_macos_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(_snow_macos_target IN LISTS _snow_macos_targets)
+        get_target_property(_snow_macos_sources "${_snow_macos_target}" SOURCES)
+        if("src/presentation/services/globalshortcutmanager.cpp" IN_LIST _snow_macos_sources)
+            target_link_libraries("${_snow_macos_target}" PRIVATE snow_shot_macos_shortcuts)
+        endif()
+    endforeach()
+    target_link_libraries(snow_shot PRIVATE
+        "-framework AppKit" "-framework CoreGraphics" "-framework ScreenCaptureKit" "-framework Foundation")
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(SNOW_MACOS_FFMPEG REQUIRED IMPORTED_TARGET
+        libavformat libavcodec libswresample libswscale libavutil)
+    target_link_libraries(snow_shot_rust_ffi_bundle INTERFACE PkgConfig::SNOW_MACOS_FFMPEG)
+endif()
+
+if(APPLE AND SNOW_SHOT_BUILD_MACOS_TESTS)
+    add_executable(snow-shot-macos-shortcut-tests tests/macos_shortcut_tests.cpp)
+    target_link_libraries(snow-shot-macos-shortcut-tests PRIVATE snow_shot_macos_shortcuts "-framework Carbon")
+    add_test(NAME snow-shot-macos-shortcut-tests COMMAND snow-shot-macos-shortcut-tests)
+    set_tests_properties(snow-shot-macos-shortcut-tests PROPERTIES LABELS "unit" TIMEOUT 30)
+    enable_language(OBJC)
+    add_executable(snow-shot-macos-capture-smoke-test
+        tests/macos_capture_smoke_test.m
+        ../snow-crates/crates/snow-macos/src/native.m)
+    target_include_directories(snow-shot-macos-capture-smoke-test PRIVATE
+        ../snow-crates/crates/snow-macos/src)
+    target_compile_options(snow-shot-macos-capture-smoke-test PRIVATE -fobjc-arc -fblocks)
+    target_link_libraries(snow-shot-macos-capture-smoke-test PRIVATE
+        "-framework AppKit" "-framework CoreGraphics" "-framework ScreenCaptureKit" "-framework Foundation")
+    add_test(NAME snow-shot-macos-capture-smoke-test COMMAND snow-shot-macos-capture-smoke-test)
+    set_tests_properties(snow-shot-macos-capture-smoke-test PROPERTIES LABELS "interactive" TIMEOUT 60)
+endif()

@@ -1,8 +1,13 @@
 include_guard(GLOBAL)
 
+option(SNOW_ENABLE_UNITY_BUILD "Enable unity builds for supported source groups." ON)
+
 option(SNOW_ENABLE_CLANG_TIDY "Run clang-tidy while compiling C++ targets." OFF)
 
 function(snow_enable_unity_build target)
+    if(NOT SNOW_ENABLE_UNITY_BUILD)
+        return()
+    endif()
     if(NOT TARGET "${target}")
         message(FATAL_ERROR "snow_enable_unity_build target does not exist: ${target}")
     endif()

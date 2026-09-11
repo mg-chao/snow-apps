@@ -1,30 +1,30 @@
 use std::sync::Arc;
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 use crate::backend::MonitorCapturer;
 use crate::backend::{AutoBackendPolicy, CaptureBackend, CaptureBackendKind, CaptureMode};
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 use crate::error::{CaptureError, CaptureResult};
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 use crate::monitor::MonitorId;
 use crate::region::MonitorLayout;
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 use crate::window::WindowId;
 
 #[cfg(target_os = "windows")]
 pub(crate) mod windows;
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 fn unsupported_error() -> CaptureError {
     CaptureError::platform(anyhow::anyhow!(
         "screen capture is only supported on Windows"
     ))
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 struct UnsupportedBackend;
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 impl CaptureBackend for UnsupportedBackend {
     fn enumerate_monitors(&self) -> CaptureResult<Vec<MonitorId>> {
         Err(unsupported_error())
@@ -93,7 +93,7 @@ pub(crate) fn monitor_layout_from_monitors(
     windows::monitor::snapshot_layout_from_monitors(monitors)
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub(crate) fn build_backend(
     _kind: CaptureBackendKind,
     _auto_policy: AutoBackendPolicy,
@@ -107,7 +107,7 @@ pub(crate) fn build_backend(
     )
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub(crate) fn build_backend_for_mode(
     _kind: CaptureBackendKind,
     _auto_policy: AutoBackendPolicy,
@@ -117,9 +117,43 @@ pub(crate) fn build_backend_for_mode(
     Ok(Arc::new(UnsupportedBackend))
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub(crate) fn monitor_layout_from_monitors(
     _monitors: Vec<crate::monitor::MonitorId>,
 ) -> crate::error::CaptureResult<MonitorLayout> {
     Err(unsupported_error())
+}
+
+#[cfg(target_os = "macos")]
+mod macos;
+
+#[cfg(target_os = "macos")]
+pub(crate) fn build_backend(
+    kind: CaptureBackendKind,
+    policy: AutoBackendPolicy,
+    explicit: bool,
+) -> crate::error::CaptureResult<Arc<dyn CaptureBackend>> {
+    build_backend_for_mode(kind, policy, explicit, CaptureMode::Snapshot)
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn build_backend_for_mode(
+    kind: CaptureBackendKind,
+    _policy: AutoBackendPolicy,
+    _explicit: bool,
+    _mode: CaptureMode,
+) -> crate::error::CaptureResult<Arc<dyn CaptureBackend>> {
+    if kind != CaptureBackendKind::Auto {
+        return Err(crate::error::CaptureError::BackendUnavailable(
+            "Windows capture backends are unavailable on macOS; use the automatic backend".into(),
+        ));
+    }
+    Ok(Arc::new(macos::MacOsBackend))
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn monitor_layout_from_monitors(
+    monitors: Vec<crate::monitor::MonitorId>,
+) -> crate::error::CaptureResult<MonitorLayout> {
+    macos::layout_from_monitors(monitors)
 }

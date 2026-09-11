@@ -10,9 +10,10 @@ $projects = @(
     "snow_draw_engine_qt",
     "snow_image",
     "snow_image_viewer",
-    "snow_shot"
+    "snow_shot",
+    "snow-crates/crates/snow-macos"
 )
-$extensions = @(".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx")
+$extensions = @(".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".m", ".mm")
 $files = foreach ($project in $projects) {
     git -C $workspaceRoot ls-files --cached --others --exclude-standard $project |
         Where-Object { $extensions -contains [System.IO.Path]::GetExtension($_).ToLowerInvariant() } |

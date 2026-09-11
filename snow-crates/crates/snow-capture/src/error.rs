@@ -136,6 +136,7 @@ mod tests {
     use super::CaptureError;
 
     #[test]
+    #[cfg(windows)]
     fn platform_error_display_preserves_windows_cause_and_context() {
         let cause =
             windows::core::Error::from_hresult(windows::core::HRESULT(0x80040154_u32 as i32));
@@ -151,5 +152,16 @@ mod tests {
         assert!(displayed.contains("GraphicsCaptureSession::IsSupported failed"));
         assert!(displayed.contains(&cause_text));
         assert!(displayed.contains("80040154"));
+    }
+
+    #[test]
+    fn platform_error_display_preserves_portable_cause_and_context() {
+        let cause = std::io::Error::other("native capture failed");
+        let error = CaptureError::platform(
+            anyhow::Error::from(cause).context("capture initialization failed"),
+        );
+        let displayed = error.to_string();
+        assert!(displayed.contains("capture initialization failed"));
+        assert!(displayed.contains("native capture failed"));
     }
 }
