@@ -39,6 +39,7 @@ const AUDIO_SAMPLE_RATE: u32 = 48_000;
 const AUDIO_CHANNELS: u16 = 2;
 const AUDIO_SLOT_MS: u64 = 10;
 const AUDIO_JITTER_MS: u64 = 100;
+const CAPTURE_STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Debug)]
 pub struct DirectRecordingConfig {
@@ -233,44 +234,40 @@ impl DirectRecordingSession {
         let (control_tx, control_rx) = crossbeam_channel::unbounded();
         let audio_stream = start_optional_audio_stream(&self.config);
         let config = self.config.clone();
-        let clock = RecordingClock::new(Instant::now());
         let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
         let worker_state = Arc::clone(&self.state);
         let worker = std::thread::Builder::new()
             .name("snow-direct-recording".to_string())
             .spawn(move || {
-                let result = (|| {
+                let initialized = (|| -> Result<DirectWorkerInputs> {
                     let mut compositor = VisualCompositor::new(config.output_dimensions());
                     if let Some(style) = config.keyboard.as_ref() {
-                        match crate::keyboard_rasterizer::create(style) {
-                            Ok(rasterizer) => {
-                                compositor.keyboard = Some(
-                                    KeyboardOverlay::new(config.output_dimensions(), rasterizer)
-                                        .with_keycap_size(style.keycap_size),
-                                )
-                            }
-                            Err(error) => {
-                                let message = format!("keyboard recording: {error}");
-                                let _ = ready_tx.send(Err(message.clone()));
-                                return Err(ScreenRecorderError::Encode(message));
-                            }
-                        }
+                        let rasterizer =
+                            crate::keyboard_rasterizer::create(style).map_err(|error| {
+                                ScreenRecorderError::Encode(format!("keyboard recording: {error}"))
+                            })?;
+                        compositor.keyboard = Some(
+                            KeyboardOverlay::new(config.output_dimensions(), rasterizer)
+                                .with_keycap_size(style.keycap_size),
+                        );
                     }
-                    let encoder = match StreamingEncoder::create(config.streaming_config()) {
-                        Ok(encoder) => {
-                            let _ = ready_tx.send(Ok(()));
-                            encoder
-                        }
-                        Err(error) => {
-                            let message = error.to_string();
-                            let _ = ready_tx.send(Err(message));
-                            return Err(ScreenRecorderError::from(error));
-                        }
-                    };
-                    run_direct_worker(DirectWorkerInputs {
+                    let mut encoder = StreamingEncoder::create(config.streaming_config())?;
+                    // Backend initialization is lazy and may involve permission/service startup.
+                    // Keep capture on its dedicated thread and do not report Running until an
+                    // actual frame and the encoder are both ready.
+                    let (initial_frame, ready_at) = wait_for_initial_capture_frame(
+                        |timeout| capture_stream.recv_timeout(timeout),
+                        Instant::now,
+                        CAPTURE_STARTUP_TIMEOUT,
+                    )?;
+                    let clock = RecordingClock::new(ready_at);
+                    let rgba = compositor.compose(&config, &initial_frame, 0)?;
+                    encoder.push_rgba_frame(0, &rgba)?;
+                    Ok(DirectWorkerInputs {
                         config,
                         encoder,
                         capture_stream,
+                        initial_frame,
                         mouse_hook,
                         click_rx,
                         keyboard_input,
@@ -280,6 +277,16 @@ impl DirectRecordingSession {
                         audio_stream,
                     })
                 })();
+                let result = match initialized {
+                    Ok(inputs) => {
+                        let _ = ready_tx.send(Ok(()));
+                        run_direct_worker(inputs)
+                    }
+                    Err(error) => {
+                        let _ = ready_tx.send(Err(error.to_string()));
+                        Err(error)
+                    }
+                };
                 worker_state.store(state_to_u8(RecordingState::Stopped), Ordering::Release);
                 result
             })
@@ -415,10 +422,49 @@ fn state_from_u8(value: u8) -> RecordingState {
     }
 }
 
+// Inject receiving and the monotonic clock so slow startup, errors, and timeout are testable
+// without screen permissions, hardware, or sleeps. The returned instant is observed after the
+// first frame arrives, not when the capture thread was spawned.
+fn wait_for_initial_capture_frame(
+    mut receive: impl FnMut(
+        Duration,
+    )
+        -> std::result::Result<CaptureEvent, snow_core::error::RecvTimeoutError>,
+    mut now: impl FnMut() -> Instant,
+    timeout: Duration,
+) -> Result<(CapturedFrame, Instant)> {
+    let deadline = now() + timeout;
+    loop {
+        let remaining = deadline.saturating_duration_since(now());
+        if remaining.is_zero() {
+            return Err(ScreenRecorderError::Encode(
+                "timed out waiting for the first recording frame".into(),
+            ));
+        }
+        match receive(remaining) {
+            Ok(CaptureEvent::Frame(frame)) => return Ok((frame, now())),
+            Ok(CaptureEvent::Error(error)) => return Err(ScreenRecorderError::Capture(error)),
+            Ok(CaptureEvent::StreamEnded)
+            | Err(snow_core::error::RecvTimeoutError::Disconnected) => {
+                return Err(ScreenRecorderError::Encode(
+                    "capture stopped before the first recording frame".into(),
+                ));
+            }
+            Err(snow_core::error::RecvTimeoutError::Timeout) => {
+                return Err(ScreenRecorderError::Encode(
+                    "timed out waiting for the first recording frame".into(),
+                ));
+            }
+            Ok(_) => {}
+        }
+    }
+}
+
 struct DirectWorkerInputs {
     config: DirectRecordingConfig,
     encoder: StreamingEncoder,
     capture_stream: CaptureStream,
+    initial_frame: CapturedFrame,
     mouse_hook: MouseHookObserver,
     click_rx: Receiver<MouseClickObservation>,
     keyboard_input: Option<KeyboardInput>,
@@ -433,6 +479,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         config,
         mut encoder,
         capture_stream,
+        initial_frame,
         mouse_hook,
         click_rx,
         mut keyboard_input,
@@ -451,8 +498,8 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
     let mut canceled = false;
     let mut input_end = None;
     let mut dropped_capture_frames = 0u64;
-    let mut last_timestamp_ms = None;
-    let mut latest_frame = None;
+    let mut last_timestamp_ms = Some(0);
+    let mut latest_frame = Some(initial_frame);
     let output_interval_ms = (1_000 / u64::from(config.output_fps.max(1))).max(1);
     let mut next_overlay_frame_ms = 0u64;
     let mut audio_mixer = encoder
@@ -555,6 +602,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                 CaptureEventContext {
                     config: &config,
                     clock: &clock,
+                    recording_ended_at: None,
                     last_timestamp_ms: &mut last_timestamp_ms,
                     latest_frame: &mut latest_frame,
                     dropped_capture_frames: &mut dropped_capture_frames,
@@ -589,12 +637,15 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         return Err(ScreenRecorderError::ExportCanceled);
     }
 
+    // Exclude backend shutdown/encoder drain time from the user-visible recording duration.
+    let final_at = input_end.unwrap_or_else(Instant::now);
     for event in capture_stream.stop_and_drain() {
         process_capture_event(
             event,
             CaptureEventContext {
                 config: &config,
                 clock: &clock,
+                recording_ended_at: Some(final_at),
                 last_timestamp_ms: &mut last_timestamp_ms,
                 latest_frame: &mut latest_frame,
                 dropped_capture_frames: &mut dropped_capture_frames,
@@ -603,8 +654,18 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
             },
         )?;
     }
-    let final_at = Instant::now();
     clock_controller.finalize(final_at);
+    if let Some(frame) = latest_frame.as_ref() {
+        // The encoder gives its final pending frame one output interval. Extend a static image
+        // to the stop boundary, allowing only normal frame-rate quantization (not startup loss).
+        let timestamp_ms = final_video_frame_timestamp(
+            clock.active_elapsed_ms(final_at),
+            config.output_fps,
+            last_timestamp_ms.unwrap_or(0),
+        );
+        let rgba = compositor.compose(&config, frame, timestamp_ms)?;
+        encoder.push_rgba_frame(timestamp_ms, &rgba)?;
+    }
     let mut audio_frames_dropped = 0u64;
     if let Some(audio) = audio_stream.take() {
         audio_frames_dropped = audio.stats().snapshot().frames_dropped;
@@ -707,7 +768,7 @@ impl LiveAudioMixer {
         }
     }
 
-    fn insert_packet(&mut self, packet: AudioPacket, clock: &RecordingClock) {
+    fn insert_packet(&mut self, mut packet: AudioPacket, clock: &RecordingClock) {
         if packet.frames == 0
             || packet.format != AudioFormat::new(AUDIO_SAMPLE_RATE, AUDIO_CHANNELS)
             || packet.data.len() != packet.frames as usize * usize::from(AUDIO_CHANNELS)
@@ -721,7 +782,9 @@ impl LiveAudioMixer {
         if !enabled {
             return;
         }
-        let Some(started_at) = packet.start_capture_time() else {
+        // Audio can initialize while video warms up. Trim against the shared absolute origin;
+        // independently rebasing each source's first packet would destroy A/V and source sync.
+        let Some(started_at) = trim_audio_packet_before(&mut packet, clock.started_at()) else {
             return;
         };
         let next_frame = match packet.source {
@@ -822,6 +885,30 @@ impl LiveAudioMixer {
     }
 }
 
+fn trim_audio_packet_before(packet: &mut AudioPacket, origin: Instant) -> Option<Instant> {
+    let started_at = packet.start_capture_time()?;
+    if started_at >= origin {
+        return Some(started_at);
+    }
+    let elapsed = origin.duration_since(started_at);
+    let trim_frames = elapsed
+        .as_nanos()
+        .saturating_mul(u128::from(packet.format.sample_rate))
+        .div_ceil(1_000_000_000)
+        .min(u128::from(packet.frames)) as u32;
+    if trim_frames >= packet.frames {
+        return None;
+    }
+    packet
+        .data
+        .drain(..trim_frames as usize * usize::from(packet.format.channels));
+    packet.frames -= trim_frames;
+    packet.metadata.discontinuity = true;
+    // End timestamp stays unchanged; the trimmed packet starts at the shared recording origin
+    // (within one audio sample), so a later-starting microphone keeps its actual offset.
+    packet.start_capture_time()
+}
+
 fn duration_to_audio_frames(duration: Duration) -> u64 {
     ((duration.as_nanos() * u128::from(AUDIO_SAMPLE_RATE) + 500_000_000) / 1_000_000_000)
         .min(u128::from(u64::MAX)) as u64
@@ -875,6 +962,7 @@ fn process_audio_event(
 struct CaptureEventContext<'a> {
     config: &'a DirectRecordingConfig,
     clock: &'a RecordingClock,
+    recording_ended_at: Option<Instant>,
     last_timestamp_ms: &'a mut Option<u64>,
     latest_frame: &'a mut Option<CapturedFrame>,
     dropped_capture_frames: &'a mut u64,
@@ -886,6 +974,7 @@ fn process_capture_event(event: CaptureEvent, context: CaptureEventContext<'_>) 
     let CaptureEventContext {
         config,
         clock,
+        recording_ended_at,
         last_timestamp_ms,
         latest_frame,
         dropped_capture_frames,
@@ -899,6 +988,9 @@ fn process_capture_event(event: CaptureEvent, context: CaptureEventContext<'_>) 
                 .stream_timestamp()
                 .map(|timestamp| timestamp.instant)
                 .unwrap_or_else(Instant::now);
+            if recording_ended_at.is_some_and(|end| instant > end) {
+                return Ok(());
+            }
             let timestamp_ms =
                 monotonic_timestamp(last_timestamp_ms, clock.active_elapsed_ms(instant));
             let rgba = compositor.compose(config, &frame, timestamp_ms)?;
@@ -915,6 +1007,13 @@ fn process_capture_event(event: CaptureEvent, context: CaptureEventContext<'_>) 
         | CaptureEvent::StreamEnded => {}
     }
     Ok(())
+}
+
+fn final_video_frame_timestamp(active_duration_ms: u64, fps: u32, last_timestamp_ms: u64) -> u64 {
+    let interval_ms = 1_000_u64.div_ceil(u64::from(fps.max(1)));
+    active_duration_ms
+        .saturating_sub(interval_ms)
+        .max(last_timestamp_ms)
 }
 
 fn monotonic_timestamp(last: &mut Option<u64>, candidate: u64) -> u64 {
@@ -1231,6 +1330,135 @@ mod tests {
             mouse_trail_duration_ms: 500,
             mouse_click_rgba: [0, 0, 0, 0],
         }
+    }
+
+    #[test]
+    fn delayed_first_frame_starts_clock_after_warmup_and_preserves_active_duration() {
+        let launch = Instant::now();
+        let time = std::cell::Cell::new(launch);
+        let mut events = VecDeque::from([
+            CaptureEvent::ResolutionChanged {
+                old_width: 0,
+                old_height: 0,
+                new_width: 4,
+                new_height: 4,
+            },
+            CaptureEvent::Frame(
+                snow_capture::frame::Frame::from_rgba8(4, 4, vec![255; 64])
+                    .unwrap()
+                    .into(),
+            ),
+        ]);
+        let (frame, ready) = wait_for_initial_capture_frame(
+            |remaining| {
+                assert!(remaining <= CAPTURE_STARTUP_TIMEOUT);
+                time.set(launch + Duration::from_millis(2400));
+                Ok(events.pop_front().unwrap())
+            },
+            || time.get(),
+            CAPTURE_STARTUP_TIMEOUT,
+        )
+        .unwrap();
+        assert_eq!(frame.dimensions(), (4, 4));
+        assert_eq!(ready, launch + Duration::from_millis(2400));
+        let clock = RecordingClock::new(ready);
+        assert_eq!(clock.active_elapsed_ms(ready), 0);
+        clock
+            .controller()
+            .mark_pause(ready + Duration::from_millis(1600));
+        clock
+            .controller()
+            .mark_resume(ready + Duration::from_millis(2200));
+        assert_eq!(
+            clock.active_elapsed_ms(ready + Duration::from_millis(3800)),
+            3200
+        );
+    }
+
+    #[test]
+    fn first_frame_ready_propagates_failure_disconnect_and_timeout() {
+        use snow_core::error::RecvTimeoutError;
+        for event in [
+            Ok(CaptureEvent::StreamEnded),
+            Err(RecvTimeoutError::Disconnected),
+            Err(RecvTimeoutError::Timeout),
+            Ok(CaptureEvent::Error(
+                snow_capture::error::CaptureError::MonitorLost,
+            )),
+        ] {
+            let mut event = Some(event);
+            assert!(
+                wait_for_initial_capture_frame(
+                    |_| event.take().unwrap(),
+                    Instant::now,
+                    CAPTURE_STARTUP_TIMEOUT,
+                )
+                .is_err()
+            );
+        }
+        let launch = Instant::now();
+        let time = std::cell::Cell::new(launch);
+        let mut calls = 0;
+        let result = wait_for_initial_capture_frame(
+            |_| {
+                calls += 1;
+                time.set(launch + CAPTURE_STARTUP_TIMEOUT);
+                Ok(CaptureEvent::FramesDropped { count: 1 })
+            },
+            || time.get(),
+            CAPTURE_STARTUP_TIMEOUT,
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            calls, 1,
+            "control events must not restart the timeout budget"
+        );
+    }
+
+    #[test]
+    fn static_final_frame_reaches_stop_boundary_without_counting_pause_or_drain() {
+        for fps in [15, 30, 60, 120] {
+            let timestamp = final_video_frame_timestamp(3200, fps, 0);
+            let final_pts = (timestamp * u64::from(fps) + 500) / 1000;
+            assert_eq!((final_pts + 1) * 1000 / u64::from(fps), 3200);
+        }
+        assert_eq!(
+            final_video_frame_timestamp(3200, 15, 3190),
+            3190,
+            "finalization must not move already queued frames backwards"
+        );
+    }
+
+    #[test]
+    fn audio_warmup_is_trimmed_against_shared_origin_without_rebasing_microphone() {
+        let origin = Instant::now();
+        let mut earlier = test_audio_packet(AudioSourceKind::System, origin, 1, vec![10; 960]);
+        assert!(trim_audio_packet_before(&mut earlier, origin).is_none());
+        let mut crossing = test_audio_packet(
+            AudioSourceKind::System,
+            origin + Duration::from_millis(5),
+            2,
+            [vec![10; 480], vec![20; 480]].concat(),
+        );
+        assert_eq!(
+            trim_audio_packet_before(&mut crossing, origin),
+            Some(origin)
+        );
+        assert_eq!(crossing.frames, 240);
+        assert_eq!(crossing.data, vec![20; 480]);
+        assert!(crossing.metadata.discontinuity);
+        let mut microphone = test_audio_packet(
+            AudioSourceKind::Microphone,
+            origin + Duration::from_millis(40),
+            1,
+            vec![30; 960],
+        );
+        assert_eq!(
+            trim_audio_packet_before(&mut microphone, origin),
+            Some(origin + Duration::from_millis(30))
+        );
+        assert_eq!(microphone.frames, 480);
+        assert!(!microphone.metadata.discontinuity);
     }
 
     #[test]
