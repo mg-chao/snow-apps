@@ -6207,6 +6207,12 @@ void ScreenshotToolPalette::addRecordingControls(QBoxLayout* layout) {
     m_recordPauseButton = addActionButton("Pause recording", outlined_icons::Pause());
     m_recordResumeButton =
         addActionButton("Resume recording", primaryIcon(custom_outlined_icons::RecordingResume()));
+    // Long-running start/stop operations report through setRecordingBusy(); use
+    // the isolated spinner surface like the other toolbar busy indicators.
+    for (auto* button : {m_recordStartButton, m_recordStopButton}) {
+        button->setBusyIndicatorPresentation(
+            adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
+    }
     layout->addWidget(m_recordStartButton);
     layout->addWidget(m_recordStopButton);
     addItemSpacing();
@@ -6234,6 +6240,8 @@ void ScreenshotToolPalette::addRecordingControls(QBoxLayout* layout) {
         addActionButton("Open recording folder", custom_outlined_icons::RecordingFolder());
     m_recordCloseButton = addActionButton("Close recording", outlined_icons::Close(), true);
     m_recordCopyButton = addActionButton("Copy recording", outlined_icons::Copy());
+    m_recordCopyButton->setBusyIndicatorPresentation(
+        adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
     layout->addWidget(m_recordOpenFolderButton);
     addItemSpacing();
     layout->addWidget(m_recordCloseButton);
@@ -6564,10 +6572,12 @@ void ScreenshotToolPalette::updateRecordingControls() {
     if (m_recordStartButton != nullptr) {
         m_recordStartButton->setVisible(idle);
         m_recordStartButton->setEnabled(idle && !m_recordingBusy);
+        m_recordStartButton->setBusy(idle && m_recordingBusy);
     }
     if (m_recordStopButton != nullptr) {
         m_recordStopButton->setVisible(active);
         m_recordStopButton->setEnabled(active && !m_recordingBusy);
+        m_recordStopButton->setBusy(active && m_recordingBusy);
     }
     if (m_recordPauseButton != nullptr) {
         const bool pauseEnabled = recording && !m_recordingBusy;
@@ -6643,6 +6653,7 @@ void ScreenshotToolPalette::updateRecordingControls() {
                                                  outlined_icons::Copy(), scheme.map.colorPrimary)
                                            : outlined_icons::Copy());
         m_recordCopyButton->setEnabled(copyEnabled);
+        m_recordCopyButton->setBusy(active && m_recordingBusy);
     }
 
     if (visibilityChanged) {
