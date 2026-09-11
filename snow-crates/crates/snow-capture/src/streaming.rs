@@ -534,6 +534,15 @@ fn stream_loop(
         let frame_start = Instant::now();
 
         drain_recycled_frames(recycle_rx, &mut reuse_frame);
+        if reuse_frame.is_none() {
+            let requested = target_interval(requested_target.load(Ordering::Acquire));
+            let budget = recycle_wait_budget(frame_start, requested, pressure_interval);
+            if !budget.is_zero()
+                && let Ok(candidate) = recycle_rx.recv_timeout(budget)
+            {
+                reuse_frame = Some(candidate);
+            }
+        }
 
         let reuse = reuse_frame.take();
         let capture_result = if config.include_cursor {
@@ -704,6 +713,35 @@ fn target_interval(target_fps: u32) -> Option<Duration> {
     (target_fps > 0).then(|| Duration::from_secs_f64(1.0 / target_fps as f64))
 }
 
+/// Upper bound for blocking on the recycle channel. The wait shares the
+/// iteration's pacing budget with the end-of-loop sleep, so cadence is
+/// unaffected; it only moves idle time ahead of the capture.
+const RECYCLE_WAIT_CAP: Duration = Duration::from_millis(4);
+
+/// How long the capture loop may block waiting for a recycled frame buffer
+/// before letting the backend allocate a fresh one. Under consumer
+/// backpressure the recycle pool stays drained and each new monitor-sized
+/// buffer costs a multi-megabyte allocation; waiting inside the pacing
+/// budget lets the consumer release a buffer instead.
+fn recycle_wait_budget(
+    frame_start: Instant,
+    requested: Option<Duration>,
+    pressure: Option<Duration>,
+) -> Duration {
+    let interval = match (requested, pressure) {
+        (Some(requested), Some(pressure)) => Some(requested.max(pressure)),
+        (Some(requested), None) => Some(requested),
+        (None, Some(pressure)) => Some(pressure),
+        (None, None) => None,
+    };
+    match interval {
+        Some(interval) => interval
+            .saturating_sub(frame_start.elapsed())
+            .min(RECYCLE_WAIT_CAP),
+        None => Duration::ZERO,
+    }
+}
+
 fn clamp_target_fps(target_fps: u32, maximum_fps: u32, minimum_fps: u32) -> u32 {
     if target_fps == 0 {
         return if maximum_fps == 0 { 0 } else { maximum_fps };
@@ -759,7 +797,34 @@ mod tests {
     use snow_core::stream_queue::StreamQueue;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn recycle_wait_budget_stays_inside_pacing_and_cap() {
+        use super::recycle_wait_budget;
+        let now = Instant::now();
+        // Uncapped streams never block on the recycle channel.
+        assert_eq!(recycle_wait_budget(now, None, None), Duration::ZERO);
+        // Fresh iteration at 60 fps: nearly the full interval is available,
+        // but the cap bounds the wait.
+        let budget = recycle_wait_budget(now, Some(Duration::from_millis(16)), None);
+        assert!(budget <= Duration::from_millis(4));
+        assert!(!budget.is_zero());
+        // A nearly exhausted budget must not go negative or block.
+        let spent = now - Duration::from_millis(16);
+        assert_eq!(
+            recycle_wait_budget(spent, Some(Duration::from_millis(16)), None),
+            Duration::ZERO
+        );
+        // Adaptive pressure lengthens the interval and therefore the budget.
+        let pressured = recycle_wait_budget(
+            now,
+            Some(Duration::from_millis(16)),
+            Some(Duration::from_millis(24)),
+        );
+        assert!(pressured <= Duration::from_millis(4));
+        assert!(!pressured.is_zero());
+    }
 
     #[test]
     fn target_fps_is_clamped_to_configured_ceiling_and_floor() {
