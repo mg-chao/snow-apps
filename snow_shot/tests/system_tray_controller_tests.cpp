@@ -42,6 +42,25 @@ void requireActionText(const QAction* action, const QString& expected, const cha
     require(action != nullptr && action->text() == expected, message);
 }
 
+QString balloonTitle(const QSystemTrayIcon* trayIcon) {
+    return trayIcon->property("lastBalloonTitle").toString();
+}
+
+QString balloonMessage(const QSystemTrayIcon* trayIcon) {
+    return trayIcon->property("lastBalloonMessage").toString();
+}
+
+QSystemTrayIcon::MessageIcon balloonIcon(const QSystemTrayIcon* trayIcon) {
+    return static_cast<QSystemTrayIcon::MessageIcon>(trayIcon->property("lastBalloonIcon").toInt());
+}
+
+void requireBalloon(const QSystemTrayIcon* trayIcon, const QString& title, const QString& message,
+                    QSystemTrayIcon::MessageIcon icon, const char* reason) {
+    require(balloonTitle(trayIcon) == title && balloonMessage(trayIcon) == message &&
+                balloonIcon(trayIcon) == icon,
+            reason);
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -78,6 +97,29 @@ int main(int argc, char* argv[]) {
             "enabling the tray should show it immediately");
     controller.hide();
     require(!trayIcon->isVisible(), "hide should make the tray icon invisible");
+
+    controller.showUpdateMessage(QStringLiteral("An update is ready."));
+    requireBalloon(trayIcon, QStringLiteral("Update"), QStringLiteral("An update is ready."),
+                   QSystemTrayIcon::Information,
+                   "an update-ready balloon must use the Update title and an informational icon");
+    controller.showCaptureMessage(QStringLiteral("Capture failed"), false);
+    requireBalloon(trayIcon, QStringLiteral("Capture"), QStringLiteral("Capture failed"),
+                   QSystemTrayIcon::Critical,
+                   "a capture failure balloon must stay titled Capture with a critical icon");
+    controller.showCaptureMessage(QStringLiteral("Capture delayed"), true);
+    requireBalloon(trayIcon, QStringLiteral("Capture"), QStringLiteral("Capture delayed"),
+                   QSystemTrayIcon::Warning,
+                   "a capture warning balloon must stay titled Capture with a warning icon");
+    controller.showTranslationMessage(QStringLiteral("No selected text"));
+    requireBalloon(trayIcon, QStringLiteral("Translation"), QStringLiteral("No selected text"),
+                   QSystemTrayIcon::Warning,
+                   "a translation balloon must stay titled Translation with a warning icon");
+    controller.setEnabled(false);
+    controller.showUpdateMessage(QStringLiteral("Ignored while disabled"));
+    requireBalloon(trayIcon, QStringLiteral("Translation"), QStringLiteral("No selected text"),
+                   QSystemTrayIcon::Warning,
+                   "a disabled tray must not replace the last balloon with an update notice");
+    controller.setEnabled(true);
 
     const QStringList bundledSelections{
         QStringLiteral("default"),      QStringLiteral("light"),      QStringLiteral("dark"),
@@ -514,6 +556,11 @@ int main(int argc, char* argv[]) {
 
     require(languageManager.setLanguage(QStringLiteral("zh_CN")),
             "the Simplified Chinese translation should load");
+    controller.showUpdateMessage(QStringLiteral("An update is ready."));
+    requireBalloon(
+        trayIcon, QStringLiteral("\u66f4\u65b0"), QStringLiteral("An update is ready."),
+        QSystemTrayIcon::Information,
+        "an update-ready balloon should keep an informational icon in Simplified Chinese");
     requireActionText(screenshotMenuAction,
                       QStringLiteral("\u622a\u56fe\t") + screenshotShortcutHint,
                       "Screenshot should translate to Simplified Chinese");
@@ -558,6 +605,11 @@ int main(int argc, char* argv[]) {
 
     require(languageManager.setLanguage(QStringLiteral("zh_TW")),
             "the Traditional Chinese translation should load");
+    controller.showUpdateMessage(QStringLiteral("An update is ready."));
+    requireBalloon(
+        trayIcon, QStringLiteral("\u66f4\u65b0"), QStringLiteral("An update is ready."),
+        QSystemTrayIcon::Information,
+        "an update-ready balloon should keep an informational icon in Traditional Chinese");
     requireActionText(screenshotMenuAction,
                       QStringLiteral("\u622a\u5716\t") + screenshotShortcutHint,
                       "Screenshot should translate to Traditional Chinese");

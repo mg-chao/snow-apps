@@ -7411,7 +7411,7 @@ Change the shortcut and try again</source>
 <context>
     <name>snow_shot::app::ApplicationController</name>
     <message>
-        <location filename="../src/app/applicationcontroller.cpp" line="193"/>
+        <location filename="../src/app/applicationcontroller.cpp" line="192"/>
         <source>An update is ready. Open About to restart and update Snow Shot.</source>
         <translation>更新已準備就緒。請開啟「關於」頁面，重新啟動並更新 Snow Shot。</translation>
     </message>
@@ -7550,14 +7550,19 @@ Change the shortcut and try again</source>
 <context>
     <name>snow_shot::presentation::SystemTrayController</name>
     <message>
-        <location filename="../src/presentation/services/systemtraycontroller.cpp" line="550"/>
+        <location filename="../src/presentation/services/systemtraycontroller.cpp" line="559"/>
         <source>Capture</source>
         <translation>擷取</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/systemtraycontroller.cpp" line="556"/>
+        <location filename="../src/presentation/services/systemtraycontroller.cpp" line="564"/>
         <source>Translation</source>
         <translation>翻譯</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/services/systemtraycontroller.cpp" line="568"/>
+        <source>Update</source>
+        <translation>更新</translation>
     </message>
 </context>
 <context>

@@ -265,6 +265,17 @@ class SystemTrayController::Impl {
         }
     }
 
+    void showBalloon(const QString& title, const QString& message,
+                     QSystemTrayIcon::MessageIcon icon) {
+        if (!enabled) {
+            return;
+        }
+        trayIcon->setProperty("lastBalloonTitle", title);
+        trayIcon->setProperty("lastBalloonMessage", message);
+        trayIcon->setProperty("lastBalloonIcon", static_cast<int>(icon));
+        trayIcon->showMessage(title, message, icon);
+    }
+
     void buildMenu() {
         separatorsBeforeGroup.resize(groups.size());
         QString windowGroupingOptionId;
@@ -545,16 +556,16 @@ void SystemTrayController::hide() {
 }
 
 void SystemTrayController::showCaptureMessage(const QString& message, bool warning) {
-    if (!m_impl->enabled)
-        return;
-    m_impl->trayIcon->showMessage(tr("Capture"), message,
-                                  warning ? QSystemTrayIcon::Warning : QSystemTrayIcon::Critical);
+    m_impl->showBalloon(tr("Capture"), message,
+                        warning ? QSystemTrayIcon::Warning : QSystemTrayIcon::Critical);
 }
 
 void SystemTrayController::showTranslationMessage(const QString& message) {
-    if (m_impl->enabled) {
-        m_impl->trayIcon->showMessage(tr("Translation"), message, QSystemTrayIcon::Warning);
-    }
+    m_impl->showBalloon(tr("Translation"), message, QSystemTrayIcon::Warning);
+}
+
+void SystemTrayController::showUpdateMessage(const QString& message) {
+    m_impl->showBalloon(tr("Update"), message, QSystemTrayIcon::Information);
 }
 
 void SystemTrayController::setEnabled(bool enabled) {
