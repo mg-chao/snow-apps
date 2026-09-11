@@ -181,14 +181,14 @@ constexpr IconDescriptor kEntries[] = {
   },
   {
     std::string_view("snow-shot"), std::string_view("outlined"), std::string_view("arrowhead-none"),
-    std::string_view(R"ADQT_SVG_24(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke="__ADQT_SLOT_PRIMARY__" opacity="0.3" stroke-width="2"> <path d="M12 12l9 0" /> <path d="M3 9l6 6" /> <path d="M3 15l6 -6" /> </g></svg>
-)ADQT_SVG_24"), std::string_view("f256397fcaee7c1f256d70d34100421082373f8a6b364d6889537213db74876a"),
+    std::string_view(R"ADQT_SVG_24(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g transform="translate(24, 0) scale(-1, 1)"><g stroke="__ADQT_SLOT_PRIMARY__" opacity="0.3" stroke-width="2"> <path d="M12 12l9 0" /> <path d="M3 9l6 6" /> <path d="M3 15l6 -6" /> </g></g></svg>
+)ADQT_SVG_24"), std::string_view("75741fe71cc7cf01e7be9433d70ad99855729e7955748d0977e537ff663c6e10"),
     IconColorModel::Monochrome, IconFit::Contain, IconStaticColors{std::string_view(""), std::string_view(""), std::string_view("")}, false
   },
   {
     std::string_view("snow-shot"), std::string_view("outlined"), std::string_view("arrowhead-none-start"),
-    std::string_view(R"ADQT_SVG_25(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g transform="translate(24, 0) scale(-1, 1)"><g stroke="__ADQT_SLOT_PRIMARY__" opacity="0.3" stroke-width="2"> <path d="M12 12l9 0" /> <path d="M3 9l6 6" /> <path d="M3 15l6 -6" /> </g></g></svg>
-)ADQT_SVG_25"), std::string_view("75741fe71cc7cf01e7be9433d70ad99855729e7955748d0977e537ff663c6e10"),
+    std::string_view(R"ADQT_SVG_25(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke="__ADQT_SLOT_PRIMARY__" opacity="0.3" stroke-width="2"> <path d="M12 12l9 0" /> <path d="M3 9l6 6" /> <path d="M3 15l6 -6" /> </g></svg>
+)ADQT_SVG_25"), std::string_view("f256397fcaee7c1f256d70d34100421082373f8a6b364d6889537213db74876a"),
     IconColorModel::Monochrome, IconFit::Contain, IconStaticColors{std::string_view(""), std::string_view(""), std::string_view("")}, false
   },
   {
@@ -815,7 +815,7 @@ constexpr IconDescriptor kEntries[] = {
   },
 };
 
-constexpr IconPack kStaticPack{std::string_view("snow-shot"), std::string_view("Snow Shot project-owned static SVG assets"), std::string_view("37e8ea2982ad2ad452ad476d0fc82f93343484a31371d383681b7f2de9d6ad43"), kEntries, sizeof(kEntries) / sizeof(kEntries[0])};
+constexpr IconPack kStaticPack{std::string_view("snow-shot"), std::string_view("Snow Shot project-owned static SVG assets"), std::string_view("20dafbdceaa4fc6cd47375261a056a06993d7c1d11921a770b6427f3ac4e1fff"), kEntries, sizeof(kEntries) / sizeof(kEntries[0])};
 
 }  // namespace
 
