@@ -195,6 +195,15 @@ void ScreenshotExportCoordinator::shutdown() {
     if (!m_impl->pool->waitForDone(m_impl->shutdownTimeoutMs)) {
         qWarning("Screenshot export workers did not stop within %d milliseconds; abandoning them",
                  m_impl->shutdownTimeoutMs);
+        // Retire what the deadline could not: clear() deletes queued runnables so
+        // they neither execute nor leak inside the abandoned pool, and an expiry
+        // timeout of 0 makes a worker exit the next time it parks (QThreadPool
+        // re-reads the timeout on every park, despite its docs claiming only
+        // newly created threads honor it). Workers already parked under the
+        // previous disabled timeout cannot be woken without starting throwaway
+        // jobs and stay parked for the remaining process lifetime.
+        m_impl->pool->clear();
+        m_impl->pool->setExpiryTimeout(0);
         static_cast<void>(m_impl->pool.release());
     }
 }

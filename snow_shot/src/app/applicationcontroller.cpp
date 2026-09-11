@@ -318,7 +318,7 @@ class ApplicationController::Impl {
         } else if (key == kPinBorderActiveColorKey) {
             QColor color = storage::colorFromRgbaString(value.toString());
             if (!color.isValid()) {
-                color = QColor(64, 150, 255, 255);
+                color = QColor(105, 177, 255, 255);
             }
             ScreenshotPinnedWindow::setRuntimeBorderActiveColor(color);
         } else if (key == kTrayEnabledKey) {

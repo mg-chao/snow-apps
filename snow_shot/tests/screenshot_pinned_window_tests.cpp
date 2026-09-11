@@ -2619,7 +2619,7 @@ void pinnedControlsMatchReferenceStyle(SnowCanvasRuntime&) {
                      "a live border-color update should repaint the pinned border");
     ScreenshotPinnedWindow::setRuntimeBorderColor(borderColor);
 
-    const QColor defaultActiveBorderColor(QStringLiteral("#4096FF"));
+    const QColor defaultActiveBorderColor(QStringLiteral("#69B1FF"));
     setPinnedWindowActive(*pinnedWindow, true);
     require(border->property("borderColor").value<QColor>() == defaultActiveBorderColor,
             "an activated pinned window should draw the active border color");

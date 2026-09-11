@@ -745,8 +745,8 @@ void builtInCatalogIsCompleteAndValid() {
             std::get<settings::SettingsColorDefinition>(pinBorderActiveColor->payload).binding ==
                 settings::SettingsColorBinding::PinBorderActiveColor &&
             storage::ConfigurationSchema::defaultValue(pinBorderActiveColor->configurationKey) ==
-                QStringLiteral("#4096FFFF"),
-        "pin to screen must expose a border active color defaulting to #4096ff");
+                QStringLiteral("#69B1FFFF"),
+        "pin to screen must expose a border active color defaulting to #69b1ff");
 
     const auto* retention =
         storage::ConfigurationSchema::entry(QStringLiteral("capture_history/retention_days"));

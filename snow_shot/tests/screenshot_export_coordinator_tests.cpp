@@ -8,6 +8,7 @@
 #include <QThread>
 #include <QTimer>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdlib>
 #include <functional>
@@ -209,10 +210,12 @@ void shutdownAbandonsAWorkerThatIgnoresCancellation() {
     std::atomic_bool entered{false};
     std::atomic_bool release{false};
     int completionCount = 0;
+    QThread* workerThread = nullptr;
     require(coordinator
                 .submit(
                     &receiver, ScreenshotExportCoordinator::Priority::Foreground,
-                    [&entered, &release](const ScreenshotExportCancellation&) {
+                    [&entered, &release, &workerThread](const ScreenshotExportCancellation&) {
+                        workerThread = QThread::currentThread();
                         entered.store(true, std::memory_order_release);
                         while (!release.load(std::memory_order_acquire)) {
                             QThread::msleep(2);
@@ -232,12 +235,69 @@ void shutdownAbandonsAWorkerThatIgnoresCancellation() {
     release.store(true, std::memory_order_release);
     require(processUntil([&coordinator]() { return coordinator.pendingJobCount() == 0; }),
             "the abandoned export worker did not finish after release");
+    // The abandoned pool retires the worker instead of parking it forever on
+    // its disabled expiry timeout.
+    require(workerThread != nullptr &&
+                processUntil([workerThread]() { return workerThread->isFinished(); }),
+            "the abandoned export worker thread did not retire after finishing");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
     require(completionCount == 1, "the abandoned worker's completion was not delivered");
     QElapsedTimer secondShutdown;
     secondShutdown.start();
     coordinator.shutdown();
     require(secondShutdown.elapsed() < 100, "a second shutdown did not return immediately");
+}
+
+void shutdownDropsQueuedWorkWhenAbandoned() {
+    ScreenshotExportCoordinator coordinator(150);
+    QObject receiver;
+    const int workerCount = std::clamp(QThread::idealThreadCount(), 1, 2);
+    std::atomic_int entered{0};
+    std::atomic_bool release{false};
+    int blockerCompletions = 0;
+    int stragglerCompletions = 0;
+    const auto blocker = [&entered, &release](const ScreenshotExportCancellation&) {
+        entered.fetch_add(1, std::memory_order_release);
+        while (!release.load(std::memory_order_acquire)) {
+            QThread::msleep(2);
+        }
+        return ScreenshotExportTaskResult{};
+    };
+    const auto countBlockerCompletion = [&blockerCompletions](ScreenshotExportTaskResult) {
+        ++blockerCompletions;
+    };
+    require(coordinator
+                .submit(&receiver, ScreenshotExportCoordinator::Priority::Foreground, blocker,
+                        countBlockerCompletion)
+                .isValid(),
+            "shutdown straggler blocker was not admitted");
+    require(processUntil(
+                [workerCount, &entered]() { return entered.load(std::memory_order_acquire) >= 1; }),
+            "shutdown straggler first blocker did not start");
+    // A second blocker keeps every pool worker wedged so the straggler below is
+    // guaranteed to stay queued, never started.
+    static_cast<void>(coordinator.submit(&receiver,
+                                         ScreenshotExportCoordinator::Priority::Foreground, blocker,
+                                         countBlockerCompletion));
+    require(processUntil([workerCount, &entered]() {
+                return entered.load(std::memory_order_acquire) == workerCount;
+            }),
+            "shutdown straggler blockers did not occupy the workers");
+    require(
+        coordinator
+            .submit(
+                &receiver, ScreenshotExportCoordinator::Priority::Background,
+                [](const ScreenshotExportCancellation&) { return ScreenshotExportTaskResult{}; },
+                [&stragglerCompletions](ScreenshotExportTaskResult) { ++stragglerCompletions; })
+            .isValid(),
+        "shutdown straggler job was not admitted");
+    coordinator.shutdown();
+    release.store(true, std::memory_order_release);
+    require(processUntil(
+                [workerCount, &blockerCompletions]() { return blockerCompletions == workerCount; }),
+            "shutdown straggler blockers did not finish after release");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    require(stragglerCompletions == 0, "the abandoned pool executed queued work after shutdown");
 }
 
 void clipboardCommitCancellationIsAsynchronous() {
@@ -322,6 +382,7 @@ int main(int argc, char** argv) {
         queueAndWorkerBoundsAreEnforced();
         shutdownCancelsAndDrains();
         shutdownAbandonsAWorkerThatIgnoresCancellation();
+        shutdownDropsQueuedWorkWhenAbandoned();
         clipboardCommitCancellationIsAsynchronous();
 #if defined(Q_OS_WIN) || defined(_WIN32)
         clipboardCommitRetriesTransientContention();
