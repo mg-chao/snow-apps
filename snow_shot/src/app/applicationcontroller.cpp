@@ -189,10 +189,8 @@ class ApplicationController::Impl {
         updates->setSystemProxy(configuration.value(QStringLiteral("network/proxy")).toString() ==
                                 u"system");
         QObject::connect(updates, &update::UpdateService::updateReady, &q, [this] {
-            systemTray.showCaptureMessage(
-                ApplicationController::tr(
-                    "An update is ready. Open About to restart and update Snow Shot."),
-                false);
+            systemTray.showUpdateMessage(ApplicationController::tr(
+                "An update is ready. Open About to restart and update Snow Shot."));
         });
         QObject::connect(updates, &update::UpdateService::restartRequested, &q, [this] {
             if ((screenshotController != nullptr &&
