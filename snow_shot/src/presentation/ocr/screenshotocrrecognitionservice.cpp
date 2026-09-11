@@ -41,6 +41,7 @@ constexpr quint16 kComplete = 5;
 constexpr quint16 kShutdown = 6;
 constexpr qsizetype kSlotHeaderBytes = 32;
 constexpr qsizetype kMaximumImageBytes = 3840LL * 2160LL * 4LL;
+constexpr unsigned long kTransportStopTimeoutMilliseconds = 5000;
 constexpr qsizetype kMaximumFrameBytes = 1024LL * 1024LL;
 constexpr qsizetype kMaximumOutstandingRequests = 32;
 constexpr qsizetype kMaximumOutstandingRequestsPerReceiver = 8;
@@ -339,12 +340,13 @@ class ScreenshotOcrRecognitionService::Impl final {
     Impl(ScreenshotOcrRecognitionService* owner, const Options& options,
          ScreenshotOcrBackendPreference preference)
         : m_owner(owner), m_workerLimit(std::clamp(options.workerCount, 1, 2)),
+          m_shutdownTimeoutMilliseconds(std::max(1, options.shutdownTimeoutMilliseconds)),
           m_proxyUrl(options.proxyUrl), m_modelType(options.modelType),
           m_backendPreference(preference) {
         m_queueClock.start();
         m_slots.resize(m_workerLimit);
         m_transportThread.setObjectName(QStringLiteral("snow-ocr-transport"));
-        m_localPool.setMaxThreadCount(m_workerLimit);
+        m_localPool->setMaxThreadCount(m_workerLimit);
         if (!options.processPath.trimmed().isEmpty() &&
             !options.detectorModelPath.trimmed().isEmpty() &&
             !options.recognizerModelPath.trimmed().isEmpty() &&
@@ -476,7 +478,7 @@ class ScreenshotOcrRecognitionService::Impl final {
         }
         const QPointer<ScreenshotOcrRecognitionService> service(m_owner);
         const auto alive = m_alive;
-        m_localPool.start(QRunnable::create([service, job, alive]() {
+        m_localPool->start(QRunnable::create([service, job, alive]() {
             SnowCanvasRegionFilterScratch scratch;
             ScreenshotOcrRecognitionResult result;
             if (alive->load(std::memory_order_acquire) &&
@@ -1121,8 +1123,8 @@ class ScreenshotOcrRecognitionService::Impl final {
             const QColor background = job->request.backgroundColor;
             const QPointer<ScreenshotOcrRecognitionService> service(m_owner);
             const auto alive = m_alive;
-            m_localPool.start(QRunnable::create([service, job, alive, result = std::move(result),
-                                                 source, canvasRect, background]() mutable {
+            m_localPool->start(QRunnable::create([service, job, alive, result = std::move(result),
+                                                  source, canvasRect, background]() mutable {
                 SnowCanvasRegionFilterScratch scratch;
                 if (alive->load(std::memory_order_acquire)) {
                     result.filteredImage =
@@ -1325,13 +1327,28 @@ class ScreenshotOcrRecognitionService::Impl final {
             m_localRenderingCount = 0;
             releaseTransport();
         }
-        m_localPool.waitForDone();
+        // Deleting the pool would wait for in-flight renders unconditionally;
+        // orphan it past the deadline. Its runnables hold only shared state, a
+        // QPointer to the service and the liveness flag, so completing after
+        // destruction is safe.
+        if (!m_localPool->waitForDone(m_shutdownTimeoutMilliseconds)) {
+            qWarning("OCR render workers did not stop within %d milliseconds; abandoning them",
+                     m_shutdownTimeoutMilliseconds);
+            m_localPool.release();
+        }
         m_transportThread.quit();
-        m_transportThread.wait();
+        if (!m_transportThread.wait(kTransportStopTimeoutMilliseconds)) {
+            qWarning("OCR transport thread did not stop within %lu milliseconds; still waiting",
+                     kTransportStopTimeoutMilliseconds);
+            // A running QThread must never be destroyed, so keep waiting past
+            // the deadline once the stall is visible in diagnostics.
+            m_transportThread.wait();
+        }
     }
 
     ScreenshotOcrRecognitionService* m_owner = nullptr;
     const int m_workerLimit;
+    const int m_shutdownTimeoutMilliseconds;
     QString m_proxyUrl;
     ScreenshotOcrModelType m_modelType = ScreenshotOcrModelType::Small;
     ScreenshotOcrResolvedAssets m_assets;
@@ -1340,7 +1357,7 @@ class ScreenshotOcrRecognitionService::Impl final {
     mutable std::mutex m_mutex;
     QHash<RequestToken, std::shared_ptr<Job>> m_jobs;
     std::vector<std::shared_ptr<Job>> m_pending, m_slots;
-    QThreadPool m_localPool;
+    std::unique_ptr<QThreadPool> m_localPool = std::make_unique<QThreadPool>();
     QElapsedTimer m_queueClock;
     std::shared_ptr<std::atomic_bool> m_alive = std::make_shared<std::atomic_bool>(true);
     std::vector<quint64> m_slotSequences;

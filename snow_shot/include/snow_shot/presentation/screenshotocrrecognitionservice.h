@@ -109,6 +109,9 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
         QString recognizerModelPath;
         QString dictionaryPath;
         QString stateDirectory;
+        // Bound on waiting for in-flight local rendering at shutdown before
+        // the render pool is abandoned.
+        int shutdownTimeoutMilliseconds = 5000;
     };
 
     explicit ScreenshotOcrRecognitionService(QObject* parent = nullptr);

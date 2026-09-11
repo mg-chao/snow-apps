@@ -5,6 +5,7 @@
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
 #include <QImage>
@@ -357,6 +358,28 @@ void renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine() {
             "the filtered image should be sized to match its canvas rect at source resolution");
     require(waitUntil([&]() { return service.liveWorkerCount() == 0; }, 1'000),
             "the render-only OCR worker should retire after its queue drains");
+}
+
+void destructionStaysBoundedWhileRendersAreInFlight() {
+    ScreenshotOcrRecognitionService::Options options;
+    options.shutdownTimeoutMilliseconds = 150;
+    QImage image(2560, 1440, QImage::Format_RGBA8888);
+    image.fill(QColor(20, 80, 220));
+    QObject receiver;
+    QElapsedTimer timer;
+    {
+        ScreenshotOcrRecognitionService service(options);
+        for (int index = 0; index < 16; ++index) {
+            ScreenshotOcrRequest request;
+            request.image = image;
+            request.canvasRect = QRectF(QPointF(), QSizeF(image.size()));
+            request.presentation = filterPresentation(request.canvasRect.toAlignedRect());
+            request.backgroundColor = QColor(30, 40, 50);
+            service.render(std::move(request), &receiver, [](ScreenshotOcrRecognitionResult) {});
+        }
+        timer.start();
+    }
+    require(timer.elapsed() < 5000, "OCR service destruction stalled on in-flight local renders");
 }
 
 void recognitionRenderIntentCanChangeWhileQueued() {
@@ -1240,6 +1263,50 @@ void modelSelectionDuringAcquisitionIsLastSelectionWins() {
             "a stale Medium V5 download may remain cached but must never become active");
 }
 
+// Destruction must interrupt the worker even while it sits in the
+// cross-process cache-lock wait, which no event loop is pumping: without the
+// interruption plumbing the destructor blocks the full 120 s lock timeout.
+void assetDestructionInterruptsTheCacheLockWait() {
+#ifdef Q_OS_WIN
+    QTemporaryDir offline;
+    QTemporaryDir cache;
+    require(offline.isValid() && cache.isValid(),
+            "temporary OCR asset lock roots should be available");
+    writeAssetManifest(offline.path(), false);
+    const QByteArray digest =
+        QCryptographicHash::hash(QFileInfo(cache.path()).absoluteFilePath().toLower().toUtf8(),
+                                 QCryptographicHash::Sha256)
+            .toHex();
+    const QString lockName =
+        QStringLiteral("Local\\SnowShotOcrAssets-%1").arg(QString::fromLatin1(digest.left(32)));
+    HANDLE lock = CreateMutexW(nullptr, FALSE, reinterpret_cast<LPCWSTR>(lockName.utf16()));
+    require(lock != nullptr, "the test must be able to create the OCR cache lock");
+    require(WaitForSingleObject(lock, 2'000) == WAIT_OBJECT_0,
+            "the test must own the OCR cache lock before acquisition starts");
+    ScreenshotOcrAssets::Options options;
+    options.offlineRoot = offline.path();
+    options.cacheRoot = cache.path();
+    int downloads = 0;
+    options.downloadOverride = [&](const QString&, const QString&, QString*) {
+        ++downloads;
+        return false;
+    };
+    ScreenshotOcrAssets* assets = new ScreenshotOcrAssets(options);
+    assets->prepare();
+    processEventsFor(500);
+    QElapsedTimer shutdown;
+    shutdown.start();
+    delete assets;
+    const qint64 elapsedMs = shutdown.elapsed();
+    ReleaseMutex(lock);
+    CloseHandle(lock);
+    require(elapsedMs < 15'000,
+            "destroying ScreenshotOcrAssets during the cache-lock wait must not block on the "
+            "lock timeout");
+    require(downloads == 0, "the held cache lock must gate every OCR asset download");
+#endif
+}
+
 // Opt-in real-model coverage. Model payloads are supplied explicitly so the
 // deterministic asset tests never need network access or large model fixtures.
 void versionedModelsRecognizeText(const QString& modelRoot, const QString& fixturePath,
@@ -1403,9 +1470,11 @@ int main(int argc, char** argv) {
     selectedModelFailureNeverFallsBackToSmallAndCanRetry();
     invalidSchemaTwoManifestsAreRejectedBeforeDownloading();
     modelSelectionDuringAcquisitionIsLastSelectionWins();
+    assetDestructionInterruptsTheCacheLockWait();
     explicitAssetsControlReadiness();
     modelInitializationFailureExposesAssetErrorAndRetries();
     renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine();
+    destructionStaysBoundedWhileRendersAreInFlight();
     diskBackedEngineCompletesThroughTheQtWorker(directMlRequested);
     if (!directMlRequested) {
         oneEngineIsInitializedBeforeReadyAndReused();

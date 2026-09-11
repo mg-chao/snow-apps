@@ -3,6 +3,7 @@
 #include <QCryptographicHash>
 #include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QEventLoop>
 #include <QEvent>
 #include <QFile>
@@ -38,6 +39,17 @@ namespace {
 constexpr auto kManifestName = "asset-manifest.json";
 constexpr auto kRuntimeVersion = "1.0.6";
 constexpr auto kPlatform = "windows-x64";
+constexpr auto kInterruptedError = "OCR asset preparation was interrupted";
+constexpr int kShutdownJoinTimeoutMs = 10'000;
+
+// The asset worker polls this between phases. ~Impl() stops the worker with
+// requestInterruption() plus quit(); quit() alone only reaches waits that run
+// inside an event loop, so hash, extraction, and cache-lock phases must check
+// the flag themselves.
+bool interruptionRequested() {
+    const QThread* thread = QThread::currentThread();
+    return thread != nullptr && thread->isInterruptionRequested();
+}
 
 struct FileDescriptor {
     QString name;
@@ -142,10 +154,23 @@ QByteArray sha256File(const QString& path, QString* error) {
         return {};
     }
     QCryptographicHash hash(QCryptographicHash::Sha256);
-    if (!hash.addData(&file)) {
-        if (error != nullptr)
-            *error = file.errorString();
-        return {};
+    // Hash in bounded chunks so model-sized files stay interruptible.
+    char buffer[256 * 1024];
+    while (true) {
+        if (interruptionRequested()) {
+            if (error != nullptr)
+                *error = QString::fromLatin1(kInterruptedError);
+            return {};
+        }
+        const qint64 count = file.read(buffer, sizeof(buffer));
+        if (count < 0) {
+            if (error != nullptr)
+                *error = file.errorString();
+            return {};
+        }
+        if (count == 0)
+            break;
+        hash.addData(QByteArrayView(buffer, count));
     }
     return hash.result();
 }
@@ -434,8 +459,21 @@ class CacheLock {
             QStringLiteral("Local\\SnowShotOcrAssets-%1").arg(QString::fromLatin1(digest.left(32)));
         m_handle = CreateMutexW(nullptr, FALSE, reinterpret_cast<LPCWSTR>(name.utf16()));
         if (m_handle != nullptr) {
-            const DWORD result = WaitForSingleObject(m_handle, 120000);
-            m_locked = result == WAIT_OBJECT_0 || result == WAIT_ABANDONED;
+            // Wait in short slices so an interruption request (app shutdown)
+            // is honored instead of blocking for the whole lock timeout.
+            QElapsedTimer deadline;
+            deadline.start();
+            while (true) {
+                const DWORD result = WaitForSingleObject(m_handle, 200);
+                if (result == WAIT_OBJECT_0 || result == WAIT_ABANDONED) {
+                    m_locked = true;
+                    break;
+                }
+                if (result != WAIT_TIMEOUT || deadline.elapsed() >= 120000 ||
+                    interruptionRequested()) {
+                    break;
+                }
+            }
         }
 #else
         Q_UNUSED(path);
@@ -485,6 +523,11 @@ bool downloadOnce(QNetworkAccessManager* manager, const FileDescriptor& descript
                   const QString& destination, const Progress& progress, QString* error,
                   bool* transient) {
     *transient = false;
+    if (interruptionRequested()) {
+        if (error != nullptr)
+            *error = QString::fromLatin1(kInterruptedError);
+        return false;
+    }
     if (descriptor.url.scheme() != QStringLiteral("https")) {
         if (error != nullptr)
             *error = QStringLiteral("insecure OCR download URL rejected");
@@ -506,8 +549,16 @@ bool downloadOnce(QNetworkAccessManager* manager, const FileDescriptor& descript
     QTimer timeout;
     timeout.setSingleShot(true);
     timeout.setInterval(120000);
-    QObject::connect(&timeout, &QTimer::timeout, reply, &QNetworkReply::abort);
+    bool stalled = false;
+    // Inactivity timeout: every received chunk restarts the window, so slow
+    // but healthy downloads of model-sized files are not cut off by a fixed
+    // total-time cap; only a connection that stops delivering data aborts.
+    QObject::connect(&timeout, &QTimer::timeout, reply, [&]() {
+        stalled = true;
+        reply->abort();
+    });
     QObject::connect(reply, &QNetworkReply::readyRead, &loop, [&]() {
+        timeout.start();
         const QByteArray bytes = reply->readAll();
         if (file.write(bytes) != bytes.size())
             reply->abort();
@@ -525,7 +576,7 @@ bool downloadOnce(QNetworkAccessManager* manager, const FileDescriptor& descript
     const auto networkError = reply->error();
     const QString networkErrorText = reply->errorString();
     reply->deleteLater();
-    *transient = networkError == QNetworkReply::TimeoutError ||
+    *transient = stalled || networkError == QNetworkReply::TimeoutError ||
                  networkError == QNetworkReply::TemporaryNetworkFailureError ||
                  networkError == QNetworkReply::RemoteHostClosedError || status == 408 ||
                  status == 429 || status >= 500;
@@ -548,6 +599,11 @@ bool downloadOnce(QNetworkAccessManager* manager, const FileDescriptor& descript
 bool download(QNetworkAccessManager* manager, const FileDescriptor& descriptor,
               const QString& destination, const Progress& progress, QString* error) {
     for (int attempt = 0; attempt < 3; ++attempt) {
+        if (interruptionRequested()) {
+            if (error != nullptr)
+                *error = QString::fromLatin1(kInterruptedError);
+            return false;
+        }
         bool transient = false;
         if (downloadOnce(manager, descriptor, destination, progress, error, &transient))
             return true;
@@ -611,6 +667,12 @@ bool extractRuntime(const QString& archive, const QString& staging,
             ok = false;
         char buffer[64 * 1024];
         while (ok) {
+            if (interruptionRequested()) {
+                if (error != nullptr)
+                    *error = QString::fromLatin1(kInterruptedError);
+                ok = false;
+                break;
+            }
             const int32_t count = mz_zip_reader_entry_read(reader, buffer, sizeof(buffer));
             if (count < 0) {
                 ok = false;
@@ -690,12 +752,20 @@ class ScreenshotOcrAssets::Impl final {
     Impl(ScreenshotOcrAssets* owner, Options options)
         : m_owner(owner), m_options(std::move(options)) {}
     ~Impl() {
-        if (m_thread != nullptr) {
-            m_thread->requestInterruption();
-            m_thread->quit();
+        if (m_thread == nullptr)
+            return;
+        m_thread->requestInterruption();
+        m_thread->quit();
+        // Every worker phase polls the interruption flag, so this normally
+        // returns within milliseconds. The deadline only makes a wedged
+        // worker observable; blocking remains the safe fallback because the
+        // worker captures this object and must not be terminated or abandoned.
+        if (!m_thread->wait(kShutdownJoinTimeoutMs)) {
+            qWarning() << "the OCR asset worker is still running after" << kShutdownJoinTimeoutMs
+                       << "ms; waiting for it to finish";
             m_thread->wait();
-            delete m_thread;
         }
+        delete m_thread;
     }
 
     void prepare() {
@@ -788,6 +858,15 @@ class ScreenshotOcrAssets::Impl final {
 
     bool acquire(const Options& options, quint64 generation, ScreenshotOcrResolvedAssets* assets,
                  QString* error) {
+        const auto cancelled = [error]() {
+            if (!interruptionRequested())
+                return false;
+            if (error != nullptr)
+                *error = QString::fromLatin1(kInterruptedError);
+            return true;
+        };
+        if (cancelled())
+            return false;
         auto descriptor = loadDescriptor(options.offlineRoot, error);
         if (!descriptor.has_value())
             return false;
@@ -821,6 +900,8 @@ class ScreenshotOcrAssets::Impl final {
             return false;
         }
         CacheLock lock(options.cacheRoot);
+        if (cancelled())
+            return false;
         if (!lock.locked()) {
             *error = QStringLiteral("timed out waiting for OCR component storage");
             return false;
@@ -839,6 +920,8 @@ class ScreenshotOcrAssets::Impl final {
         // replacement. The offline installation root is intentionally never
         // passed to this cleanup routine.
         cleanup(options.cacheRoot, *descriptor);
+        if (cancelled())
+            return false;
         if (!offlineModel && !cachedModel &&
             !ensureModel(options, *descriptor, *model, generation, stagingRoot, error)) {
             return false;
@@ -846,6 +929,8 @@ class ScreenshotOcrAssets::Impl final {
         cachedModel = cachedModel ||
                       (!offlineModel && validateComponent(modelDirectory(options.cacheRoot, *model),
                                                           model->files, model->id, true, error));
+        if (cancelled())
+            return false;
         if (!offlineRuntime && !cachedRuntime &&
             !ensureRuntime(options, *descriptor, generation, stagingRoot, error)) {
             return false;
@@ -856,6 +941,8 @@ class ScreenshotOcrAssets::Impl final {
              validateComponent(runtimeDirectory(options.cacheRoot, *descriptor),
                                descriptor->runtimeFiles, descriptor->runtimeVersion, true, error));
         if ((!offlineRuntime && !cachedRuntime) || (!offlineModel && !cachedModel))
+            return false;
+        if (cancelled())
             return false;
         const QString runtimeRoot = offlineRuntime ? options.offlineRoot : options.cacheRoot;
         const QString modelRoot = offlineModel ? options.offlineRoot : options.cacheRoot;
@@ -886,6 +973,12 @@ class ScreenshotOcrAssets::Impl final {
         if (!configureProxy(&manager, options.proxyUrl, error))
             return false;
         for (const FileDescriptor& file : model.files) {
+            if (interruptionRequested()) {
+                QDir(staging).removeRecursively();
+                if (error != nullptr)
+                    *error = QString::fromLatin1(kInterruptedError);
+                return false;
+            }
             progress(generation, QStringLiteral("models"), 0, file.size);
             const QString destinationPath = QDir(staging).filePath(file.name);
             const bool acquired =
@@ -926,6 +1019,13 @@ class ScreenshotOcrAssets::Impl final {
             return false;
         }
         QNetworkAccessManager manager;
+        if (interruptionRequested()) {
+            if (error != nullptr)
+                *error = QString::fromLatin1(kInterruptedError);
+            QFile::remove(archive);
+            QDir(staging).removeRecursively();
+            return false;
+        }
         const bool downloaded =
             options.downloadOverride
                 ? options.downloadOverride(descriptor.runtimeArchive.url.toString(), archive,
@@ -938,6 +1038,13 @@ class ScreenshotOcrAssets::Impl final {
                               progress(generation, QStringLiteral("runtime"), received, total);
                           },
                           error);
+        if (downloaded && interruptionRequested()) {
+            if (error != nullptr)
+                *error = QString::fromLatin1(kInterruptedError);
+            QFile::remove(archive);
+            QDir(staging).removeRecursively();
+            return false;
+        }
         const bool extracted =
             downloaded && (options.extractOverride
                                ? options.extractOverride(archive, staging, error)
