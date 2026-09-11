@@ -165,6 +165,9 @@ pub fn run(
             [0; 4]
         },
     };
+    // The production recording path captures BGRA; replay the same order so
+    // the benchmark exercises the compositor and encoder transport the app
+    // uses.
     let sources: Vec<CapturedFrame> = (0..4)
         .map(|phase| {
             let mut pixels = vec![0; width as usize * height as usize * 4];
@@ -177,7 +180,7 @@ pub fn run(
                 };
                 pixel.copy_from_slice(&[v, v, v, 255]);
             }
-            snow_capture::frame::Frame::from_rgba8(width, height, pixels)
+            snow_capture::frame::Frame::from_bgra8(width, height, pixels)
                 .unwrap()
                 .into()
         })

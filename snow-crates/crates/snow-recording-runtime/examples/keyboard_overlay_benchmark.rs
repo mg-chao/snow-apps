@@ -8,7 +8,7 @@ mod keyboard_rasterizer;
 use keyboard_overlay::{KeyEvent, KeyboardOverlay, KeyboardOverlayConfig};
 use snow_recording_export::{
     ExportExecutionMode, ExportFormat, SoftwareH264Priority, StreamingEncoder,
-    StreamingEncoderConfig, VideoCodec,
+    StreamingEncoderConfig, StreamingPixelOrder, VideoCodec,
 };
 use snow_recording_model::{VideoEncodeConfig, VideoEncodingSpeed};
 use std::path::{Path, PathBuf};
@@ -140,6 +140,7 @@ fn encode_fixture(output: &Path, format: ExportFormat) -> Result<(), String> {
             speed: VideoEncodingSpeed::VeryFast,
         },
         encode_threads: 2,
+        pixel_order: StreamingPixelOrder::Rgba,
         audio: None,
     })
     .map_err(|e| e.to_string())?;

@@ -5,6 +5,16 @@ use std::sync::Arc;
 pub const TILE_SIZE: u32 = 128;
 const TILE_BYTES: usize = (TILE_SIZE * TILE_SIZE * 4) as usize;
 
+/// RGB channel order of a packed 4-byte-per-pixel video buffer. Effect
+/// colors and keycap bitmaps are authored as RGBA; blending kernels swap
+/// channels on the fly when composing into a BGRA buffer.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PixelOrder {
+    #[default]
+    Rgba,
+    Bgra,
+}
+
 pub trait Surface {
     const OPAQUE: bool;
     fn size(&self) -> (u32, u32);

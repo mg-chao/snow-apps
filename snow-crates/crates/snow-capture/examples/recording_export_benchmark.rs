@@ -4,13 +4,13 @@
 use anyhow::{Context, Result, bail};
 use snow_capture::backend::CaptureBackendKind;
 use snow_capture::{
-    CaptureEvent, CaptureOptions, CaptureStream, CaptureStreamConfig, CaptureSystem, CaptureTarget,
-    CaptureWorkload,
+    CaptureEvent, CaptureOptions, CapturePixelFormat, CaptureStream, CaptureStreamConfig,
+    CaptureSystem, CaptureTarget, CaptureWorkload,
 };
 use snow_recording_export::config::{VideoEncodeConfig, VideoEncodingSpeed};
 use snow_recording_export::{
     ExportExecutionMode, ExportFormat, SoftwareH264Priority, StreamingEncoder,
-    StreamingEncoderConfig, VideoCodec,
+    StreamingEncoderConfig, StreamingPixelOrder, VideoCodec,
 };
 use std::{
     collections::BTreeMap,
@@ -26,6 +26,7 @@ fn main() -> Result<()> {
     let mut warmup = 30usize;
     let mut output = PathBuf::from("target/perf/recording-export.mp4");
     let mut hardware = true;
+    let mut pixel_format = CapturePixelFormat::Bgra8;
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
     while i < args.len() {
@@ -55,9 +56,11 @@ fn main() -> Result<()> {
                 output = PathBuf::from(args.get(i).context("--output requires a path")?);
             }
             "--software" => hardware = false,
+            "--rgba" => pixel_format = CapturePixelFormat::Rgba8,
+            "--bgra" => pixel_format = CapturePixelFormat::Bgra8,
             "--help" | "-h" => {
                 println!(
-                    "--backend dxgi|wgc|gdi --seconds N --fps N --warmup N --output PATH [--software]"
+                    "--backend dxgi|wgc|gdi --seconds N --fps N --warmup N --output PATH [--software] [--rgba|--bgra]"
                 );
                 return Ok(());
             }
@@ -82,6 +85,7 @@ fn main() -> Result<()> {
         CaptureOptions {
             workload: CaptureWorkload::Continuous,
             record_stage_timings: true,
+            output_pixel_format: pixel_format,
             ..Default::default()
         },
     )?;
@@ -145,6 +149,10 @@ fn main() -> Result<()> {
                             speed: VideoEncodingSpeed::VeryFast,
                         },
                         encode_threads: 0,
+                        pixel_order: match pixel_format {
+                            CapturePixelFormat::Rgba8 => StreamingPixelOrder::Rgba,
+                            CapturePixelFormat::Bgra8 => StreamingPixelOrder::Bgra,
+                        },
                         audio: None,
                     };
                     let encoder_started = Instant::now();
@@ -274,8 +282,12 @@ fn main() -> Result<()> {
     fs::write(
         &report_path,
         format!(
-            "backend,width,height,frames,measured_seconds,target_fps,duplicates,stream_dropped,errors,avg_capture_ms,effective_fps,push_p50_ms,push_p95_ms,queue_peak,encoder_setup_ms,finish_ms,encoded_frames,coalesced_frames,output_bytes,encoder\n{},{},{},{},{:.6},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{},{:.3},{:.3},{},{},{},{}\n",
+            "backend,pixel_format,width,height,frames,measured_seconds,target_fps,duplicates,stream_dropped,errors,avg_capture_ms,effective_fps,push_p50_ms,push_p95_ms,queue_peak,encoder_setup_ms,finish_ms,encoded_frames,coalesced_frames,output_bytes,encoder\n{},{},{},{},{},{:.6},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{},{:.3},{:.3},{},{},{},{}\n",
             backend.as_str(),
+            match pixel_format {
+                CapturePixelFormat::Rgba8 => "rgba",
+                CapturePixelFormat::Bgra8 => "bgra",
+            },
             dimensions.0,
             dimensions.1,
             frames,

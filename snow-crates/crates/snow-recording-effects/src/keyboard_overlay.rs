@@ -1,6 +1,6 @@
 //! Recording-time key state and bounded, output-pixel overlay composition.
 //! Native input and font APIs are adapters; animation uses only explicit timestamps.
-use crate::surface::{RgbaSurface, Surface};
+use crate::surface::{PixelOrder, RgbaSurface, Surface};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
@@ -247,16 +247,38 @@ impl KeyboardOverlay {
     }
 
     pub fn draw(&mut self, rgba: &mut [u8], now: u64) -> Result<(), String> {
-        self.draw_to(
+        self.draw_with_order(rgba, now, PixelOrder::Rgba)
+    }
+
+    /// Draw onto a video buffer whose RGB channels may be BGRA-ordered; the
+    /// RGBA keycap bitmaps are swapped during blending so both orders render
+    /// identically.
+    pub fn draw_with_order(
+        &mut self,
+        rgba: &mut [u8],
+        now: u64,
+        order: PixelOrder,
+    ) -> Result<(), String> {
+        self.draw_to_ordered(
             &mut RgbaSurface {
                 pixels: rgba,
                 dimensions: self.output,
             },
             now,
+            order,
         )
     }
 
     pub fn draw_to(&mut self, surface: &mut impl Surface, now: u64) -> Result<(), String> {
+        self.draw_to_ordered(surface, now, PixelOrder::Rgba)
+    }
+
+    fn draw_to_ordered(
+        &mut self,
+        surface: &mut impl Surface,
+        now: u64,
+        order: PixelOrder,
+    ) -> Result<(), String> {
         self.model.advance(now);
         let row_pitch = ROW_PITCH * self.scale;
         let keycap_size = KEYCAP_SIZE as f32 * self.scale;
@@ -287,7 +309,15 @@ impl KeyboardOverlay {
             let mut x = self.output.0 as f32 - margin - width;
             let bottom = self.output.1 as f32 - margin - row_y * row_pitch;
             for cap in caps {
-                blend_keycap_to(surface, &cap, x, bottom - cap.height as f32, 1.0, opacity);
+                blend_keycap_to(
+                    surface,
+                    &cap,
+                    x,
+                    bottom - cap.height as f32,
+                    1.0,
+                    opacity,
+                    order,
+                );
                 x += cap.width as f32 + gap;
             }
         }
@@ -315,6 +345,7 @@ fn blend_keycap(
         y,
         scale,
         opacity,
+        PixelOrder::Rgba,
     );
 }
 
@@ -325,6 +356,7 @@ fn blend_keycap_to<S: Surface>(
     y: f32,
     scale: f32,
     opacity: f32,
+    order: PixelOrder,
 ) {
     let size = surface.size();
     let width = (cap.width as f32 * scale).round().max(1.0) as i32;
@@ -349,9 +381,9 @@ fn blend_keycap_to<S: Surface>(
                     let start = (dy as usize * cap.width as usize + left as usize + offset) * 4;
                     let source = &cap.pixels[start..start + destination.len()];
                     if S::OPAQUE {
-                        blend_span::<true>(destination, source, opacity);
+                        blend_span::<true>(destination, source, opacity, order);
                     } else {
-                        blend_span::<false>(destination, source, opacity);
+                        blend_span::<false>(destination, source, opacity, order);
                     }
                 } else {
                     for (index, dst) in destination.chunks_exact_mut(4).enumerate() {
@@ -364,12 +396,14 @@ fn blend_keycap_to<S: Surface>(
                                 dst,
                                 &cap.pixels[source..source + 4],
                                 opacity,
+                                order,
                             );
                         } else {
                             blend_faded_pixel::<false>(
                                 dst,
                                 &cap.pixels[source..source + 4],
                                 opacity,
+                                order,
                             );
                         }
                     }
@@ -379,7 +413,12 @@ fn blend_keycap_to<S: Surface>(
     }
 }
 
-fn blend_span<const OPAQUE: bool>(destination: &mut [u8], source: &[u8], opacity: u32) {
+fn blend_span<const OPAQUE: bool>(
+    destination: &mut [u8],
+    source: &[u8],
+    opacity: u32,
+    order: PixelOrder,
+) {
     assert_eq!(destination.len(), source.len());
     #[cfg(target_arch = "x86_64")]
     let mut offset = 0;
@@ -396,8 +435,16 @@ fn blend_span<const OPAQUE: bool>(destination: &mut [u8], source: &[u8], opacity
         let one = _mm_set1_epi16(1);
         let fade = _mm_set1_epi16(opacity as i16);
         let alpha_mask = _mm_set1_epi32(0xff000000u32 as i32);
+        // Swap R and B within each pixel so RGBA keycap bitmaps blend into
+        // BGRA video buffers without a separate conversion pass.
+        let bgra_swap = _mm_setr_epi8(2, 1, 0, 3, 6, 5, 4, 7, 10, 9, 8, 11, 14, 13, 12, 15);
         while offset + 16 <= destination.len() {
-            let src = _mm_loadu_si128(source.as_ptr().add(offset).cast());
+            let raw = _mm_loadu_si128(source.as_ptr().add(offset).cast());
+            let src = if order == PixelOrder::Bgra {
+                _mm_shuffle_epi8(raw, bgra_swap)
+            } else {
+                raw
+            };
             let dst = _mm_loadu_si128(destination.as_ptr().add(offset).cast());
             let blend = |src16, dst16| {
                 let alpha = _mm_shufflehi_epi16::<255>(_mm_shufflelo_epi16::<255>(src16));
@@ -438,15 +485,27 @@ fn blend_span<const OPAQUE: bool>(destination: &mut [u8], source: &[u8], opacity
         .chunks_exact_mut(4)
         .zip(source[offset..].chunks_exact(4))
     {
-        blend_faded_pixel::<OPAQUE>(dst, src, opacity);
+        blend_faded_pixel::<OPAQUE>(dst, src, opacity, order);
     }
 }
 
-fn blend_faded_pixel<const OPAQUE: bool>(dst: &mut [u8], src: &[u8], opacity: u32) {
+fn blend_faded_pixel<const OPAQUE: bool>(
+    dst: &mut [u8],
+    src: &[u8],
+    opacity: u32,
+    order: PixelOrder,
+) {
     let inverse = 255 - (u32::from(src[3]) * opacity + 127) / 255;
-    for channel in 0..if OPAQUE { 3 } else { 4 } {
-        dst[channel] =
-            ((u32::from(src[channel]) * opacity + u32::from(dst[channel]) * inverse + 127) / 255)
+    let channel_count = if OPAQUE { 3 } else { 4 };
+    for (channel, destination) in dst.iter_mut().enumerate().take(channel_count) {
+        let source_channel = if order == PixelOrder::Bgra && channel < 3 {
+            2 - channel
+        } else {
+            channel
+        };
+        *destination =
+            ((u32::from(src[source_channel]) * opacity + u32::from(*destination) * inverse + 127)
+                / 255)
                 .min(255) as u8;
     }
 }
@@ -728,9 +787,9 @@ mod tests {
             let mut pixels = [15, 30, 45, 64].repeat(37);
             let mut expected = pixels.clone();
             for (dst, src) in expected.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
-                blend_faded_pixel::<false>(dst, src, opacity);
+                blend_faded_pixel::<false>(dst, src, opacity, PixelOrder::Rgba);
             }
-            blend_span::<false>(&mut pixels, &src, opacity);
+            blend_span::<false>(&mut pixels, &src, opacity, PixelOrder::Rgba);
             assert_eq!(pixels, expected);
         }
     }
@@ -803,7 +862,7 @@ mod tests {
                         / 255) as u8;
                 }
             }
-            blend_span::<true>(&mut actual, source, opacity);
+            blend_span::<true>(&mut actual, source, opacity, PixelOrder::Rgba);
             assert_eq!(actual, expected);
         }
     }

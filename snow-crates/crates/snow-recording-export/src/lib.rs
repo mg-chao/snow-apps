@@ -21,5 +21,5 @@ pub use export::{
 };
 pub use streaming::{
     StreamingAudioConfig, StreamingEncoder, StreamingEncoderConfig, StreamingEncoderReport,
-    cleanup_stale_staging_files, scaled_output_dimensions,
+    StreamingPixelOrder, cleanup_stale_staging_files, scaled_output_dimensions,
 };

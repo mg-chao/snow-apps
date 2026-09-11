@@ -765,6 +765,11 @@ impl CaptureSessionRuntime {
 }
 
 impl CaptureSession {
+    /// Output pixel format the session was configured to produce.
+    pub(crate) fn output_pixel_format(&self) -> CapturePixelFormat {
+        self.config.output_pixel_format
+    }
+
     pub(crate) fn builder() -> CaptureSessionBuilder {
         CaptureSessionBuilder::new()
     }

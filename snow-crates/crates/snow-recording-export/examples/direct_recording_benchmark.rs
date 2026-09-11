@@ -5,7 +5,7 @@ use std::time::Instant;
 use anyhow::{Context, Result, bail};
 use snow_recording_export::{
     ExportExecutionMode, ExportFormat, SoftwareH264Priority, StreamingAudioConfig,
-    StreamingEncoder, StreamingEncoderConfig, VideoCodec,
+    StreamingEncoder, StreamingEncoderConfig, StreamingPixelOrder, VideoCodec,
 };
 use snow_recording_model::{VideoEncodeConfig, VideoEncodingSpeed};
 use windows::Win32::System::ProcessStatus::{
@@ -252,6 +252,7 @@ fn run_sample(config: &Config, scenario: Scenario, sample: usize) -> Result<Benc
             speed: VideoEncodingSpeed::VeryFast,
         },
         encode_threads: 0,
+        pixel_order: StreamingPixelOrder::Rgba,
         audio: scenario.audio.then_some(StreamingAudioConfig {
             sample_rate_hz: AUDIO_SAMPLE_RATE,
             channels: AUDIO_CHANNELS,

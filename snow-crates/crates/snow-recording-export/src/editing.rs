@@ -32,7 +32,7 @@ use crate::export::{
     ExportStageDurationsMs, ExportTask,
 };
 use crate::ffmpeg_util::{copy_rgba_into_frame, ensure_ffmpeg_initialized, is_eagain};
-use crate::streaming::{StreamingEncoder, StreamingEncoderConfig};
+use crate::streaming::{StreamingEncoder, StreamingEncoderConfig, StreamingPixelOrder};
 use crate::video_quality::{quality_to_h264_crf, smart_quality_bitrate_bps};
 
 const VIDEO_INDEX_MAGIC: &[u8] = b"SVIDX\0\0";
@@ -5756,6 +5756,7 @@ where
             video: *video_config,
             encode_threads: perf_config.encode_threads,
             audio: None,
+            pixel_order: StreamingPixelOrder::Rgba,
         })?;
         let rgba_len = width as usize * height as usize * 4;
         let mut rgba = vec![0u8; rgba_len];

@@ -34,7 +34,7 @@ use std::sync::OnceLock;
 use ffmpeg_next as ffmpeg;
 use snow_recording_export::{
     EditingSession, ExportExecutionMode, ExportFormat, SoftwareH264Priority, StreamingAudioConfig,
-    StreamingEncoder, StreamingEncoderConfig,
+    StreamingEncoder, StreamingEncoderConfig, StreamingPixelOrder,
 };
 use snow_recording_model::{
     AudioSampleFormat, AudioTrackManifest, AudioTrackRole, BundleAssetKind,
@@ -85,6 +85,7 @@ fn streaming_system_audio_does_not_add_noise_to_the_source() {
             software_h264_priority: SoftwareH264Priority::X264First,
             video: VideoEncodeConfig::default(),
             encode_threads: 1,
+            pixel_order: StreamingPixelOrder::Rgba,
             audio: Some(StreamingAudioConfig {
                 sample_rate_hz,
                 channels: source.channels,

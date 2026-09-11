@@ -44,6 +44,30 @@ impl StreamingAudioConfig {
     }
 }
 
+/// Byte order of packed RGB pixels supplied to `push_rgba_frame`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum StreamingPixelOrder {
+    #[default]
+    Rgba,
+    Bgra,
+}
+
+impl StreamingPixelOrder {
+    fn kernel_order(self) -> RgbOrder {
+        match self {
+            Self::Rgba => RgbOrder::Rgba,
+            Self::Bgra => RgbOrder::Bgra,
+        }
+    }
+
+    fn ffmpeg_input(self) -> ffmpeg::format::Pixel {
+        match self {
+            Self::Rgba => ffmpeg::format::Pixel::RGBA,
+            Self::Bgra => ffmpeg::format::Pixel::BGRA,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct StreamingEncoderConfig {
     pub output_path: PathBuf,
@@ -58,6 +82,9 @@ pub struct StreamingEncoderConfig {
     pub video: VideoEncodeConfig,
     pub encode_threads: u8,
     pub audio: Option<StreamingAudioConfig>,
+    /// Byte order of the pixels passed to `push_rgba_frame`. BGRA avoids the
+    /// capture-side channel swizzle for recording streams.
+    pub pixel_order: StreamingPixelOrder,
 }
 
 pub fn scaled_output_dimensions(
@@ -168,6 +195,9 @@ pub struct StreamingEncoder {
     /// Input byte order accepted by `push_rgba_frame`; the kernel converts
     /// both orders natively, the fallback swizzles through the scaler.
     source_order: RgbOrder,
+    /// ffmpeg pixel format matching `source_order`; tags the swscale
+    /// fallback's staging frame so the scaler input stays consistent.
+    source_pixel: ffmpeg::format::Pixel,
     /// Whether `encode_frame` is NV12/YUV420P and converts via the parallel
     /// kernel instead of swscale.
     use_kernel_conversion: bool,
@@ -178,6 +208,12 @@ pub struct StreamingEncoder {
     /// Pixels are converted into `encode_frame` at push time, so no caller
     /// buffer needs to be retained between pushes.
     pending_pts: Option<i64>,
+    /// Replacement pixels for the pending frame, staged when a push repeats
+    /// the pending presentation timestamp. Converting on every repeat would
+    /// redo full-frame work for frames the encoder discards anyway; the
+    /// staged copy is converted once, when the timestamp finally advances.
+    coalesced_pixels: Vec<u8>,
+    pending_coalesced: bool,
     pending_packet_durations: VecDeque<i64>,
     audio: Option<StreamingAudioState>,
     staging_path: Option<PathBuf>,
@@ -355,8 +391,10 @@ impl StreamingEncoder {
                     )
                 })?;
         }
+        let source_order = config.pixel_order.kernel_order();
+        let source_pixel = config.pixel_order.ffmpeg_input();
         let scaler = ffmpeg::software::scaling::Context::get(
-            ffmpeg::format::Pixel::RGBA,
+            config.pixel_order.ffmpeg_input(),
             config.width,
             config.height,
             pixel_format,
@@ -377,7 +415,8 @@ impl StreamingEncoder {
             scaler,
             rgba_frame: None,
             encode_frame,
-            source_order: RgbOrder::Rgba,
+            source_order,
+            source_pixel,
             use_kernel_conversion: matches!(
                 pixel_format,
                 ffmpeg::format::Pixel::NV12 | ffmpeg::format::Pixel::YUV420P
@@ -386,6 +425,8 @@ impl StreamingEncoder {
             height: config.height,
             fps,
             pending_pts: None,
+            coalesced_pixels: Vec::new(),
+            pending_coalesced: false,
             pending_packet_durations: VecDeque::new(),
             audio,
             staging_path: None,
@@ -408,7 +449,8 @@ impl StreamingEncoder {
     /// staging frame and converted immediately, so `rgba` only needs to stay
     /// valid for the duration of this call. A push whose timestamp maps to a
     /// presentation timestamp that is not newer than the pending one replaces
-    /// the pending frame's pixels (coalescing) instead of emitting two frames.
+    /// the pending frame's pixels (coalescing) instead of emitting two frames;
+    /// replacements are staged and converted once the timestamp advances.
     pub fn push_rgba_frame(&mut self, timestamp_ms: u64, rgba: &[u8]) -> Result<()> {
         let expected = self.width as usize * self.height as usize * 4;
         if rgba.len() != expected {
@@ -423,11 +465,21 @@ impl StreamingEncoder {
             None => {}
             Some(pending_pts) if pts <= pending_pts => {
                 self.pending_pts = Some(pending_pts);
-                self.convert_frame(rgba)?;
+                if self.coalesced_pixels.len() != expected {
+                    self.coalesced_pixels.resize(expected, 0);
+                }
+                self.coalesced_pixels.copy_from_slice(rgba);
+                self.pending_coalesced = true;
                 self.report.coalesced_frames = self.report.coalesced_frames.saturating_add(1);
                 return Ok(());
             }
             Some(pending_pts) => {
+                if self.pending_coalesced {
+                    let staged = std::mem::take(&mut self.coalesced_pixels);
+                    self.convert_frame(&staged)?;
+                    self.coalesced_pixels = staged;
+                    self.pending_coalesced = false;
+                }
                 let duration = pts.saturating_sub(pending_pts).max(1);
                 self.send_converted(pending_pts, duration)?;
             }
@@ -455,6 +507,12 @@ impl StreamingEncoder {
 
     pub fn finish(mut self) -> Result<StreamingEncoderReport> {
         if let Some(pending_pts) = self.pending_pts.take() {
+            if self.pending_coalesced {
+                let staged = std::mem::take(&mut self.coalesced_pixels);
+                self.convert_frame(&staged)?;
+                self.coalesced_pixels = staged;
+                self.pending_coalesced = false;
+            }
             self.send_converted(pending_pts, 1)?;
         }
         if let Some(audio) = self.audio.as_mut() {
@@ -525,7 +583,7 @@ impl StreamingEncoder {
             return Ok(());
         }
         let rgba_frame = self.rgba_frame.get_or_insert_with(|| {
-            ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGBA, self.width, self.height)
+            ffmpeg::frame::Video::new(self.source_pixel, self.width, self.height)
         });
         copy_rgba_into_frame(rgba_frame, self.width, rgba);
         #[cfg(feature = "stage-timing")]
@@ -1036,6 +1094,7 @@ mod tests {
             },
             encode_threads: 1,
             audio: None,
+            pixel_order: StreamingPixelOrder::Rgba,
         }
     }
 
@@ -1131,6 +1190,36 @@ mod tests {
         assert_eq!(report.coalesced_frames, 1);
         let (decoded, _, _) = decoded_video_frame_count(&path);
         assert_eq!(decoded, 2);
+    }
+
+    #[test]
+    fn bgra_sources_encode_for_kernel_and_swscale_targets() {
+        let directory = tempfile::tempdir().unwrap();
+        // NV12/YUV420P go through the parallel kernel, APNG through the
+        // swscale fallback; both must accept BGRA input and produce the
+        // same decoded frame count as RGBA sources.
+        for format in [ExportFormat::Mp4, ExportFormat::Apng] {
+            let path = directory
+                .path()
+                .join(format!("recording.{}", format.file_extension()));
+            let mut config = encoder_config(path.clone(), format);
+            config.pixel_order = StreamingPixelOrder::Bgra;
+            let mut encoder = StreamingEncoder::create(config).unwrap();
+            for index in 0..3u8 {
+                let mut bgra = vec![0u8; 16 * 16 * 4];
+                for pixel in bgra.chunks_exact_mut(4) {
+                    pixel.copy_from_slice(&[180, 40, index.saturating_mul(80), 255]);
+                }
+                encoder
+                    .push_rgba_frame(u64::from(index) * 100, &bgra)
+                    .unwrap();
+            }
+            let report = encoder.finish().unwrap();
+            assert_eq!(report.encoded_frames, 3);
+            let (decoded, width, height) = decoded_video_frame_count(&path);
+            assert_eq!((width, height), (16, 16));
+            assert!(decoded >= 2, "{format:?} should contain changing frames");
+        }
     }
 
     #[test]

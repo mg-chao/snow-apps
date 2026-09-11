@@ -247,10 +247,14 @@ impl CaptureStream {
         let recycler = FrameRecycleSender::new(recycle_tx.clone());
 
         if let Some(target_info) = initial_target_info {
+            // Tag recycled buffers with the session's output format so
+            // backends that validate reuse frames by pixel format (DXGI)
+            // accept them instead of allocating fresh buffers mid-stream.
+            let output_format = capture.output_pixel_format();
             for _ in 0..recycle_depth {
                 let mut frame = Frame::empty();
                 if frame
-                    .ensure_rgba_capacity(target_info.width, target_info.height)
+                    .ensure_capacity(target_info.width, target_info.height, output_format)
                     .is_ok()
                 {
                     let _ = recycle_tx.try_send(frame);

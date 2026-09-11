@@ -11,15 +11,16 @@ use snow_audio_recorder::{
     AudioStreamHandle,
 };
 use snow_capture::{
-    CaptureEvent, CaptureOptions, CaptureStream, CaptureStreamConfig, CaptureSystem,
-    CaptureWorkload, CapturedFrame,
+    CaptureEvent, CaptureOptions, CapturePixelFormat, CaptureStream, CaptureStreamConfig,
+    CaptureSystem, CaptureWorkload, CapturedFrame,
 };
 use snow_core::recording_clock::RecordingClock;
 use snow_cursor::{AttachedCursorSample, CursorCompositionMode, CursorShape, CursorShapeState};
+use snow_recording_effects::surface::PixelOrder;
 use snow_recording_export::{
     ExportExecutionMode, ExportFormat, SoftwareH264Priority, StreamingAudioConfig,
-    StreamingEncoder, StreamingEncoderConfig, StreamingEncoderReport, VideoCodec,
-    scaled_output_dimensions,
+    StreamingEncoder, StreamingEncoderConfig, StreamingEncoderReport, StreamingPixelOrder,
+    VideoCodec, scaled_output_dimensions,
 };
 use snow_recording_model::{VideoEncodeConfig, VideoEncodingSpeed};
 
@@ -133,6 +134,7 @@ impl DirectRecordingConfig {
                 speed: self.preset,
             },
             encode_threads: 0,
+            pixel_order: StreamingPixelOrder::Bgra,
             audio: (self.format == ExportFormat::Mp4
                 && (self.enable_microphone || self.enable_system_audio))
                 .then_some(StreamingAudioConfig {
@@ -197,10 +199,15 @@ impl DirectRecordingSession {
         let capture_system = CaptureSystem::builder()
             .with_backend_kind(self.config.capture_backend)
             .build()?;
+        // The recording compositor and encoder both handle the desktop's
+        // native BGRA order, so the capture-side channel swizzle is skipped
+        // entirely. HDR captures pay one extra in-place swap; SDR recording
+        // is the norm.
         let capture_session = capture_system.open_session(
             resolve_capture_target(&RecordingTarget::Region(self.config.region))?,
             CaptureOptions {
                 workload: CaptureWorkload::Continuous,
+                output_pixel_format: CapturePixelFormat::Bgra8,
                 ..CaptureOptions::default()
             },
         )?;
@@ -988,6 +995,21 @@ impl ComposedPixels<'_> {
     }
 }
 
+fn pixel_order_of(format: CapturePixelFormat) -> PixelOrder {
+    match format {
+        CapturePixelFormat::Rgba8 => PixelOrder::Rgba,
+        CapturePixelFormat::Bgra8 => PixelOrder::Bgra,
+    }
+}
+
+/// Map an authoring-order [r, g, b, a] color onto the buffer's channel order.
+fn ordered_color(color: [u8; 4], order: PixelOrder) -> [u8; 4] {
+    match order {
+        PixelOrder::Rgba => color,
+        PixelOrder::Bgra => [color[2], color[1], color[0], color[3]],
+    }
+}
+
 struct VisualCompositor {
     output_size: (u32, u32),
     trail: LaserTrail,
@@ -1015,6 +1037,7 @@ impl VisualCompositor {
         frame: &'a CapturedFrame,
         timestamp_ms: u64,
     ) -> Result<ComposedPixels<'a>> {
+        let order = pixel_order_of(frame.pixel_format());
         self.trail.set_lifetime_ms(config.mouse_trail_duration_ms);
         let source_size = frame.dimensions();
         let cursor = frame.metadata().cursor().cloned();
@@ -1029,6 +1052,7 @@ impl VisualCompositor {
             &mut rgba,
             source_size,
             timestamp_ms,
+            order,
         )?;
         Ok(ComposedPixels::Owned(rgba))
     }
@@ -1044,6 +1068,7 @@ impl VisualCompositor {
         cursor: Option<&AttachedCursorSample>,
         timestamp_ms: u64,
     ) -> Result<ComposedPixels<'a>> {
+        let order = pixel_order_of(frame.pixel_format());
         self.trail.set_lifetime_ms(config.mouse_trail_duration_ms);
         let source_size = frame.dimensions();
         self.maintain_overlay_state(config, cursor, source_size, timestamp_ms);
@@ -1051,7 +1076,7 @@ impl VisualCompositor {
             return Ok(ComposedPixels::Source(frame.as_rgba_bytes()));
         }
         let mut rgba = resize_rgba(frame.as_rgba_bytes(), source_size, self.output_size);
-        self.draw_overlays(config, cursor, &mut rgba, source_size, timestamp_ms)?;
+        self.draw_overlays(config, cursor, &mut rgba, source_size, timestamp_ms, order)?;
         Ok(ComposedPixels::Owned(rgba))
     }
 
@@ -1110,6 +1135,7 @@ impl VisualCompositor {
             || (config.show_cursor && cursor.is_some_and(|cursor| cursor.visible))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw_overlays(
         &mut self,
         config: &DirectRecordingConfig,
@@ -1117,13 +1143,14 @@ impl VisualCompositor {
         rgba: &mut [u8],
         source_size: (u32, u32),
         timestamp_ms: u64,
+        order: PixelOrder,
     ) -> Result<()> {
         if config.mouse_trail_rgba[3] != 0 {
             self.trail.draw(
                 rgba,
                 self.output_size,
                 timestamp_ms,
-                config.mouse_trail_rgba,
+                ordered_color(config.mouse_trail_rgba, order),
             );
         }
         if config.mouse_click_rgba[3] != 0 {
@@ -1132,7 +1159,7 @@ impl VisualCompositor {
                 self.output_size,
                 &self.clicks,
                 timestamp_ms,
-                config.mouse_click_rgba,
+                ordered_color(config.mouse_click_rgba, order),
                 source_size,
             );
         }
@@ -1145,12 +1172,15 @@ impl VisualCompositor {
                 source_size,
                 cursor,
                 &mut self.cursor_shapes,
+                order,
             );
         }
         if let Some(keyboard) = self.keyboard.as_mut() {
-            keyboard.draw(rgba, timestamp_ms).map_err(|error| {
-                ScreenRecorderError::Encode(format!("keyboard recording: {error}"))
-            })?;
+            keyboard
+                .draw_with_order(rgba, timestamp_ms, order)
+                .map_err(|error| {
+                    ScreenRecorderError::Encode(format!("keyboard recording: {error}"))
+                })?;
         }
         Ok(())
     }
@@ -1204,6 +1234,7 @@ fn draw_cursor(
     source_size: (u32, u32),
     cursor: &AttachedCursorSample,
     shapes: &mut HashMap<u64, CursorShape>,
+    order: PixelOrder,
 ) {
     let shape = match &cursor.shape {
         CursorShapeState::Embedded(shape) => {
@@ -1255,6 +1286,7 @@ fn draw_cursor(
                     shape.shape_rgba[index + 3],
                 ],
                 shape.composition_mode,
+                order,
             );
         }
     }
@@ -1267,10 +1299,11 @@ fn composite_cursor_pixel(
     y: i32,
     color: [u8; 4],
     mode: CursorCompositionMode,
+    order: PixelOrder,
 ) {
     match (mode, color[3]) {
         (CursorCompositionMode::AlphaBlend, _) | (CursorCompositionMode::MaskedColor, 1..=254) => {
-            blend_pixel(rgba, size, x, y, color)
+            blend_pixel(rgba, size, x, y, color, order)
         }
         (CursorCompositionMode::MaskedColor, 0 | 255) => {
             if x < 0 || y < 0 || x as u32 >= size.0 || y as u32 >= size.1 {
@@ -1283,14 +1316,26 @@ fn composite_cursor_pixel(
             // Masked cursor alpha stores the AND mask, not opacity: zero copies
             // the color, while 255 XORs it with the existing background.
             for channel in 0..3 {
-                rgba[index + channel] = (rgba[index + channel] & color[3]) ^ color[channel];
+                let destination = if order == PixelOrder::Bgra {
+                    2 - channel
+                } else {
+                    channel
+                };
+                rgba[index + destination] = (rgba[index + destination] & color[3]) ^ color[channel];
             }
             rgba[index + 3] = 255;
         }
     }
 }
 
-fn blend_pixel(rgba: &mut [u8], size: (u32, u32), x: i32, y: i32, color: [u8; 4]) {
+fn blend_pixel(
+    rgba: &mut [u8],
+    size: (u32, u32),
+    x: i32,
+    y: i32,
+    color: [u8; 4],
+    order: PixelOrder,
+) {
     if x < 0 || y < 0 || x as u32 >= size.0 || y as u32 >= size.1 || color[3] == 0 {
         return;
     }
@@ -1298,6 +1343,7 @@ fn blend_pixel(rgba: &mut [u8], size: (u32, u32), x: i32, y: i32, color: [u8; 4]
     if index + 4 > rgba.len() {
         return;
     }
+    let color = ordered_color(color, order);
     let alpha = u16::from(color[3]);
     let inverse = 255u16.saturating_sub(alpha);
     for channel in 0..3 {
@@ -1334,6 +1380,86 @@ mod tests {
             mouse_trail_rgba: [0, 0, 0, 0],
             mouse_trail_duration_ms: 500,
             mouse_click_rgba: [0, 0, 0, 0],
+        }
+    }
+
+    #[test]
+    fn bgra_composition_matches_channel_swapped_rgba_composition() {
+        let mut value = config();
+        value.show_cursor = true;
+        value.mouse_trail_rgba = [220, 30, 60, 180];
+        value.mouse_click_rgba = [40, 180, 220, 120];
+        let size = (64u32, 48u32);
+        let mut rgba_pixels = vec![0u8; (size.0 * size.1 * 4) as usize];
+        for (index, pixel) in rgba_pixels.chunks_exact_mut(4).enumerate() {
+            let (x, y) = (index as u32 % size.0, index as u32 / size.0);
+            pixel.copy_from_slice(&[
+                (x * 4).min(255) as u8,
+                (y * 5).min(255) as u8,
+                ((x + y) * 3).min(255) as u8,
+                255,
+            ]);
+        }
+        let mut bgra_pixels = rgba_pixels.clone();
+        for pixel in bgra_pixels.chunks_exact_mut(4) {
+            pixel.swap(0, 2);
+        }
+        let shape = CursorShape::from_rgba(
+            4,
+            4,
+            3,
+            3,
+            CursorCompositionMode::AlphaBlend,
+            vec![
+                255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255, 53, 170, 204,
+                128, 20, 240, 90, 255, 90, 20, 240, 200, 128, 64, 32, 255, 240, 128, 64, 200,
+            ],
+        );
+        let cursor = AttachedCursorSample {
+            x: 20,
+            y: 12,
+            visible: true,
+            shape: CursorShapeState::Embedded(shape),
+        };
+        let rgba_frame: CapturedFrame =
+            snow_capture::frame::Frame::from_rgba8(size.0, size.1, rgba_pixels.clone())
+                .unwrap()
+                .into();
+        let bgra_frame: CapturedFrame =
+            snow_capture::frame::Frame::from_bgra8(size.0, size.1, bgra_pixels)
+                .unwrap()
+                .into();
+        let mut rgba_compositor = VisualCompositor::new(size);
+        rgba_compositor.clicks.push_back(RenderClick {
+            timestamp_ms: 40,
+            x: 30,
+            y: 24,
+            button: ObservedMouseButton::Left,
+        });
+        let mut bgra_compositor = VisualCompositor::new(size);
+        bgra_compositor.clicks.push_back(RenderClick {
+            timestamp_ms: 40,
+            x: 30,
+            y: 24,
+            button: ObservedMouseButton::Left,
+        });
+        let rgba_out = rgba_compositor
+            .compose_with_cursor(&value, &rgba_frame, Some(&cursor), 100)
+            .unwrap();
+        let bgra_out = bgra_compositor
+            .compose_with_cursor(&value, &bgra_frame, Some(&cursor), 100)
+            .unwrap();
+        let rgba_bytes = rgba_out.as_slice();
+        let bgra_bytes = bgra_out.as_slice();
+        assert_eq!(rgba_bytes.len(), bgra_bytes.len());
+        for (rgba_pixel, bgra_pixel) in rgba_bytes.chunks_exact(4).zip(bgra_bytes.chunks_exact(4)) {
+            assert_eq!(
+                rgba_pixel[0], bgra_pixel[2],
+                "red channel must land in blue slot"
+            );
+            assert_eq!(rgba_pixel[1], bgra_pixel[1]);
+            assert_eq!(rgba_pixel[2], bgra_pixel[0]);
+            assert_eq!(rgba_pixel[3], bgra_pixel[3]);
         }
     }
 
@@ -1532,9 +1658,9 @@ mod tests {
     #[test]
     fn transparent_and_visible_overlays_respect_alpha() {
         let mut rgba = vec![0u8; 8 * 8 * 4];
-        blend_pixel(&mut rgba, (8, 8), 2, 2, [255, 0, 0, 0]);
+        blend_pixel(&mut rgba, (8, 8), 2, 2, [255, 0, 0, 0], PixelOrder::Rgba);
         assert_eq!(rgba[(2 * 8 + 2) * 4], 0);
-        blend_pixel(&mut rgba, (8, 8), 2, 2, [255, 0, 0, 128]);
+        blend_pixel(&mut rgba, (8, 8), 2, 2, [255, 0, 0, 128], PixelOrder::Rgba);
         assert!(rgba[(2 * 8 + 2) * 4] > 0);
     }
 
@@ -1557,7 +1683,14 @@ mod tests {
         };
         let mut rgba = vec![0u8; 2 * 2 * 4];
         let mut shapes = HashMap::new();
-        draw_cursor(&mut rgba, (2, 2), (2, 2), &cursor, &mut shapes);
+        draw_cursor(
+            &mut rgba,
+            (2, 2),
+            (2, 2),
+            &cursor,
+            &mut shapes,
+            PixelOrder::Rgba,
+        );
         let index = (2 + 1) * 4;
         assert_eq!(&rgba[index..index + 4], &[0, 255, 0, 255]);
     }
@@ -1608,7 +1741,14 @@ mod tests {
                     for output_size in [(1, 1), (2, 2)] {
                         let count = (output_size.0 * output_size.1) as usize;
                         let mut rgba = background.repeat(count);
-                        draw_cursor(&mut rgba, output_size, (1, 1), &cursor, &mut shapes);
+                        draw_cursor(
+                            &mut rgba,
+                            output_size,
+                            (1, 1),
+                            &cursor,
+                            &mut shapes,
+                            PixelOrder::Rgba,
+                        );
                         assert_eq!(
                             rgba,
                             expected.repeat(count),
@@ -1641,7 +1781,14 @@ mod tests {
         let mut rgba = background.repeat(4);
         let mut expected = rgba.clone();
         expected[..4].copy_from_slice(&[218, 164, 92, 255]);
-        draw_cursor(&mut rgba, (2, 2), (2, 2), &cursor, &mut HashMap::new());
+        draw_cursor(
+            &mut rgba,
+            (2, 2),
+            (2, 2),
+            &cursor,
+            &mut HashMap::new(),
+            PixelOrder::Rgba,
+        );
         assert_eq!(rgba, expected);
     }
 
