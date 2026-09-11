@@ -138,8 +138,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 36 && itemCount == 144 && foundUpdates,
-            "catalog must contain thirty-six sections and one hundred forty-four items");
+    require(sectionCount == 36 && itemCount == 145 && foundUpdates,
+            "catalog must contain thirty-six sections and one hundred forty-five items");
     const auto* history =
         catalog.section(QStringLiteral("storage-and-privacy"), QStringLiteral("history"));
     require(history != nullptr && history->items.size() >= 2 &&
@@ -903,6 +903,8 @@ void globalHotkeyShortcutsHaveStableContracts() {
         {Action::PinClipboardContent, "other", "quick.pin-clipboard-content",
          "global_shortcuts/pin_clipboard_content",
          settings::SettingsCommandKind::ExecuteQuickAction},
+        {Action::PinSelectedFiles, "other", "quick.pin-selected-files",
+         "global_shortcuts/pin_selected_files", settings::SettingsCommandKind::ExecuteQuickAction},
     };
 
     const settings::SettingsCatalog& catalog = settings::builtInSettingsRegistry().catalog();
@@ -937,8 +939,8 @@ void globalHotkeyShortcutsHaveStableContracts() {
         }
     }
 
-    require(actions.size() == expectations.size() && expectations.size() == 13,
-            "the global-hotkeys catalog must expose all thirteen shortcut actions exactly once");
+    require(actions.size() == expectations.size() && expectations.size() == 14,
+            "the global-hotkeys catalog must expose all fourteen shortcut actions exactly once");
     require(!catalog.commandForShortcut(Action::OpenSettings).has_value(),
             "Open Interface settings must not appear in Global hotkeys");
 
@@ -967,16 +969,17 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 trayGroups.at(1).id == QStringLiteral("screen-recording") &&
                 trayGroups.at(1).options.size() == 2 &&
                 trayGroups.at(2).id == QStringLiteral("other") &&
-                trayGroups.at(2).options.size() == 3 &&
+                trayGroups.at(2).options.size() == 4 &&
                 trayGroups.at(3).id == QStringLiteral("system") &&
-                trayGroups.at(3).options.size() == 4 && trayOptionIds.size() == 17 &&
-                trayOptionIds.at(12) == QStringLiteral("quick.translate-selected-text") &&
-                trayOptionIds.at(13) == QStringLiteral("tray.window-grouping") &&
+                trayGroups.at(3).options.size() == 4 && trayOptionIds.size() == 18 &&
+                trayOptionIds.at(12) == QStringLiteral("quick.pin-selected-files") &&
+                trayOptionIds.at(13) == QStringLiteral("quick.translate-selected-text") &&
+                trayOptionIds.at(14) == QStringLiteral("tray.window-grouping") &&
                 trayGroups.at(3).options.at(0).kind ==
                     settings::SettingsTrayMenuOptionKind::WindowGrouping &&
-                trayOptionIds.at(14) == QStringLiteral("tray.disable-shortcut-functions") &&
-                trayOptionIds.at(15) == QStringLiteral("tray.show-main-window") &&
-                trayOptionIds.at(16) == QStringLiteral("tray.exit") && trayMenuSchema != nullptr &&
+                trayOptionIds.at(15) == QStringLiteral("tray.disable-shortcut-functions") &&
+                trayOptionIds.at(16) == QStringLiteral("tray.show-main-window") &&
+                trayOptionIds.at(17) == QStringLiteral("tray.exit") && trayMenuSchema != nullptr &&
                 trayMenuSchema->allowedStringValues == trayOptionIds,
             "tray menu options must derive all global-hotkey groups and append system commands");
 
@@ -1041,10 +1044,11 @@ void globalHotkeyShortcutsHaveStableContracts() {
                       QStringLiteral("quick.pin-clipboard-content")});
     const auto* otherShortcuts =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("other"));
-    require(otherShortcuts != nullptr && otherShortcuts->items.size() == 3 &&
+    require(otherShortcuts != nullptr && otherShortcuts->items.size() == 4 &&
                 otherShortcuts->items.at(0).id == QStringLiteral("quick.open-capture-history") &&
                 otherShortcuts->items.at(1).id == QStringLiteral("quick.pin-clipboard-content") &&
-                otherShortcuts->items.at(2).id == QStringLiteral("quick.translate-selected-text"),
+                otherShortcuts->items.at(2).id == QStringLiteral("quick.pin-selected-files") &&
+                otherShortcuts->items.at(3).id == QStringLiteral("quick.translate-selected-text"),
             "Other quick actions expose history, clipboard pinning and selected text translation");
     const auto shortcutPayload = [](const settings::SettingsItemDefinition* item) {
         return item != nullptr
@@ -1128,6 +1132,7 @@ void compactTrayManifestMatchesRegistryCatalog() {
           presentation::GlobalShortcutAction::ScreenRecordCopy,
           presentation::GlobalShortcutAction::OpenCaptureHistory,
           presentation::GlobalShortcutAction::PinClipboardContent,
+          presentation::GlobalShortcutAction::PinSelectedFiles,
           presentation::GlobalShortcutAction::TranslateSelectedText}) {
         require(compact.shortcutActionTitle(action, 0) == catalog.shortcutActionTitle(action, 0) &&
                     compact.shortcutActionTitle(action, 99) ==
@@ -1223,8 +1228,12 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 192 && index.search(QString()).size() == 192,
+    require(index.entries().size() == 193 && index.search(QString()).size() == 193,
             "search must generate all catalog nodes in catalog order");
+    const auto selectedFiles = index.search(QStringLiteral("Pin Selected Files to Screen"));
+    require(!selectedFiles.isEmpty() &&
+                selectedFiles.first().location.itemId == QStringLiteral("quick.pin-selected-files"),
+            "selected-file pinning must be searchable by its action title");
     const auto updates = index.search(QStringLiteral("Software updates"));
     require(!updates.isEmpty() &&
                 updates.constFirst().location.itemId == QStringLiteral("updates.mode"),
@@ -1275,7 +1284,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 36 && items == 144,
+    require(pages == 12 && sections == 36 && items == 145,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

@@ -21,6 +21,7 @@
 #include "snow_shot/presentation/settings/settingsbackend.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
+#include "snow_shot/platform/windows/selectedfiles.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 
@@ -447,6 +448,13 @@ class ApplicationController::Impl {
                 ensureSelectedTextTranslationController().capture();
             }
             break;
+        case presentation::GlobalShortcutAction::PinSelectedFiles: {
+            const auto target = platform::windows::createSelectedFileBackend()->captureTarget();
+            if (ScreenshotController* controller = ensureScreenshotController()) {
+                controller->pinSelectedFilesToScreen(target);
+            }
+            break;
+        }
         case presentation::GlobalShortcutAction::PinClipboardContent:
             if (ScreenshotController* controller = ensureScreenshotController()) {
                 controller->pinClipboardContentToScreen();

@@ -210,6 +210,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
                 QJsonArray{QStringLiteral("Ctrl+F1")} &&
             defaultValue("global_shortcuts/pin_clipboard_content").toArray() ==
                 QJsonArray{QStringLiteral("F3")} &&
+            defaultValue("global_shortcuts/pin_selected_files").toArray().isEmpty() &&
             defaultValue("screenshot/auto_execute_after_text_recognition").toString() ==
                 QStringLiteral("no_action") &&
             defaultValue("screenshot/double_click_action").toString() == QStringLiteral("copy") &&

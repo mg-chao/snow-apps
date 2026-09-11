@@ -387,6 +387,14 @@ QStringList ShortcutSettings::pinClipboardContent() const {
     return shortcutValue(QStringLiteral("global_shortcuts/pin_clipboard_content"));
 }
 
+QStringList ShortcutSettings::pinSelectedFiles() const {
+    return shortcutValue(QStringLiteral("global_shortcuts/pin_selected_files"));
+}
+
+bool ShortcutSettings::setPinSelectedFiles(const QStringList& shortcuts) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/pin_selected_files"), shortcuts);
+}
+
 bool ShortcutSettings::setPinClipboardContent(const QStringList& shortcuts) const {
     return setShortcutValue(QStringLiteral("global_shortcuts/pin_clipboard_content"), shortcuts);
 }

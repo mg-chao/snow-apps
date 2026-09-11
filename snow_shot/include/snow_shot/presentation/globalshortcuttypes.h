@@ -22,6 +22,7 @@ enum class GlobalShortcutAction {
     OpenSettings,
     PinClipboardContent,
     TranslateSelectedText,
+    PinSelectedFiles,
 };
 
 enum class GlobalShortcutStatus {
