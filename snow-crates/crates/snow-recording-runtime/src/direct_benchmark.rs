@@ -265,17 +265,22 @@ pub fn run(
         }
         // The production worker composes every accepted capture, then
         // recomposes the latest capture at output cadence while an overlay
-        // animation is active.
-        let composed = compositor.compose_with_cursor(
-            &config,
-            &sample.frame,
-            sample.cursor.as_ref(),
-            timestamp,
-        )?;
-        encoder.push_rgba_frame(timestamp, composed.as_slice())?;
-        compositions += 1;
-        if timestamp >= next_overlay_frame_ms && compositor.has_active_animation(&config, timestamp)
-        {
+        // animation is active. When the recomposition fires for the same
+        // iteration it replaces the capture push, so the worker skips the
+        // capture push entirely (decided once, before the event).
+        let overlay_due = timestamp >= next_overlay_frame_ms
+            && compositor.has_active_animation(&config, timestamp);
+        if !overlay_due {
+            let composed = compositor.compose_with_cursor(
+                &config,
+                &sample.frame,
+                sample.cursor.as_ref(),
+                timestamp,
+            )?;
+            encoder.push_rgba_frame(timestamp, composed.as_slice())?;
+            compositions += 1;
+        }
+        if overlay_due {
             let composed = compositor.compose_with_cursor(
                 &config,
                 &sample.frame,

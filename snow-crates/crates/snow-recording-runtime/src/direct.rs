@@ -553,6 +553,15 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         if stopping || canceled {
             break;
         }
+        // Decide once, before consuming the event, whether the overlay
+        // recomposition will emit a frame for this iteration. When it will,
+        // pushing the freshly captured frame would land on the same
+        // presentation timestamp and be replaced pixel-for-pixel by the
+        // recomposition, so the capture push is skipped outright.
+        let overlay_due = !paused && {
+            let now = clock.active_elapsed_ms(Instant::now());
+            now >= next_overlay_frame_ms && compositor.has_active_animation(&config, now)
+        };
         match capture_stream.recv_timeout(Duration::from_millis(20)) {
             Ok(event) => process_capture_event(
                 event,
@@ -564,22 +573,18 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                     dropped_capture_frames: &mut dropped_capture_frames,
                     compositor: &mut compositor,
                     encoder: &mut encoder,
+                    suppress_push: overlay_due,
                 },
             )?,
             Err(snow_core::error::RecvTimeoutError::Timeout) => {}
             Err(snow_core::error::RecvTimeoutError::Disconnected) => stopping = true,
         }
-        if !paused {
-            let timestamp_ms = clock.active_elapsed_ms(Instant::now());
-            if timestamp_ms >= next_overlay_frame_ms
-                && compositor.has_active_animation(&config, timestamp_ms)
-                && let Some(frame) = latest_frame.as_ref()
-            {
-                let timestamp_ms = monotonic_timestamp(&mut last_timestamp_ms, timestamp_ms);
-                let composed = compositor.compose(&config, frame, timestamp_ms)?;
-                encoder.push_rgba_frame(timestamp_ms, composed.as_slice())?;
-                next_overlay_frame_ms = timestamp_ms.saturating_add(output_interval_ms);
-            }
+        if overlay_due && let Some(frame) = latest_frame.as_ref() {
+            let now = clock.active_elapsed_ms(Instant::now());
+            let timestamp_ms = monotonic_timestamp(&mut last_timestamp_ms, now);
+            let composed = compositor.compose(&config, frame, timestamp_ms)?;
+            encoder.push_rgba_frame(timestamp_ms, composed.as_slice())?;
+            next_overlay_frame_ms = timestamp_ms.saturating_add(output_interval_ms);
         }
     }
 
@@ -604,6 +609,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                 dropped_capture_frames: &mut dropped_capture_frames,
                 compositor: &mut compositor,
                 encoder: &mut encoder,
+                suppress_push: false,
             },
         )?;
     }
@@ -884,6 +890,9 @@ struct CaptureEventContext<'a> {
     dropped_capture_frames: &'a mut u64,
     compositor: &'a mut VisualCompositor,
     encoder: &'a mut StreamingEncoder,
+    /// Skip composing and pushing frame pixels; the caller has already
+    /// scheduled an overlay recomposition that replaces this push.
+    suppress_push: bool,
 }
 
 fn process_capture_event(event: CaptureEvent, context: CaptureEventContext<'_>) -> Result<()> {
@@ -895,6 +904,7 @@ fn process_capture_event(event: CaptureEvent, context: CaptureEventContext<'_>) 
         dropped_capture_frames,
         compositor,
         encoder,
+        suppress_push,
     } = context;
     match event {
         CaptureEvent::Frame(frame) => {
@@ -903,10 +913,12 @@ fn process_capture_event(event: CaptureEvent, context: CaptureEventContext<'_>) 
                 .stream_timestamp()
                 .map(|timestamp| timestamp.instant)
                 .unwrap_or_else(Instant::now);
-            let timestamp_ms =
-                monotonic_timestamp(last_timestamp_ms, clock.active_elapsed_ms(instant));
-            let composed = compositor.compose(config, &frame, timestamp_ms)?;
-            encoder.push_rgba_frame(timestamp_ms, composed.as_slice())?;
+            monotonic_timestamp(last_timestamp_ms, clock.active_elapsed_ms(instant));
+            if !suppress_push {
+                let timestamp_ms = last_timestamp_ms.unwrap_or(0);
+                let composed = compositor.compose(config, &frame, timestamp_ms)?;
+                encoder.push_rgba_frame(timestamp_ms, composed.as_slice())?;
+            }
             *latest_frame = Some(frame);
         }
         CaptureEvent::FramesDropped { count, .. } => {
