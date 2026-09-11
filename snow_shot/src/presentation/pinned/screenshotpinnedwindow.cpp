@@ -281,6 +281,7 @@ constexpr int kMinimumOpacityPercent = 25;
 constexpr int kMaximumOpacityPercent = 100;
 constexpr int kWheelOpacityStep = 5;
 const QColor kDefaultPinnedBorderColor(219, 219, 219, 255);
+const QColor kDefaultPinnedBorderActiveColor(64, 150, 255, 255);
 constexpr auto kTranslationSourceProperty = "screenshotPinnedTranslationSource";
 constexpr auto kShortcutDisplayProperty = "screenshotPinnedShortcutDisplay";
 constexpr auto kRecognitionMessageKey = "screenshot-pinned-recognition-status";
@@ -482,6 +483,11 @@ QList<QPointer<ScreenshotPinnedWindow>>& livePinnedWindows() {
 
 QColor& configuredPinnedBorderColor() {
     static QColor color = kDefaultPinnedBorderColor;
+    return color;
+}
+
+QColor& configuredPinnedBorderActiveColor() {
+    static QColor color = kDefaultPinnedBorderActiveColor;
     return color;
 }
 
@@ -1138,6 +1144,12 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
     } else if (event != nullptr && event->type() == QEvent::Hide) {
         m_pointerInside = false;
     }
+    const bool windowActivationChanged =
+        event != nullptr &&
+        (event->type() == QEvent::WindowActivate || event->type() == QEvent::WindowDeactivate);
+    if (windowActivationChanged) {
+        m_windowActive = event->type() == QEvent::WindowActivate;
+    }
     const bool scaleMayHaveChanged =
         event != nullptr && event->type() == QEvent::DevicePixelRatioChange;
     const bool nativeGeometryMayHaveSettled =
@@ -1149,6 +1161,9 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
     const bool handled = QWidget::event(event);
     if (pointerPresenceChanged) {
         updateControlsGeometry();
+    }
+    if (windowActivationChanged) {
+        applyRuntimeBorderColor();
     }
     if (scaleMayHaveChanged) {
         m_preserveScaleForSettledGeometry = false;
@@ -1219,12 +1234,10 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
             // client rect briefly reports the pointer as outside and hides the controls.
             RECT windowRect{};
             const bool haveWindowRect = GetWindowRect(pinnedHwnd, &windowRect) != FALSE;
-            const QRect nativeGeometry = haveWindowRect
-                                             ? QRect(QPoint(windowRect.left, windowRect.top),
-                                                     QPoint(windowRect.right - 1,
-                                                            windowRect.bottom - 1))
-                                             : native::currentClientGeometry(
-                                                   reinterpret_cast<WId>(pinnedHwnd));
+            const QRect nativeGeometry =
+                haveWindowRect ? QRect(QPoint(windowRect.left, windowRect.top),
+                                       QPoint(windowRect.right - 1, windowRect.bottom - 1))
+                               : native::currentClientGeometry(reinterpret_cast<WId>(pinnedHwnd));
             const bool inside = havePointerPosition && nativeGeometry.isValid() &&
                                 nativeGeometry.contains(QPoint(pointer.x, pointer.y));
             if (inside != m_pointerInside) {
@@ -2901,7 +2914,8 @@ void ScreenshotPinnedWindow::applyRuntimeBorderColor() {
     if (m_borderFrame == nullptr) {
         return;
     }
-    const QColor color = configuredPinnedBorderColor();
+    const QColor color =
+        m_windowActive ? configuredPinnedBorderActiveColor() : configuredPinnedBorderColor();
     m_borderFrame->setProperty("borderColor", color);
     m_borderFrame->setStyleSheet(QStringLiteral("QFrame#screenshotPinnedBorder { "
                                                 "border: 2px solid rgba(%1, %2, %3, %4); "
@@ -3027,6 +3041,16 @@ void ScreenshotPinnedWindow::rebuildGroupMenu() {
 
 void ScreenshotPinnedWindow::setRuntimeBorderColor(const QColor& color) {
     configuredPinnedBorderColor() = color.isValid() ? color : kDefaultPinnedBorderColor;
+    const auto windows = livePinnedWindows();
+    for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
+        if (window != nullptr) {
+            window->applyRuntimeBorderColor();
+        }
+    }
+}
+
+void ScreenshotPinnedWindow::setRuntimeBorderActiveColor(const QColor& color) {
+    configuredPinnedBorderActiveColor() = color.isValid() ? color : kDefaultPinnedBorderActiveColor;
     const auto windows = livePinnedWindows();
     for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
         if (window != nullptr) {

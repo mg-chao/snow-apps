@@ -328,6 +328,8 @@ class PinToScreenSettings final {
     bool setMiddleMouseButtonAction(const QString& action) const;
     [[nodiscard]] QColor borderColor() const;
     bool setBorderColor(const QColor& color) const;
+    [[nodiscard]] QColor borderActiveColor() const;
+    bool setBorderActiveColor(const QColor& color) const;
     [[nodiscard]] QString mouseWheelZoomMode() const;
     bool setMouseWheelZoomMode(const QString& mode) const;
     [[nodiscard]] bool automaticTextRecognition() const;
