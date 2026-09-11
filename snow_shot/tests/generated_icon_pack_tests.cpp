@@ -69,6 +69,19 @@ bool containsOpaqueColorInRect(const QImage& image, const QColor& expected, cons
     return false;
 }
 
+int opaquePixelCount(const QImage& image, const QRect& bounds) {
+    int count = 0;
+    const QRect clippedBounds = bounds.intersected(image.rect());
+    for (int y = clippedBounds.top(); y <= clippedBounds.bottom(); ++y) {
+        for (int x = clippedBounds.left(); x <= clippedBounds.right(); ++x) {
+            if (image.pixelColor(x, y).alpha() > 0) {
+                ++count;
+            }
+        }
+    }
+    return count;
+}
+
 QPixmap render(const adqt::icons::IconRef& ref, const QSize& size, qreal dpr = 1.0) {
     adqt::icons::IconRenderRequest request;
     request.logicalSize = size;
@@ -256,6 +269,14 @@ void arrowheadIconsFaceTheirRespectiveEndpoints() {
             }
             require(difference <= end.width() * end.height() * 2,
                     "start arrowhead should horizontally mirror its end arrowhead");
+            // The marker glyph (head, bar, dot, ...) must sit at the boundary the option
+            // names: the end variant on the right of the tail line, start on the left.
+            const QRect leftHalf(0, 0, end.width() / 2, end.height());
+            const QRect rightHalf(end.width() - end.width() / 2, 0, end.width() / 2, end.height());
+            require(opaquePixelCount(end, rightHalf) > opaquePixelCount(end, leftHalf),
+                    "end arrowhead should place its marker on the right of the tail");
+            require(opaquePixelCount(start, leftHalf) > opaquePixelCount(start, rightHalf),
+                    "start arrowhead should place its marker on the left of the tail");
         }
     }
 }
