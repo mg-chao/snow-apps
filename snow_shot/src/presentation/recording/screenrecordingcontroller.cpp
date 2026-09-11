@@ -165,19 +165,32 @@ QString recordingDirectory() {
     return directories.isEmpty() ? QString() : directories.constFirst();
 }
 
-QString recordingFilePath(const QString& extension) {
-    const QString baseName = ScreenshotImageFileService::suggestedBaseName(
-        snow_shot::storage::RecordingSettings().videoFilenameFormat());
-    const QDir directory(recordingDirectory());
+// Runs on the start worker thread: only touches the filesystem, never storage or UI.
+QString chooseRecordingOutputPath(const QStringList& directories, const QString& baseName,
+                                  const QString& extension) {
     const QString normalizedExtension =
         extension.startsWith(QLatin1Char('.')) ? extension : QStringLiteral(".%1").arg(extension);
-    QString path = directory.filePath(baseName + normalizedExtension);
-    for (int suffix = 1; QFileInfo::exists(path); ++suffix) {
-        path = directory.filePath(
-            QStringLiteral("%1_%2%3").arg(baseName).arg(suffix).arg(normalizedExtension));
+    for (const QString& candidate : directories) {
+        QDir directory(candidate);
+        if ((!directory.exists() && !directory.mkpath(QStringLiteral("."))) ||
+            !QFileInfo(directory.absolutePath()).isWritable()) {
+            continue;
+        }
+        QString path = directory.filePath(baseName + normalizedExtension);
+        for (int suffix = 1; QFileInfo::exists(path); ++suffix) {
+            path = directory.filePath(
+                QStringLiteral("%1_%2%3").arg(baseName).arg(suffix).arg(normalizedExtension));
+        }
+        return path;
     }
-    return path;
+    return {};
 }
+
+struct StartAttemptResult {
+    SnowCaptureRecordingSession* session = nullptr;
+    QString outputPath;
+    QString error;
+};
 
 QString captureError() {
     const char* error = snow_capture_last_error_message();
@@ -250,11 +263,23 @@ struct ScreenRecordingController::Impl {
         finalizationPollTimer.setInterval(50);
         QObject::connect(&finalizationPollTimer, &QTimer::timeout, &owner,
                          [this]() { pollFinalization(); });
+        startPollTimer.setInterval(50);
+        QObject::connect(&startPollTimer, &QTimer::timeout, &owner, [this]() { pollStart(); });
     }
 
     ~Impl() {
         durationTimer.stop();
         finalizationPollTimer.stop();
+        startPollTimer.stop();
+        if (startFuture.valid()) {
+            startFuture.wait();
+            // A session that finished starting while the controller was being
+            // destroyed is adopted so the regular destroy path cancels it.
+            if (SnowCaptureRecordingSession* session = startFuture.get().session;
+                session != nullptr && recordingSession == nullptr) {
+                recordingSession = session;
+            }
+        }
         if (finalizationFuture.valid()) {
             finalizationFuture.wait();
             finalizationFuture.get();
@@ -596,26 +621,18 @@ struct ScreenRecordingController::Impl {
             }
             busy = true;
             syncUi();
-            QDir outputDirectory(recordingDirectory());
-            if (!outputDirectory.mkpath(QStringLiteral("."))) {
-                busy = false;
-                syncUi();
-                showError(tr("Unable to create the recording directory"));
-                return;
-            }
 
+            // Snapshot every UI and storage value on the GUI thread; the worker
+            // below must not touch either.
             const snow_shot::storage::RecordingSettings settings;
             sessionOutputSettings = directRecordingSettings(outputFormat, captureRegion.size());
             sessionMouseTrailColor = mouseTrailColor;
             sessionMouseClickColor = mouseClickColor;
             sessionShowCursor = showCursor;
             const bool audioSupported = outputFormat == QStringLiteral("mp4");
-            pendingOutputPath = recordingFilePath(sessionOutputSettings.extension);
-            const QByteArray outputUtf8 = QDir::toNativeSeparators(pendingOutputPath).toUtf8();
-            const RecordingKeyboardLabels keyboardLabels(showKeyboard);
             const RecordingKeyboardTheme keyboardTheme(keyboardBackgroundColor,
                                                        keyboardForegroundColor);
-            const SnowCaptureDirectRecordingConfig config{
+            SnowCaptureDirectRecordingConfig config{
                 SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION,
                 sizeof(SnowCaptureDirectRecordingConfig),
                 captureRegion.x(),
@@ -624,7 +641,8 @@ struct ScreenRecordingController::Impl {
                 static_cast<uint32_t>(captureRegion.height()),
                 // Auto tries WGC first, then DXGI and GDI on eligible capture failures.
                 static_cast<uint32_t>(SNOW_CAPTURE_BACKEND_AUTO),
-                outputUtf8.constData(),
+                // Bound on the worker thread together with the keyboard labels.
+                nullptr,
                 static_cast<uint32_t>(sessionOutputSettings.format),
                 static_cast<uint32_t>(validRecordingFrameRate(settings.frameRate())),
                 sessionOutputSettings.targetFps,
@@ -646,40 +664,88 @@ struct ScreenRecordingController::Impl {
                 packedRgba(keyboardTheme.background),
                 packedRgba(keyboardTheme.text),
                 packedRgba(keyboardTheme.border),
-                keyboardLabels.entries.constData(),
-                static_cast<uint32_t>(keyboardLabels.entries.size()),
+                nullptr,
+                0,
                 static_cast<uint32_t>(mouseTrailDurationMs),
                 static_cast<uint32_t>(keyboardSize),
             };
-            const SnowCaptureResult createResult =
-                snow_capture_recording_session_create_direct(&config, &recordingSession);
-            if (recordingSession != nullptr && settings.hideToolbarInRecording()) {
+            // Exclude before the worker starts capturing so no frame can ever
+            // contain the toolbar; a failed start restores visibility.
+            if (settings.hideToolbarInRecording()) {
                 excludeToolbarFromCapture();
             }
-            if (createResult != SNOW_CAPTURE_RESULT_OK || recordingSession == nullptr ||
-                snow_capture_recording_session_start(recordingSession) == 0) {
-                const QString error = captureError();
-                if (recordingSession != nullptr) {
-                    snow_capture_recording_session_destroy(recordingSession);
-                    recordingSession = nullptr;
-                }
-                restoreToolbarCaptureVisibility();
+            const QString baseName =
+                ScreenshotImageFileService::suggestedBaseName(settings.videoFilenameFormat());
+            const QStringList directories = recordingDirectories();
+            const QString extension = sessionOutputSettings.extension;
+            const bool keyboard = showKeyboard;
+            // Session creation blocks on capture, audio, hooks, and encoder
+            // initialization; keep it off the GUI thread so the busy state can
+            // paint. The FFI error string is thread-local, so it is read here.
+            startFuture = std::async(
+                std::launch::async,
+                [config, directories, baseName, extension,
+                 keyboard]() mutable -> StartAttemptResult {
+                    StartAttemptResult result;
+                    result.outputPath = chooseRecordingOutputPath(directories, baseName, extension);
+                    if (result.outputPath.isEmpty()) {
+                        result.error =
+                            QCoreApplication::translate("ScreenRecordingController",
+                                                        "Unable to create the recording directory");
+                        return result;
+                    }
+                    const QByteArray outputUtf8 =
+                        QDir::toNativeSeparators(result.outputPath).toUtf8();
+                    const RecordingKeyboardLabels labels(keyboard);
+                    config.output_file_utf8 = outputUtf8.constData();
+                    config.keyboard_labels = labels.entries.constData();
+                    config.keyboard_label_count = static_cast<uint32_t>(labels.entries.size());
+                    const SnowCaptureResult createResult =
+                        snow_capture_recording_session_create_direct(&config, &result.session);
+                    if (createResult != SNOW_CAPTURE_RESULT_OK || result.session == nullptr ||
+                        snow_capture_recording_session_start(result.session) == 0) {
+                        result.error = captureError();
+                        return result;
+                    }
+                    return result;
+                });
+            startPollTimer.start();
+        });
+    }
+
+    void pollStart() {
+        if (!startFuture.valid() ||
+            startFuture.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+            return;
+        }
+        startPollTimer.stop();
+        const StartAttemptResult result = startFuture.get();
+        if (uiSession == nullptr) {
+            // The UI was retired while the backend was starting. A session that
+            // did start is shut down through the regular finalization path.
+            if (result.session != nullptr && result.error.isEmpty()) {
+                recordingSession = result.session;
+                pendingOutputPath = result.outputPath;
+                state = ScreenshotToolPalette::RecordingState::Recording;
                 busy = false;
-                syncUi();
-                if (areaWindow != nullptr) {
-                    areaWindow->show();
-                    areaWindow->raise();
-                }
-                if (toolbarWindow != nullptr) {
-                    toolbarWindow->show();
-                    toolbarWindow->raise();
-                }
-                showError(error);
+                stop(false);
                 return;
             }
-
-            durationMilliseconds = 0;
-            state = ScreenshotToolPalette::RecordingState::Recording;
+            if (result.session != nullptr) {
+                snow_capture_recording_session_destroy(result.session);
+            }
+            restoreToolbarCaptureVisibility();
+            busy = false;
+            if (!result.error.isEmpty()) {
+                report(QStringLiteral("recording.failed"), QtWarningMsg);
+            }
+            return;
+        }
+        if (result.session == nullptr || !result.error.isEmpty()) {
+            if (result.session != nullptr) {
+                snow_capture_recording_session_destroy(result.session);
+            }
+            restoreToolbarCaptureVisibility();
             busy = false;
             syncUi();
             if (areaWindow != nullptr) {
@@ -687,11 +753,28 @@ struct ScreenRecordingController::Impl {
                 areaWindow->raise();
             }
             if (toolbarWindow != nullptr) {
-                toolbarWindow->showAndActivate();
+                toolbarWindow->show();
+                toolbarWindow->raise();
             }
-            durationTimer.start();
-            report(QStringLiteral("recording.started"));
-        });
+            showError(result.error);
+            return;
+        }
+
+        recordingSession = result.session;
+        pendingOutputPath = result.outputPath;
+        durationMilliseconds = 0;
+        state = ScreenshotToolPalette::RecordingState::Recording;
+        busy = false;
+        syncUi();
+        if (areaWindow != nullptr) {
+            areaWindow->show();
+            areaWindow->raise();
+        }
+        if (toolbarWindow != nullptr) {
+            toolbarWindow->showAndActivate();
+        }
+        durationTimer.start();
+        report(QStringLiteral("recording.started"));
     }
 
     void pause() {
@@ -732,7 +815,8 @@ struct ScreenRecordingController::Impl {
         }
 
         durationTimer.stop();
-        durationMilliseconds = 0;
+        // Keep the final duration on screen while the file is finalized;
+        // pollFinalization resets it once the operation completes.
         busy = true;
         syncUi();
         SnowCaptureRecordingSession* session = recordingSession;
@@ -908,7 +992,9 @@ struct ScreenRecordingController::Impl {
     QRect captureRegion;
     QTimer durationTimer;
     QTimer finalizationPollTimer;
+    QTimer startPollTimer;
     std::future<std::pair<bool, QString>> finalizationFuture;
+    std::future<StartAttemptResult> startFuture;
     ScreenshotToolPalette::RecordingState state = ScreenshotToolPalette::RecordingState::Idle;
     qint64 durationMilliseconds = 0;
     QString pendingOutputPath;

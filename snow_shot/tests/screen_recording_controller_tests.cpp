@@ -60,13 +60,13 @@ std::unique_ptr<RecordingEffectsSource> testEffectsSource() {
 }
 
 SnowCaptureRecordingSession session;
-int starts = 0;
+std::atomic<int> starts = 0;
 SnowCaptureDirectRecordingConfig lastDirectConfig{};
 std::atomic<int> exports = 0;
 std::shared_future<void> exportGate;
 std::promise<void>* exportEntered = nullptr;
 std::atomic<bool> failExport = false;
-bool failStart = false;
+std::atomic<bool> failStart = false;
 std::atomic<int> destroyedSessions = 0;
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -108,6 +108,15 @@ void waitForIdle(ScreenRecordingController& controller) {
     require(!controller.isRecording(), "controlled finalization must return to idle");
 }
 
+void waitForRecording(ScreenRecordingController& controller) {
+    QElapsedTimer deadline;
+    deadline.start();
+    while (!controller.isRecording() && deadline.elapsed() < 3000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents | QEventLoop::WaitForMoreEvents, 100);
+    }
+    require(controller.isRecording(), "controlled start must reach the recording state");
+}
+
 int recordingWindowCount() {
     int count = 0;
     for (auto* widget : QApplication::topLevelWidgets()) {
@@ -137,8 +146,7 @@ void closeAndStopHaveIndependentUiLifetimes() {
             const int previousDestroyed = destroyedSessions;
             const int previousErrors = errors.shown;
             controller.startRecording();
-            QCoreApplication::processEvents();
-            require(controller.isRecording(), "fake backend must start");
+            waitForRecording(controller);
             if (close) {
                 // Exercise the native close path as well as the toolbar command.
                 toolbar->close();
@@ -643,6 +651,15 @@ void controllerPreviewTransitions() {
     qApp->installEventFilter(&errors);
     failStart = true;
     controller.startRecording();
+    {
+        // The failed start is reported through the asynchronous start path.
+        QElapsedTimer failureWait;
+        failureWait.start();
+        while (errors.shown == 0 && failureWait.elapsed() < 3000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents | QEventLoop::WaitForMoreEvents,
+                                            100);
+        }
+    }
     pumpPreview();
     require(!controller.isRecording() && state->active && errors.shown == 1,
             "startup failure must restore a fresh preview after dismissing its modal error");
@@ -650,8 +667,13 @@ void controllerPreviewTransitions() {
     qApp->removeEventFilter(&errors);
     controller.startRecording();
     require(!state->active, "accepted start must stop preview before its queued callback");
+    waitForRecording(controller);
     pumpPreview();
     require(controller.isRecording() && !state->active, "recording must keep preview stopped");
+    auto* previewLabel =
+        area->findChild<QLabel*>(QStringLiteral("screenRecordingMotionPreviewLabel"));
+    require(previewLabel == nullptr || !previewLabel->isVisible(),
+            "native capture must never see the preview label");
     require(previewImage(*area->canvas()).pixelColor(100, 100).alpha() == 0,
             "recording with export settings selected must not retain the idle input surface");
     palette()->recordingPauseRequested();
@@ -967,18 +989,13 @@ extern "C" {
 SnowCaptureResult
 snow_capture_recording_session_create_direct(const SnowCaptureDirectRecordingConfig* config,
                                              SnowCaptureRecordingSession** result) {
+    // Session creation runs on the controller's worker thread: only plain data
+    // may be touched here. The preview label invariant is asserted on the GUI
+    // thread by controllerPreviewTransitions instead.
     lastDirectConfig = *config;
     for (const auto& weak : effectSources) {
         if (const auto source = weak.lock()) {
             require(!source->active, "native creation must follow preview observer shutdown");
-        }
-    }
-    for (auto* widget : QApplication::topLevelWidgets()) {
-        if (auto* area = qobject_cast<ScreenRecordingAreaWindow*>(widget)) {
-            auto* label =
-                area->findChild<QLabel*>(QStringLiteral("screenRecordingMotionPreviewLabel"));
-            require(!label || !label->isVisible(),
-                    "native capture must never see the preview label");
         }
     }
     if (failStart) {
@@ -1210,7 +1227,7 @@ int main(int argc, char** argv) {
         palette()->recordingKeyboardForegroundColorChanged(QColor(240, 230, 220, 200));
         controller.startRecording();
         controller.startRecording();
-        QCoreApplication::processEvents();
+        waitForRecording(controller);
         require(starts == 1 && controller.isRecording(), "a fresh request must start exactly once");
         require(lastDirectConfig.mouse_trail_duration_ms == 2000 &&
                     lastDirectConfig.keyboard_background_rgba == 0x28507880 &&

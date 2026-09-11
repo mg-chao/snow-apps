@@ -241,6 +241,9 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
                                 true,
                                 !busy,
                                 !idle && !busy};
+        // Only the start and stop/copy actions show a spinner while busy.
+        const bool spinning[] = {idle && busy, !idle && busy, false, false,        false,
+                                 false,        false,         false, !idle && busy};
         const QLayout* layout = palette.mainPanel()->layout();
         QRect previous;
         for (int index = 0; index < buttons.size(); ++index) {
@@ -256,6 +259,8 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
                     "recording control visibility should follow recording state");
             require(button->isEnabled() == enabled[index],
                     "recording control availability should follow recording and busy state");
+            require(button->busy() == spinning[index],
+                    "recording control busy indicator should follow recording and busy state");
             if (visible[index]) {
                 require(!button->visibleRegion().isEmpty() &&
                             palette.mainPanel()->rect().contains(button->geometry()),

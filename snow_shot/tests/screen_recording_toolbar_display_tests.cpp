@@ -175,6 +175,14 @@ int recordingToolbarAcrossNativeDisplays(bool startCapture) {
     }
     if (startCapture) {
         controller.startRecording();
+        // Starting the real backend is asynchronous; wait for it to finish
+        // before comparing compositor output.
+        QElapsedTimer startWait;
+        startWait.start();
+        while (!controller.isRecording() && startWait.elapsed() < 5000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+            QThread::msleep(1);
+        }
     }
     settleWindows();
     check(controller.isRecording() == startCapture,
