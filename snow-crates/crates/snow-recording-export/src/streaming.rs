@@ -7,7 +7,7 @@ use ffmpeg_next as ffmpeg;
 use snow_recording_model::{VideoCodec, VideoEncodeConfig};
 use uuid::Uuid;
 
-mod convert;
+pub mod convert;
 
 use crate::config::{ExportExecutionMode, ExportFormat, SoftwareH264Priority};
 use crate::editing::{

@@ -14,7 +14,7 @@ use rayon::prelude::*;
 
 /// Byte order of the packed 8-bit RGB source pixels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum RgbOrder {
+pub enum RgbOrder {
     Rgba,
     /// Constructed by the BGRA capture transport.
     #[allow(dead_code)]
@@ -32,7 +32,7 @@ impl RgbOrder {
 }
 
 /// Chroma planes of an interleaved (NV12) or planar (YUV420P) 4:2:0 target.
-pub(crate) enum ChromaPlanes<'a> {
+pub enum ChromaPlanes<'a> {
     Nv12 {
         uv: &'a mut [u8],
         uv_stride: usize,
@@ -46,7 +46,7 @@ pub(crate) enum ChromaPlanes<'a> {
 }
 
 /// Writable YUV 4:2:0 planes of one frame, honoring encoder strides.
-pub(crate) struct Yuv420Planes<'a> {
+pub struct Yuv420Planes<'a> {
     width: usize,
     height: usize,
     y: &'a mut [u8],
@@ -61,7 +61,7 @@ const PARALLEL_MIN_PIXELS: usize = 524_288;
 
 /// Execution mode selector; tests pin serial and parallel runs explicitly.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ConversionMode {
+pub enum ConversionMode {
     Auto,
     /// Test-only: pin single-threaded execution.
     #[allow(dead_code)]
@@ -258,7 +258,7 @@ fn split_chroma_bands<'a>(chroma: ChromaPlanes<'a>, row_cuts: &[usize]) -> Vec<C
 
 /// Convert `source` (packed `width * height * 4` bytes) into `planes`,
 /// consuming the plane views.
-pub(crate) fn convert_rgb_to_yuv420(
+pub fn convert_rgb_to_yuv420(
     source: &[u8],
     order: RgbOrder,
     planes: Yuv420Planes,
@@ -424,9 +424,8 @@ pub(crate) fn yuv420_planes_from_frame(
     }
 }
 
-/// Build planes over caller-owned buffers; used by tests.
-#[cfg(test)]
-fn yuv420_planes_from_parts<'a>(
+/// Build planes over caller-owned NV12 or planar buffers.
+pub fn yuv420_planes_from_parts<'a>(
     width: usize,
     height: usize,
     y: &'a mut [u8],

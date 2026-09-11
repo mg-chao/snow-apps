@@ -7,7 +7,7 @@ pub mod export;
 pub mod streaming;
 
 pub(crate) mod ffmpeg_util;
-pub(crate) mod video_quality;
+pub mod video_quality;
 
 pub use config::{
     ExportAudioOutputConfig, ExportAudioTrackRequest, ExportExecutionMode, ExportFormat,

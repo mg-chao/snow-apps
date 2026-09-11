@@ -43,7 +43,7 @@ pub(crate) fn smart_quality_bitrate_kbps(
     kbps.round().clamp(600.0, 240_000.0) as u32
 }
 
-pub(crate) fn smart_quality_bitrate_bps(
+pub fn smart_quality_bitrate_bps(
     width: u32,
     height: u32,
     fps: u32,

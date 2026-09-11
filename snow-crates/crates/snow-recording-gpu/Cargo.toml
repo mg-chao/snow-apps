@@ -1,0 +1,33 @@
+[package]
+name = "snow-recording-gpu"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-core = { workspace = true }
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Com",
+    "Win32_System_Ole",
+    "Win32_System_Variant",
+] }
+
+[dev-dependencies]
+ffmpeg-next.workspace = true
+tempfile.workspace = true
+snow-recording-model = { path = "../snow-recording-model" }
+snow-recording-export = { path = "../snow-recording-export" }
+
+[features]
+# Compile-time switch for GPU encode stage instrumentation; enabled by the
+# recording benchmark chain so per-stage timings appear in benchmark CSVs.
+stage-timing = []

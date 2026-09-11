@@ -21,6 +21,7 @@ members = [
     "crates/snow-recording-effects",
     "crates/snow-recording-effects-c",
     "crates/snow-recording-export",
+    "crates/snow-recording-gpu",
     "crates/snow-screen-recorder",
 ]
 resolver = "3"
