@@ -700,7 +700,7 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      QStringLiteral("#00000000"), ConfigurationValueKind::String},
     {QStringLiteral("pin_to_screen/border_color"), QStringLiteral("#DBDBDBFF"),
      ConfigurationValueKind::String},
-    {QStringLiteral("pin_to_screen/border_active_color"), QStringLiteral("#4096FFFF"),
+    {QStringLiteral("pin_to_screen/border_active_color"), QStringLiteral("#69B1FFFF"),
      ConfigurationValueKind::String},
     {QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"),
      QStringLiteral("mouse_position"),
