@@ -16,6 +16,7 @@
 #include "snow_shot/presentation/screenshotfilepinbatch.h"
 #include "snow_shot/presentation/screenshotcolorpickercontroller.h"
 #include "snow_shot/presentation/screenshotdisplayconfigurationobserver.h"
+#include "snow_shot/platform/windows/selectedfiles.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
@@ -2379,6 +2380,12 @@ void ScreenshotController::Impl::pinSelectedFilesToScreen(
     }
     m_filePinBatch.startSelection(snow_shot::platform::windows::createSelectedFileBackend(), target,
                                   filePinPresenter(screen));
+    if (m_selectionExportUiServices != nullptr) {
+        // Built after submitting so shell construction overlaps the batch's
+        // worker-side snapshot and first decode instead of delaying the first
+        // pin.
+        m_selectionExportUiServices->prewarmPinnedWindow(screen);
+    }
 }
 
 void ScreenshotController::Impl::pinClipboardContentToScreen() {
@@ -2399,6 +2406,11 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
 
     if (!paths.isEmpty()) {
         m_filePinBatch.start(paths, filePinPresenter(screen));
+        if (m_selectionExportUiServices != nullptr) {
+            // Same submit-then-prewarm overlap as the selected-files path;
+            // later presents rely on the pool's automatic replenishment.
+            m_selectionExportUiServices->prewarmPinnedWindow(screen);
+        }
         return;
     }
 

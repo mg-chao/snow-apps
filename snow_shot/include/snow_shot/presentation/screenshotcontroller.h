@@ -5,10 +5,12 @@
 #include <QPoint>
 #include <QString>
 #include "snow_shot/presentation/globalmousetypes.h"
-#include "snow_shot/platform/windows/selectedfiles.h"
 
 #include <memory>
 
+namespace snow_shot::platform::windows {
+struct SelectedFileTarget;
+}
 namespace snow_shot::presentation {
 class PinnedWindowGroupManager;
 }

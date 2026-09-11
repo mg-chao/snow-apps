@@ -1,5 +1,7 @@
 #include "snow_shot/presentation/screenshotfilepinbatch.h"
 
+#include "snow_shot/platform/windows/selectedfiles.h"
+
 #include <QApplication>
 #include <QClipboard>
 #include <QElapsedTimer>
@@ -124,6 +126,57 @@ void changedFilesAndPresentationStop() {
     require(presented == 2, "lost presentation target must stop the remaining batch");
 }
 
+QString gradientFile(QTemporaryDir& directory, const QString& name, QSize size) {
+    const QString path = directory.filePath(name);
+    QImage image(size, QImage::Format_RGBA8888);
+    for (int y = 0; y < size.height(); ++y) {
+        uchar* row = image.scanLine(y);
+        for (int x = 0; x < size.width(); ++x) {
+            row[x * 4] = uchar((x + y * 3) & 0xff);
+            row[x * 4 + 1] = uchar((x * 5 + y) & 0xff);
+            row[x * 4 + 2] = uchar((x * 3 + y * 7) & 0xff);
+            row[x * 4 + 3] = 255;
+        }
+    }
+    require(image.save(path, "PNG"), "gradient fixture must encode");
+    return path;
+}
+
+void prefetchKeepsPresentationOrder() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary directory must exist");
+    // Alternating decode costs let prefetched decodes finish out of order;
+    // presentation must still follow source order.
+    QStringList expected;
+    for (int index = 0; index < 6; ++index) {
+        expected.append(gradientFile(directory, QStringLiteral("order-%1.png").arg(index),
+                                     index % 2 == 0 ? QSize(2200, 1800) : QSize(16, 12)));
+    }
+    QStringList presented;
+    ScreenshotFilePinBatch batch;
+    batch.start(expected, [&](ScreenshotClipboardContent content) {
+        presented.append(content.originalContent.localFilePath);
+        return true;
+    });
+    finish(batch);
+    require(presented == expected, "prefetched decodes must present in source order");
+}
+
+void stoppingDiscardsPrefetchedDecodes() {
+    QTemporaryDir directory;
+    ScreenshotFilePinBatch batch;
+    int presented = 0;
+    batch.start({imageFile(directory, QStringLiteral("first.png")),
+                 imageFile(directory, QStringLiteral("second.png")),
+                 imageFile(directory, QStringLiteral("third.png"))},
+                [&](ScreenshotClipboardContent) {
+                    ++presented;
+                    return false;
+                });
+    finish(batch);
+    require(presented == 1, "a stopped batch must not present already-prefetched files");
+}
+
 void selectionAndCancellation() {
     QTemporaryDir directory;
     const QString path = imageFile(directory, QStringLiteral("selection.png"));
@@ -201,6 +254,8 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     mixedFilesAndLargeBatches();
     changedFilesAndPresentationStop();
+    prefetchKeepsPresentationOrder();
+    stoppingDiscardsPrefetchedDecodes();
     selectionAndCancellation();
     clipboardFiles();
     ScreenshotExportCoordinator::shared().shutdown();
