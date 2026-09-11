@@ -1219,12 +1219,10 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
             // client rect briefly reports the pointer as outside and hides the controls.
             RECT windowRect{};
             const bool haveWindowRect = GetWindowRect(pinnedHwnd, &windowRect) != FALSE;
-            const QRect nativeGeometry = haveWindowRect
-                                             ? QRect(QPoint(windowRect.left, windowRect.top),
-                                                     QPoint(windowRect.right - 1,
-                                                            windowRect.bottom - 1))
-                                             : native::currentClientGeometry(
-                                                   reinterpret_cast<WId>(pinnedHwnd));
+            const QRect nativeGeometry =
+                haveWindowRect ? QRect(QPoint(windowRect.left, windowRect.top),
+                                       QPoint(windowRect.right - 1, windowRect.bottom - 1))
+                               : native::currentClientGeometry(reinterpret_cast<WId>(pinnedHwnd));
             const bool inside = havePointerPosition && nativeGeometry.isValid() &&
                                 nativeGeometry.contains(QPoint(pointer.x, pointer.y));
             if (inside != m_pointerInside) {
