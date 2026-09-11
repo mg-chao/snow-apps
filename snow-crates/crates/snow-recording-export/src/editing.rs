@@ -8218,6 +8218,9 @@ fn apply_hardware_encoder_speed_options(
         return true;
     }
     if name.contains("mf") {
+        // FFmpeg's Media Foundation encoder otherwise selects a software MFT,
+        // even though this codec was chosen by the hardware-preferred path.
+        options.set("hw_encoding", "1");
         options.set("bf", "0");
         options.set("g", "60");
         return true;
@@ -8729,6 +8732,18 @@ mod tests {
         LocalRecordingPaths,
     };
     use tempfile::tempdir;
+
+    #[cfg(windows)]
+    #[test]
+    fn media_foundation_hardware_selection_requires_a_hardware_transform() {
+        ensure_ffmpeg_initialized().unwrap();
+        let codec = ffmpeg::encoder::find_by_name("h264_mf")
+            .expect("the Windows FFmpeg build must provide Media Foundation");
+        let mut options = ffmpeg::Dictionary::new();
+        assert!(apply_hardware_encoder_speed_options(&mut options, &codec));
+        assert_eq!(options.get("hw_encoding"), Some("1"));
+        assert_eq!(options.get("bf"), Some("0"));
+    }
 
     fn test_track(
         track_id: &str,

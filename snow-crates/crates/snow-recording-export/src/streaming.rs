@@ -17,6 +17,7 @@ use crate::editing::{
 };
 use crate::error::{RecordingExportError, Result};
 use crate::ffmpeg_util::{copy_rgba_into_frame, ensure_ffmpeg_initialized};
+use crate::rgba_converter::RgbaConverter;
 use crate::video_quality::smart_quality_bitrate_bps;
 
 pub const DIRECT_STAGING_PREFIX: &str = ".snow-recording-direct-";
@@ -113,6 +114,8 @@ impl StreamingEncoderConfig {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct StreamingEncoderReport {
+    #[cfg(feature = "stage-timing")]
+    pub video_stage_timings: StreamingVideoStageTimings,
     pub encoded_frames: u64,
     pub coalesced_frames: u64,
     pub video_encoder: String,
@@ -121,6 +124,15 @@ pub struct StreamingEncoderReport {
     pub encoded_audio_frames: u64,
     pub inserted_silence_frames: u64,
     pub dropped_audio_frames: u64,
+}
+
+#[cfg(feature = "stage-timing")]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct StreamingVideoStageTimings {
+    pub copy: Duration,
+    pub convert: Duration,
+    pub send: Duration,
+    pub drain_and_mux: Duration,
 }
 
 struct PendingFrame {
@@ -148,7 +160,7 @@ pub struct StreamingEncoder {
     encoder: ffmpeg::encoder::video::Encoder,
     stream_index: usize,
     stream_time_base: ffmpeg::Rational,
-    scaler: ffmpeg::software::scaling::Context,
+    scaler: StreamingScaler,
     rgba_frame: ffmpeg::frame::Video,
     encode_frame: ffmpeg::frame::Video,
     width: u32,
@@ -162,6 +174,57 @@ pub struct StreamingEncoder {
     final_path: PathBuf,
     report: StreamingEncoderReport,
     finished: bool,
+}
+
+enum StreamingScaler {
+    Serial(ffmpeg::software::scaling::Context),
+    Threaded(RgbaConverter),
+}
+
+impl StreamingScaler {
+    fn new(
+        width: u32,
+        height: u32,
+        format: ffmpeg::format::Pixel,
+        configured_threads: u8,
+    ) -> std::result::Result<Self, ffmpeg::Error> {
+        let threads = if configured_threads == 0 {
+            num_cpus::get_physical()
+        } else {
+            usize::from(configured_threads)
+        }
+        .clamp(1, 4);
+        if threads > 1
+            && u64::from(width) * u64::from(height) >= 1920 * 1080
+            && matches!(
+                format,
+                ffmpeg::format::Pixel::NV12 | ffmpeg::format::Pixel::YUV420P
+            )
+        {
+            return RgbaConverter::new(width, height, format, threads).map(Self::Threaded);
+        }
+        ffmpeg::software::scaling::Context::get(
+            ffmpeg::format::Pixel::RGBA,
+            width,
+            height,
+            format,
+            width,
+            height,
+            ffmpeg::software::scaling::Flags::BICUBIC,
+        )
+        .map(Self::Serial)
+    }
+
+    fn run(
+        &mut self,
+        input: &ffmpeg::frame::Video,
+        output: &mut ffmpeg::frame::Video,
+    ) -> std::result::Result<(), ffmpeg::Error> {
+        match self {
+            Self::Serial(context) => context.run(input, output),
+            Self::Threaded(context) => context.run(input, output),
+        }
+    }
 }
 
 impl StreamingEncoder {
@@ -333,14 +396,11 @@ impl StreamingEncoder {
                     )
                 })?;
         }
-        let scaler = ffmpeg::software::scaling::Context::get(
-            ffmpeg::format::Pixel::RGBA,
+        let scaler = StreamingScaler::new(
             config.width,
             config.height,
             pixel_format,
-            config.width,
-            config.height,
-            ffmpeg::software::scaling::flag::Flags::BICUBIC,
+            config.encode_threads,
         )
         .map_err(|error| {
             RecordingExportError::Encode(format!("failed to create streaming RGBA scaler: {error}"))
@@ -409,6 +469,33 @@ impl StreamingEncoder {
         Ok(())
     }
 
+    /// Submit an RGBA frame by transferring its buffer into the encoder.
+    ///
+    /// Callers that already own a frame-sized `Vec<u8>` can avoid a second
+    /// full-frame copy. Returns the previous buffer for the caller to reuse;
+    /// the first submission returns an empty buffer.
+    pub fn push_owned_rgba_frame(&mut self, timestamp_ms: u64, rgba: Vec<u8>) -> Result<Vec<u8>> {
+        let expected = self.width as usize * self.height as usize * 4;
+        if rgba.len() != expected {
+            return Err(RecordingExportError::InvalidConfig(format!(
+                "streaming RGBA frame has {} bytes; expected {expected}",
+                rgba.len()
+            )));
+        }
+        let pts = ((u128::from(timestamp_ms) * u128::from(self.fps) + 500) / 1_000)
+            .min(i64::MAX as u128) as i64;
+        if let Some(pending) = self.pending.as_mut() {
+            if pts <= pending.pts {
+                self.report.coalesced_frames = self.report.coalesced_frames.saturating_add(1);
+                return Ok(std::mem::replace(&mut pending.rgba, rgba));
+            }
+            let duration = pts.saturating_sub(pending.pts).max(1);
+            self.encode_pending(duration)?;
+        }
+        self.pending = Some(PendingFrame { pts, rgba });
+        Ok(std::mem::take(&mut self.spare_rgba))
+    }
+
     pub fn push_audio_pcm_i16(&mut self, timestamp_ms: u64, samples: &[i16]) -> Result<()> {
         let audio = self.audio.as_mut().ok_or_else(|| {
             RecordingExportError::InvalidConfig(
@@ -472,7 +559,15 @@ impl StreamingEncoder {
         let Some(pending) = self.pending.take() else {
             return Ok(());
         };
+        #[cfg(feature = "stage-timing")]
+        let stage_started = std::time::Instant::now();
         copy_rgba_into_frame(&mut self.rgba_frame, self.width, &pending.rgba);
+        #[cfg(feature = "stage-timing")]
+        {
+            self.report.video_stage_timings.copy += stage_started.elapsed();
+        }
+        #[cfg(feature = "stage-timing")]
+        let stage_started = std::time::Instant::now();
         ensure_video_frame_writable(&mut self.encode_frame)?;
         self.scaler
             .run(&self.rgba_frame, &mut self.encode_frame)
@@ -482,6 +577,12 @@ impl StreamingEncoder {
                 ))
             })?;
         self.encode_frame.set_pts(Some(pending.pts));
+        #[cfg(feature = "stage-timing")]
+        {
+            self.report.video_stage_timings.convert += stage_started.elapsed();
+        }
+        #[cfg(feature = "stage-timing")]
+        let stage_started = std::time::Instant::now();
         self.encoder
             .send_frame(&self.encode_frame)
             .map_err(|error| {
@@ -489,6 +590,12 @@ impl StreamingEncoder {
                     "failed to send streaming video frame: {error}"
                 ))
             })?;
+        #[cfg(feature = "stage-timing")]
+        {
+            self.report.video_stage_timings.send += stage_started.elapsed();
+        }
+        #[cfg(feature = "stage-timing")]
+        let stage_started = std::time::Instant::now();
         self.pending_packet_durations.push_back(duration.max(1));
         let output = self.output.as_mut().ok_or_else(|| {
             RecordingExportError::Encode("streaming output is already closed".to_string())
@@ -501,6 +608,10 @@ impl StreamingEncoder {
             false,
             &mut self.pending_packet_durations,
         )?;
+        #[cfg(feature = "stage-timing")]
+        {
+            self.report.video_stage_timings.drain_and_mux += stage_started.elapsed();
+        }
         self.spare_rgba = pending.rgba;
         self.report.encoded_frames = self.report.encoded_frames.saturating_add(1);
         Ok(())
@@ -992,6 +1103,61 @@ mod tests {
             count += 1;
         }
         (count, dimensions.0, dimensions.1)
+    }
+
+    #[test]
+    fn owned_submission_preserves_pixels_timestamps_and_replaces_coalesced_frames() {
+        let directory = tempfile::tempdir().unwrap();
+        let timestamps = [0, 10, 100, 100, 300];
+        let mut files = Vec::new();
+        for owned in [false, true] {
+            let path = directory.path().join(format!("{owned}.apng"));
+            let mut encoder =
+                StreamingEncoder::create(encoder_config(path.clone(), ExportFormat::Apng)).unwrap();
+            let mut spare = Vec::new();
+            for (index, timestamp) in timestamps.into_iter().enumerate() {
+                spare.resize(16 * 16 * 4, 0);
+                for pixel in spare.chunks_exact_mut(4) {
+                    pixel.copy_from_slice(&[index as u8 * 40, 50, 180, 255]);
+                }
+                if owned {
+                    spare = encoder.push_owned_rgba_frame(timestamp, spare).unwrap();
+                } else {
+                    encoder.push_rgba_frame(timestamp, &spare).unwrap();
+                }
+            }
+            let report = encoder.finish().unwrap();
+            assert_eq!(report.encoded_frames, 3);
+            assert_eq!(report.coalesced_frames, 2);
+            assert_eq!(decoded_video_frame_count(&path), (3, 16, 16));
+            files.push(std::fs::read(path).unwrap());
+        }
+        // Lossless APNG packets include the pixels and frame durations.
+        assert_eq!(files[0], files[1]);
+    }
+
+    #[test]
+    fn invalid_owned_frame_does_not_replace_pending_frame() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut files = Vec::new();
+        for invalid in [false, true] {
+            let path = directory.path().join(format!("frame-{invalid}.apng"));
+            let mut encoder =
+                StreamingEncoder::create(encoder_config(path.clone(), ExportFormat::Apng)).unwrap();
+            encoder
+                .push_owned_rgba_frame(0, vec![255; 16 * 16 * 4])
+                .unwrap();
+            if invalid {
+                assert!(encoder.push_owned_rgba_frame(100, vec![0; 3]).is_err());
+            }
+            encoder
+                .push_owned_rgba_frame(200, vec![0; 16 * 16 * 4])
+                .unwrap();
+            assert_eq!(encoder.finish().unwrap().encoded_frames, 2);
+            assert_eq!(decoded_video_frame_count(&path), (2, 16, 16));
+            files.push(std::fs::read(path).unwrap());
+        }
+        assert_eq!(files[0], files[1]);
     }
 
     #[test]

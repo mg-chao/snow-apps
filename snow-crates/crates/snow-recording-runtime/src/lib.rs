@@ -12,6 +12,7 @@ pub(crate) mod laser_trail;
 pub(crate) mod mouse_hook;
 pub use keyboard_overlay::KeyboardOverlayConfig;
 pub(crate) mod processor;
+pub(crate) mod rgba_resizer;
 pub(crate) mod temp;
 pub(crate) mod video_quality;
 

@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 snow-core = { path = "../snow-core" }
+snow-recording-export = { path = "../snow-recording-export" }
 snow-cursor = { path = "../snow-cursor" }
 anyhow.workspace = true
 rustc-hash.workspace = true
@@ -62,7 +63,7 @@ windows = { workspace = true, features = ["Win32_UI_HiDpi"] }
 # When disabled (the default, used by all production/release builds) every
 # instrumentation marker compiles to nothing: no API surface, no fields,
 # no clock reads, no code.
-stage-timing = []
+stage-timing = ["snow-recording-export/stage-timing"]
 
 [[bench]]
 name = "conversion_hot_path"
@@ -77,6 +78,10 @@ name = "benchmark"
 
 [[example]]
 name = "action_benchmark"
+required-features = ["stage-timing"]
+
+[[example]]
+name = "recording_export_benchmark"
 required-features = ["stage-timing"]
 
 [[example]]

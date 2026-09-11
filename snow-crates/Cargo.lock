@@ -2831,6 +2831,7 @@ dependencies = [
  "rustc-hash",
  "snow-core",
  "snow-cursor",
+ "snow-recording-export",
  "windows",
 ]
 

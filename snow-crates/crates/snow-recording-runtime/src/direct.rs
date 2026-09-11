@@ -573,7 +573,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
             {
                 let timestamp_ms = monotonic_timestamp(&mut last_timestamp_ms, timestamp_ms);
                 let rgba = compositor.compose(&config, frame, timestamp_ms)?;
-                encoder.push_rgba_frame(timestamp_ms, &rgba)?;
+                compositor.rgba_buffer = encoder.push_owned_rgba_frame(timestamp_ms, rgba)?;
                 next_overlay_frame_ms = timestamp_ms.saturating_add(output_interval_ms);
             }
         }
@@ -902,7 +902,7 @@ fn process_capture_event(event: CaptureEvent, context: CaptureEventContext<'_>) 
             let timestamp_ms =
                 monotonic_timestamp(last_timestamp_ms, clock.active_elapsed_ms(instant));
             let rgba = compositor.compose(config, &frame, timestamp_ms)?;
-            encoder.push_rgba_frame(timestamp_ms, &rgba)?;
+            compositor.rgba_buffer = encoder.push_owned_rgba_frame(timestamp_ms, rgba)?;
             *latest_frame = Some(frame);
         }
         CaptureEvent::FramesDropped { count, .. } => {
@@ -956,6 +956,8 @@ fn drain_click_observations(
 }
 
 struct VisualCompositor {
+    rgba_buffer: Vec<u8>,
+    resizer: crate::rgba_resizer::RgbaResizer,
     output_size: (u32, u32),
     trail: LaserTrail,
     clicks: VecDeque<RenderClick>,
@@ -967,6 +969,8 @@ struct VisualCompositor {
 impl VisualCompositor {
     fn new(output_size: (u32, u32)) -> Self {
         Self {
+            rgba_buffer: Vec::new(),
+            resizer: crate::rgba_resizer::RgbaResizer::default(),
             output_size,
             trail: LaserTrail::default(),
             clicks: VecDeque::new(),
@@ -984,7 +988,13 @@ impl VisualCompositor {
     ) -> Result<Vec<u8>> {
         self.trail.set_lifetime_ms(config.mouse_trail_duration_ms);
         let source_size = frame.dimensions();
-        let mut rgba = resize_rgba(frame.as_rgba_bytes(), source_size, self.output_size);
+        let mut rgba = std::mem::take(&mut self.rgba_buffer);
+        self.resizer.resize_into(
+            frame.as_rgba_bytes(),
+            source_size,
+            self.output_size,
+            &mut rgba,
+        );
         let cursor = frame.metadata().cursor().cloned();
         if config.mouse_trail_rgba[3] != 0 {
             self.trail.observe(
@@ -1069,29 +1079,6 @@ impl VisualCompositor {
                 .as_ref()
                 .is_some_and(|keyboard| keyboard.model.needs_frame(timestamp_ms))
     }
-}
-
-fn resize_rgba(source: &[u8], source_size: (u32, u32), output_size: (u32, u32)) -> Vec<u8> {
-    let (source_width, source_height) = source_size;
-    let (output_width, output_height) = output_size;
-    if source_size == output_size {
-        return source.to_vec();
-    }
-    let mut output = vec![0u8; output_width as usize * output_height as usize * 4];
-    for y in 0..output_height {
-        let source_y = (u64::from(y) * u64::from(source_height) / u64::from(output_height)) as u32;
-        for x in 0..output_width {
-            let source_x =
-                (u64::from(x) * u64::from(source_width) / u64::from(output_width)) as u32;
-            let source_index = (source_y as usize * source_width as usize + source_x as usize) * 4;
-            let output_index = (y as usize * output_width as usize + x as usize) * 4;
-            if source_index + 4 <= source.len() {
-                output[output_index..output_index + 4]
-                    .copy_from_slice(&source[source_index..source_index + 4]);
-            }
-        }
-    }
-    output
 }
 
 fn draw_cursor(
@@ -1248,7 +1235,14 @@ mod tests {
     fn source_coordinates_scale_into_output_space() {
         assert_eq!(scale_point(100, 50, (200, 100), (100, 50)), (50, 25));
         let source = vec![255u8; 4 * 4 * 4];
-        assert_eq!(resize_rgba(&source, (4, 4), (2, 2)).len(), 16);
+        let mut output = Vec::new();
+        crate::rgba_resizer::RgbaResizer::default().resize_into(
+            &source,
+            (4, 4),
+            (2, 2),
+            &mut output,
+        );
+        assert_eq!(output.len(), 16);
     }
 
     struct KeyboardTestRasterizer;

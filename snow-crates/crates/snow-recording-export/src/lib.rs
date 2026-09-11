@@ -7,6 +7,7 @@ pub mod export;
 pub mod streaming;
 
 pub(crate) mod ffmpeg_util;
+pub(crate) mod rgba_converter;
 pub(crate) mod video_quality;
 
 pub use config::{
