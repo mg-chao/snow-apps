@@ -6,7 +6,10 @@ license.workspace = true
 build = "build.rs"
 
 [features]
-recording-benchmark = ["snow-recording-export/stage-timing"]
+recording-benchmark = [
+    "snow-recording-export/stage-timing",
+    "snow-recording-gpu/stage-timing",
+]
 
 [dependencies]
 snow-recording-effects = { path = "../snow-recording-effects" }
@@ -35,8 +38,10 @@ windows = { workspace = true, features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_Graphics_DirectWrite",
     "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Gdi",
     "Win32_Graphics_Direct2D",
     "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_Dxgi",
     "Win32_Graphics_Dxgi_Common",
     "Win32_Graphics_Imaging",
     "Win32_System_Com",

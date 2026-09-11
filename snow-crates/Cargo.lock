@@ -2938,6 +2938,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "snow-recording-gpu"
+version = "0.1.0"
+dependencies = [
+ "ffmpeg-next",
+ "snow-recording-export",
+ "snow-recording-model",
+ "tempfile",
+ "thiserror 2.0.20",
+ "windows",
+ "windows-core",
+]
+
+[[package]]
 name = "snow-recording-model"
 version = "0.1.0"
 dependencies = [
@@ -2966,6 +2979,7 @@ dependencies = [
  "snow-pipeline",
  "snow-recording-effects",
  "snow-recording-export",
+ "snow-recording-gpu",
  "snow-recording-model",
  "tempfile",
  "thiserror 2.0.20",

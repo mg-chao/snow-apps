@@ -295,10 +295,10 @@ fn gpu_nv12_crop_matches_kernel_subrectangle() {
 #[test]
 #[ignore = "requires a D3D11 video processor and hardware H.264 MFT"]
 fn gpu_encoder_roundtrips_through_muxer() {
-    let width = 320u32;
-    let height = 180u32;
-    let fps = 10u32;
-    let frames = 12usize;
+    let width = 1280u32;
+    let height = 720u32;
+    let fps = 30u32;
+    let frames = 90usize;
     let bitrate = snow_recording_export::video_quality::smart_quality_bitrate_bps(
         width,
         height,
@@ -371,7 +371,9 @@ fn gpu_encoder_roundtrips_through_muxer() {
         audio: None,
         pixel_order: StreamingPixelOrder::Bgra,
         external_video: Some(ExternalVideoTrack {
-            extradata,
+            // Keyframe packets carry in-band SPS/PPS; the muxer derives
+            // the sample description from them.
+            extradata: Vec::new(),
             encoder_name: "h264_mf_gpu".into(),
         }),
     })

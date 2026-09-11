@@ -164,6 +164,10 @@ pub struct DirectRecordingReport {
     pub encoded_audio_frames: u64,
     pub inserted_silence_frames: u64,
     pub dropped_audio_frames: u64,
+    /// Per-stage GPU encode timings; only present in builds with the
+    /// `recording-benchmark` feature.
+    #[cfg(feature = "recording-benchmark")]
+    pub gpu_stage_timings: snow_recording_gpu::GpuStageTimings,
 }
 
 /// Whether the GPU zero-copy pipeline may serve this recording. Decided
@@ -298,6 +302,8 @@ pub struct DirectRecordingSession {
     config: DirectRecordingConfig,
     state: Arc<AtomicU8>,
     runtime: Mutex<Option<RuntimeHandles>>,
+    /// Benchmark/diagnostic override: never use the GPU lane.
+    force_cpu_pipeline: bool,
 }
 
 impl DirectRecordingSession {
@@ -309,7 +315,16 @@ impl DirectRecordingSession {
             config,
             state: Arc::new(AtomicU8::new(state_to_u8(RecordingState::Created))),
             runtime: Mutex::new(None),
+            force_cpu_pipeline: false,
         })
+    }
+
+    /// Benchmark and diagnostic seam: force the CPU pipeline even when the
+    /// GPU zero-copy lane is eligible. Production callers never need this;
+    /// the GPU lane activates on its own.
+    #[doc(hidden)]
+    pub fn force_cpu_pipeline(&mut self) {
+        self.force_cpu_pipeline = true;
     }
 
     pub fn start(&mut self) -> Result<()> {
@@ -330,7 +345,9 @@ impl DirectRecordingSession {
         // multi-monitor region, no video processor or hardware encoder)
         // falls back to the CPU pipeline with the configured backend.
         let (gpu_attempt, gpu_fallback_reason) = match gpu {
-            GpuAvailability::Auto if gpu_zero_copy_eligible(&self.config) => {
+            GpuAvailability::Auto
+                if gpu_zero_copy_eligible(&self.config) && !self.force_cpu_pipeline =>
+            {
                 match try_assemble_gpu_capture(&self.config) {
                     Ok(parts) => (Some(parts), None),
                     Err(reason) => (None, Some(reason)),
@@ -425,13 +442,22 @@ impl DirectRecordingSession {
                         Some(encoder) => {
                             let mut streaming_config = config.streaming_config();
                             streaming_config.external_video = Some(ExternalVideoTrack {
-                                extradata: encoder.extradata(),
+                                // The hardware encoder's sequence-header blob
+                                // does not round-trip through ffmpeg's
+                                // avcC path cleanly; keyframe packets carry
+                                // in-band SPS/PPS (prepended below), so the
+                                // muxer derives the sample description from
+                                // them instead.
+                                extradata: Vec::new(),
                                 encoder_name: "h264_mf_gpu".into(),
                             });
                             match StreamingEncoder::create(streaming_config) {
                                 Ok(muxer) => {
                                     let _ = ready_tx.send(Ok(()));
-                                    VideoPipeline::Gpu { encoder, muxer }
+                                    VideoPipeline::Gpu {
+                                        encoder: Box::new(encoder),
+                                        muxer,
+                                    }
                                 }
                                 Err(error) => {
                                     let message = error.to_string();
@@ -617,6 +643,14 @@ struct DirectWorkerInputs {
     gpu_pipeline: VideoPipeline,
 }
 
+/// GPU stage data surfaced by `VideoPipeline::finish`.
+#[derive(Default)]
+struct GpuStageSnapshot {
+    used_gpu: bool,
+    #[cfg(feature = "recording-benchmark")]
+    timings: snow_recording_gpu::GpuStageTimings,
+}
+
 /// The worker's video sink: the in-process CPU encoder fed BGRA pixels, or
 /// the GPU encoder whose finished packets mux through the streaming
 /// encoder's external-video mode. Audio flows through the shared
@@ -626,7 +660,7 @@ enum VideoPipeline {
         encoder: StreamingEncoder,
     },
     Gpu {
-        encoder: GpuH264Encoder,
+        encoder: Box<GpuH264Encoder>,
         muxer: StreamingEncoder,
     },
 }
@@ -645,13 +679,19 @@ impl VideoPipeline {
     }
 
     /// Flush the GPU encoder (if any), drain audio, and finalize the muxer.
-    fn finish(self) -> Result<StreamingEncoderReport> {
+    fn finish(self) -> Result<(StreamingEncoderReport, GpuStageSnapshot)> {
         match self {
-            Self::Cpu { encoder } => encoder.finish().map_err(ScreenRecorderError::from),
+            Self::Cpu { encoder } => encoder
+                .finish()
+                .map(|report| (report, GpuStageSnapshot::default()))
+                .map_err(ScreenRecorderError::from),
             Self::Gpu {
                 mut encoder,
                 mut muxer,
             } => {
+                #[cfg(feature = "recording-benchmark")]
+                let timings = encoder.stage_timings().clone();
+
                 for packet in encoder.finish().map_err(|error| {
                     ScreenRecorderError::Encode(format!("gpu encoder drain: {error}"))
                 })? {
@@ -661,7 +701,19 @@ impl VideoPipeline {
                         &packet.data,
                     )?;
                 }
-                muxer.finish().map_err(ScreenRecorderError::from)
+                muxer
+                    .finish()
+                    .map(|report| {
+                        (
+                            report,
+                            GpuStageSnapshot {
+                                used_gpu: true,
+                                #[cfg(feature = "recording-benchmark")]
+                                timings,
+                            },
+                        )
+                    })
+                    .map_err(ScreenRecorderError::from)
             }
         }
     }
@@ -937,13 +989,15 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
     }
     audio_frames_dropped = audio_frames_dropped
         .saturating_add(audio_mixer.as_ref().map_or(0, |mixer| mixer.dropped_frames));
-    let report = gpu_pipeline.finish()?;
+    let (report, gpu_snapshot) = gpu_pipeline.finish()?;
     Ok(report_from_encoder(
         report,
         dropped_capture_frames,
         audio_frames_dropped,
-        gpu_pipeline_active,
+        gpu_snapshot.used_gpu,
         gpu_fallback_reason,
+        #[cfg(feature = "recording-benchmark")]
+        gpu_snapshot.timings,
     ))
 }
 
@@ -953,6 +1007,7 @@ fn report_from_encoder(
     audio_frames_dropped: u64,
     used_gpu_pipeline: bool,
     gpu_fallback_reason: Option<String>,
+    #[cfg(feature = "recording-benchmark")] gpu_stage_timings: snow_recording_gpu::GpuStageTimings,
 ) -> DirectRecordingReport {
     DirectRecordingReport {
         encoded_frames: report.encoded_frames,
@@ -967,6 +1022,8 @@ fn report_from_encoder(
         dropped_audio_frames: report
             .dropped_audio_frames
             .saturating_add(audio_frames_dropped),
+        #[cfg(feature = "recording-benchmark")]
+        gpu_stage_timings,
     }
 }
 
@@ -2583,6 +2640,8 @@ mod tests {
             0,
             true,
             None,
+            #[cfg(feature = "recording-benchmark")]
+            Default::default(),
         );
         assert!(report.used_gpu_pipeline);
         assert_eq!(report.video_encoder, "h264_mf_gpu");
@@ -2595,6 +2654,8 @@ mod tests {
             0,
             false,
             Some("no hardware encoder".into()),
+            #[cfg(feature = "recording-benchmark")]
+            Default::default(),
         );
         assert!(!report.used_gpu_pipeline);
         assert_eq!(

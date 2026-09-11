@@ -705,12 +705,18 @@ impl StreamingEncoder {
             packet.set_flags(ffmpeg::packet::Flags::KEY);
         }
         packet.rescale_ts(ffmpeg::Rational(1, self.fps as i32), self.stream_time_base);
+        #[cfg(feature = "stage-timing")]
+        let stage_started = std::time::Instant::now();
         let output = self.output.as_mut().ok_or_else(|| {
             RecordingExportError::Encode("streaming output is already closed".into())
         })?;
         packet.write_interleaved(output).map_err(|error| {
             RecordingExportError::Encode(format!("failed to write external video packet: {error}"))
         })?;
+        #[cfg(feature = "stage-timing")]
+        {
+            self.report.video_stage_timings.mux_write += stage_started.elapsed();
+        }
         self.report.encoded_frames = self.report.encoded_frames.saturating_add(1);
         Ok(())
     }

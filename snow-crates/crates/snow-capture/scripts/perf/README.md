@@ -30,3 +30,18 @@ From the repository root, run all related A/B benchmarks sequentially:
 up and alternates execution order. Resizing and conversion require exact pixel
 equality; the encoder benchmark decodes output and verifies frame count and
 dimensions outside timed regions. Generated results remain under `build/`.
+
+## GPU zero-copy end-to-end benchmark (`recording_gpu_benchmark`)
+
+`scripts/run-recording-gpu-perf.ps1` (repository root) drives a real
+`DirectRecordingSession` over the primary monitor twice with one harness:
+once on the GPU zero-copy lane (WGC textures -> video processor ->
+Media Foundation encoder) and once on the CPU pipeline (`--cpu`), then
+prints effective encoded fps, decoded verification, and per-stage GPU
+timings (`blt`, `mft_input`, `mft_output`) alongside mux timing. Stage
+timers require the `recording-benchmark` feature, which the script sets.
+```powershell
+./scripts/run-recording-gpu-perf.ps1 -Seconds 12 -Fps 60
+```
+Pass `-SkipCpu` to measure only the GPU lane. Artifacts land under
+`build/windows-msvc-performance/recording-gpu-<timestamp>/`.
