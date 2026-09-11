@@ -363,6 +363,32 @@ void hintAreaHidesForSelectionOverlapOrCursorHover() {
             "a cursor over the shortcut hint area must hide it");
 }
 
+void hintPositionAvoidsSystemUiOnItsOwnDisplay() {
+    const QRect builtIn(0, 0, 1800, 1169);
+    const QSize hintSize(640, 160);
+    require(screenshotShortcutHintPosition(builtIn, QRect(0, 39, 1800, 1047), hintSize, 16) ==
+                QPoint(16, 910),
+            "bottom Dock must leave a 16-pixel gap below the hints");
+    require(screenshotShortcutHintPosition(builtIn, QRect(83, 39, 1717, 1130), hintSize, 16) ==
+                QPoint(99, 993),
+            "left Dock must move the hints to the right");
+    const QRect rightDock(0, 39, 1717, 1130);
+    require(rightDock.contains(
+                QRect(screenshotShortcutHintPosition(builtIn, rightDock, hintSize, 16), hintSize)),
+            "right Dock must leave the hints within the usable display");
+    const QRect external(-656, -1800, 3200, 1800);
+    require(screenshotShortcutHintPosition(external, QRect(-656, -1770, 3200, 1770), hintSize,
+                                           16) == QPoint(16, 1624),
+            "a display at a negative origin must use its own available area");
+    require(
+        screenshotShortcutHintPosition(builtIn, {}, hintSize, 16) == QPoint(16, 993) &&
+            screenshotShortcutHintPosition(builtIn, builtIn, hintSize, 16) == QPoint(16, 993),
+        "missing available geometry and an unobstructed screen must retain full-screen placement");
+    require(screenshotShortcutHintPosition(QRect(100, 100, 500, 100), QRect(0, 0, 1800, 1169),
+                                           hintSize, 16) == QPoint(16, 16),
+            "a small overlay must not move hints above its top edge");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -377,5 +403,6 @@ int main(int argc, char** argv) {
     disabledSmartSelectionHidesTheTargetSwitchHint();
     emptyContextsUseHiddenMode();
     hintAreaHidesForSelectionOverlapOrCursorHover();
+    hintPositionAvoidsSystemUiOnItsOwnDisplay();
     return 0;
 }

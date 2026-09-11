@@ -52,6 +52,12 @@ ScreenshotOverlayWindow::ScreenshotOverlayWindow(ScreenshotOverlayEventSink& eve
     setAttribute(Qt::WA_NoSystemBackground, true);
     setAttribute(Qt::WA_ShowWithoutActivating, true);
     setAttribute(Qt::WA_TransparentForMouseEvents, false);
+#ifdef Q_OS_MACOS
+    // The captured image includes the menu bar and notch area. Qt's default safe-area
+    // inset would move the canvas down on a notched display and misalign every pixel.
+    // Set this before creating the layout; only floating controls should avoid system UI.
+    setAttribute(Qt::WA_ContentsMarginsRespectsSafeArea, false);
+#endif
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
 

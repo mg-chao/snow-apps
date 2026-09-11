@@ -48,10 +48,17 @@ Allow screen recording in System Settings when macOS requests it. Keyboard
 shortcuts use Carbon hot-key registration and do not require an input-monitoring
 event tap. Qt's portable `Ctrl` modifier corresponds to Command by default.
 
-Capture failures display a reusable error window. Permission failures also offer
-a link to Screen Recording settings. Replacing an ad-hoc signed build changes its
+Capture failures display a native macOS alert. Permission failures also offer
+a button to open Screen Recording settings. Dismissing an alert does not suppress
+feedback on a later failed capture, even when macOS no longer shows its initial
+permission request. Replacing an ad-hoc signed build changes its
 code identity: if macOS still denies capture while the switch is on, add the current
 `/Applications/Snow Shot.app` in that settings pane and choose Quit & Reopen.
+
+Screenshot canvases cover the entire display, including the menu bar and notch
+area. Their layouts opt out of Qt's automatic safe-area inset to preserve captured
+pixel positions. Shortcut hints use each display's available geometry separately
+so the Dock does not cover them.
 
 ## Recording and OCR
 

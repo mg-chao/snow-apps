@@ -44,8 +44,10 @@
 #include <QPointer>
 #include <QRegion>
 #include <QScrollBar>
+#include <QScreen>
 #include <QTextBoundaryFinder>
 #include <QWheelEvent>
+#include <QWindow>
 
 #include <algorithm>
 #include <array>
@@ -795,7 +797,7 @@ void requireChangedPixelsCoveredByDirtyRegion(const QImage& previous, const QIma
 }
 
 QColor sourceOverOpaqueBackground(const QColor& source, const QColor& background) {
-    const qreal alpha = source.alphaF();
+    const qreal alpha = static_cast<qreal>(source.alphaF());
     return QColor(qRound(source.red() * alpha + background.red() * (1.0 - alpha)),
                   qRound(source.green() * alpha + background.green() * (1.0 - alpha)),
                   qRound(source.blue() * alpha + background.blue() * (1.0 - alpha)), 255);
@@ -3573,6 +3575,34 @@ void overlayPoolPrewarmRestoresRetainedNativeSurfaces() {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
+#ifdef Q_OS_MACOS
+void overlayCanvasIncludesDisplaySafeArea() {
+    NoopOverlayEventSink eventSink;
+    for (QScreen* screen : QGuiApplication::screens()) {
+        auto* canvas = new SnowCanvasWidget;
+        ScreenshotOverlayWindow overlay(eventSink, canvas);
+        // The native variant measures real notch insets without changing the visible desktop.
+        overlay.setWindowOpacity(0.0);
+        overlay.setScreen(screen);
+        for (int pass = 0; pass < 2; ++pass) {
+            require(!overlay.testAttribute(Qt::WA_ContentsMarginsRespectsSafeArea),
+                    "screenshot overlays must opt out of automatic notch insets before layout");
+            overlay.setAttribute(Qt::WA_TransparentForMouseEvents, true);
+            canvas->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+            overlay.setGeometry(screen->geometry());
+            overlay.show();
+            QApplication::processEvents();
+            require(canvas->geometry() == overlay.rect(),
+                    "the screenshot canvas must fill the entire display, including the notch area");
+            qInfo() << screen->name() << "canvas" << canvas->geometry() << "safe area"
+                    << overlay.windowHandle()->safeAreaMargins();
+            overlay.releaseNativeSurface();
+            overlay.restoreNativeSurface();
+        }
+    }
+}
+#endif
+
 void canvasCursorLayersKeepToolCursorAfterScreenshotSelection() {
     SnowCanvasWidget toolCanvas;
     require(toolCanvas.setCanvasTool(SnowCanvasTool::Shape),
@@ -3789,6 +3819,12 @@ int main(int argc, char** argv) {
         overlayPoolPrewarmRestoresRetainedNativeSurfaces();
         return 0;
     }
+#ifdef Q_OS_MACOS
+    if (application.arguments().contains(QStringLiteral("--overlay-safe-area"))) {
+        overlayCanvasIncludesDisplaySafeArea();
+        return 0;
+    }
+#endif
     if (application.arguments().contains(QStringLiteral("--large-image-slice-rendering"))) {
         largeRasterSourceExtentsRenderWithoutFixedPointWrap();
         smoothLargeImageChunkBoundariesRemainPixelEquivalent();

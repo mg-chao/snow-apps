@@ -87,6 +87,19 @@ struct ScreenshotShortcutHintContext {
     return selectionOverlaps || hintArea.contains(cursorPosition);
 }
 
+[[nodiscard]] inline QPoint screenshotShortcutHintPosition(const QRect& overlayGlobal,
+                                                           const QRect& availableGlobal,
+                                                           const QSize& hintSize, int margin) {
+    QRect available = overlayGlobal.intersected(availableGlobal);
+    if (available.isEmpty()) {
+        available = overlayGlobal;
+    }
+    available.translate(-overlayGlobal.topLeft());
+    return QPoint(
+        available.left() + margin,
+        std::max(available.top() + margin, available.bottom() + 1 - hintSize.height() - margin));
+}
+
 [[nodiscard]] inline ScreenshotShortcutHintMode
 screenshotShortcutHintSelectionModeForContext(const ScreenshotShortcutHintContext& context) {
     if (context.captureMode == ScreenshotCaptureMode::IntelligentSelecting) {

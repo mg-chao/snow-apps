@@ -49,11 +49,15 @@ int main(int argc, char** argv) {
                                                 "then try again.");
     message.present(permissionError);
     auto* settings = message.findChild<QPushButton*>(QStringLiteral("openScreenRecordingSettings"));
-    require(message.isVisible() && !message.isModal() && message.parentWidget() == nullptr,
+    require(message.isVisible() && message.isModal() && message.parentWidget() == nullptr &&
+                !message.testOption(QMessageBox::Option::DontUseNativeDialog),
             "failure feedback must remain visible independently of a closed capture overlay");
     require(settings != nullptr && settings->isVisible() &&
-                message.text().contains(QStringLiteral("quit and reopen")) &&
-                message.text().contains(QStringLiteral("remove Snow Shot")),
+                message.text() == QStringLiteral("Screen recording permission required") &&
+                message.informativeText().contains(QStringLiteral("quit and reopen")) &&
+                message.informativeText().contains(QStringLiteral("remove Snow Shot")) &&
+                message.defaultButton() == settings &&
+                message.escapeButton() == message.button(QMessageBox::Close),
             "permission failure must offer a settings action and recovery instructions");
     const auto windows = QApplication::topLevelWidgets().size();
     for (int index = 0; index < 48; ++index) {
@@ -72,12 +76,22 @@ int main(int argc, char** argv) {
                               QStringLiteral("permission denied while opening output file"),
                               QStringLiteral("<b>Invalid screenshot buffer size</b>")}) {
         message.present(error);
-        require(message.isVisible() && settings->isHidden() && message.text() == error &&
-                    message.textFormat() == Qt::PlainText,
+        require(message.isVisible() && !message.buttons().contains(settings) &&
+                    message.informativeText() == error && message.textFormat() == Qt::PlainText,
                 "other failures must show their literal diagnostics without a permission action");
+        message.close();
     }
+    for (int index = 0; index < 8; ++index) {
+        message.present(permissionError);
+        require(message.isVisible() && message.buttons().contains(settings) &&
+                    message.buttonRole(settings) == QMessageBox::AcceptRole,
+                "dismissing a previous permission failure must not suppress the next one");
+        settings->click();
+        require(!message.isVisible(), "the settings action must dismiss the alert");
+    }
+    require(opened == 9, "the settings action must work on every reopened permission alert");
     message.present({});
-    require(!message.text().isEmpty() && settings->isHidden(),
+    require(!message.text().isEmpty() && !message.buttons().contains(settings),
             "missing native diagnostics must still produce visible failure feedback");
     TestTranslator translator;
     application.installTranslator(&translator);

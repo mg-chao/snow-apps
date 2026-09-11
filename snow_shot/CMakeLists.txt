@@ -2539,6 +2539,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screenshot-canvas-renderer-tests --direct-capture-history-rendering)
     add_test(NAME snow-shot-overlay-close-release-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --close-release-only -platform offscreen)
+    if(APPLE)
+        add_test(NAME snow-shot-macos-overlay-safe-area-tests
+            COMMAND snow-shot-screenshot-canvas-renderer-tests --overlay-safe-area -platform offscreen)
+        set_tests_properties(snow-shot-macos-overlay-safe-area-tests PROPERTIES LABELS "unit" TIMEOUT 30)
+    endif()
     set_tests_properties(snow-shot-direct-capture-history-rendering-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"

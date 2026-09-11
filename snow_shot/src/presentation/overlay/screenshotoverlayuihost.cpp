@@ -24,6 +24,7 @@
 #include <QPaintEvent>
 #include <QPen>
 #include <QPixmap>
+#include <QScreen>
 #include <QVector>
 #include <QWidget>
 #include <QtMath>
@@ -579,9 +580,19 @@ void ScreenshotOverlayUiHost::updateShortcutHints(
         return;
     }
 
+#ifdef Q_OS_MACOS
+    const QRect overlayGlobal(overlay->mapToGlobal(QPoint()), overlay->size());
+    QRect availableGlobal = overlayGlobal;
+    if (const QScreen* screen = overlay->screen()) {
+        availableGlobal = screen->availableGeometry();
+    }
+    hints->move(screenshotShortcutHintPosition(overlayGlobal, availableGlobal, hints->size(),
+                                               kShortcutHintsMargin));
+#else
     const int y = std::max(kShortcutHintsMargin,
                            overlay->height() - hints->height() - kShortcutHintsMargin);
     hints->move(kShortcutHintsMargin, y);
+#endif
     hints->setObscuringSelection(selectionGlobal);
     hints->refreshVisibility(QCursor::pos());
 }

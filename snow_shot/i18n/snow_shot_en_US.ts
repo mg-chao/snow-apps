@@ -7639,19 +7639,28 @@ Change the shortcut and try again</translation>
 <context>
     <name>MacosCaptureFailureMessage</name>
     <message>
-        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="58"/>
+        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="65"/>
         <source>Screen capture failed</source>
         <translation>Screen capture failed</translation>
     </message>
     <message>
-        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="63"/>
-        <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Screen &amp; System Audio Recording. If it is already enabled, quit and reopen Snow Shot. After an update, you may need to remove Snow Shot from this list and add it again.</source>
-        <translation>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Screen &amp; System Audio Recording. If it is already enabled, quit and reopen Snow Shot. After an update, you may need to remove Snow Shot from this list and add it again.</translation>
+        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="69"/>
+        <source>Screen recording permission required</source>
+        <translation>Screen recording permission required</translation>
     </message>
     <message>
-        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="69"/>
-        <source>Open Screen Recording Settings</source>
-        <translation>Open Screen Recording Settings</translation>
+        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="73"/>
+        <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Screen &amp; System Audio Recording.
+
+If it is already enabled, quit and reopen Snow Shot. After an update, you may need to remove Snow Shot from this list and add it again.</source>
+        <translation>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Screen &amp; System Audio Recording.
+
+If it is already enabled, quit and reopen Snow Shot. After an update, you may need to remove Snow Shot from this list and add it again.</translation>
+    </message>
+    <message>
+        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="80"/>
+        <source>Open System Settings</source>
+        <translation>Open System Settings</translation>
     </message>
 </context>
 </TS>

@@ -14,7 +14,7 @@
 #endif
 
 namespace {
-#if defined(Q_OS_WIN) || defined(_WIN32)
+#if defined(SNOW_SHOT_CAPTURE_PERF_INSTRUMENTATION) || defined(SNOW_SHOT_BENCH_INTERNALS)
 constexpr auto kRevealStrategyEnvironment = "SNOW_SHOT_CAPTURE_REVEAL_STRATEGY";
 #endif
 

@@ -7638,19 +7638,28 @@ Change the shortcut and try again</source>
 <context>
     <name>MacosCaptureFailureMessage</name>
     <message>
-        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="58"/>
+        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="65"/>
         <source>Screen capture failed</source>
         <translation>螢幕擷取失敗</translation>
     </message>
     <message>
-        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="63"/>
-        <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Screen &amp; System Audio Recording. If it is already enabled, quit and reopen Snow Shot. After an update, you may need to remove Snow Shot from this list and add it again.</source>
-        <translation>請在「系統設定 &gt; 隱私權與安全性 &gt; 螢幕與系統音訊錄製」中允許 Snow Shot。如果已啟用，請結束並重新開啟 Snow Shot。更新版本後，可能需要從此列表移除 Snow Shot，再重新加入。</translation>
+        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="69"/>
+        <source>Screen recording permission required</source>
+        <translation>需要螢幕錄製權限</translation>
     </message>
     <message>
-        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="69"/>
-        <source>Open Screen Recording Settings</source>
-        <translation>開啟螢幕錄製設定</translation>
+        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="73"/>
+        <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Screen &amp; System Audio Recording.
+
+If it is already enabled, quit and reopen Snow Shot. After an update, you may need to remove Snow Shot from this list and add it again.</source>
+        <translation>請在「系統設定 &gt; 隱私權與安全性 &gt; 螢幕與系統音訊錄製」中允許 Snow Shot。
+
+如果已經開啟，請結束並重新開啟 Snow Shot。更新版本後，可能需要從列表中移除 Snow Shot，再重新加入。</translation>
+    </message>
+    <message>
+        <location filename="../src/platform/macos/capturefailuremessage.cpp" line="80"/>
+        <source>Open System Settings</source>
+        <translation>開啟系統設定</translation>
     </message>
 </context>
 </TS>
