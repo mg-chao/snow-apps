@@ -210,6 +210,7 @@ struct SnowShotApiClient::Request {
         Q_UNREACHABLE();
     }
     QElapsedTimer elapsed;
+    QElapsedTimer transport;
     QString operation = QUuid::createUuid().toString(QUuid::Id128);
     void report(const QString& outcome, int status = 0) const {
         snow_shot::diagnostics::logEvent(
@@ -217,6 +218,7 @@ struct SnowShotApiClient::Request {
             {{QStringLiteral("operation"), operation},
              {QStringLiteral("request_kind"), kindName()},
              {QStringLiteral("duration_ms"), elapsed.elapsed()},
+             {QStringLiteral("transport_ms"), transport.isValid() ? transport.elapsed() : 0},
              {QStringLiteral("status"), status},
              {QStringLiteral("outcome"), outcome},
              {QStringLiteral("model"), model},
@@ -321,27 +323,79 @@ QString SnowShotApiClient::formatFailure(int httpStatus, const QString& failureC
 
 SnowShotApiClient::RequestToken
 SnowShotApiClient::extractTable(const QImage& source, QObject* receiver, Completion completion) {
-    if (receiver == nullptr || !completion || m_baseUrl.isEmpty()) {
+    if (receiver == nullptr || !completion || m_baseUrl.isEmpty() || source.isNull()) {
         return 0;
     }
-
-    const QByteArray webp = encodeWebp(prepareImage(source));
-    if (webp.isEmpty()) {
-        return 0;
-    }
-
-    auto* manager = networkAccessManager();
 
     const RequestToken token = ++m_nextToken;
-    auto* requestState = new Request(Request::Kind::TableExtract);
-    requestState->receiver = receiver;
-    requestState->completion = std::move(completion);
-    m_requests.insert(token, requestState);
+    auto* state = new Request(Request::Kind::TableExtract);
+    state->receiver = receiver;
+    state->completion = std::move(completion);
+    m_requests.insert(token, state);
+    state->receiverDestroyed =
+        connect(receiver, &QObject::destroyed, this, [this, token]() { cancel(token); });
+    auto* deadline = new QTimer(this);
+    deadline->setSingleShot(true);
+    state->timeout = deadline;
+    connect(deadline, &QTimer::timeout, this, [this, token]() {
+        SnowShotTableResult result;
+        result.error = tr("Table recognition request timed out");
+        finish(token, std::move(result));
+    });
+    deadline->start(m_tableTimeoutMs);
+    const QPointer<SnowShotApiClient> guard(this);
+    const QElapsedTimer accepted = state->elapsed;
+    const auto prepare = m_tableImagePreparation;
+    QThreadPool::globalInstance()->start([guard, token, source, accepted, prepare]() {
+        const qint64 queueMs = accepted.elapsed();
+        QElapsedTimer encoding;
+        encoding.start();
+        const QByteArray webp = prepare ? prepare(source) : encodeWebp(prepareImage(source));
+        const qint64 preparationMs = encoding.elapsed();
+        QMetaObject::invokeMethod(
+            QCoreApplication::instance(),
+            [guard, token, webp, queueMs, preparationMs, dimensions = source.size()]() {
+                if (!guard || !guard->m_requests.contains(token)) {
+                    return;
+                }
+                auto* requestState = guard->m_requests.value(token);
+                if (!requestState->receiver) {
+                    guard->cancel(token);
+                    return;
+                }
+                snow_shot::diagnostics::logEvent(
+                    QStringLiteral("snow_shot.network"), QStringLiteral("table.image_prepared"),
+                    {{QStringLiteral("operation"), requestState->operation},
+                     {QStringLiteral("queue_ms"), queueMs},
+                     {QStringLiteral("preparation_ms"), preparationMs},
+                     {QStringLiteral("width"), dimensions.width()},
+                     {QStringLiteral("height"), dimensions.height()}});
+                guard->startTableUpload(token, webp);
+            },
+            Qt::QueuedConnection);
+    });
+    return token;
+}
 
+void SnowShotApiClient::startTableUpload(RequestToken token, const QByteArray& webp) {
+    auto* requestState = m_requests.value(token, nullptr);
+    if (!requestState) {
+        return;
+    }
+    const qint64 remaining = m_tableTimeoutMs - requestState->elapsed.elapsed();
+    if (webp.isEmpty() || remaining <= 0) {
+        SnowShotTableResult result;
+        result.error = remaining <= 0 ? tr("Table recognition request timed out")
+                                      : tr("Table recognition failed");
+        finish(token, std::move(result));
+        return;
+    }
+    auto* manager = networkAccessManager();
+    requestState->transport.start();
     QNetworkRequest request(QUrl(m_baseUrl + QStringLiteral("/api/v1/table/extract")));
     request.setRawHeader("X-Request-ID",
                          QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8());
-    request.setTransferTimeout(kRequestTimeoutMs);
+    request.setTransferTimeout(static_cast<int>(remaining));
 
     auto* multipart = new QHttpMultiPart(QHttpMultiPart::FormDataType);
     QHttpPart imagePart;
@@ -355,17 +409,6 @@ SnowShotApiClient::extractTable(const QImage& source, QObject* receiver, Complet
     QNetworkReply* reply = manager->post(request, multipart);
     multipart->setParent(reply);
     requestState->reply = reply;
-
-    auto* timeout = new QTimer(reply);
-    timeout->setSingleShot(true);
-    timeout->setInterval(kRequestTimeoutMs);
-    requestState->timeout = timeout;
-    connect(timeout, &QTimer::timeout, reply, [reply]() {
-        if (reply != nullptr && reply->isRunning()) {
-            reply->abort();
-        }
-    });
-    timeout->start();
 
     connect(reply, &QNetworkReply::finished, this, [this, token, reply]() {
         if (!m_requests.contains(token)) {
@@ -418,8 +461,6 @@ SnowShotApiClient::extractTable(const QImage& source, QObject* receiver, Complet
         }
         finish(token, std::move(result));
     });
-
-    return token;
 }
 
 const QVector<SnowShotChatModel>& SnowShotApiClient::cachedChatModels() const {
@@ -920,41 +961,41 @@ void SnowShotApiClient::startChatStream(RequestToken token, const QByteArray& bo
     });
 }
 
-void SnowShotApiClient::cancel(RequestToken token) {
-    auto it = m_requests.find(token);
-    if (it == m_requests.end()) {
-        return;
-    }
-    Request* request = it.value();
-    request->report(QStringLiteral("cancelled"));
-    m_requests.erase(it);
+void SnowShotApiClient::cleanupRequest(Request* request) {
     disconnect(request->receiverDestroyed);
-    if (request->timeout != nullptr) {
+    if (request->timeout) {
         request->timeout->stop();
         request->timeout->deleteLater();
     }
-    if (request->reply != nullptr && request->reply->isRunning()) {
-        request->reply->abort();
+    if (request->reply) {
+        if (request->reply->isRunning()) {
+            request->reply->abort();
+        }
+        request->reply->deleteLater();
     }
     delete request;
 }
 
-void SnowShotApiClient::finish(RequestToken token, SnowShotTableResult result) {
-    auto it = m_requests.find(token);
-    if (it == m_requests.end()) {
+void SnowShotApiClient::cancel(RequestToken token) {
+    Request* request = m_requests.take(token);
+    if (!request) {
         return;
     }
-    Request* request = it.value();
+    request->report(QStringLiteral("cancelled"));
+    cleanupRequest(request);
+}
+
+void SnowShotApiClient::finish(RequestToken token, SnowShotTableResult result) {
+    Request* request = m_requests.take(token);
+    if (!request) {
+        return;
+    }
     request->report(result.succeeded() ? QStringLiteral("succeeded") : QStringLiteral("failed"),
                     result.httpStatus);
-    m_requests.erase(it);
-    if (request->timeout != nullptr) {
-        request->timeout->stop();
-    }
     const QPointer<QObject> receiver = request->receiver;
     Completion completion = std::move(request->completion);
-    delete request;
-    if (receiver != nullptr && completion) {
+    cleanupRequest(request);
+    if (receiver && completion) {
         completion(std::move(result));
     }
 }

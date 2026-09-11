@@ -327,6 +327,8 @@ struct DiagnosticsService::Impl {
                                            QStringLiteral("priority"),
                                            QStringLiteral("pending_count"),
                                            QStringLiteral("running_count"),
+                                           QStringLiteral("slot_count"),
+                                           QStringLiteral("shared_memory_bytes"),
                                            QStringLiteral("request_kind"),
                                            QStringLiteral("duration_ms"),
                                            QStringLiteral("code"),

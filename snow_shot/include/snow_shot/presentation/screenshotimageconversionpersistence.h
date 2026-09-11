@@ -22,12 +22,12 @@ encodeImageConversions(const ScreenshotRecognitionResults& results) {
             continue;
         }
         formats.insert(format);
-        entries.push_back(QJsonObject{{QStringLiteral("format"), format},
-                                      {QStringLiteral("model"), entry.model},
-                                      {QStringLiteral("source"), entry.source},
-                                      {QStringLiteral("prompt_version"), entry.promptVersion},
-                                      {QStringLiteral("model_fingerprint"), entry.modelFingerprint},
-                                      {QStringLiteral("image"), entry.imageFingerprint}});
+        entries.push_back(
+            QJsonObject{{QStringLiteral("format"), format},
+                        {QStringLiteral("model"), entry.model},
+                        {QStringLiteral("source"), entry.source},
+                        {QStringLiteral("prompt_version"), entry.promptVersion},
+                        {QStringLiteral("model_fingerprint"), entry.modelFingerprint}});
     }
     if (entries.isEmpty()) {
         return {};
@@ -70,7 +70,6 @@ inline void decodeImageConversions(const QByteArray& bytes, ScreenshotRecognitio
             item.value(QStringLiteral("model")).toString(),
             item.value(QStringLiteral("source")).toString(),
             item.value(QStringLiteral("prompt_version")).toInt(-1),
-            item.value(QStringLiteral("image")).toString(),
             item.value(QStringLiteral("model_fingerprint")).toString()};
         if (entry.isValid()) {
             parsed.push_back(std::move(entry));

@@ -129,7 +129,12 @@ class SnowShotApiClient final : public QObject {
                                                const QString& description);
 
   private:
+    friend class SnowShotApiClientTestAccess;
+    std::function<QByteArray(const QImage&)> m_tableImagePreparation;
+    int m_tableTimeoutMs = 35000;
     struct Request;
+    void startTableUpload(RequestToken token, const QByteArray& webp);
+    void cleanupRequest(Request* request);
     [[nodiscard]] QNetworkAccessManager* networkAccessManager();
     void finish(RequestToken token, SnowShotTableResult result);
     void finishChatModels(RequestToken token, SnowShotChatModelsResult result);

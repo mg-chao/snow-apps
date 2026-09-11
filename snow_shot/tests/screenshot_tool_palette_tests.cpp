@@ -26,6 +26,8 @@
 #include <QClipboard>
 #include <QDir>
 #include <QEnterEvent>
+#include <QCursor>
+#include <QEventLoop>
 #include <QComboBox>
 #include <QFrame>
 #include <QFont>
@@ -48,6 +50,7 @@
 #include <QStandardItemModel>
 #include <QString>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QSlider>
 #include <QSpacerItem>
 #include <QPushButton>
@@ -2514,6 +2517,71 @@ void arrowAndLineUseConfiguredPopoverGroup() {
     require(lineRequests == 1 && arrowRequests == 1 &&
                 palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select,
             "clicking the active replaced group trigger should return to selection");
+}
+
+void tableBusyStatePreservesSiblingGroupPopovers() {
+    ScreenshotToolPalette::Options options;
+    options.showShapeTool = false;
+    options.showLineTool = true;
+    options.showTableTool = true;
+    options.showQrTool = true;
+    options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
+        {{QStringLiteral("arrow"), QStringLiteral("line")}}, {}};
+    options.actionToolsLayout = snow_shot::storage::ScreenshotToolbarLayout{
+        {{QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition")}}, {}};
+    ScreenshotToolPalette palette(options);
+    palette.resize(palette.contentSizeHint());
+    palette.show();
+    auto* table =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotTableQrButton"));
+    auto* drawing =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotArrowLineButton"));
+    require(table && drawing, "recovery scenario needs recognition and drawing groups");
+    auto* tablePopup = popoverForTrigger(table);
+    auto* drawingPopup = popoverForTrigger(drawing);
+    const auto verifyPopup = [](adqt::widgets::AdPopover* popup) {
+        require(popup != nullptr, "group trigger must own a popup");
+        QWidget* trigger = popup->sourceWidget();
+        require(trigger != nullptr, "group popup must have a hover trigger");
+        const QPoint previousCursor = QCursor::pos();
+        QCursor::setPos(trigger->mapToGlobal(trigger->rect().center()));
+        QEventLoop loop;
+        QObject::connect(popup, &adqt::widgets::AdPopover::visibleChanged, &loop,
+                         [&loop](bool visible) {
+                             if (visible) {
+                                 loop.quit();
+                             }
+                         });
+        const QPoint local = trigger->rect().center();
+        QEnterEvent enter(local, trigger->mapTo(trigger->window(), local),
+                          trigger->mapToGlobal(local));
+        QApplication::sendEvent(trigger, &enter);
+        QTimer::singleShot(2000, &loop, &QEventLoop::quit);
+        if (!popup->isVisible()) {
+            loop.exec();
+        }
+        require(popup->isVisible() && popup->contentWidget() &&
+                    popup->contentWidget()->isVisible() &&
+                    popup->contentWidget()->window()->isVisible(),
+                "hover must open the group popup and its actual surface");
+        popup->hide();
+        QCursor::setPos(previousCursor);
+    };
+    QObject::connect(&palette, &ScreenshotToolPalette::tableRequested, &palette,
+                     [&]() { palette.setTableBusy(true); });
+    verifyPopup(tablePopup);
+    auto* option = popoverButtonWithTooltip(tablePopup, "Table recognition");
+    require(option, "recognition group contains table option");
+    option->click();
+    require(table->busy(), "table action starts loading on the real group trigger");
+    verifyPopup(drawingPopup);
+    verifyPopup(tablePopup);
+    palette.setTableBusy(false);
+    verifyPopup(tablePopup);
+    verifyPopup(drawingPopup);
+    palette.clearActiveTool();
+    verifyPopup(tablePopup);
+    verifyPopup(drawingPopup);
 }
 
 void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
@@ -9096,6 +9164,11 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--popup-recovery-only"))) {
+        tableBusyStatePreservesSiblingGroupPopovers();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--selection-reset-only"))) {
         selectionResetRemainsAvailableWithoutSelection();
         selectToolExposesDedicatedActionToolbar();
@@ -9218,6 +9291,7 @@ int main(int argc, char** argv) {
         actionStacksKeepEnabledAlternativesReachable();
         drawingGroupClicksActivateOnceAfterPointerReentry();
         tableRecognitionClickActivatesOnceAfterPointerReentry();
+        tableBusyStatePreservesSiblingGroupPopovers();
         tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode();
         sharedToolbarLayoutModelOperationsAreDeterministic();
         configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement();
@@ -9263,6 +9337,7 @@ int main(int argc, char** argv) {
     repeatingActionShortcutsReturnsToSelect();
     groupedToolShortcutsToggleOnlyTheRequestedTool();
     tableToolExposesStructureActionsAndOwnHistoryState();
+    tableBusyStatePreservesSiblingGroupPopovers();
     tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode();
     tableRecognitionClickActivatesOnceAfterPointerReentry();
     drawingGroupClicksActivateOnceAfterPointerReentry();

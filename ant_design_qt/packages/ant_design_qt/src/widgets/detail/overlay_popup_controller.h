@@ -126,6 +126,8 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
     UserInteraction,
   };
 
+  void tracePopup(const char* event, int detail = 0) const;
+  int geometryRejection_ = 0;
   void setReasonOpen(InternalOpenReason reason, bool enabled);
   bool reasonOpen(InternalOpenReason reason) const;
   void clearAllOpenReasons();

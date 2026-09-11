@@ -29,6 +29,20 @@ operator list supports only the V6 models. Observed failures include `Mul(14)`,
 original and CPU-optimized graph operator requirements while preserving V6's
 requirements. The process protocol remains version 2.
 
+Runtime **1.0.6** initializes the actual recognition worker before reporting
+readiness and reuses that engine for subsequent requests. It removes the separate,
+discarded startup validation engine. The application defaults to one worker and
+one shared image slot sized for queued images, bounded by the existing 4K limit.
+Larger requests drain the old mapping and create a correctly sized replacement;
+smaller requests reuse capacity. Process startup, mapped-file work, image conversion,
+and process cleanup belong to the transport thread. The child exits when its queue
+drains, so models do not remain resident between isolated OCR interactions.
+
+The 1.0.6 archive and its SHA-256 are prepared locally in `artifacts/`. Publish the
+exact pinned archive at the URL below before distributing this app revision; the
+published 1.0.5 archive must remain unchanged. No model download is needed when an
+existing model cache is valid.
+
 When changing models, update both the trusted asset manifest and the packaging
 descriptors, and regenerate/check
 `cmake/vcpkg-overlay-ports/onnxruntime/required_operators.config` from original
@@ -39,7 +53,7 @@ The release maintainer must publish the exact hash-pinned runtime archive before
 shipping the updated app or expecting clean development machines to download it:
 
 ```text
-https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/runtime/1.0.5/windows-x64/snow-ocr-runtime-1.0.5-windows-x64.zip
+https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/runtime/1.0.6/windows-x64/snow-ocr-runtime-1.0.6-windows-x64.zip
 ```
 
 `scripts/package-snow-shot.ps1 -PrepareOcrRuntimeOnly` prepares the runtime ZIP,
@@ -61,13 +75,13 @@ cache reuse, failed acquisition/retry, and model changes during acquisition.
 
 For actual V4/V5 inference, place verified files under
 `<model-root>/<model-id>/<filename>`, as described by the trusted manifest. Then
-run the built test executable with the packaged 1.0.5 worker:
+run the built test executable with the packaged 1.0.6 worker:
 
 ```powershell
 $env:SNOW_TEST_OCR_TEXT_FIXTURE = (Resolve-Path snow_shot/tests/baselines/ocr-model-versions.png).Path
 $test = 'build/windows-msvc-debug/snow_shot/test-bin/Debug/snow-shot-ocr-recognition-service-tests.exe'
 $modelRoot = (Resolve-Path build/ocr-versioned-models).Path
-$worker = (Resolve-Path artifacts/snow-ocr-runtime-1.0.5/snow-ocr-process-1.0.5-windows-x64.exe).Path
+$worker = (Resolve-Path artifacts/snow-ocr-runtime-1.0.6/snow-ocr-process-1.0.6-windows-x64.exe).Path
 & $test "--model-root=$modelRoot" "--worker=$worker"
 & $test "--model-root=$modelRoot" "--worker=$worker" --directml
 ```

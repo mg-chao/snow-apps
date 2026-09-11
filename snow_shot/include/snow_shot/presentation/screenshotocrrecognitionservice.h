@@ -96,7 +96,7 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
   public:
     struct Options {
         // Maximum concurrent workers in the OCR child process.
-        int workerCount = 2;
+        int workerCount = 1;
         // Packaged descriptor/offline payload and writable online component cache.
         QString offlineRoot;
         QString cacheRoot;
@@ -132,6 +132,9 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     void setProxyUrl(const QString& proxyUrl);
     void setModelType(ScreenshotOcrModelType modelType);
     [[nodiscard]] int liveWorkerCount() const;
+    // Application-thread snapshots; the QProcess itself belongs to the transport thread.
+    [[nodiscard]] qint64 processId() const;
+    [[nodiscard]] QString processPath() const;
 
   private:
     class Impl;

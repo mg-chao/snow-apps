@@ -264,38 +264,29 @@ class TimingHub final : public QObject {
     }
 
     const qint64 now = nowMs();
-    std::vector<DeadlineCallback> callbacks;
-
-    while (!taskHeap_.empty()) {
-      const TaskRef ref = taskHeap_.top();
-      if (ref.deadlineMs > now) {
-        break;
-      }
+    std::vector<quint64> dueIds;
+    while (!taskHeap_.empty() && taskHeap_.top().deadlineMs <= now) {
+      dueIds.push_back(taskHeap_.top().id);
       taskHeap_.pop();
+    }
 
-      auto payloadIt = taskPayloads_.find(ref.id);
+    // Keep not-yet-dispatched tasks registered: an earlier callback may cancel,
+    // replace, or destroy the context of another task in this same batch.
+    for (quint64 id : dueIds) {
+      auto payloadIt = taskPayloads_.find(id);
       if (payloadIt == taskPayloads_.end()) {
         continue;
       }
-
       TaskPayload payload = std::move(payloadIt.value());
       taskPayloads_.erase(payloadIt);
-
       const ContextKey key{payload.context.data(), payload.key};
       auto keyIt = keyedTaskIds_.find(key);
-      if (keyIt != keyedTaskIds_.end() && keyIt.value() == ref.id) {
-        keyedTaskIds_.erase(keyIt);
-      }
-
-      if (!payload.context || !payload.callback) {
+      if (keyIt == keyedTaskIds_.end() || keyIt.value() != id) {
         continue;
       }
-      callbacks.push_back(std::move(payload.callback));
-    }
-
-    for (DeadlineCallback& callback : callbacks) {
-      if (callback) {
-        callback();
+      keyedTaskIds_.erase(keyIt);
+      if (payload.context && payload.callback) {
+        payload.callback();
       }
     }
 

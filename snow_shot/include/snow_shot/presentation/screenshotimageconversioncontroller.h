@@ -17,6 +17,7 @@ class ScreenshotImageConversionController final : public QObject {
     explicit ScreenshotImageConversionController(QObject* parent = nullptr);
     ~ScreenshotImageConversionController() override;
     void setProvider(SnowShotApiClient* provider);
+    // The caller owns target identity through key; image is used for requests and retries.
     void activate(QString key, QImage image, SnowShotImageConversionFormat format);
     void deactivate();
     void invalidate();
@@ -58,7 +59,6 @@ class ScreenshotImageConversionController final : public QObject {
     QTimer m_previewTimer;
     QString m_key;
     QString m_requestModel;
-    QString m_fingerprint;
     QImage m_image;
     QString m_source;
     QString m_error;

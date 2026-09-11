@@ -54,7 +54,7 @@ foreach ($external in @($false, $true)) {
             throw 'Symbol inventory is incomplete.'
         }
         if ($external -and ($null -ne $archive.GetEntry('snow-ocr-process/snow-ocr-process.exe') -or
-            $manifest.externalOcrRuntime.version -cne '1.0.5')) { throw 'External OCR runtime was misrepresented as a local build.' }
+            $manifest.externalOcrRuntime.version -cne '1.0.6')) { throw 'External OCR runtime was misrepresented as a local build.' }
     } finally { $archive.Dispose() }
     Write-Output "PASS: matching release PDBs; external OCR = $external"
 }

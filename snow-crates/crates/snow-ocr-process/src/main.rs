@@ -325,6 +325,7 @@ impl Scheduler {
         ));
         let cancellations = Arc::new(Mutex::new(std::collections::HashMap::new()));
         let (completion_tx, completion_rx) = mpsc::channel();
+        let (initialized_tx, initialized_rx) = mpsc::channel();
         let mut workers = Vec::new();
         let factory_config = config.clone();
         for (index, thread_budget) in config.worker_budgets.iter().copied().enumerate() {
@@ -332,19 +333,32 @@ impl Scheduler {
             let cancellations = Arc::clone(&cancellations);
             let tx = completion_tx.clone();
             let cfg = factory_config.clone();
+            let initialized = initialized_tx.clone();
             workers.push(
                 thread::Builder::new()
                     .name(format!("snow-ocr-worker-{index}"))
-                    .spawn(move || worker_loop(queue, cancellations, tx, cfg, thread_budget))
+                    .spawn(move || {
+                        worker_loop(queue, cancellations, tx, cfg, thread_budget, initialized)
+                    })
                     .map_err(|e| io::Error::other(e.to_string()))?,
             );
         }
-        Ok(Self {
+        drop(initialized_tx);
+        let mut scheduler = Self {
             queue,
             cancellations,
             workers,
             completions: completion_rx,
-        })
+        };
+        // Ready means the actual worker engines are usable. Keep those same engines
+        // for inference instead of constructing and discarding a validation engine.
+        for _ in 0..scheduler.workers.len() {
+            if initialized_rx.recv() != Ok(true) {
+                scheduler.shutdown();
+                return Err(io::Error::other("unable to initialize OCR engine"));
+            }
+        }
+        Ok(scheduler)
     }
     fn submit(&self, id: u64, input: OcrInput, priority: u8) {
         let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -517,15 +531,100 @@ fn cpu_fallback_engine(
     result.ok()
 }
 
+fn initialize_engine(
+    config: &Config,
+    thread_budget: usize,
+    operation: u64,
+    cancelled: &AtomicBool,
+) -> (Option<RapidOcr>, &'static str) {
+    let mut engine_backend = "cpu";
+    let initializing = Instant::now();
+    let wants_directml = config.directml && config.directml_enabled.load(Ordering::Acquire);
+    let engine = match make_engine(config, wants_directml, thread_budget) {
+        Ok(candidate) => {
+            let provider_ok = !wants_directml
+                || candidate
+                    .provider_resolutions()
+                    .det
+                    .into_iter()
+                    .chain(candidate.provider_resolutions().rec)
+                    .any(|resolution| resolution.resolved == ResolvedExecutionProvider::DirectMl);
+            if wants_directml && !provider_ok {
+                worker_event(
+                    "ocr.backend_fallback",
+                    operation,
+                    "provider_resolution",
+                    "cpu",
+                    "started",
+                    0,
+                    "DirectML was not selected",
+                );
+                config.directml_cache.write(false);
+                config.directml_enabled.store(false, Ordering::Release);
+                cpu_fallback_engine(config, thread_budget, operation, cancelled)
+            } else {
+                engine_backend = if wants_directml { "directml" } else { "cpu" };
+                Some(candidate)
+            }
+        }
+        Err(error) if wants_directml => {
+            worker_event(
+                "ocr.backend_fallback",
+                operation,
+                "initialization",
+                "cpu",
+                "started",
+                0,
+                &error.to_string(),
+            );
+            config.directml_cache.write(false);
+            config.directml_enabled.store(false, Ordering::Release);
+            cpu_fallback_engine(config, thread_budget, operation, cancelled)
+        }
+        Err(error) => {
+            worker_event(
+                "ocr.engine_ready",
+                operation,
+                "initialization",
+                "cpu",
+                "failed",
+                initializing.elapsed().as_millis(),
+                &error.to_string(),
+            );
+            None
+        }
+    };
+    worker_event(
+        "ocr.engine_ready",
+        operation,
+        "initialization",
+        engine_backend,
+        if engine.is_some() {
+            "succeeded"
+        } else {
+            "failed"
+        },
+        initializing.elapsed().as_millis(),
+        "",
+    );
+    (engine, engine_backend)
+}
+
 fn worker_loop(
     queue: Arc<(Mutex<Queue>, Condvar)>,
     cancellations: Arc<Mutex<std::collections::HashMap<u64, Arc<std::sync::atomic::AtomicBool>>>>,
     tx: Sender<Completion>,
     config: Config,
     thread_budget: usize,
+    initialized: Sender<bool>,
 ) {
-    let mut engine: Option<RapidOcr> = None;
-    let mut engine_backend = "cpu";
+    let (mut engine, mut engine_backend) =
+        initialize_engine(&config, thread_budget, 0, &AtomicBool::new(false));
+    let ready = engine.is_some();
+    let _ = initialized.send(ready);
+    if !ready {
+        return;
+    }
     loop {
         let job = {
             let (state, wake) = &*queue;
@@ -548,80 +647,10 @@ fn worker_loop(
             Err("cancelled".to_string())
         } else {
             if engine.is_none() {
-                let initializing = Instant::now();
-                let wants_directml =
-                    config.directml && config.directml_enabled.load(Ordering::Acquire);
-                engine = match make_engine(&config, wants_directml, thread_budget) {
-                    Ok(candidate) => {
-                        let provider_ok = !wants_directml
-                            || candidate
-                                .provider_resolutions()
-                                .det
-                                .into_iter()
-                                .chain(candidate.provider_resolutions().rec)
-                                .any(|resolution| {
-                                    resolution.resolved == ResolvedExecutionProvider::DirectMl
-                                });
-                        if wants_directml && !provider_ok {
-                            worker_event(
-                                "ocr.backend_fallback",
-                                job.id,
-                                "provider_resolution",
-                                "cpu",
-                                "started",
-                                0,
-                                "DirectML was not selected",
-                            );
-                            config.directml_cache.write(false);
-                            config.directml_enabled.store(false, Ordering::Release);
-                            cpu_fallback_engine(&config, thread_budget, job.id, &job.cancelled)
-                        } else {
-                            engine_backend = if wants_directml { "directml" } else { "cpu" };
-                            Some(candidate)
-                        }
-                    }
-                    Err(error) if wants_directml => {
-                        worker_event(
-                            "ocr.backend_fallback",
-                            job.id,
-                            "initialization",
-                            "cpu",
-                            "started",
-                            0,
-                            &error.to_string(),
-                        );
-                        config.directml_cache.write(false);
-                        config.directml_enabled.store(false, Ordering::Release);
-                        cpu_fallback_engine(&config, thread_budget, job.id, &job.cancelled)
-                    }
-                    Err(error) => {
-                        worker_event(
-                            "ocr.engine_ready",
-                            job.id,
-                            "initialization",
-                            "cpu",
-                            "failed",
-                            initializing.elapsed().as_millis(),
-                            &error.to_string(),
-                        );
-                        None
-                    }
-                };
-                worker_event(
-                    "ocr.engine_ready",
-                    job.id,
-                    "initialization",
-                    engine_backend,
-                    if engine.is_some() {
-                        "succeeded"
-                    } else {
-                        "failed"
-                    },
-                    initializing.elapsed().as_millis(),
-                    "",
-                );
+                (engine, engine_backend) =
+                    initialize_engine(&config, thread_budget, job.id, &job.cancelled);
+                initialization_ms = started.elapsed().as_millis();
             }
-            initialization_ms = started.elapsed().as_millis();
             let options = OcrCallOptions {
                 use_det: Some(true),
                 use_cls: Some(false),
@@ -923,9 +952,6 @@ fn main() -> io::Result<()> {
         }
     };
     initialize_onnx_runtime().map_err(|e| io::Error::other(e.to_string()))?;
-    // Do not advertise protocol readiness until both model sessions and the
-    // dictionary can be initialized. Workers still build their own engines.
-    make_engine(&config, false, 1).map_err(|error| io::Error::other(error.to_string()))?;
     config
         .directml_enabled
         .store(directml_capability(&config), Ordering::Release);

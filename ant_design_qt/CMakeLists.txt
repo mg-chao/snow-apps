@@ -221,6 +221,11 @@ if(ADQT_BUILD_TESTS)
     add_test(NAME adqt-scroll-area-tests COMMAND adqt-scroll-area-tests)
     set_tests_properties(adqt-scroll-area-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+    add_executable(adqt-timing-hub-tests tests/timing_hub_tests.cpp)
+    target_link_libraries(adqt-timing-hub-tests PRIVATE adqt::widgets Qt6::Widgets)
+    add_test(NAME adqt-timing-hub-tests COMMAND adqt-timing-hub-tests)
+    set_tests_properties(adqt-timing-hub-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
     add_executable(adqt-qt-tool-popup-tests
         packages/ant_design_qt/tests/qt_tool_popup_tests.cpp)
     set_target_properties(adqt-qt-tool-popup-tests PROPERTIES AUTOMOC ON)
@@ -232,6 +237,10 @@ if(ADQT_BUILD_TESTS)
     add_test(NAME adqt-select-popup-lifetime-tests
         COMMAND adqt-qt-tool-popup-tests selectSurvivesPopupContainerDestructionOrder
                 -platform offscreen)
+    add_test(NAME adqt-popup-hover-recovery-tests
+        COMMAND adqt-qt-tool-popup-tests siblingPopoversReopenAfterOverdueHoverTasks
+                siblingPopoversReopenAfterScopeRecreation -platform offscreen)
+    set_tests_properties(adqt-popup-hover-recovery-tests PROPERTIES LABELS "unit")
     add_test(NAME adqt-qt-tool-popup-tests COMMAND adqt-qt-tool-popup-tests)
     if(WIN32)
         set_tests_properties(adqt-qt-tool-popup-tests PROPERTIES

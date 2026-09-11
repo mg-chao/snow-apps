@@ -1107,9 +1107,7 @@ void pinnedImageConversionsSurviveRestartWithoutProvider() {
         const QString source = format == Format::Markdown
                                    ? QStringLiteral("# Saved\n\n**Document**")
                                    : QStringLiteral("<h1>Saved</h1><p>Document</p>");
-        config.recognitionResults.conversions = {
-            {format, QStringLiteral("vision-saved"), source, 1,
-             imageConversionFingerprint(config.imageSource.materializedImage)}};
+        config.recognitionResults.conversions = {{format, QStringLiteral("vision-saved"), source}};
         config.recognitionResults.visibleConversion = format;
         QByteArray payload;
         for (const bool restore : {false, true}) {

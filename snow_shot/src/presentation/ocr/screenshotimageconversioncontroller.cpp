@@ -85,7 +85,6 @@ void ScreenshotImageConversionController::activate(QString key, QImage image,
     cancelRequests();
     m_key = std::move(key);
     m_image = std::move(image);
-    m_fingerprint = imageConversionFingerprint(m_image);
     m_format = format;
     m_active = true;
     m_source.clear();
@@ -93,7 +92,6 @@ void ScreenshotImageConversionController::activate(QString key, QImage image,
     const QString model = Settings().visionModel();
     for (const auto& entry : m_cache.value(m_key)) {
         if (entry.isValid() && entry.format == format && entry.model == model &&
-            entry.imageFingerprint == m_fingerprint &&
             (!model.startsWith(QStringLiteral("custom:")) ||
              (m_api != nullptr && m_api->isCustomModel(model) &&
               entry.modelFingerprint == m_api->modelFingerprint(model)))) {
@@ -263,7 +261,6 @@ void ScreenshotImageConversionController::startWithModels(
             }
             m_source = normalizedImageConversionSource(m_source, m_format);
             ScreenshotImageConversionEntry entry{m_format, model, m_source};
-            entry.imageFingerprint = m_fingerprint;
             entry.modelFingerprint = m_api->modelFingerprint(model);
             if (!entry.isValid()) {
                 fail(tr("The model returned no usable content"));

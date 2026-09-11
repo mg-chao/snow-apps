@@ -162,6 +162,49 @@ void settingsInitialAvailability() {
     }
 }
 
+void conversionCacheUsesRecognitionKeys() {
+    using Controller = ScreenshotImageConversionController;
+    using Format = SnowShotImageConversionFormat;
+    snow_shot::storage::ScreenshotImageConversionSettings().setVisionModel(
+        QStringLiteral("vision-a"));
+    ConversionServer server;
+    SnowShotApiClient api(server.url());
+    Controller controller;
+    controller.setProvider(&api);
+    const QString originalKey = QStringLiteral("1:0,0,240,120");
+    QImage changedImage = sampleImage();
+    changedImage.setPixelColor(0, 0, Qt::black);
+    for (const Format format : {Format::Markdown, Format::Html}) {
+        const auto before = server.requests.size();
+        controller.activate(originalKey, sampleImage(), format);
+        until([&]() { return controller.state() == Controller::State::Completed; });
+        require(server.requests.size() == before + 1, "each format has its own completed result");
+        const QString source = controller.source();
+        controller.deactivate();
+        controller.activate(originalKey, changedImage, format);
+        require(controller.state() == Controller::State::Completed &&
+                    controller.source() == source && server.requests.size() == before + 1,
+                "matching recognition identity reuses output independently of pixels");
+        for (const auto& key : {QStringLiteral("1:1,0,240,120"), QStringLiteral("2:0,0,240,120")}) {
+            const auto requests = server.requests.size();
+            controller.activate(key, sampleImage(), format);
+            until([&]() { return controller.state() == Controller::State::Completed; });
+            require(server.requests.size() == requests + 1,
+                    "selection and capture session changes use separate cache entries");
+        }
+        const auto requests = server.requests.size();
+        controller.activate(originalKey, changedImage, format);
+        require(controller.state() == Controller::State::Completed &&
+                    server.requests.size() == requests,
+                "returning to a cached selection reuses its result");
+        Controller restored;
+        restored.seed(originalKey, controller.entries(originalKey));
+        restored.activate(originalKey, changedImage, format);
+        require(restored.state() == Controller::State::Completed && restored.source() == source,
+                "both formats restore by recognition key without a provider");
+    }
+}
+
 void conversionLifecycleAndSettings() {
     using Controller = ScreenshotImageConversionController;
     using Format = SnowShotImageConversionFormat;
@@ -254,8 +297,8 @@ void conversionLifecycleAndSettings() {
     QImage changedImage = sampleImage();
     changedImage.setPixelColor(0, 0, Qt::black);
     restored.activate(QStringLiteral("image-one"), changedImage, Format::Markdown);
-    require(restored.state() == Controller::State::Failed,
-            "a changed image cannot reuse a persisted result");
+    require(restored.state() == Controller::State::Completed,
+            "the same recognition key reuses persisted output even when pixels differ");
     server.models = QJsonArray{server.models.first()};
     controller.retry();
     until([&]() { return controller.state() == Controller::State::Failed; });
@@ -460,10 +503,8 @@ void renderingCopyAndPersistence() {
         "ordinary code fences survive normalization");
     ScreenshotRecognitionResults results;
     results.key = QStringLiteral("sample");
-    results.conversions = {{Format::Markdown, QStringLiteral("vision-a"), markdown, 1,
-                            imageConversionFingerprint(sampleImage())},
-                           {Format::Html, QStringLiteral("vision-a"), html, 1,
-                            imageConversionFingerprint(sampleImage())}};
+    results.conversions = {{Format::Markdown, QStringLiteral("vision-a"), markdown},
+                           {Format::Html, QStringLiteral("vision-a"), html}};
     results.visibleConversion = Format::Html;
     const QByteArray payload = snow_shot::presentation::encodeImageConversions(results);
     ScreenshotRecognitionResults restored;
@@ -471,6 +512,26 @@ void renderingCopyAndPersistence() {
     require(restored.conversions.size() == 2 && restored.conversions.first().source == markdown &&
                 restored.visibleConversion == Format::Html,
             "conversion formats and visible state round-trip exactly");
+    auto legacyRoot = QJsonDocument::fromJson(payload).object();
+    auto legacyEntries = legacyRoot.value(QStringLiteral("entries")).toArray();
+    for (qsizetype index = 0; index < legacyEntries.size(); ++index) {
+        auto entry = legacyEntries.at(index).toObject();
+        require(!entry.contains(QStringLiteral("image")), "new payloads omit image hashes");
+        entry.insert(QStringLiteral("image"), QString(64, u'a'));
+        legacyEntries[index] = entry;
+    }
+    legacyRoot.insert(QStringLiteral("entries"), legacyEntries);
+    snow_shot::presentation::decodeImageConversions(QJsonDocument(legacyRoot).toJson(), restored);
+    require(restored.conversions.size() == 2 && restored.conversions.first().source == markdown &&
+                restored.visibleConversion == Format::Html,
+            "legacy image hashes are ignored when restoring conversions");
+    ScreenshotRecognitionResults invalid;
+    auto invalidEntry = legacyEntries.first().toObject();
+    invalidEntry.insert(QStringLiteral("prompt_version"), 99);
+    legacyRoot.insert(QStringLiteral("entries"), QJsonArray{invalidEntry});
+    snow_shot::presentation::decodeImageConversions(QJsonDocument(legacyRoot).toJson(), invalid);
+    require(invalid.conversions.isEmpty() && !invalid.visibleConversion,
+            "unsupported prompt versions remain invalid without image hashes");
     restored.qr = ScreenshotQrRecognitionResult{};
     snow_shot::presentation::decodeImageConversions(QByteArrayLiteral("{invalid"), restored);
     require(restored.qr.has_value() && restored.conversions.size() == 2,
@@ -777,6 +838,7 @@ void runImageConversionTests() {
     adqt::theme::ThemeManager::instance().applyTo(*qApp);
 #endif
     settingsInitialAvailability();
+    conversionCacheUsesRecognitionKeys();
     conversionLifecycleAndSettings();
     customModelWorkflows();
     conversionSourceNormalization();
