@@ -88,6 +88,9 @@ void runPinnedOriginalImageTranslationTests();
 // installing the Windows HWND hooks required by present().
 class ScreenshotPinnedWindowTestAccess {
   public:
+    static bool pointerInside(const ScreenshotPinnedWindow& window) {
+        return window.m_pointerInside;
+    }
     static QTimer* showReadout(ScreenshotPinnedWindow& window, bool opacity) {
         window.m_scalePercent = 125;
         window.m_opacityPercent = 80;
@@ -1698,6 +1701,26 @@ QImage waitForClipboardImage(const std::function<bool(const QImage&)>& predicate
 }
 
 void setPinnedWindowHovered(ScreenshotPinnedWindow& window, bool hovered) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    // Pointer presence resolves inside nativeEvent from the mouse message
+    // position against the window frame, so the native backend simulates the
+    // production hover path with an NC mouse move inside or outside the
+    // window. The offscreen backend has no native window and keeps the
+    // event-driven simulation.
+    if (QGuiApplication::platformName() == QStringLiteral("windows") &&
+        window.internalWinId() != 0) {
+        const HWND hwnd = reinterpret_cast<HWND>(window.internalWinId());
+        const QRect nativeGeometry = window.currentNativeGeometry();
+        require(nativeGeometry.isValid() && !nativeGeometry.isEmpty(),
+                "hover simulation requires a presented pinned window");
+        const QPoint position =
+            hovered ? nativeGeometry.center() : nativeGeometry.topLeft() - QPoint(1000, 1000);
+        SendMessageW(
+            hwnd, WM_NCMOUSEMOVE, HTCAPTION,
+            MAKELPARAM(static_cast<short>(position.x()), static_cast<short>(position.y())));
+        return;
+    }
+#endif
     if (hovered) {
         const QPointF center(window.rect().center());
         QEnterEvent enter(center, center, QPointF(window.mapToGlobal(center.toPoint())));
@@ -3743,6 +3766,8 @@ void pinnedGeometryQueriesDoNotCreateNativeWindows() {
     QCoreApplication::sendEvent(&window, &enter);
     require(window.internalWinId() == 0,
             "hover delivery must not create an unpresented native window");
+    require(ScreenshotPinnedWindowTestAccess::pointerInside(window),
+            "hover delivery without a native window must keep event-derived presence");
 
     window.show();
     window.close();
@@ -3751,11 +3776,15 @@ void pinnedGeometryQueriesDoNotCreateNativeWindows() {
     }
     require(window.internalWinId() == 0, "the closed fixture must have no native window");
     QCoreApplication::sendEvent(&window, &enter);
+    require(ScreenshotPinnedWindowTestAccess::pointerInside(window),
+            "late hover delivery must fall back to event-derived presence");
     QEvent leave(QEvent::Leave);
     QCoreApplication::sendEvent(&window, &leave);
     static_cast<void>(window.currentNativeGeometry());
     require(window.internalWinId() == 0,
             "late hover and geometry queries must not recreate a closed native window");
+    require(!ScreenshotPinnedWindowTestAccess::pointerInside(window),
+            "leave delivery without a native window must clear event-derived presence");
 
     // Full pin presentation installs HWND hooks and cannot run with the offscreen backend.
     // The Windows registration also exercises passive reconciliation after native destruction.
@@ -3782,6 +3811,99 @@ void pinnedGeometryQueriesDoNotCreateNativeWindows() {
     require(presentedWindow.internalWinId() == 0,
             "passive geometry reconciliation must not recreate a native window");
     presentedWindow.close();
+}
+
+void pinnedControlsPresenceFollowsLiveCursor() {
+    // Regression for the unstable hover reveal: USER32's leave tracking and
+    // Qt's synthesized Enter/Leave both follow the client area and are queued,
+    // while the pinned image surface is non-client. Presence must therefore be
+    // resolved from the live cursor against the complete window frame instead
+    // of the stale event semantics.
+    if (QGuiApplication::platformName() != QStringLiteral("windows")) {
+        return; // The regression needs a real HWND and the system cursor.
+    }
+    const auto settleInto = [](const std::function<bool()>& condition, const char* what) {
+        QElapsedTimer elapsed;
+        elapsed.start();
+        while (elapsed.elapsed() < 2000) {
+            QApplication::processEvents(QEventLoop::AllEvents, 20);
+            if (condition()) {
+                return;
+            }
+            QThread::msleep(1);
+        }
+        require(condition(), what);
+    };
+    const CursorPositionRestorer cursorRestorer;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "the pointer presence fixture needs a screen");
+    QImage background(600, 400, QImage::Format_ARGB32_Premultiplied);
+    background.fill(Qt::white);
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    ScreenshotPinnedWindow::Config config;
+    config.screen = screen;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), background.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
+    config.imageSource = ScreenshotImageSource::fromImage(background, config.canvasSourceRect);
+    config.automaticTextRecognition = false;
+    require(window.present(config), "the pointer presence fixture must present");
+    waitForUi(200);
+
+    auto* controlsPanel =
+        window.findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
+    require(controlsPanel != nullptr, "the pointer presence fixture needs a controls panel");
+
+    const QRect nativeGeometry = window.currentNativeGeometry();
+    const QPoint outsidePoint =
+        ScreenshotGeometryMapper::physicalRectForScreen(*screen).bottomRight() - QPoint(8, 8);
+    require(!nativeGeometry.contains(outsidePoint),
+            "the pointer presence fixture window must not cover the screen corner");
+
+    setSystemCursorPosition(outsidePoint);
+    settleInto([&] { return !controlsPanel->isVisible(); },
+               "controls must stay hidden while the cursor is outside the window");
+
+    setSystemCursorPosition(nativeGeometry.center());
+    settleInto([&] { return controlsPanel->isVisible(); },
+               "hovering inside the window must reveal the controls");
+
+    // A queued leave delivered while the cursor still rests inside the window
+    // (the observed instability) must not hide the controls.
+    QEvent leave(QEvent::Leave);
+    QCoreApplication::sendEvent(&window, &leave);
+    require(controlsPanel->isVisible(),
+            "a queued leave while the cursor is inside must keep the controls visible");
+
+    // Leaving across the resize frame and the non-client image must hide them.
+    setSystemCursorPosition(outsidePoint);
+    settleInto([&] { return !controlsPanel->isVisible(); },
+               "leaving the window must hide the controls");
+
+    // A queued enter delivered after the pointer already left must not show them.
+    QEnterEvent enter(QPointF(10, 10), QPointF(10, 10), QPointF(10, 10));
+    QCoreApplication::sendEvent(&window, &enter);
+    require(!controlsPanel->isVisible(),
+            "a queued enter while the cursor is outside must keep the controls hidden");
+
+    // Relocating geometry under a stationary pointer (thumbnail transition,
+    // keyboard move, restore animation) produces no mouse message; presence
+    // must be re-evaluated as the geometry settles.
+    setSystemCursorPosition(nativeGeometry.center());
+    settleInto([&] { return controlsPanel->isVisible(); },
+               "hovering inside the window must reveal the controls");
+    auto* thumbnail = window.findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
+    require(thumbnail != nullptr, "the pointer presence fixture needs the thumbnail action");
+    thumbnail->setChecked(true);
+    waitForUi(300);
+    thumbnail->setChecked(false);
+    settleInto(
+        [&] {
+            return window.currentNativeGeometry() == nativeGeometry && controlsPanel->isVisible();
+        },
+        "controls must reappear once geometry settles back under the stationary cursor");
+
+    window.close();
 }
 
 void pinnedEscapeBurst(bool nativeKeys = false) {
@@ -5882,6 +6004,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--passive-geometry-only"))) {
             pinnedGeometryQueriesDoNotCreateNativeWindows();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--pointer-presence-only"))) {
+            pinnedControlsPresenceFollowsLiveCursor();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--escape-activation-only"))) {

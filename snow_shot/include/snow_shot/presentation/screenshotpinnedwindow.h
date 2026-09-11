@@ -197,6 +197,10 @@ class ScreenshotPinnedWindow final : public QWidget {
     void showContextMenu(const QPoint& globalPosition);
     void updateCanvasViewport();
     void updateControlsGeometry();
+    // Re-resolves pointer presence from the live native cursor against the
+    // complete window frame. Returns false when the native query is
+    // unavailable so the caller can fall back to event-derived presence.
+    bool applyNativePointerPresence();
     void destroyCanvas();
     using MaterializationCallback = std::function<void(bool)>;
     using PresentationCompletion = std::function<void(bool, QImage)>;

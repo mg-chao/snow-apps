@@ -3045,6 +3045,15 @@ if(SNOW_SHOT_BUILD_TESTS)
             ENVIRONMENT "QT_QPA_PLATFORM=windows"
             ENVIRONMENT_MODIFICATION
                 "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+        add_test(NAME snow-shot-pinned-pointer-presence-tests
+            COMMAND snow-shot-pinned-window-tests --pointer-presence-only)
+        set_tests_properties(snow-shot-pinned-pointer-presence-tests PROPERTIES
+            LABELS "unit;windows"
+            RUN_SERIAL TRUE
+            TIMEOUT 30
+            ENVIRONMENT "QT_QPA_PLATFORM=windows"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     endif()
     set(_snow_shot_pinned_window_test_names
         snow-shot-pinned-escape-burst-tests

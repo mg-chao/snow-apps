@@ -82,6 +82,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <optional>
 #include <utility>
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -1140,7 +1141,15 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
     const bool pointerPresenceChanged =
         event != nullptr && (event->type() == QEvent::Enter || event->type() == QEvent::Leave);
     if (pointerPresenceChanged) {
-        m_pointerInside = event->type() == QEvent::Enter;
+        // Qt synthesizes Enter/Leave from USER32 client-area leave tracking and
+        // queues them, so a leave can arrive after the pointer crossed into the
+        // window's non-client image surface, and an enter can arrive after the
+        // pointer already left the window. Resolve presence from the live
+        // cursor and fall back to the event only when the native query is
+        // unavailable.
+        if (!applyNativePointerPresence()) {
+            m_pointerInside = event->type() == QEvent::Enter;
+        }
     } else if (event != nullptr && event->type() == QEvent::Hide) {
         m_pointerInside = false;
     }
@@ -1178,6 +1187,9 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
         }
 #endif
         static_cast<void>(reconcilePassiveNativeGeometry());
+        // Keyboard move shortcuts and restore animations relocate the window
+        // under a stationary pointer, so no mouse message re-evaluates presence.
+        static_cast<void>(applyNativePointerPresence());
     }
     return handled;
 }
@@ -1202,11 +1214,11 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
 
         // The pinned image surface is exposed as HTCAPTION so a press can
         // start physical window capture. That changes the normal client hover
-        // path into non-client mouse messages, which means Qt may not send the
-        // top-level Enter event that drives the control visibility state.
-        // Track both paths here and keep the state based on the actual HWND
-        // bounds so moving between the image and its client-side controls
-        // does not briefly hide the panel.
+        // path into non-client mouse messages, and USER32's leave tracking,
+        // like Qt's synthesized Enter/Leave, follows the client area. Resolve
+        // every mouse message against the complete HWND bounds so presence
+        // tracks the real pointer; the queued Qt events re-resolve the same
+        // way in event() via applyNativePointerPresence().
         const auto updateNativePointerPresence = [&](UINT message) {
             const bool pointerMove = message == WM_MOUSEMOVE || message == WM_NCMOUSEMOVE;
             const bool pointerLeave = message == WM_MOUSELEAVE || message == WM_NCMOUSELEAVE;
@@ -1228,16 +1240,8 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
                 havePointerPosition = GetCursorPos(&pointer) != FALSE;
             }
 
-            // Track presence against the complete window frame.  The image surface is
-            // exposed as non-client HTCAPTION, so USER32 sends WM_NCMOUSELEAVE while
-            // crossing between the frame and the client-side controls.  Using only the
-            // client rect briefly reports the pointer as outside and hides the controls.
-            RECT windowRect{};
-            const bool haveWindowRect = GetWindowRect(pinnedHwnd, &windowRect) != FALSE;
             const QRect nativeGeometry =
-                haveWindowRect ? QRect(QPoint(windowRect.left, windowRect.top),
-                                       QPoint(windowRect.right - 1, windowRect.bottom - 1))
-                               : native::currentClientGeometry(reinterpret_cast<WId>(pinnedHwnd));
+                native::currentWindowGeometry(reinterpret_cast<WId>(pinnedHwnd));
             const bool inside = havePointerPosition && nativeGeometry.isValid() &&
                                 nativeGeometry.contains(QPoint(pointer.x, pointer.y));
             if (inside != m_pointerInside) {
@@ -3100,6 +3104,25 @@ void ScreenshotPinnedWindow::updateCanvasViewport() {
     m_viewportCenter = m_resultSurfaceCanvasRect.center();
     m_canvas->setViewportCamera(m_viewportCenter.x(), m_viewportCenter.y(), m_viewportZoom);
     updateRecognitionContentGeometry();
+}
+
+bool ScreenshotPinnedWindow::applyNativePointerPresence() {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (!isVisible()) {
+        return false;
+    }
+    const std::optional<bool> inside = native::pointerInsideWindow(internalWinId());
+    if (!inside.has_value()) {
+        return false;
+    }
+    if (*inside != m_pointerInside) {
+        m_pointerInside = *inside;
+        updateControlsGeometry();
+    }
+    return true;
+#else
+    return false;
+#endif
 }
 
 void ScreenshotPinnedWindow::updateControlsGeometry() {

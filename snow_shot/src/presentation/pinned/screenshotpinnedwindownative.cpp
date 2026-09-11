@@ -233,6 +233,42 @@ QRect screenshot_pinned_window_native::currentClientGeometry(WId windowId) {
 #endif
 }
 
+QRect screenshot_pinned_window_native::currentWindowGeometry(WId windowId) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    const HWND hwnd = toNativeHwnd(windowId);
+    if (hwnd == nullptr) {
+        return {};
+    }
+
+    RECT windowRect{};
+    if (GetWindowRect(hwnd, &windowRect) != FALSE) {
+        return QRect(QPoint(windowRect.left, windowRect.top),
+                     QPoint(windowRect.right - 1, windowRect.bottom - 1));
+    }
+    return currentClientGeometry(windowId);
+#else
+    Q_UNUSED(windowId);
+    return {};
+#endif
+}
+
+std::optional<bool> screenshot_pinned_window_native::pointerInsideWindow(WId windowId) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    POINT pointer{};
+    if (GetCursorPos(&pointer) == FALSE) {
+        return std::nullopt;
+    }
+    const QRect nativeGeometry = currentWindowGeometry(windowId);
+    if (!nativeGeometry.isValid() || nativeGeometry.isEmpty()) {
+        return std::nullopt;
+    }
+    return nativeGeometry.contains(QPoint(pointer.x, pointer.y));
+#else
+    Q_UNUSED(windowId);
+    return std::nullopt;
+#endif
+}
+
 bool screenshot_pinned_window_native::applySystemResizeStyle(WId windowId) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
     const HWND hwnd = toNativeHwnd(windowId);
@@ -336,8 +372,8 @@ bool screenshot_pinned_window_native::applyCursor(Qt::CursorShape shape) {
 #endif
 }
 
-bool screenshot_pinned_window_native::synchronizeClientPaint(
-    WId windowId, PaintSynchronization synchronization) {
+bool screenshot_pinned_window_native::synchronizeClientPaint(WId windowId,
+                                                             PaintSynchronization synchronization) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
     const HWND hwnd = toNativeHwnd(windowId);
     if (hwnd == nullptr) {
