@@ -91,11 +91,17 @@ def stage(app, onnx_runtime=None, offline_models=(), cache=ROOT / "artifacts/ocr
                 shutil.copy2(source, staged)
                 staged.replace(library)
     else:
-        candidates = [path for path in frameworks.glob("libonnxruntime*.dylib")
-                      if not path.is_symlink()]
-        if len(candidates) != 1:
-            raise ValueError(f"Expected one bundled ONNX Runtime library, got {candidates}")
-        library = candidates[0]
+        declared = frameworks / previous_runtime["name"] if previous_runtime is not None else None
+        if declared is not None and declared.is_file() and not declared.is_symlink():
+            # macdeployqt may expand SONAME aliases into ordinary files. Retain
+            # the staged library identity, but rehash its final signed bytes.
+            library = declared
+        else:
+            candidates = [path for path in frameworks.glob("libonnxruntime*.dylib")
+                          if path.is_file() and not path.is_symlink()]
+            if len(candidates) != 1:
+                raise ValueError(f"Expected one bundled ONNX Runtime library, got {candidates}")
+            library = candidates[0]
     manifest["schema"] = 3
     manifest["runtime"] = {
         "version": manifest["runtime"]["version"],
