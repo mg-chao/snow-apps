@@ -8,6 +8,8 @@
 #include <QCoreApplication>
 #include <QFile>
 #include <QFileInfo>
+#include <QDir>
+#include <QSet>
 #include <QGuiApplication>
 #include <QMimeData>
 #include <QPalette>
@@ -31,8 +33,8 @@
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 bool screenshotClipboardDibAvx2Available();
-bool screenshotClipboardDibDecodeBgrxAvx2(const std::uint32_t* source,
-                                          std::uint32_t* destination, int pixels);
+bool screenshotClipboardDibDecodeBgrxAvx2(const std::uint32_t* source, std::uint32_t* destination,
+                                          int pixels);
 #endif
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -346,8 +348,8 @@ readFileImage(const ScreenshotClipboardLocalImage& localImage,
 }
 
 std::optional<ScreenshotClipboardContentSnapshot>
-snapshotMimeDataInternal(const QMimeData* mimeData, qreal devicePixelRatio,
-                         const QColor& baseColor, bool includeDetachedImage) {
+snapshotMimeDataInternal(const QMimeData* mimeData, qreal devicePixelRatio, const QColor& baseColor,
+                         bool includeDetachedImage) {
     if (mimeData == nullptr || !std::isfinite(devicePixelRatio) || devicePixelRatio <= 0.0) {
         return std::nullopt;
     }
@@ -378,23 +380,10 @@ snapshotMimeDataInternal(const QMimeData* mimeData, qreal devicePixelRatio,
         }
     }
 
-    for (const QUrl& url : mimeData->urls()) {
-        if (!url.isLocalFile()) {
-            continue;
-        }
-        const QFileInfo fileInfo(url.toLocalFile());
-        const QString suffix = fileInfo.suffix().toLower();
-        const bool supported =
-            std::any_of(std::begin(kFileImageFormats), std::end(kFileImageFormats),
-                        [&suffix](const FileImageFormat& candidate) {
-                            return suffix == QLatin1String(candidate.suffix);
-                        });
-        if (supported) {
-            snapshot.localImage =
-                ScreenshotClipboardLocalImage{fileInfo.absoluteFilePath(), suffix, fileInfo.size(),
-                                              fileInfo.lastModified().toUTC()};
-            break;
-        }
+    const auto files = ScreenshotClipboardContentReader::snapshotLocalFiles(
+        ScreenshotClipboardContentReader::localFilePaths(mimeData));
+    if (!files.isEmpty()) {
+        snapshot.localImage = files.constFirst();
     }
 
     if (mimeData->hasHtml()) {
@@ -486,7 +475,8 @@ std::optional<ScreenshotClipboardNativeDib> captureNativeDib() {
     void* locked = handle != nullptr ? GlobalLock(handle) : nullptr;
     if (locked == nullptr || size < sizeof(BITMAPINFOHEADER) ||
         size > static_cast<SIZE_T>(std::numeric_limits<int>::max())) {
-        if (locked != nullptr) GlobalUnlock(handle);
+        if (locked != nullptr)
+            GlobalUnlock(handle);
         closeClipboard();
         return std::nullopt;
     }
@@ -530,10 +520,13 @@ struct DibChannelMetadata {
 DibChannelMetadata makeDibChannelMetadata(std::uint32_t mask) {
     DibChannelMetadata metadata;
     metadata.mask = mask;
-    if (mask == 0) return metadata;
-    while (metadata.shift < 32 && ((mask >> metadata.shift) & 1u) == 0u) ++metadata.shift;
+    if (mask == 0)
+        return metadata;
+    while (metadata.shift < 32 && ((mask >> metadata.shift) & 1u) == 0u)
+        ++metadata.shift;
     unsigned highestBit = 31;
-    while (highestBit > metadata.shift && ((mask >> highestBit) & 1u) == 0u) --highestBit;
+    while (highestBit > metadata.shift && ((mask >> highestBit) & 1u) == 0u)
+        --highestBit;
     unsigned compactBit = 0;
     bool gap = false;
     for (unsigned bit = metadata.shift; bit <= highestBit; ++bit) {
@@ -550,7 +543,8 @@ DibChannelMetadata makeDibChannelMetadata(std::uint32_t mask) {
 
 unsigned char dibChannel(std::uint32_t value, const DibChannelMetadata& metadata,
                          unsigned char fallback) {
-    if (metadata.mask == 0 || metadata.bitCount == 0) return fallback;
+    if (metadata.mask == 0 || metadata.bitCount == 0)
+        return fallback;
     std::uint32_t raw = 0;
     if (metadata.contiguous) {
         raw = (value & metadata.mask) >> metadata.shift;
@@ -568,7 +562,8 @@ unsigned char dibChannel(std::uint32_t value, const DibChannelMetadata& metadata
 }
 
 QImage decodeNativeDib(const ScreenshotClipboardNativeDib& native) {
-    if (!native.isValid()) return {};
+    if (!native.isValid())
+        return {};
     const auto* header = reinterpret_cast<const BITMAPINFOHEADER*>(native.bytes.constData());
     if (native.bytes.size() < static_cast<int>(sizeof(BITMAPINFOHEADER)) ||
         header->biSize < sizeof(BITMAPINFOHEADER) ||
@@ -578,9 +573,8 @@ QImage decodeNativeDib(const ScreenshotClipboardNativeDib& native) {
         return {};
     }
     const qint64 width = header->biWidth;
-    const qint64 height = header->biHeight < 0
-                              ? -static_cast<qint64>(header->biHeight)
-                              : static_cast<qint64>(header->biHeight);
+    const qint64 height = header->biHeight < 0 ? -static_cast<qint64>(header->biHeight)
+                                               : static_cast<qint64>(header->biHeight);
     const bool topDown = header->biHeight < 0;
     if (height <= 0 || width > std::numeric_limits<qint64>::max() / 4 ||
         width * height > kMaximumClipboardImagePixels || width > std::numeric_limits<int>::max() ||
@@ -588,7 +582,8 @@ QImage decodeNativeDib(const ScreenshotClipboardNativeDib& native) {
         return {};
     }
     const qint64 rowBytes = width * 4;
-    if (rowBytes > std::numeric_limits<qint64>::max() - 3) return {};
+    if (rowBytes > std::numeric_limits<qint64>::max() - 3)
+        return {};
     const qint64 stride = (rowBytes + 3) & ~qint64(3);
     const qint64 pixelOffset = nativeDibPixelOffset(native.bytes, *header, stride * height);
     if (pixelOffset < 0 || pixelOffset > native.bytes.size() ||
@@ -602,9 +597,10 @@ QImage decodeNativeDib(const ScreenshotClipboardNativeDib& native) {
     std::uint32_t blueMask = 0x000000ffu;
     std::uint32_t alphaMask = 0;
     if (header->biCompression == BI_BITFIELDS) {
-        if (native.bytes.size() < static_cast<int>(sizeof(BITMAPINFOHEADER) + 12)) return {};
-        const auto* masks = reinterpret_cast<const std::uint32_t*>(
-            native.bytes.constData() + sizeof(BITMAPINFOHEADER));
+        if (native.bytes.size() < static_cast<int>(sizeof(BITMAPINFOHEADER) + 12))
+            return {};
+        const auto* masks = reinterpret_cast<const std::uint32_t*>(native.bytes.constData() +
+                                                                   sizeof(BITMAPINFOHEADER));
         redMask = masks[0];
         greenMask = masks[1];
         blueMask = masks[2];
@@ -626,7 +622,8 @@ QImage decodeNativeDib(const ScreenshotClipboardNativeDib& native) {
     const bool useAvx2 = false;
 #endif
     QImage image(native.size, QImage::Format_ARGB32_Premultiplied);
-    if (image.isNull()) return {};
+    if (image.isNull())
+        return {};
     const auto decodeRows = [&](int firstRow, int lastRow) {
         for (int y = firstRow; y < lastRow; ++y) {
             const int sourceY = topDown ? y : image.height() - 1 - y;
@@ -636,26 +633,30 @@ QImage decodeNativeDib(const ScreenshotClipboardNativeDib& native) {
             if (standardOpaque) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
                 if (useAvx2) {
-                    static_cast<void>(screenshotClipboardDibDecodeBgrxAvx2(
-                        source, destination, image.width()));
+                    static_cast<void>(
+                        screenshotClipboardDibDecodeBgrxAvx2(source, destination, image.width()));
                     continue;
                 }
 #endif
-                for (int x = 0; x < image.width(); ++x) destination[x] = source[x] | 0xff000000u;
+                for (int x = 0; x < image.width(); ++x)
+                    destination[x] = source[x] | 0xff000000u;
                 continue;
             }
             for (int x = 0; x < image.width(); ++x) {
                 const std::uint32_t value = source[x];
                 const unsigned char a = alphaMask == 0 ? 255 : dibChannel(value, alpha, 255);
-                destination[x] = qPremultiply(qRgba(dibChannel(value, red, 0),
-                                                    dibChannel(value, green, 0),
-                                                    dibChannel(value, blue, 0), a));
+                destination[x] =
+                    qPremultiply(qRgba(dibChannel(value, red, 0), dibChannel(value, green, 0),
+                                       dibChannel(value, blue, 0), a));
             }
         }
     };
-    if (standardOpaque) SNOW_SHOT_PIN_PERF_COUNTER("clipboard.dib.fast_path", 1);
-    else SNOW_SHOT_PIN_PERF_COUNTER("clipboard.dib.generic_path", 1);
-    if (useAvx2) SNOW_SHOT_PIN_PERF_COUNTER("clipboard.dib.avx2", 1);
+    if (standardOpaque)
+        SNOW_SHOT_PIN_PERF_COUNTER("clipboard.dib.fast_path", 1);
+    else
+        SNOW_SHOT_PIN_PERF_COUNTER("clipboard.dib.generic_path", 1);
+    if (useAvx2)
+        SNOW_SHOT_PIN_PERF_COUNTER("clipboard.dib.avx2", 1);
     SNOW_SHOT_PIN_PERF_COUNTER("clipboard.dib.decoded_bytes", native.bytes.size());
     const qint64 pixels = static_cast<qint64>(image.width()) * image.height();
     const int workersCount = std::min(8, std::max(1, QThread::idealThreadCount() - 1));
@@ -668,10 +669,12 @@ QImage decodeNativeDib(const ScreenshotClipboardNativeDib& native) {
         for (int worker = 0; worker < workersCount; ++worker) {
             const int first = worker * rowsPerWorker;
             const int last = std::min(image.height(), first + rowsPerWorker);
-            if (first >= last) break;
+            if (first >= last)
+                break;
             workers.emplace_back([&, first, last]() { decodeRows(first, last); });
         }
-        for (auto& worker : workers) worker.join();
+        for (auto& worker : workers)
+            worker.join();
     }
     return image;
 }
@@ -685,14 +688,63 @@ ScreenshotClipboardContentReader::readMimeData(const QMimeData* mimeData, qreal 
     return captured.has_value() ? decode(std::move(*captured)) : std::nullopt;
 }
 
+QStringList ScreenshotClipboardContentReader::localFilePaths(const QMimeData* mimeData) {
+    QStringList paths;
+    if (mimeData != nullptr) {
+        for (const QUrl& url : mimeData->urls()) {
+            if (url.isLocalFile()) {
+                paths.append(url.toLocalFile());
+            }
+        }
+    }
+    return paths;
+}
+
+QList<ScreenshotClipboardLocalImage>
+ScreenshotClipboardContentReader::snapshotLocalFiles(const QStringList& paths,
+                                                     CancellationCheck cancelled) {
+    QList<ScreenshotClipboardLocalImage> files;
+    QSet<QString> seen;
+    for (const QString& path : paths) {
+        if (cancellationRequested(cancelled)) {
+            return {};
+        }
+        const QFileInfo info(QDir::cleanPath(path));
+        const QString suffix = info.suffix().toLower();
+        const bool supported =
+            std::any_of(std::begin(kFileImageFormats), std::end(kFileImageFormats),
+                        [&suffix](const FileImageFormat& format) {
+                            return suffix == QLatin1String(format.suffix);
+                        });
+        if (!supported || !info.isFile() || !info.isReadable() || info.size() <= 0 ||
+            info.size() > kMaximumEncodedImageBytes) {
+            continue;
+        }
+        const QString absolute = info.absoluteFilePath();
+        QString identity = info.canonicalFilePath();
+        if (identity.isEmpty()) {
+            identity = absolute;
+        }
+#if defined(Q_OS_WIN)
+        identity = identity.toCaseFolded();
+#endif
+        if (seen.contains(identity)) {
+            continue;
+        }
+        seen.insert(identity);
+        files.append({absolute, suffix, info.size(), info.lastModified().toUTC()});
+    }
+    return files;
+}
+
 std::optional<ScreenshotClipboardContentSnapshot>
 ScreenshotClipboardContentReader::snapshot(QClipboard* clipboard, qreal devicePixelRatio) {
     if (clipboard == nullptr) {
         return std::nullopt;
     }
     const QColor baseColor = QGuiApplication::palette().color(QPalette::Base);
-    auto snapshot = snapshotMimeDataInternal(clipboard->mimeData(), devicePixelRatio, baseColor,
-                                             false);
+    auto snapshot =
+        snapshotMimeDataInternal(clipboard->mimeData(), devicePixelRatio, baseColor, false);
     if (!snapshot.has_value() && std::isfinite(devicePixelRatio) && devicePixelRatio > 0.0) {
         snapshot = ScreenshotClipboardContentSnapshot{};
         snapshot->devicePixelRatio = devicePixelRatio;
@@ -741,8 +793,7 @@ ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snap
 
     {
         SNOW_SHOT_PIN_PERF_SCOPE("clipboard.decode_encoded_image");
-        if (auto result = readEncodedImage(snapshot.encodedImages, cancelled);
-            result.has_value()) {
+        if (auto result = readEncodedImage(snapshot.encodedImages, cancelled); result.has_value()) {
             return result;
         }
     }

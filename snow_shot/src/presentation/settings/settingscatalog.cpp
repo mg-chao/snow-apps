@@ -556,12 +556,25 @@ SettingsItemDefinition pinClipboardContentItem() {
     return quickActionItem(
         QStringLiteral("quick.pin-clipboard-content"),
         QT_TRANSLATE_NOOP("SettingsCatalog", "Pin clipboard content to screen"),
-        QT_TRANSLATE_NOOP("SettingsCatalog",
-                          "Pin an image, formatted text, or HTML from the clipboard to the screen"),
+        QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Pin images, image files, formatted text, or HTML from the clipboard to the screen"),
         {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clipboard content")),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pin clipboard"))},
         GlobalShortcutAction::PinClipboardContent,
         QStringLiteral("global_shortcuts/pin_clipboard_content"),
+        []() { return custom_outlined_icons::PinToScreen(); });
+}
+
+SettingsItemDefinition pinSelectedFilesItem() {
+    return quickActionItem(
+        QStringLiteral("quick.pin-selected-files"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Pin Selected Files to Screen"),
+        QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Pin selected image files from File Explorer or the desktop to the screen"),
+        {}, GlobalShortcutAction::PinSelectedFiles,
+        QStringLiteral("global_shortcuts/pin_selected_files"),
         []() { return custom_outlined_icons::PinToScreen(); });
 }
 
@@ -1542,6 +1555,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     {
                         openCaptureHistoryItem(),
                         pinClipboardContentItem(),
+                        pinSelectedFilesItem(),
                         translateSelectedTextItem(),
                     },
                 },
@@ -2160,6 +2174,8 @@ QString shortcutConfigurationKey(GlobalShortcutAction action) {
         return QStringLiteral("global_shortcuts/open_settings");
     case GlobalShortcutAction::PinClipboardContent:
         return QStringLiteral("global_shortcuts/pin_clipboard_content");
+    case GlobalShortcutAction::PinSelectedFiles:
+        return QStringLiteral("global_shortcuts/pin_selected_files");
     case GlobalShortcutAction::TranslateSelectedText:
         return QStringLiteral("global_shortcuts/translate_selected_text");
     }
@@ -2462,6 +2478,10 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
           quick(QStringLiteral("quick.pin-clipboard-content"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Pin clipboard content to screen"),
                 GlobalShortcutAction::PinClipboardContent,
+                []() { return custom_outlined_icons::PinToScreen(); }),
+          quick(QStringLiteral("quick.pin-selected-files"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Pin Selected Files to Screen"),
+                GlobalShortcutAction::PinSelectedFiles,
                 []() { return custom_outlined_icons::PinToScreen(); }),
           quick(QStringLiteral("quick.translate-selected-text"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Translate Selected Text"),

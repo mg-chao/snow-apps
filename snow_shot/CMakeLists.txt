@@ -937,6 +937,8 @@ set(PROJECT_HEADERS
 )
 
 set(PROJECT_CXX_SOURCES
+    src/platform/windows/selectedfiles.cpp
+    src/presentation/services/screenshotfilepinbatch.cpp
     src/presentation/capture/directcapturecontroller.cpp
     src/presentation/capture/directcapturenative.cpp
     src/presentation/capture/directcaptureworkflow.cpp
@@ -1120,6 +1122,9 @@ target_link_libraries(snow_shot PRIVATE
     MINIZIP::minizip-ng
 )
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotUpdates.cmake")
+if(WIN32)
+    target_link_libraries(snow_shot PRIVATE ole32 oleaut32 shell32 uuid)
+endif()
 target_compile_definitions(snow_shot PRIVATE
     QT_MESSAGELOGCONTEXT
     SNOW_DIAGNOSTICS_VERSION="${SNOW_SHOT_VERSION}"
@@ -2660,6 +2665,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
 
     add_executable(snow-shot-pinned-window-tests
+        src/presentation/services/screenshotfilepinbatch.cpp
         tests/screenshot_pinned_window_tests.cpp
         tests/original_image_translation_tests.cpp
         include/snow_shot/presentation/components/pathinput.h
@@ -2770,6 +2776,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests
     )
     snow_shot_import_offscreen_platform(snow-shot-pinned-window-tests)
+    add_test(NAME snow-shot-file-pin-presentation-tests
+        COMMAND snow-shot-pinned-window-tests --file-pin-batch-only)
+    set_tests_properties(snow-shot-file-pin-presentation-tests PROPERTIES
+        LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-pinned-shortcut-display-tests
         COMMAND snow-shot-pinned-window-tests --shortcut-display-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-shortcut-display-tests PROPERTIES LABELS "unit")
@@ -2862,6 +2872,46 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+
+    add_executable(snow-shot-file-pin-settings-tests tests/file_pin_settings_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-file-pin-settings-tests PRIVATE snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-file-pin-settings-tests)
+    add_test(NAME snow-shot-file-pin-settings-tests COMMAND snow-shot-file-pin-settings-tests)
+    set_tests_properties(snow-shot-file-pin-settings-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+    add_executable(snow-shot-file-pin-batch-tests
+        tests/screenshot_file_pin_batch_tests.cpp
+        src/platform/windows/selectedfiles.cpp
+        src/presentation/services/screenshotfilepinbatch.cpp
+        src/presentation/services/screenshotexportcoordinator.cpp
+        include/snow_shot/presentation/screenshotexportcoordinator.h
+        src/presentation/services/screenshotclipboardcontent.cpp
+        src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
+    )
+    target_include_directories(snow-shot-file-pin-batch-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow-shot-file-pin-batch-tests PRIVATE snow_shot_image_codec Qt6::Widgets)
+    if(WIN32)
+        target_link_libraries(snow-shot-file-pin-batch-tests PRIVATE ole32 oleaut32 shell32 uuid)
+        add_executable(snow-shot-selected-files-native-smoke-tests
+            tests/selected_files_native_smoke_tests.cpp src/platform/windows/selectedfiles.cpp)
+        target_include_directories(snow-shot-selected-files-native-smoke-tests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        target_link_libraries(snow-shot-selected-files-native-smoke-tests PRIVATE
+            Qt6::Core ole32 oleaut32 shell32 uuid user32)
+        add_test(NAME snow-shot-selected-files-native-smoke-tests
+            COMMAND snow-shot-selected-files-native-smoke-tests)
+        set_tests_properties(snow-shot-selected-files-native-smoke-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60)
+    endif()
+    snow_shot_import_offscreen_platform(snow-shot-file-pin-batch-tests)
+    add_test(NAME snow-shot-file-pin-batch-tests COMMAND snow-shot-file-pin-batch-tests)
+    set_tests_properties(snow-shot-file-pin-batch-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
     add_executable(snow-shot-clipboard-content-tests
         tests/screenshot_clipboard_content_tests.cpp

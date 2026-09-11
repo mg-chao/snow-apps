@@ -438,6 +438,13 @@ class ApplicationController::Impl {
                 ensureSelectedTextTranslationController().capture();
             }
             break;
+        case presentation::GlobalShortcutAction::PinSelectedFiles: {
+            const auto target = platform::windows::createSelectedFileBackend()->captureTarget();
+            if (ScreenshotController* controller = ensureScreenshotController()) {
+                controller->pinSelectedFilesToScreen(target);
+            }
+            break;
+        }
         case presentation::GlobalShortcutAction::PinClipboardContent:
             if (ScreenshotController* controller = ensureScreenshotController()) {
                 controller->pinClipboardContentToScreen();

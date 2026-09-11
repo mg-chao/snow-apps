@@ -15,6 +15,7 @@
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/presentation/screenshotselectionexportuiservices.h"
+#include "snow_shot/presentation/screenshotfilepinbatch.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -1378,6 +1379,82 @@ void transformedPinnedOcrTracksCanvasViewport() {
             action->trigger();
             verifyAlignment();
         }
+    }
+}
+
+void fileBatchCreatesIndependentCenteredWindows() {
+    QTemporaryDir directory;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(directory.isValid() && screen != nullptr,
+            "file pin fixtures need a screen and directory");
+    require(topLevelPinnedWindows().isEmpty(), "file pin test must start without windows");
+    QStringList paths;
+    for (int index = 0; index < 3; ++index) {
+        QImage image(QSize(120 + index * 20, 80 + index * 10), QImage::Format_ARGB32_Premultiplied);
+        image.fill(QColor(30 + index * 50, 120, 180));
+        const QString path = directory.filePath(QStringLiteral("pin-%1.png").arg(index));
+        require(image.save(path, "PNG"), "file pin fixture must encode");
+        paths.append(path);
+    }
+    ScreenshotSelectionExportUiServices services;
+    for (bool autoResize : {true, false}) {
+        ScreenshotFilePinBatch batch;
+        QHash<QString, QRect> expectedGeometry;
+        int completed = 0;
+        batch.start(paths, [&](ScreenshotClipboardContent content) {
+            const auto fit =
+                autoResize
+                    ? ScreenshotGeometryMapper::fitImageToAvailableGeometry(
+                          content.image.size(), screen->availableGeometry(), screen->geometry(),
+                          ScreenshotGeometryMapper::physicalRectForScreen(*screen), 16)
+                    : ScreenshotGeometryMapper::centerImageAtFullResolution(
+                          content.image.size(), screen->availableGeometry(), screen->geometry(),
+                          ScreenshotGeometryMapper::physicalRectForScreen(*screen));
+            require(fit.valid, "each file must have valid centered geometry");
+            expectedGeometry.insert(content.originalContent.localFilePath, fit.nativeGeometry);
+            require(services.presentPinnedImage(content.image, screen, fit.nativeGeometry,
+                                                fit.fullResolutionSize, {}, {}, 1.0,
+                                                std::move(content.originalContent), {},
+                                                [&](bool success, QImage image) {
+                                                    require(success && !image.isNull(),
+                                                            "each file must complete presentation");
+                                                    ++completed;
+                                                }),
+                    "each file must present independently");
+            return true;
+        });
+        QElapsedTimer timer;
+        timer.start();
+        while ((batch.active() || completed != paths.size()) && timer.elapsed() < 10000) {
+            waitForUi(10);
+        }
+        require(!batch.active() && completed == paths.size(), "all file pins must finish");
+        QSet<QString> identities;
+        QStringList originals;
+        QVector<ScreenshotPinnedWindow*> visible;
+        for (auto* window : topLevelPinnedWindows()) {
+            if (!window->isVisible()) {
+                continue;
+            }
+            visible.append(window);
+            const auto record = window->persistenceSnapshot();
+            require(!record.id.isEmpty() && !identities.contains(record.id),
+                    "file pins need unique persistence identities");
+            identities.insert(record.id);
+            originals.append(record.originalFilePath);
+            require(window->currentNativeGeometry() ==
+                        expectedGeometry.value(record.originalFilePath),
+                    "each independent file window must retain its centered geometry");
+        }
+        originals.sort();
+        QStringList sortedPaths = paths;
+        sortedPaths.sort();
+        require(originals == sortedPaths,
+                "each window must retain only its own original file path");
+        for (auto* window : visible) {
+            window->close();
+        }
+        waitForUi(100);
     }
 }
 
@@ -5921,6 +5998,11 @@ int main(int argc, char* argv[]) {
             restoredThumbnailScaleMenuStaysConsistentThroughExit(sourceRuntime);
             restoredFractionalScaleCopiesTheDisplayedViewport(sourceRuntime);
             restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(sourceRuntime);
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--file-pin-batch-only"))) {
+            fileBatchCreatesIndependentCenteredWindows();
+            ScreenshotExportCoordinator::shared().shutdown();
             return 0;
         }
         for (const QString& scenario : {QStringLiteral("appearance"), QStringLiteral("dpi"),

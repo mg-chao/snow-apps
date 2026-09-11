@@ -993,6 +993,8 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                       QStringLiteral("global_shortcuts/translate_selected_text"));
         resetShortcut(GlobalShortcutAction::PinClipboardContent,
                       QStringLiteral("global_shortcuts/pin_clipboard_content"));
+        resetShortcut(GlobalShortcutAction::PinSelectedFiles,
+                      QStringLiteral("global_shortcuts/pin_selected_files"));
         return accepted;
     }
     case SettingsSectionReset::GeneralSettings: {

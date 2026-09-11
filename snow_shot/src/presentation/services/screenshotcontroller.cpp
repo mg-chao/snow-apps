@@ -13,6 +13,7 @@
 #include "snow_shot/presentation/screenshotcanvascolorsamplerwindow.h"
 #include "snow_shot/presentation/screenshotclipboardservice.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
+#include "snow_shot/presentation/screenshotfilepinbatch.h"
 #include "snow_shot/presentation/screenshotcolorpickercontroller.h"
 #include "snow_shot/presentation/screenshotdisplayconfigurationobserver.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
@@ -65,6 +66,7 @@
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "widgets/color_picker.h"
 #include <QApplication>
+#include <QClipboard>
 #include <QCoreApplication>
 #include <QCursor>
 #include <QDir>
@@ -344,6 +346,9 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void setScrollingScreenshotAutoScroll(bool enabled) override;
     void pinSelectionToScreen() override;
     void pinClipboardContentToScreen();
+    void pinSelectedFilesToScreen(snow_shot::platform::windows::SelectedFileTarget target);
+    void cancelContentPin();
+    ScreenshotFilePinBatch::Present filePinPresenter(QScreen* screen);
     void restorePinnedWindows();
     void restoreActivePinnedGroupWindows();
     void saveSelectionToFile() override;
@@ -467,6 +472,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     std::vector<ScreenshotExportJobHandle> m_exportJobs;
     std::vector<ScreenshotClipboardCommitHandle> m_clipboardCommits;
     ScreenshotExportJobHandle m_clipboardPinJob;
+    ScreenshotFilePinBatch m_filePinBatch;
     quint64 m_clipboardPinGeneration = 0;
     quint64 m_delayedCaptureGeneration = 0;
     PendingSelectionAction m_pendingSelectionAction = PendingSelectionAction::None;
@@ -2326,7 +2332,59 @@ void ScreenshotController::Impl::setScrollingScreenshotRecognitionMode(
     static_cast<void>(m_scrollingCaptureController->setRecognitionMode(mode));
 }
 
+void ScreenshotController::Impl::cancelContentPin() {
+    m_filePinBatch.cancel();
+    m_clipboardPinJob.cancel();
+    m_clipboardPinJob = {};
+    ++m_clipboardPinGeneration;
+}
+
+ScreenshotFilePinBatch::Present ScreenshotController::Impl::filePinPresenter(QScreen* screen) {
+    const QPointer<ScreenshotController> receiver(&owner);
+    const QPointer<QScreen> guardedScreen(screen);
+    const bool autoResizeWindow = snow_shot::storage::PinToScreenSettings().autoResizeWindow();
+    return [receiver, guardedScreen, autoResizeWindow](ScreenshotClipboardContent decoded) {
+        if (!receiver || !receiver->m_impl || !guardedScreen) {
+            return false;
+        }
+        const auto fit =
+            autoResizeWindow
+                ? ScreenshotGeometryMapper::fitImageToAvailableGeometry(
+                      decoded.image.size(), guardedScreen->availableGeometry(),
+                      guardedScreen->geometry(),
+                      ScreenshotGeometryMapper::physicalRectForScreen(*guardedScreen), 16)
+                : ScreenshotGeometryMapper::centerImageAtFullResolution(
+                      decoded.image.size(), guardedScreen->availableGeometry(),
+                      guardedScreen->geometry(),
+                      ScreenshotGeometryMapper::physicalRectForScreen(*guardedScreen));
+        auto* services = receiver->m_impl->m_selectionExportUiServices.get();
+        if (fit.valid && services != nullptr) {
+            static_cast<void>(services->presentPinnedImage(
+                decoded.image, guardedScreen, fit.nativeGeometry, fit.fullResolutionSize, {}, {},
+                1.0, std::move(decoded.originalContent)));
+        }
+        return true;
+    };
+}
+
+void ScreenshotController::Impl::pinSelectedFilesToScreen(
+    snow_shot::platform::windows::SelectedFileTarget target) {
+    cancelContentPin();
+    QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
+    if (screen == nullptr) {
+        screen = QGuiApplication::primaryScreen();
+    }
+    if (screen == nullptr || target.window == 0 || !ensureExportFeature()) {
+        return;
+    }
+    m_filePinBatch.startSelection(snow_shot::platform::windows::createSelectedFileBackend(), target,
+                                  filePinPresenter(screen));
+}
+
 void ScreenshotController::Impl::pinClipboardContentToScreen() {
+    cancelContentPin();
+    const QStringList paths =
+        ScreenshotClipboardContentReader::localFilePaths(QApplication::clipboard()->mimeData());
     if (!ensureExportFeature()) {
         return;
     }
@@ -2336,6 +2394,11 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
     }
     if (screen == nullptr) {
         qWarning("No screen is available for clipboard pinning");
+        return;
+    }
+
+    if (!paths.isEmpty()) {
+        m_filePinBatch.start(paths, filePinPresenter(screen));
         return;
     }
 
@@ -2379,8 +2442,7 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
     SNOW_SHOT_PIN_PERF_COUNTER("clipboard.reader_snapshot_ns", perfReaderNanoseconds);
 
     const bool autoResizeWindow = snow_shot::storage::PinToScreenSettings().autoResizeWindow();
-    m_clipboardPinJob.cancel();
-    const quint64 generation = ++m_clipboardPinGeneration;
+    const quint64 generation = m_clipboardPinGeneration;
 
     // QMimeData may already expose a detached image with its final dimensions. In
     // that case the shell can be placed immediately while the clipboard decode
@@ -3878,9 +3940,7 @@ void ScreenshotController::Impl::shutdown() {
     if (m_selectionExportUiServices != nullptr) {
         m_selectionExportUiServices->cancelClipboardPublication();
     }
-    m_clipboardPinJob.cancel();
-    m_clipboardPinJob = {};
-    ++m_clipboardPinGeneration;
+    cancelContentPin();
     ++m_imageExportGeneration;
     m_activeImageExports.clear();
     m_imageExportCaptureEpochs.clear();
@@ -4096,6 +4156,16 @@ void ScreenshotController::editHistoryRecord(const QString& recordId) {
 
 void ScreenshotController::pinClipboardContentToScreen() {
     m_impl->pinClipboardContentToScreen();
+}
+
+void ScreenshotController::pinSelectedFilesToScreen() {
+    pinSelectedFilesToScreen(
+        snow_shot::platform::windows::createSelectedFileBackend()->captureTarget());
+}
+
+void ScreenshotController::pinSelectedFilesToScreen(
+    snow_shot::platform::windows::SelectedFileTarget target) {
+    m_impl->pinSelectedFilesToScreen(target);
 }
 
 void ScreenshotController::Impl::setSelectionToolbarHovered(bool hovered) {
