@@ -261,6 +261,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
         PendingSelectionAction action = PendingSelectionAction::None,
         ScreenshotCaptureWorkflow::StartMode mode = ScreenshotCaptureWorkflow::StartMode::Normal);
     void applyGlobalMouseDrag(bool finishReleased);
+    void refreshGlobalMouseDragFromLiveCursor();
     void endGlobalMouseDrag();
     void handleSelectionConfirmed();
     [[nodiscard]] bool selectPreviousSelection();
@@ -1219,6 +1220,7 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                 [this]() {
                     if (m_globalMouseDrag.active()) {
                         m_globalMouseDrag.setReady();
+                        refreshGlobalMouseDragFromLiveCursor();
                         m_overlayInputHandler->beginExternalSelectionDrag(
                             m_geometry.canvasPositionForPhysicalPoint(m_displaySession,
                                                                       m_globalMouseDrag.start()));
@@ -3776,6 +3778,20 @@ void ScreenshotController::Impl::endGlobalMouseDrag() {
     if (id != 0) {
         emit owner.globalMouseCaptureEnded(id);
     }
+}
+
+void ScreenshotController::Impl::refreshGlobalMouseDragFromLiveCursor() {
+    // Reveal work delays paced drag deliveries, leaving the buffered end point
+    // behind the cursor. Refresh it once from the live cursor so the first
+    // presented selection frame is current instead of catching up later.
+    std::optional<QPoint> position;
+    if (m_physicalCursor != nullptr && m_physicalCursor->isSupported()) {
+        position = m_physicalCursor->position();
+    }
+    if (!position.has_value() && !m_geometry.isEmpty()) {
+        position = m_geometry.physicalPositionForLogicalPoint(m_displaySession, QCursor::pos());
+    }
+    m_globalMouseDrag.refreshEndFromLivePosition(position);
 }
 
 void ScreenshotController::Impl::applyGlobalMouseDrag(bool finishReleased) {

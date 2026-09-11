@@ -418,9 +418,9 @@ void ScreenshotOverlayWindow::warmPresentationSurface() {
     }
 }
 
-void ScreenshotOverlayWindow::showPreparedFrame() {
+void ScreenshotOverlayWindow::showPreparedFrame(bool deferFirstPaint) {
     if (m_framePresenter != nullptr) {
-        m_framePresenter->presentPreparedFrame();
+        m_framePresenter->presentPreparedFrame(deferFirstPaint);
     }
 }
 

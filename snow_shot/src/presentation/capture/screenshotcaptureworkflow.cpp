@@ -471,8 +471,13 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
     // The desktop frame and initial smart-selection result have both arrived.
     // Reveal only this complete first frame, avoiding a visible selection jump
     // while keeping capture and selection work fully asynchronous.
-    m_context.runtime.showOverlayWindows(m_context.displaySession,
-                                         ScreenshotOverlayShowMode::CapturedImage);
+    // A global-mouse drag is already in progress when this frame arrives, so
+    // reveal it frame-paced: the first paint runs as a queued update instead of
+    // a synchronous commit, letting paced drag updates interleave ahead of it.
+    const ScreenshotOverlayShowMode revealMode =
+        m_startMode == StartMode::ExternalDrag ? ScreenshotOverlayShowMode::CapturedImageFramePaced
+                                               : ScreenshotOverlayShowMode::CapturedImage;
+    m_context.runtime.showOverlayWindows(m_context.displaySession, revealMode);
     SNOW_SHOT_CAPTURE_PERF_FLUSH_COMPOSITION();
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.composited");
     SNOW_SHOT_CAPTURE_PERF_FINISH(true);
