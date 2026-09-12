@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/settings/settingsbackend.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/settings/applicationpriority.h"
 #include "snow_shot/presentation/settings/textrecognitionacceleration.h"
 #include "snow_shot/platform/windows/autostartregistration.h"
@@ -1226,6 +1227,19 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_translation/layout_processing"))},
         });
+    case SettingsSectionReset::CustomAiModels:
+    case SettingsSectionReset::ExtendedTranslation: {
+        // These categories contain configuration-backed fields only. The compiled
+        // registry owns their membership and schema defaults, just as it owns the
+        // generated controls and runtime refresh scope.
+        const auto& registry = builtInSettingsRegistry();
+        QMap<QString, QJsonValue> defaults;
+        for (const int index : registry.fieldsForReset(reset)) {
+            const auto& field = registry.fields().at(index);
+            defaults.insert(field.configurationKey, field.defaultValue);
+        }
+        return storage::ApplicationStorage::instance().configuration().setValues(defaults);
+    }
     case SettingsSectionReset::Tray:
         return storage::ApplicationStorage::instance().configuration().setValues({
             {QStringLiteral("tray/enabled"),

@@ -104,6 +104,9 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     }
 
     bool switchValue(settings::SettingsSwitchBinding binding) const override {
+        if (binding == settings::SettingsSwitchBinding::TranslationPageEnabled) {
+            return m_translationPageEnabled;
+        }
         if (binding == settings::SettingsSwitchBinding::HistoryKeepPermanently) {
             return m_keepPermanently;
         }
@@ -118,6 +121,11 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     }
 
     bool applySwitchValue(settings::SettingsSwitchBinding binding, bool value) override {
+        if (binding == settings::SettingsSwitchBinding::TranslationPageEnabled) {
+            return applyField(
+                QStringLiteral("extended-features.translation-page"), value,
+                [this](const QVariant& next) { m_translationPageEnabled = next.toBool(); });
+        }
         if (binding == settings::SettingsSwitchBinding::HistoryKeepPermanently) {
             m_keepPermanently = value;
             emit synchronized();
@@ -459,6 +467,7 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     QString m_theme = QStringLiteral("system");
     bool m_trayEnabled = true;
     bool m_keepPermanently = false;
+    bool m_translationPageEnabled = false;
     int m_delay = 3;
     QVariantList m_trayOptions{QStringLiteral("quick.screenshot")};
     storage::ScreenshotToolbarLayout m_drawingToolbar{{{QStringLiteral("select")}},
@@ -1310,9 +1319,39 @@ void customModelsPreserveAcceptedStateOnRejectedWrites() {
             "failed deletion draft can be discarded");
 }
 
+void categoryResetFailuresRetainAcceptedValues() {
+    FakeSettingsBackend backend;
+    const auto registry = settings::buildBuiltInSettingsRegistry();
+    settings::SettingsRuntimeSession session(registry, backend);
+    const QString modelsId = QStringLiteral("api.custom-models");
+    const QString featureId = QStringLiteral("extended-features.translation-page");
+    const snow_shot::CustomAiModels models{{QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                            QStringLiteral("Model"),
+                                            QStringLiteral("http://localhost:1234/v1"),
+                                            {},
+                                            QStringLiteral("local"),
+                                            false}};
+    require(session.applyCustomAiModels(models) && session.submitDraft(featureId, true),
+            "prepare nondefault category values");
+    backend.setResetAccepted(false);
+    for (const auto group : {settings::SettingsSectionReset::CustomAiModels,
+                             settings::SettingsSectionReset::ExtendedTranslation}) {
+        const auto id =
+            group == settings::SettingsSectionReset::CustomAiModels ? modelsId : featureId;
+        require(!session.reset(group), "failed category reset must report rejection");
+        backend.notify();
+        require(session.state(id).phase == settings::SettingsWritePhase::Rejected &&
+                    !session.state(id).error.isEmpty() && session.customAiModels() == models &&
+                    session.state(featureId).acceptedValue.toBool(),
+                "failed reset retains persisted values and exposes a stable field error");
+        require(session.discard(id), "reset failure can be dismissed through the shared session");
+    }
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     customModelsPreserveAcceptedStateOnRejectedWrites();
+    categoryResetFailuresRetainAcceptedValues();
     initialStateAndNoOp();
     permanentHistoryDisablesOnlyLimitControls();
     storageUsagePropagation();

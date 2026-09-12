@@ -5,9 +5,15 @@
 #include "snow_shot/storage/settingsadapters.h"
 
 #include "snow_shot/presentation/components/settingscustomwidget.h"
+#include "snow_shot/presentation/components/settingspagewidget.h"
+#include "snow_shot/presentation/components/sectionheaderwidget.h"
+#include "widgets/button.h"
+#include "widgets/popconfirm.h"
+#include "widgets/switch.h"
 
 #include <QAbstractButton>
 #include <QApplication>
+#include <QMouseEvent>
 #include <QDir>
 #include <QHash>
 #include <QTemporaryDir>
@@ -16,6 +22,16 @@
 #include <iostream>
 
 namespace {
+void clickReset(QWidget* button) {
+    const QPointF local = button->rect().center();
+    const QPointF global = button->mapToGlobal(local.toPoint());
+    QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton, Qt::LeftButton,
+                      Qt::NoModifier);
+    QMouseEvent release(QEvent::MouseButtonRelease, local, global, Qt::LeftButton, Qt::NoButton,
+                        Qt::NoModifier);
+    QApplication::sendEvent(button, &press);
+    QApplication::sendEvent(button, &release);
+}
 void require(bool condition, const char* message) {
     if (!condition) {
         std::cerr << message << '\n';
@@ -111,6 +127,41 @@ void selectedTextShortcutSettings() {
         require(session.applyShortcuts(action, keys) && persisted.translateSelectedText() == keys &&
                     manager.state(action).status == GlobalShortcutStatus::Registered,
                 "editing selected text bindings updates storage and native registrations");
+        {
+            SettingsPageWidget page(registry, QStringLiteral("extended-features"), session);
+            page.resize(880, 760);
+            page.show();
+            QCoreApplication::processEvents();
+            auto* header = page.findChild<SectionHeaderWidget*>();
+            auto* reset =
+                header->findChild<adqt::widgets::AdButton*>(QStringLiteral("sectionResetButton"));
+            auto* confirmation = header->findChild<adqt::widgets::AdPopconfirm*>();
+            auto* toggle = page.findChild<adqt::widgets::AdSwitch*>();
+            require(reset != nullptr && reset->isVisible() && reset->isEnabled() &&
+                        confirmation != nullptr && toggle != nullptr && toggle->isChecked() &&
+                        reset->geometry().right() == header->contentsRect().right(),
+                    "extended category uses the shared right-aligned reset and generated toggle");
+            clickReset(reset);
+            QCoreApplication::processEvents();
+            require(confirmation->isVisible(), "extended reset opens shared confirmation");
+            confirmation->button(adqt::widgets::AdPopconfirm::StandardButton::Cancel)->click();
+            require(storage::ExtendedFeaturesSettings().translationPageEnabled(),
+                    "cancel extended category reset preserves feature opt-in");
+            clickReset(reset);
+            QCoreApplication::processEvents();
+            confirmation->button(adqt::widgets::AdPopconfirm::StandardButton::Ok)->click();
+            QCoreApplication::processEvents();
+            require(!storage::ExtendedFeaturesSettings().translationPageEnabled() &&
+                        !toggle->isChecked() &&
+                        !session.state(QStringLiteral("extended-features.translation-page"))
+                             .acceptedValue.toBool() &&
+                        !session.state(QStringLiteral("quick.translate-selected-text")).visible &&
+                        !input->registrations.values().contains(keys.first()) &&
+                        persisted.translateSelectedText() == keys,
+                    "reset disables translation, refreshes UI and hotkeys, and preserves bindings");
+            require(session.submitDraft(QStringLiteral("extended-features.translation-page"), true),
+                    "generated feature field can be enabled again after reset");
+        }
         int activations = 0;
         QObject::connect(
             &manager, &GlobalShortcutManager::activated, &manager,
