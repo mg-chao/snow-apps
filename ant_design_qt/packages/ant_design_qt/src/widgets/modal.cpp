@@ -244,6 +244,49 @@ class ModalOverlayWidget final : public QWidget {
     applyWindowModeNativeChrome();
   }
 
+  void setWindowResizable(bool value) { windowResizable_ = value; }
+
+  void applyWindowSurfaceFlags(Qt::WindowFlags flags) {
+    if (windowFlags() == flags) {
+      return;
+    }
+    if ((windowFlags() ^ flags) == Qt::WindowStaysOnTopHint) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+      if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        // Changing QWidget flags hides the surface and replaces the native
+        // frame styles. A stacking-only change must preserve the HWND and DWM
+        // chrome, visibility, activation, and geometry.
+        const HWND hwnd = hwndForWidget(this);
+        if (!SetWindowPos(hwnd,
+                          flags.testFlag(Qt::WindowStaysOnTopHint) ? HWND_TOPMOST : HWND_NOTOPMOST,
+                          0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)) {
+          qWarning("Unable to update modal window stacking order");
+          return;
+        }
+        // Keep QWidget's flags in sync without another platform update.
+        overrideWindowFlags(flags);
+        return;
+      }
+#endif
+      if (windowHandle()) {
+        windowHandle()->setFlags(flags);
+      }
+      overrideWindowFlags(flags);
+      return;
+    }
+
+    const QRect previousGeometry = geometry();
+    const bool wasVisible = isVisible();
+    setWindowFlags(flags);
+    applyWindowModeNativeChrome();
+    if (wasVisible) {
+      setGeometry(previousGeometry);
+      show();
+      raise();
+      activateWindow();
+    }
+  }
+
   void setWindowModeDragWidgets(QWidget* header, QWidget* panel) {
     windowModeHeader_ = header;
     windowModePanel_ = panel;
@@ -328,7 +371,7 @@ class ModalOverlayWidget final : public QWidget {
 
   void applyWindowModeNativeChrome() {
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    if (!windowModeChromeEnabled_) {
+    if (!windowModeChromeEnabled_ || QGuiApplication::platformName() != QStringLiteral("windows")) {
       return;
     }
 
@@ -466,6 +509,25 @@ class ModalOverlayWidget final : public QWidget {
           return true;
         }
 
+        const QPoint local = mapFromGlobal(QCursor::pos());
+        if (windowResizable_ && !isMaximized()) {
+          constexpr int border = 6;
+          const bool left = local.x() < border;
+          const bool right = local.x() >= width() - border;
+          const bool top = local.y() < border;
+          const bool bottom = local.y() >= height() - border;
+          if (top || bottom || left || right) {
+            *result = top      ? (left    ? HTTOPLEFT
+                                  : right ? HTTOPRIGHT
+                                          : HTTOP)
+                      : bottom ? (left    ? HTBOTTOMLEFT
+                                  : right ? HTBOTTOMRIGHT
+                                          : HTBOTTOM)
+                      : left   ? HTLEFT
+                               : HTRIGHT;
+            return true;
+          }
+        }
         *result = isWindowModeDragAreaAt(QCursor::pos()) ? HTCAPTION : HTCLIENT;
         return true;
       }
@@ -482,6 +544,7 @@ class ModalOverlayWidget final : public QWidget {
   QColor maskColor_ = QColor(0, 0, 0, 115);
   bool maskEnabled_ = true;
   bool windowModeChromeEnabled_ = false;
+  bool windowResizable_ = false;
   QPointer<QWidget> windowModeHeader_;
   QPointer<QWidget> windowModePanel_;
   std::function<bool(bool)> focusNavigator_;
@@ -838,6 +901,114 @@ void AdModal::setWindowModeDetached(bool value) {
     registerOpenModal(this);
     setOpenInternal(true, false);
   }
+}
+
+QScreen* AdModal::windowScreen() const { return windowScreen_; }
+
+void AdModal::setWindowScreen(QScreen* screen) {
+  if (windowScreen_ == screen) {
+    return;
+  }
+  windowScreen_ = screen;
+  if (!open_) {
+    windowGeometryInitialized_ = false;
+  }
+}
+
+QSize AdModal::windowPreferredSize() const { return windowPreferredSize_; }
+void AdModal::setWindowPreferredSize(const QSize& size) {
+  if (windowPreferredSize_ == size) {
+    return;
+  }
+  windowPreferredSize_ = size;
+  syncOverlayGeometry();
+}
+
+QSize AdModal::windowMinimumSize() const { return windowMinimumSize_; }
+void AdModal::setWindowMinimumSize(const QSize& size) {
+  if (windowMinimumSize_ == size) {
+    return;
+  }
+  windowMinimumSize_ = size;
+  syncOverlayGeometry();
+}
+
+bool AdModal::windowResizable() const { return windowResizable_; }
+void AdModal::setWindowResizable(bool value) {
+  if (windowResizable_ == value) {
+    return;
+  }
+  windowResizable_ = value;
+  windowGeometryInitialized_ = false;
+  refreshLayout();
+  applyVisualStyle();
+}
+
+bool AdModal::windowTaskbarVisible() const { return windowTaskbarVisible_; }
+void AdModal::setWindowTaskbarVisible(bool value) {
+  if (windowTaskbarVisible_ == value) {
+    return;
+  }
+  windowTaskbarVisible_ = value;
+  emit windowTaskbarVisibleChanged(value);
+  reapplyWindowSurfaceFlags();
+}
+
+bool AdModal::windowMinimizeButtonVisible() const { return windowMinimizeButtonVisible_; }
+void AdModal::setWindowMinimizeButtonVisible(bool value) {
+  if (windowMinimizeButtonVisible_ == value) {
+    return;
+  }
+  windowMinimizeButtonVisible_ = value;
+  emit windowMinimizeButtonVisibleChanged(value);
+  refreshVisibility();
+}
+
+bool AdModal::windowAlwaysOnTopButtonVisible() const { return windowAlwaysOnTopButtonVisible_; }
+void AdModal::setWindowAlwaysOnTopButtonVisible(bool value) {
+  if (windowAlwaysOnTopButtonVisible_ == value) {
+    return;
+  }
+  windowAlwaysOnTopButtonVisible_ = value;
+  emit windowAlwaysOnTopButtonVisibleChanged(value);
+  refreshVisibility();
+}
+
+bool AdModal::windowAlwaysOnTop() const { return windowAlwaysOnTop_; }
+void AdModal::setWindowAlwaysOnTop(bool value) {
+  if (windowAlwaysOnTop_ == value) {
+    return;
+  }
+  windowAlwaysOnTop_ = value;
+  if (alwaysOnTopButton_) {
+    alwaysOnTopButton_->setChecked(value);
+  }
+  emit windowAlwaysOnTopChanged(value);
+  reapplyWindowSurfaceFlags();
+  applyVisualStyle();
+}
+
+void AdModal::present() {
+  if (!open_ || !overlay_) {
+    open();
+  }
+  if (!overlay_) {
+    return;
+  }
+  if (overlay_->isMinimized()) {
+    overlay_->showNormal();
+  }
+  overlay_->show();
+  overlay_->raise();
+  overlay_->activateWindow();
+#if defined(Q_OS_WIN) || defined(_WIN32)
+  if (usesWindowSurface()) {
+    const HWND hwnd = reinterpret_cast<HWND>(overlay_->winId());
+    if (hwnd && IsWindow(hwnd)) {
+      SetForegroundWindow(hwnd);
+    }
+  }
+#endif
 }
 
 bool AdModal::isOpen() const { return open_; }
@@ -1610,6 +1781,9 @@ QWidget* AdModal::resolveOwnerWindow() const {
   if (ownerWindow_) {
     return ownerWindow_;
   }
+  if (usesWindowSurface() && windowModeDetached_) {
+    return nullptr;
+  }
   if (auto* parentWidget = qobject_cast<QWidget*>(parent())) {
     return normalizeOwnerWindow(parentWidget);
   }
@@ -1652,8 +1826,8 @@ const QWidget* AdModal::themeSourceWidget() const {
 }
 
 QRect AdModal::windowModeAvailableGeometry() const {
-  QScreen* screen = nullptr;
-  if (ownerWindow_) {
+  QScreen* screen = windowScreen_;
+  if (!screen && ownerWindow_) {
     screen = ownerWindow_->screen();
   }
   if (!screen && overlay_) {
@@ -1666,7 +1840,7 @@ QRect AdModal::windowModeAvailableGeometry() const {
 }
 
 QRect AdModal::windowModeAnchorGeometry() const {
-  if (!ownerWindow_) {
+  if (windowScreen_ || !ownerWindow_) {
     return windowModeAvailableGeometry();
   }
 
@@ -1676,6 +1850,25 @@ QRect AdModal::windowModeAnchorGeometry() const {
   }
 
   return QRect(ownerWindow_->mapToGlobal(QPoint(0, 0)), ownerWindow_->size());
+}
+
+Qt::WindowFlags AdModal::windowSurfaceFlags() const {
+  Qt::WindowFlags flags = Qt::FramelessWindowHint;
+  // A taskbar-visible surface must be a plain window: Qt::Tool surfaces never
+  // get a taskbar button and owned dialogs only appear while their owner does.
+  flags |= windowTaskbarVisible_ ? Qt::Window : (windowModeDetached_ ? Qt::Tool : Qt::Dialog);
+  if (windowAlwaysOnTop_ ||
+      (ownerWindow_ && ownerWindow_->windowFlags().testFlag(Qt::WindowStaysOnTopHint))) {
+    flags |= Qt::WindowStaysOnTopHint;
+  }
+  return flags;
+}
+
+void AdModal::reapplyWindowSurfaceFlags() {
+  if (!overlay_ || !usesWindowSurface()) {
+    return;
+  }
+  static_cast<ModalOverlayWidget*>(overlay_.data())->applyWindowSurfaceFlags(windowSurfaceFlags());
 }
 
 void AdModal::ensureOverlay() {
@@ -1705,10 +1898,7 @@ void AdModal::ensureOverlay() {
   const bool windowMode = usesWindowSurface();
   Qt::WindowFlags overlayFlags = Qt::WindowFlags();
   if (windowMode) {
-    overlayFlags = (windowModeDetached_ ? Qt::Tool : Qt::Dialog) | Qt::FramelessWindowHint;
-    if (ownerWindow_ && ownerWindow_->windowFlags().testFlag(Qt::WindowStaysOnTopHint)) {
-      overlayFlags |= Qt::WindowStaysOnTopHint;
-    }
+    overlayFlags = windowSurfaceFlags();
   }
 
   QWidget* nativeParent = renderContainer_
@@ -1768,7 +1958,30 @@ void AdModal::ensureOverlay() {
   connect(closeButton, &QToolButton::clicked, this,
           [this]() { requestReject(CloseReason::CloseButton); });
 
+  auto* minimizeButton = new ModalIconButton(header);
+  minimizeButton->setObjectName(QStringLiteral("ad-modal-minimize"));
+  minimizeButton->setAutoRaise(true);
+  minimizeButton->setCursor(Qt::PointingHandCursor);
+  minimizeButton->setFocusPolicy(Qt::StrongFocus);
+  connect(minimizeButton, &QToolButton::clicked, this, [this]() {
+    if (overlay_ && usesWindowSurface()) {
+      overlay_->showMinimized();
+    }
+  });
+
+  auto* alwaysOnTopButton = new ModalIconButton(header);
+  alwaysOnTopButton->setObjectName(QStringLiteral("ad-modal-always-on-top"));
+  alwaysOnTopButton->setAutoRaise(true);
+  alwaysOnTopButton->setCursor(Qt::PointingHandCursor);
+  alwaysOnTopButton->setFocusPolicy(Qt::StrongFocus);
+  alwaysOnTopButton->setCheckable(true);
+  alwaysOnTopButton->setChecked(windowAlwaysOnTop_);
+  connect(alwaysOnTopButton, &QToolButton::clicked, this,
+          [this](bool checked) { setWindowAlwaysOnTop(checked); });
+
   headerLayout->addWidget(titleLabel, 1, Qt::AlignVCenter);
+  headerLayout->addWidget(minimizeButton, 0, Qt::AlignTop);
+  headerLayout->addWidget(alwaysOnTopButton, 0, Qt::AlignTop);
   headerLayout->addWidget(closeButton, 0, Qt::AlignTop);
 
   auto* body = new QWidget(panel);
@@ -1873,6 +2086,7 @@ void AdModal::ensureOverlay() {
   });
 
   overlay_ = overlay;
+  windowGeometryInitialized_ = false;
   overlayLayout_ = overlayLayout;
   panel_ = panel;
   panelLayout_ = panelLayout;
@@ -1881,6 +2095,8 @@ void AdModal::ensureOverlay() {
   titleIconLabel_ = titleIconLabel;
   titleLabel_ = titleLabel;
   closeButton_ = closeButton;
+  minimizeButton_ = minimizeButton;
+  alwaysOnTopButton_ = alwaysOnTopButton;
   body_ = body;
   bodyLayout_ = bodyLayout;
   confirmBodyHost_ = confirmBodyHost;
@@ -1955,6 +2171,8 @@ void AdModal::releaseOverlay() {
   titleIconLabel_.clear();
   titleLabel_.clear();
   closeButton_.clear();
+  minimizeButton_.clear();
+  alwaysOnTopButton_.clear();
   body_.clear();
   bodyLayout_.clear();
   confirmBodyHost_.clear();
@@ -2000,6 +2218,31 @@ void AdModal::syncWindowModeGeometry() {
     return;
   }
   QScopedValueRollback<bool> syncingGuard(syncingWindowModeGeometry_, true);
+
+  if (windowResizable_) {
+    const QRect available = windowModeAvailableGeometry().adjusted(16, 16, -16, -16);
+    const QSize maximum(std::max(1, available.width()), std::max(1, available.height()));
+    const QSize minimum = windowMinimumSize_.expandedTo(QSize(160, 120)).boundedTo(maximum);
+    overlay_->setMinimumSize(minimum);
+    overlay_->setMaximumSize(QSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX));
+    if (!windowGeometryInitialized_) {
+      const QSize desired =
+          windowPreferredSize_.isValid() ? windowPreferredSize_ : QSize(preferredWidth_, 480);
+      const QSize size = desired.expandedTo(minimum).boundedTo(maximum);
+      const QRect anchor = windowModeAnchorGeometry();
+      QPoint position(anchor.center().x() - size.width() / 2,
+                      centered_ ? anchor.center().y() - size.height() / 2
+                                : anchor.top() + std::max(0, topOffset_));
+      position.setX(
+          std::clamp(position.x(), available.left(), available.right() - size.width() + 1));
+      position.setY(
+          std::clamp(position.y(), available.top(), available.bottom() - size.height() + 1));
+      overlay_->setGeometry(QRect(position, size));
+      // Initialization before open can precede content installation. Lock only on presentation.
+      windowGeometryInitialized_ = open_;
+    }
+    return;
+  }
 
   overlay_->setMinimumSize(QSize(0, 0));
   overlay_->setMaximumSize(QSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX));
@@ -2053,6 +2296,11 @@ void AdModal::syncWindowModeGeometry() {
   targetSize.setWidth(std::clamp(targetSize.width(), 160, maxWidth));
   targetSize.setHeight(std::clamp(targetSize.height(), 1, maxHeight));
 
+  if (windowPreferredSize_.isValid()) {
+    targetSize = windowPreferredSize_.expandedTo(windowMinimumSize_);
+    targetSize.setWidth(std::clamp(targetSize.width(), 160, maxWidth));
+    targetSize.setHeight(std::clamp(targetSize.height(), 1, maxHeight));
+  }
   if (overlay_->minimumSize() != targetSize || overlay_->maximumSize() != targetSize) {
     overlay_->setFixedSize(targetSize);
   }
@@ -2088,7 +2336,12 @@ void AdModal::refreshLayout() {
 
   if (usesWindowSurface() || renderContainer_) {
     overlayLayout_->setContentsMargins(0, 0, 0, 0);
-    overlayLayout_->setAlignment(panel_, Qt::AlignCenter);
+    const bool resizable = usesWindowSurface() && windowResizable_;
+    overlayLayout_->setAlignment(panel_, resizable ? Qt::Alignment{} : Qt::AlignCenter);
+    panel_->setSizePolicy(resizable ? QSizePolicy::Expanding : QSizePolicy::Fixed,
+                          resizable ? QSizePolicy::Expanding : QSizePolicy::Maximum);
+    overlayLayout_->setSizeConstraint(resizable ? QLayout::SetNoConstraint
+                                                : QLayout::SetDefaultConstraint);
     syncOverlayGeometry();
     return;
   }
@@ -2162,6 +2415,14 @@ void AdModal::refreshVisibility() {
 
   if (closeButton_) {
     closeButton_->setVisible(showPanelCloseButton);
+  }
+
+  const bool windowChrome = usesWindowSurface();
+  if (minimizeButton_) {
+    minimizeButton_->setVisible(windowChrome && windowMinimizeButtonVisible_);
+  }
+  if (alwaysOnTopButton_) {
+    alwaysOnTopButton_->setVisible(windowChrome && windowAlwaysOnTopButtonVisible_);
   }
 
   if (confirmBodyHost_) {
@@ -2291,6 +2552,14 @@ void AdModal::updateAccessibility() {
     closeButton_->setAccessibleName(tr("Close"));
     closeButton_->setAccessibleDescription(tr("Close modal"));
   }
+  if (minimizeButton_) {
+    minimizeButton_->setAccessibleName(tr("Minimize"));
+    minimizeButton_->setAccessibleDescription(tr("Minimize modal window"));
+  }
+  if (alwaysOnTopButton_) {
+    alwaysOnTopButton_->setAccessibleName(tr("Always on top"));
+    alwaysOnTopButton_->setAccessibleDescription(tr("Keep modal window above other windows"));
+  }
   if (acceptButtonControl_) {
     acceptButtonControl_->setAccessibleName(acceptButtonControl_->text().trimmed().isEmpty()
                                                 ? tr("OK")
@@ -2414,6 +2683,7 @@ void AdModal::applyVisualStyle() {
 
   auto* overlayWidget = static_cast<ModalOverlayWidget*>(overlay_.data());
   if (overlayWidget) {
+    overlayWidget->setWindowResizable(usesWindowSurface() && windowResizable_);
     overlayWidget->setRootColor(usesWindowSurface() ? style.containerBg : style.rootBg);
     overlayWidget->setMaskEnabled(!usesWindowSurface() && maskVisible_);
     overlayWidget->setMaskColor(style.maskBg);
@@ -2434,7 +2704,12 @@ void AdModal::applyVisualStyle() {
         width = std::min(width, available);
       }
     }
-    panel_->setFixedWidth(std::max(160, width));
+    if (usesWindowSurface() && windowResizable_) {
+      panel_->setMinimumWidth(0);
+      panel_->setMaximumWidth(QWIDGETSIZE_MAX);
+    } else {
+      panel_->setFixedWidth(std::max(160, width));
+    }
 
     auto* panelWidget = static_cast<ModalPanelWidget*>(panel_.data());
     if (panelWidget) {
@@ -2453,17 +2728,23 @@ void AdModal::applyVisualStyle() {
   }
 
   if (panelLayout_) {
-    panelLayout_->setContentsMargins(style.contentPaddingHorizontal, style.contentPaddingVertical,
-                                     style.contentPaddingHorizontal, style.contentPaddingVertical);
+    // The panel itself has no inset: every section carries its own padding so
+    // the content area can be re-padded without moving header or footer.
+    panelLayout_->setContentsMargins(0, 0, 0, 0);
   }
   if (headerLayout_) {
-    headerLayout_->setContentsMargins(style.headerPaddingHorizontal, style.headerPaddingVertical,
-                                      style.headerPaddingHorizontal,
-                                      style.headerPaddingVertical + style.headerMarginBottom);
+    headerLayout_->setContentsMargins(
+        style.contentPaddingHorizontal + style.headerPaddingHorizontal,
+        style.contentPaddingVertical + style.headerPaddingVertical,
+        style.contentPaddingHorizontal + style.headerPaddingHorizontal,
+        style.headerPaddingVertical + style.headerMarginBottom);
   }
   if (bodyLayout_) {
-    bodyLayout_->setContentsMargins(style.bodyPaddingHorizontal, style.bodyPaddingVertical,
-                                    style.bodyPaddingHorizontal, style.bodyPaddingVertical);
+    bodyLayout_->setContentsMargins(
+        style.contentAreaPaddingHorizontal + style.bodyPaddingHorizontal,
+        style.contentAreaPaddingVertical + style.bodyPaddingVertical,
+        style.contentAreaPaddingHorizontal + style.bodyPaddingHorizontal,
+        style.contentAreaPaddingVertical + style.bodyPaddingVertical);
   }
   if (confirmBodyLayout_) {
     confirmBodyLayout_->setSpacing(style.confirmIconGap);
@@ -2472,9 +2753,11 @@ void AdModal::applyVisualStyle() {
     confirmParagraphLayout_->setSpacing(style.confirmParagraphGap);
   }
   if (footerLayout_) {
-    footerLayout_->setContentsMargins(style.footerPaddingHorizontal,
-                                      style.footerPaddingVertical + style.footerMarginTop,
-                                      style.footerPaddingHorizontal, style.footerPaddingVertical);
+    footerLayout_->setContentsMargins(
+        style.contentPaddingHorizontal + style.footerPaddingHorizontal,
+        style.footerPaddingVertical + style.footerMarginTop,
+        style.contentPaddingHorizontal + style.footerPaddingHorizontal,
+        style.contentPaddingVertical + style.footerPaddingVertical);
   }
   if (footerButtonsLayout_) {
     footerButtonsLayout_->setSpacing(style.footerButtonGap);
@@ -2505,22 +2788,34 @@ void AdModal::applyVisualStyle() {
     confirmContentLabel_->setPalette(palette);
   }
 
-  if (closeButton_) {
+  const auto applyChromeButton = [this, &style](QToolButton* button,
+                                                const adqt::icons::IconRef& icon) {
+    if (!button) {
+      return;
+    }
     const auto iconColors = adqt::icons::IconColors::primary(style.closeIconColor);
-    const int closeIconSize = std::max(10, style.closeIconSize);
-    closeButton_->setFixedSize(std::max(closeIconSize, style.closeButtonSize),
-                               std::max(closeIconSize, style.closeButtonSize));
+    const int iconSize = std::max(10, style.closeIconSize);
+    const int buttonSize = std::max(iconSize, style.closeButtonSize);
+    button->setFixedSize(buttonSize, buttonSize);
     const qreal ratio = panel_ ? std::max(1.0, panel_->devicePixelRatioF()) : 1.0;
-    closeButton_->setIcon(QIcon(adqt::icons::renderIconPixmap(
-        outlined_icons::Close(iconColors), {QSize(closeIconSize, closeIconSize), ratio})));
-    closeButton_->setIconSize(QSize(closeIconSize, closeIconSize));
-    closeButton_->setEnabled(!acceptButtonBusy_);
-    static_cast<ModalIconButton*>(closeButton_.data())
-        ->setVisualStyle(style.closeButtonBackground, style.closeButtonHoverBackground,
-                         style.closeButtonPressedBackground, style.closeButtonDisabledBackground,
-                         style.closeButtonBorderColor, style.closeButtonBorderWidth,
-                         style.closeButtonRadius);
-  }
+    button->setIcon(QIcon(adqt::icons::renderIconPixmap(icon, {QSize(iconSize, iconSize), ratio})));
+    button->setIconSize(QSize(iconSize, iconSize));
+    button->setEnabled(!acceptButtonBusy_);
+    static_cast<ModalIconButton*>(button)->setVisualStyle(
+        style.closeButtonBackground, style.closeButtonHoverBackground,
+        style.closeButtonPressedBackground, style.closeButtonDisabledBackground,
+        style.closeButtonBorderColor, style.closeButtonBorderWidth, style.closeButtonRadius);
+  };
+
+  applyChromeButton(closeButton_,
+                    outlined_icons::Close(adqt::icons::IconColors::primary(style.closeIconColor)));
+  applyChromeButton(minimizeButton_,
+                    outlined_icons::Minus(adqt::icons::IconColors::primary(style.closeIconColor)));
+  applyChromeButton(
+      alwaysOnTopButton_,
+      windowAlwaysOnTop_
+          ? filled_icons::Pushpin(adqt::icons::IconColors::primary(style.closeIconColor))
+          : outlined_icons::Pushpin(adqt::icons::IconColors::primary(style.closeIconColor)));
 
   if (rejectButtonControl_) {
     rejectButtonControl_->setEnabled(!acceptButtonBusy_);
@@ -2571,6 +2866,10 @@ AdModal::VisualStyle AdModal::resolveVisualStyle() const {
   style.borderWidth = 0;
   style.contentPaddingHorizontal = wireframe ? 0 : std::max(0, qRound(map.sizeLG));
   style.contentPaddingVertical = wireframe ? 0 : std::max(0, qRound(map.sizeMD));
+  // The vertical theme inset belongs to the header top and footer bottom; the
+  // content area sits flush between the sections unless a token pads it.
+  style.contentAreaPaddingHorizontal = style.contentPaddingHorizontal;
+  style.contentAreaPaddingVertical = 0;
   style.headerPaddingHorizontal = wireframe ? std::max(0, qRound(map.sizeLG)) : 0;
   style.headerPaddingVertical = wireframe ? std::max(0, qRound(map.size)) : 0;
   style.headerMarginBottom = wireframe ? 0 : std::max(0, qRound(map.sizeXS));
@@ -2629,11 +2928,21 @@ AdModal::VisualStyle AdModal::resolveVisualStyle() const {
   if (componentTokens_.borderWidth.has_value()) {
     style.borderWidth = std::max(0, componentTokens_.borderWidth.value());
   }
+  if (componentTokens_.contentPaddingHorizontal.has_value()) {
+    style.contentAreaPaddingHorizontal =
+        std::max(0, componentTokens_.contentPaddingHorizontal.value());
+  }
+  if (componentTokens_.contentPaddingVertical.has_value()) {
+    style.contentAreaPaddingVertical = std::max(0, componentTokens_.contentPaddingVertical.value());
+  }
   if (componentTokens_.headerPaddingHorizontal.has_value()) {
     style.headerPaddingHorizontal = std::max(0, componentTokens_.headerPaddingHorizontal.value());
   }
   if (componentTokens_.headerPaddingVertical.has_value()) {
     style.headerPaddingVertical = std::max(0, componentTokens_.headerPaddingVertical.value());
+  }
+  if (componentTokens_.headerMarginBottom.has_value()) {
+    style.headerMarginBottom = std::max(0, componentTokens_.headerMarginBottom.value());
   }
   if (componentTokens_.bodyPaddingHorizontal.has_value()) {
     style.bodyPaddingHorizontal = std::max(0, componentTokens_.bodyPaddingHorizontal.value());
@@ -2732,6 +3041,7 @@ void AdModal::setOpenInternal(bool value, bool emitSignal) {
   }
 
   open_ = value;
+  windowGeometryInitialized_ = false;
   if (open_) {
     saveFocusBeforeOpen();
     ensureOverlay();

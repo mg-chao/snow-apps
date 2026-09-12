@@ -459,7 +459,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
 <context>
     <name>DiagnosticsService</name>
     <message>
-        <location filename="../src/presentation/settings/settingsbackend.cpp" line="885"/>
+        <location filename="../src/presentation/settings/settingsbackend.cpp" line="895"/>
         <location filename="../src/diagnostics/diagnostics.cpp" line="911"/>
         <source>The diagnostics writer stopped unexpectedly.</source>
         <translation>The diagnostics writer stopped unexpectedly.</translation>
@@ -894,6 +894,14 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <location filename="../src/presentation/components/maincontentheaderwidget.cpp" line="131"/>
         <source>Search settings and functions</source>
         <translation>Search settings and functions</translation>
+    </message>
+</context>
+<context>
+    <name>MainWindow</name>
+    <message>
+        <location filename="../src/presentation/mainwindow.cpp" line="249"/>
+        <source>Failed to retrieve selected text</source>
+        <translation>Failed to retrieve selected text</translation>
     </message>
 </context>
 <context>
@@ -3855,7 +3863,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
 <context>
     <name>SettingsBackend</name>
     <message>
-        <location filename="../src/presentation/settings/settingsbackend.cpp" line="909"/>
+        <location filename="../src/presentation/settings/settingsbackend.cpp" line="919"/>
         <source>The clipboard is unavailable.</source>
         <translation>The clipboard is unavailable.</translation>
     </message>
@@ -3942,12 +3950,12 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <translation>Limit how much disk space screenshot history can use</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2014"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2021"/>
         <source>System settings</source>
         <translation>System settings</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2069"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2076"/>
         <source>Shortcut keys for screenshot tools and cursor movement</source>
         <translation>Shortcut keys for screenshot tools and cursor movement</translation>
     </message>
@@ -3958,9 +3966,9 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1652"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1715"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1800"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2028"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2068"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2503"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2035"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2075"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2510"/>
         <source>Screenshot</source>
         <translation>Screenshot</translation>
     </message>
@@ -4164,14 +4172,14 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="161"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1600"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1611"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1686"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1687"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1691"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1760"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1905"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2096"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2538"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2103"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2554"/>
         <source>Screen recording</source>
         <translation>Screen recording</translation>
     </message>
@@ -4421,7 +4429,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <translation>Delete</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1614"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1601"/>
         <source>Pin to screen shortcuts and actions</source>
         <translation>Pin to screen shortcuts and actions</translation>
     </message>
@@ -4493,12 +4501,12 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <translation>Enable the Translation page and the Translate Selected Text shortcut.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2117"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2124"/>
         <source>About</source>
         <translation>About</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2119"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2126"/>
         <source>Software version and license information</source>
         <translation>Software version and license information</translation>
     </message>
@@ -4519,38 +4527,38 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <translation>Text recognition appearance</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2029"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2036"/>
         <source>Screen capture settings</source>
         <translation>Screen capture settings</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2036"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2043"/>
         <source>Network</source>
         <translation>Network</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2037"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2044"/>
         <source>Configure proxy use for network requests</source>
         <translation>Configure proxy use for network requests</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2045"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2052"/>
         <source>Configure text recognition models and acceleration</source>
         <translation>Configure text recognition models and acceleration</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2088"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2095"/>
         <source>Shortcut keys for pinned-to-screen windows</source>
         <translation>Shortcut keys for pinned-to-screen windows</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2097"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2104"/>
         <source>Shortcut keys for recording controls</source>
         <translation>Shortcut keys for recording controls</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2454"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2584"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2461"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2591"/>
         <source>Exit</source>
         <translation>Exit</translation>
     </message>
@@ -4768,7 +4776,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1301"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1392"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1658"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2525"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2532"/>
         <source>Copy to clipboard</source>
         <translation>Copy to clipboard</translation>
     </message>
@@ -4784,12 +4792,12 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="88"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="808"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1280"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1612"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1600"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1662"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1726"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1873"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2087"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2513"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2094"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2520"/>
         <source>Pin to screen</source>
         <translation>Pin to screen</translation>
     </message>
@@ -4853,7 +4861,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="171"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2542"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2558"/>
         <source>Record/Copy Video</source>
         <translation>Record/Copy Video</translation>
     </message>
@@ -5125,7 +5133,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="76"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2508"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2515"/>
         <source>Delay %1s to execute</source>
         <translation>Delay %1s to execute</translation>
     </message>
@@ -5133,8 +5141,8 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="100"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1318"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1666"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2044"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2517"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2051"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2524"/>
         <source>Text recognition</source>
         <translation>Text recognition</translation>
     </message>
@@ -5142,25 +5150,25 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="112"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1322"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1670"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2521"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2528"/>
         <source>Text translation</source>
         <translation>Text translation</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="136"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2529"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2536"/>
         <source>Current monitor</source>
         <translation>Current monitor</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="149"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2533"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2540"/>
         <source>Focused window</source>
         <translation>Focused window</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="184"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2546"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2562"/>
         <source>Screen recording folder</source>
         <translation>Screen recording folder</translation>
     </message>
@@ -5178,7 +5186,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="195"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1637"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1913"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2560"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2567"/>
         <source>Screenshot history</source>
         <translation>Screenshot history</translation>
     </message>
@@ -5305,7 +5313,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="592"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2551"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2545"/>
         <source>Pin clipboard content to screen</source>
         <translation>Pin clipboard content to screen</translation>
     </message>
@@ -5316,7 +5324,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="606"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2555"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2549"/>
         <source>Pin Selected Files to Screen</source>
         <translation>Pin Selected Files to Screen</translation>
     </message>
@@ -5830,14 +5838,14 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <translation>App-wide storage usage, location, mode, errors, and cleanup</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2443"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2569"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2450"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2576"/>
         <source>Window grouping</source>
         <translation>Window grouping</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2451"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2579"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2458"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2586"/>
         <source>Show main interface</source>
         <translation>Show main interface</translation>
     </message>
@@ -5875,13 +5883,13 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <translation>Storage error</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1601"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1612"/>
         <source>Screen recording shortcuts and actions</source>
         <translation>Screen recording shortcuts and actions</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1623"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2105"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2112"/>
         <source>Other</source>
         <translation>Other</translation>
     </message>
@@ -5907,7 +5915,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1792"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2020"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2027"/>
         <source>General</source>
         <translation>General</translation>
     </message>
@@ -6005,7 +6013,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1751"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1864"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2078"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2085"/>
         <source>Drawing</source>
         <translation>Drawing</translation>
     </message>
@@ -6084,42 +6092,42 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <translation>Recording output location and filename settings</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2021"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2028"/>
         <source>General system integration settings</source>
         <translation>General system integration settings</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2052"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2059"/>
         <source>Core</source>
         <translation>Core</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2064"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2071"/>
         <source>Configure screenshot editor shortcut keys</source>
         <translation>Configure screenshot editor shortcut keys</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2080"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2087"/>
         <source>Shortcut keys for drawing tools</source>
         <translation>Shortcut keys for drawing tools</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2106"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2113"/>
         <source>Shortcut keys for recognition and screenshot actions</source>
         <translation>Shortcut keys for recognition and screenshot actions</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2144"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2151"/>
         <source>Settings</source>
         <translation>Settings</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2016"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2023"/>
         <source>Configure application process behavior</source>
         <translation>Configure application process behavior</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2053"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2060"/>
         <source>Core application settings</source>
         <translation>Core application settings</translation>
     </message>
@@ -6222,13 +6230,13 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <translation>Quick save</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2062"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2069"/>
         <source>Application shortcuts</source>
         <translation>Application shortcuts</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2447"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2574"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2454"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2581"/>
         <source>Disable global hotkeys</source>
         <translation>Disable global hotkeys</translation>
     </message>
@@ -6286,7 +6294,7 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="582"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2564"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2571"/>
         <source>Translate Selected Text</source>
         <translation>Translate Selected Text</translation>
     </message>
@@ -6374,6 +6382,16 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="737"/>
         <source>Landscape A4</source>
         <translation>Landscape A4</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2012"/>
+        <source>Standalone Translation Window</source>
+        <translation>Standalone Translation Window</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2013"/>
+        <source>Open selected text translation in a standalone window.</source>
+        <translation>Open selected text translation in a standalone window.</translation>
     </message>
 </context>
 <context>
@@ -7696,31 +7714,29 @@ Change the shortcut and try again</translation>
     </message>
 </context>
 <context>
-    <name>snow_shot::presentation::SelectedTextTranslationController</name>
+    <name>snow_shot::presentation::StandaloneTranslationWindow</name>
     <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="142"/>
-        <source>No selected text was found.</source>
-        <translation>No selected text was found.</translation>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="20"/>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="55"/>
+        <source>Translation</source>
+        <translation>Translation</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="145"/>
-        <source>Selected text capture is not supported here.</source>
-        <translation>Selected text capture is not supported here.</translation>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="21"/>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="56"/>
+        <source>Copy and Close</source>
+        <translation>Copy and Close</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="148"/>
-        <source>Selected text capture is busy. Please try again.</source>
-        <translation>Selected text capture is busy. Please try again.</translation>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="22"/>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="57"/>
+        <source>Close</source>
+        <translation>Close</translation>
     </message>
     <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="151"/>
-        <source>Selected text capture timed out. Please try again.</source>
-        <translation>Selected text capture timed out. Please try again.</translation>
-    </message>
-    <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="154"/>
-        <source>Could not capture the selected text. Please try again.</source>
-        <translation>Could not capture the selected text. Please try again.</translation>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="91"/>
+        <source>Failed to retrieve selected text</source>
+        <translation>Failed to retrieve selected text</translation>
     </message>
 </context>
 <context>
@@ -7732,11 +7748,6 @@ Change the shortcut and try again</translation>
     </message>
     <message>
         <location filename="../src/presentation/services/systemtraycontroller.cpp" line="564"/>
-        <source>Translation</source>
-        <translation>Translation</translation>
-    </message>
-    <message>
-        <location filename="../src/presentation/services/systemtraycontroller.cpp" line="568"/>
         <source>Update</source>
         <translation>Update</translation>
     </message>

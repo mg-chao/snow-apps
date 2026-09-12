@@ -399,6 +399,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::PinToScreenSettings().automaticTextRecognition();
     case SettingsSwitchBinding::PinAutoResizeWindow:
         return storage::PinToScreenSettings().autoResizeWindow();
+    case SettingsSwitchBinding::StandaloneTranslationWindow:
+        return storage::ExtendedFeaturesSettings().standaloneTranslationWindow();
     case SettingsSwitchBinding::TranslationPageEnabled:
         return storage::ExtendedFeaturesSettings().translationPageEnabled();
     case SettingsSwitchBinding::OriginalImageTranslation:
@@ -414,6 +416,9 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
 }
 
 bool BuiltInSettingsBackend::switchEnabled(SettingsSwitchBinding binding) const {
+    if (binding == SettingsSwitchBinding::StandaloneTranslationWindow) {
+        return storage::ExtendedFeaturesSettings().translationPageEnabled();
+    }
     if (binding == SettingsSwitchBinding::AutoStartAtBoot) {
         return snow_shot::platform::windows::AutoStartRegistration::isSupported();
     }
@@ -468,6 +473,10 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::PinAutoResizeWindow) {
         return storage::PinToScreenSettings().setAutoResizeWindow(value);
     }
+    if (binding == SettingsSwitchBinding::StandaloneTranslationWindow) {
+        return switchEnabled(binding) &&
+               storage::ExtendedFeaturesSettings().setStandaloneTranslationWindow(value);
+    }
     if (binding == SettingsSwitchBinding::TranslationPageEnabled) {
         return storage::ExtendedFeaturesSettings().setTranslationPageEnabled(value);
     }
@@ -507,6 +516,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::PinAutomaticTextRecognition:
     case SettingsSwitchBinding::PinAutoResizeWindow:
     case SettingsSwitchBinding::TranslationPageEnabled:
+    case SettingsSwitchBinding::StandaloneTranslationWindow:
     case SettingsSwitchBinding::OriginalImageTranslation:
     case SettingsSwitchBinding::ScreenRecordingHideToolbar:
     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:

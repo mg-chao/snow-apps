@@ -116,6 +116,18 @@ void builtInCatalogIsCompleteAndValid() {
                      translationToggle->configurationKey)
                      .toBool(true),
             "extended translation page exposes a persisted default-off toggle");
+    const auto* standaloneToggle =
+        catalog.item({QStringLiteral("extended-features"), QStringLiteral("translation"),
+                      QStringLiteral("extended-features.standalone-translation-window")});
+    require(standaloneToggle &&
+                standaloneToggle->title.translated() ==
+                    QStringLiteral("Standalone Translation Window") &&
+                standaloneToggle->configurationKey ==
+                    QStringLiteral("extended_features/standalone_translation_window") &&
+                !snow_shot::storage::ConfigurationSchema::defaultValue(
+                     standaloneToggle->configurationKey)
+                     .toBool(true),
+            "standalone translation exposes a persisted default-off switch");
     qsizetype sectionCount = 0;
     qsizetype itemCount = 0;
     bool foundUpdates = false;
@@ -159,8 +171,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 37 && itemCount == 149 && foundUpdates,
-            "catalog must contain thirty-seven sections and one hundred forty-nine items");
+    require(sectionCount == 37 && itemCount == 150 && foundUpdates,
+            "catalog must contain thirty-seven sections and one hundred fifty items");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
                       QStringLiteral("interface.pin-to-screen.pinned-toolbar-editor")});
@@ -1308,7 +1320,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 198 && index.search(QString()).size() == 198,
+    require(index.entries().size() == 199 && index.search(QString()).size() == 199,
             "search must generate all catalog nodes in catalog order");
     const auto pdfPaper = index.search(QStringLiteral("Landscape A4"));
     require(!pdfPaper.isEmpty() && pdfPaper.constFirst().location.itemId ==
@@ -1368,7 +1380,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 37 && items == 149,
+    require(pages == 12 && sections == 37 && items == 150,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

@@ -15,6 +15,8 @@ class ExtendedFeaturesSettings final {
   public:
     [[nodiscard]] bool translationPageEnabled() const;
     bool setTranslationPageEnabled(bool enabled) const;
+    [[nodiscard]] bool standaloneTranslationWindow() const;
+    bool setStandaloneTranslationWindow(bool enabled) const;
 };
 
 class TextRecognitionSettings final {

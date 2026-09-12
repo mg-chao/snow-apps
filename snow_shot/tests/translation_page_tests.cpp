@@ -423,6 +423,14 @@ void selectedTextNavigation() {
                 child<AdTextEdit>(*page, "translationSourceText")->toPlainText() ==
                     QStringLiteral("first selection"),
             "hidden main window opens Translation and synchronizes navigation and source");
+    window.showTranslation(QString());
+    require(window.findChild<TranslationPageWidget*>() == page &&
+                child<AdTextEdit>(*page, "translationSourceText")->toPlainText().isEmpty(),
+            "empty handoff keeps the translation page open with an empty source");
+    auto* emptyWarning = window.findChild<QLabel*>(QStringLiteral("ad-message-content"));
+    require(emptyWarning != nullptr && emptyWarning->isVisible() &&
+                emptyWarning->text() == QStringLiteral("Failed to retrieve selected text"),
+            "empty handoff warns inside the window instead of a system prompt");
     QPointer<TranslationPageWidget> oldPage(page);
     require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(false),
             "disable active page");
