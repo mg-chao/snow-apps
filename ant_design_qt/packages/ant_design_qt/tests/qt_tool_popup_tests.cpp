@@ -91,6 +91,7 @@ class QtToolPopupTest final : public QObject {
   void siblingPopoversReopenAfterScopeRecreation();
   void popoverReleasesAndRecreatesNativeResources();
   void popupTriggerTooltipsRequireOptIn();
+  void popupOptionTooltipsRemainVisible();
   void popupTriggerTooltipsAvoidPopoverAtScreenEdges();
   void popupTriggerTooltipsRequireSpaceBelow();
   void warmTooltipSurvivesGroupPopoverOpening();
@@ -103,6 +104,42 @@ class QtToolPopupTest final : public QObject {
   void recreateLifetimeStillDestroysPopupSurface();
   void retainedPopupCachesFollowVisibilityAndStayComponentLocal();
 };
+
+void QtToolPopupTest::popupOptionTooltipsRemainVisible() {
+  AdTooltip::installApplicationTooltips();
+  QWidget host;
+  host.resize(640, 360);
+  host.move(QApplication::primaryScreen()->availableGeometry().center() - host.rect().center());
+  auto* trigger = new QPushButton(QStringLiteral("Draw"), &host);
+  trigger->setGeometry(240, 160, 100, 32);
+  trigger->setProperty(adqt::widgets::detail::kPopupTriggerTooltipEnabledProperty, true);
+  AdPopover popover(trigger);
+  popover.setSourceWidget(trigger);
+  popover.setPopupLayerMode(AdPopover::PopupLayerMode::QtTool);
+  popover.setPlacement(AdPopover::Placement::Top);
+  auto* option = new QPushButton(QStringLiteral("Rectangle"));
+  option->setToolTip(QStringLiteral("Draw rectangle"));
+  popover.setContentWidget(option);
+  host.show();
+  QCoreApplication::processEvents();
+  popover.show();
+  QCoreApplication::processEvents();
+  QVERIFY(option->isVisible());
+  host.activateWindow();
+  QCoreApplication::processEvents();
+  QVERIFY(!option->window()->isActiveWindow());
+  const QPoint center = option->rect().center();
+  QTest::mouseMove(option->window()->windowHandle(), option->mapTo(option->window(), center));
+  QTRY_VERIFY_WITH_TIMEOUT(findSurface(QStringLiteral("adtooltip-surface"), true), 2000);
+  QVERIFY(popover.isVisible());
+  QVERIFY(findSurface(QStringLiteral("adtooltip-surface"), true));
+  bool matched = false;
+  for (auto* tip : qApp->findChildren<AdTooltip*>()) {
+    matched |=
+        tip->isVisible() && tip->targetWidget() == option && tip->text() == option->toolTip();
+  }
+  QVERIFY(matched);
+}
 
 void QtToolPopupTest::popupTriggerTooltipsRequireOptIn() {
   AdTooltip::installApplicationTooltips();

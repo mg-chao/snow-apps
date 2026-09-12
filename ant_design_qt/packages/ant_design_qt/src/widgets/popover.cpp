@@ -1355,6 +1355,8 @@ void AdPopover::ensurePopupSurface() {
   if (popupLayerMode_ == PopupLayerMode::QtTool) {
     surface->setWindowFlags(adQtToolWindowFlags());
     surface->setAttribute(Qt::WA_ShowWithoutActivating, true);
+    // Qt otherwise suppresses hover tooltip events in this parentless, inactive window.
+    surface->setAttribute(Qt::WA_AlwaysShowToolTips, true);
     surface->setAttribute(Qt::WA_TranslucentBackground, true);
     surface->setAttribute(Qt::WA_QuitOnClose, false);
   }
