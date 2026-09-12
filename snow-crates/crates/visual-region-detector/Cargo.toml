@@ -1,0 +1,18 @@
+[package]
+name = "visual-region-detector"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+# The detector is usable on a stock Rust installation. `opencv` is an
+# additive opt-in: when enabled it becomes the active primitive backend and
+# the OpenCV adapter module is made available.
+default = ["pure-rust"]
+pure-rust = []
+opencv = ["dep:opencv"]
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["bmp", "jpeg", "png"] }
+opencv = { version = "0.100.1", optional = true, default-features = false, features = ["clang-runtime", "imgproc", "imgcodecs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
