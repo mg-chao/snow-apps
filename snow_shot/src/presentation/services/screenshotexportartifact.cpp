@@ -739,19 +739,21 @@ bool ScreenshotExportArtifact::requestQuickSave(QObject* receiver,
             },
             Qt::QueuedConnection);
     }
-    return requestAutomaticSave(receiver, {directory},
-                                ScreenshotImageFileService::formatForKey(settings.imageFormat()),
-                                settings.autoSaveFilenameFormat(), std::move(callback));
+    return requestAutomaticSave(
+        receiver, {directory}, ScreenshotImageFileService::formatForKey(settings.imageFormat()),
+        settings.autoSaveFilenameFormat(), std::move(callback),
+        ScreenshotPdfOptions{screenshot_pdf::pageSizeForKey(settings.pdfPageSize())});
 }
 
 bool ScreenshotExportArtifact::requestAutomaticSave(
     QObject* receiver, QStringList directories, ScreenshotImageFileFormat format,
-    QString filenameFormat, ScreenshotExportCoordinator::Completion callback) {
+    QString filenameFormat, ScreenshotExportCoordinator::Completion callback,
+    ScreenshotPdfOptions pdf) {
     if (receiver == nullptr || !callback || isCancelled())
         return false;
     const QPointer<ScreenshotExportArtifact> guarded(this);
     const QPointer<QObject> target(receiver);
-    auto schedule = [guarded, target, directories = std::move(directories), format,
+    auto schedule = [guarded, target, directories = std::move(directories), format, pdf,
                      filenameFormat = std::move(filenameFormat), callback = std::move(callback)](
                         snow_shot::storage::PreparedPngImage png, ScreenshotImageRowSource rows,
                         QString error) mutable {
@@ -767,7 +769,7 @@ bool ScreenshotExportArtifact::requestAutomaticSave(
             std::make_shared<ScreenshotExportCoordinator::Completion>(std::move(callback));
         auto job = ScreenshotExportCoordinator::shared().submit(
             target, ScreenshotExportCoordinator::Priority::Background,
-            [directories, format, filenameFormat, png = std::move(png),
+            [directories, format, pdf, filenameFormat, png = std::move(png),
              rows = std::move(rows)](const ScreenshotExportCancellation& cancellation) mutable {
                 if (cancellation.isCancellationRequested()) {
                     return ScreenshotExportTaskResult::failure(
@@ -781,8 +783,9 @@ bool ScreenshotExportArtifact::requestAutomaticSave(
                 } else {
                     rows = withCancellation(
                         rows, [&cancellation] { return cancellation.isCancellationRequested(); });
-                    saved = ScreenshotImageFileService::saveAutomatically(rows, directories, format,
-                                                                          filenameFormat);
+                    saved = ScreenshotImageFileService::saveAutomatically(
+                        rows, directories, format, filenameFormat, QDateTime::currentDateTime(),
+                        pdf);
                 }
                 if (!saved.succeeded()) {
                     return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::File,

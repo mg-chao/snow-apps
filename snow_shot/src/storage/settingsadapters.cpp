@@ -544,6 +544,13 @@ bool ScreenshotSettings::setLastManualSaveDirectory(const QString& directory) co
     return cache().setValue(QStringLiteral("screenshot/last_manual_save_directory"), directory);
 }
 
+QString ScreenshotSettings::pdfPageSize() const {
+    return cache().value(QStringLiteral("screenshot/pdf_page_size")).toString();
+}
+bool ScreenshotSettings::setPdfPageSize(const QString& pageSize) const {
+    return cache().setValue(QStringLiteral("screenshot/pdf_page_size"), pageSize);
+}
+
 QString ScreenshotSettings::imageFormat() const {
     return cache().value(QStringLiteral("screenshot/image_format")).toString();
 }

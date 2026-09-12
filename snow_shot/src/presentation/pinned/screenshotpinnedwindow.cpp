@@ -4450,6 +4450,7 @@ void ScreenshotPinnedWindow::saveAsFile() {
             setProperty("saveDialogOpen", false);
         return;
     }
+    const ScreenshotPdfOptions pdf{screenshot_pdf::pageSizeForKey(outputSettings.pdfPageSize())};
     const QString directory = ScreenshotImageFileService::saveDialogDirectory(
         outputSettings.lastManualSaveDirectory(), outputSettings.imageSaveDirectory());
     static_cast<void>(QDir().mkpath(directory));
@@ -4480,7 +4481,7 @@ void ScreenshotPinnedWindow::saveAsFile() {
     const QString outputPath = ScreenshotImageFileService::normalizedPath(selectedPath, format);
     invalidatePendingCopy();
     m_exportArtifact = artifact;
-    if (!artifact->requestImage(this, [this, artifact, outputPath,
+    if (!artifact->requestImage(this, [this, artifact, outputPath, pdf,
                                        format](ScreenshotExportImageResult result) mutable {
             if (!result.succeeded() || m_closing || m_exportArtifact != artifact) {
                 if (!m_closing) {
@@ -4495,15 +4496,16 @@ void ScreenshotPinnedWindow::saveAsFile() {
             m_fileSaveJob.cancel();
             m_fileSaveJob = ScreenshotExportCoordinator::shared().submit(
                 this, ScreenshotExportCoordinator::Priority::Foreground,
-                [image = std::move(result.image), outputPath,
+                [image = std::move(result.image), outputPath, pdf,
                  format](const ScreenshotExportCancellation& cancellation) mutable {
                     if (cancellation.isCancellationRequested()) {
                         return ScreenshotExportTaskResult::failure(
                             ScreenshotExportFailureStage::Cancelled,
                             QStringLiteral("The pinned image save was cancelled"));
                     }
-                    const ScreenshotImageFileSaveResult saved =
-                        ScreenshotImageFileService::write(image, outputPath, format);
+                    const ScreenshotImageFileSaveResult saved = ScreenshotImageFileService::write(
+                        image, outputPath, format, pdf,
+                        [&cancellation] { return cancellation.isCancellationRequested(); });
                     if (!saved.succeeded()) {
                         return ScreenshotExportTaskResult::failure(
                             ScreenshotExportFailureStage::File, saved.error);

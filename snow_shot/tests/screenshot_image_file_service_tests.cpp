@@ -59,6 +59,23 @@ class SaveDialogTranslator final : public QTranslator {
 };
 
 void namingAndFormatSelection() {
+    require(ScreenshotImageFileService::formatForKey(QStringLiteral("PDF")) ==
+                    ScreenshotImageFileFormat::Pdf &&
+                ScreenshotImageFileService::formatForPath(QStringLiteral("capture.PDF")) ==
+                    ScreenshotImageFileFormat::Pdf &&
+                ScreenshotImageFileService::formatKey(ScreenshotImageFileFormat::Pdf) ==
+                    QStringLiteral("pdf") &&
+                ScreenshotImageFileService::normalizedPath(QStringLiteral("capture.png"),
+                                                           ScreenshotImageFileFormat::Pdf) ==
+                    QStringLiteral("capture.pdf") &&
+                ScreenshotImageFileService::saveDialogFilter().contains(
+                    ScreenshotImageFileService::dialogFilter(ScreenshotImageFileFormat::Pdf)) &&
+                ScreenshotImageFileService::formatForDialogSelection(
+                    QStringLiteral("capture"),
+                    ScreenshotImageFileService::dialogFilter(ScreenshotImageFileFormat::Pdf)) ==
+                    ScreenshotImageFileFormat::Pdf,
+            "PDF must be selectable and use its canonical suffix in both dialogs");
+
     const QDateTime timestamp(QDate(2026, 8, 14), QTime(9, 7, 6), QTimeZone::UTC);
     require(ScreenshotImageFileService::suggestedBaseName(timestamp) ==
                 QStringLiteral("SnowShot_2026-08-14_09-07-06"),

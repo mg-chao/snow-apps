@@ -368,13 +368,9 @@ if(NOT SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC)
         find_package(PNG REQUIRED)
         target_link_libraries(snow_shot_image_codec_backend PRIVATE PNG::PNG)
     endif()
-    if(NOT SNOW_IMAGE_LINK_JPEG_DEPENDENCIES)
-        find_package(libjpeg-turbo CONFIG REQUIRED)
-        target_link_libraries(snow_shot_image_codec_backend PRIVATE
-            $<IF:$<TARGET_EXISTS:libjpeg-turbo::jpeg>,libjpeg-turbo::jpeg,libjpeg-turbo::jpeg-static>
-            $<IF:$<TARGET_EXISTS:libjpeg-turbo::turbojpeg>,libjpeg-turbo::turbojpeg,libjpeg-turbo::turbojpeg-static>
-        )
-    endif()
+    # Snow Image selects its JPEG headers and library together, including Qt's
+    # bundled libjpeg when requested. Its static target propagates those link
+    # dependencies; adding vcpkg libjpeg here would override the matching ABI.
 endif()
 if(SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC)
     target_compile_definitions(snow_shot_image_codec_backend PUBLIC
@@ -988,6 +984,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/ocr/screenshotrecognitionimage.cpp
     src/presentation/services/screenshotexportscrollingsource.cpp
     src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
     src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
     src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
     src/presentation/core/screenshotgeometry.cpp
@@ -2135,6 +2132,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-direct-capture-native-tests
         tests/direct_capture_native_tests.cpp
         src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
         src/presentation/capture/directcapturenative.cpp)
     target_include_directories(snow-shot-direct-capture-native-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -2715,6 +2713,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
         src/presentation/services/screenshotclipboardservice.cpp
         src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
         src/presentation/services/screenshotmessageservice.cpp
         src/presentation/selection/screenshotselectiongeometry.cpp
         src/presentation/selection/screenshotselectionmodel.cpp
@@ -2861,10 +2860,23 @@ if(SNOW_SHOT_BUILD_TESTS)
         )
     endif()
 
+    add_executable(snow-shot-pdf-export-tests
+        tests/screenshot_pdf_export_tests.cpp
+        src/presentation/services/screenshotpdfexport.cpp
+        src/presentation/services/screenshotimagefileservice.cpp
+    )
+    target_include_directories(snow-shot-pdf-export-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include" "${CMAKE_CURRENT_SOURCE_DIR}/src/image")
+    target_link_libraries(snow-shot-pdf-export-tests PRIVATE snow_shot_storage snow_shot_image_codec Qt6::Gui)
+    add_test(NAME snow-shot-pdf-export-tests COMMAND snow-shot-pdf-export-tests)
+    set_tests_properties(snow-shot-pdf-export-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(snow-shot-screenshot-image-file-service-tests
         tests/screenshot_image_file_service_tests.cpp
         include/snow_shot/presentation/screenshotimagefileservice.h
         src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
     )
     target_include_directories(snow-shot-screenshot-image-file-service-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -3154,6 +3166,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/services/screenshotclipboardservice.cpp
         src/presentation/services/screenshotexportartifact.cpp
         src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
         src/presentation/services/screenshotexportcoordinator.cpp
         src/presentation/services/screenshotexportpinnedsource.cpp
         src/presentation/ocr/screenshotrecognitionimage.cpp
@@ -3167,6 +3180,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_shot_image_codec snow_shot_settings snow_draw_engine_qt_canvas Qt6::Widgets
     )
     snow_shot_import_offscreen_platform(snow-shot-export-dialog-workflow-tests)
+    add_test(NAME snow-shot-pdf-dialog-tests COMMAND snow-shot-export-dialog-workflow-tests --pdf)
+    set_tests_properties(snow-shot-pdf-dialog-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-export-dialog-workflow-tests
         COMMAND snow-shot-export-dialog-workflow-tests)
     add_test(NAME snow-shot-save-format-tests
@@ -3205,6 +3222,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/services/screenshotclipboardservice.cpp
         src/presentation/services/screenshotexportartifact.cpp
         src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
         src/presentation/services/screenshotexportcoordinator.cpp
         src/presentation/services/screenshotexportpinnedsource.cpp
         src/presentation/ocr/screenshotrecognitionimage.cpp
@@ -3994,6 +4012,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettehost.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
         src/platform/windows/windowchrome.cpp
     )
     target_include_directories(snow-shot-screen-recording-controller-tests PRIVATE
@@ -4891,6 +4910,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         tests/screenshot_save_to_file_performance_benchmark.cpp
         src/presentation/services/screenshotsaveexportpipeline.cpp
         src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
         src/presentation/services/screenshotexportcoordinator.cpp
     )
     target_include_directories(snow-shot-save-to-file-performance-benchmark PRIVATE
@@ -4957,6 +4977,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
         src/presentation/services/screenshotclipboardservice.cpp
         src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
         src/presentation/services/screenshotmessageservice.cpp
         src/presentation/selection/screenshotselectiongeometry.cpp
         src/presentation/selection/screenshotselectionmodel.cpp

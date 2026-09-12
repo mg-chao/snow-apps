@@ -1502,6 +1502,11 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <source>The encoded image is empty</source>
         <translation>編碼後的影像為空</translation>
     </message>
+    <message>
+        <location filename="../src/presentation/services/screenshotimagefileservice.cpp" line="20"/>
+        <source>PDF document (*.pdf)</source>
+        <translation>PDF 文件 (*.pdf)</translation>
+    </message>
 </context>
 <context>
     <name>ScreenshotOcrController</name>
@@ -2202,6 +2207,11 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <location filename="../src/presentation/services/screenshotsaveexportpipeline.cpp" line="184"/>
         <source>The screenshot pixels could not be read</source>
         <translation>無法讀取擷取畫面像素</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/services/screenshotsaveasfiledialog.cpp" line="1081"/>
+        <source>PDF</source>
+        <translation>PDF</translation>
     </message>
 </context>
 <context>
@@ -6263,6 +6273,36 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <source>Hidden tools</source>
         <translation>隱藏的工具</translation>
     </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="675"/>
+        <source>PDF</source>
+        <translation>PDF</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="715"/>
+        <source>PDF page size</source>
+        <translation>PDF 頁面大小</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="716"/>
+        <source>Choose the page size for manually and automatically saved PDF files</source>
+        <translation>選擇手動和自動儲存 PDF 檔案時使用的頁面大小</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="722"/>
+        <source>Image size</source>
+        <translation>圖像大小</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="724"/>
+        <source>Portrait A4</source>
+        <translation>直向 A4</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="726"/>
+        <source>Landscape A4</source>
+        <translation>橫向 A4</translation>
+    </message>
 </context>
 <context>
     <name>ShortcutKeyRow</name>
@@ -7730,6 +7770,19 @@ Change the shortcut and try again</source>
         <location filename="../src/presentation/components/settingscustomwidget.cpp" line="91"/>
         <source>Hidden pinned toolbar tools</source>
         <translation>隱藏的貼圖工具列工具</translation>
+    </message>
+</context>
+<context>
+    <name>ScreenshotPdfExport</name>
+    <message>
+        <location filename="../src/presentation/services/screenshotpdfexport.cpp" line="13"/>
+        <source>The PDF could not be exported</source>
+        <translation>無法匯出 PDF</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/services/screenshotpdfexport.cpp" line="19"/>
+        <source>The PDF export was cancelled</source>
+        <translation>PDF 匯出已取消</translation>
     </message>
 </context>
 </TS>

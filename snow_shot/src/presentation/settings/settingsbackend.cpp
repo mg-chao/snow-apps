@@ -243,6 +243,8 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
         return storage::RecordingSettings().encoder();
     case SettingsSelectBinding::ScreenRecordingEncodingPreset:
         return storage::RecordingSettings().encodingPreset();
+    case SettingsSelectBinding::ScreenshotPdfPageSize:
+        return storage::ScreenshotSettings().pdfPageSize();
     case SettingsSelectBinding::ScreenshotImageFormat:
         return storage::ScreenshotSettings().imageFormat();
     case SettingsSelectBinding::ScreenshotSaveAsFileDialog:
@@ -349,6 +351,8 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
         return storage::RecordingSettings().setEncoder(value.toString());
     case SettingsSelectBinding::ScreenRecordingEncodingPreset:
         return storage::RecordingSettings().setEncodingPreset(value.toString());
+    case SettingsSelectBinding::ScreenshotPdfPageSize:
+        return storage::ScreenshotSettings().setPdfPageSize(value.toString());
     case SettingsSelectBinding::ScreenshotImageFormat:
         return storage::ScreenshotSettings().setImageFormat(value.toString());
     case SettingsSelectBinding::ScreenshotSaveAsFileDialog:
@@ -1052,6 +1056,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("screenshot/image_save_directory"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot/image_save_directory"))},
+            {QStringLiteral("screenshot/pdf_page_size"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot/pdf_page_size"))},
             {QStringLiteral("screenshot/image_format"),
              storage::ConfigurationSchema::defaultValue(QStringLiteral("screenshot/image_format"))},
             {QStringLiteral("screenshot/manual_save_filename_format"),

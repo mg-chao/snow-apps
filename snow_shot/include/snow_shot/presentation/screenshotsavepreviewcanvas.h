@@ -1,5 +1,6 @@
 #pragma once
 
+#include "snow_shot/presentation/screenshotpdfexport.h"
 #include <QImage>
 #include <QPixmap>
 #include <QWidget>
@@ -13,6 +14,10 @@ class ScreenshotSavePreviewCanvas final : public QWidget {
     explicit ScreenshotSavePreviewCanvas(QWidget* parent = nullptr);
     void setSource(QImage image, QSize pixels);
     void setOutput(QImage image);
+    void setPdfLayout(screenshot_pdf::Layout layout);
+    [[nodiscard]] screenshot_pdf::Layout pdfLayout() const {
+        return m_pdfLayout;
+    }
     [[nodiscard]] const QImage& outputImage() const {
         return m_output;
     }
@@ -46,6 +51,7 @@ class ScreenshotSavePreviewCanvas final : public QWidget {
     void showReadout();
     void zoomAt(double value, QPointF position);
     [[nodiscard]] bool splitHandleContains(QPointF position) const;
+    screenshot_pdf::Layout m_pdfLayout;
     QImage m_original;
     QImage m_output;
     QPixmap m_checkerboard;

@@ -37,6 +37,7 @@ struct Encoded {
     ScreenshotSaveExportOptions options;
     std::shared_ptr<PreparedPixels> pixels;
     snow_shot::image_codec::EncodeResult codecResult;
+    std::shared_ptr<screenshot_pdf::Payload> pdf;
 };
 [[nodiscard]] Source prepare(const ScreenshotImageRowSource& rows,
                              const ScreenshotExportCancellation& cancellation, QString* error);
@@ -44,10 +45,10 @@ struct Encoded {
 preparePixels(const Source& source, QSize size, const ScreenshotExportCancellation& cancellation,
               QString* error);
 [[nodiscard]] ScreenshotSaveExportOptions normalizedOptions(ScreenshotSaveExportOptions options);
-[[nodiscard]] std::shared_ptr<Encoded> render(std::shared_ptr<PreparedPixels> pixels,
-                                              const ScreenshotSaveExportOptions& options,
-                                              const ScreenshotExportCancellation& cancellation,
-                                              QString* error);
+[[nodiscard]] std::shared_ptr<Encoded>
+render(std::shared_ptr<PreparedPixels> pixels, const ScreenshotSaveExportOptions& options,
+       const ScreenshotExportCancellation& cancellation, QString* error,
+       std::shared_ptr<screenshot_pdf::Payload> cachedPdf = {});
 [[nodiscard]] std::shared_ptr<Encoded> render(const Source& source,
                                               const ScreenshotSaveExportOptions& options,
                                               const ScreenshotExportCancellation& cancellation,

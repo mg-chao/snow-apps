@@ -18,6 +18,8 @@ int32_t SNOW_SHOT_IMAGE_CODEC_CALL cancelled(void* context) {
 }
 uint32_t bridgeFormat(ScreenshotImageFileFormat format) {
     switch (format) {
+    case ScreenshotImageFileFormat::Pdf:
+        return SNOW_SHOT_IMAGE_CODEC_FORMAT_UNKNOWN;
     case ScreenshotImageFileFormat::Png:
         return SNOW_SHOT_IMAGE_CODEC_FORMAT_PNG;
     case ScreenshotImageFileFormat::Jpeg:
@@ -206,6 +208,8 @@ Source prepare(const ScreenshotImageRowSource& rows,
     return {rows, preview, alpha};
 }
 QSize encoderLimits(ScreenshotImageFileFormat format) {
+    if (format == ScreenshotImageFileFormat::Pdf)
+        return {1000000, 1000000};
     uint32_t width = 0;
     uint32_t height = 0;
     if (!snow_shot_image_codec_export_limits(bridgeFormat(format), &width, &height))
@@ -217,6 +221,10 @@ ScreenshotSaveExportOptions normalizedOptions(ScreenshotSaveExportOptions option
     const bool supportsQuality = options.format != ScreenshotImageFileFormat::Png &&
                                  options.format != ScreenshotImageFileFormat::Bmp;
     options.quality = supportsQuality ? qBound(1, options.quality, 100) : 100;
+    if (options.format != ScreenshotImageFileFormat::Pdf) {
+        options.pdfPageSize = ScreenshotPdfPageSize::PortraitA4;
+        options.pdfTitle.clear();
+    }
     return options;
 }
 
@@ -254,7 +262,8 @@ std::shared_ptr<PreparedPixels> preparePixels(const Source& source, QSize size,
 
 std::shared_ptr<Encoded> render(std::shared_ptr<PreparedPixels> pixels,
                                 const ScreenshotSaveExportOptions& options,
-                                const ScreenshotExportCancellation& cancellation, QString* error) {
+                                const ScreenshotExportCancellation& cancellation, QString* error,
+                                std::shared_ptr<screenshot_pdf::Payload> cachedPdf) {
     if (!pixels || !pixels->rows.isValid() || pixels->size != options.size ||
         cancellation.isCancellationRequested()) {
         return {};
@@ -281,6 +290,28 @@ std::shared_ptr<Encoded> render(std::shared_ptr<PreparedPixels> pixels,
         return {};
     }
     ScreenshotImageRowSource rows = withCancellation(result->pixels->rows, cancellation);
+    if (options.format == ScreenshotImageFileFormat::Pdf) {
+        if (cachedPdf && cachedPdf->size == options.size &&
+            cachedPdf->quality == result->options.quality)
+            result->pdf = std::move(cachedPdf);
+        else
+            result->pdf = screenshot_pdf::prepare(rows, result->options.quality, error);
+        if (!result->pdf ||
+            !screenshot_pdf::write(
+                *result->pdf, &output,
+                ScreenshotPdfOptions{options.pdfPageSize, result->options.quality, options.pdfTitle,
+                                     QDateTime::currentDateTimeUtc()},
+                error, [&cancellation] { return cancellation.isCancellationRequested(); }))
+            return {};
+        if (!output.flush()) {
+            *error = output.errorString();
+            return {};
+        }
+        result->codecResult.roundTrip = result->options.quality == 100
+                                            ? snow::image::PixelRoundTrip::exact
+                                            : snow::image::PixelRoundTrip::codec_artifact;
+        return result;
+    }
     snow::image::EncodeOptions encodeOptions =
         ScreenshotImageFileService::encodeOptions(result->options.format, result->options.quality);
     encodeOptions.verified_alpha_content = result->pixels->alphaContent;
@@ -312,6 +343,21 @@ QImage decode(const Encoded& encoded, const ScreenshotExportCancellation& cancel
     auto decoded = MappedRaster::create(encoded.options.size, error);
     if (!decoded)
         return {};
+    if (encoded.pdf) {
+        if (!screenshot_pdf::decodeTiles(
+                *encoded.pdf,
+                [decoded](QRect rect, const QImage& tile) {
+                    for (int row = 0; row < rect.height(); ++row)
+                        std::memcpy(
+                            decoded->pixels +
+                                (qsizetype(rect.y() + row) * decoded->size.width() + rect.x()) * 4,
+                            tile.constScanLine(row), size_t(rect.width()) * 4);
+                    return true;
+                },
+                error, [&cancellation] { return cancellation.isCancellationRequested(); }))
+            return {};
+        return decoded->image();
+    }
     std::array<char, 1024> backendError{};
     auto* context = const_cast<ScreenshotExportCancellation*>(&cancellation);
     if (!snow_shot_image_codec_decode_file_into(

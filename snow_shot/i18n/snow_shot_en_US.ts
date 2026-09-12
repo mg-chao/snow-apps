@@ -1503,6 +1503,11 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <source>The encoded image is empty</source>
         <translation>The encoded image is empty</translation>
     </message>
+    <message>
+        <location filename="../src/presentation/services/screenshotimagefileservice.cpp" line="20"/>
+        <source>PDF document (*.pdf)</source>
+        <translation>PDF document (*.pdf)</translation>
+    </message>
 </context>
 <context>
     <name>ScreenshotOcrController</name>
@@ -2203,6 +2208,11 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <location filename="../src/presentation/services/screenshotsaveexportpipeline.cpp" line="184"/>
         <source>The screenshot pixels could not be read</source>
         <translation>The screenshot pixels could not be read</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/services/screenshotsaveasfiledialog.cpp" line="1081"/>
+        <source>PDF</source>
+        <translation>PDF</translation>
     </message>
 </context>
 <context>
@@ -6264,6 +6274,36 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <source>Hidden tools</source>
         <translation>Hidden tools</translation>
     </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="675"/>
+        <source>PDF</source>
+        <translation>PDF</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="715"/>
+        <source>PDF page size</source>
+        <translation>PDF page size</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="716"/>
+        <source>Choose the page size for manually and automatically saved PDF files</source>
+        <translation>Choose the page size for manually and automatically saved PDF files</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="722"/>
+        <source>Image size</source>
+        <translation>Image size</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="724"/>
+        <source>Portrait A4</source>
+        <translation>Portrait A4</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="726"/>
+        <source>Landscape A4</source>
+        <translation>Landscape A4</translation>
+    </message>
 </context>
 <context>
     <name>ShortcutKeyRow</name>
@@ -7731,6 +7771,19 @@ Change the shortcut and try again</translation>
         <location filename="../src/presentation/components/settingscustomwidget.cpp" line="91"/>
         <source>Hidden pinned toolbar tools</source>
         <translation>Hidden pinned toolbar tools</translation>
+    </message>
+</context>
+<context>
+    <name>ScreenshotPdfExport</name>
+    <message>
+        <location filename="../src/presentation/services/screenshotpdfexport.cpp" line="13"/>
+        <source>The PDF could not be exported</source>
+        <translation>The PDF could not be exported</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/services/screenshotpdfexport.cpp" line="19"/>
+        <source>The PDF export was cancelled</source>
+        <translation>The PDF export was cancelled</translation>
     </message>
 </context>
 </TS>
