@@ -111,6 +111,9 @@ void managerValidationPersistenceAndCounts() {
     const QString secondId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     storage::PinnedWindowRecord first = record(firstId);
     first.groupId = *alphaId;
+    first.hideToTopMode = true;
+    first.hideToTopHandleNativeGeometry = QRect(20, 0, 30, 6);
+    first.hideToTopAccentIndex = 4;
     require(repository.upsert(first).success, "failed to seed an alpha record");
     require(repository.upsert(record(secondId)).success, "failed to seed a default record");
     require(manager.windowCount(*alphaId) == 1 && manager.windowCount("default") == 1,
@@ -120,6 +123,12 @@ void managerValidationPersistenceAndCounts() {
     require(repository.activeGroupId() == *alphaId, "the active group should be persisted");
     presentation::PinnedWindowGroupManager restored(&repository);
     require(restored.activeGroupId() == *alphaId, "the active group should survive manager reload");
+    const auto restoredRecord = repository.loadRecord(firstId);
+    require(restoredRecord && restoredRecord->hideToTopMode &&
+                restoredRecord->hideToTopHandleNativeGeometry ==
+                    first.hideToTopHandleNativeGeometry &&
+                restoredRecord->hideToTopAccentIndex == 4,
+            "group switches must preserve hidden geometry and stable accent metadata");
     require(!restored.deleteEmptyGroups(),
             "a group containing persisted records should not be deleted");
     require(restored.activeGroupId() == *alphaId,

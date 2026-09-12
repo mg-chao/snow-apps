@@ -138,8 +138,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 36 && itemCount == 145 && foundUpdates,
-            "catalog must contain thirty-six sections and one hundred forty-five items");
+    require(sectionCount == 36 && itemCount == 146 && foundUpdates,
+            "catalog must contain thirty-six sections and one hundred forty-six items");
     const auto* history =
         catalog.section(QStringLiteral("storage-and-privacy"), QStringLiteral("history"));
     require(history != nullptr && history->items.size() >= 2 &&
@@ -384,13 +384,15 @@ void builtInCatalogIsCompleteAndValid() {
             "Pin to Screen must expose Double-click Action");
     const auto& pinSelect = std::get<settings::SettingsSelectDefinition>(pinDoubleClick->payload);
     require(pinSelect.binding == settings::SettingsSelectBinding::PinDoubleClickAction &&
-                pinSelect.options.size() == 3 &&
+                pinSelect.options.size() == 4 &&
                 pinSelect.options[0].value == QStringLiteral("none") &&
                 pinSelect.options[0].label.translated() == QStringLiteral("None") &&
                 pinSelect.options[1].value == QStringLiteral("thumbnail_mode") &&
                 pinSelect.options[1].label.translated() == QStringLiteral("Thumbnail Mode") &&
-                pinSelect.options[2].value == QStringLiteral("close") &&
-                pinSelect.options[2].label.translated() == QStringLiteral("Close"),
+                pinSelect.options[2].value == QStringLiteral("hide_to_top") &&
+                pinSelect.options[2].label.translated() == QStringLiteral("Hide to Top") &&
+                pinSelect.options[3].value == QStringLiteral("close") &&
+                pinSelect.options[3].label.translated() == QStringLiteral("Close"),
             "pinned double-click options must preserve the specified order, labels and values");
     require(functionPage->sections.at(1).items.at(1).id == pinDoubleClick->id,
             "pinned double-click must follow mouse wheel zoom mode");
@@ -404,15 +406,17 @@ void builtInCatalogIsCompleteAndValid() {
     const auto& middleSelect =
         std::get<settings::SettingsSelectDefinition>(pinMiddleClick->payload);
     require(middleSelect.binding == settings::SettingsSelectBinding::PinMiddleClickAction &&
-                middleSelect.options.size() == 4 &&
+                middleSelect.options.size() == 5 &&
                 middleSelect.options[0].value == QStringLiteral("none") &&
                 middleSelect.options[0].label.translated() == QStringLiteral("None") &&
                 middleSelect.options[1].value == QStringLiteral("reset_zoom") &&
                 middleSelect.options[1].label.translated() == QStringLiteral("Reset Zoom") &&
                 middleSelect.options[2].value == QStringLiteral("thumbnail_mode") &&
                 middleSelect.options[2].label.translated() == QStringLiteral("Thumbnail Mode") &&
-                middleSelect.options[3].value == QStringLiteral("close") &&
-                middleSelect.options[3].label.translated() == QStringLiteral("Close"),
+                middleSelect.options[3].value == QStringLiteral("hide_to_top") &&
+                middleSelect.options[3].label.translated() == QStringLiteral("Hide to Top") &&
+                middleSelect.options[4].value == QStringLiteral("close") &&
+                middleSelect.options[4].label.translated() == QStringLiteral("Close"),
             "pinned middle-click options must preserve the specified order, labels and values");
     require(functionPage->sections.at(1).items.at(2).id == pinMiddleClick->id,
             "pinned middle-click must follow double-click action");
@@ -643,7 +647,7 @@ void builtInCatalogIsCompleteAndValid() {
                     .scope == settings::SettingsLocalShortcutScope::Screenshot &&
             drawingShortcuts != nullptr && drawingShortcuts->items.size() == 10 &&
             drawingShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
-            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 11 &&
+            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 12 &&
             pinToScreenShortcuts->itemLayout ==
                 settings::SettingsSectionItemLayout::TwoColumnGrid &&
             pinToScreenShortcuts->title.translated() == QStringLiteral("Pin to screen") &&
@@ -1228,7 +1232,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 193 && index.search(QString()).size() == 193,
+    require(index.entries().size() == 194 && index.search(QString()).size() == 194,
             "search must generate all catalog nodes in catalog order");
     const auto selectedFiles = index.search(QStringLiteral("Pin Selected Files to Screen"));
     require(!selectedFiles.isEmpty() &&
@@ -1284,7 +1288,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 36 && items == 145,
+    require(pages == 12 && sections == 36 && items == 146,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

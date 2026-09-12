@@ -105,6 +105,7 @@ reconcileRestoreState(const snow_shot::storage::PinnedWindowRecord& record, QScr
     screenshot_pinned_restore_geometry::SavedState saved;
     saved.nativeGeometry = record.nativeGeometry;
     saved.preThumbnailNativeGeometry = record.preThumbnailNativeGeometry;
+    saved.hideToTopHandleNativeGeometry = record.hideToTopHandleNativeGeometry;
     saved.screenPhysicalBounds = record.screenPhysicalGeometry;
     QList<screenshot_pinned_restore_geometry::ScreenGeometry> screens;
     for (QScreen* screen : QGuiApplication::screens()) {
@@ -938,6 +939,9 @@ void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
         config.persistedOpacityPercent = record.opacityPercent;
         config.persistedImageTransform = record.imageTransform;
         config.persistedQuarterTurns = record.quarterTurns;
+        config.persistedHideToTopMode = record.hideToTopMode;
+        config.persistedHideToTopHandleNativeGeometry = restored.hideToTopHandleNativeGeometry;
+        config.persistedHideToTopAccentIndex = record.hideToTopAccentIndex;
         config.persistedThumbnailMode = record.thumbnailMode;
         config.persistedPreThumbnailNativeGeometry = restored.preThumbnailNativeGeometry;
         config.persistedFirstCreationTextDpi = record.firstCreationTextDpi;

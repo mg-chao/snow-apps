@@ -134,11 +134,21 @@ void geometryWiderThanWorkAreaAlignsWithWorkAreaOrigin() {
     require(restored.nativeGeometry == QRect(QPoint(5000, 200), QSize(3000, 800)),
             "geometry wider than the work area should align with the work area origin");
 }
+void hideToTopHandleRebasesWithItsShownWindow() {
+    const auto target = screen(QRect(-1920, 0, 1920, 1080), QRect(-1920, 40, 1920, 1040));
+    auto state = saved(QRect(200, 46, 400, 200), QRect(0, 0, 1920, 1080));
+    state.hideToTopHandleNativeGeometry = QRect(200, 40, 30, 6);
+    const auto restored = restore_geometry::reconcileSavedState(state, target, {target});
+    require(restored.nativeGeometry == QRect(-1720, 46, 400, 200) &&
+                restored.hideToTopHandleNativeGeometry == QRect(-1720, 40, 30, 6),
+            "monitor relocation must rebase the handle and shown geometry together");
+}
 } // namespace
 
 int main() {
     try {
         sameScreenRestorePreservesGeometryExactly();
+        hideToTopHandleRebasesWithItsShownWindow();
         higherTargetDpiKeepsEveryPhysicalPixel();
         lowerTargetDpiKeepsEveryPhysicalPixel();
         differentScreenOriginRebasesOffsetUnscaled();
