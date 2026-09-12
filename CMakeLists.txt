@@ -315,6 +315,7 @@ if(NOT TARGET snow-benchmarks)
     foreach(_snow_benchmark IN ITEMS
         snow-shot-history-performance-benchmark
         snow-shot-direct-recording-performance-benchmark
+        snow-shot-realtime-recording-performance-benchmark
         snow-shot-selection-render-benchmark
         snow-shot-screenshot-toolbar-render-benchmark
         snow-shot-save-to-file-performance-benchmark

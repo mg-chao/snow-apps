@@ -24,6 +24,10 @@ use snow_recording_export::{
 use snow_recording_model::{VideoEncodeConfig, VideoEncodingSpeed};
 
 use crate::adapter::video::resolve_capture_target;
+#[cfg(any(feature = "bench-stage-timing", feature = "bench-compositor-timing"))]
+use crate::bench_timing::StageHistogram;
+#[cfg(feature = "bench-pipeline-timing")]
+use crate::bench_timing::{CapturePipelineStats, PipelineTimings};
 use crate::config::{CaptureBackendKind, RecordingRegion, RecordingTarget};
 use crate::error::{Result, ScreenRecorderError};
 use crate::keyboard_hook::KeyboardInput;
@@ -150,6 +154,15 @@ pub struct DirectRecordingReport {
     pub encoded_audio_frames: u64,
     pub inserted_silence_frames: u64,
     pub dropped_audio_frames: u64,
+    /// Per-backend capture stage breakdown (`bench-stage-timing` builds only).
+    #[cfg(feature = "bench-stage-timing")]
+    pub capture_stage_timings: Option<StageHistogram>,
+    /// Overlay compositing stage breakdown (`bench-compositor-timing` builds only).
+    #[cfg(feature = "bench-compositor-timing")]
+    pub compositor_timings: Option<StageHistogram>,
+    /// Capture-to-encode latency summary (`bench-pipeline-timing` builds only).
+    #[cfg(feature = "bench-pipeline-timing")]
+    pub pipeline: Option<CapturePipelineStats>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -197,6 +210,8 @@ impl DirectRecordingSession {
             resolve_capture_target(&RecordingTarget::Region(self.config.region))?,
             CaptureOptions {
                 workload: CaptureWorkload::Continuous,
+                #[cfg(feature = "bench-stage-timing")]
+                record_stage_timings: true,
                 ..CaptureOptions::default()
             },
         )?;
@@ -453,6 +468,12 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
     let mut dropped_capture_frames = 0u64;
     let mut last_timestamp_ms = None;
     let mut latest_frame = None;
+    #[cfg(feature = "bench-stage-timing")]
+    let mut capture_stage_timings = StageHistogram::default();
+    #[cfg(feature = "bench-pipeline-timing")]
+    let mut pipeline_timings = PipelineTimings::default();
+    #[cfg(feature = "bench-pipeline-timing")]
+    pipeline_timings.begin();
     let output_interval_ms = (1_000 / u64::from(config.output_fps.max(1))).max(1);
     let mut next_overlay_frame_ms = 0u64;
     let mut audio_mixer = encoder
@@ -560,6 +581,10 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                     dropped_capture_frames: &mut dropped_capture_frames,
                     compositor: &mut compositor,
                     encoder: &mut encoder,
+                    #[cfg(feature = "bench-stage-timing")]
+                    capture_stage_timings: &mut capture_stage_timings,
+                    #[cfg(feature = "bench-pipeline-timing")]
+                    pipeline_timings: &mut pipeline_timings,
                 },
             )?,
             Err(snow_core::error::RecvTimeoutError::Timeout) => {}
@@ -574,6 +599,11 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                 let timestamp_ms = monotonic_timestamp(&mut last_timestamp_ms, timestamp_ms);
                 let rgba = compositor.compose(&config, frame, timestamp_ms)?;
                 encoder.push_rgba_frame(timestamp_ms, &rgba)?;
+                #[cfg(feature = "bench-pipeline-timing")]
+                {
+                    pipeline_timings.synthetic_overlay_frames =
+                        pipeline_timings.synthetic_overlay_frames.saturating_add(1);
+                }
                 next_overlay_frame_ms = timestamp_ms.saturating_add(output_interval_ms);
             }
         }
@@ -589,6 +619,8 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         return Err(ScreenRecorderError::ExportCanceled);
     }
 
+    #[cfg(feature = "bench-pipeline-timing")]
+    let stream_stats = capture_stream.stats().snapshot();
     for event in capture_stream.stop_and_drain() {
         process_capture_event(
             event,
@@ -600,6 +632,10 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                 dropped_capture_frames: &mut dropped_capture_frames,
                 compositor: &mut compositor,
                 encoder: &mut encoder,
+                #[cfg(feature = "bench-stage-timing")]
+                capture_stage_timings: &mut capture_stage_timings,
+                #[cfg(feature = "bench-pipeline-timing")]
+                pipeline_timings: &mut pipeline_timings,
             },
         )?;
     }
@@ -618,17 +654,27 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
     audio_frames_dropped = audio_frames_dropped
         .saturating_add(audio_mixer.as_ref().map_or(0, |mixer| mixer.dropped_frames));
     let report = encoder.finish()?;
-    Ok(report_from_encoder(
+    let report = report_from_encoder(
         report,
         dropped_capture_frames,
         audio_frames_dropped,
-    ))
+        #[cfg(feature = "bench-stage-timing")]
+        Some(std::mem::take(&mut capture_stage_timings)),
+        #[cfg(feature = "bench-compositor-timing")]
+        Some(compositor.timings.clone()),
+        #[cfg(feature = "bench-pipeline-timing")]
+        Some(pipeline_timings.stats(&stream_stats)),
+    );
+    Ok(report)
 }
 
 fn report_from_encoder(
     report: StreamingEncoderReport,
     dropped_capture_frames: u64,
     audio_frames_dropped: u64,
+    #[cfg(feature = "bench-stage-timing")] capture_stage_timings: Option<StageHistogram>,
+    #[cfg(feature = "bench-compositor-timing")] compositor_timings: Option<StageHistogram>,
+    #[cfg(feature = "bench-pipeline-timing")] pipeline: Option<CapturePipelineStats>,
 ) -> DirectRecordingReport {
     DirectRecordingReport {
         encoded_frames: report.encoded_frames,
@@ -641,6 +687,12 @@ fn report_from_encoder(
         dropped_audio_frames: report
             .dropped_audio_frames
             .saturating_add(audio_frames_dropped),
+        #[cfg(feature = "bench-stage-timing")]
+        capture_stage_timings,
+        #[cfg(feature = "bench-compositor-timing")]
+        compositor_timings,
+        #[cfg(feature = "bench-pipeline-timing")]
+        pipeline,
     }
 }
 
@@ -880,6 +932,10 @@ struct CaptureEventContext<'a> {
     dropped_capture_frames: &'a mut u64,
     compositor: &'a mut VisualCompositor,
     encoder: &'a mut StreamingEncoder,
+    #[cfg(feature = "bench-stage-timing")]
+    capture_stage_timings: &'a mut StageHistogram,
+    #[cfg(feature = "bench-pipeline-timing")]
+    pipeline_timings: &'a mut PipelineTimings,
 }
 
 fn process_capture_event(event: CaptureEvent, context: CaptureEventContext<'_>) -> Result<()> {
@@ -891,18 +947,32 @@ fn process_capture_event(event: CaptureEvent, context: CaptureEventContext<'_>) 
         dropped_capture_frames,
         compositor,
         encoder,
+        #[cfg(feature = "bench-stage-timing")]
+        capture_stage_timings,
+        #[cfg(feature = "bench-pipeline-timing")]
+        pipeline_timings,
     } = context;
     match event {
         CaptureEvent::Frame(frame) => {
+            #[cfg(feature = "bench-stage-timing")]
+            for stage in frame.metadata().stage_timings() {
+                capture_stage_timings.record(stage.name, stage.duration);
+            }
             let instant = frame
                 .metadata()
                 .stream_timestamp()
                 .map(|timestamp| timestamp.instant)
                 .unwrap_or_else(Instant::now);
+            #[cfg(feature = "bench-pipeline-timing")]
+            let received = Instant::now();
             let timestamp_ms =
                 monotonic_timestamp(last_timestamp_ms, clock.active_elapsed_ms(instant));
             let rgba = compositor.compose(config, &frame, timestamp_ms)?;
+            #[cfg(feature = "bench-pipeline-timing")]
+            let composed = Instant::now();
             encoder.push_rgba_frame(timestamp_ms, &rgba)?;
+            #[cfg(feature = "bench-pipeline-timing")]
+            pipeline_timings.observe_frame(instant, received, composed, Instant::now());
             *latest_frame = Some(frame);
         }
         CaptureEvent::FramesDropped { count, .. } => {
@@ -962,6 +1032,8 @@ struct VisualCompositor {
     cursor_shapes: HashMap<u64, CursorShape>,
     keyboard: Option<KeyboardOverlay>,
     pending_keys: VecDeque<KeyEvent>,
+    #[cfg(feature = "bench-compositor-timing")]
+    timings: StageHistogram,
 }
 
 impl VisualCompositor {
@@ -973,6 +1045,8 @@ impl VisualCompositor {
             cursor_shapes: HashMap::new(),
             keyboard: None,
             pending_keys: VecDeque::new(),
+            #[cfg(feature = "bench-compositor-timing")]
+            timings: StageHistogram::default(),
         }
     }
 
@@ -984,8 +1058,14 @@ impl VisualCompositor {
     ) -> Result<Vec<u8>> {
         self.trail.set_lifetime_ms(config.mouse_trail_duration_ms);
         let source_size = frame.dimensions();
+        #[cfg(feature = "bench-compositor-timing")]
+        let stage = Instant::now();
         let mut rgba = resize_rgba(frame.as_rgba_bytes(), source_size, self.output_size);
+        #[cfg(feature = "bench-compositor-timing")]
+        self.timings.record("compose.resize", stage.elapsed());
         let cursor = frame.metadata().cursor().cloned();
+        #[cfg(feature = "bench-compositor-timing")]
+        let stage = Instant::now();
         if config.mouse_trail_rgba[3] != 0 {
             self.trail.observe(
                 cursor
@@ -999,12 +1079,12 @@ impl VisualCompositor {
         } else {
             self.trail.clear();
         }
-        while self.clicks.front().is_some_and(|click| {
-            timestamp_ms.saturating_sub(click.timestamp_ms) > CLICK_ANIMATION_MS
-        }) {
-            self.clicks.pop_front();
-        }
+        #[cfg(feature = "bench-compositor-timing")]
+        self.timings
+            .record("compose.trail_observe", stage.elapsed());
 
+        #[cfg(feature = "bench-compositor-timing")]
+        let stage = Instant::now();
         if config.mouse_trail_rgba[3] != 0 {
             self.trail.draw(
                 &mut rgba,
@@ -1012,6 +1092,16 @@ impl VisualCompositor {
                 timestamp_ms,
                 config.mouse_trail_rgba,
             );
+        }
+        #[cfg(feature = "bench-compositor-timing")]
+        self.timings.record("compose.trail_draw", stage.elapsed());
+
+        #[cfg(feature = "bench-compositor-timing")]
+        let stage = Instant::now();
+        while self.clicks.front().is_some_and(|click| {
+            timestamp_ms.saturating_sub(click.timestamp_ms) > CLICK_ANIMATION_MS
+        }) {
+            self.clicks.pop_front();
         }
         if config.mouse_click_rgba[3] != 0 {
             draw_clicks(
@@ -1023,6 +1113,11 @@ impl VisualCompositor {
                 source_size,
             );
         }
+        #[cfg(feature = "bench-compositor-timing")]
+        self.timings.record("compose.clicks", stage.elapsed());
+
+        #[cfg(feature = "bench-compositor-timing")]
+        let stage = Instant::now();
         if config.show_cursor
             && let Some(cursor) = cursor.as_ref()
         {
@@ -1034,6 +1129,11 @@ impl VisualCompositor {
                 &mut self.cursor_shapes,
             );
         }
+        #[cfg(feature = "bench-compositor-timing")]
+        self.timings.record("compose.cursor", stage.elapsed());
+
+        #[cfg(feature = "bench-compositor-timing")]
+        let stage = Instant::now();
         if let Some(keyboard) = self.keyboard.as_mut() {
             while self
                 .pending_keys
@@ -1048,6 +1148,8 @@ impl VisualCompositor {
                 ScreenRecorderError::Encode(format!("keyboard recording: {error}"))
             })?;
         }
+        #[cfg(feature = "bench-compositor-timing")]
+        self.timings.record("compose.keyboard", stage.elapsed());
         Ok(rgba)
     }
 
@@ -1747,5 +1849,36 @@ mod tests {
             compositor.clicks.front().map(|click| click.x),
             Some((CLICK_QUEUE_DEPTH * 2) as i32)
         );
+    }
+
+    #[cfg(feature = "bench-compositor-timing")]
+    #[test]
+    fn compositor_records_every_stage_once_per_frame() {
+        let mut value = config();
+        value.mouse_trail_rgba = [255, 0, 0, 255];
+        value.mouse_click_rgba = [0, 255, 0, 128];
+        let size = (320, 180);
+        let original = [20, 40, 60, 255].repeat(size.0 as usize * size.1 as usize);
+        let frame: CapturedFrame = snow_capture::frame::Frame::from_rgba8(size.0, size.1, original)
+            .unwrap()
+            .into();
+        let mut compositor = VisualCompositor::new(size);
+        compositor.keyboard = Some(KeyboardOverlay::new(size, Box::new(KeyboardTestRasterizer)));
+        compositor.compose(&value, &frame, 100).unwrap();
+        let snapshot = compositor.timings.snapshot();
+        for name in [
+            "compose.resize",
+            "compose.trail_observe",
+            "compose.trail_draw",
+            "compose.clicks",
+            "compose.cursor",
+            "compose.keyboard",
+        ] {
+            assert_eq!(
+                snapshot.get(name).map(|stats| stats.count),
+                Some(1),
+                "{name} must be recorded exactly once per composited frame"
+            );
+        }
     }
 }

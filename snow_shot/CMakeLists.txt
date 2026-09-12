@@ -5118,6 +5118,33 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         VERBATIM
     )
 
+    # Drives the real DirectRecordingSession path (capture stream, input
+    # hooks, overlay compositing, encoder) against a temporary animated
+    # fullscreen window with simulated mouse/keyboard input. The metric
+    # groups are compile-time cargo features so each is measured without
+    # the instrumentation overhead of the others.
+    add_custom_target(snow-shot-realtime-recording-performance-benchmark
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
+            "FFMPEG_DIR=${SNOW_FFMPEG_ROOT}"
+            "${CARGO_EXECUTABLE}" build --locked --release
+            --target x86_64-pc-windows-msvc
+            --package snow-recording-runtime
+            --features bench-stage-timing,bench-compositor-timing,bench-pipeline-timing
+            --example realtime_recording_benchmark
+        WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
+        USES_TERMINAL
+        VERBATIM
+    )
+    # Seizes the primary monitor and injects input; interactive label keeps it
+    # out of default test presets.
+    add_test(NAME snow-shot-realtime-recording-performance-benchmark
+        COMMAND "${SNOW_RUST_CARGO_TARGET_DIR}/x86_64-pc-windows-msvc/release/examples/realtime_recording_benchmark.exe"
+            --duration-seconds 4 --warmup-seconds 1)
+    set_tests_properties(snow-shot-realtime-recording-performance-benchmark PROPERTIES
+        LABELS "benchmark;interactive;windows" RUN_SERIAL TRUE TIMEOUT 300
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${SNOW_FFMPEG_ROOT}/bin")
+
     add_executable(snow-shot-pin-to-screen-performance-benchmark
         tests/screenshot_pin_to_screen_performance_benchmark.cpp
     )

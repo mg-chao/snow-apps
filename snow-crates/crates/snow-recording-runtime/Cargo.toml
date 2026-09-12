@@ -37,5 +37,32 @@ windows = { workspace = true, features = [
 ] }
 
 [dev-dependencies]
+anyhow.workspace = true
 proptest = "1.11.0"
 tempfile.workspace = true
+
+[target.'cfg(windows)'.dev-dependencies]
+windows = { workspace = true, features = [
+    "Win32_Graphics_Gdi",
+    "Win32_UI_HiDpi",
+    "Win32_System_LibraryLoader",
+    "Win32_System_ProcessStatus",
+] }
+
+[features]
+# Compile-time metric groups for the realtime recording benchmark. Each group
+# is independently selectable so one measurement is not perturbed by the
+# instrumentation overhead of the others, and production builds (which enable
+# none of them) compile every marker to nothing.
+#
+# Forwards snow-capture's per-backend capture stage instrumentation; direct
+# recording sessions then enable `CaptureOptions::record_stage_timings` and
+# aggregate the per-frame stage breakdown into `DirectRecordingReport`.
+bench-stage-timing = ["snow-capture/stage-timing"]
+# Times each overlay compositing stage (resize, trail, clicks, cursor,
+# keyboard) for every composited frame.
+bench-compositor-timing = []
+# Measures per-frame pipeline latency (queue dwell, compose, encode push,
+# capture-to-encode end to end), counts synthetic overlay frames, and copies
+# capture stream statistics into the report.
+bench-pipeline-timing = []
