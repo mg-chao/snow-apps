@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
+#[cfg(feature = "bench-synthetic-input")]
+use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -31,10 +33,15 @@ use crate::bench_timing::StageHistogram;
 use crate::bench_timing::{CapturePipelineStats, PipelineTimings};
 use crate::config::{CaptureBackendKind, RecordingRegion, RecordingTarget};
 use crate::error::{Result, ScreenRecorderError};
+#[cfg(feature = "bench-synthetic-input")]
+use crate::keyboard_hook::KeyObservation;
 use crate::keyboard_hook::KeyboardInput;
 use crate::keyboard_overlay::{KeyEvent, KeyboardOverlay, KeyboardOverlayConfig};
 use crate::laser_trail::LaserTrail;
-use crate::mouse_hook::{MouseClickObservation, MouseHookObserver};
+use crate::mouse_hook::MouseClickObservation;
+use crate::mouse_hook::MouseHookObserver;
+#[cfg(feature = "bench-synthetic-input")]
+use crate::mouse_hook::ObservedMouseButton;
 use crate::recording::RecordingState;
 
 use snow_recording_effects::mouse_effects::{
@@ -44,6 +51,10 @@ const AUDIO_SAMPLE_RATE: u32 = 48_000;
 const AUDIO_CHANNELS: u16 = 2;
 const AUDIO_SLOT_MS: u64 = 10;
 const AUDIO_JITTER_MS: u64 = 100;
+/// Synthetic cursor queue depth; the worker drains once per output slot, so
+/// this only needs to absorb brief worker stalls (`bench-synthetic-input`).
+#[cfg(feature = "bench-synthetic-input")]
+const BENCH_CURSOR_QUEUE_DEPTH: usize = 64;
 
 #[derive(Clone, Debug)]
 pub struct DirectRecordingConfig {
@@ -233,6 +244,9 @@ enum ControlCommand {
 struct RuntimeHandles {
     control_tx: Sender<ControlCommand>,
     worker: JoinHandle<Result<DirectRecordingReport>>,
+    /// Synthetic overlay input senders (`bench-synthetic-input` builds only).
+    #[cfg(feature = "bench-synthetic-input")]
+    synthetic: Option<BenchSyntheticInput>,
 }
 
 pub struct DirectRecordingSession {
@@ -240,6 +254,8 @@ pub struct DirectRecordingSession {
     encode_threads: u8,
     resize_threads: u8,
     align_capture: bool,
+    #[cfg(feature = "bench-synthetic-input")]
+    bench_synthetic_input: bool,
     state: Arc<AtomicU8>,
     runtime: Mutex<Option<RuntimeHandles>>,
 }
@@ -256,6 +272,8 @@ impl DirectRecordingSession {
             encode_threads: 0,
             resize_threads,
             align_capture,
+            #[cfg(feature = "bench-synthetic-input")]
+            bench_synthetic_input: false,
             state: Arc::new(AtomicU8::new(state_to_u8(RecordingState::Created))),
             runtime: Mutex::new(None),
         })
@@ -294,6 +312,75 @@ impl DirectRecordingSession {
         }
         self.resize_threads = threads;
         Ok(())
+    }
+
+    /// Bench-only (`bench-synthetic-input` builds): drive the overlay inputs
+    /// with synthetic observations instead of OS input injection. The hooks
+    /// stay installed; only the event source changes.
+    #[cfg(feature = "bench-synthetic-input")]
+    pub fn set_bench_synthetic_input(&mut self, enabled: bool) -> Result<()> {
+        if self.state() != RecordingState::Created {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "synthetic bench input must be configured before recording starts".into(),
+            ));
+        }
+        self.bench_synthetic_input = enabled;
+        Ok(())
+    }
+
+    /// Feed a synthetic cursor position (region-relative) to the trail and
+    /// cursor overlays without moving the physical pointer.
+    #[cfg(feature = "bench-synthetic-input")]
+    pub fn bench_observe_cursor(&self, x: i32, y: i32) -> Result<()> {
+        self.with_bench_synthetic(|synthetic| {
+            synthetic
+                .cursor
+                .try_send((Instant::now(), x, y))
+                .map_err(|error| ScreenRecorderError::Encode(format!("synthetic cursor: {error}")))
+        })
+    }
+
+    /// Feed a synthetic left-button click (region-relative) to the click
+    /// overlay without pressing the physical mouse.
+    #[cfg(feature = "bench-synthetic-input")]
+    pub fn bench_observe_click(&self, x: i32, y: i32) -> Result<()> {
+        self.with_bench_synthetic(|synthetic| {
+            synthetic
+                .clicks
+                .try_send(MouseClickObservation {
+                    at: Instant::now(),
+                    x,
+                    y,
+                    button: ObservedMouseButton::Left,
+                })
+                .map_err(|error| ScreenRecorderError::Encode(format!("synthetic click: {error}")))
+        })
+    }
+
+    /// Feed a synthetic key edge to the keyboard overlay without emitting a
+    /// physical keystroke. Modifier state is tracked across calls.
+    #[cfg(feature = "bench-synthetic-input")]
+    pub fn bench_observe_key(&self, key: u16, down: bool) -> Result<()> {
+        self.with_bench_synthetic(|synthetic| synthetic.observe_key(key, down))
+    }
+
+    #[cfg(feature = "bench-synthetic-input")]
+    fn with_bench_synthetic(
+        &self,
+        observe: impl FnOnce(&mut BenchSyntheticInput) -> Result<()>,
+    ) -> Result<()> {
+        let mut runtime = self.runtime.lock().map_err(|_| {
+            ScreenRecorderError::InvalidConfig("direct recording runtime lock poisoned".to_string())
+        })?;
+        let Some(synthetic) = runtime
+            .as_mut()
+            .and_then(|handles| handles.synthetic.as_mut())
+        else {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "synthetic bench input requires a started session that opted in".into(),
+            ));
+        };
+        observe(synthetic)
     }
 
     pub fn start(&mut self) -> Result<()> {
@@ -343,6 +430,8 @@ impl DirectRecordingSession {
             },
         )?;
         let (click_tx, click_rx) = crossbeam_channel::bounded(CLICK_QUEUE_DEPTH);
+        #[cfg(feature = "bench-synthetic-input")]
+        let bench_click_tx = self.bench_synthetic_input.then(|| click_tx.clone());
         let mouse_hook = MouseHookObserver::start(
             (
                 self.config.region.x,
@@ -353,6 +442,27 @@ impl DirectRecordingSession {
             click_tx,
         )
         .map_err(ScreenRecorderError::Encode)?;
+        #[cfg(feature = "bench-synthetic-input")]
+        let (keyboard_input, bench_keyboard_tx, bench_keyboard_generation) =
+            match (self.config.keyboard.is_some(), self.bench_synthetic_input) {
+                (true, true) => {
+                    let (input, sender) =
+                        KeyboardInput::start_with_synthetic_sender().map_err(|error| {
+                            ScreenRecorderError::Encode(format!("keyboard recording: {error}"))
+                        })?;
+                    let generation = Arc::clone(&input.generation);
+                    (Some(input), Some(sender), Some(generation))
+                }
+                (true, false) => (
+                    Some(KeyboardInput::start().map_err(|error| {
+                        ScreenRecorderError::Encode(format!("keyboard recording: {error}"))
+                    })?),
+                    None,
+                    None,
+                ),
+                (false, _) => (None, None, None),
+            };
+        #[cfg(not(feature = "bench-synthetic-input"))]
         let keyboard_input = self
             .config
             .keyboard
@@ -360,6 +470,13 @@ impl DirectRecordingSession {
             .map(|_| KeyboardInput::start())
             .transpose()
             .map_err(|error| ScreenRecorderError::Encode(format!("keyboard recording: {error}")))?;
+        #[cfg(feature = "bench-synthetic-input")]
+        let (bench_cursor_tx, bench_cursor_rx) = if self.bench_synthetic_input {
+            let (sender, receiver) = crossbeam_channel::bounded(BENCH_CURSOR_QUEUE_DEPTH);
+            (Some(sender), Some(receiver))
+        } else {
+            (None, None)
+        };
         let (control_tx, control_rx) = crossbeam_channel::unbounded();
         let audio_stream = start_optional_audio_stream(&self.config);
         let config = self.config.clone();
@@ -416,6 +533,8 @@ impl DirectRecordingSession {
                         control_rx,
                         clock,
                         audio_stream,
+                        #[cfg(feature = "bench-synthetic-input")]
+                        bench_cursor_rx,
                     })
                 })();
                 worker_state.store(state_to_u8(RecordingState::Stopped), Ordering::Release);
@@ -435,9 +554,24 @@ impl DirectRecordingSession {
                 ));
             }
         }
+        #[cfg(feature = "bench-synthetic-input")]
+        let synthetic = self.bench_synthetic_input.then(|| BenchSyntheticInput {
+            clicks: bench_click_tx.expect("synthetic clicks sender"),
+            // Absent when the session records without a keyboard overlay.
+            keys: bench_keyboard_tx,
+            generation: bench_keyboard_generation,
+            cursor: bench_cursor_tx.expect("synthetic cursor sender"),
+            pressed: [0; 256],
+            layout: bench_keyboard_layout(),
+        });
         *self.runtime.lock().map_err(|_| {
             ScreenRecorderError::InvalidConfig("direct recording runtime lock poisoned".to_string())
-        })? = Some(RuntimeHandles { control_tx, worker });
+        })? = Some(RuntimeHandles {
+            control_tx,
+            worker,
+            #[cfg(feature = "bench-synthetic-input")]
+            synthetic,
+        });
         let _ = self.state.compare_exchange(
             state_to_u8(RecordingState::Created),
             state_to_u8(RecordingState::Running),
@@ -535,6 +669,106 @@ impl Drop for DirectRecordingSession {
     }
 }
 
+/// Sender side of a started session's synthetic overlay inputs
+/// (`bench-synthetic-input` builds only). Coordinates are region-relative,
+/// matching what the low-level hooks report. Nothing here injects OS input:
+/// the mouse and keyboard devices are never touched.
+#[cfg(feature = "bench-synthetic-input")]
+struct BenchSyntheticInput {
+    clicks: Sender<MouseClickObservation>,
+    /// Absent when the session records without a keyboard overlay.
+    keys: Option<Sender<KeyObservation>>,
+    /// Current keyboard generation so synthetic events pass the worker's
+    /// overflow rejection check without forcing a reset.
+    generation: Option<Arc<AtomicU64>>,
+    cursor: Sender<(Instant, i32, i32)>,
+    /// Synthetic modifier state mirrored from the observed key edges.
+    pressed: [u8; 256],
+    layout: usize,
+}
+
+#[cfg(feature = "bench-synthetic-input")]
+impl BenchSyntheticInput {
+    fn observe_key(&mut self, key: u16, down: bool) -> Result<()> {
+        let Some(keys) = self.keys.as_ref() else {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "synthetic keys require an enabled keyboard overlay".into(),
+            ));
+        };
+        if usize::from(key) >= self.pressed.len() {
+            return Err(ScreenRecorderError::InvalidConfig(format!(
+                "virtual key {key:#04x} is outside the synthetic keyboard state range"
+            )));
+        }
+        self.pressed[usize::from(key)] = u8::from(down) * 0x80;
+        let observation = KeyObservation {
+            at: Instant::now(),
+            key,
+            scan: bench_scan_code(key, self.layout),
+            down,
+            layout: self.layout,
+            pressed: self.pressed,
+            alt_gr: false,
+            generation: self
+                .generation
+                .as_deref()
+                .map_or(0, |generation| generation.load(Ordering::Acquire)),
+        };
+        keys.try_send(observation)
+            .map_err(|error| ScreenRecorderError::Encode(format!("synthetic key: {error}")))
+    }
+}
+
+#[cfg(all(windows, feature = "bench-synthetic-input"))]
+fn bench_keyboard_layout() -> usize {
+    unsafe { windows::Win32::UI::Input::KeyboardAndMouse::GetKeyboardLayout(0) }.0 as usize
+}
+
+#[cfg(all(not(windows), feature = "bench-synthetic-input"))]
+fn bench_keyboard_layout() -> usize {
+    0
+}
+
+#[cfg(all(windows, feature = "bench-synthetic-input"))]
+fn bench_scan_code(key: u16, layout: usize) -> u32 {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{HKL, MAPVK_VK_TO_VSC_EX, MapVirtualKeyExW};
+    unsafe {
+        MapVirtualKeyExW(
+            u32::from(key),
+            MAPVK_VK_TO_VSC_EX,
+            Some(HKL(layout as *mut _)),
+        )
+    }
+}
+
+#[cfg(all(not(windows), feature = "bench-synthetic-input"))]
+fn bench_scan_code(_key: u16, _layout: usize) -> u32 {
+    0
+}
+
+/// Deterministic wedge cursor drawn by the overlays when synthetic cursor
+/// positions replace the capture-attached samples.
+#[cfg(feature = "bench-synthetic-input")]
+fn synthetic_arrow_cursor_shape() -> CursorShape {
+    const SIZE: u32 = 24;
+    const EDGE: i32 = 2;
+    let mut rgba = Vec::with_capacity((SIZE * SIZE * 4) as usize);
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let (x, y) = (x as i32, y as i32);
+            let pixel = if x <= y {
+                [0, 0, 0, 255]
+            } else if x <= y + EDGE {
+                [255, 255, 255, 255]
+            } else {
+                [0, 0, 0, 0]
+            };
+            rgba.extend_from_slice(&pixel);
+        }
+    }
+    CursorShape::from_rgba(0, 0, SIZE, SIZE, CursorCompositionMode::AlphaBlend, rgba)
+}
+
 fn state_to_u8(state: RecordingState) -> u8 {
     match state {
         RecordingState::Created => 0,
@@ -565,6 +799,9 @@ struct DirectWorkerInputs {
     control_rx: Receiver<ControlCommand>,
     clock: RecordingClock,
     audio_stream: Option<AudioStreamHandle>,
+    /// Synthetic cursor positions (`bench-synthetic-input` builds only).
+    #[cfg(feature = "bench-synthetic-input")]
+    bench_cursor_rx: Option<Receiver<(Instant, i32, i32)>>,
 }
 
 fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport> {
@@ -580,8 +817,19 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         control_rx,
         clock,
         mut audio_stream,
+        #[cfg(feature = "bench-synthetic-input")]
+        bench_cursor_rx,
     } = inputs;
     let _mouse_hook = mouse_hook;
+    // Synthetic cursor positions replace the capture-attached samples so the
+    // trail and cursor overlays follow the benchmark's sweep, not the
+    // physical pointer (`bench-synthetic-input` builds only).
+    #[cfg(feature = "bench-synthetic-input")]
+    let bench_cursor = bench_cursor_rx.is_some();
+    #[cfg(not(feature = "bench-synthetic-input"))]
+    let bench_cursor = false;
+    #[cfg(feature = "bench-synthetic-input")]
+    let bench_cursor_shape = bench_cursor.then(synthetic_arrow_cursor_shape);
     let clock_controller = clock.controller();
     if align_capture {
         capture_stream.set_pacing_origin(Some(clock.started_at()));
@@ -677,6 +925,23 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
             }
         }
         drain_click_observations(&click_rx, &clock, paused, fresh_since, &mut compositor);
+        #[cfg(feature = "bench-synthetic-input")]
+        if let (Some(receiver), Some(shape)) =
+            (bench_cursor_rx.as_ref(), bench_cursor_shape.as_ref())
+            && !paused
+        {
+            while let Ok((at, x, y)) = receiver.try_recv() {
+                cursors.push(
+                    at,
+                    AttachedCursorSample {
+                        x,
+                        y,
+                        visible: true,
+                        shape: CursorShapeState::Embedded(shape.clone()),
+                    },
+                );
+            }
+        }
         if let (Some(input), Some(style)) = (keyboard_input.as_ref(), config.keyboard.as_ref()) {
             let generation = input.generation.load(Ordering::Acquire);
             if keyboard_generation != generation {
@@ -754,7 +1019,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                             .unwrap_or_else(|| frame_instant(&frame))
                             >= fresh_since
                     {
-                        if let Some(cursor) = frame.metadata().cursor() {
+                        if let Some(cursor) = frame.metadata().cursor().filter(|_| !bench_cursor) {
                             cursors.push(
                                 frame.metadata().queued_at().unwrap_or(received),
                                 cursor.clone(),
@@ -2396,6 +2661,121 @@ mod tests {
                 Some(1),
                 "{name} must be recorded exactly once per composited frame"
             );
+        }
+    }
+
+    #[cfg(feature = "bench-synthetic-input")]
+    mod bench_synthetic_input_tests {
+        use super::*;
+
+        struct Synthetic {
+            input: BenchSyntheticInput,
+            clicks: crossbeam_channel::Receiver<MouseClickObservation>,
+            keys: crossbeam_channel::Receiver<KeyObservation>,
+            cursor: crossbeam_channel::Receiver<(Instant, i32, i32)>,
+        }
+
+        fn synthetic() -> Synthetic {
+            let (click_tx, click_rx) = crossbeam_channel::bounded(CLICK_QUEUE_DEPTH);
+            let (key_tx, key_rx) = crossbeam_channel::bounded(64);
+            let (cursor_tx, cursor_rx) = crossbeam_channel::bounded(BENCH_CURSOR_QUEUE_DEPTH);
+            Synthetic {
+                input: BenchSyntheticInput {
+                    clicks: click_tx,
+                    keys: Some(key_tx),
+                    generation: None,
+                    cursor: cursor_tx,
+                    pressed: [0; 256],
+                    layout: bench_keyboard_layout(),
+                },
+                clicks: click_rx,
+                keys: key_rx,
+                cursor: cursor_rx,
+            }
+        }
+
+        #[test]
+        fn synthetic_keys_track_modifier_state_for_overlay_chords() {
+            let mut synthetic = synthetic();
+            let chord = [
+                (0xa2u16, true),
+                (0xa0, true),
+                (u16::from(b'S'), true),
+                (u16::from(b'S'), false),
+                (0xa0, false),
+                (0xa2, false),
+            ];
+            for (key, down) in chord {
+                synthetic.input.observe_key(key, down).unwrap();
+            }
+            let config = KeyboardOverlayConfig {
+                keycap_size: 64,
+                background_rgba: [0; 4],
+                text_rgba: [0; 4],
+                border_rgba: [0; 4],
+                labels: [
+                    (0x11, "Ctrl".into()),
+                    (0x10, "Shift".into()),
+                    (u16::from(b'S'), "S".into()),
+                ]
+                .into(),
+            };
+            // Drain without blocking: the sender stays alive inside `synthetic`.
+            let events: Vec<_> = std::iter::from_fn(|| synthetic.keys.try_recv().ok()).collect();
+            assert_eq!(events.len(), chord.len());
+            assert!(events.iter().all(|event| event.generation == 0));
+            let press = events[2].event(0, &config);
+            assert_eq!(press.key, u16::from(b'S'));
+            assert!(press.down);
+            assert_eq!(
+                press
+                    .modifiers
+                    .iter()
+                    .map(|(key, _)| *key)
+                    .collect::<Vec<_>>(),
+                [0xa2, 0xa0]
+            );
+            assert!(events[5].pressed.iter().all(|&state| state == 0));
+        }
+
+        #[test]
+        fn synthetic_keys_without_an_overlay_are_rejected() {
+            let mut synthetic = synthetic();
+            synthetic.input.keys = None;
+            assert!(synthetic.input.observe_key(u16::from(b'A'), true).is_err());
+        }
+
+        #[test]
+        fn synthetic_clicks_and_cursor_carry_region_relative_positions() {
+            let synthetic = synthetic();
+            synthetic
+                .input
+                .clicks
+                .try_send(MouseClickObservation {
+                    at: Instant::now(),
+                    x: 12,
+                    y: 34,
+                    button: ObservedMouseButton::Left,
+                })
+                .unwrap();
+            synthetic
+                .input
+                .cursor
+                .try_send((Instant::now(), 56, 78))
+                .unwrap();
+            let click = synthetic.clicks.try_recv().unwrap();
+            assert_eq!((click.x, click.y), (12, 34));
+            let (_, x, y) = synthetic.cursor.try_recv().unwrap();
+            assert_eq!((x, y), (56, 78));
+        }
+
+        #[test]
+        fn synthetic_cursor_shape_has_opaque_and_transparent_pixels() {
+            let shape = synthetic_arrow_cursor_shape();
+            assert_eq!((shape.width, shape.height), (24, 24));
+            assert_eq!(shape.shape_rgba.len(), 24 * 24 * 4);
+            assert!(shape.shape_rgba.chunks(4).any(|pixel| pixel[3] == 255));
+            assert!(shape.shape_rgba.chunks(4).any(|pixel| pixel[3] == 0));
         }
     }
 }

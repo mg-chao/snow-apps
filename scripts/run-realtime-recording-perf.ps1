@@ -8,7 +8,7 @@ param(
     [int]$Samples = 1,
     [string]$Scenario = "",
     [string]$Backend = "auto",
-    [int]$Fps = 30,
+    [int]$Fps = 60,
     [string]$Clarity = "1080p",
     [switch]$PreferHardware,
     [string]$OutputDirectory = "",
@@ -60,8 +60,12 @@ if ($PreferHardware) {
 }
 
 $env:SNOW_BENCH_REVISION = (& git -C $repoRoot rev-parse HEAD).Trim()
-$featureArguments = @()
-if (-not [string]::IsNullOrWhiteSpace($Metrics)) { $featureArguments = @("--features", $Metrics) }
+# Synthetic overlay input is always required: the benchmark never injects OS
+# mouse or keyboard events, so the example target only builds with this feature.
+$features = @($Metrics -split ',' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+$features += 'bench-synthetic-input'
+$features = @($features | Select-Object -Unique)
+$featureArguments = @("--features", ($features -join ','))
 Push-Location (Join-Path $repoRoot "snow-crates")
 try {
     if ([string]::IsNullOrWhiteSpace($Executable)) {
@@ -81,7 +85,7 @@ try {
         arguments = $benchmarkArguments
     } | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 (Join-Path $OutputDirectory 'build-identity.json')
     Write-Host "Realtime recording benchmark report: $OutputDirectory"
-    Write-Warning "The benchmark takes over the primary monitor and simulates mouse and keyboard input."
+    Write-Warning "The benchmark covers the leftmost monitor with a fullscreen workload window. It never injects mouse or keyboard input."
     for ($remaining = 5; $remaining -ge 1; $remaining--) {
         Write-Host "Starting in $remaining..."
         Start-Sleep -Seconds 1

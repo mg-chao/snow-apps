@@ -37,6 +37,23 @@ impl KeyboardInput {
             _observer: observer,
         })
     }
+    /// Bench-only: start observation exactly like [`KeyboardInput::start`] but
+    /// retain a channel sender so synthetic key observations can be fed to the
+    /// recording pipeline without injecting OS keyboard input.
+    #[cfg(feature = "bench-synthetic-input")]
+    pub fn start_with_synthetic_sender() -> Result<(Self, Sender<KeyObservation>), String> {
+        let (sender, receiver) = crossbeam_channel::bounded(256);
+        let generation = Arc::new(AtomicU64::new(0));
+        let observer = platform::Observer::start(sender.clone(), Arc::clone(&generation))?;
+        Ok((
+            Self {
+                receiver,
+                generation,
+                _observer: observer,
+            },
+            sender,
+        ))
+    }
     pub fn reset(&self) {
         self.generation.fetch_add(1, Ordering::AcqRel);
         while self.receiver.try_recv().is_ok() {}

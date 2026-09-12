@@ -17,3 +17,7 @@ windows = { workspace = true, features = [
 
 [features]
 bench-timing = []
+# Bench-only synthetic input: retains a channel sender next to the keyboard
+# hook so benchmarks can feed KeyObservation values without injecting OS
+# input. Production builds never enable this.
+bench-synthetic-input = []

@@ -41,6 +41,12 @@ anyhow.workspace = true
 proptest = "1.11.0"
 tempfile.workspace = true
 
+# Drives the overlays without OS input injection; skipped entirely in builds
+# that do not opt into the bench feature.
+[[example]]
+name = "realtime_recording_benchmark"
+required-features = ["bench-synthetic-input"]
+
 [target.'cfg(windows)'.dev-dependencies]
 windows = { workspace = true, features = [
     "Win32_Graphics_Gdi",
@@ -66,3 +72,8 @@ bench-compositor-timing = ["snow-recording-effects/bench-timing"]
 # capture-to-encode end to end), counts synthetic overlay frames, and copies
 # capture stream statistics into the report.
 bench-pipeline-timing = ["snow-capture/stage-timing", "snow-recording-export/bench-timing"]
+# Lets the realtime recording benchmark drive a direct session's overlay
+# inputs (cursor, clicks, keys) with synthetic observations instead of OS
+# input injection. Sessions opt in explicitly; production builds that enable
+# none of the bench features compile the hooks-only path unchanged.
+bench-synthetic-input = ["snow-recording-effects/bench-synthetic-input"]

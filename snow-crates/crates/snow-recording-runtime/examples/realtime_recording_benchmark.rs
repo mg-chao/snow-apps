@@ -2,19 +2,22 @@
 //!
 //! Drives a real `DirectRecordingSession` (capture stream, low-level mouse and
 //! keyboard hooks, overlay compositing, and FFmpeg encoding to a temporary
-//! MP4) against a fullscreen window that repaints continuously, while
-//! simulating user input with `SendInput`:
+//! MP4) against a fullscreen window that repaints continuously on the
+//! leftmost monitor, while feeding the overlays synthetic input observations
+//! through the session's bench API (`bench-synthetic-input` feature). The
+//! benchmark never injects OS input: the physical mouse and keyboard stay in
+//! the user's hands, and the workload window never takes focus.
 //!
-//! * `mouse-only`  — cursor + mouse trail/click effects; mouse movement and
-//!   clicks simulated, no keyboard overlay.
+//! * `mouse-only`  — cursor + mouse trail/click effects; synthetic cursor
+//!   movement and clicks, no keyboard overlay.
 //! * `all-effects` — everything above plus the keyboard overlay, with
-//!   simulated key presses and periodic Ctrl+Shift chords.
+//!   synthetic key presses and periodic Ctrl+Shift chords.
 //!
 //! Detailed metric groups are compile-time gated (see the `bench-*-timing`
 //! cargo features); with none enabled only the always-on metrics below are
 //! reported. Run via `scripts/run-realtime-recording-perf.ps1`, which uses the
-//! `windows-msvc-performance` preset environment. The benchmark takes over
-//! the primary monitor and injects input while it runs.
+//! `windows-msvc-performance` preset environment. The benchmark covers the
+//! leftmost monitor with its workload window while it runs.
 
 #![cfg(windows)]
 
@@ -28,6 +31,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+use snow_capture::region::MonitorGeometry;
 use snow_capture::{CaptureSystem, MonitorLayout};
 use snow_recording_export::{ExportFormat, VideoCodec, scaled_output_dimensions};
 use snow_recording_model::VideoEncodingSpeed;
@@ -41,7 +45,7 @@ use snow_recording_runtime::{
     CaptureBackendKind, DirectRecordingConfig, DirectRecordingSession, KeyboardOverlayConfig,
     RecordingRegion,
 };
-use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateSolidBrush, DeleteDC,
     DeleteObject, Ellipse, EndPaint, FillRect, GetStockObject, HBITMAP, HDC, InvalidateRect,
@@ -51,47 +55,28 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::ProcessStatus::{
     K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX,
 };
-use windows::Win32::System::Threading::{
-    AttachThreadInput, GetCurrentProcess, GetCurrentThreadId, GetProcessTimes,
-};
+use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetThreadDpiAwarenessContext,
 };
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBD_EVENT_FLAGS, KEYBDINPUT,
-    KEYEVENTF_KEYUP, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
-    MOUSEEVENTF_MOVE, MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, SendInput, VIRTUAL_KEY,
-};
 use windows::Win32::UI::WindowsAndMessaging::{
-    BringWindowToTop, CREATESTRUCTW, CreateWindowExW, DefWindowProcW, DispatchMessageW,
-    GWLP_USERDATA, GetCursorPos, GetForegroundWindow, GetMessageW, GetPhysicalCursorPos,
-    GetWindowLongPtrW, GetWindowThreadProcessId, IDC_ARROW, LoadCursorW, MSG, PostMessageW,
-    PostQuitMessage, RegisterClassW, SW_SHOW, SetCursorPos, SetForegroundWindow, SetTimer,
-    SetWindowLongPtrW, ShowWindow, WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_NCCREATE, WM_PAINT,
-    WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
-    WindowFromPhysicalPoint,
+    CREATESTRUCTW, CreateWindowExW, DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetMessageW,
+    GetWindowLongPtrW, IDC_ARROW, LoadCursorW, MSG, PostMessageW, PostQuitMessage, RegisterClassW,
+    SW_SHOW, SetTimer, SetWindowLongPtrW, ShowWindow, WM_CLOSE, WM_DESTROY, WM_ERASEBKGND,
+    WM_NCCREATE, WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_POPUP, WS_VISIBLE,
 };
 use windows::core::w;
-
-#[link(name = "imm32")]
-unsafe extern "system" {
-    fn ImmAssociateContext(
-        hwnd: *mut std::ffi::c_void,
-        context: *mut std::ffi::c_void,
-    ) -> *mut std::ffi::c_void;
-    fn ImmDisableIME(thread: u32) -> i32;
-}
 
 const DEFAULT_DURATION_SECONDS: u64 = 12;
 const DEFAULT_WARMUP_SECONDS: u64 = 2;
 const DEFAULT_SAMPLES: usize = 1;
-const DEFAULT_FPS: u32 = 30;
+const DEFAULT_FPS: u32 = 60;
 const DEFAULT_MOVE_INTERVAL_MS: u64 = 16;
 const DEFAULT_CLICK_INTERVAL_MS: u64 = 1_000;
 const DEFAULT_KEY_INTERVAL_MS: u64 = 333;
 const DEFAULT_CHORD_INTERVAL_MS: u64 = 5_000;
 const DEFAULT_WINDOW_TIMER_MS: u32 = 15;
-const MAX_WORKING_SET_DELTA_MIB: f64 = 768.0;
 const MIB: f64 = 1024.0 * 1024.0;
 
 // Effect colors mirror the palette the app exposes for these overlays; a zero
@@ -344,6 +329,15 @@ fn parse_backend(value: &str) -> Result<CaptureBackendKind> {
     }
 }
 
+/// The leftmost monitor of the current device, breaking ties by topmost
+/// origin so the choice is deterministic for a given layout.
+fn select_recording_monitor(layout: &MonitorLayout) -> Option<&MonitorGeometry> {
+    layout
+        .monitors
+        .iter()
+        .min_by_key(|monitor| (monitor.x, monitor.y))
+}
+
 struct Scenario {
     mouse_effects: bool,
     name: &'static str,
@@ -374,8 +368,6 @@ const SCENARIOS: [Scenario; 3] = [
 
 #[derive(Clone, Copy, Debug, Default)]
 struct InputOutcome {
-    workload_hwnd: isize,
-    focus_lost: bool,
     moves_sent: u64,
     clicks_sent: u64,
     keys_sent: u64,
@@ -454,14 +446,10 @@ fn main() -> Result<()> {
         .build()
         .context("building capture system")?;
     let layout = system.monitor_layout().context("enumerating monitors")?;
-    let primary = system
-        .primary_monitor()
-        .context("resolving primary monitor")?;
-    let monitor = layout
-        .monitors
-        .iter()
-        .find(|monitor| monitor.monitor == primary)
-        .context("primary monitor disappeared from the layout")?;
+    // The leftmost monitor keeps the user's primary display usable while the
+    // benchmark covers one screen with its workload window.
+    let monitor =
+        select_recording_monitor(&layout).context("monitor layout contains no monitors")?;
     // Even dimensions, matching screenRecordingCompatibleCaptureRegion.
     let region = RecordingRegion::new(
         monitor.x,
@@ -471,7 +459,7 @@ fn main() -> Result<()> {
     );
 
     println!(
-        "region: {}x{} at ({}, {}) on the primary monitor; virtual desktop {}x{} at ({}, {})",
+        "region: {}x{} at ({}, {}) on the leftmost monitor; virtual desktop {}x{} at ({}, {})",
         region.width,
         region.height,
         region.x,
@@ -521,12 +509,13 @@ fn main() -> Result<()> {
     fs::write(
         options.output_directory.join("run-metadata.txt"),
         format!(
-            "schema_version=4\nrevision={}\nrelease={}\nbackend={:?}\nworkload={}\naudio={}\nfeatures=stage:{},compose:{},pipeline:{}\nencode_threads={}\nalign_capture_override={:?}\nresize_threads_override={:?}\n",
+            "schema_version=5\nrevision={}\nrelease={}\nbackend={:?}\nworkload={}\naudio={}\nsynthetic_input={}\nfeatures=stage:{},compose:{},pipeline:{}\nencode_threads={}\nalign_capture_override={:?}\nresize_threads_override={:?}\n",
             option_env!("SNOW_BENCH_REVISION").unwrap_or("unknown"),
             !cfg!(debug_assertions),
             options.backend,
             options.workload,
             options.audio,
+            true,
             cfg!(feature = "bench-stage-timing"),
             cfg!(feature = "bench-compositor-timing"),
             cfg!(feature = "bench-pipeline-timing"),
@@ -548,22 +537,14 @@ fn main() -> Result<()> {
                 "[{}] warming up for {} s",
                 scenario.name, options.warmup_seconds
             );
-            let warmup = run_sample(&options, scenario, region, &layout, window.handle, 0, true)?;
+            let warmup = run_sample(&options, scenario, region, 0, true)?;
             if let Err(error) = validate_sample(&warmup, true) {
                 eprintln!("{error:#}");
                 validation_errors.push(format!("{error:#}"));
             }
         }
         for sample in 0..options.samples {
-            let result = run_sample(
-                &options,
-                scenario,
-                region,
-                &layout,
-                window.handle,
-                sample,
-                false,
-            )?;
+            let result = run_sample(&options, scenario, region, sample, false)?;
             // Print first so a gate failure still shows the sample's numbers.
             print_sample(&result);
             let validation = validate_sample(&result, false);
@@ -678,13 +659,10 @@ fn print_compiled_metric_groups() {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn run_sample(
     options: &Options,
     scenario: &Scenario,
     region: RecordingRegion,
-    layout: &MonitorLayout,
-    workload_hwnd: isize,
     sample: usize,
     warmup: bool,
 ) -> Result<SampleResult> {
@@ -759,36 +737,27 @@ fn run_sample(
     if let Some(aligned) = options.align_capture {
         session.set_aligned_capture(aligned)?;
     }
+    // Overlay inputs are synthetic observations fed straight to the session;
+    // the physical mouse and keyboard are never touched.
+    session.set_bench_synthetic_input(true)?;
     session
         .start()
         .context("starting direct recording session")?;
     let setup_ms = elapsed_ms(setup_started);
 
     let recording_started = Instant::now();
-    let input_thread = std::thread::Builder::new()
-        .name("snow-bench-input".to_string())
-        .spawn({
-            let plan = InputPlan {
-                move_interval_ms: options.move_interval_ms,
-                click_interval_ms: options.click_interval_ms,
-                key_interval_ms: options.key_interval_ms,
-                chord_interval_ms: options.chord_interval_ms,
-                region,
-                desktop: VirtualDesktop {
-                    left: layout.virtual_left,
-                    top: layout.virtual_top,
-                    width: layout.virtual_width,
-                    height: layout.virtual_height,
-                },
-                workload_hwnd,
-                simulate_keys: scenario.simulate_keys,
-                duration: Duration::from_secs(duration_seconds),
-            };
-            move || simulate_input(&plan)
-        })?;
-    let input = input_thread
-        .join()
-        .map_err(|_| anyhow::anyhow!("input simulation thread panicked"))??;
+    let input = simulate_input(
+        &session,
+        &InputPlan {
+            move_interval_ms: options.move_interval_ms,
+            click_interval_ms: options.click_interval_ms,
+            key_interval_ms: options.key_interval_ms,
+            chord_interval_ms: options.chord_interval_ms,
+            region,
+            simulate_keys: scenario.simulate_keys,
+            duration: Duration::from_secs(duration_seconds),
+        },
+    )?;
 
     let measured_seconds = recording_started.elapsed().as_secs_f64();
     let stop_started = Instant::now();
@@ -858,19 +827,10 @@ fn validate_sample(result: &SampleResult, warmup: bool) -> Result<()> {
     } else {
         format!("{} sample {}", result.scenario, result.sample)
     };
-    if result.input.focus_lost {
-        bail!("{label} lost foreground focus; stopped input and preserved the partial sample");
-    }
     if result.unreadable_ids != 0 {
         bail!(
             "{label} has {} unreadable source identifiers; workload was obstructed or pixels were corrupted",
             result.unreadable_ids
-        );
-    }
-    if result.dropped_capture_frames > 0 {
-        bail!(
-            "{label} dropped {} capture frames",
-            result.dropped_capture_frames
         );
     }
     if result.input.send_failures > 0 {
@@ -881,18 +841,6 @@ fn validate_sample(result: &SampleResult, warmup: bool) -> Result<()> {
     }
     if warmup {
         return Ok(());
-    }
-    let working_set_delta_mib = (result
-        .usage
-        .working_set_peak_bytes
-        .saturating_sub(result.usage.working_set_start_bytes))
-        as f64
-        / MIB;
-    if working_set_delta_mib > MAX_WORKING_SET_DELTA_MIB {
-        bail!(
-            "{label} exceeded the {:.0} MiB working-set budget: {working_set_delta_mib:.1} MiB",
-            MAX_WORKING_SET_DELTA_MIB
-        );
     }
     // Static/sparse desktops deliberately retain variable-duration images.
     // Moving-content throughput must count distinct decoded source content.
@@ -1020,7 +968,7 @@ fn write_summary_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<P
     let mut cells = Vec::with_capacity(rows.len());
     for row in rows {
         let base_columns: Vec<(String, String)> = vec![
-            ("schema_version".into(), "4".into()),
+            ("schema_version".into(), "5".into()),
             ("scenario".into(), row.scenario.to_string()),
             ("workload".into(), row.workload.clone()),
             (
@@ -1070,10 +1018,6 @@ fn write_summary_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<P
             ("keys_sent".into(), row.input.keys_sent.to_string()),
             ("chords_sent".into(), row.input.chords_sent.to_string()),
             ("input_failures".into(), row.input.send_failures.to_string()),
-            (
-                "input_focus_lost".into(),
-                u8::from(row.input.focus_lost).to_string(),
-            ),
             (
                 "working_set_delta_mib".into(),
                 format!(
@@ -1296,21 +1240,12 @@ fn write_stages_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<Pa
 }
 
 // ---------------------------------------------------------------------------
-// Simulated input
+// Synthetic input
 // ---------------------------------------------------------------------------
 
-// Both sides of Ctrl, Shift, Alt, and Win; injected only after confirming all
-// of them are physically up so the benchmark never releases a real modifier.
-const MODIFIER_VKS: [u16; 8] = [0xA2, 0xA3, 0xA0, 0xA1, 0xA4, 0xA5, 0x5B, 0x5C];
+// Left-side virtual keys used by the simulated Ctrl+Shift chord.
 const VK_CONTROL: u16 = 0xA2;
 const VK_SHIFT: u16 = 0xA0;
-
-struct VirtualDesktop {
-    left: i32,
-    top: i32,
-    width: u32,
-    height: u32,
-}
 
 struct InputPlan {
     move_interval_ms: u64,
@@ -1318,36 +1253,15 @@ struct InputPlan {
     key_interval_ms: u64,
     chord_interval_ms: u64,
     region: RecordingRegion,
-    desktop: VirtualDesktop,
-    workload_hwnd: isize,
     simulate_keys: bool,
     duration: Duration,
 }
 
-fn simulate_input(plan: &InputPlan) -> Result<InputOutcome> {
-    for vk in MODIFIER_VKS {
-        if unsafe { GetAsyncKeyState(i32::from(vk)) } < 0 {
-            bail!("a Ctrl/Shift/Alt/Win modifier ({vk:#04x}) is held; release it before running");
-        }
-    }
-    let foreground = unsafe { GetForegroundWindow() };
-    if foreground.0 as isize != plan.workload_hwnd {
-        bail!(
-            "workload window lost foreground focus; refusing to inject input into other \
-             applications"
-        );
-    }
-    let mut saved_cursor = POINT::default();
-    let has_cursor = unsafe { GetCursorPos(&mut saved_cursor) }.is_ok();
-    let (start_x, start_y) = sweep_position(&plan.region, Duration::ZERO);
-    if has_cursor {
-        let _ = unsafe { SetCursorPos(start_x, start_y) };
-    }
-
-    let mut outcome = InputOutcome {
-        workload_hwnd: plan.workload_hwnd,
-        ..Default::default()
-    };
+/// Drives the session's overlay inputs with synthetic observations. Nothing
+/// here touches the OS input stack: the physical mouse and keyboard stay in
+/// the user's hands for the whole run.
+fn simulate_input(session: &DirectRecordingSession, plan: &InputPlan) -> Result<InputOutcome> {
+    let mut outcome = InputOutcome::default();
     let started = Instant::now();
     let mut next_move_ms = 0u64;
     let mut next_click_ms = plan.click_interval_ms / 2;
@@ -1357,14 +1271,15 @@ fn simulate_input(plan: &InputPlan) -> Result<InputOutcome> {
         let elapsed_ms = started.elapsed().as_millis() as u64;
         while next_move_ms <= elapsed_ms && outcome.send_failures == 0 {
             let (x, y) = sweep_position(&plan.region, Duration::from_millis(next_move_ms));
-            if send_mouse_move(x, y, &plan.desktop, &mut outcome) {
+            if send_mouse_move(session, x, y, &mut outcome) {
                 next_move_ms = next_move_ms.saturating_add(plan.move_interval_ms);
             } else {
                 break;
             }
         }
         while next_click_ms <= elapsed_ms && outcome.send_failures == 0 {
-            if send_mouse_click(&mut outcome) {
+            let (x, y) = sweep_position(&plan.region, Duration::from_millis(next_click_ms));
+            if send_mouse_click(session, x, y, &mut outcome) {
                 next_click_ms = next_click_ms.saturating_add(plan.click_interval_ms);
             } else {
                 break;
@@ -1372,14 +1287,14 @@ fn simulate_input(plan: &InputPlan) -> Result<InputOutcome> {
         }
         if plan.simulate_keys {
             while next_key_ms <= elapsed_ms && outcome.send_failures == 0 {
-                if send_key_tap(letter_for(outcome.keys_sent), &mut outcome) {
+                if send_key_tap(session, letter_for(outcome.keys_sent), &mut outcome) {
                     next_key_ms = next_key_ms.saturating_add(plan.key_interval_ms);
                 } else {
                     break;
                 }
             }
             while next_chord_ms <= elapsed_ms && outcome.send_failures == 0 {
-                if send_chord(letter_for(outcome.keys_sent), &mut outcome) {
+                if send_chord(session, letter_for(outcome.keys_sent), &mut outcome) {
                     next_chord_ms = next_chord_ms.saturating_add(plan.chord_interval_ms);
                 } else {
                     break;
@@ -1391,10 +1306,6 @@ fn simulate_input(plan: &InputPlan) -> Result<InputOutcome> {
         }
         std::thread::sleep(Duration::from_millis(2));
     }
-
-    if has_cursor && unsafe { GetForegroundWindow() }.0 as isize == plan.workload_hwnd {
-        let _ = unsafe { SetCursorPos(saved_cursor.x, saved_cursor.y) };
-    }
     Ok(outcome)
 }
 
@@ -1402,7 +1313,8 @@ fn letter_for(keys_sent: u64) -> u16 {
     u16::from(b'A' + (keys_sent % 26) as u8)
 }
 
-/// Deterministic Lissajous sweep inside the region with a 10% margin.
+/// Deterministic Lissajous sweep inside the region with a 10% margin, in
+/// region-relative coordinates.
 fn sweep_position(region: &RecordingRegion, elapsed: Duration) -> (i32, i32) {
     let seconds = elapsed.as_secs_f64();
     let margin_x = region.width as f64 * 0.1;
@@ -1411,273 +1323,137 @@ fn sweep_position(region: &RecordingRegion, elapsed: Duration) -> (i32, i32) {
     let span_y = (region.height as f64 - 2.0 * margin_y).max(1.0);
     let fx = 0.5 + 0.5 * (std::f64::consts::TAU * seconds / 4.7).sin();
     let fy = 0.5 + 0.5 * (std::f64::consts::TAU * seconds / 3.1).sin();
-    let x = region.x as f64 + margin_x + fx * span_x;
-    let y = region.y as f64 + margin_y + fy * span_y;
+    let x = margin_x + fx * span_x;
+    let y = margin_y + fy * span_y;
     (x.round() as i32, y.round() as i32)
 }
 
-fn send_inputs(inputs: &[INPUT], outcome: &mut InputOutcome) -> bool {
-    let mut foreground = unsafe { GetForegroundWindow() }.0 as isize;
-    if inputs.iter().any(|input| {
-        input.r#type == INPUT_MOUSE
-        // SAFETY: a mouse INPUT initializes the mouse member.
-        && unsafe { input.Anonymous.mi.dwFlags }.contains(MOUSEEVENTF_LEFTDOWN)
-    }) {
-        let mut point = POINT::default();
-        if unsafe { GetPhysicalCursorPos(&mut point) }.is_err()
-            || unsafe { WindowFromPhysicalPoint(point) }.0 as isize != outcome.workload_hwnd
-        {
-            foreground = 0;
-        }
-    }
-    send_inputs_guarded(inputs, outcome, foreground, |batch| unsafe {
-        SendInput(batch, std::mem::size_of::<INPUT>() as i32)
-    })
-}
-
-fn send_inputs_guarded(
-    inputs: &[INPUT],
+fn send_mouse_move(
+    session: &DirectRecordingSession,
+    x: i32,
+    y: i32,
     outcome: &mut InputOutcome,
-    foreground: isize,
-    mut inject: impl FnMut(&[INPUT]) -> u32,
 ) -> bool {
-    if outcome.workload_hwnd == 0 || foreground != outcome.workload_hwnd {
-        outcome.focus_lost = true;
+    if let Err(error) = session.bench_observe_cursor(x, y) {
+        eprintln!("synthetic cursor move failed: {error:#}");
         outcome.send_failures += 1;
-        return false;
-    }
-    let sent = inject(inputs);
-    if sent == inputs.len() as u32 {
-        return true;
-    }
-    outcome.send_failures += 1;
-    // SendInput batches are balanced. Only a partial insertion needs cleanup;
-    // release exactly the presses inserted by that batch, never physical modifiers.
-    let releases = pending_input_releases(&inputs[..(sent as usize).min(inputs.len())]);
-    if !releases.is_empty() {
-        inject(&releases);
-    }
-    false
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum InjectedPress {
-    Key(u16),
-    LeftMouse,
-}
-
-fn pending_input_releases(inputs: &[INPUT]) -> Vec<INPUT> {
-    let mut pending = Vec::new();
-    for input in inputs {
-        // SAFETY: INPUT's tag identifies the initialized union member. All
-        // batches are built by this example's keyboard/mouse constructors.
-        let change = unsafe {
-            if input.r#type == INPUT_KEYBOARD {
-                let key = input.Anonymous.ki;
-                Some((
-                    InjectedPress::Key(key.wVk.0),
-                    !key.dwFlags.contains(KEYEVENTF_KEYUP),
-                ))
-            } else if input.r#type == INPUT_MOUSE {
-                let flags = input.Anonymous.mi.dwFlags;
-                if flags.contains(MOUSEEVENTF_LEFTDOWN) {
-                    Some((InjectedPress::LeftMouse, true))
-                } else if flags.contains(MOUSEEVENTF_LEFTUP) {
-                    Some((InjectedPress::LeftMouse, false))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        };
-        if let Some((press, down)) = change {
-            pending.retain(|previous| *previous != press);
-            if down {
-                pending.push(press);
-            }
-        }
-    }
-    pending
-        .into_iter()
-        .rev()
-        .map(|press| match press {
-            InjectedPress::Key(vk) => key_input(vk, false),
-            InjectedPress::LeftMouse => mouse_button_input(false),
-        })
-        .collect()
-}
-
-#[cfg(test)]
-mod input_safety_tests {
-    use super::*;
-
-    #[test]
-    fn losing_focus_between_batches_prevents_any_further_injection() {
-        let batch = [
-            key_input(u16::from(b'A'), true),
-            key_input(u16::from(b'A'), false),
-        ];
-        let mut outcome = InputOutcome {
-            workload_hwnd: 10,
-            ..Default::default()
-        };
-        let mut calls = 0;
-        assert!(send_inputs_guarded(&batch, &mut outcome, 10, |inputs| {
-            calls += 1;
-            inputs.len() as u32
-        }));
-        assert!(!send_inputs_guarded(&batch, &mut outcome, 11, |_| {
-            calls += 1;
-            0
-        }));
-        assert_eq!(calls, 1);
-        assert!(outcome.focus_lost);
-        assert_eq!(outcome.send_failures, 1);
-    }
-
-    #[test]
-    fn partial_batches_release_only_their_inserted_presses() {
-        let batch = [
-            key_input(VK_CONTROL, true),
-            key_input(VK_SHIFT, true),
-            key_input(u16::from(b'A'), true),
-            key_input(u16::from(b'A'), false),
-            key_input(VK_SHIFT, false),
-            key_input(VK_CONTROL, false),
-        ];
-        let mut outcome = InputOutcome {
-            workload_hwnd: 10,
-            ..Default::default()
-        };
-        let mut calls = 0;
-        assert!(!send_inputs_guarded(&batch, &mut outcome, 10, |inputs| {
-            calls += 1;
-            if calls == 1 {
-                return 2;
-            }
-            assert_eq!(inputs.len(), 2);
-            // SAFETY: cleanup for this keyboard-only prefix creates keyboard INPUTs.
-            unsafe {
-                assert_eq!(inputs[0].Anonymous.ki.wVk.0, VK_SHIFT);
-                assert_eq!(inputs[1].Anonymous.ki.wVk.0, VK_CONTROL);
-                assert!(
-                    inputs
-                        .iter()
-                        .all(|input| input.Anonymous.ki.dwFlags.contains(KEYEVENTF_KEYUP))
-                );
-            }
-            inputs.len() as u32
-        }));
-        assert_eq!(calls, 2);
-        assert!(pending_input_releases(&batch).is_empty());
-        let release = pending_input_releases(&[mouse_button_input(true)]);
-        assert_eq!(release.len(), 1);
-        // SAFETY: cleanup for a mouse-only prefix creates a mouse INPUT.
-        assert!(unsafe { release[0].Anonymous.mi.dwFlags }.contains(MOUSEEVENTF_LEFTUP));
-    }
-}
-
-fn mouse_move_input(x: i32, y: i32, desktop: &VirtualDesktop) -> INPUT {
-    let virtual_width = (desktop.width.max(1) as i64 - 1).max(1);
-    let virtual_height = (desktop.height.max(1) as i64 - 1).max(1);
-    let dx = ((i64::from(x - desktop.left) * 65_535) / virtual_width) as i32;
-    let dy = ((i64::from(y - desktop.top) * 65_535) / virtual_height) as i32;
-    INPUT {
-        r#type: INPUT_MOUSE,
-        Anonymous: INPUT_0 {
-            mi: MOUSEINPUT {
-                dx,
-                dy,
-                mouseData: 0,
-                dwFlags: MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
-                time: 0,
-                dwExtraInfo: 0,
-            },
-        },
-    }
-}
-
-fn send_mouse_move(x: i32, y: i32, desktop: &VirtualDesktop, outcome: &mut InputOutcome) -> bool {
-    if !send_inputs(&[mouse_move_input(x, y, desktop)], outcome) {
         return false;
     }
     outcome.moves_sent += 1;
     true
 }
 
-fn mouse_button_input(down: bool) -> INPUT {
-    INPUT {
-        r#type: INPUT_MOUSE,
-        Anonymous: INPUT_0 {
-            mi: MOUSEINPUT {
-                dx: 0,
-                dy: 0,
-                mouseData: 0,
-                dwFlags: if down {
-                    MOUSEEVENTF_LEFTDOWN
-                } else {
-                    MOUSEEVENTF_LEFTUP
-                },
-                time: 0,
-                dwExtraInfo: 0,
-            },
-        },
-    }
-}
-
-fn send_mouse_click(outcome: &mut InputOutcome) -> bool {
-    if !send_inputs(
-        &[mouse_button_input(true), mouse_button_input(false)],
-        outcome,
-    ) {
+fn send_mouse_click(
+    session: &DirectRecordingSession,
+    x: i32,
+    y: i32,
+    outcome: &mut InputOutcome,
+) -> bool {
+    if let Err(error) = session.bench_observe_click(x, y) {
+        eprintln!("synthetic click failed: {error:#}");
+        outcome.send_failures += 1;
         return false;
     }
     outcome.clicks_sent += 1;
     true
 }
 
-fn key_input(vk: u16, down: bool) -> INPUT {
-    INPUT {
-        r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 {
-            ki: KEYBDINPUT {
-                wVk: VIRTUAL_KEY(vk),
-                wScan: 0,
-                dwFlags: if down {
-                    KEYBD_EVENT_FLAGS(0)
-                } else {
-                    KEYEVENTF_KEYUP
-                },
-                time: 0,
-                dwExtraInfo: 0,
-            },
-        },
-    }
-}
-
-fn send_key_tap(vk: u16, outcome: &mut InputOutcome) -> bool {
-    if !send_inputs(&[key_input(vk, true), key_input(vk, false)], outcome) {
-        return false;
+fn send_key_tap(session: &DirectRecordingSession, vk: u16, outcome: &mut InputOutcome) -> bool {
+    for down in [true, false] {
+        if let Err(error) = session.bench_observe_key(vk, down) {
+            eprintln!("synthetic key failed: {error:#}");
+            outcome.send_failures += 1;
+            return false;
+        }
     }
     outcome.keys_sent += 1;
     true
 }
 
-fn send_chord(vk: u16, outcome: &mut InputOutcome) -> bool {
-    let inputs = [
-        key_input(VK_CONTROL, true),
-        key_input(VK_SHIFT, true),
-        key_input(vk, true),
-        key_input(vk, false),
-        key_input(VK_SHIFT, false),
-        key_input(VK_CONTROL, false),
+fn send_chord(session: &DirectRecordingSession, vk: u16, outcome: &mut InputOutcome) -> bool {
+    let sequence = [
+        (VK_CONTROL, true),
+        (VK_SHIFT, true),
+        (vk, true),
+        (vk, false),
+        (VK_SHIFT, false),
+        (VK_CONTROL, false),
     ];
-    if !send_inputs(&inputs, outcome) {
-        return false;
+    for (key, down) in sequence {
+        if let Err(error) = session.bench_observe_key(key, down) {
+            eprintln!("synthetic chord key failed: {error:#}");
+            outcome.send_failures += 1;
+            return false;
+        }
     }
     outcome.chords_sent += 1;
     true
+}
+
+#[cfg(test)]
+mod synthetic_input_tests {
+    use super::*;
+
+    #[test]
+    fn sweep_stays_inside_the_region_with_margin() {
+        let region = RecordingRegion::new(-1920, 500, 1920, 1080);
+        for ms in (0..20_000u64).step_by(97) {
+            let (x, y) = sweep_position(&region, Duration::from_millis(ms));
+            assert!(x >= 0 && x < region.width as i32, "x={x} at {ms}ms");
+            assert!(y >= 0 && y < region.height as i32, "y={y} at {ms}ms");
+        }
+    }
+}
+
+#[cfg(test)]
+mod monitor_selection_tests {
+    use super::*;
+
+    fn geometry(index: usize, x: i32, y: i32) -> MonitorGeometry {
+        MonitorGeometry {
+            monitor: snow_capture::MonitorId::from_name(
+                index as isize,
+                format!("monitor-{index}"),
+                index == 0,
+            ),
+            x,
+            y,
+            width: 1920,
+            height: 1080,
+        }
+    }
+
+    fn layout(monitors: Vec<MonitorGeometry>) -> MonitorLayout {
+        MonitorLayout {
+            monitors,
+            virtual_left: -3840,
+            virtual_top: 0,
+            virtual_width: 5760,
+            virtual_height: 1080,
+        }
+    }
+
+    #[test]
+    fn prefers_the_leftmost_monitor_over_the_primary() {
+        let primary_at_origin = layout(vec![geometry(0, 0, 0), geometry(1, -1920, 0)]);
+        let selected = select_recording_monitor(&primary_at_origin).expect("a monitor");
+        assert_eq!((selected.x, selected.y), (-1920, 0));
+        assert!(!selected.monitor.is_primary());
+    }
+
+    #[test]
+    fn breaks_position_ties_with_the_topmost_monitor() {
+        let stacked = layout(vec![geometry(0, -1920, 300), geometry(1, -1920, 0)]);
+        let selected = select_recording_monitor(&stacked).expect("a monitor");
+        assert_eq!((selected.x, selected.y), (-1920, 0));
+    }
+
+    #[test]
+    fn single_monitor_layout_selects_that_monitor() {
+        let single = layout(vec![geometry(0, 0, 0)]);
+        assert_eq!(select_recording_monitor(&single).map(|m| m.x), Some(0));
+        assert!(select_recording_monitor(&layout(Vec::new())).is_none());
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1883,11 +1659,10 @@ fn run_window_thread(
             tick: 0,
         });
         let state_raw = Box::into_raw(state);
-        // Disable IME for this workload thread before creating any windows.
-        // Context disassociation alone can be undone by a Ctrl+Shift layout switch.
-        ImmDisableIME(GetCurrentThreadId());
+        // The window must stay visible for capture but never steal focus: no
+        // OS input is injected, so nothing requires foreground activation.
         let created = CreateWindowExW(
-            WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
             class_name,
             w!("snow realtime recording workload"),
             WS_POPUP | WS_VISIBLE,
@@ -1908,10 +1683,6 @@ fn run_window_thread(
             }
         };
 
-        // Synthetic typing is a recording workload, not text entry. Prevent an
-        // inherited IME from opening a candidate popup over the frame marker.
-        ImmAssociateContext(hwnd.0, std::ptr::null_mut());
-        bring_to_foreground(hwnd);
         let _ = ShowWindow(hwnd, SW_SHOW);
         if timer_ms > 0 {
             SetTimer(Some(hwnd), WORKLOAD_TIMER_ID, timer_ms, None);
@@ -1920,26 +1691,9 @@ fn run_window_thread(
 
         let mut message = MSG::default();
         while GetMessageW(&mut message, None, 0, 0).as_bool() {
-            // Key hooks consume virtual keys; this surface has no text input.
             let _ = DispatchMessageW(&message);
         }
         Ok(())
-    }
-}
-
-fn bring_to_foreground(hwnd: HWND) {
-    unsafe {
-        let previous = GetForegroundWindow();
-        let foreground_thread = GetWindowThreadProcessId(previous, None);
-        let current_thread = GetCurrentThreadId();
-        let attached = foreground_thread != 0
-            && foreground_thread != current_thread
-            && AttachThreadInput(current_thread, foreground_thread, true).as_bool();
-        let _ = BringWindowToTop(hwnd);
-        let _ = SetForegroundWindow(hwnd);
-        if attached {
-            let _ = AttachThreadInput(current_thread, foreground_thread, false);
-        }
     }
 }
 

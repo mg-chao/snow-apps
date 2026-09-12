@@ -7,7 +7,7 @@ param(
     [ValidateRange(1, 10)][int]$StartPair = 1,
     [int]$DurationSeconds = 30,
     [int]$WarmupSeconds = 5,
-    [int]$Fps = 30,
+    [int]$Fps = 60,
     [string]$Backend = "auto",
     [string]$BaselineBackend = "",
     [string]$CandidateBackend = "",
@@ -64,7 +64,7 @@ $manifest = [ordered]@{
     prefer_hardware = [bool]$PreferHardware
 }
 $manifest | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $OutputDirectory "comparison-manifest.json")
-Write-Warning "Paired recording benchmarks take over the primary display and inject input."
+Write-Warning "Paired recording benchmarks cover the leftmost display with a workload window; current builds never inject mouse or keyboard input."
 for ($pair = $StartPair; $pair -le $Pairs; $pair++) {
     $order = if ($pair % 2 -eq 1) { @("baseline", "candidate") } else { @("candidate", "baseline") }
     foreach ($variant in $order) {
