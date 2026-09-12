@@ -91,6 +91,16 @@ class ScreenshotPinnedWindowTestAccess {
     static bool pointerInside(const ScreenshotPinnedWindow& window) {
         return window.m_pointerInside;
     }
+    static bool moveWindow(ScreenshotPinnedWindow& window, const QRect& nativeGeometry) {
+        return window.applyWindowGeometry(nativeGeometry,
+                                          ScreenshotPinnedWindow::GeometryMutation::Move);
+    }
+    static bool geometrySettled(const ScreenshotPinnedWindow& window) {
+        const auto* controller = window.m_nativeGeometryController.get();
+        return window.interactiveResizingEnabled() && controller != nullptr &&
+               controller->phase() == ScreenshotPinnedNativeGeometryController::Phase::Stable &&
+               controller->committedGeometry() == window.currentNativeGeometry();
+    }
     static QTimer* showReadout(ScreenshotPinnedWindow& window, bool opacity) {
         window.m_scalePercent = 125;
         window.m_opacityPercent = 80;
@@ -307,6 +317,21 @@ QRect physicalPinGeometry(QScreen& screen, const QPoint& logicalOffset, const QS
                  physicalSize);
 }
 
+// Clipboard transfers are asynchronous (delayed rendering and ownership
+// handoff), so the payload may not be readable immediately after a copy.
+bool clipboardReceivesText(const QString& expected) {
+    QElapsedTimer settle;
+    settle.start();
+    while (settle.elapsed() < 2000) {
+        if (QApplication::clipboard()->text() == expected) {
+            return true;
+        }
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(10);
+    }
+    return QApplication::clipboard()->text() == expected;
+}
+
 class CursorPositionRestorer final {
   public:
     CursorPositionRestorer() : m_position(systemCursorPosition()) {}
@@ -416,7 +441,7 @@ void pinnedQrResultCopiesWithKeyboardShortcut() {
     QApplication::clipboard()->setText(QStringLiteral("stale clipboard text"));
     QKeyEvent copy(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
     QApplication::sendEvent(browser, &copy);
-    require(copy.isAccepted() && QApplication::clipboard()->text() == expected,
+    require(copy.isAccepted() && clipboardReceivesText(expected),
             "Ctrl+C should copy all pinned QR result text");
 
     QKeyEvent selectAll(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
@@ -723,6 +748,15 @@ void pinnedSelectionRendersCachedOcrInCanvasCoordinates(bool restoreFromStorage 
                     "ordinary pinned resize borders must retain priority over caption dragging");
             }
 #endif
+            // The inherited overlay visibility is applied by the deferred
+            // presentation setup, which lands on a loop iteration after the
+            // presentation completion. Give it a bounded window to land.
+            QElapsedTimer visibilitySettle;
+            visibilitySettle.start();
+            while (action->isChecked() != initiallyVisible && visibilitySettle.elapsed() < 2000) {
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+                QThread::msleep(5);
+            }
             require(action->isChecked() == initiallyVisible,
                     "a pin must inherit visibility independently of its OCR cache");
             if (!initiallyVisible) {
@@ -858,7 +892,7 @@ void pinnedSelectionRendersCachedOcrInCanvasCoordinates(bool restoreFromStorage 
             }
             require(hasTextPixels, "cached OCR should paint text pixels in the pinned viewport");
             require(recognitionContent->copyVisibleContentToClipboard() &&
-                        QApplication::clipboard()->text() == text,
+                        clipboardReceivesText(text),
                     "the rendered cached OCR text should remain copyable");
             require(recognition.requests == 0,
                     "pinning cached OCR should not recognize the screenshot again");
@@ -1214,10 +1248,10 @@ void cachedPinnedOcrAvailableWithoutRecognitionProvider() {
         }
     });
     require(window->present(config), "the provider-free cached pin should present");
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     QAction* action = pinnedMenuActionNamed(*window, QStringLiteral("screenshotPinnedOcrAction"));
     require(action != nullptr && action->isEnabled(),
-            "cached text must remain available without a recognition provider");
+            "cached text must be available before deferred setup without a recognition provider");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     action->trigger();
     auto* content = window->findChild<ScreenshotRecognitionWindow*>(
         QStringLiteral("screenshotPinnedRecognitionContent"));
@@ -2846,6 +2880,20 @@ void pinnedNativeDragAcceptsCursorMovementShortcuts(SnowCanvasRuntime&) {
     require(screen != nullptr, "a primary screen is required");
     const CursorPositionRestorer restoreCursor;
 
+    // The move loop tracks the pointer through GetCursorPos, and the cursor
+    // shortcuts relocate it through the platform cursor APIs. Track every
+    // delta in that same platform cursor space; reading the physical cursor
+    // here instead can disagree by a scaling factor on hosts whose reported
+    // display scale does not match the active mode.
+    const auto platformCursorPosition = []() {
+        POINT position{};
+        require(GetCursorPos(&position) != FALSE, "failed to read the platform cursor position");
+        return QPoint(position.x, position.y);
+    };
+    const auto setPlatformCursorPosition = [](const QPoint& position) {
+        require(SetCursorPos(position.x(), position.y()) != FALSE,
+                "failed to set the platform cursor position");
+    };
     const snow_shot::storage::PinToScreenShortcutSettings shortcuts;
     const QString actionId = QStringLiteral("move_cursor_up");
     const QStringList previousShortcuts = shortcuts.shortcuts(actionId);
@@ -2869,7 +2917,7 @@ void pinnedNativeDragAcceptsCursorMovementShortcuts(SnowCanvasRuntime&) {
 
     const QRect startingGeometry = pinnedWindow->currentNativeGeometry();
     const QPoint startingCursor = startingGeometry.center();
-    setSystemCursorPosition(startingCursor);
+    setPlatformCursorPosition(startingCursor);
     waitForUi(50);
 
     static_cast<void>(SendMessageW(
@@ -2879,10 +2927,10 @@ void pinnedNativeDragAcceptsCursorMovementShortcuts(SnowCanvasRuntime&) {
     SendMessageW(hwnd, WM_CAPTURECHANGED, 0, 0);
     static_cast<void>(SendMessageW(hwnd, WM_ENTERSIZEMOVE, 0, 0));
 
-    const QPoint cursorBeforeShortcut = systemCursorPosition();
+    const QPoint cursorBeforeShortcut = platformCursorPosition();
     const QPoint windowPositionBeforeShortcut = pinnedWindow->currentNativeGeometry().topLeft();
     sendShortcut(*pinnedWindow, Qt::Key_W);
-    const QPoint cursorAfterShortcuts = systemCursorPosition();
+    const QPoint cursorAfterShortcuts = platformCursorPosition();
     // USER32 reacts to cursor movement with WM_MOVING on its next iteration.
     RECT shortcutProposal =
         nativeRectForQRect(startingGeometry.translated(cursorAfterShortcuts - startingCursor));
@@ -2900,8 +2948,8 @@ void pinnedNativeDragAcceptsCursorMovementShortcuts(SnowCanvasRuntime&) {
     // the application the proposed rectangle through WM_MOVING; emulate that
     // proposal for the follow-up pointer movement.
     const QPoint pointerDelta(7, 3);
-    const QPoint cursorBeforePointerMove = systemCursorPosition();
-    setSystemCursorPosition(cursorAfterShortcuts + pointerDelta);
+    const QPoint cursorBeforePointerMove = platformCursorPosition();
+    setPlatformCursorPosition(cursorAfterShortcuts + pointerDelta);
     RECT movingProposal =
         nativeRectForQRect(pinnedWindow->currentNativeGeometry().translated(pointerDelta));
     require(SendMessageW(hwnd, WM_MOVING, 0, reinterpret_cast<LPARAM>(&movingProposal)) == TRUE,
@@ -2909,10 +2957,10 @@ void pinnedNativeDragAcceptsCursorMovementShortcuts(SnowCanvasRuntime&) {
     const RECT acceptedMove = movingProposal;
     SetWindowPos(hwnd, nullptr, acceptedMove.left, acceptedMove.top, 0, 0,
                  SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-    const QPoint actualPointerDelta = systemCursorPosition() - cursorBeforePointerMove;
-    const bool windowFollowedPointer =
-        pinnedWindow->currentNativeGeometry().topLeft() - windowPositionAfterShortcuts ==
-        actualPointerDelta;
+    const QPoint actualPointerDelta = platformCursorPosition() - cursorBeforePointerMove;
+    const QPoint pointerWindowDelta =
+        pinnedWindow->currentNativeGeometry().topLeft() - windowPositionAfterShortcuts;
+    const bool windowFollowedPointer = pointerWindowDelta == actualPointerDelta;
     static_cast<void>(SendMessageW(hwnd, WM_EXITSIZEMOVE, 0, 0));
     static_cast<void>(SendMessageW(hwnd, WM_LBUTTONUP, 0, 0));
     waitForUi(50);
@@ -4317,6 +4365,46 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
             "system resizing requires WS_THICKFRAME on the pinned HWND");
     require(nativeChildWindowCount(pinnedHwnd) == 0,
             "the scaling pin should contain no native child windows");
+    // The 500 and 10 percent clamp cycles above keep the pin anchored at its
+    // top-left, which can park the window outside the region a system cursor
+    // can reach. Hover presence resolves from the live cursor, so bring the
+    // pin back inside the primary display through the programmatic move path
+    // before the native interaction checks. The reachable bounds come from
+    // USER32 rather than Qt: the two can disagree about the active display
+    // mode, and the cursor can only reach what the OS actually drives. The
+    // primary monitor is used because the input stack on some hosts confines
+    // the cursor to it even when further monitors are attached.
+    const QRect reachableBounds(0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+    require(reachableBounds.isValid() && !reachableBounds.isEmpty(),
+            "the native interaction checks need a non-empty primary display");
+    {
+        const QRect windowGeometry = pinnedWindow->currentNativeGeometry();
+        const QPoint desiredTopLeft(
+            reachableBounds.left() +
+                std::max(0, (reachableBounds.width() - windowGeometry.width()) / 2),
+            reachableBounds.top() +
+                std::max(0, (reachableBounds.height() - windowGeometry.height()) / 2));
+        require(ScreenshotPinnedWindowTestAccess::moveWindow(
+                    *pinnedWindow, QRect(desiredTopLeft, windowGeometry.size())),
+                "the reposition onto the reachable display was not accepted");
+        waitForUi(80);
+    }
+    // Crossing monitors can leave a DPI transition settling. Wait for the controller
+    // to commit the actual native rectangle before sending any resize proposals.
+    const auto repositionSettled = [pinnedWindow] {
+        return ScreenshotPinnedWindowTestAccess::geometrySettled(*pinnedWindow);
+    };
+    {
+        QElapsedTimer settleTimer;
+        settleTimer.start();
+        while (!repositionSettled() && settleTimer.elapsed() < 3000) {
+            QApplication::processEvents(QEventLoop::AllEvents, 20);
+            QThread::msleep(5);
+        }
+    }
+    require(repositionSettled(), "the pin should settle after moving onto the reachable display");
+    require(reachableBounds.contains(pinnedWindow->currentNativeGeometry().center()),
+            "the native interaction checks need a pin the system cursor can reach");
     PaintEventCounter canvasPaints(*canvas);
 
     const auto nativeHitTest = [pinnedHwnd](const QPoint& position) {
@@ -5533,6 +5621,11 @@ void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
 
     QPushButton* confirmButton = buttonNamed(*toolbar, QStringLiteral("Confirm edit"));
     require(confirmButton != nullptr, "pinned edit confirm button was not found");
+    // The controls panel follows live pointer presence, and the editing
+    // sequence above takes long enough for the pointer state to re-resolve.
+    // Re-establish the hover so the assertion below covers the edit exit, not
+    // unrelated pointer drift.
+    setPinnedWindowHovered(*pinnedWindow, true);
     confirmButton->click();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     require(controlsPanel->isVisible(), "pinned controls should return after confirming the edit");
@@ -6115,6 +6208,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--pooling-only"))) {
             pinnedWindowPoolReusesAndReplenishesPreparedShell();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--scaling-resize-only"))) {
+            pinnedScalingAndAspectLockedResizing(sourceRuntime);
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--qr-copy-only"))) {

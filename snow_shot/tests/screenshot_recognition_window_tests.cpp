@@ -1144,6 +1144,19 @@ void imageSnapshotTracksOnlyOriginalImageAndOwnsItsResult() {
     require(snapshot && snapshot->lines.isEmpty(),
             "pending OCR snapshots the current image without waiting");
 }
+void defaultSelectionResizeActionsDeclineInteraction() {
+    // Both empty and partial aggregates are used by embedded recognition hosts.
+    for (const auto& actions :
+         {ScreenshotRecognitionWindowActions{}, ScreenshotRecognitionWindowActions{[]() {}}}) {
+        for (const QPointF& point : {QPointF(), QPointF(19.5, -42.0)}) {
+            require(actions.selectionResizeDragMode(point) == ScreenshotSelectionDragMode::None,
+                    "an unwired recognition surface must expose no resize handle");
+            require(!actions.beginSelectionResize(point),
+                    "an unwired recognition surface must decline selection resizing");
+        }
+    }
+}
+
 void selectionResizeCompletionCanReplaceWindow() {
     QPointer<ScreenshotRecognitionWindow> window;
     bool finished = false;
@@ -1249,6 +1262,7 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    defaultSelectionResizeActionsDeclineInteraction();
     selectionResizeKeepsMouseCaptureWhenContentIsCleared();
     selectionResizeCompletionCanReplaceWindow();
     if (application.arguments().contains(QStringLiteral("--selection-resize-only"))) {
