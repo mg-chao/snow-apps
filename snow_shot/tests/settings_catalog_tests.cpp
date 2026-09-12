@@ -1019,17 +1019,19 @@ void globalHotkeyShortcutsHaveStableContracts() {
         storage::ConfigurationSchema::entry(QStringLiteral("tray/menu_options"));
     require(trayGroups.size() == 5 && trayGroups.at(0).id == QStringLiteral("screenshot") &&
                 trayGroups.at(0).options.size() == 8 &&
-                trayGroups.at(1).id == QStringLiteral("screen-recording") &&
-                trayGroups.at(1).options.size() == 3 &&
-                trayGroups.at(2).id == QStringLiteral("pin-to-screen") &&
-                trayGroups.at(2).options.size() == 2 &&
+                trayGroups.at(1).id == QStringLiteral("pin-to-screen") &&
+                trayGroups.at(1).options.size() == 2 &&
+                trayGroups.at(2).id == QStringLiteral("screen-recording") &&
+                trayGroups.at(2).options.size() == 3 &&
                 trayGroups.at(3).id == QStringLiteral("other") &&
                 trayGroups.at(3).options.size() == 2 &&
                 trayGroups.at(4).id == QStringLiteral("system") &&
                 trayGroups.at(4).options.size() == 4 && trayOptionIds.size() == 19 &&
-                trayOptionIds.at(10) == QStringLiteral("quick.open-screen-recording-folder") &&
-                trayOptionIds.at(11) == QStringLiteral("quick.pin-clipboard-content") &&
-                trayOptionIds.at(12) == QStringLiteral("quick.pin-selected-files") &&
+                trayOptionIds.at(8) == QStringLiteral("quick.pin-clipboard-content") &&
+                trayOptionIds.at(9) == QStringLiteral("quick.pin-selected-files") &&
+                trayOptionIds.at(10) == QStringLiteral("quick.screen-record") &&
+                trayOptionIds.at(11) == QStringLiteral("quick.screen-record-copy") &&
+                trayOptionIds.at(12) == QStringLiteral("quick.open-screen-recording-folder") &&
                 trayOptionIds.at(13) == QStringLiteral("quick.open-capture-history") &&
                 trayOptionIds.at(14) == QStringLiteral("quick.translate-selected-text") &&
                 trayOptionIds.at(15) == QStringLiteral("tray.window-grouping") &&
