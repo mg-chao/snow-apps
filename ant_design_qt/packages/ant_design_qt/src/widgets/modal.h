@@ -41,6 +41,14 @@ class AdModal final : public QObject {
                  windowModalityChanged)
   Q_PROPERTY(bool windowModeDetached READ windowModeDetached WRITE setWindowModeDetached NOTIFY
                  windowModeDetachedChanged)
+  Q_PROPERTY(bool windowTaskbarVisible READ windowTaskbarVisible WRITE setWindowTaskbarVisible
+                 NOTIFY windowTaskbarVisibleChanged)
+  Q_PROPERTY(bool windowMinimizeButtonVisible READ windowMinimizeButtonVisible WRITE
+                 setWindowMinimizeButtonVisible NOTIFY windowMinimizeButtonVisibleChanged)
+  Q_PROPERTY(bool windowAlwaysOnTopButtonVisible READ windowAlwaysOnTopButtonVisible WRITE
+                 setWindowAlwaysOnTopButtonVisible NOTIFY windowAlwaysOnTopButtonVisibleChanged)
+  Q_PROPERTY(bool windowAlwaysOnTop READ windowAlwaysOnTop WRITE setWindowAlwaysOnTop NOTIFY
+                 windowAlwaysOnTopChanged)
   Q_PROPERTY(bool open READ isOpen WRITE setOpen NOTIFY openChanged)
   Q_PROPERTY(QString windowTitle READ windowTitle WRITE setWindowTitle NOTIFY windowTitleChanged)
   Q_PROPERTY(bool centered READ centered WRITE setCentered NOTIFY centeredChanged)
@@ -132,8 +140,11 @@ class AdModal final : public QObject {
     std::optional<int> zIndexPopup;
     std::optional<int> borderRadius;
     std::optional<int> borderWidth;
+    std::optional<int> contentPaddingHorizontal;
+    std::optional<int> contentPaddingVertical;
     std::optional<int> headerPaddingHorizontal;
     std::optional<int> headerPaddingVertical;
+    std::optional<int> headerMarginBottom;
     std::optional<int> bodyPaddingHorizontal;
     std::optional<int> bodyPaddingVertical;
     std::optional<int> footerPaddingHorizontal;
@@ -208,6 +219,15 @@ class AdModal final : public QObject {
   void setWindowMinimumSize(const QSize& size);
   bool windowResizable() const;
   void setWindowResizable(bool value);
+  bool windowTaskbarVisible() const;
+  void setWindowTaskbarVisible(bool value);
+  bool windowMinimizeButtonVisible() const;
+  void setWindowMinimizeButtonVisible(bool value);
+  bool windowAlwaysOnTopButtonVisible() const;
+  void setWindowAlwaysOnTopButtonVisible(bool value);
+  bool windowAlwaysOnTop() const;
+  // On Windows, updates stacking in place, preserving native chrome and visibility.
+  void setWindowAlwaysOnTop(bool value);
   // Open, or restore and activate an already open surface without resetting geometry.
   void present();
 
@@ -308,6 +328,10 @@ class AdModal final : public QObject {
   void modeChanged(Mode value);
   void windowModalityChanged(Qt::WindowModality value);
   void windowModeDetachedChanged(bool value);
+  void windowTaskbarVisibleChanged(bool value);
+  void windowMinimizeButtonVisibleChanged(bool value);
+  void windowAlwaysOnTopButtonVisibleChanged(bool value);
+  void windowAlwaysOnTopChanged(bool value);
   void openChanged(bool value);
   void windowTitleChanged(const QString& value);
   void finished(DialogCode code);
@@ -366,6 +390,8 @@ class AdModal final : public QObject {
     int borderWidth = 0;
     int contentPaddingHorizontal = 24;
     int contentPaddingVertical = 20;
+    int contentAreaPaddingHorizontal = 24;
+    int contentAreaPaddingVertical = 0;
     int headerPaddingHorizontal = 0;
     int headerPaddingVertical = 0;
     int headerMarginBottom = 8;
@@ -400,6 +426,8 @@ class AdModal final : public QObject {
   const QWidget* themeSourceWidget() const;
   QRect windowModeAvailableGeometry() const;
   QRect windowModeAnchorGeometry() const;
+  Qt::WindowFlags windowSurfaceFlags() const;
+  void reapplyWindowSurfaceFlags();
 
   QWidget* ensureParkingWidget();
   void attachOwnerWindowWatcher(QWidget* ownerWindow);
@@ -482,6 +510,8 @@ class AdModal final : public QObject {
   QPointer<QLabel> titleIconLabel_;
   QPointer<QLabel> titleLabel_;
   QPointer<QToolButton> closeButton_;
+  QPointer<QToolButton> minimizeButton_;
+  QPointer<QToolButton> alwaysOnTopButton_;
   QPointer<QWidget> body_;
   QPointer<QVBoxLayout> bodyLayout_;
   QPointer<QWidget> confirmBodyHost_;
@@ -514,6 +544,10 @@ class AdModal final : public QObject {
   QSize windowPreferredSize_;
   QSize windowMinimumSize_;
   bool windowResizable_ = false;
+  bool windowTaskbarVisible_ = false;
+  bool windowMinimizeButtonVisible_ = false;
+  bool windowAlwaysOnTopButtonVisible_ = false;
+  bool windowAlwaysOnTop_ = false;
   bool windowGeometryInitialized_ = false;
   int resolvedZIndex_ = 1000;
   quint64 openSequence_ = 0;

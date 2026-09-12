@@ -897,6 +897,14 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     </message>
 </context>
 <context>
+    <name>MainWindow</name>
+    <message>
+        <location filename="../src/presentation/mainwindow.cpp" line="249"/>
+        <source>Failed to retrieve selected text</source>
+        <translation>Failed to retrieve selected text</translation>
+    </message>
+</context>
+<context>
     <name>PinnedToolbarEditorSettingsWidget</name>
     <message>
         <location filename="../src/presentation/components/settingscustomwidget.cpp" line="82"/>
@@ -7628,40 +7636,29 @@ Change the shortcut and try again</translation>
     </message>
 </context>
 <context>
-    <name>snow_shot::presentation::SelectedTextTranslationController</name>
-    <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="146"/>
-        <source>No selected text was found.</source>
-        <translation>No selected text was found.</translation>
-    </message>
-    <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="149"/>
-        <source>Selected text capture is not supported here.</source>
-        <translation>Selected text capture is not supported here.</translation>
-    </message>
-    <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="152"/>
-        <source>Selected text capture is busy. Please try again.</source>
-        <translation>Selected text capture is busy. Please try again.</translation>
-    </message>
-    <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="155"/>
-        <source>Selected text capture timed out. Please try again.</source>
-        <translation>Selected text capture timed out. Please try again.</translation>
-    </message>
-    <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="158"/>
-        <source>Could not capture the selected text. Please try again.</source>
-        <translation>Could not capture the selected text. Please try again.</translation>
-    </message>
-</context>
-<context>
     <name>snow_shot::presentation::StandaloneTranslationWindow</name>
     <message>
-        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="19"/>
-        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="37"/>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="20"/>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="55"/>
         <source>Translation</source>
         <translation>Translation</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="21"/>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="56"/>
+        <source>Copy and Close</source>
+        <translation>Copy and Close</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="22"/>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="57"/>
+        <source>Close</source>
+        <translation>Close</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="91"/>
+        <source>Failed to retrieve selected text</source>
+        <translation>Failed to retrieve selected text</translation>
     </message>
 </context>
 <context>
@@ -7673,11 +7670,6 @@ Change the shortcut and try again</translation>
     </message>
     <message>
         <location filename="../src/presentation/services/systemtraycontroller.cpp" line="564"/>
-        <source>Translation</source>
-        <translation>Translation</translation>
-    </message>
-    <message>
-        <location filename="../src/presentation/services/systemtraycontroller.cpp" line="568"/>
         <source>Update</source>
         <translation>Update</translation>
     </message>

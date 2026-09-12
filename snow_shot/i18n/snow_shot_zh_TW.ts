@@ -897,6 +897,14 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     </message>
 </context>
 <context>
+    <name>MainWindow</name>
+    <message>
+        <location filename="../src/presentation/mainwindow.cpp" line="249"/>
+        <source>Failed to retrieve selected text</source>
+        <translation>擷取選取文字失敗</translation>
+    </message>
+</context>
+<context>
     <name>PinnedToolbarEditorSettingsWidget</name>
     <message>
         <location filename="../src/presentation/components/settingscustomwidget.cpp" line="82"/>
@@ -906,7 +914,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <message>
         <location filename="../src/presentation/components/settingscustomwidget.cpp" line="86"/>
         <source>Pin to Screen toolbar preview</source>
-        <translation>貼圖工具列預覽</translation>
+        <translation>固定到螢幕工具列預覽</translation>
     </message>
     <message>
         <location filename="../src/presentation/components/settingscustomwidget.cpp" line="87"/>
@@ -916,7 +924,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <message>
         <location filename="../src/presentation/components/settingscustomwidget.cpp" line="88"/>
         <source>Drag tools here to hide them from the pinned toolbar.</source>
-        <translation>將工具拖曳到此處，即可在貼圖工具列中隱藏。</translation>
+        <translation>將工具拖曳到此處，即可在固定到螢幕工具列中隱藏。</translation>
     </message>
     <message>
         <location filename="../src/presentation/components/settingscustomwidget.cpp" line="90"/>
@@ -926,7 +934,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <message>
         <location filename="../src/presentation/components/settingscustomwidget.cpp" line="91"/>
         <source>Hidden pinned toolbar tools</source>
-        <translation>隱藏的貼圖工具列工具</translation>
+        <translation>固定到螢幕工具列的隱藏工具</translation>
     </message>
 </context>
 <context>
@@ -5273,18 +5281,18 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="582"/>
         <source>Pin images, image files, formatted text, or HTML from the clipboard to the screen</source>
-        <translation>將剪貼簿中的影像、影像檔案、格式化文字或 HTML 貼到螢幕</translation>
+        <translation>將剪貼簿中的影像、影像檔案、格式化文字或 HTML 固定到螢幕</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="595"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="2525"/>
         <source>Pin Selected Files to Screen</source>
-        <translation>將選取的檔案貼到螢幕</translation>
+        <translation>固定選取的檔案到螢幕</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="596"/>
         <source>Pin selected image files from File Explorer or the desktop to the screen</source>
-        <translation>將檔案總管或桌面中選取的影像檔案貼到螢幕</translation>
+        <translation>將檔案總管或桌面中選取的影像檔案固定到螢幕</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="671"/>
@@ -6201,7 +6209,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="925"/>
         <source>Choose the action for double-clicking a draggable area of a pinned screenshot</source>
-        <translation>選擇按兩下貼圖可拖曳區域時執行的操作</translation>
+        <translation>選擇按兩下固定到螢幕的截圖可拖曳區域時執行的操作</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="933"/>
@@ -6223,7 +6231,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="944"/>
         <source>Choose the action for middle-clicking a draggable area of a pinned screenshot</source>
-        <translation>選擇在釘選截圖可拖曳區域按一下滑鼠中鍵時執行的操作</translation>
+        <translation>選擇在固定到螢幕的截圖可拖曳區域按一下滑鼠中鍵時執行的操作</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="952"/>
@@ -6289,17 +6297,17 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="343"/>
         <source>Pin to Screen toolbar settings</source>
-        <translation>貼圖工具列設定</translation>
+        <translation>固定到螢幕工具列設定</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="344"/>
         <source>Drag pinned tools to reorder them or stack them in the same toolbar position.</source>
-        <translation>拖曳貼圖工具以調整順序，或將其堆疊在同一工具列位置。</translation>
+        <translation>拖曳固定到螢幕的工具以調整順序，或將其堆疊在同一工具列位置。</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="347"/>
         <source>Custom pinned toolbar</source>
-        <translation>自訂貼圖工具列</translation>
+        <translation>自訂固定到螢幕工具列</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="348"/>
@@ -7627,40 +7635,29 @@ Change the shortcut and try again</source>
     </message>
 </context>
 <context>
-    <name>snow_shot::presentation::SelectedTextTranslationController</name>
-    <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="146"/>
-        <source>No selected text was found.</source>
-        <translation>找不到選取的文字。</translation>
-    </message>
-    <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="149"/>
-        <source>Selected text capture is not supported here.</source>
-        <translation>此處不支援擷取選取文字。</translation>
-    </message>
-    <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="152"/>
-        <source>Selected text capture is busy. Please try again.</source>
-        <translation>正在擷取選取文字，請再試一次。</translation>
-    </message>
-    <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="155"/>
-        <source>Selected text capture timed out. Please try again.</source>
-        <translation>擷取選取文字逾時，請再試一次。</translation>
-    </message>
-    <message>
-        <location filename="../src/presentation/services/selectedtexttranslationcontroller.cpp" line="158"/>
-        <source>Could not capture the selected text. Please try again.</source>
-        <translation>無法擷取選取文字，請再試一次。</translation>
-    </message>
-</context>
-<context>
     <name>snow_shot::presentation::StandaloneTranslationWindow</name>
     <message>
-        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="19"/>
-        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="37"/>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="20"/>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="55"/>
         <source>Translation</source>
         <translation>翻譯</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="21"/>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="56"/>
+        <source>Copy and Close</source>
+        <translation>複製並關閉</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="22"/>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="57"/>
+        <source>Close</source>
+        <translation>關閉</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/standalonetranslationwindow.cpp" line="91"/>
+        <source>Failed to retrieve selected text</source>
+        <translation>擷取選取文字失敗</translation>
     </message>
 </context>
 <context>
@@ -7672,11 +7669,6 @@ Change the shortcut and try again</source>
     </message>
     <message>
         <location filename="../src/presentation/services/systemtraycontroller.cpp" line="564"/>
-        <source>Translation</source>
-        <translation>翻譯</translation>
-    </message>
-    <message>
-        <location filename="../src/presentation/services/systemtraycontroller.cpp" line="568"/>
         <source>Update</source>
         <translation>更新</translation>
     </message>

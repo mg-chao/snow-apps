@@ -472,10 +472,6 @@ class ApplicationController::Impl {
                         ensureMainWindow().showTranslation(text);
                     }
                 });
-            QObject::connect(selectedTextTranslationCoordinator.get(),
-                             &presentation::SelectedTextTranslationCoordinator::operationFailed,
-                             &systemTray,
-                             &presentation::SystemTrayController::showTranslationMessage);
             QObject::connect(&app, &QCoreApplication::aboutToQuit,
                              selectedTextTranslationCoordinator.get(),
                              &presentation::SelectedTextTranslationCoordinator::shutdown);

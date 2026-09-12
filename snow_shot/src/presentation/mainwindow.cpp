@@ -9,6 +9,7 @@
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/styles/themecolorscheme.h"
+#include "widgets/message.h"
 
 #include <QEvent>
 #include <QFont>
@@ -242,6 +243,12 @@ void MainWindow::showTranslation(const QString& text) {
         m_contentCard->showTranslation(text);
     }
     showAndActivate();
+    if (text.trimmed().isEmpty()) {
+        adqt::widgets::AdMessage::Request request;
+        request.key = QStringLiteral("main-translation-empty-selection");
+        request.content = tr("Failed to retrieve selected text");
+        adqt::widgets::AdMessageService::warning(std::move(request), this);
+    }
 }
 
 void MainWindow::showScreenshotHistory() {

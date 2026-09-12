@@ -39,38 +39,38 @@ void captureOnlyHandsOffCompletedText() {
     SelectedTextTranslationController controller(std::make_unique<FakeCaptureBackend>(state));
     QString delivered;
     int successes = 0;
-    int failures = 0;
     QObject::connect(&controller, &SelectedTextTranslationController::textReady, &controller,
                      [&](const QString& text) {
                          delivered = text;
                          ++successes;
                      });
-    QObject::connect(&controller, &SelectedTextTranslationController::operationFailed, &controller,
-                     [&]() { ++failures; });
     controller.capture();
     controller.capture();
-    require(state->starts == 1 && successes == 0 && failures == 0,
+    require(state->starts == 1 && successes == 0,
             "submit immediately without activating a page or replacing a pending capture");
     waitUntil([&]() { return state->polls > 1; }, "poll pending capture without blocking Qt");
-    require(successes == 0 && failures == 0, "pending capture must not navigate or notify");
+    require(successes == 0, "pending capture must not navigate or notify");
     const QString text =
         QString::fromUtf8("  Selected \xe4\xb8\xad\xe6\x96\x87 \xf0\x9f\x8c\x8d\r\nsecond line  ");
     state->result = {SelectedTextStatus::Selected, text};
     waitUntil([&]() { return successes == 1; }, "successful capture hands off text");
-    require(delivered == text && failures == 0, "preserve Unicode, whitespace and line breaks");
+    require(delivered == text, "preserve Unicode, whitespace and line breaks");
     state->initial = {SelectedTextStatus::Selected, QStringLiteral("next")};
     controller.capture();
     require(successes == 2 && delivered == QStringLiteral("next") && state->starts == 2,
             "a completed capture permits another explicit request");
 }
 
-void failuresNeverHandOffText() {
+void unusableCapturesHandOffEmptyText() {
     for (const auto status : {SelectedTextStatus::NoSelection, SelectedTextStatus::Unsupported,
                               SelectedTextStatus::Busy, SelectedTextStatus::TimedOut,
                               SelectedTextStatus::Failed, SelectedTextStatus::Selected}) {
+        // Only a Selected capture carries text; the other statuses report empty payloads.
+        const QString payload =
+            status == SelectedTextStatus::Selected ? QStringLiteral(" \t\r\n") : QString();
         for (const bool immediate : {true, false}) {
             auto state = std::make_shared<CaptureState>();
-            const SelectedTextCaptureResult result{status, QStringLiteral(" \t\r\n")};
+            const SelectedTextCaptureResult result{status, payload};
             if (immediate) {
                 state->initial = result;
             } else {
@@ -78,33 +78,24 @@ void failuresNeverHandOffText() {
             }
             SelectedTextTranslationController controller(
                 std::make_unique<FakeCaptureBackend>(state));
-            int successes = 0;
-            int failures = 0;
-            QString message;
+            int deliveries = 0;
+            QString delivered;
             QObject::connect(&controller, &SelectedTextTranslationController::textReady,
-                             &controller, [&]() { ++successes; });
-            QObject::connect(&controller, &SelectedTextTranslationController::operationFailed,
                              &controller, [&](const QString& text) {
-                                 ++failures;
-                                 message = text;
+                                 ++deliveries;
+                                 delivered = text;
                              });
             controller.capture();
-            waitUntil([&]() { return failures == 1; }, "capture failure emits a notification");
-            require(successes == 0 && !message.isEmpty(),
-                    "failures and whitespace selections preserve page and source text");
+            waitUntil([&]() { return deliveries == 1; },
+                      "unusable capture hands off so the page can open and warn");
+            require(delivered == payload,
+                    "timeouts, failures and empty selections hand off without extra signals");
             state->initial = {SelectedTextStatus::Selected, QStringLiteral("recovered")};
             controller.capture();
-            require(successes == 1 && failures == 1, "a failed request permits retry");
+            require(deliveries == 2 && delivered == QStringLiteral("recovered"),
+                    "an unusable capture permits the next request");
         }
     }
-    auto state = std::make_shared<CaptureState>();
-    state->initial = {SelectedTextStatus::Selected, {}};
-    SelectedTextTranslationController controller(std::make_unique<FakeCaptureBackend>(state));
-    int failures = 0;
-    QObject::connect(&controller, &SelectedTextTranslationController::operationFailed, &controller,
-                     [&]() { ++failures; });
-    controller.capture();
-    require(failures == 1, "an empty selection must not clear the translation page");
 }
 
 void shutdownCancelsWithoutLateDelivery() {
@@ -114,8 +105,6 @@ void shutdownCancelsWithoutLateDelivery() {
         SelectedTextTranslationController controller(std::make_unique<FakeCaptureBackend>(state));
         QObject::connect(&controller, &SelectedTextTranslationController::textReady, &controller,
                          [&]() { ++deliveries; });
-        QObject::connect(&controller, &SelectedTextTranslationController::operationFailed,
-                         &controller, [&]() { ++deliveries; });
         controller.capture();
         controller.shutdown();
         controller.shutdown();
@@ -140,7 +129,7 @@ void shutdownCancelsWithoutLateDelivery() {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     captureOnlyHandsOffCompletedText();
-    failuresNeverHandOffText();
+    unusableCapturesHandOffEmptyText();
     shutdownCancelsWithoutLateDelivery();
     return 0;
 }

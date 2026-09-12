@@ -48,8 +48,8 @@ class SelectedTextTranslationController final : public QObject {
     }
 
   signals:
+    // Emitted when a capture finishes; text is empty when nothing was retrieved.
     void textReady(const QString& text);
-    void operationFailed(const QString& message);
 
   private:
     void acceptResult(const SelectedTextCaptureResult& result);

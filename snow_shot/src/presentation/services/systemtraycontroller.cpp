@@ -560,10 +560,6 @@ void SystemTrayController::showCaptureMessage(const QString& message, bool warni
                         warning ? QSystemTrayIcon::Warning : QSystemTrayIcon::Critical);
 }
 
-void SystemTrayController::showTranslationMessage(const QString& message) {
-    m_impl->showBalloon(tr("Translation"), message, QSystemTrayIcon::Warning);
-}
-
 void SystemTrayController::showUpdateMessage(const QString& message) {
     m_impl->showBalloon(tr("Update"), message, QSystemTrayIcon::Information);
 }

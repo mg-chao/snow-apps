@@ -17,6 +17,7 @@
 #include <QClipboard>
 #include <QDir>
 #include <QCursor>
+#include <QToolButton>
 #include <QWindow>
 #include <QLabel>
 #include <QScreen>
@@ -83,15 +84,12 @@ void routingAndCancellation() {
         });
     auto* modal = coordinator.findChild<AdModal*>();
     int mainRequests = 0;
-    int failures = 0;
     QString mainText;
     QObject::connect(&coordinator, &SelectedTextTranslationCoordinator::mainTranslationRequested,
                      &coordinator, [&](const QString& text) {
                          ++mainRequests;
                          mainText = text;
                      });
-    QObject::connect(&coordinator, &SelectedTextTranslationCoordinator::operationFailed,
-                     &coordinator, [&] { ++failures; });
     const storage::ExtendedFeaturesSettings settings;
     for (const bool standalone : {false, true}) {
         require(settings.setTranslationPageEnabled(false) &&
@@ -108,6 +106,10 @@ void routingAndCancellation() {
     coordinator.capture();
     require(mainRequests == 1 && mainText == QStringLiteral("main page") && !modal->isOpen(),
             "standalone off routes successful capture to the main-page signal");
+    state->initial = {SelectedTextStatus::NoSelection, {}};
+    coordinator.capture();
+    require(mainRequests == 2 && mainText.isEmpty() && !modal->isOpen(),
+            "standalone off routes empty selections to the main-page signal");
     require(settings.setStandaloneTranslationWindow(true), "enable standalone routing");
     state->initial = {};
     coordinator.capture();
@@ -118,7 +120,7 @@ void routingAndCancellation() {
             "ignored trigger cannot overwrite captured screen or destination");
     state->result = {SelectedTextStatus::Selected, QStringLiteral("standalone")};
     waitUntil([&] { return modal->isOpen(); }, "capture opens standalone window");
-    require(mainRequests == 1 && visibleTranslationWindows() == 1 &&
+    require(mainRequests == 2 && visibleTranslationWindows() == 1 &&
                 modal->windowScreen() == qApp->primaryScreen(),
             "standalone uses trigger screen and never requests main presentation");
     auto* page = qobject_cast<TranslationPageWidget*>(modal->contentWidget());
@@ -128,7 +130,7 @@ void routingAndCancellation() {
     coordinator.capture();
     require(modal->contentWidget() == page &&
                 controller->sourceText() == QStringLiteral("replacement") &&
-                visibleTranslationWindows() == 1 && mainRequests == 1,
+                visibleTranslationWindows() == 1 && mainRequests == 2,
             "retrigger reuses the same page and replaces source text");
     require(settings.setStandaloneTranslationWindow(false), "turn standalone off");
     require(!modal->isOpen() && !controller->active(),
@@ -142,7 +144,7 @@ void routingAndCancellation() {
     require(state->cancellations > cancellations, "setting change cancels pending capture");
     state->result = {SelectedTextStatus::Selected, QStringLiteral("stale")};
     flushEvents();
-    require(!modal->isOpen() && mainRequests == 1,
+    require(!modal->isOpen() && mainRequests == 2,
             "cancelled capture does not open either destination");
     state->initial = {SelectedTextStatus::Selected, QStringLiteral("fresh")};
     coordinator.capture();
@@ -152,12 +154,24 @@ void routingAndCancellation() {
             "master off closes window and preserves child preference");
     require(settings.setTranslationPageEnabled(true), "re-enable master");
     for (const auto status : {SelectedTextStatus::NoSelection, SelectedTextStatus::TimedOut,
-                              SelectedTextStatus::Failed, SelectedTextStatus::Selected}) {
-        state->initial = {status, QStringLiteral("  ")};
+                              SelectedTextStatus::Failed, SelectedTextStatus::Busy,
+                              SelectedTextStatus::Unsupported, SelectedTextStatus::Selected}) {
+        // Only a Selected capture carries text; the other statuses report empty payloads.
+        const QString payload =
+            status == SelectedTextStatus::Selected ? QStringLiteral("  ") : QString();
+        state->initial = {status, payload};
         coordinator.capture();
+        require(modal->isOpen(), "unusable capture still opens the standalone translation page");
+        QWidget* surface = modal->contentWidget()->window();
+        auto* warning = surface->findChild<QLabel*>(QStringLiteral("ad-message-content"));
+        require(warning != nullptr && warning->isVisible() &&
+                    warning->text() == QStringLiteral("Failed to retrieve selected text"),
+                "unusable capture warns on the opened page instead of notifying the system");
+        modal->close();
+        flushEvents();
     }
-    require(failures == 4 && !modal->isOpen() && mainRequests == 1,
-            "capture failures notify without opening windows");
+    require(!modal->isOpen() && mainRequests == 2,
+            "every unusable capture stays on the standalone destination");
     state->initial = {};
     state->result = {};
     coordinator.capture();
@@ -241,17 +255,30 @@ void pageActionsAndLifecycle() {
     coordinator.capture();
     auto* page = qobject_cast<TranslationPageWidget*>(modal->contentWidget());
     require(page && modal->mode() == AdModal::Mode::Window && modal->windowModeDetached() &&
-                modal->windowModality() == Qt::NonModal && !modal->footerVisible() &&
-                modal->ownerWindow() == nullptr,
-            "detached footer-free modal has no main-window owner");
+                modal->windowModality() == Qt::NonModal && modal->footerVisible() &&
+                modal->windowTaskbarVisible() && modal->windowMinimizeButtonVisible() &&
+                modal->windowAlwaysOnTopButtonVisible() && modal->ownerWindow() == nullptr,
+            "detached taskbar-enabled modal with footer has no main-window owner");
     QWidget* surface = page->window();
     require(surface != &existingMain && surface->parentWidget() == nullptr &&
                 modal->closeButtonVisible(),
             "standalone has its own title bar and native surface");
+    require((surface->windowFlags() & Qt::WindowType_Mask) == Qt::Window &&
+                surface->findChild<QToolButton*>(QStringLiteral("ad-modal-minimize")) &&
+                surface->findChild<QToolButton*>(QStringLiteral("ad-modal-always-on-top")),
+            "standalone chrome exposes a taskbar window with minimize and pin buttons");
+    require(modal->acceptButton()->text() == QStringLiteral("Copy and Close") &&
+                modal->rejectButton()->text() == QStringLiteral("Close"),
+            "footer buttons offer copy-and-close and close");
     const QRect available = qApp->primaryScreen()->availableGeometry().adjusted(16, 16, -16, -16);
-    require(surface->size() == QSize(960, 640).boundedTo(available.size()) &&
-                surface->minimumSize() == QSize(640, 480).boundedTo(available.size()),
+    require(surface->size() == QSize(700, 450).boundedTo(available.size()) &&
+                surface->minimumSize() == QSize(650, 400).boundedTo(available.size()),
             "explicit geometry is clamped to available display");
+    require(modal->componentTokens().contentPaddingHorizontal.value_or(-1) == 0 &&
+                modal->componentTokens().contentPaddingVertical.value_or(-1) == 0,
+            "standalone window pads only the modal chrome, not the content area");
+    require(modal->componentTokens().headerMarginBottom.value_or(-1) == 0,
+            "standalone window drops the chrome gap between header and options");
     surface->resize(surface->size() - QSize(40, 40));
     surface->move(surface->pos() + QPoint(9, 7));
     const QRect geometry = surface->geometry();
@@ -307,7 +334,7 @@ void pageActionsAndLifecycle() {
     page = qobject_cast<TranslationPageWidget*>(modal->contentWidget());
     require(page && page->window() == surface && visibleTranslationWindows() == 1,
             "reopening creates fresh content in the same modal surface");
-    require(page->window()->size() == QSize(960, 640).boundedTo(available.size()),
+    require(page->window()->size() == QSize(700, 450).boundedTo(available.size()),
             "reopen restores default size rather than persisting geometry");
     controller = page->findChild<TranslationPageController*>();
     waitUntil([&] { return server.streams.size() == 2; }, "reopened page translates");
@@ -330,6 +357,15 @@ void pageActionsAndLifecycle() {
               "preference changes start new translation");
     require(target->currentValue().toString() == QStringLiteral("ja"),
             "page synchronizes target selection");
+    server.delta(3, QStringLiteral("final preference result"));
+    server.finish(3);
+    waitUntil([&] { return !controller->translating(); },
+              "preference translation finishes before accepting");
+    qApp->clipboard()->setText(QStringLiteral("stale clipboard"));
+    modal->acceptButton()->click();
+    require(!modal->isOpen() &&
+                qApp->clipboard()->text() == QStringLiteral("final preference result"),
+            "footer accept copies the result and closes the standalone window");
     require(settings.setStandaloneTranslationWindow(false), "disable standalone while streaming");
     waitUntil([&] { return server.disconnected(3); }, "setting off cancels active stream");
     require(!modal->isOpen() && existingMain.isVisible(),

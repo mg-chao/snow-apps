@@ -110,13 +110,13 @@ int main(int argc, char* argv[]) {
     requireBalloon(trayIcon, QStringLiteral("Capture"), QStringLiteral("Capture delayed"),
                    QSystemTrayIcon::Warning,
                    "a capture warning balloon must stay titled Capture with a warning icon");
-    controller.showTranslationMessage(QStringLiteral("No selected text"));
-    requireBalloon(trayIcon, QStringLiteral("Translation"), QStringLiteral("No selected text"),
+    controller.showCaptureMessage(QStringLiteral("Capture timed out"), true);
+    requireBalloon(trayIcon, QStringLiteral("Capture"), QStringLiteral("Capture timed out"),
                    QSystemTrayIcon::Warning,
-                   "a translation balloon must stay titled Translation with a warning icon");
+                   "a capture warning balloon must stay titled Capture with a warning icon");
     controller.setEnabled(false);
     controller.showUpdateMessage(QStringLiteral("Ignored while disabled"));
-    requireBalloon(trayIcon, QStringLiteral("Translation"), QStringLiteral("No selected text"),
+    requireBalloon(trayIcon, QStringLiteral("Capture"), QStringLiteral("Capture timed out"),
                    QSystemTrayIcon::Warning,
                    "a disabled tray must not replace the last balloon with an update notice");
     controller.setEnabled(true);

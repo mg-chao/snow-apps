@@ -33,8 +33,6 @@ SelectedTextTranslationCoordinator::SelectedTextTranslationCoordinator(
                     emit mainTranslationRequested(text);
                 }
             });
-    connect(m_capture, &SelectedTextTranslationController::operationFailed, this,
-            &SelectedTextTranslationCoordinator::operationFailed);
     connect(&configuration, &storage::ConfigurationStore::valueChanged, this,
             [this](const QString& key, const QJsonValue&) {
                 if (key != kMasterKey && key != kStandaloneKey) {

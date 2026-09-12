@@ -246,6 +246,47 @@ class ModalOverlayWidget final : public QWidget {
 
   void setWindowResizable(bool value) { windowResizable_ = value; }
 
+  void applyWindowSurfaceFlags(Qt::WindowFlags flags) {
+    if (windowFlags() == flags) {
+      return;
+    }
+    if ((windowFlags() ^ flags) == Qt::WindowStaysOnTopHint) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+      if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        // Changing QWidget flags hides the surface and replaces the native
+        // frame styles. A stacking-only change must preserve the HWND and DWM
+        // chrome, visibility, activation, and geometry.
+        const HWND hwnd = hwndForWidget(this);
+        if (!SetWindowPos(hwnd,
+                          flags.testFlag(Qt::WindowStaysOnTopHint) ? HWND_TOPMOST : HWND_NOTOPMOST,
+                          0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)) {
+          qWarning("Unable to update modal window stacking order");
+          return;
+        }
+        // Keep QWidget's flags in sync without another platform update.
+        overrideWindowFlags(flags);
+        return;
+      }
+#endif
+      if (windowHandle()) {
+        windowHandle()->setFlags(flags);
+      }
+      overrideWindowFlags(flags);
+      return;
+    }
+
+    const QRect previousGeometry = geometry();
+    const bool wasVisible = isVisible();
+    setWindowFlags(flags);
+    applyWindowModeNativeChrome();
+    if (wasVisible) {
+      setGeometry(previousGeometry);
+      show();
+      raise();
+      activateWindow();
+    }
+  }
+
   void setWindowModeDragWidgets(QWidget* header, QWidget* panel) {
     windowModeHeader_ = header;
     windowModePanel_ = panel;
@@ -330,7 +371,7 @@ class ModalOverlayWidget final : public QWidget {
 
   void applyWindowModeNativeChrome() {
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    if (!windowModeChromeEnabled_) {
+    if (!windowModeChromeEnabled_ || QGuiApplication::platformName() != QStringLiteral("windows")) {
       return;
     }
 
@@ -900,6 +941,50 @@ void AdModal::setWindowResizable(bool value) {
   windowResizable_ = value;
   windowGeometryInitialized_ = false;
   refreshLayout();
+  applyVisualStyle();
+}
+
+bool AdModal::windowTaskbarVisible() const { return windowTaskbarVisible_; }
+void AdModal::setWindowTaskbarVisible(bool value) {
+  if (windowTaskbarVisible_ == value) {
+    return;
+  }
+  windowTaskbarVisible_ = value;
+  emit windowTaskbarVisibleChanged(value);
+  reapplyWindowSurfaceFlags();
+}
+
+bool AdModal::windowMinimizeButtonVisible() const { return windowMinimizeButtonVisible_; }
+void AdModal::setWindowMinimizeButtonVisible(bool value) {
+  if (windowMinimizeButtonVisible_ == value) {
+    return;
+  }
+  windowMinimizeButtonVisible_ = value;
+  emit windowMinimizeButtonVisibleChanged(value);
+  refreshVisibility();
+}
+
+bool AdModal::windowAlwaysOnTopButtonVisible() const { return windowAlwaysOnTopButtonVisible_; }
+void AdModal::setWindowAlwaysOnTopButtonVisible(bool value) {
+  if (windowAlwaysOnTopButtonVisible_ == value) {
+    return;
+  }
+  windowAlwaysOnTopButtonVisible_ = value;
+  emit windowAlwaysOnTopButtonVisibleChanged(value);
+  refreshVisibility();
+}
+
+bool AdModal::windowAlwaysOnTop() const { return windowAlwaysOnTop_; }
+void AdModal::setWindowAlwaysOnTop(bool value) {
+  if (windowAlwaysOnTop_ == value) {
+    return;
+  }
+  windowAlwaysOnTop_ = value;
+  if (alwaysOnTopButton_) {
+    alwaysOnTopButton_->setChecked(value);
+  }
+  emit windowAlwaysOnTopChanged(value);
+  reapplyWindowSurfaceFlags();
   applyVisualStyle();
 }
 
@@ -1767,6 +1852,25 @@ QRect AdModal::windowModeAnchorGeometry() const {
   return QRect(ownerWindow_->mapToGlobal(QPoint(0, 0)), ownerWindow_->size());
 }
 
+Qt::WindowFlags AdModal::windowSurfaceFlags() const {
+  Qt::WindowFlags flags = Qt::FramelessWindowHint;
+  // A taskbar-visible surface must be a plain window: Qt::Tool surfaces never
+  // get a taskbar button and owned dialogs only appear while their owner does.
+  flags |= windowTaskbarVisible_ ? Qt::Window : (windowModeDetached_ ? Qt::Tool : Qt::Dialog);
+  if (windowAlwaysOnTop_ ||
+      (ownerWindow_ && ownerWindow_->windowFlags().testFlag(Qt::WindowStaysOnTopHint))) {
+    flags |= Qt::WindowStaysOnTopHint;
+  }
+  return flags;
+}
+
+void AdModal::reapplyWindowSurfaceFlags() {
+  if (!overlay_ || !usesWindowSurface()) {
+    return;
+  }
+  static_cast<ModalOverlayWidget*>(overlay_.data())->applyWindowSurfaceFlags(windowSurfaceFlags());
+}
+
 void AdModal::ensureOverlay() {
   if (overlay_) {
     syncOverlayGeometry();
@@ -1794,10 +1898,7 @@ void AdModal::ensureOverlay() {
   const bool windowMode = usesWindowSurface();
   Qt::WindowFlags overlayFlags = Qt::WindowFlags();
   if (windowMode) {
-    overlayFlags = (windowModeDetached_ ? Qt::Tool : Qt::Dialog) | Qt::FramelessWindowHint;
-    if (ownerWindow_ && ownerWindow_->windowFlags().testFlag(Qt::WindowStaysOnTopHint)) {
-      overlayFlags |= Qt::WindowStaysOnTopHint;
-    }
+    overlayFlags = windowSurfaceFlags();
   }
 
   QWidget* nativeParent = renderContainer_
@@ -1857,7 +1958,30 @@ void AdModal::ensureOverlay() {
   connect(closeButton, &QToolButton::clicked, this,
           [this]() { requestReject(CloseReason::CloseButton); });
 
+  auto* minimizeButton = new ModalIconButton(header);
+  minimizeButton->setObjectName(QStringLiteral("ad-modal-minimize"));
+  minimizeButton->setAutoRaise(true);
+  minimizeButton->setCursor(Qt::PointingHandCursor);
+  minimizeButton->setFocusPolicy(Qt::StrongFocus);
+  connect(minimizeButton, &QToolButton::clicked, this, [this]() {
+    if (overlay_ && usesWindowSurface()) {
+      overlay_->showMinimized();
+    }
+  });
+
+  auto* alwaysOnTopButton = new ModalIconButton(header);
+  alwaysOnTopButton->setObjectName(QStringLiteral("ad-modal-always-on-top"));
+  alwaysOnTopButton->setAutoRaise(true);
+  alwaysOnTopButton->setCursor(Qt::PointingHandCursor);
+  alwaysOnTopButton->setFocusPolicy(Qt::StrongFocus);
+  alwaysOnTopButton->setCheckable(true);
+  alwaysOnTopButton->setChecked(windowAlwaysOnTop_);
+  connect(alwaysOnTopButton, &QToolButton::clicked, this,
+          [this](bool checked) { setWindowAlwaysOnTop(checked); });
+
   headerLayout->addWidget(titleLabel, 1, Qt::AlignVCenter);
+  headerLayout->addWidget(minimizeButton, 0, Qt::AlignTop);
+  headerLayout->addWidget(alwaysOnTopButton, 0, Qt::AlignTop);
   headerLayout->addWidget(closeButton, 0, Qt::AlignTop);
 
   auto* body = new QWidget(panel);
@@ -1971,6 +2095,8 @@ void AdModal::ensureOverlay() {
   titleIconLabel_ = titleIconLabel;
   titleLabel_ = titleLabel;
   closeButton_ = closeButton;
+  minimizeButton_ = minimizeButton;
+  alwaysOnTopButton_ = alwaysOnTopButton;
   body_ = body;
   bodyLayout_ = bodyLayout;
   confirmBodyHost_ = confirmBodyHost;
@@ -2045,6 +2171,8 @@ void AdModal::releaseOverlay() {
   titleIconLabel_.clear();
   titleLabel_.clear();
   closeButton_.clear();
+  minimizeButton_.clear();
+  alwaysOnTopButton_.clear();
   body_.clear();
   bodyLayout_.clear();
   confirmBodyHost_.clear();
@@ -2289,6 +2417,14 @@ void AdModal::refreshVisibility() {
     closeButton_->setVisible(showPanelCloseButton);
   }
 
+  const bool windowChrome = usesWindowSurface();
+  if (minimizeButton_) {
+    minimizeButton_->setVisible(windowChrome && windowMinimizeButtonVisible_);
+  }
+  if (alwaysOnTopButton_) {
+    alwaysOnTopButton_->setVisible(windowChrome && windowAlwaysOnTopButtonVisible_);
+  }
+
   if (confirmBodyHost_) {
     confirmBodyHost_->setVisible(confirmMode && showTextContent);
   }
@@ -2415,6 +2551,14 @@ void AdModal::updateAccessibility() {
   if (closeButton_) {
     closeButton_->setAccessibleName(tr("Close"));
     closeButton_->setAccessibleDescription(tr("Close modal"));
+  }
+  if (minimizeButton_) {
+    minimizeButton_->setAccessibleName(tr("Minimize"));
+    minimizeButton_->setAccessibleDescription(tr("Minimize modal window"));
+  }
+  if (alwaysOnTopButton_) {
+    alwaysOnTopButton_->setAccessibleName(tr("Always on top"));
+    alwaysOnTopButton_->setAccessibleDescription(tr("Keep modal window above other windows"));
   }
   if (acceptButtonControl_) {
     acceptButtonControl_->setAccessibleName(acceptButtonControl_->text().trimmed().isEmpty()
@@ -2584,17 +2728,23 @@ void AdModal::applyVisualStyle() {
   }
 
   if (panelLayout_) {
-    panelLayout_->setContentsMargins(style.contentPaddingHorizontal, style.contentPaddingVertical,
-                                     style.contentPaddingHorizontal, style.contentPaddingVertical);
+    // The panel itself has no inset: every section carries its own padding so
+    // the content area can be re-padded without moving header or footer.
+    panelLayout_->setContentsMargins(0, 0, 0, 0);
   }
   if (headerLayout_) {
-    headerLayout_->setContentsMargins(style.headerPaddingHorizontal, style.headerPaddingVertical,
-                                      style.headerPaddingHorizontal,
-                                      style.headerPaddingVertical + style.headerMarginBottom);
+    headerLayout_->setContentsMargins(
+        style.contentPaddingHorizontal + style.headerPaddingHorizontal,
+        style.contentPaddingVertical + style.headerPaddingVertical,
+        style.contentPaddingHorizontal + style.headerPaddingHorizontal,
+        style.headerPaddingVertical + style.headerMarginBottom);
   }
   if (bodyLayout_) {
-    bodyLayout_->setContentsMargins(style.bodyPaddingHorizontal, style.bodyPaddingVertical,
-                                    style.bodyPaddingHorizontal, style.bodyPaddingVertical);
+    bodyLayout_->setContentsMargins(
+        style.contentAreaPaddingHorizontal + style.bodyPaddingHorizontal,
+        style.contentAreaPaddingVertical + style.bodyPaddingVertical,
+        style.contentAreaPaddingHorizontal + style.bodyPaddingHorizontal,
+        style.contentAreaPaddingVertical + style.bodyPaddingVertical);
   }
   if (confirmBodyLayout_) {
     confirmBodyLayout_->setSpacing(style.confirmIconGap);
@@ -2603,9 +2753,11 @@ void AdModal::applyVisualStyle() {
     confirmParagraphLayout_->setSpacing(style.confirmParagraphGap);
   }
   if (footerLayout_) {
-    footerLayout_->setContentsMargins(style.footerPaddingHorizontal,
-                                      style.footerPaddingVertical + style.footerMarginTop,
-                                      style.footerPaddingHorizontal, style.footerPaddingVertical);
+    footerLayout_->setContentsMargins(
+        style.contentPaddingHorizontal + style.footerPaddingHorizontal,
+        style.footerPaddingVertical + style.footerMarginTop,
+        style.contentPaddingHorizontal + style.footerPaddingHorizontal,
+        style.contentPaddingVertical + style.footerPaddingVertical);
   }
   if (footerButtonsLayout_) {
     footerButtonsLayout_->setSpacing(style.footerButtonGap);
@@ -2636,22 +2788,34 @@ void AdModal::applyVisualStyle() {
     confirmContentLabel_->setPalette(palette);
   }
 
-  if (closeButton_) {
+  const auto applyChromeButton = [this, &style](QToolButton* button,
+                                                const adqt::icons::IconRef& icon) {
+    if (!button) {
+      return;
+    }
     const auto iconColors = adqt::icons::IconColors::primary(style.closeIconColor);
-    const int closeIconSize = std::max(10, style.closeIconSize);
-    closeButton_->setFixedSize(std::max(closeIconSize, style.closeButtonSize),
-                               std::max(closeIconSize, style.closeButtonSize));
+    const int iconSize = std::max(10, style.closeIconSize);
+    const int buttonSize = std::max(iconSize, style.closeButtonSize);
+    button->setFixedSize(buttonSize, buttonSize);
     const qreal ratio = panel_ ? std::max(1.0, panel_->devicePixelRatioF()) : 1.0;
-    closeButton_->setIcon(QIcon(adqt::icons::renderIconPixmap(
-        outlined_icons::Close(iconColors), {QSize(closeIconSize, closeIconSize), ratio})));
-    closeButton_->setIconSize(QSize(closeIconSize, closeIconSize));
-    closeButton_->setEnabled(!acceptButtonBusy_);
-    static_cast<ModalIconButton*>(closeButton_.data())
-        ->setVisualStyle(style.closeButtonBackground, style.closeButtonHoverBackground,
-                         style.closeButtonPressedBackground, style.closeButtonDisabledBackground,
-                         style.closeButtonBorderColor, style.closeButtonBorderWidth,
-                         style.closeButtonRadius);
-  }
+    button->setIcon(QIcon(adqt::icons::renderIconPixmap(icon, {QSize(iconSize, iconSize), ratio})));
+    button->setIconSize(QSize(iconSize, iconSize));
+    button->setEnabled(!acceptButtonBusy_);
+    static_cast<ModalIconButton*>(button)->setVisualStyle(
+        style.closeButtonBackground, style.closeButtonHoverBackground,
+        style.closeButtonPressedBackground, style.closeButtonDisabledBackground,
+        style.closeButtonBorderColor, style.closeButtonBorderWidth, style.closeButtonRadius);
+  };
+
+  applyChromeButton(closeButton_,
+                    outlined_icons::Close(adqt::icons::IconColors::primary(style.closeIconColor)));
+  applyChromeButton(minimizeButton_,
+                    outlined_icons::Minus(adqt::icons::IconColors::primary(style.closeIconColor)));
+  applyChromeButton(
+      alwaysOnTopButton_,
+      windowAlwaysOnTop_
+          ? filled_icons::Pushpin(adqt::icons::IconColors::primary(style.closeIconColor))
+          : outlined_icons::Pushpin(adqt::icons::IconColors::primary(style.closeIconColor)));
 
   if (rejectButtonControl_) {
     rejectButtonControl_->setEnabled(!acceptButtonBusy_);
@@ -2702,6 +2866,10 @@ AdModal::VisualStyle AdModal::resolveVisualStyle() const {
   style.borderWidth = 0;
   style.contentPaddingHorizontal = wireframe ? 0 : std::max(0, qRound(map.sizeLG));
   style.contentPaddingVertical = wireframe ? 0 : std::max(0, qRound(map.sizeMD));
+  // The vertical theme inset belongs to the header top and footer bottom; the
+  // content area sits flush between the sections unless a token pads it.
+  style.contentAreaPaddingHorizontal = style.contentPaddingHorizontal;
+  style.contentAreaPaddingVertical = 0;
   style.headerPaddingHorizontal = wireframe ? std::max(0, qRound(map.sizeLG)) : 0;
   style.headerPaddingVertical = wireframe ? std::max(0, qRound(map.size)) : 0;
   style.headerMarginBottom = wireframe ? 0 : std::max(0, qRound(map.sizeXS));
@@ -2760,11 +2928,21 @@ AdModal::VisualStyle AdModal::resolveVisualStyle() const {
   if (componentTokens_.borderWidth.has_value()) {
     style.borderWidth = std::max(0, componentTokens_.borderWidth.value());
   }
+  if (componentTokens_.contentPaddingHorizontal.has_value()) {
+    style.contentAreaPaddingHorizontal =
+        std::max(0, componentTokens_.contentPaddingHorizontal.value());
+  }
+  if (componentTokens_.contentPaddingVertical.has_value()) {
+    style.contentAreaPaddingVertical = std::max(0, componentTokens_.contentPaddingVertical.value());
+  }
   if (componentTokens_.headerPaddingHorizontal.has_value()) {
     style.headerPaddingHorizontal = std::max(0, componentTokens_.headerPaddingHorizontal.value());
   }
   if (componentTokens_.headerPaddingVertical.has_value()) {
     style.headerPaddingVertical = std::max(0, componentTokens_.headerPaddingVertical.value());
+  }
+  if (componentTokens_.headerMarginBottom.has_value()) {
+    style.headerMarginBottom = std::max(0, componentTokens_.headerMarginBottom.value());
   }
   if (componentTokens_.bodyPaddingHorizontal.has_value()) {
     style.bodyPaddingHorizontal = std::max(0, componentTokens_.bodyPaddingHorizontal.value());

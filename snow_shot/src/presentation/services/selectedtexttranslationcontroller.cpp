@@ -4,6 +4,10 @@
 
 namespace snow_shot::presentation {
 namespace {
+// The 2 s FFI default budget is sized for the slower strategies; the clipboard
+// roundtrip only waits for the target app to answer the injected Ctrl+C.
+constexpr uint32_t kClipboardCaptureTimeoutMs = 800;
+
 SelectedTextStatus errorStatus(uint32_t kind) {
     switch (kind) {
     case SNOW_SELECTED_TEXT_ERROR_BUSY:
@@ -37,6 +41,7 @@ class NativeSelectedTextCaptureBackend final : public SelectedTextCaptureBackend
             return {SelectedTextStatus::Failed, {}};
         }
         options.strategy = SNOW_SELECTED_TEXT_STRATEGY_CLIPBOARD;
+        options.timeout_ms = kClipboardCaptureTimeoutMs;
         SnowSelectedTextRequest* request = nullptr;
         const auto error = snow_selected_text_start(m_service.get(), &options, &request, nullptr);
         m_request.reset(request);
@@ -136,27 +141,8 @@ void SelectedTextTranslationController::acceptResult(const SelectedTextCaptureRe
     }
     m_pollTimer.stop();
     m_pending = false;
-    if (result.status == SelectedTextStatus::Selected && !result.text.trimmed().isEmpty()) {
-        emit textReady(result.text);
-        return;
-    }
-    switch (result.status) {
-    case SelectedTextStatus::Selected:
-    case SelectedTextStatus::NoSelection:
-        emit operationFailed(tr("No selected text was found."));
-        break;
-    case SelectedTextStatus::Unsupported:
-        emit operationFailed(tr("Selected text capture is not supported here."));
-        break;
-    case SelectedTextStatus::Busy:
-        emit operationFailed(tr("Selected text capture is busy. Please try again."));
-        break;
-    case SelectedTextStatus::TimedOut:
-        emit operationFailed(tr("Selected text capture timed out. Please try again."));
-        break;
-    default:
-        emit operationFailed(tr("Could not capture the selected text. Please try again."));
-        break;
-    }
+    // Every completed capture hands off, even with empty text; the destination opens the
+    // translation page and warns there when nothing was retrieved.
+    emit textReady(result.text);
 }
 } // namespace snow_shot::presentation
