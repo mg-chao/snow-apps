@@ -2995,6 +2995,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --invalid-ocr-restore-only)
     add_test(NAME snow-shot-pinned-cached-ocr-provider-tests
         COMMAND snow-shot-pinned-window-tests --cached-ocr-provider-only)
+    add_test(NAME snow-shot-pinned-toolbar-layout-tests
+        COMMAND snow-shot-pinned-window-tests --pinned-toolbar-layout-only)
+    set_tests_properties(snow-shot-pinned-toolbar-layout-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-pinned-recognition-shortcut-tests
         COMMAND snow-shot-pinned-window-tests --recognition-shortcut-only)
     add_test(NAME snow-shot-pinned-recognition-shortcut-offscreen-tests

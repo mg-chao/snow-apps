@@ -1,3 +1,5 @@
+#include "snow_shot/presentation/screenshottoolbarmainpanel.h"
+#include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "close_release_native_test_support.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
@@ -1016,6 +1018,63 @@ ScreenshotPinnedWindow::Config cachedOcrPinConfig(ScreenshotOcrRecognitionPort* 
     config.recognitionResults.key = QStringLiteral("cached-ocr-audit");
     config.recognitionResults.text = ScreenshotOcrRecognitionResult{presentation, {}, {}, {}};
     return config;
+}
+
+void pinnedToolbarLayoutReloadsAndResetsIndependently() {
+    namespace storage = snow_shot::storage;
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    const auto kind = storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
+    const storage::ScreenshotToolbarSettings toolbarSettings;
+    const auto originalPinned = toolbarSettings.layout(kind);
+    const auto originalScreenshot =
+        toolbarSettings.layout(storage::ScreenshotToolbarLayoutKind::ActionTools);
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(toolbarSettings.setLayout(kind, originalPinned));
+        static_cast<void>(toolbarSettings.setLayout(
+            storage::ScreenshotToolbarLayoutKind::ActionTools, originalScreenshot));
+    });
+    const storage::ScreenshotToolbarLayout hidden{{}, layout::defaultOrder(kind)};
+    require(toolbarSettings.setLayout(kind, hidden),
+            "must persist a hidden pinned layout before lazy creation");
+    ScreenshotPinnedWindow window;
+    SnowCanvasWidget canvas;
+    snow_shot::presentation::WindowShortcutManager manager;
+    ScreenshotPinnedEditController controller(window, canvas, manager);
+    require(controller.toolbarWindow() == nullptr,
+            "layout settings must not eagerly create a toolbar");
+    const auto positions = [&]() {
+        QVector<QStringList> result;
+        auto* panel = controller.toolbarWindow()->palette()->mainPanel();
+        for (auto* button : panel->findChildren<adqt::widgets::AdButton*>()) {
+            const auto ids = button->property("screenshotToolbarPositionItems").toStringList();
+            if (!button->isHidden() && !ids.isEmpty() &&
+                layout::defaultOrder(kind).contains(ids.first()))
+                result.append(ids);
+        }
+        return result;
+    };
+    controller.setEditMode(true);
+    require(positions().isEmpty(), "lazy pinned toolbar must load the saved hidden layout");
+    const storage::ScreenshotToolbarLayout custom{
+        {{QStringLiteral("text-translation"), QStringLiteral("table-recognition")}},
+        {QStringLiteral("text-recognition"), QStringLiteral("barcode-recognition"),
+         QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")}};
+    require(toolbarSettings.setLayout(kind, custom), "must save the custom pinned layout");
+    QCoreApplication::processEvents();
+    require(positions() == custom.positions,
+            "existing pinned toolbar must reload its custom layout");
+    require(toolbarSettings.setLayout(storage::ScreenshotToolbarLayoutKind::ActionTools, {}),
+            "must update screenshot settings independently");
+    require(positions() == custom.positions, "screenshot settings must not change pinned groups");
+    controller.setEditMode(false);
+    controller.setEditMode(true);
+    require(positions() == custom.positions,
+            "recreated pinned toolbar must reload the persisted layout");
+    require(toolbarSettings.setLayout(kind, {}) &&
+                toolbarSettings.layout(kind) == layout::normalizedLayout({}, kind),
+            "pinned toolbar defaults must be restorable");
+    require(positions().size() == 3, "restoring defaults must refresh an existing pinned toolbar");
+    controller.setEditMode(false);
 }
 
 void pinnedEditingRecognitionShortcutsUsePaletteCommands() {
@@ -6353,6 +6412,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--invalid-ocr-restore-only"))) {
             restoredInvalidOcrDoesNotSuppressRecognition();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--pinned-toolbar-layout-only"))) {
+            pinnedToolbarLayoutReloadsAndResetsIndependently();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--recognition-shortcut-only"))) {

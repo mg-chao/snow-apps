@@ -1202,6 +1202,8 @@ QString screenshotToolbarLayoutKey(ScreenshotToolbarLayoutKind kind) {
         return QStringLiteral("screenshot_toolbar/layout");
     case ScreenshotToolbarLayoutKind::ActionTools:
         return QStringLiteral("screenshot_toolbar/action_tools_layout");
+    case ScreenshotToolbarLayoutKind::PinnedActionTools:
+        return QStringLiteral("pin_to_screen/action_tools_layout");
     }
     return {};
 }

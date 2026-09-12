@@ -282,6 +282,7 @@ enum class SettingsCustomRenderer {
     StorageStatus,
     DrawingToolbarEditor,
     ScreenshotToolbarEditor,
+    PinnedToolbarEditor,
     TrayMenuOptions,
 };
 

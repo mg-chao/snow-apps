@@ -774,6 +774,39 @@ void screenshotUiAdaptersRoundTripTypedValues() {
                 toolbar.layout(storage::ScreenshotToolbarLayoutKind::DrawingTools) ==
                     expectedLayout,
             "drawing and action toolbar layouts must round-trip independently");
+    const auto pinnedKind = storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
+    const auto pinnedDefault = toolbar.layout(pinnedKind);
+    require(pinnedDefault.positions.size() == 3 && pinnedDefault.hidden.isEmpty() &&
+                pinnedDefault.positions.first().last() == QStringLiteral("table-recognition"),
+            "pinned defaults must expose three positions with Table as the stack entry");
+    // This valid layout resembles a historical screenshot default; pinned layouts must not migrate.
+    const storage::ScreenshotToolbarLayout pinnedLayout{
+        {{QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
+         {QStringLiteral("convert-to-markdown")},
+         {QStringLiteral("convert-to-html")},
+         {QStringLiteral("text-recognition")},
+         {QStringLiteral("text-translation")}},
+        {}};
+    require(toolbar.setLayout(pinnedKind, pinnedLayout) &&
+                toolbar.layout(pinnedKind) == pinnedLayout,
+            "pinned layouts must not inherit screenshot conversion migrations");
+    auto malformedPinned = pinnedLayout;
+    malformedPinned.positions.prepend({QStringLiteral("save-as-file"), QStringLiteral("unknown")});
+    malformedPinned.positions.last().append(QStringLiteral("table-recognition"));
+    malformedPinned.hidden = {QStringLiteral("text-recognition"), QStringLiteral("unknown")};
+    require(
+        toolbar.setLayout(pinnedKind, malformedPinned) &&
+            toolbar.layout(pinnedKind) == pinnedLayout,
+        "pinned normalization must remove unknown IDs and duplicates, preferring visible tools");
+    storage::ScreenshotToolbarLayout hiddenPinned;
+    for (const auto& position : pinnedLayout.positions)
+        hiddenPinned.hidden.append(position);
+    require(toolbar.setLayout(pinnedKind, hiddenPinned) &&
+                toolbar.layout(pinnedKind) == hiddenPinned &&
+                toolbar.layout(storage::ScreenshotToolbarLayoutKind::ActionTools) == actionLayout,
+            "all-hidden pinned layouts must remain empty and independent of screenshot layouts");
+    require(toolbar.setLayout(pinnedKind, {}) && toolbar.layout(pinnedKind) == pinnedDefault,
+            "restoring pinned defaults must recover the original arrangement");
 }
 
 void screenshotTranslationSettingsRoundTripSupportedValues() {
