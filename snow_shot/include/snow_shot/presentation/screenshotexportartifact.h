@@ -104,7 +104,8 @@ class ScreenshotExportArtifact final : public QObject {
     [[nodiscard]] bool requestAutomaticSave(QObject* receiver, QStringList directories,
                                             ScreenshotImageFileFormat format,
                                             QString filenameFormat,
-                                            ScreenshotExportCoordinator::Completion callback);
+                                            ScreenshotExportCoordinator::Completion callback,
+                                            ScreenshotPdfOptions pdf = {});
     [[nodiscard]] bool requestQuickSave(QObject* receiver,
                                         ScreenshotExportCoordinator::Completion callback);
     void cancel();

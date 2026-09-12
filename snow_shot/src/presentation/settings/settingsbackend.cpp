@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/settings/settingsbackend.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/settings/applicationpriority.h"
 #include "snow_shot/presentation/settings/textrecognitionacceleration.h"
 #include "snow_shot/platform/windows/autostartregistration.h"
@@ -242,6 +243,8 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
         return storage::RecordingSettings().encoder();
     case SettingsSelectBinding::ScreenRecordingEncodingPreset:
         return storage::RecordingSettings().encodingPreset();
+    case SettingsSelectBinding::ScreenshotPdfPageSize:
+        return storage::ScreenshotSettings().pdfPageSize();
     case SettingsSelectBinding::ScreenshotImageFormat:
         return storage::ScreenshotSettings().imageFormat();
     case SettingsSelectBinding::ScreenshotSaveAsFileDialog:
@@ -348,6 +351,8 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
         return storage::RecordingSettings().setEncoder(value.toString());
     case SettingsSelectBinding::ScreenRecordingEncodingPreset:
         return storage::RecordingSettings().setEncodingPreset(value.toString());
+    case SettingsSelectBinding::ScreenshotPdfPageSize:
+        return storage::ScreenshotSettings().setPdfPageSize(value.toString());
     case SettingsSelectBinding::ScreenshotImageFormat:
         return storage::ScreenshotSettings().setImageFormat(value.toString());
     case SettingsSelectBinding::ScreenshotSaveAsFileDialog:
@@ -1061,6 +1066,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("screenshot/image_save_directory"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot/image_save_directory"))},
+            {QStringLiteral("screenshot/pdf_page_size"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot/pdf_page_size"))},
             {QStringLiteral("screenshot/image_format"),
              storage::ConfigurationSchema::defaultValue(QStringLiteral("screenshot/image_format"))},
             {QStringLiteral("screenshot/manual_save_filename_format"),
@@ -1236,6 +1244,19 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_translation/layout_processing"))},
         });
+    case SettingsSectionReset::CustomAiModels:
+    case SettingsSectionReset::ExtendedTranslation: {
+        // These categories contain configuration-backed fields only. The compiled
+        // registry owns their membership and schema defaults, just as it owns the
+        // generated controls and runtime refresh scope.
+        const auto& registry = builtInSettingsRegistry();
+        QMap<QString, QJsonValue> defaults;
+        for (const int index : registry.fieldsForReset(reset)) {
+            const auto& field = registry.fields().at(index);
+            defaults.insert(field.configurationKey, field.defaultValue);
+        }
+        return storage::ApplicationStorage::instance().configuration().setValues(defaults);
+    }
     case SettingsSectionReset::Tray:
         return storage::ApplicationStorage::instance().configuration().setValues({
             {QStringLiteral("tray/enabled"),

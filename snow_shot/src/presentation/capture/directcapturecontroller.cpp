@@ -74,7 +74,7 @@ class DirectCaptureController::Impl {
                                         request.requestedAt)
                                   : ScreenshotImageFileService::saveAutomatically(
                                         frame.image, request.directories, format,
-                                        request.filenameFormat, request.requestedAt);
+                                        request.filenameFormat, request.requestedAt, request.pdf);
                           return OutputResult{saved.error, saved.path, {}};
                       },
                       [done = std::move(done)](OutputResult result) {
@@ -201,6 +201,7 @@ class DirectCaptureController::Impl {
         result.directories =
             ScreenshotImageFileService::automaticDirectories(settings.imageSaveDirectory());
         result.imageFormat = settings.imageFormat();
+        result.pdf.pageSize = screenshot_pdf::pageSizeForKey(settings.pdfPageSize());
         result.filenameFormat = settings.autoSaveFilenameFormat();
         return result;
     }

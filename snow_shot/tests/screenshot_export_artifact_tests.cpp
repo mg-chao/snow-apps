@@ -571,6 +571,8 @@ void quickSaveUsesOnlyConfiguredOutput() {
                 settings.setLastManualSaveDirectory(directory.path()) &&
                 settings.setLastManualSaveFormat(QStringLiteral("jpeg")),
             "quick save settings setup failed");
+    require(settings.setPdfPageSize(QStringLiteral("a4_landscape")),
+            "PDF page setting must persist");
     QObject receiver;
     const QImage image = testImage();
     const auto save = [&](ScreenshotExportArtifact& artifact) {
@@ -584,7 +586,8 @@ void quickSaveUsesOnlyConfiguredOutput() {
     };
     for (const QString& format :
          {QStringLiteral("png"), QStringLiteral("jpeg"), QStringLiteral("bmp"),
-          QStringLiteral("webp"), QStringLiteral("jxl"), QStringLiteral("avif")}) {
+          QStringLiteral("webp"), QStringLiteral("jxl"), QStringLiteral("avif"),
+          QStringLiteral("pdf")}) {
         require(settings.setImageFormat(format), "quick save format setup failed");
         ScreenshotExportArtifact artifact(ScreenshotExportSource::fromImage(image));
         const auto first = save(artifact);
@@ -600,6 +603,15 @@ void quickSaveUsesOnlyConfiguredOutput() {
                     QFileInfo(second.savedPath).baseName().endsWith(QStringLiteral("_1")) &&
                     QFileInfo::exists(first.savedPath),
                 "quick save must preserve existing files on collision");
+        if (format == QStringLiteral("pdf")) {
+            QFile file(first.savedPath);
+            require(file.open(QIODevice::ReadOnly), "quick save PDF must be readable");
+            const QByteArray pdf = file.readAll();
+            require(pdf.startsWith("%PDF-1.7") &&
+                        pdf.contains("/MediaBox [0 0 841.88976378 595.27559055]") &&
+                        !pdf.contains("/DCTDecode"),
+                    "quick save must honor the PDF setting and default to lossless");
+        }
         if (format == QStringLiteral("png")) {
             require(QImage(first.savedPath).convertToFormat(QImage::Format_RGBA8888) == image,
                     "quick save must preserve composed source pixels");

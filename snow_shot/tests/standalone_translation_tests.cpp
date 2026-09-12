@@ -271,7 +271,7 @@ void pageActionsAndLifecycle() {
                 modal->rejectButton()->text() == QStringLiteral("Close"),
             "footer buttons offer copy-and-close and close");
     const QRect available = qApp->primaryScreen()->availableGeometry().adjusted(16, 16, -16, -16);
-    require(surface->size() == QSize(700, 450).boundedTo(available.size()) &&
+    require(surface->size() == QSize(720, 500).boundedTo(available.size()) &&
                 surface->minimumSize() == QSize(650, 400).boundedTo(available.size()),
             "explicit geometry is clamped to available display");
     require(modal->componentTokens().contentPaddingHorizontal.value_or(-1) == 0 &&
@@ -334,7 +334,7 @@ void pageActionsAndLifecycle() {
     page = qobject_cast<TranslationPageWidget*>(modal->contentWidget());
     require(page && page->window() == surface && visibleTranslationWindows() == 1,
             "reopening creates fresh content in the same modal surface");
-    require(page->window()->size() == QSize(700, 450).boundedTo(available.size()),
+    require(page->window()->size() == QSize(720, 500).boundedTo(available.size()),
             "reopen restores default size rather than persisting geometry");
     controller = page->findChild<TranslationPageController*>();
     waitUntil([&] { return server.streams.size() == 2; }, "reopened page translates");

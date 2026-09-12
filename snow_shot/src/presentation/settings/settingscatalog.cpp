@@ -671,7 +671,8 @@ SettingsItemDefinition screenshotImageFormatItem() {
          {QStringLiteral("bmp"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "BMP"))},
          {QStringLiteral("webp"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "WebP"))},
          {QStringLiteral("jxl"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "JPEG XL"))},
-         {QStringLiteral("avif"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "AVIF"))}});
+         {QStringLiteral("avif"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "AVIF"))},
+         {QStringLiteral("pdf"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "PDF"))}});
 }
 
 SettingsItemDefinition ocrFillStyleItem() {
@@ -710,6 +711,19 @@ QVector<SettingsItemDefinition> screenshotOutputItems() {
             SettingsDirectoryPathBinding::ScreenshotImageDirectory,
             QT_TRANSLATE_NOOP("SettingsCatalog", "Select image save directory")),
         screenshotImageFormatItem(),
+        fixedSelectItem(QStringLiteral("screenshot-output.pdf-page-size"),
+                        QT_TRANSLATE_NOOP("SettingsCatalog", "PDF page size"),
+                        QT_TRANSLATE_NOOP(
+                            "SettingsCatalog",
+                            "Choose the page size for manually and automatically saved PDF files"),
+                        QStringLiteral("screenshot/pdf_page_size"),
+                        SettingsSelectBinding::ScreenshotPdfPageSize,
+                        {{QStringLiteral("image_size"),
+                          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Image size"))},
+                         {QStringLiteral("a4_portrait"),
+                          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Portrait A4"))},
+                         {QStringLiteral("a4_landscape"),
+                          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Landscape A4"))}}),
         textFormatItem(
             QStringLiteral("screenshot-output.manual-filename-format"),
             QT_TRANSLATE_NOOP("SettingsCatalog", "Manual save screenshot filename format"),
@@ -1944,7 +1958,7 @@ QVector<SettingsPageDefinition> builtInPages() {
               settingsText(QT_TRANSLATE_NOOP(
                   "SettingsCatalog",
                   "Custom OpenAI-compatible models for translation and image conversion")),
-              SettingsSectionReset::None,
+              SettingsSectionReset::CustomAiModels,
               {{QStringLiteral("api.custom-models"),
                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Custom Models")),
                 settingsText(
@@ -1963,7 +1977,7 @@ QVector<SettingsPageDefinition> builtInPages() {
             {{QStringLiteral("translation"),
               settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Translation")),
               settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Translation")),
-              SettingsSectionReset::None,
+              SettingsSectionReset::ExtendedTranslation,
               {switchItem(
                    QStringLiteral("extended-features.translation-page"),
                    QT_TRANSLATE_NOOP("SettingsCatalog", "Translation Page"),
@@ -2751,6 +2765,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSelectBinding::ScreenRecordingEncodingPreset:
                         expectedKey = QStringLiteral("screen_recording/encoding_preset");
+                        break;
+                    case SettingsSelectBinding::ScreenshotPdfPageSize:
+                        expectedKey = QStringLiteral("screenshot/pdf_page_size");
                         break;
                     case SettingsSelectBinding::ScreenshotImageFormat:
                         expectedKey = QStringLiteral("screenshot/image_format");

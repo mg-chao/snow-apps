@@ -1543,6 +1543,11 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <source>The encoded image is empty</source>
         <translation>编码后的图像为空</translation>
     </message>
+    <message>
+        <location filename="../src/presentation/services/screenshotimagefileservice.cpp" line="20"/>
+        <source>PDF document (*.pdf)</source>
+        <translation>PDF 文档 (*.pdf)</translation>
+    </message>
 </context>
 <context>
     <name>ScreenshotOcrController</name>
@@ -2243,6 +2248,11 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <location filename="../src/presentation/services/screenshotsaveexportpipeline.cpp" line="184"/>
         <source>The screenshot pixels could not be read</source>
         <translation>无法读取截图像素</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/services/screenshotsaveasfiledialog.cpp" line="1081"/>
+        <source>PDF</source>
+        <translation>PDF</translation>
     </message>
 </context>
 <context>
@@ -6314,6 +6324,36 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <source>Hidden tools</source>
         <translation>隐藏的工具</translation>
     </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="675"/>
+        <source>PDF</source>
+        <translation>PDF</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="715"/>
+        <source>PDF page size</source>
+        <translation>PDF 页面大小</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="716"/>
+        <source>Choose the page size for manually and automatically saved PDF files</source>
+        <translation>选择手动和自动保存 PDF 文件时使用的页面大小</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="722"/>
+        <source>Image size</source>
+        <translation>图像大小</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="724"/>
+        <source>Portrait A4</source>
+        <translation>纵向 A4</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="726"/>
+        <source>Landscape A4</source>
+        <translation>横向 A4</translation>
+    </message>
 </context>
 <context>
     <name>ShortcutKeyRow</name>
@@ -7741,6 +7781,52 @@ Change the shortcut and try again</source>
         <location filename="../src/update/updateservice.cpp" line="112"/>
         <source>The update helper did not respond. Please retry.</source>
         <translation>更新程序未响应。请重试。</translation>
+    </message>
+</context>
+<context>
+    <name>PinnedToolbarEditorSettingsWidget</name>
+    <message>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="82"/>
+        <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</source>
+        <translation>拖放到工具旁边以创建新位置，拖放到工具上方以堆叠。底部工具将显示在主工具栏行中。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="86"/>
+        <source>Pin to Screen toolbar preview</source>
+        <translation>贴图工具栏预览</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="87"/>
+        <source>Hidden tools</source>
+        <translation>隐藏的工具</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="88"/>
+        <source>Drag tools here to hide them from the pinned toolbar.</source>
+        <translation>将工具拖到此处，即可在贴图工具栏中隐藏。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="90"/>
+        <source>No hidden tools</source>
+        <translation>没有隐藏的工具</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="91"/>
+        <source>Hidden pinned toolbar tools</source>
+        <translation>隐藏的贴图工具栏工具</translation>
+    </message>
+</context>
+<context>
+    <name>ScreenshotPdfExport</name>
+    <message>
+        <location filename="../src/presentation/services/screenshotpdfexport.cpp" line="13"/>
+        <source>The PDF could not be exported</source>
+        <translation>无法导出 PDF</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/services/screenshotpdfexport.cpp" line="19"/>
+        <source>The PDF export was cancelled</source>
+        <translation>PDF 导出已取消</translation>
     </message>
 </context>
 </TS>

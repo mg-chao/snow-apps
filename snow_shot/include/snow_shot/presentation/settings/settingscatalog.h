@@ -93,6 +93,7 @@ enum class SettingsSelectBinding {
     ScreenRecordingEncoder,
     ScreenRecordingEncodingPreset,
     ScreenshotImageFormat,
+    ScreenshotPdfPageSize,
     ScreenshotSaveAsFileDialog,
     TrayLeftClickAction,
     TrayMiddleClickAction,
@@ -379,6 +380,8 @@ enum class SettingsSectionReset {
     SystemSettings,
     TextRecognition,
     Translation,
+    CustomAiModels,
+    ExtendedTranslation,
 };
 
 enum class SettingsSectionItemLayout {

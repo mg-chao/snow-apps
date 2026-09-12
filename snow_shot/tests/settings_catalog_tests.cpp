@@ -83,6 +83,27 @@ void builtInCatalogIsCompleteAndValid() {
             "general settings must expose an opaque theme primary color picker");
     require(catalog.pages().size() == 12, "catalog must contain twelve pages");
 
+    for (const auto& pageId :
+         {QStringLiteral("api-configuration"), QStringLiteral("extended-features")}) {
+        const auto* page = catalog.page(pageId);
+        const auto& registry = settings::builtInSettingsRegistry();
+        require(page != nullptr && page->kind == settings::SettingsPageKind::GeneratedSettings,
+                "API and extended features must use generated settings pages");
+        for (const auto& section : page->sections) {
+            require(section.reset != settings::SettingsSectionReset::None,
+                    "every API and extended features category must expose reset");
+            const auto& indexes = registry.fieldsForReset(section.reset);
+            require(indexes.size() == section.items.size(),
+                    "category reset must cover exactly its generated fields");
+            for (const int index : indexes) {
+                const auto& field = registry.fields().at(index);
+                require(field.pageId == pageId && field.sectionId == section.id &&
+                            !field.configurationKey.isEmpty() && !field.defaultValue.isUndefined(),
+                        "reset membership and defaults must come from the category schema");
+            }
+        }
+    }
+
     const auto* extended = catalog.page(QStringLiteral("extended-features"));
     const auto* translationToggle =
         catalog.item({QStringLiteral("extended-features"), QStringLiteral("translation"),
@@ -150,8 +171,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 36 && itemCount == 148 && foundUpdates,
-            "catalog must contain thirty-six sections and one hundred forty-eight items");
+    require(sectionCount == 36 && itemCount == 149 && foundUpdates,
+            "catalog must contain thirty-six sections and one hundred forty-nine items");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
                       QStringLiteral("interface.pin-to-screen.pinned-toolbar-editor")});
@@ -463,7 +484,7 @@ void builtInCatalogIsCompleteAndValid() {
             storagePage->sections.at(3).id == QStringLiteral("storage-status") &&
             imageFormat != nullptr && imageDirectory != nullptr && videoFilename != nullptr &&
             std::get<settings::SettingsSelectDefinition>(imageFormat->payload).options.size() ==
-                6 &&
+                7 &&
             std::get<settings::SettingsSelectDefinition>(imageFormat->payload)
                     .options.at(2)
                     .value == QStringLiteral("bmp") &&
@@ -472,6 +493,22 @@ void builtInCatalogIsCompleteAndValid() {
             std::get<settings::SettingsTextDefinition>(videoFilename->payload).binding ==
                 settings::SettingsTextBinding::ScreenRecordingVideoFilenameFormat,
         "Storage and privacy must expose ordered screenshot and recording output settings");
+
+    const auto* pdfPageSize =
+        catalog.item({QStringLiteral("storage-and-privacy"), QStringLiteral("screenshots"),
+                      QStringLiteral("screenshot-output.pdf-page-size")});
+    require(pdfPageSize != nullptr && storagePage->sections.at(0).items.at(2).id == pdfPageSize->id,
+            "PDF page size must immediately follow image format");
+    const auto& paper = std::get<settings::SettingsSelectDefinition>(pdfPageSize->payload);
+    require(paper.binding == settings::SettingsSelectBinding::ScreenshotPdfPageSize &&
+                paper.options.size() == 3 &&
+                paper.options[0].value == QStringLiteral("image_size") &&
+                paper.options[0].label.translated() == QStringLiteral("Image size") &&
+                paper.options[1].value == QStringLiteral("a4_portrait") &&
+                paper.options[1].label.translated() == QStringLiteral("Portrait A4") &&
+                paper.options[2].value == QStringLiteral("a4_landscape") &&
+                paper.options[2].label.translated() == QStringLiteral("Landscape A4"),
+            "PDF page options must expose the specified order and labels");
 
     const auto* systemPage = catalog.page(QStringLiteral("system-settings"));
     const auto* proxy = catalog.item({QStringLiteral("system-settings"), QStringLiteral("network"),
@@ -1253,8 +1290,12 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 196 && index.search(QString()).size() == 196,
+    require(index.entries().size() == 197 && index.search(QString()).size() == 197,
             "search must generate all catalog nodes in catalog order");
+    const auto pdfPaper = index.search(QStringLiteral("Landscape A4"));
+    require(!pdfPaper.isEmpty() && pdfPaper.constFirst().location.itemId ==
+                                       QStringLiteral("screenshot-output.pdf-page-size"),
+            "PDF paper options must be discoverable through settings search");
     const auto selectedFiles = index.search(QStringLiteral("Pin Selected Files to Screen"));
     require(!selectedFiles.isEmpty() &&
                 selectedFiles.first().location.itemId == QStringLiteral("quick.pin-selected-files"),
@@ -1309,7 +1350,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 36 && items == 148,
+    require(pages == 12 && sections == 36 && items == 149,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

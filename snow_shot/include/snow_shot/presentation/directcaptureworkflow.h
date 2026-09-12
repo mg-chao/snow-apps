@@ -1,6 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_DIRECTCAPTUREWORKFLOW_H
 #define SNOW_SHOT_PRESENTATION_DIRECTCAPTUREWORKFLOW_H
 
+#include "snow_shot/presentation/screenshotpdfexport.h"
 #include <QDateTime>
 #include <QImage>
 #include <QObject>
@@ -31,6 +32,7 @@ struct DirectCaptureRequest {
     bool historyEnabled = false;
     QStringList directories;
     QString imageFormat;
+    ScreenshotPdfOptions pdf;
     QString filenameFormat;
     bool restoreOriginalScreenColors = false;
     bool shutterSoundNotification = true;

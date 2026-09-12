@@ -351,6 +351,126 @@ void persistence(const QTemporaryDir& temp) {
     require(adapter.setSavePathShortcuts({}), "shortcut cleanup failed");
 }
 
+void pdfDialogAndSettings(QWidget& owner, const QTemporaryDir& temp) {
+    const storage::ScreenshotSettings settings;
+    std::optional<ScreenshotExportTaskResult> cacheResult;
+    const auto cacheJob = ScreenshotExportCoordinator::shared().submit(
+        &owner, ScreenshotExportCoordinator::Priority::Foreground,
+        [](const ScreenshotExportCancellation& cancellation) {
+            QString error;
+            const auto source = pipeline::prepare(snow_shot::image_codec::srgbRowSource(fixture()),
+                                                  cancellation, &error);
+            auto pixels = pipeline::preparePixels(source, source.rows.size, cancellation, &error);
+            ScreenshotSaveExportOptions options{source.rows.size, Format::Pdf, 99};
+            const auto first = pipeline::render(pixels, options, cancellation, &error);
+            require(first && first->pdf, "PDF pipeline must encode its image payload");
+            options.pdfTitle = QStringLiteral("renamed");
+            options.pdfPageSize = ScreenshotPdfPageSize::LandscapeA4;
+            const auto relaid = pipeline::render(pixels, options, cancellation, &error, first->pdf);
+            require(relaid && relaid->pdf == first->pdf &&
+                        relaid->options.pdfTitle == options.pdfTitle,
+                    "metadata and paper changes must reuse compressed image payloads");
+            const auto decoded = pipeline::decode(*relaid, cancellation, &error);
+            require(!decoded.isNull() && decoded.size() == source.rows.size,
+                    "PDF previews must decode their embedded image, not pass PDF to the raster "
+                    "decoder");
+            return ScreenshotExportTaskResult{};
+        },
+        [&cacheResult](ScreenshotExportTaskResult result) { cacheResult = std::move(result); });
+    require(cacheJob.isValid(), "PDF cache test job must start");
+    processUntil([&] { return cacheResult.has_value(); });
+    require(cacheResult->succeeded(), "PDF layout and metadata must reuse the compressed payload");
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    const QString key = QStringLiteral("screenshot/pdf_page_size");
+    require(storage::ConfigurationSchema::defaultValue(key).toString() ==
+                QStringLiteral("a4_portrait"),
+            "PDF paper must default to portrait A4");
+    for (const QString& value : {QStringLiteral("image_size"), QStringLiteral("a4_portrait"),
+                                 QStringLiteral("a4_landscape")})
+        require(backend.applySelectValue(settings::SettingsSelectBinding::ScreenshotPdfPageSize,
+                                         value) &&
+                    settings.pdfPageSize() == value &&
+                    backend.selectValue(settings::SettingsSelectBinding::ScreenshotPdfPageSize)
+                            .toString() == value,
+                "all PDF paper options must round-trip through settings");
+    require(!settings.setPdfPageSize(QStringLiteral("invalid")) &&
+                settings.pdfPageSize() == QStringLiteral("a4_landscape"),
+            "invalid page size must preserve the previous value");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotOutput) &&
+                settings.pdfPageSize() == QStringLiteral("a4_portrait"),
+            "output reset must restore portrait A4");
+    require(settings.setImageSaveDirectory(temp.path()) &&
+                settings.setLastManualSaveFormat(QStringLiteral("pdf")) &&
+                settings.setPdfPageSize(QStringLiteral("a4_landscape")),
+            "PDF dialog settings setup failed");
+    require(storage::ApplicationStorage::instance().flushNow().success, "PDF setting flush failed");
+    storage::ConfigurationStore reloaded(
+        QDir(storage::ApplicationStorage::instance().configurationDirectory())
+            .filePath(QStringLiteral("config.json")),
+        true, false);
+    require(reloaded.value(key).toString() == QStringLiteral("a4_landscape"),
+            "PDF paper must survive configuration reload");
+    QString savedPath;
+    auto* modal = openDialog(owner, fixture(), [&](const QString& path) { savedPath = path; });
+    auto* content = modal->contentWidget();
+    auto* quality = child<AdSlider>(content, "saveQualitySlider");
+    auto* canvas = child<ScreenshotSavePreviewCanvas>(content, "savePreviewCanvas");
+    require(child<AdSelect>(content, "saveFormatSelect")->currentValue().toString() ==
+                    QStringLiteral("pdf") &&
+                quality->isEnabled() && quality->value() == 100 &&
+                quality->marks().value(100).label == QStringLiteral("Lossless"),
+            "PDF must start at lossless quality with the correct endpoint label");
+    require(canvas->pdfLayout().pagePoints.width() > canvas->pdfLayout().pagePoints.height(),
+            "PDF preview must show the configured landscape page");
+    const auto paper = canvas->pdfLayout();
+    require(settings.setPdfPageSize(QStringLiteral("image_size")), "page snapshot fixture failed");
+    quality->setValue(1);
+    quality->setValue(99);
+    processUntil([&] { return child<QLabel>(content, "savePreviewStatus")->isHidden(); });
+    require(canvas->outputImage().pixelColor(0, 0).alpha() == 255 &&
+                canvas->pdfLayout().pagePoints == paper.pagePoints,
+            "PDF lossy preview must be opaque and retain the opening page setting");
+    child<AdInputNumber>(content, "saveWidthInput")->setValue(320);
+    child<AdSelect>(content, "saveFormatSelect")->setCurrentValue(QStringLiteral("png"));
+    child<AdSelect>(content, "saveFormatSelect")->setCurrentValue(QStringLiteral("pdf"));
+    quality->setValue(100);
+    child<AdLineEdit>(content, "saveFilenameInput")->setText(QStringLiteral("pdf-preview-final"));
+    processUntil([&] { return child<QLabel>(content, "savePreviewStatus")->isHidden(); });
+    require(canvas->outputImage().size() == QSize(320, 200),
+            "stale preview results must not replace the final PDF image");
+    snapshot(modal, QStringLiteral("export-pdf-landscape"));
+    modal->acceptButton()->click();
+    processUntil([&] { return !savedPath.isEmpty(); });
+    require(savedPath.endsWith(QStringLiteral("pdf-preview-final.pdf")),
+            "manual PDF must use .pdf extension");
+    QFile saved(savedPath);
+    require(saved.open(QIODevice::ReadOnly), "saved PDF must be readable");
+    const auto bytes = saved.readAll();
+    require(bytes.contains("/MediaBox [0 0 841.88976378 595.27559055]") &&
+                !bytes.contains("/DCTDecode"),
+            "saved PDF must use the preview paper and final lossless quality");
+    flush();
+    modal = openDialog(owner, fixture());
+    content = modal->contentWidget();
+    require(child<AdSlider>(content, "saveQualitySlider")->value() == 100 &&
+                child<AdSelect>(content, "saveFormatSelect")->currentValue().toString() ==
+                    QStringLiteral("pdf") &&
+                child<ScreenshotSavePreviewCanvas>(content, "savePreviewCanvas")
+                        ->pdfLayout()
+                        .pagePoints == QSizeF(120, 75),
+            "new dialogs must remember PDF, reset quality and read the current page setting");
+    child<AdSlider>(content, "saveQualitySlider")->setValue(20);
+    child<AdSelect>(content, "saveFormatSelect")->setCurrentValue(QStringLiteral("jpeg"));
+    modal->reject();
+    flush();
+    require(settings.lastManualSaveFormat() == QStringLiteral("pdf"),
+            "cancel must not replace remembered PDF");
+    require(settings.setLastManualSaveFormat(QStringLiteral("png")) &&
+                settings.setPdfPageSize(QStringLiteral("a4_portrait")),
+            "PDF settings cleanup failed");
+}
+
 void rememberedManualFormat(QWidget& owner, const QTemporaryDir& temp) {
     const storage::ScreenshotSettings settings;
     const QString key = QStringLiteral("screenshot/last_manual_save_format");
@@ -362,8 +482,8 @@ void rememberedManualFormat(QWidget& owner, const QTemporaryDir& temp) {
     const QString configPath =
         QDir(storage::ApplicationStorage::instance().configurationDirectory())
             .filePath("config.json");
-    for (const auto format :
-         {Format::Png, Format::Jpeg, Format::Bmp, Format::Webp, Format::Jxl, Format::Avif}) {
+    for (const auto format : {Format::Png, Format::Jpeg, Format::Bmp, Format::Webp, Format::Jxl,
+                              Format::Pdf, Format::Avif}) {
         const QString value = ScreenshotImageFileService::formatKey(format);
         require(settings.setLastManualSaveFormat(value) &&
                     ScreenshotSaveDialogState::initial(QSize(160, 100)).output.format == format,
@@ -694,6 +814,79 @@ void canvasInteraction() {
     QApplication::sendEvent(&canvas, &move);
     QApplication::sendEvent(&canvas, &up);
     require(canvas.pan() == pan + QPointF(25, 20), "canvas dragging did not pan");
+}
+
+void canvasPdfComparison() {
+    ScreenshotSavePreviewCanvas canvas;
+    canvas.resize(600, 400);
+    QImage original(QSize(400, 200), QImage::Format_RGBA8888);
+    original.fill(Qt::red);
+    QImage output(original.size(), original.format());
+    output.fill(Qt::green);
+    canvas.setSource(original, QSize(1000, 500));
+    canvas.setOutput(output);
+    canvas.show();
+    flush();
+    const auto verify = [&] {
+        canvas.setPdfLayout({});
+        const double zoom = canvas.zoom();
+        const QPointF pan = canvas.pan();
+        const QImage baseline = canvas.grab().toImage();
+        const qreal dpr = baseline.devicePixelRatio();
+        for (const auto page :
+             {ScreenshotPdfPageSize::PortraitA4, ScreenshotPdfPageSize::LandscapeA4,
+              ScreenshotPdfPageSize::ImageSize}) {
+            for (const QSize size : {QSize(400, 200), QSize(800, 400), QSize(400, 100)}) {
+                canvas.setOutput(output.scaled(size));
+                canvas.setPdfLayout(screenshot_pdf::layout(size, page));
+                require(canvas.zoom() == zoom && canvas.pan() == pan,
+                        "PDF layout changes must preserve comparison zoom and pan");
+                const QImage frame = canvas.grab().toImage();
+                const int leftWidth = qRound(260 * dpr);
+                require(frame.copy(0, 0, leftWidth, frame.height()) ==
+                            baseline.copy(0, 0, leftWidth, baseline.height()),
+                        "PDF paper must not change any original-pane pixels");
+                bool paperAdded = false;
+                for (int y = 0; y < frame.height(); ++y) {
+                    for (int x = 0; x < frame.width(); ++x) {
+                        const QColor before = baseline.pixelColor(x, y);
+                        const QColor after = frame.pixelColor(x, y);
+                        require((before == QColor(Qt::red)) == (after == QColor(Qt::red)) &&
+                                    (before == QColor(Qt::green)) == (after == QColor(Qt::green)),
+                                "PDF must preserve both images' displayed position and size");
+                        if (x > qRound(340 * dpr) && before != after && after == QColor(Qt::white))
+                            paperAdded = true;
+                    }
+                }
+                require(page == ScreenshotPdfPageSize::ImageSize || paperAdded,
+                        "PDF must add white paper around the output image");
+            }
+        }
+        canvas.setPdfLayout({});
+        require(canvas.zoom() == zoom && canvas.pan() == pan && canvas.grab().toImage() == baseline,
+                "leaving PDF must restore the raster preview without changing the viewport");
+    };
+    verify();
+    QWheelEvent wheel(QPointF(450, 150), canvas.mapToGlobal(QPoint(450, 150)), {}, QPoint(0, 120),
+                      Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(&canvas, &wheel);
+    child<QTimer>(&canvas, "savePreviewZoomTimer")->stop();
+    child<QLabel>(&canvas, "savePreviewZoom")->hide();
+    verify();
+    canvas.setPdfLayout(screenshot_pdf::layout(output.size(), ScreenshotPdfPageSize::PortraitA4));
+    const double zoom = canvas.zoom();
+    const QPointF pan = canvas.pan();
+    canvas.resize(800, 600);
+    flush();
+    require(canvas.zoom() == zoom && canvas.pan() == pan,
+            "PDF must preserve manual viewport mode across canvas resizing");
+    canvas.fitImage();
+    require(qAbs(canvas.zoom() - 0.76) < 0.000001 && canvas.pan().isNull(),
+            "explicit PDF fitting must use source pixels, regardless of paper dimensions");
+    canvas.resize(600, 400);
+    flush();
+    require(qAbs(canvas.zoom() - 0.56) < 0.000001,
+            "automatic PDF fitting must continue to use source pixels");
 }
 
 void canvasZoomHint() {
@@ -2197,6 +2390,14 @@ int main(int argc, char* argv[]) {
         QWidget owner;
         owner.resize(1200, 800);
         owner.show();
+        if (app.arguments().contains(QStringLiteral("--pdf"))) {
+            canvasPdfComparison();
+            pdfDialogAndSettings(owner, temp);
+            ScreenshotExportCoordinator::shared().shutdown();
+            storage::ApplicationStorage::instance().shutdown();
+            std::cout << "PDF dialog tests passed\n";
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--remember-format"))) {
             rememberedManualFormat(owner, temp);
             ScreenshotExportCoordinator::shared().shutdown();
@@ -2275,6 +2476,7 @@ int main(int argc, char* argv[]) {
         rememberedManualFormat(owner, temp);
         encodingAndFullResolutionDisplay();
         canvasInteraction();
+        canvasPdfComparison();
         canvasZoomHint();
         canvasOriginalSizeBaseline();
         unchangedPreviewEdits(owner);

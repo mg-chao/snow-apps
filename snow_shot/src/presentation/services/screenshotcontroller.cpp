@@ -358,11 +358,12 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> recognitionFileSaveArtifact() const;
     void quickSaveSelection() override;
     void saveImageToFile(QImage image, const QString& outputPath, ScreenshotImageFileFormat format,
-                         quint64 generation,
+                         ScreenshotPdfOptions pdf, quint64 generation,
                          std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate,
                          snow_shot::storage::CaptureHistorySource historySource);
     void saveSnapshotToFile(ScreenshotScrollingSnapshot snapshot, const QString& outputPath,
-                            ScreenshotImageFileFormat format, quint64 generation,
+                            ScreenshotImageFileFormat format, ScreenshotPdfOptions pdf,
+                            quint64 generation,
                             std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate,
                             snow_shot::storage::CaptureHistorySource historySource);
     void completeFileSave(ScreenshotExportTaskResult result, quint64 generation,
@@ -2738,6 +2739,7 @@ void ScreenshotController::Impl::saveSelectionToFile() {
     });
 
     const snow_shot::storage::ScreenshotSettings outputSettings;
+    const ScreenshotPdfOptions pdf{screenshot_pdf::pageSizeForKey(outputSettings.pdfPageSize())};
     const QString directory = ScreenshotImageFileService::saveDialogDirectory(
         outputSettings.lastManualSaveDirectory(), outputSettings.imageSaveDirectory());
     static_cast<void>(QDir().mkpath(directory));
@@ -2777,13 +2779,13 @@ void ScreenshotController::Impl::saveSelectionToFile() {
     }
 
     const QPointer<ScreenshotController> receiver(&owner);
-    const auto imageReady = [receiver, generation = *exportGeneration, outputPath, format,
+    const auto imageReady = [receiver, generation = *exportGeneration, outputPath, format, pdf,
                              historyCandidate, historySource](QImage image) mutable {
         if (receiver.isNull() || receiver->m_impl == nullptr ||
             !receiver->m_impl->imageExportCurrent(generation)) {
             return;
         }
-        receiver->m_impl->saveImageToFile(std::move(image), outputPath, format, generation,
+        receiver->m_impl->saveImageToFile(std::move(image), outputPath, format, pdf, generation,
                                           historyCandidate, historySource);
     };
 
@@ -2797,13 +2799,13 @@ void ScreenshotController::Impl::saveSelectionToFile() {
             });
     } else if (m_scrollingCaptureController != nullptr && m_scrollingCaptureController->active()) {
         scheduled = m_scrollingCaptureController->requestTrimmedSnapshot(
-            [receiver, generation = *exportGeneration, outputPath, format, historyCandidate,
+            [receiver, generation = *exportGeneration, outputPath, format, pdf, historyCandidate,
              historySource](ScreenshotScrollingSnapshot snapshot) mutable {
                 if (receiver.isNull() || receiver->m_impl == nullptr ||
                     !receiver->m_impl->imageExportCurrent(generation)) {
                     return;
                 }
-                receiver->m_impl->saveSnapshotToFile(std::move(snapshot), outputPath, format,
+                receiver->m_impl->saveSnapshotToFile(std::move(snapshot), outputPath, format, pdf,
                                                      generation, historyCandidate, historySource);
             });
     } else if (m_selection.hasPixelSelection() && m_exportService != nullptr) {
@@ -2933,7 +2935,8 @@ void ScreenshotController::Impl::saveSelectionWithSnowDialog() {
 }
 
 void ScreenshotController::Impl::saveImageToFile(
-    QImage image, const QString& outputPath, ScreenshotImageFileFormat format, quint64 generation,
+    QImage image, const QString& outputPath, ScreenshotImageFileFormat format,
+    ScreenshotPdfOptions pdf, quint64 generation,
     std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate,
     snow_shot::storage::CaptureHistorySource historySource) {
     const QPointer<ScreenshotController> receiver(&owner);
@@ -2941,7 +2944,7 @@ void ScreenshotController::Impl::saveImageToFile(
         std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromImage(image));
     m_exportJob = ScreenshotExportCoordinator::shared().submit(
         &owner, ScreenshotExportCoordinator::Priority::Foreground,
-        [image = std::move(image), outputPath,
+        [image = std::move(image), outputPath, pdf,
          format](const ScreenshotExportCancellation& cancellation) mutable {
             if (cancellation.isCancellationRequested()) {
                 return ScreenshotExportTaskResult::failure(
@@ -2949,7 +2952,9 @@ void ScreenshotController::Impl::saveImageToFile(
                     QStringLiteral("The screenshot save was cancelled"));
             }
             const ScreenshotImageFileSaveResult saved =
-                ScreenshotImageFileService::write(image, outputPath, format);
+                ScreenshotImageFileService::write(image, outputPath, format, pdf, [&cancellation] {
+                    return cancellation.isCancellationRequested();
+                });
             if (!saved.succeeded()) {
                 return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::File,
                                                            saved.error);
@@ -2977,7 +2982,7 @@ void ScreenshotController::Impl::saveImageToFile(
 
 void ScreenshotController::Impl::saveSnapshotToFile(
     ScreenshotScrollingSnapshot snapshot, const QString& outputPath,
-    ScreenshotImageFileFormat format, quint64 generation,
+    ScreenshotImageFileFormat format, ScreenshotPdfOptions pdf, quint64 generation,
     std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate,
     snow_shot::storage::CaptureHistorySource historySource) {
     const QPointer<ScreenshotController> receiver(&owner);
@@ -2985,7 +2990,7 @@ void ScreenshotController::Impl::saveSnapshotToFile(
         ScreenshotExportSource::fromScrollingSnapshot(snapshot));
     m_exportJob = ScreenshotExportCoordinator::shared().submit(
         &owner, ScreenshotExportCoordinator::Priority::Foreground,
-        [snapshot = std::move(snapshot), outputPath,
+        [snapshot = std::move(snapshot), outputPath, pdf,
          format](const ScreenshotExportCancellation& cancellation) mutable {
             const ScreenshotImageRowSource source = snapshot.rowSource(
                 [&cancellation]() { return cancellation.isCancellationRequested(); });
@@ -2995,7 +3000,7 @@ void ScreenshotController::Impl::saveSnapshotToFile(
                     QStringLiteral("The scrolling screenshot is unavailable"));
             }
             const ScreenshotImageFileSaveResult saved =
-                ScreenshotImageFileService::write(source, outputPath, format);
+                ScreenshotImageFileService::write(source, outputPath, format, pdf);
             if (!saved.succeeded()) {
                 return ScreenshotExportTaskResult::failure(
                     cancellation.isCancellationRequested() ? ScreenshotExportFailureStage::Cancelled
@@ -3333,7 +3338,8 @@ void ScreenshotController::Impl::saveArtifactForCopy(
                 impl.completeCopyExport(false, generation, historySource, historyCandidate,
                                         scrolling, artifact);
             }
-        });
+        },
+        ScreenshotPdfOptions{screenshot_pdf::pageSizeForKey(settings.pdfPageSize())});
     if (!scheduled) {
         if (copyFileToClipboard) {
             completeCopyExport(false, generation, historySource, historyCandidate, scrolling,
