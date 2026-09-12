@@ -283,8 +283,9 @@ class AdTooltipPrivate final : public QObject, private detail::OverlayPopupContr
   bool popupHasContent() const override;
   bool popupAcceptsGeometry(const QRect& anchor, const QSize& size,
                             const QRect& bounds) const override;
-  std::optional<QRect> popupTriggerGlobalRect() const override;
-  std::optional<QRect> popupAnchorGlobalRect() const override;
+  std::optional<QRect> popupTriggerLocalRect() const override;
+  std::optional<QRect> popupAnchorLocalRect() const override;
+  std::optional<detail::PopupScreenRect> popupAnchorScreenSnapshot() const override;
   detail::OverlayPopupPlacement popupPlacement() const override;
   AdPopupLayerMode popupLayerMode() const override;
   bool popupAutoAdjustOverflow() const override;
@@ -325,7 +326,7 @@ class AdTooltipPrivate final : public QObject, private detail::OverlayPopupContr
   QPointer<QWidget> anchorWidgetOverride;
   std::optional<QRect> triggerRect;
   std::optional<QRect> anchorRect;
-  std::optional<QRect> topLevelTransientAnchorGlobalRect;
+  std::optional<detail::PopupScreenRect> topLevelTransientAnchorSnapshot;
 
   TooltipPopupView popupView;
   TooltipStyleState styleState;
@@ -808,7 +809,7 @@ void AdTooltipPrivate::applyInitiallyVisibleIfNeeded() {
 }
 
 void AdTooltipPrivate::captureTopLevelTransientAnchor() {
-  topLevelTransientAnchorGlobalRect.reset();
+  topLevelTransientAnchorSnapshot.reset();
   if (layerMode != AdTooltip::LayerMode::TopLevelTransient) {
     return;
   }
@@ -822,8 +823,12 @@ void AdTooltipPrivate::captureTopLevelTransientAnchor() {
   if (!localRect.isValid()) {
     return;
   }
-  topLevelTransientAnchorGlobalRect =
-      QRect(coordinateWidget->mapToGlobal(localRect.topLeft()), localRect.size());
+  const auto snapshot = detail::PopupWidgetRect{coordinateWidget, localRect}.visible().onScreen();
+  // A clipped anchor has no placement to capture. Leave it uncaptured so a
+  // subsequent layout can place the tooltip when the anchor becomes visible.
+  if (snapshot.screen && snapshot.rect.isValid()) {
+    topLevelTransientAnchorSnapshot = snapshot;
+  }
 }
 
 void AdTooltipPrivate::syncTransientOwner() {
@@ -887,7 +892,7 @@ void AdTooltipPrivate::handleControllerPopupVisibleChanged(bool value) {
                                      value ? QAccessible::ObjectShow : QAccessible::ObjectHide);
   }
   if (!value) {
-    topLevelTransientAnchorGlobalRect.reset();
+    topLevelTransientAnchorSnapshot.reset();
     clearTransientOwner();
     syncActualVisible();
   }
@@ -916,7 +921,7 @@ QWidget* AdTooltipPrivate::popupEnsureSurface() {
 }
 
 void AdTooltipPrivate::popupPrepareToShow() {
-  if (!topLevelTransientAnchorGlobalRect.has_value()) {
+  if (!topLevelTransientAnchorSnapshot.has_value()) {
     captureTopLevelTransientAnchor();
   }
   ensurePopupSurface();
@@ -939,31 +944,13 @@ bool AdTooltipPrivate::popupAcceptsGeometry(const QRect& anchor, const QSize& si
          anchor.bottom() + std::max(0, popupOffset()) + size.height() <= bounds.bottom();
 }
 
-std::optional<QRect> AdTooltipPrivate::popupTriggerGlobalRect() const {
-  if (!triggerRect.has_value() || !targetWidget || !targetWidget->isVisible()) {
-    return std::nullopt;
-  }
-  const QRect localRect = triggerRect.value();
-  if (!localRect.isValid()) {
-    return std::nullopt;
-  }
-  return QRect(targetWidget->mapToGlobal(localRect.topLeft()), localRect.size());
-}
+std::optional<QRect> AdTooltipPrivate::popupTriggerLocalRect() const { return triggerRect; }
 
-std::optional<QRect> AdTooltipPrivate::popupAnchorGlobalRect() const {
-  if (layerMode == AdTooltip::LayerMode::TopLevelTransient &&
-      topLevelTransientAnchorGlobalRect.has_value()) {
-    return topLevelTransientAnchorGlobalRect;
-  }
-  if (!anchorRect.has_value()) {
-    return std::nullopt;
-  }
-  QWidget* coordinateWidget = resolvedAnchorWidget();
-  if (!coordinateWidget || !coordinateWidget->isVisible()) {
-    return std::nullopt;
-  }
-  return QRect(coordinateWidget->mapToGlobal(anchorRect.value().topLeft()),
-               anchorRect.value().size());
+std::optional<QRect> AdTooltipPrivate::popupAnchorLocalRect() const { return anchorRect; }
+
+std::optional<detail::PopupScreenRect> AdTooltipPrivate::popupAnchorScreenSnapshot() const {
+  return layerMode == AdTooltip::LayerMode::TopLevelTransient ? topLevelTransientAnchorSnapshot
+                                                              : std::nullopt;
 }
 
 detail::OverlayPopupPlacement AdTooltipPrivate::popupPlacement() const {
@@ -1136,7 +1123,7 @@ void AdTooltip::setLayerMode(LayerMode value) {
 
   const bool wasVisible = d->logicalVisible();
   d->layerMode = value;
-  d->topLevelTransientAnchorGlobalRect.reset();
+  d->topLevelTransientAnchorSnapshot.reset();
   d->releasePopupSurface();
   emit layerModeChanged(d->layerMode);
   if (wasVisible) {
@@ -1412,9 +1399,9 @@ void AdTooltip::setAnchorRect(const QRect& rect) {
   }
   if (d->anchorRect == rect) {
     if (d->layerMode == LayerMode::TopLevelTransient && d->logicalVisible()) {
-      const std::optional<QRect> previousGlobalRect = d->topLevelTransientAnchorGlobalRect;
+      const auto previousSnapshot = d->topLevelTransientAnchorSnapshot;
       d->captureTopLevelTransientAnchor();
-      if (d->topLevelTransientAnchorGlobalRect != previousGlobalRect) {
+      if (d->topLevelTransientAnchorSnapshot != previousSnapshot) {
         d->refreshVisiblePopup();
       }
     }

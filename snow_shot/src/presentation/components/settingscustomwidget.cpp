@@ -78,6 +78,19 @@ constexpr int kHiddenZoneHeight = 56;
     QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Hidden screenshot toolbar tools"),
 };
 
+[[maybe_unused]] constexpr const char* kPinnedEditorTranslations[] = {
+    QT_TRANSLATE_NOOP(
+        "PinnedToolbarEditorSettingsWidget",
+        "Drop beside a tool to create a position. Drop above a tool to stack it. The bottom "
+        "tool stays on the main toolbar row."),
+    QT_TRANSLATE_NOOP("PinnedToolbarEditorSettingsWidget", "Pin to Screen toolbar preview"),
+    QT_TRANSLATE_NOOP("PinnedToolbarEditorSettingsWidget", "Hidden tools"),
+    QT_TRANSLATE_NOOP("PinnedToolbarEditorSettingsWidget",
+                      "Drag tools here to hide them from the pinned toolbar."),
+    QT_TRANSLATE_NOOP("PinnedToolbarEditorSettingsWidget", "No hidden tools"),
+    QT_TRANSLATE_NOOP("PinnedToolbarEditorSettingsWidget", "Hidden pinned toolbar tools"),
+};
+
 QString translatedToolbarText(const char* context, const char* sourceText) {
     return QApplication::translate(context, sourceText);
 }
@@ -821,6 +834,10 @@ struct ToolbarEditorSettingsWidget::Private {
                                    : QStringLiteral("settings-screenshot-toolbar");
         translationContext = drawing ? "DrawingToolbarEditorSettingsWidget"
                                      : "ScreenshotToolbarEditorSettingsWidget";
+        if (layoutKind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools) {
+            objectNamePrefix = QStringLiteral("settings-pinned-toolbar");
+            translationContext = "PinnedToolbarEditorSettingsWidget";
+        }
     }
 
     void initialize() {
@@ -1031,17 +1048,26 @@ struct ToolbarEditorSettingsWidget::Private {
             "Drop beside a tool to create a position. Drop above a tool to stack it. The bottom "
             "tool stays on the main toolbar row."));
         toolbarSurface->setAccessibleName(translatedToolbarText(
-            translationContext, layoutKind == storage::ScreenshotToolbarLayoutKind::DrawingTools
-                                    ? "Drawing toolbar preview"
-                                    : "Screenshot toolbar preview"));
+            translationContext,
+            layoutKind == storage::ScreenshotToolbarLayoutKind::DrawingTools
+                ? "Drawing toolbar preview"
+            : layoutKind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools
+                ? "Pin to Screen toolbar preview"
+                : "Screenshot toolbar preview"));
         hiddenTitleLabel->setText(translatedToolbarText(translationContext, "Hidden tools"));
         hiddenDescriptionLabel->setText(translatedToolbarText(
-            translationContext, "Drag tools here to hide them from the screenshot toolbar."));
+            translationContext,
+            layoutKind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools
+                ? "Drag tools here to hide them from the pinned toolbar."
+                : "Drag tools here to hide them from the screenshot toolbar."));
         hiddenZone->setEmptyText(translatedToolbarText(translationContext, "No hidden tools"));
         hiddenZone->setAccessibleName(translatedToolbarText(
-            translationContext, layoutKind == storage::ScreenshotToolbarLayoutKind::DrawingTools
-                                    ? "Hidden drawing toolbar tools"
-                                    : "Hidden screenshot toolbar tools"));
+            translationContext,
+            layoutKind == storage::ScreenshotToolbarLayoutKind::DrawingTools
+                ? "Hidden drawing toolbar tools"
+            : layoutKind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools
+                ? "Hidden pinned toolbar tools"
+                : "Hidden screenshot toolbar tools"));
         for (const toolbar_layout::EditorDescriptor& descriptor : descriptors) {
             ToolbarDragButton* button = buttons.value(QString::fromLatin1(descriptor.id));
             if (button != nullptr) {
@@ -1114,6 +1140,10 @@ SettingsCustomWidget* createSettingsCustomWidget(
     case SettingsCustomRenderer::DrawingToolbarEditor:
         return new ToolbarEditorSettingsWidget(
             renderer, storage::ScreenshotToolbarLayoutKind::DrawingTools, runtimeSession, parent);
+    case SettingsCustomRenderer::PinnedToolbarEditor:
+        return new ToolbarEditorSettingsWidget(
+            renderer, storage::ScreenshotToolbarLayoutKind::PinnedActionTools, runtimeSession,
+            parent);
     case SettingsCustomRenderer::ScreenshotToolbarEditor:
         return new ToolbarEditorSettingsWidget(
             renderer, storage::ScreenshotToolbarLayoutKind::ActionTools, runtimeSession, parent);

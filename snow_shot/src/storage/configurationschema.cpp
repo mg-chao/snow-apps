@@ -73,6 +73,20 @@ QVector<QStringList> defaultActionToolbarPositions() {
     };
 }
 
+const QStringList kPinnedActionToolbarItemIds = {
+    QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
+    QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html"),
+    QStringLiteral("text-recognition"),    QStringLiteral("text-translation")};
+
+QVector<QStringList> defaultPinnedActionToolbarPositions() {
+    return {
+        {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
+         QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
+        {QStringLiteral("text-recognition")},
+        {QStringLiteral("text-translation")},
+    };
+}
+
 QJsonObject defaultToolbarLayout(const QVector<QStringList>& positions) {
     return {{QStringLiteral("positions"), jsonArray(positions)},
             {QStringLiteral("hidden"), QJsonArray()}};
@@ -673,6 +687,9 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      {QStringLiteral("table"), QStringLiteral("qr")}},
     {QStringLiteral("screenshot_toolbar/layout"),
      defaultToolbarLayout(defaultDrawingToolbarPositions()), ConfigurationValueKind::Structured},
+    {QStringLiteral("pin_to_screen/action_tools_layout"),
+     defaultToolbarLayout(defaultPinnedActionToolbarPositions()),
+     ConfigurationValueKind::Structured},
     {QStringLiteral("screenshot_toolbar/action_tools_layout"),
      defaultToolbarLayout(defaultActionToolbarPositions()), ConfigurationValueKind::Structured},
     {QStringLiteral("screenshot_ui/toolbar_size"),
@@ -1151,7 +1168,8 @@ ConfigurationNormalization normalizeTranslationLanguage(const ConfigurationSchem
 
 ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
                                                   const QStringList& itemIds,
-                                                  const QVector<QStringList>& defaultPositions) {
+                                                  const QVector<QStringList>& defaultPositions,
+                                                  bool migrateScreenshotLayout = false) {
     if (!value.isObject()) {
         return {};
     }
@@ -1227,7 +1245,8 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
             hiddenSet.insert(QStringLiteral("quick-save"));
         }
     }
-    if (!positions.isEmpty() && known.contains(QStringLiteral("convert-to-markdown"))) {
+    if (migrateScreenshotLayout && !positions.isEmpty() &&
+        known.contains(QStringLiteral("convert-to-markdown"))) {
         // Upgrade earlier defaults without changing custom placements.
         auto previousDefault = defaultPositions;
         previousDefault[0] = {QStringLiteral("barcode-recognition"),
@@ -1409,9 +1428,13 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
         return normalizeToolbarLayout(value, kDrawingToolbarItemIds,
                                       defaultDrawingToolbarPositions());
     }
+    if (key == QStringLiteral("pin_to_screen/action_tools_layout")) {
+        return normalizeToolbarLayout(value, kPinnedActionToolbarItemIds,
+                                      defaultPinnedActionToolbarPositions());
+    }
     if (key == QStringLiteral("screenshot_toolbar/action_tools_layout")) {
-        return normalizeToolbarLayout(value, kActionToolbarItemIds,
-                                      defaultActionToolbarPositions());
+        return normalizeToolbarLayout(value, kActionToolbarItemIds, defaultActionToolbarPositions(),
+                                      true);
     }
     if (isGlobalMouseKey(key)) {
         return normalizeGlobalMouseCombination(value);

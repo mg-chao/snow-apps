@@ -138,8 +138,17 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 36 && itemCount == 146 && foundUpdates,
-            "catalog must contain thirty-six sections and one hundred forty-six items");
+    require(sectionCount == 36 && itemCount == 147 && foundUpdates,
+            "catalog must contain thirty-six sections and one hundred forty-seven items");
+    const auto* pinnedEditor =
+        catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
+                      QStringLiteral("interface.pin-to-screen.pinned-toolbar-editor")});
+    require(pinnedEditor != nullptr &&
+                pinnedEditor->configurationKey ==
+                    QStringLiteral("pin_to_screen/action_tools_layout") &&
+                std::get<settings::SettingsCustomDefinition>(pinnedEditor->payload).renderer ==
+                    settings::SettingsCustomRenderer::PinnedToolbarEditor,
+            "Interface Settings must expose the pinned editor in Pin to Screen");
     const auto* history =
         catalog.section(QStringLiteral("storage-and-privacy"), QStringLiteral("history"));
     require(history != nullptr && history->items.size() >= 2 &&
@@ -743,7 +752,7 @@ void builtInCatalogIsCompleteAndValid() {
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
                       QStringLiteral("interface.pin-to-screen.border-active-color")});
     require(
-        pinSection.items.size() == 2 && pinBorderActiveColor != nullptr &&
+        pinSection.items.size() == 3 && pinBorderActiveColor != nullptr &&
             pinBorderActiveColor->configurationKey ==
                 QStringLiteral("pin_to_screen/border_active_color") &&
             std::get<settings::SettingsColorDefinition>(pinBorderActiveColor->payload).binding ==
@@ -1232,7 +1241,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 194 && index.search(QString()).size() == 194,
+    require(index.entries().size() == 195 && index.search(QString()).size() == 195,
             "search must generate all catalog nodes in catalog order");
     const auto selectedFiles = index.search(QStringLiteral("Pin Selected Files to Screen"));
     require(!selectedFiles.isEmpty() &&
@@ -1288,7 +1297,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 36 && items == 146,
+    require(pages == 12 && sections == 36 && items == 147,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));
@@ -1324,6 +1333,11 @@ void searchIndexIsGeneratedAndRanked() {
                 drawingToolbar.constFirst().location.itemId ==
                     QStringLiteral("interface.toolbar.drawing-toolbar-editor"),
             "drawing toolbar position and stack terminology must be indexed");
+    const auto pinnedToolbar = index.search(QStringLiteral("custom pinned toolbar"));
+    require(!pinnedToolbar.isEmpty() &&
+                pinnedToolbar.constFirst().location.itemId ==
+                    QStringLiteral("interface.pin-to-screen.pinned-toolbar-editor"),
+            "pinned toolbar customization must be indexed");
     const auto screenshotToolbar = index.search(QStringLiteral("custom screenshot toolbar"));
     require(!screenshotToolbar.isEmpty() &&
                 screenshotToolbar.constFirst().location.itemId ==

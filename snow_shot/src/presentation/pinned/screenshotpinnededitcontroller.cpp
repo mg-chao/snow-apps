@@ -50,6 +50,10 @@ ScreenshotToolPalette::Options pinnedEditToolbarOptions() {
     options.showTableTool = true;
     options.showQrTool = true;
     options.showImageConversionTools = true;
+    options.actionToolsLayoutKind =
+        snow_shot::storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
+    options.actionToolsLayout =
+        snow_shot::storage::ScreenshotToolbarSettings().layout(options.actionToolsLayoutKind);
     options.showSaveButton = true;
     options.saveButtonWithResultActions = true;
     options.copyButtonWithNeutralIcon = true;
@@ -103,7 +107,15 @@ ScreenshotPinnedEditController::ScreenshotPinnedEditController(
     if (storage.isInitialized()) {
         connect(&storage.configuration(), &snow_shot::storage::ConfigurationStore::valueChanged,
                 this, [this](const QString& key, const QJsonValue&) {
-                    if (key.startsWith(QStringLiteral("drawing_shortcuts/"))) {
+                    if (key == QStringLiteral("pin_to_screen/action_tools_layout")) {
+                        if (m_toolbarWindow != nullptr && m_toolbarWindow->palette() != nullptr) {
+                            m_toolbarWindow->palette()->setActionToolsLayout(
+                                snow_shot::storage::ScreenshotToolbarSettings().layout(
+                                    snow_shot::storage::ScreenshotToolbarLayoutKind::
+                                        PinnedActionTools));
+                            updatePlacement();
+                        }
+                    } else if (key.startsWith(QStringLiteral("drawing_shortcuts/"))) {
                         reloadDrawingShortcuts();
                     } else if (key.startsWith(QStringLiteral("screenshot_shortcuts/"))) {
                         reloadRecognitionShortcuts();

@@ -653,7 +653,7 @@ snow_shot::storage::ScreenshotToolbarLayout
 initialActionToolsLayout(const ScreenshotToolPalette::Options& options) {
     return toolbar_layout::normalizedLayout(
         options.actionToolsLayout.value_or(snow_shot::storage::ScreenshotToolbarLayout{}),
-        snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools);
+        options.actionToolsLayoutKind);
 }
 
 } // namespace
@@ -896,8 +896,8 @@ void ScreenshotToolPalette::setToolbarLayout(
 
 void ScreenshotToolPalette::setActionToolsLayout(
     const snow_shot::storage::ScreenshotToolbarLayout& layout) {
-    const snow_shot::storage::ScreenshotToolbarLayout normalized = toolbar_layout::normalizedLayout(
-        layout, snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools);
+    const snow_shot::storage::ScreenshotToolbarLayout normalized =
+        toolbar_layout::normalizedLayout(layout, m_options.actionToolsLayoutKind);
     if (m_actionToolsLayout == normalized) {
         return;
     }
@@ -1478,6 +1478,11 @@ bool ScreenshotToolPalette::activateTableQrTool(Tool tool, bool toggleVisibleBut
 
 void ScreenshotToolPalette::setTableQrEntryTool(Tool tool) {
     if (tool != Tool::Table && tool != Tool::Qr) {
+        return;
+    }
+    if (m_options.actionToolsLayoutKind ==
+        snow_shot::storage::ScreenshotToolbarLayoutKind::PinnedActionTools) {
+        selectActionToolGroupEntry(actionToolItemId(tool));
         return;
     }
     static_cast<void>(
@@ -2966,9 +2971,8 @@ bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
         if (m_spotlightOpacitySlider == nullptr || !m_spotlightOpacitySlider->isEnabled()) {
             return false;
         }
-        const QRect sliderRect(m_spotlightOpacitySlider->mapToGlobal(QPoint(0, 0)),
-                               m_spotlightOpacitySlider->size());
-        if (!sliderRect.contains(event->globalPosition().toPoint())) {
+        if (!m_spotlightOpacitySlider->rect().contains(
+                m_spotlightOpacitySlider->mapFromGlobal(event->globalPosition().toPoint()))) {
             return false;
         }
         static_cast<void>(stepSpotlightOpacity(direction));
@@ -3873,7 +3877,9 @@ adqt::widgets::AdButton* ScreenshotToolPalette::createActionToolGroup(const QStr
     group.popoverItemIds = stack.popoverItemIds;
     const QSet<QString> items(availableItemIds.cbegin(), availableItemIds.cend());
     const bool nativeRecognitionGroup =
-        items == recognitionItems && m_tableButton != nullptr && m_tableQrPopover != nullptr;
+        items == recognitionItems && m_tableButton != nullptr && m_tableQrPopover != nullptr &&
+        m_options.actionToolsLayoutKind !=
+            snow_shot::storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
     const bool recognitionNeedsIndependentTrigger =
         availableItemIds.size() == 1 &&
         (availableItemIds.constFirst() == QStringLiteral("barcode-recognition") ||

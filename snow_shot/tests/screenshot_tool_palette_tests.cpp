@@ -2878,6 +2878,7 @@ void toolbarStacksFollowConfiguredBottomToTopOrder() {
         if (kind == ScreenshotToolbarLayoutKind::DrawingTools) {
             options.toolbarLayout = makeLayout(position);
         } else {
+            options.actionToolsLayoutKind = kind;
             options.actionToolsLayout = makeLayout(position);
         }
         ScreenshotToolPalette palette(options);
@@ -2956,6 +2957,8 @@ void toolbarStacksFollowConfiguredBottomToTopOrder() {
     const QStringList recognition{
         QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
         QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")};
+    exercise(ScreenshotToolbarLayoutKind::PinnedActionTools, recognition);
+    exercise(ScreenshotToolbarLayoutKind::PinnedActionTools, recognition, false);
     exercise(ScreenshotToolbarLayoutKind::ActionTools, recognition);
     exercise(ScreenshotToolbarLayoutKind::ActionTools, recognition, false);
 }
@@ -3036,8 +3039,113 @@ void sharedToolbarLayoutModelOperationsAreDeterministic() {
 
     exercise(ScreenshotToolbarLayoutKind::DrawingTools, QStringLiteral("shape"),
              QStringLiteral("arrow"), QStringLiteral("free-draw"));
+    exercise(ScreenshotToolbarLayoutKind::PinnedActionTools, QStringLiteral("barcode-recognition"),
+             QStringLiteral("table-recognition"), QStringLiteral("text-translation"));
     exercise(ScreenshotToolbarLayoutKind::ActionTools, QStringLiteral("barcode-recognition"),
              QStringLiteral("table-recognition"), QStringLiteral("record-screen"));
+}
+
+void pinnedActionLayoutUsesGenericStacks() {
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    using snow_shot::storage::ScreenshotToolbarLayout;
+    const auto kind = snow_shot::storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
+    const QString table = QStringLiteral("table-recognition");
+    const QString barcode = QStringLiteral("barcode-recognition");
+    const QString ocr = QStringLiteral("text-recognition");
+    const QString translation = QStringLiteral("text-translation");
+    const QString markdown = QStringLiteral("convert-to-markdown");
+    const QString html = QStringLiteral("convert-to-html");
+    require(snow_shot::storage::ScreenshotToolbarSettings().setTableQrTool(QStringLiteral("qr")),
+            "pinned fixture must set a conflicting legacy preference");
+    ScreenshotToolPalette::Options options;
+    options.showTableTool = options.showQrTool = options.showOcrTool = true;
+    options.showTextTranslationTool = options.showImageConversionTools = true;
+    options.showSaveButton = options.saveButtonWithResultActions = true;
+    options.actions = ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::ConfirmAction;
+    options.actionToolsLayoutKind = kind;
+    const ScreenshotToolbarLayout expected{
+        {{barcode, table}, {markdown}, {html}, {ocr}, {translation}}, {}};
+    options.actionToolsLayout = expected;
+    require(layout::normalizedLayout(expected, kind) == expected,
+            "presentation normalization must not migrate pinned layouts");
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    QCoreApplication::processEvents();
+    const auto positions = [&]() {
+        QVector<QStringList> result;
+        for (auto* button : mainToolbarButtons(palette)) {
+            const auto ids = button->property("screenshotToolbarPositionItems").toStringList();
+            if (!ids.isEmpty() && layout::defaultOrder(kind).contains(ids.first()))
+                result.append(ids);
+        }
+        return result;
+    };
+    require(positions() == expected.positions,
+            "pinned rendering must preserve configured positions");
+    auto* trigger = mainActionToolbarButtons(palette).first();
+    require(trigger->property("screenshotToolbarItemId").toString() == table,
+            "legacy Barcode preference must not replace the configured Table entry");
+    int tables = 0;
+    int barcodes = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::tableRequested, [&] { ++tables; });
+    QObject::connect(&palette, &ScreenshotToolPalette::qrRequested, [&] { ++barcodes; });
+    trigger->click();
+    require(tables == 1 && barcodes == 0 &&
+                snow_shot::storage::ScreenshotToolbarSettings().tableQrTool() ==
+                    QStringLiteral("qr"),
+            "configured Table entry must dispatch Table without writing a legacy preference");
+    materializeLazyPopover(trigger);
+    auto* barcodeOption =
+        popoverButtonWithTooltip(popoverForTrigger(trigger), "Barcode recognition");
+    require(barcodeOption != nullptr, "generic recognition stack must expose Barcode");
+    barcodeOption->click();
+    require(barcodes == 1 && trigger->property("screenshotToolbarItemId").toString() == barcode,
+            "activating a stacked tool must select its entry through the generic group logic");
+    palette.setTableEnabled(false);
+    palette.setQrEnabled(true);
+    palette.setQrBusy(true);
+    require(trigger->isEnabled() &&
+                trigger->property("screenshotToolbarItemId").toString() == barcode &&
+                positions() == expected.positions,
+            "recognition state changes must preserve stack membership and entry");
+    palette.setTableEnabled(true);
+    palette.setQrBusy(false);
+    const ScreenshotToolbarLayout mixed{{{translation, table}, {barcode}}, {ocr, markdown, html}};
+    palette.setActionToolsLayout(mixed);
+    require(positions() == mixed.positions,
+            "pinned tools must support arbitrary stacks and hidden items");
+    for (const QString& hidden : {table, barcode}) {
+        ScreenshotToolbarLayout separated{{{table}, {barcode}, {translation}},
+                                          {ocr, markdown, html}};
+        for (qsizetype index = separated.positions.size(); index-- > 0;) {
+            if (separated.positions.at(index).contains(hidden))
+                separated.positions.removeAt(index);
+        }
+        separated.hidden.append(hidden);
+        palette.setActionToolsLayout(separated);
+        require(positions() == separated.positions,
+                "hiding a recognition tool must not restore it through its sibling");
+    }
+    palette.setActionToolsLayout({{}, layout::defaultOrder(kind)});
+    require(positions().isEmpty(), "all six pinned tools can be hidden without legacy restoration");
+    int saves = 0;
+    int copies = 0;
+    int confirms = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::saveRequested, [&] { ++saves; });
+    QObject::connect(&palette, &ScreenshotToolPalette::copyRequested, [&] { ++copies; });
+    QObject::connect(&palette, &ScreenshotToolPalette::confirmRequested, [&] { ++confirms; });
+    for (auto* button : mainToolbarButtons(palette)) {
+        if (button->property("screenshotToolbarItemId").toString() ==
+                QStringLiteral("save-as-file") ||
+            button->accessibleName() == QStringLiteral("Copy to clipboard") ||
+            button->accessibleName() == QStringLiteral("Confirm edit"))
+            button->click();
+    }
+    require(saves == 1 && copies == 1 && confirms == 1,
+            "fixed result controls must survive hiding all pinned tools");
+    palette.setActionToolsLayout({});
+    require(positions() == layout::defaultPositions(kind),
+            "pinned defaults must be restorable at runtime");
 }
 
 void quickSaveStacksAndLayoutMigration() {
@@ -5295,6 +5403,13 @@ void spotlightControlsMatchMaskConfigurationBehavior() {
     require(palette.handleToolbarWheel(&wheel) && wheel.isAccepted() &&
                 opacitySlider->value() == 60 && commits == 4,
             "Spotlight opacity wheel input must commit five percentage point steps");
+    const QPoint outside(opacitySlider->width() + 20, local.y());
+    QWheelEvent outsideWheel(QPointF(outside), opacitySlider->mapToGlobal(outside), QPoint(),
+                             QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase,
+                             false);
+    require(!palette.handleToolbarWheel(&outsideWheel) && opacitySlider->value() == 60 &&
+                commits == 4,
+            "Spotlight opacity wheel handling must reject points outside the slider");
     require(palette.stepSpotlightOpacity(-1) && opacitySlider->value() == 55 && commits == 5 &&
                 qFuzzyCompare(lastConfig.opacity + 1.0, 1.55),
             "Spotlight canvas wheel steps must update the complete mask configuration");
@@ -9350,6 +9465,11 @@ int main(int argc, char** argv) {
         confirmActionRemainsSeparatedAndCallableForPinnedEditing();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--spotlight-wheel-only"))) {
+        spotlightControlsMatchMaskConfigurationBehavior();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--toolbar-layout-only"))) {
         drawingModeSelectionsSurviveToolbarReentry();
         drawingGroupClicksActivateOnceAfterPointerReentry();
@@ -9367,6 +9487,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--action-toolbar-layout-only"))) {
+        pinnedActionLayoutUsesGenericStacks();
         screenshotToolbarUsesCanonicalOrderAndSectionSeparators();
         toolbarStacksFollowConfiguredBottomToTopOrder();
         actionStacksKeepEnabledAlternativesReachable();

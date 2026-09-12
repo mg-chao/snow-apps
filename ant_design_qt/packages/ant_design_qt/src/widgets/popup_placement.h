@@ -22,6 +22,8 @@ enum class PopupPlacement {
   TopCenter,
 };
 
+// All lengths and rectangles in an input must use the same coordinate space:
+// the popup parent for child surfaces, or the selected screen for tool windows.
 struct PopupPlacementInput {
   QPoint anchorTopLeft;
   QSize anchorSize;
@@ -71,7 +73,6 @@ struct OverlayPopupPlacementOutput {
 };
 
 QWidget* resolvePopupScopeWindow(const QWidget* owner);
-QRect popupBoundsInGlobal(const QWidget* scopeWindow);
 QScreen* popupScreenForGlobalRect(const QWidget* owner, const QRect& globalRect);
 QScreen* popupScreenForGlobalPos(const QWidget* owner, const QPoint& globalPos);
 QRect popupScreenBoundsInGlobal(const QWidget* owner, const QRect& globalRect);
