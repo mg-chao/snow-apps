@@ -42,6 +42,10 @@ class SelectedTextTranslationController final : public QObject {
     ~SelectedTextTranslationController() override;
     void capture();
     void shutdown();
+    void cancel();
+    [[nodiscard]] bool pending() const {
+        return m_pending;
+    }
 
   signals:
     void textReady(const QString& text);

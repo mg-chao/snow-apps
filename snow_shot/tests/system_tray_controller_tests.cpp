@@ -277,6 +277,25 @@ int main(int argc, char* argv[]) {
     controller.setMenuOptions(translationMenu);
     require(actionForId(selectedTextId)->isVisible(),
             "enabled translation feature exposes requested tray action");
+    int selectedTextDispatches = 0;
+    const auto translationConnection = QObject::connect(
+        &controller, &snow_shot::presentation::SystemTrayController::quickActionRequested,
+        &controller, [&](snow_shot::presentation::GlobalShortcutAction action) {
+            require(action == snow_shot::presentation::GlobalShortcutAction::TranslateSelectedText,
+                    "translation tray action uses the shared quick-action dispatch");
+            ++selectedTextDispatches;
+        });
+    for (const bool standalone : {true, false}) {
+        require(snow_shot::storage::ExtendedFeaturesSettings().setStandaloneTranslationWindow(
+                    standalone),
+                "toggle standalone mode for tray dispatch");
+        controller.setMenuOptions(translationMenu);
+        require(actionForId(selectedTextId)->isVisible(),
+                "standalone setting does not gate actual tray action");
+        actionForId(selectedTextId)->trigger();
+    }
+    require(selectedTextDispatches == 2, "both standalone modes dispatch the same tray action");
+    QObject::disconnect(translationConnection);
     require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(false),
             "disable tray translation");
     controller.setMenuOptions(translationMenu);

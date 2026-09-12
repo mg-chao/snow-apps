@@ -1,5 +1,7 @@
 #include <QApplication>
 #include <QPointer>
+#include <QScreen>
+#include <QLabel>
 #include <QWidget>
 #include <QtTest>
 
@@ -87,6 +89,115 @@ class TstModalWindow : public QObject {
     QVERIFY2(visibleOverlaySurface(), "service modal without owner has no visible surface");
     modal->close();
     QVERIFY(!modal->isOpen());
+  }
+
+  void resizableWindowRetainsGeometryAndReopensAtDefault() {
+    AdModal modal;
+    modal.setMode(AdModal::Mode::Window);
+    modal.setWindowModeDetached(true);
+    modal.setWindowModality(Qt::NonModal);
+    modal.setWindowScreen(qApp->primaryScreen());
+    modal.setWindowPreferredSize(QSize(960, 640));
+    modal.setWindowMinimumSize(QSize(640, 480));
+    modal.setWindowResizable(true);
+    modal.setCentered(true);
+    modal.setFooterVisible(false);
+    modal.setWindowTitle(QStringLiteral("Resizable translation"));
+    auto* content = new QLabel(QStringLiteral("Content"));
+    modal.setContentWidget(content);
+    modal.present();
+    auto* surface = visibleOverlaySurface(modal.windowTitle());
+    QVERIFY(surface);
+    const QRect available = qApp->primaryScreen()->availableGeometry().adjusted(16, 16, -16, -16);
+    const QSize initial = QSize(960, 640).boundedTo(available.size());
+    QCOMPARE(surface->size(), initial);
+    QCOMPARE(surface->minimumSize(), QSize(640, 480).boundedTo(available.size()));
+    QVERIFY((surface->geometry().center() - available.center()).manhattanLength() <= 2);
+    QCOMPARE(content->window(), surface);
+    surface->resize(initial - QSize(40, 40));
+    surface->move(surface->pos() + QPoint(11, 7));
+    const QRect changed = surface->geometry();
+    modal.setWindowTitle(QStringLiteral("Updated title"));
+    content->setText(QStringLiteral("More content that must not reset window geometry"));
+    AdModal::ComponentTokens tokens;
+    tokens.contentBg = QColor(Qt::darkGray);
+    modal.setComponentTokens(tokens);
+    QEvent languageChange(QEvent::LanguageChange);
+    QApplication::sendEvent(surface, &languageChange);
+    qApp->processEvents();
+    modal.present();
+    QCOMPARE(surface->geometry(), changed);
+    surface->showMinimized();
+    modal.present();
+    QVERIFY(!surface->isMinimized());
+    QCOMPARE(surface->geometry(), changed);
+    modal.close();
+    modal.present();
+    QCOMPARE(content->window(), surface);
+    QCOMPARE(surface->size(), initial);
+    QVERIFY((surface->geometry().center() - available.center()).manhattanLength() <= 2);
+    modal.close();
+  }
+
+  void explicitScreenCentersOnEachAvailableDisplay() {
+    for (QScreen* screen : qApp->screens()) {
+      qInfo() << "Modal display:" << screen->name() << screen->availableGeometry()
+              << "DPR:" << screen->devicePixelRatio();
+      AdModal modal;
+      modal.setMode(AdModal::Mode::Window);
+      modal.setWindowModeDetached(true);
+      modal.setWindowModality(Qt::NonModal);
+      modal.setWindowScreen(screen);
+      modal.setWindowPreferredSize(QSize(960, 640));
+      modal.setWindowMinimumSize(QSize(640, 480));
+      modal.setWindowResizable(true);
+      modal.setCentered(true);
+      modal.open();
+      auto* surface = visibleOverlaySurface();
+      QVERIFY(surface);
+      QVERIFY(QTest::qWaitForWindowExposed(surface));
+      QTRY_COMPARE(surface->screen(), screen);
+      const QRect available = screen->availableGeometry().adjusted(16, 16, -16, -16);
+      QCOMPARE(surface->size(), QSize(960, 640).boundedTo(available.size()));
+      QVERIFY((surface->geometry().center() - available.center()).manhattanLength() <= 2);
+      modal.close();
+    }
+  }
+
+  void explicitGeometryClampsOversizedMinimumToScreen() {
+    AdModal modal;
+    modal.setMode(AdModal::Mode::Window);
+    modal.setWindowModeDetached(true);
+    modal.setWindowScreen(qApp->primaryScreen());
+    modal.setWindowPreferredSize(QSize(100000, 100000));
+    modal.setWindowMinimumSize(QSize(90000, 90000));
+    modal.setWindowResizable(true);
+    modal.setCentered(true);
+    modal.open();
+    auto* surface = visibleOverlaySurface();
+    QVERIFY(surface);
+    const QRect available = qApp->primaryScreen()->availableGeometry().adjusted(16, 16, -16, -16);
+    QCOMPARE(surface->size(), available.size());
+    QCOMPARE(surface->minimumSize(), available.size());
+    QVERIFY(available.contains(surface->geometry()));
+    modal.close();
+  }
+
+  void detachedWindowDoesNotAcquireAmbientOwner() {
+    QWidget owner;
+    owner.show();
+    AdModal modal;
+    modal.setMode(AdModal::Mode::Window);
+    modal.setWindowModeDetached(true);
+    modal.setWindowModality(Qt::NonModal);
+    modal.open();
+    auto* surface = visibleOverlaySurface();
+    QVERIFY(surface);
+    QCOMPARE(modal.ownerWindow(), nullptr);
+    QCOMPARE(surface->parentWidget(), nullptr);
+    owner.hide();
+    QVERIFY(modal.isOpen());
+    modal.close();
   }
 
   // Control case: with a visible owner the dialog remains anchored to it.

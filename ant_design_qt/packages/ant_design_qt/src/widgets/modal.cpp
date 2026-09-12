@@ -244,6 +244,8 @@ class ModalOverlayWidget final : public QWidget {
     applyWindowModeNativeChrome();
   }
 
+  void setWindowResizable(bool value) { windowResizable_ = value; }
+
   void setWindowModeDragWidgets(QWidget* header, QWidget* panel) {
     windowModeHeader_ = header;
     windowModePanel_ = panel;
@@ -466,6 +468,25 @@ class ModalOverlayWidget final : public QWidget {
           return true;
         }
 
+        const QPoint local = mapFromGlobal(QCursor::pos());
+        if (windowResizable_ && !isMaximized()) {
+          constexpr int border = 6;
+          const bool left = local.x() < border;
+          const bool right = local.x() >= width() - border;
+          const bool top = local.y() < border;
+          const bool bottom = local.y() >= height() - border;
+          if (top || bottom || left || right) {
+            *result = top      ? (left    ? HTTOPLEFT
+                                  : right ? HTTOPRIGHT
+                                          : HTTOP)
+                      : bottom ? (left    ? HTBOTTOMLEFT
+                                  : right ? HTBOTTOMRIGHT
+                                          : HTBOTTOM)
+                      : left   ? HTLEFT
+                               : HTRIGHT;
+            return true;
+          }
+        }
         *result = isWindowModeDragAreaAt(QCursor::pos()) ? HTCAPTION : HTCLIENT;
         return true;
       }
@@ -482,6 +503,7 @@ class ModalOverlayWidget final : public QWidget {
   QColor maskColor_ = QColor(0, 0, 0, 115);
   bool maskEnabled_ = true;
   bool windowModeChromeEnabled_ = false;
+  bool windowResizable_ = false;
   QPointer<QWidget> windowModeHeader_;
   QPointer<QWidget> windowModePanel_;
   std::function<bool(bool)> focusNavigator_;
@@ -838,6 +860,70 @@ void AdModal::setWindowModeDetached(bool value) {
     registerOpenModal(this);
     setOpenInternal(true, false);
   }
+}
+
+QScreen* AdModal::windowScreen() const { return windowScreen_; }
+
+void AdModal::setWindowScreen(QScreen* screen) {
+  if (windowScreen_ == screen) {
+    return;
+  }
+  windowScreen_ = screen;
+  if (!open_) {
+    windowGeometryInitialized_ = false;
+  }
+}
+
+QSize AdModal::windowPreferredSize() const { return windowPreferredSize_; }
+void AdModal::setWindowPreferredSize(const QSize& size) {
+  if (windowPreferredSize_ == size) {
+    return;
+  }
+  windowPreferredSize_ = size;
+  syncOverlayGeometry();
+}
+
+QSize AdModal::windowMinimumSize() const { return windowMinimumSize_; }
+void AdModal::setWindowMinimumSize(const QSize& size) {
+  if (windowMinimumSize_ == size) {
+    return;
+  }
+  windowMinimumSize_ = size;
+  syncOverlayGeometry();
+}
+
+bool AdModal::windowResizable() const { return windowResizable_; }
+void AdModal::setWindowResizable(bool value) {
+  if (windowResizable_ == value) {
+    return;
+  }
+  windowResizable_ = value;
+  windowGeometryInitialized_ = false;
+  refreshLayout();
+  applyVisualStyle();
+}
+
+void AdModal::present() {
+  if (!open_ || !overlay_) {
+    open();
+  }
+  if (!overlay_) {
+    return;
+  }
+  if (overlay_->isMinimized()) {
+    overlay_->showNormal();
+  }
+  overlay_->show();
+  overlay_->raise();
+  overlay_->activateWindow();
+#if defined(Q_OS_WIN) || defined(_WIN32)
+  if (usesWindowSurface()) {
+    const HWND hwnd = reinterpret_cast<HWND>(overlay_->winId());
+    if (hwnd && IsWindow(hwnd)) {
+      SetForegroundWindow(hwnd);
+    }
+  }
+#endif
 }
 
 bool AdModal::isOpen() const { return open_; }
@@ -1610,6 +1696,9 @@ QWidget* AdModal::resolveOwnerWindow() const {
   if (ownerWindow_) {
     return ownerWindow_;
   }
+  if (usesWindowSurface() && windowModeDetached_) {
+    return nullptr;
+  }
   if (auto* parentWidget = qobject_cast<QWidget*>(parent())) {
     return normalizeOwnerWindow(parentWidget);
   }
@@ -1652,8 +1741,8 @@ const QWidget* AdModal::themeSourceWidget() const {
 }
 
 QRect AdModal::windowModeAvailableGeometry() const {
-  QScreen* screen = nullptr;
-  if (ownerWindow_) {
+  QScreen* screen = windowScreen_;
+  if (!screen && ownerWindow_) {
     screen = ownerWindow_->screen();
   }
   if (!screen && overlay_) {
@@ -1666,7 +1755,7 @@ QRect AdModal::windowModeAvailableGeometry() const {
 }
 
 QRect AdModal::windowModeAnchorGeometry() const {
-  if (!ownerWindow_) {
+  if (windowScreen_ || !ownerWindow_) {
     return windowModeAvailableGeometry();
   }
 
@@ -1873,6 +1962,7 @@ void AdModal::ensureOverlay() {
   });
 
   overlay_ = overlay;
+  windowGeometryInitialized_ = false;
   overlayLayout_ = overlayLayout;
   panel_ = panel;
   panelLayout_ = panelLayout;
@@ -2001,6 +2091,31 @@ void AdModal::syncWindowModeGeometry() {
   }
   QScopedValueRollback<bool> syncingGuard(syncingWindowModeGeometry_, true);
 
+  if (windowResizable_) {
+    const QRect available = windowModeAvailableGeometry().adjusted(16, 16, -16, -16);
+    const QSize maximum(std::max(1, available.width()), std::max(1, available.height()));
+    const QSize minimum = windowMinimumSize_.expandedTo(QSize(160, 120)).boundedTo(maximum);
+    overlay_->setMinimumSize(minimum);
+    overlay_->setMaximumSize(QSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX));
+    if (!windowGeometryInitialized_) {
+      const QSize desired =
+          windowPreferredSize_.isValid() ? windowPreferredSize_ : QSize(preferredWidth_, 480);
+      const QSize size = desired.expandedTo(minimum).boundedTo(maximum);
+      const QRect anchor = windowModeAnchorGeometry();
+      QPoint position(anchor.center().x() - size.width() / 2,
+                      centered_ ? anchor.center().y() - size.height() / 2
+                                : anchor.top() + std::max(0, topOffset_));
+      position.setX(
+          std::clamp(position.x(), available.left(), available.right() - size.width() + 1));
+      position.setY(
+          std::clamp(position.y(), available.top(), available.bottom() - size.height() + 1));
+      overlay_->setGeometry(QRect(position, size));
+      // Initialization before open can precede content installation. Lock only on presentation.
+      windowGeometryInitialized_ = open_;
+    }
+    return;
+  }
+
   overlay_->setMinimumSize(QSize(0, 0));
   overlay_->setMaximumSize(QSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX));
 
@@ -2053,6 +2168,11 @@ void AdModal::syncWindowModeGeometry() {
   targetSize.setWidth(std::clamp(targetSize.width(), 160, maxWidth));
   targetSize.setHeight(std::clamp(targetSize.height(), 1, maxHeight));
 
+  if (windowPreferredSize_.isValid()) {
+    targetSize = windowPreferredSize_.expandedTo(windowMinimumSize_);
+    targetSize.setWidth(std::clamp(targetSize.width(), 160, maxWidth));
+    targetSize.setHeight(std::clamp(targetSize.height(), 1, maxHeight));
+  }
   if (overlay_->minimumSize() != targetSize || overlay_->maximumSize() != targetSize) {
     overlay_->setFixedSize(targetSize);
   }
@@ -2088,7 +2208,12 @@ void AdModal::refreshLayout() {
 
   if (usesWindowSurface() || renderContainer_) {
     overlayLayout_->setContentsMargins(0, 0, 0, 0);
-    overlayLayout_->setAlignment(panel_, Qt::AlignCenter);
+    const bool resizable = usesWindowSurface() && windowResizable_;
+    overlayLayout_->setAlignment(panel_, resizable ? Qt::Alignment{} : Qt::AlignCenter);
+    panel_->setSizePolicy(resizable ? QSizePolicy::Expanding : QSizePolicy::Fixed,
+                          resizable ? QSizePolicy::Expanding : QSizePolicy::Maximum);
+    overlayLayout_->setSizeConstraint(resizable ? QLayout::SetNoConstraint
+                                                : QLayout::SetDefaultConstraint);
     syncOverlayGeometry();
     return;
   }
@@ -2414,6 +2539,7 @@ void AdModal::applyVisualStyle() {
 
   auto* overlayWidget = static_cast<ModalOverlayWidget*>(overlay_.data());
   if (overlayWidget) {
+    overlayWidget->setWindowResizable(usesWindowSurface() && windowResizable_);
     overlayWidget->setRootColor(usesWindowSurface() ? style.containerBg : style.rootBg);
     overlayWidget->setMaskEnabled(!usesWindowSurface() && maskVisible_);
     overlayWidget->setMaskColor(style.maskBg);
@@ -2434,7 +2560,12 @@ void AdModal::applyVisualStyle() {
         width = std::min(width, available);
       }
     }
-    panel_->setFixedWidth(std::max(160, width));
+    if (usesWindowSurface() && windowResizable_) {
+      panel_->setMinimumWidth(0);
+      panel_->setMaximumWidth(QWIDGETSIZE_MAX);
+    } else {
+      panel_->setFixedWidth(std::max(160, width));
+    }
 
     auto* panelWidget = static_cast<ModalPanelWidget*>(panel_.data());
     if (panelWidget) {
@@ -2732,6 +2863,7 @@ void AdModal::setOpenInternal(bool value, bool emitSignal) {
   }
 
   open_ = value;
+  windowGeometryInitialized_ = false;
   if (open_) {
     saveFocusBeforeOpen();
     ensureOverlay();

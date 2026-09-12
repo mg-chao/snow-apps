@@ -71,6 +71,13 @@ void selectedTextShortcutSettings() {
         settings::BuiltInSettingsBackend backend(manager);
         settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
         manager.initialize();
+        const auto standaloneBinding = settings::SettingsSwitchBinding::StandaloneTranslationWindow;
+        const QString standaloneId =
+            QStringLiteral("extended-features.standalone-translation-window");
+        require(!storage::ExtendedFeaturesSettings().standaloneTranslationWindow() &&
+                    session.state(standaloneId).visible && !session.state(standaloneId).enabled &&
+                    !backend.applySwitchValue(standaloneBinding, true),
+                "standalone defaults off and is visible but disabled under master off");
         require(manager.state(action).status == GlobalShortcutStatus::Unset,
                 "unassigned action does not register a native shortcut");
         require(!storage::ExtendedFeaturesSettings().translationPageEnabled(),
@@ -111,6 +118,18 @@ void selectedTextShortcutSettings() {
         require(session.applyShortcuts(action, keys) && persisted.translateSelectedText() == keys &&
                     manager.state(action).status == GlobalShortcutStatus::Registered,
                 "editing selected text bindings updates storage and native registrations");
+        require(session.state(standaloneId).enabled, "master on enables standalone switch live");
+        for (const bool enabled : {true, false, true}) {
+            require(backend.applySwitchValue(standaloneBinding, enabled) &&
+                        storage::ExtendedFeaturesSettings().standaloneTranslationWindow() ==
+                            enabled,
+                    "standalone switch persists through backend");
+            QCoreApplication::processEvents();
+            require(manager.state(action).status == GlobalShortcutStatus::Registered &&
+                        session.state(QStringLiteral("quick.translate-selected-text")).visible &&
+                        !translationCheckbox->isHidden(),
+                    "standalone flag never gates shortcut or tray availability");
+        }
         int activations = 0;
         QObject::connect(
             &manager, &GlobalShortcutManager::activated, &manager,
@@ -121,6 +140,10 @@ void selectedTextShortcutSettings() {
         require(activations == 1, "native activation dispatches selected text translation");
         require(storage::ExtendedFeaturesSettings().setTranslationPageEnabled(false),
                 "disable feature live");
+        QCoreApplication::processEvents();
+        require(!session.state(standaloneId).enabled &&
+                    storage::ExtendedFeaturesSettings().standaloneTranslationWindow(),
+                "master off disables child control without clearing preference");
         input->handler(id);
         require(activations == 1 && !input->registrations.values().contains(keys.first()) &&
                     persisted.translateSelectedText() == keys,

@@ -121,6 +121,10 @@ void SelectedTextTranslationController::shutdown() {
         return;
     }
     m_shutdown = true;
+    cancel();
+}
+
+void SelectedTextTranslationController::cancel() {
     m_pending = false;
     m_pollTimer.stop();
     m_backend->cancel();

@@ -1965,13 +1965,20 @@ QVector<SettingsPageDefinition> builtInPages() {
               settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Translation")),
               SettingsSectionReset::None,
               {switchItem(
-                  QStringLiteral("extended-features.translation-page"),
-                  QT_TRANSLATE_NOOP("SettingsCatalog", "Translation Page"),
-                  QT_TRANSLATE_NOOP(
-                      "SettingsCatalog",
-                      "Enable the Translation page and the Translate Selected Text shortcut."),
-                  QStringLiteral("extended_features/translation_page_enabled"),
-                  SettingsSwitchBinding::TranslationPageEnabled)}}},
+                   QStringLiteral("extended-features.translation-page"),
+                   QT_TRANSLATE_NOOP("SettingsCatalog", "Translation Page"),
+                   QT_TRANSLATE_NOOP(
+                       "SettingsCatalog",
+                       "Enable the Translation page and the Translate Selected Text shortcut."),
+                   QStringLiteral("extended_features/translation_page_enabled"),
+                   SettingsSwitchBinding::TranslationPageEnabled),
+               switchItem(
+                   QStringLiteral("extended-features.standalone-translation-window"),
+                   QT_TRANSLATE_NOOP("SettingsCatalog", "Standalone Translation Window"),
+                   QT_TRANSLATE_NOOP("SettingsCatalog",
+                                     "Open selected text translation in a standalone window."),
+                   QStringLiteral("extended_features/standalone_translation_window"),
+                   SettingsSwitchBinding::StandaloneTranslationWindow)}}},
         },
         {
             QString::fromLatin1(SYSTEM_PAGE_ID),
@@ -2846,6 +2853,10 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::PinAutoResizeWindow:
                         expectedKey = QStringLiteral("pin_to_screen/auto_resize_window");
+                        break;
+                    case SettingsSwitchBinding::StandaloneTranslationWindow:
+                        expectedKey =
+                            QStringLiteral("extended_features/standalone_translation_window");
                         break;
                     case SettingsSwitchBinding::TranslationPageEnabled:
                         expectedKey = QStringLiteral("extended_features/translation_page_enabled");

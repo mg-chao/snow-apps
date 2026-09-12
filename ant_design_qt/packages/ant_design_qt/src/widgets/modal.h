@@ -20,6 +20,7 @@ class QHBoxLayout;
 class QLabel;
 class QPushButton;
 class QShortcut;
+class QScreen;
 class QToolButton;
 class QVBoxLayout;
 class QWidget;
@@ -197,6 +198,18 @@ class AdModal final : public QObject {
 
   bool windowModeDetached() const;
   void setWindowModeDetached(bool value);
+
+  // Optional window-surface geometry. Empty sizes retain content-driven sizing.
+  QScreen* windowScreen() const;
+  void setWindowScreen(QScreen* screen);
+  QSize windowPreferredSize() const;
+  void setWindowPreferredSize(const QSize& size);
+  QSize windowMinimumSize() const;
+  void setWindowMinimumSize(const QSize& size);
+  bool windowResizable() const;
+  void setWindowResizable(bool value);
+  // Open, or restore and activate an already open surface without resetting geometry.
+  void present();
 
   bool isOpen() const;
   void setOpen(bool value);
@@ -497,6 +510,11 @@ class AdModal final : public QObject {
   bool staticServiceOwned_ = false;
   bool deletionScheduled_ = false;
   bool syncingWindowModeGeometry_ = false;
+  QPointer<QScreen> windowScreen_;
+  QSize windowPreferredSize_;
+  QSize windowMinimumSize_;
+  bool windowResizable_ = false;
+  bool windowGeometryInitialized_ = false;
   int resolvedZIndex_ = 1000;
   quint64 openSequence_ = 0;
   std::optional<CloseReason> pendingCloseReason_;

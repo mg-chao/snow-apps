@@ -371,6 +371,17 @@ bool ExtendedFeaturesSettings::translationPageEnabled() const {
         .toBool(false);
 }
 
+bool ExtendedFeaturesSettings::standaloneTranslationWindow() const {
+    return cache()
+        .value(QStringLiteral("extended_features/standalone_translation_window"))
+        .toBool();
+}
+
+bool ExtendedFeaturesSettings::setStandaloneTranslationWindow(bool enabled) const {
+    return cache().setValue(QStringLiteral("extended_features/standalone_translation_window"),
+                            enabled);
+}
+
 bool ExtendedFeaturesSettings::setTranslationPageEnabled(bool enabled) const {
     return cache().setValue(QStringLiteral("extended_features/translation_page_enabled"), enabled);
 }

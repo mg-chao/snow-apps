@@ -708,6 +708,10 @@ target_link_libraries(snow_shot_settings_search PUBLIC
 )
 
 set(SNOW_SHOT_SETTINGS_SOURCES
+    include/snow_shot/presentation/selectedtexttranslationcoordinator.h
+    src/presentation/services/selectedtexttranslationcoordinator.cpp
+    include/snow_shot/presentation/components/standalonetranslationwindow.h
+    src/presentation/components/standalonetranslationwindow.cpp
     include/snow_shot/presentation/components/translationpagewidget.h
     src/presentation/components/translationpagewidget.cpp
     include/snow_shot/presentation/components/aboutpagewidget.h
@@ -4476,6 +4480,22 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "unit"
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
     )
+
+    add_executable(snow-shot-standalone-translation-tests
+        tests/standalone_translation_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-standalone-translation-tests PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    if(WIN32)
+        target_link_libraries(snow-shot-standalone-translation-tests PRIVATE PkgConfig::SNOW_SHOT_FFMPEG)
+    endif()
+    target_compile_definitions(snow-shot-standalone-translation-tests PRIVATE
+        SNOW_SHOT_TEST_TRANSLATIONS_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+    add_dependencies(snow-shot-standalone-translation-tests snow_shot_release_translations)
+    snow_shot_import_offscreen_platform(snow-shot-standalone-translation-tests)
+    add_test(NAME snow-shot-standalone-translation-tests COMMAND snow-shot-standalone-translation-tests)
+    set_tests_properties(snow-shot-standalone-translation-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
 
     add_executable(snow-shot-translation-page-streaming-tests
         tests/translation_page_streaming_tests.cpp
