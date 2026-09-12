@@ -5295,6 +5295,13 @@ void spotlightControlsMatchMaskConfigurationBehavior() {
     require(palette.handleToolbarWheel(&wheel) && wheel.isAccepted() &&
                 opacitySlider->value() == 60 && commits == 4,
             "Spotlight opacity wheel input must commit five percentage point steps");
+    const QPoint outside(opacitySlider->width() + 20, local.y());
+    QWheelEvent outsideWheel(QPointF(outside), opacitySlider->mapToGlobal(outside), QPoint(),
+                             QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase,
+                             false);
+    require(!palette.handleToolbarWheel(&outsideWheel) && opacitySlider->value() == 60 &&
+                commits == 4,
+            "Spotlight opacity wheel handling must reject points outside the slider");
     require(palette.stepSpotlightOpacity(-1) && opacitySlider->value() == 55 && commits == 5 &&
                 qFuzzyCompare(lastConfig.opacity + 1.0, 1.55),
             "Spotlight canvas wheel steps must update the complete mask configuration");
@@ -9348,6 +9355,11 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--pinned-actions-only"))) {
         confirmActionRemainsSeparatedAndCallableForPinnedEditing();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--spotlight-wheel-only"))) {
+        spotlightControlsMatchMaskConfigurationBehavior();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--toolbar-layout-only"))) {

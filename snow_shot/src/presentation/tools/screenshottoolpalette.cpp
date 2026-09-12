@@ -2966,9 +2966,8 @@ bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
         if (m_spotlightOpacitySlider == nullptr || !m_spotlightOpacitySlider->isEnabled()) {
             return false;
         }
-        const QRect sliderRect(m_spotlightOpacitySlider->mapToGlobal(QPoint(0, 0)),
-                               m_spotlightOpacitySlider->size());
-        if (!sliderRect.contains(event->globalPosition().toPoint())) {
+        if (!m_spotlightOpacitySlider->rect().contains(
+                m_spotlightOpacitySlider->mapFromGlobal(event->globalPosition().toPoint()))) {
             return false;
         }
         static_cast<void>(stepSpotlightOpacity(direction));

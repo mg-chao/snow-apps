@@ -170,122 +170,6 @@ void removeControllerFromPendingScopeRelayouts(OverlayPopupController* controlle
   }
 }
 
-QRect widgetGlobalRect(const QWidget* widget) {
-  if (!widget) {
-    return QRect();
-  }
-  return QRect(widget->mapToGlobal(QPoint(0, 0)), widget->size());
-}
-
-QRect widgetRectInAncestorSpace(const QWidget* widget, const QWidget* ancestor) {
-  if (!widget || !ancestor) {
-    return QRect();
-  }
-  if (widget != ancestor && !ancestor->isAncestorOf(const_cast<QWidget*>(widget))) {
-    return QRect();
-  }
-  return QRect(widget->mapTo(const_cast<QWidget*>(ancestor), QPoint(0, 0)), widget->size());
-}
-
-QRect widgetGlobalRectIfEffectivelyVisible(const QWidget* widget, const QWidget* scopeWindow) {
-  if (!widget || !widget->isVisible()) {
-    return QRect();
-  }
-
-  QRect clippedRect = widgetGlobalRect(widget);
-  if (!clippedRect.isValid()) {
-    return QRect();
-  }
-
-  bool reachedScope = false;
-  const QWidget* cursor = widget;
-  while (cursor) {
-    if (!cursor->isVisible()) {
-      return QRect();
-    }
-    const QRect cursorRect = widgetGlobalRect(cursor);
-    if (!cursorRect.isValid()) {
-      return QRect();
-    }
-    clippedRect = clippedRect.intersected(cursorRect);
-    if (!clippedRect.isValid()) {
-      return QRect();
-    }
-    if (scopeWindow && cursor == scopeWindow) {
-      reachedScope = true;
-      break;
-    }
-    cursor = cursor->parentWidget();
-  }
-
-  if (scopeWindow && !reachedScope) {
-    const QRect scopeRect = widgetGlobalRect(scopeWindow);
-    if (!scopeRect.isValid()) {
-      return QRect();
-    }
-    clippedRect = clippedRect.intersected(scopeRect);
-    if (!clippedRect.isValid()) {
-      return QRect();
-    }
-  }
-
-  return clippedRect;
-}
-
-QRect widgetRectIfEffectivelyVisibleInAncestorSpace(const QWidget* widget,
-                                                    const QWidget* ancestor) {
-  if (!widget || !ancestor || !widget->isVisible()) {
-    return QRect();
-  }
-
-  QRect clippedRect = widgetRectInAncestorSpace(widget, ancestor);
-  if (!clippedRect.isValid()) {
-    return QRect();
-  }
-
-  bool reachedAncestor = false;
-  const QWidget* cursor = widget;
-  while (cursor) {
-    if (!cursor->isVisible()) {
-      return QRect();
-    }
-    const QRect cursorRect = widgetRectInAncestorSpace(cursor, ancestor);
-    if (!cursorRect.isValid()) {
-      return QRect();
-    }
-    clippedRect = clippedRect.intersected(cursorRect);
-    if (!clippedRect.isValid()) {
-      return QRect();
-    }
-    if (cursor == ancestor) {
-      reachedAncestor = true;
-      break;
-    }
-    cursor = cursor->parentWidget();
-  }
-
-  return reachedAncestor ? clippedRect : QRect();
-}
-
-QRect widgetVisibleRectInAncestorMappedToGlobal(const QWidget* widget, const QWidget* ancestor) {
-  if (!widget) {
-    return QRect();
-  }
-  if (!ancestor) {
-    return widgetGlobalRectIfEffectivelyVisible(widget, nullptr);
-  }
-  const QRect visibleLocalRect = widgetRectIfEffectivelyVisibleInAncestorSpace(widget, ancestor);
-  if (!visibleLocalRect.isValid()) {
-    return QRect();
-  }
-  return QRect(ancestor->mapToGlobal(visibleLocalRect.topLeft()), visibleLocalRect.size());
-}
-
-bool widgetContainsGlobalPos(const QWidget* widget, const QPoint& globalPos) {
-  const QRect rect = widgetGlobalRect(widget);
-  return rect.isValid() && rect.contains(globalPos);
-}
-
 bool popupInteractiveContainsGlobalPos(const QWidget* popup, const QPoint& globalPos) {
   if (!popup || !popup->isVisible()) {
     return false;
@@ -515,17 +399,17 @@ void OverlayPopupController::tracePopup(const char* event, int detail) const {
   const auto* scope = delegate_->popupScopeWindow();
   const auto* surface = delegate_->popupSurfaceWidget();
   qCDebug(popupLog) << event << "detail" << detail << "anchor"
-                    << (anchor ? anchor->objectName() : QString()) << "anchor_rect"
-                    << (anchor ? QRect(anchor->mapToGlobal(QPoint()), anchor->size()) : QRect())
-                    << "scope" << (scope ? scope->objectName() : QString()) << "scope_rect"
-                    << (scope ? QRect(scope->mapToGlobal(QPoint()), scope->size()) : QRect())
-                    << "requested" << popupVisible_ << "actual" << (surface && surface->isVisible())
-                    << "disabled" << disabled_ << "has_content" << delegate_->popupHasContent()
-                    << "hover_inside" << hoverRegionInside_ << "hover_open" << openByHover_
-                    << "hover_pending" << hoverTransitionPending_ << "hover_monitor"
-                    << hoverMonitorScheduled_ << "cursor" << QCursor::pos() << "buttons"
-                    << QApplication::mouseButtons() << "grabber" << QWidget::mouseGrabber()
-                    << "active_popup" << QApplication::activePopupWidget() << "modal"
+                    << (anchor ? anchor->objectName() : QString()) << "anchor_local_rect"
+                    << PopupWidgetRect::whole(anchor).visible().rect << "scope"
+                    << (scope ? scope->objectName() : QString()) << "scope_local_rect"
+                    << PopupWidgetRect::whole(scope).rect << "requested" << popupVisible_
+                    << "actual" << (surface && surface->isVisible()) << "disabled" << disabled_
+                    << "has_content" << delegate_->popupHasContent() << "hover_inside"
+                    << hoverRegionInside_ << "hover_open" << openByHover_ << "hover_pending"
+                    << hoverTransitionPending_ << "hover_monitor" << hoverMonitorScheduled_
+                    << "cursor" << QCursor::pos() << "buttons" << QApplication::mouseButtons()
+                    << "grabber" << QWidget::mouseGrabber() << "active_popup"
+                    << QApplication::activePopupWidget() << "modal"
                     << QApplication::activeModalWidget();
 }
 
@@ -845,21 +729,48 @@ QPoint OverlayPopupController::cursorGlobalPos() const {
   return cursorPositionProvider_ ? cursorPositionProvider_() : QCursor::pos();
 }
 
+QRect OverlayPopupController::resolvedAnchorRect(QWidget* coordinateWidget,
+                                                 QScreen** screen) const {
+  QWidget* anchor = popupAnchorWidget();
+  if (contextMenuGlobalPos_.has_value() && reasonOpen(InternalOpenReason::ContextMenu)) {
+    const QPoint point = contextMenuGlobalPos_.value();
+    if (screen) {
+      *screen = popupScreenForGlobalPos(anchor, point);
+    }
+    return QRect(coordinateWidget ? coordinateWidget->mapFromGlobal(point) : point, QSize(1, 1));
+  }
+  if (!delegate_ || !anchor) {
+    return {};
+  }
+  const auto local =
+      PopupWidgetRect{anchor, delegate_->popupAnchorLocalRect().value_or(anchor->rect())}.visible();
+  if (!local.rect.isValid()) {
+    return {};
+  }
+  if (coordinateWidget) {
+    return local.mappedTo(coordinateWidget);
+  }
+  // Transient tooltips deliberately retain their captured placement until the
+  // next explicit anchor update. Visibility is still checked in local space.
+  const auto snapshot = delegate_->popupAnchorScreenSnapshot().value_or(local.onScreen());
+  if (screen) {
+    *screen = snapshot.screen;
+  }
+  return snapshot.screen ? snapshot.rect : QRect();
+}
+
 bool OverlayPopupController::triggerContainsGlobalPos(const QPoint& globalPos) const {
   if (!delegate_) {
     return false;
-  }
-
-  if (delegate_->popupTriggerGlobalRect().has_value()) {
-    return delegate_->popupTriggerGlobalRect().value().contains(globalPos);
   }
 
   QWidget* trigger = popupTriggerWidget();
   if (!trigger) {
     return false;
   }
-  const QRect triggerRect = widgetGlobalRectIfEffectivelyVisible(trigger, popupScopeWindow());
-  return triggerRect.isValid() && triggerRect.contains(globalPos);
+  return PopupWidgetRect{trigger, delegate_->popupTriggerLocalRect().value_or(trigger->rect())}
+      .visible()
+      .containsGlobalPos(globalPos);
 }
 
 bool OverlayPopupController::hoverRegionContainsGlobalPos(const QPoint& globalPos) const {
@@ -1126,22 +1037,7 @@ bool OverlayPopupController::shouldSkipQueuedRelayoutSync() const {
     return false;
   }
 
-  QRect anchorRect;
-  if (contextMenuGlobalPos_.has_value() && reasonOpen(InternalOpenReason::ContextMenu)) {
-    anchorRect = QRect(popupParent->mapFromGlobal(contextMenuGlobalPos_.value()), QSize(1, 1));
-  } else if (delegate_->popupAnchorGlobalRect().has_value()) {
-    anchorRect = delegate_->popupAnchorGlobalRect().value();
-    anchorRect.moveTopLeft(popupParent->mapFromGlobal(anchorRect.topLeft()));
-    const QRect visibleAnchorRect =
-        widgetRectIfEffectivelyVisibleInAncestorSpace(popupAnchorWidget(), popupParent);
-    if (!visibleAnchorRect.isValid()) {
-      anchorRect = QRect();
-    } else {
-      anchorRect = anchorRect.intersected(visibleAnchorRect);
-    }
-  } else {
-    anchorRect = widgetRectIfEffectivelyVisibleInAncestorSpace(anchor, popupParent);
-  }
+  const QRect anchorRect = resolvedAnchorRect(popupParent);
   if (!anchorRect.isValid()) {
     return false;
   }
@@ -1472,32 +1368,9 @@ bool OverlayPopupController::syncPopupGeometry(bool prepareLayout) {
   QWidget* anchorVisibilityScope = popupScopeWindow();
   QWidget* geometrySnapshotParent = useTopLevelToolLayer ? anchorVisibilityScope : popupParent;
 
-  QRect anchorRect;
-  if (contextMenuGlobalPos_.has_value() && reasonOpen(InternalOpenReason::ContextMenu)) {
-    const QPoint contextMenuPos = useTopLevelToolLayer
-                                      ? contextMenuGlobalPos_.value()
-                                      : popupParent->mapFromGlobal(contextMenuGlobalPos_.value());
-    anchorRect = QRect(contextMenuPos, QSize(1, 1));
-  } else if (delegate_->popupAnchorGlobalRect().has_value()) {
-    anchorRect = delegate_->popupAnchorGlobalRect().value();
-    if (!useTopLevelToolLayer) {
-      anchorRect.moveTopLeft(popupParent->mapFromGlobal(anchorRect.topLeft()));
-    }
-    const QRect visibleAnchorRect =
-        useTopLevelToolLayer
-            ? widgetVisibleRectInAncestorMappedToGlobal(popupAnchorWidget(), anchorVisibilityScope)
-            : widgetRectIfEffectivelyVisibleInAncestorSpace(popupAnchorWidget(), popupParent);
-    if (!visibleAnchorRect.isValid()) {
-      anchorRect = QRect();
-    } else {
-      anchorRect = anchorRect.intersected(visibleAnchorRect);
-    }
-  } else {
-    anchorRect =
-        useTopLevelToolLayer
-            ? widgetVisibleRectInAncestorMappedToGlobal(popupAnchorWidget(), anchorVisibilityScope)
-            : widgetRectIfEffectivelyVisibleInAncestorSpace(popupAnchorWidget(), popupParent);
-  }
+  QScreen* toolScreen = nullptr;
+  const QRect anchorRect =
+      resolvedAnchorRect(useTopLevelToolLayer ? nullptr : popupParent, &toolScreen);
   if (!anchorRect.isValid()) {
     rejectGeometry(2);  // Anchor is hidden or clipped out.
     applyPopupVisibility(popup, false, false);
@@ -1511,10 +1384,7 @@ bool OverlayPopupController::syncPopupGeometry(bool prepareLayout) {
   popupSize.setHeight(std::max(1, popupSize.height()));
   const QSize popupFrameSize = popupFrameSizeForVisualSize(popupSize, popupShadowMargins);
 
-  QScreen* toolScreen = nullptr;
   if (useTopLevelToolLayer) {
-    const QWidget* screenOwner = popupAnchorWidget() ? popupAnchorWidget() : anchorVisibilityScope;
-    toolScreen = popupScreenForGlobalRect(screenOwner, anchorRect);
     if (toolScreen && popup->isWindow() && popup->screen() != toolScreen) {
       popup->setScreen(toolScreen);
     }
