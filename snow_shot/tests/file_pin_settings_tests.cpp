@@ -82,11 +82,11 @@ void shortcutSettings() {
                     manager.state(action).bindings.first().failureReason ==
                         GlobalShortcutFailureReason::AlreadyInUse,
                 "clipboard shortcut conflict must be reported");
-        require(backend.resetSection(settings::SettingsSectionReset::OtherShortcuts),
-                "Other reset succeeds");
+        require(backend.resetSection(settings::SettingsSectionReset::GlobalPinToScreenShortcuts),
+                "Pin to screen reset succeeds");
         require(stored.pinSelectedFiles().isEmpty() &&
                     manager.state(action).status == GlobalShortcutStatus::Unset,
-                "Other reset must clear the new shortcut");
+                "Pin to screen reset must clear the new shortcut");
         require(session.applyShortcuts(action, keys), "prepare reload");
     }
     {

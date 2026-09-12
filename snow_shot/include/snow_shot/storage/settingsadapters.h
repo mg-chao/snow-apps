@@ -93,6 +93,8 @@ class ShortcutSettings final {
     bool setScreenRecord(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList screenRecordCopy() const;
     bool setScreenRecordCopy(const QStringList& shortcuts) const;
+    [[nodiscard]] QStringList openScreenRecordingFolder() const;
+    bool setOpenScreenRecordingFolder(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList openCaptureHistory() const;
     bool setOpenCaptureHistory(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList openSettings() const;

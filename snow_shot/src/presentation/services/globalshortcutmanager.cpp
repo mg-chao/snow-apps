@@ -27,7 +27,7 @@ namespace {
 constexpr int MAX_SHORTCUTS_PER_ACTION = 2;
 constexpr int FIRST_REGISTRATION_ID = 0x2200;
 constexpr int LAST_REGISTRATION_ID = 0xBFFF;
-constexpr std::size_t ACTION_COUNT = 15;
+constexpr std::size_t ACTION_COUNT = 16;
 
 constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::Screenshot,
@@ -40,6 +40,7 @@ constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::ScreenshotFocusedWindow,
     GlobalShortcutAction::ScreenRecord,
     GlobalShortcutAction::ScreenRecordCopy,
+    GlobalShortcutAction::OpenScreenRecordingFolder,
     GlobalShortcutAction::OpenCaptureHistory,
     GlobalShortcutAction::OpenSettings,
     GlobalShortcutAction::PinClipboardContent,
@@ -69,16 +70,18 @@ int actionIndex(GlobalShortcutAction action) {
         return 8;
     case GlobalShortcutAction::ScreenRecordCopy:
         return 9;
-    case GlobalShortcutAction::OpenCaptureHistory:
+    case GlobalShortcutAction::OpenScreenRecordingFolder:
         return 10;
-    case GlobalShortcutAction::OpenSettings:
+    case GlobalShortcutAction::OpenCaptureHistory:
         return 11;
-    case GlobalShortcutAction::PinClipboardContent:
+    case GlobalShortcutAction::OpenSettings:
         return 12;
-    case GlobalShortcutAction::TranslateSelectedText:
+    case GlobalShortcutAction::PinClipboardContent:
         return 13;
-    case GlobalShortcutAction::PinSelectedFiles:
+    case GlobalShortcutAction::TranslateSelectedText:
         return 14;
+    case GlobalShortcutAction::PinSelectedFiles:
+        return 15;
     }
     return 0;
 }
@@ -557,6 +560,8 @@ QStringList persistedShortcuts(const snow_shot::storage::ShortcutSettings& setti
         return settings.screenRecord();
     case GlobalShortcutAction::ScreenRecordCopy:
         return settings.screenRecordCopy();
+    case GlobalShortcutAction::OpenScreenRecordingFolder:
+        return settings.openScreenRecordingFolder();
     case GlobalShortcutAction::OpenCaptureHistory:
         return settings.openCaptureHistory();
     case GlobalShortcutAction::OpenSettings:
@@ -594,6 +599,8 @@ bool persistShortcuts(const snow_shot::storage::ShortcutSettings& settings,
         return settings.setScreenRecord(shortcuts);
     case GlobalShortcutAction::ScreenRecordCopy:
         return settings.setScreenRecordCopy(shortcuts);
+    case GlobalShortcutAction::OpenScreenRecordingFolder:
+        return settings.setOpenScreenRecordingFolder(shortcuts);
     case GlobalShortcutAction::OpenCaptureHistory:
         return settings.setOpenCaptureHistory(shortcuts);
     case GlobalShortcutAction::OpenSettings:

@@ -4183,6 +4183,12 @@ void ScreenshotController::startOrStopScreenRecordingAndCopy() {
     }
 }
 
+void ScreenshotController::openScreenRecordingFolder() {
+    if (m_impl->ensureRecordingFeature()) {
+        m_impl->m_screenRecordingController->openRecordingFolder();
+    }
+}
+
 void ScreenshotController::editHistoryRecord(const QString& recordId) {
     ++m_impl->m_captureEpoch;
     m_impl->startHistoryEdit(recordId);

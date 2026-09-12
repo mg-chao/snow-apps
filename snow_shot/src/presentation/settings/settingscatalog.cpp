@@ -178,6 +178,17 @@ SettingsItemDefinition screenRecordCopyItem() {
         []() { return custom_outlined_icons::ScreenshotCopy(); }, SettingsShortcutAdjustment::None);
 }
 
+SettingsItemDefinition openScreenRecordingFolderItem() {
+    return quickActionItem(
+        QStringLiteral("quick.open-screen-recording-folder"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording folder"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Open the folder where recorded videos are saved"),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Recording folder"))},
+        GlobalShortcutAction::OpenScreenRecordingFolder,
+        QStringLiteral("global_shortcuts/open_screen_recording_folder"),
+        []() { return custom_outlined_icons::RecordingFolder(); });
+}
+
 SettingsItemDefinition openCaptureHistoryItem() {
     return quickActionItem(
         QStringLiteral("quick.open-capture-history"),
@@ -1593,6 +1604,18 @@ QVector<SettingsPageDefinition> builtInPages() {
                     {
                         screenRecordItem(),
                         screenRecordCopyItem(),
+                        openScreenRecordingFolderItem(),
+                    },
+                },
+                {
+                    QStringLiteral("pin-to-screen"),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to screen")),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                                   "Pin to screen shortcuts and actions")),
+                    SettingsSectionReset::GlobalPinToScreenShortcuts,
+                    {
+                        pinClipboardContentItem(),
+                        pinSelectedFilesItem(),
                     },
                 },
                 {
@@ -1603,8 +1626,6 @@ QVector<SettingsPageDefinition> builtInPages() {
                     SettingsSectionReset::OtherShortcuts,
                     {
                         openCaptureHistoryItem(),
-                        pinClipboardContentItem(),
-                        pinSelectedFilesItem(),
                         translateSelectedTextItem(),
                     },
                 },
@@ -2217,6 +2238,8 @@ QString shortcutConfigurationKey(GlobalShortcutAction action) {
         return QStringLiteral("global_shortcuts/screen_record");
     case GlobalShortcutAction::ScreenRecordCopy:
         return QStringLiteral("global_shortcuts/screen_record_copy");
+    case GlobalShortcutAction::OpenScreenRecordingFolder:
+        return QStringLiteral("global_shortcuts/open_screen_recording_folder");
     case GlobalShortcutAction::OpenCaptureHistory:
         return QStringLiteral("global_shortcuts/open_capture_history");
     case GlobalShortcutAction::OpenSettings:
@@ -2518,20 +2541,25 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
           quick(QStringLiteral("quick.screen-record-copy"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Record/Copy Video"),
                 GlobalShortcutAction::ScreenRecordCopy,
-                []() { return custom_outlined_icons::ScreenshotCopy(); })}},
-        {QStringLiteral("other"),
-         {quick(QStringLiteral("quick.open-capture-history"),
-                QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot history"),
-                GlobalShortcutAction::OpenCaptureHistory,
-                []() { return outlined_icons::History(); }),
-          quick(QStringLiteral("quick.pin-clipboard-content"),
+                []() { return custom_outlined_icons::ScreenshotCopy(); }),
+          quick(QStringLiteral("quick.open-screen-recording-folder"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording folder"),
+                GlobalShortcutAction::OpenScreenRecordingFolder,
+                []() { return custom_outlined_icons::RecordingFolder(); })}},
+        {QStringLiteral("pin-to-screen"),
+         {quick(QStringLiteral("quick.pin-clipboard-content"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Pin clipboard content to screen"),
                 GlobalShortcutAction::PinClipboardContent,
                 []() { return custom_outlined_icons::PinToScreen(); }),
           quick(QStringLiteral("quick.pin-selected-files"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Pin Selected Files to Screen"),
                 GlobalShortcutAction::PinSelectedFiles,
-                []() { return custom_outlined_icons::PinToScreen(); }),
+                []() { return custom_outlined_icons::PinToScreen(); })}},
+        {QStringLiteral("other"),
+         {quick(QStringLiteral("quick.open-capture-history"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot history"),
+                GlobalShortcutAction::OpenCaptureHistory,
+                []() { return outlined_icons::History(); }),
           quick(QStringLiteral("quick.translate-selected-text"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Translate Selected Text"),
                 GlobalShortcutAction::TranslateSelectedText,

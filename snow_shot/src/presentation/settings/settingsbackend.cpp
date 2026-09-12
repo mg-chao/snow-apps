@@ -1000,6 +1000,14 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                       QStringLiteral("global_shortcuts/open_capture_history"));
         resetShortcut(GlobalShortcutAction::TranslateSelectedText,
                       QStringLiteral("global_shortcuts/translate_selected_text"));
+        return accepted;
+    }
+    case SettingsSectionReset::GlobalPinToScreenShortcuts: {
+        bool accepted = true;
+        const auto resetShortcut = [this, &accepted](GlobalShortcutAction action,
+                                                     const QString& key) {
+            accepted = applyShortcuts(action, stringListDefault(key)) && accepted;
+        };
         resetShortcut(GlobalShortcutAction::PinClipboardContent,
                       QStringLiteral("global_shortcuts/pin_clipboard_content"));
         resetShortcut(GlobalShortcutAction::PinSelectedFiles,

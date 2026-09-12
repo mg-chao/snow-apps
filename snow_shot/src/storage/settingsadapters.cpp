@@ -349,6 +349,15 @@ bool ShortcutSettings::setScreenRecordCopy(const QStringList& shortcuts) const {
     return setShortcutValue(QStringLiteral("global_shortcuts/screen_record_copy"), shortcuts);
 }
 
+QStringList ShortcutSettings::openScreenRecordingFolder() const {
+    return shortcutValue(QStringLiteral("global_shortcuts/open_screen_recording_folder"));
+}
+
+bool ShortcutSettings::setOpenScreenRecordingFolder(const QStringList& shortcuts) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/open_screen_recording_folder"),
+                            shortcuts);
+}
+
 QStringList ShortcutSettings::openCaptureHistory() const {
     return shortcutValue(QStringLiteral("global_shortcuts/open_capture_history"));
 }

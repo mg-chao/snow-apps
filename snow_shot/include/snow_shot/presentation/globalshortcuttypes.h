@@ -18,6 +18,7 @@ enum class GlobalShortcutAction {
     ScreenshotFocusedWindow,
     ScreenRecord,
     ScreenRecordCopy,
+    OpenScreenRecordingFolder,
     OpenCaptureHistory,
     OpenSettings,
     PinClipboardContent,

@@ -1067,3 +1067,7 @@ void ScreenRecordingController::startRecording() {
 void ScreenRecordingController::stopRecordingAndCopy() {
     m_impl->stop(true);
 }
+
+void ScreenRecordingController::openRecordingFolder() {
+    m_impl->openFolder();
+}

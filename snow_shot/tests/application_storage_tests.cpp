@@ -211,6 +211,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             defaultValue("global_shortcuts/pin_clipboard_content").toArray() ==
                 QJsonArray{QStringLiteral("F3")} &&
             defaultValue("global_shortcuts/pin_selected_files").toArray().isEmpty() &&
+            defaultValue("global_shortcuts/open_screen_recording_folder").toArray().isEmpty() &&
             defaultValue("screenshot/auto_execute_after_text_recognition").toString() ==
                 QStringLiteral("no_action") &&
             defaultValue("screenshot/double_click_action").toString() == QStringLiteral("copy") &&
@@ -433,7 +434,8 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
           QStringLiteral("pin"), QStringLiteral("none")}},
         {QStringLiteral("screenshot/image_format"),
          {QStringLiteral("png"), QStringLiteral("jpeg"), QStringLiteral("bmp"),
-          QStringLiteral("webp"), QStringLiteral("jxl"), QStringLiteral("avif")}},
+          QStringLiteral("webp"), QStringLiteral("jxl"), QStringLiteral("avif"),
+          QStringLiteral("pdf")}},
         {QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"),
          {QStringLiteral("mouse_position"), QStringLiteral("top_left"), QStringLiteral("top_right"),
           QStringLiteral("bottom_left"), QStringLiteral("bottom_right"), QStringLiteral("center")}},
