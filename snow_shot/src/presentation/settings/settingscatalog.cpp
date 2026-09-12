@@ -1944,7 +1944,7 @@ QVector<SettingsPageDefinition> builtInPages() {
               settingsText(QT_TRANSLATE_NOOP(
                   "SettingsCatalog",
                   "Custom OpenAI-compatible models for translation and image conversion")),
-              SettingsSectionReset::None,
+              SettingsSectionReset::CustomAiModels,
               {{QStringLiteral("api.custom-models"),
                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Custom Models")),
                 settingsText(
@@ -1963,7 +1963,7 @@ QVector<SettingsPageDefinition> builtInPages() {
             {{QStringLiteral("translation"),
               settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Translation")),
               settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Translation")),
-              SettingsSectionReset::None,
+              SettingsSectionReset::ExtendedTranslation,
               {switchItem(
                   QStringLiteral("extended-features.translation-page"),
                   QT_TRANSLATE_NOOP("SettingsCatalog", "Translation Page"),

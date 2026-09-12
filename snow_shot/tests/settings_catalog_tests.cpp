@@ -83,6 +83,27 @@ void builtInCatalogIsCompleteAndValid() {
             "general settings must expose an opaque theme primary color picker");
     require(catalog.pages().size() == 12, "catalog must contain twelve pages");
 
+    for (const auto& pageId :
+         {QStringLiteral("api-configuration"), QStringLiteral("extended-features")}) {
+        const auto* page = catalog.page(pageId);
+        const auto& registry = settings::builtInSettingsRegistry();
+        require(page != nullptr && page->kind == settings::SettingsPageKind::GeneratedSettings,
+                "API and extended features must use generated settings pages");
+        for (const auto& section : page->sections) {
+            require(section.reset != settings::SettingsSectionReset::None,
+                    "every API and extended features category must expose reset");
+            const auto& indexes = registry.fieldsForReset(section.reset);
+            require(indexes.size() == section.items.size(),
+                    "category reset must cover exactly its generated fields");
+            for (const int index : indexes) {
+                const auto& field = registry.fields().at(index);
+                require(field.pageId == pageId && field.sectionId == section.id &&
+                            !field.configurationKey.isEmpty() && !field.defaultValue.isUndefined(),
+                        "reset membership and defaults must come from the category schema");
+            }
+        }
+    }
+
     const auto* extended = catalog.page(QStringLiteral("extended-features"));
     const auto* translationToggle =
         catalog.item({QStringLiteral("extended-features"), QStringLiteral("translation"),

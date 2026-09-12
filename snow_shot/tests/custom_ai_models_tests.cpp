@@ -4,6 +4,8 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/presentation/components/customaimodelssettingswidget.h"
 #include "snow_shot/presentation/components/settingspagewidget.h"
+#include "snow_shot/presentation/components/sectionheaderwidget.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/languagemanager.h"
@@ -13,6 +15,7 @@
 #include "widgets/input_line_edit.h"
 #include "widgets/input_password_edit.h"
 #include "widgets/modal.h"
+#include "widgets/popconfirm.h"
 #include "widgets/switch.h"
 #include "widgets/tag.h"
 #include "widgets/combo_box.h"
@@ -23,6 +26,7 @@
 #include <QTcpSocket>
 #include <QElapsedTimer>
 #include <QApplication>
+#include <QMouseEvent>
 #include <QDir>
 #include <QFile>
 #include <QFontDatabase>
@@ -39,6 +43,16 @@ using namespace snow_shot;
 using namespace adqt::widgets;
 namespace settings = snow_shot::presentation::settings;
 namespace {
+void clickReset(QWidget* button) {
+    const QPointF local = button->rect().center();
+    const QPointF global = button->mapToGlobal(local.toPoint());
+    QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton, Qt::LeftButton,
+                      Qt::NoModifier);
+    QMouseEvent release(QEvent::MouseButtonRelease, local, global, Qt::LeftButton, Qt::NoButton,
+                        Qt::NoModifier);
+    QApplication::sendEvent(button, &press);
+    QApplication::sendEvent(button, &release);
+}
 void require(bool value, const char* message) {
     if (!value) {
         std::cerr << message << '\n';
@@ -169,6 +183,13 @@ void widgetContracts(QApplication& application) {
         flush();
         auto* widget = page.findChild<CustomAiModelsSettingsWidget*>();
         require(widget != nullptr, "page constructs custom model renderer");
+        auto* header = page.findChild<SectionHeaderWidget*>();
+        auto* reset = header->findChild<AdButton*>(QStringLiteral("sectionResetButton"));
+        auto* confirmation = header->findChild<AdPopconfirm*>();
+        require(reset != nullptr && reset->isVisible() && reset->isEnabled() &&
+                    confirmation != nullptr &&
+                    reset->geometry().right() == header->contentsRect().right(),
+                "API category exposes the shared reset button at the far right");
         auto* add = widget->findChild<AdButton*>(QStringLiteral("customAiModelAdd"));
         require(add != nullptr && widget->findChild<QLabel*>(QStringLiteral("customAiModelsEmpty")),
                 "empty state with add action");
@@ -444,6 +465,30 @@ void widgetContracts(QApplication& application) {
         widget->findChild<AdModal*>(QStringLiteral("customAiModelEditor"))->reject();
         flush();
         require(session.customAiModels().size() == 2, "cancel create preserves list");
+
+        const auto beforeReset = session.customAiModels();
+        require(storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
+                "prepare unrelated feature preference");
+        clickReset(reset);
+        flush();
+        require(session.customAiModels() == beforeReset && confirmation->isVisible(),
+                "opening reset confirmation must not change model configurations");
+        confirmation->button(AdPopconfirm::StandardButton::Cancel)->click();
+        flush();
+        require(session.customAiModels() == beforeReset, "cancel reset preserves models");
+        clickReset(reset);
+        flush();
+        confirmation->button(AdPopconfirm::StandardButton::Ok)->click();
+        flush();
+        require(
+            session.customAiModels().isEmpty() &&
+                storage::ApiConfigurationSettings().customModels().isEmpty() &&
+                widget->findChild<QLabel*>(QStringLiteral("customAiModelsEmpty")) != nullptr &&
+                !session.state(QStringLiteral("api.custom-models")).dirty &&
+                storage::ExtendedFeaturesSettings().translationPageEnabled(),
+            "confirmed reset persists defaults, refreshes custom UI, and stays category-scoped");
+        require(session.applyCustomAiModels(beforeReset), "restore models for preview");
+        flush();
 
         const auto args = application.arguments();
         const int previewIndex = args.indexOf(QStringLiteral("--preview-dir"));

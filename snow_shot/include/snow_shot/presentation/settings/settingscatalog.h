@@ -378,6 +378,8 @@ enum class SettingsSectionReset {
     SystemSettings,
     TextRecognition,
     Translation,
+    CustomAiModels,
+    ExtendedTranslation,
 };
 
 enum class SettingsSectionItemLayout {
