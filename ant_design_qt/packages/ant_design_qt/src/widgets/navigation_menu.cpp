@@ -1,5 +1,6 @@
-
 #include "navigation_menu.h"
+
+#include "detail/popup_geometry.h"
 
 #include "detail/navigation_menu_popup_state.h"
 #include "detail/navigation_menu_state.h"
@@ -58,17 +59,6 @@ constexpr int kAntdDropdownMinWidth = 160;
 constexpr int kSubMenuArrowBoxWidth = 12;
 constexpr int kSubMenuArrowBoxHeight = 14;
 constexpr int kSubMenuArrowTextGap = 6;
-QRect widgetGlobalRect(const QWidget* widget) {
-  if (!widget) {
-    return QRect();
-  }
-  return QRect(widget->mapToGlobal(QPoint(0, 0)), widget->size());
-}
-
-bool widgetContainsGlobalPos(const QWidget* widget, const QPoint& globalPos) {
-  const QRect rect = widgetGlobalRect(widget);
-  return rect.isValid() && rect.contains(globalPos);
-}
 
 QString trimmedOrFallback(const QString& value, const QString& fallback) {
   const QString trimmed = value.trimmed();
@@ -303,8 +293,8 @@ int menuRowLeadingSpacing(const MenuVisualStyle& style, const QModelIndex& sourc
 int menuRootLeadingSpacing(const MenuVisualStyle& style, AdNavigationMenu::Mode mode,
                            bool popupLevel, const QModelIndex& sourceIndex,
                            const QModelIndex& previousSourceIndex) {
-  if (mode == AdNavigationMenu::Mode::Horizontal || popupLevel ||
-      sourceIndex.parent().isValid() || previousSourceIndex.isValid()) {
+  if (mode == AdNavigationMenu::Mode::Horizontal || popupLevel || sourceIndex.parent().isValid() ||
+      previousSourceIndex.isValid()) {
     return 0;
   }
   return std::max(0, style.metrics.rootPaddingBlockStart);
@@ -574,8 +564,8 @@ class AdMenuTreeView final : public QTreeView {
     }
 
     const bool popupLevel = property("AdNavigationMenu.popupLevel").toBool();
-    const AdNavigationMenu::Mode mode = static_cast<AdNavigationMenu::Mode>(
-        property("AdNavigationMenu.mode").toInt());
+    const AdNavigationMenu::Mode mode =
+        static_cast<AdNavigationMenu::Mode>(property("AdNavigationMenu.mode").toInt());
     const AdNavigationMenu::ColorScheme popupColorScheme =
         static_cast<AdNavigationMenu::ColorScheme>(
             property("AdNavigationMenu.popupColorScheme").toInt());
@@ -2600,12 +2590,12 @@ void AdNavigationMenu::Private::cancelHoverClose() { hoverCloseTimer.stop(); }
 
 void AdNavigationMenu::Private::closeDanglingPopups() {
   const QPoint cursorPos = QCursor::pos();
-  if (widgetContainsGlobalPos(q, cursorPos)) {
+  if (detail::widgetContainsGlobalPos(q, cursorPos)) {
     return;
   }
   for (const auto& level : popupLevels) {
     if (level && level->shell && level->shell->isVisible() &&
-        widgetContainsGlobalPos(level->shell, cursorPos)) {
+        detail::widgetContainsGlobalPos(level->shell, cursorPos)) {
       return;
     }
   }
@@ -4302,13 +4292,13 @@ bool AdNavigationMenu::popupIsVisible() const {
 }
 
 bool AdNavigationMenu::popupContainsGlobalPos(const QPoint& globalPos) const {
-  if (widgetContainsGlobalPos(this, globalPos)) {
+  if (detail::widgetContainsGlobalPos(this, globalPos)) {
     return true;
   }
   return std::any_of(d_->popupLevels.cbegin(), d_->popupLevels.cend(),
                      [&globalPos](const auto& level) {
                        return level && level->shell && level->shell->isVisible() &&
-                              widgetContainsGlobalPos(level->shell, globalPos);
+                              detail::widgetContainsGlobalPos(level->shell, globalPos);
                      });
 }
 

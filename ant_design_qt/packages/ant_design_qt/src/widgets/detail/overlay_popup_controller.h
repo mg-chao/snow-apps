@@ -3,6 +3,7 @@
 #include "../popup_interaction_host.h"
 #include "../popup_placement.h"
 #include "../popup_types.h"
+#include "popup_geometry.h"
 
 #include <QFlags>
 #include <QHash>
@@ -33,8 +34,11 @@ class OverlayPopupControllerDelegate {
   virtual void popupPrepareToShow() = 0;
   virtual bool popupHasContent() const = 0;
   virtual bool popupAcceptsGeometry(const QRect&, const QSize&, const QRect&) const { return true; }
-  virtual std::optional<QRect> popupTriggerGlobalRect() const { return std::nullopt; }
-  virtual std::optional<QRect> popupAnchorGlobalRect() const { return std::nullopt; }
+  // Overrides remain in popupTriggerWidget()/popupAnchorWidget() local coordinates.
+  virtual std::optional<QRect> popupTriggerLocalRect() const { return std::nullopt; }
+  virtual std::optional<QRect> popupAnchorLocalRect() const { return std::nullopt; }
+  // Optional captured placement for transient tooltips; never used for hit testing.
+  virtual std::optional<PopupScreenRect> popupAnchorScreenSnapshot() const { return std::nullopt; }
   virtual OverlayPopupPlacement popupPlacement() const = 0;
   virtual AdPopupLayerMode popupLayerMode() const { return AdPopupLayerMode::InWindow; }
   virtual bool popupAutoAdjustOverflow() const = 0;
@@ -126,6 +130,7 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
     UserInteraction,
   };
 
+  QRect resolvedAnchorRect(QWidget* coordinateWidget, QScreen** screen = nullptr) const;
   void tracePopup(const char* event, int detail = 0) const;
   int geometryRejection_ = 0;
   void setReasonOpen(InternalOpenReason reason, bool enabled);

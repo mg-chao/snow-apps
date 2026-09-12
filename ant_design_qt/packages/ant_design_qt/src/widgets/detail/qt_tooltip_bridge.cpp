@@ -1,5 +1,7 @@
 #include "qt_tooltip_bridge.h"
 
+#include "popup_geometry.h"
+
 #include "overlay_popup_surface.h"
 
 #include "../tooltip.h"
@@ -72,8 +74,7 @@ bool routeAllowsTriggerTooltip(const PopupTooltipRoute& route) {
   if (const auto* surface = dynamic_cast<const OverlayPopupSurface*>(route.popupSurface.data())) {
     popupBody = popupBody.marginsRemoved(surface->shadowMargins());
   }
-  return route.popupSurface->mapToGlobal(popupBody.bottomLeft()).y() <
-         route.triggerRoot->mapToGlobal(QPoint()).y();
+  return PopupWidgetRect{route.popupSurface, popupBody}.mappedTo(route.triggerRoot).bottom() < 0;
 }
 
 struct PendingTooltipRequest {
@@ -494,8 +495,7 @@ class QtTooltipBridge final : public QObject {
     QWidget* anchorWidget = request.anchor.data();
     const QRect targetRect = activeRect.isValid() ? activeRect : widget->rect();
     if (anchorWidget && targetRect.isValid()) {
-      const QPoint globalTopLeft = widget->mapToGlobal(targetRect.topLeft());
-      request.anchorRect = QRect(anchorWidget->mapFromGlobal(globalTopLeft), targetRect.size());
+      request.anchorRect = PopupWidgetRect{widget, targetRect}.mappedTo(anchorWidget);
     }
     return request;
   }

@@ -1,5 +1,125 @@
 # Persistent screenshot toolbar popover investigation
 
+## Confirmed pinned-toolbar recurrence, 2026-09-12
+
+Live debugging of PID 69252 established a mixed-DPI hover geometry defect. Mouse
+enter events reached multiple popup controllers, but no hover-open callback fired.
+The controllers were enabled and closed; Qt reported no pressed mouse buttons,
+explicit mouse grabber, or pressed-button owner. The GUI thread was in its normal
+event loop.
+
+At `screenshotActionToolGroupButton0`, the real cursor was around `(879, 1100)` and
+the button mapped to `(860, 1081)-(891, 1112)`. However, its ancestor
+`ScreenshotToolPaletteHost` mapped to `(-120, 1580)-(1121, 1721)`. The hover helper
+mapped each ancestor's origin independently, then intersected those global rectangles.
+Qt's mapping chooses a screen-dependent scale for each point when a window spans
+screens. Here the ancestor origin and button fell on different display scales, so
+the intersection became empty despite valid local containment.
+
+`triggerContainsGlobalPos()` consequently always returned false, preventing the
+outside-to-inside transition and hover-open scheduling. Main and sub-tool popovers
+share this path. The Table request failures in the same session do not establish
+a causal connection to this recurrence.
+
+The initial diagnostic correction reused `widgetVisibleRectInAncestorMappedToGlobal()`,
+which popup placement already used: clip through ancestors in scope-local coordinates, then map
+the surviving rectangle once. Redirecting only that call in the existing process
+restored both main and sub-tool popovers, as confirmed by the user. No restart,
+toolbar recreation, or timer reset was needed. Debugger breakpoints were removed
+and the debugger detached; the corrected call remains in that process until exit.
+
+`adqt-popup-hover-geometry-tests` configures offscreen 100% and 150% displays and
+recreates the disjoint global rectangles. It checks main/sub-tool hover opening,
+sibling reopening, actual surface visibility, and rejection of a locally clipped
+button. This test is independent of the machine's physical display arrangement.
+
+Validation: the new regression fails at hover opening with the original helper and
+passes with the correction. The related popup hover recovery and Snow Shot toolbar
+popup recovery tests also pass after rebuilding. Changed C++ files pass clang-format,
+and `git diff --check` passes.
+The full suite was not run. The running application retains the diagnostic correction;
+the on-disk application executable still needs a normal rebuild after that instance exits.
+
+### Structural correction and related-path audit
+
+The initial live correction proved the ancestor-intersection cause, but still
+constructed a global rectangle from one mapped point plus an unchanged local size.
+That representation also fails when a control itself spans a scale boundary.
+The permanent implementation therefore replaces the geometry mechanism rather than
+retaining the one-call diagnostic patch.
+
+`widgets/detail/popup_geometry.{h,cpp}` defines two explicit representations:
+
+- `PopupWidgetRect` retains the widget owning its local rectangle. Visibility clips
+  against ancestors in local coordinates and stops at the widget's own window.
+  A top-level window's QObject owner is not a clipping ancestor. Hit testing maps
+  the global pointer back into the owning widget before testing containment.
+- `PopupScreenRect` is a placement snapshot with a guarded screen pointer. Projection
+  maps one reference point and scales the rectangle's offsets and size into that
+  screen's coordinates. It must never be used as a desktop hit-test region.
+  Cross-widget mapping stays local within a window; across windows it maps one
+  reference point and preserves physical size using the windows' DPR ratio.
+
+`OverlayPopupController::resolvedAnchorRect()` now serves both layout synchronization
+and its cached-layout fast path. Tooltip delegate overrides provide local rectangles;
+transient tooltips retain explicit screen snapshots until an anchor update. The
+controller validates visibility locally, eliminating global ancestor intersections.
+
+The same invariant is applied to:
+
+| Path | Defect addressed |
+| --- | --- |
+| Main/sub-tool hover and controller ownership | Valid visible controls rejected by global rectangles |
+| Popup interaction host | In-scope outside presses missed; nested anchors classified using a false global center |
+| Tooltip bridge and custom trigger/anchor rectangles | Cross-window size mismatch and comparisons in different screen coordinate spaces |
+| Select placement and select/menu ownership | Incorrect anchor extents and hover/press containment at a scale boundary |
+| Isolated busy indicator | Small overlay positioned with local dimensions in another screen's units |
+| Date-range popup arrow | Subtracting independently mapped global points from different screen spaces |
+| Spotlight opacity wheel handler | Wheel input rejected even though the pointer is inside the slider |
+
+The existing popup surface body hit test and Snow Shot floating-toolbar interaction
+region already map the pointer into local coordinates. Navigation-menu placement
+already works in scope-local coordinates. These paths required no geometry redesign.
+Modal centering uses the owner's native frame geometry in its normal path; the
+remaining fallback expression does not establish another reproduced failure.
+Single-point QMenu placement is outside this rectangle-clipping defect.
+
+The expanded offscreen regression covers both source screen scales, controls crossing
+the boundary, local clipping, hidden ancestors, owned tool windows, nested dismissal,
+select/menu ownership, tooltip sub-rectangles, small overlay alignment, and date-range
+arrow alignment, in addition to the original main/sub/main reopening scenario. It
+also checks frozen transient anchors, explicit recapture, and recovery when an
+initially clipped anchor returns to view. Invalid placements are not captured.
+A negative control restoring only the old mapped-origin-plus-local-size hit test
+fails with `both sides of a control spanning different display scales must be interactive`.
+The corrected implementation passes. The original ancestor-intersection regression
+also failed before the initial correction and passed afterward.
+
+Final validation uses the Debug build and only relevant tests:
+
+- `adqt-popup-hover-geometry-tests` (deterministic simulated 100%/150% displays).
+- `adqt-popup-hover-recovery-tests`, `adqt-select-popup-lifetime-tests`,
+  `adqt-select-tests`, `snow-shot-toolbar-popup-recovery-tests`, and
+  `snow-shot-spotlight-wheel-tests`.
+- `adqt-qt-tool-popup-tests -platform offscreen`: 17 passed, no failures or skips.
+- Changed C++ files pass `clang-format --dry-run --Werror`; `git diff --check`
+  passes. The preset has `SNOW_APPS_ENABLE_CLANG_TIDY=OFF`, so no clang-tidy run
+  is claimed. No full repository test suite was run.
+
+The Windows-only busy indicator uses the tested small-overlay projection; its native
+compositing was not exercised by the offscreen regression. These tests establish the
+coordinate invariant and affected behavior, not every physical monitor arrangement
+or native compositor interaction. The running Snow Shot instance still contains
+only the earlier diagnostic call patch; the permanent refactor is in source and the
+rebuilt test targets, pending a normal application rebuild after that instance exits.
+
+The older investigation below describes a separate, previously unconfirmed failure.
+Its logging instructions have an additional limitation: `DiagnosticsService::record()`
+unconditionally discards `QtDebugMsg`, so `adqt.popup` debug events are not persisted
+in Snow Shot's log files even when `QT_LOGGING_RULES` enables the category.
+
+## Earlier investigation
+
 Inspected revision: `1f21a041`, including comparison with `bd994b5c`.
 
 ## Observed symptom and conclusion
@@ -123,8 +243,9 @@ try {
 }
 ```
 
-Snow Shot's diagnostics service captures these messages in its configured storage
-directory's `logs` folder. The rule must reach the process that actually handles captures.
+Snow Shot's diagnostics service currently discards these debug messages; a debugger
+or console capture is required instead of relying on the storage `logs` folder.
+The rule must reach the process that actually handles captures.
 No change is made to the user's persistent logging configuration.
 
 The added events are `hover.open_fired` and `hover.close_fired`, complementing the
