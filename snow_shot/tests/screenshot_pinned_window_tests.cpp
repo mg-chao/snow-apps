@@ -4100,8 +4100,8 @@ void pinnedGeometryQueriesDoNotCreateNativeWindows() {
     QCoreApplication::sendEvent(&window, &enter);
     require(window.internalWinId() == 0,
             "hover delivery must not create an unpresented native window");
-    require(ScreenshotPinnedWindowTestAccess::pointerPresenceTimer(window).isActive(),
-            "hover delivery without a native window must schedule event-derived presence");
+    require(ScreenshotPinnedWindowTestAccess::pointerInside(window),
+            "hover delivery without a native window must apply event-derived presence immediately");
 
     window.show();
     window.close();
@@ -4160,29 +4160,28 @@ void pinnedPointerPresenceIsDebounced() {
     QEvent leave(QEvent::Leave);
     require(timer.interval() == 100 && timer.isSingleShot() &&
                 timer.timerType() == Qt::PreciseTimer,
-            "pointer transitions must wait at least 100 ms");
+            "hiding must wait at least 100 ms");
     QCoreApplication::sendEvent(&window, &enter);
-    require(!inside() && timer.isActive(), "enter must not change presence immediately");
-    const auto timerId = timer.id();
+    require(inside() && !timer.isActive(), "enter must reveal controls immediately");
     QCoreApplication::sendEvent(&window, &enter);
-    require(timer.id() == timerId, "repeated enter must not restart the delay");
-    QCoreApplication::sendEvent(&window, &leave);
-    require(!inside() && !timer.isActive(), "brief entry must cancel without revealing controls");
-    QCoreApplication::sendEvent(&window, &enter);
-    expire();
-    require(inside(), "stable entry must commit on timeout");
+    require(inside() && !timer.isActive(), "repeated entry must not schedule hiding");
     QCoreApplication::sendEvent(&window, &leave);
     require(inside() && timer.isActive(), "leave must not change presence immediately");
+    const auto timerId = timer.id();
+    QCoreApplication::sendEvent(&window, &leave);
+    require(timer.id() == timerId, "repeated leave must not restart the delay");
     QCoreApplication::sendEvent(&window, &enter);
     require(inside() && !timer.isActive(), "brief exit must cancel without hiding controls");
     QCoreApplication::sendEvent(&window, &leave);
     expire();
     require(!inside(), "stable exit must commit on timeout");
     QCoreApplication::sendEvent(&window, &enter);
+    QCoreApplication::sendEvent(&window, &leave);
     QEvent hide(QEvent::Hide);
     QCoreApplication::sendEvent(&window, &hide);
     require(!inside() && !timer.isActive(), "hiding must cancel pending presence");
     QCoreApplication::sendEvent(&window, &enter);
+    QCoreApplication::sendEvent(&window, &leave);
     window.close();
     require(!inside() && !timer.isActive(), "closing must cancel pending presence");
 }

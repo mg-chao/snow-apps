@@ -182,15 +182,16 @@ void debouncedHandlePresence() {
     require(f.timer().interval() == 100 && f.timer().timerType() == Qt::PreciseTimer,
             "handle must share the 100 ms presence policy");
     f.controller.updatePointer(handle);
-    require(!f.owner.isVisible() && f.timer().isActive(), "handle entry must wait");
-    const auto timerId = f.timer().id();
+    require(f.owner.isVisible() && !f.timer().isActive() && f.activations == 1,
+            "handle entry must reveal immediately");
     f.controller.updatePointer(handle);
-    require(f.timer().id() == timerId, "handle motion must not restart the delay");
-    f.controller.updatePointer(outside);
-    require(!f.timer().isActive() && !f.owner.isVisible(), "brief handle entry must cancel");
-    f.pointer(handle);
+    require(f.activations == 1 && !f.timer().isActive(),
+            "repeated handle entry must not reactivate or schedule hiding");
     f.controller.updatePointer(outside);
     require(f.owner.isVisible() && f.timer().isActive(), "handle union exit must wait");
+    const auto timerId = f.timer().id();
+    f.controller.updatePointer(outside);
+    require(f.timer().id() == timerId, "repeated exit must not restart the delay");
     f.controller.updatePointer(f.nativeGeometry.center());
     require(f.owner.isVisible() && !f.timer().isActive(),
             "returning to the image must cancel pending hiding");
@@ -204,22 +205,21 @@ void debouncedHandlePresence() {
     f.pointer(outside);
     require(!f.owner.isVisible(), "stable exit must hide after timeout");
     f.controller.updatePointer(handle);
-    f.cursor = outside;
-    f.expire();
-    require(!f.owner.isVisible(), "timeout must reject a stale handle entry using live cursor");
-    f.cursor.reset();
-    f.controller.updatePointer(handle);
+    require(f.owner.isVisible() && !f.timer().isActive(), "reentry must reveal immediately");
+    f.controller.updatePointer(outside);
     f.controller.setSuppressed(true);
-    require(!f.timer().isActive(), "suppression must cancel pending entry");
+    require(!f.timer().isActive(), "suppression must cancel pending hiding");
     f.controller.setSuppressed(false);
     f.controller.updatePointer(handle);
+    f.controller.updatePointer(outside);
     f.controller.exit();
-    require(!f.timer().isActive(), "exiting hide-to-top must cancel pending entry");
+    require(!f.timer().isActive(), "exiting hide-to-top must cancel pending hiding");
     f.enter();
     f.finish();
     f.controller.updatePointer(handle);
+    f.controller.updatePointer(outside);
     f.controller.shutdown();
-    require(!f.timer().isActive(), "shutdown must cancel pending entry");
+    require(!f.timer().isActive(), "shutdown must cancel pending hiding");
 }
 
 void reservationsAndRestore() {
