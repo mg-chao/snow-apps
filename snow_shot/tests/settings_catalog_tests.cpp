@@ -159,8 +159,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 36 && itemCount == 147 && foundUpdates,
-            "catalog must contain thirty-six sections and one hundred forty-seven items");
+    require(sectionCount == 36 && itemCount == 148 && foundUpdates,
+            "catalog must contain thirty-six sections and one hundred forty-eight items");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
                       QStringLiteral("interface.pin-to-screen.pinned-toolbar-editor")});
@@ -472,7 +472,7 @@ void builtInCatalogIsCompleteAndValid() {
             storagePage->sections.at(3).id == QStringLiteral("storage-status") &&
             imageFormat != nullptr && imageDirectory != nullptr && videoFilename != nullptr &&
             std::get<settings::SettingsSelectDefinition>(imageFormat->payload).options.size() ==
-                6 &&
+                7 &&
             std::get<settings::SettingsSelectDefinition>(imageFormat->payload)
                     .options.at(2)
                     .value == QStringLiteral("bmp") &&
@@ -481,6 +481,22 @@ void builtInCatalogIsCompleteAndValid() {
             std::get<settings::SettingsTextDefinition>(videoFilename->payload).binding ==
                 settings::SettingsTextBinding::ScreenRecordingVideoFilenameFormat,
         "Storage and privacy must expose ordered screenshot and recording output settings");
+
+    const auto* pdfPageSize =
+        catalog.item({QStringLiteral("storage-and-privacy"), QStringLiteral("screenshots"),
+                      QStringLiteral("screenshot-output.pdf-page-size")});
+    require(pdfPageSize != nullptr && storagePage->sections.at(0).items.at(2).id == pdfPageSize->id,
+            "PDF page size must immediately follow image format");
+    const auto& paper = std::get<settings::SettingsSelectDefinition>(pdfPageSize->payload);
+    require(paper.binding == settings::SettingsSelectBinding::ScreenshotPdfPageSize &&
+                paper.options.size() == 3 &&
+                paper.options[0].value == QStringLiteral("image_size") &&
+                paper.options[0].label.translated() == QStringLiteral("Image size") &&
+                paper.options[1].value == QStringLiteral("a4_portrait") &&
+                paper.options[1].label.translated() == QStringLiteral("Portrait A4") &&
+                paper.options[2].value == QStringLiteral("a4_landscape") &&
+                paper.options[2].label.translated() == QStringLiteral("Landscape A4"),
+            "PDF page options must expose the specified order and labels");
 
     const auto* systemPage = catalog.page(QStringLiteral("system-settings"));
     const auto* proxy = catalog.item({QStringLiteral("system-settings"), QStringLiteral("network"),
@@ -1262,8 +1278,12 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 195 && index.search(QString()).size() == 195,
+    require(index.entries().size() == 196 && index.search(QString()).size() == 196,
             "search must generate all catalog nodes in catalog order");
+    const auto pdfPaper = index.search(QStringLiteral("Landscape A4"));
+    require(!pdfPaper.isEmpty() && pdfPaper.constFirst().location.itemId ==
+                                       QStringLiteral("screenshot-output.pdf-page-size"),
+            "PDF paper options must be discoverable through settings search");
     const auto selectedFiles = index.search(QStringLiteral("Pin Selected Files to Screen"));
     require(!selectedFiles.isEmpty() &&
                 selectedFiles.first().location.itemId == QStringLiteral("quick.pin-selected-files"),
@@ -1318,7 +1338,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 36 && items == 147,
+    require(pages == 12 && sections == 36 && items == 148,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));
