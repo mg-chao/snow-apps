@@ -2302,6 +2302,11 @@ bool ScreenshotPinnedWindow::present(const Config& config,
     // must be resolved here — before anything can ask whether recognition is
     // possible, not only once a recognition action has been triggered.
     ensureRecognitionProviders();
+    // Cached recognition results arrive with the config, while the deferred
+    // setup pass only refreshes the menu after the first frame publishes on a
+    // later loop iteration. Reflect the cached availability immediately so the
+    // recognition actions are consistent as soon as the pin is presented.
+    refreshContextMenu();
 
     SNOW_SHOT_PIN_PERF_MILESTONE("window.before_show");
     show();
