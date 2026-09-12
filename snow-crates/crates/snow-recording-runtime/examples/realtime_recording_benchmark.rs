@@ -43,8 +43,9 @@ use snow_recording_runtime::{
 };
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateSolidBrush, DeleteObject, Ellipse, EndPaint, FillRect, GetStockObject, HDC,
-    InvalidateRect, NULL_PEN, PAINTSTRUCT, SelectObject, SetBkMode, SetTextColor, TextOutW,
+    BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateSolidBrush, DeleteDC,
+    DeleteObject, Ellipse, EndPaint, FillRect, GetStockObject, HBITMAP, HDC, InvalidateRect,
+    NULL_PEN, PAINTSTRUCT, SRCCOPY, SelectObject, SetBkMode, SetTextColor, TextOutW,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::ProcessStatus::{
@@ -63,13 +64,23 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     BringWindowToTop, CREATESTRUCTW, CreateWindowExW, DefWindowProcW, DispatchMessageW,
-    GWLP_USERDATA, GetCursorPos, GetForegroundWindow, GetMessageW, GetWindowLongPtrW,
-    GetWindowThreadProcessId, IDC_ARROW, LoadCursorW, MSG, PostMessageW, PostQuitMessage,
-    RegisterClassW, SW_SHOW, SetCursorPos, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
-    ShowWindow, TranslateMessage, WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_NCCREATE, WM_PAINT,
+    GWLP_USERDATA, GetCursorPos, GetForegroundWindow, GetMessageW, GetPhysicalCursorPos,
+    GetWindowLongPtrW, GetWindowThreadProcessId, IDC_ARROW, LoadCursorW, MSG, PostMessageW,
+    PostQuitMessage, RegisterClassW, SW_SHOW, SetCursorPos, SetForegroundWindow, SetTimer,
+    SetWindowLongPtrW, ShowWindow, WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_NCCREATE, WM_PAINT,
     WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
+    WindowFromPhysicalPoint,
 };
 use windows::core::w;
+
+#[link(name = "imm32")]
+unsafe extern "system" {
+    fn ImmAssociateContext(
+        hwnd: *mut std::ffi::c_void,
+        context: *mut std::ffi::c_void,
+    ) -> *mut std::ffi::c_void;
+    fn ImmDisableIME(thread: u32) -> i32;
+}
 
 const DEFAULT_DURATION_SECONDS: u64 = 12;
 const DEFAULT_WARMUP_SECONDS: u64 = 2;
@@ -131,6 +142,9 @@ struct Options {
     clarity: Clarity,
     backend: CaptureBackendKind,
     prefer_hardware: bool,
+    encode_threads: u8,
+    resize_threads: Option<u8>,
+    align_capture: Option<bool>,
     scenario_filter: Option<String>,
     output_directory: PathBuf,
     move_interval_ms: u64,
@@ -139,6 +153,8 @@ struct Options {
     chord_interval_ms: u64,
     window_timer_ms: u32,
     allow_debug: bool,
+    workload: String,
+    audio: bool,
 }
 
 fn print_usage() {
@@ -147,6 +163,10 @@ fn print_usage() {
 bench-stage-timing,bench-compositor-timing,bench-pipeline-timing \
 --example realtime_recording_benchmark -- [options]\n\
   --duration-seconds <n>     measured recording length per sample (default: {DEFAULT_DURATION_SECONDS})\n\
+  --encode-threads <n>       encoder threads; 0 keeps automatic selection\n\
+  --resize-threads <n>       override row workers; 0/1 serial, maximum 4\n\
+  --align-capture            experimental acquisition/output clock alignment\n\
+  --free-running-capture     disable acquisition/output clock alignment\n\
   --warmup-seconds <n>       discarded warmup recording per scenario, 0 disables (default: \
 {DEFAULT_WARMUP_SECONDS})\n\
   --samples <n>              measured samples per scenario (default: {DEFAULT_SAMPLES})\n\
@@ -176,6 +196,9 @@ fn parse_args() -> Result<Options> {
         clarity: Clarity::Fixed(1920, 1080),
         backend: CaptureBackendKind::Auto,
         prefer_hardware: false,
+        encode_threads: 0,
+        resize_threads: None,
+        align_capture: None,
         scenario_filter: None,
         output_directory: PathBuf::from("target/perf/realtime-recording"),
         move_interval_ms: DEFAULT_MOVE_INTERVAL_MS,
@@ -184,6 +207,8 @@ fn parse_args() -> Result<Options> {
         chord_interval_ms: DEFAULT_CHORD_INTERVAL_MS,
         window_timer_ms: DEFAULT_WINDOW_TIMER_MS,
         allow_debug: false,
+        workload: "continuous".into(),
+        audio: false,
     };
     let args = std::env::args().collect::<Vec<_>>();
     let next_value = |flag: &str, args: &[String], index: &mut usize| -> Result<String> {
@@ -204,6 +229,20 @@ fn parse_args() -> Result<Options> {
                 options.duration_seconds = next_value("--duration-seconds", &args, &mut index)?
                     .parse()
                     .context("--duration-seconds")?;
+            }
+            "--align-capture" => options.align_capture = Some(true),
+            "--resize-threads" => {
+                options.resize_threads = Some(
+                    next_value("--resize-threads", &args, &mut index)?
+                        .parse()
+                        .context("--resize-threads")?,
+                );
+            }
+            "--free-running-capture" => options.align_capture = Some(false),
+            "--encode-threads" => {
+                options.encode_threads = next_value("--encode-threads", &args, &mut index)?
+                    .parse()
+                    .context("--encode-threads")?;
             }
             "--warmup-seconds" => {
                 options.warmup_seconds = next_value("--warmup-seconds", &args, &mut index)?
@@ -260,6 +299,8 @@ fn parse_args() -> Result<Options> {
                     PathBuf::from(next_value("--output", &args, &mut index)?);
             }
             "--allow-debug" => options.allow_debug = true,
+            "--workload" => options.workload = next_value("--workload", &args, &mut index)?,
+            "--audio" => options.audio = true,
             other => bail!("unknown argument: {other}. Use --help for usage."),
         }
         index += 1;
@@ -268,6 +309,9 @@ fn parse_args() -> Result<Options> {
         && SCENARIOS.iter().all(|scenario| scenario.name != filter)
     {
         bail!("unknown scenario '{filter}' (expected mouse-only or all-effects)");
+    }
+    if !["continuous", "static", "sparse"].contains(&options.workload.as_str()) {
+        bail!("--workload must be continuous, static, or sparse");
     }
     if options.duration_seconds == 0 {
         bail!("--duration-seconds must be greater than zero");
@@ -301,19 +345,28 @@ fn parse_backend(value: &str) -> Result<CaptureBackendKind> {
 }
 
 struct Scenario {
+    mouse_effects: bool,
     name: &'static str,
     keyboard_overlay: bool,
     simulate_keys: bool,
 }
 
-const SCENARIOS: [Scenario; 2] = [
+const SCENARIOS: [Scenario; 3] = [
+    Scenario {
+        name: "no-effects",
+        mouse_effects: false,
+        keyboard_overlay: false,
+        simulate_keys: false,
+    },
     Scenario {
         name: "mouse-only",
+        mouse_effects: true,
         keyboard_overlay: false,
         simulate_keys: false,
     },
     Scenario {
         name: "all-effects",
+        mouse_effects: true,
         keyboard_overlay: true,
         simulate_keys: true,
     },
@@ -321,6 +374,8 @@ const SCENARIOS: [Scenario; 2] = [
 
 #[derive(Clone, Copy, Debug, Default)]
 struct InputOutcome {
+    workload_hwnd: isize,
+    focus_lost: bool,
     moves_sent: u64,
     clicks_sent: u64,
     keys_sent: u64,
@@ -329,6 +384,7 @@ struct InputOutcome {
 }
 
 struct ProcessUsage {
+    samples: Vec<(f64, u64, u64)>,
     working_set_start_bytes: u64,
     working_set_peak_bytes: u64,
     private_peak_bytes: u64,
@@ -336,16 +392,26 @@ struct ProcessUsage {
 }
 
 struct SampleResult {
+    workload: String,
     scenario: &'static str,
     sample: usize,
     duration_seconds: u64,
+    measured_seconds: f64,
+    decoded_frames: u64,
+    fresh_frames: u64,
+    unreadable_ids: u64,
     fps: u32,
     region: (u32, u32),
     output: (u32, u32),
     expected_frames: u64,
     encoded_frames: u64,
     coalesced_frames: u64,
+    superseded_capture_frames: u64,
+    missed_output_slots: u64,
     dropped_capture_frames: u64,
+    encoded_audio_frames: u64,
+    inserted_silence_frames: u64,
+    dropped_audio_frames: u64,
     setup_ms: f64,
     stop_ms: f64,
     output_bytes: u64,
@@ -367,6 +433,19 @@ fn elapsed_ms(started: Instant) -> f64 {
 }
 
 fn main() -> Result<()> {
+    let arguments: Vec<_> = std::env::args().collect();
+    if arguments.get(1).is_some_and(|arg| arg == "--inspect-media") {
+        return inspect_media(Path::new(arguments.get(2).context("missing media file")?));
+    }
+    if arguments.get(1).is_some_and(|arg| arg == "--inspect") {
+        let result = decode_frame_ids(
+            Path::new(arguments.get(2).context("missing inspect file")?),
+            3840,
+            2160,
+        )?;
+        println!("decoded={result:?}");
+        return Ok(());
+    }
     let options = parse_args()?;
     print_compiled_metric_groups();
 
@@ -423,7 +502,12 @@ fn main() -> Result<()> {
         },
     );
 
-    let window = WorkloadWindow::spawn(region, options.window_timer_ms)?;
+    let timer_ms = match options.workload.as_str() {
+        "static" => 0,
+        "sparse" => 250,
+        _ => options.window_timer_ms,
+    };
+    let window = WorkloadWindow::spawn(region, timer_ms)?;
     // Let the first frames reach the compositor before capturing or injecting.
     std::thread::sleep(Duration::from_millis(750));
 
@@ -434,7 +518,25 @@ fn main() -> Result<()> {
         )
     })?;
 
+    fs::write(
+        options.output_directory.join("run-metadata.txt"),
+        format!(
+            "schema_version=4\nrevision={}\nrelease={}\nbackend={:?}\nworkload={}\naudio={}\nfeatures=stage:{},compose:{},pipeline:{}\nencode_threads={}\nalign_capture_override={:?}\nresize_threads_override={:?}\n",
+            option_env!("SNOW_BENCH_REVISION").unwrap_or("unknown"),
+            !cfg!(debug_assertions),
+            options.backend,
+            options.workload,
+            options.audio,
+            cfg!(feature = "bench-stage-timing"),
+            cfg!(feature = "bench-compositor-timing"),
+            cfg!(feature = "bench-pipeline-timing"),
+            options.encode_threads,
+            options.align_capture,
+            options.resize_threads
+        ),
+    )?;
     let mut rows = Vec::new();
+    let mut validation_errors = Vec::new();
     for scenario in SCENARIOS.iter().filter(|scenario| {
         options
             .scenario_filter
@@ -447,7 +549,10 @@ fn main() -> Result<()> {
                 scenario.name, options.warmup_seconds
             );
             let warmup = run_sample(&options, scenario, region, &layout, window.handle, 0, true)?;
-            validate_sample(&warmup, true)?;
+            if let Err(error) = validate_sample(&warmup, true) {
+                eprintln!("{error:#}");
+                validation_errors.push(format!("{error:#}"));
+            }
         }
         for sample in 0..options.samples {
             let result = run_sample(
@@ -461,8 +566,19 @@ fn main() -> Result<()> {
             )?;
             // Print first so a gate failure still shows the sample's numbers.
             print_sample(&result);
-            validate_sample(&result, false)?;
+            let validation = validate_sample(&result, false);
             rows.push(result);
+            write_summary_csv(&options.output_directory, &rows)?;
+            #[cfg(any(
+                feature = "bench-stage-timing",
+                feature = "bench-compositor-timing",
+                feature = "bench-pipeline-timing"
+            ))]
+            write_stages_csv(&options.output_directory, &rows)?;
+            if let Err(error) = validation {
+                eprintln!("{error:#}");
+                validation_errors.push(format!("{error:#}"));
+            }
         }
     }
     drop(window);
@@ -477,6 +593,67 @@ fn main() -> Result<()> {
     {
         let stages_path = write_stages_csv(&options.output_directory, &rows)?;
         println!("Wrote {}", stages_path.display());
+    }
+    fs::write(
+        options.output_directory.join("validation-errors.txt"),
+        validation_errors.join("\n"),
+    )?;
+    if !validation_errors.is_empty() {
+        bail!("{}", validation_errors.join("; "));
+    }
+    Ok(())
+}
+
+fn inspect_media(path: &Path) -> Result<()> {
+    use ffmpeg_next as ffmpeg;
+    ffmpeg::init()?;
+    let mut input = ffmpeg::format::input(path)?;
+    let streams: Vec<_> = input
+        .streams()
+        .map(|stream| {
+            (
+                stream.index(),
+                format!("{:?}", stream.parameters().medium()),
+                format!("{:?}", stream.parameters().id()),
+                stream.time_base(),
+                stream.start_time(),
+                stream.duration(),
+            )
+        })
+        .collect();
+    let mut packets = BTreeMap::new();
+    for (stream, packet) in input.packets() {
+        let stats = packets
+            .entry(stream.index())
+            .or_insert((0u64, None::<i64>, None::<i64>, 0u64));
+        stats.0 += 1;
+        if let Some(dts) = packet.dts() {
+            if stats.1.is_some_and(|previous| dts < previous) {
+                stats.3 += 1;
+            }
+            stats.1 = Some(dts);
+        }
+        if let Some(pts) = packet.pts() {
+            let end = pts.saturating_add(packet.duration());
+            stats.2 = Some(stats.2.map_or(end, |previous| previous.max(end)));
+        }
+    }
+    println!(
+        "stream,kind,codec,time_base_numerator,time_base_denominator,start_seconds,duration_seconds,packets,last_packet_end_seconds,dts_regressions"
+    );
+    for (index, kind, codec, base, start, duration) in streams {
+        let scale = f64::from(base.numerator()) / f64::from(base.denominator());
+        let stats = packets.get(&index).copied().unwrap_or_default();
+        println!(
+            "{index},{kind},{codec},{},{},{:.6},{:.6},{},{:.6},{}",
+            base.numerator(),
+            base.denominator(),
+            start as f64 * scale,
+            duration as f64 * scale,
+            stats.0,
+            stats.2.unwrap_or(0) as f64 * scale,
+            stats.3
+        );
     }
     Ok(())
 }
@@ -556,22 +733,38 @@ fn run_sample(
         preset: VideoEncodingSpeed::VeryFast,
         prefer_hardware_encoder: options.prefer_hardware,
         enable_microphone: false,
-        enable_system_audio: false,
-        show_cursor: true,
+        enable_system_audio: options.audio,
+        show_cursor: scenario.mouse_effects,
         keyboard,
-        mouse_trail_rgba: TRAIL_RGBA,
+        mouse_trail_rgba: if scenario.mouse_effects {
+            TRAIL_RGBA
+        } else {
+            [0; 4]
+        },
         mouse_trail_duration_ms: TRAIL_DURATION_MS,
-        mouse_click_rgba: CLICK_RGBA,
+        mouse_click_rgba: if scenario.mouse_effects {
+            CLICK_RGBA
+        } else {
+            [0; 4]
+        },
     };
 
     let (usage_running, usage_thread) = spawn_usage_sampler(Duration::from_millis(500));
     let setup_started = Instant::now();
     let mut session = DirectRecordingSession::create(config)?;
+    session.set_encode_threads(options.encode_threads)?;
+    if let Some(threads) = options.resize_threads {
+        session.set_resize_threads(threads)?;
+    }
+    if let Some(aligned) = options.align_capture {
+        session.set_aligned_capture(aligned)?;
+    }
     session
         .start()
         .context("starting direct recording session")?;
     let setup_ms = elapsed_ms(setup_started);
 
+    let recording_started = Instant::now();
     let input_thread = std::thread::Builder::new()
         .name("snow-bench-input".to_string())
         .spawn({
@@ -597,6 +790,7 @@ fn run_sample(
         .join()
         .map_err(|_| anyhow::anyhow!("input simulation thread panicked"))??;
 
+    let measured_seconds = recording_started.elapsed().as_secs_f64();
     let stop_started = Instant::now();
     let report = session
         .stop()
@@ -607,24 +801,41 @@ fn run_sample(
     let usage = usage_thread
         .join()
         .map_err(|_| anyhow::anyhow!("usage sampler thread panicked"))??;
+    let mut usage_csv = String::from("seconds,working_set_bytes,private_bytes\n");
+    for (seconds, working, private) in &usage.samples {
+        usage_csv.push_str(&format!("{seconds:.6},{working},{private}\n"));
+    }
+    fs::write(output_path.with_extension("usage.csv"), usage_csv)?;
     let output_bytes = fs::metadata(&output_path)
         .with_context(|| format!("failed to stat {}", output_path.display()))?
         .len();
+    let (decoded_frames, fresh_frames, unreadable_ids) =
+        decode_frame_ids(&output_path, region.width, region.height)?;
     if warmup {
         let _ = fs::remove_file(&output_path);
     }
 
     Ok(SampleResult {
+        workload: options.workload.clone(),
         scenario: scenario.name,
         sample: sample + 1,
         duration_seconds,
         fps: options.fps,
         region: (region.width, region.height),
         output: (output_width, output_height),
+        measured_seconds,
+        decoded_frames,
+        fresh_frames,
+        unreadable_ids,
         expected_frames: duration_seconds * u64::from(options.fps),
         encoded_frames: report.encoded_frames,
         coalesced_frames: report.coalesced_frames,
+        superseded_capture_frames: report.superseded_capture_frames,
+        missed_output_slots: report.missed_output_slots,
         dropped_capture_frames: report.dropped_capture_frames,
+        encoded_audio_frames: report.encoded_audio_frames,
+        inserted_silence_frames: report.inserted_silence_frames,
+        dropped_audio_frames: report.dropped_audio_frames,
         setup_ms,
         stop_ms,
         output_bytes,
@@ -647,6 +858,15 @@ fn validate_sample(result: &SampleResult, warmup: bool) -> Result<()> {
     } else {
         format!("{} sample {}", result.scenario, result.sample)
     };
+    if result.input.focus_lost {
+        bail!("{label} lost foreground focus; stopped input and preserved the partial sample");
+    }
+    if result.unreadable_ids != 0 {
+        bail!(
+            "{label} has {} unreadable source identifiers; workload was obstructed or pixels were corrupted",
+            result.unreadable_ids
+        );
+    }
     if result.dropped_capture_frames > 0 {
         bail!(
             "{label} dropped {} capture frames",
@@ -674,20 +894,18 @@ fn validate_sample(result: &SampleResult, warmup: bool) -> Result<()> {
             MAX_WORKING_SET_DELTA_MIB
         );
     }
-    // Frame-count shortfalls against the requested fps are machine-dependent
-    // performance signal (captured frames may also be coalesced away as
-    // timestamp duplicates), so they warn instead of failing the run; the
-    // dropped-frame and injection gates above are the correctness checks.
-    let achieved_fps = result.encoded_frames as f64 / result.duration_seconds as f64;
+    // Static/sparse desktops deliberately retain variable-duration images.
+    // Moving-content throughput must count distinct decoded source content.
+    let achieved_fps = result.fresh_frames as f64 / result.measured_seconds;
     if result.coalesced_frames > 0 {
         println!(
             "warning: {label} coalesced {} frames",
             result.coalesced_frames
         );
     }
-    if achieved_fps < f64::from(result.fps) * 0.95 {
+    if result.workload == "continuous" && achieved_fps < f64::from(result.fps) * 0.95 {
         println!(
-            "warning: {label} achieved {achieved_fps:.1} fps, below 95% of the {} fps target",
+            "warning: {label} achieved {achieved_fps:.1} fresh fps, below 95% of the {} fps target",
             result.fps
         );
     }
@@ -755,16 +973,17 @@ fn print_metric_tables(result: &SampleResult) {
             "pipeline",
             &BTreeMap::from([
                 ("pipeline.queue_dwell", pipeline.queue_dwell),
+                ("pipeline.source_age", pipeline.source_age),
                 ("pipeline.compose", pipeline.compose),
                 ("pipeline.encode_push", pipeline.encode_push),
                 ("pipeline.end_to_end", pipeline.end_to_end),
             ]),
         );
         println!(
-            "  time_to_first_encoded_frame={} synthetic_overlay_frames={} stream: captured={} \
+            "  time_to_first_handoff={} synthetic_overlay_frames={} stream: captured={} \
 dropped={} capture_fps={:.1} capture_latency_avg={:.2}ms",
             pipeline
-                .time_to_first_encoded_frame
+                .time_to_first_handoff
                 .map(|value| format!("{:.1}ms", value.as_secs_f64() * 1_000.0))
                 .unwrap_or_else(|| "n/a".into()),
             pipeline.synthetic_overlay_frames,
@@ -801,7 +1020,20 @@ fn write_summary_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<P
     let mut cells = Vec::with_capacity(rows.len());
     for row in rows {
         let base_columns: Vec<(String, String)> = vec![
+            ("schema_version".into(), "4".into()),
             ("scenario".into(), row.scenario.to_string()),
+            ("workload".into(), row.workload.clone()),
+            (
+                "measured_seconds".into(),
+                format!("{:.6}", row.measured_seconds),
+            ),
+            ("decoded_frames".into(), row.decoded_frames.to_string()),
+            ("fresh_frames".into(), row.fresh_frames.to_string()),
+            ("unreadable_ids".into(), row.unreadable_ids.to_string()),
+            (
+                "useful_fps".into(),
+                format!("{:.6}", row.fresh_frames as f64 / row.measured_seconds),
+            ),
             ("sample".into(), row.sample.to_string()),
             ("duration_seconds".into(), row.duration_seconds.to_string()),
             ("fps".into(), row.fps.to_string()),
@@ -812,6 +1044,14 @@ fn write_summary_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<P
             ("expected_frames".into(), row.expected_frames.to_string()),
             ("encoded_frames".into(), row.encoded_frames.to_string()),
             ("coalesced_frames".into(), row.coalesced_frames.to_string()),
+            (
+                "superseded_capture_frames".into(),
+                row.superseded_capture_frames.to_string(),
+            ),
+            (
+                "missed_output_slots".into(),
+                row.missed_output_slots.to_string(),
+            ),
             (
                 "dropped_capture_frames".into(),
                 row.dropped_capture_frames.to_string(),
@@ -831,6 +1071,10 @@ fn write_summary_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<P
             ("chords_sent".into(), row.input.chords_sent.to_string()),
             ("input_failures".into(), row.input.send_failures.to_string()),
             (
+                "input_focus_lost".into(),
+                u8::from(row.input.focus_lost).to_string(),
+            ),
+            (
                 "working_set_delta_mib".into(),
                 format!(
                     "{:.3}",
@@ -849,7 +1093,29 @@ fn write_summary_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<P
                 "cpu_percent".into(),
                 format!("{:.3}", row.usage.cpu_percent),
             ),
+            (
+                "private_plateau_mib".into(),
+                format!("{:.3}", {
+                    let tail = &row.usage.samples[row.usage.samples.len() * 4 / 5..];
+                    tail.iter()
+                        .map(|(_, _, bytes)| *bytes as f64 / MIB)
+                        .sum::<f64>()
+                        / tail.len().max(1) as f64
+                }),
+            ),
             ("output_bytes".into(), row.output_bytes.to_string()),
+            (
+                "encoded_audio_frames".into(),
+                row.encoded_audio_frames.to_string(),
+            ),
+            (
+                "inserted_silence_frames".into(),
+                row.inserted_silence_frames.to_string(),
+            ),
+            (
+                "dropped_audio_frames".into(),
+                row.dropped_audio_frames.to_string(),
+            ),
             ("video_encoder".into(), row.video_encoder.clone()),
             (
                 "used_hardware_video_encoder".into(),
@@ -863,10 +1129,23 @@ fn write_summary_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<P
         #[cfg(feature = "bench-pipeline-timing")]
         if let Some(pipeline) = row.report.pipeline.as_ref() {
             columns.extend([
+                ("capture_backend".into(), pipeline.capture_backend.clone()),
                 (
-                    "time_to_first_encoded_frame_ms".into(),
+                    "encoder_copied_bytes".into(),
+                    row.report.encoder_timings.copied_bytes.to_string(),
+                ),
+                (
+                    "first_packet_ms".into(),
+                    row.report
+                        .encoder_timings
+                        .first_packet
+                        .map(|d| format!("{:.3}", d.as_secs_f64() * 1000.0))
+                        .unwrap_or_default(),
+                ),
+                (
+                    "time_to_first_handoff_ms".into(),
                     pipeline
-                        .time_to_first_encoded_frame
+                        .time_to_first_handoff
                         .map(|value| format!("{:.3}", value.as_secs_f64() * 1_000.0))
                         .unwrap_or_default(),
                 ),
@@ -939,11 +1218,58 @@ fn write_stages_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<Pa
                 stats.max.as_secs_f64() * 1_000.0,
             ));
         };
+        #[cfg(feature = "bench-pipeline-timing")]
+        {
+            let mut trace = String::from("kind,index,value\n");
+            for (kind, values) in [
+                ("submitted_pts", &row.report.encoder_timings.submitted_pts),
+                ("encoded_pts", &row.report.encoder_timings.encoded_pts),
+            ] {
+                for (index, value) in values.iter().enumerate() {
+                    trace.push_str(&format!("{kind},{index},{value}\n"));
+                }
+            }
+            if let Some(pipeline) = &row.report.pipeline {
+                for (sequence, duplicate) in &pipeline.capture_sequences {
+                    trace.push_str(&format!("capture,{sequence},{}\n", u8::from(*duplicate)));
+                }
+                for (sequence, generation) in &pipeline.capture_contents {
+                    trace.push_str(&format!(
+                        "content_generation,{sequence},{}\n",
+                        generation
+                            .map(|value| value.to_string())
+                            .unwrap_or_default()
+                    ));
+                }
+                let mut sources = String::from(
+                    "output_pts,capture_sequence,content_generation,source_active_ns\n",
+                );
+                for (pts, sequence, generation, source_ns) in &pipeline.output_sources {
+                    sources.push_str(&format!("{pts},{sequence},{generation},{source_ns}\n"));
+                }
+                fs::write(
+                    output_directory.join(format!("{}-{}-sources.csv", row.scenario, row.sample)),
+                    sources,
+                )?;
+            }
+            fs::write(
+                output_directory.join(format!("{}-{}-trace.csv", row.scenario, row.sample)),
+                trace,
+            )?;
+        }
         #[cfg(feature = "bench-stage-timing")]
         if let Some(timings) = row.report.capture_stage_timings.as_ref() {
             for (stage, stats) in timings.snapshot() {
                 emit("capture", stage, &stats);
             }
+        }
+        #[cfg(feature = "bench-pipeline-timing")]
+        for (stage, samples) in &row.report.encoder_timings.stages {
+            emit(
+                "encoder",
+                stage,
+                &SampleStats::from_samples(&mut samples.clone()),
+            );
         }
         #[cfg(feature = "bench-compositor-timing")]
         if let Some(timings) = row.report.compositor_timings.as_ref() {
@@ -955,6 +1281,7 @@ fn write_stages_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<Pa
         if let Some(pipeline) = row.report.pipeline.as_ref() {
             for (stage, stats) in [
                 ("pipeline.queue_dwell", pipeline.queue_dwell),
+                ("pipeline.source_age", pipeline.source_age),
                 ("pipeline.compose", pipeline.compose),
                 ("pipeline.encode_push", pipeline.encode_push),
                 ("pipeline.end_to_end", pipeline.end_to_end),
@@ -1017,7 +1344,10 @@ fn simulate_input(plan: &InputPlan) -> Result<InputOutcome> {
         let _ = unsafe { SetCursorPos(start_x, start_y) };
     }
 
-    let mut outcome = InputOutcome::default();
+    let mut outcome = InputOutcome {
+        workload_hwnd: plan.workload_hwnd,
+        ..Default::default()
+    };
     let started = Instant::now();
     let mut next_move_ms = 0u64;
     let mut next_click_ms = plan.click_interval_ms / 2;
@@ -1025,7 +1355,7 @@ fn simulate_input(plan: &InputPlan) -> Result<InputOutcome> {
     let mut next_chord_ms = plan.chord_interval_ms;
     while started.elapsed() < plan.duration {
         let elapsed_ms = started.elapsed().as_millis() as u64;
-        while next_move_ms <= elapsed_ms {
+        while next_move_ms <= elapsed_ms && outcome.send_failures == 0 {
             let (x, y) = sweep_position(&plan.region, Duration::from_millis(next_move_ms));
             if send_mouse_move(x, y, &plan.desktop, &mut outcome) {
                 next_move_ms = next_move_ms.saturating_add(plan.move_interval_ms);
@@ -1033,7 +1363,7 @@ fn simulate_input(plan: &InputPlan) -> Result<InputOutcome> {
                 break;
             }
         }
-        while next_click_ms <= elapsed_ms {
+        while next_click_ms <= elapsed_ms && outcome.send_failures == 0 {
             if send_mouse_click(&mut outcome) {
                 next_click_ms = next_click_ms.saturating_add(plan.click_interval_ms);
             } else {
@@ -1041,14 +1371,14 @@ fn simulate_input(plan: &InputPlan) -> Result<InputOutcome> {
             }
         }
         if plan.simulate_keys {
-            while next_key_ms <= elapsed_ms {
+            while next_key_ms <= elapsed_ms && outcome.send_failures == 0 {
                 if send_key_tap(letter_for(outcome.keys_sent), &mut outcome) {
                     next_key_ms = next_key_ms.saturating_add(plan.key_interval_ms);
                 } else {
                     break;
                 }
             }
-            while next_chord_ms <= elapsed_ms {
+            while next_chord_ms <= elapsed_ms && outcome.send_failures == 0 {
                 if send_chord(letter_for(outcome.keys_sent), &mut outcome) {
                     next_chord_ms = next_chord_ms.saturating_add(plan.chord_interval_ms);
                 } else {
@@ -1056,11 +1386,13 @@ fn simulate_input(plan: &InputPlan) -> Result<InputOutcome> {
                 }
             }
         }
+        if outcome.send_failures != 0 {
+            break;
+        }
         std::thread::sleep(Duration::from_millis(2));
     }
 
-    release_all_modifiers(&mut outcome);
-    if has_cursor {
+    if has_cursor && unsafe { GetForegroundWindow() }.0 as isize == plan.workload_hwnd {
         let _ = unsafe { SetCursorPos(saved_cursor.x, saved_cursor.y) };
     }
     Ok(outcome)
@@ -1085,12 +1417,165 @@ fn sweep_position(region: &RecordingRegion, elapsed: Duration) -> (i32, i32) {
 }
 
 fn send_inputs(inputs: &[INPUT], outcome: &mut InputOutcome) -> bool {
-    let sent = unsafe { SendInput(inputs, std::mem::size_of::<INPUT>() as i32) };
+    let mut foreground = unsafe { GetForegroundWindow() }.0 as isize;
+    if inputs.iter().any(|input| {
+        input.r#type == INPUT_MOUSE
+        // SAFETY: a mouse INPUT initializes the mouse member.
+        && unsafe { input.Anonymous.mi.dwFlags }.contains(MOUSEEVENTF_LEFTDOWN)
+    }) {
+        let mut point = POINT::default();
+        if unsafe { GetPhysicalCursorPos(&mut point) }.is_err()
+            || unsafe { WindowFromPhysicalPoint(point) }.0 as isize != outcome.workload_hwnd
+        {
+            foreground = 0;
+        }
+    }
+    send_inputs_guarded(inputs, outcome, foreground, |batch| unsafe {
+        SendInput(batch, std::mem::size_of::<INPUT>() as i32)
+    })
+}
+
+fn send_inputs_guarded(
+    inputs: &[INPUT],
+    outcome: &mut InputOutcome,
+    foreground: isize,
+    mut inject: impl FnMut(&[INPUT]) -> u32,
+) -> bool {
+    if outcome.workload_hwnd == 0 || foreground != outcome.workload_hwnd {
+        outcome.focus_lost = true;
+        outcome.send_failures += 1;
+        return false;
+    }
+    let sent = inject(inputs);
     if sent == inputs.len() as u32 {
         return true;
     }
     outcome.send_failures += 1;
+    // SendInput batches are balanced. Only a partial insertion needs cleanup;
+    // release exactly the presses inserted by that batch, never physical modifiers.
+    let releases = pending_input_releases(&inputs[..(sent as usize).min(inputs.len())]);
+    if !releases.is_empty() {
+        inject(&releases);
+    }
     false
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InjectedPress {
+    Key(u16),
+    LeftMouse,
+}
+
+fn pending_input_releases(inputs: &[INPUT]) -> Vec<INPUT> {
+    let mut pending = Vec::new();
+    for input in inputs {
+        // SAFETY: INPUT's tag identifies the initialized union member. All
+        // batches are built by this example's keyboard/mouse constructors.
+        let change = unsafe {
+            if input.r#type == INPUT_KEYBOARD {
+                let key = input.Anonymous.ki;
+                Some((
+                    InjectedPress::Key(key.wVk.0),
+                    !key.dwFlags.contains(KEYEVENTF_KEYUP),
+                ))
+            } else if input.r#type == INPUT_MOUSE {
+                let flags = input.Anonymous.mi.dwFlags;
+                if flags.contains(MOUSEEVENTF_LEFTDOWN) {
+                    Some((InjectedPress::LeftMouse, true))
+                } else if flags.contains(MOUSEEVENTF_LEFTUP) {
+                    Some((InjectedPress::LeftMouse, false))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+        if let Some((press, down)) = change {
+            pending.retain(|previous| *previous != press);
+            if down {
+                pending.push(press);
+            }
+        }
+    }
+    pending
+        .into_iter()
+        .rev()
+        .map(|press| match press {
+            InjectedPress::Key(vk) => key_input(vk, false),
+            InjectedPress::LeftMouse => mouse_button_input(false),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod input_safety_tests {
+    use super::*;
+
+    #[test]
+    fn losing_focus_between_batches_prevents_any_further_injection() {
+        let batch = [
+            key_input(u16::from(b'A'), true),
+            key_input(u16::from(b'A'), false),
+        ];
+        let mut outcome = InputOutcome {
+            workload_hwnd: 10,
+            ..Default::default()
+        };
+        let mut calls = 0;
+        assert!(send_inputs_guarded(&batch, &mut outcome, 10, |inputs| {
+            calls += 1;
+            inputs.len() as u32
+        }));
+        assert!(!send_inputs_guarded(&batch, &mut outcome, 11, |_| {
+            calls += 1;
+            0
+        }));
+        assert_eq!(calls, 1);
+        assert!(outcome.focus_lost);
+        assert_eq!(outcome.send_failures, 1);
+    }
+
+    #[test]
+    fn partial_batches_release_only_their_inserted_presses() {
+        let batch = [
+            key_input(VK_CONTROL, true),
+            key_input(VK_SHIFT, true),
+            key_input(u16::from(b'A'), true),
+            key_input(u16::from(b'A'), false),
+            key_input(VK_SHIFT, false),
+            key_input(VK_CONTROL, false),
+        ];
+        let mut outcome = InputOutcome {
+            workload_hwnd: 10,
+            ..Default::default()
+        };
+        let mut calls = 0;
+        assert!(!send_inputs_guarded(&batch, &mut outcome, 10, |inputs| {
+            calls += 1;
+            if calls == 1 {
+                return 2;
+            }
+            assert_eq!(inputs.len(), 2);
+            // SAFETY: cleanup for this keyboard-only prefix creates keyboard INPUTs.
+            unsafe {
+                assert_eq!(inputs[0].Anonymous.ki.wVk.0, VK_SHIFT);
+                assert_eq!(inputs[1].Anonymous.ki.wVk.0, VK_CONTROL);
+                assert!(
+                    inputs
+                        .iter()
+                        .all(|input| input.Anonymous.ki.dwFlags.contains(KEYEVENTF_KEYUP))
+                );
+            }
+            inputs.len() as u32
+        }));
+        assert_eq!(calls, 2);
+        assert!(pending_input_releases(&batch).is_empty());
+        let release = pending_input_releases(&[mouse_button_input(true)]);
+        assert_eq!(release.len(), 1);
+        // SAFETY: cleanup for a mouse-only prefix creates a mouse INPUT.
+        assert!(unsafe { release[0].Anonymous.mi.dwFlags }.contains(MOUSEEVENTF_LEFTUP));
+    }
 }
 
 fn mouse_move_input(x: i32, y: i32, desktop: &VirtualDesktop) -> INPUT {
@@ -1121,8 +1606,8 @@ fn send_mouse_move(x: i32, y: i32, desktop: &VirtualDesktop, outcome: &mut Input
     true
 }
 
-fn send_mouse_click(outcome: &mut InputOutcome) -> bool {
-    let click = |down: bool| INPUT {
+fn mouse_button_input(down: bool) -> INPUT {
+    INPUT {
         r#type: INPUT_MOUSE,
         Anonymous: INPUT_0 {
             mi: MOUSEINPUT {
@@ -1138,8 +1623,14 @@ fn send_mouse_click(outcome: &mut InputOutcome) -> bool {
                 dwExtraInfo: 0,
             },
         },
-    };
-    if !send_inputs(&[click(true), click(false)], outcome) {
+    }
+}
+
+fn send_mouse_click(outcome: &mut InputOutcome) -> bool {
+    if !send_inputs(
+        &[mouse_button_input(true), mouse_button_input(false)],
+        outcome,
+    ) {
         return false;
     }
     outcome.clicks_sent += 1;
@@ -1189,14 +1680,6 @@ fn send_chord(vk: u16, outcome: &mut InputOutcome) -> bool {
     true
 }
 
-fn release_all_modifiers(outcome: &mut InputOutcome) {
-    let releases: Vec<INPUT> = MODIFIER_VKS
-        .iter()
-        .map(|vk| key_input(*vk, false))
-        .collect();
-    send_inputs(&releases, outcome);
-}
-
 // ---------------------------------------------------------------------------
 // Process usage sampling
 // ---------------------------------------------------------------------------
@@ -1241,6 +1724,7 @@ fn spawn_usage_sampler(
             move || -> anyhow::Result<ProcessUsage> {
                 let (working_set_start, private_start) = sample_memory()?;
                 let mut usage = ProcessUsage {
+                    samples: Vec::new(),
                     working_set_start_bytes: working_set_start,
                     working_set_peak_bytes: working_set_start,
                     private_peak_bytes: private_start,
@@ -1255,6 +1739,11 @@ fn spawn_usage_sampler(
                         usage.working_set_peak_bytes =
                             usage.working_set_peak_bytes.max(working_set);
                         usage.private_peak_bytes = usage.private_peak_bytes.max(private_bytes);
+                        usage.samples.push((
+                            started.elapsed().as_secs_f64(),
+                            working_set,
+                            private_bytes,
+                        ));
                     }
                     ticks_last = process_cpu_ticks().unwrap_or(ticks_last);
                 }
@@ -1290,7 +1779,25 @@ impl Drop for ThreadDpiAwareness {
     }
 }
 
+// Publish each workload image in one blit: a capture must never see a
+// half-written identifier while GDI is repainting its background.
+struct WorkloadSurface {
+    dc: HDC,
+    bitmap: HBITMAP,
+    previous: windows::Win32::Graphics::Gdi::HGDIOBJ,
+}
+impl Drop for WorkloadSurface {
+    fn drop(&mut self) {
+        unsafe {
+            SelectObject(self.dc, self.previous);
+            let _ = DeleteObject(self.bitmap.into());
+            let _ = DeleteDC(self.dc);
+        }
+    }
+}
+
 struct WindowState {
+    surface: Option<WorkloadSurface>,
     width: i32,
     height: i32,
     tick: u64,
@@ -1370,11 +1877,15 @@ fn run_window_thread(
         }
 
         let state = Box::new(WindowState {
+            surface: None,
             width: region.width as i32,
             height: region.height as i32,
             tick: 0,
         });
         let state_raw = Box::into_raw(state);
+        // Disable IME for this workload thread before creating any windows.
+        // Context disassociation alone can be undone by a Ctrl+Shift layout switch.
+        ImmDisableIME(GetCurrentThreadId());
         let created = CreateWindowExW(
             WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
             class_name,
@@ -1397,14 +1908,19 @@ fn run_window_thread(
             }
         };
 
+        // Synthetic typing is a recording workload, not text entry. Prevent an
+        // inherited IME from opening a candidate popup over the frame marker.
+        ImmAssociateContext(hwnd.0, std::ptr::null_mut());
         bring_to_foreground(hwnd);
         let _ = ShowWindow(hwnd, SW_SHOW);
-        SetTimer(Some(hwnd), WORKLOAD_TIMER_ID, timer_ms, None);
+        if timer_ms > 0 {
+            SetTimer(Some(hwnd), WORKLOAD_TIMER_ID, timer_ms, None);
+        }
         let _ = ready.send(Ok(hwnd.0 as isize));
 
         let mut message = MSG::default();
         while GetMessageW(&mut message, None, 0, 0).as_bool() {
-            let _ = TranslateMessage(&message);
+            // Key hooks consume virtual keys; this surface has no text input.
             let _ = DispatchMessageW(&message);
         }
         Ok(())
@@ -1449,7 +1965,30 @@ unsafe extern "system" fn workload_wnd_proc(
                 let mut paint = PAINTSTRUCT::default();
                 let dc = BeginPaint(hwnd, &mut paint);
                 if let Some(state) = window_state(hwnd) {
-                    render_workload_frame(dc, &mut *state);
+                    let state = &mut *state;
+                    if state.surface.is_none() {
+                        let memory = CreateCompatibleDC(Some(dc));
+                        let bitmap = CreateCompatibleBitmap(dc, state.width, state.height);
+                        let previous = SelectObject(memory, bitmap.into());
+                        state.surface = Some(WorkloadSurface {
+                            dc: memory,
+                            bitmap,
+                            previous,
+                        });
+                    }
+                    let memory = state.surface.as_ref().unwrap().dc;
+                    render_workload_frame(memory, state);
+                    let _ = BitBlt(
+                        dc,
+                        0,
+                        0,
+                        state.width,
+                        state.height,
+                        Some(memory),
+                        0,
+                        0,
+                        SRCCOPY,
+                    );
                 }
                 let _ = EndPaint(hwnd, &paint);
                 LRESULT(0)
@@ -1515,6 +2054,18 @@ unsafe fn render_workload_frame(dc: HDC, state: &mut WindowState) {
             rgb(32, 224, 255),
         );
 
+        let code = ((tick as u32 & 0x00ff_ffff) << 8) | 0xa5;
+        for bit in 0..32 {
+            let level = if code & (1 << bit) != 0 { 255 } else { 0 };
+            fill_rect(
+                dc,
+                16 + bit * 16,
+                64,
+                32 + bit * 16,
+                96,
+                rgb(level, level, level),
+            );
+        }
         let text = format!("tick={tick}");
         let wide: Vec<u16> = text.encode_utf16().collect();
         let _ = SetBkMode(dc, windows::Win32::Graphics::Gdi::TRANSPARENT);
@@ -1551,4 +2102,87 @@ unsafe fn draw_ellipse(dc: HDC, left: i32, top: i32, right: i32, bottom: i32, co
         let _ = SelectObject(dc, old_brush);
         let _ = DeleteObject(brush.into());
     }
+}
+
+// Count changed source identifiers after decoding: packet count alone can hide duplicates.
+fn decode_frame_ids(path: &Path, source_width: u32, source_height: u32) -> Result<(u64, u64, u64)> {
+    use ffmpeg_next as ffmpeg;
+    let mut input = ffmpeg::format::input(path)?;
+    let stream = input
+        .streams()
+        .best(ffmpeg::media::Type::Video)
+        .context("missing video")?;
+    let index = stream.index();
+    let mut decoder = ffmpeg::codec::context::Context::from_parameters(stream.parameters())?
+        .decoder()
+        .video()?;
+    let mut scaler = ffmpeg::software::scaling::Context::get(
+        decoder.format(),
+        decoder.width(),
+        decoder.height(),
+        ffmpeg::format::Pixel::RGB24,
+        decoder.width(),
+        decoder.height(),
+        ffmpeg::software::scaling::flag::Flags::POINT,
+    )?;
+    let mut count = 0;
+    let mut fresh = 0;
+    let mut unreadable = 0;
+    let mut identifiers = String::from("decoded_frame,pts,identifier,valid\n");
+    let mut previous = None;
+    let mut receive = |decoder: &mut ffmpeg::decoder::Video| -> Result<()> {
+        let mut frame = ffmpeg::frame::Video::empty();
+        while decoder.receive_frame(&mut frame).is_ok() {
+            let mut rgb = ffmpeg::frame::Video::empty();
+            scaler.run(&frame, &mut rgb)?;
+            count += 1;
+            if count == 1 {
+                let mut ppm = format!("P6\n{} {}\n255\n", rgb.width(), rgb.height()).into_bytes();
+                for row in rgb
+                    .data(0)
+                    .chunks(rgb.stride(0))
+                    .take(rgb.height() as usize)
+                {
+                    ppm.extend_from_slice(&row[..rgb.width() as usize * 3]);
+                }
+                fs::write(path.with_extension(format!("{count}.ppm")), ppm)?;
+            }
+            let mut code = 0u32;
+            for bit in 0..32u32 {
+                let x =
+                    ((24 + bit * 16) as u64 * rgb.width() as u64 / source_width as u64) as usize;
+                let y = (80u64 * rgb.height() as u64 / source_height as u64) as usize;
+                let pixel = y * rgb.stride(0) + x * 3;
+                if rgb.data(0).get(pixel).copied().unwrap_or(0) >= 128 {
+                    code |= 1 << bit;
+                }
+            }
+            identifiers.push_str(&format!(
+                "{count},{},{},{}\n",
+                frame.pts().unwrap_or(-1),
+                code >> 8,
+                u8::from(code & 255 == 0xa5)
+            ));
+            if code & 255 != 0xa5 {
+                unreadable += 1;
+                continue;
+            }
+            let id = code >> 8;
+            if previous != Some(id) {
+                fresh += 1;
+            }
+            previous = Some(id);
+        }
+        Ok(())
+    };
+    for (stream, packet) in input.packets() {
+        if stream.index() == index {
+            decoder.send_packet(&packet)?;
+            receive(&mut decoder)?;
+        }
+    }
+    decoder.send_eof()?;
+    receive(&mut decoder)?;
+    fs::write(path.with_extension("identifiers.csv"), identifiers)?;
+    Ok((count, fresh, unreadable))
 }

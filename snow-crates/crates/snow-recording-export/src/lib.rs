@@ -4,7 +4,11 @@ pub mod config;
 pub mod editing;
 pub mod error;
 pub mod export;
+pub mod resize;
 pub mod streaming;
+
+#[cfg(feature = "bench-timing")]
+pub mod bench_timing;
 
 pub(crate) mod ffmpeg_util;
 pub(crate) mod video_quality;

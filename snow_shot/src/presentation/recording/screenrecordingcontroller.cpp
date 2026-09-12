@@ -649,7 +649,7 @@ struct ScreenRecordingController::Impl {
                 captureRegion.y(),
                 static_cast<uint32_t>(captureRegion.width()),
                 static_cast<uint32_t>(captureRegion.height()),
-                // Auto tries WGC first, then DXGI and GDI on eligible capture failures.
+                // Direct recording Auto tries DXGI, then WGC and GDI on eligible failures.
                 static_cast<uint32_t>(SNOW_CAPTURE_BACKEND_AUTO),
                 // Bound on the worker thread together with the keyboard labels.
                 nullptr,

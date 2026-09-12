@@ -16,6 +16,7 @@ use snow_capture::{
 };
 use snow_core::recording_clock::RecordingClock;
 use snow_cursor::{AttachedCursorSample, CursorCompositionMode, CursorShape, CursorShapeState};
+use snow_recording_export::resize::NearestResizePlan;
 use snow_recording_export::{
     ExportExecutionMode, ExportFormat, SoftwareH264Priority, StreamingAudioConfig,
     StreamingEncoder, StreamingEncoderConfig, StreamingEncoderReport, VideoCodec,
@@ -132,7 +133,7 @@ impl DirectRecordingConfig {
                 quality: 80,
                 speed: self.preset,
             },
-            encode_threads: 0,
+            encode_threads: self.automatic_encode_threads(),
             audio: (self.format == ExportFormat::Mp4
                 && (self.enable_microphone || self.enable_system_audio))
                 .then_some(StreamingAudioConfig {
@@ -142,11 +143,67 @@ impl DirectRecordingConfig {
                 }),
         }
     }
+
+    fn automatic_encode_threads(&self) -> u8 {
+        let (width, height) = self.output_dimensions();
+        // Two threads reduce the measured live H.264 working set without losing
+        // cadence. Keep other rates, sizes, speeds, codecs, and hardware on the
+        // encoder's existing automatic policy until they have equivalent evidence.
+        if self.format != ExportFormat::Mp4
+            || self.codec != VideoCodec::H264
+            || self.prefer_hardware_encoder
+            || self.preset != VideoEncodingSpeed::VeryFast
+            || self.output_fps > 30
+            || u64::from(width) * u64::from(height) > 1920 * 1080
+        {
+            return 0;
+        }
+        let logical = std::thread::available_parallelism().map_or(1, |value| value.get());
+        let physical = num_cpus::get_physical();
+        let available = if physical == 0 {
+            logical
+        } else {
+            physical.min(logical)
+        };
+        available.clamp(1, 2) as u8
+    }
+
+    fn automatic_resize_threads(&self) -> u8 {
+        let output = self.output_dimensions();
+        // The live 4K-to-1080p comparison supports two row workers in this
+        // software encoding budget. Native and small images stay serial.
+        if self.automatic_encode_threads() == 2
+            && std::thread::available_parallelism().is_ok_and(|value| value.get() >= 4)
+            && output != (self.region.width, self.region.height)
+            && u64::from(output.0) * u64::from(output.1) >= 1_000_000
+        {
+            2
+        } else {
+            0
+        }
+    }
+
+    fn aligned_capture(&self) -> bool {
+        // The combined clock/thread/resize/owned-conversion gate passed for
+        // matched 30 fps downscaled DXGI/Auto recording. Keep other workloads
+        // on their existing acquisition clock until separately measured.
+        self.capture_fps == self.output_fps
+            && self.output_fps == 30
+            && self.automatic_resize_threads() == 2
+            && matches!(
+                self.capture_backend,
+                CaptureBackendKind::Auto | CaptureBackendKind::DxgiDuplication
+            )
+    }
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DirectRecordingReport {
+    #[cfg(feature = "bench-pipeline-timing")]
+    pub encoder_timings: snow_recording_export::bench_timing::EncoderTimings,
     pub encoded_frames: u64,
+    pub superseded_capture_frames: u64,
+    pub missed_output_slots: u64,
     pub coalesced_frames: u64,
     pub dropped_capture_frames: u64,
     pub video_encoder: String,
@@ -180,6 +237,9 @@ struct RuntimeHandles {
 
 pub struct DirectRecordingSession {
     config: DirectRecordingConfig,
+    encode_threads: u8,
+    resize_threads: u8,
+    align_capture: bool,
     state: Arc<AtomicU8>,
     runtime: Mutex<Option<RuntimeHandles>>,
 }
@@ -189,11 +249,51 @@ impl DirectRecordingSession {
         config
             .validate()
             .map_err(ScreenRecorderError::InvalidConfig)?;
+        let resize_threads = config.automatic_resize_threads();
+        let align_capture = config.aligned_capture();
         Ok(Self {
             config,
+            encode_threads: 0,
+            resize_threads,
+            align_capture,
             state: Arc::new(AtomicU8::new(state_to_u8(RecordingState::Created))),
             runtime: Mutex::new(None),
         })
+    }
+
+    /// Override encoder worker count before startup; zero keeps automatic selection.
+    /// This Rust-only control leaves the recording settings and C ABI unchanged.
+    pub fn set_encode_threads(&mut self, threads: u8) -> Result<()> {
+        if self.state() != RecordingState::Created {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "encoder threads must be configured before recording starts".into(),
+            ));
+        }
+        self.encode_threads = threads;
+        Ok(())
+    }
+
+    /// Override whether capture acquisition is aligned to this session's output clock.
+    pub fn set_aligned_capture(&mut self, enabled: bool) -> Result<()> {
+        if self.state() != RecordingState::Created {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "capture pacing must be configured before recording starts".into(),
+            ));
+        }
+        self.align_capture = enabled;
+        Ok(())
+    }
+
+    /// Configure an optional bounded resize pool before recording starts.
+    /// Zero or one retains serial pixel selection; at most four row workers are allowed.
+    pub fn set_resize_threads(&mut self, threads: u8) -> Result<()> {
+        if self.state() != RecordingState::Created || threads > 4 {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "resize workers must be configured before recording and cannot exceed four".into(),
+            ));
+        }
+        self.resize_threads = threads;
+        Ok(())
     }
 
     pub fn start(&mut self) -> Result<()> {
@@ -203,8 +303,23 @@ impl DirectRecordingSession {
             ));
         }
 
+        let resize_pool = if self.resize_threads > 1 {
+            Some(
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(usize::from(self.resize_threads))
+                    .build()
+                    .map_err(|error| {
+                        ScreenRecorderError::Encode(format!("resize pool: {error}"))
+                    })?,
+            )
+        } else {
+            None
+        };
         let capture_system = CaptureSystem::builder()
             .with_backend_kind(self.config.capture_backend)
+            .with_auto_backend_policy(crate::recording::recording_auto_backend_policy(
+                crate::recording::RecordingCapturePath::Direct,
+            ))
             .build()?;
         let capture_session = capture_system.open_session(
             resolve_capture_target(&RecordingTarget::Region(self.config.region))?,
@@ -220,7 +335,7 @@ impl DirectRecordingSession {
             CaptureStreamConfig {
                 target_fps: self.config.capture_fps,
                 min_fps: self.config.output_fps.min(self.config.capture_fps).max(1),
-                buffer_depth: 8,
+                buffer_depth: 2,
                 max_consecutive_errors: 30,
                 adaptive_fps: false,
                 pause_on_resolution_change: false,
@@ -248,6 +363,8 @@ impl DirectRecordingSession {
         let (control_tx, control_rx) = crossbeam_channel::unbounded();
         let audio_stream = start_optional_audio_stream(&self.config);
         let config = self.config.clone();
+        let encode_threads = self.encode_threads;
+        let align_capture = self.align_capture;
         let clock = RecordingClock::new(Instant::now());
         let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
         let worker_state = Arc::clone(&self.state);
@@ -256,6 +373,7 @@ impl DirectRecordingSession {
             .spawn(move || {
                 let result = (|| {
                     let mut compositor = VisualCompositor::new(config.output_dimensions());
+                    compositor.resize_pool = resize_pool;
                     if let Some(style) = config.keyboard.as_ref() {
                         match crate::keyboard_rasterizer::create(style) {
                             Ok(rasterizer) => {
@@ -271,7 +389,11 @@ impl DirectRecordingSession {
                             }
                         }
                     }
-                    let encoder = match StreamingEncoder::create(config.streaming_config()) {
+                    let mut streaming_config = config.streaming_config();
+                    if encode_threads != 0 {
+                        streaming_config.encode_threads = encode_threads;
+                    }
+                    let encoder = match StreamingEncoder::create(streaming_config) {
                         Ok(encoder) => {
                             let _ = ready_tx.send(Ok(()));
                             encoder
@@ -285,6 +407,7 @@ impl DirectRecordingSession {
                     run_direct_worker(DirectWorkerInputs {
                         config,
                         encoder,
+                        align_capture,
                         capture_stream,
                         mouse_hook,
                         click_rx,
@@ -431,6 +554,7 @@ fn state_from_u8(value: u8) -> RecordingState {
 }
 
 struct DirectWorkerInputs {
+    align_capture: bool,
     config: DirectRecordingConfig,
     encoder: StreamingEncoder,
     capture_stream: CaptureStream,
@@ -445,6 +569,7 @@ struct DirectWorkerInputs {
 
 fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport> {
     let DirectWorkerInputs {
+        align_capture,
         config,
         mut encoder,
         capture_stream,
@@ -458,6 +583,9 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
     } = inputs;
     let _mouse_hook = mouse_hook;
     let clock_controller = clock.controller();
+    if align_capture {
+        capture_stream.set_pacing_origin(Some(clock.started_at()));
+    }
     // Initialization can take time; keys used before the worker is ready are not recording input.
     let mut keyboard_since = Instant::now();
     let mut keyboard_generation = 0;
@@ -466,16 +594,20 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
     let mut canceled = false;
     let mut input_end = None;
     let mut dropped_capture_frames = 0u64;
-    let mut last_timestamp_ms = None;
+    let mut captures = CaptureInbox::default();
+    let mut cursors = CursorInbox::default();
+    let mut latest_cursor = None;
     let mut latest_frame = None;
+    let mut fresh_since = clock.started_at();
+    let mut schedule = crate::output_schedule::OutputSchedule::new(config.output_fps);
+    let mut overlay_was_active = false;
     #[cfg(feature = "bench-stage-timing")]
     let mut capture_stage_timings = StageHistogram::default();
     #[cfg(feature = "bench-pipeline-timing")]
     let mut pipeline_timings = PipelineTimings::default();
     #[cfg(feature = "bench-pipeline-timing")]
     pipeline_timings.begin();
-    let output_interval_ms = (1_000 / u64::from(config.output_fps.max(1))).max(1);
-    let mut next_overlay_frame_ms = 0u64;
+
     let mut audio_mixer = encoder
         .has_audio()
         .then(|| LiveAudioMixer::new(config.enable_system_audio, config.enable_microphone));
@@ -485,6 +617,14 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
             match command {
                 ControlCommand::Pause if !paused => {
                     let at = Instant::now();
+                    captures.clear();
+                    cursors.frames.clear();
+                    latest_cursor = None;
+                    latest_frame = None;
+                    compositor.background_sequence = None;
+                    compositor.clicks.clear();
+                    compositor.trail.clear();
+                    overlay_was_active = false;
                     capture_stream.pause();
                     if let Some(audio) = audio_stream.as_ref() {
                         audio.pause();
@@ -503,7 +643,17 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                 ControlCommand::Resume if paused => {
                     let at = Instant::now();
                     clock_controller.mark_resume(at);
+                    if align_capture {
+                        capture_stream
+                            .set_pacing_origin(at.checked_sub(clock.active_elapsed_duration(at)));
+                    }
                     keyboard_since = at;
+                    fresh_since = at;
+                    captures.clear();
+                    cursors.frames.clear();
+                    latest_cursor = None;
+                    latest_frame = None;
+                    compositor.background_sequence = None;
                     reset_keyboard(
                         keyboard_input.as_ref(),
                         &mut compositor,
@@ -526,7 +676,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                 ControlCommand::Pause | ControlCommand::Resume => {}
             }
         }
-        drain_click_observations(&click_rx, &clock, paused, &mut compositor);
+        drain_click_observations(&click_rx, &clock, paused, fresh_since, &mut compositor);
         if let (Some(input), Some(style)) = (keyboard_input.as_ref(), config.keyboard.as_ref()) {
             let generation = input.generation.load(Ordering::Acquire);
             if keyboard_generation != generation {
@@ -570,42 +720,121 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         if stopping || canceled {
             break;
         }
-        match capture_stream.recv_timeout(Duration::from_millis(20)) {
-            Ok(event) => process_capture_event(
-                event,
-                CaptureEventContext {
-                    config: &config,
-                    clock: &clock,
-                    last_timestamp_ms: &mut last_timestamp_ms,
-                    latest_frame: &mut latest_frame,
-                    dropped_capture_frames: &mut dropped_capture_frames,
-                    compositor: &mut compositor,
-                    encoder: &mut encoder,
-                    #[cfg(feature = "bench-stage-timing")]
-                    capture_stage_timings: &mut capture_stage_timings,
-                    #[cfg(feature = "bench-pipeline-timing")]
-                    pipeline_timings: &mut pipeline_timings,
-                },
-            )?,
-            Err(snow_core::error::RecvTimeoutError::Timeout) => {}
-            Err(snow_core::error::RecvTimeoutError::Disconnected) => stopping = true,
-        }
-        if !paused {
-            let timestamp_ms = clock.active_elapsed_ms(Instant::now());
-            if timestamp_ms >= next_overlay_frame_ms
-                && compositor.has_active_animation(&config, timestamp_ms)
-                && let Some(frame) = latest_frame.as_ref()
-            {
-                let timestamp_ms = monotonic_timestamp(&mut last_timestamp_ms, timestamp_ms);
-                let rgba = compositor.compose(&config, frame, timestamp_ms)?;
-                encoder.push_rgba_frame(timestamp_ms, &rgba)?;
-                #[cfg(feature = "bench-pipeline-timing")]
-                {
-                    pipeline_timings.synthetic_overlay_frames =
-                        pipeline_timings.synthetic_overlay_frames.saturating_add(1);
-                }
-                next_overlay_frame_ms = timestamp_ms.saturating_add(output_interval_ms);
+        let elapsed = clock.active_elapsed_duration(Instant::now());
+        let wait = if paused {
+            Duration::from_millis(10)
+        } else {
+            schedule.wait(elapsed)
+        };
+        let first = match capture_stream.recv_timeout(wait) {
+            Ok(event) => Some(event),
+            Err(snow_core::error::RecvTimeoutError::Timeout) => None,
+            Err(snow_core::error::RecvTimeoutError::Disconnected) => {
+                stopping = true;
+                None
             }
+        };
+        for event in first
+            .into_iter()
+            .chain(std::iter::from_fn(|| capture_stream.try_recv().ok()))
+        {
+            match event {
+                CaptureEvent::Frame(frame) => {
+                    #[cfg(feature = "bench-stage-timing")]
+                    for stage in frame.metadata().stage_timings() {
+                        capture_stage_timings.record(stage.name, stage.duration);
+                    }
+                    let received = Instant::now();
+                    #[cfg(feature = "bench-pipeline-timing")]
+                    pipeline_timings.observe_capture(&frame, received);
+                    if !paused
+                        && frame
+                            .metadata()
+                            .observation_started_at()
+                            .unwrap_or_else(|| frame_instant(&frame))
+                            >= fresh_since
+                    {
+                        if let Some(cursor) = frame.metadata().cursor() {
+                            cursors.push(
+                                frame.metadata().queued_at().unwrap_or(received),
+                                cursor.clone(),
+                            );
+                        }
+                        captures.push(frame, received);
+                    }
+                }
+                CaptureEvent::FramesDropped { count, .. } => {
+                    dropped_capture_frames += u64::from(count)
+                }
+                CaptureEvent::Error(error) => return Err(ScreenRecorderError::Capture(error)),
+                CaptureEvent::StreamEnded => stopping = true,
+                _ => {}
+            }
+        }
+        if paused || stopping {
+            continue;
+        }
+        let Some(slot) = schedule.poll(clock.active_elapsed_duration(Instant::now())) else {
+            continue;
+        };
+        let new_frame = captures.select(&clock, slot.at);
+        let mut changed = false;
+        if let Some(cursor) = cursors.select(&clock, slot.at) {
+            changed = (config.show_cursor || config.mouse_trail_rgba[3] != 0)
+                && latest_cursor.as_ref() != Some(&cursor);
+            latest_cursor = Some(cursor);
+        }
+        if let Some((frame, _received)) = new_frame {
+            changed |= latest_frame
+                .as_ref()
+                .is_none_or(|previous: &CapturedFrame| {
+                    !frame.metadata().is_duplicate()
+                        || previous.metadata().content_generation()
+                            != frame.metadata().content_generation()
+                });
+            latest_frame = Some(frame);
+        }
+        let timestamp_ms = slot.at.as_millis() as u64;
+        let active = compositor.has_active_animation(&config, timestamp_ms);
+        if (changed || active || overlay_was_active)
+            && let Some(frame) = latest_frame.as_ref()
+        {
+            let compose_started = Instant::now();
+            let rgba = compositor.compose_with_cursor(
+                &config,
+                frame,
+                timestamp_ms,
+                latest_cursor.as_ref(),
+            )?;
+            #[cfg(feature = "bench-pipeline-timing")]
+            let composed = Instant::now();
+            compositor.rgba = encoder.push_owned_rgba_frame_at_pts(slot.pts, rgba)?;
+            #[cfg(feature = "bench-pipeline-timing")]
+            {
+                pipeline_timings.observe_frame(
+                    frame_instant(frame),
+                    compose_started,
+                    composed,
+                    Instant::now(),
+                );
+                pipeline_timings.output_sources.push((
+                    slot.pts,
+                    frame.metadata().sequence(),
+                    frame
+                        .metadata()
+                        .content_generation()
+                        .unwrap_or(frame.metadata().sequence()),
+                    clock
+                        .active_elapsed_duration(frame_instant(frame))
+                        .as_nanos()
+                        .min(u128::from(u64::MAX)) as u64,
+                ));
+                if !changed {
+                    pipeline_timings.synthetic_overlay_frames += 1;
+                }
+            }
+            let _ = compose_started;
+            overlay_was_active = active;
         }
     }
 
@@ -619,28 +848,17 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         return Err(ScreenRecorderError::ExportCanceled);
     }
 
+    let final_at = input_end.unwrap_or_else(Instant::now);
+    let endpoint = schedule.endpoint(clock.active_elapsed_duration(final_at));
+    clock_controller.finalize(final_at);
     #[cfg(feature = "bench-pipeline-timing")]
     let stream_stats = capture_stream.stats().snapshot();
+    // Captures after the accepted stop boundary must not extend the recording.
     for event in capture_stream.stop_and_drain() {
-        process_capture_event(
-            event,
-            CaptureEventContext {
-                config: &config,
-                clock: &clock,
-                last_timestamp_ms: &mut last_timestamp_ms,
-                latest_frame: &mut latest_frame,
-                dropped_capture_frames: &mut dropped_capture_frames,
-                compositor: &mut compositor,
-                encoder: &mut encoder,
-                #[cfg(feature = "bench-stage-timing")]
-                capture_stage_timings: &mut capture_stage_timings,
-                #[cfg(feature = "bench-pipeline-timing")]
-                pipeline_timings: &mut pipeline_timings,
-            },
-        )?;
+        if let CaptureEvent::Error(error) = event {
+            return Err(ScreenRecorderError::Capture(error));
+        }
     }
-    let final_at = Instant::now();
-    clock_controller.finalize(final_at);
     let mut audio_frames_dropped = 0u64;
     if let Some(audio) = audio_stream.take() {
         audio_frames_dropped = audio.stats().snapshot().frames_dropped;
@@ -653,8 +871,8 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
     }
     audio_frames_dropped = audio_frames_dropped
         .saturating_add(audio_mixer.as_ref().map_or(0, |mixer| mixer.dropped_frames));
-    let report = encoder.finish()?;
-    let report = report_from_encoder(
+    let report = encoder.finish_at_pts(endpoint)?;
+    let mut report = report_from_encoder(
         report,
         dropped_capture_frames,
         audio_frames_dropped,
@@ -665,6 +883,8 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         #[cfg(feature = "bench-pipeline-timing")]
         Some(pipeline_timings.stats(&stream_stats)),
     );
+    report.superseded_capture_frames = captures.superseded;
+    report.missed_output_slots = schedule.missed_slots;
     Ok(report)
 }
 
@@ -677,7 +897,11 @@ fn report_from_encoder(
     #[cfg(feature = "bench-pipeline-timing")] pipeline: Option<CapturePipelineStats>,
 ) -> DirectRecordingReport {
     DirectRecordingReport {
+        #[cfg(feature = "bench-pipeline-timing")]
+        encoder_timings: report.timings,
         encoded_frames: report.encoded_frames,
+        superseded_capture_frames: 0,
+        missed_output_slots: 0,
         coalesced_frames: report.coalesced_frames,
         dropped_capture_frames,
         video_encoder: report.video_encoder,
@@ -780,6 +1004,9 @@ impl LiveAudioMixer {
             AudioSourceKind::System => &mut self.next_system_frame,
             AudioSourceKind::Microphone => &mut self.next_microphone_frame,
         };
+        if !clock.is_active_at(started_at) {
+            return;
+        }
         // Capture instants include device-read scheduling jitter. Preserve PCM continuity
         // between alignment boundaries, as the buffered recording writer does.
         let start_frame = if packet.metadata.discontinuity {
@@ -864,7 +1091,13 @@ impl LiveAudioMixer {
             let slot = self.slots.remove(&slot_index).unwrap_or_default();
             let samples = mix_audio_slot(
                 slot,
-                self.slot_frames as usize * usize::from(AUDIO_CHANNELS),
+                (if flush {
+                    self.slot_frames
+                        .min(release_frame.saturating_sub(slot_start))
+                } else {
+                    self.slot_frames
+                }) as usize
+                    * usize::from(AUDIO_CHANNELS),
             );
             let timestamp_ms = slot_index.saturating_mul(AUDIO_SLOT_MS);
             encoder.push_audio_pcm_i16(timestamp_ms, &samples)?;
@@ -924,73 +1157,79 @@ fn process_audio_event(
     }
 }
 
-struct CaptureEventContext<'a> {
-    config: &'a DirectRecordingConfig,
-    clock: &'a RecordingClock,
-    last_timestamp_ms: &'a mut Option<u64>,
-    latest_frame: &'a mut Option<CapturedFrame>,
-    dropped_capture_frames: &'a mut u64,
-    compositor: &'a mut VisualCompositor,
-    encoder: &'a mut StreamingEncoder,
-    #[cfg(feature = "bench-stage-timing")]
-    capture_stage_timings: &'a mut StageHistogram,
-    #[cfg(feature = "bench-pipeline-timing")]
-    pipeline_timings: &'a mut PipelineTimings,
+fn frame_instant(frame: &CapturedFrame) -> Instant {
+    frame
+        .metadata()
+        .stream_timestamp()
+        .map(|stamp| stamp.instant)
+        .unwrap_or_else(Instant::now)
 }
 
-fn process_capture_event(event: CaptureEvent, context: CaptureEventContext<'_>) -> Result<()> {
-    let CaptureEventContext {
-        config,
-        clock,
-        last_timestamp_ms,
-        latest_frame,
-        dropped_capture_frames,
-        compositor,
-        encoder,
-        #[cfg(feature = "bench-stage-timing")]
-        capture_stage_timings,
-        #[cfg(feature = "bench-pipeline-timing")]
-        pipeline_timings,
-    } = context;
-    match event {
-        CaptureEvent::Frame(frame) => {
-            #[cfg(feature = "bench-stage-timing")]
-            for stage in frame.metadata().stage_timings() {
-                capture_stage_timings.record(stage.name, stage.duration);
-            }
-            let instant = frame
-                .metadata()
-                .stream_timestamp()
-                .map(|timestamp| timestamp.instant)
-                .unwrap_or_else(Instant::now);
-            #[cfg(feature = "bench-pipeline-timing")]
-            let received = Instant::now();
-            let timestamp_ms =
-                monotonic_timestamp(last_timestamp_ms, clock.active_elapsed_ms(instant));
-            let rgba = compositor.compose(config, &frame, timestamp_ms)?;
-            #[cfg(feature = "bench-pipeline-timing")]
-            let composed = Instant::now();
-            encoder.push_rgba_frame(timestamp_ms, &rgba)?;
-            #[cfg(feature = "bench-pipeline-timing")]
-            pipeline_timings.observe_frame(instant, received, composed, Instant::now());
-            *latest_frame = Some(frame);
-        }
-        CaptureEvent::FramesDropped { count, .. } => {
-            *dropped_capture_frames = dropped_capture_frames.saturating_add(u64::from(count));
-        }
-        CaptureEvent::Error(error) => return Err(ScreenRecorderError::Capture(error)),
-        CaptureEvent::Paused { .. }
-        | CaptureEvent::Resumed { .. }
-        | CaptureEvent::ResolutionChanged { .. }
-        | CaptureEvent::StreamEnded => {}
+#[derive(Default)]
+struct CaptureInbox {
+    frames: VecDeque<(CapturedFrame, Instant, Instant)>,
+    superseded: u64,
+}
+
+impl CaptureInbox {
+    fn clear(&mut self) {
+        self.frames.clear();
     }
-    Ok(())
+
+    fn push(&mut self, frame: CapturedFrame, received: Instant) {
+        // Keep enough history to select the most recent frame at the output deadline,
+        // including one frame that arrived just after it. No unbounded backlog.
+        if self.frames.len() == 2 {
+            self.frames.pop_front();
+            self.superseded += 1;
+        }
+        let at = frame_instant(&frame);
+        self.frames.push_back((frame, received, at));
+    }
+
+    fn select(&mut self, clock: &RecordingClock, at: Duration) -> Option<(CapturedFrame, Instant)> {
+        let mut selected = None;
+        while self
+            .frames
+            .front()
+            .is_some_and(|(_, _, captured)| clock.active_elapsed_duration(*captured) <= at)
+        {
+            if selected.is_some() {
+                self.superseded += 1;
+            }
+            selected = self
+                .frames
+                .pop_front()
+                .map(|(frame, received, _)| (frame, received));
+        }
+        selected
+    }
 }
 
-fn monotonic_timestamp(last: &mut Option<u64>, candidate: u64) -> u64 {
-    let value = candidate.max(last.unwrap_or(0));
-    *last = Some(value);
-    value
+/// Cursor observations have a later sampling time than their desktop images.
+/// Keep their deadlines independent so fresh desktop pixels need not be delayed.
+#[derive(Default)]
+struct CursorInbox {
+    frames: VecDeque<(Instant, AttachedCursorSample)>,
+}
+impl CursorInbox {
+    fn push(&mut self, at: Instant, cursor: AttachedCursorSample) {
+        if self.frames.len() == 2 {
+            self.frames.pop_front();
+        }
+        self.frames.push_back((at, cursor));
+    }
+    fn select(&mut self, clock: &RecordingClock, at: Duration) -> Option<AttachedCursorSample> {
+        let mut selected = None;
+        while self
+            .frames
+            .front()
+            .is_some_and(|(observed, _)| clock.active_elapsed_duration(*observed) <= at)
+        {
+            selected = self.frames.pop_front().map(|(_, cursor)| cursor);
+        }
+        selected
+    }
 }
 
 fn reset_keyboard(input: Option<&KeyboardInput>, compositor: &mut VisualCompositor, now: u64) {
@@ -1007,10 +1246,11 @@ fn drain_click_observations(
     receiver: &Receiver<MouseClickObservation>,
     clock: &RecordingClock,
     paused: bool,
+    fresh_since: Instant,
     compositor: &mut VisualCompositor,
 ) {
     while let Ok(observation) = receiver.try_recv() {
-        if paused {
+        if paused || observation.at < fresh_since || !clock.is_active_at(observation.at) {
             continue;
         }
         if compositor.clicks.len() >= CLICK_QUEUE_DEPTH {
@@ -1027,6 +1267,11 @@ fn drain_click_observations(
 
 struct VisualCompositor {
     output_size: (u32, u32),
+    background: Vec<u8>,
+    rgba: Vec<u8>,
+    resize_plan: Option<NearestResizePlan>,
+    resize_pool: Option<rayon::ThreadPool>,
+    background_sequence: Option<u64>,
     trail: LaserTrail,
     clicks: VecDeque<RenderClick>,
     cursor_shapes: HashMap<u64, CursorShape>,
@@ -1040,6 +1285,11 @@ impl VisualCompositor {
     fn new(output_size: (u32, u32)) -> Self {
         Self {
             output_size,
+            background: Vec::new(),
+            rgba: Vec::new(),
+            resize_plan: None,
+            resize_pool: None,
+            background_sequence: None,
             trail: LaserTrail::default(),
             clicks: VecDeque::new(),
             cursor_shapes: HashMap::new(),
@@ -1050,20 +1300,63 @@ impl VisualCompositor {
         }
     }
 
+    #[cfg(test)]
     fn compose(
         &mut self,
         config: &DirectRecordingConfig,
         frame: &CapturedFrame,
         timestamp_ms: u64,
     ) -> Result<Vec<u8>> {
+        self.compose_with_cursor(config, frame, timestamp_ms, frame.metadata().cursor())
+    }
+
+    fn compose_with_cursor(
+        &mut self,
+        config: &DirectRecordingConfig,
+        frame: &CapturedFrame,
+        timestamp_ms: u64,
+        cursor: Option<&AttachedCursorSample>,
+    ) -> Result<Vec<u8>> {
         self.trail.set_lifetime_ms(config.mouse_trail_duration_ms);
         let source_size = frame.dimensions();
         #[cfg(feature = "bench-compositor-timing")]
         let stage = Instant::now();
-        let mut rgba = resize_rgba(frame.as_rgba_bytes(), source_size, self.output_size);
+        let sequence = frame
+            .metadata()
+            .content_generation()
+            .unwrap_or_else(|| frame.metadata().sequence());
+        let geometry_changed = self
+            .resize_plan
+            .as_ref()
+            .is_none_or(|plan| !plan.matches(source_size, self.output_size));
+        if geometry_changed {
+            self.resize_plan = Some(NearestResizePlan::new(
+                source_size.0,
+                source_size.1,
+                self.output_size.0,
+                self.output_size.1,
+            ));
+        }
+        let bytes = self.output_size.0 as usize * self.output_size.1 as usize * 4;
+        self.background.resize(bytes, 0);
+        if geometry_changed
+            || self.background_sequence.is_none()
+            || self.background_sequence != Some(sequence)
+        {
+            let plan = self.resize_plan.as_ref().expect("resize plan");
+            if let Some(pool) = self.resize_pool.as_ref() {
+                plan.resize_into_with_pool(frame.as_rgba_bytes(), &mut self.background, pool);
+            } else {
+                plan.resize_into(frame.as_rgba_bytes(), &mut self.background);
+            }
+        }
+        self.background_sequence = Some(sequence);
+        self.rgba.resize(bytes, 0);
+        self.rgba.copy_from_slice(&self.background);
+        let mut rgba = std::mem::take(&mut self.rgba);
         #[cfg(feature = "bench-compositor-timing")]
         self.timings.record("compose.resize", stage.elapsed());
-        let cursor = frame.metadata().cursor().cloned();
+        let cursor = cursor.cloned();
         #[cfg(feature = "bench-compositor-timing")]
         let stage = Instant::now();
         if config.mouse_trail_rgba[3] != 0 {
@@ -1135,6 +1428,8 @@ impl VisualCompositor {
         #[cfg(feature = "bench-compositor-timing")]
         let stage = Instant::now();
         if let Some(keyboard) = self.keyboard.as_mut() {
+            #[cfg(feature = "bench-compositor-timing")]
+            let (hits, misses) = keyboard.cache_stats();
             while self
                 .pending_keys
                 .front()
@@ -1147,6 +1442,16 @@ impl VisualCompositor {
             keyboard.draw(&mut rgba, timestamp_ms).map_err(|error| {
                 ScreenRecorderError::Encode(format!("keyboard recording: {error}"))
             })?;
+            #[cfg(feature = "bench-compositor-timing")]
+            {
+                let (new_hits, new_misses) = keyboard.cache_stats();
+                for _ in hits..new_hits {
+                    self.timings.record("keyboard.cache_hit", Duration::ZERO);
+                }
+                for _ in misses..new_misses {
+                    self.timings.record("keyboard.cache_miss", Duration::ZERO);
+                }
+            }
         }
         #[cfg(feature = "bench-compositor-timing")]
         self.timings.record("compose.keyboard", stage.elapsed());
@@ -1157,8 +1462,10 @@ impl VisualCompositor {
         let trail_active =
             config.mouse_trail_rgba[3] > 0 && self.trail.has_active_animation(timestamp_ms);
         let click_active = config.mouse_click_rgba[3] > 0
-            && self.clicks.back().is_some_and(|click| {
-                timestamp_ms.saturating_sub(click.timestamp_ms) <= CLICK_ANIMATION_MS
+            && self.clicks.iter().any(|click| {
+                timestamp_ms
+                    .checked_sub(click.timestamp_ms)
+                    .is_some_and(|age| age <= CLICK_ANIMATION_MS)
             });
         trail_active
             || click_active
@@ -1173,6 +1480,7 @@ impl VisualCompositor {
     }
 }
 
+#[cfg(test)]
 fn resize_rgba(source: &[u8], source_size: (u32, u32), output_size: (u32, u32)) -> Vec<u8> {
     let (source_width, source_height) = source_size;
     let (output_width, output_height) = output_size;
@@ -1344,6 +1652,114 @@ mod tests {
         assert!(value.validate().is_ok());
         value.output_path = PathBuf::from("recording.gif");
         assert!(value.validate().is_err());
+    }
+
+    #[test]
+    fn automatic_thread_cap_is_limited_to_the_validated_live_configuration() {
+        assert!((1..=2).contains(&config().streaming_config().encode_threads));
+        for variant in 0..5 {
+            let mut other = config();
+            match variant {
+                0 => other.output_fps = 60,
+                1 => other.region = RecordingRegion::new(0, 0, 3840, 2160),
+                2 => other.codec = VideoCodec::H265,
+                3 => other.prefer_hardware_encoder = true,
+                _ => other.preset = VideoEncodingSpeed::Medium,
+            }
+            assert_eq!(other.streaming_config().encode_threads, 0);
+        }
+        for format in [ExportFormat::Gif, ExportFormat::Apng, ExportFormat::Webp] {
+            let mut other = config();
+            other.format = format;
+            assert_eq!(other.streaming_config().encode_threads, 0);
+        }
+    }
+
+    #[test]
+    fn resize_workers_require_a_large_resized_image_and_the_validated_encode_budget() {
+        let mut value = config();
+        value.region = RecordingRegion::new(0, 0, 3840, 2160);
+        value.maximum_width = Some(1920);
+        value.maximum_height = Some(1080);
+        let expected = if value.automatic_encode_threads() == 2
+            && std::thread::available_parallelism().is_ok_and(|value| value.get() >= 4)
+        {
+            2
+        } else {
+            0
+        };
+        assert_eq!(value.automatic_resize_threads(), expected);
+        let mut session = DirectRecordingSession::create(value.clone()).unwrap();
+        assert_eq!(session.resize_threads, expected);
+        session.set_resize_threads(1).unwrap();
+        assert_eq!(session.resize_threads, 1);
+        assert!(session.set_resize_threads(5).is_err());
+        value.output_fps = 60;
+        assert_eq!(value.automatic_resize_threads(), 0);
+        value.output_fps = 30;
+        value.region = RecordingRegion::new(0, 0, 1920, 1080);
+        assert_eq!(value.automatic_resize_threads(), 0);
+        value.maximum_width = Some(960);
+        value.maximum_height = Some(540);
+        assert_eq!(value.automatic_resize_threads(), 0);
+    }
+
+    #[test]
+    fn capture_alignment_default_is_limited_to_the_measured_clock_and_capture_path() {
+        let mut value = config();
+        value.region = RecordingRegion::new(0, 0, 3840, 2160);
+        value.maximum_width = Some(1920);
+        value.maximum_height = Some(1080);
+        let expected = value.automatic_resize_threads() == 2;
+        assert_eq!(value.aligned_capture(), expected);
+        let mut session = DirectRecordingSession::create(value.clone()).unwrap();
+        assert_eq!(session.align_capture, expected);
+        session.set_aligned_capture(false).unwrap();
+        assert!(!session.align_capture);
+        value.capture_fps = 20;
+        assert!(!value.aligned_capture());
+        value.capture_fps = 60;
+        value.output_fps = 60;
+        assert!(!value.aligned_capture());
+        value.capture_fps = 30;
+        value.output_fps = 30;
+        for backend in [
+            CaptureBackendKind::WindowsGraphicsCapture,
+            CaptureBackendKind::Gdi,
+        ] {
+            value.capture_backend = backend;
+            assert!(!value.aligned_capture());
+        }
+    }
+
+    #[test]
+    fn composed_storage_never_accumulates_overlays_and_geometry_invalidates_plan() {
+        let frame = snow_capture::frame::Frame::from_rgba8(4, 4, vec![90; 64]).unwrap();
+        let frame = CapturedFrame::from(frame);
+        let mut compositor = VisualCompositor::new((2, 2));
+        let first = compositor.compose(&config(), &frame, 0).unwrap();
+        assert_eq!(first, resize_rgba(frame.as_rgba_bytes(), (4, 4), (2, 2)));
+        compositor.rgba = first;
+        compositor.rgba.fill(255);
+        assert_eq!(
+            compositor.compose(&config(), &frame, 33).unwrap(),
+            vec![90; 16]
+        );
+        let changed = CapturedFrame::from(
+            snow_capture::frame::Frame::from_rgba8(3, 5, vec![42; 60]).unwrap(),
+        );
+        assert_eq!(
+            compositor.compose(&config(), &changed, 66).unwrap(),
+            vec![42; 16]
+        );
+        compositor.background_sequence = None;
+        let resumed = CapturedFrame::from(
+            snow_capture::frame::Frame::from_rgba8(3, 5, vec![60; 60]).unwrap(),
+        );
+        assert_eq!(
+            compositor.compose(&config(), &resumed, 100).unwrap(),
+            vec![60; 16]
+        );
     }
 
     #[test]
@@ -1603,6 +2019,74 @@ mod tests {
     }
 
     #[test]
+    fn live_audio_pause_observations_do_not_shift_resumed_pcm() {
+        let start = Instant::now() - Duration::from_secs(1);
+        let clock = RecordingClock::new(start);
+        clock
+            .controller()
+            .mark_pause(start + Duration::from_millis(100));
+        clock
+            .controller()
+            .mark_resume(start + Duration::from_millis(300));
+        let mut mixer = LiveAudioMixer::new(true, false);
+        for (at, value) in [(100, 1), (200, 2), (320, 3)] {
+            // The worker resets continuity at pause/resume control boundaries.
+            mixer.reset_alignment(None);
+            mixer.insert_packet(
+                test_audio_packet(
+                    AudioSourceKind::System,
+                    start + Duration::from_millis(at),
+                    at,
+                    vec![value; 960],
+                ),
+                &clock,
+            );
+        }
+        assert_eq!(
+            mix_audio_slot(mixer.slots.remove(&9).unwrap(), 960),
+            vec![1; 960]
+        );
+        assert_eq!(
+            mix_audio_slot(mixer.slots.remove(&11).unwrap(), 960),
+            vec![3; 960]
+        );
+        assert!(
+            mixer.slots.is_empty(),
+            "paused PCM must not enter the active timeline"
+        );
+    }
+
+    #[test]
+    fn live_audio_final_flush_stops_inside_the_last_pcm_slot() {
+        let mut config = config();
+        config.output_path =
+            std::env::temp_dir().join(format!("snow-audio-endpoint-{}.mp4", uuid::Uuid::new_v4()));
+        config.enable_system_audio = true;
+        let mut encoder = StreamingEncoder::create(config.streaming_config()).unwrap();
+        encoder
+            .push_owned_rgba_frame_at_pts(0, vec![128; 4 * 4 * 4])
+            .unwrap();
+        let mut mixer = LiveAudioMixer::new(true, false);
+        mixer.insert_samples(
+            AudioSourceKind::System,
+            0,
+            48_480,
+            &vec![1000; 48_480 * 2],
+            Duration::from_millis(1010),
+        );
+        mixer
+            .emit_ready(Duration::from_millis(1001), true, &mut encoder)
+            .unwrap();
+        let report = encoder.finish_at_pts(31).unwrap();
+        assert_eq!(
+            report.encoded_audio_frames, 48_048,
+            "finalization must not emit the rest of the 10ms slot"
+        );
+        assert_eq!(report.dropped_audio_frames, 0);
+        std::fs::remove_file(config.output_path).unwrap();
+    }
+
+    #[test]
     fn live_audio_mixer_accepts_delayed_start_but_never_rewrites_emitted_audio() {
         let mut mixer = LiveAudioMixer::new(true, false);
         let samples = vec![1000; 960];
@@ -1843,12 +2327,45 @@ mod tests {
                 .unwrap();
         }
         let mut compositor = VisualCompositor::new((4, 4));
-        drain_click_observations(&receiver, &clock, false, &mut compositor);
+        drain_click_observations(&receiver, &clock, false, started_at, &mut compositor);
         assert_eq!(compositor.clicks.len(), CLICK_QUEUE_DEPTH);
         assert_eq!(
             compositor.clicks.front().map(|click| click.x),
             Some((CLICK_QUEUE_DEPTH * 2) as i32)
         );
+    }
+
+    #[test]
+    fn resumed_clicks_reject_paused_and_pre_resume_observations() {
+        let (sender, receiver) = crossbeam_channel::unbounded();
+        let start = Instant::now();
+        let clock = RecordingClock::new(start);
+        clock
+            .controller()
+            .mark_pause(start + Duration::from_millis(100));
+        clock
+            .controller()
+            .mark_resume(start + Duration::from_millis(300));
+        for ms in [50, 150, 299, 301] {
+            sender
+                .send(MouseClickObservation {
+                    at: start + Duration::from_millis(ms),
+                    x: ms as i32,
+                    y: 0,
+                    button: ObservedMouseButton::Left,
+                })
+                .unwrap();
+        }
+        let mut compositor = VisualCompositor::new((4, 4));
+        drain_click_observations(
+            &receiver,
+            &clock,
+            false,
+            start + Duration::from_millis(300),
+            &mut compositor,
+        );
+        assert_eq!(compositor.clicks.len(), 1);
+        assert_eq!(compositor.clicks[0].timestamp_ms, 101);
     }
 
     #[cfg(feature = "bench-compositor-timing")]
@@ -1880,5 +2397,102 @@ mod tests {
                 "{name} must be recorded exactly once per composited frame"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod scheduling_tests {
+    use super::*;
+    fn frame(value: u8) -> CapturedFrame {
+        snow_capture::frame::Frame::from_rgba8(2, 2, vec![value; 16])
+            .unwrap()
+            .into()
+    }
+
+    #[test]
+    fn capture_selection_keeps_future_frames_and_discards_only_superseded_history() {
+        let start = Instant::now();
+        let clock = RecordingClock::new(start);
+        let mut inbox = CaptureInbox::default();
+        inbox
+            .frames
+            .push_back((frame(1), start, start + Duration::from_millis(30)));
+        inbox
+            .frames
+            .push_back((frame(2), start, start + Duration::from_millis(35)));
+        assert_eq!(
+            inbox
+                .select(&clock, Duration::from_millis(33))
+                .unwrap()
+                .0
+                .as_rgba_bytes()[0],
+            1
+        );
+        assert!(inbox.select(&clock, Duration::from_millis(33)).is_none());
+        assert_eq!(
+            inbox
+                .select(&clock, Duration::from_millis(66))
+                .unwrap()
+                .0
+                .as_rgba_bytes()[0],
+            2
+        );
+    }
+
+    #[test]
+    fn capture_backlog_remains_bounded_and_newest_eligible_frame_wins() {
+        let start = Instant::now();
+        let clock = RecordingClock::new(start);
+        let mut inbox = CaptureInbox::default();
+        for value in 0..20 {
+            inbox.push(frame(value), start);
+        }
+        assert_eq!(inbox.frames.len(), 2);
+        assert_eq!(inbox.superseded, 18);
+        assert_eq!(
+            inbox
+                .select(&clock, Duration::from_secs(1))
+                .unwrap()
+                .0
+                .as_rgba_bytes()[0],
+            19
+        );
+        assert_eq!(inbox.superseded, 19);
+        inbox.clear();
+        assert!(inbox.select(&clock, Duration::from_secs(2)).is_none());
+    }
+    #[test]
+    fn cursor_sampling_after_a_desktop_deadline_does_not_delay_the_desktop() {
+        let start = Instant::now();
+        let clock = RecordingClock::new(start);
+        let mut desktop = CaptureInbox::default();
+        desktop.frames.push_back((
+            frame(42),
+            start + Duration::from_millis(35),
+            start + Duration::from_millis(30),
+        ));
+        let mut cursor = CursorInbox::default();
+        cursor.push(
+            start + Duration::from_millis(35),
+            AttachedCursorSample {
+                x: 20,
+                y: 30,
+                visible: true,
+                shape: CursorShapeState::Unavailable,
+            },
+        );
+        assert_eq!(
+            desktop
+                .select(&clock, Duration::from_millis(33))
+                .unwrap()
+                .0
+                .as_rgba_bytes()[0],
+            42
+        );
+        assert!(cursor.select(&clock, Duration::from_millis(33)).is_none());
+        assert_eq!(
+            cursor.select(&clock, Duration::from_millis(66)).unwrap().x,
+            20
+        );
     }
 }

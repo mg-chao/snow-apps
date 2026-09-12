@@ -5,6 +5,9 @@ edition = "2024"
 license.workspace = true
 build = "build.rs"
 
+[features]
+bench-timing = []
+
 [dependencies]
 snow-audio-recorder = { path = "../snow-audio-recorder" }
 snow-recording-model = { path = "../snow-recording-model" }

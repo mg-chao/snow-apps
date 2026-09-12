@@ -196,6 +196,10 @@ pub struct KeyboardOverlay {
     cache: BTreeMap<String, (Arc<Keycap>, u64)>,
     cache_bytes: usize,
     cache_clock: u64,
+    #[cfg(feature = "bench-timing")]
+    cache_hits: u64,
+    #[cfg(feature = "bench-timing")]
+    cache_misses: u64,
     output: (u32, u32),
     scale: f32,
 }
@@ -208,6 +212,10 @@ impl KeyboardOverlay {
             cache: BTreeMap::new(),
             cache_bytes: 0,
             cache_clock: 0,
+            #[cfg(feature = "bench-timing")]
+            cache_hits: 0,
+            #[cfg(feature = "bench-timing")]
+            cache_misses: 0,
             output,
             scale: 1.0,
         }
@@ -218,11 +226,24 @@ impl KeyboardOverlay {
         self
     }
 
+    #[cfg(feature = "bench-timing")]
+    pub fn cache_stats(&self) -> (u64, u64) {
+        (self.cache_hits, self.cache_misses)
+    }
+
     fn keycap(&mut self, label: &str) -> Result<Arc<Keycap>, String> {
         self.cache_clock = self.cache_clock.wrapping_add(1);
         if let Some((cap, used)) = self.cache.get_mut(label) {
+            #[cfg(feature = "bench-timing")]
+            {
+                self.cache_hits += 1;
+            }
             *used = self.cache_clock;
             return Ok(Arc::clone(cap));
+        }
+        #[cfg(feature = "bench-timing")]
+        {
+            self.cache_misses += 1;
         }
         let cap = Arc::new(self.rasterizer.rasterize(label, self.scale)?);
         let bytes = cap.pixels.len();

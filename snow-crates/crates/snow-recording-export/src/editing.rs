@@ -1,3 +1,4 @@
+use crate::resize::{NearestResizePlan, resize_rgba_fast_into};
 use std::cell::Cell;
 use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
@@ -1805,143 +1806,6 @@ fn pts_to_millis(pts: i64, time_base: ffmpeg::Rational) -> u64 {
         .saturating_mul(1_000)
         / denominator;
     millis.clamp(0, i128::from(u64::MAX)) as u64
-}
-
-#[derive(Clone, Debug)]
-struct NearestResizePlan {
-    src_w: u32,
-    src_h: u32,
-    dst_w: u32,
-    dst_h: u32,
-    src_x_byte_offsets: Vec<usize>,
-    src_row_byte_offsets: Vec<usize>,
-}
-
-impl NearestResizePlan {
-    fn new(src_w: u32, src_h: u32, dst_w: u32, dst_h: u32) -> Self {
-        let src_w_usize = src_w.max(1) as usize;
-        let src_row_bytes = src_w_usize * 4;
-        let src_x_byte_offsets = (0..dst_w.max(1))
-            .map(|x| {
-                let sx = ((x as u64 * src_w.max(1) as u64) / dst_w.max(1) as u64) as usize;
-                sx * 4
-            })
-            .collect();
-        let src_row_byte_offsets = (0..dst_h.max(1))
-            .map(|y| {
-                let sy = ((y as u64 * src_h.max(1) as u64) / dst_h.max(1) as u64) as usize;
-                sy * src_row_bytes
-            })
-            .collect();
-
-        Self {
-            src_w: src_w.max(1),
-            src_h: src_h.max(1),
-            dst_w: dst_w.max(1),
-            dst_h: dst_h.max(1),
-            src_x_byte_offsets,
-            src_row_byte_offsets,
-        }
-    }
-}
-
-fn resize_rgba_fast_into(
-    src: &[u8],
-    src_w: u32,
-    src_h: u32,
-    dst_w: u32,
-    dst_h: u32,
-    plan: Option<&NearestResizePlan>,
-    out: &mut [u8],
-    process_pool: Option<&rayon::ThreadPool>,
-) {
-    if src_w == dst_w && src_h == dst_h {
-        out.copy_from_slice(src);
-        return;
-    }
-
-    let expected = dst_w.max(1) as usize * dst_h.max(1) as usize * 4;
-    debug_assert_eq!(out.len(), expected);
-
-    if let Some(plan) = plan
-        && plan.src_w == src_w.max(1)
-        && plan.src_h == src_h.max(1)
-        && plan.dst_w == dst_w.max(1)
-        && plan.dst_h == dst_h.max(1)
-    {
-        resize_rgba_with_plan(src, plan, out, process_pool);
-        return;
-    }
-
-    resize_rgba_scalar(src, src_w, src_h, dst_w, dst_h, out);
-}
-
-fn resize_rgba_with_plan(
-    src: &[u8],
-    plan: &NearestResizePlan,
-    out: &mut [u8],
-    process_pool: Option<&rayon::ThreadPool>,
-) {
-    let dst_row_bytes = plan.dst_w as usize * 4;
-    let should_parallel = process_pool.is_some()
-        && (plan.dst_w as usize * plan.dst_h as usize) >= 1_000_000
-        && plan.dst_h >= 256;
-    if should_parallel {
-        let pool = process_pool.expect("checked Some above");
-        pool.install(|| {
-            out.par_chunks_exact_mut(dst_row_bytes)
-                .enumerate()
-                .for_each(|(y, row)| {
-                    let src_row = plan.src_row_byte_offsets[y];
-                    let row_u32 = row.as_mut_ptr() as *mut u32;
-                    for (dst_x, src_x) in plan.src_x_byte_offsets.iter().enumerate() {
-                        let src_offset = src_row + *src_x;
-                        // SAFETY:
-                        // - Source and destination pixel addresses are valid by plan construction.
-                        // - Each parallel worker owns disjoint `row` slices.
-                        unsafe {
-                            let pixel =
-                                ptr::read_unaligned(src.as_ptr().add(src_offset) as *const u32);
-                            ptr::write_unaligned(row_u32.add(dst_x), pixel);
-                        }
-                    }
-                });
-        });
-        return;
-    }
-
-    for (y, row) in out.chunks_exact_mut(dst_row_bytes).enumerate() {
-        let src_row = plan.src_row_byte_offsets[y];
-        let row_u32 = row.as_mut_ptr() as *mut u32;
-        for (dst_x, src_x) in plan.src_x_byte_offsets.iter().enumerate() {
-            let src_offset = src_row + *src_x;
-            // SAFETY:
-            // - Source and destination pixel addresses are valid by plan construction.
-            unsafe {
-                let pixel = ptr::read_unaligned(src.as_ptr().add(src_offset) as *const u32);
-                ptr::write_unaligned(row_u32.add(dst_x), pixel);
-            }
-        }
-    }
-}
-
-fn resize_rgba_scalar(src: &[u8], src_w: u32, src_h: u32, dst_w: u32, dst_h: u32, out: &mut [u8]) {
-    let dst_row_bytes = dst_w.max(1) as usize * 4;
-    for (y, row) in out.chunks_exact_mut(dst_row_bytes).enumerate() {
-        let sy = ((y as u64 * src_h.max(1) as u64) / dst_h.max(1) as u64) as usize;
-        let src_row = sy * src_w.max(1) as usize * 4;
-        let row_u32 = row.as_mut_ptr() as *mut u32;
-        for x in 0..dst_w.max(1) as usize {
-            let sx = ((x as u64 * src_w.max(1) as u64) / dst_w.max(1) as u64) as usize;
-            let src_offset = src_row + sx * 4;
-            // SAFETY:
-            // - Source and destination pixel addresses are valid by loop bounds.
-            unsafe {
-                let pixel = ptr::read_unaligned(src.as_ptr().add(src_offset) as *const u32);
-                ptr::write_unaligned(row_u32.add(x), pixel);
-            }
-        }
-    }
 }
 
 fn prepare_overlay_base_rgba(
@@ -5939,7 +5803,7 @@ where
     };
     let mut telemetry = ExportCodecTelemetry {
         video_encoder: Some(video_codec.name().to_string()),
-        used_hardware_encode: is_hardware_h264_encoder(&video_codec),
+        used_hardware_encode: opened_video_encoder_uses_hardware(&video_encoder),
         ..ExportCodecTelemetry::default()
     };
 
@@ -6387,7 +6251,7 @@ fn export_video_generated_from_source(
         ),
         video_encoder: Some(video_codec.name().to_string()),
         used_hardware_decode: hw_decode_state.is_some(),
-        used_hardware_encode: is_hardware_h264_encoder(&video_codec),
+        used_hardware_encode: opened_video_encoder_uses_hardware(&video_encoder),
         ..ExportCodecTelemetry::default()
     };
 
@@ -6948,7 +6812,7 @@ fn export_video_generated_from_source_with_overlay(
         ),
         video_encoder: Some(video_codec.name().to_string()),
         used_hardware_decode: hw_decode_state.is_some(),
-        used_hardware_encode: is_hardware_h264_encoder(&video_codec),
+        used_hardware_encode: opened_video_encoder_uses_hardware(&video_encoder),
         ..ExportCodecTelemetry::default()
     };
 
@@ -8123,6 +7987,28 @@ pub(crate) fn is_hardware_h264_encoder(codec: &ffmpeg::Codec) -> bool {
     name.contains("nvenc") || name.contains("qsv") || name.contains("amf") || name.contains("mf")
 }
 
+/// Report the successfully opened mode, including MF's explicit hardware option.
+pub(crate) fn opened_video_encoder_uses_hardware(
+    encoder: &ffmpeg::encoder::video::Encoder,
+) -> bool {
+    let Some(codec) = encoder.codec() else {
+        return false;
+    };
+    let name = codec.name();
+    if name.ends_with("_mf") {
+        let mut enabled = 0i64;
+        // SAFETY: the opened encoder owns its live private options for this call.
+        unsafe {
+            let private = (*encoder.as_ptr()).priv_data;
+            return !private.is_null()
+                && ffmpeg::ffi::av_opt_get_int(private, c"hw_encoding".as_ptr(), 0, &mut enabled)
+                    >= 0
+                && enabled == 1;
+        }
+    }
+    is_hardware_h264_encoder(&codec)
+}
+
 fn is_hardware_video_encoder(codec: &ffmpeg::Codec) -> bool {
     is_hardware_h264_encoder(codec)
 }
@@ -8218,6 +8104,8 @@ fn apply_hardware_encoder_speed_options(
         return true;
     }
     if name.contains("mf") {
+        // FFmpeg Media Foundation defaults to a software MFT unless requested.
+        options.set("hw_encoding", "1");
         options.set("bf", "0");
         options.set("g", "60");
         return true;
@@ -8237,6 +8125,26 @@ pub(crate) fn drain_video_packets_with_durations(
     draining: bool,
     pending_packet_durations: &mut VecDeque<i64>,
 ) -> Result<()> {
+    drain_video_packets_observed(
+        encoder,
+        output,
+        stream_index,
+        stream_time_base,
+        draining,
+        pending_packet_durations,
+        |_| {},
+    )
+}
+
+pub(crate) fn drain_video_packets_observed(
+    encoder: &mut ffmpeg::encoder::video::Encoder,
+    output: &mut ffmpeg::format::context::Output,
+    stream_index: usize,
+    stream_time_base: ffmpeg::Rational,
+    draining: bool,
+    pending_packet_durations: &mut VecDeque<i64>,
+    mut packet_received: impl FnMut(&mut ffmpeg::Packet),
+) -> Result<()> {
     loop {
         let mut packet = ffmpeg::Packet::empty();
         match encoder.receive_packet(&mut packet) {
@@ -8244,6 +8152,7 @@ pub(crate) fn drain_video_packets_with_durations(
                 if let Some(duration) = pending_packet_durations.pop_front() {
                     packet.set_duration(duration);
                 }
+                packet_received(&mut packet);
                 packet.set_stream(stream_index);
                 packet.rescale_ts(encoder.time_base(), stream_time_base);
                 packet.write_interleaved(output).map_err(|err| {
@@ -10130,5 +10039,13 @@ mod tests {
 
         assert_eq!(optimized.data(0), reference.data(0));
         assert_eq!(optimized.data(1), reference.data(1));
+    }
+    #[test]
+    fn media_foundation_hardware_selection_is_explicit() {
+        if let Some(codec) = ffmpeg::encoder::find_by_name("h264_mf") {
+            let mut options = ffmpeg::Dictionary::new();
+            assert!(apply_hardware_encoder_speed_options(&mut options, &codec));
+            assert_eq!(options.get("hw_encoding"), Some("1"));
+        }
     }
 }

@@ -20,6 +20,24 @@ use snow_core::timestamp::TickFormat;
 use snow_cursor::CursorShapeState;
 use snow_cursor::{CursorProjector, CursorSampler, CursorSnapshot, CursorTargetInfo};
 
+// Lossy stream queues cannot require that a consumer saw the first shape packet.
+// Keep one authentic shape and attach its Arc-backed pixels to every observation.
+fn retain_cursor_shape(
+    last: &mut Option<snow_cursor::CursorShape>,
+    sample: &mut snow_cursor::AttachedCursorSample,
+) {
+    use snow_cursor::CursorShapeState;
+    match &sample.shape {
+        CursorShapeState::Embedded(shape) => *last = Some(shape.clone()),
+        CursorShapeState::Cached(id) => {
+            if let Some(shape) = last.as_ref().filter(|shape| shape.shape_id == *id) {
+                sample.shape = CursorShapeState::Embedded(shape.clone());
+            }
+        }
+        CursorShapeState::Unavailable => {}
+    }
+}
+
 #[derive(Clone, Debug)]
 struct RegionPlanEntry {
     monitor: MonitorId,
@@ -253,6 +271,7 @@ impl CaptureSessionBuilder {
             runtime,
             cursor_fallback_sampler: None,
             cursor_projector: CursorProjector::new(),
+            latest_cursor_shape: None,
         })
     }
 
@@ -384,6 +403,7 @@ pub struct CaptureSession {
     runtime: CaptureSessionRuntime,
     cursor_fallback_sampler: Option<CursorSampler>,
     cursor_projector: CursorProjector,
+    latest_cursor_shape: Option<snow_cursor::CursorShape>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -825,6 +845,7 @@ impl CaptureSession {
         self.runtime.release_idle_resources();
         self.cursor_fallback_sampler = None;
         self.cursor_projector = CursorProjector::new();
+        self.latest_cursor_shape = None;
     }
 
     /// Release all snapshot capture-time allocations and restore the
@@ -1070,9 +1091,17 @@ impl CaptureSession {
         }
 
         if let Some(snapshot) = snapshot {
-            let sample = self.cursor_projector.project(&target, snapshot);
+            if self.config.mode == CaptureMode::Continuous
+                && let Some(shape) = snapshot.shape.shape()
+            {
+                self.latest_cursor_shape = Some(shape.clone());
+            }
+            let mut sample = self.cursor_projector.project(&target, snapshot);
             #[cfg(feature = "stage-timing")]
             observe_projected_cursor(&mut stats, &sample);
+            if self.config.mode == CaptureMode::Continuous {
+                retain_cursor_shape(&mut self.latest_cursor_shape, &mut sample);
+            }
             frame.metadata.cursor = Some(sample);
         }
 
@@ -1418,7 +1447,7 @@ impl CaptureSession {
             .map(|frame| frame.metadata.sequence);
         let cache_output_frame = history_reuse.should_cache_output();
         let mut out_frame = history_reuse.frame.unwrap_or_else(Frame::empty);
-        let destination_has_history = matches!(
+        let mut destination_has_history = matches!(
             (reuse_sequence, last_history_seq),
             (Some(reuse_seq), Some(last_seq)) if reuse_seq == last_seq
         ) && !plan_changed
@@ -1453,14 +1482,16 @@ impl CaptureSession {
                         config,
                         &first_entry.monitor,
                     )?;
-                    capturer.capture_desktop_region_into(
+                    let result = capturer.capture_desktop_region_into(
                         region.x,
                         region.y,
                         out_w,
                         out_h,
                         &mut out_frame,
                         destination_has_history,
-                    )
+                    );
+                    out_frame.metadata.backend_kind = capturer.backend_kind();
+                    result
                 };
                 match direct_sample {
                     Ok(Some(sample)) => {
@@ -1489,6 +1520,10 @@ impl CaptureSession {
                     }
                     Err(_) => {}
                 }
+                // A failed accelerated attempt may have written part of this region.
+                // General fallback must reconstruct it before publication.
+                destination_has_history = false;
+                out_frame.reset_metadata();
             }
         }
 
@@ -1509,7 +1544,13 @@ impl CaptureSession {
                     config,
                     &entry.monitor,
                 )?;
-                capturer.capture_region_into(entry.blit, &mut out_frame, destination_has_history)?
+                let result = capturer.capture_region_into(
+                    entry.blit,
+                    &mut out_frame,
+                    destination_has_history,
+                )?;
+                out_frame.metadata.backend_kind = capturer.backend_kind();
+                result
             };
 
             let sample = if let Some(sample) = sample {
@@ -2949,5 +2990,32 @@ mod tests {
         assert_eq!(*desktop_calls.lock().unwrap(), 0);
         assert_eq!(*region_calls.lock().unwrap(), 1);
         Ok(())
+    }
+    #[test]
+    fn cursor_pixels_survive_superseding_the_first_shape_observation() {
+        use snow_cursor::{
+            AttachedCursorSample, CursorCompositionMode, CursorShape, CursorShapeState,
+        };
+        let shape =
+            CursorShape::from_rgba(0, 0, 1, 1, CursorCompositionMode::AlphaBlend, vec![255; 4]);
+        let mut last = None;
+        let mut first = AttachedCursorSample {
+            x: 0,
+            y: 0,
+            visible: true,
+            shape: CursorShapeState::Embedded(shape.clone()),
+        };
+        retain_cursor_shape(&mut last, &mut first);
+        drop(first);
+        let mut next = AttachedCursorSample {
+            x: 1,
+            y: 2,
+            visible: true,
+            shape: CursorShapeState::Cached(shape.shape_id),
+        };
+        retain_cursor_shape(&mut last, &mut next);
+        let actual = next.shape.embedded_shape().unwrap();
+        assert!(Arc::ptr_eq(&actual.shape_rgba, &shape.shape_rgba));
+        assert_eq!((next.x, next.y), (1, 2));
     }
 }

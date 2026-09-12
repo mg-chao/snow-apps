@@ -260,6 +260,8 @@ impl AutomaticWindowsCapturer {
     ) -> CaptureResult<Frame> {
         self.refresh_topology_state();
         let started_at = Instant::now();
+        let continuous = self.capture_mode == CaptureMode::Continuous;
+        let mut valid_history = destination_has_history;
         let mut reusable = reuse;
         let mut errors = Vec::new();
 
@@ -271,9 +273,11 @@ impl AutomaticWindowsCapturer {
 
             let kind = self.candidates[index].kind;
             let attempt_frame = reusable.take();
-            let rollback = attempt_frame.as_ref().cloned();
+            let rollback = (!continuous)
+                .then(|| attempt_frame.as_ref().cloned())
+                .flatten();
             let result = self.ensure_candidate(index).and_then(|capturer| {
-                capturer.capture_with_history_hint(attempt_frame, destination_has_history)
+                capturer.capture_with_history_hint(attempt_frame, valid_history)
             });
             match result {
                 Ok(frame) => {
@@ -283,6 +287,9 @@ impl AutomaticWindowsCapturer {
                 Err(error) if fallback_eligible(&error) => {
                     self.discard_candidate(index);
                     reusable = rollback;
+                    if continuous {
+                        valid_history = false;
+                    }
                     errors.push((kind, error));
                 }
                 Err(error) => {
@@ -304,6 +311,8 @@ impl AutomaticWindowsCapturer {
     ) -> CaptureResult<Option<CaptureSampleMetadata>> {
         self.refresh_topology_state();
         let started_at = Instant::now();
+        let continuous = self.capture_mode == CaptureMode::Continuous;
+        let mut valid_history = destination_has_history;
         let mut errors = Vec::new();
         for index in self.attempt_order() {
             if self.budget_expired(started_at) {
@@ -311,9 +320,12 @@ impl AutomaticWindowsCapturer {
                 break;
             }
             let kind = self.candidates[index].kind;
-            let rollback = destination.clone();
+            // Snapshot retains transactional pixels. Continuous outputs are unpublished
+            // until success, so a failed region only invalidates its incremental history.
+            let rollback = (!continuous).then(|| destination.clone());
+            let metadata = destination.metadata.clone();
             let result = self.ensure_candidate(index).and_then(|capturer| {
-                capturer.capture_region_into(blit, destination, destination_has_history)
+                capturer.capture_region_into(blit, destination, valid_history)
             });
             match result {
                 Ok(sample) => {
@@ -321,11 +333,21 @@ impl AutomaticWindowsCapturer {
                     return Ok(sample);
                 }
                 Err(error) if fallback_eligible(&error) => {
-                    *destination = rollback;
+                    if let Some(rollback) = rollback {
+                        *destination = rollback;
+                    } else {
+                        destination.metadata = metadata;
+                        valid_history = false;
+                    }
                     self.discard_candidate(index);
                     errors.push((kind, error));
                 }
                 Err(error) => {
+                    if let Some(rollback) = rollback {
+                        *destination = rollback;
+                    } else {
+                        destination.metadata = metadata;
+                    }
                     self.discard_all_candidates();
                     return Err(error);
                 }
@@ -346,6 +368,8 @@ impl AutomaticWindowsCapturer {
     ) -> CaptureResult<Option<CaptureSampleMetadata>> {
         self.refresh_topology_state();
         let started_at = Instant::now();
+        let continuous = self.capture_mode == CaptureMode::Continuous;
+        let mut valid_history = destination_has_history;
         let mut errors = Vec::new();
         for index in self.attempt_order() {
             if self.budget_expired(started_at) {
@@ -353,7 +377,10 @@ impl AutomaticWindowsCapturer {
                 break;
             }
             let kind = self.candidates[index].kind;
-            let rollback = destination.clone();
+            // Snapshot retains transactional pixels. Continuous outputs are unpublished
+            // until success, so a failed region only invalidates its incremental history.
+            let rollback = (!continuous).then(|| destination.clone());
+            let metadata = destination.metadata.clone();
             let result = self.ensure_candidate(index).and_then(|capturer| {
                 capturer.capture_desktop_region_into(
                     x,
@@ -361,7 +388,7 @@ impl AutomaticWindowsCapturer {
                     width,
                     height,
                     destination,
-                    destination_has_history,
+                    valid_history,
                 )
             });
             match result {
@@ -370,11 +397,21 @@ impl AutomaticWindowsCapturer {
                     return Ok(sample);
                 }
                 Err(error) if fallback_eligible(&error) => {
-                    *destination = rollback;
+                    if let Some(rollback) = rollback {
+                        *destination = rollback;
+                    } else {
+                        destination.metadata = metadata;
+                        valid_history = false;
+                    }
                     self.discard_candidate(index);
                     errors.push((kind, error));
                 }
                 Err(error) => {
+                    if let Some(rollback) = rollback {
+                        *destination = rollback;
+                    } else {
+                        destination.metadata = metadata;
+                    }
                     self.discard_all_candidates();
                     return Err(error);
                 }
@@ -1040,5 +1077,203 @@ mod tests {
             window_auto_priority(&AutoBackendPolicy::default(), true),
             crate::backend::DEFAULT_AUTO_BACKEND_PRIORITY
         );
+    }
+    struct PartialWriteCapturer {
+        fail: bool,
+        history: Arc<Mutex<Vec<bool>>>,
+        pointers: Arc<Mutex<Vec<usize>>>,
+    }
+
+    impl PartialWriteCapturer {
+        fn write(
+            &self,
+            destination: &mut Frame,
+            blit: CaptureBlitRegion,
+            history: bool,
+        ) -> CaptureResult<Option<CaptureSampleMetadata>> {
+            self.history.lock().unwrap().push(history);
+            self.pointers
+                .lock()
+                .unwrap()
+                .push(destination.as_bytes().as_ptr() as usize);
+            if self.fail {
+                let offset =
+                    (blit.dst_y as usize * destination.width() as usize + blit.dst_x as usize) * 4;
+                destination.as_mut_bytes()[offset..offset + 4].fill(255);
+                destination.metadata.sequence = 999;
+                return Err(CaptureError::Timeout);
+            }
+            // A backend with valid dirty history may leave unchanged pixels untouched.
+            if !history {
+                let stride = destination.width() as usize * 4;
+                for y in blit.dst_y..blit.dst_y + blit.height {
+                    let start = y as usize * stride + blit.dst_x as usize * 4;
+                    destination.as_mut_bytes()[start..start + blit.width as usize * 4].fill(42);
+                }
+            }
+            Ok(Some(CaptureSampleMetadata {
+                is_duplicate: history,
+                ..Default::default()
+            }))
+        }
+    }
+
+    impl MonitorCapturer for PartialWriteCapturer {
+        fn capture(&mut self, reuse: Option<Frame>) -> CaptureResult<Frame> {
+            self.capture_with_history_hint(reuse, false)
+        }
+        fn capture_with_history_hint(
+            &mut self,
+            reuse: Option<Frame>,
+            history: bool,
+        ) -> CaptureResult<Frame> {
+            let mut frame = reuse.unwrap_or_else(Frame::empty);
+            frame.ensure_rgba_capacity(4, 4)?;
+            self.write(
+                &mut frame,
+                CaptureBlitRegion {
+                    src_x: 0,
+                    src_y: 0,
+                    width: 4,
+                    height: 4,
+                    dst_x: 0,
+                    dst_y: 0,
+                },
+                history,
+            )?;
+            Ok(frame)
+        }
+        fn capture_region_into(
+            &mut self,
+            blit: CaptureBlitRegion,
+            destination: &mut Frame,
+            history: bool,
+        ) -> CaptureResult<Option<CaptureSampleMetadata>> {
+            self.write(destination, blit, history)
+        }
+        fn capture_desktop_region_into(
+            &mut self,
+            _x: i32,
+            _y: i32,
+            width: u32,
+            height: u32,
+            destination: &mut Frame,
+            history: bool,
+        ) -> CaptureResult<Option<CaptureSampleMetadata>> {
+            self.write(
+                destination,
+                CaptureBlitRegion {
+                    src_x: 0,
+                    src_y: 0,
+                    width,
+                    height,
+                    dst_x: 0,
+                    dst_y: 0,
+                },
+                history,
+            )
+        }
+    }
+
+    #[test]
+    fn continuous_fallback_invalidates_partial_pixels_for_every_capture_path() {
+        for path in 0..3 {
+            for snapshot in [false, true] {
+                let history = Arc::new(Mutex::new(Vec::new()));
+                let pointers = Arc::new(Mutex::new(Vec::new()));
+                let state = Arc::new(Mutex::new(CandidateState::default()));
+                let mut auto = scripted_auto(&[
+                    (CaptureBackendKind::DxgiDuplication, state.clone()),
+                    (CaptureBackendKind::WindowsGraphicsCapture, state),
+                ]);
+                auto.capture_mode = if snapshot {
+                    CaptureMode::Snapshot
+                } else {
+                    CaptureMode::Continuous
+                };
+                for (index, candidate) in auto.candidates.iter_mut().enumerate() {
+                    candidate.capturer = Some(Box::new(PartialWriteCapturer {
+                        fail: index == 0,
+                        history: history.clone(),
+                        pointers: pointers.clone(),
+                    }));
+                }
+                let mut destination = Frame::from_rgba8(4, 4, vec![7; 64]).unwrap();
+                destination.metadata.sequence = 12;
+                if path == 0 {
+                    destination = auto.capture_frame(Some(destination), true).unwrap();
+                } else if path == 1 {
+                    auto.capture_region(
+                        CaptureBlitRegion {
+                            src_x: 2,
+                            src_y: 3,
+                            width: 2,
+                            height: 2,
+                            dst_x: 1,
+                            dst_y: 1,
+                        },
+                        &mut destination,
+                        true,
+                    )
+                    .unwrap();
+                } else {
+                    auto.capture_desktop_region(-10, 20, 2, 2, &mut destination, true)
+                        .unwrap();
+                }
+                assert_eq!(*history.lock().unwrap(), vec![true, snapshot]);
+                for y in 0..4 {
+                    for x in 0..4 {
+                        let selected = path == 0
+                            || (path == 1 && (1..3).contains(&x) && (1..3).contains(&y))
+                            || (path == 2 && x < 2 && y < 2);
+                        let expected = if selected && !snapshot { 42 } else { 7 };
+                        assert_eq!(
+                            &destination.as_bytes()[(y * 4 + x) * 4..(y * 4 + x + 1) * 4],
+                            &[expected; 4]
+                        );
+                    }
+                }
+                if path != 0 {
+                    assert_eq!(destination.metadata.sequence, 12);
+                }
+                // The borrowed region succeeds in place, without copy-on-write.
+                if !snapshot && path != 0 {
+                    let pointers = pointers.lock().unwrap();
+                    assert_eq!(pointers[0], pointers[1]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn continuous_failure_never_publishes_candidate_metadata() {
+        let state = Arc::new(Mutex::new(CandidateState::default()));
+        let mut auto = scripted_auto(&[(CaptureBackendKind::DxgiDuplication, state)]);
+        auto.capture_mode = CaptureMode::Continuous;
+        auto.candidates[0].capturer = Some(Box::new(PartialWriteCapturer {
+            fail: true,
+            history: Default::default(),
+            pointers: Default::default(),
+        }));
+        let mut destination = Frame::from_rgba8(4, 4, vec![7; 64]).unwrap();
+        destination.metadata.sequence = 12;
+        assert!(
+            auto.capture_region(
+                CaptureBlitRegion {
+                    src_x: 0,
+                    src_y: 0,
+                    width: 2,
+                    height: 2,
+                    dst_x: 1,
+                    dst_y: 1
+                },
+                &mut destination,
+                true
+            )
+            .is_err()
+        );
+        assert_eq!(destination.metadata.sequence, 12);
+        assert_eq!(&destination.as_bytes()[0..4], &[7; 4]);
+        assert!(auto.selected.is_none());
     }
 }

@@ -12,6 +12,7 @@ struct RecordingClockState {
     started_at: Instant,
     pause_started_at: Option<Instant>,
     intervals: Vec<PauseInterval>,
+    precise_intervals: Vec<(Instant, Instant)>,
     total_paused: Duration,
 }
 
@@ -21,6 +22,7 @@ impl RecordingClockState {
             started_at,
             pause_started_at: None,
             intervals: Vec::new(),
+            precise_intervals: Vec::new(),
             total_paused: Duration::ZERO,
         }
     }
@@ -36,6 +38,7 @@ impl RecordingClockState {
             let start_ms = start.saturating_duration_since(self.started_at).as_millis() as u64;
             let end_ms = at.saturating_duration_since(self.started_at).as_millis() as u64;
             self.total_paused += at.saturating_duration_since(start);
+            self.precise_intervals.push((start, at));
             self.intervals.push(PauseInterval { start_ms, end_ms });
         }
     }
@@ -48,7 +51,20 @@ impl RecordingClockState {
 
     fn active_elapsed_duration(&self, at: Instant) -> Duration {
         let elapsed = at.saturating_duration_since(self.started_at);
-        let mut paused = self.total_paused;
+        // Queued observations can precede the latest resume. Subtract only
+        // the portion of each pause that occurred before this observation.
+        let mut paused = if self
+            .precise_intervals
+            .last()
+            .is_none_or(|(_, end)| at >= *end)
+        {
+            self.total_paused
+        } else {
+            self.precise_intervals
+                .iter()
+                .map(|(start, end)| at.min(*end).saturating_duration_since(*start))
+                .sum()
+        };
         if let Some(paused_from) = self.pause_started_at {
             paused += at.saturating_duration_since(paused_from);
         }
@@ -84,6 +100,17 @@ impl RecordingClock {
 
     pub fn active_elapsed_ms(&self, at: Instant) -> u64 {
         self.active_elapsed_duration(at).as_millis() as u64
+    }
+
+    /// Whether an observation belongs to active recording rather than a pause.
+    pub fn is_active_at(&self, at: Instant) -> bool {
+        let state = self.inner.lock().unwrap();
+        at >= state.started_at
+            && state.pause_started_at.is_none_or(|start| at < start)
+            && !state
+                .precise_intervals
+                .iter()
+                .any(|(start, end)| at >= *start && at < *end)
     }
 
     pub fn active_elapsed_from_stream_offset(&self, offset: Duration) -> Duration {
@@ -158,5 +185,29 @@ mod tests {
                 end_ms: 100,
             }]
         );
+    }
+
+    #[test]
+    fn queued_observations_keep_their_original_time_after_later_pauses() {
+        let start = Instant::now();
+        let clock = RecordingClock::new(start);
+        let controller = clock.controller();
+        controller.mark_pause(start + Duration::from_millis(100));
+        controller.mark_resume(start + Duration::from_millis(250));
+        controller.mark_pause(start + Duration::from_millis(350));
+        controller.mark_resume(start + Duration::from_millis(450));
+        for (wall, media, active) in [
+            (50, 50, true),
+            (100, 100, false),
+            (200, 100, false),
+            (250, 100, true),
+            (300, 150, true),
+            (400, 200, false),
+            (500, 250, true),
+        ] {
+            let at = start + Duration::from_millis(wall);
+            assert_eq!(clock.active_elapsed_ms(at), media);
+            assert_eq!(clock.is_active_at(at), active);
+        }
     }
 }

@@ -2762,6 +2762,26 @@ impl OutputCapturer {
         destination_has_history: bool,
         prefer_low_latency: bool,
     ) -> CaptureResult<CaptureSampleMetadata> {
+        #[cfg(feature = "stage-timing")]
+        let stages = StageScope::enter(self.record_stage_timings);
+        let result = self.capture_region_into_inner(
+            blit,
+            destination,
+            destination_has_history,
+            prefer_low_latency,
+        );
+        #[cfg(feature = "stage-timing")]
+        attach_stage_timings(destination, stages);
+        result
+    }
+
+    fn capture_region_into_inner(
+        &mut self,
+        blit: CaptureBlitRegion,
+        destination: &mut Frame,
+        destination_has_history: bool,
+        prefer_low_latency: bool,
+    ) -> CaptureResult<CaptureSampleMetadata> {
         // Region capture may consume a desktop update that the full-frame
         // native history has not seen.
         self.rotation_frame = None;

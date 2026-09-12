@@ -11,12 +11,14 @@ use crate::config::{ExportExecutionMode, ExportFormat, SoftwareH264Priority};
 use crate::editing::{
     choose_audio_channel_layout, choose_audio_codec, choose_audio_sample_format,
     choose_audio_sample_rate, choose_video_pixel_format, configure_codec_threads,
-    drain_audio_packets_with_callback, drain_video_packets_with_durations,
-    effective_audio_bitrate_kbps, effective_video_config, ensure_video_frame_writable,
-    is_hardware_h264_encoder, open_audio_encoder, open_video_encoder, select_video_codec,
+    drain_audio_packets_with_callback, drain_video_packets_observed, effective_audio_bitrate_kbps,
+    effective_video_config, ensure_video_frame_writable, is_hardware_h264_encoder,
+    open_audio_encoder, open_video_encoder, opened_video_encoder_uses_hardware, select_video_codec,
 };
 use crate::error::{RecordingExportError, Result};
-use crate::ffmpeg_util::{copy_rgba_into_frame, ensure_ffmpeg_initialized};
+#[cfg(test)]
+use crate::ffmpeg_util::copy_rgba_into_frame;
+use crate::ffmpeg_util::ensure_ffmpeg_initialized;
 use crate::video_quality::smart_quality_bitrate_bps;
 
 pub const DIRECT_STAGING_PREFIX: &str = ".snow-recording-direct-";
@@ -113,6 +115,8 @@ impl StreamingEncoderConfig {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct StreamingEncoderReport {
+    #[cfg(feature = "bench-timing")]
+    pub timings: crate::bench_timing::EncoderTimings,
     pub encoded_frames: u64,
     pub coalesced_frames: u64,
     pub video_encoder: String,
@@ -149,7 +153,6 @@ pub struct StreamingEncoder {
     stream_index: usize,
     stream_time_base: ffmpeg::Rational,
     scaler: ffmpeg::software::scaling::Context,
-    rgba_frame: ffmpeg::frame::Video,
     encode_frame: ffmpeg::frame::Video,
     width: u32,
     height: u32,
@@ -157,6 +160,7 @@ pub struct StreamingEncoder {
     pending: Option<PendingFrame>,
     spare_rgba: Vec<u8>,
     pending_packet_durations: VecDeque<i64>,
+    pending_timed_durations: VecDeque<(i64, i64)>,
     audio: Option<StreamingAudioState>,
     staging_path: Option<PathBuf>,
     final_path: PathBuf,
@@ -346,17 +350,20 @@ impl StreamingEncoder {
             RecordingExportError::Encode(format!("failed to create streaming RGBA scaler: {error}"))
         })?;
 
+        let report = StreamingEncoderReport::default();
+        #[cfg(feature = "bench-timing")]
+        let report = {
+            let mut report = report;
+            report.timings.begin();
+            report
+        };
+        let used_hardware_video_encoder = opened_video_encoder_uses_hardware(&encoder);
         Ok(Self {
             output: Some(output),
             encoder,
             stream_index,
             stream_time_base,
             scaler,
-            rgba_frame: ffmpeg::frame::Video::new(
-                ffmpeg::format::Pixel::RGBA,
-                config.width,
-                config.height,
-            ),
             encode_frame: ffmpeg::frame::Video::new(pixel_format, config.width, config.height),
             width: config.width,
             height: config.height,
@@ -364,24 +371,32 @@ impl StreamingEncoder {
             pending: None,
             spare_rgba: Vec::new(),
             pending_packet_durations: VecDeque::new(),
+            pending_timed_durations: VecDeque::new(),
             audio,
             staging_path: None,
             final_path: config.output_path,
             report: StreamingEncoderReport {
                 video_encoder: video_codec.name().to_string(),
-                used_hardware_video_encoder: is_hardware_h264_encoder(&video_codec),
+                used_hardware_video_encoder,
                 audio_encoder: config
                     .audio
                     .as_ref()
                     .and_then(|_| choose_audio_codec(config.format))
                     .map(|codec| codec.name().to_string()),
-                ..StreamingEncoderReport::default()
+                ..report
             },
             finished: false,
         })
     }
 
     pub fn push_rgba_frame(&mut self, timestamp_ms: u64, rgba: &[u8]) -> Result<()> {
+        let pts = ((u128::from(timestamp_ms) * u128::from(self.fps) + 500) / 1_000)
+            .min(i64::MAX as u128) as i64;
+        self.push_rgba_frame_at_pts(pts as u64, rgba)
+    }
+
+    /// Submit using the encoder's integer frame time base without millisecond rounding.
+    pub fn push_rgba_frame_at_pts(&mut self, pts: u64, rgba: &[u8]) -> Result<()> {
         let expected = self.width as usize * self.height as usize * 4;
         if rgba.len() != expected {
             return Err(RecordingExportError::InvalidConfig(format!(
@@ -389,24 +404,48 @@ impl StreamingEncoder {
                 rgba.len()
             )));
         }
-        let pts = ((u128::from(timestamp_ms) * u128::from(self.fps) + 500) / 1_000)
-            .min(i64::MAX as u128) as i64;
+        let mut owned = std::mem::take(&mut self.spare_rgba);
+        owned.resize(expected, 0);
+        #[cfg(feature = "bench-timing")]
+        let copy_started = std::time::Instant::now();
+        owned.copy_from_slice(rgba);
+        #[cfg(feature = "bench-timing")]
+        {
+            self.report.timings.copied_bytes += rgba.len() as u64;
+            self.report
+                .timings
+                .record("encode.pending_copy", copy_started);
+        }
+        self.spare_rgba = self.push_owned_rgba_frame_at_pts(pts, owned)?;
+        Ok(())
+    }
+
+    /// Transfer an RGBA image at an integer frame index and return recyclable storage.
+    /// Returned pixels are no longer referenced by the encoder. The first call may
+    /// return an empty vector; subsequent calls return the previous image's storage.
+    /// Storage may grow on first use to provide FFmpeg's SIMD tail padding.
+    pub fn push_owned_rgba_frame_at_pts(&mut self, pts: u64, rgba: Vec<u8>) -> Result<Vec<u8>> {
+        let pts = i64::try_from(pts)
+            .map_err(|_| RecordingExportError::InvalidConfig("video PTS overflow".into()))?;
+        let expected = self.width as usize * self.height as usize * 4;
+        if rgba.len() != expected {
+            return Err(RecordingExportError::InvalidConfig(format!(
+                "streaming RGBA frame has {} bytes; expected {expected}",
+                rgba.len()
+            )));
+        }
+        #[cfg(feature = "bench-timing")]
+        self.report.timings.submitted_pts.push(pts);
         if let Some(pending) = self.pending.as_mut() {
             if pts <= pending.pts {
-                pending.rgba.copy_from_slice(rgba);
                 self.report.coalesced_frames = self.report.coalesced_frames.saturating_add(1);
-                return Ok(());
+                return Ok(std::mem::replace(&mut pending.rgba, rgba));
             }
             let duration = pts.saturating_sub(pending.pts).max(1);
             self.encode_pending(duration)?;
         }
-        let mut owned = std::mem::take(&mut self.spare_rgba);
-        if owned.len() != expected {
-            owned.resize(expected, 0);
-        }
-        owned.copy_from_slice(rgba);
-        self.pending = Some(PendingFrame { pts, rgba: owned });
-        Ok(())
+        self.pending = Some(PendingFrame { pts, rgba });
+        Ok(std::mem::take(&mut self.spare_rgba))
     }
 
     pub fn push_audio_pcm_i16(&mut self, timestamp_ms: u64, samples: &[i16]) -> Result<()> {
@@ -425,8 +464,35 @@ impl StreamingEncoder {
         self.audio.is_some()
     }
 
-    pub fn finish(mut self) -> Result<StreamingEncoderReport> {
-        self.encode_pending(1)?;
+    pub fn finish(self) -> Result<StreamingEncoderReport> {
+        self.finish_inner(None)
+    }
+
+    /// End the last pending image at an exclusive output-frame boundary.
+    pub fn finish_at_pts(self, end_pts: u64) -> Result<StreamingEncoderReport> {
+        let endpoint = i64::try_from(end_pts)
+            .map_err(|_| RecordingExportError::InvalidConfig("video endpoint overflow".into()))?;
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|frame| endpoint <= frame.pts)
+        {
+            return Err(RecordingExportError::InvalidConfig(
+                "video endpoint must follow the last submitted PTS".into(),
+            ));
+        }
+        self.finish_inner(Some(endpoint))
+    }
+
+    fn finish_inner(mut self, end_pts: Option<i64>) -> Result<StreamingEncoderReport> {
+        #[cfg(feature = "bench-timing")]
+        let finish_started = std::time::Instant::now();
+        let duration = self
+            .pending
+            .as_ref()
+            .and_then(|frame| end_pts.map(|end| end.saturating_sub(frame.pts).max(1)))
+            .unwrap_or(1);
+        self.encode_pending(duration)?;
         if let Some(audio) = self.audio.as_mut() {
             let output = self.output.as_mut().ok_or_else(|| {
                 RecordingExportError::Encode("streaming output is already closed".to_string())
@@ -442,13 +508,18 @@ impl StreamingEncoder {
             let output = self.output.as_mut().ok_or_else(|| {
                 RecordingExportError::Encode("streaming output is already closed".to_string())
             })?;
-            drain_video_packets_with_durations(
+            drain_video_packets_observed(
                 &mut self.encoder,
                 output,
                 self.stream_index,
                 self.stream_time_base,
                 true,
                 &mut self.pending_packet_durations,
+                |packet| {
+                    apply_packet_duration(packet, &mut self.pending_timed_durations);
+                    #[cfg(feature = "bench-timing")]
+                    self.report.timings.packet();
+                },
             )?;
             output.write_trailer().map_err(|error| {
                 RecordingExportError::Encode(format!(
@@ -465,23 +536,52 @@ impl StreamingEncoder {
             return Err(error.into());
         }
         self.finished = true;
+        #[cfg(feature = "bench-timing")]
+        self.report
+            .timings
+            .record("encode.finalize", finish_started);
         Ok(self.report.clone())
     }
 
     fn encode_pending(&mut self, duration: i64) -> Result<()> {
-        let Some(pending) = self.pending.take() else {
+        let Some(mut pending) = self.pending.take() else {
             return Ok(());
         };
-        copy_rgba_into_frame(&mut self.rgba_frame, self.width, &pending.rgba);
+        #[cfg(feature = "bench-timing")]
+        let prepare_started = std::time::Instant::now();
+        #[cfg(feature = "bench-timing")]
+        let original_storage = (
+            pending.rgba.as_ptr(),
+            pending.rgba.len(),
+            pending.rgba.capacity(),
+        );
+        pad_owned_rgba(&mut pending.rgba);
+        #[cfg(feature = "bench-timing")]
+        {
+            if pending.rgba.as_ptr() != original_storage.0 {
+                self.report.timings.copied_bytes += original_storage.1 as u64;
+            }
+            if pending.rgba.capacity() != original_storage.2 {
+                self.report
+                    .timings
+                    .record("encode.rgba_storage_growth", prepare_started);
+            }
+            self.report.timings.encoded_pts.push(pending.pts);
+            self.report
+                .timings
+                .record("encode.rgba_prepare", prepare_started);
+        }
+        #[cfg(feature = "bench-timing")]
+        let convert_started = std::time::Instant::now();
         ensure_video_frame_writable(&mut self.encode_frame)?;
-        self.scaler
-            .run(&self.rgba_frame, &mut self.encode_frame)
-            .map_err(|error| {
-                RecordingExportError::Encode(format!(
-                    "failed to convert streaming RGBA frame: {error}"
-                ))
-            })?;
+        convert_owned_rgba(&mut self.scaler, &pending.rgba, &mut self.encode_frame)?;
+        #[cfg(feature = "bench-timing")]
+        self.report
+            .timings
+            .record("encode.convert", convert_started);
         self.encode_frame.set_pts(Some(pending.pts));
+        #[cfg(feature = "bench-timing")]
+        let send_started = std::time::Instant::now();
         self.encoder
             .send_frame(&self.encode_frame)
             .map_err(|error| {
@@ -489,21 +589,108 @@ impl StreamingEncoder {
                     "failed to send streaming video frame: {error}"
                 ))
             })?;
+        #[cfg(feature = "bench-timing")]
+        self.report.timings.record("encode.send", send_started);
+        #[cfg(feature = "bench-timing")]
+        let drain_started = std::time::Instant::now();
         self.pending_packet_durations.push_back(duration.max(1));
+        self.pending_timed_durations
+            .push_back((pending.pts, duration.max(1)));
         let output = self.output.as_mut().ok_or_else(|| {
             RecordingExportError::Encode("streaming output is already closed".to_string())
         })?;
-        drain_video_packets_with_durations(
+        drain_video_packets_observed(
             &mut self.encoder,
             output,
             self.stream_index,
             self.stream_time_base,
             false,
             &mut self.pending_packet_durations,
+            |packet| {
+                apply_packet_duration(packet, &mut self.pending_timed_durations);
+                #[cfg(feature = "bench-timing")]
+                self.report.timings.packet();
+            },
         )?;
+        #[cfg(feature = "bench-timing")]
+        self.report
+            .timings
+            .record("encode.receive_mux", drain_started);
+        pending
+            .rgba
+            .truncate(self.width as usize * self.height as usize * 4);
         self.spare_rgba = pending.rgba;
         self.report.encoded_frames = self.report.encoded_frames.saturating_add(1);
         Ok(())
+    }
+}
+
+fn pad_owned_rgba(rgba: &mut Vec<u8>) {
+    // swscale permits SIMD reads past the last plane. Reserve initialized tail
+    // padding without doubling a full-size image's capacity on its first use.
+    let padding = ffmpeg::ffi::AV_INPUT_BUFFER_PADDING_SIZE as usize;
+    rgba.reserve_exact(padding);
+    rgba.resize(rgba.len() + padding, 0);
+}
+
+fn convert_owned_rgba(
+    scaler: &mut ffmpeg::software::scaling::Context,
+    rgba: &[u8],
+    output: &mut ffmpeg::frame::Video,
+) -> Result<()> {
+    let input = scaler.input();
+    let stride = input
+        .width
+        .checked_mul(4)
+        .and_then(|value| i32::try_from(value).ok())
+        .ok_or_else(|| RecordingExportError::InvalidConfig("RGBA row size overflow".into()))?;
+    let expected = stride as usize * input.height as usize;
+    if input.format != ffmpeg::format::Pixel::RGBA
+        || rgba.len() < expected + ffmpeg::ffi::AV_INPUT_BUFFER_PADDING_SIZE as usize
+        || output.format() != scaler.output().format
+        || (output.width(), output.height()) != (scaler.output().width, scaler.output().height)
+    {
+        return Err(RecordingExportError::InvalidConfig(
+            "invalid owned RGBA conversion layout".into(),
+        ));
+    }
+    let height = input.height;
+    let mut source = [std::ptr::null(); 8];
+    source[0] = rgba.as_ptr();
+    let mut strides = [0; 8];
+    strides[0] = stride;
+    // SAFETY: sws_scale is synchronous and does not retain these source pointers.
+    // The caller owns the initialized RGBA pixels and SIMD tail padding through
+    // this call; each source row has exactly `stride` bytes. The destination is
+    // a fully allocated, writable AVFrame matching the scaler output. Encoding
+    // references only that separate destination, so RGBA storage can be recycled.
+    let rows = unsafe {
+        ffmpeg::ffi::sws_scale(
+            scaler.as_mut_ptr(),
+            source.as_ptr(),
+            strides.as_ptr(),
+            0,
+            height as i32,
+            (*output.as_mut_ptr()).data.as_ptr(),
+            (*output.as_mut_ptr()).linesize.as_ptr(),
+        )
+    };
+    if rows != output.height() as i32 {
+        return Err(RecordingExportError::Encode(format!(
+            "owned RGBA conversion returned {rows} rows"
+        )));
+    }
+    Ok(())
+}
+
+// Encoders with B-frames emit packets in decode order. Duration belongs to
+// the submitted image's PTS, including a prolonged static final image.
+fn apply_packet_duration(packet: &mut ffmpeg::Packet, pending: &mut VecDeque<(i64, i64)>) {
+    let index = packet
+        .pts()
+        .map_or(Some(0), |pts| pending.iter().position(|(at, _)| *at == pts));
+    if let Some((_, duration)) = index.and_then(|index| pending.remove(index)) {
+        packet.set_duration(duration);
     }
 }
 
@@ -952,6 +1139,151 @@ mod tests {
         }
     }
 
+    #[test]
+    #[ignore = "Release performance benchmark; requires SNOW_CONVERSION_BENCH_OUTPUT"]
+    fn benchmark_owned_rgba_conversion() {
+        use std::hint::black_box;
+        use std::io::Write;
+        use std::time::Instant;
+        if cfg!(debug_assertions) {
+            panic!("use windows-msvc-performance Release");
+        }
+        ensure_ffmpeg_initialized().unwrap();
+        let mut csv =
+            fs::File::create(std::env::var("SNOW_CONVERSION_BENCH_OUTPUT").unwrap()).unwrap();
+        writeln!(csv, "pair,variant,iterations,nanoseconds_per_frame").unwrap();
+        let (width, height) = (1920, 1080);
+        let mut pixels: Vec<u8> = (0..width * height * 4)
+            .map(|index| (index % 251) as u8)
+            .collect();
+        let visible = pixels.len();
+        pad_owned_rgba(&mut pixels);
+        let mut rgba_frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGBA, width, height);
+        let mut output = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::YUV420P, width, height);
+        let mut scaler = ffmpeg::software::scaling::Context::get(
+            ffmpeg::format::Pixel::RGBA,
+            width,
+            height,
+            ffmpeg::format::Pixel::YUV420P,
+            width,
+            height,
+            ffmpeg::software::scaling::flag::Flags::BICUBIC,
+        )
+        .unwrap();
+        let mut run = |owned| {
+            if owned {
+                convert_owned_rgba(&mut scaler, black_box(&pixels), black_box(&mut output))
+                    .unwrap();
+            } else {
+                copy_rgba_into_frame(&mut rgba_frame, width, black_box(&pixels[..visible]));
+                scaler.run(&rgba_frame, black_box(&mut output)).unwrap();
+            }
+            black_box(&output);
+        };
+        let warmup = Instant::now();
+        while warmup.elapsed() < Duration::from_secs(5) {
+            run(false);
+            run(true);
+        }
+        for pair in 1..=5 {
+            for owned in if pair % 2 == 1 {
+                [false, true]
+            } else {
+                [true, false]
+            } {
+                let started = Instant::now();
+                let mut iterations = 0;
+                while started.elapsed() < Duration::from_secs(2) {
+                    run(owned);
+                    iterations += 1;
+                }
+                writeln!(
+                    csv,
+                    "{pair},{},{iterations},{}",
+                    if owned { "owned" } else { "avframe-copy" },
+                    started.elapsed().as_nanos() / iterations
+                )
+                .unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn owned_rgba_conversion_matches_avframe_copy_for_all_streaming_pixel_layouts() {
+        ensure_ffmpeg_initialized().unwrap();
+        for (width, height) in [(1, 1), (17, 19), (63, 127), (128, 64), (1920, 1080)] {
+            let pixels: Vec<u8> = (0..width * height * 4)
+                .map(|index| (index % 251) as u8)
+                .collect();
+            let mut source = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGBA, width, height);
+            copy_rgba_into_frame(&mut source, width, &pixels);
+            let mut padded = pixels.clone();
+            pad_owned_rgba(&mut padded);
+            for format in [
+                ffmpeg::format::Pixel::YUV420P,
+                ffmpeg::format::Pixel::NV12,
+                ffmpeg::format::Pixel::YUV422P,
+                ffmpeg::format::Pixel::YUVA420P,
+                ffmpeg::format::Pixel::RGB8,
+                ffmpeg::format::Pixel::RGB24,
+                ffmpeg::format::Pixel::RGBA,
+                ffmpeg::format::Pixel::BGRA,
+            ] {
+                let make_scaler = || {
+                    ffmpeg::software::scaling::Context::get(
+                        ffmpeg::format::Pixel::RGBA,
+                        width,
+                        height,
+                        format,
+                        width,
+                        height,
+                        ffmpeg::software::scaling::flag::Flags::BICUBIC,
+                    )
+                    .unwrap()
+                };
+                let mut baseline = ffmpeg::frame::Video::new(format, width, height);
+                let mut candidate = ffmpeg::frame::Video::new(format, width, height);
+                make_scaler().run(&source, &mut baseline).unwrap();
+                convert_owned_rgba(&mut make_scaler(), &padded, &mut candidate).unwrap();
+                let packed = |frame: &ffmpeg::frame::Video| {
+                    // SAFETY: both frames are allocated for this exact format and
+                    // geometry. FFmpeg computes and fills the packed image size;
+                    // row padding is excluded from the pixel comparison.
+                    unsafe {
+                        let size = ffmpeg::ffi::av_image_get_buffer_size(
+                            format.into(),
+                            width as i32,
+                            height as i32,
+                            1,
+                        );
+                        assert!(size > 0);
+                        let mut bytes = vec![0; size as usize];
+                        let copied = ffmpeg::ffi::av_image_copy_to_buffer(
+                            bytes.as_mut_ptr(),
+                            size,
+                            (*frame.as_ptr()).data.as_ptr() as *const *const u8,
+                            (*frame.as_ptr()).linesize.as_ptr(),
+                            format.into(),
+                            width as i32,
+                            height as i32,
+                            1,
+                        );
+                        assert_eq!(copied, size);
+                        bytes
+                    }
+                };
+                assert_eq!(
+                    packed(&baseline),
+                    packed(&candidate),
+                    "{width}x{height} {format:?}"
+                );
+                assert!(convert_owned_rgba(&mut make_scaler(), &pixels, &mut candidate).is_err());
+            }
+            assert_eq!(&padded[..pixels.len()], pixels);
+            assert!(padded[pixels.len()..].iter().all(|byte| *byte == 0));
+        }
+    }
+
     fn write_test_frames(encoder: &mut StreamingEncoder) {
         for index in 0..3u8 {
             let mut rgba = vec![0u8; 16 * 16 * 4];
@@ -1105,5 +1437,178 @@ mod tests {
                     .to_string_lossy()
                     .starts_with(DIRECT_STAGING_PREFIX))
         );
+    }
+    #[test]
+    fn explicit_pts_and_endpoint_preserve_variable_duration_and_decode() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("timing.mp4");
+        let mut encoder =
+            StreamingEncoder::create(encoder_config(output.clone(), ExportFormat::Mp4)).unwrap();
+        encoder
+            .push_rgba_frame_at_pts(0, &[80; 16 * 16 * 4])
+            .unwrap();
+        encoder
+            .push_rgba_frame_at_pts(3, &[160; 16 * 16 * 4])
+            .unwrap();
+        let report = encoder.finish_at_pts(10).unwrap();
+        assert_eq!(report.encoded_frames, 2);
+        assert_eq!(decoded_video_frame_count(&output).0, 2);
+        let mut input = ffmpeg::format::input(&output).unwrap();
+        let stream = input.streams().best(ffmpeg::media::Type::Video).unwrap();
+        let index = stream.index();
+        let time_base = stream.time_base();
+        let packets: Vec<_> = input
+            .packets()
+            .filter(|(stream, _)| stream.index() == index)
+            .map(|(_, packet)| (packet.pts().unwrap(), packet.duration()))
+            .collect();
+        assert_eq!(packets.len(), 2);
+        let seconds = |ticks: i64| {
+            ticks as f64 * f64::from(time_base.numerator()) / f64::from(time_base.denominator())
+        };
+        assert!((seconds(packets[1].0) - 0.3).abs() < 0.001);
+        assert!((seconds(packets[1].0 + packets[1].1) - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn owned_submission_recycles_only_released_pixels_and_matches_borrowed_packets() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut packets = Vec::new();
+        for owned in [false, true] {
+            let path = directory.path().join(format!("owned-{owned}.mp4"));
+            let mut encoder =
+                StreamingEncoder::create(encoder_config(path.clone(), ExportFormat::Mp4)).unwrap();
+            let mut storage = vec![0; 16 * 16 * 4];
+            let mut pointers = Vec::new();
+            for index in 0..12 {
+                storage.resize(16 * 16 * 4, 0);
+                // Reserve SIMD tail room before checking pointer identity. First-use
+                // growth is permitted; adequately sized storage must recycle in place.
+                storage.reserve_exact(ffmpeg::ffi::AV_INPUT_BUFFER_PADDING_SIZE as usize);
+                storage.fill((index * 17) as u8);
+                if owned {
+                    pointers.push(storage.as_ptr());
+                    storage = encoder
+                        .push_owned_rgba_frame_at_pts(index, storage)
+                        .unwrap();
+                    if index > 0 {
+                        assert_eq!(storage.as_ptr(), pointers[index as usize - 1]);
+                        assert_eq!(storage, vec![((index - 1) * 17) as u8; 16 * 16 * 4]);
+                    }
+                    // Poison the returned allocation while encoded frames remain referenced.
+                    storage.fill(255);
+                } else {
+                    encoder.push_rgba_frame_at_pts(index, &storage).unwrap();
+                }
+            }
+            assert_eq!(encoder.finish_at_pts(15).unwrap().encoded_frames, 12);
+            assert_eq!(decoded_video_frame_count(&path).0, 12);
+            let mut input = ffmpeg::format::input(&path).unwrap();
+            packets.push(
+                input
+                    .packets()
+                    .map(|(_, p)| (p.pts(), p.duration(), p.data().unwrap().to_vec()))
+                    .collect::<Vec<_>>(),
+            );
+        }
+        assert_eq!(packets[0], packets[1]);
+    }
+
+    #[test]
+    fn invalid_media_endpoint_cancels_staging_without_publishing() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("invalid-end.mp4");
+        let mut encoder =
+            StreamingEncoder::create(encoder_config(path.clone(), ExportFormat::Mp4)).unwrap();
+        encoder
+            .push_owned_rgba_frame_at_pts(3, vec![80; 16 * 16 * 4])
+            .unwrap();
+        assert!(encoder.finish_at_pts(3).is_err());
+        assert!(!path.exists());
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn reordered_packets_keep_the_duration_of_their_own_image() {
+        let mut pending = VecDeque::from([(0, 3), (3, 3), (6, 6)]);
+        for (pts, duration) in [(0, 3), (6, 6), (3, 3)] {
+            let mut packet = ffmpeg::Packet::empty();
+            packet.set_pts(Some(pts));
+            apply_packet_duration(&mut packet, &mut pending);
+            assert_eq!(packet.duration(), duration);
+        }
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn h265_reordered_static_final_frame_reaches_stop_boundary() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("h265-timing.mp4");
+        let mut config = encoder_config(path.clone(), ExportFormat::Mp4);
+        config.codec = VideoCodec::H265;
+        config.width = 64;
+        config.height = 64;
+        config.encode_threads = 1;
+        let mut encoder = StreamingEncoder::create(config).unwrap();
+        for (pts, value) in [(0, 60), (3, 120), (6, 180)] {
+            encoder
+                .push_owned_rgba_frame_at_pts(pts, vec![value; 64 * 64 * 4])
+                .unwrap();
+        }
+        assert_eq!(encoder.finish_at_pts(12).unwrap().encoded_frames, 3);
+        // The distributed FFmpeg enables libx265 but not the HEVC decoder.
+        // Validate demuxed timing here; the retained fixture is decoded externally.
+        let mut input = ffmpeg::format::input(&path).unwrap();
+        let stream = input.streams().best(ffmpeg::media::Type::Video).unwrap();
+        let time_base = stream.time_base();
+        let endpoint = input
+            .packets()
+            .map(|(_, p)| p.pts().unwrap() + p.duration())
+            .max()
+            .unwrap();
+        let seconds =
+            endpoint as f64 * f64::from(time_base.numerator()) / f64::from(time_base.denominator());
+        assert!((seconds - 1.2).abs() < 0.001, "{seconds}");
+        if let Some(directory) = std::env::var_os("SNOW_RECORDING_TEST_ARTIFACTS") {
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::copy(&path, Path::new(&directory).join("h265-timing.mp4")).unwrap();
+        }
+    }
+
+    #[test]
+    fn failed_audio_initialization_after_video_open_removes_staging() {
+        for hardware in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("partial-initialization.mp4");
+            let mut config = encoder_config(path.clone(), ExportFormat::Mp4);
+            config.width = 640;
+            config.height = 360;
+            config.prefer_hardware_h264 = hardware;
+            config.execution_mode = ExportExecutionMode::HardwarePreferred;
+            // Reaches resampler initialization after opening video and adding its
+            // stream. FFmpeg cannot represent this input rate as a positive int.
+            config.audio = Some(StreamingAudioConfig {
+                sample_rate_hz: u32::MAX,
+                channels: 2,
+                bitrate_kbps: 160,
+            });
+            assert!(StreamingEncoder::create(config).is_err());
+            assert!(!path.exists());
+            assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+        }
+    }
+
+    #[test]
+    fn software_execution_mode_never_silently_selects_hardware() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("software.mp4");
+        let mut config = encoder_config(path, ExportFormat::Mp4);
+        config.prefer_hardware_h264 = true;
+        config.execution_mode = ExportExecutionMode::SoftwareOnly;
+        let mut encoder = StreamingEncoder::create(config).unwrap();
+        write_test_frames(&mut encoder);
+        let report = encoder.finish().unwrap();
+        assert_eq!(report.video_encoder, "libx264");
+        assert!(!report.used_hardware_video_encoder);
     }
 }

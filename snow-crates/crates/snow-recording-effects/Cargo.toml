@@ -14,3 +14,6 @@ windows = { workspace = true, features = [
   "Win32_Graphics_Direct2D", "Win32_Graphics_Direct2D_Common",
   "Win32_Graphics_Dxgi_Common", "Win32_Graphics_Imaging", "Win32_System_Com",
 ] }
+
+[features]
+bench-timing = []

@@ -76,7 +76,12 @@ impl StageHistogram {
 #[cfg(feature = "bench-pipeline-timing")]
 #[derive(Default)]
 pub struct PipelineTimings {
+    source_age: Vec<Duration>,
     queue_dwell: Vec<Duration>,
+    pub capture_backend: String,
+    pub captures: Vec<(u64, bool)>,
+    pub capture_contents: Vec<(u64, Option<u64>)>,
+    pub output_sources: Vec<(u64, u64, u64, u64)>,
     compose: Vec<Duration>,
     encode_push: Vec<Duration>,
     end_to_end: Vec<Duration>,
@@ -95,6 +100,24 @@ impl PipelineTimings {
     }
 
     /// Records one captured frame's journey through the worker.
+    pub fn observe_capture(
+        &mut self,
+        frame: &snow_capture::CapturedFrame,
+        received: std::time::Instant,
+    ) {
+        if let Some(queued) = frame.metadata().queued_at() {
+            self.queue_dwell
+                .push(received.saturating_duration_since(queued));
+        }
+        self.capture_backend = frame.metadata().backend_kind().as_str().to_owned();
+        self.captures
+            .push((frame.metadata().sequence(), frame.metadata().is_duplicate()));
+        self.capture_contents.push((
+            frame.metadata().sequence(),
+            frame.metadata().content_generation(),
+        ));
+    }
+
     pub fn observe_frame(
         &mut self,
         captured_at: std::time::Instant,
@@ -102,7 +125,7 @@ impl PipelineTimings {
         composed: std::time::Instant,
         pushed: std::time::Instant,
     ) {
-        self.queue_dwell
+        self.source_age
             .push(received.saturating_duration_since(captured_at));
         self.compose
             .push(composed.saturating_duration_since(received));
@@ -117,16 +140,23 @@ impl PipelineTimings {
 
     /// Summarizes the samples together with a final capture stream snapshot.
     pub fn stats(&self, stream: &snow_capture::CaptureStreamStatsSnapshot) -> CapturePipelineStats {
+        let mut source_age = self.source_age.clone();
         let mut queue_dwell = self.queue_dwell.clone();
         let mut compose = self.compose.clone();
         let mut encode_push = self.encode_push.clone();
         let mut end_to_end = self.end_to_end.clone();
         CapturePipelineStats {
+            source_age: SampleStats::from_samples(&mut source_age),
             queue_dwell: SampleStats::from_samples(&mut queue_dwell),
+            capture_backend: self.capture_backend.clone(),
+            observed_captures: self.captures.len() as u64,
+            capture_sequences: self.captures.clone(),
+            capture_contents: self.capture_contents.clone(),
+            output_sources: self.output_sources.clone(),
             compose: SampleStats::from_samples(&mut compose),
             encode_push: SampleStats::from_samples(&mut encode_push),
             end_to_end: SampleStats::from_samples(&mut end_to_end),
-            time_to_first_encoded_frame: self.first_encoded,
+            time_to_first_handoff: self.first_encoded,
             synthetic_overlay_frames: self.synthetic_overlay_frames,
             stream_frames_captured: stream.frames_captured,
             stream_frames_dropped: stream.frames_dropped,
@@ -141,17 +171,25 @@ impl PipelineTimings {
 
 /// Pipeline latency summary attached to [`crate::DirectRecordingReport`].
 #[cfg(feature = "bench-pipeline-timing")]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct CapturePipelineStats {
-    /// Capture stream timestamp to the worker receiving the frame.
+    /// Source timestamp to the start of composition, including cached-image age.
+    pub source_age: SampleStats,
+    /// Publication in the capture stream to receipt by the recording worker.
     pub queue_dwell: SampleStats,
+    pub capture_backend: String,
+    pub observed_captures: u64,
+    pub capture_sequences: Vec<(u64, bool)>,
+    pub capture_contents: Vec<(u64, Option<u64>)>,
+    /// Output PTS, capture sequence, content generation, and active source time in nanoseconds.
+    pub output_sources: Vec<(u64, u64, u64, u64)>,
     /// Overlay compositing inside the worker.
     pub compose: SampleStats,
     /// `StreamingEncoder::push_rgba_frame` duration.
     pub encode_push: SampleStats,
     /// Capture stream timestamp to the frame being handed to the encoder.
     pub end_to_end: SampleStats,
-    pub time_to_first_encoded_frame: Option<Duration>,
+    pub time_to_first_handoff: Option<Duration>,
     /// Frames the overlay scheduler composited from the cached latest frame
     /// while the desktop itself was static.
     pub synthetic_overlay_frames: u64,
@@ -220,13 +258,13 @@ mod tests {
         timings.synthetic_overlay_frames = 2;
 
         let stats = timings.stats(&snow_capture::CaptureStreamStatsSnapshot::default());
-        assert_eq!(stats.queue_dwell.max, Duration::from_millis(5));
+        assert_eq!(stats.source_age.max, Duration::from_millis(5));
         assert_eq!(stats.compose.max, Duration::from_millis(7));
         assert_eq!(stats.encode_push.max, Duration::from_millis(3));
         assert_eq!(stats.end_to_end.max, Duration::from_millis(15));
         assert_eq!(stats.synthetic_overlay_frames, 2);
         // The session start and the test's `start` are two adjacent clock reads, so
         // the first-frame span is 115 ms minus a few nanoseconds.
-        assert!(stats.time_to_first_encoded_frame.unwrap() >= Duration::from_millis(100));
+        assert!(stats.time_to_first_handoff.unwrap() >= Duration::from_millis(100));
     }
 }

@@ -56,6 +56,15 @@ pub struct DirtyRect {
 /// Metadata attached to each captured frame for recording pipelines.
 #[derive(Clone, Debug, Default)]
 pub struct FrameMetadata {
+    /// Publication after readback and cursor sampling. Schedulers use this to
+    /// avoid rendering a newer cursor observation at an earlier output time.
+    pub(crate) queued_at: Option<Instant>,
+    /// Start of the stream observation, used to reject an in-flight capture
+    /// spanning pause/resume even when its desktop source image is unchanged.
+    pub(crate) observation_started_at: Option<Instant>,
+    /// Stream-local image generation, unchanged for duplicates. Unlike a
+    /// duplicate flag, this survives dropped or intentionally superseded frames.
+    pub(crate) content_generation: Option<u64>,
     /// Wall-clock time spent inside the capture call (GPU readback,
     /// staging copy, pixel conversion). Lets recorders detect when the
     /// capture pipeline itself is the bottleneck vs. the encoder.
@@ -93,6 +102,18 @@ pub struct FrameMetadata {
 }
 
 impl FrameMetadata {
+    pub fn queued_at(&self) -> Option<Instant> {
+        self.queued_at
+    }
+
+    pub fn observation_started_at(&self) -> Option<Instant> {
+        self.observation_started_at
+    }
+
+    pub fn content_generation(&self) -> Option<u64> {
+        self.content_generation
+    }
+
     pub fn backend_kind(&self) -> CaptureBackendKind {
         self.backend_kind
     }
@@ -368,6 +389,8 @@ impl FrameBuffer {
     fn make_unique_with_len(&mut self, len: usize) {
         if let Some(storage) = Arc::get_mut(&mut self.storage) {
             if storage.len() == len {
+                #[cfg(feature = "stage-timing")]
+                crate::timing::stage_record("buffer.writable_reuse", Duration::ZERO);
                 return;
             }
             if len <= storage.capacity() {
@@ -376,7 +399,9 @@ impl FrameBuffer {
             }
         }
 
+        let allocation_started = crate::timing::stage_checkpoint();
         self.storage = Arc::new(clone_frame_buffer_storage(self.storage.as_ref(), len));
+        crate::timing::stage_record_since("buffer.allocate", allocation_started);
     }
 
     fn ensure_len(&mut self, len: usize) {
@@ -547,6 +572,9 @@ impl Frame {
     /// Called at the start of each capture to avoid stale metadata from
     /// a reused frame leaking into the new result.
     pub(crate) fn reset_metadata(&mut self) {
+        self.metadata.queued_at = None;
+        self.metadata.observation_started_at = None;
+        self.metadata.content_generation = None;
         self.metadata.stream_timestamp = None;
         #[cfg(feature = "stage-timing")]
         {

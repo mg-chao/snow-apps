@@ -11,10 +11,19 @@ param(
     [int]$Fps = 30,
     [string]$Clarity = "1080p",
     [switch]$PreferHardware,
-    [string]$OutputDirectory = ""
+    [string]$OutputDirectory = "",
+    [ValidateSet("continuous", "static", "sparse")][string]$Workload = "continuous",
+    [switch]$Audio,
+    [ValidateRange(0, 64)][int]$EncodeThreads = 0,
+    [ValidateRange(0, 4)][int]$ResizeThreads = 0,
+    [switch]$AlignCapture,
+    [switch]$FreeRunningCapture,
+    [switch]$BuildOnly,
+    [string]$Executable = ""
 )
 
 $ErrorActionPreference = "Stop"
+if ($AlignCapture -and $FreeRunningCapture) { throw 'Choose one capture pacing override.' }
 . (Join-Path $PSScriptRoot "snow-build-environment.ps1")
 Set-SnowBuildEnvironment -Preset windows-msvc-performance | Out-Null
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -35,32 +44,49 @@ $benchmarkArguments = @(
     "--backend", $Backend,
     "--fps", $Fps,
     "--clarity", $Clarity,
+    "--workload", $Workload,
     "--output", $OutputDirectory
 )
 if (-not [string]::IsNullOrWhiteSpace($Scenario)) {
     $benchmarkArguments += @("--scenario", $Scenario)
 }
+if ($Audio) { $benchmarkArguments += "--audio" }
+if ($EncodeThreads -gt 0) { $benchmarkArguments += @("--encode-threads", $EncodeThreads) }
+if ($ResizeThreads -gt 0) { $benchmarkArguments += @("--resize-threads", $ResizeThreads) }
+if ($AlignCapture) { $benchmarkArguments += "--align-capture" }
+if ($FreeRunningCapture) { $benchmarkArguments += "--free-running-capture" }
 if ($PreferHardware) {
     $benchmarkArguments += "--prefer-hardware"
 }
 
-Write-Host "Realtime recording benchmark report: $OutputDirectory"
-Write-Warning "The benchmark takes over the primary monitor and simulates mouse and keyboard input."
-for ($remaining = 5; $remaining -ge 1; $remaining--) {
-    Write-Host "Starting in $remaining..."
-    Start-Sleep -Seconds 1
-}
-
+$env:SNOW_BENCH_REVISION = (& git -C $repoRoot rev-parse HEAD).Trim()
+$featureArguments = @()
+if (-not [string]::IsNullOrWhiteSpace($Metrics)) { $featureArguments = @("--features", $Metrics) }
 Push-Location (Join-Path $repoRoot "snow-crates")
 try {
-    & cargo run -p snow-recording-runtime --release --target x86_64-pc-windows-msvc `
-        --target-dir (Join-Path $repoRoot "build/windows-msvc-performance/cargo") `
-        --features $Metrics `
-        --example realtime_recording_benchmark -- @benchmarkArguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "Realtime recording benchmark failed."
+    if ([string]::IsNullOrWhiteSpace($Executable)) {
+        & cargo build -p snow-recording-runtime --release --target x86_64-pc-windows-msvc `
+            --target-dir (Join-Path $repoRoot "build/windows-msvc-performance/cargo") `
+            @featureArguments --example realtime_recording_benchmark
+        if ($LASTEXITCODE -ne 0) { throw "Realtime recording benchmark build failed." }
+        $Executable = Join-Path $repoRoot "build/windows-msvc-performance/cargo/x86_64-pc-windows-msvc/release/examples/realtime_recording_benchmark.exe"
     }
+    if ($BuildOnly) { Write-Output $Executable; return }
+    New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
+    [ordered]@{
+        schema_version = 1
+        executable = [System.IO.Path]::GetFullPath($Executable)
+        executable_sha256 = (Get-FileHash -LiteralPath $Executable -Algorithm SHA256).Hash
+        preset = 'windows-msvc-performance'
+        arguments = $benchmarkArguments
+    } | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 (Join-Path $OutputDirectory 'build-identity.json')
+    Write-Host "Realtime recording benchmark report: $OutputDirectory"
+    Write-Warning "The benchmark takes over the primary monitor and simulates mouse and keyboard input."
+    for ($remaining = 5; $remaining -ge 1; $remaining--) {
+        Write-Host "Starting in $remaining..."
+        Start-Sleep -Seconds 1
+    }
+    & $Executable @benchmarkArguments
+    if ($LASTEXITCODE -ne 0) { throw "Realtime recording benchmark failed." }
 }
-finally {
-    Pop-Location
-}
+finally { Pop-Location }

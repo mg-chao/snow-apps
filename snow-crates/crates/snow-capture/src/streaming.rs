@@ -7,8 +7,8 @@
 //! an encoder). Data-plane frame events are bounded and droppable,
 //! while control-plane lifecycle events remain reliable.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel as mpsc;
@@ -204,6 +204,7 @@ pub struct CaptureStream {
     join_handle: Option<std::thread::JoinHandle<()>>,
     buffer_depth: usize,
     target_fps: Arc<AtomicU32>,
+    pacing_origin: Arc<Mutex<Option<Instant>>>,
     maximum_fps: u32,
     minimum_fps: u32,
 }
@@ -241,20 +242,18 @@ impl CaptureStream {
 
         let buffer_depth = config.buffer_depth.max(1);
         let queue = Arc::new(StreamQueue::new(buffer_depth));
-        let recycle_depth = (buffer_depth * 3).max(8);
+        let recycle_depth = buffer_depth.saturating_add(2);
         let initial_target_info = capture.target_info().ok();
         let (recycle_tx, recycle_rx) = mpsc::bounded::<Frame>(recycle_depth);
         let recycler = FrameRecycleSender::new(recycle_tx.clone());
 
         if let Some(target_info) = initial_target_info {
-            for _ in 0..recycle_depth {
-                let mut frame = Frame::empty();
-                if frame
-                    .ensure_rgba_capacity(target_info.width, target_info.height)
-                    .is_ok()
-                {
-                    let _ = recycle_tx.try_send(frame);
-                }
+            let mut frame = Frame::empty();
+            if frame
+                .ensure_rgba_capacity(target_info.width, target_info.height)
+                .is_ok()
+            {
+                let _ = recycle_tx.try_send(frame);
             }
         }
 
@@ -277,6 +276,8 @@ impl CaptureStream {
         let pause = pause_flag.clone();
         let stats_clone = stats.clone();
         let requested_target = Arc::clone(&target_fps);
+        let pacing_origin = Arc::new(Mutex::new(None));
+        let worker_origin = Arc::clone(&pacing_origin);
 
         let join_handle = std::thread::Builder::new()
             .name("snow-capture-stream".to_string())
@@ -291,6 +292,7 @@ impl CaptureStream {
                     &pause,
                     &stats_clone,
                     &requested_target,
+                    &worker_origin,
                 );
                 worker_queue.close();
             })
@@ -308,9 +310,20 @@ impl CaptureStream {
             join_handle: Some(join_handle),
             buffer_depth,
             target_fps,
+            pacing_origin,
             maximum_fps,
             minimum_fps,
         })
+    }
+
+    /// Align acquisition to an external clock while preserving the requested rate.
+    /// Captures begin a quarter interval after each clock boundary, leaving time
+    /// for readback before the following output boundary. None restores free pacing.
+    pub fn set_pacing_origin(&self, origin: Option<Instant>) {
+        *self
+            .pacing_origin
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = origin;
     }
 
     /// Receive the next capture event, blocking until one is available
@@ -468,6 +481,7 @@ fn stream_loop(
     pause: &AtomicBool,
     stats: &CaptureStreamStats,
     requested_target: &AtomicU32,
+    pacing_origin: &Mutex<Option<Instant>>,
 ) {
     let min_interval = if config.adaptive_fps && config.min_fps > 0 {
         Some(Duration::from_secs_f64(1.0 / config.min_fps as f64))
@@ -476,6 +490,7 @@ fn stream_loop(
     };
 
     let mut reuse_frame: Option<Frame> = None;
+    let mut cadence: Option<AlignedCaptureCadence> = None;
     let mut consecutive_errors: usize = 0;
     let mut last_width: u32 = 0;
     let mut last_height: u32 = 0;
@@ -493,6 +508,7 @@ fn stream_loop(
     let mut cursor_latency_avg_ns: f64 = 0.0;
 
     let mut fps_counter: u64 = 0;
+    let mut content_generation = 0u64;
     let mut fps_epoch = Instant::now();
 
     let mut was_paused = false;
@@ -527,6 +543,34 @@ fn stream_loop(
             pause_started = None;
         }
 
+        let origin = *pacing_origin
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let fps = requested_target.load(Ordering::Acquire);
+        let aligned = origin.is_some() && fps > 0 && !config.adaptive_fps;
+        if let Some(origin) = origin.filter(|_| aligned) {
+            if cadence
+                .as_ref()
+                .is_none_or(|cadence| cadence.origin != origin || cadence.fps != fps)
+            {
+                cadence = Some(AlignedCaptureCadence {
+                    origin,
+                    fps,
+                    next: 0,
+                });
+            }
+            spin_sleep(
+                cadence
+                    .as_mut()
+                    .expect("capture cadence")
+                    .wait(Instant::now()),
+            );
+            if stop.load(Ordering::Acquire) || pause.load(Ordering::Acquire) {
+                continue;
+            }
+        } else {
+            cadence = None;
+        }
         let frame_start = Instant::now();
 
         drain_recycled_frames(recycle_rx, &mut reuse_frame);
@@ -541,11 +585,9 @@ fn stream_loop(
         let capture_elapsed = frame_start.elapsed();
 
         match capture_result {
-            Ok((frame, cursor_outcome)) => {
+            Ok((mut frame, cursor_outcome)) => {
                 consecutive_errors = 0;
 
-                #[cfg(feature = "stage-timing")]
-                let mut frame = frame;
                 #[cfg(feature = "stage-timing")]
                 if let Some(cursor_outcome) = cursor_outcome {
                     let cursor_stats = cursor_outcome.stats;
@@ -604,6 +646,10 @@ fn stream_loop(
                 last_height = h;
 
                 stats.frames_captured.fetch_add(1, Ordering::Relaxed);
+                stamp_content_generation(&mut frame, &mut content_generation);
+
+                frame.metadata.queued_at = Some(Instant::now());
+                frame.metadata.observation_started_at = Some(frame_start);
 
                 let outcome = queue.push(CaptureEvent::Frame(
                     CapturedFrame::from_frame_with_recycler(frame, recycler.clone()),
@@ -683,7 +729,7 @@ fn stream_loop(
             (None, Some(pressure)) => Some(pressure),
             (None, None) => None,
         };
-        if let Some(interval) = interval {
+        if let Some(interval) = interval.filter(|_| !aligned) {
             let elapsed = frame_start.elapsed();
             if elapsed < interval {
                 spin_sleep(interval - elapsed);
@@ -694,6 +740,29 @@ fn stream_loop(
     // Send StreamEnded sentinel so the consumer knows no more events
     // will arrive and can flush its encoder.
     store_queue_fill(stats, queue.push(CaptureEvent::StreamEnded).data_len);
+}
+
+struct AlignedCaptureCadence {
+    origin: Instant,
+    fps: u32,
+    next: u64,
+}
+impl AlignedCaptureCadence {
+    fn offset(index: u64, fps: u32) -> Duration {
+        Duration::from_nanos(
+            ((u128::from(index) * 4 + 1) * 1_000_000_000)
+                .div_ceil(u128::from(fps) * 4)
+                .min(u128::from(u64::MAX)) as u64,
+        )
+    }
+    fn wait(&mut self, now: Instant) -> Duration {
+        let elapsed = now.saturating_duration_since(self.origin);
+        let current = (elapsed.as_nanos() * u128::from(self.fps) * 4).saturating_sub(1_000_000_000)
+            / (4 * 1_000_000_000u128);
+        let index = self.next.max(current.min(u128::from(u64::MAX)) as u64);
+        self.next = index.saturating_add(1);
+        Self::offset(index, self.fps).saturating_sub(elapsed)
+    }
 }
 
 fn target_interval(target_fps: u32) -> Option<Duration> {
@@ -745,6 +814,13 @@ fn spin_sleep(duration: Duration) {
     while Instant::now() < target {
         std::hint::spin_loop();
     }
+}
+
+fn stamp_content_generation(frame: &mut Frame, generation: &mut u64) {
+    if *generation == 0 || !frame.metadata.is_duplicate {
+        *generation = generation.saturating_add(1);
+    }
+    frame.metadata.content_generation = Some(*generation);
 }
 
 #[cfg(test)]
@@ -805,6 +881,7 @@ mod tests {
             join_handle: None,
             buffer_depth: 1,
             target_fps: Arc::new(AtomicU32::new(maximum_fps)),
+            pacing_origin: Arc::new(std::sync::Mutex::new(None)),
             maximum_fps,
             minimum_fps,
         }
@@ -829,5 +906,45 @@ mod tests {
         assert_eq!(stream.target_fps(), 15);
         stream.set_target_fps(0);
         assert_eq!(stream.target_fps(), 0);
+    }
+    #[test]
+    fn image_generation_survives_superseded_changes_followed_by_duplicates() {
+        let mut frame = crate::frame::Frame::from_rgba8(2, 2, vec![0; 16]).unwrap();
+        let mut generation = 0;
+        super::stamp_content_generation(&mut frame, &mut generation);
+        let displayed = frame.metadata.content_generation();
+        frame.as_mut_bytes().fill(42);
+        super::stamp_content_generation(&mut frame, &mut generation);
+        // The changed capture is dropped; only its duplicate reaches the consumer.
+        frame.metadata.is_duplicate = true;
+        super::stamp_content_generation(&mut frame, &mut generation);
+        assert_eq!(frame.metadata.content_generation(), Some(2));
+        assert_ne!(frame.metadata.content_generation(), displayed);
+        super::stamp_content_generation(&mut frame, &mut generation);
+        assert_eq!(frame.metadata.content_generation(), Some(2));
+    }
+
+    #[test]
+    fn aligned_capture_deadlines_do_not_drift_or_replay_missed_slots() {
+        use super::AlignedCaptureCadence;
+        let start = std::time::Instant::now();
+        for fps in [10, 30, 60, 144] {
+            assert_eq!(
+                AlignedCaptureCadence::offset(u64::from(fps) * 3600, fps)
+                    - AlignedCaptureCadence::offset(0, fps),
+                Duration::from_secs(3600)
+            );
+        }
+        let mut cadence = AlignedCaptureCadence {
+            origin: start,
+            fps: 30,
+            next: 0,
+        };
+        assert_eq!(cadence.wait(start), Duration::from_nanos(8_333_334));
+        assert_eq!(
+            cadence.wait(start + Duration::from_millis(110)),
+            Duration::ZERO
+        );
+        assert!(cadence.wait(start + Duration::from_millis(110)) > Duration::from_millis(20));
     }
 }

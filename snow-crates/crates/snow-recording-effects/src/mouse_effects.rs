@@ -55,7 +55,9 @@ pub fn draw_clicks_to(
 ) {
     let output_size = surface.size();
     for click in clicks {
-        let age = timestamp_ms.saturating_sub(click.timestamp_ms);
+        let Some(age) = timestamp_ms.checked_sub(click.timestamp_ms) else {
+            continue;
+        };
         if age > CLICK_ANIMATION_MS {
             continue;
         }
@@ -96,5 +98,24 @@ fn draw_circle_outline_rgba(
                 surface.blend_pixel(center_x + x, center_y + y, color);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod timing_tests {
+    use super::*;
+    #[test]
+    fn future_click_does_not_appear_in_an_earlier_output_slot() {
+        let mut pixels = vec![0; 100 * 100 * 4];
+        let clicks = VecDeque::from([RenderClick {
+            timestamp_ms: 101,
+            x: 50,
+            y: 50,
+            button: ObservedMouseButton::Left,
+        }]);
+        draw_clicks(&mut pixels, (100, 100), &clicks, 100, [255; 4], (100, 100));
+        assert!(pixels.iter().all(|pixel| *pixel == 0));
+        draw_clicks(&mut pixels, (100, 100), &clicks, 101, [255; 4], (100, 100));
+        assert!(pixels.iter().any(|pixel| *pixel != 0));
     }
 }
