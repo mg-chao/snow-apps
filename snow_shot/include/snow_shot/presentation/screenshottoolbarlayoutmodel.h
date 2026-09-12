@@ -187,6 +187,21 @@ struct EditorDescriptor {
 
 [[nodiscard]] inline QVector<EditorDescriptor>
 editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
+    if (kind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools) {
+        QVector<EditorDescriptor> result;
+        for (const auto& descriptor : actionDescriptors()) {
+            const QString id = QString::fromLatin1(descriptor.id);
+            if (id == QStringLiteral("barcode-recognition") ||
+                id == QStringLiteral("table-recognition") ||
+                id == QStringLiteral("convert-to-markdown") ||
+                id == QStringLiteral("convert-to-html") ||
+                id == QStringLiteral("text-recognition") ||
+                id == QStringLiteral("text-translation")) {
+                result.push_back(descriptor);
+            }
+        }
+        return result;
+    }
     if (kind == storage::ScreenshotToolbarLayoutKind::ActionTools) {
         return actionDescriptors();
     }
@@ -233,6 +248,14 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
 
 [[nodiscard]] inline QVector<QStringList>
 defaultPositions(storage::ScreenshotToolbarLayoutKind kind) {
+    if (kind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools) {
+        return {
+            {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
+             QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
+            {QStringLiteral("text-recognition")},
+            {QStringLiteral("text-translation")},
+        };
+    }
     return kind == storage::ScreenshotToolbarLayoutKind::ActionTools ? actionDefaultPositions()
                                                                      : defaultPositions();
 }
@@ -249,7 +272,7 @@ defaultPositions(storage::ScreenshotToolbarLayoutKind kind) {
 
 [[nodiscard]] inline storage::ScreenshotToolbarLayout
 normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringList& defaults,
-                 const QVector<QStringList>& defaultLayout) {
+                 const QVector<QStringList>& defaultLayout, bool migrateScreenshotLayout = false) {
     const QSet<QString> known(defaults.cbegin(), defaults.cend());
     QSet<QString> positioned;
     storage::ScreenshotToolbarLayout result;
@@ -291,7 +314,8 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
             hidden.insert(QStringLiteral("quick-save"));
         }
     }
-    if (!result.positions.isEmpty() && known.contains(QStringLiteral("convert-to-markdown"))) {
+    if (migrateScreenshotLayout && !result.positions.isEmpty() &&
+        known.contains(QStringLiteral("convert-to-markdown"))) {
         // Upgrade earlier defaults without changing custom placements.
         auto previousDefault = defaultLayout;
         previousDefault[0] = {QStringLiteral("barcode-recognition"),
@@ -351,7 +375,8 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input) {
 [[nodiscard]] inline storage::ScreenshotToolbarLayout
 normalizedLayout(const storage::ScreenshotToolbarLayout& input,
                  storage::ScreenshotToolbarLayoutKind kind) {
-    return normalizedLayout(input, defaultOrder(kind), defaultPositions(kind));
+    return normalizedLayout(input, defaultOrder(kind), defaultPositions(kind),
+                            kind == storage::ScreenshotToolbarLayoutKind::ActionTools);
 }
 
 namespace detail {

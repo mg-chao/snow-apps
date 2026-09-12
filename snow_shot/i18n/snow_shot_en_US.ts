@@ -6231,6 +6231,26 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <source>Software updates</source>
         <translation>Software updates</translation>
     </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="343"/>
+        <source>Pin to Screen toolbar settings</source>
+        <translation>Pin to Screen toolbar settings</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="344"/>
+        <source>Drag pinned tools to reorder them or stack them in the same toolbar position.</source>
+        <translation>Drag pinned tools to reorder them or stack them in the same toolbar position.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="347"/>
+        <source>Custom pinned toolbar</source>
+        <translation>Custom pinned toolbar</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="348"/>
+        <source>Hidden tools</source>
+        <translation>Hidden tools</translation>
+    </message>
 </context>
 <context>
     <name>ShortcutKeyRow</name>
@@ -7665,6 +7685,39 @@ Change the shortcut and try again</translation>
         <location filename="../src/update/updateservice.cpp" line="112"/>
         <source>The update helper did not respond. Please retry.</source>
         <translation>The update helper did not respond. Please retry.</translation>
+    </message>
+</context>
+<context>
+    <name>PinnedToolbarEditorSettingsWidget</name>
+    <message>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="82"/>
+        <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</source>
+        <translation>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="86"/>
+        <source>Pin to Screen toolbar preview</source>
+        <translation>Pin to Screen toolbar preview</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="87"/>
+        <source>Hidden tools</source>
+        <translation>Hidden tools</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="88"/>
+        <source>Drag tools here to hide them from the pinned toolbar.</source>
+        <translation>Drag tools here to hide them from the pinned toolbar.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="90"/>
+        <source>No hidden tools</source>
+        <translation>No hidden tools</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="91"/>
+        <source>Hidden pinned toolbar tools</source>
+        <translation>Hidden pinned toolbar tools</translation>
     </message>
 </context>
 </TS>

@@ -231,6 +231,8 @@ class ScreenshotToolPalette final : public QWidget {
         bool showDrawingModeShortcutOnConfirm = false;
         Actions actions = NoActions;
         std::optional<snow_shot::storage::ScreenshotToolbarLayout> toolbarLayout;
+        snow_shot::storage::ScreenshotToolbarLayoutKind actionToolsLayoutKind =
+            snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools;
         std::optional<snow_shot::storage::ScreenshotToolbarLayout> actionToolsLayout;
         SnowCanvasStyleDefaults styleDefaults =
             snow_shot::presentation::screenshotCanvasStyleDefaults();

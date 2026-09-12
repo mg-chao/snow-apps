@@ -338,6 +338,18 @@ SettingsItemDefinition screenshotToolbarEditorItem() {
             SettingsCustomDefinition{SettingsCustomRenderer::ScreenshotToolbarEditor}};
 }
 
+SettingsItemDefinition pinnedToolbarEditorItem() {
+    return {QStringLiteral("interface.pin-to-screen.pinned-toolbar-editor"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to Screen toolbar settings")),
+            settingsText(QT_TRANSLATE_NOOP(
+                "SettingsCatalog",
+                "Drag pinned tools to reorder them or stack them in the same toolbar position.")),
+            {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Custom pinned toolbar")),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Hidden tools"))},
+            QStringLiteral("pin_to_screen/action_tools_layout"),
+            SettingsCustomDefinition{SettingsCustomRenderer::PinnedToolbarEditor}};
+}
+
 SettingsItemDefinition pinBorderColorItem() {
     return screenshotColorItem(
         QStringLiteral("interface.pin-to-screen.border-color"),
@@ -1820,7 +1832,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                                    "Pinned screenshot window appearance settings")),
                     SettingsSectionReset::PinToScreen,
-                    {pinBorderColorItem(), pinBorderActiveColorItem()},
+                    {pinBorderColorItem(), pinBorderActiveColorItem(), pinnedToolbarEditorItem()},
                 },
                 {
                     QStringLiteral("tray"),
@@ -3166,6 +3178,11 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsCustomRenderer::DrawingToolbarEditor:
                         rendererSupported = true;
                         expectedKey = QStringLiteral("screenshot_toolbar/layout");
+                        expectedKind = storage::ConfigurationValueKind::Structured;
+                        break;
+                    case SettingsCustomRenderer::PinnedToolbarEditor:
+                        rendererSupported = true;
+                        expectedKey = QStringLiteral("pin_to_screen/action_tools_layout");
                         expectedKind = storage::ConfigurationValueKind::Structured;
                         break;
                     case SettingsCustomRenderer::ScreenshotToolbarEditor:

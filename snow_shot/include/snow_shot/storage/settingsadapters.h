@@ -45,6 +45,7 @@ struct ScreenshotToolbarLayout {
 };
 
 enum class ScreenshotToolbarLayoutKind {
+    PinnedActionTools,
     DrawingTools,
     ActionTools,
 };

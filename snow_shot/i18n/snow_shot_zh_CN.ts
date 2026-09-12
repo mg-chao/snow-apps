@@ -6230,6 +6230,26 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <source>Software updates</source>
         <translation>软件更新</translation>
     </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="343"/>
+        <source>Pin to Screen toolbar settings</source>
+        <translation>贴图工具栏设置</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="344"/>
+        <source>Drag pinned tools to reorder them or stack them in the same toolbar position.</source>
+        <translation>拖动贴图工具以调整顺序，或将其堆叠在同一工具栏位置。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="347"/>
+        <source>Custom pinned toolbar</source>
+        <translation>自定义贴图工具栏</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="348"/>
+        <source>Hidden tools</source>
+        <translation>隐藏的工具</translation>
+    </message>
 </context>
 <context>
     <name>ShortcutKeyRow</name>
@@ -7664,6 +7684,39 @@ Change the shortcut and try again</source>
         <location filename="../src/update/updateservice.cpp" line="112"/>
         <source>The update helper did not respond. Please retry.</source>
         <translation>更新程序未响应。请重试。</translation>
+    </message>
+</context>
+<context>
+    <name>PinnedToolbarEditorSettingsWidget</name>
+    <message>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="82"/>
+        <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</source>
+        <translation>拖放到工具旁边以创建新位置，拖放到工具上方以堆叠。底部工具将显示在主工具栏行中。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="86"/>
+        <source>Pin to Screen toolbar preview</source>
+        <translation>贴图工具栏预览</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="87"/>
+        <source>Hidden tools</source>
+        <translation>隐藏的工具</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="88"/>
+        <source>Drag tools here to hide them from the pinned toolbar.</source>
+        <translation>将工具拖到此处，即可在贴图工具栏中隐藏。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="90"/>
+        <source>No hidden tools</source>
+        <translation>没有隐藏的工具</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/settingscustomwidget.cpp" line="91"/>
+        <source>Hidden pinned toolbar tools</source>
+        <translation>隐藏的贴图工具栏工具</translation>
     </message>
 </context>
 </TS>

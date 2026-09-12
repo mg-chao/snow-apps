@@ -205,6 +205,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
 
     storage::ScreenshotToolbarLayout
     toolbarLayout(storage::ScreenshotToolbarLayoutKind kind) const override {
+        if (kind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools)
+            return m_pinnedToolbar;
         return kind == storage::ScreenshotToolbarLayoutKind::DrawingTools ? m_drawingToolbar
                                                                           : m_actionToolbar;
     }
@@ -415,6 +417,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
             m_trayOptions = value.toList();
         } else if (fieldId == QStringLiteral("toolbar")) {
             m_drawingToolbar = value.value<storage::ScreenshotToolbarLayout>();
+        } else if (fieldId == QStringLiteral("pinned-toolbar")) {
+            m_pinnedToolbar = value.value<storage::ScreenshotToolbarLayout>();
         } else if (fieldId == QStringLiteral("action-toolbar")) {
             m_actionToolbar = value.value<storage::ScreenshotToolbarLayout>();
         } else if (fieldId.startsWith(QStringLiteral("global-mouse."))) {
@@ -437,6 +441,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     }
 
     static QString toolbarFieldId(storage::ScreenshotToolbarLayoutKind kind) {
+        if (kind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools)
+            return QStringLiteral("pinned-toolbar");
         return kind == storage::ScreenshotToolbarLayoutKind::DrawingTools
                    ? QStringLiteral("toolbar")
                    : QStringLiteral("action-toolbar");
@@ -444,6 +450,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
 
     storage::ScreenshotToolbarLayout&
     toolbarLayoutStorage(storage::ScreenshotToolbarLayoutKind kind) {
+        if (kind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools)
+            return m_pinnedToolbar;
         return kind == storage::ScreenshotToolbarLayoutKind::DrawingTools ? m_drawingToolbar
                                                                           : m_actionToolbar;
     }
@@ -455,6 +463,7 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     QVariantList m_trayOptions{QStringLiteral("quick.screenshot")};
     storage::ScreenshotToolbarLayout m_drawingToolbar{{{QStringLiteral("select")}},
                                                       {QStringLiteral("eraser")}};
+    storage::ScreenshotToolbarLayout m_pinnedToolbar;
     storage::ScreenshotToolbarLayout m_actionToolbar{
         {{QStringLiteral("table-recognition")}, {QStringLiteral("save-as-file")}},
         {QStringLiteral("barcode-recognition")}};
@@ -531,6 +540,13 @@ testRegistry(settings::SettingsSectionReset reset = settings::SettingsSectionRes
           {},
           QStringLiteral("screenshot_toolbar/layout"),
           toolbar},
+         {QStringLiteral("pinned-toolbar"),
+          text("Pinned toolbar"),
+          text("Pinned toolbar"),
+          {},
+          QStringLiteral("pin_to_screen/action_tools_layout"),
+          settings::SettingsCustomDefinition{
+              settings::SettingsCustomRenderer::PinnedToolbarEditor}},
          {QStringLiteral("action-toolbar"),
           text("Action toolbar"),
           text("Action toolbar"),
@@ -954,6 +970,20 @@ void deterministicDirtyOrderAndCustomValues() {
                     actionLayout &&
                 session.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools) == layout,
             "drawing and screenshot toolbar compatibility bindings must be independent");
+    const storage::ScreenshotToolbarLayout pinnedLayout{
+        {{QStringLiteral("text-translation"), QStringLiteral("table-recognition")}},
+        {QStringLiteral("barcode-recognition")}};
+    require(session.applyToolbarLayout(storage::ScreenshotToolbarLayoutKind::PinnedActionTools,
+                                       pinnedLayout) &&
+                session.toolbarLayout(storage::ScreenshotToolbarLayoutKind::PinnedActionTools) ==
+                    pinnedLayout &&
+                session.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools) ==
+                    actionLayout &&
+                session.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools) ==
+                    layout &&
+                session.state(QStringLiteral("pinned-toolbar")).phase ==
+                    settings::SettingsWritePhase::Clean,
+            "pinned toolbar values must use their own runtime descriptor and accepted state");
 }
 
 void toolbarLayoutsMaintainIndependentWriteState() {
