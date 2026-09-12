@@ -32,6 +32,7 @@ class ScreenshotPinnedNativeGeometryController final {
         ImageTransform,
         Thumbnail,
         Animation,
+        HideToTop,
         Restoration,
     };
 

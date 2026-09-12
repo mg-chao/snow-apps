@@ -340,6 +340,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         {QStringLiteral("show_text_recognition_results"), QJsonArray{QStringLiteral("Ctrl+D")}},
         {QStringLiteral("drawing_mode"), QJsonArray{QStringLiteral("Space")}},
         {QStringLiteral("thumbnail_mode"), QJsonArray{QStringLiteral("R")}},
+        {QStringLiteral("hide_to_top"), QJsonArray{QStringLiteral("H")}},
         {QStringLiteral("close_window"), QJsonArray{QStringLiteral("Esc")}},
         {QStringLiteral("move_cursor_up"), QJsonArray{QStringLiteral("W"), QStringLiteral("Up")}},
         {QStringLiteral("move_cursor_down"),
@@ -409,9 +410,10 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
     const QMap<QString, QStringList> allowedStringValues{
         {QStringLiteral("pin_to_screen/middle_mouse_button_action"),
          {QStringLiteral("none"), QStringLiteral("reset_zoom"), QStringLiteral("thumbnail_mode"),
-          QStringLiteral("close")}},
+          QStringLiteral("hide_to_top"), QStringLiteral("close")}},
         {QStringLiteral("pin_to_screen/double_click_action"),
-         {QStringLiteral("none"), QStringLiteral("thumbnail_mode"), QStringLiteral("close")}},
+         {QStringLiteral("none"), QStringLiteral("thumbnail_mode"), QStringLiteral("hide_to_top"),
+          QStringLiteral("close")}},
         {QStringLiteral("text_recognition/fill_style"),
          {QStringLiteral("blur"), QStringLiteral("background_fill")}},
         {QStringLiteral("text_recognition/model_type"),
@@ -862,7 +864,7 @@ void verifyPinToScreenShortcutSettings() {
     const storage::PinToScreenShortcutSettings shortcuts;
     const QMap<QString, QStringList> defaults = shortcuts.allShortcuts();
     require(
-        defaults.size() == 11 &&
+        defaults.size() == 12 &&
             defaults.value(QStringLiteral("copy_to_clipboard")) ==
                 QStringList{QStringLiteral("Ctrl+C")} &&
             defaults.value(QStringLiteral("copy_original_content")) ==
@@ -874,6 +876,7 @@ void verifyPinToScreenShortcutSettings() {
             defaults.value(QStringLiteral("drawing_mode")) ==
                 QStringList{QStringLiteral("Space")} &&
             defaults.value(QStringLiteral("thumbnail_mode")) == QStringList{QStringLiteral("R")} &&
+            defaults.value(QStringLiteral("hide_to_top")) == QStringList{QStringLiteral("H")} &&
             defaults.value(QStringLiteral("close_window")) == QStringList{QStringLiteral("Esc")} &&
             defaults.value(QStringLiteral("move_cursor_up")) ==
                 QStringList{QStringLiteral("W"), QStringLiteral("Up")} &&
@@ -989,8 +992,8 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     const storage::PinToScreenSettings pin;
     require(pin.doubleClickAction() == QStringLiteral("thumbnail_mode"),
             "pinned double-click must default to thumbnail mode");
-    for (const QString& action :
-         {QStringLiteral("none"), QStringLiteral("thumbnail_mode"), QStringLiteral("close")}) {
+    for (const QString& action : {QStringLiteral("none"), QStringLiteral("thumbnail_mode"),
+                                  QStringLiteral("hide_to_top"), QStringLiteral("close")}) {
         require(pin.setDoubleClickAction(action) && pin.doubleClickAction() == action,
                 "pinned double-click actions must round-trip through storage");
     }
@@ -999,8 +1002,9 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             "invalid pinned double-click actions must preserve the saved choice");
     require(pin.middleMouseButtonAction() == QStringLiteral("reset_zoom"),
             "pinned middle-click must default to reset zoom");
-    for (const QString& action : {QStringLiteral("none"), QStringLiteral("reset_zoom"),
-                                  QStringLiteral("thumbnail_mode"), QStringLiteral("close")}) {
+    for (const QString& action :
+         {QStringLiteral("none"), QStringLiteral("reset_zoom"), QStringLiteral("thumbnail_mode"),
+          QStringLiteral("hide_to_top"), QStringLiteral("close")}) {
         require(pin.setMiddleMouseButtonAction(action) && pin.middleMouseButtonAction() == action,
                 "pinned middle-click actions must round-trip through storage");
     }

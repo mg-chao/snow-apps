@@ -323,6 +323,7 @@ bool samePayload(const StoredRecord& stored, const PinnedWindowRecord& incoming,
 struct Snapshot final {
     QVector<PinnedWindowGroup> groups;
     QString activeGroupId;
+    int nextHideToTopAccent = 0;
     QVector<StoredRecord> records;
     quint64 revision = 0;
 };
@@ -377,6 +378,10 @@ QJsonObject recordToJson(const PinnedWindowRecord& record, const QJsonObject& pa
         {QStringLiteral("opacity_percent"), record.opacityPercent},
         {QStringLiteral("quarter_turns"), record.quarterTurns},
         {QStringLiteral("image_transform"), transformToJson(record.imageTransform)},
+        {QStringLiteral("hide_to_top_mode"), record.hideToTopMode},
+        {QStringLiteral("hide_to_top_handle_geometry"),
+         rectToJson(record.hideToTopHandleNativeGeometry)},
+        {QStringLiteral("hide_to_top_accent_index"), record.hideToTopAccentIndex},
         {QStringLiteral("thumbnail_mode"), record.thumbnailMode},
         {QStringLiteral("recognition_visible"), record.recognitionVisible},
         {QStringLiteral("translation_visible"), record.translationVisible},
@@ -663,6 +668,18 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
         return false;
     }
     record.thumbnailMode = object.value(QStringLiteral("thumbnail_mode")).toBool();
+    const auto accentValue = object.value(QStringLiteral("hide_to_top_accent_index"));
+    const int accent = accentValue.toInt(-1);
+    record.hideToTopAccentIndex =
+        accent >= 0 && accent < 13 && accentValue.toDouble(-1) == accent ? accent : -1;
+    record.hideToTopMode = object.value(QStringLiteral("hide_to_top_mode")).toBool(false);
+    if (!optionalRectFromJson(object.value(QStringLiteral("hide_to_top_handle_geometry")),
+                              &record.hideToTopHandleNativeGeometry) ||
+        record.hideToTopHandleNativeGeometry.isEmpty() || record.hideToTopAccentIndex < 0 ||
+        record.thumbnailMode) {
+        record.hideToTopMode = false;
+        record.hideToTopHandleNativeGeometry = {};
+    }
     record.recognitionVisible = object.value(QStringLiteral("recognition_visible")).toBool(false);
     record.translationVisible = object.value(QStringLiteral("translation_visible")).toBool(false);
     if (record.thumbnailMode &&
@@ -725,6 +742,7 @@ bool snapshotToDisk(const QString& root, const Snapshot& snapshot,
     const QByteArray bytes = jsonBytes(QJsonObject{
         {QStringLiteral("format_version"), kFormatVersion},
         {QStringLiteral("active_group_id"), snapshot.activeGroupId},
+        {QStringLiteral("next_hide_to_top_accent"), snapshot.nextHideToTopAccent},
         {QStringLiteral("groups"), groups},
         {QStringLiteral("records"), records},
     });
@@ -762,6 +780,7 @@ struct PinnedWindowRepository::Impl final {
     QHash<QString, StoredRecord> records;
     QVector<PinnedWindowGroup> groups{defaultGroup()};
     QString activeGroupId = QString::fromLatin1(kDefaultGroupId);
+    int nextHideToTopAccent = 0;
     quint64 revision = 0;
     quint64 attemptCount = 0;
     bool dirty = false;
@@ -777,6 +796,7 @@ struct PinnedWindowRepository::Impl final {
         Snapshot snapshot;
         snapshot.groups = groups;
         snapshot.activeGroupId = activeGroupId;
+        snapshot.nextHideToTopAccent = nextHideToTopAccent;
         snapshot.records.reserve(records.size());
         for (const auto& stored : records) {
             snapshot.records.push_back(stored);
@@ -840,6 +860,9 @@ PinnedWindowRepository::PinnedWindowRepository(QString configurationDirectory, b
                     group.builtIn = false;
                     m_impl->groups.push_back(std::move(group));
                 }
+                const int nextAccent =
+                    object.value(QStringLiteral("next_hide_to_top_accent")).toInt(0);
+                m_impl->nextHideToTopAccent = nextAccent >= 0 && nextAccent < 13 ? nextAccent : 0;
                 const QString active = object.value(QStringLiteral("active_group_id")).toString();
                 if (std::any_of(m_impl->groups.cbegin(), m_impl->groups.cend(),
                                 [&active](const auto& group) { return group.id == active; })) {
@@ -992,6 +1015,16 @@ QVector<PinnedWindowSummary> PinnedWindowRepository::summaries() const {
         return first.updatedUtc < second.updatedUtc;
     });
     return result;
+}
+
+int PinnedWindowRepository::allocateHideToTopAccent() {
+    std::lock_guard locker(m_impl->mutex);
+    const int index = m_impl->nextHideToTopAccent;
+    m_impl->nextHideToTopAccent = (index + 1) % 13;
+    if (m_impl->writeAvailable) {
+        m_impl->markDirtyLocked();
+    }
+    return index;
 }
 
 quint64 PinnedWindowRepository::revision() const {

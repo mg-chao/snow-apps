@@ -931,6 +931,8 @@ SettingsItemDefinition pinDoubleClickActionItem() {
             {QStringLiteral("none"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "None"))},
             {QStringLiteral("thumbnail_mode"),
              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Thumbnail Mode"))},
+            {QStringLiteral("hide_to_top"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Hide to Top"))},
             {QStringLiteral("close"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Close"))},
         });
 }
@@ -950,6 +952,8 @@ SettingsItemDefinition pinMiddleClickActionItem() {
              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Reset Zoom"))},
             {QStringLiteral("thumbnail_mode"),
              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Thumbnail Mode"))},
+            {QStringLiteral("hide_to_top"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Hide to Top"))},
             {QStringLiteral("close"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Close"))},
         });
 }
@@ -1379,6 +1383,9 @@ QVector<SettingsItemDefinition> pinToScreenShortcutItems() {
         localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("thumbnail_mode"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Thumbnail mode"),
                           []() { return outlined_icons::Compress(); }),
+        localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("hide_to_top"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Hide to Top"),
+                          []() { return outlined_icons::ArrowUp(); }),
         localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("close_window"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Close window"),
                           []() { return outlined_icons::Close(); }),

@@ -51,6 +51,8 @@ RestoredState reconcileSavedState(const SavedState& saved, const ScreenGeometry&
     restored.nativeGeometry = translateGeometry(saved.nativeGeometry, saved, targetScreen, screens);
     restored.preThumbnailNativeGeometry =
         translateGeometry(saved.preThumbnailNativeGeometry, saved, targetScreen, screens);
+    restored.hideToTopHandleNativeGeometry =
+        translateGeometry(saved.hideToTopHandleNativeGeometry, saved, targetScreen, screens);
     return restored;
 }
 
