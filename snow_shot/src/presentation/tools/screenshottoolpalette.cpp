@@ -3126,17 +3126,6 @@ bool ScreenshotToolPalette::eventFilter(QObject* watched, QEvent* event) {
             }
         }
     }
-    if (event != nullptr &&
-        (event->type() == QEvent::Enter || event->type() == QEvent::HoverEnter)) {
-        auto* trigger = qobject_cast<adqt::widgets::AdButton*>(watched);
-        if (trigger == m_tableButton && m_tableQrPopover != nullptr &&
-            m_tableQrPopover->contentWidget() == nullptr) {
-            ensureTableQrPopover();
-        } else if (trigger != nullptr) {
-            ensureDrawingToolGroupPopover(trigger);
-            ensureActionToolGroupPopover(trigger);
-        }
-    }
     if (event != nullptr && event->type() == QEvent::Wheel &&
         handleToolbarWheel(static_cast<QWheelEvent*>(event))) {
         return true;
@@ -3884,10 +3873,6 @@ void ScreenshotToolPalette::ensureActionToolGroupPopover(adqt::widgets::AdButton
     }
 }
 
-void ScreenshotToolPalette::ensureTableQrPopover() {
-    ensureActionToolGroupPopover(m_tableButton);
-}
-
 adqt::widgets::AdButton* ScreenshotToolPalette::createActionToolGroup(const QStringList& itemIds) {
     const auto stack = toolbar_layout::stackPresentation(itemIds, [this](const QString& id) {
         return toolbar_layout::actionDescriptor(id) != nullptr && actionToolAvailable(id);
@@ -3937,14 +3922,10 @@ adqt::widgets::AdButton* ScreenshotToolPalette::createActionToolGroup(const QStr
                                          : QStringLiteral("screenshotActionToolGroupButton%1")
                                                .arg(m_actionToolGroups.size()));
         if (availableItemIds.size() > 1) {
-            group.popover = createScreenshotToolPaletteOptionPopoverShell(group.trigger);
+            group.popover = createScreenshotToolPaletteOptionPopoverShell(
+                group.trigger, this,
+                [this, trigger = group.trigger]() { ensureActionToolGroupPopover(trigger); });
             group.trigger->installEventFilter(this);
-            connect(group.popover, &adqt::widgets::AdPopover::visibilityRequested, this,
-                    [this, trigger = group.trigger](bool visible) {
-                        if (visible) {
-                            ensureActionToolGroupPopover(trigger);
-                        }
-                    });
         }
         connect(group.trigger, &adqt::widgets::AdButton::clicked, this,
                 [this, trigger = group.trigger]() {
@@ -4063,17 +4044,10 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
                                  : QStringLiteral("screenshotDrawingToolGroupButton%1")
                                        .arg(m_drawingToolGroups.size()));
 
-            group.popover = createScreenshotToolPaletteOptionPopoverShell(group.trigger);
-            // AdPopover intentionally suppresses open requests while it has no content. Observe
-            // the trigger before the popover's hover delay elapses so the first real hover can
-            // materialize the options and continue through the normal opening path.
+            group.popover = createScreenshotToolPaletteOptionPopoverShell(
+                group.trigger, this,
+                [this, trigger = group.trigger]() { ensureDrawingToolGroupPopover(trigger); });
             group.trigger->installEventFilter(this);
-            connect(group.popover, &adqt::widgets::AdPopover::visibilityRequested, this,
-                    [this, trigger = group.trigger](bool visible) {
-                        if (visible) {
-                            ensureDrawingToolGroupPopover(trigger);
-                        }
-                    });
             connect(group.trigger, &adqt::widgets::AdButton::clicked, this,
                     [this, trigger = group.trigger]() {
                         for (const DrawingToolGroup& candidate :
@@ -4422,14 +4396,9 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
             adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
         addButton(m_tableButton);
 
-        m_tableQrPopover = createScreenshotToolPaletteOptionPopoverShell(m_tableButton);
+        m_tableQrPopover = createScreenshotToolPaletteOptionPopoverShell(
+            m_tableButton, this, [this]() { ensureActionToolGroupPopover(m_tableButton); });
         m_tableButton->installEventFilter(this);
-        connect(m_tableQrPopover, &adqt::widgets::AdPopover::visibilityRequested, this,
-                [this](bool visible) {
-                    if (visible) {
-                        ensureTableQrPopover();
-                    }
-                });
         connect(m_tableButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateActionTool(actionToolItemId(m_tableQrEntryTool)); });
         refreshTableQrTrigger();

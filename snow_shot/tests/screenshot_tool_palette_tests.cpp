@@ -2598,16 +2598,19 @@ void arrowAndLineUseConfiguredPopoverGroup() {
             "clicking the active replaced group trigger should return to selection");
 }
 
-void tableBusyStatePreservesSiblingGroupPopovers() {
+void tableBusyStatePreservesSiblingGroupPopovers(bool recoverFromMove = false) {
     ScreenshotToolPalette::Options options;
     options.showShapeTool = false;
     options.showLineTool = true;
     options.showTableTool = true;
     options.showQrTool = true;
+    options.showOcrTool = options.showTextTranslationTool = true;
     options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
         {{QStringLiteral("arrow"), QStringLiteral("line")}}, {}};
     options.actionToolsLayout = snow_shot::storage::ScreenshotToolbarLayout{
-        {{QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition")}}, {}};
+        {{QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition")},
+         {QStringLiteral("text-recognition"), QStringLiteral("text-translation")}},
+        {}};
     ScreenshotToolPalette palette(options);
     palette.resize(palette.contentSizeHint());
     palette.show();
@@ -2618,7 +2621,14 @@ void tableBusyStatePreservesSiblingGroupPopovers() {
     require(table && drawing, "recovery scenario needs recognition and drawing groups");
     auto* tablePopup = popoverForTrigger(table);
     auto* drawingPopup = popoverForTrigger(drawing);
-    const auto verifyPopup = [](adqt::widgets::AdPopover* popup) {
+    auto* action = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotActionToolGroupButton1"));
+    require(action, "recovery scenario needs a custom action group");
+    auto* actionPopup = popoverForTrigger(action);
+    for (auto* popup : {tablePopup, drawingPopup, actionPopup}) {
+        require(popup && !popup->contentWidget(), "all combo popovers must initially be lazy");
+    }
+    const auto verifyPopup = [recoverFromMove](adqt::widgets::AdPopover* popup) {
         require(popup != nullptr, "group trigger must own a popup");
         QWidget* trigger = popup->sourceWidget();
         require(trigger != nullptr, "group popup must have a hover trigger");
@@ -2634,7 +2644,14 @@ void tableBusyStatePreservesSiblingGroupPopovers() {
         const QPoint local = trigger->rect().center();
         QEnterEvent enter(local, trigger->mapTo(trigger->window(), local),
                           trigger->mapToGlobal(local));
-        QApplication::sendEvent(trigger, &enter);
+        if (recoverFromMove) {
+            QMouseEvent move(QEvent::MouseMove, local, trigger->mapToGlobal(local), Qt::NoButton,
+                             Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(trigger, &move);
+        } else {
+            QApplication::sendEvent(trigger, &enter);
+        }
+        require(popup->contentWidget(), "pointer input must materialize all combo popovers");
         QTimer::singleShot(2000, &loop, &QEventLoop::quit);
         if (!popup->isVisible()) {
             loop.exec();
@@ -2648,6 +2665,7 @@ void tableBusyStatePreservesSiblingGroupPopovers() {
     };
     QObject::connect(&palette, &ScreenshotToolPalette::tableRequested, &palette,
                      [&]() { palette.setTableBusy(true); });
+    verifyPopup(actionPopup);
     verifyPopup(tablePopup);
     auto* option = popoverButtonWithTooltip(tablePopup, "Table recognition");
     require(option, "recognition group contains table option");
@@ -2655,6 +2673,7 @@ void tableBusyStatePreservesSiblingGroupPopovers() {
     require(table->busy(), "table action starts loading on the real group trigger");
     verifyPopup(drawingPopup);
     verifyPopup(tablePopup);
+    verifyPopup(actionPopup);
     palette.setTableBusy(false);
     verifyPopup(tablePopup);
     verifyPopup(drawingPopup);
@@ -9542,6 +9561,7 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--popup-recovery-only"))) {
         tableBusyStatePreservesSiblingGroupPopovers();
+        tableBusyStatePreservesSiblingGroupPopovers(true);
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -9675,6 +9695,7 @@ int main(int argc, char** argv) {
         drawingGroupClicksActivateOnceAfterPointerReentry();
         tableRecognitionClickActivatesOnceAfterPointerReentry();
         tableBusyStatePreservesSiblingGroupPopovers();
+        tableBusyStatePreservesSiblingGroupPopovers(true);
         tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode();
         sharedToolbarLayoutModelOperationsAreDeterministic();
         configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement();

@@ -112,9 +112,13 @@ if(ADQT_BUILD_TESTS)
     snow_link_test_cli_guard(qt)
     add_executable(adqt-button-lifetime-tests tests/button_lifetime_tests.cpp)
     target_link_libraries(adqt-button-lifetime-tests PRIVATE adqt::widgets Qt6::Widgets)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        target_link_libraries(adqt-button-lifetime-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-button-lifetime-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
     add_test(NAME adqt-button-lifetime-tests COMMAND adqt-button-lifetime-tests)
     set_tests_properties(adqt-button-lifetime-tests PROPERTIES
-        ENVIRONMENT "QT_QPA_PLATFORM=$<IF:$<BOOL:${WIN32}>,windows,offscreen>"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 

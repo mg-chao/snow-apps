@@ -650,7 +650,6 @@ class ScreenshotToolPalette final : public QWidget {
 
     void ensureDrawingToolGroupPopover(adqt::widgets::AdButton* trigger);
     void ensureActionToolGroupPopover(adqt::widgets::AdButton* trigger);
-    void ensureTableQrPopover();
     void clearActionToolGroups();
     [[nodiscard]] adqt::widgets::AdButton* actionToolSourceButton(const QString& itemId) const;
     [[nodiscard]] adqt::widgets::AdButton* actionToolEntryButton(const QString& itemId) const;
