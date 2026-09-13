@@ -229,6 +229,8 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
         return storage::PinToScreenSettings().doubleClickAction();
     case SettingsSelectBinding::PinMiddleClickAction:
         return storage::PinToScreenSettings().middleMouseButtonAction();
+    case SettingsSelectBinding::PinTextSelectionOnRecognitionResults:
+        return storage::PinToScreenSettings().textSelectionOnRecognitionResults();
     case SettingsSelectBinding::PinMouseWheelZoomMode:
         return storage::PinToScreenSettings().mouseWheelZoomMode();
     case SettingsSelectBinding::ScreenRecordingClarity:
@@ -337,6 +339,9 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
         return storage::PinToScreenSettings().setDoubleClickAction(value.toString());
     case SettingsSelectBinding::PinMiddleClickAction:
         return storage::PinToScreenSettings().setMiddleMouseButtonAction(value.toString());
+    case SettingsSelectBinding::PinTextSelectionOnRecognitionResults:
+        return storage::PinToScreenSettings().setTextSelectionOnRecognitionResults(
+            value.toString());
     case SettingsSelectBinding::PinMouseWheelZoomMode:
         return storage::PinToScreenSettings().setMouseWheelZoomMode(value.toString());
     case SettingsSelectBinding::ScreenRecordingClarity:
@@ -1236,6 +1241,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"))},
+            {QStringLiteral("pin_to_screen/text_selection_on_recognition_results"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("pin_to_screen/text_selection_on_recognition_results"))},
             {QStringLiteral("pin_to_screen/automatic_text_recognition"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("pin_to_screen/automatic_text_recognition"))},

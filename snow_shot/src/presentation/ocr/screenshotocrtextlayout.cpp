@@ -737,15 +737,20 @@ QRectF ScreenshotOcrTextLayout::boundingRect() const {
 }
 
 void ScreenshotOcrTextLayout::paint(QPainter* painter, const QColor& selectionBackground,
-                                    const QColor& selectionForeground) const {
-    if (painter == nullptr || m_text.isEmpty()) {
+                                    const QColor& selectionForeground, PaintMode mode) const {
+    const bool selectionOnly = mode == PaintMode::SelectionOnly;
+    if (painter == nullptr || m_text.isEmpty() || (selectionOnly && m_selection.empty())) {
         return;
     }
 
     painter->save();
     painter->setClipRect(m_bounds);
     painter->setRenderHint(QPainter::TextAntialiasing, true);
-    painter->setPen(m_textColor);
+    // Visibility is a paint policy, independent of cached background colors
+    // that may have chosen an opaque contrasting color during text layout.
+    const QColor textColor = selectionOnly ? QColor(Qt::transparent) : m_textColor;
+    const QColor selectedTextColor = selectionOnly ? QColor(Qt::transparent) : selectionForeground;
+    painter->setPen(textColor);
 
     if (m_direction == ScreenshotOcrTextDirection::Vertical) {
         const int selectionStart = qBound(0, m_selection.start, static_cast<int>(m_text.size()));
@@ -762,6 +767,11 @@ void ScreenshotOcrTextLayout::paint(QPainter* painter, const QColor& selectionBa
             }
         }
 
+        if (selectionOnly) {
+            painter->restore();
+            return;
+        }
+
         for (std::size_t index = 0; index < m_verticalGlyphs.size(); ++index) {
             const VerticalGlyph& glyph = m_verticalGlyphs.at(index);
             if (glyph.layout == nullptr) {
@@ -773,7 +783,7 @@ void ScreenshotOcrTextLayout::paint(QPainter* painter, const QColor& selectionBa
             QTextLayout::FormatRange textFormat;
             textFormat.start = 0;
             textFormat.length = static_cast<int>(glyph.layout->text().size());
-            textFormat.format.setForeground(QBrush(selected ? selectionForeground : m_textColor));
+            textFormat.format.setForeground(QBrush(selected ? selectedTextColor : textColor));
             formats.push_back(textFormat);
 
             painter->save();
@@ -795,7 +805,7 @@ void ScreenshotOcrTextLayout::paint(QPainter* painter, const QColor& selectionBa
             QTextLayout::FormatRange textFormat;
             textFormat.start = 0;
             textFormat.length = row.textLength;
-            textFormat.format.setForeground(QBrush(m_textColor));
+            textFormat.format.setForeground(QBrush(textColor));
             formats.push_back(textFormat);
             const int start = std::max(row.textStart, m_selection.start);
             const int end =
@@ -805,7 +815,7 @@ void ScreenshotOcrTextLayout::paint(QPainter* painter, const QColor& selectionBa
                 selected.start = start - row.textStart;
                 selected.length = end - start;
                 selected.format.setBackground(QBrush(selectionBackground));
-                selected.format.setForeground(QBrush(selectionForeground));
+                selected.format.setForeground(QBrush(selectedTextColor));
                 formats.push_back(selected);
             }
             painter->save();
@@ -827,14 +837,14 @@ void ScreenshotOcrTextLayout::paint(QPainter* painter, const QColor& selectionBa
     QTextLayout::FormatRange textFormat;
     textFormat.start = 0;
     textFormat.length = static_cast<int>(m_text.size());
-    textFormat.format.setForeground(QBrush(m_textColor));
+    textFormat.format.setForeground(QBrush(textColor));
     formats.push_back(textFormat);
     if (!m_selection.empty()) {
         QTextLayout::FormatRange range;
         range.start = qBound(0, m_selection.start, static_cast<int>(m_text.size()));
         range.length = qBound(0, m_selection.length, static_cast<int>(m_text.size()) - range.start);
         range.format.setBackground(QBrush(selectionBackground));
-        range.format.setForeground(QBrush(selectionForeground));
+        range.format.setForeground(QBrush(selectedTextColor));
         formats.push_back(range);
     }
 

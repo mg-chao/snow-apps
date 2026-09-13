@@ -514,6 +514,10 @@
             <translation>所有截圖歷史都將被移除</translation>
         </message>
         <message>
+            <source>Always</source>
+            <translation>一律</translation>
+        </message>
+        <message>
             <source>Always hide</source>
             <translation>一律隱藏</translation>
         </message>
@@ -752,6 +756,10 @@
         <message>
             <source>Choose what left-clicking the tray icon does</source>
             <translation>選擇按一下系統匣圖示時執行的動作</translation>
+        </message>
+        <message>
+            <source>Choose when recognized text can be selected on pinned screenshots.</source>
+            <translation>選擇何時可以在貼圖上選取辨識出的文字。</translation>
         </message>
         <message>
             <source>Choose where images are written for automatic save and copy-file actions</source>
@@ -1494,6 +1502,10 @@
             <translation>OCR 模型</translation>
         </message>
         <message>
+            <source>Only when displayed</source>
+            <translation>僅在顯示時</translation>
+        </message>
+        <message>
             <source>Open Function Settings</source>
             <translation>開啟功能設定</translation>
         </message>
@@ -2184,6 +2196,10 @@
         <message>
             <source>Text recognition image saving settings</source>
             <translation>文字辨識圖片儲存設定</translation>
+        </message>
+        <message>
+            <source>Text selection on recognition results</source>
+            <translation>辨識結果文字選取</translation>
         </message>
         <message>
             <source>Text translation</source>

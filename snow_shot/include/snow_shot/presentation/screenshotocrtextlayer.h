@@ -17,9 +17,12 @@ class ScreenshotOcrGraphicsTextItem;
 
 class ScreenshotOcrTextLayer final : public QGraphicsView {
   public:
+    enum class RenderingMode { Normal, SelectionOnly };
+
     explicit ScreenshotOcrTextLayer(QWidget* parent = nullptr);
 
-    void setPresentation(std::shared_ptr<ScreenshotOcrPresentation> presentation);
+    void setPresentation(std::shared_ptr<ScreenshotOcrPresentation> presentation,
+                         RenderingMode mode = RenderingMode::Normal);
     void clearPresentation();
     [[nodiscard]] QColor textColor() const {
         return m_textColor;
@@ -48,6 +51,7 @@ class ScreenshotOcrTextLayer final : public QGraphicsView {
     QGraphicsScene* m_scene = nullptr;
     std::shared_ptr<ScreenshotOcrPresentation> m_presentation;
     QColor m_textColor;
+    RenderingMode m_renderingMode = RenderingMode::Normal;
     std::vector<TextItem> m_textItems;
     QTransform m_canvasToViewTransform;
     QRect m_viewportRect;

@@ -514,6 +514,10 @@
             <translation>All screenshot history will be removed</translation>
         </message>
         <message>
+            <source>Always</source>
+            <translation>Always</translation>
+        </message>
+        <message>
             <source>Always hide</source>
             <translation>Always hide</translation>
         </message>
@@ -752,6 +756,10 @@
         <message>
             <source>Choose what left-clicking the tray icon does</source>
             <translation>Choose what left-clicking the tray icon does</translation>
+        </message>
+        <message>
+            <source>Choose when recognized text can be selected on pinned screenshots.</source>
+            <translation>Choose when recognized text can be selected on pinned screenshots.</translation>
         </message>
         <message>
             <source>Choose where images are written for automatic save and copy-file actions</source>
@@ -1494,6 +1502,10 @@
             <translation>OCR model</translation>
         </message>
         <message>
+            <source>Only when displayed</source>
+            <translation>Only when displayed</translation>
+        </message>
+        <message>
             <source>Open Function Settings</source>
             <translation>Open Function Settings</translation>
         </message>
@@ -2184,6 +2196,10 @@
         <message>
             <source>Text recognition image saving settings</source>
             <translation>Text recognition image saving settings</translation>
+        </message>
+        <message>
+            <source>Text selection on recognition results</source>
+            <translation>Text selection on recognition results</translation>
         </message>
         <message>
             <source>Text translation</source>

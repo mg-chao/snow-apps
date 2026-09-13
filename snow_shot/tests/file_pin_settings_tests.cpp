@@ -39,6 +39,49 @@ class Backend final : public GlobalShortcutBackend {
         registrations.remove(id);
     }
 };
+void textSelectionSettings() {
+    const storage::PinToScreenSettings stored;
+    const auto binding = settings::SettingsSelectBinding::PinTextSelectionOnRecognitionResults;
+    GlobalShortcutManager manager(std::make_unique<Backend>(), nullptr, [] { return false; });
+    settings::BuiltInSettingsBackend backend(manager);
+    settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
+    require(stored.textSelectionOnRecognitionResults() == QStringLiteral("only_when_displayed"),
+            "hidden text selection defaults off");
+    const auto* field = settings::builtInSettingsRegistry().fieldForSelect(binding);
+    require(field &&
+                field->id ==
+                    QStringLiteral("pin-to-screen.text-selection-on-recognition-results") &&
+                field->reset == settings::SettingsSectionReset::PinToScreenBehavior,
+            "select is registered in the pin behavior section");
+    const auto& select = std::get<settings::SettingsSelectDefinition>(field->definition->payload);
+    require(select.options.size() == 2 &&
+                select.options[0].value == QStringLiteral("only_when_displayed") &&
+                select.options[0].label.translated() == QStringLiteral("Only when displayed") &&
+                select.options[1].value == QStringLiteral("always") &&
+                select.options[1].label.translated() == QStringLiteral("Always"),
+            "dropdown options match the specified labels and order");
+    const auto* section =
+        settings::builtInSettingsRegistry().catalog().section(field->pageId, field->sectionId);
+    require(section != nullptr, "pin section exists");
+    int index = -1;
+    for (int i = 0; i < section->items.size(); ++i) {
+        if (section->items[i].id == field->id)
+            index = i;
+    }
+    require(index > 0 && section->items[index - 1].id ==
+                             QStringLiteral("pin-to-screen.automatic-text-recognition"),
+            "selection setting follows automatic recognition");
+    require(session.applySelectValue(binding, QStringLiteral("always")) &&
+                stored.textSelectionOnRecognitionResults() == QStringLiteral("always"),
+            "settings session writes selection policy through backend");
+    require(!stored.setTextSelectionOnRecognitionResults(QStringLiteral("invalid")) &&
+                stored.textSelectionOnRecognitionResults() == QStringLiteral("always"),
+            "schema rejects unsupported selection modes");
+    require(backend.resetSection(settings::SettingsSectionReset::PinToScreenBehavior) &&
+                stored.textSelectionOnRecognitionResults() == QStringLiteral("only_when_displayed"),
+            "pin behavior reset restores default selection policy");
+}
+
 void shortcutSettings() {
     const auto action = GlobalShortcutAction::PinSelectedFiles;
     const QString id = QStringLiteral("quick.pin-selected-files");
@@ -105,6 +148,7 @@ int main(int argc, char** argv) {
     require(
         storage.initialize({directory.filePath(QStringLiteral("bin")), directory.path()}).success,
         "temporary storage must initialize");
+    textSelectionSettings();
     shortcutSettings();
     storage.shutdown();
     return 0;

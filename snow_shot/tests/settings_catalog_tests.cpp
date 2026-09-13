@@ -171,8 +171,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 37 && itemCount == 150 && foundUpdates,
-            "catalog must contain thirty-seven sections and one hundred fifty items");
+    require(sectionCount == 37 && itemCount == 151 && foundUpdates,
+            "catalog must contain thirty-seven sections and one hundred fifty-one items");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
                       QStringLiteral("interface.pin-to-screen.pinned-toolbar-editor")});
@@ -1320,7 +1320,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 199 && index.search(QString()).size() == 199,
+    require(index.entries().size() == 200 && index.search(QString()).size() == 200,
             "search must generate all catalog nodes in catalog order");
     const auto pdfPaper = index.search(QStringLiteral("Landscape A4"));
     require(!pdfPaper.isEmpty() && pdfPaper.constFirst().location.itemId ==
@@ -1380,7 +1380,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 37 && items == 150,
+    require(pages == 12 && sections == 37 && items == 151,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

@@ -47,6 +47,7 @@
 class ScreenshotOcrGraphicsTextItem final : public QGraphicsItem {
   public:
     ScreenshotOcrTextLayout layout;
+    bool selectionOnly = false;
 
     void setSelection(const ScreenshotOcrTextRange& selection) {
         layout.setSelection(selection);
@@ -69,7 +70,13 @@ class ScreenshotOcrGraphicsTextItem final : public QGraphicsItem {
     }
     void paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget* widget) override {
         const QPalette palette = widget != nullptr ? widget->palette() : QApplication::palette();
-        layout.paint(painter, palette.highlight().color(), palette.highlightedText().color());
+        QColor highlight = palette.highlight().color();
+        if (selectionOnly) {
+            highlight.setAlphaF(0.4F);
+        }
+        layout.paint(painter, highlight, palette.highlightedText().color(),
+                     selectionOnly ? ScreenshotOcrTextLayout::PaintMode::SelectionOnly
+                                   : ScreenshotOcrTextLayout::PaintMode::TextAndSelection);
     }
 };
 
@@ -681,7 +688,8 @@ ScreenshotOcrTextLayer::ScreenshotOcrTextLayer(QWidget* parent)
 }
 
 void ScreenshotOcrTextLayer::setPresentation(
-    std::shared_ptr<ScreenshotOcrPresentation> presentation) {
+    std::shared_ptr<ScreenshotOcrPresentation> presentation, RenderingMode mode) {
+    m_renderingMode = mode;
     m_textItems.clear();
     m_scene->clear();
     m_presentation = std::move(presentation);
@@ -816,6 +824,7 @@ void ScreenshotOcrTextLayer::rebuildTextItems() {
 
     const auto appendTextItem = [this](int lineIndex) {
         auto* graphicsText = new ScreenshotOcrGraphicsTextItem;
+        graphicsText->selectionOnly = m_renderingMode == RenderingMode::SelectionOnly;
         m_scene->addItem(graphicsText);
         m_textItems.push_back(TextItem{
             lineIndex,

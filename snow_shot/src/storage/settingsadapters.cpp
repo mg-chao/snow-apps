@@ -1335,6 +1335,17 @@ bool PinToScreenSettings::setMouseWheelZoomMode(const QString& mode) const {
     return cache().setValue(QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"), mode);
 }
 
+QString PinToScreenSettings::textSelectionOnRecognitionResults() const {
+    return cache()
+        .value(QStringLiteral("pin_to_screen/text_selection_on_recognition_results"))
+        .toString();
+}
+
+bool PinToScreenSettings::setTextSelectionOnRecognitionResults(const QString& mode) const {
+    return cache().setValue(QStringLiteral("pin_to_screen/text_selection_on_recognition_results"),
+                            mode);
+}
+
 bool PinToScreenSettings::automaticTextRecognition() const {
     return cache().value(QStringLiteral("pin_to_screen/automatic_text_recognition")).toBool();
 }

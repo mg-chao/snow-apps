@@ -1003,6 +1003,19 @@ SettingsItemDefinition pinAutomaticOcrItem() {
         SettingsSwitchBinding::PinAutomaticTextRecognition);
 }
 
+SettingsItemDefinition pinTextSelectionItem() {
+    return fixedSelectItem(
+        QStringLiteral("pin-to-screen.text-selection-on-recognition-results"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Text selection on recognition results"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Choose when recognized text can be selected on pinned screenshots."),
+        QStringLiteral("pin_to_screen/text_selection_on_recognition_results"),
+        SettingsSelectBinding::PinTextSelectionOnRecognitionResults,
+        {{QStringLiteral("only_when_displayed"),
+          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Only when displayed"))},
+         {QStringLiteral("always"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Always"))}});
+}
+
 SettingsItemDefinition pinAutoResizeItem() {
     return switchItem(
         QStringLiteral("pin-to-screen.auto-resize-window"),
@@ -1728,7 +1741,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                                                    "Pinned screenshot window appearance settings")),
                     SettingsSectionReset::PinToScreenBehavior,
                     {pinZoomModeItem(), pinDoubleClickActionItem(), pinMiddleClickActionItem(),
-                     pinAutomaticOcrItem(), pinAutoResizeItem()},
+                     pinAutomaticOcrItem(), pinTextSelectionItem(), pinAutoResizeItem()},
                 },
                 {
                     QStringLiteral("text-recognition-settings"),
@@ -2772,6 +2785,10 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSelectBinding::PinDoubleClickAction:
                         expectedKey = QStringLiteral("pin_to_screen/double_click_action");
+                        break;
+                    case SettingsSelectBinding::PinTextSelectionOnRecognitionResults:
+                        expectedKey =
+                            QStringLiteral("pin_to_screen/text_selection_on_recognition_results");
                         break;
                     case SettingsSelectBinding::PinMouseWheelZoomMode:
                         expectedKey = QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode");
