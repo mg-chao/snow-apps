@@ -117,7 +117,7 @@ impl Editor {
                     ElementData::Filter(filter)
                         if filter_hit_test(filter, canvas_point, hit_tolerance) =>
                     {
-                        ElementKind::Filter
+                        element.data.kind()
                     }
                     ElementData::PenFilter(filter)
                         if snow_draw_engine_document::pen_filter_hit_test(

@@ -72,7 +72,10 @@ impl Editor {
         let tolerance = self.eraser_tolerance();
         let mut changed = false;
         for sample in samples {
-            for (id, _) in document.elements_at_with_tolerance(*sample, tolerance) {
+            for (id, kind) in document.elements_at_with_tolerance(*sample, tolerance) {
+                if kind == snow_draw_engine_document::ElementKind::AutoFilter {
+                    continue;
+                }
                 let id = document.arrow_id_for_text(id).unwrap_or(id);
                 if !self.state.eraser.pending_ids.contains(&id) {
                     self.state.eraser.pending_ids.push(id);
