@@ -1326,6 +1326,10 @@
             <translation>Keep selection width and height consistent</translation>
         </message>
         <message>
+            <source>Keep the recognition process running to avoid startup delays. Uses memory while idle.</source>
+            <translation>Keep the recognition process running to avoid startup delays. Uses memory while idle.</translation>
+        </message>
+        <message>
             <source>Landscape A4</source>
             <translation>Landscape A4</translation>
         </message>
@@ -1420,6 +1424,10 @@
         <message>
             <source>Middle mouse button action</source>
             <translation>Middle mouse button action</translation>
+        </message>
+        <message>
+            <source>Model Hot Start</source>
+            <translation>Model Hot Start</translation>
         </message>
         <message>
             <source>Model Type</source>
@@ -1650,6 +1658,10 @@
             <translation>Portrait A4</translation>
         </message>
         <message>
+            <source>Preload the selected model for faster recognition. Requires a resident process and uses additional memory.</source>
+            <translation>Preload the selected model for faster recognition. Requires a resident process and uses additional memory.</translation>
+        </message>
+        <message>
             <source>Prevent left-click selection of matching elements while these tools are active</source>
             <translation>Prevent left-click selection of matching elements while these tools are active</translation>
         </message>
@@ -1752,6 +1764,10 @@
         <message>
             <source>Reset Zoom</source>
             <translation>Reset Zoom</translation>
+        </message>
+        <message>
+            <source>Resident Recognition Process</source>
+            <translation>Resident Recognition Process</translation>
         </message>
         <message>
             <source>Resize scrolling screenshots automatically to remain inside the monitor</source>

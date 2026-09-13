@@ -1458,6 +1458,32 @@ SettingsItemDefinition directMlAccelerationItem() {
     };
 }
 
+SettingsItemDefinition ocrResidentProcessItem() {
+    return {
+        QStringLiteral("text-recognition.resident-process"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Resident Recognition Process")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                       "Keep the recognition process running to avoid "
+                                       "startup delays. Uses memory while idle.")),
+        {},
+        QStringLiteral("text_recognition/resident_process"),
+        SettingsSwitchDefinition{SettingsSwitchBinding::OcrResidentProcess},
+    };
+}
+
+SettingsItemDefinition ocrModelHotStartItem() {
+    return {
+        QStringLiteral("text-recognition.model-hot-start"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Model Hot Start")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                       "Preload the selected model for faster recognition. "
+                                       "Requires a resident process and uses additional memory.")),
+        {},
+        QStringLiteral("text_recognition/model_hot_start"),
+        SettingsSwitchDefinition{SettingsSwitchBinding::OcrModelHotStart},
+    };
+}
+
 SettingsItemDefinition ocrModelTypeItem() {
     SettingsSelectDefinition payload;
     payload.options = {
@@ -2065,7 +2091,8 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(QT_TRANSLATE_NOOP(
                         "SettingsCatalog", "Configure text recognition models and acceleration")),
                     SettingsSectionReset::TextRecognition,
-                    {ocrModelTypeItem(), directMlAccelerationItem()},
+                    {ocrModelTypeItem(), directMlAccelerationItem(), ocrResidentProcessItem(),
+                     ocrModelHotStartItem()},
                 },
                 {
                     QStringLiteral("core"),
@@ -2880,6 +2907,12 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::SmartSelection:
                         expectedKey = QStringLiteral("screenshot_selection/smart_selection");
+                        break;
+                    case SettingsSwitchBinding::OcrResidentProcess:
+                        expectedKey = QStringLiteral("text_recognition/resident_process");
+                        break;
+                    case SettingsSwitchBinding::OcrModelHotStart:
+                        expectedKey = QStringLiteral("text_recognition/model_hot_start");
                         break;
                     case SettingsSwitchBinding::DirectMlAcceleration:
                         expectedKey = QStringLiteral("text_recognition/direct_ml_acceleration");

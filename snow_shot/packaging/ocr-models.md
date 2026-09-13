@@ -29,19 +29,38 @@ operator list supports only the V6 models. Observed failures include `Mul(14)`,
 original and CPU-optimized graph operator requirements while preserving V6's
 requirements. The process protocol remains version 2.
 
-Runtime **1.0.6** initializes the actual recognition worker before reporting
-readiness and reuses that engine for subsequent requests. It removes the separate,
-discarded startup validation engine. The application defaults to one worker and
-one shared image slot sized for queued images, bounded by the existing 4K limit.
-Larger requests drain the old mapping and create a correctly sized replacement;
-smaller requests reuse capacity. Process startup, mapped-file work, image conversion,
-and process cleanup belong to the transport thread. The child exits when its queue
-drains, so models do not remain resident between isolated OCR interactions.
+Runtime **1.0.7**, protocol **3**, separates command-channel readiness, model
+sessions, and image-transfer mappings. Both new settings default off:
+`text_recognition/resident_process` keeps the child alive while idle;
+`text_recognition/model_hot_start` additionally creates a fresh image-free model
+session after each inference cycle. Hot start is effective only with residency
+and retains its saved preference when residency is disabled.
 
-The 1.0.6 archive and its SHA-256 are prepared locally in `artifacts/`. Publish the
-exact pinned archive at the URL below before distributing this app revision; the
-published 1.0.5 archive must remain unchanged. No model download is needed when an
-existing model cache is valid.
+Recognition and callback delivery are FIFO across interactive and prefetch work.
+The single inference executor can overlap the next image transfer. Model/backend
+changes replace sessions in the existing child; waiting images use the newest
+configuration when inference is dispatched. Canceled resident inference drains
+naturally, and local rendering does not retain OCR resources.
+
+Process startup, mapped-file work, image conversion, and process cleanup belong
+to the transport thread. One shared image slot is allocated only for undelivered
+images, bounded by the existing 3840 × 2160 total-pixel limit. Larger images wait
+for transfer acknowledgement before replacing the mapping; smaller images reuse
+capacity. The mapping is released after the last image is copied into the child,
+independently of inference and session lifetime.
+
+After three unexpected exits in 60 seconds, background residency is suspended.
+The first two retries wait 1 and 2 seconds. The next user recognition re-arms
+residency; automatic prefetch runs on demand while suspended. Background resource
+acquisition retries after 5, 15, and then 60 seconds without showing settings
+errors. Warm-up failures are logged and retried on the next recognition.
+
+The locally verified artifact is
+`artifacts/snow-ocr-runtime-1.0.7-windows-x64.zip` (17,345,508 bytes), with SHA-256
+`dd529a051862183a4c1782b973c28559d6c7abf37e09214af594bcd2102062e1`.
+Publish the exact pinned archive before distributing this app revision. Published
+1.0.6 and earlier artifacts must remain unchanged. Existing verified model files
+remain reusable; the application and runtime must use matching protocol versions.
 
 When changing models, update both the trusted asset manifest and the packaging
 descriptors, and regenerate/check
@@ -53,11 +72,15 @@ The release maintainer must publish the exact hash-pinned runtime archive before
 shipping the updated app or expecting clean development machines to download it:
 
 ```text
-https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/runtime/1.0.6/windows-x64/snow-ocr-runtime-1.0.6-windows-x64.zip
+https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/runtime/1.0.7/windows-x64/snow-ocr-runtime-1.0.7-windows-x64.zip
 ```
 
 `scripts/package-snow-shot.ps1 -PrepareOcrRuntimeOnly` prepares the runtime ZIP,
-checksum, and descriptor without producing an installer. Keep the manifest's
+checksum, and descriptor without producing an installer. It delegates to
+`scripts/prepare-snow-shot-ocr-runtime.ps1`, builds only the Release OCR target,
+and verifies the ZIP through the same pinned importer used by application
+releases. `-SkipBuild` packages an already-built runtime without requiring an
+installed application or updater. Keep the manifest's
 runtime file sizes and hashes synchronized with that artifact. Never replace an
 already-published runtime version with different bytes. Offline installers still
 bundle only Small V6; other selections download on demand.
@@ -75,19 +98,27 @@ cache reuse, failed acquisition/retry, and model changes during acquisition.
 
 For actual V4/V5 inference, place verified files under
 `<model-root>/<model-id>/<filename>`, as described by the trusted manifest. Then
-run the built test executable with the packaged 1.0.6 worker:
+run the built test executable with the packaged 1.0.7 worker:
 
 ```powershell
 $env:SNOW_TEST_OCR_TEXT_FIXTURE = (Resolve-Path snow_shot/tests/baselines/ocr-model-versions.png).Path
 $test = 'build/windows-msvc-debug/snow_shot/test-bin/Debug/snow-shot-ocr-recognition-service-tests.exe'
 $modelRoot = (Resolve-Path build/ocr-versioned-models).Path
-$worker = (Resolve-Path artifacts/snow-ocr-runtime-1.0.6/snow-ocr-process-1.0.6-windows-x64.exe).Path
+$worker = (Resolve-Path artifacts/snow-ocr-runtime-1.0.7/snow-ocr-process-1.0.7-windows-x64.exe).Path
 & $test "--model-root=$modelRoot" "--worker=$worker"
 & $test "--model-root=$modelRoot" "--worker=$worker" --directml
 ```
 
 Both runs must recognize `Snow Shot 12345` and `文字识别` with all four bundles
 (ignoring model-dependent spacing between Latin words).
+To verify two resident/hot-start cycles using the staged default model and the
+same packaged worker, run:
+
+```powershell
+& $test "--worker=$worker" --resident-text-fixture
+& $test "--worker=$worker" --resident-text-fixture --directml
+```
+
 Initialization-only checks (`--validate-model-set`) are also required but do not
 replace recognition tests. DirectML requests retain the existing CPU fallback
 when acceleration is unavailable. Model payloads are not committed or downloaded

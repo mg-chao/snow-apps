@@ -258,6 +258,19 @@ class ApplicationController::Impl {
         }
     }
 
+    void applyOcrConfiguration() {
+        if (ocrRecognition == nullptr)
+            return;
+        const auto& configuration = storage::ApplicationStorage::instance().configuration();
+        ocrRecognition->setRuntimeConfiguration(
+            {screenshotOcrModelTypeFromValue(configuration.value(kOcrModelTypeKey).toString()),
+             configuration.value(kOcrDirectMlKey).toBool()
+                 ? ScreenshotOcrBackendPreference::DirectMl
+                 : ScreenshotOcrBackendPreference::Cpu,
+             configuration.value(QStringLiteral("text_recognition/resident_process")).toBool(),
+             configuration.value(QStringLiteral("text_recognition/model_hot_start")).toBool()});
+    }
+
     void start() {
         if (started) {
             return;
@@ -275,6 +288,7 @@ class ApplicationController::Impl {
             }
         });
         QTimer::singleShot(0, &q, [this]() { restorePinnedWindows(); });
+        QTimer::singleShot(0, &q, [this]() { applyOcrConfiguration(); });
     }
 
     ScreenshotController* ensureScreenshotController() {
@@ -332,12 +346,11 @@ class ApplicationController::Impl {
             systemTray.setMenuOptions(stringList(value));
         } else if (key == kScreenshotDelaySecondsKey) {
             systemTray.setScreenshotDelaySeconds(value.toInt(3));
-        } else if (key == kOcrModelTypeKey && ocrRecognition != nullptr) {
-            ocrRecognition->setModelType(screenshotOcrModelTypeFromValue(value.toString()));
-        } else if (key == kOcrDirectMlKey && ocrRecognition != nullptr) {
-            ocrRecognition->setBackendPreference(value.toBool()
-                                                     ? ScreenshotOcrBackendPreference::DirectMl
-                                                     : ScreenshotOcrBackendPreference::Cpu);
+        } else if (key == kOcrModelTypeKey || key == kOcrDirectMlKey ||
+                   key == QStringLiteral("text_recognition/resident_process") ||
+                   key == QStringLiteral("text_recognition/model_hot_start")) {
+            if (started)
+                applyOcrConfiguration();
         }
     }
 

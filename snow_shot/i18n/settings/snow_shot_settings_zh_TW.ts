@@ -1326,6 +1326,10 @@
             <translation>保持選取區寬高一致</translation>
         </message>
         <message>
+            <source>Keep the recognition process running to avoid startup delays. Uses memory while idle.</source>
+            <translation>保持辨識程序執行以避免啟動延遲，閒置時會占用記憶體。</translation>
+        </message>
+        <message>
             <source>Landscape A4</source>
             <translation>橫向 A4</translation>
         </message>
@@ -1420,6 +1424,10 @@
         <message>
             <source>Middle mouse button action</source>
             <translation>滑鼠中鍵動作</translation>
+        </message>
+        <message>
+            <source>Model Hot Start</source>
+            <translation>模型熱啟動</translation>
         </message>
         <message>
             <source>Model Type</source>
@@ -1650,6 +1658,10 @@
             <translation>直向 A4</translation>
         </message>
         <message>
+            <source>Preload the selected model for faster recognition. Requires a resident process and uses additional memory.</source>
+            <translation>預先載入所選模型以加快辨識，需要開啟常駐辨識程序，並會占用額外記憶體。</translation>
+        </message>
+        <message>
             <source>Prevent left-click selection of matching elements while these tools are active</source>
             <translation>使用這些工具時，禁止用滑鼠左鍵選取相同類型的元素</translation>
         </message>
@@ -1752,6 +1764,10 @@
         <message>
             <source>Reset Zoom</source>
             <translation>重設縮放</translation>
+        </message>
+        <message>
+            <source>Resident Recognition Process</source>
+            <translation>常駐辨識程序</translation>
         </message>
         <message>
             <source>Resize scrolling screenshots automatically to remain inside the monitor</source>

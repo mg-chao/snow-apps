@@ -1,7 +1,7 @@
 use std::io::{self, Read, Write};
 
 pub const MAGIC: [u8; 4] = *b"SOCR";
-pub const VERSION: u16 = 2;
+pub const VERSION: u16 = 3;
 pub const MAX_FRAME: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,6 +14,17 @@ pub enum Kind {
     Complete = 5,
     Shutdown = 6,
     ShutdownAck = 7,
+    PrepareSession = 8,
+    SessionReady = 9,
+    ReleaseSession = 10,
+    SessionReleased = 11,
+    AttachBuffer = 12,
+    BufferAttached = 13,
+    Recognize = 14,
+    ImageConsumed = 15,
+    DetachBuffer = 16,
+    BufferDetached = 17,
+    DiscardImage = 18,
 }
 
 impl TryFrom<u16> for Kind {
@@ -27,6 +38,17 @@ impl TryFrom<u16> for Kind {
             5 => Ok(Self::Complete),
             6 => Ok(Self::Shutdown),
             7 => Ok(Self::ShutdownAck),
+            8 => Ok(Self::PrepareSession),
+            9 => Ok(Self::SessionReady),
+            10 => Ok(Self::ReleaseSession),
+            11 => Ok(Self::SessionReleased),
+            12 => Ok(Self::AttachBuffer),
+            13 => Ok(Self::BufferAttached),
+            14 => Ok(Self::Recognize),
+            15 => Ok(Self::ImageConsumed),
+            16 => Ok(Self::DetachBuffer),
+            17 => Ok(Self::BufferDetached),
+            18 => Ok(Self::DiscardImage),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "unknown OCR protocol message",

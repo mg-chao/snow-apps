@@ -38,6 +38,17 @@ enum class ScreenshotOcrRequestPriority { Interactive, Prefetch };
 
 enum class ScreenshotOcrBackendPreference { Cpu, DirectMl };
 
+struct ScreenshotOcrRuntimeConfiguration {
+    ScreenshotOcrModelType modelType = ScreenshotOcrModelType::Small;
+    ScreenshotOcrBackendPreference backend = ScreenshotOcrBackendPreference::Cpu;
+    bool residentProcess = false;
+    bool modelHotStart = false;
+    bool operator==(const ScreenshotOcrRuntimeConfiguration& other) const {
+        return modelType == other.modelType && backend == other.backend &&
+               residentProcess == other.residentProcess && modelHotStart == other.modelHotStart;
+    }
+};
+
 struct ScreenshotOcrRequest {
     QImage image;
     QRectF canvasRect;
@@ -95,8 +106,6 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
 
   public:
     struct Options {
-        // Maximum concurrent workers in the OCR child process.
-        int workerCount = 1;
         // Packaged descriptor/offline payload and writable online component cache.
         QString offlineRoot;
         QString cacheRoot;
@@ -112,6 +121,10 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
         // Bound on waiting for in-flight local rendering at shutdown before
         // the render pool is abandoned.
         int shutdownTimeoutMilliseconds = 5000;
+        // Injectable timing scale for deterministic lifecycle tests.
+        int retryTimeUnitMilliseconds = 1000;
+        // Optional worker-side barrier for deterministic rendering/lifecycle tests.
+        std::function<void()> beforeLocalRender;
     };
 
     explicit ScreenshotOcrRecognitionService(QObject* parent = nullptr);
@@ -134,6 +147,7 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     void setBackendPreference(ScreenshotOcrBackendPreference preference);
     void setProxyUrl(const QString& proxyUrl);
     void setModelType(ScreenshotOcrModelType modelType);
+    void setRuntimeConfiguration(const ScreenshotOcrRuntimeConfiguration& configuration);
     [[nodiscard]] int liveWorkerCount() const;
     // Application-thread snapshots; the QProcess itself belongs to the transport thread.
     [[nodiscard]] qint64 processId() const;

@@ -8,6 +8,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if ($PrepareOcrRuntimeOnly) {
+    & (Join-Path $PSScriptRoot 'prepare-snow-shot-ocr-runtime.ps1') -BuildDirectory $BuildDirectory -Parallelism $Parallelism -SkipBuild:$SkipBuild
+    return
+}
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 . (Join-Path $PSScriptRoot "snow-build-environment.ps1")
 $buildEnvironment = Set-SnowBuildEnvironment -Preset "snow-shot-msvc-release"
@@ -506,10 +510,7 @@ if ($unexpectedImports.Count -gt 0) {
     throw "Release staging imports non-system or disallowed libraries: $($unexpectedImports -join ', ')"
 }
 Write-Output "PE dependency audit: $($stagedBinaries.Count) binaries checked"
-$symbolOptions = @{}
-if (-not $PrepareOcrRuntimeOnly) {
-    $symbolOptions.OcrAssetManifest = Join-Path $repoRoot 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json'
-}
+$symbolOptions = @{ OcrAssetManifest = Join-Path $repoRoot 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json' }
 & (Join-Path $PSScriptRoot "collect-snow-shot-symbols.ps1") -BuildDirectory $buildDirectory -InstallDirectory $installDirectory @symbolOptions
 
 $linkMapPath = Join-Path $buildDirectory "snow_shot\Release\snow_shot.map"
@@ -625,7 +626,7 @@ if ($versionInfo.FileVersion -ne "$packageVersionNumeric.0" -or
     throw "Snow Shot binary version '$($versionInfo.FileVersion)'/'$($versionInfo.ProductVersion)' does not match package version '$packageVersion'."
 }
 
-$ocrRuntimeVersion = "1.0.6"
+$ocrRuntimeVersion = "1.0.7"
 $ocrPlatform = "windows-x64"
 $ocrDefaultModelType = "small"
 $ocrDefaultModelId = "ppocrv6-small-463ea9f"
@@ -861,55 +862,49 @@ function Assert-ZipMatchesFileManifest {
     finally { $stream.Dispose() }
 }
 
-$runtimeSource = Join-Path $installDirectory "bin\snow-ocr-process.exe"
-$directMlSource = Join-Path $installDirectory "bin\DirectML.dll"
 $runtimeWork = Join-Path $artifactRoot "snow-ocr-runtime-$ocrRuntimeVersion"
 Reset-ReleaseDirectory -Path $runtimeWork
 $runtimeArchivePath = Join-Path $buildDirectory $ocrRuntimeArchiveName
-if ($PrepareOcrRuntimeOnly) {
-    Copy-Item -LiteralPath $runtimeSource -Destination (Join-Path $runtimeWork $ocrRuntimeFileName)
-    Copy-Item -LiteralPath $directMlSource -Destination (Join-Path $runtimeWork "DirectML.dll")
-} else {
-    $pinnedRuntime = (Get-Content -Raw (Join-Path $repoRoot 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json') | ConvertFrom-Json).runtime
-    if ($pinnedRuntime.version -cne $ocrRuntimeVersion -or $pinnedRuntime.platform -cne $ocrPlatform -or
-        $pinnedRuntime.archive.url -cne $ocrRuntimeUrl -or $pinnedRuntime.archive.name -cne $ocrRuntimeArchiveName) {
-        throw 'The release OCR runtime identity differs from the checked-in manifest.'
-    }
-    Invoke-WebRequest -Uri $pinnedRuntime.archive.url -OutFile $runtimeArchivePath -TimeoutSec 180 -MaximumRedirection 5
-    . (Join-Path $PSScriptRoot 'snow-shot-ocr-release-runtime.ps1')
-    Expand-PinnedSnowOcrRuntime -ArchivePath $runtimeArchivePath -Runtime $pinnedRuntime -Destination $runtimeWork
-    # Audit the actual published binaries as well as the separately built development runtime.
-    foreach ($binary in @(Get-ChildItem -LiteralPath $runtimeWork -File | Where-Object { $_.Extension -in @('.exe', '.dll') })) {
-        $headers = @(& $script:DumpbinPath /nologo /headers $binary.FullName 2>&1)
-        if ($LASTEXITCODE -ne 0 -or -not ($headers -match '8664 machine')) { throw 'Published OCR runtime must be x64.' }
-        $imports = @(& $script:DumpbinPath /nologo /dependents $binary.FullName 2>&1)
-        if ($LASTEXITCODE -ne 0) { throw 'Published OCR dependency inspection failed.' }
-        foreach ($line in $imports) {
-            if ($line -notmatch '^\s+([A-Za-z0-9_.-]+\.dll)\s*$') { continue }
-            $dependency = $Matches[1].ToLowerInvariant()
-            if ($dependency -match '^(?:api|ext)-ms-' -or
-                ($binary.Name -ceq $ocrRuntimeFileName -and $dependency -eq 'directml.dll')) { continue }
-            if ($dependency -notin $allowedSystemImports -or
-                -not (Test-Path -LiteralPath (Join-Path $windowsSystemDirectory $dependency) -PathType Leaf)) {
-                throw "Published OCR runtime imports an unresolved or disallowed dependency: $dependency"
-            }
+$pinnedRuntime = (Get-Content -Raw (Join-Path $repoRoot 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json') | ConvertFrom-Json).runtime
+if ($pinnedRuntime.version -cne $ocrRuntimeVersion -or $pinnedRuntime.platform -cne $ocrPlatform -or
+    $pinnedRuntime.archive.url -cne $ocrRuntimeUrl -or $pinnedRuntime.archive.name -cne $ocrRuntimeArchiveName) {
+    throw 'The release OCR runtime identity differs from the checked-in manifest.'
+}
+Invoke-WebRequest -Uri $pinnedRuntime.archive.url -OutFile $runtimeArchivePath -TimeoutSec 180 -MaximumRedirection 5
+. (Join-Path $PSScriptRoot 'snow-shot-ocr-release-runtime.ps1')
+Expand-PinnedSnowOcrRuntime -ArchivePath $runtimeArchivePath -Runtime $pinnedRuntime -Destination $runtimeWork
+# Audit the actual published binaries as well as the separately built development runtime.
+foreach ($binary in @(Get-ChildItem -LiteralPath $runtimeWork -File | Where-Object { $_.Extension -in @('.exe', '.dll') })) {
+    $headers = @(& $script:DumpbinPath /nologo /headers $binary.FullName 2>&1)
+    if ($LASTEXITCODE -ne 0 -or -not ($headers -match '8664 machine')) { throw 'Published OCR runtime must be x64.' }
+    $imports = @(& $script:DumpbinPath /nologo /dependents $binary.FullName 2>&1)
+    if ($LASTEXITCODE -ne 0) { throw 'Published OCR dependency inspection failed.' }
+    foreach ($line in $imports) {
+        if ($line -notmatch '^\s+([A-Za-z0-9_.-]+\.dll)\s*$') { continue }
+        $dependency = $Matches[1].ToLowerInvariant()
+        if ($dependency -match '^(?:api|ext)-ms-' -or
+            ($binary.Name -ceq $ocrRuntimeFileName -and $dependency -eq 'directml.dll')) { continue }
+        if ($dependency -notin $allowedSystemImports -or
+            -not (Test-Path -LiteralPath (Join-Path $windowsSystemDirectory $dependency) -PathType Leaf)) {
+            throw "Published OCR runtime imports an unresolved or disallowed dependency: $dependency"
         }
     }
 }
+
 $ocrVersionOutput = & (Join-Path $runtimeWork $ocrRuntimeFileName) --version 2>$null
 if ($LASTEXITCODE -ne 0 -or $ocrVersionOutput -notmatch
-    '^snow-ocr-process 1\.0\.5 windows-x86_64 protocol 2$') {
+    ("^snow-ocr-process " + [regex]::Escape($ocrRuntimeVersion) + " windows-x86_64 protocol 3$")) {
     throw "The staged OCR runtime reported an unexpected version: $ocrVersionOutput"
 }
 $ocrRuntimeVersionInfo = (Get-Item -LiteralPath (Join-Path $runtimeWork $ocrRuntimeFileName)).VersionInfo
 $expectedOcrMetadata = @{
     CompanyName = "Snow Apps"
     FileDescription = "Snow Shot OCR runtime"
-    FileVersion = "1.0.6.0"
+    FileVersion = "1.0.7.0"
     InternalName = "snow-ocr-process"
     OriginalFilename = $ocrRuntimeFileName
     ProductName = "Snow Shot OCR Runtime"
-    ProductVersion = "1.0.6"
+    ProductVersion = "1.0.7"
 }
 foreach ($property in $expectedOcrMetadata.Keys) {
     if ($ocrRuntimeVersionInfo.$property -ne $expectedOcrMetadata[$property]) {
@@ -921,21 +916,9 @@ $runtimePayloadFiles = @(
     (Get-ReleaseFileDescriptor -Path (Join-Path $runtimeWork "DirectML.dll") -Name "DirectML.dll")
 )
 $runtimeManifestPath = Join-Path $runtimeWork "runtime-manifest.json"
-if ($PrepareOcrRuntimeOnly) {
-    [ordered]@{
-        schema = 1
-        version = $ocrRuntimeVersion
-        platform = $ocrPlatform
-        protocol = 2
-        files = $runtimePayloadFiles
-    } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $runtimeManifestPath -Encoding utf8
-}
 $runtimeFiles = @($runtimePayloadFiles) + @(
     (Get-ReleaseFileDescriptor -Path $runtimeManifestPath -Name "runtime-manifest.json")
 )
-if ($PrepareOcrRuntimeOnly) {
-    New-DeterministicZip -SourceDirectory $runtimeWork -Destination $runtimeArchivePath
-}
 $runtimeArchive = Get-ReleaseFileDescriptor -Path $runtimeArchivePath -Name $ocrRuntimeArchiveName -Url $ocrRuntimeUrl
 $runtimeArchiveChecksum = "$runtimeArchivePath.sha256"
 "$($runtimeArchive.sha256)  $ocrRuntimeArchiveName" | Set-Content -LiteralPath $runtimeArchiveChecksum -Encoding ascii
@@ -954,19 +937,11 @@ $runtimeReleaseManifest = Join-Path $buildDirectory "snow-ocr-runtime-$ocrRuntim
     SchemaVersion = 1
     RuntimeVersion = $ocrRuntimeVersion
     Platform = $ocrPlatform
-    Protocol = 2
+    Protocol = 3
     UploadUrl = $ocrRuntimeUrl
     Archive = $runtimeArchive
     Files = $runtimeFiles
 } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $runtimeReleaseManifest -Encoding utf8
-
-if ($PrepareOcrRuntimeOnly) {
-    Write-Output "OCR runtime upload artifact: $runtimeArchivePath"
-    Write-Output "OCR runtime development cache: $runtimeArtifactCachePath"
-    Write-Output "OCR runtime checksum: $runtimeArchiveChecksum"
-    Write-Output "OCR runtime manifest: $runtimeReleaseManifest"
-    return
-}
 
 $modelDescriptors = @()
 foreach ($model in $ocrModels) {

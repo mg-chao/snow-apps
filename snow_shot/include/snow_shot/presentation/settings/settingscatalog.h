@@ -112,6 +112,8 @@ enum class SettingsSwitchBinding {
     HistoryKeepPermanently,
     SmartSelection,
     DirectMlAcceleration,
+    OcrResidentProcess,
+    OcrModelHotStart,
     SelectionTransitionAnimation,
     TrayEnabled,
     ScreenshotAutoSaveAfterCopy,
