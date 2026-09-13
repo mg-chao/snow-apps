@@ -110,6 +110,31 @@ void shutterSoundSettingsPersistAndReset(const QString& configurationPath) {
     require(!invalid.valid, "shutter preference must reject nonboolean values");
 }
 
+void ownUiCapturePreferencesPersistAndReset() {
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    constexpr auto scrolling =
+        settings::SettingsSwitchBinding::ScreenshotCaptureUiInScrollingScreenshot;
+    constexpr auto recording = settings::SettingsSwitchBinding::ScreenRecordingCaptureToolbar;
+    require(backend.switchValue(scrolling) && backend.switchValue(recording),
+            "both own-UI capture preferences must default to enabled");
+    require(backend.applySwitchValue(scrolling, false) && !backend.switchValue(scrolling) &&
+                !storage::ScreenshotSettings().captureUiInScrollingScreenshot(),
+            "scrolling screenshot UI capture must be disabled through the settings backend");
+    require(backend.applySwitchValue(recording, false) && !backend.switchValue(recording) &&
+                !storage::RecordingSettings().captureToolbarInRecording(),
+            "recording toolbar capture must be disabled through the settings backend");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenRecording) &&
+                !backend.switchValue(recording) && !backend.switchValue(scrolling),
+            "the Function screen recording reset must not own either capture preference");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenRecordingCapture) &&
+                backend.switchValue(recording) && !backend.switchValue(scrolling),
+            "the system Screen recording reset must restore only toolbar capture");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotCapture) &&
+                backend.switchValue(scrolling),
+            "the system Screenshot reset must restore scrolling screenshot UI capture");
+}
+
 void toolbarLayoutSectionResetsRemainIndependent() {
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
@@ -321,6 +346,7 @@ int main(int argc, char** argv) {
                                        temporary.filePath(QStringLiteral("data")), 60000}));
     settingsPersistAndResetToMsaa(temporary.filePath(QStringLiteral("data/config.json")));
     shutterSoundSettingsPersistAndReset(temporary.filePath(QStringLiteral("data/config.json")));
+    ownUiCapturePreferencesPersistAndReset();
     toolbarLayoutSectionResetsRemainIndependent();
     changedApiRefreshesServiceAndRejectsOldResults();
     apiChangesDuringRefreshAndWhileIdle();

@@ -1119,7 +1119,7 @@ int main(int argc, char** argv) {
             "isolated storage must initialize");
     require(RecordingSettings().setVideoSaveDirectory(temporary.path()),
             "test output directory must be set");
-    require(RecordingSettings().setHideToolbarInRecording(false),
+    require(RecordingSettings().setCaptureToolbarInRecording(true),
             "capture exclusion must be disabled for fake backend");
 #ifdef Q_OS_WIN
     if (app.arguments().contains(QStringLiteral("--native-toolbar-display-only")) ||

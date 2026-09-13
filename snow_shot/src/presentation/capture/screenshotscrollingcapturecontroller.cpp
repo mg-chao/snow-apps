@@ -292,7 +292,8 @@ struct ScreenshotScrollingCaptureController::Impl {
     bool excludeScrollingWindowsFromCapture(ScreenshotOverlayWindow* overlay) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
         ScreenshotToolbarWindow* const toolbar = context.overlayCoordinator.toolbar();
-        if (QCoreApplication::arguments().contains(QStringLiteral("--e2e-allow-overlay-capture"))) {
+        if (context.captureUiInScrollingScreenshot() ||
+            QCoreApplication::arguments().contains(QStringLiteral("--e2e-allow-overlay-capture"))) {
             return overlay != nullptr && toolbar != nullptr;
         }
         if (overlay == nullptr || toolbar == nullptr) {

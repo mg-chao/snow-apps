@@ -646,6 +646,10 @@
             <translation>截图</translation>
         </message>
         <message>
+            <source>Capture UI during scrolling screenshots</source>
+            <translation>滚动截图时捕获界面</translation>
+        </message>
+        <message>
             <source>Capture and copy the currently focused window</source>
             <translation>截取并复制当前焦点窗口</translation>
         </message>
@@ -664,6 +668,10 @@
         <message>
             <source>Capture selected text and open it in Translation</source>
             <translation>获取选中文本并在翻译页面中打开</translation>
+        </message>
+        <message>
+            <source>Capture toolbar during recording</source>
+            <translation>录制时捕获工具栏</translation>
         </message>
         <message>
             <source>Center on mouse position</source>
@@ -1118,10 +1126,6 @@
             <translation>橡皮擦</translation>
         </message>
         <message>
-            <source>Exclude the screen recording toolbar from captured video</source>
-            <translation>录制屏幕时不捕获屏幕录制工具栏</translation>
-        </message>
-        <message>
             <source>Execution order</source>
             <translation>执行顺序</translation>
         </message>
@@ -1246,10 +1250,6 @@
             <translation>顶部隐藏</translation>
         </message>
         <message>
-            <source>Hide toolbar in recording</source>
-            <translation>录制时隐藏工具栏</translation>
-        </message>
-        <message>
             <source>Hide when outside selection</source>
             <translation>移出选区时隐藏</translation>
         </message>
@@ -1296,6 +1296,14 @@
         <message>
             <source>Include the mouse cursor in normal screenshots.</source>
             <translation>在常规截图中包含鼠标光标。</translation>
+        </message>
+        <message>
+            <source>Include the screen recording toolbar in the recorded video.</source>
+            <translation>在录制的视频中包含屏幕录制工具栏。</translation>
+        </message>
+        <message>
+            <source>Include the screenshot window and its toolbar in the stitched scrolling screenshot.</source>
+            <translation>在拼接后的滚动截图中包含截图窗口及其工具栏。</translation>
         </message>
         <message>
             <source>Interface settings</source>
@@ -1828,6 +1836,10 @@
         <message>
             <source>Screen recording and animated image export settings</source>
             <translation>屏幕录制和动图导出设置</translation>
+        </message>
+        <message>
+            <source>Screen recording capture settings</source>
+            <translation>屏幕录制捕获设置</translation>
         </message>
         <message>
             <source>Screen recording clarity</source>

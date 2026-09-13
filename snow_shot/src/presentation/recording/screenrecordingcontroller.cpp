@@ -681,7 +681,7 @@ struct ScreenRecordingController::Impl {
             };
             // Exclude before the worker starts capturing so no frame can ever
             // contain the toolbar; a failed start restores visibility.
-            if (settings.hideToolbarInRecording()) {
+            if (!settings.captureToolbarInRecording()) {
                 excludeToolbarFromCapture();
             }
             const QString baseName =

@@ -646,6 +646,10 @@
             <translation>Capture</translation>
         </message>
         <message>
+            <source>Capture UI during scrolling screenshots</source>
+            <translation>Capture UI during scrolling screenshots</translation>
+        </message>
+        <message>
             <source>Capture and copy the currently focused window</source>
             <translation>Capture and copy the currently focused window</translation>
         </message>
@@ -664,6 +668,10 @@
         <message>
             <source>Capture selected text and open it in Translation</source>
             <translation>Capture selected text and open it in Translation</translation>
+        </message>
+        <message>
+            <source>Capture toolbar during recording</source>
+            <translation>Capture toolbar during recording</translation>
         </message>
         <message>
             <source>Center on mouse position</source>
@@ -1118,10 +1126,6 @@
             <translation>Eraser</translation>
         </message>
         <message>
-            <source>Exclude the screen recording toolbar from captured video</source>
-            <translation>Exclude the screen recording toolbar from captured video</translation>
-        </message>
-        <message>
             <source>Execution order</source>
             <translation>Execution order</translation>
         </message>
@@ -1246,10 +1250,6 @@
             <translation>Hide to Top</translation>
         </message>
         <message>
-            <source>Hide toolbar in recording</source>
-            <translation>Hide toolbar in recording</translation>
-        </message>
-        <message>
             <source>Hide when outside selection</source>
             <translation>Hide when outside selection</translation>
         </message>
@@ -1296,6 +1296,14 @@
         <message>
             <source>Include the mouse cursor in normal screenshots.</source>
             <translation>Include the mouse cursor in normal screenshots.</translation>
+        </message>
+        <message>
+            <source>Include the screen recording toolbar in the recorded video.</source>
+            <translation>Include the screen recording toolbar in the recorded video.</translation>
+        </message>
+        <message>
+            <source>Include the screenshot window and its toolbar in the stitched scrolling screenshot.</source>
+            <translation>Include the screenshot window and its toolbar in the stitched scrolling screenshot.</translation>
         </message>
         <message>
             <source>Interface settings</source>
@@ -1828,6 +1836,10 @@
         <message>
             <source>Screen recording and animated image export settings</source>
             <translation>Screen recording and animated image export settings</translation>
+        </message>
+        <message>
+            <source>Screen recording capture settings</source>
+            <translation>Screen recording capture settings</translation>
         </message>
         <message>
             <source>Screen recording clarity</source>

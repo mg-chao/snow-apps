@@ -121,6 +121,8 @@ class ScreenshotSettings final {
     bool setShutterSoundNotification(bool enabled) const;
     [[nodiscard]] bool captureCursor() const;
     bool setCaptureCursor(bool enabled) const;
+    [[nodiscard]] bool captureUiInScrollingScreenshot() const;
+    bool setCaptureUiInScrollingScreenshot(bool enabled) const;
     [[nodiscard]] bool restoreOriginalScreenColors() const;
     bool setRestoreOriginalScreenColors(bool enabled) const;
     [[nodiscard]] QString apiMode() const;
@@ -313,8 +315,8 @@ class RecordingSettings final {
     bool setEncoder(const QString& encoder) const;
     [[nodiscard]] QString encodingPreset() const;
     bool setEncodingPreset(const QString& preset) const;
-    [[nodiscard]] bool hideToolbarInRecording() const;
-    bool setHideToolbarInRecording(bool hide) const;
+    [[nodiscard]] bool captureToolbarInRecording() const;
+    bool setCaptureToolbarInRecording(bool capture) const;
     [[nodiscard]] QString videoSaveDirectory() const;
     bool setVideoSaveDirectory(const QString& directory) const;
     [[nodiscard]] QString videoFilenameFormat() const;

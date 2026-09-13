@@ -402,6 +402,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ScreenshotSettings().autoSaveAfterCopy();
     case SettingsSwitchBinding::ScreenshotCaptureCursor:
         return storage::ScreenshotSettings().captureCursor();
+    case SettingsSwitchBinding::ScreenshotCaptureUiInScrollingScreenshot:
+        return storage::ScreenshotSettings().captureUiInScrollingScreenshot();
     case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
         return storage::ScreenshotSettings().shutterSoundNotification();
     case SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors:
@@ -420,8 +422,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ExtendedFeaturesSettings().translationPageEnabled();
     case SettingsSwitchBinding::OriginalImageTranslation:
         return storage::ScreenshotTranslationSettings().originalImageTranslationEnabled();
-    case SettingsSwitchBinding::ScreenRecordingHideToolbar:
-        return storage::RecordingSettings().hideToolbarInRecording();
+    case SettingsSwitchBinding::ScreenRecordingCaptureToolbar:
+        return storage::RecordingSettings().captureToolbarInRecording();
     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
         return storage::GlobalShortcutSettings().disableOnFocusedFullscreenWindow();
     case SettingsSwitchBinding::AutoStartAtBoot:
@@ -460,6 +462,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     }
     if (binding == SettingsSwitchBinding::ScreenshotCaptureCursor) {
         return storage::ScreenshotSettings().setCaptureCursor(value);
+    }
+    if (binding == SettingsSwitchBinding::ScreenshotCaptureUiInScrollingScreenshot) {
+        return storage::ScreenshotSettings().setCaptureUiInScrollingScreenshot(value);
     }
     if (binding == SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors) {
         return storage::ScreenshotSettings().setRestoreOriginalScreenColors(value);
@@ -511,8 +516,8 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::OriginalImageTranslation) {
         return storage::ScreenshotTranslationSettings().setOriginalImageTranslationEnabled(value);
     }
-    if (binding == SettingsSwitchBinding::ScreenRecordingHideToolbar) {
-        return storage::RecordingSettings().setHideToolbarInRecording(value);
+    if (binding == SettingsSwitchBinding::ScreenRecordingCaptureToolbar) {
+        return storage::RecordingSettings().setCaptureToolbarInRecording(value);
     }
     if (binding == SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen) {
         return storage::GlobalShortcutSettings().setDisableOnFocusedFullscreenWindow(value);
@@ -539,6 +544,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::TrayEnabled:
     case SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy:
     case SettingsSwitchBinding::ScreenshotCaptureCursor:
+    case SettingsSwitchBinding::ScreenshotCaptureUiInScrollingScreenshot:
     case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
     case SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors:
     case SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard:
@@ -548,7 +554,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::TranslationPageEnabled:
     case SettingsSwitchBinding::StandaloneTranslationWindow:
     case SettingsSwitchBinding::OriginalImageTranslation:
-    case SettingsSwitchBinding::ScreenRecordingHideToolbar:
+    case SettingsSwitchBinding::ScreenRecordingCaptureToolbar:
     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
     case SettingsSwitchBinding::AutoStartAtBoot:
         return false;
@@ -1364,10 +1370,12 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("screen_recording/encoding_preset"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/encoding_preset"))},
-            {QStringLiteral("screen_recording/hide_toolbar_in_recording"),
-             storage::ConfigurationSchema::defaultValue(
-                 QStringLiteral("screen_recording/hide_toolbar_in_recording"))},
         });
+    case SettingsSectionReset::ScreenRecordingCapture:
+        return storage::ApplicationStorage::instance().configuration().setValue(
+            QStringLiteral("screen_recording/capture_toolbar_in_recording"),
+            storage::ConfigurationSchema::defaultValue(
+                QStringLiteral("screen_recording/capture_toolbar_in_recording")));
     case SettingsSectionReset::ScreenRecordingOutput:
         return storage::ApplicationStorage::instance().configuration().setValues({
             {QStringLiteral("screen_recording/video_save_directory"),
@@ -1400,6 +1408,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("screenshot/capture_cursor"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot/capture_cursor"))},
+            {QStringLiteral("screenshot/capture_ui_in_scrolling_screenshot"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot/capture_ui_in_scrolling_screenshot"))},
         });
     case SettingsSectionReset::Network:
         return applySelectValue(

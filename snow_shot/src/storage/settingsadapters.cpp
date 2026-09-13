@@ -446,6 +446,15 @@ bool ScreenshotSettings::setCaptureCursor(bool enabled) const {
     return cache().setValue(QStringLiteral("screenshot/capture_cursor"), enabled);
 }
 
+bool ScreenshotSettings::captureUiInScrollingScreenshot() const {
+    return cache().value(QStringLiteral("screenshot/capture_ui_in_scrolling_screenshot")).toBool();
+}
+
+bool ScreenshotSettings::setCaptureUiInScrollingScreenshot(bool enabled) const {
+    return cache().setValue(QStringLiteral("screenshot/capture_ui_in_scrolling_screenshot"),
+                            enabled);
+}
+
 bool ScreenshotSettings::restoreOriginalScreenColors() const {
     return cache().value(QStringLiteral("screenshot/restore_original_screen_colors")).toBool();
 }
@@ -1190,12 +1199,13 @@ bool RecordingSettings::setEncodingPreset(const QString& preset) const {
     return cache().setValue(QStringLiteral("screen_recording/encoding_preset"), preset);
 }
 
-bool RecordingSettings::hideToolbarInRecording() const {
-    return cache().value(QStringLiteral("screen_recording/hide_toolbar_in_recording")).toBool();
+bool RecordingSettings::captureToolbarInRecording() const {
+    return cache().value(QStringLiteral("screen_recording/capture_toolbar_in_recording")).toBool();
 }
 
-bool RecordingSettings::setHideToolbarInRecording(bool hide) const {
-    return cache().setValue(QStringLiteral("screen_recording/hide_toolbar_in_recording"), hide);
+bool RecordingSettings::setCaptureToolbarInRecording(bool capture) const {
+    return cache().setValue(QStringLiteral("screen_recording/capture_toolbar_in_recording"),
+                            capture);
 }
 
 QString RecordingSettings::videoSaveDirectory() const {

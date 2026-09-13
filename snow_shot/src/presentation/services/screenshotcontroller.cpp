@@ -991,6 +991,9 @@ bool ScreenshotController::Impl::ensureScrollingFeature() {
             m_geometry,
             *m_overlayCoordinator,
             [this]() { return m_captureState.restoreOriginalScreenColors; },
+            []() {
+                return snow_shot::storage::ScreenshotSettings().captureUiInScrollingScreenshot();
+            },
         },
         &owner);
     return m_scrollingCaptureController != nullptr;

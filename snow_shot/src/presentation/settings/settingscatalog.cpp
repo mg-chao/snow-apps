@@ -851,6 +851,17 @@ SettingsItemDefinition screenshotCaptureCursorItem() {
         SettingsSwitchBinding::ScreenshotCaptureCursor);
 }
 
+SettingsItemDefinition screenshotCaptureUiInScrollingScreenshotItem() {
+    return switchItem(
+        QStringLiteral("screenshot.capture-ui-in-scrolling-screenshot"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Capture UI during scrolling screenshots"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Include the screenshot window and its toolbar in the stitched "
+                          "scrolling screenshot."),
+        QStringLiteral("screenshot/capture_ui_in_scrolling_screenshot"),
+        SettingsSwitchBinding::ScreenshotCaptureUiInScrollingScreenshot);
+}
+
 SettingsItemDefinition screenshotShutterSoundNotificationItem() {
     return switchItem(
         QStringLiteral("screenshot.shutter-sound-notification"),
@@ -1172,13 +1183,17 @@ QVector<SettingsItemDefinition> screenRecordingItems() {
               settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Very slow"))},
              {QStringLiteral("placebo"),
               settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Maximum compression"))}}),
-        switchItem(QStringLiteral("screen-recording.hide-toolbar"),
-                   QT_TRANSLATE_NOOP("SettingsCatalog", "Hide toolbar in recording"),
-                   QT_TRANSLATE_NOOP("SettingsCatalog",
-                                     "Exclude the screen recording toolbar from captured video"),
-                   QStringLiteral("screen_recording/hide_toolbar_in_recording"),
-                   SettingsSwitchBinding::ScreenRecordingHideToolbar),
     };
+}
+
+SettingsItemDefinition screenRecordingCaptureToolbarItem() {
+    return switchItem(
+        QStringLiteral("screen-recording.capture-toolbar"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Capture toolbar during recording"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Include the screen recording toolbar in the recorded video."),
+        QStringLiteral("screen_recording/capture_toolbar_in_recording"),
+        SettingsSwitchBinding::ScreenRecordingCaptureToolbar);
 }
 
 SettingsItemDefinition fullscreenHotkeySuppressionItem() {
@@ -2075,7 +2090,16 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screen capture settings")),
                     SettingsSectionReset::ScreenshotCapture,
                     {screenshotApiModeItem(), windowElementApiItem(),
-                     screenshotRestoreOriginalScreenColorsItem(), screenshotCaptureCursorItem()},
+                     screenshotRestoreOriginalScreenColorsItem(), screenshotCaptureCursorItem(),
+                     screenshotCaptureUiInScrollingScreenshotItem()},
+                },
+                {
+                    QStringLiteral("screen-recording-capture"),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording")),
+                    settingsText(
+                        QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording capture settings")),
+                    SettingsSectionReset::ScreenRecordingCapture,
+                    {screenRecordingCaptureToolbarItem()},
                 },
                 {
                     QStringLiteral("network"),
@@ -2930,6 +2954,10 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::ScreenshotCaptureCursor:
                         expectedKey = QStringLiteral("screenshot/capture_cursor");
                         break;
+                    case SettingsSwitchBinding::ScreenshotCaptureUiInScrollingScreenshot:
+                        expectedKey =
+                            QStringLiteral("screenshot/capture_ui_in_scrolling_screenshot");
+                        break;
                     case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
                         expectedKey = QStringLiteral("screenshot/shutter_sound_notification");
                         break;
@@ -2960,8 +2988,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         expectedKey =
                             QStringLiteral("screenshot_translation/original_image_translation");
                         break;
-                    case SettingsSwitchBinding::ScreenRecordingHideToolbar:
-                        expectedKey = QStringLiteral("screen_recording/hide_toolbar_in_recording");
+                    case SettingsSwitchBinding::ScreenRecordingCaptureToolbar:
+                        expectedKey =
+                            QStringLiteral("screen_recording/capture_toolbar_in_recording");
                         break;
                     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
                         expectedKey =

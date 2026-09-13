@@ -21,6 +21,9 @@ struct ScreenshotScrollingCaptureControllerContext {
     const ScreenshotGeometryMapper& geometry;
     ScreenshotOverlayCoordinator& overlayCoordinator;
     std::function<bool()> restoreOriginalScreenColors = []() { return false; };
+    // When enabled the overlay and the screenshot toolbar stay capturable, so
+    // they appear in the stitched scrolling screenshot.
+    std::function<bool()> captureUiInScrollingScreenshot = []() { return false; };
 };
 
 class ScreenshotScrollingCaptureController final : public QObject {

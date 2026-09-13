@@ -256,7 +256,10 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             defaultValue("screen_recording/encoder").toString() == QStringLiteral("h264_hw") &&
             defaultValue("screen_recording/encoding_preset").toString() ==
                 QStringLiteral("veryfast") &&
-            defaultValue("screen_recording/hide_toolbar_in_recording").toBool() &&
+            defaultValue("screen_recording/capture_toolbar_in_recording").toBool() &&
+            storage::ConfigurationSchema::entry(
+                QStringLiteral("screen_recording/hide_toolbar_in_recording")) == nullptr &&
+            defaultValue("screenshot/capture_ui_in_scrolling_screenshot").toBool() &&
             defaultValue("screen_recording/video_save_directory").toString() ==
                 systemSaveDirectory(QStandardPaths::MoviesLocation) &&
             defaultValue("screen_recording/video_filename_format").toString() ==
@@ -941,6 +944,14 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     require(screenshot.setRestoreOriginalScreenColors(true) &&
                 storage::ScreenshotSettings().restoreOriginalScreenColors(),
             "screen color restoration must support re-enabling");
+    require(screenshot.captureUiInScrollingScreenshot(),
+            "scrolling screenshot UI capture must default on");
+    require(screenshot.setCaptureUiInScrollingScreenshot(false) &&
+                !storage::ScreenshotSettings().captureUiInScrollingScreenshot(),
+            "scrolling screenshot UI capture must persist when disabled");
+    require(screenshot.setCaptureUiInScrollingScreenshot(true) &&
+                storage::ScreenshotSettings().captureUiInScrollingScreenshot(),
+            "scrolling screenshot UI capture must support re-enabling");
     require(screenshot.autoExecuteAfterTextRecognition() == QStringLiteral("no_action") &&
                 screenshot.doubleClickAction() == QStringLiteral("copy") &&
                 screenshot.middleMouseButtonAction() == QStringLiteral("pin") &&
@@ -1036,7 +1047,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 recording.mouseClickColor() == QColor(0, 0, 0, 0) && recording.showCursor() &&
                 !recording.showKeyboard() && recording.encoder() == QStringLiteral("h264_hw") &&
                 recording.encodingPreset() == QStringLiteral("veryfast") &&
-                recording.hideToolbarInRecording() &&
+                recording.captureToolbarInRecording() &&
                 recording.videoSaveDirectory() ==
                     systemSaveDirectory(QStandardPaths::MoviesLocation) &&
                 recording.videoFilenameFormat() ==
@@ -1052,7 +1063,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             recording.setShowKeyboard(true) && storage::RecordingSettings().showKeyboard() &&
             recording.setEncoder(QStringLiteral("h265")) &&
             recording.setEncodingPreset(QStringLiteral("placebo")) &&
-            recording.setHideToolbarInRecording(false) &&
+            recording.setCaptureToolbarInRecording(false) &&
             recording.setVideoSaveDirectory(QStringLiteral("D:/Recordings")) &&
             recording.setVideoFilenameFormat(QStringLiteral("Recording_{yyyyMMdd}")) &&
             recording.screenRecordingClarity() == QStringLiteral("2k") &&
@@ -1064,7 +1075,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             recording.mouseClickColor() == QColor(5, 6, 7, 128) && !recording.showCursor() &&
             recording.encoder() == QStringLiteral("h265") &&
             recording.encodingPreset() == QStringLiteral("placebo") &&
-            !recording.hideToolbarInRecording() &&
+            !recording.captureToolbarInRecording() &&
             recording.videoSaveDirectory() == QStringLiteral("D:/Recordings") &&
             recording.videoFilenameFormat() == QStringLiteral("Recording_{yyyyMMdd}"),
         "recording adapters must round-trip every requested option");

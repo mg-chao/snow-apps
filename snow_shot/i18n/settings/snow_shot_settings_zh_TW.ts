@@ -646,6 +646,10 @@
             <translation>截圖</translation>
         </message>
         <message>
+            <source>Capture UI during scrolling screenshots</source>
+            <translation>捲動截圖時擷取介面</translation>
+        </message>
+        <message>
             <source>Capture and copy the currently focused window</source>
             <translation>擷取並複製目前的焦點視窗</translation>
         </message>
@@ -664,6 +668,10 @@
         <message>
             <source>Capture selected text and open it in Translation</source>
             <translation>擷取選取文字並在翻譯頁面中開啟</translation>
+        </message>
+        <message>
+            <source>Capture toolbar during recording</source>
+            <translation>錄製時擷取工具列</translation>
         </message>
         <message>
             <source>Center on mouse position</source>
@@ -1118,10 +1126,6 @@
             <translation>橡皮擦</translation>
         </message>
         <message>
-            <source>Exclude the screen recording toolbar from captured video</source>
-            <translation>錄製螢幕時不擷取螢幕錄製工具列</translation>
-        </message>
-        <message>
             <source>Execution order</source>
             <translation>執行順序</translation>
         </message>
@@ -1246,10 +1250,6 @@
             <translation>頂部隱藏</translation>
         </message>
         <message>
-            <source>Hide toolbar in recording</source>
-            <translation>錄製時隱藏工具列</translation>
-        </message>
-        <message>
             <source>Hide when outside selection</source>
             <translation>位於選取範圍外時隱藏</translation>
         </message>
@@ -1296,6 +1296,14 @@
         <message>
             <source>Include the mouse cursor in normal screenshots.</source>
             <translation>在一般截圖中包含滑鼠游標。</translation>
+        </message>
+        <message>
+            <source>Include the screen recording toolbar in the recorded video.</source>
+            <translation>在錄製的影片中包含螢幕錄製工具列。</translation>
+        </message>
+        <message>
+            <source>Include the screenshot window and its toolbar in the stitched scrolling screenshot.</source>
+            <translation>在拼接後的捲動截圖中包含截圖視窗及其工具列。</translation>
         </message>
         <message>
             <source>Interface settings</source>
@@ -1828,6 +1836,10 @@
         <message>
             <source>Screen recording and animated image export settings</source>
             <translation>螢幕錄製與動態圖片匯出設定</translation>
+        </message>
+        <message>
+            <source>Screen recording capture settings</source>
+            <translation>螢幕錄製擷取設定</translation>
         </message>
         <message>
             <source>Screen recording clarity</source>

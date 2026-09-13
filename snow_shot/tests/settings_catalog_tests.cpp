@@ -171,8 +171,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 37 && itemCount == 153 && foundUpdates,
-            "catalog must contain thirty-seven sections and one hundred fifty-three items");
+    require(sectionCount == 38 && itemCount == 154 && foundUpdates,
+            "catalog must contain thirty-eight sections and one hundred fifty-four items");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
                       QStringLiteral("interface.pin-to-screen.pinned-toolbar-editor")});
@@ -263,7 +263,7 @@ void builtInCatalogIsCompleteAndValid() {
         catalog.section(QStringLiteral("system-settings"), QStringLiteral("screenshot-capture"));
     require(
         captureCursor != nullptr && screenshotCaptureSection != nullptr &&
-            screenshotCaptureSection->items.size() == 4 &&
+            screenshotCaptureSection->items.size() == 5 &&
             screenshotCaptureSection->items.at(2).id ==
                 QStringLiteral("screenshot.restore-original-screen-colors") &&
             screenshotCaptureSection->items.at(3).id ==
@@ -275,7 +275,48 @@ void builtInCatalogIsCompleteAndValid() {
             std::get<settings::SettingsSwitchDefinition>(captureCursor->payload).binding ==
                 settings::SettingsSwitchBinding::ScreenshotCaptureCursor &&
             !storage::ConfigurationSchema::defaultValue(captureCursor->configurationKey).toBool(),
-        "cursor capture must be the disabled final switch in system Screenshot settings");
+        "cursor capture must be the disabled switch that follows color restoration in system "
+        "Screenshot settings");
+    const auto* scrollingUiCapture =
+        catalog.item({QStringLiteral("system-settings"), QStringLiteral("screenshot-capture"),
+                      QStringLiteral("screenshot.capture-ui-in-scrolling-screenshot")});
+    require(scrollingUiCapture != nullptr &&
+                screenshotCaptureSection->items.at(4).id ==
+                    QStringLiteral("screenshot.capture-ui-in-scrolling-screenshot") &&
+                scrollingUiCapture->title.translated() ==
+                    QStringLiteral("Capture UI during scrolling screenshots") &&
+                scrollingUiCapture->configurationKey ==
+                    QStringLiteral("screenshot/capture_ui_in_scrolling_screenshot") &&
+                std::get<settings::SettingsSwitchDefinition>(scrollingUiCapture->payload).binding ==
+                    settings::SettingsSwitchBinding::ScreenshotCaptureUiInScrollingScreenshot &&
+                storage::ConfigurationSchema::defaultValue(scrollingUiCapture->configurationKey)
+                    .toBool(),
+            "scrolling screenshot UI capture must be the enabled final switch in system Screenshot "
+            "settings");
+    const auto* recordingToolbarCapture =
+        catalog.item({QStringLiteral("system-settings"), QStringLiteral("screen-recording-capture"),
+                      QStringLiteral("screen-recording.capture-toolbar")});
+    const auto* recordingCaptureSection = catalog.section(
+        QStringLiteral("system-settings"), QStringLiteral("screen-recording-capture"));
+    require(
+        recordingToolbarCapture != nullptr && recordingCaptureSection != nullptr &&
+            recordingCaptureSection->title.translated() == QStringLiteral("Screen recording") &&
+            recordingCaptureSection->reset ==
+                settings::SettingsSectionReset::ScreenRecordingCapture &&
+            recordingCaptureSection->items.size() == 1 &&
+            recordingToolbarCapture->title.translated() ==
+                QStringLiteral("Capture toolbar during recording") &&
+            recordingToolbarCapture->configurationKey ==
+                QStringLiteral("screen_recording/capture_toolbar_in_recording") &&
+            std::get<settings::SettingsSwitchDefinition>(recordingToolbarCapture->payload)
+                    .binding == settings::SettingsSwitchBinding::ScreenRecordingCaptureToolbar &&
+            storage::ConfigurationSchema::defaultValue(recordingToolbarCapture->configurationKey)
+                .toBool(),
+        "system Screen recording settings must expose the enabled toolbar capture switch");
+    require(catalog.item({QStringLiteral("function-settings"),
+                          QStringLiteral("screen-recording-settings"),
+                          QStringLiteral("screen-recording.hide-toolbar")}) == nullptr,
+            "the retired hide-toolbar switch must no longer appear in Function settings");
     const auto* functionPage = catalog.page(QStringLiteral("function-settings"));
     const auto* shutterSound =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
@@ -525,13 +566,14 @@ void builtInCatalogIsCompleteAndValid() {
         modelType != nullptr ? std::get_if<settings::SettingsSelectDefinition>(&modelType->payload)
                              : nullptr;
     require(
-        systemPage != nullptr && systemPage->sections.size() == 5 &&
+        systemPage != nullptr && systemPage->sections.size() == 6 &&
             systemPage->sections.at(0).id == QStringLiteral("system-general") &&
             systemPage->sections.at(1).id == QStringLiteral("screenshot-capture") &&
             systemPage->sections.at(1).reset == settings::SettingsSectionReset::ScreenshotCapture &&
-            systemPage->sections.at(2).id == QStringLiteral("network") &&
-            systemPage->sections.at(3).id == QStringLiteral("text-recognition") &&
-            systemPage->sections.at(4).id == QStringLiteral("core") && proxy != nullptr &&
+            systemPage->sections.at(2).id == QStringLiteral("screen-recording-capture") &&
+            systemPage->sections.at(3).id == QStringLiteral("network") &&
+            systemPage->sections.at(4).id == QStringLiteral("text-recognition") &&
+            systemPage->sections.at(5).id == QStringLiteral("core") && proxy != nullptr &&
             proxy->configurationKey == QStringLiteral("network/proxy") && proxySelect != nullptr &&
             proxySelect->binding == settings::SettingsSelectBinding::Proxy &&
             proxySelect->options.size() == 2 &&
@@ -1320,7 +1362,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 202 && index.search(QString()).size() == 202,
+    require(index.entries().size() == 204 && index.search(QString()).size() == 204,
             "search must generate all catalog nodes in catalog order");
     const auto pdfPaper = index.search(QStringLiteral("Landscape A4"));
     require(!pdfPaper.isEmpty() && pdfPaper.constFirst().location.itemId ==
@@ -1380,7 +1422,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 37 && items == 153,
+    require(pages == 12 && sections == 38 && items == 154,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));
