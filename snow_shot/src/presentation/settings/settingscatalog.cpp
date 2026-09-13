@@ -254,7 +254,7 @@ SettingsItemDefinition screenshotToolbarSizeItem() {
     SettingsSelectDefinition payload;
     payload.binding = SettingsSelectBinding::ScreenshotToolbarSize;
     payload.options = {
-        {QStringLiteral("small"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Small V6"))},
+        {QStringLiteral("small"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Small"))},
         {QStringLiteral("normal"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Normal"))},
     };
     return {QStringLiteral("interface.screenshot.toolbar-size"),

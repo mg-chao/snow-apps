@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE TS>
+<TS version="2.1" language="en_US" sourcelanguage="en_US">
+    <context>
+        <name>DirectCaptureController</name>
+        <message>
+            <source>The capture operation could not be queued</source>
+            <translation>The capture operation could not be queued</translation>
+        </message>
+        <message>
+            <source>The capture returned an invalid image</source>
+            <translation>The capture returned an invalid image</translation>
+        </message>
+    </context>
+    <context>
+        <name>ScreenshotAutoFilterController</name>
+        <message>
+            <source>Region identification failed. Try Auto Filter again.</source>
+            <translation>Region identification failed. Try Auto Filter again.</translation>
+        </message>
+    </context>
+    <context>
+        <name>ScreenshotController</name>
+        <message>
+            <source>Automatic screenshot saving failed: %1</source>
+            <translation>Automatic screenshot saving failed: %1</translation>
+        </message>
+        <message>
+            <source>No recognized result is available to copy</source>
+            <translation>No recognized result is available to copy</translation>
+        </message>
+        <message>
+            <source>Save screenshot</source>
+            <translation>Save screenshot</translation>
+        </message>
+        <message>
+            <source>The clipboard content could not be pinned</source>
+            <translation>The clipboard content could not be pinned</translation>
+        </message>
+        <message>
+            <source>The clipboard content could not be pinned: %1</source>
+            <translation>The clipboard content could not be pinned: %1</translation>
+        </message>
+        <message>
+            <source>The clipboard does not contain content that can be pinned</source>
+            <translation>The clipboard does not contain content that can be pinned</translation>
+        </message>
+        <message>
+            <source>The clipboard pin could not be presented</source>
+            <translation>The clipboard pin could not be presented</translation>
+        </message>
+        <message>
+            <source>The clipboard pin queue is full</source>
+            <translation>The clipboard pin queue is full</translation>
+        </message>
+        <message>
+            <source>The screenshot clipboard operation could not be started</source>
+            <translation>The screenshot clipboard operation could not be started</translation>
+        </message>
+        <message>
+            <source>The screenshot could not be copied: %1</source>
+            <translation>The screenshot could not be copied: %1</translation>
+        </message>
+        <message>
+            <source>The screenshot could not be prepared for saving</source>
+            <translation>The screenshot could not be prepared for saving</translation>
+        </message>
+        <message>
+            <source>The screenshot could not be saved: %1</source>
+            <translation>The screenshot could not be saved: %1</translation>
+        </message>
+        <message>
+            <source>The screenshot export queue is full</source>
+            <translation>The screenshot export queue is full</translation>
+        </message>
+        <message>
+            <source>The screenshot will be copied, but automatic saving could not be queued</source>
+            <translation>The screenshot will be copied, but automatic saving could not be queued</translation>
+        </message>
+        <message>
+            <source>The scrolling screenshot could not be pinned</source>
+            <translation>The scrolling screenshot could not be pinned</translation>
+        </message>
+        <message>
+            <source>The scrolling screenshot could not be prepared</source>
+            <translation>The scrolling screenshot could not be prepared</translation>
+        </message>
+    </context>
+    <context>
+        <name>ScreenshotOverlayWindow</name>
+        <message>
+            <source>Loading screenshot history</source>
+            <translation>Loading screenshot history</translation>
+        </message>
+    </context>
+    <context>
+        <name>ScreenshotSelectionResizeModalContent</name>
+        <message>
+            <source>%1 x %2</source>
+            <translation>%1 x %2</translation>
+        </message>
+        <message>
+            <source>Add</source>
+            <translation>Add</translation>
+        </message>
+        <message>
+            <source>Add preset</source>
+            <translation>Add preset</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>Cancel</translation>
+        </message>
+        <message>
+            <source>Corner radius</source>
+            <translation>Corner radius</translation>
+        </message>
+        <message>
+            <source>Current selection</source>
+            <translation>Current selection</translation>
+        </message>
+        <message>
+            <source>Delete</source>
+            <translation>Delete</translation>
+        </message>
+        <message>
+            <source>Delete preset</source>
+            <translation>Delete preset</translation>
+        </message>
+        <message>
+            <source>Delete preset "%1"? This action cannot be undone</source>
+            <translation>Delete preset "%1"? This action cannot be undone</translation>
+        </message>
+        <message>
+            <source>Height</source>
+            <translation>Height</translation>
+        </message>
+        <message>
+            <source>Lock aspect ratio</source>
+            <translation>Lock aspect ratio</translation>
+        </message>
+        <message>
+            <source>Please enter a preset name</source>
+            <translation>Please enter a preset name</translation>
+        </message>
+        <message>
+            <source>Position X</source>
+            <translation>Position X</translation>
+        </message>
+        <message>
+            <source>Position Y</source>
+            <translation>Position Y</translation>
+        </message>
+        <message>
+            <source>Preset</source>
+            <translation>Preset</translation>
+        </message>
+        <message>
+            <source>Preset name</source>
+            <translation>Preset name</translation>
+        </message>
+        <message>
+            <source>Previous selection</source>
+            <translation>Previous selection</translation>
+        </message>
+        <message>
+            <source>Quick set</source>
+            <translation>Quick set</translation>
+        </message>
+        <message>
+            <source>Selection</source>
+            <translation>Selection</translation>
+        </message>
+        <message>
+            <source>Shadow color</source>
+            <translation>Shadow color</translation>
+        </message>
+        <message>
+            <source>Shadow width</source>
+            <translation>Shadow width</translation>
+        </message>
+        <message>
+            <source>Width</source>
+            <translation>Width</translation>
+        </message>
+    </context>
+    <context>
+        <name>ScreenshotSelectionResizeWorkflow</name>
+        <message>
+            <source>Cancel</source>
+            <translation>Cancel</translation>
+        </message>
+        <message>
+            <source>OK</source>
+            <translation>OK</translation>
+        </message>
+        <message>
+            <source>Resize selection</source>
+            <translation>Resize selection</translation>
+        </message>
+    </context>
+    <context>
+        <name>ScreenshotSelectionToolbarWidget</name>
+        <message>
+            <source>Corner radius</source>
+            <translation>Corner radius</translation>
+        </message>
+        <message>
+            <source>Height</source>
+            <translation>Height</translation>
+        </message>
+        <message>
+            <source>Lock selection aspect ratio</source>
+            <translation>Lock selection aspect ratio</translation>
+        </message>
+        <message>
+            <source>Pixels</source>
+            <translation>Pixels</translation>
+        </message>
+        <message>
+            <source>Shadow width</source>
+            <translation>Shadow width</translation>
+        </message>
+        <message>
+            <source>Width</source>
+            <translation>Width</translation>
+        </message>
+        <message>
+            <source>X coordinate</source>
+            <translation>X coordinate</translation>
+        </message>
+        <message>
+            <source>Y coordinate</source>
+            <translation>Y coordinate</translation>
+        </message>
+    </context>
+    <context>
+        <name>ScreenshotShortcutHintsWidget</name>
+        <message>
+            <source>Auto-align: Ctrl</source>
+            <translation>Auto-align: Ctrl</translation>
+        </message>
+        <message>
+            <source>Delete selected elements: Delete</source>
+            <translation>Delete selected elements: Delete</translation>
+        </message>
+        <message>
+            <source>Draw straight line: Shift</source>
+            <translation>Draw straight line: Shift</translation>
+        </message>
+        <message>
+            <source>Fixed-angle rotation: Shift</source>
+            <translation>Fixed-angle rotation: Shift</translation>
+        </message>
+        <message>
+            <source>Horizontal scroll: Shift + mouse wheel</source>
+            <translation>Horizontal scroll: Shift + mouse wheel</translation>
+        </message>
+        <message>
+            <source>Maintain aspect ratio: Shift</source>
+            <translation>Maintain aspect ratio: Shift</translation>
+        </message>
+        <message>
+            <source>Scale from center: Alt</source>
+            <translation>Scale from center: Alt</translation>
+        </message>
+        <message>
+            <source>Switch color format: Shift</source>
+            <translation>Switch color format: Shift</translation>
+        </message>
+        <message>
+            <source>Switch element level: mouse wheel</source>
+            <translation>Switch element level: mouse wheel</translation>
+        </message>
+        <message>
+            <source>Switch screenshot history</source>
+            <translation>Switch screenshot history</translation>
+        </message>
+        <message>
+            <source>Vertical scroll: mouse wheel</source>
+            <translation>Vertical scroll: mouse wheel</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::presentation::DirectCaptureController</name>
+        <message>
+            <source>Capture failed: %1</source>
+            <translation>Capture failed: %1</translation>
+        </message>
+        <message>
+            <source>History publication could not be queued</source>
+            <translation>History publication could not be queued</translation>
+        </message>
+        <message>
+            <source>The capture operation failed</source>
+            <translation>The capture operation failed</translation>
+        </message>
+        <message>
+            <source>The clipboard publication could not be queued</source>
+            <translation>The clipboard publication could not be queued</translation>
+        </message>
+        <message>
+            <source>The image could not be prepared for the clipboard</source>
+            <translation>The image could not be prepared for the clipboard</translation>
+        </message>
+    </context>
+</TS>

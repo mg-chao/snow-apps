@@ -631,46 +631,7 @@ target_include_directories(snow_shot_window_shortcuts PUBLIC
 )
 target_link_libraries(snow_shot_window_shortcuts PUBLIC Qt6::Widgets)
 
-set(QT_I18N_SOURCE_LANGUAGE en_US)
-file(GLOB TS_FILES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/i18n/snow_shot_*.ts"
-)
-list(SORT TS_FILES)
-
-function(snow_shot_add_translations target)
-    if(target STREQUAL "snow_shot")
-        set(_lupdate_target snow_shot_update_translations)
-        set(_lrelease_target snow_shot_release_translations)
-        set(_translation_source_targets
-            ${target}
-            snow_shot_storage
-            snow_shot_settings_catalog
-            snow_shot_settings_search
-            snow_shot_settings
-            snow_shot_global_mouse
-            snow_shot_translation
-            snow_shot_diagnostics
-            snow_shot_updates
-            snow_shot_update_core
-        )
-    else()
-        set(_lupdate_target "${target}_update_translations")
-        set(_lrelease_target "${target}_release_translations")
-        set(_translation_source_targets ${target})
-    endif()
-
-    qt_add_translations(
-        ${target}
-        TS_FILES ${TS_FILES}
-        SOURCE_TARGETS ${_translation_source_targets}
-        RESOURCE_PREFIX "/i18n"
-        MERGE_QT_TRANSLATIONS
-        LUPDATE_TARGET ${_lupdate_target}
-        LUPDATE_OPTIONS -no-obsolete
-        LRELEASE_TARGET ${_lrelease_target}
-        LRELEASE_OPTIONS -fail-on-unfinished
-    )
-endfunction()
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotTranslations.cmake")
 
 set(SNOW_SHOT_SETTINGS_CATALOG_SOURCES
     include/snow_shot/presentation/settings/settingscatalog.h
@@ -1204,6 +1165,10 @@ set(SNOW_SHOT_RECOGNITION_IMAGE_RENDER_SOURCES
     src/presentation/overlay/screenshotselectionshadowrenderer.cpp)
 
 if(SNOW_SHOT_BUILD_TESTS)
+    add_test(NAME snow-shot-translation-catalog-tests
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/translation_catalog_tests.py")
+    set_tests_properties(snow-shot-translation-catalog-tests PROPERTIES LABELS "unit")
+
     if(WIN32)
         find_program(SNOW_SHOT_INSTALLER_TEST_POWERSHELL NAMES pwsh powershell REQUIRED)
         add_test(NAME snow-shot-installer-running-app-tests

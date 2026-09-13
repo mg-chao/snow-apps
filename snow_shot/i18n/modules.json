@@ -1,0 +1,83 @@
+{
+  "core": [
+    "AboutPageWidget",
+    "DiagnosticsService",
+    "LanguageCatalog",
+    "MainContentHeaderWidget",
+    "MainWindow",
+    "QObject",
+    "SectionHeaderWidget",
+    "SidebarWidget",
+    "SnowShotApiClient",
+    "SystemTrayController",
+    "TitleBarWidget",
+    "snow_shot::app::ApplicationController",
+    "snow_shot::presentation::SystemTrayController"
+  ],
+  "settings": [
+    "CustomAiModelsSettingsWidget",
+    "DrawingToolbarEditorSettingsWidget",
+    "GlobalMouseRow",
+    "PinnedToolbarEditorSettingsWidget",
+    "ScreenshotToolbarEditorSettingsWidget",
+    "SettingsBackend",
+    "SettingsCatalog",
+    "ShortcutKeyRow",
+    "StorageStatusSettingsWidget",
+    "snow_shot::presentation::GlobalMouseManager",
+    "snow_shot::storage::ConfigurationStore"
+  ],
+  "capture": [
+    "DirectCaptureController",
+    "ScreenshotAutoFilterController",
+    "ScreenshotController",
+    "ScreenshotOverlayWindow",
+    "ScreenshotSelectionResizeModalContent",
+    "ScreenshotSelectionResizeWorkflow",
+    "ScreenshotSelectionToolbarWidget",
+    "ScreenshotShortcutHintsWidget",
+    "snow_shot::presentation::DirectCaptureController"
+  ],
+  "annotation": [
+    "ScreenshotToolPalette"
+  ],
+  "export": [
+    "ScreenshotClipboardService",
+    "ScreenshotExportArtifact",
+    "ScreenshotImageFileService",
+    "ScreenshotPdfExport",
+    "ScreenshotSaveAsFileDialog",
+    "ScreenshotSavePreviewCanvas"
+  ],
+  "recording": [
+    "RecordingEffectPreview",
+    "ScreenRecordingController"
+  ],
+  "recognition": [
+    "ScreenshotImageConversionController",
+    "ScreenshotImageConversionView",
+    "ScreenshotOcrController",
+    "ScreenshotRecognitionSessionController",
+    "ScreenshotTableEditor"
+  ],
+  "translation": [
+    "ScreenshotTranslationSettingsDialog",
+    "TranslationLanguages",
+    "TranslationPageWidget",
+    "TranslationService",
+    "snow_shot::presentation::StandaloneTranslationWindow",
+    "snow_shot::presentation::TranslationPageController",
+    "snow_shot::translation::TranslationJob",
+    "snow_shot::translation::TranslationService"
+  ],
+  "history": [
+    "HistoryEntryWidget",
+    "ScreenshotHistoryPageWidget",
+    "ScreenshotPinnedWindow",
+    "snow_shot::presentation::PinnedWindowGroupManager"
+  ],
+  "updates": [
+    "UpdateErrors",
+    "snow_shot::update::UpdateService"
+  ]
+}
