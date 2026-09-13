@@ -88,8 +88,7 @@ struct ADQT_ICON_CORE_EXPORT IconPack final {
   IconRef icon(std::size_t index) const;
   IconRef icon(std::size_t index, const IconColors& colors) const;
   IconRef icon(std::string_view variant, std::string_view name) const;
-  IconRef icon(std::string_view variant, std::string_view name,
-               const IconColors& colors) const;
+  IconRef icon(std::string_view variant, std::string_view name, const IconColors& colors) const;
 };
 
 class ADQT_ICON_CORE_EXPORT IconColors final {

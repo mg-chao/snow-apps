@@ -1270,8 +1270,7 @@ void printResults(const std::vector<Result>& results) {
                   << " sparse_batches=" << result.diagnostics.sparseBatchCount
                   << " fragments=" << result.diagnostics.submittedFragmentCount
                   << " dense_fills=" << result.diagnostics.denseFillCount
-                  << " fallback_draws=" << result.diagnostics.fallbackGlyphDrawCount
-                  << '\n';
+                  << " fallback_draws=" << result.diagnostics.fallbackGlyphDrawCount << '\n';
     }
 }
 
@@ -1380,10 +1379,10 @@ bool writeCsv(const std::string& path, const std::vector<Result>& results, std::
                << diagnostics.renderedDeviceBounds.left() << ','
                << diagnostics.renderedDeviceBounds.top() << ','
                << diagnostics.renderedDeviceBounds.right() << ','
-               << diagnostics.renderedDeviceBounds.bottom() << ','
-               << csvEscape(result.resolvedFont) << ',' << csvEscape(qtVersion) << ','
-               << csvEscape(platform) << ',' << csvEscape(architecture) << ','
-               << csvEscape(compiler) << ',' << buildType() << '\n';
+               << diagnostics.renderedDeviceBounds.bottom() << ',' << csvEscape(result.resolvedFont)
+               << ',' << csvEscape(qtVersion) << ',' << csvEscape(platform) << ','
+               << csvEscape(architecture) << ',' << csvEscape(compiler) << ',' << buildType()
+               << '\n';
     }
     if (!stream) {
         error = "failed while writing CSV output: " + path;

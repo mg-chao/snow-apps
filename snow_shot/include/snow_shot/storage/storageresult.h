@@ -10,7 +10,9 @@ struct StorageResult {
     bool success = false;
     QString error;
 
-    [[nodiscard]] static StorageResult ok() { return {true, {}}; }
+    [[nodiscard]] static StorageResult ok() {
+        return {true, {}};
+    }
     [[nodiscard]] static StorageResult failure(QString message) {
         return {false, std::move(message)};
     }

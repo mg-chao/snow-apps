@@ -181,8 +181,8 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
 
     void setMoveTool() override {}
     void setSelectTool() override {}
-    void resetCanvas() override {
-        ++resetCanvasCount;
+    void deleteAllElements() override {
+        ++deleteAllElementsCount;
     }
     void setShapeTool() override {}
     void setArrowTool() override {}
@@ -226,7 +226,7 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void hideColorPickersForScreenshotUi() override {}
 
     int repositionCount = 0;
-    int resetCanvasCount = 0;
+    int deleteAllElementsCount = 0;
     int presentationRepositionCount = 0;
     int textTranslationToolCount = 0;
     int textTranslationToggleCount = 0;
@@ -2309,7 +2309,7 @@ int main(int argc, char* argv[]) {
             require(reset != nullptr && reset->isEnabled(),
                     "screenshot reset should be enabled without selection");
             reset->click();
-            require(commands.resetCanvasCount == 1,
+            require(commands.deleteAllElementsCount == 1,
                     "screenshot reset should forward exactly one canvas command");
             return 0;
         }

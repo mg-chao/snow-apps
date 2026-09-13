@@ -10,9 +10,8 @@
 
 class ThemedHeaderIconButton final : public adqt::widgets::AdButton {
   public:
-    ThemedHeaderIconButton(
-        const snow_shot::presentation::styles::ThemeAliasMetricToken& metric,
-        const adqt::icons::IconRef& iconRef, QWidget* parent = nullptr)
+    ThemedHeaderIconButton(const snow_shot::presentation::styles::ThemeAliasMetricToken& metric,
+                           const adqt::icons::IconRef& iconRef, QWidget* parent = nullptr)
         : adqt::widgets::AdButton(parent) {
         const int iconSize = std::max(metric.fontSize, metric.controlInteractiveSize);
         const int buttonSize = std::max(metric.controlHeight, iconSize + metric.paddingXXS * 2);

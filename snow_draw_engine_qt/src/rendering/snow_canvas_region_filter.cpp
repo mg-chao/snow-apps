@@ -6,8 +6,8 @@
 #include <cstdint>
 
 namespace {
-snow_canvas_filter_render::Parameters internalParameters(
-    const SnowCanvasRegionFilterParameters& parameters) {
+snow_canvas_filter_render::Parameters
+internalParameters(const SnowCanvasRegionFilterParameters& parameters) {
     snow_canvas_filter_render::Parameters internal;
     internal.type = static_cast<std::uint32_t>(parameters.type);
     internal.strength = parameters.strength;
@@ -20,15 +20,14 @@ snow_canvas_filter_render::Parameters internalParameters(
 } // namespace
 
 struct SnowCanvasRegionFilterScratch::Impl {
-    explicit Impl(std::size_t retainedByteLimit)
-        : workspace(retainedByteLimit) {}
+    explicit Impl(std::size_t retainedByteLimit) : workspace(retainedByteLimit) {}
 
     snow_canvas_filter_render::RenderWorkspace workspace;
 };
 
 struct SnowCanvasRegionFilterScratchAccess {
-    static snow_canvas_filter_render::RenderWorkspace& workspace(
-        SnowCanvasRegionFilterScratch& scratch) {
+    static snow_canvas_filter_render::RenderWorkspace&
+    workspace(SnowCanvasRegionFilterScratch& scratch) {
         return scratch.m_impl->workspace;
     }
 };

@@ -32,12 +32,12 @@ class ScreenshotPinnedSelectionResultHandle final {
 
     ScreenshotPinnedSelectionResultHandle() = default;
     ScreenshotPinnedSelectionResultHandle(const ScreenshotPinnedSelectionResultHandle&) = default;
-    ScreenshotPinnedSelectionResultHandle& operator=(
-        const ScreenshotPinnedSelectionResultHandle&) = default;
+    ScreenshotPinnedSelectionResultHandle&
+    operator=(const ScreenshotPinnedSelectionResultHandle&) = default;
     ScreenshotPinnedSelectionResultHandle(ScreenshotPinnedSelectionResultHandle&&) noexcept =
         default;
-    ScreenshotPinnedSelectionResultHandle& operator=(
-        ScreenshotPinnedSelectionResultHandle&&) noexcept = default;
+    ScreenshotPinnedSelectionResultHandle&
+    operator=(ScreenshotPinnedSelectionResultHandle&&) noexcept = default;
     ~ScreenshotPinnedSelectionResultHandle() = default;
 
     [[nodiscard]] bool subscribe(QObject* receiver, Callback callback) const {
@@ -54,8 +54,8 @@ class ScreenshotPinnedSelectionResultHandle final {
             }
             completed = m_state->completed;
             if (!completed) {
-                m_state->subscribers.push_back(Subscriber{QPointer<QObject>(receiver),
-                                                           std::move(callback)});
+                m_state->subscribers.push_back(
+                    Subscriber{QPointer<QObject>(receiver), std::move(callback)});
                 return true;
             }
             succeeded = m_state->succeeded;
@@ -123,14 +123,15 @@ class ScreenshotPinnedSelectionResultHandle final {
                 publishedImage = image;
             }
             for (Subscriber& subscriber : pending) {
-                ScreenshotPinnedSelectionResultHandle::dispatch(
-                    subscriber.receiver, std::move(subscriber.callback), publishedSuccess,
-                    publishedImage);
+                ScreenshotPinnedSelectionResultHandle::dispatch(subscriber.receiver,
+                                                                std::move(subscriber.callback),
+                                                                publishedSuccess, publishedImage);
             }
         }
     };
 
-    static void dispatch(QObject* receiver, Callback callback, bool succeeded, const QImage& image) {
+    static void dispatch(QObject* receiver, Callback callback, bool succeeded,
+                         const QImage& image) {
         if (receiver == nullptr || !callback) {
             return;
         }
@@ -177,10 +178,9 @@ struct ScreenshotPinnedSelectionRequest {
         return !selection.isEmpty() && geometry.nativeGeometry.isValid() &&
                !geometry.nativeGeometry.isEmpty() && geometry.canvasSourceRect.isValid() &&
                !geometry.canvasSourceRect.isEmpty() && geometry.initialPhysicalSize.isValid() &&
-               !geometry.initialPhysicalSize.isEmpty() &&
-               contentCanvasRect.isValid() && !contentCanvasRect.isEmpty() &&
-               surfaceCanvasRect.isValid() && !surfaceCanvasRect.isEmpty() &&
-               surfaceCanvasRect.contains(contentCanvasRect) &&
+               !geometry.initialPhysicalSize.isEmpty() && contentCanvasRect.isValid() &&
+               !contentCanvasRect.isEmpty() && surfaceCanvasRect.isValid() &&
+               !surfaceCanvasRect.isEmpty() && surfaceCanvasRect.contains(contentCanvasRect) &&
                fullResolutionScaleBasis.isValid() && !fullResolutionScaleBasis.isEmpty() &&
                screen != nullptr;
     }
@@ -199,9 +199,8 @@ class ScreenshotSelectionImageComposerPort {
   public:
     using ImageCallback = std::function<void(QImage)>;
     using ClipboardCallback = std::function<void(ScreenshotSelectionClipboardResult)>;
-    using PinRequestCallback =
-        std::function<void(ScreenshotPinnedSelectionRequest,
-                           ScreenshotPinnedSelectionResultHandle)>;
+    using PinRequestCallback = std::function<void(ScreenshotPinnedSelectionRequest,
+                                                  ScreenshotPinnedSelectionResultHandle)>;
 
     virtual ~ScreenshotSelectionImageComposerPort() = default;
 

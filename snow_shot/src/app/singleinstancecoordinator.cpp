@@ -24,10 +24,9 @@ constexpr int kForwardTimeoutMilliseconds = 1500;
 constexpr int kMaximumRequestBytes = 1024 * 1024;
 
 QString instanceIdentity() {
-    const QByteArray identity =
-        (QDir::homePath() + u'|' + QCoreApplication::organizationName() + u'|' +
-         QCoreApplication::applicationName())
-            .toUtf8();
+    const QByteArray identity = (QDir::homePath() + u'|' + QCoreApplication::organizationName() +
+                                 u'|' + QCoreApplication::applicationName())
+                                    .toUtf8();
     return QString::fromLatin1(
         QCryptographicHash::hash(identity, QCryptographicHash::Sha256).toHex().left(24));
 }
@@ -66,8 +65,8 @@ SingleInstanceCoordinator::SingleInstanceCoordinator(QObject* parent) : QObject(
     const QString identity = instanceIdentity();
     m_serverName = QStringLiteral("snow-shot-") + identity;
     m_lockFilePath =
-        QDir(runtimeDirectory()).filePath(QStringLiteral("snow-shot-") + identity +
-                                          QStringLiteral(".lock"));
+        QDir(runtimeDirectory())
+            .filePath(QStringLiteral("snow-shot-") + identity + QStringLiteral(".lock"));
 }
 
 SingleInstanceCoordinator::~SingleInstanceCoordinator() {
@@ -79,8 +78,7 @@ SingleInstanceCoordinator::~SingleInstanceCoordinator() {
     }
 }
 
-SingleInstanceResult
-SingleInstanceCoordinator::acquireOrForward(const QStringList& arguments) {
+SingleInstanceResult SingleInstanceCoordinator::acquireOrForward(const QStringList& arguments) {
     if (m_primary) {
         return {SingleInstanceOutcome::Primary, {}};
     }
@@ -166,8 +164,7 @@ bool SingleInstanceCoordinator::startServer(QString* error) {
 }
 
 bool SingleInstanceCoordinator::forwardRequest(const QStringList& arguments,
-                                               int timeoutMilliseconds,
-                                               QString* error) const {
+                                               int timeoutMilliseconds, QString* error) const {
     const QByteArray payload = requestPayload(arguments);
     if (payload.size() > kMaximumRequestBytes) {
         if (error != nullptr) {
@@ -208,8 +205,7 @@ void SingleInstanceCoordinator::acceptConnections() {
             continue;
         }
         socket->setProperty("snowShotLaunchBuffer", QByteArray());
-        connect(socket, &QLocalSocket::readyRead, this,
-                [this, socket]() { readSocket(socket); });
+        connect(socket, &QLocalSocket::readyRead, this, [this, socket]() { readSocket(socket); });
         connect(socket, &QLocalSocket::disconnected, socket, &QObject::deleteLater);
         readSocket(socket);
     }

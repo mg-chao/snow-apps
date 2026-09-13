@@ -103,9 +103,9 @@ ScaleAnchor screenshot_pinned_resize_geometry::scaleAnchorFromSetting(QStringVie
 }
 
 QRect screenshot_pinned_resize_geometry::anchoredScaleRect(const QRect& reference,
-                                                            const QSize& targetSize,
-                                                            ScaleAnchor anchor,
-                                                            const QPointF& mousePosition) {
+                                                           const QSize& targetSize,
+                                                           ScaleAnchor anchor,
+                                                           const QPointF& mousePosition) {
     if (!reference.isValid() || reference.isEmpty() || !targetSize.isValid() ||
         targetSize.isEmpty()) {
         return {};
@@ -114,10 +114,8 @@ QRect screenshot_pinned_resize_geometry::anchoredScaleRect(const QRect& referenc
     QPointF topLeft;
     switch (anchor) {
     case ScaleAnchor::MousePosition: {
-        const double normalizedX =
-            (mousePosition.x() - reference.left()) / reference.width();
-        const double normalizedY =
-            (mousePosition.y() - reference.top()) / reference.height();
+        const double normalizedX = (mousePosition.x() - reference.left()) / reference.width();
+        const double normalizedY = (mousePosition.y() - reference.top()) / reference.height();
         topLeft = QPointF(mousePosition.x() - normalizedX * targetSize.width(),
                           mousePosition.y() - normalizedY * targetSize.height());
         break;
@@ -126,12 +124,12 @@ QRect screenshot_pinned_resize_geometry::anchoredScaleRect(const QRect& referenc
         topLeft = QPointF(reference.left(), reference.top());
         break;
     case ScaleAnchor::TopRight:
-        topLeft = QPointF(reference.left() + reference.width() - targetSize.width(),
-                          reference.top());
+        topLeft =
+            QPointF(reference.left() + reference.width() - targetSize.width(), reference.top());
         break;
     case ScaleAnchor::BottomLeft:
-        topLeft = QPointF(reference.left(),
-                          reference.top() + reference.height() - targetSize.height());
+        topLeft =
+            QPointF(reference.left(), reference.top() + reference.height() - targetSize.height());
         break;
     case ScaleAnchor::BottomRight:
         topLeft = QPointF(reference.left() + reference.width() - targetSize.width(),

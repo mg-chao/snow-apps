@@ -24,10 +24,9 @@ class ApplicationSearchWidget final : public QWidget {
     Q_OBJECT
 
   public:
-    ApplicationSearchWidget(
-        const snow_shot::presentation::settings::SettingsRegistry& registry,
-        const snow_shot::presentation::styles::ThemeAliasMetricToken& metric,
-        QWidget* parent = nullptr);
+    ApplicationSearchWidget(const snow_shot::presentation::settings::SettingsRegistry& registry,
+                            const snow_shot::presentation::styles::ThemeAliasMetricToken& metric,
+                            QWidget* parent = nullptr);
     ~ApplicationSearchWidget() override;
 
     void setPlaceholderText(const QString& text);
@@ -36,8 +35,7 @@ class ApplicationSearchWidget final : public QWidget {
     void rebuildIndex();
 
   signals:
-    void locationActivated(
-        const snow_shot::presentation::settings::SettingsLocation& location);
+    void locationActivated(const snow_shot::presentation::settings::SettingsLocation& location);
 
   protected:
     void changeEvent(QEvent* event) override;

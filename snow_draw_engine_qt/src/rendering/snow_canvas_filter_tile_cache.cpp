@@ -26,11 +26,11 @@ struct KeyHash {
         result ^= static_cast<std::size_t>(key.sourceRect.height()) * 0xc2b2ae3du;
         result ^= static_cast<std::size_t>(key.logicalSize.width()) * 0x9e3779b1u;
         result ^= static_cast<std::size_t>(key.logicalSize.height()) * 0x85ebca77u;
-        result ^= static_cast<std::size_t>(key.devicePixelRatioBits ^
-                                           (key.devicePixelRatioBits >> 32));
+        result ^=
+            static_cast<std::size_t>(key.devicePixelRatioBits ^ (key.devicePixelRatioBits >> 32));
         result ^= static_cast<std::size_t>(key.contentKey ^ (key.contentKey >> 32));
-        result ^= static_cast<std::size_t>(key.dependencyFingerprint ^
-                                           (key.dependencyFingerprint >> 32));
+        result ^=
+            static_cast<std::size_t>(key.dependencyFingerprint ^ (key.dependencyFingerprint >> 32));
         result ^= static_cast<std::size_t>(key.nodeFingerprint ^ (key.nodeFingerprint >> 32));
         return result;
     }
@@ -85,9 +85,9 @@ void evictLocked(Cache& state, Diagnostics* diagnostics) {
 
 bool Key::operator==(const Key& other) const {
     return canvasNamespace == other.canvasNamespace && tile == other.tile &&
-           sourceRect == other.sourceRect &&
-           logicalSize == other.logicalSize && devicePixelRatioBits == other.devicePixelRatioBits &&
-           contentKey == other.contentKey && dependencyFingerprint == other.dependencyFingerprint &&
+           sourceRect == other.sourceRect && logicalSize == other.logicalSize &&
+           devicePixelRatioBits == other.devicePixelRatioBits && contentKey == other.contentKey &&
+           dependencyFingerprint == other.dependencyFingerprint &&
            nodeFingerprint == other.nodeFingerprint;
 }
 
@@ -175,8 +175,9 @@ void invalidateNamespace(const void* canvasNamespace) {
     }
 }
 
-void invalidateRegion(const void* canvasNamespace, const QRect& logicalRegion, qreal devicePixelRatio,
-                      std::uint64_t dependencyFingerprint, Diagnostics* diagnostics) {
+void invalidateRegion(const void* canvasNamespace, const QRect& logicalRegion,
+                      qreal devicePixelRatio, std::uint64_t dependencyFingerprint,
+                      Diagnostics* diagnostics) {
     if (canvasNamespace == nullptr) {
         return;
     }
@@ -191,8 +192,8 @@ void invalidateRegion(const void* canvasNamespace, const QRect& logicalRegion, q
     std::lock_guard<std::mutex> lock(state.mutex);
     for (auto iterator = state.entries.begin(); iterator != state.entries.end();) {
         const Key& key = iterator->first;
-        const bool fingerprintMatches = dependencyFingerprint == 0 ||
-                                         key.dependencyFingerprint == dependencyFingerprint;
+        const bool fingerprintMatches =
+            dependencyFingerprint == 0 || key.dependencyFingerprint == dependencyFingerprint;
         if (key.canvasNamespace != canvasNamespace || !fingerprintMatches ||
             (!invalidateAll && !iterator->second.entry->physicalRect.intersects(physicalRegion))) {
             ++iterator;

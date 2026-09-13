@@ -97,7 +97,8 @@ int main(int argc, char** argv) {
     QElapsedTimer referenceTimer;
     referenceTimer.start();
     const QImage reference = referenceContiguousPreview(strips);
-    const double referenceMilliseconds = static_cast<double>(referenceTimer.nsecsElapsed()) / 1'000'000.0;
+    const double referenceMilliseconds =
+        static_cast<double>(referenceTimer.nsecsElapsed()) / 1'000'000.0;
 
     QWidget parent;
     ScreenshotScrollingThumbnailWidget thumbnail(parent);
@@ -116,7 +117,8 @@ int main(int argc, char** argv) {
 
     const std::uint64_t referenceChecksum = checksum(reference);
     const std::uint64_t tiledChecksum = checksum(tiled);
-    const bool checksumMatches = referenceChecksum == tiledChecksum && reference.size() == tiled.size();
+    const bool checksumMatches =
+        referenceChecksum == tiledChecksum && reference.size() == tiled.size();
     const qsizetype logicalBytes = thumbnail.previewLogicalBytesForTesting();
     const qsizetype allocatedBytes = thumbnail.previewAllocatedBytesForTesting();
     constexpr qsizetype tileBytes = kPreviewWidth * kTileHeight * 4;

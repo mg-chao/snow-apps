@@ -1189,6 +1189,9 @@ SnowError snow_viewport_reset_editing_state_ex(SnowRuntime runtime, SnowViewport
 SnowError snow_viewport_delete_selected_ex(SnowRuntime runtime, SnowViewport viewport,
                                            SnowChangedViewportList* out_changed_viewports);
 
+SnowError snow_viewport_delete_all_elements_ex(SnowRuntime runtime, SnowViewport viewport,
+                                               SnowChangedViewportList* out_changed_viewports);
+
 SnowError snow_viewport_duplicate_selected_ex(SnowRuntime runtime, SnowViewport viewport,
                                               double offset_x, double offset_y,
                                               SnowChangedViewportList* out_changed_viewports);

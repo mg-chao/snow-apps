@@ -24,7 +24,6 @@ class ScreenshotDisplayConfigurationObserver final : public QObject {
     void observeScreens(const QList<QScreen*>& screens);
     void observeScreen(QScreen* screen);
 
-
     void handleScreenAdded(QScreen* screen);
     void handleScreenRemoved(QScreen* screen);
     void handleApplicationStateChanged(Qt::ApplicationState state);

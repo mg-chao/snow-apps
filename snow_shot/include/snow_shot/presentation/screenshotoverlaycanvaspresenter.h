@@ -79,6 +79,7 @@ class ScreenshotOverlayCanvasPresenter final {
                                     qreal opacity) const;
     void duplicateSelectedElements(const ScreenshotDisplaySession& displaySession) const;
     void deleteSelectedElements(const ScreenshotDisplaySession& displaySession) const;
+    void deleteAllElements(const ScreenshotDisplaySession& displaySession) const;
 
   private:
     OverlayFactory m_ensureOverlay;

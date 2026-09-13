@@ -36,8 +36,7 @@ class ScreenshotSelectionExportWorkflow final {
     [[nodiscard]] bool copySelectionToClipboard(ResultValidator validator,
                                                 CopyCompletion completion,
                                                 quint64 publicationId = 0);
-    [[nodiscard]] bool pinSelectionToScreen(ResultValidator validator,
-                                            Completion completion);
+    [[nodiscard]] bool pinSelectionToScreen(ResultValidator validator, Completion completion);
 
   private:
     [[nodiscard]] ScreenshotSelectionParams currentSelectionParams() const;

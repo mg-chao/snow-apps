@@ -99,11 +99,9 @@ void ScreenshotToolbarPresenter::updateSelectionToolbarState(
     {
         SNOW_SHOT_CAPTURE_PERF_SCOPE("toolbar.set_selection_state");
         toolbarWidget->setSelectionState(
-            state.selectionPixels, state.aspectRatioLocked, state.cornerRadius,
-            state.shadowWidth,
-            state.intelligentSelecting
-                ? ScreenshotSelectionToolbarWidget::DisplayMode::SizeOnly
-                : ScreenshotSelectionToolbarWidget::DisplayMode::Full);
+            state.selectionPixels, state.aspectRatioLocked, state.cornerRadius, state.shadowWidth,
+            state.intelligentSelecting ? ScreenshotSelectionToolbarWidget::DisplayMode::SizeOnly
+                                       : ScreenshotSelectionToolbarWidget::DisplayMode::Full);
     }
 
     if (reposition) {

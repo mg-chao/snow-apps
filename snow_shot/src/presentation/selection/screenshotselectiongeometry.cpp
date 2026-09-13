@@ -141,13 +141,12 @@ QRectF aspectRatioLockedMarqueeRect(const QPointF& originPosition, const QPointF
     }
 
     const QRectF normalizedBounds = bounds.normalized();
-    const QPointF anchor(
-        bounds.isNull() ? originPosition.x()
-                        : std::clamp(originPosition.x(), normalizedBounds.left(),
-                                     normalizedBounds.right()),
-        bounds.isNull() ? originPosition.y()
-                        : std::clamp(originPosition.y(), normalizedBounds.top(),
-                                     normalizedBounds.bottom()));
+    const QPointF anchor(bounds.isNull() ? originPosition.x()
+                                         : std::clamp(originPosition.x(), normalizedBounds.left(),
+                                                      normalizedBounds.right()),
+                         bounds.isNull() ? originPosition.y()
+                                         : std::clamp(originPosition.y(), normalizedBounds.top(),
+                                                      normalizedBounds.bottom()));
     const QPointF delta = position - anchor;
     const int horizontalDirection = delta.x() < 0.0 ? -1 : 1;
     const int verticalDirection = delta.y() < 0.0 ? -1 : 1;
@@ -165,9 +164,8 @@ QRectF aspectRatioLockedMarqueeRect(const QPointF& originPosition, const QPointF
         const qreal availableHeight = verticalDirection < 0
                                           ? anchor.y() - normalizedBounds.top()
                                           : normalizedBounds.bottom() - anchor.y();
-        const qreal maximumWidth = std::max<qreal>(0.0,
-                                                   std::min(availableWidth,
-                                                            availableHeight / lockedAspectRatio));
+        const qreal maximumWidth =
+            std::max<qreal>(0.0, std::min(availableWidth, availableHeight / lockedAspectRatio));
         width = std::min(width, maximumWidth);
         height = width * lockedAspectRatio;
     }

@@ -897,7 +897,7 @@ mod tests {
     use crate::{ActiveTextDraftPresentation, ActiveTextDraftTarget};
     use snow_draw_engine_core::{
         ColorRgba8, CornerRadii, EngineConfig,
-        arrow::{StrokeStyle, ArrowType, Arrowhead, BindMode},
+        arrow::{ArrowType, Arrowhead, BindMode, StrokeStyle},
     };
     use snow_draw_engine_document::{
         ArrowData, ArrowEndpointBinding, ElementData, ElementMeta, MIN_SERIAL_NUMBER_FONT_SIZE,

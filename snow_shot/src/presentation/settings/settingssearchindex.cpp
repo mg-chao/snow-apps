@@ -22,8 +22,7 @@ QStringList tokens(const QString& query) {
     return normalized(query).split(u' ', Qt::SkipEmptyParts);
 }
 
-int fieldScore(const QString& token, const QString& field, int exact, int prefix,
-               int contains) {
+int fieldScore(const QString& token, const QString& field, int exact, int prefix, int contains) {
     if (field.isEmpty()) {
         return 0;
     }
@@ -36,8 +35,7 @@ int fieldScore(const QString& token, const QString& field, int exact, int prefix
     return field.contains(token) ? contains : 0;
 }
 
-int entryScore(const SettingsSearchIndex::NormalizedFields& fields,
-               const QStringList& queryTokens,
+int entryScore(const SettingsSearchIndex::NormalizedFields& fields, const QStringList& queryTokens,
                const QString& normalizedQuery) {
     if (queryTokens.isEmpty()) {
         return 0;
@@ -90,8 +88,7 @@ QVector<int> sortedUnion(const QVector<int>& first, const QVector<int>& second) 
 }
 
 void indexField(QHash<QString, QVector<int>>* postings,
-                QHash<QString, QVector<int>>* trigramPostings,
-                const QString& field, int index) {
+                QHash<QString, QVector<int>>* trigramPostings, const QString& field, int index) {
     const QStringList words = field.split(u' ', Qt::SkipEmptyParts);
     for (const QString& word : words) {
         if (word.isEmpty()) {
@@ -200,9 +197,8 @@ void SettingsSearchIndex::rebuild() {
                 order++,
             });
 
-            const QString itemPath = QStringLiteral("%1 / %2")
-                                         .arg(page.title.translated(),
-                                              section.title.translated());
+            const QString itemPath =
+                QStringLiteral("%1 / %2").arg(page.title.translated(), section.title.translated());
             for (const SettingsItemDefinition& item : section.items) {
                 QStringList optionLabels;
                 if (const auto* select = std::get_if<SettingsSelectDefinition>(&item.payload)) {
@@ -293,8 +289,7 @@ QVector<SettingsSearchEntry> SettingsSearchIndex::search(const QString& query) c
                 QVector<int> trigramCandidates;
                 bool hasTrigramCandidates = false;
                 for (int offset = 0; offset + 3 <= token.size(); ++offset) {
-                    const auto trigramFound =
-                        m_trigramPostings.constFind(token.sliced(offset, 3));
+                    const auto trigramFound = m_trigramPostings.constFind(token.sliced(offset, 3));
                     if (trigramFound == m_trigramPostings.cend()) {
                         hasTrigramCandidates = false;
                         break;
@@ -304,10 +299,9 @@ QVector<SettingsSearchEntry> SettingsSearchIndex::search(const QString& query) c
                         hasTrigramCandidates = true;
                     } else {
                         QVector<int> intersection;
-                        intersection.reserve(std::min(trigramCandidates.size(),
-                                                      trigramFound.value().size()));
-                        std::set_intersection(trigramCandidates.cbegin(),
-                                              trigramCandidates.cend(),
+                        intersection.reserve(
+                            std::min(trigramCandidates.size(), trigramFound.value().size()));
+                        std::set_intersection(trigramCandidates.cbegin(), trigramCandidates.cend(),
                                               trigramFound.value().cbegin(),
                                               trigramFound.value().cend(),
                                               std::back_inserter(intersection));
@@ -349,22 +343,21 @@ QVector<SettingsSearchEntry> SettingsSearchIndex::search(const QString& query) c
     QVector<RankedEntry> ranked;
     for (const int index : candidates) {
         const SettingsSearchEntry& entry = m_entries.at(index);
-        const int score = entryScore(m_normalizedEntries.at(index), queryTokens,
-                                     normalizedQuery);
+        const int score = entryScore(m_normalizedEntries.at(index), queryTokens, normalizedQuery);
         if (score >= 0) {
             ranked.push_back({entry, score});
         }
     }
-    std::sort(ranked.begin(), ranked.end(), [](const RankedEntry& first,
-                                               const RankedEntry& second) {
-        if (first.score != second.score) {
-            return first.score > second.score;
-        }
-        if (first.entry.catalogOrder != second.entry.catalogOrder) {
-            return first.entry.catalogOrder < second.entry.catalogOrder;
-        }
-        return first.entry.id < second.entry.id;
-    });
+    std::sort(ranked.begin(), ranked.end(),
+              [](const RankedEntry& first, const RankedEntry& second) {
+                  if (first.score != second.score) {
+                      return first.score > second.score;
+                  }
+                  if (first.entry.catalogOrder != second.entry.catalogOrder) {
+                      return first.entry.catalogOrder < second.entry.catalogOrder;
+                  }
+                  return first.entry.id < second.entry.id;
+              });
 
     QVector<SettingsSearchEntry> result;
     result.reserve(ranked.size());

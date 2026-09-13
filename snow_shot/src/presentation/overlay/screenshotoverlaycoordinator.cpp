@@ -14,10 +14,9 @@
 
 #include <limits>
 
-ScreenshotOverlayCoordinator::ScreenshotOverlayCoordinator(ScreenshotOverlayEventSink& eventSink,
-                                                           SnowCanvasRuntime& canvasRuntime,
-                                                           snow_shot::presentation::WindowShortcutManager&
-                                                               shortcutManager)
+ScreenshotOverlayCoordinator::ScreenshotOverlayCoordinator(
+    ScreenshotOverlayEventSink& eventSink, SnowCanvasRuntime& canvasRuntime,
+    snow_shot::presentation::WindowShortcutManager& shortcutManager)
     : m_overlayPool(
           eventSink, canvasRuntime, shortcutManager,
           ScreenshotOverlayPoolCallbacks{
@@ -214,10 +213,9 @@ void ScreenshotOverlayCoordinator::updateOverlayState(
     const ScreenshotDisplaySession& displaySession, const QRectF& selection, int cornerRadius,
     int shadowWidth, const QColor& shadowColor, bool selectionToolbarHovered,
     bool selectionHandlesVisible, bool intelligentSelecting, bool manualSelecting, bool dragging) {
-    m_canvasPresenter.updateOverlayState(displaySession, selection, cornerRadius, shadowWidth,
-                                         shadowColor, selectionToolbarHovered,
-                                         selectionHandlesVisible, intelligentSelecting,
-                                         manualSelecting, dragging);
+    m_canvasPresenter.updateOverlayState(
+        displaySession, selection, cornerRadius, shadowWidth, shadowColor, selectionToolbarHovered,
+        selectionHandlesVisible, intelligentSelecting, manualSelecting, dragging);
 }
 
 namespace {
@@ -271,12 +269,13 @@ void ScreenshotOverlayCoordinator::setSelectionMaskColor(
     });
 }
 
-void ScreenshotOverlayCoordinator::updateGuideLines(
-    const ScreenshotDisplaySession& displaySession, ScreenshotOverlayWindow* owner,
-    const QPointF& localPosition, bool selecting, const QColor& cursorColor,
-    const QColor& monitorCenterColor) const {
-    m_canvasPresenter.updateGuideLines(displaySession, owner, localPosition, selecting,
-                                       cursorColor, monitorCenterColor);
+void ScreenshotOverlayCoordinator::updateGuideLines(const ScreenshotDisplaySession& displaySession,
+                                                    ScreenshotOverlayWindow* owner,
+                                                    const QPointF& localPosition, bool selecting,
+                                                    const QColor& cursorColor,
+                                                    const QColor& monitorCenterColor) const {
+    m_canvasPresenter.updateGuideLines(displaySession, owner, localPosition, selecting, cursorColor,
+                                       monitorCenterColor);
 }
 
 void ScreenshotOverlayCoordinator::updateGuideLinesAtGlobalPosition(
@@ -307,8 +306,7 @@ void ScreenshotOverlayCoordinator::setCanvasTool(const ScreenshotDisplaySession&
 }
 
 void ScreenshotOverlayCoordinator::refreshCanvasCreationStyles(
-    const ScreenshotDisplaySession& displaySession,
-    const SnowCanvasStyleDefaults& defaults) const {
+    const ScreenshotDisplaySession& displaySession, const SnowCanvasStyleDefaults& defaults) const {
     m_canvasPresenter.refreshCanvasCreationStyles(displaySession, defaults);
     if (ScreenshotToolbarWindow* toolbarWindow = toolbar()) {
         if (ScreenshotToolPalette* palette = toolbarWindow->palette()) {
@@ -392,6 +390,11 @@ void ScreenshotOverlayCoordinator::duplicateSelectedElements(
 void ScreenshotOverlayCoordinator::deleteSelectedElements(
     const ScreenshotDisplaySession& displaySession) {
     m_canvasPresenter.deleteSelectedElements(displaySession);
+}
+
+void ScreenshotOverlayCoordinator::deleteAllElements(
+    const ScreenshotDisplaySession& displaySession) {
+    m_canvasPresenter.deleteAllElements(displaySession);
 }
 
 ScreenshotToolbarWindow* ScreenshotOverlayCoordinator::ensureToolbar() {

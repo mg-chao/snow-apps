@@ -71,8 +71,8 @@ ShadowTile createShadowTile(qreal radius, qreal blur, const QPointF& offset, con
   return ShadowTile{pixmap, static_cast<qreal>(physicalSlice) / dpr};
 }
 
-ShadowTile uncachedShadowTile(qreal radius, qreal blur, const QPointF& offset,
-                              const QColor& color, qreal dpr) {
+ShadowTile uncachedShadowTile(qreal radius, qreal blur, const QPointF& offset, const QColor& color,
+                              qreal dpr) {
   return createShadowTile(radius, blur, offset, color, dpr);
 }
 
@@ -146,7 +146,6 @@ void drawNineSlice(QPainter& painter, const QRectF& target, const QMargins& targ
 }
 
 }  // namespace
-
 
 AdFloatingSurface::AdFloatingSurface(QWidget* parent) : QWidget(parent) {
   setAttribute(Qt::WA_TranslucentBackground, true);

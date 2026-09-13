@@ -9,7 +9,6 @@
 #include <stdexcept>
 #include <utility>
 
-
 namespace {
 void require(bool condition, const char* message) {
     if (!condition) {

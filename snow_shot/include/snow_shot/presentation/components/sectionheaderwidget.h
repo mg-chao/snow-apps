@@ -11,7 +11,7 @@ class QEvent;
 namespace adqt::widgets {
 class AdButton;
 class AdPopconfirm;
-}
+} // namespace adqt::widgets
 namespace snow_shot::presentation::styles {
 struct ThemeAliasMetricToken;
 struct ThemeColorScheme;

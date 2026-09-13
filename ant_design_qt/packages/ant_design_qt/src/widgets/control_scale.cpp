@@ -40,8 +40,7 @@ AdControlScaleContext AdControlScaleContext::fromDprs(qreal reference, qreal cur
   return fromDprsAndContentScale(reference, current, 1.0, revision);
 }
 
-AdControlScaleContext AdControlScaleContext::fromDprsAndContentScale(qreal reference,
-                                                                     qreal current,
+AdControlScaleContext AdControlScaleContext::fromDprsAndContentScale(qreal reference, qreal current,
                                                                      qreal contentScale,
                                                                      quint64 revision) {
   AdControlScaleContext result;
@@ -89,8 +88,7 @@ bool AdControlScaleScope::publishScale(const AdControlScaleContext& requested,
   }
 
   AdControlScaleContext next = AdControlScaleContext::fromDprsAndContentScale(
-      requested.referenceDpr, requested.currentDpr, requested.contentScale,
-      context_.revision + 1);
+      requested.referenceDpr, requested.currentDpr, requested.contentScale, context_.revision + 1);
   if (context_.equivalentTo(next) && logicalClientExtent_ == logicalClientExtent) {
     return false;
   }

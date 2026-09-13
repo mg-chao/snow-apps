@@ -20,12 +20,12 @@ class ScreenshotMessageService final {
                              ScreenshotSelectionModel& selection,
                              std::function<QWidget*()> toolbarFallback = {});
 
-    void warning(const QString& key, const QString& message,
-                 const QRectF& canvasRect = {}, QWidget* preferredOwner = nullptr) const;
-    void error(const QString& key, const QString& message,
-               const QRectF& canvasRect = {}, QWidget* preferredOwner = nullptr) const;
-    void loading(const QString& key, const QString& message,
-                 const QRectF& canvasRect = {}, QWidget* preferredOwner = nullptr) const;
+    void warning(const QString& key, const QString& message, const QRectF& canvasRect = {},
+                 QWidget* preferredOwner = nullptr) const;
+    void error(const QString& key, const QString& message, const QRectF& canvasRect = {},
+               QWidget* preferredOwner = nullptr) const;
+    void loading(const QString& key, const QString& message, const QRectF& canvasRect = {},
+                 QWidget* preferredOwner = nullptr) const;
     void destroy(const QString& key) const;
 
     static void loadingFor(QWidget* owner, const QString& key, const QString& message);

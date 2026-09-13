@@ -17,25 +17,22 @@ void landscapeAndPortraitResultsFitBothAxes() {
     const QRect nativeScreen(100, 50, 2880, 1620);
 
     const ScreenshotPinnedImageFit landscape =
-        ScreenshotGeometryMapper::fitImageToAvailableGeometry(
-            QSize(5000, 1000), available, logicalScreen, nativeScreen);
+        ScreenshotGeometryMapper::fitImageToAvailableGeometry(QSize(5000, 1000), available,
+                                                              logicalScreen, nativeScreen);
     require(landscape.valid && landscape.nativeGeometry.width() <= 2832 &&
                 landscape.nativeGeometry.height() <= 1512,
             "landscape result did not fit the inset work area");
 
-    const ScreenshotPinnedImageFit portrait =
-        ScreenshotGeometryMapper::fitImageToAvailableGeometry(
-            QSize(800, 5000), available, logicalScreen, nativeScreen);
+    const ScreenshotPinnedImageFit portrait = ScreenshotGeometryMapper::fitImageToAvailableGeometry(
+        QSize(800, 5000), available, logicalScreen, nativeScreen);
     require(portrait.valid && portrait.nativeGeometry.width() <= 2832 &&
                 portrait.nativeGeometry.height() <= 1512,
             "portrait result did not fit the inset work area");
 }
 
 void fitUsesAvailableGeometryMarginAndNeverUpscales() {
-    const ScreenshotPinnedImageFit small =
-        ScreenshotGeometryMapper::fitImageToAvailableGeometry(
-            QSize(320, 200), QRect(0, 0, 1280, 680), QRect(0, 0, 1280, 720),
-            QRect(0, 0, 1600, 900));
+    const ScreenshotPinnedImageFit small = ScreenshotGeometryMapper::fitImageToAvailableGeometry(
+        QSize(320, 200), QRect(0, 0, 1280, 680), QRect(0, 0, 1280, 720), QRect(0, 0, 1600, 900));
     require(small.valid && small.nativeGeometry.size() == QSize(320, 200) &&
                 small.scalePercent == 100.0,
             "small result was initially upscaled");
@@ -62,10 +59,10 @@ void fullResolutionPlacementCentersWithoutFitting() {
     const QRect nativeScreen(200, 100, 2400, 1350);
     const QSize imageSize(5000, 3000);
     const ScreenshotPinnedImageFit placement =
-        ScreenshotGeometryMapper::centerImageAtFullResolution(
-            imageSize, available, logicalScreen, nativeScreen);
-    const QRect availableNative = ScreenshotGeometryMapper::nativeRectForLogicalRect(
-        available, logicalScreen, nativeScreen);
+        ScreenshotGeometryMapper::centerImageAtFullResolution(imageSize, available, logicalScreen,
+                                                              nativeScreen);
+    const QRect availableNative =
+        ScreenshotGeometryMapper::nativeRectForLogicalRect(available, logicalScreen, nativeScreen);
     const QPointF availableCenter(availableNative.left() + availableNative.width() / 2.0,
                                   availableNative.top() + availableNative.height() / 2.0);
     const QPointF placementCenter(

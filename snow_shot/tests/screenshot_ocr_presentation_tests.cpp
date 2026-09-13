@@ -325,12 +325,11 @@ void textEditingTransformsAccumulateAndManualEditsClearTheirState() {
 
     require(session.setFormatting(QStringLiteral("remove")) &&
                 session.text() == QStringLiteral("A,B!") &&
-                session.formatting() == QStringLiteral("remove") &&
-                session.punctuation().isEmpty(),
+                session.formatting() == QStringLiteral("remove") && session.punctuation().isEmpty(),
             "line-break formatting should remain selected after it is applied");
 
-    const QString fullWidth = QStringLiteral("A") + QChar(0xFF0C) + QStringLiteral("B") +
-                              QChar(0xFF01);
+    const QString fullWidth =
+        QStringLiteral("A") + QChar(0xFF0C) + QStringLiteral("B") + QChar(0xFF01);
     require(session.setPunctuation(QStringLiteral("full")) && session.text() == fullWidth &&
                 session.formatting() == QStringLiteral("remove") &&
                 session.punctuation() == QStringLiteral("full"),
@@ -345,8 +344,7 @@ void textEditingTransformsAccumulateAndManualEditsClearTheirState() {
             "changing line-break formatting should preserve the punctuation effect");
 
     require(session.setPunctuation(QString{}) && session.text() == QStringLiteral("A,\nB!") &&
-                session.formatting() == QStringLiteral("keep") &&
-                session.punctuation().isEmpty(),
+                session.formatting() == QStringLiteral("keep") && session.punctuation().isEmpty(),
             "clearing punctuation should preserve the active formatting selection");
     static_cast<void>(session.setPunctuation(QStringLiteral("full")));
 

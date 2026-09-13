@@ -51,11 +51,9 @@ void firstInstanceAndQueuedForwarding() {
             "first process did not acquire single-instance ownership");
 
     QStringList signaledArguments;
-    QObject::connect(&primary,
-                     &single_instance::SingleInstanceCoordinator::launchRequestReceived,
-                     [&signaledArguments](const QStringList& arguments) {
-                         signaledArguments = arguments;
-                     });
+    QObject::connect(
+        &primary, &single_instance::SingleInstanceCoordinator::launchRequestReceived,
+        [&signaledArguments](const QStringList& arguments) { signaledArguments = arguments; });
     const QStringList forwardedArguments{QStringLiteral("snow-shot-test"),
                                          QStringLiteral("--show-main-window"),
                                          QStringLiteral("capture.png")};
@@ -77,9 +75,8 @@ void firstInstanceAndQueuedForwarding() {
             "primary did not decode the forwarded launch request");
 
     QStringList handledArguments;
-    primary.setLaunchRequestHandler([&handledArguments](const QStringList& arguments) {
-        handledArguments = arguments;
-    });
+    primary.setLaunchRequestHandler(
+        [&handledArguments](const QStringList& arguments) { handledArguments = arguments; });
     require(handledArguments == forwardedArguments,
             "launch request received before controller readiness was not queued");
 }

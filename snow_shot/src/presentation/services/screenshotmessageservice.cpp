@@ -31,12 +31,11 @@ void showMessage(MessageKind kind, adqt::widgets::AdMessage::Request request, QW
 }
 } // namespace
 
-ScreenshotMessageService::ScreenshotMessageService(
-    ScreenshotDisplaySession& displaySession, ScreenshotGeometryMapper& geometry,
-    ScreenshotSelectionModel& selection, std::function<QWidget*()> toolbarFallback)
-    : m_displaySession(displaySession),
-      m_geometry(geometry),
-      m_selection(selection),
+ScreenshotMessageService::ScreenshotMessageService(ScreenshotDisplaySession& displaySession,
+                                                   ScreenshotGeometryMapper& geometry,
+                                                   ScreenshotSelectionModel& selection,
+                                                   std::function<QWidget*()> toolbarFallback)
+    : m_displaySession(displaySession), m_geometry(geometry), m_selection(selection),
       m_toolbarFallback(std::move(toolbarFallback)) {}
 
 void ScreenshotMessageService::warning(const QString& key, const QString& message,
@@ -102,7 +101,6 @@ void ScreenshotMessageService::loadingFor(QWidget* owner, const QString& key,
     showMessage(MessageKind::Loading, std::move(request), owner);
 }
 
-
 void ScreenshotMessageService::destroyFor(QWidget* owner, const QString& key) {
     if (owner != nullptr) {
         adqt::widgets::AdMessageService::destroy(key, owner);
@@ -130,8 +128,7 @@ QWidget* ScreenshotMessageService::ownerFor(const QRectF& canvasRect,
     if (target.isNull() || target.isEmpty()) {
         target = QRectF(m_selection.pixelSelection());
     }
-    const CapturedDisplayModel* display =
-        m_geometry.displayForCanvasRect(m_displaySession, target);
+    const CapturedDisplayModel* display = m_geometry.displayForCanvasRect(m_displaySession, target);
     if (ScreenshotOverlayWindow* overlay = m_displaySession.overlayForDisplay(display)) {
         return overlay;
     }

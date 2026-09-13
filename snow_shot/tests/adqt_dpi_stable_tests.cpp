@@ -83,15 +83,16 @@ class DpiTrackingIconEngine final : public QIconEngine {
     explicit DpiTrackingIconEngine(std::shared_ptr<IconPaintTrace> trace)
         : trace_(std::move(trace)) {}
 
-    QIconEngine* clone() const override { return new DpiTrackingIconEngine(trace_); }
+    QIconEngine* clone() const override {
+        return new DpiTrackingIconEngine(trace_);
+    }
 
     void paint(QPainter* painter, const QRect& rect, QIcon::Mode mode,
                QIcon::State state) override {
         Q_UNUSED(mode)
         Q_UNUSED(state)
-        trace_->painterDprs.append(painter && painter->device()
-                                       ? painter->device()->devicePixelRatioF()
-                                       : 1.0);
+        trace_->painterDprs.append(
+            painter && painter->device() ? painter->device()->devicePixelRatioF() : 1.0);
         trace_->paintRects.append(rect);
         if (painter != nullptr) {
             painter->fillRect(rect, Qt::black);
@@ -185,8 +186,8 @@ void scopeIsBatchedAndNoOpsRepeatRequests() {
 }
 
 void contentScaleComposesWithDpiAndParticipatesInEquivalence() {
-    const auto context = adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(
-        1.5, 2.0, 0.8, 9);
+    const auto context =
+        adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(1.5, 2.0, 0.8, 9);
     require(qFuzzyCompare(context.logicalScale + 1.0, 1.6),
             "content scale did not compose with the reference/current DPI ratio");
     require(qFuzzyCompare(context.contentScale + 1.0, 1.8) && context.revision == 9,
@@ -201,8 +202,8 @@ void contentScaleComposesWithDpiAndParticipatesInEquivalence() {
     adqt::widgets::AdControlScaleScope scope(&root);
     require(scope.publishScale(context), "first content-scale publication should commit");
     require(!scope.publishScale(context), "equivalent content-scale publication should be a no-op");
-    const auto changed = adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(
-        1.5, 2.0, 1.0, 10);
+    const auto changed =
+        adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(1.5, 2.0, 1.0, 10);
     require(scope.publishScale(changed),
             "changing only content scale must produce a new scale commit");
 }
@@ -210,8 +211,8 @@ void contentScaleComposesWithDpiAndParticipatesInEquivalence() {
 void currentScaleCanBeAppliedToANewSubtree() {
     QWidget root;
     adqt::widgets::AdControlScaleScope scope(&root);
-    const auto published = adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(
-        1.5, 2.0, 0.8);
+    const auto published =
+        adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(1.5, 2.0, 0.8);
     require(scope.publishScale(published), "subtree reference publication failed");
 
     QWidget subtree(&root);
@@ -222,8 +223,7 @@ void currentScaleCanBeAppliedToANewSubtree() {
                 participant.lastCommittedRevision == scope.context().revision,
             "new subtree did not receive one paired prepare/commit at the current revision");
     const auto expected = scope.context();
-    const auto contextMatches = [&expected](
-                                    const adqt::widgets::AdControlScaleContext& actual) {
+    const auto contextMatches = [&expected](const adqt::widgets::AdControlScaleContext& actual) {
         return qFuzzyCompare(actual.referenceDpr + 1.0, expected.referenceDpr + 1.0) &&
                qFuzzyCompare(actual.currentDpr + 1.0, expected.currentDpr + 1.0) &&
                qFuzzyCompare(actual.contentScale + 1.0, expected.contentScale + 1.0) &&
@@ -366,14 +366,14 @@ void baselineCaptureIsBlockedDuringNativeTransition() {
     const qreal referenceDpr = controller.referenceDpr();
     window.resize(640, 160);
     adqt::widgets::AdDpiStableWindowControllerTestAccess::setNativeTransitionActive(controller,
-                                                                                     true);
+                                                                                    true);
     require(controller.captureBaseline(2.0),
             "capture during an active transition should preserve an existing baseline");
     require(controller.stablePhysicalFrameSize() == frameSize &&
                 qFuzzyCompare(controller.referenceDpr() + 1.0, referenceDpr + 1.0),
             "capture during an active transition replaced the authoritative baseline");
     adqt::widgets::AdDpiStableWindowControllerTestAccess::setNativeTransitionActive(controller,
-                                                                                     false);
+                                                                                    false);
 }
 
 void completionHandlersCanEstablishTheNextFrameBaseline() {
@@ -531,7 +531,7 @@ constexpr adqt::icons::IconPack kDpiTestPack{
     sizeof(kDpiTestEntries) / sizeof(kDpiTestEntries[0]),
 };
 
-}  // namespace
+} // namespace
 
 adqt::icons::IconRef testIconRef() {
     const auto ref = kDpiTestPack.icon(0);

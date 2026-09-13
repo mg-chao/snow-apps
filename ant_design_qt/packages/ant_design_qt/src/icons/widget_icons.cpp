@@ -15,9 +15,10 @@ using adqt::icons::IconPack;
 using adqt::icons::IconStaticColors;
 
 constexpr IconDescriptor kEntries[] = {
-  {
-    std::string_view("ant-design-qt"), std::string_view("twotone"), std::string_view("empty-simple"),
-    std::string_view(R"ADQT_SVG_0(<svg width="64" height="41" viewBox="0 0 64 41" xmlns="http://www.w3.org/2000/svg" fill="__ADQT_SLOT_PRIMARY__">
+    {std::string_view("ant-design-qt"), std::string_view("twotone"),
+     std::string_view("empty-simple"),
+     std::string_view(
+         R"ADQT_SVG_0(<svg width="64" height="41" viewBox="0 0 64 41" xmlns="http://www.w3.org/2000/svg" fill="__ADQT_SLOT_PRIMARY__">
   <g transform="translate(0 1)" fill="none" fill-rule="evenodd">
     <ellipse fill="__ADQT_SLOT_TERTIARY__" cx="32" cy="33" rx="32" ry="7" />
     <g fill-rule="nonzero" stroke="__ADQT_SLOT_PRIMARY__">
@@ -26,12 +27,19 @@ constexpr IconDescriptor kEntries[] = {
     </g>
   </g>
 </svg>
-)ADQT_SVG_0"), std::string_view("4db64c1917fd372161934c01ca1f55de400c66fc9fc14ce53644c2d107ded26f"),
-    IconColorModel::ThreeTone, IconFit::Contain, IconStaticColors{std::string_view(""), std::string_view("#E6E6E6"), std::string_view("#F5F5F5")}, false
-  },
+)ADQT_SVG_0"),
+     std::string_view("4db64c1917fd372161934c01ca1f55de400c66fc9fc14ce53644c2d107ded26f"),
+     IconColorModel::ThreeTone, IconFit::Contain,
+     IconStaticColors{std::string_view(""), std::string_view("#E6E6E6"),
+                      std::string_view("#F5F5F5")},
+     false},
 };
 
-constexpr IconPack kStaticPack{std::string_view("ant-design-qt"), std::string_view("ant_design_qt widget-owned static SVG assets"), std::string_view("fb1a49c75e20a61d5ff4ab74a687f4e79b4cd8aef8c4bfac5d29f95373efbac8"), kEntries, sizeof(kEntries) / sizeof(kEntries[0])};
+constexpr IconPack kStaticPack{
+    std::string_view("ant-design-qt"),
+    std::string_view("ant_design_qt widget-owned static SVG assets"),
+    std::string_view("fb1a49c75e20a61d5ff4ab74a687f4e79b4cd8aef8c4bfac5d29f95373efbac8"), kEntries,
+    sizeof(kEntries) / sizeof(kEntries[0])};
 
 }  // namespace
 
@@ -44,9 +52,7 @@ adqt::icons::IconPackRegistrationResult registerWith(adqt::icons::IconRenderer& 
   return pack().registerWith(renderer);
 }
 
-adqt::icons::IconPackRegistrationResult ensureRegistered() {
-  return pack().ensureRegistered();
-}
+adqt::icons::IconPackRegistrationResult ensureRegistered() { return pack().ensureRegistered(); }
 
 namespace twotone {
 

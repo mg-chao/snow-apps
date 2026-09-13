@@ -1,6 +1,4 @@
-use crate::{
-    ArrowState, BindableState, Bounds, BindableShape, FixedPointBinding, Point,
-};
+use crate::{ArrowState, BindableShape, BindableState, Bounds, FixedPointBinding, Point};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -20,13 +20,27 @@
 namespace {
 class NoOpSelectionToolbarCommands final : public ScreenshotSelectionToolbarCommandSink {
   public:
-    void toggleSelectionAspectRatioLockFromToolbar() override { ++interactionCount; }
-    void openSelectionResizeModalFromToolbar() override { ++interactionCount; }
-    void hideColorPickersForScreenshotUi() override { ++interactionCount; }
-    void adjustSelectionFromToolbar(int, int, int, int) override { ++interactionCount; }
-    void setSelectionCornerRadiusFromToolbar(int) override { ++interactionCount; }
-    void setSelectionShadowWidthFromToolbar(int) override { ++interactionCount; }
-    void setSelectionToolbarHovered(bool) override { ++interactionCount; }
+    void toggleSelectionAspectRatioLockFromToolbar() override {
+        ++interactionCount;
+    }
+    void openSelectionResizeModalFromToolbar() override {
+        ++interactionCount;
+    }
+    void hideColorPickersForScreenshotUi() override {
+        ++interactionCount;
+    }
+    void adjustSelectionFromToolbar(int, int, int, int) override {
+        ++interactionCount;
+    }
+    void setSelectionCornerRadiusFromToolbar(int) override {
+        ++interactionCount;
+    }
+    void setSelectionShadowWidthFromToolbar(int) override {
+        ++interactionCount;
+    }
+    void setSelectionToolbarHovered(bool) override {
+        ++interactionCount;
+    }
 
     int interactionCount = 0;
 };

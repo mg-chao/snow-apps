@@ -92,10 +92,8 @@ void scrollingCadenceHasAThirtyFpsHardCap() {
     config.maximumFps = 120;
     config.initialFps = 120;
     Cadence cadence(config);
-    require(cadence.maximumFps() == 30,
-            "scrolling capture must enforce a 30 fps hard ceiling");
-    require(cadence.fps() <= 30.0,
-            "scrolling capture must never start above the 30 fps ceiling");
+    require(cadence.maximumFps() == 30, "scrolling capture must enforce a 30 fps hard ceiling");
+    require(cadence.fps() <= 30.0, "scrolling capture must never start above the 30 fps ceiling");
 }
 
 void streamPressureReducesRateImmediately() {

@@ -21,8 +21,7 @@ struct AdControlScaleContext {
   static qreal normalizeDpr(qreal value);
   static AdControlScaleContext fromDprs(qreal referenceDpr, qreal currentDpr, quint64 revision = 0);
   static AdControlScaleContext fromDprsAndContentScale(qreal referenceDpr, qreal currentDpr,
-                                                       qreal contentScale,
-                                                       quint64 revision = 0);
+                                                       qreal contentScale, quint64 revision = 0);
 
   bool equivalentTo(const AdControlScaleContext& other) const;
 };

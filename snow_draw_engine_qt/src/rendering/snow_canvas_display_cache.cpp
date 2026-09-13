@@ -318,9 +318,8 @@ bool SnowCanvasDisplayCache::sync(SnowRuntime runtime, SnowViewport viewport) {
     const PatchApplyResult overlayApply =
         applyPatchOps(m_overlayStorage, patchInfo.overlay_reset != 0, payload.overlayOps,
                       payload.overlayOpCount, payload.overlayItems, payload.overlayItemCount);
-    applyPatchOps(
-        m_spotlightStorage, patchInfo.decoration_reset != 0, payload.spotlightOps,
-        payload.spotlightOpCount, payload.spotlightCutouts, payload.spotlightCutoutCount);
+    applyPatchOps(m_spotlightStorage, patchInfo.decoration_reset != 0, payload.spotlightOps,
+                  payload.spotlightOpCount, payload.spotlightCutouts, payload.spotlightCutoutCount);
     if (patchInfo.scene_reset != 0) {
         decltype(m_sceneSpatialCells)().swap(m_sceneSpatialCells);
         std::vector<std::vector<std::int64_t>>().swap(m_sceneItemSpatialCells);
@@ -419,7 +418,6 @@ std::uint32_t SnowCanvasDisplayCache::overlayItemCount() const {
 std::uint32_t SnowCanvasDisplayCache::spotlightCutoutCount() const {
     return m_spotlightCutoutCount;
 }
-
 
 std::uint32_t SnowCanvasDisplayCache::lastPenFilterGeometryPointCount() const {
     return m_lastPenFilterGeometryPointCount;

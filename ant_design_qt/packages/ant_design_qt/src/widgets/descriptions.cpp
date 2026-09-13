@@ -467,8 +467,7 @@ struct AdDescriptions::Private {
     return textOrWidget(
         label ? item.labelWidget.data() : item.contentWidget.data(),
         label ? item.label : item.content, color, font,
-        label ? AdDescriptions::tr("Description label")
-              : AdDescriptions::tr("Description content"),
+        label ? AdDescriptions::tr("Description label") : AdDescriptions::tr("Description content"),
         parent);
   }
 

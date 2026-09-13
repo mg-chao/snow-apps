@@ -40,8 +40,7 @@ QSize boundedDetectorSize(const QSize& sourceSize) {
                  std::max(1, static_cast<int>(std::floor(height * scale))));
 }
 
-ScreenshotQrRecognitionResult recognizeImage(QImage source,
-                                             const std::atomic_bool& cancellation) {
+ScreenshotQrRecognitionResult recognizeImage(QImage source, const std::atomic_bool& cancellation) {
     try {
         const QSize detectorSize = boundedDetectorSize(source.size());
         if (detectorSize.isEmpty() || cancellation.load(std::memory_order_relaxed)) {
@@ -60,10 +59,9 @@ ScreenshotQrRecognitionResult recognizeImage(QImage source,
             return {};
         }
 
-        const ZXing::ImageView view(
-            reinterpret_cast<const std::uint8_t*>(source.constBits()), source.width(),
-            source.height(), ZXing::ImageFormat::Lum,
-            static_cast<int>(source.bytesPerLine()));
+        const ZXing::ImageView view(reinterpret_cast<const std::uint8_t*>(source.constBits()),
+                                    source.width(), source.height(), ZXing::ImageFormat::Lum,
+                                    static_cast<int>(source.bytesPerLine()));
         // Reader defaults (tryHarder, tryInvert, tryDownscale) target accuracy
         // across every supported symbology; rotation is only attempted on a
         // second pass because screenshots are usually upright and the extra
@@ -111,8 +109,8 @@ class ScreenshotQrRecognitionService::Impl final {
         request->receiver = receiver;
         request->completion = std::move(completion);
         QPointer<ScreenshotQrRecognitionService> service(m_owner);
-        request->receiverDestroyed = QObject::connect(
-            receiver, &QObject::destroyed, m_owner, [service, token]() {
+        request->receiverDestroyed =
+            QObject::connect(receiver, &QObject::destroyed, m_owner, [service, token]() {
                 if (service != nullptr) {
                     service->cancel(token);
                 }
@@ -156,8 +154,7 @@ class ScreenshotQrRecognitionService::Impl final {
         QPointer<QObject> receiver;
         Completion completion;
         QMetaObject::Connection receiverDestroyed;
-        std::shared_ptr<std::atomic_bool> cancellation =
-            std::make_shared<std::atomic_bool>(false);
+        std::shared_ptr<std::atomic_bool> cancellation = std::make_shared<std::atomic_bool>(false);
         ScreenshotQrRecognitionResult result;
     };
     using RequestHandle = std::shared_ptr<Request>;
@@ -182,8 +179,7 @@ class ScreenshotQrRecognitionService::Impl final {
 
         QThread* const thread = QThread::create([request]() {
             if (!request->cancellation->load(std::memory_order_acquire)) {
-                request->result =
-                    recognizeImage(std::move(request->image), *request->cancellation);
+                request->result = recognizeImage(std::move(request->image), *request->cancellation);
             }
         });
         thread->setObjectName(QStringLiteral("ScreenshotQrWorker"));

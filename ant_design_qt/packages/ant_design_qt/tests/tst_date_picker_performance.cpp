@@ -81,10 +81,11 @@ void DatePickerPerformanceTests::meridiemColumnUsesConfiguredLocale() {
 
   const QList<QListWidget*> columns = timeColumns(&panel);
   QCOMPARE(columns.size(), 4);
-  const auto meridiemIt = std::find_if(columns.cbegin(), columns.cend(), [&locale](QListWidget* list) {
-    return list && list->count() >= 2 && list->item(0)->text() == locale.amText() &&
-           list->item(1)->text() == locale.pmText();
-  });
+  const auto meridiemIt =
+      std::find_if(columns.cbegin(), columns.cend(), [&locale](QListWidget* list) {
+        return list && list->count() >= 2 && list->item(0)->text() == locale.amText() &&
+               list->item(1)->text() == locale.pmText();
+      });
   QVERIFY(meridiemIt != columns.cend());
   QListWidget* const meridiem = *meridiemIt;
   QCOMPARE(meridiem->item(0)->text(), locale.amText());
@@ -274,8 +275,7 @@ void DatePickerPerformanceTests::rangePickerStartEditAdvancesToEnd() {
     const int index = firstDayOffset + date.day() - 1;
     const int row = index / 7;
     const int column = index % 7;
-    return QPoint((column * 2 + 1) * grid->width() / 14,
-                  (row * 2 + 3) * grid->height() / 14);
+    return QPoint((column * 2 + 1) * grid->width() / 14, (row * 2 + 3) * grid->height() / 14);
   };
 
   const auto clickDate = [grid, &pointForDate](const QDate& date) {
@@ -397,8 +397,7 @@ void DatePickerPerformanceTests::rangePickerStartAfterEndContinuesEditing() {
     const int index = firstDayOffset + date.day() - 1;
     const int row = index / 7;
     const int column = index % 7;
-    return QPoint((column * 2 + 1) * grid->width() / 14,
-                  (row * 2 + 3) * grid->height() / 14);
+    return QPoint((column * 2 + 1) * grid->width() / 14, (row * 2 + 3) * grid->height() / 14);
   };
   const auto clickDate = [grid, &pointForDate](const QDate& date) {
     QTest::mouseClick(grid, Qt::LeftButton, Qt::NoModifier, pointForDate(date));
@@ -496,8 +495,7 @@ void DatePickerPerformanceTests::rangePickerStartAfterEndClickAdvancesToEnd() {
     const int index = firstDayOffset + date.day() - 1;
     const int row = index / 7;
     const int column = index % 7;
-    return QPoint((column * 2 + 1) * grid->width() / 14,
-                  (row * 2 + 3) * grid->height() / 14);
+    return QPoint((column * 2 + 1) * grid->width() / 14, (row * 2 + 3) * grid->height() / 14);
   };
 
   const auto clickDate = [grid, &pointForDate](const QDate& date) {
@@ -575,8 +573,7 @@ void DatePickerPerformanceTests::rangePickerCrossPanelEditRefreshesHighlight() {
     const int index = firstDayOffset + date.day() - 1;
     const int row = index / 7;
     const int column = index % 7;
-    const QPoint point((column * 2 + 1) * grid->width() / 14,
-                       (row * 2 + 3) * grid->height() / 14);
+    const QPoint point((column * 2 + 1) * grid->width() / 14, (row * 2 + 3) * grid->height() / 14);
     QTest::mouseClick(grid, Qt::LeftButton, Qt::NoModifier, point);
     processEvents();
   };

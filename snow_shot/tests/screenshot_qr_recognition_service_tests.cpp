@@ -192,8 +192,7 @@ void oversizedScreenshotIsBoundedAndStillDecoded() {
 void oneDimensionalBarcodeDecodesTheSelectedImage() {
     ScreenshotQrRecognitionService service;
     const ScreenshotQrRecognitionResult output =
-        recognize(service, eanFixture(),
-                  "EAN recognition should complete within the test timeout");
+        recognize(service, eanFixture(), "EAN recognition should complete within the test timeout");
     require(output.error.isEmpty(), "EAN recognition should not report an error");
     require(output.contents == QStringList{QString::fromLatin1(kEanPayload)},
             "the detector should decode the embedded EAN-13 payload");
@@ -227,8 +226,7 @@ void queuedRequestsReuseNoPersistentWorker() {
 
     const auto firstToken = service.recognize(image, &receiver, completion);
     const auto secondToken = service.recognize(image, &receiver, completion);
-    require(firstToken != 0 && secondToken != 0,
-            "queued QR requests should both be accepted");
+    require(firstToken != 0 && secondToken != 0, "queued QR requests should both be accepted");
     require(service.findChildren<QThread*>().size() == 1,
             "queued QR requests should share one active worker at a time");
 

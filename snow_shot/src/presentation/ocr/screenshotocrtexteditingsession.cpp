@@ -9,9 +9,8 @@ ScreenshotOcrTextEditingSession::ScreenshotOcrTextEditingSession(QString origina
     m_document.setUndoRedoEnabled(false);
     m_document.setPlainText(m_originalText);
     m_history.push_back(m_originalText);
-    QObject::connect(&m_document, &QTextDocument::contentsChanged, [this]() {
-        recordCurrentText();
-    });
+    QObject::connect(&m_document, &QTextDocument::contentsChanged,
+                     [this]() { recordCurrentText(); });
 }
 
 const QString& ScreenshotOcrTextEditingSession::originalText() const {

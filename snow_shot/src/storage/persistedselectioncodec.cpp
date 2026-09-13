@@ -12,8 +12,8 @@ constexpr int kMaximumShadowWidth = 64;
 
 bool integer(const QJsonValue& value, int minimum, int maximum, int* result) {
     if (!value.isDouble() || !std::isfinite(value.toDouble()) ||
-        std::floor(value.toDouble()) != value.toDouble() ||
-        value.toDouble() < minimum || value.toDouble() > maximum) {
+        std::floor(value.toDouble()) != value.toDouble() || value.toDouble() < minimum ||
+        value.toDouble() > maximum) {
         return false;
     }
     if (result != nullptr) {
@@ -49,11 +49,10 @@ bool rectangle(const QJsonValue& value, QRect* result) {
 QJsonObject persistedSelectionToJson(const PersistedSelection& selection) {
     const QRect& rectangle = selection.rectangle;
     return {
-        {QStringLiteral("rectangle"),
-         QJsonObject{{QStringLiteral("x"), rectangle.x()},
-                     {QStringLiteral("y"), rectangle.y()},
-                     {QStringLiteral("width"), rectangle.width()},
-                     {QStringLiteral("height"), rectangle.height()}}},
+        {QStringLiteral("rectangle"), QJsonObject{{QStringLiteral("x"), rectangle.x()},
+                                                  {QStringLiteral("y"), rectangle.y()},
+                                                  {QStringLiteral("width"), rectangle.width()},
+                                                  {QStringLiteral("height"), rectangle.height()}}},
         {QStringLiteral("corner_radius"), selection.cornerRadius},
         {QStringLiteral("shadow_width"), selection.shadowWidth},
         {QStringLiteral("shadow_color"), selection.shadowColor.name(QColor::HexArgb).toUpper()},
@@ -86,8 +85,7 @@ PersistedSelectionNormalization normalizePersistedSelection(const QJsonValue& va
     selection.shadowWidth = shadowWidth;
     selection.shadowColor = color;
     selection.lockAspectRatio = object.value(QStringLiteral("lock_aspect_ratio")).toBool();
-    selection.lockDragAspectRatio =
-        object.value(QStringLiteral("lock_drag_aspect_ratio")).toBool();
+    selection.lockDragAspectRatio = object.value(QStringLiteral("lock_drag_aspect_ratio")).toBool();
     const QJsonObject normalized = persistedSelectionToJson(selection);
     return {selection, true, normalized != object};
 }

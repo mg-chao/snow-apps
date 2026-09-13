@@ -261,8 +261,8 @@ class ScreenshotTableDelegate final : public QStyledItemDelegate {
         if ((option.state & QStyle::State_HasFocus) != 0) {
             painter->setRenderHint(QPainter::Antialiasing, true);
             painter->setBrush(Qt::NoBrush);
-            painter->setPen(QPen(m_focus, m_lineWidth, Qt::SolidLine, Qt::SquareCap,
-                                 Qt::MiterJoin));
+            painter->setPen(
+                QPen(m_focus, m_lineWidth, Qt::SolidLine, Qt::SquareCap, Qt::MiterJoin));
             const QRectF focusRect = tableBorderRect(QRectF(option.rect), m_lineWidth);
             QPainterPath focusPath;
             focusPath.addRect(focusRect);
@@ -287,15 +287,16 @@ class ScreenshotTableDelegate final : public QStyledItemDelegate {
         editor->setProperty("snowShotTableColumn", index.column());
         editor->setFont(m_font);
         editor->setActiveBorderStyle(m_focus, m_lineWidth);
-        editor->setStyleSheet(QStringLiteral("QPlainTextEdit#snowShotTableCellEditor {"
-                                             " padding: %1px; border: none;"
-                                             " border-radius: 0; background: %2; color: %3;"
-                                             " selection-background-color: %4; selection-color: %5; }")
-                                  .arg(m_padding)
-                                  .arg(cssColor(m_surface))
-                                  .arg(cssColor(m_text))
-                                  .arg(cssColor(m_focus))
-                                  .arg(cssColor(m_selectionText)));
+        editor->setStyleSheet(
+            QStringLiteral("QPlainTextEdit#snowShotTableCellEditor {"
+                           " padding: %1px; border: none;"
+                           " border-radius: 0; background: %2; color: %3;"
+                           " selection-background-color: %4; selection-color: %5; }")
+                .arg(m_padding)
+                .arg(cssColor(m_surface))
+                .arg(cssColor(m_text))
+                .arg(cssColor(m_focus))
+                .arg(cssColor(m_selectionText)));
         return editor;
     }
 
@@ -581,11 +582,11 @@ bool ScreenshotTableEditor::copySelectionToClipboard() {
     }
     // A current cell is navigation state, not a text selection. Copy the
     // complete recognized table when the selection model has no indexes.
-    const ScreenshotTableRange range = selectionModel()->selectedIndexes().isEmpty()
-                                           ? ScreenshotTableRange{
-                                                 0, 0, m_session->document.rowCount() - 1,
-                                                 m_session->document.columnCount() - 1}
-                                           : selectedRange();
+    const ScreenshotTableRange range =
+        selectionModel()->selectedIndexes().isEmpty()
+            ? ScreenshotTableRange{0, 0, m_session->document.rowCount() - 1,
+                                   m_session->document.columnCount() - 1}
+            : selectedRange();
     if (!range.isValid()) {
         return false;
     }
@@ -769,8 +770,8 @@ void ScreenshotTableEditor::wheelEvent(QWheelEvent* event) {
 
     if (event->modifiers().testFlag(Qt::ShiftModifier) && horizontalScrollBar() != nullptr &&
         horizontalScrollBar()->maximum() > horizontalScrollBar()->minimum()) {
-        const int delta = !event->pixelDelta().isNull() ? event->pixelDelta().y()
-                                                        : event->angleDelta().y();
+        const int delta =
+            !event->pixelDelta().isNull() ? event->pixelDelta().y() : event->angleDelta().y();
         if (delta != 0) {
             horizontalScrollBar()->setValue(horizontalScrollBar()->value() - delta);
             event->accept();

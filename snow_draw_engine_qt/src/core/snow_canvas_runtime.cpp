@@ -112,8 +112,7 @@ bool SnowCanvasRuntime::Impl::clearDocumentPreservingViewports() {
     return session.clearDocumentPreservingViewports();
 }
 
-bool SnowCanvasRuntime::Impl::setQuickSelectionDisabledTools(
-    const QSet<SnowCanvasTool>& tools) {
+bool SnowCanvasRuntime::Impl::setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools) {
     return hasThreadAccess("setQuickSelectionDisabledTools") &&
            session.setQuickSelectionDisabledTools(tools);
 }

@@ -58,7 +58,6 @@ impl Engine {
         self.refresh_single_viewport(id)
     }
 
-
     pub fn acquire_patch(
         &self,
         id: ViewportId,

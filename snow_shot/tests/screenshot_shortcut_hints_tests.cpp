@@ -67,8 +67,7 @@ void toolMatrixMatchesRequestedVisibility() {
     require(hintLines(ScreenshotActiveTool::PenFilter) == penTransformHints,
             "pen-filter hint matrix changed");
     require(hintLines(ScreenshotActiveTool::PenHighlight) ==
-                withDefaultCursorHints(
-                    {QStringLiteral("Delete selected elements: Delete")}),
+                withDefaultCursorHints({QStringLiteral("Delete selected elements: Delete")}),
             "pen-highlighter hint matrix changed");
 
     const QStringList textTransformHints = withDefaultCursorHints({
@@ -101,16 +100,15 @@ void toolMatrixMatchesRequestedVisibility() {
                     QStringLiteral("Auto-align: Ctrl"),
                 }),
             "line quick-selection suppression changed");
-    require(hintLines(ScreenshotActiveTool::RectangleHighlight,
-                      {SnowCanvasTool::RectangleHighlight}) ==
-                withDefaultCursorHints({
-                    QStringLiteral("Maintain aspect ratio: Shift"),
-                    QStringLiteral("Scale from center: Alt"),
-                    QStringLiteral("Auto-align: Ctrl"),
-                }),
-            "rectangle-highlighter quick-selection suppression changed");
-    require(hintLines(ScreenshotActiveTool::RectangleFilter,
-                      {SnowCanvasTool::RectangleFilter}) ==
+    require(
+        hintLines(ScreenshotActiveTool::RectangleHighlight, {SnowCanvasTool::RectangleHighlight}) ==
+            withDefaultCursorHints({
+                QStringLiteral("Maintain aspect ratio: Shift"),
+                QStringLiteral("Scale from center: Alt"),
+                QStringLiteral("Auto-align: Ctrl"),
+            }),
+        "rectangle-highlighter quick-selection suppression changed");
+    require(hintLines(ScreenshotActiveTool::RectangleFilter, {SnowCanvasTool::RectangleFilter}) ==
                 withDefaultCursorHints({
                     QStringLiteral("Maintain aspect ratio: Shift"),
                     QStringLiteral("Scale from center: Alt"),
@@ -148,14 +146,12 @@ void configuredShortcutRowsUseActualValues() {
     context.activeTool = ScreenshotActiveTool::Move;
     context.captureMode = ScreenshotCaptureMode::ManualSelecting;
     context.configuredShortcuts = QMap<QString, QStringList>{
-        {QStringLiteral("move_cursor_up"),
-         {QStringLiteral("Ctrl+Alt+I"), QStringLiteral("Up")}},
+        {QStringLiteral("move_cursor_up"), {QStringLiteral("Ctrl+Alt+I"), QStringLiteral("Up")}},
         {QStringLiteral("move_cursor_down"), {QStringLiteral("Ctrl+Alt+K")}},
         {QStringLiteral("move_cursor_left"), {QStringLiteral("Ctrl+Alt+J")}},
         {QStringLiteral("move_cursor_right"), {QStringLiteral("Ctrl+Alt+L")}},
         {QStringLiteral("move_entire_selection"), {QStringLiteral("Ctrl+M")}},
-        {QStringLiteral("keep_selection_width_and_height_consistent"),
-         {QStringLiteral("Alt+R")}},
+        {QStringLiteral("keep_selection_width_and_height_consistent"), {QStringLiteral("Alt+R")}},
         {QStringLiteral("select_previously_selected_area"), {QStringLiteral("P")}},
         {QStringLiteral("copy_color"), {QStringLiteral("Alt+C")}},
         {QStringLiteral("previous_screenshot_history"),
@@ -185,8 +181,8 @@ void configuredShortcutRowsUseActualValues() {
             "the fixed color-format shortcut must remain visible");
     require(rows.at(9).label == QStringLiteral("Switch screenshot history") &&
                 rows.at(9).shortcut == QStringLiteral("PgUp / [ / PgDown / ]") &&
-                rows.at(9).shortcutChips == QStringList{QStringLiteral("PgUp / ["),
-                                                       QStringLiteral("PgDown / ]")},
+                rows.at(9).shortcutChips ==
+                    QStringList{QStringLiteral("PgUp / ["), QStringLiteral("PgDown / ]")},
             "history hint must split the previous and next shortcuts into separate chips");
 }
 
@@ -196,8 +192,7 @@ void defaultHistoryShortcutUsesSeparateChips() {
     const ScreenshotShortcutHintRow& historyRow = rows.constLast();
     require(historyRow.label == QStringLiteral("Switch screenshot history") &&
                 historyRow.shortcut == QStringLiteral(", / .") &&
-                historyRow.shortcutChips ==
-                    QStringList{QStringLiteral(","), QStringLiteral(".")},
+                historyRow.shortcutChips == QStringList{QStringLiteral(","), QStringLiteral(".")},
             "default history keys must render as separate comma and period chips");
 }
 
@@ -246,11 +241,10 @@ void unconfiguredRowsFallBackToSchemaDefaults() {
         schemaDefaults.insert(actionId, defaults);
     }
 
-    require(screenshotShortcutHintRows(ScreenshotShortcutHintMode::Selection, std::nullopt,
-                                       true) ==
-                screenshotShortcutHintRows(ScreenshotShortcutHintMode::Selection,
-                                           schemaDefaults, true),
-            "unconfigured selection rows must render the schema defaults");
+    require(
+        screenshotShortcutHintRows(ScreenshotShortcutHintMode::Selection, std::nullopt, true) ==
+            screenshotShortcutHintRows(ScreenshotShortcutHintMode::Selection, schemaDefaults, true),
+        "unconfigured selection rows must render the schema defaults");
     require(screenshotShortcutHintRows(ScreenshotShortcutHintMode::SmartSelection, std::nullopt,
                                        true) ==
                 screenshotShortcutHintRows(ScreenshotShortcutHintMode::SmartSelection,
@@ -259,10 +253,10 @@ void unconfiguredRowsFallBackToSchemaDefaults() {
 
     QMap<QString, QStringList> partialMap = schemaDefaults;
     partialMap.remove(QStringLiteral("copy_color"));
-    require(screenshotShortcutHintRows(ScreenshotShortcutHintMode::Selection, partialMap, true) ==
-                screenshotShortcutHintRows(ScreenshotShortcutHintMode::Selection,
-                                           schemaDefaults, true),
-            "an action missing from the configured snapshot must fall back to the schema default");
+    require(
+        screenshotShortcutHintRows(ScreenshotShortcutHintMode::Selection, partialMap, true) ==
+            screenshotShortcutHintRows(ScreenshotShortcutHintMode::Selection, schemaDefaults, true),
+        "an action missing from the configured snapshot must fall back to the schema default");
 }
 
 void scrollingHintsUseMouseWheelLabels() {
@@ -352,14 +346,13 @@ void emptyContextsUseHiddenMode() {
 
 void hintAreaHidesForSelectionOverlapOrCursorHover() {
     const QRectF hintArea(16.0, 300.0, 240.0, 180.0);
-    require(!screenshotShortcutHintAreaIsObscured(
-                hintArea, QRectF(300.0, 100.0, 200.0, 150.0), QPointF(500.0, 500.0)),
+    require(!screenshotShortcutHintAreaIsObscured(hintArea, QRectF(300.0, 100.0, 200.0, 150.0),
+                                                  QPointF(500.0, 500.0)),
             "a separate selection and cursor must leave shortcut hints visible");
-    require(screenshotShortcutHintAreaIsObscured(
-                hintArea, QRectF(200.0, 250.0, 100.0, 100.0), QPointF(500.0, 500.0)),
+    require(screenshotShortcutHintAreaIsObscured(hintArea, QRectF(200.0, 250.0, 100.0, 100.0),
+                                                 QPointF(500.0, 500.0)),
             "a selection overlapping the shortcut hint area must hide it");
-    require(screenshotShortcutHintAreaIsObscured(
-                hintArea, QRectF(), QPointF(100.0, 350.0)),
+    require(screenshotShortcutHintAreaIsObscured(hintArea, QRectF(), QPointF(100.0, 350.0)),
             "a cursor over the shortcut hint area must hide it");
 }
 

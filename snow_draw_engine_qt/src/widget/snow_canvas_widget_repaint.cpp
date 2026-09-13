@@ -11,7 +11,6 @@ QRegion clippedUpdateRegion(const QRegion& region, const QRect& clip) {
     return region.intersected(clip);
 }
 
-
 QRegion adaptiveUpdateRegion(const QRegion& region, const QRect& clip, double boundingAreaFactor,
                              int maximumRectCount) {
     QRegion clipped = clippedUpdateRegion(region, clip);

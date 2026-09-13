@@ -108,17 +108,11 @@ SnowCanvasTextStyle defaultTextStyle() {
 } // namespace
 
 ScreenshotToolPaletteRectangleStyleModel::ScreenshotToolPaletteRectangleStyleModel(
-    double minimumStrokeWidth
-)
-    : m_strokeWidthValues{style_presets::shapeStrokeWidths()}
-    , m_strokeColorValues{style_presets::strokeColors()}
-    , m_fillColorValues{style_presets::shapeFillColors()}
-    , m_minimumStrokeWidth(std::clamp(
-          minimumStrokeWidth,
-          0.0,
-          kMaxRectangleStrokeWidth
-      ))
-{
+    double minimumStrokeWidth)
+    : m_strokeWidthValues{style_presets::shapeStrokeWidths()},
+      m_strokeColorValues{style_presets::strokeColors()},
+      m_fillColorValues{style_presets::shapeFillColors()},
+      m_minimumStrokeWidth(std::clamp(minimumStrokeWidth, 0.0, kMaxRectangleStrokeWidth)) {
     reset();
 }
 
@@ -254,8 +248,7 @@ bool ScreenshotToolPaletteRectangleStyleModel::setStrokeColor(const QColor& colo
     return true;
 }
 
-bool ScreenshotToolPaletteRectangleStyleModel::setStrokeStyle(
-    SnowCanvasStrokeStyle strokeStyle) {
+bool ScreenshotToolPaletteRectangleStyleModel::setStrokeStyle(SnowCanvasStrokeStyle strokeStyle) {
     if (m_strokeStyle == strokeStyle) {
         return false;
     }
@@ -320,10 +313,10 @@ double ScreenshotToolPaletteRectangleStyleModel::clampedCornerRadius(double corn
 }
 
 ScreenshotToolPaletteTextStyleModel::ScreenshotToolPaletteTextStyleModel()
-    : m_fontSizeValues{style_presets::fontSizes()}
-    , m_strokeWidthValues{style_presets::strokePresetWidths()}
-    , m_colorValues{style_presets::textColors()}
-    , m_fillColorValues{style_presets::textFillColors()} {
+    : m_fontSizeValues{style_presets::fontSizes()},
+      m_strokeWidthValues{style_presets::strokePresetWidths()},
+      m_colorValues{style_presets::textColors()},
+      m_fillColorValues{style_presets::textFillColors()} {
     reset();
 }
 

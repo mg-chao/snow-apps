@@ -41,8 +41,7 @@ bool focusedFullscreenWindowExists() {
     }
 
     RECT frame{};
-    if (FAILED(DwmGetWindowAttribute(window, DWMWA_EXTENDED_FRAME_BOUNDS, &frame,
-                                     sizeof(frame)))) {
+    if (FAILED(DwmGetWindowAttribute(window, DWMWA_EXTENDED_FRAME_BOUNDS, &frame, sizeof(frame)))) {
         return false;
     }
     const HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONULL);
@@ -56,8 +55,7 @@ bool focusedFullscreenWindowExists() {
     }
 
     const RECT& bounds = monitorInfo.rcMonitor;
-    return coordinatesMatch(frame.left, bounds.left) &&
-           coordinatesMatch(frame.top, bounds.top) &&
+    return coordinatesMatch(frame.left, bounds.left) && coordinatesMatch(frame.top, bounds.top) &&
            coordinatesMatch(frame.right, bounds.right) &&
            coordinatesMatch(frame.bottom, bounds.bottom);
 #else

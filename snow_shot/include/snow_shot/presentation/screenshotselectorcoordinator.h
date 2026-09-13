@@ -50,8 +50,7 @@ class ScreenshotSelectorCoordinator final : public QObject, public ScreenshotSel
     bool m_hitTestInFlight = false;
     bool m_hasPendingHitTestPoint = false;
     QPoint m_pendingHitTestPoint;
-    ScreenshotSelectorHitTestMode m_pendingHitTestMode =
-        ScreenshotSelectorHitTestMode::Window;
+    ScreenshotSelectorHitTestMode m_pendingHitTestMode = ScreenshotSelectorHitTestMode::Window;
     QVector<std::uintptr_t> m_lastExcludedHwnds;
 };
 

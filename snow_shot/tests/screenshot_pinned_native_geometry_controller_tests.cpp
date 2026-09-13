@@ -153,8 +153,7 @@ void shortcutMovementAfterDpiUsesTheAdoptedTargetAsItsAnchor() {
             "move transaction did not track the cursor before the DPI transition");
 
     const QRect dpiTarget(1120, 920, 1623, 921);
-    require(controller.adoptDpiTarget(dpiTarget, dpiCursor),
-            "mid-drag DPI target was rejected");
+    require(controller.adoptDpiTarget(dpiTarget, dpiCursor), "mid-drag DPI target was rejected");
     QRect expected = dpiTarget;
     expected.translate(1, 0);
     require(controller.updateMove({}, dpiCursor + QPoint(1, 0)) == expected,

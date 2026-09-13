@@ -93,8 +93,7 @@ bool ScreenshotSelectionExportWorkflow::pinSelectionToScreen(ResultValidator val
 
     return m_context.imageComposer.schedulePinnedSelection(
         std::move(*request), &m_context.callbackContext,
-        [this, validator = std::move(validator),
-         completion = std::move(completion),
+        [this, validator = std::move(validator), completion = std::move(completion),
          savedSelectionParams](ScreenshotPinnedSelectionRequest pinRequest,
                                ScreenshotPinnedSelectionResultHandle result) mutable {
             if (validator && !validator()) {
@@ -106,20 +105,24 @@ bool ScreenshotSelectionExportWorkflow::pinSelectionToScreen(ResultValidator val
             }
             if (!pinRequest.isPrepared()) {
                 result.cancel();
-                if (completion) completion(false, {});
+                if (completion)
+                    completion(false, {});
                 return;
             }
             const auto terminal = std::make_shared<bool>(false);
             const auto finish = std::make_shared<std::function<void(bool, QImage)>>();
-            *finish = [this, terminal, savedSelectionParams,
-                       validator = std::move(validator), completion = std::move(completion)](
-                          bool success, QImage image) mutable {
-                if (*terminal) return;
+            *finish = [this, terminal, savedSelectionParams, validator = std::move(validator),
+                       completion = std::move(completion)](bool success, QImage image) mutable {
+                if (*terminal)
+                    return;
                 *terminal = true;
-                if (validator && !validator()) success = false;
+                if (validator && !validator())
+                    success = false;
                 SNOW_SHOT_PIN_PERF_MILESTONE("workflow.destination_complete");
-                if (success) persistSelectionParams(savedSelectionParams);
-                if (completion) completion(success, success ? std::move(image) : QImage{});
+                if (success)
+                    persistSelectionParams(savedSelectionParams);
+                if (completion)
+                    completion(success, success ? std::move(image) : QImage{});
             };
             if (!m_context.destination.presentPinnedSelection(
                     pinRequest, std::move(result), [finish](bool success, QImage image) mutable {

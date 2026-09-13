@@ -41,17 +41,18 @@ void finish(bool success);
 #define SNOW_SHOT_CAPTURE_PERF_CONCAT_IMPL(a, b) a##b
 #define SNOW_SHOT_CAPTURE_PERF_CONCAT(a, b) SNOW_SHOT_CAPTURE_PERF_CONCAT_IMPL(a, b)
 #if defined(SNOW_SHOT_CAPTURE_PERF_INSTRUMENTATION)
-#define SNOW_SHOT_CAPTURE_PERF_SCOPE(name) \
-    ::snow_shot::presentation::capture_perf::Scope SNOW_SHOT_CAPTURE_PERF_CONCAT(snowShotCapturePerfScope, __LINE__)(name)
-#define SNOW_SHOT_CAPTURE_PERF_BEGIN(scenario, width, height) \
+#define SNOW_SHOT_CAPTURE_PERF_SCOPE(name)                                                         \
+    ::snow_shot::presentation::capture_perf::Scope SNOW_SHOT_CAPTURE_PERF_CONCAT(                  \
+        snowShotCapturePerfScope, __LINE__)(name)
+#define SNOW_SHOT_CAPTURE_PERF_BEGIN(scenario, width, height)                                      \
     ::snow_shot::presentation::capture_perf::beginSample(scenario, width, height)
-#define SNOW_SHOT_CAPTURE_PERF_MILESTONE(name) \
+#define SNOW_SHOT_CAPTURE_PERF_MILESTONE(name)                                                     \
     ::snow_shot::presentation::capture_perf::milestone(name)
-#define SNOW_SHOT_CAPTURE_PERF_COUNTER(name, value) \
+#define SNOW_SHOT_CAPTURE_PERF_COUNTER(name, value)                                                \
     ::snow_shot::presentation::capture_perf::counter(name, value)
-#define SNOW_SHOT_CAPTURE_PERF_FINISH(success) \
+#define SNOW_SHOT_CAPTURE_PERF_FINISH(success)                                                     \
     ::snow_shot::presentation::capture_perf::finish(success)
-#define SNOW_SHOT_CAPTURE_PERF_FLUSH_COMPOSITION() \
+#define SNOW_SHOT_CAPTURE_PERF_FLUSH_COMPOSITION()                                                 \
     ::snow_shot::presentation::capture_perf::flushDesktopComposition()
 #else
 #define SNOW_SHOT_CAPTURE_PERF_SCOPE(name) ((void)0)

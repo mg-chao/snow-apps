@@ -99,7 +99,7 @@ bool ScreenshotSelectorCoordinator::startRefresh(const QVector<std::uintptr_t>& 
 }
 
 bool ScreenshotSelectorCoordinator::requestHitTest(const QPoint& physicalPoint,
-                                                    ScreenshotSelectorHitTestMode mode) {
+                                                   ScreenshotSelectorHitTestMode mode) {
     if ((!m_ready && !m_refreshInFlight) || !m_serviceClient->hasService()) {
         return false;
     }

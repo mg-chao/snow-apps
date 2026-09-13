@@ -15,9 +15,9 @@ using adqt::icons::IconPack;
 using adqt::icons::IconStaticColors;
 
 constexpr IconDescriptor kEntries[] = {
-  {
-    std::string_view("snow-draw-engine-qt"), std::string_view("cursor"), std::string_view("corner-radius"),
-    std::string_view(R"ADQT_SVG_0(<?xml version="1.0" encoding="UTF-8"?>
+    {std::string_view("snow-draw-engine-qt"), std::string_view("cursor"),
+     std::string_view("corner-radius"),
+     std::string_view(R"ADQT_SVG_0(<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
      width="32"
      height="32"
@@ -92,78 +92,89 @@ constexpr IconDescriptor kEntries[] = {
     </g>
   </g>
 </svg>
-)ADQT_SVG_0"), std::string_view("5cef6b53d66e14f777a031bdceb885b51a56ef0d6fdfb8077d7ec69030d9f3df"),
-    IconColorModel::FullColor, IconFit::Contain, IconStaticColors{std::string_view(""), std::string_view(""), std::string_view("")}, false
-  },
-  {
-    std::string_view("snow-draw-engine-qt"), std::string_view("toolbar"), std::string_view("serial-decrease"),
-    std::string_view(R"ADQT_SVG_1(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="__ADQT_SLOT_PRIMARY__">
+)ADQT_SVG_0"),
+     std::string_view("5cef6b53d66e14f777a031bdceb885b51a56ef0d6fdfb8077d7ec69030d9f3df"),
+     IconColorModel::FullColor, IconFit::Contain,
+     IconStaticColors{std::string_view(""), std::string_view(""), std::string_view("")}, false},
+    {std::string_view("snow-draw-engine-qt"), std::string_view("toolbar"),
+     std::string_view("serial-decrease"),
+     std::string_view(
+         R"ADQT_SVG_1(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="__ADQT_SLOT_PRIMARY__">
   <rect x="3" y="6" width="8" height="2" rx="1"/>
 </svg>
-)ADQT_SVG_1"), std::string_view("f71a26eb9ca2dc3293232cfa260f849a578b5c5cce9494c121934d11948f8267"),
-    IconColorModel::Monochrome, IconFit::Contain, IconStaticColors{std::string_view(""), std::string_view(""), std::string_view("")}, false
-  },
-  {
-    std::string_view("snow-draw-engine-qt"), std::string_view("toolbar"), std::string_view("serial-increase"),
-    std::string_view(R"ADQT_SVG_2(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="__ADQT_SLOT_PRIMARY__">
+)ADQT_SVG_1"),
+     std::string_view("f71a26eb9ca2dc3293232cfa260f849a578b5c5cce9494c121934d11948f8267"),
+     IconColorModel::Monochrome, IconFit::Contain,
+     IconStaticColors{std::string_view(""), std::string_view(""), std::string_view("")}, false},
+    {std::string_view("snow-draw-engine-qt"), std::string_view("toolbar"),
+     std::string_view("serial-increase"),
+     std::string_view(
+         R"ADQT_SVG_2(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="__ADQT_SLOT_PRIMARY__">
   <rect x="3" y="6" width="8" height="2" rx="1"/>
   <rect x="6" y="3" width="2" height="8" rx="1"/>
 </svg>
-)ADQT_SVG_2"), std::string_view("237f6c9bb0ca45b8449b32d109a819df9b9a8bc80a79b4e98d9ef40d7431d43f"),
-    IconColorModel::Monochrome, IconFit::Contain, IconStaticColors{std::string_view(""), std::string_view(""), std::string_view("")}, false
-  },
-  {
-    std::string_view("snow-draw-engine-qt"), std::string_view("toolbar"), std::string_view("serial-text-fields"),
-    std::string_view(R"ADQT_SVG_3(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="__ADQT_SLOT_PRIMARY__">
+)ADQT_SVG_2"),
+     std::string_view("237f6c9bb0ca45b8449b32d109a819df9b9a8bc80a79b4e98d9ef40d7431d43f"),
+     IconColorModel::Monochrome, IconFit::Contain,
+     IconStaticColors{std::string_view(""), std::string_view(""), std::string_view("")}, false},
+    {std::string_view("snow-draw-engine-qt"), std::string_view("toolbar"),
+     std::string_view("serial-text-fields"),
+     std::string_view(
+         R"ADQT_SVG_3(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="__ADQT_SLOT_PRIMARY__">
   <rect x="1" y="2" width="8" height="2"/>
   <rect x="4" y="4" width="2" height="8"/>
   <rect x="8" y="6" width="5" height="2"/>
   <rect x="10" y="8" width="2" height="4"/>
 </svg>
-)ADQT_SVG_3"), std::string_view("d5797d954453ddbe172a04997417f04e1b4e419f330fcdd3ef58e4f675f9214f"),
-    IconColorModel::Monochrome, IconFit::Contain, IconStaticColors{std::string_view(""), std::string_view(""), std::string_view("")}, false
-  },
+)ADQT_SVG_3"),
+     std::string_view("d5797d954453ddbe172a04997417f04e1b4e419f330fcdd3ef58e4f675f9214f"),
+     IconColorModel::Monochrome, IconFit::Contain,
+     IconStaticColors{std::string_view(""), std::string_view(""), std::string_view("")}, false},
 };
 
-constexpr IconPack kStaticPack{std::string_view("snow-draw-engine-qt"), std::string_view("snow_draw_engine_qt project-owned static SVG assets"), std::string_view("d003b55189541865771a30bf350e655b0ee6e7a97be4bc93cc21752878f750f2"), kEntries, sizeof(kEntries) / sizeof(kEntries[0])};
+constexpr IconPack kStaticPack{
+    std::string_view("snow-draw-engine-qt"),
+    std::string_view("snow_draw_engine_qt project-owned static SVG assets"),
+    std::string_view("d003b55189541865771a30bf350e655b0ee6e7a97be4bc93cc21752878f750f2"), kEntries,
+    sizeof(kEntries) / sizeof(kEntries[0])};
 
-}  // namespace
+} // namespace
 
 const adqt::icons::ExternalIconPack& pack() {
-  static const adqt::icons::ExternalIconPack value(kStaticPack);
-  return value;
+    static const adqt::icons::ExternalIconPack value(kStaticPack);
+    return value;
 }
 
 adqt::icons::IconPackRegistrationResult registerWith(adqt::icons::IconRenderer& renderer) {
-  return pack().registerWith(renderer);
+    return pack().registerWith(renderer);
 }
 
 adqt::icons::IconPackRegistrationResult ensureRegistered() {
-  return pack().ensureRegistered();
+    return pack().ensureRegistered();
 }
 
 namespace cursor {
 
 adqt::icons::IconRef CornerRadius(const adqt::icons::IconColors& colors) {
-  return pack().icon(0, colors);
+    return pack().icon(0, colors);
 }
 
-}  // namespace cursor
+} // namespace cursor
 
 namespace toolbar {
 
 adqt::icons::IconRef SerialDecrease(const adqt::icons::IconColors& colors) {
-  return pack().icon(1, colors);
+    return pack().icon(1, colors);
 }
 
 adqt::icons::IconRef SerialIncrease(const adqt::icons::IconColors& colors) {
-  return pack().icon(2, colors);
+    return pack().icon(2, colors);
 }
 
 adqt::icons::IconRef SerialTextFields(const adqt::icons::IconColors& colors) {
-  return pack().icon(3, colors);
+    return pack().icon(3, colors);
 }
 
-}  // namespace toolbar
+} // namespace toolbar
 
-}  // namespace snow::draw_engine::icons
+} // namespace snow::draw_engine::icons

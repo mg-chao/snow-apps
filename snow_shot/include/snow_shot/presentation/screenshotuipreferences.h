@@ -63,8 +63,9 @@ struct ScreenshotColorPickerVisibilityState {
     bool pointInsideSelection = false;
 };
 
-[[nodiscard]] inline qreal screenshotColorPickerOpacity(
-    ScreenshotColorPickerDisplayMode mode, const ScreenshotColorPickerVisibilityState& state) {
+[[nodiscard]] inline qreal
+screenshotColorPickerOpacity(ScreenshotColorPickerDisplayMode mode,
+                             const ScreenshotColorPickerVisibilityState& state) {
     if (mode == ScreenshotColorPickerDisplayMode::AlwaysHide) {
         return 0.0;
     }

@@ -230,8 +230,10 @@ void ScreenshotToolbarWindow::connectStyleCommands(ScreenshotToolPalette& toolPa
             [this]() { m_commands.duplicateSelectedElements(); });
     connect(&toolPalette, &ScreenshotToolPalette::deleteSelectionRequested, this,
             [this]() { m_commands.deleteSelectedElements(); });
+    // The reset button clears every element as a single undoable history entry
+    // instead of wiping the document and its history.
     connect(&toolPalette, &ScreenshotToolPalette::resetCanvasRequested, this,
-            [this]() { m_commands.resetCanvas(); });
+            [this]() { m_commands.deleteAllElements(); });
     connect(
         &toolPalette, &ScreenshotToolPalette::shapeStyleChanged, this,
         [this](const SnowCanvasShapeStyle& style, quint32 properties, SnowCanvasShapeKind kind) {

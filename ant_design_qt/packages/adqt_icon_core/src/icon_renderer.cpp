@@ -156,8 +156,7 @@ QColor slot(const IconColors& colors, int index) {
 
 bool colorsAllowed(IconColorModel model, const IconColors& colors) {
   if (model == IconColorModel::FullColor) return colors.isEmpty();
-  if (model == IconColorModel::Monochrome)
-    return !colors.secondarySlot() && !colors.tertiarySlot();
+  if (model == IconColorModel::Monochrome) return !colors.secondarySlot() && !colors.tertiarySlot();
   if (model == IconColorModel::TwoTone) return !colors.tertiarySlot();
   return true;
 }
@@ -203,8 +202,8 @@ ResolvedColors resolveColors(const IconDescriptor& descriptor, const IconRef& re
   result.primary = descriptor.colorModel == IconColorModel::Monochrome
                        ? (mode == QIcon::Disabled ? app.textDisabled : app.text)
                        : (mode == QIcon::Disabled ? app.textDisabled : app.primary);
-  result.secondary = mode == QIcon::Disabled ? deriveSecondary(app.textDisabled)
-                                             : app.twoToneSecondary;
+  result.secondary =
+      mode == QIcon::Disabled ? deriveSecondary(app.textDisabled) : app.twoToneSecondary;
   result.tertiary = mode == QIcon::Disabled ? result.secondary : app.tertiary;
 
   const std::optional<IconColors> stateColors = statePalette.resolve(mode, state);
@@ -222,8 +221,8 @@ ResolvedColors resolveColors(const IconDescriptor& descriptor, const IconRef& re
     if (index == 1 && selected.isValid()) result.secondary = selected;
     if (index == 2 && selected.isValid()) result.tertiary = selected;
   }
-  const bool hasPrimaryOverride = (stateColors && stateColors->primarySlot()) ||
-                                  refColors.primarySlot();
+  const bool hasPrimaryOverride =
+      (stateColors && stateColors->primarySlot()) || refColors.primarySlot();
   const bool hasSecondaryColor = (stateColors && stateColors->secondarySlot()) ||
                                  refColors.secondarySlot() || defaults.secondarySlot();
   if (descriptor.colorModel != IconColorModel::Monochrome && hasPrimaryOverride &&
@@ -263,8 +262,7 @@ int physicalDimension(int logical, qreal dpr) {
   // qRound returns an int; reject values that could overflow during rounding rather than
   // allowing an overflowed small dimension to slip past the raster safety check.
   const qreal maxRounded = static_cast<qreal>(std::numeric_limits<int>::max()) - 0.5;
-  if (!qIsFinite(scaled) || scaled >= maxRounded)
-    return std::numeric_limits<int>::max();
+  if (!qIsFinite(scaled) || scaled >= maxRounded) return std::numeric_limits<int>::max();
   return qMax(1, qRound(scaled));
 }
 
@@ -302,8 +300,8 @@ IconMetadata metadataFromDescriptor(const IconDescriptor& descriptor) {
 }
 
 IconMetadataView metadataViewFromDescriptor(const IconDescriptor& descriptor) {
-  return {descriptor.pack, descriptor.variant, descriptor.name, descriptor.colorModel,
-          descriptor.fit, descriptor.defaultColors, descriptor.sourceHash};
+  return {descriptor.pack, descriptor.variant,       descriptor.name,      descriptor.colorModel,
+          descriptor.fit,  descriptor.defaultColors, descriptor.sourceHash};
 }
 
 void touchCache(IconRendererImpl& impl, IconRendererImpl::CacheIterator iterator) {
@@ -348,9 +346,8 @@ void releaseEmptyCacheIndex(IconRendererImpl& impl) {
 int kilobytesFor(qint64 bytes) {
   if (bytes <= 0) return 0;
   const qint64 kilobytes = bytes / 1024 + (bytes % 1024 == 0 ? 0 : 1);
-  return kilobytes >= std::numeric_limits<int>::max()
-             ? std::numeric_limits<int>::max()
-             : static_cast<int>(kilobytes);
+  return kilobytes >= std::numeric_limits<int>::max() ? std::numeric_limits<int>::max()
+                                                      : static_cast<int>(kilobytes);
 }
 
 QImage rasterize(const IconDescriptor& descriptor, const ResolvedColors& colors,
@@ -381,10 +378,10 @@ QImage renderImage(const std::shared_ptr<IconRendererImpl>& impl, const IconRef&
       (!detail::IconRefAccess::colors(ref).isEmpty() || !statePalette.isEmpty()))
     return {};
 
-  if (!request.logicalSize.isValid() || request.logicalSize.isEmpty()) request.logicalSize = QSize(16, 16);
-  const qreal dpr = request.devicePixelRatio > 0.0
-                        ? qBound<qreal>(0.25, request.devicePixelRatio, 8.0)
-                        : 1.0;
+  if (!request.logicalSize.isValid() || request.logicalSize.isEmpty())
+    request.logicalSize = QSize(16, 16);
+  const qreal dpr =
+      request.devicePixelRatio > 0.0 ? qBound<qreal>(0.25, request.devicePixelRatio, 8.0) : 1.0;
   const QSize physical(physicalDimension(request.logicalSize.width(), dpr),
                        physicalDimension(request.logicalSize.height(), dpr));
 
@@ -411,22 +408,14 @@ QImage renderImage(const std::shared_ptr<IconRendererImpl>& impl, const IconRef&
     // Ignore color slots that the descriptor cannot consume. This keeps equivalent monochrome and
     // two-tone requests on one raster instead of retaining duplicate cache entries for irrelevant
     // state overrides.
-    const QRgb secondaryKey = descriptor->colorModel == IconColorModel::Monochrome
-                                  ? 0
-                                  : colors.secondary.rgba();
-    const QRgb tertiaryKey = descriptor->colorModel == IconColorModel::ThreeTone
-                                 ? colors.tertiary.rgba()
-                                 : 0;
+    const QRgb secondaryKey =
+        descriptor->colorModel == IconColorModel::Monochrome ? 0 : colors.secondary.rgba();
+    const QRgb tertiaryKey =
+        descriptor->colorModel == IconColorModel::ThreeTone ? colors.tertiary.rgba() : 0;
     const int alignmentKey = fit == IconFit::Stretch ? static_cast<int>(Qt::AlignCenter)
-                                                      : static_cast<int>(request.alignment);
-    key = IconCacheKey{descriptor,
-                       physical,
-                       request.mode,
-                       request.state,
-                       fit,
-                       alignmentKey,
-                       colors.primary.rgba(),
-                       secondaryKey,
+                                                     : static_cast<int>(request.alignment);
+    key = IconCacheKey{descriptor, physical,     request.mode,          request.state,
+                       fit,        alignmentKey, colors.primary.rgba(), secondaryKey,
                        tertiaryKey};
 
     bool retry = false;
@@ -614,21 +603,18 @@ IconColors IconColors::withTertiary(const QColor& color) const {
 }
 
 std::optional<QColor> IconColors::primarySlot() const {
-  return (presentMask_ & Primary) != 0
-             ? std::optional<QColor>(QColor::fromRgba(primary_))
-             : std::nullopt;
+  return (presentMask_ & Primary) != 0 ? std::optional<QColor>(QColor::fromRgba(primary_))
+                                       : std::nullopt;
 }
 
 std::optional<QColor> IconColors::secondarySlot() const {
-  return (presentMask_ & Secondary) != 0
-             ? std::optional<QColor>(QColor::fromRgba(secondary_))
-             : std::nullopt;
+  return (presentMask_ & Secondary) != 0 ? std::optional<QColor>(QColor::fromRgba(secondary_))
+                                         : std::nullopt;
 }
 
 std::optional<QColor> IconColors::tertiarySlot() const {
-  return (presentMask_ & Tertiary) != 0
-             ? std::optional<QColor>(QColor::fromRgba(tertiary_))
-             : std::nullopt;
+  return (presentMask_ & Tertiary) != 0 ? std::optional<QColor>(QColor::fromRgba(tertiary_))
+                                        : std::nullopt;
 }
 
 IconHashValue qHash(const IconColors& value, IconHashValue seed) {
@@ -834,7 +820,8 @@ void IconRenderer::clearCache() {
 }
 
 void IconRenderer::prewarm(const QList<IconPixmapRequest>& requests) const {
-  for (const auto& request : requests) renderImage(impl_, request.ref, request.render, request.palette);
+  for (const auto& request : requests)
+    renderImage(impl_, request.ref, request.render, request.palette);
 }
 
 IconCacheStatistics IconRenderer::cacheStatistics() const {
@@ -861,7 +848,9 @@ IconRenderer& defaultRenderer() {
   return instance;
 }
 
-IconMetadataView describeIconView(const IconRef& ref) { return defaultRenderer().describeIconView(ref); }
+IconMetadataView describeIconView(const IconRef& ref) {
+  return defaultRenderer().describeIconView(ref);
+}
 IconMetadata describeIcon(const IconRef& ref) { return defaultRenderer().describeIcon(ref); }
 
 QIcon makeIcon(const IconRef& ref, const IconStatePalette& palette) {
@@ -883,14 +872,18 @@ QCursor makeCursor(const IconRef& ref, const QSize& logicalSize, const QPoint& h
                    qreal devicePixelRatio) {
   return defaultRenderer().makeCursor(ref, logicalSize, hotSpot, devicePixelRatio);
 }
-void setPaletteResolver(IconPaletteResolver resolver) { defaultRenderer().setPaletteResolver(std::move(resolver)); }
+void setPaletteResolver(IconPaletteResolver resolver) {
+  defaultRenderer().setPaletteResolver(std::move(resolver));
+}
 void clearPaletteResolver() { defaultRenderer().clearPaletteResolver(); }
 void setCacheLimitBytes(qint64 bytes) { defaultRenderer().setCacheLimitBytes(bytes); }
 void setCacheLimits(qint64 bytes, int maxEntries, qint64 maxRasterBytes) {
   defaultRenderer().setCacheLimits(bytes, maxEntries, maxRasterBytes);
 }
 
-IconCacheReclaimReport trimIconCache(qint64 targetBytes) { return defaultRenderer().trimCache(targetBytes); }
+IconCacheReclaimReport trimIconCache(qint64 targetBytes) {
+  return defaultRenderer().trimCache(targetBytes);
+}
 
 void clearCache() { defaultRenderer().clearCache(); }
 void prewarm(const QList<IconPixmapRequest>& requests) { defaultRenderer().prewarm(requests); }

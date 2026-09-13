@@ -15,8 +15,7 @@ enum class ApplicationPriority {
 };
 
 [[nodiscard]] QString applicationPriorityValue(ApplicationPriority priority);
-[[nodiscard]] std::optional<ApplicationPriority>
-applicationPriorityForValue(const QString& value);
+[[nodiscard]] std::optional<ApplicationPriority> applicationPriorityForValue(const QString& value);
 
 // Applies the saved preference to the current process. This is intentionally a no-op failure
 // when the operating system rejects a requested class (for example, Realtime without privilege).

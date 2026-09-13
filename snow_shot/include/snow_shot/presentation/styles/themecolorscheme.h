@@ -5,7 +5,6 @@
 #include <QHash>
 #include <QString>
 
-
 namespace snow_shot::presentation::styles {
 using ThemePresetColorMap = QHash<QString, QColor>;
 

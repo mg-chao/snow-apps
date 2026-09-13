@@ -116,9 +116,8 @@ void waitFor(int milliseconds) {
 
 adqt::widgets::AdButton* toolbarButton(ScreenshotToolbarWindow& toolbar, const QString& tooltip) {
     for (QWidget* control : toolbar.findChildren<QWidget*>()) {
-        if (control != nullptr &&
-            (control->toolTip() == tooltip ||
-             control->toolTip().startsWith(tooltip + QStringLiteral(" (")))) {
+        if (control != nullptr && (control->toolTip() == tooltip ||
+                                   control->toolTip().startsWith(tooltip + QStringLiteral(" (")))) {
             return qobject_cast<adqt::widgets::AdButton*>(control);
         }
     }
@@ -131,9 +130,8 @@ adqt::widgets::AdButton* popoverButton(adqt::widgets::AdPopover* popover, const 
     }
     for (adqt::widgets::AdButton* button :
          popover->contentWidget()->findChildren<adqt::widgets::AdButton*>()) {
-        if (button != nullptr &&
-            (button->toolTip() == tooltip ||
-             button->toolTip().startsWith(tooltip + QStringLiteral(" (")))) {
+        if (button != nullptr && (button->toolTip() == tooltip ||
+                                  button->toolTip().startsWith(tooltip + QStringLiteral(" (")))) {
             return button;
         }
     }

@@ -834,11 +834,10 @@ ScreenshotPinnedImageFit ScreenshotGeometryMapper::centerImageAtFullResolution(
     if (!availableNative.isValid() || availableNative.isEmpty()) {
         return placement;
     }
-    const QPoint topLeft(
-        qRound(availableNative.left() +
-               (availableNative.width() - fullResolutionSize.width()) / 2.0),
-        qRound(availableNative.top() +
-               (availableNative.height() - fullResolutionSize.height()) / 2.0));
+    const QPoint topLeft(qRound(availableNative.left() +
+                                (availableNative.width() - fullResolutionSize.width()) / 2.0),
+                         qRound(availableNative.top() +
+                                (availableNative.height() - fullResolutionSize.height()) / 2.0));
     placement.nativeGeometry = QRect(topLeft, fullResolutionSize);
     placement.scalePercent = 100.0;
     placement.valid = true;
@@ -861,11 +860,10 @@ QPoint ScreenshotGeometryMapper::clampContentPositionToRect(const QPoint& desire
 }
 
 QPoint ScreenshotGeometryMapper::cursorPanelPosition(const QPoint& cursorPosition,
-                                                      const QSize& panelSize,
-                                                      const QRect& bounds, int gap) {
+                                                     const QSize& panelSize, const QRect& bounds,
+                                                     int gap) {
     const int effectiveGap = std::max(0, gap);
-    const QPoint bottomRightPosition =
-        cursorPosition + QPoint(effectiveGap, effectiveGap);
+    const QPoint bottomRightPosition = cursorPosition + QPoint(effectiveGap, effectiveGap);
     if (panelSize.isEmpty() || !bounds.isValid()) {
         return bottomRightPosition;
     }
@@ -875,10 +873,8 @@ QPoint ScreenshotGeometryMapper::cursorPanelPosition(const QPoint& cursorPositio
     const bool useLeft = bottomRightPosition.x() + panelSize.width() > boundsRight;
     const bool useTop = bottomRightPosition.y() + panelSize.height() > boundsBottom;
     const QPoint desiredPosition(
-        useLeft ? cursorPosition.x() - effectiveGap - panelSize.width()
-                : bottomRightPosition.x(),
-        useTop ? cursorPosition.y() - effectiveGap - panelSize.height()
-               : bottomRightPosition.y());
+        useLeft ? cursorPosition.x() - effectiveGap - panelSize.width() : bottomRightPosition.x(),
+        useTop ? cursorPosition.y() - effectiveGap - panelSize.height() : bottomRightPosition.y());
 
     return clampContentPositionToRect(desiredPosition, QRect(QPoint(), panelSize), bounds);
 }
@@ -895,8 +891,7 @@ ScreenshotAnchoredToolbarPlacement ScreenshotGeometryMapper::anchoredToolbarPlac
 
     const int effectiveGap = std::max(0, gap);
     const auto contentPositionForAnchor = [effectiveGap](const QPoint& anchor,
-                                                          const QRect& mainRect,
-                                                          bool aboveAnchor) {
+                                                         const QRect& mainRect, bool aboveAnchor) {
         return QPoint(anchor.x() - mainRect.right(),
                       aboveAnchor ? anchor.y() - mainRect.bottom() - effectiveGap - 1
                                   : anchor.y() + effectiveGap + 1 - mainRect.top());
@@ -918,8 +913,8 @@ ScreenshotAnchoredToolbarPlacement ScreenshotGeometryMapper::anchoredToolbarPlac
     QRect bottomOccupied;
     bool bottomFits = false;
     if (bottomMainValid) {
-        bottomPosition = contentPositionForAnchor(
-            bottomRightAnchor, bottomPlacement.mainToolbarContentRect, false);
+        bottomPosition = contentPositionForAnchor(bottomRightAnchor,
+                                                  bottomPlacement.mainToolbarContentRect, false);
         bottomOccupied = occupiedRectFor(bottomPlacement);
         bottomFits = fullyVisible(bottomOccupied, bottomPosition);
     }
@@ -932,8 +927,8 @@ ScreenshotAnchoredToolbarPlacement ScreenshotGeometryMapper::anchoredToolbarPlac
     QRect topOccupied;
     bool topFits = false;
     if (topMainValid) {
-        topPosition = contentPositionForAnchor(topRightAnchor, topPlacement.mainToolbarContentRect,
-                                               true);
+        topPosition =
+            contentPositionForAnchor(topRightAnchor, topPlacement.mainToolbarContentRect, true);
         topOccupied = occupiedRectFor(topPlacement);
         topFits = fullyVisible(topOccupied, topPosition);
     }

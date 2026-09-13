@@ -17,7 +17,6 @@
 #include <iostream>
 #include <utility>
 
-
 namespace {
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -118,10 +117,11 @@ QImage waitForResult(ScheduleRequest scheduleRequest, ResultImage resultImage) {
     return image;
 }
 
-QImage waitForPinnedResult(ScreenshotExportService& service,
-                           const ScreenshotPinnedSelectionRequest& request,
-                           std::optional<ScreenshotPinnedSelectionRequest>* deliveredRequest = nullptr,
-                           bool* deliveredSuccess = nullptr) {
+QImage
+waitForPinnedResult(ScreenshotExportService& service,
+                    const ScreenshotPinnedSelectionRequest& request,
+                    std::optional<ScreenshotPinnedSelectionRequest>* deliveredRequest = nullptr,
+                    bool* deliveredSuccess = nullptr) {
     QObject receiver;
     QEventLoop loop;
     QTimer timeout;
@@ -135,9 +135,9 @@ QImage waitForPinnedResult(ScreenshotExportService& service,
     });
     const bool scheduled = service.schedulePinnedSelection(
         request, &receiver,
-        [&receiver, &image, &loop, deliveredRequest, deliveredSuccess](
-            ScreenshotPinnedSelectionRequest delivered,
-            ScreenshotPinnedSelectionResultHandle result) mutable {
+        [&receiver, &image, &loop, deliveredRequest,
+         deliveredSuccess](ScreenshotPinnedSelectionRequest delivered,
+                           ScreenshotPinnedSelectionResultHandle result) mutable {
             if (deliveredRequest != nullptr) {
                 *deliveredRequest = delivered;
             }
@@ -223,17 +223,16 @@ void pinnedSelectionMaterializesCompositedImage() {
     canvas.resize(fixture.displaySnapshot().size());
     canvas.show();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    require(canvas.setViewportCamera(40.0, 30.0, 1.0),
-            "pinned export canvas camera setup failed");
+    require(canvas.setViewportCamera(40.0, 30.0, 1.0), "pinned export canvas camera setup failed");
     require(canvas.setCanvasTool(SnowCanvasTool::Shape),
             "pinned export canvas should activate the shape tool");
     SnowCanvasShapeStyle shapeStyle;
     shapeStyle.stroke = QColor(240, 24, 24);
     shapeStyle.strokeWidth = 4.0;
-    require(canvas.setCanvasShapeStylePatch(
-                shapeStyle, SnowCanvasShapeStylePropertyStrokeColor |
-                               SnowCanvasShapeStylePropertyStrokeWidth,
-                SnowCanvasShapeKind::Rectangle),
+    require(canvas.setCanvasShapeStylePatch(shapeStyle,
+                                            SnowCanvasShapeStylePropertyStrokeColor |
+                                                SnowCanvasShapeStylePropertyStrokeWidth,
+                                            SnowCanvasShapeKind::Rectangle),
             "pinned export canvas should configure a detectable rectangle stroke");
     QMouseEvent press(QEvent::MouseButtonPress, QPointF(15.0, 10.0),
                       canvas.mapToGlobal(QPoint(15, 10)), Qt::LeftButton, Qt::LeftButton,
@@ -271,8 +270,8 @@ void pinnedSelectionMaterializesCompositedImage() {
 
     std::optional<ScreenshotPinnedSelectionRequest> materialized;
     bool pinnedSuccess = false;
-    const QImage pinnedImage = waitForPinnedResult(fixture.service(), *prepared, &materialized,
-                                                   &pinnedSuccess);
+    const QImage pinnedImage =
+        waitForPinnedResult(fixture.service(), *prepared, &materialized, &pinnedSuccess);
     require(materialized.has_value() && materialized->isPrepared(),
             "pinned selection callback did not receive a valid prepared request");
     require(pinnedSuccess && !pinnedImage.isNull(),
@@ -281,7 +280,7 @@ void pinnedSelectionMaterializesCompositedImage() {
     const QImage expected = waitForResult(
         [&](QObject* receiver, auto callback) {
             return fixture.service().requestSelectionResult(selection, style, receiver,
-                                                             std::move(callback));
+                                                            std::move(callback));
         },
         [](QImage image) { return image; });
     require(hasSamePixels(pinnedImage, expected),

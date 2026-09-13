@@ -364,8 +364,7 @@ int main(int argc, char** argv) {
                       QStringLiteral("count"), QString::number(kDefaultIterations)});
     parser.addOption({QStringLiteral("warmup"), QStringLiteral("Warmup frames per scenario"),
                       QStringLiteral("count"), QString::number(kDefaultWarmup)});
-    parser.addOption(
-        {QStringLiteral("list"), QStringLiteral("List benchmark scenarios and exit")});
+    parser.addOption({QStringLiteral("list"), QStringLiteral("List benchmark scenarios and exit")});
     parser.process(application);
 
     const QStringList scenarioNames{

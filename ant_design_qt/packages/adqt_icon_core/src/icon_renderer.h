@@ -72,11 +72,10 @@ ADQT_ICON_CORE_EXPORT IconMetadataView describeIconView(const IconRef& ref);
 ADQT_ICON_CORE_EXPORT IconMetadata describeIcon(const IconRef& ref);
 ADQT_ICON_CORE_EXPORT QIcon makeIcon(const IconRef& ref, const IconStatePalette& palette = {});
 ADQT_ICON_CORE_EXPORT QImage renderIconImage(const IconRef& ref,
-                                              const IconRenderRequest& request = {},
-                                              const IconStatePalette& palette = {});
-ADQT_ICON_CORE_EXPORT QPixmap renderIconPixmap(const IconRef& ref,
-                                                const IconRenderRequest& request,
-                                                const IconStatePalette& palette = {});
+                                             const IconRenderRequest& request = {},
+                                             const IconStatePalette& palette = {});
+ADQT_ICON_CORE_EXPORT QPixmap renderIconPixmap(const IconRef& ref, const IconRenderRequest& request,
+                                               const IconStatePalette& palette = {});
 ADQT_ICON_CORE_EXPORT void paintIcon(QPainter* painter, const IconRef& ref, const QRectF& rect,
                                      const IconRenderRequest& request = {},
                                      const IconStatePalette& palette = {});
@@ -85,10 +84,9 @@ ADQT_ICON_CORE_EXPORT QCursor makeCursor(const IconRef& ref, const QSize& logica
 ADQT_ICON_CORE_EXPORT void setPaletteResolver(IconPaletteResolver resolver);
 ADQT_ICON_CORE_EXPORT void clearPaletteResolver();
 ADQT_ICON_CORE_EXPORT void setCacheLimitBytes(qint64 bytes);
-ADQT_ICON_CORE_EXPORT void setCacheLimits(qint64 bytes,
-                                          int maxEntries = IconRenderer::kDefaultMaxCacheEntries,
-                                          qint64 maxRasterBytes =
-                                              IconRenderer::kDefaultMaxRasterBytes);
+ADQT_ICON_CORE_EXPORT void setCacheLimits(
+    qint64 bytes, int maxEntries = IconRenderer::kDefaultMaxCacheEntries,
+    qint64 maxRasterBytes = IconRenderer::kDefaultMaxRasterBytes);
 ADQT_ICON_CORE_EXPORT IconCacheReclaimReport trimIconCache(qint64 targetBytes = -1);
 ADQT_ICON_CORE_EXPORT void clearCache();
 ADQT_ICON_CORE_EXPORT void prewarm(const QList<IconPixmapRequest>& requests);

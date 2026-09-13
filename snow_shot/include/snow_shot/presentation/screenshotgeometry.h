@@ -155,10 +155,11 @@ class ScreenshotGeometryMapper final {
     [[nodiscard]] static QRect nativeRectForLogicalRect(const QRect& logicalRect,
                                                         const QRect& ownerLogicalBounds,
                                                         const QRect& ownerPhysicalBounds);
-    [[nodiscard]] static ScreenshotPinnedImageFit fitImageToAvailableGeometry(
-        const QSize& fullResolutionSize, const QRect& availableLogicalGeometry,
-        const QRect& screenLogicalGeometry, const QRect& screenNativeGeometry,
-        int logicalMargin = 16);
+    [[nodiscard]] static ScreenshotPinnedImageFit
+    fitImageToAvailableGeometry(const QSize& fullResolutionSize,
+                                const QRect& availableLogicalGeometry,
+                                const QRect& screenLogicalGeometry,
+                                const QRect& screenNativeGeometry, int logicalMargin = 16);
     [[nodiscard]] static ScreenshotPinnedImageFit centerImageAtFullResolution(
         const QSize& fullResolutionSize, const QRect& availableLogicalGeometry,
         const QRect& screenLogicalGeometry, const QRect& screenNativeGeometry);
@@ -166,8 +167,8 @@ class ScreenshotGeometryMapper final {
                                                            const QRect& contentRect,
                                                            const QRect& bounds);
     [[nodiscard]] static QPoint cursorPanelPosition(const QPoint& cursorPosition,
-                                                     const QSize& panelSize,
-                                                     const QRect& bounds, int gap);
+                                                    const QSize& panelSize, const QRect& bounds,
+                                                    int gap);
     [[nodiscard]] static ScreenshotAnchoredToolbarPlacement
     anchoredToolbarPlacement(const QPoint& bottomRightAnchor, const QPoint& topRightAnchor,
                              const ScreenshotToolbarPlacementGeometry& bottomPlacement,

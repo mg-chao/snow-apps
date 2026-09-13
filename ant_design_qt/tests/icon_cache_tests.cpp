@@ -38,8 +38,8 @@ using adqt::icons::IconDescriptor;
 using adqt::icons::IconFit;
 using adqt::icons::IconPack;
 using adqt::icons::IconRef;
-using adqt::icons::IconRenderRequest;
 using adqt::icons::IconRenderer;
+using adqt::icons::IconRenderRequest;
 using adqt::icons::IconStaticColors;
 
 constexpr IconDescriptor kEntries[] = {{
@@ -56,15 +56,12 @@ constexpr IconDescriptor kEntries[] = {{
 }};
 
 constexpr IconPack kPack{std::string_view("cache-test"), std::string_view("unit test"),
-                         std::string_view("cache-test-pack-v1"), kEntries,
-                         std::size(kEntries)};
+                         std::string_view("cache-test-pack-v1"), kEntries, std::size(kEntries)};
 
 static_assert(std::is_trivially_copyable_v<IconColors>);
 static_assert(std::is_trivially_copyable_v<IconRef>);
 
-IconRef coloredRef(const QColor& color) {
-  return kPack.icon(0, IconColors::primary(color));
-}
+IconRef coloredRef(const QColor& color) { return kPack.icon(0, IconColors::primary(color)); }
 
 IconRenderRequest requestFor(const QSize& logicalSize, qreal dpr = 1.0) {
   IconRenderRequest request;
@@ -120,8 +117,8 @@ void entryLimitAndLruOrderAreEnforced() {
   static_cast<void>(renderer.renderIconImage(red, request));
   static_cast<void>(renderer.renderIconImage(blue, request));
   auto statistics = renderer.cacheStatistics();
-  require(statistics.entryCount == 2 && statistics.hitCount == 1 &&
-              statistics.missCount == 3 && statistics.evictionCount == 1,
+  require(statistics.entryCount == 2 && statistics.hitCount == 1 && statistics.missCount == 3 &&
+              statistics.evictionCount == 1,
           "a cache hit should promote the entry before the next LRU eviction");
 
   static_cast<void>(renderer.renderIconImage(red, request));
@@ -130,25 +127,21 @@ void entryLimitAndLruOrderAreEnforced() {
           "the promoted LRU entry should remain resident");
   static_cast<void>(renderer.renderIconImage(green, request));
   statistics = renderer.cacheStatistics();
-  require(statistics.hitCount == 2 && statistics.missCount == 4 &&
-              statistics.evictionCount == 2,
+  require(statistics.hitCount == 2 && statistics.missCount == 4 && statistics.evictionCount == 2,
           "the untouched entry should be the one reclaimed");
 }
 
 void oversizedRastersAreNeverAllocatedToTheCache() {
   IconRenderer renderer;
   const IconRef ref = coloredRef(QColor(Qt::black));
-  const QImage atThreshold =
-      renderer.renderIconImage(ref, requestFor(QSize(256, 256)));
+  const QImage atThreshold = renderer.renderIconImage(ref, requestFor(QSize(256, 256)));
   auto statistics = renderer.cacheStatistics();
-  require(!atThreshold.isNull() &&
-              static_cast<qint64>(atThreshold.sizeInBytes()) == 256 * 1024 &&
+  require(!atThreshold.isNull() && static_cast<qint64>(atThreshold.sizeInBytes()) == 256 * 1024 &&
               statistics.entryCount == 1 && statistics.costBytes == 256 * 1024,
           "a raster exactly at the individual limit should remain cacheable");
 
   renderer.clearCache();
-  const QImage overThreshold =
-      renderer.renderIconImage(ref, requestFor(QSize(257, 256)));
+  const QImage overThreshold = renderer.renderIconImage(ref, requestFor(QSize(257, 256)));
   statistics = renderer.cacheStatistics();
   require(!overThreshold.isNull() &&
               static_cast<qint64>(overThreshold.sizeInBytes()) > 256 * 1024 &&
@@ -160,8 +153,7 @@ void oversizedRastersAreNeverAllocatedToTheCache() {
   renderer.setCacheLimits(1024, 512, 256 * 1024);
   static_cast<void>(renderer.renderIconImage(ref, requestFor(QSize(32, 32))));
   statistics = renderer.cacheStatistics();
-  require(statistics.entryCount == 0 && statistics.costBytes == 0 &&
-              statistics.evictionCount == 0,
+  require(statistics.entryCount == 0 && statistics.costBytes == 0 && statistics.evictionCount == 0,
           "a raster larger than the total budget should not allocate a transient LRU entry");
 }
 
@@ -186,8 +178,7 @@ void loweringRasterLimitReclaimsExistingOversizedEntries() {
 
   renderer.setCacheLimits(2 * 1024 * 1024, 512, 64 * 1024);
   statistics = renderer.cacheStatistics();
-  require(statistics.entryCount == 0 && statistics.costBytes == 0 &&
-              statistics.evictionCount == 1,
+  require(statistics.entryCount == 0 && statistics.costBytes == 0 && statistics.evictionCount == 1,
           "lowering the per-raster limit should reclaim existing oversized entries");
 }
 
@@ -205,8 +196,7 @@ void trimmingReportsExactReclamationAndPreservesCallers() {
           "the trim fixture should begin with three exact-size entries");
 
   const auto partial = renderer.trimCache(64 * 64 * 4);
-  require(partial.bytesBefore == 3 * 64 * 64 * 4 &&
-              partial.bytesAfter == 64 * 64 * 4 &&
+  require(partial.bytesBefore == 3 * 64 * 64 * 4 && partial.bytesAfter == 64 * 64 * 4 &&
               partial.reclaimedBytes == 2 * 64 * 64 * 4 && partial.entriesBefore == 3 &&
               partial.entriesAfter == 1 && partial.generation == before.generation + 1,
           "trim reports should describe the exact whole-entry reclamation");
@@ -214,8 +204,7 @@ void trimmingReportsExactReclamationAndPreservesCallers() {
   const auto all = renderer.trimCache(0);
   const auto empty = renderer.cacheStatistics();
   require(all.bytesBefore == 64 * 64 * 4 && all.bytesAfter == 0 &&
-              all.reclaimedBytes == 64 * 64 * 4 && empty.entryCount == 0 &&
-              empty.costBytes == 0,
+              all.reclaimedBytes == 64 * 64 * 4 && empty.entryCount == 0 && empty.costBytes == 0,
           "trimming to zero should release all cache-owned bytes");
   require(!held.isNull() && held.pixelColor(held.width() / 2, held.height() / 2).alpha() > 0,
           "a caller-held image should survive eviction while leaving cache accounting");
@@ -282,13 +271,12 @@ void clearingAnActiveRenderPreventsStaleRepopulation() {
 
   QImage result;
   std::thread renderThread([&] {
-    result = renderer.renderIconImage(coloredRef(QColor(Qt::black)),
-                                      requestFor(QSize(64, 64)));
+    result = renderer.renderIconImage(coloredRef(QColor(Qt::black)), requestFor(QSize(64, 64)));
   });
   {
     std::unique_lock lock(mutex);
-    const bool started = enteredCondition.wait_for(
-        lock, std::chrono::seconds(5), [&] { return entered; });
+    const bool started =
+        enteredCondition.wait_for(lock, std::chrono::seconds(5), [&] { return entered; });
     if (!started) {
       release = true;
       lock.unlock();

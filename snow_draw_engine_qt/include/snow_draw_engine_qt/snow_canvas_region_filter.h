@@ -44,13 +44,13 @@ class SnowCanvasRegionFilterScratch {
 // Returns the blur's physical sampling radius in image pixels: filtered output at
 // a pixel depends on source pixels at most this far away. Callers use it to size
 // crops or masks around a region of interest.
-[[nodiscard]] int snowCanvasRegionFilterSupportPixels(
-    const SnowCanvasRegionFilterParameters& parameters);
+[[nodiscard]] int
+snowCanvasRegionFilterSupportPixels(const SnowCanvasRegionFilterParameters& parameters);
 
 // Applies a filter only to destinationPixels. The caller must provide same-size
 // ARGB32 premultiplied images and initialize destination (normally as a copy of
 // source); pixels outside destinationPixels are preserved.
-[[nodiscard]] bool applySnowCanvasRegionFilter(
-    const QImage& source, QImage& destination, const QRegion& destinationPixels,
-    const SnowCanvasRegionFilterParameters& parameters,
-    SnowCanvasRegionFilterScratch* scratch = nullptr);
+[[nodiscard]] bool applySnowCanvasRegionFilter(const QImage& source, QImage& destination,
+                                               const QRegion& destinationPixels,
+                                               const SnowCanvasRegionFilterParameters& parameters,
+                                               SnowCanvasRegionFilterScratch* scratch = nullptr);

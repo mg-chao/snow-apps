@@ -395,10 +395,9 @@ void PaginationTest::languageChangeRefreshesPersistentText() {
   QCOMPARE(quickLabel->text(), QStringLiteral("translated:Go to"));
   QCOMPARE(sizeChanger->currentText(), QStringLiteral("translated:10 / page"));
   const auto translatedOptions = sizeChanger->options();
-  const auto page50 = std::find_if(translatedOptions.cbegin(), translatedOptions.cend(),
-                                   [](const AdComboBox::Option& option) {
-                                     return option.value.toInt() == 50;
-                                   });
+  const auto page50 =
+      std::find_if(translatedOptions.cbegin(), translatedOptions.cend(),
+                   [](const AdComboBox::Option& option) { return option.value.toInt() == 50; });
   QVERIFY(page50 != translatedOptions.cend());
   QCOMPARE(page50->label, QStringLiteral("translated:50 / page"));
   QCOMPARE(pagination.accessibleName(), QStringLiteral("translated:Pagination"));

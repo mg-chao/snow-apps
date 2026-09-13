@@ -392,8 +392,7 @@ class ColorSaturationPanel final : public QWidget {
   bool hasCurrentBackgroundCache(const QSize& logicalSize, qreal dpr) const {
     return backgroundCache_ && !backgroundCache_->image.isNull() &&
            backgroundCache_->size == logicalSize &&
-           qFuzzyCompare(backgroundCache_->dpr + 1.0, dpr + 1.0) &&
-           backgroundCache_->hue == hue_ &&
+           qFuzzyCompare(backgroundCache_->dpr + 1.0, dpr + 1.0) && backgroundCache_->hue == hue_ &&
            backgroundCache_->base == palette().color(backgroundRole());
   }
 
@@ -1513,9 +1512,8 @@ class PresetColorButton final : public QAbstractButton {
 
   void setColorValue(const ColorValue& value) {
     value_ = value;
-    setAccessibleName(
-        QCoreApplication::translate("adqt::widgets::AdColorPicker", "Preset color %1")
-            .arg(detail::ColorPickerValueModel::cssValue(value_)));
+    setAccessibleName(QCoreApplication::translate("adqt::widgets::AdColorPicker", "Preset color %1")
+                          .arg(detail::ColorPickerValueModel::cssValue(value_)));
     setAccessibleDescription(
         QCoreApplication::translate("adqt::widgets::AdColorPicker", "Apply preset color"));
   }
@@ -1791,10 +1789,9 @@ class ColorPickerClearButton final : public QAbstractButton {
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     setFocusPolicy(Qt::TabFocus);
     setAttribute(Qt::WA_Hover, true);
-    setAccessibleName(
-        QCoreApplication::translate("adqt::widgets::AdColorPicker", "Clear color"));
-    setAccessibleDescription(QCoreApplication::translate(
-        "adqt::widgets::AdColorPicker", "Reset the current color selection"));
+    setAccessibleName(QCoreApplication::translate("adqt::widgets::AdColorPicker", "Clear color"));
+    setAccessibleDescription(QCoreApplication::translate("adqt::widgets::AdColorPicker",
+                                                         "Reset the current color selection"));
   }
 
   void setVisualStyle(const QColor& background, const QColor& border, const QColor& borderHover,

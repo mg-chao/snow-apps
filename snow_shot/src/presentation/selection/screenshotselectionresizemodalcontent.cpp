@@ -332,9 +332,8 @@ void ScreenshotSelectionResizeModalContent::retranslateUi() {
     }
     if (m_deletePresetModal != nullptr) {
         m_deletePresetModal->setWindowTitle(translate("Delete preset"));
-        m_deletePresetModal->setText(
-            translate("Delete preset \"%1\"? This action cannot be undone")
-                .arg(m_deletePresetName));
+        m_deletePresetModal->setText(translate("Delete preset \"%1\"? This action cannot be undone")
+                                         .arg(m_deletePresetName));
         m_deletePresetModal->setAcceptText(translate("Delete"));
         m_deletePresetModal->setRejectText(translate("Cancel"));
     }

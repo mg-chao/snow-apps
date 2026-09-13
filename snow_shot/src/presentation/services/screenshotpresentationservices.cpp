@@ -63,11 +63,9 @@ void ScreenshotPresentationServices::setSelectionToolbarHovered(bool hovered) {
     updateOverlayState();
 }
 
-void ScreenshotPresentationServices::setUiPreferences(
-    const ScreenshotUiPreferences& preferences) {
+void ScreenshotPresentationServices::setUiPreferences(const ScreenshotUiPreferences& preferences) {
     m_uiPreferences = preferences.normalized();
-    m_smartSelectionTransition.setEnabled(
-        m_uiPreferences.selectionTransitionAnimationEnabled);
+    m_smartSelectionTransition.setEnabled(m_uiPreferences.selectionTransitionAnimationEnabled);
     m_context.overlayCoordinator.setSelectionMaskColor(m_context.displaySession,
                                                        m_uiPreferences.selectionMaskColor);
     m_context.overlayCoordinator.setColorPickerCenterGuideLineColor(
@@ -144,13 +142,12 @@ void ScreenshotPresentationServices::presentOverlayState(const QRectF& selection
         m_context.displaySession, QCursor::pos(), m_context.interaction.selecting(),
         m_uiPreferences.cursorGuideLineColor, m_uiPreferences.monitorCenterGuideLineColor);
 
-    ScreenshotShortcutHintContext hintContext{
-        m_context.interaction.activeTool(), m_context.interaction.mode(),
-        m_context.quickSelectionDisabledTools};
+    ScreenshotShortcutHintContext hintContext{m_context.interaction.activeTool(),
+                                              m_context.interaction.mode(),
+                                              m_context.quickSelectionDisabledTools};
     hintContext.configuredShortcuts = m_configuredShortcuts;
     hintContext.smartSelectionEnabled = m_context.intelligentSelection.smartSelectionEnabled();
-    const ScreenshotShortcutHintMode hintMode =
-        screenshotShortcutHintModeForContext(hintContext);
+    const ScreenshotShortcutHintMode hintMode = screenshotShortcutHintModeForContext(hintContext);
     ScreenshotOverlayWindow* hintOwner = nullptr;
     QRectF selectionGlobal;
     if (hintMode != ScreenshotShortcutHintMode::Hidden) {
@@ -163,31 +160,28 @@ void ScreenshotPresentationServices::presentOverlayState(const QRectF& selection
                     ScreenshotGeometryMapper::displayCanvasRect(*display);
                 const QRectF selectionOnDisplay = selection.intersected(displayCanvasRect);
                 if (selectionOnDisplay.isValid() && !selectionOnDisplay.isEmpty()) {
-                    selectionGlobal = QRectF(
-                        m_context.geometry.logicalPositionForCanvasPoint(
-                            *display, selectionOnDisplay.topLeft()),
-                        m_context.geometry.logicalPositionForCanvasPoint(
-                            *display, selectionOnDisplay.bottomRight()))
+                    selectionGlobal = QRectF(m_context.geometry.logicalPositionForCanvasPoint(
+                                                 *display, selectionOnDisplay.topLeft()),
+                                             m_context.geometry.logicalPositionForCanvasPoint(
+                                                 *display, selectionOnDisplay.bottomRight()))
                                           .normalized();
                 }
             }
         }
         if (hintOwner == nullptr) {
             const QPoint cursorPosition = QCursor::pos();
-            m_context.displaySession.forEachActiveOverlay(
-                [&](qsizetype, const CapturedDisplayModel& display,
-                    ScreenshotOverlayWindow* overlay) {
-                    if (hintOwner == nullptr &&
-                        display.logicalRect.contains(cursorPosition, false)) {
-                        hintOwner = overlay;
-                    }
-                });
+            m_context.displaySession.forEachActiveOverlay([&](qsizetype,
+                                                              const CapturedDisplayModel& display,
+                                                              ScreenshotOverlayWindow* overlay) {
+                if (hintOwner == nullptr && display.logicalRect.contains(cursorPosition, false)) {
+                    hintOwner = overlay;
+                }
+            });
         }
     }
     SNOW_SHOT_CAPTURE_PERF_SCOPE("overlay.shortcut_hints");
-    m_context.overlayCoordinator.updateShortcutHints(hintOwner, hintContext,
-                                                     m_uiPreferences.shortcutHintOpacity,
-                                                     selectionGlobal);
+    m_context.overlayCoordinator.updateShortcutHints(
+        hintOwner, hintContext, m_uiPreferences.shortcutHintOpacity, selectionGlobal);
 }
 
 void ScreenshotPresentationServices::updateOverlayCursors() const {
