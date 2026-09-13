@@ -5151,6 +5151,30 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
             LABELS "benchmark;windows" RUN_SERIAL TRUE TIMEOUT 90)
     endif()
 
+    # Measures the recording window startup phases (controller open → windows
+    # shown → first paint → first motion-preview frame) through the
+    # compile-time gated recording_perf instrumentation. Deterministic and
+    # offscreen, so unlike the effects presentation benchmark it stays out of
+    # the interactive label.
+    if(TARGET snow-shot-screen-recording-controller-tests)
+        target_sources(snow-shot-screen-recording-controller-tests PRIVATE
+            tests/screen_recording_window_startup_performance_benchmark.cpp
+            tests/screen_recording_window_startup_performance_benchmark.h
+            src/presentation/recording/screenrecordingperfinstrumentation.cpp
+            src/presentation/recording/screenrecordingperfinstrumentation.h)
+        target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
+            SNOW_RECORDING_WINDOW_STARTUP_BENCHMARK=1
+            SNOW_SHOT_RECORDING_PERF_INSTRUMENTATION=1)
+        add_test(NAME snow-shot-recording-window-startup-performance-benchmark
+            COMMAND snow-shot-screen-recording-controller-tests
+                --recording-window-startup-performance)
+        set_tests_properties(snow-shot-recording-window-startup-performance-benchmark
+            PROPERTIES LABELS "benchmark" RUN_SERIAL TRUE TIMEOUT 180
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
+
     add_custom_target(snow-shot-keyboard-recording-performance-benchmark
         COMMAND "${CMAKE_COMMAND}" -E env
             "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"

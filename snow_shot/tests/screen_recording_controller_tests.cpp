@@ -4,6 +4,9 @@
 #ifdef SNOW_RECORDING_EFFECTS_BENCHMARK
 #include "recording_effects_performance_benchmark.h"
 #endif
+#ifdef SNOW_RECORDING_WINDOW_STARTUP_BENCHMARK
+#include "screen_recording_window_startup_performance_benchmark.h"
+#endif
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include <QDialog>
 #include <QPainter>
@@ -1143,6 +1146,13 @@ int main(int argc, char** argv) {
         const int result = recordingToolbarAcrossNativeDisplays(
             app.arguments().contains(QStringLiteral("--native-toolbar-display-only")));
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        ApplicationStorage::instance().shutdown();
+        return result;
+    }
+#endif
+#ifdef SNOW_RECORDING_WINDOW_STARTUP_BENCHMARK
+    if (app.arguments().contains(QStringLiteral("--recording-window-startup-performance"))) {
+        const int result = runRecordingWindowStartupPerformanceBenchmark(app);
         ApplicationStorage::instance().shutdown();
         return result;
     }

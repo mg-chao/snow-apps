@@ -3,6 +3,7 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "screenrecordinggeometry.h"
+#include "screenrecordingperfinstrumentation.h"
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -244,6 +245,7 @@ bool ScreenRecordingAreaWindow::eventFilter(QObject* watched, QEvent* event) {
 
 void ScreenRecordingAreaWindow::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
+    SNOW_SHOT_RECORDING_PERF_MILESTONE("area.show_event");
     applyInputMode();
     scheduleGeometrySynchronization();
 }
@@ -360,6 +362,7 @@ void ScreenRecordingAreaWindow::scheduleGeometrySynchronization() {
         [this]() {
             m_geometrySyncPending = false;
             synchronizeWindowGeometry();
+            SNOW_SHOT_RECORDING_PERF_MILESTONE("area.geometry_synchronized");
         },
         Qt::QueuedConnection);
 }
@@ -544,6 +547,8 @@ void ScreenRecordingAreaWindow::applyNativePassThrough(bool enabled) {
 
 void ScreenRecordingAreaWindow::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
+    SNOW_SHOT_RECORDING_PERF_MILESTONE("area.first_paint_begin");
+    SNOW_SHOT_RECORDING_PERF_COUNTER("area.paints", 1);
     QColor color = kIdleColor;
     if (m_state == ScreenshotToolPalette::RecordingState::Recording) {
         color = kRecordingColor;
@@ -563,4 +568,5 @@ void ScreenRecordingAreaWindow::paintEvent(QPaintEvent* event) {
     painter.fillRect(border.bottom, color);
     painter.fillRect(border.left, color);
     painter.fillRect(border.right, color);
+    SNOW_SHOT_RECORDING_PERF_MILESTONE("area.first_paint_end");
 }

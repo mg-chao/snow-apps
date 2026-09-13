@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/screenshottoolpalettehost.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "screenrecordinggeometry.h"
+#include "screenrecordingperfinstrumentation.h"
 
 #include <QScreen>
 #include <QCloseEvent>
@@ -70,9 +71,11 @@ void ScreenRecordingToolbarWindow::showAndActivate() {
     raise();
     activateWindow();
     setFocus(Qt::OtherFocusReason);
+    SNOW_SHOT_RECORDING_PERF_MILESTONE("toolbar.show_and_activate_returned");
 }
 
 void ScreenRecordingToolbarWindow::placeForPhysicalRegion(const QRect& physicalRegion) {
+    SNOW_SHOT_RECORDING_PERF_SCOPE("toolbar.place_for_region");
     if (m_regionInteractionActive || m_placing || !physicalRegion.isValid() ||
         physicalRegion.isEmpty()) {
         return;

@@ -1,6 +1,7 @@
 #include "recordingeffectpreview.h"
 #include "recordingeffectstyle.h"
 #include "recordingeffectgeometry.h"
+#include "screenrecordingperfinstrumentation.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include "snow_shot/presentation/screenrecordingareawindow.h"
 #include "snow_shot/presentation/styles/thememanager.h"
@@ -183,6 +184,7 @@ void RecordingEffectPreview::setEligible(bool eligible) {
 }
 
 void RecordingEffectPreview::synchronize() {
+    SNOW_SHOT_RECORDING_PERF_SCOPE("preview.synchronize");
     const bool enabled = m_eligible && m_area.isVisible() && !m_windowBlocked &&
                          QApplication::activeModalWidget() == nullptr && m_capture.isValid() &&
                          m_output.isValid() &&
@@ -286,6 +288,7 @@ void RecordingEffectPreview::receiveFrame() {
         damage += frameRegion(*m_frame);
     }
     m_frame = std::move(frame);
+    SNOW_SHOT_RECORDING_PERF_MILESTONE("preview.first_frame_received");
     if (!damage.isEmpty()) {
         m_area.canvas()->update(damage);
     }

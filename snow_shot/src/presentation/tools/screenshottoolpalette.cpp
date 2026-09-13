@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/shortcutdisplaytext.h"
 
 #include "screenshottoolbarperfinstrumentation.h"
+#include "../recording/screenrecordingperfinstrumentation.h"
 
 #include "snow_shot/presentation/screenshottoolbarmainpanel.h"
 #include "screenshottoolpalettebuttons.h"
@@ -851,6 +852,8 @@ ScreenshotToolbarPlacementSnapshot ScreenshotToolPalette::placementSnapshot() co
 }
 
 void ScreenshotToolPalette::prepareForDisplay() {
+    SNOW_SHOT_RECORDING_PERF_SCOPE("palette.prepare_for_display");
+    SNOW_SHOT_RECORDING_PERF_COUNTER("palette.prepare_for_display_calls", 1);
     ensureLayoutApplied();
 }
 

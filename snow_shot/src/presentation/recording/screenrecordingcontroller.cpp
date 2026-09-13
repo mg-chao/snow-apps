@@ -1,6 +1,7 @@
 #include "recordingeffectpreview.h"
 #include "widgets/message.h"
 #include "recordingeffectstyle.h"
+#include "screenrecordingperfinstrumentation.h"
 #include "snow_shot/presentation/screenrecordingcontroller.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include <QUuid>
@@ -327,10 +328,13 @@ struct ScreenRecordingController::Impl {
 
         physicalRegion = region;
         updateCaptureRegion();
+        SNOW_SHOT_RECORDING_PERF_MILESTONE("open.before_ui_session");
         uiSession = new RecordingUiSession(&owner);
+        SNOW_SHOT_RECORDING_PERF_MILESTONE("open.ui_session_constructed");
         areaWindow = uiSession->area.get();
         uiSession->preview = std::make_unique<RecordingEffectPreview>(
             *areaWindow, effectsSourceFactory ? effectsSourceFactory() : nullptr);
+        SNOW_SHOT_RECORDING_PERF_MILESTONE("open.preview_created");
         uiSession->preview->reportError = [this](const QString& error) {
             if (toolbarWindow == nullptr) {
                 return;
@@ -347,17 +351,22 @@ struct ScreenRecordingController::Impl {
         toolbarWindow->setAttribute(Qt::WA_DeleteOnClose, false);
         areaWindow->setPhysicalRegion(region);
         toolbarWindow->placeForPhysicalRegion(region);
+        SNOW_SHOT_RECORDING_PERF_MILESTONE("open.region_applied");
         connectToolbar();
+        SNOW_SHOT_RECORDING_PERF_MILESTONE("open.toolbar_connected");
         uiSession->shortcuts =
             std::make_unique<ScreenRecordingShortcutController>(*areaWindow, *toolbarWindow);
+        SNOW_SHOT_RECORDING_PERF_MILESTONE("open.shortcuts_created");
 
         sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::idle();
         durationMilliseconds = 0;
         syncUi();
+        SNOW_SHOT_RECORDING_PERF_MILESTONE("open.ui_synced");
 
         areaWindow->show();
         areaWindow->raise();
         toolbarWindow->showAndActivate();
+        SNOW_SHOT_RECORDING_PERF_MILESTONE("open.show_returned");
     }
 
     bool isOpen() const {
