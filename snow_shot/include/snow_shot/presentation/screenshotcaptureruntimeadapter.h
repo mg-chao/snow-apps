@@ -56,8 +56,7 @@ class ScreenshotCaptureRuntimeAdapter final : public ScreenshotCaptureRuntimePor
     preparePreCaptureOverlayWindows(ScreenshotDisplaySession& displaySession) override;
     void showOverlayWindows(const ScreenshotDisplaySession& displaySession,
                             ScreenshotOverlayShowMode mode) override;
-    void hideOverlayWindowsImmediately(
-        const ScreenshotDisplaySession& displaySession) override;
+    void hideOverlayWindowsImmediately(const ScreenshotDisplaySession& displaySession) override;
     void hideOverlayWindows(const ScreenshotDisplaySession& displaySession) override;
     void prewarmToolbarSurface(const ScreenshotDisplaySession& displaySession) override;
 

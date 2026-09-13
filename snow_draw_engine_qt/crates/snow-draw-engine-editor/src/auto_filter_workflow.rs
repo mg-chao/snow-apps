@@ -283,7 +283,71 @@ mod tests {
         assert!(m.auto_filter_fill(2).is_none());
     }
     #[test]
-    fn auto_filter_gesture_does_not_apply_new_detection_and_eraser_removes_fill() {
+    fn auto_filter_fills_ignore_selection_hover_click_and_drag() {
+        for tool in [ActiveTool::Select, ActiveTool::RectangleFilter] {
+            for shift in [false, true] {
+                let (mut e, mut m) = setup();
+                let fill = m.auto_filter_fill_transaction(
+                    &[2],
+                    CanvasFilterType::GaussianBlur,
+                    0.3,
+                    false,
+                );
+                m.apply_transaction(fill).unwrap();
+                let fill_id = m.auto_filter_fill(2).unwrap().0;
+                let original = *m.auto_filter_fill(2).unwrap().1;
+                e.set_active_tool(tool).unwrap();
+                for (kind, x, y) in [
+                    (PointerEventType::Move, 30.0, 30.0),
+                    (PointerEventType::Down, 30.0, 30.0),
+                    (PointerEventType::Move, 35.0, 35.0),
+                    (PointerEventType::Up, 35.0, 35.0),
+                ] {
+                    let InputEvent::Pointer(mut event) = pointer(kind, x, y) else {
+                        unreachable!();
+                    };
+                    event.modifiers.shift = shift;
+                    if kind == PointerEventType::Move && x == 30.0 {
+                        event.button = None;
+                        event.buttons = PointerButtons::default();
+                    }
+                    let update = e.process_input(&m, InputEvent::Pointer(event)).unwrap();
+                    commit(&mut m, update);
+                    assert!(
+                        !e.selected_ids().contains(&fill_id),
+                        "{tool:?}, shift={shift}"
+                    );
+                    assert_ne!(e.state.ui.hovered_element, Some(fill_id), "{tool:?}");
+                    if kind == PointerEventType::Move && x == 30.0 {
+                        assert!(e.presentation_state(&m).hovered_rect.is_none(), "{tool:?}");
+                    }
+                    assert!(e.auto_filter_highlights(&m).is_empty());
+                    assert_eq!(*m.auto_filter_fill(2).unwrap().1, original);
+                }
+                e.set_active_tool(ActiveTool::AutoFilter).unwrap();
+                e.process_input(&m, pointer(PointerEventType::Move, 30.0, 30.0))
+                    .unwrap();
+                assert_eq!(e.auto_filter_highlights(&m).len(), 1);
+                e.process_input(&m, pointer(PointerEventType::Down, 30.0, 30.0))
+                    .unwrap();
+                let up = e
+                    .process_input(&m, pointer(PointerEventType::Up, 30.0, 30.0))
+                    .unwrap();
+                commit(&mut m, up);
+                assert_ne!(*m.auto_filter_fill(2).unwrap().1, original);
+                e.process_input(&m, pointer(PointerEventType::Down, 30.0, 30.0))
+                    .unwrap();
+                let up = e
+                    .process_input(&m, pointer(PointerEventType::Up, 30.0, 30.0))
+                    .unwrap();
+                commit(&mut m, up);
+                assert!(m.auto_filter_fill(2).is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn auto_filter_gesture_does_not_apply_new_detection_and_eraser_preserves_fill() {
         let (mut e, mut m) = setup();
         let reset = m.auto_filter_record_transaction(None).unwrap();
         m.apply_transaction(reset).unwrap();
@@ -306,7 +370,7 @@ mod tests {
             .process_input(&m, pointer(PointerEventType::Up, 30.0, 30.0))
             .unwrap();
         commit(&mut m, up);
-        assert!(m.auto_filter_fill(2).is_none());
+        assert!(m.auto_filter_fill(2).is_some());
         assert!(m.auto_filter_regions().is_some());
     }
     #[test]

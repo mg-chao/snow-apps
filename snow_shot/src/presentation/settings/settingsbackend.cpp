@@ -229,6 +229,8 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
         return storage::PinToScreenSettings().doubleClickAction();
     case SettingsSelectBinding::PinMiddleClickAction:
         return storage::PinToScreenSettings().middleMouseButtonAction();
+    case SettingsSelectBinding::PinTextSelectionOnRecognitionResults:
+        return storage::PinToScreenSettings().textSelectionOnRecognitionResults();
     case SettingsSelectBinding::PinMouseWheelZoomMode:
         return storage::PinToScreenSettings().mouseWheelZoomMode();
     case SettingsSelectBinding::ScreenRecordingClarity:
@@ -337,6 +339,9 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
         return storage::PinToScreenSettings().setDoubleClickAction(value.toString());
     case SettingsSelectBinding::PinMiddleClickAction:
         return storage::PinToScreenSettings().setMiddleMouseButtonAction(value.toString());
+    case SettingsSelectBinding::PinTextSelectionOnRecognitionResults:
+        return storage::PinToScreenSettings().setTextSelectionOnRecognitionResults(
+            value.toString());
     case SettingsSelectBinding::PinMouseWheelZoomMode:
         return storage::PinToScreenSettings().setMouseWheelZoomMode(value.toString());
     case SettingsSelectBinding::ScreenRecordingClarity:
@@ -373,6 +378,16 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ApplicationStorage::instance().captureHistoryPolicy().keepPermanently;
     case SettingsSwitchBinding::SmartSelection:
         return storage::ApplicationStorage::instance().smartSelectionEnabled();
+    case SettingsSwitchBinding::OcrResidentProcess:
+        return storage::ApplicationStorage::instance()
+            .configuration()
+            .value(QStringLiteral("text_recognition/resident_process"))
+            .toBool();
+    case SettingsSwitchBinding::OcrModelHotStart:
+        return storage::ApplicationStorage::instance()
+            .configuration()
+            .value(QStringLiteral("text_recognition/model_hot_start"))
+            .toBool();
     case SettingsSwitchBinding::DirectMlAcceleration:
         return directMlTextRecognitionSupported() &&
                storage::ApplicationStorage::instance()
@@ -416,6 +431,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
 }
 
 bool BuiltInSettingsBackend::switchEnabled(SettingsSwitchBinding binding) const {
+    if (binding == SettingsSwitchBinding::OcrModelHotStart)
+        return switchValue(SettingsSwitchBinding::OcrResidentProcess);
     if (binding == SettingsSwitchBinding::StandaloneTranslationWindow) {
         return storage::ExtendedFeaturesSettings().translationPageEnabled();
     }
@@ -427,6 +444,17 @@ bool BuiltInSettingsBackend::switchEnabled(SettingsSwitchBinding binding) const 
 }
 
 bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, bool value) {
+    if (binding == SettingsSwitchBinding::OcrResidentProcess ||
+        binding == SettingsSwitchBinding::OcrModelHotStart) {
+        const auto key = binding == SettingsSwitchBinding::OcrResidentProcess
+                             ? QStringLiteral("text_recognition/resident_process")
+                             : QStringLiteral("text_recognition/model_hot_start");
+        const bool accepted =
+            storage::ApplicationStorage::instance().configuration().setValue(key, value);
+        if (accepted)
+            emit synchronized();
+        return accepted;
+    }
     if (binding == SettingsSwitchBinding::ScreenshotShutterSoundNotification) {
         return storage::ScreenshotSettings().setShutterSoundNotification(value);
     }
@@ -503,6 +531,8 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
         break;
     case SettingsSwitchBinding::SmartSelection:
         return false;
+    case SettingsSwitchBinding::OcrResidentProcess:
+    case SettingsSwitchBinding::OcrModelHotStart:
     case SettingsSwitchBinding::DirectMlAcceleration:
         return false;
     case SettingsSwitchBinding::SelectionTransitionAnimation:
@@ -1236,6 +1266,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"))},
+            {QStringLiteral("pin_to_screen/text_selection_on_recognition_results"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("pin_to_screen/text_selection_on_recognition_results"))},
             {QStringLiteral("pin_to_screen/automatic_text_recognition"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("pin_to_screen/automatic_text_recognition"))},
@@ -1399,6 +1432,8 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
     case SettingsSectionReset::TextRecognition: {
         auto& storage = storage::ApplicationStorage::instance();
         const bool accepted = storage.configuration().setValues({
+            {QStringLiteral("text_recognition/resident_process"), false},
+            {QStringLiteral("text_recognition/model_hot_start"), false},
             {QStringLiteral("text_recognition/model_type"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("text_recognition/model_type"))},

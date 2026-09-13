@@ -189,8 +189,7 @@ void displayCachePatchesSpotlightIndependentlyFromStyle() {
             "spotlight runtime creation must succeed");
     SnowCanvasViewport viewport;
     SnowEngineConfig config = snow_canvas_viewport::defaultEngineConfig();
-    require(viewport.create(runtime.get(), config),
-            "spotlight viewport creation must succeed");
+    require(viewport.create(runtime.get(), config), "spotlight viewport creation must succeed");
     require(snow_viewport_set_surface_size(runtime.get(), viewport.get(), 100, 100) == SNOW_OK,
             "spotlight surface setup must succeed");
     ScopedChangedViewportList toolChange;
@@ -233,8 +232,7 @@ void displayCachePatchesSpotlightIndependentlyFromStyle() {
             "spotlight creation preview must not dirty retained scene content");
 
     pointer(SNOW_POINTER_EVENT_UP, 70.0, 70.0, 0);
-    require(cache.sync(runtime.get(), viewport.get()),
-            "committed spotlight sync must succeed");
+    require(cache.sync(runtime.get(), viewport.get()), "committed spotlight sync must succeed");
     SnowSpotlightConfig spotlight{};
     require(snow_viewport_get_spotlight_config(runtime.get(), viewport.get(), &spotlight) ==
                 SNOW_OK,

@@ -278,11 +278,10 @@ mod tests {
     use super::*;
     use snow_draw_engine_core::{
         ColorRgba8, CornerRadii, EngineConfig,
-        arrow::{StrokeStyle, ArrowType},
+        arrow::{ArrowType, StrokeStyle},
     };
     use snow_draw_engine_document::{
-        ElementMeta, FillStyle, HighlightShape, RectangleData, RectangleElementKind,
-        Transaction,
+        ElementMeta, FillStyle, HighlightShape, RectangleData, RectangleElementKind, Transaction,
     };
     use snow_draw_engine_interaction::{
         PointerButton, PointerButtons, PointerDevice, PointerEventType,

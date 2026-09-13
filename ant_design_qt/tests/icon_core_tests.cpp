@@ -83,8 +83,7 @@ constexpr IconDescriptor kEntries[] = {
      false},
 };
 
-constexpr IconPack kTestPack{std::string_view("core-test"),
-                             std::string_view("icon core tests"),
+constexpr IconPack kTestPack{std::string_view("core-test"), std::string_view("icon core tests"),
                              std::string_view("core-test-pack"), kEntries,
                              sizeof(kEntries) / sizeof(kEntries[0])};
 

@@ -210,18 +210,16 @@ void writeSeededConfiguration(const std::wstring& storageDirectory) {
             "could not create the e2e configuration directory");
 
     const std::wstring configurationPath = storageDirectory + L"\\config.json";
-    const HANDLE file =
-        CreateFileW(configurationPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
-                    FILE_ATTRIBUTE_NORMAL, nullptr);
+    const HANDLE file = CreateFileW(configurationPath.c_str(), GENERIC_WRITE, 0, nullptr,
+                                    CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     require(file != INVALID_HANDLE_VALUE, "could not seed the e2e configuration file");
     // storage/schema_version is mandatory; without it the store discards the
     // seeded document as an invalid schema.
     static constexpr char kSeededDocument[] =
         R"({"storage":{"schema_version":1},"global_shortcuts":{"screenshot":["F24"]}})";
     DWORD written = 0;
-    const BOOL writeResult =
-        WriteFile(file, kSeededDocument, static_cast<DWORD>(sizeof(kSeededDocument) - 1), &written,
-                  nullptr);
+    const BOOL writeResult = WriteFile(
+        file, kSeededDocument, static_cast<DWORD>(sizeof(kSeededDocument) - 1), &written, nullptr);
     CloseHandle(file);
     require(writeResult != FALSE && written == sizeof(kSeededDocument) - 1,
             "could not write the seeded e2e configuration");
@@ -352,9 +350,8 @@ void reportProcessUiAutomationElements(IUIAutomation& automation, DWORD processI
 }
 
 template <typename Finder>
-[[nodiscard]] ComPtr<IUIAutomationElement> waitForElement(Finder&& finder,
-                                                          std::chrono::steady_clock::duration
-                                                              timeout = 5s) {
+[[nodiscard]] ComPtr<IUIAutomationElement>
+waitForElement(Finder&& finder, std::chrono::steady_clock::duration timeout = 5s) {
     constexpr auto pollInterval = 50ms;
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     do {
@@ -429,8 +426,8 @@ BOOL CALLBACK overlaySearchCallback(HWND window, LPARAM param) {
     }
     // The capture overlay covers the region the test drags across; no other
     // visible top-level window of the process is expected at this point.
-    if (rect.left <= kSelectionLeft && rect.top <= kSelectionTop &&
-        rect.right >= kSelectionRight && rect.bottom >= kSelectionBottom) {
+    if (rect.left <= kSelectionLeft && rect.top <= kSelectionTop && rect.right >= kSelectionRight &&
+        rect.bottom >= kSelectionBottom) {
         context->result = window;
         return FALSE;
     }
@@ -470,9 +467,9 @@ BOOL CALLBACK overlaySearchCallback(HWND window, LPARAM param) {
         foreground != nullptr ? GetWindowThreadProcessId(foreground, nullptr) : 0;
     const bool attachedCurrent = foregroundThread != 0 && foregroundThread != currentThread &&
                                  AttachThreadInput(currentThread, foregroundThread, TRUE) != FALSE;
-    const bool attachedTarget =
-        foregroundThread != 0 && targetThread != 0 && targetThread != foregroundThread &&
-        AttachThreadInput(targetThread, foregroundThread, TRUE) != FALSE;
+    const bool attachedTarget = foregroundThread != 0 && targetThread != 0 &&
+                                targetThread != foregroundThread &&
+                                AttachThreadInput(targetThread, foregroundThread, TRUE) != FALSE;
     BringWindowToTop(window);
     const BOOL setResult = SetForegroundWindow(window);
     if (attachedTarget) {
@@ -728,9 +725,8 @@ void runCtrlCRound(IUIAutomation& automation, const ScopedProcess& application, 
     }
     if (!captureOwnsForeground(application.processId())) {
         reportForegroundWindow();
-        throw std::runtime_error(roundMessage(round,
-                                              "the screenshot capture UI did not own "
-                                              "keyboard/mouse input before the area drag"));
+        throw std::runtime_error(roundMessage(round, "the screenshot capture UI did not own "
+                                                     "keyboard/mouse input before the area drag"));
     }
 
     // Give the overlay a beat to settle after activation so the press below
@@ -778,19 +774,17 @@ void runCtrlCRound(IUIAutomation& automation, const ScopedProcess& application, 
         const bool recovered = waitUntil(clipboardContainsValidImage, 10s);
         sendCtrlCUp();
         if (recovered) {
-            throw std::runtime_error(
-                roundMessage(round,
-                             "the first Ctrl+C press was swallowed and only the retry copied: "
-                             "the previous capture's key release never reached the app, so the "
-                             "press arrived mislabeled as an auto-repeat"));
+            throw std::runtime_error(roundMessage(
+                round, "the first Ctrl+C press was swallowed and only the retry copied: "
+                       "the previous capture's key release never reached the app, so the "
+                       "press arrived mislabeled as an auto-repeat"));
         }
         throw std::runtime_error(
             roundMessage(round, "Ctrl+C did not complete the screenshot copy to the clipboard"));
     }
 
-    const bool captureEnded =
-        waitUntil([&]() { return !IsWindowVisible(overlay) || GetForegroundWindow() != overlay; },
-                  5s);
+    const bool captureEnded = waitUntil(
+        [&]() { return !IsWindowVisible(overlay) || GetForegroundWindow() != overlay; }, 5s);
     requireRound(captureEnded, round,
                  "the screenshot did not end after Ctrl+C with a selected area");
 

@@ -514,6 +514,10 @@
             <translation>All screenshot history will be removed</translation>
         </message>
         <message>
+            <source>Always</source>
+            <translation>Always</translation>
+        </message>
+        <message>
             <source>Always hide</source>
             <translation>Always hide</translation>
         </message>
@@ -752,6 +756,10 @@
         <message>
             <source>Choose what left-clicking the tray icon does</source>
             <translation>Choose what left-clicking the tray icon does</translation>
+        </message>
+        <message>
+            <source>Choose when recognized text can be selected on pinned screenshots.</source>
+            <translation>Choose when recognized text can be selected on pinned screenshots.</translation>
         </message>
         <message>
             <source>Choose where images are written for automatic save and copy-file actions</source>
@@ -1318,6 +1326,10 @@
             <translation>Keep selection width and height consistent</translation>
         </message>
         <message>
+            <source>Keep the recognition process running to avoid startup delays. Uses memory while idle.</source>
+            <translation>Keep the recognition process running to avoid startup delays. Uses memory while idle.</translation>
+        </message>
+        <message>
             <source>Landscape A4</source>
             <translation>Landscape A4</translation>
         </message>
@@ -1414,6 +1426,10 @@
             <translation>Middle mouse button action</translation>
         </message>
         <message>
+            <source>Model Hot Start</source>
+            <translation>Model Hot Start</translation>
+        </message>
+        <message>
             <source>Model Type</source>
             <translation>Model Type</translation>
         </message>
@@ -1492,6 +1508,10 @@
         <message>
             <source>OCR model</source>
             <translation>OCR model</translation>
+        </message>
+        <message>
+            <source>Only when displayed</source>
+            <translation>Only when displayed</translation>
         </message>
         <message>
             <source>Open Function Settings</source>
@@ -1638,6 +1658,10 @@
             <translation>Portrait A4</translation>
         </message>
         <message>
+            <source>Preload the selected model for faster recognition. Requires a resident process and uses additional memory.</source>
+            <translation>Preload the selected model for faster recognition. Requires a resident process and uses additional memory.</translation>
+        </message>
+        <message>
             <source>Prevent left-click selection of matching elements while these tools are active</source>
             <translation>Prevent left-click selection of matching elements while these tools are active</translation>
         </message>
@@ -1740,6 +1764,10 @@
         <message>
             <source>Reset Zoom</source>
             <translation>Reset Zoom</translation>
+        </message>
+        <message>
+            <source>Resident Recognition Process</source>
+            <translation>Resident Recognition Process</translation>
         </message>
         <message>
             <source>Resize scrolling screenshots automatically to remain inside the monitor</source>
@@ -2184,6 +2212,10 @@
         <message>
             <source>Text recognition image saving settings</source>
             <translation>Text recognition image saving settings</translation>
+        </message>
+        <message>
+            <source>Text selection on recognition results</source>
+            <translation>Text selection on recognition results</translation>
         </message>
         <message>
             <source>Text translation</source>

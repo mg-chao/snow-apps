@@ -50,8 +50,8 @@ bool store(const Key& key, const QImage& image, const QRect& physicalRect,
            Diagnostics* diagnostics = nullptr);
 
 void invalidateNamespace(const void* canvasNamespace);
-void invalidateRegion(const void* canvasNamespace, const QRect& logicalRegion, qreal devicePixelRatio,
-                      std::uint64_t dependencyFingerprint = 0,
+void invalidateRegion(const void* canvasNamespace, const QRect& logicalRegion,
+                      qreal devicePixelRatio, std::uint64_t dependencyFingerprint = 0,
                       Diagnostics* diagnostics = nullptr);
 void invalidateRegion(const void* canvasNamespace, const QRegion& logicalRegion,
                       qreal devicePixelRatio, std::uint64_t dependencyFingerprint = 0,

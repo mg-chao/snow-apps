@@ -362,6 +362,15 @@ impl EditorSession {
         self.editor.delete_selected(document)
     }
 
+    pub fn delete_elements(
+        &mut self,
+        document: &DocumentModel,
+        ids: &[ElementId],
+        label: &str,
+    ) -> Result<Option<EditorCommand>, ErrorCode> {
+        self.editor.delete_elements(document, ids, label)
+    }
+
     pub fn duplicate_selected(
         &mut self,
         document: &DocumentModel,

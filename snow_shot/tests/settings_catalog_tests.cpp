@@ -171,8 +171,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 37 && itemCount == 150 && foundUpdates,
-            "catalog must contain thirty-seven sections and one hundred fifty items");
+    require(sectionCount == 37 && itemCount == 153 && foundUpdates,
+            "catalog must contain thirty-seven sections and one hundred fifty-three items");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
                       QStringLiteral("interface.pin-to-screen.pinned-toolbar-editor")});
@@ -539,7 +539,7 @@ void builtInCatalogIsCompleteAndValid() {
             proxySelect->options.at(1).value == QStringLiteral("system") &&
             textRecognition != nullptr &&
             textRecognition->reset == settings::SettingsSectionReset::TextRecognition &&
-            textRecognition->items.size() == 2 &&
+            textRecognition->items.size() == 4 &&
             textRecognition->items.at(0).id == QStringLiteral("text-recognition.model-type") &&
             textRecognition->items.at(1).id ==
                 QStringLiteral("text-recognition.direct-ml-acceleration") &&
@@ -1320,7 +1320,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 199 && index.search(QString()).size() == 199,
+    require(index.entries().size() == 202 && index.search(QString()).size() == 202,
             "search must generate all catalog nodes in catalog order");
     const auto pdfPaper = index.search(QStringLiteral("Landscape A4"));
     require(!pdfPaper.isEmpty() && pdfPaper.constFirst().location.itemId ==
@@ -1380,7 +1380,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 37 && items == 150,
+    require(pages == 12 && sections == 37 && items == 153,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

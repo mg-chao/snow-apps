@@ -283,6 +283,46 @@ int main(int argc, char** argv) {
         const auto binding = settings::SettingsSwitchBinding::OriginalImageTranslation;
         const storage::ScreenshotTranslationSettings translation;
         settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
+        const auto resident = settings::SettingsSwitchBinding::OcrResidentProcess;
+        const auto hot = settings::SettingsSwitchBinding::OcrModelHotStart;
+        const QString hotId = QStringLiteral("text-recognition.model-hot-start");
+        const QString residentId = QStringLiteral("text-recognition.resident-process");
+        require(!backend.switchValue(resident) && !backend.switchValue(hot) &&
+                    !session.state(hotId).enabled && session.state(residentId).enabled,
+                "OCR residency settings default off and hot start is disabled");
+        require(backend.applySwitchValue(resident, true) && backend.applySwitchValue(hot, true),
+                "OCR settings must persist without attempting resource preparation");
+        QCoreApplication::processEvents();
+        require(session.state(hotId).enabled && session.state(hotId).acceptedValue.toBool(),
+                "enabling residency must enable hot start immediately");
+        require(backend.applySwitchValue(resident, false), "resident preference can be disabled");
+        QCoreApplication::processEvents();
+        require(!session.state(hotId).enabled && session.state(hotId).acceptedValue.toBool() &&
+                    backend.switchValue(hot) && session.state(hotId).error.isEmpty() &&
+                    session.state(residentId).error.isEmpty(),
+                "resident-off retains the checked hot-start value without a settings failure");
+        require(backend.applySwitchValue(resident, true), "resident preference can be restored");
+        QCoreApplication::processEvents();
+        require(session.state(hotId).enabled && session.state(hotId).acceptedValue.toBool(),
+                "restoring residency restores the saved hot-start preference");
+        bool resetObserved = false;
+        auto resetConnection = QObject::connect(
+            &applicationStorage.configuration(), &storage::ConfigurationStore::valueChanged,
+            &application, [&](const QString& key, const QJsonValue&) {
+                if (key == QStringLiteral("text_recognition/resident_process") ||
+                    key == QStringLiteral("text_recognition/model_hot_start")) {
+                    resetObserved = true;
+                    require(!backend.switchValue(resident) && !backend.switchValue(hot),
+                            "all observers must see both values reset atomically");
+                }
+            });
+        require(backend.resetSection(settings::SettingsSectionReset::TextRecognition),
+                "OCR category reset must succeed");
+        QObject::disconnect(resetConnection);
+        QCoreApplication::processEvents();
+        require(resetObserved && !backend.switchValue(resident) && !backend.switchValue(hot) &&
+                    !session.state(hotId).enabled,
+                "OCR category reset must clear both preferences and refresh the disabled control");
         const auto pinBinding = settings::SettingsSelectBinding::PinDoubleClickAction;
         const QString pinId = QStringLiteral("pin-to-screen.double-click-action");
         require(backend.selectValue(pinBinding).toString() == QStringLiteral("thumbnail_mode") &&

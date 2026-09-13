@@ -98,8 +98,8 @@ void encodedImageAndTextAreSupported() {
 
 void formattedTextRetainsOriginalClipboardInput() {
     QMimeData mime;
-    const QString html = QStringLiteral(
-        "<article data-source=\"clipboard\"><b>Original HTML</b></article>");
+    const QString html =
+        QStringLiteral("<article data-source=\"clipboard\"><b>Original HTML</b></article>");
     const QString text = QStringLiteral("Original HTML");
     mime.setHtml(html);
     mime.setText(text);
@@ -395,8 +395,8 @@ void formattedTextUsesOwningDisplayDevicePixelRatio() {
 ScreenshotClipboardContentSnapshot nativeDibSnapshot(QByteArray bytes, QSize size) {
     ScreenshotClipboardContentSnapshot snapshot;
     snapshot.devicePixelRatio = 1.0;
-    snapshot.nativeDib = ScreenshotClipboardNativeDib{
-        std::move(bytes), size, ScreenshotClipboardNativeDibFormat::Dib};
+    snapshot.nativeDib = ScreenshotClipboardNativeDib{std::move(bytes), size,
+                                                      ScreenshotClipboardNativeDibFormat::Dib};
     return snapshot;
 }
 
@@ -445,14 +445,14 @@ void malformedAndLargeDibsAreHandled() {
     malformedHeader->biPlanes = 1;
     malformedHeader->biBitCount = 32;
     malformedHeader->biCompression = BI_RGB;
-    require(!ScreenshotClipboardContentReader::decode(nativeDibSnapshot(
-                         std::move(malformed), QSize(1, 1)))
+    require(!ScreenshotClipboardContentReader::decode(
+                 nativeDibSnapshot(std::move(malformed), QSize(1, 1)))
                  .has_value(),
             "malformed DIB dimensions should be rejected");
 
     const QSize largeSize(1024, 1024);
-    auto decoded = ScreenshotClipboardContentReader::decode(nativeDibSnapshot(
-        makeRgbDib(largeSize.width(), largeSize.height(), true), largeSize));
+    auto decoded = ScreenshotClipboardContentReader::decode(
+        nativeDibSnapshot(makeRgbDib(largeSize.width(), largeSize.height(), true), largeSize));
     require(decoded.has_value() && decoded->image.size() == largeSize,
             "large DIBs should decode through the parallel conversion path");
 }

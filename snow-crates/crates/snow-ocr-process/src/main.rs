@@ -1,9 +1,12 @@
+mod buffer;
+use buffer::{SLOT_HEADER, SharedImage};
 mod protocol;
+mod session;
+mod worker;
+use worker::{Work, WorkResult, worker_loop};
 
 use memmap2::Mmap;
-use protocol::{
-    Decoder, Frame, Kind, put_f32, put_string, put_u8, put_u32, read_frame, write_frame,
-};
+use protocol::{Decoder, Kind, put_f32, put_string, put_u8, put_u32, read_frame, write_frame};
 use rapid_ocr_rs::{
     DictionarySource, EngineConfig, LangDet, LangRec, ModelSource, ModelType, OcrCallOptions,
     OcrInput, OcrResult, PipelineSources, ProviderPreference, RapidOcr, ResolvedExecutionProvider,
@@ -11,42 +14,26 @@ use rapid_ocr_rs::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::VecDeque,
     fs::{self, File},
     io::{self, BufReader, BufWriter, Write},
     path::{Path, PathBuf},
     sync::{
-        Arc, Condvar, Mutex,
-        atomic::{AtomicBool, Ordering, fence},
-        mpsc::{self, Receiver, Sender},
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self},
     },
-    thread::{self, JoinHandle},
+    thread::{self},
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
-const SLOT_HEADER: usize = 32;
-const SLOT_SEQUENCE: usize = 0;
-const SLOT_STATE: usize = 8;
-const SLOT_WIDTH: usize = 12;
-const SLOT_HEIGHT: usize = 16;
-const SLOT_STRIDE: usize = 20;
-const SLOT_BYTES: usize = 24;
-const SLOT_MAGIC: usize = 28;
-const SLOT_READY: u32 = 1;
-const SLOT_MAGIC_VALUE: u32 = 0x544f4c53;
-
 #[derive(Clone)]
 struct Config {
-    worker_budgets: Vec<usize>,
     directml: bool,
     directml_enabled: Arc<AtomicBool>,
     directml_cache: Arc<DirectMlCapabilityCache>,
     detector_model: PathBuf,
     recognizer_model: PathBuf,
     dictionary: PathBuf,
-    slot_bytes: usize,
-    slot_count: usize,
-    shm_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -198,209 +185,16 @@ fn directml_capability(config: &Config) -> bool {
     value
 }
 
-struct SharedImage {
-    mmap: Arc<Mmap>,
-    slot_bytes: usize,
-}
-impl SharedImage {
-    fn read_bgr(
-        &self,
-        slot: usize,
-        width: usize,
-        height: usize,
-        stride: usize,
-        sequence: u64,
-    ) -> io::Result<Vec<u8>> {
-        if width == 0 || height == 0 || stride < width.saturating_mul(4) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "invalid OCR image dimensions",
-            ));
-        }
-        let required = stride
-            .checked_mul(height)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "OCR image size overflow"))?;
-        if required > self.slot_bytes.saturating_sub(SLOT_HEADER) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "OCR image exceeds shared-memory slot",
-            ));
-        }
-        let start = slot
-            .checked_mul(self.slot_bytes)
-            .and_then(|v| v.checked_add(SLOT_HEADER))
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::InvalidData, "invalid OCR shared-memory slot")
-            })?;
-        let end = start.checked_add(required).ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidData, "OCR image range overflow")
-        })?;
-        if end > self.mmap.len() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "OCR shared-memory slot is out of range",
-            ));
-        }
-        let header_start = slot.checked_mul(self.slot_bytes).ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidData, "invalid OCR shared-memory slot")
-        })?;
-        let header = self
-            .mmap
-            .get(header_start..header_start + SLOT_HEADER)
-            .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "OCR shared-memory slot header is out of range",
-                )
-            })?;
-        fence(Ordering::Acquire);
-        let header_sequence =
-            u64::from_le_bytes(header[SLOT_SEQUENCE..SLOT_SEQUENCE + 8].try_into().unwrap());
-        let state = u32::from_le_bytes(header[SLOT_STATE..SLOT_STATE + 4].try_into().unwrap());
-        let header_width =
-            u32::from_le_bytes(header[SLOT_WIDTH..SLOT_WIDTH + 4].try_into().unwrap()) as usize;
-        let header_height =
-            u32::from_le_bytes(header[SLOT_HEIGHT..SLOT_HEIGHT + 4].try_into().unwrap()) as usize;
-        let header_stride =
-            u32::from_le_bytes(header[SLOT_STRIDE..SLOT_STRIDE + 4].try_into().unwrap()) as usize;
-        let header_bytes =
-            u32::from_le_bytes(header[SLOT_BYTES..SLOT_BYTES + 4].try_into().unwrap()) as usize;
-        let header_magic =
-            u32::from_le_bytes(header[SLOT_MAGIC..SLOT_MAGIC + 4].try_into().unwrap());
-        if state != SLOT_READY
-            || header_sequence != sequence
-            || header_width != width
-            || header_height != height
-            || header_stride != stride
-            || header_bytes != required
-            || header_magic != SLOT_MAGIC_VALUE
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "OCR shared-memory slot ownership mismatch",
-            ));
-        }
-        let source = &self.mmap[start..end];
-        let mut bgr = Vec::with_capacity(width * height * 3);
-        for row in source.chunks(stride).take(height) {
-            for pixel in row[..width * 4].chunks_exact(4) {
-                bgr.extend_from_slice(&[pixel[2], pixel[1], pixel[0]]);
-            }
-        }
-        Ok(bgr)
-    }
-}
-
 struct Job {
     id: u64,
     queued_at: Instant,
     input: OcrInput,
-    cancelled: Arc<std::sync::atomic::AtomicBool>,
-    priority: u8,
-}
-struct Queue {
-    jobs: VecDeque<Job>,
-    stopping: bool,
+    cancelled: Arc<AtomicBool>,
 }
 struct Completion {
     id: u64,
     result: Result<OcrResult, String>,
     cancelled: bool,
-}
-struct Scheduler {
-    queue: Arc<(Mutex<Queue>, Condvar)>,
-    cancellations: Arc<Mutex<std::collections::HashMap<u64, Arc<std::sync::atomic::AtomicBool>>>>,
-    workers: Vec<JoinHandle<()>>,
-    completions: Receiver<Completion>,
-}
-
-impl Scheduler {
-    fn new(config: &Config) -> io::Result<Self> {
-        let queue = Arc::new((
-            Mutex::new(Queue {
-                jobs: VecDeque::new(),
-                stopping: false,
-            }),
-            Condvar::new(),
-        ));
-        let cancellations = Arc::new(Mutex::new(std::collections::HashMap::new()));
-        let (completion_tx, completion_rx) = mpsc::channel();
-        let (initialized_tx, initialized_rx) = mpsc::channel();
-        let mut workers = Vec::new();
-        let factory_config = config.clone();
-        for (index, thread_budget) in config.worker_budgets.iter().copied().enumerate() {
-            let queue = Arc::clone(&queue);
-            let cancellations = Arc::clone(&cancellations);
-            let tx = completion_tx.clone();
-            let cfg = factory_config.clone();
-            let initialized = initialized_tx.clone();
-            workers.push(
-                thread::Builder::new()
-                    .name(format!("snow-ocr-worker-{index}"))
-                    .spawn(move || {
-                        worker_loop(queue, cancellations, tx, cfg, thread_budget, initialized)
-                    })
-                    .map_err(|e| io::Error::other(e.to_string()))?,
-            );
-        }
-        drop(initialized_tx);
-        let mut scheduler = Self {
-            queue,
-            cancellations,
-            workers,
-            completions: completion_rx,
-        };
-        // Ready means the actual worker engines are usable. Keep those same engines
-        // for inference instead of constructing and discarding a validation engine.
-        for _ in 0..scheduler.workers.len() {
-            if initialized_rx.recv() != Ok(true) {
-                scheduler.shutdown();
-                return Err(io::Error::other("unable to initialize OCR engine"));
-            }
-        }
-        Ok(scheduler)
-    }
-    fn submit(&self, id: u64, input: OcrInput, priority: u8) {
-        let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        self.cancellations
-            .lock()
-            .unwrap()
-            .insert(id, Arc::clone(&cancelled));
-        let (state, wake) = &*self.queue;
-        let mut state = state.lock().unwrap();
-        let position = state
-            .jobs
-            .iter()
-            .position(|job| job.priority > priority)
-            .unwrap_or(state.jobs.len());
-        state.jobs.insert(
-            position,
-            Job {
-                id,
-                queued_at: Instant::now(),
-                input,
-                cancelled,
-                priority,
-            },
-        );
-        wake.notify_one();
-    }
-    fn cancel(&self, id: u64) {
-        if let Some(flag) = self.cancellations.lock().unwrap().get(&id) {
-            flag.store(true, std::sync::atomic::Ordering::Release);
-        }
-    }
-    fn try_completion(&self) -> Option<Completion> {
-        self.completions.try_recv().ok()
-    }
-    fn shutdown(&mut self) {
-        let (state, wake) = &*self.queue;
-        state.lock().unwrap().stopping = true;
-        wake.notify_all();
-        for worker in self.workers.drain(..) {
-            let _ = worker.join();
-        }
-    }
 }
 
 fn make_engine(
@@ -610,220 +404,34 @@ fn initialize_engine(
     (engine, engine_backend)
 }
 
-fn worker_loop(
-    queue: Arc<(Mutex<Queue>, Condvar)>,
-    cancellations: Arc<Mutex<std::collections::HashMap<u64, Arc<std::sync::atomic::AtomicBool>>>>,
-    tx: Sender<Completion>,
-    config: Config,
-    thread_budget: usize,
-    initialized: Sender<bool>,
-) {
-    let (mut engine, mut engine_backend) =
-        initialize_engine(&config, thread_budget, 0, &AtomicBool::new(false));
-    let ready = engine.is_some();
-    let _ = initialized.send(ready);
-    if !ready {
-        return;
-    }
-    loop {
-        let job = {
-            let (state, wake) = &*queue;
-            let mut state = state.lock().unwrap();
-            while state.jobs.is_empty() && !state.stopping {
-                state = wake.wait(state).unwrap();
-            }
-            if state.stopping {
-                return;
-            }
-            state.jobs.pop_front().unwrap()
-        };
-        let cancelled = job.cancelled.load(std::sync::atomic::Ordering::Acquire);
-        let started = Instant::now();
-        let queue_ms = job.queued_at.elapsed().as_millis();
-        let mut initialization_ms = 0;
-        let mut inference_ms = 0;
-        diagnostics::operation_started(job.id);
-        let result = if cancelled {
-            Err("cancelled".to_string())
-        } else {
-            if engine.is_none() {
-                (engine, engine_backend) =
-                    initialize_engine(&config, thread_budget, job.id, &job.cancelled);
-                initialization_ms = started.elapsed().as_millis();
-            }
-            let options = OcrCallOptions {
-                use_det: Some(true),
-                use_cls: Some(false),
-                use_rec: Some(true),
-                ..Default::default()
-            };
-            let input = job.input;
-            let first_attempt = engine.as_mut().map(|engine| {
-                run_unless_cancelled(&job.cancelled, || {
-                    let inference_started = Instant::now();
-                    let result = engine
-                        .run(input.clone(), options.clone())
-                        .and_then(OcrResult::try_from)
-                        .map_err(|e| e.to_string());
-                    inference_ms += inference_started.elapsed().as_millis();
-                    result
-                })
-            });
-            match first_attempt {
-                Some(Ok(result)) => Ok(result),
-                Some(Err(error))
-                    if config.directml_enabled.load(Ordering::Acquire)
-                        && !job.cancelled.load(Ordering::Acquire) =>
-                {
-                    // A provider can pass the inexpensive availability check
-                    // and still fail while creating or executing a session.
-                    // Persist the negative result and retry this request on
-                    // CPU so one bad driver does not fail the OCR operation.
-                    config.directml_cache.write(false);
-                    config.directml_enabled.store(false, Ordering::Release);
-                    worker_event(
-                        "ocr.backend_fallback",
-                        job.id,
-                        "inference",
-                        "cpu",
-                        "started",
-                        0,
-                        &error,
-                    );
-                    let fallback_started = Instant::now();
-                    engine_backend = "cpu";
-                    engine = cpu_fallback_engine(&config, thread_budget, job.id, &job.cancelled);
-                    initialization_ms += fallback_started.elapsed().as_millis();
-                    let result = match engine.as_mut() {
-                        Some(cpu) => run_unless_cancelled(&job.cancelled, || {
-                            let inference_started = Instant::now();
-                            let result = cpu
-                                .run(input, options)
-                                .and_then(OcrResult::try_from)
-                                .map_err(|cpu_error| {
-                                    format!("{error}; CPU fallback failed: {cpu_error}")
-                                });
-                            inference_ms += inference_started.elapsed().as_millis();
-                            result
-                        }),
-                        None => Err(format!("{error}; unable to initialize CPU fallback engine")),
-                    };
-                    worker_event(
-                        "ocr.backend_fallback",
-                        job.id,
-                        "retry",
-                        "cpu",
-                        if job.cancelled.load(Ordering::Acquire) {
-                            "cancelled"
-                        } else if result.is_ok() {
-                            "succeeded"
-                        } else {
-                            "failed"
-                        },
-                        fallback_started.elapsed().as_millis(),
-                        result.as_ref().err().map_or("", String::as_str),
-                    );
-                    result
-                }
-                Some(Err(error)) => Err(error),
-                None => Err("unable to initialize OCR engine".to_string()),
-            }
-        };
-        let cancelled = job.cancelled.load(Ordering::Acquire);
-        eprintln!(
-            "{}",
-            serde_json::json!({
-                "event": "ocr.worker_finished", "fields": {
-                "operation": job.id.to_string(), "queue_ms": queue_ms,
-                "initialization_ms": initialization_ms, "inference_ms": inference_ms,
-                    "worker_ms": started.elapsed().as_millis(), "backend": engine_backend,
-                    "outcome": if cancelled { "cancelled" } else if result.is_ok() { "succeeded" } else { "failed" }
-                }
-            })
-        );
-        cancellations.lock().unwrap().remove(&job.id);
-        let _ = tx.send(Completion {
-            id: job.id,
-            result,
-            cancelled,
-        });
-    }
-}
-
-fn hello(frame: &Frame) -> io::Result<Config> {
-    let mut d = Decoder::new(&frame.payload);
-    let requested_workers = (d.u32()? as usize).clamp(1, 2);
+fn session_config(payload: &[u8], state: &str) -> io::Result<Config> {
+    let mut d = Decoder::new(payload);
     let directml = d.u8()? != 0;
     let detector_model = PathBuf::from(d.string()?);
     let recognizer_model = PathBuf::from(d.string()?);
     let dictionary = PathBuf::from(d.string()?);
-    let state = d.string()?;
-    let shm_path = PathBuf::from(d.string()?);
-    let slot_bytes = d.u64()? as usize;
-    let slot_count = d.u32()? as usize;
-    if !d.done() || slot_bytes < SLOT_HEADER + 4 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "invalid OCR startup configuration",
-        ));
+    if !d.done() {
+        return Err(io::Error::other("invalid OCR session configuration"));
     }
-    for path in [&detector_model, &recognizer_model, &dictionary] {
-        if !path.is_file() {
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("required OCR asset is missing: {}", path.display()),
-            ));
-        }
-    }
-    let state_dir = (!state.trim().is_empty()).then(|| PathBuf::from(state));
-    let directml_cache = Arc::new(DirectMlCapabilityCache::new(state_dir.as_deref()));
-    let physical = num_cpus::get_physical().max(1);
-    let recognition_budget = (physical / 2).max(1);
-    let workers = requested_workers.min(recognition_budget);
-    if slot_count < workers {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "OCR shared-memory slot count is below worker count",
-        ));
-    }
-    let base = recognition_budget / workers;
-    let remainder = recognition_budget % workers;
-    let worker_budgets = (0..workers)
-        .map(|index| base + usize::from(index < remainder))
-        .collect();
+    let state_dir = (!state.is_empty()).then(|| PathBuf::from(state));
     Ok(Config {
-        worker_budgets,
         directml,
         directml_enabled: Arc::new(AtomicBool::new(false)),
-        directml_cache,
+        directml_cache: Arc::new(DirectMlCapabilityCache::new(state_dir.as_deref())),
         detector_model,
         recognizer_model,
         dictionary,
-        slot_bytes,
-        slot_count,
-        shm_path,
     })
 }
-
-fn ready_payload(config: &Config) -> Vec<u8> {
+fn ready_payload() -> Vec<u8> {
     let mut p = Vec::new();
     put_u8(&mut p, 1);
-    let available = config.directml_enabled.load(Ordering::Acquire);
-    put_u8(&mut p, available as u8);
-    put_string(&mut p, if available { "directml" } else { "cpu" });
+    put_u8(&mut p, 0);
+    put_string(&mut p, "unloaded");
     put_string(&mut p, env!("CARGO_PKG_VERSION"));
-    protocol::put_u32(&mut p, protocol::VERSION as u32);
+    put_u32(&mut p, protocol::VERSION as u32);
     p
 }
-fn error_payload(message: &str) -> Vec<u8> {
-    let mut p = Vec::new();
-    put_u8(&mut p, 0);
-    put_u8(&mut p, 0);
-    put_string(&mut p, "cpu");
-    put_string(&mut p, message);
-    p
-}
-
 fn completion_payload(completion: &Completion) -> Vec<u8> {
     let mut p = Vec::new();
     if completion.cancelled {
@@ -945,120 +553,179 @@ fn main() -> io::Result<()> {
             "OCR process expected Hello",
         ));
     }
-    let config = match hello(&startup) {
-        Ok(config) => config,
-        Err(error) => {
-            return Err(error);
-        }
-    };
-    initialize_onnx_runtime().map_err(|e| io::Error::other(e.to_string()))?;
-    config
-        .directml_enabled
-        .store(directml_capability(&config), Ordering::Release);
-    let file = File::open(&config.shm_path)?;
-    let mmap = Arc::new(unsafe { Mmap::map(&file)? });
-    let required_shared_memory = config
-        .slot_bytes
-        .checked_mul(config.slot_count)
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "OCR shared-memory size overflow",
-            )
-        })?;
-    if mmap.len() < required_shared_memory {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "OCR shared-memory file is too small",
-        ));
+    let mut hello = Decoder::new(&startup.payload);
+    let state = hello.string()?;
+    if !hello.done() {
+        return Err(io::Error::other("invalid OCR hello"));
     }
-    let shared = SharedImage {
-        mmap,
-        slot_bytes: config.slot_bytes,
-    };
-    let scheduler = Scheduler::new(&config)?;
-    write_frame(&mut writer, Kind::Ready, 0, &ready_payload(&config))?;
+    let (work_tx, work_rx) = mpsc::channel();
+    let (result_tx, result_rx) = mpsc::channel();
+    let worker = thread::Builder::new()
+        .name("snow-ocr-inference".into())
+        .spawn(move || worker_loop(work_rx, result_tx))?;
+    write_frame(&mut writer, Kind::Ready, 0, &ready_payload())?;
     let (command_tx, command_rx) = mpsc::channel();
-    let _reader_thread = thread::spawn(move || {
-        loop {
-            match read_frame(&mut reader) {
-                Ok(frame) => {
-                    if command_tx.send(frame).is_err() {
-                        break;
-                    }
-                }
-                Err(error) => {
-                    let _ = command_tx.send(Frame {
-                        kind: Kind::Shutdown,
-                        request_id: 0,
-                        payload: error.to_string().into_bytes(),
-                    });
-                    break;
-                }
+    thread::spawn(move || {
+        while let Ok(frame) = read_frame(&mut reader) {
+            if command_tx.send(frame).is_err() {
+                break;
             }
         }
     });
-    let mut stopping = false;
-    while !stopping {
-        while let Some(completion) = scheduler.try_completion() {
-            write_frame(
-                &mut writer,
-                Kind::Complete,
-                completion.id,
-                &completion_payload(&completion),
-            )?;
+    let mut shared: Option<(u64, SharedImage)> = None;
+    let mut staged: Option<(u64, OcrInput)> = None;
+    let mut active: Option<(u64, Arc<AtomicBool>)> = None;
+    let mut last_sequence = 0;
+    loop {
+        while let Ok(result) = result_rx.try_recv() {
+            match result {
+                WorkResult::Prepared(id, ok) => {
+                    write_frame(&mut writer, Kind::SessionReady, id, &[u8::from(ok)])?
+                }
+                WorkResult::Released(id) => {
+                    write_frame(&mut writer, Kind::SessionReleased, id, &[])?
+                }
+                WorkResult::Complete(completion) => {
+                    active = None;
+                    write_frame(
+                        &mut writer,
+                        Kind::Complete,
+                        completion.id,
+                        &completion_payload(&completion),
+                    )?;
+                }
+            }
         }
-        match command_rx.recv_timeout(std::time::Duration::from_millis(5)) {
-            Ok(frame) => match frame.kind {
-                Kind::Submit => {
-                    let mut d = Decoder::new(&frame.payload);
-                    let slot = d.u32()? as usize;
-                    let width = d.u32()? as usize;
-                    let height = d.u32()? as usize;
-                    let stride = d.u32()? as usize;
-                    let sequence = d.u64()?;
-                    let priority = d.u8()?;
-                    if !d.done() || slot >= config.slot_count {
-                        let p = error_payload("invalid OCR submit payload");
-                        write_frame(&mut writer, Kind::Complete, frame.request_id, &p)?;
-                    } else {
-                        match shared.read_bgr(slot, width, height, stride, sequence) {
-                            Ok(data) => scheduler.submit(
-                                frame.request_id,
-                                OcrInput::BgrU8 {
-                                    width,
-                                    height,
-                                    data,
-                                },
-                                priority,
-                            ),
-                            Err(error) => {
-                                let p = error_payload(&error.to_string());
-                                write_frame(&mut writer, Kind::Complete, frame.request_id, &p)?;
-                            }
-                        }
-                    }
+        let frame = match command_rx.recv_timeout(std::time::Duration::from_millis(5)) {
+            Ok(frame) => frame,
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        };
+        match frame.kind {
+            Kind::AttachBuffer => {
+                if shared.is_some() {
+                    return Err(io::Error::other("OCR buffer already attached"));
                 }
-                Kind::Cancel => scheduler.cancel(frame.request_id),
-                Kind::Shutdown => {
-                    stopping = true;
+                let mut d = Decoder::new(&frame.payload);
+                let path = d.string()?;
+                let bytes = usize::try_from(d.u64()?).map_err(io::Error::other)?;
+                if !d.done() || !(SLOT_HEADER + 4..=SLOT_HEADER + 3840 * 2160 * 4).contains(&bytes)
+                {
+                    return Err(io::Error::other("invalid OCR buffer capacity"));
                 }
-                _ => {}
-            },
-            Err(mpsc::RecvTimeoutError::Disconnected) => stopping = true,
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
+                let file = File::open(path)?;
+                if file.metadata()?.len() != bytes as u64 {
+                    return Err(io::Error::other("OCR buffer size mismatch"));
+                }
+                let mmap = Arc::new(unsafe { Mmap::map(&file)? });
+                shared = Some((
+                    frame.request_id,
+                    SharedImage {
+                        mmap,
+                        slot_bytes: bytes,
+                    },
+                ));
+                last_sequence = 0;
+                write_frame(&mut writer, Kind::BufferAttached, frame.request_id, &[])?;
+            }
+            Kind::DetachBuffer => {
+                if shared.as_ref().map(|(id, _)| *id) != Some(frame.request_id) {
+                    return Err(io::Error::other("stale OCR buffer detach"));
+                }
+                shared = None;
+                write_frame(&mut writer, Kind::BufferDetached, frame.request_id, &[])?;
+            }
+            Kind::Submit => {
+                let mut d = Decoder::new(&frame.payload);
+                let generation = d.u64()?;
+                let width = d.u32()? as usize;
+                let height = d.u32()? as usize;
+                let stride = d.u32()? as usize;
+                let sequence = d.u64()?;
+                if !d.done() || staged.is_some() || sequence <= last_sequence {
+                    return Err(io::Error::other("invalid OCR image transfer"));
+                }
+                let Some((id, image)) = &shared else {
+                    return Err(io::Error::other("OCR buffer is absent"));
+                };
+                if *id != generation {
+                    return Err(io::Error::other("stale OCR image transfer"));
+                }
+                let data = image.read_bgr(0, width, height, stride, sequence)?;
+                last_sequence = sequence;
+                staged = Some((
+                    frame.request_id,
+                    OcrInput::BgrU8 {
+                        width,
+                        height,
+                        data,
+                    },
+                ));
+                let mut ack = Vec::new();
+                ack.extend_from_slice(&generation.to_le_bytes());
+                ack.extend_from_slice(&sequence.to_le_bytes());
+                write_frame(&mut writer, Kind::ImageConsumed, frame.request_id, &ack)?;
+            }
+            Kind::Recognize => {
+                if active.is_some() {
+                    return Err(io::Error::other("OCR inference is already running"));
+                }
+                let Some((id, input)) = staged.take() else {
+                    return Err(io::Error::other("OCR image is absent"));
+                };
+                if id != frame.request_id {
+                    return Err(io::Error::other("OCR image ownership mismatch"));
+                }
+                let cancelled = Arc::new(AtomicBool::new(false));
+                active = Some((id, Arc::clone(&cancelled)));
+                work_tx
+                    .send(Work::Recognize(Job {
+                        id,
+                        queued_at: Instant::now(),
+                        input,
+                        cancelled,
+                    }))
+                    .map_err(io::Error::other)?;
+            }
+            Kind::DiscardImage => {
+                if staged.as_ref().map(|(id, _)| *id) == Some(frame.request_id) {
+                    staged = None;
+                }
+            }
+            Kind::PrepareSession => {
+                if active.is_some() {
+                    return Err(io::Error::other("cannot replace an executing OCR session"));
+                }
+                work_tx
+                    .send(Work::Prepare(
+                        frame.request_id,
+                        session_config(&frame.payload, &state)?,
+                    ))
+                    .map_err(io::Error::other)?;
+            }
+            Kind::ReleaseSession => {
+                if active.is_some() {
+                    return Err(io::Error::other("cannot release an executing OCR session"));
+                }
+                work_tx
+                    .send(Work::Release(frame.request_id))
+                    .map_err(io::Error::other)?;
+            }
+            Kind::Cancel => {
+                if let Some((id, flag)) = &active
+                    && *id == frame.request_id
+                {
+                    flag.store(true, Ordering::Release);
+                }
+            }
+            Kind::Shutdown => break,
+            _ => return Err(io::Error::other("unexpected OCR command")),
         }
     }
-    let mut scheduler = scheduler;
-    scheduler.shutdown();
-    while let Some(completion) = scheduler.try_completion() {
-        write_frame(
-            &mut writer,
-            Kind::Complete,
-            completion.id,
-            &completion_payload(&completion),
-        )?;
-    }
+    drop(staged);
+    drop(shared);
+    drop(work_tx);
+    let _ = worker.join();
     write_frame(&mut writer, Kind::ShutdownAck, 0, &[])
 }
 

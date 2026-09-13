@@ -29,8 +29,7 @@ class AdaptiveScrollingCaptureCadence final {
     using Duration = Clock::duration;
     using Config = AdaptiveScrollingCaptureCadenceConfig;
 
-    explicit AdaptiveScrollingCaptureCadence(
-        AdaptiveScrollingCaptureCadenceConfig config = {})
+    explicit AdaptiveScrollingCaptureCadence(AdaptiveScrollingCaptureCadenceConfig config = {})
         : m_config(normalizeConfig(config)), m_targetFps(m_config.initialFps) {}
 
     void reset() {
@@ -60,15 +59,14 @@ class AdaptiveScrollingCaptureCadence final {
             return;
         }
         m_recoverySampleCount = 0;
-        m_targetFps = std::max(
-            static_cast<double>(m_config.minimumFps),
-            std::floor(std::min(m_targetFps * 0.75, sustainableFps())));
+        m_targetFps = std::max(static_cast<double>(m_config.minimumFps),
+                               std::floor(std::min(m_targetFps * 0.75, sustainableFps())));
     }
 
     void setMaximumFps(int maximumFps) {
         m_config.maximumFps = std::clamp(maximumFps, m_config.minimumFps, kAbsoluteMaximumFps);
-        m_config.initialFps = std::clamp(m_config.initialFps, m_config.minimumFps,
-                                         m_config.maximumFps);
+        m_config.initialFps =
+            std::clamp(m_config.initialFps, m_config.minimumFps, m_config.maximumFps);
         m_targetFps = std::clamp(m_targetFps, static_cast<double>(m_config.minimumFps),
                                  static_cast<double>(m_config.maximumFps));
     }
@@ -78,8 +76,7 @@ class AdaptiveScrollingCaptureCadence final {
     }
 
     [[nodiscard]] LimitingStage limitingStage() const {
-        const double captureCost =
-            std::max(m_captureCostMilliseconds, m_captureLatestMilliseconds);
+        const double captureCost = std::max(m_captureCostMilliseconds, m_captureLatestMilliseconds);
         const double stitchCost = std::max(m_stitchCostMilliseconds, m_stitchLatestMilliseconds);
         if (captureCost <= 0.0 && stitchCost <= 0.0) {
             return LimitingStage::Warmup;
@@ -102,9 +99,9 @@ class AdaptiveScrollingCaptureCadence final {
         if (stageCostMilliseconds <= 0.0) {
             return static_cast<double>(m_config.maximumFps);
         }
-        return std::clamp(
-            std::floor(1000.0 / (stageCostMilliseconds * m_config.capacityHeadroom)),
-            static_cast<double>(m_config.minimumFps), static_cast<double>(m_config.maximumFps));
+        return std::clamp(std::floor(1000.0 / (stageCostMilliseconds * m_config.capacityHeadroom)),
+                          static_cast<double>(m_config.minimumFps),
+                          static_cast<double>(m_config.maximumFps));
     }
 
   private:
@@ -113,14 +110,11 @@ class AdaptiveScrollingCaptureCadence final {
     static constexpr double kDefaultCapacityHeadroom = 1.25;
     static constexpr double kDefaultEwmaSampleWeight = 0.25;
 
-    static AdaptiveScrollingCaptureCadenceConfig normalizeConfig(
-        AdaptiveScrollingCaptureCadenceConfig config) {
-        config.minimumFps = std::clamp(config.minimumFps, kAbsoluteMinimumFps,
-                                       kAbsoluteMaximumFps);
-        config.maximumFps = std::clamp(config.maximumFps, config.minimumFps,
-                                       kAbsoluteMaximumFps);
-        config.initialFps = std::clamp(config.initialFps, config.minimumFps,
-                                       config.maximumFps);
+    static AdaptiveScrollingCaptureCadenceConfig
+    normalizeConfig(AdaptiveScrollingCaptureCadenceConfig config) {
+        config.minimumFps = std::clamp(config.minimumFps, kAbsoluteMinimumFps, kAbsoluteMaximumFps);
+        config.maximumFps = std::clamp(config.maximumFps, config.minimumFps, kAbsoluteMaximumFps);
+        config.initialFps = std::clamp(config.initialFps, config.minimumFps, config.maximumFps);
         if (!std::isfinite(config.capacityHeadroom) || config.capacityHeadroom < 1.0) {
             config.capacityHeadroom = kDefaultCapacityHeadroom;
         }
@@ -146,10 +140,9 @@ class AdaptiveScrollingCaptureCadence final {
         if (latest <= 0.0) {
             return;
         }
-        ewma = ewma <= 0.0
-                   ? latest
-                   : (ewma * (1.0 - m_config.ewmaSampleWeight)) +
-                         (latest * m_config.ewmaSampleWeight);
+        ewma = ewma <= 0.0 ? latest
+                           : (ewma * (1.0 - m_config.ewmaSampleWeight)) +
+                                 (latest * m_config.ewmaSampleWeight);
     }
 
     void updateTarget() {

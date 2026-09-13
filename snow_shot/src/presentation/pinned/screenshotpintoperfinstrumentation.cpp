@@ -37,7 +37,8 @@ class FileSink final : public Sink {
         }
     }
     void recordMilestone(const char* name, qint64 nanoseconds) override {
-        if (state.active) state.milestones[QString::fromLatin1(name)] = nanoseconds;
+        if (state.active)
+            state.milestones[QString::fromLatin1(name)] = nanoseconds;
     }
     void recordCounter(const char* name, qint64 value) override {
         if (state.active) {
@@ -46,8 +47,10 @@ class FileSink final : public Sink {
         }
     }
     void finish(bool success) override {
-        if (!state.active) return;
-        QJsonObject object{{QStringLiteral("timestamp_utc"), QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)},
+        if (!state.active)
+            return;
+        QJsonObject object{{QStringLiteral("timestamp_utc"),
+                            QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)},
                            {QStringLiteral("scenario"), state.scenario},
                            {QStringLiteral("width"), state.width},
                            {QStringLiteral("height"), state.height},
@@ -56,7 +59,8 @@ class FileSink final : public Sink {
                            {QStringLiteral("spans_ns"), state.spans},
                            {QStringLiteral("milestones_ns"), state.milestones},
                            {QStringLiteral("counters"), state.counters},
-                           {QStringLiteral("thread"), QString::number(reinterpret_cast<quintptr>(QThread::currentThreadId()))}};
+                           {QStringLiteral("thread"), QString::number(reinterpret_cast<quintptr>(
+                                                          QThread::currentThreadId()))}};
         if (traceFile.isOpen()) {
             traceFile.write(QJsonDocument(object).toJson(QJsonDocument::Compact));
             traceFile.write("\n");
@@ -70,7 +74,8 @@ FileSink fileSink;
 
 void configureTrace(const QString& path) {
     QMutexLocker lock(&mutex);
-    if (traceFile.isOpen()) traceFile.close();
+    if (traceFile.isOpen())
+        traceFile.close();
     if (!path.isEmpty()) {
         traceFile.setFileName(path);
         static_cast<void>(traceFile.open(QIODevice::WriteOnly | QIODevice::Append));
@@ -78,28 +83,53 @@ void configureTrace(const QString& path) {
     activeSink = &fileSink;
 }
 void beginSample(const char* scenario, qint64 width, qint64 height) {
-    if (state.active) fileSink.finish(false);
+    if (state.active)
+        fileSink.finish(false);
     QMutexLocker lock(&mutex);
     state = {};
     state.scenario = QString::fromLatin1(scenario);
-    state.width = width; state.height = height; state.timer.start(); state.active = true;
+    state.width = width;
+    state.height = height;
+    state.timer.start();
+    state.active = true;
 }
 void setSampleDescriptor(const char* scenario, qint64 width, qint64 height) {
     QMutexLocker lock(&mutex);
-    if (!state.active) return;
+    if (!state.active)
+        return;
     if (scenario != nullptr && scenario[0] != '\0') {
         state.scenario = QString::fromLatin1(scenario);
     }
-    if (width > 0) state.width = width;
-    if (height > 0) state.height = height;
+    if (width > 0)
+        state.width = width;
+    if (height > 0)
+        state.height = height;
 }
-void milestone(const char* name) { QMutexLocker lock(&mutex); if (activeSink && state.active) { const qint64 elapsed = state.timer.nsecsElapsed(); activeSink->recordMilestone(name, elapsed); } }
-void counter(const char* name, qint64 value) { QMutexLocker lock(&mutex); if (activeSink && state.active) activeSink->recordCounter(name, value); }
+void milestone(const char* name) {
+    QMutexLocker lock(&mutex);
+    if (activeSink && state.active) {
+        const qint64 elapsed = state.timer.nsecsElapsed();
+        activeSink->recordMilestone(name, elapsed);
+    }
+}
+void counter(const char* name, qint64 value) {
+    QMutexLocker lock(&mutex);
+    if (activeSink && state.active)
+        activeSink->recordCounter(name, value);
+}
 Scope::~Scope() {
-    const qint64 elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - m_started).count();
-    QMutexLocker lock(&mutex); if (activeSink && state.active) activeSink->recordScope(m_name, elapsed);
+    const qint64 elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               std::chrono::steady_clock::now() - m_started)
+                               .count();
+    QMutexLocker lock(&mutex);
+    if (activeSink && state.active)
+        activeSink->recordScope(m_name, elapsed);
 }
-void finish(bool success) { QMutexLocker lock(&mutex); if (activeSink && state.active) activeSink->finish(success); }
+void finish(bool success) {
+    QMutexLocker lock(&mutex);
+    if (activeSink && state.active)
+        activeSink->finish(success);
+}
 } // namespace snow_shot::presentation::pin_perf
 #else
 namespace snow_shot::presentation::pin_perf {

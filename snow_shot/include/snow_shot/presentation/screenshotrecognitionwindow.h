@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTRECOGNITIONWINDOW_H
 
 #include "snow_shot/presentation/screenshotselectiongeometry.h"
+#include "snow_shot/presentation/screenshotocrtextlayer.h"
 #include "snow_shot/presentation/screenshotimageconversion.h"
 #include "snow_shot/presentation/screenshotrecognitionimage.h"
 #include <optional>
@@ -89,6 +90,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
         QRectF canvasSelection;
         PresentationMode presentationMode = PresentationMode::TopLevelWindow;
         qreal formattedTextDevicePixelRatio = 1.0;
+        bool takeFocus = true;
     };
 
     explicit ScreenshotRecognitionWindow(
@@ -101,7 +103,12 @@ class ScreenshotRecognitionWindow final : public QWidget {
     [[nodiscard]] bool updateSelectionGeometry(const QRect& geometry,
                                                const QRectF& canvasSelection);
 
-    void setOcrPresentation(std::shared_ptr<ScreenshotOcrPresentation> presentation);
+    void setOcrPresentation(
+        std::shared_ptr<ScreenshotOcrPresentation> presentation,
+        ScreenshotOcrTextLayer::RenderingMode mode = ScreenshotOcrTextLayer::RenderingMode::Normal,
+        bool takeFocus = true);
+    void updateOcrSelection();
+    void clearOcrSelection();
     void updateOcrText(int lineIndex, const QString& text);
     void clearOcrPresentation();
     [[nodiscard]] std::optional<ScreenshotRecognitionImageSnapshot>
@@ -178,6 +185,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     qreal m_formattedTextDevicePixelRatio = 1.0;
     PresentationMode m_presentationMode = PresentationMode::TopLevelWindow;
     bool m_selectionResizeActive = false;
+    bool m_selectionOnly = false;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTRECOGNITIONWINDOW_H

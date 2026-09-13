@@ -74,6 +74,9 @@ class SnowCanvasWidget : public QWidget {
     bool undo();
     bool redo();
     bool deleteSelected();
+    // Deletes every document element as one undoable history entry, preserving viewports,
+    // creation styles, history, and document-wide configuration.
+    bool deleteAllElements();
     // Clears all document elements and history, preserving viewports and creation styles.
     bool clearDocument();
     bool duplicateSelected(const QPointF& offset = QPointF(12.0, 12.0));

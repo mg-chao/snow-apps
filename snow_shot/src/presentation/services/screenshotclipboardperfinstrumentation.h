@@ -82,10 +82,10 @@ class Scope final {
 
 #define SNOW_SHOT_CLIPBOARD_PERF_CONCAT_IMPL(a, b) a##b
 #define SNOW_SHOT_CLIPBOARD_PERF_CONCAT(a, b) SNOW_SHOT_CLIPBOARD_PERF_CONCAT_IMPL(a, b)
-#define SNOW_SHOT_CLIPBOARD_PERF_SCOPE(name)                                                     \
-    ::snow_shot::presentation::clipboard_perf::Scope SNOW_SHOT_CLIPBOARD_PERF_CONCAT(            \
+#define SNOW_SHOT_CLIPBOARD_PERF_SCOPE(name)                                                       \
+    ::snow_shot::presentation::clipboard_perf::Scope SNOW_SHOT_CLIPBOARD_PERF_CONCAT(              \
         snowShotClipboardPerfScope, __LINE__)(name)
-#define SNOW_SHOT_CLIPBOARD_PERF_COUNTER(name, value)                                            \
+#define SNOW_SHOT_CLIPBOARD_PERF_COUNTER(name, value)                                              \
     ::snow_shot::presentation::clipboard_perf::counter(name, value)
 
 #endif // SNOW_SHOT_SCREENSHOTCLIPBOARDPERFINSTRUMENTATION_H

@@ -11,8 +11,7 @@ use crate::arrow_hit_test::{
 };
 use crate::{
     ArrowEndpointEdge, ArrowEndpointSelector, ArrowState, BindMode, BindableLookupRecord,
-    BindableState, Bounds, FixedPointBinding, Point,
-    normalize_arrow_endpoint_edge,
+    BindableState, Bounds, FixedPointBinding, Point, normalize_arrow_endpoint_edge,
 };
 
 #[path = "binding_geometry_direction.rs"]

@@ -118,6 +118,16 @@ MutationResult deleteSelected(SnowRuntime runtime, SnowViewport viewport) {
     return result;
 }
 
+MutationResult deleteAllElements(SnowRuntime runtime, SnowViewport viewport) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport)) {
+        return result;
+    }
+    result.success = snow_viewport_delete_all_elements_ex(
+                         runtime, viewport, result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
 MutationResult duplicateSelected(SnowRuntime runtime, SnowViewport viewport, double offsetX,
                                  double offsetY) {
     MutationResult result;

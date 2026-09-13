@@ -40,11 +40,10 @@ QByteArray configuredSelectorBackend() {
 
 bool smartSelectionEnabled() {
     const auto& storage = snow_shot::storage::ApplicationStorage::instance();
-    return storage.isInitialized()
-               ? storage.smartSelectionEnabled()
-               : snow_shot::storage::ConfigurationSchema::defaultValue(
-                     QStringLiteral("screenshot_selection/smart_selection"))
-                     .toBool();
+    return storage.isInitialized() ? storage.smartSelectionEnabled()
+                                   : snow_shot::storage::ConfigurationSchema::defaultValue(
+                                         QStringLiteral("screenshot_selection/smart_selection"))
+                                         .toBool();
 }
 
 SnowUiSelectorBackend selectorBackendForCurrentMode() {
@@ -52,8 +51,8 @@ SnowUiSelectorBackend selectorBackendForCurrentMode() {
         .backend;
 }
 
-SnowUiSelectorHitTestMode hitTestModeForRequestedTarget(
-    ScreenshotSelectorHitTestMode requestedMode) {
+SnowUiSelectorHitTestMode
+hitTestModeForRequestedTarget(ScreenshotSelectorHitTestMode requestedMode) {
     return screenshotSelectorHitTestMode(smartSelectionEnabled(), requestedMode);
 }
 
@@ -94,8 +93,7 @@ bool ScreenshotSelectorServiceClient::hasService() const {
 
 bool ScreenshotSelectorServiceClient::ensureService() {
     const SnowUiSelectorBackend desiredBackend = selectorBackendForCurrentMode();
-    if (m_service != nullptr &&
-        m_serviceBackend != static_cast<int>(desiredBackend)) {
+    if (m_service != nullptr && m_serviceBackend != static_cast<int>(desiredBackend)) {
         destroyService();
     }
     if (m_service != nullptr) {
@@ -154,8 +152,7 @@ bool ScreenshotSelectorServiceClient::startRefresh(quint64 requestId,
     return true;
 }
 
-bool ScreenshotSelectorServiceClient::startHitTest(quint64 requestId,
-                                                   const QPoint& physicalPoint,
+bool ScreenshotSelectorServiceClient::startHitTest(quint64 requestId, const QPoint& physicalPoint,
                                                    ScreenshotSelectorHitTestMode mode) {
     if (!ensureService()) {
         return false;
@@ -164,8 +161,8 @@ bool ScreenshotSelectorServiceClient::startHitTest(quint64 requestId,
     auto* context = new HitTestCallbackContext{QPointer<ScreenshotSelectorServiceClient>(this)};
     const uint8_t started = snow_ui_selector_service_hit_test_point_async(
         m_service, static_cast<std::uint64_t>(requestId), physicalPoint.x(), physicalPoint.y(),
-        hitTestModeForRequestedTarget(mode),
-        &ScreenshotSelectorServiceClient::hitTestCallback, context);
+        hitTestModeForRequestedTarget(mode), &ScreenshotSelectorServiceClient::hitTestCallback,
+        context);
     if (started == 0) {
         delete context;
         return false;

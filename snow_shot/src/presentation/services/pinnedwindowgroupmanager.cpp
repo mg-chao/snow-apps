@@ -39,13 +39,15 @@ PinnedWindowGroupManager::PinnedWindowGroupManager(storage::PinnedWindowReposito
             m_repository = &storage.pinnedWindows();
         }
     }
-    m_groups = m_repository != nullptr ? m_repository->groups() : QVector<storage::PinnedWindowGroup>{};
+    m_groups =
+        m_repository != nullptr ? m_repository->groups() : QVector<storage::PinnedWindowGroup>{};
     if (m_groups.isEmpty()) {
         m_groups.push_back(defaultGroup());
     }
-    if (std::none_of(m_groups.cbegin(), m_groups.cend(), [](const storage::PinnedWindowGroup& group) {
-            return group.id == QString::fromLatin1(kDefaultGroupId);
-        })) {
+    if (std::none_of(m_groups.cbegin(), m_groups.cend(),
+                     [](const storage::PinnedWindowGroup& group) {
+                         return group.id == QString::fromLatin1(kDefaultGroupId);
+                     })) {
         m_groups.push_front(defaultGroup());
     }
     m_activeGroupId = m_repository != nullptr ? m_repository->activeGroupId()
@@ -73,7 +75,7 @@ QVector<storage::PinnedWindowGroup> PinnedWindowGroupManager::groupsSortedForDis
                       return false;
                   }
                   const int comparison = QString::localeAwareCompare(normalizedDisplayName(first),
-                                                                    normalizedDisplayName(second));
+                                                                     normalizedDisplayName(second));
                   return comparison == 0 ? first.id < second.id : comparison < 0;
               });
     return sorted;
@@ -83,21 +85,20 @@ QString PinnedWindowGroupManager::activeGroupId() const {
     return m_activeGroupId;
 }
 
-QString PinnedWindowGroupManager::normalizedDisplayName(const storage::PinnedWindowGroup& group) const {
+QString
+PinnedWindowGroupManager::normalizedDisplayName(const storage::PinnedWindowGroup& group) const {
     return group.id == QString::fromLatin1(kDefaultGroupId) ? tr("Default") : group.name;
 }
 
 QString PinnedWindowGroupManager::displayName(const QString& groupId) const {
-    const auto it = std::find_if(m_groups.cbegin(), m_groups.cend(), [&groupId](const auto& group) {
-        return group.id == groupId;
-    });
+    const auto it = std::find_if(m_groups.cbegin(), m_groups.cend(),
+                                 [&groupId](const auto& group) { return group.id == groupId; });
     return it == m_groups.cend() ? tr("Default") : normalizedDisplayName(*it);
 }
 
 bool PinnedWindowGroupManager::contains(const QString& groupId) const {
-    return std::any_of(m_groups.cbegin(), m_groups.cend(), [&groupId](const auto& group) {
-        return group.id == groupId;
-    });
+    return std::any_of(m_groups.cbegin(), m_groups.cend(),
+                       [&groupId](const auto& group) { return group.id == groupId; });
 }
 
 int PinnedWindowGroupManager::windowCount(const QString& groupId) const {
@@ -212,9 +213,10 @@ QString PinnedWindowGroupManager::uniqueGeneratedName() const {
     int index = std::max(1, static_cast<int>(m_groups.size()));
     for (;;) {
         const QString candidate = tr("Group %1").arg(index);
-        const bool exists = std::any_of(m_groups.cbegin(), m_groups.cend(), [&candidate](const auto& group) {
-            return group.name.trimmed().compare(candidate, Qt::CaseInsensitive) == 0;
-        });
+        const bool exists =
+            std::any_of(m_groups.cbegin(), m_groups.cend(), [&candidate](const auto& group) {
+                return group.name.trimmed().compare(candidate, Qt::CaseInsensitive) == 0;
+            });
         if (!exists) {
             return candidate;
         }
@@ -315,8 +317,7 @@ void PinnedWindowGroupManager::registerWindow(::ScreenshotPinnedWindow* window,
     const ScreenshotPinnedWindow* identity = window;
     QObject::connect(window, &QObject::destroyed, this, [this, key, identity]() {
         const auto it = m_windows.find(key);
-        if (it != m_windows.end() &&
-            (it.value().isNull() || it.value().data() == identity)) {
+        if (it != m_windows.end() && (it.value().isNull() || it.value().data() == identity)) {
             m_windows.erase(it);
             m_inactiveClosing.remove(key);
         }
@@ -372,12 +373,12 @@ QString PinnedWindowGroupManager::windowKey(::ScreenshotPinnedWindow* window) co
     if (!persistenceId.isEmpty()) {
         return persistenceId;
     }
-    return QStringLiteral("runtime:%1").arg(
-        QString::number(reinterpret_cast<quintptr>(window), 16));
+    return QStringLiteral("runtime:%1")
+        .arg(QString::number(reinterpret_cast<quintptr>(window), 16));
 }
 
 void PinnedWindowGroupManager::openCreateGroupModal(QWidget* owner,
-                                                     ::ScreenshotPinnedWindow* currentWindow) {
+                                                    ::ScreenshotPinnedWindow* currentWindow) {
     auto* form = new adqt::widgets::AdForm();
     form->setObjectName(QStringLiteral("pinnedWindowGroupCreateForm"));
     form->setFixedWidth(352);
@@ -435,8 +436,8 @@ void PinnedWindowGroupManager::openCreateGroupModal(QWidget* owner,
     const QPointer<adqt::widgets::AdLineEdit> inputGuard(input);
     const QPointer<::ScreenshotPinnedWindow> currentWindowGuard(currentWindow);
     connect(modal, &adqt::widgets::AdModal::closeRequested, modal,
-            [this, modal, formGuard, inputGuard, currentWindowGuard](
-                adqt::widgets::AdModal::CloseReason reason) {
+            [this, modal, formGuard, inputGuard,
+             currentWindowGuard](adqt::widgets::AdModal::CloseReason reason) {
                 if (reason != adqt::widgets::AdModal::CloseReason::OkAction) {
                     modal->reject();
                     return;

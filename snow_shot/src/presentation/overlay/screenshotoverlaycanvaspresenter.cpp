@@ -720,3 +720,14 @@ void ScreenshotOverlayCanvasPresenter::deleteSelectedElements(
         }
     });
 }
+
+void ScreenshotOverlayCanvasPresenter::deleteAllElements(
+    const ScreenshotDisplaySession& displaySession) const {
+    bool handled = false;
+    displaySession.forEachOverlay([&handled](qsizetype, ScreenshotOverlayWindow* overlay) {
+        if (!handled && overlay != nullptr && overlay->canvas() != nullptr) {
+            static_cast<void>(overlay->canvas()->deleteAllElements());
+            handled = true;
+        }
+    });
+}

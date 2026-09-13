@@ -514,6 +514,10 @@
             <translation>所有截圖歷史都將被移除</translation>
         </message>
         <message>
+            <source>Always</source>
+            <translation>一律</translation>
+        </message>
+        <message>
             <source>Always hide</source>
             <translation>一律隱藏</translation>
         </message>
@@ -752,6 +756,10 @@
         <message>
             <source>Choose what left-clicking the tray icon does</source>
             <translation>選擇按一下系統匣圖示時執行的動作</translation>
+        </message>
+        <message>
+            <source>Choose when recognized text can be selected on pinned screenshots.</source>
+            <translation>選擇何時可以在貼圖上選取辨識出的文字。</translation>
         </message>
         <message>
             <source>Choose where images are written for automatic save and copy-file actions</source>
@@ -1318,6 +1326,10 @@
             <translation>保持選取區寬高一致</translation>
         </message>
         <message>
+            <source>Keep the recognition process running to avoid startup delays. Uses memory while idle.</source>
+            <translation>保持辨識程序執行以避免啟動延遲，閒置時會占用記憶體。</translation>
+        </message>
+        <message>
             <source>Landscape A4</source>
             <translation>橫向 A4</translation>
         </message>
@@ -1414,6 +1426,10 @@
             <translation>滑鼠中鍵動作</translation>
         </message>
         <message>
+            <source>Model Hot Start</source>
+            <translation>模型熱啟動</translation>
+        </message>
+        <message>
             <source>Model Type</source>
             <translation>模型類型</translation>
         </message>
@@ -1492,6 +1508,10 @@
         <message>
             <source>OCR model</source>
             <translation>OCR 模型</translation>
+        </message>
+        <message>
+            <source>Only when displayed</source>
+            <translation>僅在顯示時</translation>
         </message>
         <message>
             <source>Open Function Settings</source>
@@ -1638,6 +1658,10 @@
             <translation>直向 A4</translation>
         </message>
         <message>
+            <source>Preload the selected model for faster recognition. Requires a resident process and uses additional memory.</source>
+            <translation>預先載入所選模型以加快辨識，需要開啟常駐辨識程序，並會占用額外記憶體。</translation>
+        </message>
+        <message>
             <source>Prevent left-click selection of matching elements while these tools are active</source>
             <translation>使用這些工具時，禁止用滑鼠左鍵選取相同類型的元素</translation>
         </message>
@@ -1740,6 +1764,10 @@
         <message>
             <source>Reset Zoom</source>
             <translation>重設縮放</translation>
+        </message>
+        <message>
+            <source>Resident Recognition Process</source>
+            <translation>常駐辨識程序</translation>
         </message>
         <message>
             <source>Resize scrolling screenshots automatically to remain inside the monitor</source>
@@ -2184,6 +2212,10 @@
         <message>
             <source>Text recognition image saving settings</source>
             <translation>文字辨識圖片儲存設定</translation>
+        </message>
+        <message>
+            <source>Text selection on recognition results</source>
+            <translation>辨識結果文字選取</translation>
         </message>
         <message>
             <source>Text translation</source>

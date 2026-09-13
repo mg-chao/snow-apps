@@ -12,6 +12,8 @@ class QPainter;
 // Owns text-shaping data on the calling thread; independent of widgets and theme state.
 class ScreenshotOcrTextLayout final {
   public:
+    enum class PaintMode { TextAndSelection, SelectionOnly };
+
     void configure(const QString& text, const QFont& font, const QColor& textColor,
                    const ScreenshotOcrTextRange& selection, ScreenshotOcrTextDirection direction,
                    qreal targetAspectRatio, bool paragraph, const QVector<QRectF>& sourceRows = {});
@@ -24,7 +26,8 @@ class ScreenshotOcrTextLayout final {
 
     [[nodiscard]] QRectF boundingRect() const;
     void paint(QPainter* painter, const QColor& selectionBackground = {},
-               const QColor& selectionForeground = {}) const;
+               const QColor& selectionForeground = {},
+               PaintMode mode = PaintMode::TextAndSelection) const;
 
   private:
     struct FittedRow {

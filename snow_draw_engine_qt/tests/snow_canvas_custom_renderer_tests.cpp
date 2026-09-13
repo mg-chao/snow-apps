@@ -544,9 +544,8 @@ void coalescedSceneRevisionsInvalidateEveryDirtyRegion() {
     canvas.setCanvasContentVisible(false);
     canvas.setCanvasContentVisible(true);
     const QImage uncached = renderCanvas(canvas);
-    require(
-        cached == uncached,
-        "coalesced scene revisions must not leave earlier dirty regions valid");
+    require(cached == uncached,
+            "coalesced scene revisions must not leave earlier dirty regions valid");
 }
 
 void rectangleStrokeStylesRenderDistinctPatterns() {

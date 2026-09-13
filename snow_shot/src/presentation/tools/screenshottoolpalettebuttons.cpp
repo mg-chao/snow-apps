@@ -1477,8 +1477,37 @@ createScreenshotToolPaletteRadioEditor(QWidget* parent,
     return editor;
 }
 
+namespace {
+class ToolbarPopoverMaterializer final : public QObject {
+  public:
+    ToolbarPopoverMaterializer(adqt::widgets::AdPopover* popover, QObject* receiver,
+                               const std::function<void()>& materialize)
+        : QObject(popover), m_popover(popover), m_receiver(receiver), m_materialize(materialize) {
+        // Install after AdPopover's filter so content exists before it reconciles hover.
+        popover->sourceWidget()->installEventFilter(this);
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        const auto type = event->type();
+        if ((type == QEvent::Enter || type == QEvent::HoverEnter || type == QEvent::MouseMove ||
+             type == QEvent::HoverMove) &&
+            m_receiver && m_popover->contentWidget() == nullptr && m_materialize) {
+            m_materialize();
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+  private:
+    adqt::widgets::AdPopover* m_popover;
+    QPointer<QObject> m_receiver;
+    std::function<void()> m_materialize;
+};
+} // namespace
+
 adqt::widgets::AdPopover*
-createScreenshotToolPaletteOptionPopoverShell(adqt::widgets::AdButton* trigger) {
+createScreenshotToolPaletteOptionPopoverShell(adqt::widgets::AdButton* trigger, QObject* receiver,
+                                              const std::function<void()>& materialize) {
     if (trigger == nullptr) {
         return nullptr;
     }
@@ -1491,6 +1520,7 @@ createScreenshotToolPaletteOptionPopoverShell(adqt::widgets::AdButton* trigger) 
     popover->setPlacement(adqt::widgets::AdPopover::Placement::Top);
     popover->setPopupLayerMode(adqt::widgets::AdPopover::PopupLayerMode::QtTool);
     popover->setArrowVisible(true);
+    new ToolbarPopoverMaterializer(popover, receiver, materialize);
     return popover;
 }
 

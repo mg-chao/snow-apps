@@ -53,9 +53,9 @@ void renderDocumentDecorations(QPainter& painter, const Frame& frame) {
             frame.hasSpotlightRenderArea
                 ? frame.spotlightRenderArea
                 : QRectF(0.0, 0.0, frame.sceneInfo->surface_width, frame.sceneInfo->surface_height);
-        snow_canvas_spotlight_renderer::render(
-            painter, *frame.sceneInfo, *frame.spotlightInfo, frame.spotlightCutouts,
-            frame.spotlightCutoutCount, spotlightArea, exposedRegion);
+        snow_canvas_spotlight_renderer::render(painter, *frame.sceneInfo, *frame.spotlightInfo,
+                                               frame.spotlightCutouts, frame.spotlightCutoutCount,
+                                               spotlightArea, exposedRegion);
     }
     if (frame.watermarkInfo == nullptr) {
         return;

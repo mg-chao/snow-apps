@@ -22,8 +22,7 @@ inline void configureSettingsScrollArea(adqt::widgets::AdScrollArea* scrollArea,
     if (adqt::widgets::AdScrollBar* scrollBar = scrollArea->overlayVerticalScrollBar();
         scrollBar != nullptr) {
         scrollBar->setOverlayMargins(QMargins(metric.scrollbarMargin, metric.scrollbarMargin,
-                                              metric.scrollbarMargin,
-                                              metric.scrollbarMargin));
+                                              metric.scrollbarMargin, metric.scrollbarMargin));
     }
 
     QWidget* viewport = scrollArea->viewport();
@@ -37,8 +36,7 @@ inline int settingsControlWidth(const styles::ThemeAliasMetricToken&) {
     return 230;
 }
 
-inline QWidget* createSettingItemRow(QWidget* parent,
-                                     const styles::ThemeAliasMetricToken& metric,
+inline QWidget* createSettingItemRow(QWidget* parent, const styles::ThemeAliasMetricToken& metric,
                                      QLabel** title, QLabel** description, QWidget* control,
                                      const QString& objectName) {
     auto* row = new QWidget(parent);

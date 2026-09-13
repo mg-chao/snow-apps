@@ -18,11 +18,10 @@ class SettingsPageWidget final : public QWidget {
     Q_OBJECT
 
   public:
-    SettingsPageWidget(
-        const snow_shot::presentation::settings::SettingsRegistry& registry,
-        const QString& pageId,
-        snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession,
-        QWidget* parent = nullptr);
+    SettingsPageWidget(const snow_shot::presentation::settings::SettingsRegistry& registry,
+                       const QString& pageId,
+                       snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession,
+                       QWidget* parent = nullptr);
     ~SettingsPageWidget() override;
 
     [[nodiscard]] QString pageId() const;
@@ -31,8 +30,7 @@ class SettingsPageWidget final : public QWidget {
     void retranslateUi();
 
   signals:
-    void commandRequested(
-        const snow_shot::presentation::settings::SettingsCommand& command);
+    void commandRequested(const snow_shot::presentation::settings::SettingsCommand& command);
     void visibleSectionChanged(const QString& sectionId);
 
   protected:

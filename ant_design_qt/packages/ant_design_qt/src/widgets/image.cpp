@@ -195,7 +195,7 @@ QString dataUrlNameHint(const QUrl& source) {
 }
 
 snow::image::Result<snow::image::Input> makeSnowInput(const QUrl& source,
-                                                       const QByteArray& suppliedBytes) {
+                                                      const QByteArray& suppliedBytes) {
   if (!suppliedBytes.isEmpty()) {
     return snow::image::memory_input(sharedBytes(suppliedBytes),
                                      sourceNameHint(source).toUtf8().toStdString());
@@ -205,7 +205,7 @@ snow::image::Result<snow::image::Input> makeSnowInput(const QUrl& source,
   if (source.scheme().compare(QStringLiteral("data"), Qt::CaseInsensitive) == 0) {
     if (!decodeDataUrl(source, &dataBytes)) {
       return snow::image::Status::error(snow::image::ErrorCode::invalid_argument,
-                                         "The data URL payload is invalid.");
+                                        "The data URL payload is invalid.");
     }
     return snow::image::memory_input(sharedBytes(dataBytes),
                                      dataUrlNameHint(source).toUtf8().toStdString());
@@ -213,19 +213,19 @@ snow::image::Result<snow::image::Input> makeSnowInput(const QUrl& source,
 
   if (source.scheme().compare(QStringLiteral("qrc"), Qt::CaseInsensitive) == 0 ||
       source.toString().startsWith(QStringLiteral(":/"))) {
-    const QString resourcePath = source.scheme().compare(QStringLiteral("qrc"),
-                                                          Qt::CaseInsensitive) == 0
-                                      ? QStringLiteral(":") + source.path()
-                                      : source.toString();
+    const QString resourcePath =
+        source.scheme().compare(QStringLiteral("qrc"), Qt::CaseInsensitive) == 0
+            ? QStringLiteral(":") + source.path()
+            : source.toString();
     QFile resource(resourcePath);
     if (!resource.open(QIODevice::ReadOnly)) {
       return snow::image::Status::error(snow::image::ErrorCode::io_error,
-                                         "Could not open the image resource.");
+                                        "Could not open the image resource.");
     }
     const QByteArray resourceBytes = resource.readAll();
     if (resourceBytes.isEmpty()) {
       return snow::image::Status::error(snow::image::ErrorCode::io_error,
-                                         "The image resource is empty.");
+                                        "The image resource is empty.");
     }
     return snow::image::memory_input(sharedBytes(resourceBytes),
                                      sourceNameHint(source).toUtf8().toStdString());
@@ -233,7 +233,7 @@ snow::image::Result<snow::image::Input> makeSnowInput(const QUrl& source,
 
   if (isRemoteSource(source)) {
     return snow::image::Status::error(snow::image::ErrorCode::invalid_argument,
-                                       "A remote image response was not provided.");
+                                      "A remote image response was not provided.");
   }
 
   QString path;
@@ -245,7 +245,7 @@ snow::image::Result<snow::image::Input> makeSnowInput(const QUrl& source,
     path = sourceToString(source);
   } else {
     return snow::image::Status::error(snow::image::ErrorCode::invalid_argument,
-                                       "The image URL scheme is unsupported.");
+                                      "The image URL scheme is unsupported.");
   }
   return snow::image::file_input(std::filesystem::path(path.toStdU16String()));
 }
@@ -261,9 +261,8 @@ QImage imageFromSnow(const snow::image::Image& source, QString* error) {
     return {};
   }
   const std::size_t rowBytes = static_cast<std::size_t>(source.width()) * 4U;
-  if (source.row_stride() < rowBytes || source.pixels().size() <
-                                            source.row_stride() *
-                                                static_cast<std::size_t>(source.height())) {
+  if (source.row_stride() < rowBytes ||
+      source.pixels().size() < source.row_stride() * static_cast<std::size_t>(source.height())) {
     if (error) {
       *error = QStringLiteral("The decoded image raster is invalid.");
     }
@@ -318,8 +317,8 @@ DecodedImage decodeImage(const QUrl& source, const QByteArray& suppliedBytes,
                           static_cast<int>(inspected.value().canvas_height));
       const QSize target = boundedDecodeSize(naturalSize, options);
       if (target.isValid() && !target.isEmpty()) {
-        decodeOptions.maximum_extent = static_cast<std::uint32_t>(
-            std::max(target.width(), target.height()));
+        decodeOptions.maximum_extent =
+            static_cast<std::uint32_t>(std::max(target.width(), target.height()));
       }
     }
 
@@ -541,25 +540,25 @@ class DefaultImageLoader final : public AdImageLoader {
     if (isRemoteSource(source)) {
       QNetworkReply* networkReply = sharedNetworkManager()->get(QNetworkRequest(source));
       operation->networkReply = networkReply;
-      QObject::connect(
-          networkReply, &QNetworkReply::finished, this, [this, operation, networkReply]() {
-            networkReply->deleteLater();
-            if (operations_.value(operation->key) != operation ||
-                operation->subscribers.isEmpty()) {
-              return;
-            }
-            if (networkReply->error() != QNetworkReply::NoError) {
-              finishOperation(operation, DecodedImage{}, networkReply->errorString());
-              return;
-            }
-            const QByteArray bytes = networkReply->readAll();
-            if (bytes.isEmpty()) {
-              finishOperation(operation, DecodedImage{},
-                              QStringLiteral("Image response was empty"));
-              return;
-            }
-            startDecode(operation, bytes);
-          });
+      QObject::connect(networkReply, &QNetworkReply::finished, this,
+                       [this, operation, networkReply]() {
+                         networkReply->deleteLater();
+                         if (operations_.value(operation->key) != operation ||
+                             operation->subscribers.isEmpty()) {
+                           return;
+                         }
+                         if (networkReply->error() != QNetworkReply::NoError) {
+                           finishOperation(operation, DecodedImage{}, networkReply->errorString());
+                           return;
+                         }
+                         const QByteArray bytes = networkReply->readAll();
+                         if (bytes.isEmpty()) {
+                           finishOperation(operation, DecodedImage{},
+                                           QStringLiteral("Image response was empty"));
+                           return;
+                         }
+                         startDecode(operation, bytes);
+                       });
     } else {
       startDecode(operation, QByteArray());
     }
@@ -585,25 +584,24 @@ class DefaultImageLoader final : public AdImageLoader {
     }
     ++activeDecodeTasks_;
     const std::uint64_t poolGeneration = poolGeneration_;
-    decodePool_->start([guardedLoader, operation, bytes = std::move(bytes), poolGeneration]() mutable {
-      const DecodedImage decoded = decodeImage(operation->source, bytes, operation->options);
-      if (!guardedLoader) {
-        return;
-      }
-      QMetaObject::invokeMethod(
-          guardedLoader,
-          [guardedLoader, operation, decoded, poolGeneration]() {
-            if (!guardedLoader) {
-              return;
-            }
-            guardedLoader->finishOperation(
-                operation, decoded,
-                decoded.image.isNull() ? decoded.errorString
-                                       : QString());
-            guardedLoader->finishDecodeTask(poolGeneration);
-          },
-          Qt::QueuedConnection);
-    });
+    decodePool_->start(
+        [guardedLoader, operation, bytes = std::move(bytes), poolGeneration]() mutable {
+          const DecodedImage decoded = decodeImage(operation->source, bytes, operation->options);
+          if (!guardedLoader) {
+            return;
+          }
+          QMetaObject::invokeMethod(
+              guardedLoader,
+              [guardedLoader, operation, decoded, poolGeneration]() {
+                if (!guardedLoader) {
+                  return;
+                }
+                guardedLoader->finishOperation(
+                    operation, decoded, decoded.image.isNull() ? decoded.errorString : QString());
+                guardedLoader->finishDecodeTask(poolGeneration);
+              },
+              Qt::QueuedConnection);
+        });
   }
 
   void finishOperation(const std::shared_ptr<Operation>& operation, const DecodedImage& decoded,
@@ -2191,7 +2189,6 @@ AdImageLoader::~AdImageLoader() = default;
 
 AdImageLoader* defaultAdImageLoader() { return defaultImageLoaderInstance(); }
 
-
 bool operator==(const AdImageLoadOptions& lhs, const AdImageLoadOptions& rhs) {
   return lhs.targetPixelSize == rhs.targetPixelSize && lhs.aspectRatioMode == rhs.aspectRatioMode &&
          lhs.allowUpscale == rhs.allowUpscale;
@@ -2966,8 +2963,8 @@ QSize AdImage::sizeHint() const {
   }
 
   if (!sourcePixmap.isNull()) {
-    const QSize natural = naturalMainPixelSize_.isValid() ? naturalMainPixelSize_
-                                                          : pixmapActualSize(sourcePixmap);
+    const QSize natural =
+        naturalMainPixelSize_.isValid() ? naturalMainPixelSize_ : pixmapActualSize(sourcePixmap);
     if (targetWidth > 0 && natural.width() > 0) {
       const int h = std::max(1, static_cast<int>(std::round(targetWidth * natural.height() /
                                                             std::max(1, natural.width()))));
@@ -3494,7 +3491,8 @@ void AdImage::reloadPlaceholderImage() {
     return;
   }
 
-  AdImageReply* reply = resolvedImageLoader(imageLoader_)->load(placeholderSource_, AdImageLoadOptions{}, this);
+  AdImageReply* reply =
+      resolvedImageLoader(imageLoader_)->load(placeholderSource_, AdImageLoadOptions{}, this);
   placeholderReply_ = reply;
   const QPointer<AdImageReply> guardedReply(reply);
   QObject::connect(reply, &AdImageReply::finished, this, [this, token, guardedReply]() {

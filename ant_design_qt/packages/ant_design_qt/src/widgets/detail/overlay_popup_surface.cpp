@@ -206,7 +206,7 @@ void OverlayPopupSurface::ensurePathCache() const {
   }
 
   pathCache_->bubble.addRoundedRect(bubbleRect, style_.metrics.borderRadius,
-                                     style_.metrics.borderRadius);
+                                    style_.metrics.borderRadius);
   const QPolygonF arrow = arrowPolygon(bubbleRect);
   if (!arrow.isEmpty()) {
     pathCache_->arrow.addPolygon(arrow);

@@ -275,22 +275,21 @@ QImage ScreenshotSelectionShadowRenderer::composeExport(const QImage& content, i
         std::max<qreal>(1.0, content.devicePixelRatio()));
 }
 
-void ScreenshotSelectionShadowRenderer::renderResultShadow(
-    QPainter& painter, const QRectF& contentBounds, qreal cornerRadius, qreal shadowWidth,
-    const QColor& shadowColor, qreal devicePixelRatio) {
-    renderShadow(painter, contentBounds, cornerRadius, shadowWidth, shadowColor,
-                 devicePixelRatio);
+void ScreenshotSelectionShadowRenderer::renderResultShadow(QPainter& painter,
+                                                           const QRectF& contentBounds,
+                                                           qreal cornerRadius, qreal shadowWidth,
+                                                           const QColor& shadowColor,
+                                                           qreal devicePixelRatio) {
+    renderShadow(painter, contentBounds, cornerRadius, shadowWidth, shadowColor, devicePixelRatio);
 }
 
-ScreenshotResultStyle ScreenshotResultCompositor::normalizedStyle(
-    const ScreenshotResultStyle& style) {
+ScreenshotResultStyle
+ScreenshotResultCompositor::normalizedStyle(const ScreenshotResultStyle& style) {
     ScreenshotResultStyle normalized = style;
     normalized.cornerRadius = std::clamp(
-        normalized.cornerRadius, 0,
-        snow_shot::presentation::kScreenshotSelectionCornerRadiusMax);
+        normalized.cornerRadius, 0, snow_shot::presentation::kScreenshotSelectionCornerRadiusMax);
     normalized.shadowWidth = std::clamp(
-        normalized.shadowWidth, 0,
-        snow_shot::presentation::kScreenshotSelectionShadowWidthMax);
+        normalized.shadowWidth, 0, snow_shot::presentation::kScreenshotSelectionShadowWidthMax);
     if (!normalized.shadowColor.isValid()) {
         normalized.shadowColor = QColor(0x33, 0x33, 0x33);
     }
@@ -372,9 +371,11 @@ QImage ScreenshotResultCompositor::compose(const QImage& content,
     return output;
 }
 
-void ScreenshotResultCompositor::finishLiveSurface(
-    QPainter& painter, const QRectF& viewportBounds, const QRectF& contentBounds,
-    const ScreenshotResultStyle& style, qreal devicePixelRatio, qreal canvasToViewScale) {
+void ScreenshotResultCompositor::finishLiveSurface(QPainter& painter, const QRectF& viewportBounds,
+                                                   const QRectF& contentBounds,
+                                                   const ScreenshotResultStyle& style,
+                                                   qreal devicePixelRatio,
+                                                   qreal canvasToViewScale) {
     if (viewportBounds.isEmpty() || contentBounds.isEmpty()) {
         return;
     }
@@ -392,8 +393,7 @@ void ScreenshotResultCompositor::finishLiveSurface(
     painter.fillPath(outside, Qt::black);
     painter.setCompositionMode(QPainter::CompositionMode_DestinationOver);
     ScreenshotSelectionShadowRenderer::renderResultShadow(
-        painter, contentBounds, viewRadius, viewShadow, normalized.shadowColor,
-        devicePixelRatio);
+        painter, contentBounds, viewRadius, viewShadow, normalized.shadowColor, devicePixelRatio);
     painter.restore();
 }
 

@@ -215,15 +215,21 @@ visibility while no surface is shown. The shared host checks actual visibility f
 some operations. Geometry/scope diagnostics must be examined before calling such a
 case a hover failure. This does not by itself demonstrate a persistent sibling lockout.
 
-### Lazy initialization has a limited fallback
+### Lazy initialization consolidated, 2026-09-13
 
-Main groups materialize content only on `Enter`/`HoverEnter`. Their additional
-`visibilityRequested` connection is ineffective in the default Automatic visibility
-policy; that signal is emitted by the Manual/External path, and empty popovers also
-suppress opening. `MouseMove` can recover a controller's hover state without materializing
-an empty group. If enter events are lost, the supposed fallback does not provide recovery.
-This is a narrower candidate: by itself it does not explain already-materialized sibling
-groups remaining unavailable after ordinary pointer re-entry.
+The main combo-button shell now owns a shared materialization event filter for drawing,
+action, and Table/QR groups. It initializes missing content on Enter/HoverEnter and
+MouseMove/HoverMove before the popup controller handles that input. The callback is
+bound to the receiver's lifetime, and existing content remains retained. This replaces
+the palette's special-case event routing and ineffective `visibilityRequested`
+connections: Automatic visibility does not emit that signal, and an empty popup
+suppresses opening. Group-specific option construction and command handling remain
+with the palette.
+
+`snow-shot-toolbar-popup-recovery-tests` exercises lazy first opening of all three
+group types, both through enter events and through mouse movement alone, then sibling
+reopening before, during, and after Table busy state. This closes the narrower lost-enter
+initialization gap; it does not establish the cause of the earlier persistent failure.
 
 Table busy state itself does not disable all sibling groups. Inspection and the focused
 test confirm that recognition availability is handled on its own triggers/options.

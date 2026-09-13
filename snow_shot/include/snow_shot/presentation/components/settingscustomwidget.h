@@ -9,15 +9,14 @@
 namespace snow_shot::presentation::settings {
 class SettingsRegistry;
 class SettingsRuntimeSession;
-}
+} // namespace snow_shot::presentation::settings
 
 class SettingsCustomWidget : public QWidget {
   public:
     explicit SettingsCustomWidget(QWidget* parent = nullptr) : QWidget(parent) {}
     ~SettingsCustomWidget() override = default;
 
-    virtual void applyTheme(
-        const snow_shot::presentation::styles::ThemeColorScheme& scheme) = 0;
+    virtual void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) = 0;
     virtual void retranslateUi() = 0;
 };
 

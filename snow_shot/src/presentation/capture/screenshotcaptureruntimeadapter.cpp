@@ -12,7 +12,6 @@
 
 #include <QObject>
 
-
 ScreenshotCaptureRuntimeAdapter::ScreenshotCaptureRuntimeAdapter(
     ScreenshotCaptureRuntimeAdapterContext context)
     : m_context(context) {}
@@ -40,8 +39,7 @@ void ScreenshotCaptureRuntimeAdapter::ensureCaptureCoordinator() {
                          }
                      });
     QObject::connect(m_captureCoordinator.get(), &ScreenshotCaptureCoordinator::captureFinished,
-                     m_captureCoordinator.get(),
-                     [this](const ScreenshotCaptureResult& result) {
+                     m_captureCoordinator.get(), [this](const ScreenshotCaptureResult& result) {
                          if (m_captureEventSink != nullptr) {
                              m_captureEventSink->handleCaptureFinished(result);
                          }

@@ -51,7 +51,7 @@ inline void connectScreenRecordingSelection(ScreenshotToolPalette& palette,
     QObject::connect(&palette, &ScreenshotToolPalette::deleteSelectionRequested, &context,
                      [canvas]() { canvas->deleteSelected(); });
     QObject::connect(&palette, &ScreenshotToolPalette::resetCanvasRequested, &context,
-                     [canvas]() { canvas->clearDocument(); });
+                     [canvas]() { canvas->deleteAllElements(); });
 }
 
 } // namespace snow_shot::presentation::recording

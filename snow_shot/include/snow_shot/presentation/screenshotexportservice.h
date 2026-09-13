@@ -25,19 +25,19 @@ class ScreenshotExportService final : public ScreenshotSelectionImageComposerPor
     explicit ScreenshotExportService(ScreenshotExportServiceContext context);
     ~ScreenshotExportService() override;
 
-
-    [[nodiscard]] bool requestSelectionResult(
-        const QRect& selection, const ScreenshotResultStyle& style, QObject* receiver,
-        ImageCallback callback) override;
-    [[nodiscard]] bool requestSelectionClipboard(
-        const QRect& selection, const ScreenshotResultStyle& style, QObject* receiver,
-        ClipboardCallback callback) override;
+    [[nodiscard]] bool requestSelectionResult(const QRect& selection,
+                                              const ScreenshotResultStyle& style, QObject* receiver,
+                                              ImageCallback callback) override;
+    [[nodiscard]] bool requestSelectionClipboard(const QRect& selection,
+                                                 const ScreenshotResultStyle& style,
+                                                 QObject* receiver,
+                                                 ClipboardCallback callback) override;
     [[nodiscard]] std::optional<ScreenshotPinnedSelectionRequest>
     preparePinnedSelection(const QRect& selection,
                            const ScreenshotResultStyle& style) const override;
-    [[nodiscard]] bool schedulePinnedSelection(
-        ScreenshotPinnedSelectionRequest request, QObject* receiver,
-        PinRequestCallback callback) override;
+    [[nodiscard]] bool schedulePinnedSelection(ScreenshotPinnedSelectionRequest request,
+                                               QObject* receiver,
+                                               PinRequestCallback callback) override;
 
   private:
     ScreenshotExportServiceContext m_context;

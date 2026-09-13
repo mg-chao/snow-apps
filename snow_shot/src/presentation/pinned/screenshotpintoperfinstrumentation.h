@@ -38,14 +38,16 @@ void finish(bool success);
 #define SNOW_SHOT_PIN_PERF_CONCAT_IMPL(a, b) a##b
 #define SNOW_SHOT_PIN_PERF_CONCAT(a, b) SNOW_SHOT_PIN_PERF_CONCAT_IMPL(a, b)
 #if defined(SNOW_SHOT_PIN_PERF_INSTRUMENTATION)
-#define SNOW_SHOT_PIN_PERF_SCOPE(name) \
-    ::snow_shot::presentation::pin_perf::Scope SNOW_SHOT_PIN_PERF_CONCAT(snowShotPinPerfScope, __LINE__)(name)
-#define SNOW_SHOT_PIN_PERF_BEGIN(scenario, width, height) \
+#define SNOW_SHOT_PIN_PERF_SCOPE(name)                                                             \
+    ::snow_shot::presentation::pin_perf::Scope SNOW_SHOT_PIN_PERF_CONCAT(snowShotPinPerfScope,     \
+                                                                         __LINE__)(name)
+#define SNOW_SHOT_PIN_PERF_BEGIN(scenario, width, height)                                          \
     ::snow_shot::presentation::pin_perf::beginSample(scenario, width, height)
-#define SNOW_SHOT_PIN_PERF_DESCRIPTOR(scenario, width, height) \
+#define SNOW_SHOT_PIN_PERF_DESCRIPTOR(scenario, width, height)                                     \
     ::snow_shot::presentation::pin_perf::setSampleDescriptor(scenario, width, height)
 #define SNOW_SHOT_PIN_PERF_MILESTONE(name) ::snow_shot::presentation::pin_perf::milestone(name)
-#define SNOW_SHOT_PIN_PERF_COUNTER(name, value) ::snow_shot::presentation::pin_perf::counter(name, value)
+#define SNOW_SHOT_PIN_PERF_COUNTER(name, value)                                                    \
+    ::snow_shot::presentation::pin_perf::counter(name, value)
 #define SNOW_SHOT_PIN_PERF_FINISH(success) ::snow_shot::presentation::pin_perf::finish(success)
 #else
 // The inert forms still consume their value arguments so call sites can pass

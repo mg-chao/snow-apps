@@ -33,10 +33,9 @@ class WindowShortcutManager;
 
 class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort {
   public:
-    explicit ScreenshotOverlayCoordinator(ScreenshotOverlayEventSink& eventSink,
-                                          SnowCanvasRuntime& canvasRuntime,
-                                          snow_shot::presentation::WindowShortcutManager&
-                                              shortcutManager);
+    explicit ScreenshotOverlayCoordinator(
+        ScreenshotOverlayEventSink& eventSink, SnowCanvasRuntime& canvasRuntime,
+        snow_shot::presentation::WindowShortcutManager& shortcutManager);
     ~ScreenshotOverlayCoordinator();
 
     void setToolbarCommandSinks(ScreenshotToolbarCommandSink& toolbarCommands,
@@ -109,6 +108,7 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     void setSelectedElementsOpacity(const ScreenshotDisplaySession& displaySession, qreal opacity);
     void duplicateSelectedElements(const ScreenshotDisplaySession& displaySession);
     void deleteSelectedElements(const ScreenshotDisplaySession& displaySession);
+    void deleteAllElements(const ScreenshotDisplaySession& displaySession);
 
     ScreenshotToolbarWindow* ensureToolbar();
     ScreenshotToolbarWindow* toolbar() const;

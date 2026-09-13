@@ -16,7 +16,7 @@ bool isEnabled();
 // Accumulates wall time into `destination` while in scope. Inert unless
 // diagnostics were enabled for the process.
 class StageTimer {
-public:
+  public:
     explicit StageTimer(std::uint64_t& destination)
         : m_destination(destination), m_enabled(isEnabled()) {
         if (m_enabled) {
@@ -36,7 +36,7 @@ public:
     StageTimer(const StageTimer&) = delete;
     StageTimer& operator=(const StageTimer&) = delete;
 
-private:
+  private:
     std::uint64_t& m_destination;
     bool m_enabled;
     std::chrono::steady_clock::time_point m_start{};

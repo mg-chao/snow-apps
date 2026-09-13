@@ -46,8 +46,7 @@ struct NativeScreenGrid {
   qreal factor = 1.0;
 };
 
-std::optional<NativeScreenGrid> nativeScreenGridForFrame(const QPoint& topLeft,
-                                                         const QSize& size) {
+std::optional<NativeScreenGrid> nativeScreenGridForFrame(const QPoint& topLeft, const QSize& size) {
   RECT rect{topLeft.x(), topLeft.y(), topLeft.x() + size.width(), topLeft.y() + size.height()};
   // Same lookup Qt performs when it picks the screen for a window rectangle.
   const HMONITOR monitor = MonitorFromRect(&rect, MONITOR_DEFAULTTONULL);
@@ -169,15 +168,9 @@ void AdDpiStableWindowController::resetBaseline() {
 bool AdDpiStableWindowController::hasBaseline() const { return baseline_.valid(); }
 
 qreal AdDpiStableWindowController::referenceDpr() const { return baseline_.referenceDpr; }
-QSize AdDpiStableWindowController::stablePhysicalFrameSize() const {
-  return baseline_.frameSize;
-}
-QSize AdDpiStableWindowController::stablePhysicalClientSize() const {
-  return baseline_.clientSize;
-}
-QRect AdDpiStableWindowController::nativeFrameGeometry() const {
-  return baseline_.frameGeometry;
-}
+QSize AdDpiStableWindowController::stablePhysicalFrameSize() const { return baseline_.frameSize; }
+QSize AdDpiStableWindowController::stablePhysicalClientSize() const { return baseline_.clientSize; }
+QRect AdDpiStableWindowController::nativeFrameGeometry() const { return baseline_.frameGeometry; }
 
 bool AdDpiStableWindowController::beginPhysicalDrag() {
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -203,9 +196,8 @@ bool AdDpiStableWindowController::beginPhysicalDrag(const QPointF& cursor) {
     if (!hwnd || !GetWindowRect(hwnd, &frame) || !GetClientRect(hwnd, &client)) {
       return false;
     }
-    baseline_.frameGeometry =
-        QRect(frame.left, frame.top, std::max(1L, frame.right - frame.left),
-              std::max(1L, frame.bottom - frame.top));
+    baseline_.frameGeometry = QRect(frame.left, frame.top, std::max(1L, frame.right - frame.left),
+                                    std::max(1L, frame.bottom - frame.top));
     baseline_.frameSize = baseline_.frameGeometry.size();
     baseline_.clientSize =
         QSize(std::max(1L, client.right - client.left), std::max(1L, client.bottom - client.top));
@@ -277,9 +269,7 @@ QPoint AdDpiStableWindowController::stableNativeTopLeft(const QPoint& nativeTopL
 }
 
 void AdDpiStableWindowController::endPhysicalDrag() { dragSession_.reset(); }
-bool AdDpiStableWindowController::physicalDragActive() const {
-  return dragSession_.has_value();
-}
+bool AdDpiStableWindowController::physicalDragActive() const { return dragSession_.has_value(); }
 QPointF AdDpiStableWindowController::physicalDragAnchor() const {
   return dragSession_.has_value() ? dragSession_->cursorToFrameOffset : QPointF();
 }
@@ -444,9 +434,8 @@ void AdDpiStableWindowController::commitPendingScale() {
   const qreal dpr = AdControlScaleContext::normalizeDpr(currentDpr());
   const QSize logicalExtent(std::max(1, qRound(baseline_.clientSize.width() / dpr)),
                             std::max(1, qRound(baseline_.clientSize.height() / dpr)));
-  AdControlScaleContext context =
-      AdControlScaleContext::fromDprs(baseline_.referenceDpr, dpr,
-                                      diagnostics_.transitionCount + 1);
+  AdControlScaleContext context = AdControlScaleContext::fromDprs(baseline_.referenceDpr, dpr,
+                                                                  diagnostics_.transitionCount + 1);
   if (scaleScope_) scaleScope_->publishScale(context, logicalExtent);
   lastCommittedDpr_ = dpr;
   baseline_.frameGeometry = currentNativeFrameGeometry();

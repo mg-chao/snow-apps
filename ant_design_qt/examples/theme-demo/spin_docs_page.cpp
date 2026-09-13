@@ -190,8 +190,7 @@ QWidget* SpinDocsPage::buildCustomIndicatorDemo() {
   auto* spin = new AdSpin();
   auto* icon = new QLabel();
   icon->setFixedSize(36, 36);
-  icon->setPixmap(
-      adqt::icons::renderIconPixmap(outlined_icons::Sync(), {QSize(36, 36), 1.0}));
+  icon->setPixmap(adqt::icons::renderIconPixmap(outlined_icons::Sync(), {QSize(36, 36), 1.0}));
   icon->setScaledContents(true);
   icon->setAccessibleName(QStringLiteral("Custom loading indicator"));
   spin->setIndicatorWidget(icon);

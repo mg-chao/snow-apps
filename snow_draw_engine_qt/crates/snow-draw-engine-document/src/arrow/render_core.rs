@@ -1,9 +1,9 @@
 use crate::arrow_geom::{distance, rotate_point};
 use crate::{
-    ArrowEndpointPosition, ArrowPathCommand, StrokeStyle, Arrowhead, ArrowheadCirclePrimitive,
+    ArrowEndpointPosition, ArrowPathCommand, Arrowhead, ArrowheadCirclePrimitive,
     ArrowheadDashMode, ArrowheadFillMode, ArrowheadLinePrimitive, ArrowheadPoints,
     ArrowheadPolygonPrimitive, ArrowheadPrimitiveKind, ArrowheadRenderPrimitive, CurvePathOp,
-    Point,
+    Point, StrokeStyle,
 };
 
 #[derive(Clone, Debug, PartialEq)]

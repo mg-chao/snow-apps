@@ -47,19 +47,18 @@ void windowTargetUsesWindowOnlyLookup() {
 }
 
 void windowSubElementTargetUsesElementLookup() {
-    require(screenshotSelectorHitTestMode(true,
-                                          ScreenshotSelectorHitTestMode::WindowSubElement) ==
+    require(screenshotSelectorHitTestMode(true, ScreenshotSelectorHitTestMode::WindowSubElement) ==
                 SNOW_UI_SELECTOR_HIT_TEST_MODE_UI_ELEMENT,
             "window sub-element target must traverse the element hierarchy");
 }
 
 void disabledSmartSelectionOverridesSubElementRequests() {
     const auto policy = screenshotSelectorLookupPolicy(false, QByteArrayLiteral("uia"));
-    require(policy.mode == SNOW_UI_SELECTOR_HIT_TEST_MODE_WINDOW &&
-                screenshotSelectorHitTestMode(
-                    false, ScreenshotSelectorHitTestMode::WindowSubElement) ==
-                    SNOW_UI_SELECTOR_HIT_TEST_MODE_WINDOW,
-            "disabled Smart selection must reject stale window sub-element requests");
+    require(
+        policy.mode == SNOW_UI_SELECTOR_HIT_TEST_MODE_WINDOW &&
+            screenshotSelectorHitTestMode(false, ScreenshotSelectorHitTestMode::WindowSubElement) ==
+                SNOW_UI_SELECTOR_HIT_TEST_MODE_WINDOW,
+        "disabled Smart selection must reject stale window sub-element requests");
 }
 } // namespace
 

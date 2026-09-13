@@ -26,8 +26,8 @@ class ScreenshotSelectionShadowRenderer final {
                                 const QColor& shadowColor);
 
     static void renderResultShadow(QPainter& painter, const QRectF& contentBounds,
-                                   qreal cornerRadius, qreal shadowWidth,
-                                   const QColor& shadowColor, qreal devicePixelRatio);
+                                   qreal cornerRadius, qreal shadowWidth, const QColor& shadowColor,
+                                   qreal devicePixelRatio);
 
     static ScreenshotSelectionShadowDiagnostics diagnosticsForCurrentThread();
     static void resetDiagnosticsForCurrentThread();

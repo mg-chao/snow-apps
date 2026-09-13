@@ -67,8 +67,7 @@ void applyTokenOverrides(MenuMetrics& metrics, const AdNavigationMenu::Component
     metrics.itemMarginBlock = std::max(0, metricTokens.itemMarginBlock.value());
   }
   if (metricTokens.rootPaddingBlockStart.has_value()) {
-    metrics.rootPaddingBlockStart =
-        std::max(0, metricTokens.rootPaddingBlockStart.value());
+    metrics.rootPaddingBlockStart = std::max(0, metricTokens.rootPaddingBlockStart.value());
   }
   if (metricTokens.itemBorderRadius.has_value()) {
     metrics.itemBorderRadius = std::max(0, metricTokens.itemBorderRadius.value());

@@ -126,10 +126,8 @@ void testWheelScaleAnchorsUseHalfOpenEdges() {
     require(bottomLeft.left() == reference.left() &&
                 bottomLeft.top() + bottomLeft.height() == reference.top() + reference.height(),
             "bottom-left wheel scaling should preserve its half-open anchor");
-    require(bottomRight.left() + bottomRight.width() ==
-                    reference.left() + reference.width() &&
-                bottomRight.top() + bottomRight.height() ==
-                    reference.top() + reference.height(),
+    require(bottomRight.left() + bottomRight.width() == reference.left() + reference.width() &&
+                bottomRight.top() + bottomRight.height() == reference.top() + reference.height(),
             "bottom-right wheel scaling should preserve its half-open anchor");
 }
 
@@ -150,8 +148,8 @@ void testWheelScalePreservesCenterAndMousePosition() {
     const QRect oddReference(101, 203, 319, 181);
     const QRect parityChanged =
         resize_geometry::anchoredScaleRect(oddReference, QSize(478, 270), ScaleAnchor::Center);
-    const QRect roundTrip = resize_geometry::anchoredScaleRect(
-        parityChanged, oddReference.size(), ScaleAnchor::Center);
+    const QRect roundTrip =
+        resize_geometry::anchoredScaleRect(parityChanged, oddReference.size(), ScaleAnchor::Center);
     require(roundTrip == oddReference,
             "center wheel scaling should not drift across dimension parity changes");
 
@@ -184,18 +182,16 @@ void testThumbnailEntryPreservesCurrentMousePosition() {
 
 void testWheelScaleSettingNames() {
     using ScaleAnchor = resize_geometry::ScaleAnchor;
-    require(resize_geometry::scaleAnchorFromSetting(u"top_left") == ScaleAnchor::TopLeft &&
-                resize_geometry::scaleAnchorFromSetting(u"top_right") == ScaleAnchor::TopRight &&
-                resize_geometry::scaleAnchorFromSetting(u"bottom_left") ==
-                    ScaleAnchor::BottomLeft &&
-                resize_geometry::scaleAnchorFromSetting(u"bottom_right") ==
-                    ScaleAnchor::BottomRight &&
-                resize_geometry::scaleAnchorFromSetting(u"center") == ScaleAnchor::Center &&
-                resize_geometry::scaleAnchorFromSetting(u"mouse_position") ==
-                    ScaleAnchor::MousePosition &&
-                resize_geometry::scaleAnchorFromSetting(u"invalid") ==
-                    ScaleAnchor::MousePosition,
-            "wheel scale setting names should map to the documented anchors and default safely");
+    require(
+        resize_geometry::scaleAnchorFromSetting(u"top_left") == ScaleAnchor::TopLeft &&
+            resize_geometry::scaleAnchorFromSetting(u"top_right") == ScaleAnchor::TopRight &&
+            resize_geometry::scaleAnchorFromSetting(u"bottom_left") == ScaleAnchor::BottomLeft &&
+            resize_geometry::scaleAnchorFromSetting(u"bottom_right") == ScaleAnchor::BottomRight &&
+            resize_geometry::scaleAnchorFromSetting(u"center") == ScaleAnchor::Center &&
+            resize_geometry::scaleAnchorFromSetting(u"mouse_position") ==
+                ScaleAnchor::MousePosition &&
+            resize_geometry::scaleAnchorFromSetting(u"invalid") == ScaleAnchor::MousePosition,
+        "wheel scale setting names should map to the documented anchors and default safely");
 }
 
 void testInvalidInputsAreRejected() {

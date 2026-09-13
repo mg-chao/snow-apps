@@ -37,8 +37,7 @@ double elapsedMs(const QElapsedTimer& timer) {
   return static_cast<double>(timer.nsecsElapsed()) / 1000000.0;
 }
 
-SampleStats runSamples(const QString& name, int iterations,
-                       const std::function<void()>& setup,
+SampleStats runSamples(const QString& name, int iterations, const std::function<void()>& setup,
                        const std::function<void()>& body,
                        const std::function<void()>& cleanup = {}) {
   SampleStats result{name, {}};
@@ -150,10 +149,12 @@ void forceRender(QWidget* widget) {
 
 template <typename Widget, typename Configure>
 SampleStats benchmarkLifecycle(const QString& name, int iterations, Configure configure) {
-  return runSamples(name, iterations, []() {}, [&]() {
-    auto widget = std::make_unique<Widget>();
-    configure(*widget);
-  });
+  return runSamples(
+      name, iterations, []() {},
+      [&]() {
+        auto widget = std::make_unique<Widget>();
+        configure(*widget);
+      });
 }
 
 template <typename Picker, typename Configure>
@@ -184,13 +185,15 @@ SampleStats benchmarkFreshPopup(QWidget* host, const QString& name, int iteratio
 
 template <typename Configure>
 SampleStats benchmarkFreshPanelRender(const QString& name, int iterations, Configure configure) {
-  return runSamples(name, iterations, []() {}, [&]() {
-    AdDatePickerPanel panel;
-    configure(panel);
-    panel.show();
-    processEvents();
-    forceRender(&panel);
-  });
+  return runSamples(
+      name, iterations, []() {},
+      [&]() {
+        AdDatePickerPanel panel;
+        configure(panel);
+        panel.show();
+        processEvents();
+        forceRender(&panel);
+      });
 }
 
 }  // namespace
@@ -212,55 +215,47 @@ int main(int argc, char** argv) {
   processEvents();
   printStats(out, benchmarkFreshPopup<AdDatePicker>(
                       &coldHost, "process_first_single_popup_in_window", 1,
-                      AdDatePicker::PopupLayerMode::InWindow, [](AdDatePicker& picker) {
-                        picker.setDate(QDate(2026, 7, 8));
-                      }));
+                      AdDatePicker::PopupLayerMode::InWindow,
+                      [](AdDatePicker& picker) { picker.setDate(QDate(2026, 7, 8)); }));
 
-  printStats(out, benchmarkLifecycle<AdDatePicker>("lifecycle_single", 80,
-                                                    [](AdDatePicker&) {}));
-  printStats(out, benchmarkLifecycle<AdDatePicker>("lifecycle_time", 40,
-                                                    [](AdDatePicker& picker) {
-                                                      picker.setShowTime(true);
-                                                    }));
-  printStats(out, benchmarkLifecycle<AdDateRangePicker>("lifecycle_range", 50,
-                                                         [](AdDateRangePicker&) {}));
+  printStats(out, benchmarkLifecycle<AdDatePicker>("lifecycle_single", 80, [](AdDatePicker&) {}));
+  printStats(out, benchmarkLifecycle<AdDatePicker>("lifecycle_time", 40, [](AdDatePicker& picker) {
+               picker.setShowTime(true);
+             }));
+  printStats(
+      out, benchmarkLifecycle<AdDateRangePicker>("lifecycle_range", 50, [](AdDateRangePicker&) {}));
   printStats(out, benchmarkLifecycle<AdDatePickerPanel>("lifecycle_panel_date", 40,
-                                                         [](AdDatePickerPanel&) {}));
-  printStats(out, benchmarkLifecycle<AdDatePickerPanel>("lifecycle_panel_time", 20,
-                                                         [](AdDatePickerPanel& panel) {
-                                                           panel.setShowTime(true);
-                                                         }));
+                                                        [](AdDatePickerPanel&) {}));
+  printStats(out, benchmarkLifecycle<AdDatePickerPanel>(
+                      "lifecycle_panel_time", 20,
+                      [](AdDatePickerPanel& panel) { panel.setShowTime(true); }));
 
   printStats(out, benchmarkFreshPopup<AdDatePicker>(
                       &coldHost, "fresh_single_popup_in_window", 24,
-                      AdDatePicker::PopupLayerMode::InWindow, [](AdDatePicker& picker) {
-                        picker.setDate(QDate(2026, 7, 8));
-                      }));
-  printStats(out, benchmarkFreshPopup<AdDatePicker>(
-                      &coldHost, "fresh_single_popup_qt_tool", 16,
-                      AdDatePicker::PopupLayerMode::QtTool, [](AdDatePicker& picker) {
-                        picker.setDate(QDate(2026, 7, 8));
-                      }));
+                      AdDatePicker::PopupLayerMode::InWindow,
+                      [](AdDatePicker& picker) { picker.setDate(QDate(2026, 7, 8)); }));
+  printStats(out,
+             benchmarkFreshPopup<AdDatePicker>(
+                 &coldHost, "fresh_single_popup_qt_tool", 16, AdDatePicker::PopupLayerMode::QtTool,
+                 [](AdDatePicker& picker) { picker.setDate(QDate(2026, 7, 8)); }));
   printStats(out, benchmarkFreshPopup<AdDatePicker>(
                       &coldHost, "fresh_time_popup_in_window", 16,
                       AdDatePicker::PopupLayerMode::InWindow, [](AdDatePicker& picker) {
                         picker.setShowTime(true);
-                        picker.setDateTime(
-                            QDateTime(QDate(2026, 7, 8), QTime(13, 45, 30)));
+                        picker.setDateTime(QDateTime(QDate(2026, 7, 8), QTime(13, 45, 30)));
                       }));
-  printStats(out, benchmarkFreshPopup<AdDatePicker>(
-                      &coldHost, "fresh_multiple_popup_in_window", 16,
-                      AdDatePicker::PopupLayerMode::InWindow, [](AdDatePicker& picker) {
-                        picker.setMultiple(true);
-                        picker.setSelectedDates(selectedDateSet());
-                      }));
+  printStats(out, benchmarkFreshPopup<AdDatePicker>(&coldHost, "fresh_multiple_popup_in_window", 16,
+                                                    AdDatePicker::PopupLayerMode::InWindow,
+                                                    [](AdDatePicker& picker) {
+                                                      picker.setMultiple(true);
+                                                      picker.setSelectedDates(selectedDateSet());
+                                                    }));
   printStats(out, benchmarkFreshPopup<AdDatePicker>(
                       &coldHost, "fresh_disabled_popup_in_window", 16,
                       AdDatePicker::PopupLayerMode::InWindow, [](AdDatePicker& picker) {
                         picker.setDate(QDate(2026, 7, 8));
                         picker.setDisabledDatePredicate([](const QDate& date) {
-                          return date.dayOfWeek() == Qt::Saturday ||
-                                 date.dayOfWeek() == Qt::Sunday;
+                          return date.dayOfWeek() == Qt::Saturday || date.dayOfWeek() == Qt::Sunday;
                         });
                       }));
   printStats(out, benchmarkFreshPopup<AdDatePicker>(
@@ -271,50 +266,42 @@ int main(int argc, char** argv) {
                       }));
   printStats(out, benchmarkFreshPopup<AdDateRangePicker>(
                       &coldHost, "fresh_range_popup_in_window", 16,
-                      AdDateRangePicker::PopupLayerMode::InWindow,
-                      [](AdDateRangePicker& picker) {
+                      AdDateRangePicker::PopupLayerMode::InWindow, [](AdDateRangePicker& picker) {
                         picker.setRange(QDate(2026, 7, 8), QDate(2026, 7, 22));
                       }));
   printStats(out, benchmarkFreshPopup<AdDateRangePicker>(
                       &coldHost, "fresh_range_presets_popup_in_window", 10,
-                      AdDateRangePicker::PopupLayerMode::InWindow,
-                      [](AdDateRangePicker& picker) {
+                      AdDateRangePicker::PopupLayerMode::InWindow, [](AdDateRangePicker& picker) {
                         picker.setRange(QDate(2026, 7, 8), QDate(2026, 7, 22));
                         picker.setPresets(rangePresetSet());
                       }));
   printStats(out, benchmarkFreshPopup<AdDateRangePicker>(
                       &coldHost, "fresh_range_popup_qt_tool", 12,
-                      AdDateRangePicker::PopupLayerMode::QtTool,
-                      [](AdDateRangePicker& picker) {
+                      AdDateRangePicker::PopupLayerMode::QtTool, [](AdDateRangePicker& picker) {
                         picker.setRange(QDate(2026, 7, 8), QDate(2026, 7, 22));
                       }));
   printStats(out, benchmarkFreshPopup<AdDateRangePicker>(
                       &coldHost, "fresh_range_time_popup_in_window", 10,
-                      AdDateRangePicker::PopupLayerMode::InWindow,
-                      [](AdDateRangePicker& picker) {
+                      AdDateRangePicker::PopupLayerMode::InWindow, [](AdDateRangePicker& picker) {
                         picker.setShowTime(true);
-                        picker.setDateTimeRange(
-                            QDateTime(QDate(2026, 7, 8), QTime(9, 15)),
-                            QDateTime(QDate(2026, 7, 22), QTime(18, 30)));
+                        picker.setDateTimeRange(QDateTime(QDate(2026, 7, 8), QTime(9, 15)),
+                                                QDateTime(QDate(2026, 7, 22), QTime(18, 30)));
                       }));
-  printStats(out, benchmarkFreshPanelRender("fresh_panel_date_render", 24,
-                                             [](AdDatePickerPanel& panel) {
-                                               panel.setSelectedDate(QDate(2026, 7, 8));
-                                             }));
-  printStats(out, benchmarkFreshPanelRender("fresh_panel_time_render", 12,
-                                             [](AdDatePickerPanel& panel) {
-                                               panel.setShowTime(true);
-                                               panel.setSelectedDateTime(QDateTime(
-                                                   QDate(2026, 7, 8), QTime(13, 45, 30)));
-                                             }));
+  printStats(out,
+             benchmarkFreshPanelRender("fresh_panel_date_render", 24, [](AdDatePickerPanel& panel) {
+               panel.setSelectedDate(QDate(2026, 7, 8));
+             }));
+  printStats(out,
+             benchmarkFreshPanelRender("fresh_panel_time_render", 12, [](AdDatePickerPanel& panel) {
+               panel.setShowTime(true);
+               panel.setSelectedDateTime(QDateTime(QDate(2026, 7, 8), QTime(13, 45, 30)));
+             }));
 
   AdDatePickerPanel countDatePanel;
   AdDatePickerPanel countTimePanel;
   countTimePanel.setShowTime(true);
-  out << "date_panel_child_widgets=" << countDatePanel.findChildren<QWidget*>().size()
-      << Qt::endl;
-  out << "time_panel_child_widgets=" << countTimePanel.findChildren<QWidget*>().size()
-      << Qt::endl;
+  out << "date_panel_child_widgets=" << countDatePanel.findChildren<QWidget*>().size() << Qt::endl;
+  out << "time_panel_child_widgets=" << countTimePanel.findChildren<QWidget*>().size() << Qt::endl;
 
   QWidget host;
   auto* layout = new QHBoxLayout(&host);

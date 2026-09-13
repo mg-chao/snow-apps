@@ -119,12 +119,13 @@ void headerPlacesSearchAboveAntDesignTabs() {
     select->setSearchText(QStringLiteral("delay 7s"));
     flushEvents();
     const auto delayOptions = select->options();
-    require(!delayOptions.isEmpty() &&
-                delayOptions.constFirst().value.toString() ==
-                    QStringLiteral("item:quick.screenshot-delay") &&
-                delayOptions.constFirst().label == QStringLiteral("Delay 7s to execute") &&
-                !delayOptions.constFirst().label.contains(QStringLiteral("%1")),
-            "global search should render the current delayed screenshot value without placeholders");
+    require(
+        !delayOptions.isEmpty() &&
+            delayOptions.constFirst().value.toString() ==
+                QStringLiteral("item:quick.screenshot-delay") &&
+            delayOptions.constFirst().label == QStringLiteral("Delay 7s to execute") &&
+            !delayOptions.constFirst().label.contains(QStringLiteral("%1")),
+        "global search should render the current delayed screenshot value without placeholders");
     require(snow_shot::storage::ScreenshotSettings().setDelaySeconds(4),
             "the delayed screenshot setting should support live updates");
     select->setSearchText(QStringLiteral("delay 4s"));
@@ -166,12 +167,10 @@ void headerPlacesSearchAboveAntDesignTabs() {
     require(resultPopup != nullptr,
             "the search result list should belong to an Ant Design popup surface");
     const int selectCenter = select->mapTo(&header, select->rect().center()).x();
-    const int popupCenter =
-        resultPopup->mapTo(&header, resultPopup->rect().center()).x();
+    const int popupCenter = resultPopup->mapTo(&header, resultPopup->rect().center()).x();
     require(std::abs(selectCenter - popupCenter) <= 1,
             "the search result popup should be horizontally centered under the search control");
-    const QString resultsSnapshotPath =
-        qEnvironmentVariable("SNOW_SHOT_SEARCH_RESULTS_SNAPSHOT");
+    const QString resultsSnapshotPath = qEnvironmentVariable("SNOW_SHOT_SEARCH_RESULTS_SNAPSHOT");
     if (!resultsSnapshotPath.isEmpty()) {
         const QImage snapshot = resultList->grab().toImage();
         require(!snapshot.isNull() && snapshot.save(resultsSnapshotPath),
@@ -180,9 +179,7 @@ void headerPlacesSearchAboveAntDesignTabs() {
     select->hidePopup();
     snow_shot::presentation::settings::SettingsLocation activatedLocation;
     QObject::connect(search, &ApplicationSearchWidget::locationActivated, &header,
-                     [&activatedLocation](const auto& location) {
-                         activatedLocation = location;
-                     });
+                     [&activatedLocation](const auto& location) { activatedLocation = location; });
     select->selected(QStringLiteral("page:storage-and-privacy"),
                      QStringLiteral("Storage and privacy"));
     require(activatedLocation.pageId == QStringLiteral("storage-and-privacy") &&
@@ -222,10 +219,9 @@ void tabsRequestCategoriesWithoutChangingPages() {
     require(tabs != nullptr, "section tabs should exist");
 
     QStringList categoryRequests;
-    QObject::connect(&header, &MainContentHeaderWidget::sectionRequested, &header,
-                     [&categoryRequests](const QString& sectionId) {
-                         categoryRequests.push_back(sectionId);
-                     });
+    QObject::connect(
+        &header, &MainContentHeaderWidget::sectionRequested, &header,
+        [&categoryRequests](const QString& sectionId) { categoryRequests.push_back(sectionId); });
 
     tabs->setCurrentKey(QStringLiteral("other"));
     require(categoryRequests.isEmpty(),
@@ -236,16 +232,14 @@ void tabsRequestCategoriesWithoutChangingPages() {
 
     categoryRequests.clear();
     header.setCurrentSection(QStringLiteral("screenshot"));
-    require(header.currentSection() == QStringLiteral("screenshot") &&
-                categoryRequests.isEmpty(),
+    require(header.currentSection() == QStringLiteral("screenshot") && categoryRequests.isEmpty(),
             "external category synchronization should not emit a navigation loop");
 
     header.setCurrentSection(QStringLiteral("section.unknown"));
     require(header.currentSection() == QStringLiteral("screenshot"),
             "unknown categories should resolve to the first current-page category");
 
-    const auto interfaceSections =
-        catalog().sectionSummaries(QStringLiteral("interface-settings"));
+    const auto interfaceSections = catalog().sectionSummaries(QStringLiteral("interface-settings"));
     header.setSections(interfaceSections);
     require(tabs->count() == interfaceSections.size(),
             "Interface settings tabs should cover every registry section");

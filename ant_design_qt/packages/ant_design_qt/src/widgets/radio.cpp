@@ -967,9 +967,9 @@ void AdRadio::paintButtonVariant(QPainter* painter) const {
       qMax(0, qRound(style.metrics.buttonPaddingInline * controlScale_.logicalScale));
   const int contentGap =
       qMax(0, qRound(contentGapForMetrics(style.metrics) * controlScale_.logicalScale));
-  const InlineContentLayout contentLayout = layoutInlineContent(
-      contentRect.adjusted(buttonPaddingInline, 0, -buttonPaddingInline, 0), iconLogicalSize,
-      textBounds, contentGap, layoutDirection(), true);
+  const InlineContentLayout contentLayout =
+      layoutInlineContent(contentRect.adjusted(buttonPaddingInline, 0, -buttonPaddingInline, 0),
+                          iconLogicalSize, textBounds, contentGap, layoutDirection(), true);
 
   drawButtonIcon(this, painter, contentLayout.iconRect, iconLogicalSize);
   drawStyledText(this, painter, contentLayout.textRect, text(), state.textColor,

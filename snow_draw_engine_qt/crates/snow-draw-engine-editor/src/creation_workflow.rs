@@ -1,5 +1,5 @@
 use super::*;
-use snow_draw_engine_core::arrow::{ArrowEndpointEdge, StrokeStyle, ArrowType};
+use snow_draw_engine_core::arrow::{ArrowEndpointEdge, ArrowType, StrokeStyle};
 use snow_draw_engine_document::{
     ElementMeta, TextLayoutSize, arrow_is_degenerate, resolve_serial_number_diameter,
     validate_text_layout_size,

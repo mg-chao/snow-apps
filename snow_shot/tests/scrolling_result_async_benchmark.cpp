@@ -77,8 +77,8 @@ MaterializedResult materialize(const SharedSnapshot& snapshot) {
         checksum *= 1099511628211ULL;
     }
     const QByteArray png = snow_shot::image_codec::encodePng(output);
-    const QImage decoded = snow_shot::image_codec::decode(
-        png, snow::image::Format::png, "benchmark.png");
+    const QImage decoded =
+        snow_shot::image_codec::decode(png, snow::image::Format::png, "benchmark.png");
     return {output.size(), checksum, png.size(),
             !png.isEmpty() && !decoded.isNull() && decoded.size() == output.size()};
 }

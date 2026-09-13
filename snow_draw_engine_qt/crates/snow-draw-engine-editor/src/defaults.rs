@@ -1,6 +1,6 @@
 use snow_draw_engine_core::{
     ColorRgba8, CornerRadii,
-    arrow::{StrokeStyle, ArrowType, Arrowhead},
+    arrow::{ArrowType, Arrowhead, StrokeStyle},
 };
 use snow_draw_engine_document::{FillStyle, TextHorizontalAlign, TextVerticalAlign};
 

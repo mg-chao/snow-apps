@@ -11,9 +11,7 @@ struct LocaleConfig {
     return lhs.locale == rhs.locale;
   }
 
-  friend bool operator!=(const LocaleConfig& lhs, const LocaleConfig& rhs) {
-    return !(lhs == rhs);
-  }
+  friend bool operator!=(const LocaleConfig& lhs, const LocaleConfig& rhs) { return !(lhs == rhs); }
 };
 
 }  // namespace adqt::locale

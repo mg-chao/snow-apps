@@ -87,8 +87,8 @@ bool applyConfiguredApplicationPriority() {
     if (!storage.isInitialized()) {
         static_cast<void>(storage.initialize());
     }
-    QString value = storage.configuration().value(QStringLiteral("system/application_priority"))
-                        .toString();
+    QString value =
+        storage.configuration().value(QStringLiteral("system/application_priority")).toString();
     if (value.isEmpty()) {
         value = storage::ConfigurationSchema::defaultValue(
                     QStringLiteral("system/application_priority"))

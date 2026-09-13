@@ -40,6 +40,23 @@ impl Engine {
         }
     }
 
+    pub fn delete_all_elements_with_viewport_changes(
+        &mut self,
+        source_viewport_id: ViewportId,
+    ) -> Result<MutationResult, ErrorCode> {
+        self.ensure_viewport(source_viewport_id)?;
+        let before = self.editor.snapshot();
+        let ids: Vec<ElementId> = self.model.paint_order().to_vec();
+        let command = self
+            .editor
+            .delete_elements(&self.model, &ids, "delete all elements")?;
+        if let Some(command) = command {
+            self.apply_editor_command(source_viewport_id, command)
+        } else {
+            self.refresh_after_session_mutation(before)
+        }
+    }
+
     pub fn duplicate_selected_with_viewport_changes(
         &mut self,
         source_viewport_id: ViewportId,
@@ -157,5 +174,106 @@ impl Engine {
                 history_undo_snapshot: None,
             }),
         )
+    }
+}
+
+#[cfg(test)]
+mod delete_all_elements_tests {
+    use super::*;
+    use snow_draw_engine_core::{ColorRgba8, CornerRadii};
+    use snow_draw_engine_document::{
+        ElementMeta, FillStyle, RectangleData, RectangleElementKind, StrokeStyle, Transaction,
+    };
+
+    fn rectangle() -> RectangleData {
+        RectangleData {
+            rectangle_kind: RectangleElementKind::Rectangle,
+            highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
+            center: Point::new(0.0, 0.0),
+            width: 40.0,
+            height: 20.0,
+            rotation: 0.0,
+            fill: ColorRgba8 {
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 255,
+            },
+            fill_style: FillStyle::Solid,
+            stroke: ColorRgba8::default(),
+            stroke_width: 0.0,
+            stroke_style: StrokeStyle::Solid,
+            corner_radii: CornerRadii::default(),
+            opacity: 1.0,
+        }
+    }
+
+    fn engine_with_elements(count: usize) -> (Engine, ViewportId) {
+        let mut engine = Engine::default();
+        let viewport = engine.create_viewport(ViewportConfig::default()).unwrap();
+        for _ in 0..count {
+            let id = engine.model.peek_next_element_id();
+            let mut transaction = Transaction::new("create rectangle");
+            transaction.insert_rectangle(id, ElementMeta::default(), rectangle());
+            engine
+                .commit_transaction(
+                    viewport,
+                    ApplyTransactionCommand {
+                        transaction,
+                        history_undo_snapshot: None,
+                    },
+                )
+                .unwrap();
+        }
+        (engine, viewport)
+    }
+
+    #[test]
+    fn delete_all_elements_is_a_single_undoable_history_entry() {
+        let (mut engine, viewport) = engine_with_elements(3);
+        let ids: Vec<ElementId> = engine.model.paint_order().to_vec();
+        engine.editor.select_element(&engine.model, ids[0]).unwrap();
+
+        engine
+            .delete_all_elements_with_viewport_changes(viewport)
+            .unwrap();
+
+        assert!(engine.model.paint_order().is_empty());
+        assert!(engine.selected_ids().is_empty());
+        assert!(engine.history_state().can_undo);
+
+        // One undo must restore every element, unlike clear_document which
+        // destroys the history alongside the elements.
+        engine.undo().unwrap();
+        assert_eq!(engine.model.paint_order(), &ids[..]);
+
+        engine.redo().unwrap();
+        assert!(engine.model.paint_order().is_empty());
+    }
+
+    #[test]
+    fn delete_all_elements_preserves_document_wide_configuration() {
+        let (mut engine, viewport) = engine_with_elements(1);
+        let mut watermark = engine.watermark_config().clone();
+        watermark.text = "kept".to_owned();
+        engine
+            .set_viewport_watermark_config(viewport, watermark.clone())
+            .unwrap();
+
+        engine
+            .delete_all_elements_with_viewport_changes(viewport)
+            .unwrap();
+
+        assert_eq!(engine.watermark_config(), &watermark);
+    }
+
+    #[test]
+    fn delete_all_elements_on_an_empty_document_commits_no_history() {
+        let (mut engine, viewport) = engine_with_elements(0);
+        engine
+            .delete_all_elements_with_viewport_changes(viewport)
+            .unwrap();
+        assert!(!engine.history_state().can_undo);
+        assert!(!engine.history_state().can_redo);
     }
 }

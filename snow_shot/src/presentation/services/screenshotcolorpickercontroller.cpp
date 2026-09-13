@@ -224,7 +224,7 @@ qreal ScreenshotColorPickerController::opacityForPoint(
             context.dragging,
             selectionDrag,
             hasSelection,
-            hasSelection && QRectF(toleratedSelection)
-                                .contains(canvasPositionForPhysicalPoint(physicalPoint)),
+            hasSelection &&
+                QRectF(toleratedSelection).contains(canvasPositionForPhysicalPoint(physicalPoint)),
         });
 }

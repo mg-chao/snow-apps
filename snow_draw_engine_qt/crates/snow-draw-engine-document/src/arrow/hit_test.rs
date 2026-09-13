@@ -3,10 +3,7 @@ use std::f64::consts::PI;
 use crate::arrow_geom::{
     center, clamp, distance, normalize_fixed_point, rotate_point, unrotate_point,
 };
-use crate::{
-    BindableState, Bounds,
-    BindableShape, Point,
-};
+use crate::{BindableShape, BindableState, Bounds, Point};
 
 #[path = "hit_test_binding_hit.rs"]
 mod binding_hit;

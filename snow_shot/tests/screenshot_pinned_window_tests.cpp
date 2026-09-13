@@ -254,6 +254,30 @@ class ScreenshotPinnedWindowTestAccess {
         session->activate(ScreenshotRecognitionSessionController::Mode::Text);
         return session;
     }
+    static ScreenshotRecognitionSessionController*
+    hiddenSelectionOffscreen(ScreenshotPinnedWindow& window,
+                             const ScreenshotPinnedWindow::Config& config) {
+        restoreOffscreen(window, config);
+        window.m_recognitionTargetReady = false;
+        window.m_recognition = config.recognition;
+        window.m_recognitionResults = config.recognitionResults;
+        window.m_automaticTextRecognition = false;
+        window.m_ocrMode = false;
+        window.m_hiddenTextSelection = false;
+        window.configureRecognitionSession();
+        window.configureRecognitionTarget();
+        window.show();
+        return window.m_recognitionSession.get();
+    }
+    static bool hiddenSelection(const ScreenshotPinnedWindow& window) {
+        return window.m_hiddenTextSelection;
+    }
+    static bool draggableAt(const ScreenshotPinnedWindow& window, const QPoint& point) {
+        return window.windowDragEnabledAt(point);
+    }
+    static void editSelectionOffscreen(ScreenshotPinnedWindow& window, bool enabled) {
+        window.setEditMode(enabled);
+    }
     static std::shared_ptr<ScreenshotExportArtifact> fileSave(ScreenshotPinnedWindow& window) {
         return window.fileSaveArtifact();
     }
@@ -6235,6 +6259,236 @@ void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
     require(processUntilDeleted(guardedWindow, 2000),
             "pinned window was not deleted after the history test");
 }
+void pinnedHiddenTextSelectionOffscreen() {
+#ifdef Q_OS_WIN
+    require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
+            "load offscreen selection font");
+    QApplication::setFont(QFont(QStringLiteral("Segoe UI")));
+#endif
+    const snow_shot::storage::PinToScreenSettings settings;
+    require(settings.setTextSelectionOnRecognitionResults(QStringLiteral("only_when_displayed")),
+            "set default text selection policy");
+    class DeferredRecognition final : public ScreenshotOcrRecognitionPort {
+      public:
+        Completion pending;
+        int requests = 0;
+        RequestToken recognize(ScreenshotOcrRequest, QObject*, Completion completion) override {
+            ++requests;
+            pending = std::move(completion);
+            return 1;
+        }
+        void cancel(RequestToken) override {
+            pending = {};
+        }
+        bool reprioritize(RequestToken, ScreenshotOcrRequestPriority) override {
+            return false;
+        }
+    } delayed;
+    IdleOcrRecognition provider;
+    auto config = cachedOcrPinConfig(&provider);
+    ScreenshotPinnedWindow first;
+    ScreenshotPinnedWindow second;
+    auto* session = ScreenshotPinnedWindowTestAccess::hiddenSelectionOffscreen(first, config);
+    ScreenshotPinnedWindowTestAccess::hiddenSelectionOffscreen(second, config);
+    require(!ScreenshotPinnedWindowTestAccess::hiddenSelection(first),
+            "default has no hidden layer");
+    require(settings.setTextSelectionOnRecognitionResults(QStringLiteral("always")),
+            "enable Always");
+    require(ScreenshotPinnedWindowTestAccess::hiddenSelection(first) &&
+                ScreenshotPinnedWindowTestAccess::hiddenSelection(second),
+            "all existing windows update synchronously");
+    require(provider.requests == 0 && !session->active() &&
+                !first.persistenceSnapshot().recognitionVisible,
+            "hidden selection must neither request OCR nor persist display activation");
+    auto* content = first.findChild<ScreenshotRecognitionWindow*>(
+        QStringLiteral("screenshotPinnedRecognitionContent"));
+    require(content && content->isVisible(), "hidden selection needs an input-bearing overlay");
+    first.activateWindow();
+    content->setFocus();
+    QApplication::processEvents();
+    const QPoint textStart(48, 60);
+    const QPoint textEnd(205, 60);
+    const QPoint blank(12, 12);
+    const auto pointer = [&](QEvent::Type type, QPoint point, Qt::MouseButton button,
+                             Qt::MouseButtons buttons) {
+        QMouseEvent event(type, QPointF(point), QPointF(content->mapToGlobal(point)), button,
+                          buttons, Qt::NoModifier);
+        QApplication::sendEvent(content, &event);
+    };
+    require(!content->isOcrBackgroundAt(textStart) && content->isOcrBackgroundAt(blank),
+            "hidden text uses the same hit geometry");
+    require(
+        !ScreenshotPinnedWindowTestAccess::draggableAt(first, content->mapTo(&first, textStart)) &&
+            ScreenshotPinnedWindowTestAccess::draggableAt(first, content->mapTo(&first, blank)),
+        "press target distinguishes text selection from window drag");
+    pointer(QEvent::MouseMove, textStart, Qt::NoButton, Qt::NoButton);
+    require(content->cursor().shape() == Qt::IBeamCursor, "hovering hidden text shows an I-beam");
+    pointer(QEvent::MouseButtonPress, textStart, Qt::LeftButton, Qt::LeftButton);
+    pointer(QEvent::MouseMove, textEnd, Qt::NoButton, Qt::LeftButton);
+    pointer(QEvent::MouseButtonRelease, textEnd, Qt::LeftButton, Qt::NoButton);
+    const QString selected =
+        ScreenshotPinnedWindowTestAccess::displayedRecognition(first).selectedText();
+    require(!selected.isEmpty(), "drag selects hidden text");
+    sendShortcut(*content, Qt::Key_C, Qt::ControlModifier);
+    require(QApplication::clipboard()->text() == selected, "Ctrl+C copies hidden selection");
+    auto* copyAction = pinnedMenuActionNamed(first, QStringLiteral("screenshotPinnedCopyAction"));
+    require(copyAction != nullptr, "pinned Copy menu action exists");
+    QApplication::clipboard()->setText(QStringLiteral("before menu"));
+    QFocusEvent popupFocus(QEvent::FocusOut, Qt::PopupFocusReason);
+    QApplication::sendEvent(content, &popupFocus);
+    copyAction->trigger();
+    require(QApplication::clipboard()->text() == selected,
+            "menu focus preserves selected-text copy");
+    pointer(QEvent::MouseButtonPress, blank, Qt::LeftButton, Qt::LeftButton);
+    pointer(QEvent::MouseButtonRelease, blank, Qt::LeftButton, Qt::NoButton);
+    require(!ScreenshotPinnedWindowTestAccess::displayedRecognition(first).hasTextSelection(),
+            "blank click clears selection");
+    QApplication::clipboard()->clear();
+    content->setFocus();
+    sendShortcut(*content, Qt::Key_C, Qt::ControlModifier);
+    // Windows publishes images through the native clipboard, while the offscreen
+    // QPA clipboard is separate. Inspect the produced image artifact here; the
+    // native restore scenario verifies actual clipboard publication.
+    const auto copiedArtifact = ScreenshotPinnedWindowTestAccess::exportArtifact(first);
+    require(copiedArtifact != nullptr, "Ctrl+C without selection starts image copying");
+    QImage copiedImage;
+    require(copiedArtifact->requestImage(&first,
+                                         [&](ScreenshotExportImageResult result) {
+                                             require(result.succeeded(),
+                                                     "image-copy artifact renders successfully");
+                                             copiedImage = result.image;
+                                         }),
+            "request copied image pixels");
+    QElapsedTimer copyTimer;
+    copyTimer.start();
+    while (copiedImage.isNull() && copyTimer.elapsed() < 5000) {
+        QApplication::processEvents();
+    }
+    require(copiedImage == config.imageSource.materializedImage,
+            "hidden layer is excluded from image-copy pixels");
+    content->setFocus();
+    sendShortcut(*content, Qt::Key_A, Qt::ControlModifier);
+    require(ScreenshotPinnedWindowTestAccess::displayedRecognition(first).selectedText() ==
+                QStringLiteral("Saved OCR"),
+            "Ctrl+A selects and highlights hidden text");
+    session->activate(ScreenshotRecognitionSessionController::Mode::Text);
+    require(!ScreenshotPinnedWindowTestAccess::hiddenSelection(first) &&
+                first.persistenceSnapshot().recognitionVisible &&
+                ScreenshotPinnedWindowTestAccess::displayedRecognition(first).hasTextSelection(),
+            "display activation preserves selection and changes only explicit display state");
+    session->deactivate();
+    require(ScreenshotPinnedWindowTestAccess::hiddenSelection(first) &&
+                ScreenshotPinnedWindowTestAccess::displayedRecognition(first).hasTextSelection(),
+            "hiding displayed recognition preserves selection under Always");
+    session->activate(ScreenshotRecognitionSessionController::Mode::Text);
+    require(settings.setTextSelectionOnRecognitionResults(QStringLiteral("only_when_displayed")),
+            "disable Always while results displayed");
+    require(content->isVisible() && !ScreenshotPinnedWindowTestAccess::hiddenSelection(second),
+            "displayed results remain while hidden results disappear immediately");
+    session->deactivate();
+    require(!content->isVisible(), "default removes layer when display ends");
+    require(settings.setTextSelectionOnRecognitionResults(QStringLiteral("always")),
+            "reenable Always");
+    ScreenshotPinnedWindowTestAccess::editSelectionOffscreen(first, true);
+    require(!ScreenshotPinnedWindowTestAccess::hiddenSelection(first), "annotation takes priority");
+    ScreenshotPinnedWindowTestAccess::editSelectionOffscreen(first, false);
+    require(ScreenshotPinnedWindowTestAccess::hiddenSelection(first),
+            "leaving annotation restores selection");
+    ScreenshotPinnedWindowTestAccess::thumbnailForHideTest(first, true);
+    require(!ScreenshotPinnedWindowTestAccess::hiddenSelection(first),
+            "thumbnail suspends selection");
+    ScreenshotPinnedWindowTestAccess::thumbnailForHideTest(first, false);
+    require(ScreenshotPinnedWindowTestAccess::hiddenSelection(first),
+            "expansion restores selection");
+    ScreenshotPinnedWindowTestAccess::rotateRecognitionOffscreen(first);
+    require(ScreenshotPinnedWindowTestAccess::displayedRecognition(first).lines[0].quad !=
+                config.recognitionResults.text->presentation->lines[0].quad,
+            "hidden text follows image transforms");
+    auto emptyConfig = config;
+    emptyConfig.recognitionResults = {};
+    session = ScreenshotPinnedWindowTestAccess::hiddenSelectionOffscreen(first, emptyConfig);
+    require(!ScreenshotPinnedWindowTestAccess::hiddenSelection(first),
+            "reused window cannot retain another target's hidden text");
+    auto newResults = config.recognitionResults;
+    newResults.key = QStringLiteral("pinned:%1").arg(reinterpret_cast<quintptr>(&first));
+    session->seedRecognitionResults(newResults);
+    require(ScreenshotPinnedWindowTestAccess::hiddenSelection(first),
+            "newly available cached OCR immediately installs selection");
+    emptyConfig.recognition = &delayed;
+    session = ScreenshotPinnedWindowTestAccess::hiddenSelectionOffscreen(first, emptyConfig);
+    require(delayed.requests == 0, "Always alone does not request recognition");
+    session->prefetchText();
+    require(delayed.requests == 1 && delayed.pending,
+            "existing automatic recognition can run independently");
+    auto complete = std::move(delayed.pending);
+    complete(*config.recognitionResults.text);
+    require(ScreenshotPinnedWindowTestAccess::hiddenSelection(first) && delayed.requests == 1 &&
+                !session->active(),
+            "completed background OCR installs hidden selection without extra requests");
+    session = ScreenshotPinnedWindowTestAccess::hiddenSelectionOffscreen(first, emptyConfig);
+    auto emptyResults = newResults;
+    emptyResults.text->presentation = std::make_shared<ScreenshotOcrPresentation>();
+    session->seedRecognitionResults(emptyResults);
+    require(!ScreenshotPinnedWindowTestAccess::hiddenSelection(first), "empty OCR has no layer");
+    // Display activation above can request background rendering; changing this setting cannot.
+    const int requests = provider.requests;
+    require(settings.setTextSelectionOnRecognitionResults(QStringLiteral("only_when_displayed")) &&
+                settings.setTextSelectionOnRecognitionResults(QStringLiteral("always")) &&
+                provider.requests == requests,
+            "setting changes never start recognition work");
+    require(settings.setTextSelectionOnRecognitionResults(QStringLiteral("only_when_displayed")),
+            "restore default selection setting");
+}
+
+void pinnedHiddenTextSelectionRestores() {
+    const snow_shot::storage::PinToScreenSettings settings;
+    require(settings.setTextSelectionOnRecognitionResults(QStringLiteral("always")),
+            "enable Always before creation");
+    auto config = cachedOcrPinConfig(nullptr);
+    QPointer<ScreenshotPinnedWindow> window = new ScreenshotPinnedWindow;
+    require(window->present(config), "present native pin with cached text");
+    const auto waitForLayer = [&]() {
+        QElapsedTimer timer;
+        timer.start();
+        while (window && !ScreenshotPinnedWindowTestAccess::hiddenSelection(*window) &&
+               timer.elapsed() < 3000) {
+            QApplication::processEvents();
+        }
+        require(window && ScreenshotPinnedWindowTestAccess::hiddenSelection(*window),
+                "cached results install hidden selection without a provider");
+    };
+    waitForLayer();
+    auto* content = window->findChild<ScreenshotRecognitionWindow*>();
+    window->activateWindow();
+    content->setFocus();
+    QApplication::processEvents();
+    QApplication::clipboard()->clear();
+    sendShortcut(*content, Qt::Key_C, Qt::ControlModifier);
+    require(!waitForClipboardImage([](const QImage& image) { return !image.isNull(); }).isNull(),
+            "native Ctrl+C without selection publishes the image");
+    const auto record = window->persistenceSnapshot();
+    require(!record.recognitionVisible && !record.recognitionResults.isEmpty(),
+            "persist cached OCR without persisting display activation");
+    window->close();
+    require(processUntilDeleted(window, 2000), "close first native pin");
+    config.recognitionResults = {};
+    config.restorePersistentState = true;
+    config.persistedRecognitionResults = record.recognitionResults;
+    config.persistedRecognitionVisible = record.recognitionVisible;
+    window = new ScreenshotPinnedWindow;
+    require(window->present(config), "restore native pin from serialized recognition");
+    waitForLayer();
+    require(!window->persistenceSnapshot().recognitionVisible &&
+                ScreenshotPinnedWindowTestAccess::displayedRecognition(*window).lines[0].text ==
+                    QStringLiteral("Saved OCR"),
+            "restored hidden selection retains cached text and display state");
+    require(settings.setTextSelectionOnRecognitionResults(QStringLiteral("only_when_displayed")) &&
+                !ScreenshotPinnedWindowTestAccess::hiddenSelection(*window),
+            "restored windows update live");
+    window->close();
+    require(processUntilDeleted(window, 2000), "close restored native pin");
+}
+
 void pinnedRecognitionSaveSnapshotsAndRoutesOffscreen() {
 #if defined(Q_OS_WIN)
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
@@ -6777,6 +7031,14 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--image-conversion-only"))) {
             pinnedImageConversionsSurviveRestartWithoutProvider();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--hidden-text-selection-restore-only"))) {
+            pinnedHiddenTextSelectionRestores();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--hidden-text-selection-only"))) {
+            pinnedHiddenTextSelectionOffscreen();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--recognition-save-only"))) {

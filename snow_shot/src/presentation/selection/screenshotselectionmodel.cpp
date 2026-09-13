@@ -66,11 +66,9 @@ QRectF ScreenshotSelectionModel::selectionRectForDrag(ScreenshotSelectionDragMod
                                                       const QPointF& position, const QRectF& bounds,
                                                       qreal minimumSelectionSize,
                                                       qreal lockedAspectRatioOverride) const {
-    return draggedScreenshotSelectionRect(dragMode, m_moveOriginalSelection, m_moveStart, position,
-                                          bounds, minimumSelectionSize,
-                                          lockedAspectRatioOverride >= 0.0
-                                              ? lockedAspectRatioOverride
-                                              : m_lockedAspectRatio);
+    return draggedScreenshotSelectionRect(
+        dragMode, m_moveOriginalSelection, m_moveStart, position, bounds, minimumSelectionSize,
+        lockedAspectRatioOverride >= 0.0 ? lockedAspectRatioOverride : m_lockedAspectRatio);
 }
 
 QRectF ScreenshotSelectionModel::boundedSelectionRect(const QRectF& selection, const QRectF& bounds,

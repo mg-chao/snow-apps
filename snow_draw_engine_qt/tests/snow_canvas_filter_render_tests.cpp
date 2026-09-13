@@ -40,9 +40,9 @@ void publicRegionFilterApiRestrictsEffectsToTheRequestedRegion() {
     QImage source(QSize(24, 16), QImage::Format_ARGB32_Premultiplied);
     for (int y = 0; y < source.height(); ++y) {
         for (int x = 0; x < source.width(); ++x) {
-            source.setPixelColor(x, y, QColor((x * 17 + y * 3) % 256,
-                                              (x * 5 + y * 19) % 256,
-                                              (x * 11 + y * 7) % 256, 255));
+            source.setPixelColor(x, y,
+                                 QColor((x * 17 + y * 3) % 256, (x * 5 + y * 19) % 256,
+                                        (x * 11 + y * 7) % 256, 255));
         }
     }
 
@@ -106,8 +106,9 @@ QImage noisyPatternImage(const QSize& size) {
     QImage image(size, QImage::Format_ARGB32_Premultiplied);
     for (int y = 0; y < size.height(); ++y) {
         for (int x = 0; x < size.width(); ++x) {
-            image.setPixel(x, y, qRgba((x * 37 + y * 11) % 256, (x * 7 + y * 53) % 256,
-                                       (x * 97 + y * 29) % 256, 255));
+            image.setPixel(x, y,
+                           qRgba((x * 37 + y * 11) % 256, (x * 7 + y * 53) % 256,
+                                 (x * 97 + y * 29) % 256, 255));
         }
     }
     return image;
@@ -123,16 +124,15 @@ void croppedRegionFilterMatchesFullFrameRender() {
 
     // Two disjoint regions that would form independent clusters in the OCR
     // pipeline; together they exercise per-region calls on a shared crop.
-    const QRegion region =
-        QRegion(QRect(14, 10, 26, 14)) + QRegion(QRect(70, 52, 22, 12));
+    const QRegion region = QRegion(QRect(14, 10, 26, 14)) + QRegion(QRect(70, 52, 22, 12));
 
     QImage fullDestination = source;
     require(applySnowCanvasRegionFilter(source, fullDestination, region, parameters),
             "the full-frame reference render should succeed");
 
-    const QRect crop =
-        region.boundingRect().adjusted(-support, -support, support, support)
-            .intersected(source.rect());
+    const QRect crop = region.boundingRect()
+                           .adjusted(-support, -support, support, support)
+                           .intersected(source.rect());
     QImage cropSource = source.copy(crop);
     QImage cropDestination = cropSource;
     SnowCanvasRegionFilterParameters cropped = parameters;
@@ -1365,9 +1365,9 @@ void plainExportUsesDirectSourceFastPath() {
     }
 
     snow_canvas_export::resetDiagnosticsForCurrentThread();
-    const QImage output = runtime.renderToImage(
-        QRectF(0.0, 0.0, 23.0, 17.0), source.size(),
-        {CanvasExportSource{source, QRectF(0.0, 0.0, 23.0, 17.0)}});
+    const QImage output =
+        runtime.renderToImage(QRectF(0.0, 0.0, 23.0, 17.0), source.size(),
+                              {CanvasExportSource{source, QRectF(0.0, 0.0, 23.0, 17.0)}});
     const auto directDiagnostics = snow_canvas_export::diagnosticsForCurrentThread();
     require(output == source, "plain export fast path changed source pixels");
     require(directDiagnostics.directSourceFastPathCount == 1 &&
@@ -1382,9 +1382,9 @@ void plainExportUsesDirectSourceFastPath() {
     require(canvas.setCanvasWatermarkConfig(watermark),
             "failed to configure watermark for export path test");
     snow_canvas_export::resetDiagnosticsForCurrentThread();
-    const QImage watermarked = runtime.renderToImage(
-        QRectF(0.0, 0.0, 23.0, 17.0), source.size(),
-        {CanvasExportSource{source, QRectF(0.0, 0.0, 23.0, 17.0)}});
+    const QImage watermarked =
+        runtime.renderToImage(QRectF(0.0, 0.0, 23.0, 17.0), source.size(),
+                              {CanvasExportSource{source, QRectF(0.0, 0.0, 23.0, 17.0)}});
     const auto compositorDiagnostics = snow_canvas_export::diagnosticsForCurrentThread();
     require(!watermarked.isNull(), "effectful export produced a null image");
     require(compositorDiagnostics.directSourceFastPathCount == 0 &&
@@ -2009,14 +2009,8 @@ void filterSourceCacheKeepsOverlappingZBoundariesSeparate() {
     const QRect physicalRect(0, 0, 64, 64);
     const auto key = [&](std::uint64_t dependency, std::uint64_t node) {
         return snow_canvas_filter_tile_cache::Key{
-            &namespaceToken,
-            QPoint(0, 0),
-            physicalRect,
-            QSize(64, 64),
-            0x3ff0000000000000ULL,
-            17,
-            dependency,
-            node,
+            &namespaceToken,       QPoint(0, 0), physicalRect, QSize(64, 64),
+            0x3ff0000000000000ULL, 17,           dependency,   node,
         };
     };
     require(snow_canvas_filter_tile_cache::store(key(11, 1), first, physicalRect),
@@ -2026,8 +2020,7 @@ void filterSourceCacheKeepsOverlappingZBoundariesSeparate() {
     require(snow_canvas_filter_tile_cache::find(key(11, 1)) != nullptr &&
                 snow_canvas_filter_tile_cache::find(key(29, 2)) != nullptr,
             "overlapping filter boundaries must coexist for one tile coordinate");
-    snow_canvas_filter_tile_cache::invalidateRegion(&namespaceToken, QRect(0, 0, 8, 8), 1.0,
-                                                    11);
+    snow_canvas_filter_tile_cache::invalidateRegion(&namespaceToken, QRect(0, 0, 8, 8), 1.0, 11);
     require(snow_canvas_filter_tile_cache::find(key(11, 1)) == nullptr &&
                 snow_canvas_filter_tile_cache::find(key(29, 2)) != nullptr,
             "dependency invalidation must remove only the affected boundary");
@@ -2359,8 +2352,9 @@ void tiledRenderMatchesFullRender() {
         tiled.fill(Qt::transparent);
         QPainter tiledPainter(&tiled);
         snow_canvas_renderer::renderSceneItemsTiled(snow_canvas_renderer::SceneRenderRequest{
-            &tiledPainter, &displayInfo, items, 1, all, nullptr, 0, nullptr, &backdrop, &context,
-            nullptr, nullptr, {}, nullptr, &renderToken, nullptr, false, 0, QPoint(), true});
+            &tiledPainter, &displayInfo, items,    1,       all,      nullptr, 0,
+            nullptr,       &backdrop,    &context, nullptr, nullptr,  {},      nullptr,
+            &renderToken,  nullptr,      false,    0,       QPoint(), true});
         tiledPainter.end();
 
         std::size_t mismatched = 0;

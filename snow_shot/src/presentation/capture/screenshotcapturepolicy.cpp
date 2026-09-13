@@ -14,19 +14,26 @@ namespace snow_shot::presentation::capture {
 ScreenshotApiMode screenshotApiModeFromValue(const char* value) noexcept {
     if (value != nullptr) {
         const QString mode = QString::fromLatin1(value);
-        if (mode == QStringLiteral("dxgi")) return ScreenshotApiMode::Dxgi;
-        if (mode == QStringLiteral("wgc")) return ScreenshotApiMode::Wgc;
-        if (mode == QStringLiteral("gdi")) return ScreenshotApiMode::Gdi;
+        if (mode == QStringLiteral("dxgi"))
+            return ScreenshotApiMode::Dxgi;
+        if (mode == QStringLiteral("wgc"))
+            return ScreenshotApiMode::Wgc;
+        if (mode == QStringLiteral("gdi"))
+            return ScreenshotApiMode::Gdi;
     }
     return ScreenshotApiMode::Auto;
 }
 
 std::uint8_t nativeBackendForNormalScreenshot(ScreenshotApiMode mode) noexcept {
     switch (mode) {
-    case ScreenshotApiMode::Dxgi: return SNOW_CAPTURE_BACKEND_DXGI;
-    case ScreenshotApiMode::Wgc: return SNOW_CAPTURE_BACKEND_WGC;
-    case ScreenshotApiMode::Gdi: return SNOW_CAPTURE_BACKEND_GDI;
-    case ScreenshotApiMode::Auto: break;
+    case ScreenshotApiMode::Dxgi:
+        return SNOW_CAPTURE_BACKEND_DXGI;
+    case ScreenshotApiMode::Wgc:
+        return SNOW_CAPTURE_BACKEND_WGC;
+    case ScreenshotApiMode::Gdi:
+        return SNOW_CAPTURE_BACKEND_GDI;
+    case ScreenshotApiMode::Auto:
+        break;
     }
     return SNOW_CAPTURE_BACKEND_AUTO;
 }
@@ -36,7 +43,8 @@ ScreenshotApiMode resolveAutoScreenshotApiMode() noexcept {
 #if defined(Q_OS_WIN) || defined(_WIN32)
         UINT pathCount = 0;
         UINT modeCount = 0;
-        if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &pathCount, &modeCount) == ERROR_SUCCESS) {
+        if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &pathCount, &modeCount) ==
+            ERROR_SUCCESS) {
             QVector<DISPLAYCONFIG_PATH_INFO> paths(static_cast<qsizetype>(pathCount));
             QVector<DISPLAYCONFIG_MODE_INFO> modes(static_cast<qsizetype>(modeCount));
             if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pathCount, paths.data(), &modeCount,
@@ -55,7 +63,7 @@ ScreenshotApiMode resolveAutoScreenshotApiMode() noexcept {
             }
         }
 #endif
-    return ScreenshotApiMode::Gdi;
+        return ScreenshotApiMode::Gdi;
     }();
     return resolved;
 }

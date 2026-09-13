@@ -443,7 +443,7 @@ void ScreenshotPinnedEditController::ensureToolbar() {
         connect(toolbar, &ScreenshotToolPalette::deleteSelectionRequested, this,
                 [this]() { m_canvas.deleteSelected(); });
         connect(toolbar, &ScreenshotToolPalette::resetCanvasRequested, this,
-                [this]() { m_canvas.clearDocument(); });
+                [this]() { m_canvas.deleteAllElements(); });
         connect(toolbar, &ScreenshotToolPalette::shapeStyleChanged, this,
                 &ScreenshotPinnedEditController::applyShapeStyleFromPalette);
         connect(toolbar, &ScreenshotToolPalette::textStyleChanged, this,

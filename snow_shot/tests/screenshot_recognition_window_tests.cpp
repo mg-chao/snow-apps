@@ -15,6 +15,7 @@
 #include <QContextMenuEvent>
 #include <QDir>
 #include <QFrame>
+#include <QFontDatabase>
 #include <QFocusEvent>
 #include <QGuiApplication>
 #include <QGraphicsItem>
@@ -97,6 +98,94 @@ double averageLightness(const QImage& image) {
         }
     }
     return static_cast<double>(total) / static_cast<double>(image.width() * image.height());
+}
+
+void selectionOnlyTextLayerPaintsOnlyHighlights() {
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() == QStringLiteral("offscreen")) {
+        require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >=
+                    0,
+                "load offscreen recognition font");
+        QApplication::setFont(QFont(QStringLiteral("Segoe UI")));
+    }
+#endif
+    QWidget host;
+    host.resize(260, 180);
+    QPalette palette = host.palette();
+    palette.setColor(QPalette::Window, QColor(24, 72, 120));
+    host.setPalette(palette);
+    host.setAutoFillBackground(true);
+    host.show();
+    const QImage original = host.grab().toImage();
+    ScreenshotRecognitionWindow recognition(
+        {}, &host, ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild);
+    require(recognition.present({QGuiApplication::primaryScreen(), &host, host.rect(), host.rect(),
+                                 ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild}),
+            "selection-only embedded presentation initializes");
+    for (int kind = 0; kind != 3; ++kind) {
+        auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+        presentation->selection = host.rect();
+        ScreenshotOcrLine line;
+        line.text = QStringLiteral("Selectable text");
+        // Cached OCR can retain fill colors from an earlier displayed presentation.
+        // That metadata must never make text visible in selection-only mode.
+        line.backgroundFillColor = kind == 1 ? QColor(Qt::white) : QColor(Qt::black);
+        const QRectF bounds = kind == 1 ? QRectF(80, 10, 24, 155) : QRectF(20, 40, 220, 60);
+        line.quad = QPolygonF(
+            {bounds.topLeft(), bounds.topRight(), bounds.bottomRight(), bounds.bottomLeft()});
+        if (kind == 1) {
+            line.direction = ScreenshotOcrTextDirection::Vertical;
+        } else if (kind == 2) {
+            line.paragraph = true;
+            line.sourceLineQuads = {line.quad};
+        }
+        presentation->lines = {line};
+        presentation->prepareForRendering();
+        recognition.setOcrPresentation(presentation,
+                                       ScreenshotOcrTextLayer::RenderingMode::SelectionOnly, false);
+        recognition.show();
+        QApplication::processEvents();
+        require(host.grab().toImage() == original,
+                "hidden text and regions must not change any image pixel");
+        presentation->selectAll();
+        recognition.updateOcrSelection();
+        QApplication::processEvents();
+        const QImage selected = host.grab().toImage();
+        require(selected != original, "hidden selection must render its highlight");
+        auto* layer = recognition.findChild<QGraphicsView*>(QStringLiteral("snowShotOcrTextLayer"));
+        require(layer != nullptr, "selection-only text layer exists");
+        QImage overlay(host.size(), QImage::Format_ARGB32_Premultiplied);
+        overlay.fill(Qt::transparent);
+        {
+            QPainter painter(&overlay);
+            layer->scene()->render(&painter, QRectF(overlay.rect()), layer->sceneRect());
+        }
+        int maximumAlpha = 0;
+        for (int y = 0; y < overlay.height(); ++y) {
+            for (int x = 0; x < overlay.width(); ++x) {
+                maximumAlpha = std::max(maximumAlpha, qAlpha(overlay.pixel(x, y)));
+            }
+        }
+        require(maximumAlpha == 102,
+                "hidden selection paints only a 40-percent highlight, with no opaque glyphs");
+        const qreal dpr = selected.devicePixelRatio();
+        const QRect allowed = QRectF(bounds.topLeft() * dpr, bounds.size() * dpr)
+                                  .toAlignedRect()
+                                  .adjusted(-1, -1, 1, 1);
+        for (int y = 0; y < selected.height(); ++y) {
+            for (int x = 0; x < selected.width(); ++x) {
+                require(selected.pixel(x, y) == original.pixel(x, y) || allowed.contains(x, y),
+                        "selection paints only within the recognized text region");
+            }
+        }
+        recognition.clearOcrSelection();
+        QApplication::processEvents();
+        require(host.grab().toImage() == original,
+                "clearing selection restores exact image pixels");
+        recognition.setOcrPresentation(presentation);
+        QApplication::processEvents();
+        require(host.grab().toImage() != original, "normal mode still paints recognized text");
+    }
 }
 
 void embeddedRecognitionWindowPreservesParentSurfaceWithVisibleTextLayer() {
@@ -1257,6 +1346,10 @@ void selectionResizeKeepsMouseCaptureWhenContentIsCleared() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
+    if (application.arguments().contains(QStringLiteral("--selection-only-rendering"))) {
+        selectionOnlyTextLayerPaintsOnlyHighlights();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--image-snapshot-only"))) {
         imageSnapshotTracksOnlyOriginalImageAndOwnsItsResult();
         return 0;
@@ -1268,6 +1361,7 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--selection-resize-only"))) {
         return 0;
     }
+    selectionOnlyTextLayerPaintsOnlyHighlights();
     embeddedRecognitionWindowPreservesParentSurfaceWithVisibleTextLayer();
     recognitionWindowCanExtendBeyondItsDpiScreen();
     recognitionWindowUsesOrdinaryQtWindowBehavior();

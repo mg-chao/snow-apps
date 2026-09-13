@@ -388,6 +388,45 @@ void arrowTypesMoveAndEraseAsPair() {
     }
 }
 
+void deleteAllElementsClearsDocumentAsOneUndoEntry() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(600, 360);
+    canvas.show();
+    QApplication::processEvents();
+    createArrow(canvas, runtime);
+    openLabel(canvas);
+    key(canvas, Qt::Key_A, Qt::NoModifier, QStringLiteral("label"));
+    key(canvas, Qt::Key_Return, Qt::ControlModifier);
+    require(canvas.setCanvasTool(SnowCanvasTool::Shape), "activate shape tool");
+    mouse(canvas, QEvent::MouseButtonPress, {20.0, 20.0}, Qt::LeftButton, Qt::LeftButton);
+    mouse(canvas, QEvent::MouseMove, {120.0, 90.0}, Qt::NoButton, Qt::LeftButton);
+    mouse(canvas, QEvent::MouseButtonRelease, {120.0, 90.0}, Qt::LeftButton, Qt::NoButton);
+    require(records(runtime, QStringLiteral("Arrow")).size() == 1 &&
+                records(runtime, QStringLiteral("Text")).size() == 1 &&
+                records(runtime, QStringLiteral("Rectangle")).size() == 1,
+            "arrow, label, and rectangle exist before deleting all");
+
+    require(canvas.deleteAllElements(), "delete all elements should succeed");
+    require(records(runtime, QStringLiteral("Arrow")).isEmpty() &&
+                records(runtime, QStringLiteral("Text")).isEmpty() &&
+                records(runtime, QStringLiteral("Rectangle")).isEmpty(),
+            "delete all removes every element kind");
+    require(canvas.canvasHistoryState().canUndo, "delete all keeps history for undo");
+
+    require(canvas.undo(), "undo delete all");
+    require(records(runtime, QStringLiteral("Arrow")).size() == 1 &&
+                records(runtime, QStringLiteral("Text")).size() == 1 &&
+                records(runtime, QStringLiteral("Rectangle")).size() == 1,
+            "one undo restores every element");
+
+    require(canvas.redo(), "redo delete all");
+    require(records(runtime, QStringLiteral("Arrow")).isEmpty() &&
+                records(runtime, QStringLiteral("Text")).isEmpty() &&
+                records(runtime, QStringLiteral("Rectangle")).isEmpty(),
+            "redo clears the document again");
+}
+
 void sharedViewsAndLongOffscreenText() {
     SnowCanvasRuntime runtime;
     SnowCanvasWidget canvas(runtime);
@@ -484,6 +523,7 @@ int main(int argc, char** argv) {
     wrappingAndFinalPointerPosition();
     gapPreservesBackground();
     arrowTypesMoveAndEraseAsPair();
+    deleteAllElementsClearsDocumentAsOneUndoEntry();
     sharedViewsAndLongOffscreenText();
     boundShapeReroutesAndMeasuresLabel();
     std::cout << "Arrow text tests passed\n";

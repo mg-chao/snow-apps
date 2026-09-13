@@ -55,7 +55,6 @@ void installedApplicationIconPreservesItsGreenTaskbarBorder() {
         require(containsGreenNearBorder(pixmap.toImage()),
                 "application icon should preserve its green border at taskbar sizes");
     }
-
 }
 
 #ifdef Q_OS_WIN
@@ -63,8 +62,8 @@ void executableIconResourcePreservesItsGreenTaskbarBorder() {
     HMODULE module = GetModuleHandleW(nullptr);
     require(module != nullptr, "application icon test could not resolve its module");
     for (const int size : {16, 32, 48}) {
-        HICON icon = static_cast<HICON>(LoadImageW(module, MAKEINTRESOURCEW(101), IMAGE_ICON,
-                                                   size, size, LR_DEFAULTCOLOR));
+        HICON icon = static_cast<HICON>(
+            LoadImageW(module, MAKEINTRESOURCEW(101), IMAGE_ICON, size, size, LR_DEFAULTCOLOR));
         require(icon != nullptr, "Snow Shot executable did not contain its application icon");
         const QImage image = QImage::fromHICON(icon);
         DestroyIcon(icon);

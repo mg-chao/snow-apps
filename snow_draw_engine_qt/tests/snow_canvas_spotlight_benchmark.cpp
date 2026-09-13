@@ -192,8 +192,8 @@ std::vector<Scenario> scenarios() {
                            Mutation::Color, true, false});
     out.push_back(Scenario{"renderer_zero_visible_cutouts_1920x1080", 1920, 1080, 1.0, 128,
                            Mutation::None, false, false, true});
-    out.push_back(Scenario{"renderer_fractional_geometry_dpr125_1920x1080", 1920, 1080, 1.25,
-                           16, Mutation::None, false, false, false, true});
+    out.push_back(Scenario{"renderer_fractional_geometry_dpr125_1920x1080", 1920, 1080, 1.25, 16,
+                           Mutation::None, false, false, false, true});
     out.push_back(Scenario{"renderer_geometry_change_1920x1080", 1920, 1080, 1.0, 128,
                            Mutation::Geometry, false, false});
     out.push_back(Scenario{"renderer_camera_change_3840x2160", 3840, 2160, 1.0, 128,
@@ -412,10 +412,9 @@ bool writeCsv(const std::string& path, const std::vector<Result>& results, int s
                << result.scenario.cutoutCount << ',' << samples << ',' << result.timing.mean << ','
                << result.timing.p50 << ',' << result.timing.p95 << ',' << result.timing.p99 << ','
                << result.timing.minimum << ',' << result.timing.maximum << ','
-               << d.processedCutoutCount << ','
-               << d.locallyCulledCutoutCount << ',' << d.earlyExitCount << ','
-               << d.zeroCutoutFastPathCount << ',' << d.renderedPixelCount << ','
-               << d.renderedRegionCount << ',' << result.checksum
+               << d.processedCutoutCount << ',' << d.locallyCulledCutoutCount << ','
+               << d.earlyExitCount << ',' << d.zeroCutoutFastPathCount << ','
+               << d.renderedPixelCount << ',' << d.renderedRegionCount << ',' << result.checksum
                << ',' << qVersion() << ',' << QSysInfo::prettyProductName().toStdString() << ','
                << QSysInfo::currentCpuArchitecture().toStdString() << '\n';
     }

@@ -93,9 +93,9 @@ void AdPasswordEdit::changeEvent(QEvent* event) {
   }
 
   if (event->type() == QEvent::LanguageChange || event->type() == QEvent::EnabledChange ||
-      event->type() == QEvent::PaletteChange ||
-      event->type() == QEvent::ApplicationPaletteChange || event->type() == QEvent::FontChange ||
-      event->type() == QEvent::ApplicationFontChange || event->type() == QEvent::StyleChange) {
+      event->type() == QEvent::PaletteChange || event->type() == QEvent::ApplicationPaletteChange ||
+      event->type() == QEvent::FontChange || event->type() == QEvent::ApplicationFontChange ||
+      event->type() == QEvent::StyleChange) {
     updateToggleVisual();
   }
 }

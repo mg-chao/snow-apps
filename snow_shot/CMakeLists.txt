@@ -3223,6 +3223,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-application-storage-tests --toolbar-layout-only)
     add_test(NAME snow-shot-quick-save-export-tests
         COMMAND snow-shot-export-artifact-tests --quick-save-only)
+    add_test(NAME snow-shot-pinned-hidden-text-selection-restore-tests
+        COMMAND snow-shot-pinned-window-tests --hidden-text-selection-restore-only)
+    add_test(NAME snow-shot-pinned-hidden-text-selection-tests
+        COMMAND snow-shot-pinned-window-tests --hidden-text-selection-only -platform offscreen)
     add_test(NAME snow-shot-pinned-recognition-save-tests
         COMMAND snow-shot-pinned-window-tests --recognition-save-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-recognition-save-tests PROPERTIES LABELS "unit" TIMEOUT 90)
@@ -4194,6 +4198,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         )
     endif()
     snow_shot_import_offscreen_platform(snow-shot-recognition-window-tests)
+    add_test(NAME snow-shot-recognition-selection-only-rendering-tests
+        COMMAND snow-shot-recognition-window-tests --selection-only-rendering -platform offscreen)
     add_test(
         NAME snow-shot-recognition-window-tests
         COMMAND snow-shot-recognition-window-tests

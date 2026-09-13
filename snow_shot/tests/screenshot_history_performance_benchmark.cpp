@@ -44,7 +44,7 @@ constexpr qint64 kSteadyPrivateBytesLimit = 25 * 1024 * 1024;
 constexpr qint64 kRefreshDriftLimitBytes = 1 * 1024 * 1024;
 
 #ifndef SNOW_SHOT_HISTORY_BENCHMARK_BASELINE_PATH
-#define SNOW_SHOT_HISTORY_BENCHMARK_BASELINE_PATH \
+#define SNOW_SHOT_HISTORY_BENCHMARK_BASELINE_PATH                                                  \
     "tests/baselines/screenshot_history_performance.json"
 #endif
 
@@ -163,8 +163,7 @@ int main(int argc, char** argv) {
     }
 
     snow_shot::presentation::GlobalShortcutManager shortcutManager;
-    const auto& registry =
-        snow_shot::presentation::settings::builtInSettingsRegistry();
+    const auto& registry = snow_shot::presentation::settings::builtInSettingsRegistry();
     snow_shot::presentation::settings::BuiltInSettingsBackend backend(shortcutManager);
     snow_shot::presentation::settings::SettingsRuntimeSession session(registry, backend);
     QElapsedTimer constructionTimer;
@@ -270,8 +269,7 @@ int main(int argc, char** argv) {
     // only after the intentionally unbounded persistence queue has drained.
     for (int drainPass = 0; drainPass < 3; ++drainPass) {
         QApplication::processEvents(QEventLoop::AllEvents, 10);
-        processUntil(
-            []() { return screenshotHistoryPendingJobCount() == 0; }, 30000, &peakBytes);
+        processUntil([]() { return screenshotHistoryPendingJobCount() == 0; }, 30000, &peakBytes);
     }
     const ProcessMetrics drainedMetrics = processMetrics();
     QThread::msleep(100);
@@ -353,20 +351,19 @@ int main(int argc, char** argv) {
          postNavigationMetrics.privateWorkingSetBytes},
         {QStringLiteral("post_navigation_private_commit_bytes"),
          postNavigationMetrics.privateCommitBytes},
-        {QStringLiteral("post_navigation_process_thread_count"),
-         postNavigationMetrics.threadCount},
+        {QStringLiteral("post_navigation_process_thread_count"), postNavigationMetrics.threadCount},
         {QStringLiteral("history_page_count_drained"),
          content.findChildren<ScreenshotHistoryPageWidget*>().size()},
         {QStringLiteral("ad_image_count_drained"),
          page->findChildren<adqt::widgets::AdImage*>().size()},
         {QStringLiteral("history_page_count_idle"),
          content.findChildren<ScreenshotHistoryPageWidget*>().size()},
-        {QStringLiteral("ad_image_count_idle"), page->findChildren<adqt::widgets::AdImage*>().size()},
+        {QStringLiteral("ad_image_count_idle"),
+         page->findChildren<adqt::widgets::AdImage*>().size()},
         {QStringLiteral("pending_history_jobs_before_drain"), pendingHistoryJobsBeforeDrain},
         {QStringLiteral("pending_persistence_jobs_before_drain"),
          pendingPersistenceJobsBeforeDrain},
-        {QStringLiteral("queued_persistence_jobs_before_drain"),
-         queuedPersistenceJobsBeforeDrain},
+        {QStringLiteral("queued_persistence_jobs_before_drain"), queuedPersistenceJobsBeforeDrain},
         {QStringLiteral("submitted_persistence_jobs_before_drain"),
          static_cast<qint64>(submittedPersistenceJobsBeforeDrain)},
         {QStringLiteral("pending_history_jobs_after_drain"), screenshotHistoryPendingJobCount()},
@@ -390,10 +387,8 @@ int main(int argc, char** argv) {
         {QStringLiteral("complete_thumbnail_limit_ms"), kCompleteThumbnailLimitMs},
         {QStringLiteral("steady_private_bytes_limit"), kSteadyPrivateBytesLimit},
         {QStringLiteral("refresh_drift_limit_bytes"), kRefreshDriftLimitBytes},
-        {QStringLiteral("baseline"),
-         QString::fromUtf8(SNOW_SHOT_HISTORY_BENCHMARK_BASELINE_PATH)},
-        {QStringLiteral("baseline_policy"),
-         baseline.value(QStringLiteral("policy")).toString()},
+        {QStringLiteral("baseline"), QString::fromUtf8(SNOW_SHOT_HISTORY_BENCHMARK_BASELINE_PATH)},
+        {QStringLiteral("baseline_policy"), baseline.value(QStringLiteral("policy")).toString()},
         {QStringLiteral("baseline_fixture_matches"), baselineFixtureMatches},
         {QStringLiteral("baseline_behavioral_limits_match"), baselineBehaviorMatches},
         {QStringLiteral("timing_and_memory_thresholds_enforced"), true},
@@ -405,5 +400,5 @@ int main(int argc, char** argv) {
     QApplication::processEvents(QEventLoop::AllEvents, 10);
     snow_shot::storage::ApplicationStorage::instance().shutdown();
     return timingAndMemoryThresholdsPassed && baselineFixtureMatches && baselineBehaviorMatches ? 0
-                                                                                               : 2;
+                                                                                                : 2;
 }

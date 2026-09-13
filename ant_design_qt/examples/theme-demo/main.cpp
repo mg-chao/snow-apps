@@ -1821,16 +1821,13 @@ class DemoWindow final : public QWidget {
 
   bool parseDocsGroupKey(const QString& key, DocsKind* kind) const {
     for (const DocsKind candidate :
-         {DocsKind::Button,      DocsKind::Alert,        DocsKind::Input,
-          DocsKind::Form,        DocsKind::Descriptions, DocsKind::Divider,
-          DocsKind::InputNumber,
-          DocsKind::Switch,      DocsKind::Segmented,    DocsKind::Menu,
-          DocsKind::Message,     DocsKind::Notification, DocsKind::Modal,
-          DocsKind::Select,      DocsKind::Slider,       DocsKind::Spin,
-          DocsKind::Pagination,  DocsKind::Tabs,         DocsKind::Carousel,
-          DocsKind::ColorPicker, DocsKind::DatePicker,   DocsKind::Image,
-          DocsKind::Popover,     DocsKind::Popconfirm,   DocsKind::Tooltip,
-          DocsKind::Radio,       DocsKind::Checkbox,     DocsKind::Tag}) {
+         {DocsKind::Button,       DocsKind::Alert,   DocsKind::Input,       DocsKind::Form,
+          DocsKind::Descriptions, DocsKind::Divider, DocsKind::InputNumber, DocsKind::Switch,
+          DocsKind::Segmented,    DocsKind::Menu,    DocsKind::Message,     DocsKind::Notification,
+          DocsKind::Modal,        DocsKind::Select,  DocsKind::Slider,      DocsKind::Spin,
+          DocsKind::Pagination,   DocsKind::Tabs,    DocsKind::Carousel,    DocsKind::ColorPicker,
+          DocsKind::DatePicker,   DocsKind::Image,   DocsKind::Popover,     DocsKind::Popconfirm,
+          DocsKind::Tooltip,      DocsKind::Radio,   DocsKind::Checkbox,    DocsKind::Tag}) {
       if (key == docsGroupKey(candidate)) {
         if (kind) {
           *kind = candidate;

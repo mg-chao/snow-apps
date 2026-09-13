@@ -14,8 +14,7 @@ struct PersistedSelectionNormalization {
 };
 
 [[nodiscard]] QJsonObject persistedSelectionToJson(const PersistedSelection& selection);
-[[nodiscard]] PersistedSelectionNormalization
-normalizePersistedSelection(const QJsonValue& value);
+[[nodiscard]] PersistedSelectionNormalization normalizePersistedSelection(const QJsonValue& value);
 } // namespace snow_shot::storage
 
 #endif // SNOW_SHOT_STORAGE_PERSISTEDSELECTIONCODEC_H

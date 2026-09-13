@@ -1273,6 +1273,9 @@ void AdButton::showEvent(QShowEvent* event) {
 
 void AdButton::hideEvent(QHideEvent* event) {
   QPushButton::hideEvent(event);
+  // Retained popup children can be hidden without receiving a matching Leave.
+  // Hover belongs to the current visible interaction, not the next popup session.
+  d_->hovered = false;
   d_->enterPressed = false;
   setDown(false);
   updateSpinnerState();

@@ -34,9 +34,8 @@ struct SettingsSearchRuntimeValues {
 
 class SettingsSearchIndex final {
   public:
-    explicit SettingsSearchIndex(
-        const SettingsRegistry& registry,
-        SettingsSearchRuntimeValues runtimeValues = {});
+    explicit SettingsSearchIndex(const SettingsRegistry& registry,
+                                 SettingsSearchRuntimeValues runtimeValues = {});
 
     void rebuild();
     void setRuntimeValues(SettingsSearchRuntimeValues runtimeValues);

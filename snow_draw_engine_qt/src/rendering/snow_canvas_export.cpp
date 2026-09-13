@@ -80,8 +80,7 @@ void renderSources(QPainter& painter, const ExportProjection& projection,
 }
 
 bool synchronizeRuntimeScene(SnowRuntime runtime, const ExportProjection& projection,
-                             SnowCanvasViewport& viewport,
-                             SnowCanvasDisplayCache& displayCache,
+                             SnowCanvasViewport& viewport, SnowCanvasDisplayCache& displayCache,
                              snow_canvas_state::Store& state) {
     if (runtime == nullptr) {
         return false;

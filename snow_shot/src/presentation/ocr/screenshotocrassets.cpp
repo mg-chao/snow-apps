@@ -37,7 +37,7 @@
 
 namespace {
 constexpr auto kManifestName = "asset-manifest.json";
-constexpr auto kRuntimeVersion = "1.0.6";
+constexpr auto kRuntimeVersion = "1.0.7";
 constexpr auto kPlatform = "windows-x64";
 constexpr auto kInterruptedError = "OCR asset preparation was interrupted";
 constexpr int kShutdownJoinTimeoutMs = 10'000;

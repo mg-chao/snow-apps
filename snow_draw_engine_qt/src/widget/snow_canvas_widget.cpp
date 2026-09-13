@@ -414,6 +414,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool undo();
     bool redo();
     bool deleteSelected();
+    bool deleteAllElements();
     bool clearDocument();
     bool duplicateSelected(const QPointF& offset);
     bool reorderSelected(SnowCanvasSelectionOrder order);
@@ -1597,6 +1598,15 @@ bool SnowCanvasWidget::Impl::deleteSelected() {
 
 bool SnowCanvasWidget::deleteSelected() {
     return m_impl->deleteSelected();
+}
+
+bool SnowCanvasWidget::Impl::deleteAllElements() {
+    return applyMutationResult(snow_canvas_commands::deleteAllElements(
+        runtimeBinding.engine(), runtimeBinding.viewportHandle()));
+}
+
+bool SnowCanvasWidget::deleteAllElements() {
+    return m_impl->deleteAllElements();
 }
 
 bool SnowCanvasWidget::Impl::clearDocument() {

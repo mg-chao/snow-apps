@@ -232,6 +232,10 @@ class ScreenshotPinnedWindow final : public QWidget {
     void configureEditToolbar(ScreenshotFloatingToolPaletteWindow* toolbarWindow);
     void setEditMode(bool enabled);
     void stopRecognition();
+    void configureRecognitionSession();
+    ScreenshotRecognitionWindow* ensureRecognitionContent();
+    void synchronizeHiddenTextSelection();
+    [[nodiscard]] bool copyHiddenTextSelection();
     void updateOcrPresentation();
     void updateRecognitionContentGeometry();
     void activateRecognitionMode(int mode, bool showToolbar = true);
@@ -414,6 +418,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_ocrSupported = false;
     bool m_formattedTextAvailable = false;
     bool m_ocrMode = false;
+    bool m_hiddenTextSelection = false;
     bool m_initialRecognitionVisible = false;
     bool m_initialTranslationVisible = false;
     bool m_translateAfterRecognition = false;

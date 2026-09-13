@@ -203,6 +203,8 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         defaultValue("system/auto_start_at_boot").toBool() &&
             defaultValue("network/proxy").toString() == QStringLiteral("none") &&
             defaultValue("text_recognition/model_type").toString() == QStringLiteral("small") &&
+            !defaultValue("text_recognition/resident_process").toBool() &&
+            !defaultValue("text_recognition/model_hot_start").toBool() &&
             !defaultValue("global_shortcuts/disable_on_focused_fullscreen_window").toBool() &&
             defaultValue("global_shortcuts/screenshot").toArray() ==
                 QJsonArray{QStringLiteral("F1")} &&

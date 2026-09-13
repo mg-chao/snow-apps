@@ -77,6 +77,7 @@ MutationResult redo(SnowRuntime runtime);
 MutationResult resetEditingState(SnowRuntime runtime, SnowViewport viewport);
 MutationResult selectElement(SnowRuntime runtime, SnowViewport viewport, SnowElementId id);
 MutationResult deleteSelected(SnowRuntime runtime, SnowViewport viewport);
+MutationResult deleteAllElements(SnowRuntime runtime, SnowViewport viewport);
 MutationResult duplicateSelected(SnowRuntime runtime, SnowViewport viewport, double offsetX,
                                  double offsetY);
 MutationResult reorderSelected(SnowRuntime runtime, SnowViewport viewport, std::uint32_t action);

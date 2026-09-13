@@ -1085,12 +1085,10 @@ bool writeCsv(const std::string& path, const std::vector<Result>& results, std::
                << result.diagnostics.penSimdRasterExecutions << ','
                << result.diagnostics.retainedPenAtlasBytes << ','
                << result.diagnostics.allocatedBytes << ',' << result.diagnostics.copiedBytes << ','
-               << result.diagnostics.scratchReuseCount << ','
-               << result.diagnostics.sourceTileHits << ','
-               << result.diagnostics.sourceTileMisses << ','
-               << result.diagnostics.sourceTileEvictions << ','
-               << result.diagnostics.parallelJobs << ','
-               << result.diagnostics.retainedWorkspaceBytes << ','
+               << result.diagnostics.scratchReuseCount << ',' << result.diagnostics.sourceTileHits
+               << ',' << result.diagnostics.sourceTileMisses << ','
+               << result.diagnostics.sourceTileEvictions << ',' << result.diagnostics.parallelJobs
+               << ',' << result.diagnostics.retainedWorkspaceBytes << ','
                << result.diagnostics.gaussianPasses << ','
                << result.diagnostics.gaussianDownsampleAvx2Executions << ','
                << result.diagnostics.gaussianReconstructionAvx2Executions << ','

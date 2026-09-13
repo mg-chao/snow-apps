@@ -91,8 +91,8 @@ class AdDpiStableWindowController final : public QObject {
     quint64 generation = 0;
 
     [[nodiscard]] bool valid() const {
-      return windowId != 0 && frameSize.isValid() && !frameSize.isEmpty() &&
-             clientSize.isValid() && !clientSize.isEmpty();
+      return windowId != 0 && frameSize.isValid() && !frameSize.isEmpty() && clientSize.isValid() &&
+             !clientSize.isEmpty();
     }
   };
 

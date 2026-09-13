@@ -140,7 +140,7 @@ void explicitAssetsControlReadiness() {
     require(service.modelFilesReady(), "a complete explicit OCR asset set must report ready");
 }
 
-void modelInitializationFailureExposesAssetErrorAndRetries() {
+void modelInitializationFailureIsReportedOnRequestsAndRetries() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary OCR initialization directory should be available");
     ScreenshotOcrRecognitionService::Options options;
@@ -178,16 +178,17 @@ void modelInitializationFailureExposesAssetErrorAndRetries() {
 
     submit();
     require(waitUntil([&]() { return completions == 1; }, 10'000) &&
-                service.assetStatus().phase == ScreenshotOcrAssetPhase::Failed,
-            "model initialization failure should expose the OCR asset error state");
+                service.assetStatus().phase != ScreenshotOcrAssetPhase::Failed,
+            "model initialization failure must reach its request without corrupting resource "
+            "readiness");
     submit();
     require(
         waitUntil([&]() { return completions == 2; }, 10'000) &&
-            service.assetStatus().phase == ScreenshotOcrAssetPhase::Failed,
+            service.assetStatus().phase != ScreenshotOcrAssetPhase::Failed,
         "a later OCR request should retry and report the selected model initialization failure");
 }
 
-void oneEngineIsInitializedBeforeReadyAndReused() {
+void oneEngineIsInitializedAfterReadyAndReused() {
     using namespace snow_shot::diagnostics;
     QTemporaryDir directory;
     DiagnosticsOptions logging;
@@ -227,9 +228,10 @@ void oneEngineIsInitializedBeforeReadyAndReused() {
                 ++starts;
             if (event == QStringLiteral("ocr.engine_ready")) {
                 ++initializations;
+                require(readyCount == 1, "process readiness must precede model loading");
                 require(fields.value(QStringLiteral("operation")) == QStringLiteral("0") &&
                             fields.value(QStringLiteral("outcome")) == QStringLiteral("succeeded"),
-                        "the real engine must initialize during startup");
+                        "the real engine must initialize for a session");
             }
             if (event == QStringLiteral("ocr.process_ready"))
                 ++readyCount;
@@ -245,6 +247,85 @@ void oneEngineIsInitializedBeforeReadyAndReused() {
     diagnostics.shutdown();
 }
 
+void residentRuntimeRebuildsWarmSessions(bool directMl, const QImage& fixture = {}) {
+    using namespace snow_shot::diagnostics;
+    QTemporaryDir directory;
+    DiagnosticsOptions logging;
+    logging.directories = {directory.path()};
+    logging.enableCrashCapture = false;
+    logging.mirrorToConsole = false;
+    auto& diagnostics = DiagnosticsService::instance();
+    require(diagnostics.initialize(logging), "resident diagnostics must initialize");
+    const auto count = [&](const QString& event) {
+        require(diagnostics.flush(), "resident diagnostics must flush");
+        QFile log(diagnostics.status().currentFile);
+        require(log.open(QIODevice::ReadOnly), "resident diagnostics must be readable");
+        int found = 0;
+        for (const auto& line : log.readAll().split('\n')) {
+            const auto record = QJsonDocument::fromJson(line).object();
+            if (record.value(QStringLiteral("event")) == event)
+                ++found;
+        }
+        return found;
+    };
+    {
+        ScreenshotOcrRecognitionService service(sourceRuntimeOptions());
+        ScreenshotOcrRuntimeConfiguration configuration;
+        configuration.residentProcess = configuration.modelHotStart = true;
+        configuration.backend = directMl ? ScreenshotOcrBackendPreference::DirectMl
+                                         : ScreenshotOcrBackendPreference::Cpu;
+        service.setRuntimeConfiguration(configuration);
+        require(waitUntil([&] { return count(QStringLiteral("ocr.engine_ready")) == 1; },
+                          kRecognitionTimeoutMs),
+                "real warm-up must create the selected engine");
+        const auto pid = service.processId();
+        require(pid != 0 && count(QStringLiteral("ocr.buffer_allocated")) == 0 &&
+                    count(QStringLiteral("ocr.worker_finished")) == 0,
+                "real warm-up must hold no transfer buffer and perform no inference");
+        QObject receiver;
+        int completed = 0;
+        for (int cycle = 1; cycle <= 2; ++cycle) {
+            auto image = fixture.isNull() ? whiteImage() : fixture;
+            require(service.recognize(
+                        {image, QRectF(0, 0, image.width(), image.height())}, &receiver,
+                        [&](ScreenshotOcrRecognitionResult result) {
+                            require(result.error.isEmpty() && result.presentation != nullptr,
+                                    "warm recognition must succeed");
+                            if (!fixture.isNull()) {
+                                QString text;
+                                for (const auto& line : result.presentation->lines)
+                                    text += line.text;
+                                text.remove(QLatin1Char(' '));
+                                require(
+                                    text.contains(QStringLiteral("SnowShot12345")) &&
+                                        text.contains(QStringLiteral("\u6587\u5b57\u8bc6\u522b")),
+                                    "packaged resident runtime must recognize the English and "
+                                    "Chinese fixture");
+                            }
+                            ++completed;
+                        }) != 0,
+                    "warm recognition must be accepted");
+            require(waitUntil(
+                        [&] {
+                            return completed == cycle &&
+                                   count(QStringLiteral("ocr.engine_ready")) == cycle + 1;
+                        },
+                        kRecognitionTimeoutMs),
+                    "each inference cycle must end with a newly loaded warm engine");
+            require(service.processId() == pid &&
+                        count(QStringLiteral("ocr.buffer_released")) == cycle,
+                    "warm cycles must retain the process and release every transfer mapping");
+        }
+        configuration.modelHotStart = false;
+        service.setRuntimeConfiguration(configuration);
+        configuration.residentProcess = false;
+        service.setRuntimeConfiguration(configuration);
+        require(waitUntil([&] { return service.processId() == 0; }, 5000),
+                "resident shutdown must finish");
+    }
+    diagnostics.shutdown();
+}
+
 void diskBackedEngineCompletesThroughTheQtWorker(bool directMlEnabled,
                                                  bool managedRuntime = false) {
     QTemporaryDir cache;
@@ -253,8 +334,8 @@ void diskBackedEngineCompletesThroughTheQtWorker(bool directMlEnabled,
         managedRuntime ? ScreenshotOcrRecognitionService::Options{} : sourceRuntimeOptions();
     const QString expectedProcess =
         managedRuntime ? QDir(QCoreApplication::applicationDirPath())
-                             .filePath(QStringLiteral("assets/ocr/runtimes/1.0.6/windows-x64/"
-                                                      "snow-ocr-process-1.0.6-windows-x64.exe"))
+                             .filePath(QStringLiteral("assets/ocr/runtimes/1.0.7/windows-x64/"
+                                                      "snow-ocr-process-1.0.7-windows-x64.exe"))
                        : options.processPath;
     if (managedRuntime) {
         // Exercise the same trusted offline selection as the app, without a
@@ -384,7 +465,6 @@ void destructionStaysBoundedWhileRendersAreInFlight() {
 
 void recognitionRenderIntentCanChangeWhileQueued() {
     auto options = sourceRuntimeOptions();
-    options.workerCount = 1;
     ScreenshotOcrRecognitionService service(options);
     QObject receiver;
     const QImage blocker = whiteImage(768);
@@ -493,9 +573,8 @@ void concurrentRequestsCompleteExactlyOnce() {
     outputs.clear();
 }
 
-void interactiveRequestsPrecedeQueuedPrefetch() {
+void recognitionRequestsKeepSubmissionOrder() {
     auto options = sourceRuntimeOptions();
-    options.workerCount = 1;
     ScreenshotOcrRecognitionService service(options);
     QObject receiver;
     QEventLoop loop;
@@ -537,8 +616,8 @@ void interactiveRequestsPrecedeQueuedPrefetch() {
     timeout.start(kRecognitionTimeoutMs);
     loop.exec();
     require(!timedOut, "priority test OCR requests should finish within the timeout");
-    require(completionOrder == std::vector<int>({0, 2, 1}),
-            "queued interactive OCR must run before queued prefetch OCR");
+    require(completionOrder == std::vector<int>({0, 1, 2}),
+            "recognitions must remain FIFO across interactive and prefetch requests");
 }
 
 void workerRecyclesImmediatelyAndCanBeRecreated() {
@@ -584,13 +663,12 @@ void workerRecyclesImmediatelyAndCanBeRecreated() {
             "the recreated OCR worker should exit after completing the request");
 }
 
-void modelChangeDrainsSubmittedWorkBeforeRestartingPendingWork() {
+void modelChangeUsesTheSameProcessForPendingWork() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary OCR model-change directory should be available");
     const QDir assetRoot(
         QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("assets/ocr")));
     auto options = sourceRuntimeOptions();
-    options.workerCount = 1;
     options.processPath = sourceRuntimeOptions().processPath;
     options.detectorModelPath =
         assetRoot.filePath(QStringLiteral("models/ppocrv6-small-463ea9f/PP-OCRv6_det_small.onnx"));
@@ -639,7 +717,7 @@ void modelChangeDrainsSubmittedWorkBeforeRestartingPendingWork() {
                     require(pendingResult.error.isEmpty() && pendingResult.presentation != nullptr,
                             "work queued after a model change should finish successfully");
                     require(service.processId() != 0,
-                            "pending OCR work should run in a replacement child");
+                            "pending OCR work should run in the existing child");
                     replacementProcessId = service.processId();
                     completionOrder.push_back(2);
                 });
@@ -651,8 +729,8 @@ void modelChangeDrainsSubmittedWorkBeforeRestartingPendingWork() {
                       kRecognitionTimeoutMs),
             "submitted and pending OCR work should complete across the model change");
     require(completionOrder == std::vector<int>({1, 2}) && originalProcessId > 0 &&
-                replacementProcessId > 0 && replacementProcessId != originalProcessId,
-            "a model change must drain submitted work before starting pending work in a new child");
+                replacementProcessId > 0 && replacementProcessId == originalProcessId,
+            "a model change must preserve FIFO and the existing process");
 }
 
 void queuedCancellationSkipsExecution() {
@@ -762,12 +840,12 @@ void writeAssetManifest(const QString& root, bool completePayload) {
     const QByteArray recognizer("recognizer");
     const QByteArray dictionary("dictionary");
     const QString runtimeDirectory =
-        QDir(root).filePath(QStringLiteral("runtimes/1.0.6/windows-x64"));
+        QDir(root).filePath(QStringLiteral("runtimes/1.0.7/windows-x64"));
     const QString modelDirectory =
         QDir(root).filePath(QStringLiteral("models/ppocrv6-small-463ea9f"));
     if (completePayload) {
         writeFixture(QDir(runtimeDirectory)
-                         .filePath(QStringLiteral("snow-ocr-process-1.0.6-windows-x64.exe")),
+                         .filePath(QStringLiteral("snow-ocr-process-1.0.7-windows-x64.exe")),
                      process);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral("DirectML.dll")), directMl);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral("runtime-manifest.json")),
@@ -778,12 +856,12 @@ void writeAssetManifest(const QString& root, bool completePayload) {
                      recognizer);
         writeFixture(QDir(modelDirectory).filePath(QStringLiteral("ppocrv6_dict.txt")), dictionary);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral(".complete.json")),
-                     R"({"schema":1,"component":"1.0.6"})");
+                     R"({"schema":1,"component":"1.0.7"})");
         writeFixture(QDir(modelDirectory).filePath(QStringLiteral(".complete.json")),
                      R"({"schema":1,"component":"ppocrv6-small-463ea9f"})");
     }
     const QJsonArray runtimeFiles{
-        assetFile(QStringLiteral("snow-ocr-process-1.0.6-windows-x64.exe"), process),
+        assetFile(QStringLiteral("snow-ocr-process-1.0.7-windows-x64.exe"), process),
         assetFile(QStringLiteral("DirectML.dll"), directMl),
         assetFile(QStringLiteral("runtime-manifest.json"), runtimeManifest)};
     const auto model = [](const QString& type, const QString& id, const QString& detectorName,
@@ -812,10 +890,10 @@ void writeAssetManifest(const QString& root, bool completePayload) {
         {QStringLiteral("schema"), 2},
         {QStringLiteral("default_model"), QStringLiteral("small")},
         {QStringLiteral("runtime"),
-         QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.6")},
+         QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.7")},
                      {QStringLiteral("platform"), QStringLiteral("windows-x64")},
                      {QStringLiteral("archive"),
-                      assetFile(QStringLiteral("snow-ocr-runtime-1.0.6-windows-x64.zip"), archive,
+                      assetFile(QStringLiteral("snow-ocr-runtime-1.0.7-windows-x64.zip"), archive,
                                 QStringLiteral("https://example.invalid/runtime"))},
                      {QStringLiteral("files"), runtimeFiles}}},
         {QStringLiteral("models"),
@@ -1423,7 +1501,7 @@ void actualOcrCrashAfterInference() {
     const auto bytes = dump.readAll();
     dump.close();
     require(bytes.contains(diagnostics.status().sessionId.toUtf8()) &&
-                bytes.contains("ocr.operation_started") && bytes.contains("1.0.6"),
+                bytes.contains("ocr.operation_started") && bytes.contains("1.0.7"),
             "actual OCR dump retains parent session, operation and runtime version");
     require(diagnostics.flush(), "actual OCR final diagnostics flush");
     diagnostics.shutdown();
@@ -1450,6 +1528,13 @@ int main(int argc, char** argv) {
     QTemporaryDir sourceRuntime;
     require(sourceRuntime.isValid(), "an isolated source OCR runtime directory is required");
     stageSourceRuntime(sourceRuntime.path());
+    if (application.arguments().contains(QStringLiteral("--resident-text-fixture"))) {
+        const QImage fixture(qEnvironmentVariable("SNOW_TEST_OCR_TEXT_FIXTURE"));
+        require(!fixture.isNull(), "resident text fixture must be readable");
+        residentRuntimeRebuildsWarmSessions(
+            application.arguments().contains(QStringLiteral("--directml")), fixture);
+        return 0;
+    }
     for (const QString& argument : application.arguments()) {
         if (argument.startsWith(QStringLiteral("--model-root="))) {
             const QString fixturePath = qEnvironmentVariable("SNOW_TEST_OCR_TEXT_FIXTURE");
@@ -1472,18 +1557,19 @@ int main(int argc, char** argv) {
     modelSelectionDuringAcquisitionIsLastSelectionWins();
     assetDestructionInterruptsTheCacheLockWait();
     explicitAssetsControlReadiness();
-    modelInitializationFailureExposesAssetErrorAndRetries();
+    modelInitializationFailureIsReportedOnRequestsAndRetries();
     renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine();
     destructionStaysBoundedWhileRendersAreInFlight();
     diskBackedEngineCompletesThroughTheQtWorker(directMlRequested);
+    residentRuntimeRebuildsWarmSessions(directMlRequested);
     if (!directMlRequested) {
-        oneEngineIsInitializedBeforeReadyAndReused();
+        oneEngineIsInitializedAfterReadyAndReused();
         recognitionRenderIntentCanChangeWhileQueued();
         concurrentRequestsCompleteExactlyOnce();
-        interactiveRequestsPrecedeQueuedPrefetch();
+        recognitionRequestsKeepSubmissionOrder();
         queuedCancellationSkipsExecution();
         workerRecyclesImmediatelyAndCanBeRecreated();
-        modelChangeDrainsSubmittedWorkBeforeRestartingPendingWork();
+        modelChangeUsesTheSameProcessForPendingWork();
         cancellationSuppressesCompletion();
         receiverDestructionSuppressesCompletion();
         serviceDestructionJoinsWorkersAndSuppressesLateDelivery();

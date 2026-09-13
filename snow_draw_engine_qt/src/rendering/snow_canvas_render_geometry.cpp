@@ -549,7 +549,6 @@ QPainterPath arrowPathFromCommands(const ViewProjection& projection,
     return path;
 }
 
-
 QRectF sceneItemBounds(const SceneDisplayInfo& displayInfo, const SnowSceneDisplayItem& item) {
     const ViewProjection projection = sceneProjection(displayInfo);
     switch (item.kind) {
