@@ -219,7 +219,7 @@ mod double_click_tests {
     use super::*;
     use snow_draw_engine_core::{
         ColorRgba8, EngineConfig,
-        arrow::{StrokeStyle, ArrowType},
+        arrow::{ArrowType, StrokeStyle},
     };
     use snow_draw_engine_document::{ElementMeta, FillStyle};
     use snow_draw_engine_interaction::{InputEvent, Modifiers, PointerButtons, PointerDevice};
@@ -279,11 +279,9 @@ mod stroke_cursor_tests {
     use super::*;
     use snow_draw_engine_core::{
         EngineConfig, PathSegmentMode,
-        arrow::{StrokeStyle, ArrowType},
+        arrow::{ArrowType, StrokeStyle},
     };
-    use snow_draw_engine_document::{
-        ElementMeta, FillStyle, FreeDrawData, FreeDrawStyle,
-    };
+    use snow_draw_engine_document::{ElementMeta, FillStyle, FreeDrawData, FreeDrawStyle};
     use snow_draw_engine_interaction::{InputEvent, Modifiers, PointerButtons, PointerDevice};
 
     fn pointer(event_type: PointerEventType, position: Point<f64>) -> InputEvent {
@@ -364,6 +362,11 @@ mod stroke_cursor_tests {
                 Some(EditorStrokeCursor {
                     position: Point::new(20.0, -20.0),
                     stroke_width: width,
+                    stroke_color: match tool {
+                        ActiveTool::FreeDraw | ActiveTool::PenHighlight =>
+                            Some(editor.shape_style(&document).stroke),
+                        _ => None,
+                    },
                 })
             );
 
@@ -386,6 +389,52 @@ mod stroke_cursor_tests {
                 CursorCommand::Set(CursorStyle::Default)
             );
             assert_eq!(editor.presentation_state(&document).stroke_cursor, None);
+        }
+    }
+
+    #[test]
+    fn active_brush_color_changes_refresh_the_visible_cursor() {
+        let document = DocumentModel::new();
+        let mut editor = Editor::new(EngineConfig::default()).unwrap();
+        editor.set_surface_size(200, 200).unwrap();
+        for (tool, kind) in [
+            (ActiveTool::FreeDraw, ShapeKind::FreeDraw),
+            (ActiveTool::PenHighlight, ShapeKind::PenHighlight),
+        ] {
+            editor.set_active_tool(tool).unwrap();
+            editor
+                .process_input(
+                    &document,
+                    pointer(PointerEventType::Enter, Point::new(100.0, 100.0)),
+                )
+                .unwrap();
+            let previous_revision = editor.overlay_input_revision();
+            let mut style = editor.shape_style(&document);
+            style.stroke = snow_draw_engine_core::ColorRgba8 {
+                r: 12,
+                g: 180,
+                b: 90,
+                a: 255,
+            };
+            editor
+                .set_shape_style_patch(
+                    &document,
+                    ShapeStylePatch {
+                        kind,
+                        style,
+                        properties: crate::SHAPE_STYLE_PROPERTY_STROKE,
+                    },
+                )
+                .unwrap();
+            assert!(editor.overlay_input_revision() > previous_revision);
+            assert_eq!(
+                editor
+                    .presentation_state(&document)
+                    .stroke_cursor
+                    .unwrap()
+                    .stroke_color,
+                Some(style.stroke)
+            );
         }
     }
 

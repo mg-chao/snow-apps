@@ -5,10 +5,16 @@
 #include <QRectF>
 #include <QtGlobal>
 
+#include <optional>
+
 class ScreenshotGlobalMouseDrag final {
   public:
     void begin(quint64 id, const QPoint& position);
     bool update(quint64 id, const QPoint& position, bool released = false);
+    // Adopt the live cursor position once the capture is presented: reveal work
+    // delays paced drag deliveries, leaving the buffered end point behind the
+    // actual cursor. A buffered release keeps its exact position.
+    void refreshEndFromLivePosition(const std::optional<QPoint>& position);
     void reset();
     void setReady() {
         m_ready = true;

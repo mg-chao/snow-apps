@@ -93,6 +93,7 @@ enum class SettingsSelectBinding {
     ScreenRecordingEncoder,
     ScreenRecordingEncodingPreset,
     ScreenshotImageFormat,
+    ScreenshotPdfPageSize,
     ScreenshotSaveAsFileDialog,
     TrayLeftClickAction,
     TrayMiddleClickAction,
@@ -122,6 +123,7 @@ enum class SettingsSwitchBinding {
     PinAutoResizeWindow,
     OriginalImageTranslation,
     TranslationPageEnabled,
+    StandaloneTranslationWindow,
     ScreenRecordingHideToolbar,
     DisableHotkeysOnFocusedFullscreen,
     AutoStartAtBoot,
@@ -170,6 +172,7 @@ enum class SettingsColorBinding {
     MonitorCenterGuideLineColor,
     ColorPickerCenterGuideLineColor,
     PinBorderColor,
+    PinBorderActiveColor,
 };
 
 struct SettingsColorDefinition {
@@ -281,6 +284,7 @@ enum class SettingsCustomRenderer {
     StorageStatus,
     DrawingToolbarEditor,
     ScreenshotToolbarEditor,
+    PinnedToolbarEditor,
     TrayMenuOptions,
 };
 
@@ -349,6 +353,7 @@ enum class SettingsSectionReset {
     ScreenshotShortcuts,
     GlobalMouse,
     OtherShortcuts,
+    GlobalPinToScreenShortcuts,
     GeneralSettings,
     HistoryPolicy,
     ScreenshotSettings,
@@ -377,6 +382,8 @@ enum class SettingsSectionReset {
     SystemSettings,
     TextRecognition,
     Translation,
+    CustomAiModels,
+    ExtendedTranslation,
 };
 
 enum class SettingsSectionItemLayout {

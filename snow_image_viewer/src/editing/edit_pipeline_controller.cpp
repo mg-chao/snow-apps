@@ -416,8 +416,8 @@ EditPipelineController::EditPipelineController(EditPipelineOptions options, QObj
         options_.cacheBudgetBytes = maximumCache;
     options_.cacheBudgetBytes = std::min(options_.cacheBudgetBytes, maximumCache);
     options_.workerTimeoutMs = std::max(100, options_.workerTimeoutMs);
-    pool_.setMaxThreadCount(1);
-    pool_.setExpiryTimeout(-1);
+    pool_->setMaxThreadCount(1);
+    pool_->setExpiryTimeout(-1);
     exactTimer_.setSingleShot(true);
     exactTimer_.setTimerType(Qt::PreciseTimer);
     connect(&exactTimer_, &QTimer::timeout, this, &EditPipelineController::scheduleExact);
@@ -458,7 +458,15 @@ EditPipelineController::~EditPipelineController() {
             worker_->waitForFinished(1000);
         }
     }
-    pool_.waitForDone();
+    // Deleting the pool would wait for an in-flight decode unconditionally;
+    // orphan it past the deadline. The decode task holds only by-value state
+    // and shared_ptr handles, and its completion watcher dies with this
+    // controller, so finishing after destruction is safe.
+    if (!pool_->waitForDone(std::max(1, options_.shutdownTimeoutMs))) {
+        qWarning("Edit pipeline decode worker did not stop within %d milliseconds; abandoning it",
+                 options_.shutdownTimeoutMs);
+        pool_.release();
+    }
     exactResult_.reset();
     clearCache();
     artifactDirectory_.reset();
@@ -837,8 +845,8 @@ void EditPipelineController::startSourceDecode(
             });
     const auto artifactDirectory = artifactDirectory_;
     const snow::image::RasterAnalysis providedAnalysis = sourceAnalysis_;
-    watcher->setFuture(QtConcurrent::run(&pool_, [path = sourcePath_, cancellation,
-                                                  artifactDirectory, providedAnalysis]() {
+    watcher->setFuture(QtConcurrent::run(pool_.get(), [path = sourcePath_, cancellation,
+                                                       artifactDirectory, providedAnalysis]() {
         SourceResult result;
         QElapsedTimer timer;
         timer.start();
@@ -1012,9 +1020,9 @@ void EditPipelineController::startCpuExact(PendingExact request,
                 watcher->deleteLater();
                 finishBasePreparation(std::move(request), std::move(result));
             });
-    watcher->setFuture(QtConcurrent::run(&pool_, [source, sourceRaster, artifactDirectory, request,
-                                                  maximumThreads, handoffMode, sharedSessionKey,
-                                                  sourceAnalysis]() mutable {
+    watcher->setFuture(QtConcurrent::run(pool_.get(), [source, sourceRaster, artifactDirectory,
+                                                       request, maximumThreads, handoffMode,
+                                                       sharedSessionKey, sourceAnalysis]() mutable {
         PreviewResult result;
         QElapsedTimer timer;
         timer.start();
@@ -1108,165 +1116,167 @@ void EditPipelineController::startGpuEncode(PendingExact request, GpuRasterResul
                 watcher->deleteLater();
                 finishBasePreparation(std::move(request), std::move(result));
             });
-    watcher->setFuture(QtConcurrent::run(&pool_, [readback = std::move(readback), request,
-                                                  artifactDirectory, handoffMode, sharedSessionKey,
-                                                  propagatedAlpha]() mutable {
-        PreviewResult result;
-        QElapsedTimer timer;
-        timer.start();
-        const bool fp = readback.encoding == PixelEncoding::LinearScRgb16F;
-        const std::size_t bytesPerPixel = fp ? 8U : 4U;
-        if (!readback.isValid() || readback.pixelSize.width() <= 0 ||
-            readback.pixelSize.height() <= 0 ||
-            static_cast<std::size_t>(readback.pixelSize.width()) >
-                std::numeric_limits<std::size_t>::max() / bytesPerPixel) {
-            result.error = QStringLiteral("The GPU resize readback buffer is invalid.");
-            return result;
-        }
-        const std::size_t packedRowBytes =
-            static_cast<std::size_t>(readback.pixelSize.width()) * bytesPerPixel;
-        if (static_cast<std::size_t>(readback.pixelSize.height()) >
-            std::numeric_limits<std::size_t>::max() / packedRowBytes) {
-            result.error = QStringLiteral("The GPU resize output size overflows.");
-            return result;
-        }
-        const std::size_t outputBytes =
-            packedRowBytes * static_cast<std::size_t>(readback.pixelSize.height());
-        if (!artifactDirectory || !artifactDirectory->isValid()) {
-            result.error = QStringLiteral("The raster-package directory is unavailable.");
-            return result;
-        }
-        const QString packagePath =
-            artifactDirectory->filePath(QStringLiteral("base-%1.raster").arg(uuidHex()));
-        const QString sharedKey = sharedSessionKey + QLatin1Char('-') + uuidHex();
-
-        snow::image::DocumentInfo info;
-        info.canvas_width = static_cast<std::uint32_t>(readback.pixelSize.width());
-        info.canvas_height = static_cast<std::uint32_t>(readback.pixelSize.height());
-        info.color.primaries = snow::image::ColorPrimaries::srgb;
-        info.color.transfer =
-            fp ? snow::image::TransferFunction::linear : snow::image::TransferFunction::srgb;
-        info.color.dynamic_range = readback.color.dynamicRange == DynamicRange::High
-                                       ? snow::image::DynamicRange::high
-                                       : snow::image::DynamicRange::standard;
-        info.color.source_peak_nits = readback.color.sourcePeakNits;
-        info.color.diffuse_white_nits = readback.color.diffuseWhiteNits;
-        info.frames.push_back({info.canvas_width,
-                               info.canvas_height,
-                               0,
-                               0,
-                               {},
-                               fp ? snow::image::kRgba16Float : snow::image::kRgba8,
-                               true,
-                               {},
-                               info.color});
-
-        std::unique_ptr<MappedRasterSink> fileSink;
-        std::unique_ptr<SharedRasterSink> sharedSink;
-        snow::image::PixelSink* sink = nullptr;
-        if (handoffMode != RasterHandoffMode::verified_file) {
-            sharedSink = std::make_unique<SharedRasterSink>(sharedKey, propagatedAlpha);
-            sink = sharedSink.get();
-        } else {
-            fileSink = std::make_unique<MappedRasterSink>(packagePath, propagatedAlpha);
-            sink = fileSink.get();
-        }
-        auto status = sink->begin(info);
-        if (!status && handoffMode == RasterHandoffMode::automatic) {
-            sharedSink.reset();
-            fileSink = std::make_unique<MappedRasterSink>(packagePath, propagatedAlpha);
-            sink = fileSink.get();
-            status = sink->begin(info);
-        }
-        if (status)
-            status = sink->begin_frame(0, info.frames.front());
-        std::span<std::byte> destination;
-        if (status)
-            destination = sink->frame_storage(0, packedRowBytes, outputBytes);
-        if (!status || destination.size() != outputBytes) {
-            if (fileSink)
-                fileSink->discard();
-            if (sharedSink)
-                sharedSink->discard();
-            result.error =
-                status ? QStringLiteral("The GPU raster package could not map its output plane.")
-                       : statusText(status.error());
-            return result;
-        }
-
-        const auto copyRows = [&](const QByteArray& source, std::size_t sourceStride,
-                                  const QRect& rect) {
-            const std::size_t tileRowBytes = static_cast<std::size_t>(rect.width()) * bytesPerPixel;
-            for (int row = 0; row < rect.height(); ++row) {
-                if (request.cancellation->stop_requested())
-                    return false;
-                std::memcpy(destination.data() +
-                                static_cast<std::size_t>(rect.y() + row) * packedRowBytes +
-                                static_cast<std::size_t>(rect.x()) * bytesPerPixel,
-                            source.constData() + static_cast<std::size_t>(row) * sourceStride,
-                            tileRowBytes);
+    watcher->setFuture(
+        QtConcurrent::run(pool_.get(), [readback = std::move(readback), request, artifactDirectory,
+                                        handoffMode, sharedSessionKey, propagatedAlpha]() mutable {
+            PreviewResult result;
+            QElapsedTimer timer;
+            timer.start();
+            const bool fp = readback.encoding == PixelEncoding::LinearScRgb16F;
+            const std::size_t bytesPerPixel = fp ? 8U : 4U;
+            if (!readback.isValid() || readback.pixelSize.width() <= 0 ||
+                readback.pixelSize.height() <= 0 ||
+                static_cast<std::size_t>(readback.pixelSize.width()) >
+                    std::numeric_limits<std::size_t>::max() / bytesPerPixel) {
+                result.error = QStringLiteral("The GPU resize readback buffer is invalid.");
+                return result;
             }
-            return true;
-        };
-        bool copied = true;
-        if (readback.storage) {
-            copied = copyRows(*readback.storage, readback.rowStride,
-                              QRect(QPoint(0, 0), readback.pixelSize));
-            readback.storage.reset();
-        } else {
-            for (std::size_t tileIndex = 0; tileIndex < readback.tiles.size(); ++tileIndex) {
-                const GpuRasterTile& tile = readback.tiles[tileIndex];
-                if (!tile.storage || !copyRows(*tile.storage, tile.rowStride, tile.pixelRect)) {
+            const std::size_t packedRowBytes =
+                static_cast<std::size_t>(readback.pixelSize.width()) * bytesPerPixel;
+            if (static_cast<std::size_t>(readback.pixelSize.height()) >
+                std::numeric_limits<std::size_t>::max() / packedRowBytes) {
+                result.error = QStringLiteral("The GPU resize output size overflows.");
+                return result;
+            }
+            const std::size_t outputBytes =
+                packedRowBytes * static_cast<std::size_t>(readback.pixelSize.height());
+            if (!artifactDirectory || !artifactDirectory->isValid()) {
+                result.error = QStringLiteral("The raster-package directory is unavailable.");
+                return result;
+            }
+            const QString packagePath =
+                artifactDirectory->filePath(QStringLiteral("base-%1.raster").arg(uuidHex()));
+            const QString sharedKey = sharedSessionKey + QLatin1Char('-') + uuidHex();
+
+            snow::image::DocumentInfo info;
+            info.canvas_width = static_cast<std::uint32_t>(readback.pixelSize.width());
+            info.canvas_height = static_cast<std::uint32_t>(readback.pixelSize.height());
+            info.color.primaries = snow::image::ColorPrimaries::srgb;
+            info.color.transfer =
+                fp ? snow::image::TransferFunction::linear : snow::image::TransferFunction::srgb;
+            info.color.dynamic_range = readback.color.dynamicRange == DynamicRange::High
+                                           ? snow::image::DynamicRange::high
+                                           : snow::image::DynamicRange::standard;
+            info.color.source_peak_nits = readback.color.sourcePeakNits;
+            info.color.diffuse_white_nits = readback.color.diffuseWhiteNits;
+            info.frames.push_back({info.canvas_width,
+                                   info.canvas_height,
+                                   0,
+                                   0,
+                                   {},
+                                   fp ? snow::image::kRgba16Float : snow::image::kRgba8,
+                                   true,
+                                   {},
+                                   info.color});
+
+            std::unique_ptr<MappedRasterSink> fileSink;
+            std::unique_ptr<SharedRasterSink> sharedSink;
+            snow::image::PixelSink* sink = nullptr;
+            if (handoffMode != RasterHandoffMode::verified_file) {
+                sharedSink = std::make_unique<SharedRasterSink>(sharedKey, propagatedAlpha);
+                sink = sharedSink.get();
+            } else {
+                fileSink = std::make_unique<MappedRasterSink>(packagePath, propagatedAlpha);
+                sink = fileSink.get();
+            }
+            auto status = sink->begin(info);
+            if (!status && handoffMode == RasterHandoffMode::automatic) {
+                sharedSink.reset();
+                fileSink = std::make_unique<MappedRasterSink>(packagePath, propagatedAlpha);
+                sink = fileSink.get();
+                status = sink->begin(info);
+            }
+            if (status)
+                status = sink->begin_frame(0, info.frames.front());
+            std::span<std::byte> destination;
+            if (status)
+                destination = sink->frame_storage(0, packedRowBytes, outputBytes);
+            if (!status || destination.size() != outputBytes) {
+                if (fileSink)
+                    fileSink->discard();
+                if (sharedSink)
+                    sharedSink->discard();
+                result.error =
+                    status
+                        ? QStringLiteral("The GPU raster package could not map its output plane.")
+                        : statusText(status.error());
+                return result;
+            }
+
+            const auto copyRows = [&](const QByteArray& source, std::size_t sourceStride,
+                                      const QRect& rect) {
+                const std::size_t tileRowBytes =
+                    static_cast<std::size_t>(rect.width()) * bytesPerPixel;
+                for (int row = 0; row < rect.height(); ++row) {
+                    if (request.cancellation->stop_requested())
+                        return false;
+                    std::memcpy(destination.data() +
+                                    static_cast<std::size_t>(rect.y() + row) * packedRowBytes +
+                                    static_cast<std::size_t>(rect.x()) * bytesPerPixel,
+                                source.constData() + static_cast<std::size_t>(row) * sourceStride,
+                                tileRowBytes);
+                }
+                return true;
+            };
+            bool copied = true;
+            if (readback.storage) {
+                copied = copyRows(*readback.storage, readback.rowStride,
+                                  QRect(QPoint(0, 0), readback.pixelSize));
+                readback.storage.reset();
+            } else {
+                for (std::size_t tileIndex = 0; tileIndex < readback.tiles.size(); ++tileIndex) {
+                    const GpuRasterTile& tile = readback.tiles[tileIndex];
+                    if (!tile.storage || !copyRows(*tile.storage, tile.rowStride, tile.pixelRect)) {
+                        readback.tiles[tileIndex].storage.reset();
+                        copied = false;
+                        break;
+                    }
+                    // A tile is no longer needed once its final row has reached the
+                    // destination plane; keep no GPU readback ownership across dispatch.
                     readback.tiles[tileIndex].storage.reset();
-                    copied = false;
-                    break;
-                }
-                // A tile is no longer needed once its final row has reached the
-                // destination plane; keep no GPU readback ownership across dispatch.
-                readback.tiles[tileIndex].storage.reset();
-                if (request.cancellation->stop_requested()) {
-                    copied = false;
-                    break;
+                    if (request.cancellation->stop_requested()) {
+                        copied = false;
+                        break;
+                    }
                 }
             }
-        }
-        if (!copied) {
-            if (fileSink)
-                fileSink->discard();
-            if (sharedSink)
-                sharedSink->discard();
-            return result;
-        }
-        status = sink->end_frame(0);
-        if (status)
-            status = sink->end();
-        if (!status) {
-            if (fileSink)
-                fileSink->discard();
-            if (sharedSink)
-                sharedSink->discard();
-            result.error = statusText(status.error());
-            return result;
-        }
-        recordTiming(&result.timings, QStringLiteral("exact.raw_buffer_prepare"), &timer);
+            if (!copied) {
+                if (fileSink)
+                    fileSink->discard();
+                if (sharedSink)
+                    sharedSink->discard();
+                return result;
+            }
+            status = sink->end_frame(0);
+            if (status)
+                status = sink->end();
+            if (!status) {
+                if (fileSink)
+                    fileSink->discard();
+                if (sharedSink)
+                    sharedSink->discard();
+                result.error = statusText(status.error());
+                return result;
+            }
+            recordTiming(&result.timings, QStringLiteral("exact.raw_buffer_prepare"), &timer);
 
-        if (fileSink) {
-            const auto lease =
-                TemporaryFileLease::adopt(packagePath, artifactDirectory, &result.error);
-            if (lease)
-                result.raster = fileSink->takePackage(&result.error, lease);
-            if (!result.raster)
-                fileSink->discard();
-        } else {
-            result.raster = sharedSink->takePackage(&result.error);
-            if (!result.raster)
-                sharedSink->discard();
-        }
-        readback = {};
-        result.provenance = RasterProvenance::gpu_approximate;
-        recordTiming(&result.timings, QStringLiteral("exact.base_package"), &timer);
-        return result;
-    }));
+            if (fileSink) {
+                const auto lease =
+                    TemporaryFileLease::adopt(packagePath, artifactDirectory, &result.error);
+                if (lease)
+                    result.raster = fileSink->takePackage(&result.error, lease);
+                if (!result.raster)
+                    fileSink->discard();
+            } else {
+                result.raster = sharedSink->takePackage(&result.error);
+                if (!result.raster)
+                    sharedSink->discard();
+            }
+            readback = {};
+            result.provenance = RasterProvenance::gpu_approximate;
+            recordTiming(&result.timings, QStringLiteral("exact.base_package"), &timer);
+            return result;
+        }));
 }
 
 void EditPipelineController::finishBasePreparation(PendingExact request, PreviewResult result) {

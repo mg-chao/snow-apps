@@ -73,6 +73,8 @@ class ScreenshotRecognitionSessionController;
 class ScreenshotPinnedEditController;
 class ScreenshotFloatingToolPaletteWindow;
 class ScreenshotExportArtifact;
+class ScreenshotPinnedHideToTopController;
+class ScreenshotPinnedPointerPresence;
 class ScreenshotPinnedNativeGeometryController;
 class QTextDocument;
 
@@ -116,6 +118,9 @@ class ScreenshotPinnedWindow final : public QWidget {
         int persistedOpacityPercent = 100;
         QTransform persistedImageTransform;
         int persistedQuarterTurns = 0;
+        bool persistedHideToTopMode = false;
+        QRect persistedHideToTopHandleNativeGeometry;
+        int persistedHideToTopAccentIndex = -1;
         bool persistedThumbnailMode = false;
         QRect persistedPreThumbnailNativeGeometry;
         QByteArray persistedCanvasSession;
@@ -150,6 +155,7 @@ class ScreenshotPinnedWindow final : public QWidget {
 
   public:
     static void setRuntimeBorderColor(const QColor& color);
+    static void setRuntimeBorderActiveColor(const QColor& color);
     static void setRuntimeTrayEnabled(bool enabled);
 
   signals:
@@ -167,6 +173,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         ImageTransform,
         Thumbnail,
         Animation,
+        HideToTop,
     };
 
     bool event(QEvent* event) override;
@@ -197,6 +204,13 @@ class ScreenshotPinnedWindow final : public QWidget {
     void showContextMenu(const QPoint& globalPosition);
     void updateCanvasViewport();
     void updateControlsGeometry();
+    // Single writer for hover presence: the live native cursor against the
+    // complete window frame. Native mouse messages, queued Enter/Leave, and
+    // passive geometry settlement all resolve through this. Returns false when
+    // the native query is unavailable so the caller can fall back to
+    // event-derived presence.
+    bool applyNativePointerPresence();
+    void schedulePointerPresence(bool inside);
     void destroyCanvas();
     using MaterializationCallback = std::function<void(bool)>;
     using PresentationCompletion = std::function<void(bool, QImage)>;
@@ -260,6 +274,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     [[nodiscard]] snow_shot::storage::PinnedWindowRecord persistenceRecord() const;
     void restorePersistentState(const Config& config);
     [[nodiscard]] QRect intendedNativeGeometry() const;
+    void toggleHideToTop();
+    void exitHideToTop();
+    [[nodiscard]] bool hideToTopActive() const;
     void updateThumbnailPresentation();
     void setThumbnailMode(bool enabled, bool animate = true);
     void restoreFromThumbnailImmediately();
@@ -267,7 +284,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool applyWindowGeometry(const QRect& nativeGeometry, GeometryMutation mutation);
     bool finishNativeGeometryInteraction();
     bool reconcilePassiveNativeGeometry();
-    bool restoreCommittedNativeGeometry();
+    bool restoreCommittedNativeGeometry(bool closeOnFailure = true);
     QRect nativeRectForLogicalRect(const QRect& logical, QScreen* screen) const;
     void showAllPinnedWindows();
     void hideOtherPinnedWindows();
@@ -339,6 +356,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QAction* m_ocrAction = nullptr;
     QAction* m_drawingAction = nullptr;
     QAction* m_thumbnailAction = nullptr;
+    QAction* m_hideToTopAction = nullptr;
     QAction* m_showMainInterfaceAction = nullptr;
     QAction* m_closeAction = nullptr;
     QActionGroup* m_opacityActions = nullptr;
@@ -346,6 +364,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QAction* m_scaleMenuAction = nullptr;
     QAction* m_opacityReadoutAction = nullptr;
     QAction* m_scaleReadoutAction = nullptr;
+    std::unique_ptr<ScreenshotPinnedHideToTopController> m_hideToTop;
     QVariantAnimation* m_geometryAnimation = nullptr;
     QRectF m_canvasSourceRect;
     QRectF m_backgroundCanvasRect;
@@ -419,6 +438,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_windowDragActive = false;
     bool m_windowDragCursorSet = false;
     bool m_pointerInside = false;
+    std::unique_ptr<ScreenshotPinnedPointerPresence> m_pointerPresence;
+    bool m_windowActive = false;
     bool m_passiveGeometryReconciliationActive = false;
     WId m_synchronizedResizeWindowId = 0;
 };

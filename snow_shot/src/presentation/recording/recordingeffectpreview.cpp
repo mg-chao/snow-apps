@@ -20,23 +20,34 @@ uint32_t rgba(const QColor& color) {
            (static_cast<uint32_t>(color.blue()) << 8) | static_cast<uint32_t>(color.alpha());
 }
 
+struct SnowRecordingEffectsDeleter {
+    void operator()(SnowRecordingEffects* handle) const {
+        snow_recording_effects_destroy(handle);
+    }
+};
+
 class NativeRecordingEffectsSource final : public RecordingEffectsSource {
   public:
+    // The handle owns the native observers (including the low-level input hooks
+    // while active), so every path releases it through the same deleter.
+    using Handle = std::unique_ptr<SnowRecordingEffects, SnowRecordingEffectsDeleter>;
+
     ~NativeRecordingEffectsSource() override {
+        // Joins the native worker before m_notify is destroyed.
         stop();
     }
     bool start(const SnowRecordingEffectsConfig& config, std::function<void()> notify,
                QString& error) override {
         stop();
         m_notify = std::move(notify);
-        m_handle = snow_recording_effects_create(
+        m_handle.reset(snow_recording_effects_create(
             &config,
             [](void* context) {
                 auto* self = static_cast<NativeRecordingEffectsSource*>(context);
                 self->m_notify();
             },
-            this);
-        if (m_handle != nullptr && snow_recording_effects_set_active(m_handle, 1) != 0) {
+            this));
+        if (m_handle != nullptr && snow_recording_effects_set_active(m_handle.get(), 1) != 0) {
             return true;
         }
         error = QString::fromUtf8(snow_recording_effects_last_error());
@@ -44,19 +55,18 @@ class NativeRecordingEffectsSource final : public RecordingEffectsSource {
         return false;
     }
     bool configure(const SnowRecordingEffectsConfig& config, QString& error) override {
-        if (snow_recording_effects_configure(m_handle, &config) != 0) {
+        if (snow_recording_effects_configure(m_handle.get(), &config) != 0) {
             return true;
         }
         error = QString::fromUtf8(snow_recording_effects_last_error());
         return false;
     }
     void stop() override {
-        snow_recording_effects_destroy(m_handle);
-        m_handle = nullptr;
+        m_handle.reset();
         m_notify = {};
     }
     std::shared_ptr<RecordingEffectsFrame> acquire() override {
-        auto* native = snow_recording_effects_acquire_frame(m_handle);
+        auto* native = snow_recording_effects_acquire_frame(m_handle.get());
         if (native == nullptr) {
             return {};
         }
@@ -97,7 +107,7 @@ class NativeRecordingEffectsSource final : public RecordingEffectsSource {
     }
 
   private:
-    SnowRecordingEffects* m_handle = nullptr;
+    Handle m_handle;
     std::function<void()> m_notify;
 };
 } // namespace

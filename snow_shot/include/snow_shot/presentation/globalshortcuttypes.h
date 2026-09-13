@@ -18,10 +18,12 @@ enum class GlobalShortcutAction {
     ScreenshotFocusedWindow,
     ScreenRecord,
     ScreenRecordCopy,
+    OpenScreenRecordingFolder,
     OpenCaptureHistory,
     OpenSettings,
     PinClipboardContent,
     TranslateSelectedText,
+    PinSelectedFiles,
 };
 
 enum class GlobalShortcutStatus {

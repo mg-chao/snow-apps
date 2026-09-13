@@ -8,6 +8,9 @@
 
 #include <memory>
 
+namespace snow_shot::platform::windows {
+struct SelectedFileTarget;
+}
 namespace snow_shot::presentation {
 class PinnedWindowGroupManager;
 }
@@ -24,6 +27,7 @@ class ScreenshotController : public QObject {
         ScreenshotOcrRecognitionService* sharedOcrRecognition = nullptr,
         SnowShotApiClient* sharedApiClient = nullptr);
     ~ScreenshotController() override;
+    void pinSelectedFilesToScreen(snow_shot::platform::windows::SelectedFileTarget target);
     [[nodiscard]] bool captureAvailable() const;
     [[nodiscard]] bool blocksApplicationUpdate() const;
     [[nodiscard]] bool
@@ -45,8 +49,10 @@ class ScreenshotController : public QObject {
     void captureAndCopySelection();
     void captureAndStartScreenRecording();
     void startOrStopScreenRecordingAndCopy();
+    void openScreenRecordingFolder();
     void editHistoryRecord(const QString& recordId);
     void pinClipboardContentToScreen();
+    void pinSelectedFilesToScreen();
 
   signals:
     void showMainWindowRequested();

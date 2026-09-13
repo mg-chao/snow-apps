@@ -1,4 +1,6 @@
 #include "popup_interaction_host.h"
+
+#include "detail/popup_geometry.h"
 #include "detail/timing_hub.h"
 
 #include <QAbstractScrollArea>
@@ -57,13 +59,6 @@ std::optional<QPoint> popupInteractionGlobalPos(const QEvent* event) {
     default:
       return std::nullopt;
   }
-}
-
-QRect widgetGlobalRect(const QWidget* widget) {
-  if (!widget) {
-    return QRect();
-  }
-  return QRect(widget->mapToGlobal(QPoint(0, 0)), widget->size());
 }
 
 bool isAnchorGeometryEvent(QEvent::Type type) {
@@ -193,8 +188,7 @@ class PopupInteractionHost final : public QObject {
       if (!interactionGlobalPos.has_value()) {
         return QObject::eventFilter(watched, event);
       }
-      const QRect scopeGlobalRect = widgetGlobalRect(scopeWindow_);
-      if (scopeGlobalRect.isValid() && scopeGlobalRect.contains(interactionGlobalPos.value())) {
+      if (widgetContainsGlobalPos(scopeWindow_, interactionGlobalPos.value())) {
         requestCloseOwnersOutsidePoint(interactionGlobalPos.value(),
                                        PopupCloseReason::OutsidePressInScope);
       }
@@ -336,11 +330,12 @@ class PopupInteractionHost final : public QObject {
     if (!activeOwner_ || !candidateAnchor || !activeOwner_->popupIsVisible()) {
       return false;
     }
-    const QRect anchorRect = widgetGlobalRect(candidateAnchor);
-    if (!anchorRect.isValid()) {
+    const auto anchorRect = PopupWidgetRect::whole(candidateAnchor).visible();
+    if (!anchorRect.rect.isValid()) {
       return false;
     }
-    return activeOwner_->popupContainsGlobalPos(anchorRect.center());
+    return activeOwner_->popupContainsGlobalPos(
+        candidateAnchor->mapToGlobal(anchorRect.rect.center()));
   }
 
   void suspendActiveOwner() {

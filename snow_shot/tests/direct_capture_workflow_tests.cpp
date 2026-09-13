@@ -275,7 +275,8 @@ void queuedRequestsRetainTargetsAndOutputSettings() {
     request.copyFile = true;
     request.historyEnabled = true;
     request.directories = {QStringLiteral("original-directory")};
-    request.imageFormat = QStringLiteral("png");
+    request.imageFormat = QStringLiteral("pdf");
+    request.pdf.pageSize = ScreenshotPdfPageSize::LandscapeA4;
     request.filenameFormat = QStringLiteral("original-filename");
     f.workflow.enqueue({});
     for (int i = 0; i < 12; ++i) {
@@ -294,7 +295,9 @@ void queuedRequestsRetainTargetsAndOutputSettings() {
                     queued.copyFile && queued.historyEnabled &&
                     queued.requestedAt.toMSecsSinceEpoch() == 123456 &&
                     queued.directories == QStringList{QStringLiteral("original-directory")} &&
-                    queued.imageFormat == QStringLiteral("png") &&
+                    queued.imageFormat == QStringLiteral("pdf") &&
+                    queued.pdf.pageSize == ScreenshotPdfPageSize::LandscapeA4 &&
+                    queued.pdf.quality == 100 &&
                     queued.filenameFormat == QStringLiteral("original-filename"),
                 "queued target or settings changed after invocation");
         f.acquired(frame());

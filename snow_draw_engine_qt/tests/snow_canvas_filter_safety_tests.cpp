@@ -1,7 +1,9 @@
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <new>
 #include <thread>
 
@@ -105,14 +107,86 @@ void cacheHitsPreserveLruWithoutAllocating() {
             "invalidation after cache hits must safely remove all retained nodes");
     require(!retained->image.isNull(), "existing readers must survive invalidation");
 }
+struct KernelError final : std::exception {};
+
+constexpr int kExceptionRowCount = 1000;
+constexpr int kExceptionWidth = 1000;
+
+int exceptionJobCount(const snow_canvas_filter_render::FilterWorkerPool& pool) {
+    using namespace snow_canvas_filter_render;
+    constexpr std::size_t pixels =
+        static_cast<std::size_t>(kExceptionRowCount) * static_cast<std::size_t>(kExceptionWidth);
+    const int usefulJobs =
+        static_cast<int>((pixels + kTargetPixelsPerJob - 1) / kTargetPixelsPerJob);
+    return std::min<int>(kExceptionRowCount,
+                         std::min(usefulJobs, static_cast<int>(pool.workerCount()) + 1));
+}
+
+void callerFailureJoinsSubmittedJobsBeforePropagating() {
+    using namespace snow_canvas_filter_render;
+    // Neutralize the beforeNotify() parking hook: these modes drive many jobs
+    // through the barrier and only the barrier mode coordinates a pause.
+    releaseWorker.store(true);
+    FilterWorkerPool pool;
+    const int jobCount = exceptionJobCount(pool);
+    require(jobCount >= 2, "exception tests need a parallel job split");
+    const int rowsPerJob = (kExceptionRowCount + jobCount - 1) / jobCount;
+    const int callerBegin = (jobCount - 1) * rowsPerJob;
+    std::atomic<int> completedRanges{0};
+    bool threw = false;
+    try {
+        static_cast<void>(
+            parallelRows(kExceptionRowCount, kExceptionWidth, false, [&](int begin, int) {
+                if (begin == callerBegin) {
+                    throw KernelError{};
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                ++completedRanges;
+            }));
+    } catch (const KernelError&) {
+        threw = true;
+    }
+    require(threw, "the caller chunk's failure must propagate to the caller");
+    require(completedRanges.load() == jobCount - 1,
+            "parallelRows must join every submitted job before propagating a caller failure");
+}
+
+void workerFailurePropagatesAfterRemainingJobsFinish() {
+    using namespace snow_canvas_filter_render;
+    releaseWorker.store(true);
+    FilterWorkerPool pool;
+    const int jobCount = exceptionJobCount(pool);
+    require(jobCount >= 2, "exception tests need a parallel job split");
+    std::atomic<int> completedRanges{0};
+    bool threw = false;
+    try {
+        static_cast<void>(
+            parallelRows(kExceptionRowCount, kExceptionWidth, false, [&](int begin, int) {
+                if (begin == 0) {
+                    throw KernelError{};
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                ++completedRanges;
+            }));
+    } catch (const KernelError&) {
+        threw = true;
+    }
+    require(threw, "a worker kernel failure must propagate to the joining caller");
+    require(completedRanges.load() == jobCount - 1,
+            "non-failing ranges, including the caller chunk, must complete when a worker fails");
+}
 } // namespace
 
 int main(int argc, char** argv) {
-    require(argc == 2, "expected barrier or cache test mode");
+    require(argc == 2, "expected barrier, cache, caller-failure, or worker-failure test mode");
     if (std::strcmp(argv[1], "barrier") == 0) {
         completionProtectsBarrierUntilNotification();
     } else if (std::strcmp(argv[1], "cache") == 0) {
         cacheHitsPreserveLruWithoutAllocating();
+    } else if (std::strcmp(argv[1], "caller-failure") == 0) {
+        callerFailureJoinsSubmittedJobsBeforePropagating();
+    } else if (std::strcmp(argv[1], "worker-failure") == 0) {
+        workerFailurePropagatesAfterRemainingJobsFinish();
     } else {
         require(false, "unknown test mode");
     }

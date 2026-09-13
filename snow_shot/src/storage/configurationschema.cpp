@@ -73,6 +73,20 @@ QVector<QStringList> defaultActionToolbarPositions() {
     };
 }
 
+const QStringList kPinnedActionToolbarItemIds = {
+    QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
+    QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html"),
+    QStringLiteral("text-recognition"),    QStringLiteral("text-translation")};
+
+QVector<QStringList> defaultPinnedActionToolbarPositions() {
+    return {
+        {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
+         QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
+        {QStringLiteral("text-recognition")},
+        {QStringLiteral("text-translation")},
+    };
+}
+
 QJsonObject defaultToolbarLayout(const QVector<QStringList>& positions) {
     return {{QStringLiteral("positions"), jsonArray(positions)},
             {QStringLiteral("hidden"), QJsonArray()}};
@@ -145,6 +159,8 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
     {QStringLiteral("screenshot_translation/model"), QString(), ConfigurationValueKind::String},
     {QStringLiteral("screenshot_conversion/vision_model"), QString(),
      ConfigurationValueKind::String},
+    {QStringLiteral("extended_features/standalone_translation_window"), false,
+     ConfigurationValueKind::Boolean},
     {QStringLiteral("extended_features/translation_page_enabled"), false,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot_translation/original_image_translation"), true,
@@ -222,6 +238,12 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      std::nullopt,
      {},
      2},
+    {QStringLiteral("global_shortcuts/open_screen_recording_folder"),
+     QJsonArray(),
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
     {QStringLiteral("global_shortcuts/open_capture_history"),
      QJsonArray(),
      ConfigurationValueKind::StringList,
@@ -242,6 +264,12 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      2},
     {QStringLiteral("global_shortcuts/pin_clipboard_content"),
      QJsonArray{QStringLiteral("F3")},
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
+    {QStringLiteral("global_shortcuts/pin_selected_files"),
+     QJsonArray(),
      ConfigurationValueKind::StringList,
      std::nullopt,
      {},
@@ -512,6 +540,12 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      std::nullopt,
      {},
      2},
+    {QStringLiteral("screenshot_shortcuts/quick_save"),
+     QJsonArray{QStringLiteral("Ctrl+Shift+S")},
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
     {QStringLiteral("screenshot_shortcuts/save_as_file"),
      QJsonArray{QStringLiteral("Ctrl+S")},
      ConfigurationValueKind::StringList,
@@ -602,6 +636,12 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      std::nullopt,
      {},
      2},
+    {QStringLiteral("pin_to_screen_shortcuts/hide_to_top"),
+     QJsonArray{QStringLiteral("H")},
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
     {QStringLiteral("pin_to_screen_shortcuts/thumbnail_mode"),
      QJsonArray{QStringLiteral("R")},
      ConfigurationValueKind::StringList,
@@ -655,6 +695,9 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      {QStringLiteral("table"), QStringLiteral("qr")}},
     {QStringLiteral("screenshot_toolbar/layout"),
      defaultToolbarLayout(defaultDrawingToolbarPositions()), ConfigurationValueKind::Structured},
+    {QStringLiteral("pin_to_screen/action_tools_layout"),
+     defaultToolbarLayout(defaultPinnedActionToolbarPositions()),
+     ConfigurationValueKind::Structured},
     {QStringLiteral("screenshot_toolbar/action_tools_layout"),
      defaultToolbarLayout(defaultActionToolbarPositions()), ConfigurationValueKind::Structured},
     {QStringLiteral("screenshot_ui/toolbar_size"),
@@ -688,6 +731,8 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      QStringLiteral("#00000000"), ConfigurationValueKind::String},
     {QStringLiteral("pin_to_screen/border_color"), QStringLiteral("#DBDBDBFF"),
      ConfigurationValueKind::String},
+    {QStringLiteral("pin_to_screen/border_active_color"), QStringLiteral("#69B1FFFF"),
+     ConfigurationValueKind::String},
     {QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"),
      QStringLiteral("mouse_position"),
      ConfigurationValueKind::String,
@@ -698,13 +743,14 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      QStringLiteral("thumbnail_mode"),
      ConfigurationValueKind::String,
      std::nullopt,
-     {QStringLiteral("none"), QStringLiteral("thumbnail_mode"), QStringLiteral("close")}},
+     {QStringLiteral("none"), QStringLiteral("thumbnail_mode"), QStringLiteral("hide_to_top"),
+      QStringLiteral("close")}},
     {QStringLiteral("pin_to_screen/middle_mouse_button_action"),
      QStringLiteral("reset_zoom"),
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("none"), QStringLiteral("reset_zoom"), QStringLiteral("thumbnail_mode"),
-      QStringLiteral("close")}},
+      QStringLiteral("hide_to_top"), QStringLiteral("close")}},
     {QStringLiteral("pin_to_screen/automatic_text_recognition"), true,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("pin_to_screen/auto_resize_window"), true, ConfigurationValueKind::Boolean},
@@ -744,13 +790,14 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
       QStringLiteral("quick.screenshot-fixed"), QStringLiteral("quick.screenshot-ocr"),
       QStringLiteral("quick.screenshot-translation"), QStringLiteral("quick.screenshot-copy"),
       QStringLiteral("quick.screenshot-full-screen"),
-      QStringLiteral("quick.screenshot-focused-window"), QStringLiteral("quick.screen-record"),
-      QStringLiteral("quick.screen-record-copy"), QStringLiteral("quick.open-capture-history"),
-      QStringLiteral("quick.pin-clipboard-content"),
-      QStringLiteral("quick.translate-selected-text"), QStringLiteral("tray.window-grouping"),
-      QStringLiteral("tray.disable-shortcut-functions"), QStringLiteral("tray.show-main-window"),
-      QStringLiteral("tray.exit")},
-     17},
+      QStringLiteral("quick.screenshot-focused-window"),
+      QStringLiteral("quick.pin-clipboard-content"), QStringLiteral("quick.pin-selected-files"),
+      QStringLiteral("quick.screen-record"), QStringLiteral("quick.screen-record-copy"),
+      QStringLiteral("quick.open-screen-recording-folder"),
+      QStringLiteral("quick.open-capture-history"), QStringLiteral("quick.translate-selected-text"),
+      QStringLiteral("tray.window-grouping"), QStringLiteral("tray.disable-shortcut-functions"),
+      QStringLiteral("tray.show-main-window"), QStringLiteral("tray.exit")},
+     19},
     {QStringLiteral("screenshot_selection/previous_selection"), QJsonValue::Null,
      ConfigurationValueKind::Structured},
     {QStringLiteral("screenshot_selection/smart_selection"), true, ConfigurationValueKind::Boolean},
@@ -781,14 +828,14 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      QStringLiteral("copy"),
      ConfigurationValueKind::String,
      std::nullopt,
-     {QStringLiteral("copy"), QStringLiteral("save"), QStringLiteral("pin"),
-      QStringLiteral("none")}},
+     {QStringLiteral("copy"), QStringLiteral("save"), QStringLiteral("quick_save"),
+      QStringLiteral("pin"), QStringLiteral("none")}},
     {QStringLiteral("screenshot/middle_mouse_button_action"),
      QStringLiteral("pin"),
      ConfigurationValueKind::String,
      std::nullopt,
-     {QStringLiteral("copy"), QStringLiteral("save"), QStringLiteral("pin"),
-      QStringLiteral("none")}},
+     {QStringLiteral("copy"), QStringLiteral("save"), QStringLiteral("quick_save"),
+      QStringLiteral("pin"), QStringLiteral("none")}},
     {QStringLiteral("screenshot/auto_save_after_copy"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot/copy_image_file_to_clipboard"), false,
      ConfigurationValueKind::Boolean},
@@ -801,7 +848,7 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("png"), QStringLiteral("jpeg"), QStringLiteral("bmp"), QStringLiteral("webp"),
-      QStringLiteral("jxl"), QStringLiteral("avif")}},
+      QStringLiteral("jxl"), QStringLiteral("avif"), QStringLiteral("pdf")}},
     {QStringLiteral("screenshot/save_as_file_dialog"),
      QStringLiteral("system"),
      ConfigurationValueKind::String,
@@ -814,7 +861,12 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("png"), QStringLiteral("jpeg"), QStringLiteral("bmp"), QStringLiteral("webp"),
-      QStringLiteral("jxl"), QStringLiteral("avif")}},
+      QStringLiteral("jxl"), QStringLiteral("avif"), QStringLiteral("pdf")}},
+    {QStringLiteral("screenshot/pdf_page_size"),
+     QStringLiteral("a4_portrait"),
+     ConfigurationValueKind::String,
+     std::nullopt,
+     {QStringLiteral("image_size"), QStringLiteral("a4_portrait"), QStringLiteral("a4_landscape")}},
     {QStringLiteral("screenshot/api_mode"),
      QStringLiteral("auto"),
      ConfigurationValueKind::String,
@@ -1071,6 +1123,7 @@ bool isRgbaColorKey(const QString& key) {
            key == QStringLiteral("screenshot_ui/monitor_center_guide_line_color") ||
            key == QStringLiteral("screenshot_ui/color_picker_center_guide_line_color") ||
            key == QStringLiteral("pin_to_screen/border_color") ||
+           key == QStringLiteral("pin_to_screen/border_active_color") ||
            key == QStringLiteral("screen_recording/mouse_trail_color") ||
            key == QStringLiteral("screen_recording/mouse_click_color") ||
            key == QStringLiteral("screen_recording/keyboard_background_color") ||
@@ -1129,7 +1182,8 @@ ConfigurationNormalization normalizeTranslationLanguage(const ConfigurationSchem
 
 ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
                                                   const QStringList& itemIds,
-                                                  const QVector<QStringList>& defaultPositions) {
+                                                  const QVector<QStringList>& defaultPositions,
+                                                  bool migrateScreenshotLayout = false) {
     if (!value.isObject()) {
         return {};
     }
@@ -1205,7 +1259,8 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
             hiddenSet.insert(QStringLiteral("quick-save"));
         }
     }
-    if (!positions.isEmpty() && known.contains(QStringLiteral("convert-to-markdown"))) {
+    if (migrateScreenshotLayout && !positions.isEmpty() &&
+        known.contains(QStringLiteral("convert-to-markdown"))) {
         // Upgrade earlier defaults without changing custom placements.
         auto previousDefault = defaultPositions;
         previousDefault[0] = {QStringLiteral("barcode-recognition"),
@@ -1387,9 +1442,13 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
         return normalizeToolbarLayout(value, kDrawingToolbarItemIds,
                                       defaultDrawingToolbarPositions());
     }
+    if (key == QStringLiteral("pin_to_screen/action_tools_layout")) {
+        return normalizeToolbarLayout(value, kPinnedActionToolbarItemIds,
+                                      defaultPinnedActionToolbarPositions());
+    }
     if (key == QStringLiteral("screenshot_toolbar/action_tools_layout")) {
-        return normalizeToolbarLayout(value, kActionToolbarItemIds,
-                                      defaultActionToolbarPositions());
+        return normalizeToolbarLayout(value, kActionToolbarItemIds, defaultActionToolbarPositions(),
+                                      true);
     }
     if (isGlobalMouseKey(key)) {
         return normalizeGlobalMouseCombination(value);

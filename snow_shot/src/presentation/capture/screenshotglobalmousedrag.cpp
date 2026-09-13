@@ -19,6 +19,13 @@ bool ScreenshotGlobalMouseDrag::update(quint64 id, const QPoint& position, bool 
     return true;
 }
 
+void ScreenshotGlobalMouseDrag::refreshEndFromLivePosition(const std::optional<QPoint>& position) {
+    if (!position.has_value() || !active() || m_released) {
+        return;
+    }
+    static_cast<void>(update(m_id, *position));
+}
+
 void ScreenshotGlobalMouseDrag::reset() {
     *this = {};
 }

@@ -2455,8 +2455,7 @@ void populateMeridiemColumn(QListWidget* list, const QLocale& locale) {
   }
 }
 
-QListWidget* createTimeColumn(QWidget* parent, int maximum, int step = 1,
-                              bool populate = true) {
+QListWidget* createTimeColumn(QWidget* parent, int maximum, int step = 1, bool populate = true) {
   auto* list = new DatePickerTimeColumnList(parent);
   list->setFrameShape(QFrame::NoFrame);
   list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -3304,12 +3303,10 @@ class DatePickerCalendarGrid final : public QWidget {
         normalizeForPicker(panel_->pickerMode_, panel_->rangeEndDate_, panel_->firstDayOfWeek_);
     const QDate normalizedHover =
         normalizeForPicker(panel_->pickerMode_, hoveredPreviewDate_, panel_->firstDayOfWeek_);
-    QDate hoverRangeStart =
-        normalizeForPicker(panel_->pickerMode_, panel_->hoverRangeStartDate_,
-                           panel_->firstDayOfWeek_);
-    QDate hoverRangeEnd =
-        normalizeForPicker(panel_->pickerMode_, panel_->hoverRangeEndDate_,
-                           panel_->firstDayOfWeek_);
+    QDate hoverRangeStart = normalizeForPicker(panel_->pickerMode_, panel_->hoverRangeStartDate_,
+                                               panel_->firstDayOfWeek_);
+    QDate hoverRangeEnd = normalizeForPicker(panel_->pickerMode_, panel_->hoverRangeEndDate_,
+                                             panel_->firstDayOfWeek_);
     if (!panel_->hoverRangeActive_ && normalizedHover.isValid()) {
       if (normalizedStart.isValid() && !normalizedEnd.isValid()) {
         hoverRangeStart = normalizedStart;
@@ -3330,8 +3327,10 @@ class DatePickerCalendarGrid final : public QWidget {
     const bool hasHoverRange = panel_->selectionMode_ == AdDatePickerPanel::SelectionMode::Range &&
                                (hoverRangeStart.isValid() || hoverRangeEnd.isValid());
     const bool hasCommittedRange = normalizedStart.isValid() && normalizedEnd.isValid();
-    const QDate committedLow = hasCommittedRange ? std::min(normalizedStart, normalizedEnd) : QDate();
-    const QDate committedHigh = hasCommittedRange ? std::max(normalizedStart, normalizedEnd) : QDate();
+    const QDate committedLow =
+        hasCommittedRange ? std::min(normalizedStart, normalizedEnd) : QDate();
+    const QDate committedHigh =
+        hasCommittedRange ? std::max(normalizedStart, normalizedEnd) : QDate();
     QDate hoverLow = hoverRangeStart;
     QDate hoverHigh = hoverRangeEnd;
     if (hasHoverRange) {
@@ -3427,8 +3426,7 @@ class DatePickerCalendarGrid final : public QWidget {
     }
 
     const QDate today = todayDate();
-    const QDate normalizedToday =
-        normalizeForPicker(compareMode, today, panel_->firstDayOfWeek_);
+    const QDate normalizedToday = normalizeForPicker(compareMode, today, panel_->firstDayOfWeek_);
     const QDate normalizedSelected =
         normalizeForPicker(compareMode, panel_->selectedDate_, panel_->firstDayOfWeek_);
     const QDate normalizedStart =
@@ -3437,10 +3435,10 @@ class DatePickerCalendarGrid final : public QWidget {
         normalizeForPicker(compareMode, panel_->rangeEndDate_, panel_->firstDayOfWeek_);
     const QDate normalizedHover =
         normalizeForPicker(compareMode, hoveredPreviewDate_, panel_->firstDayOfWeek_);
-    QDate hoverRangeStart = normalizeForPicker(compareMode, panel_->hoverRangeStartDate_,
-                                               panel_->firstDayOfWeek_);
-    QDate hoverRangeEnd = normalizeForPicker(compareMode, panel_->hoverRangeEndDate_,
-                                             panel_->firstDayOfWeek_);
+    QDate hoverRangeStart =
+        normalizeForPicker(compareMode, panel_->hoverRangeStartDate_, panel_->firstDayOfWeek_);
+    QDate hoverRangeEnd =
+        normalizeForPicker(compareMode, panel_->hoverRangeEndDate_, panel_->firstDayOfWeek_);
     if (!panel_->hoverRangeActive_ && normalizedHover.isValid()) {
       if (normalizedStart.isValid() && !normalizedEnd.isValid()) {
         hoverRangeStart = normalizedStart;
@@ -3881,8 +3879,7 @@ class DatePickerCalendarGrid final : public QWidget {
       weekdayLabels_.clear();
       weekdayLabels_.reserve(7);
       for (int day = 1; day <= 7; ++day) {
-        weekdayLabels_.append(
-            weekdayName(static_cast<Qt::DayOfWeek>(day), panel_->locale_));
+        weekdayLabels_.append(weekdayName(static_cast<Qt::DayOfWeek>(day), panel_->locale_));
       }
       weekdayLabelsLocale_ = panel_->locale_;
       weekdayLabelsValid_ = true;
@@ -3893,8 +3890,7 @@ class DatePickerCalendarGrid final : public QWidget {
 
   mutable QVector<Cell> cachedCells_;
   mutable QSize cachedSize_;
-  mutable AdDatePickerPanel::DisplayMode cachedDisplayMode_ =
-      AdDatePickerPanel::DisplayMode::Time;
+  mutable AdDatePickerPanel::DisplayMode cachedDisplayMode_ = AdDatePickerPanel::DisplayMode::Time;
   mutable bool cellsDirty_ = true;
   mutable QStringList weekdayLabels_;
   mutable QLocale weekdayLabelsLocale_;
@@ -11563,10 +11559,9 @@ void AdDateRangePicker::syncPopupArrowPosition() {
   }
 
   const QMargins shadowMargins = surface->shadowMargins();
-  const QPoint visualTopLeft =
-      surface->mapToGlobal(QPoint(shadowMargins.left(), shadowMargins.top()));
+  const QPoint visualTopLeft(shadowMargins.left(), shadowMargins.top());
   const int partCenter = lineEdit_->x() + lineEdit_->rangeInputPartCenterX(lastFocusedRangePart_);
-  const QPoint activePoint = mapToGlobal(QPoint(partCenter, height() / 2));
+  const QPoint activePoint = surface->mapFromGlobal(mapToGlobal(QPoint(partCenter, height() / 2)));
 
   switch (surface->placement()) {
     case detail::OverlayPopupPlacement::Left:

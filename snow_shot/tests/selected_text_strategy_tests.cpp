@@ -51,6 +51,8 @@ uint32_t snow_selected_text_start(const SnowSelectedTextService*,
     ++submissions;
     require(options != nullptr && options->strategy == SNOW_SELECTED_TEXT_STRATEGY_CLIPBOARD,
             "Snow Shot must explicitly submit clipboard-only capture on every request");
+    require(options->timeout_ms == 800,
+            "clipboard-only capture must retain the upstream 800 ms response budget");
     *output = nullptr;
     return SNOW_SELECTED_TEXT_ERROR_COPY_BLOCKED;
 }
@@ -80,16 +82,17 @@ uint8_t snow_selected_text_result_error(const SnowSelectedTextResult*, SnowSelec
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     SelectedTextTranslationController controller;
-    int failures = 0;
-    QObject::connect(&controller, &SelectedTextTranslationController::operationFailed, &controller,
-                     [&]() { ++failures; });
+    int deliveries = 0;
     QObject::connect(&controller, &SelectedTextTranslationController::textReady, &controller,
-                     [&]() { require(false, "blocked Copy must not deliver text"); });
+                     [&](const QString& text) {
+                         require(text.isEmpty(), "blocked Copy must not invent selected text");
+                         ++deliveries;
+                     });
     controller.capture();
-    require(submissions == 1 && failures == 1,
-            "blocked Copy must report failure without submitting another strategy");
+    require(submissions == 1 && deliveries == 1,
+            "blocked Copy must hand off the empty result without submitting another strategy");
     controller.capture();
-    require(submissions == 2 && failures == 2,
+    require(submissions == 2 && deliveries == 2,
             "an explicit retry must still use clipboard-only capture");
     return 0;
 }

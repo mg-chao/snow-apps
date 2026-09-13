@@ -311,13 +311,23 @@ fn forwarding_thread<E, H, F, O>(
     O: StreamEvent,
 {
     loop {
-        // Process any pending commands.
-        while let Ok(cmd) = cmd_rx.try_recv() {
-            match cmd {
-                MuxCommand::Pause => handle.pause(),
-                MuxCommand::Resume => handle.resume(),
-                MuxCommand::Stop => handle.stop(),
+        // Process any pending commands. A disconnected command channel means
+        // the main loop is gone, so stop the source and exit instead of
+        // polling the handle forever.
+        let commands_disconnected = loop {
+            match cmd_rx.try_recv() {
+                Ok(MuxCommand::Pause) => handle.pause(),
+                Ok(MuxCommand::Resume) => handle.resume(),
+                Ok(MuxCommand::Stop) => handle.stop(),
+                Err(cbc::TryRecvError::Empty) => break false,
+                Err(cbc::TryRecvError::Disconnected) => {
+                    handle.stop();
+                    break true;
+                }
             }
+        };
+        if commands_disconnected {
+            break;
         }
 
         // Use recv_timeout so we periodically wake up to check for commands.
@@ -390,10 +400,23 @@ fn main_loop<O: StreamEvent>(
 
     loop {
         // Check for commands (non-blocking) and fan out to all alive sources.
-        while let Ok(cmd) = cmd_rx.try_recv() {
-            fanout_command(&alive_cmd_txs, cmd);
-            if cmd == MuxCommand::Stop {
-                stop_requested = true;
+        // A disconnected command channel means the consumer dropped the
+        // multiplexer without sending Stop; treat that abandonment as a stop
+        // request so sources and threads shut down instead of running forever.
+        loop {
+            match cmd_rx.try_recv() {
+                Ok(cmd) => {
+                    fanout_command(&alive_cmd_txs, cmd);
+                    if cmd == MuxCommand::Stop {
+                        stop_requested = true;
+                    }
+                }
+                Err(cbc::TryRecvError::Empty) => break,
+                Err(cbc::TryRecvError::Disconnected) => {
+                    fanout_command(&alive_cmd_txs, MuxCommand::Stop);
+                    stop_requested = true;
+                    break;
+                }
             }
         }
 
@@ -936,6 +959,68 @@ mod tests {
                     expected,
                     data_seqs,
                 );
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Abandonment safety: dropping the handle must stop the sources
+    // -----------------------------------------------------------------------
+
+    /// Dropping the multiplexer handle without ever sending Stop must stop
+    /// every registered source instead of leaving the main and forwarding
+    /// threads (and the sources they own) running forever.
+    #[test]
+    fn dropping_handle_without_stop_stops_sources() {
+        let mut command_logs = Vec::new();
+        let mut builder = StreamMultiplexerBuilder::new(MultiplexerConfig {
+            select_timeout: Duration::from_millis(25),
+            priority_source: None,
+            priority_drain_batch: 8,
+            output_capacity: 16,
+            output_send_timeout: Duration::from_millis(10),
+        });
+
+        for idx in 0..2 {
+            let sid = SourceId(idx as u8);
+            let (handle, log) = CommandTrackingHandle::new();
+            command_logs.push(log);
+            builder.register(
+                SourceConfig {
+                    source_id: sid,
+                    channel_capacity: 8,
+                    send_timeout: Duration::from_millis(50),
+                },
+                handle,
+                move |te: TaggedEvent<MockEvent>| {
+                    smallvec::smallvec![TestOutput {
+                        source: te.source,
+                        seq: te.event.seq,
+                    }]
+                },
+            );
+        }
+
+        // Abandon the multiplexer without a Stop command. The handles keep
+        // their event senders alive and never emit a terminal event, so the
+        // only way these sources can be stopped is the abandonment path.
+        drop(builder.build());
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        for (idx, log) in command_logs.iter().enumerate() {
+            loop {
+                let received = log.lock().unwrap().clone();
+                if received.last() == Some(&MuxCommand::Stop) {
+                    break;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "source {} was not stopped after the multiplexer was dropped; \
+                     commands received: {:?}",
+                    idx,
+                    received,
+                );
+                std::thread::sleep(Duration::from_millis(10));
             }
         }
     }

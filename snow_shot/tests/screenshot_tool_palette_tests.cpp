@@ -195,6 +195,63 @@ int longestHorizontalColorRun(const QImage& image, const QColor& color) {
     return longestRun;
 }
 
+ScreenshotToolPalette::RecordingSessionStatus
+recordingSessionFor(ScreenshotToolPalette::RecordingState state,
+                    ScreenshotToolPalette::RecordingBusyOperation operation) {
+    using Status = ScreenshotToolPalette::RecordingSessionStatus;
+    using State = ScreenshotToolPalette::RecordingState;
+    using BusyOp = ScreenshotToolPalette::RecordingBusyOperation;
+    if (operation == BusyOp::None) {
+        return Status::fromState(state);
+    }
+    if (operation == BusyOp::Starting) {
+        return Status::starting();
+    }
+    if (operation == BusyOp::Stopping) {
+        return state == State::Paused ? Status::pausedStopping() : Status::stopping();
+    }
+    return state == State::Paused ? Status::pausedCopying() : Status::copying();
+}
+
+void recordingSessionStatusMakesInvalidCombinationsUnrepresentable() {
+    using Status = ScreenshotToolPalette::RecordingSessionStatus;
+    using State = ScreenshotToolPalette::RecordingState;
+    using BusyOp = ScreenshotToolPalette::RecordingBusyOperation;
+    const Status valid[] = {Status::idle(),    Status::starting(),     Status::recording(),
+                            Status::paused(),  Status::stopping(),     Status::pausedStopping(),
+                            Status::copying(), Status::pausedCopying()};
+    for (const auto& status : valid) {
+        const bool starting = status.busyOperation() == BusyOp::Starting;
+        const bool finishing =
+            status.busyOperation() == BusyOp::Stopping || status.busyOperation() == BusyOp::Copying;
+        require((starting && status.state() == State::Idle) ||
+                    (finishing && status.state() != State::Idle) || !status.busy(),
+                "every constructible recording session must pair busy work with a valid phase");
+    }
+    require(Status::starting().state() == State::Idle &&
+                Status::copying().state() == State::Recording &&
+                Status::pausedCopying().state() == State::Paused,
+            "named factories must pin start and copy to their session phases");
+    require(Status::idle().finishing(true) == Status::idle() &&
+                Status::recording().finishing(true) == Status::copying() &&
+                Status::paused().finishing(false) == Status::pausedStopping() &&
+                Status::copying().finishing(false) == Status::copying(),
+            "finishing must keep idle and in-flight sessions unchanged");
+
+    ScreenshotToolPalette::Options options;
+    options.showRecordingControls = true;
+    options.enableStyleToolbar = false;
+    ScreenshotToolPalette palette(options);
+    palette.prepareForDisplay();
+    palette.setRecordingSession(Status::copying());
+    require(palette.recordingSession() == Status::copying() &&
+                palette.recordingBusyOperation() == BusyOp::Copying,
+            "copying must be published as a session, not a boolean busy flag");
+    palette.setRecordingState(State::Idle);
+    require(palette.recordingSession() == Status::idle() && !palette.recordingBusy(),
+            "changing the recording phase must drop any leftover copy or stop spinner");
+}
+
 void recordingControlsRemainLaidOutAcrossStateChanges() {
     ScreenshotToolPalette::Options options;
     options.showDragHandle = true;
@@ -227,13 +284,14 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
     require(duration != nullptr, "recording duration should be created");
 
     using State = ScreenshotToolPalette::RecordingState;
-    const auto verify = [&](State state, bool busy) {
-        palette.setRecordingState(state);
-        palette.setRecordingBusy(busy);
+    using BusyOp = ScreenshotToolPalette::RecordingBusyOperation;
+    const auto verify = [&](State state, BusyOp operation) {
+        palette.setRecordingSession(recordingSessionFor(state, operation));
         palette.prepareForDisplay();
         QCoreApplication::processEvents();
         const bool idle = state == State::Idle;
         const bool paused = state == State::Paused;
+        const bool busy = operation != BusyOp::None;
         const bool visible[] = {idle, !idle, !paused, paused, true, true, true, true, true};
         const bool enabled[] = {idle && !busy,
                                 !idle && !busy,
@@ -244,9 +302,16 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
                                 true,
                                 !busy,
                                 !idle && !busy};
-        // Only the start and stop/copy actions show a spinner while busy.
-        const bool spinning[] = {idle && busy, !idle && busy, false, false,        false,
-                                 false,        false,         false, !idle && busy};
+        // Only the initiating start, stop, or copy action shows a spinner.
+        const bool spinning[] = {operation == BusyOp::Starting,
+                                 operation == BusyOp::Stopping,
+                                 false,
+                                 false,
+                                 false,
+                                 false,
+                                 false,
+                                 false,
+                                 operation == BusyOp::Copying};
         const QLayout* layout = palette.mainPanel()->layout();
         QRect previous;
         for (int index = 0; index < buttons.size(); ++index) {
@@ -255,15 +320,16 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
                     "every recording control must remain in the main toolbar layout");
             if (button->isVisible() != visible[index]) {
                 std::cerr << "visibility mismatch for " << sources[index] << " in state "
-                          << static_cast<int>(state) << " busy=" << busy << ": expected "
-                          << visible[index] << ", actual " << button->isVisible() << '\n';
+                          << static_cast<int>(state) << " busy=" << static_cast<int>(operation)
+                          << ": expected " << visible[index] << ", actual " << button->isVisible()
+                          << '\n';
             }
             require(button->isVisible() == visible[index],
                     "recording control visibility should follow recording state");
             require(button->isEnabled() == enabled[index],
                     "recording control availability should follow recording and busy state");
             require(button->busy() == spinning[index],
-                    "recording control busy indicator should follow recording and busy state");
+                    "recording busy indicators must stay on the initiating action");
             if (visible[index]) {
                 require(!button->visibleRegion().isEmpty() &&
                             palette.mainPanel()->rect().contains(button->geometry()),
@@ -278,14 +344,27 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
                 "recording duration must remain visible inside the toolbar layout");
     };
 
-    verify(State::Idle, false);
+    verify(State::Idle, BusyOp::None);
     for (State state : {State::Recording, State::Paused, State::Idle}) {
-        verify(state, false);
-        verify(state, true);
+        verify(state, BusyOp::None);
     }
+    verify(State::Idle, BusyOp::Starting);
+    for (State state : {State::Recording, State::Paused}) {
+        verify(state, BusyOp::Stopping);
+        verify(state, BusyOp::Copying);
+    }
+    palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::stopping());
+    require(palette.recordingSession() ==
+                    ScreenshotToolPalette::RecordingSessionStatus::stopping() &&
+                buttons.at(1)->busy() && !buttons.last()->busy(),
+            "stopping must spin stop without spinning copy");
+    palette.setRecordingState(State::Idle);
+    require(palette.recordingSession() == ScreenshotToolPalette::RecordingSessionStatus::idle() &&
+                !buttons.at(1)->busy() && !buttons.last()->busy(),
+            "returning to idle must clear every recording busy indicator");
     palette.setToolbarLayout({});
     palette.setActionToolsLayout({});
-    verify(State::Idle, false);
+    verify(State::Idle, BusyOp::None);
     palette.setRecordingDuration(65000);
     require(duration->text() == QStringLiteral("00:01:05"),
             "visible recording duration should update");
@@ -957,9 +1036,9 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
         verifyPresetsEditable(editable);
     };
     const int visibilityChangesBeforeRecording = exportVisibilityChanges;
-    palette.setRecordingBusy(true);
+    palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::starting());
     verifyExportSettingsSelected(false);
-    palette.setRecordingBusy(false);
+    palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::idle());
     verifyExportSettingsSelected(true);
 
     adqt::widgets::AdButton* microphone = nullptr;
@@ -2801,6 +2880,7 @@ void toolbarStacksFollowConfiguredBottomToTopOrder() {
         if (kind == ScreenshotToolbarLayoutKind::DrawingTools) {
             options.toolbarLayout = makeLayout(position);
         } else {
+            options.actionToolsLayoutKind = kind;
             options.actionToolsLayout = makeLayout(position);
         }
         ScreenshotToolPalette palette(options);
@@ -2879,6 +2959,8 @@ void toolbarStacksFollowConfiguredBottomToTopOrder() {
     const QStringList recognition{
         QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
         QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")};
+    exercise(ScreenshotToolbarLayoutKind::PinnedActionTools, recognition);
+    exercise(ScreenshotToolbarLayoutKind::PinnedActionTools, recognition, false);
     exercise(ScreenshotToolbarLayoutKind::ActionTools, recognition);
     exercise(ScreenshotToolbarLayoutKind::ActionTools, recognition, false);
 }
@@ -2959,8 +3041,113 @@ void sharedToolbarLayoutModelOperationsAreDeterministic() {
 
     exercise(ScreenshotToolbarLayoutKind::DrawingTools, QStringLiteral("shape"),
              QStringLiteral("arrow"), QStringLiteral("free-draw"));
+    exercise(ScreenshotToolbarLayoutKind::PinnedActionTools, QStringLiteral("barcode-recognition"),
+             QStringLiteral("table-recognition"), QStringLiteral("text-translation"));
     exercise(ScreenshotToolbarLayoutKind::ActionTools, QStringLiteral("barcode-recognition"),
              QStringLiteral("table-recognition"), QStringLiteral("record-screen"));
+}
+
+void pinnedActionLayoutUsesGenericStacks() {
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    using snow_shot::storage::ScreenshotToolbarLayout;
+    const auto kind = snow_shot::storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
+    const QString table = QStringLiteral("table-recognition");
+    const QString barcode = QStringLiteral("barcode-recognition");
+    const QString ocr = QStringLiteral("text-recognition");
+    const QString translation = QStringLiteral("text-translation");
+    const QString markdown = QStringLiteral("convert-to-markdown");
+    const QString html = QStringLiteral("convert-to-html");
+    require(snow_shot::storage::ScreenshotToolbarSettings().setTableQrTool(QStringLiteral("qr")),
+            "pinned fixture must set a conflicting legacy preference");
+    ScreenshotToolPalette::Options options;
+    options.showTableTool = options.showQrTool = options.showOcrTool = true;
+    options.showTextTranslationTool = options.showImageConversionTools = true;
+    options.showSaveButton = options.saveButtonWithResultActions = true;
+    options.actions = ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::ConfirmAction;
+    options.actionToolsLayoutKind = kind;
+    const ScreenshotToolbarLayout expected{
+        {{barcode, table}, {markdown}, {html}, {ocr}, {translation}}, {}};
+    options.actionToolsLayout = expected;
+    require(layout::normalizedLayout(expected, kind) == expected,
+            "presentation normalization must not migrate pinned layouts");
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    QCoreApplication::processEvents();
+    const auto positions = [&]() {
+        QVector<QStringList> result;
+        for (auto* button : mainToolbarButtons(palette)) {
+            const auto ids = button->property("screenshotToolbarPositionItems").toStringList();
+            if (!ids.isEmpty() && layout::defaultOrder(kind).contains(ids.first()))
+                result.append(ids);
+        }
+        return result;
+    };
+    require(positions() == expected.positions,
+            "pinned rendering must preserve configured positions");
+    auto* trigger = mainActionToolbarButtons(palette).first();
+    require(trigger->property("screenshotToolbarItemId").toString() == table,
+            "legacy Barcode preference must not replace the configured Table entry");
+    int tables = 0;
+    int barcodes = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::tableRequested, [&] { ++tables; });
+    QObject::connect(&palette, &ScreenshotToolPalette::qrRequested, [&] { ++barcodes; });
+    trigger->click();
+    require(tables == 1 && barcodes == 0 &&
+                snow_shot::storage::ScreenshotToolbarSettings().tableQrTool() ==
+                    QStringLiteral("qr"),
+            "configured Table entry must dispatch Table without writing a legacy preference");
+    materializeLazyPopover(trigger);
+    auto* barcodeOption =
+        popoverButtonWithTooltip(popoverForTrigger(trigger), "Barcode recognition");
+    require(barcodeOption != nullptr, "generic recognition stack must expose Barcode");
+    barcodeOption->click();
+    require(barcodes == 1 && trigger->property("screenshotToolbarItemId").toString() == barcode,
+            "activating a stacked tool must select its entry through the generic group logic");
+    palette.setTableEnabled(false);
+    palette.setQrEnabled(true);
+    palette.setQrBusy(true);
+    require(trigger->isEnabled() &&
+                trigger->property("screenshotToolbarItemId").toString() == barcode &&
+                positions() == expected.positions,
+            "recognition state changes must preserve stack membership and entry");
+    palette.setTableEnabled(true);
+    palette.setQrBusy(false);
+    const ScreenshotToolbarLayout mixed{{{translation, table}, {barcode}}, {ocr, markdown, html}};
+    palette.setActionToolsLayout(mixed);
+    require(positions() == mixed.positions,
+            "pinned tools must support arbitrary stacks and hidden items");
+    for (const QString& hidden : {table, barcode}) {
+        ScreenshotToolbarLayout separated{{{table}, {barcode}, {translation}},
+                                          {ocr, markdown, html}};
+        for (qsizetype index = separated.positions.size(); index-- > 0;) {
+            if (separated.positions.at(index).contains(hidden))
+                separated.positions.removeAt(index);
+        }
+        separated.hidden.append(hidden);
+        palette.setActionToolsLayout(separated);
+        require(positions() == separated.positions,
+                "hiding a recognition tool must not restore it through its sibling");
+    }
+    palette.setActionToolsLayout({{}, layout::defaultOrder(kind)});
+    require(positions().isEmpty(), "all six pinned tools can be hidden without legacy restoration");
+    int saves = 0;
+    int copies = 0;
+    int confirms = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::saveRequested, [&] { ++saves; });
+    QObject::connect(&palette, &ScreenshotToolPalette::copyRequested, [&] { ++copies; });
+    QObject::connect(&palette, &ScreenshotToolPalette::confirmRequested, [&] { ++confirms; });
+    for (auto* button : mainToolbarButtons(palette)) {
+        if (button->property("screenshotToolbarItemId").toString() ==
+                QStringLiteral("save-as-file") ||
+            button->accessibleName() == QStringLiteral("Copy to clipboard") ||
+            button->accessibleName() == QStringLiteral("Confirm edit"))
+            button->click();
+    }
+    require(saves == 1 && copies == 1 && confirms == 1,
+            "fixed result controls must survive hiding all pinned tools");
+    palette.setActionToolsLayout({});
+    require(positions() == layout::defaultPositions(kind),
+            "pinned defaults must be restorable at runtime");
 }
 
 void quickSaveStacksAndLayoutMigration() {
@@ -4161,6 +4348,7 @@ void screenshotShortcutsShareButtonCommandsAndAvailability() {
     const Command commands[] = {
         {"pin_to_screen", "Pin to screen", &ScreenshotToolPalette::pinRequested},
         {"save_as_file", "Save as file", &ScreenshotToolPalette::saveRequested},
+        {"quick_save", "Quick save", &ScreenshotToolPalette::quickSaveRequested},
         {"video_recording", "Record screen", &ScreenshotToolPalette::screenRecordRequested},
         {"cancel_screenshot", "Cancel screenshot", &ScreenshotToolPalette::cancelRequested},
         {"copy_to_clipboard", "Copy to clipboard", &ScreenshotToolPalette::copyRequested},
@@ -5224,6 +5412,13 @@ void spotlightControlsMatchMaskConfigurationBehavior() {
     require(palette.handleToolbarWheel(&wheel) && wheel.isAccepted() &&
                 opacitySlider->value() == 60 && commits == 4,
             "Spotlight opacity wheel input must commit five percentage point steps");
+    const QPoint outside(opacitySlider->width() + 20, local.y());
+    QWheelEvent outsideWheel(QPointF(outside), opacitySlider->mapToGlobal(outside), QPoint(),
+                             QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase,
+                             false);
+    require(!palette.handleToolbarWheel(&outsideWheel) && opacitySlider->value() == 60 &&
+                commits == 4,
+            "Spotlight opacity wheel handling must reject points outside the slider");
     require(palette.stepSpotlightOpacity(-1) && opacitySlider->value() == 55 && commits == 5 &&
                 qFuzzyCompare(lastConfig.opacity + 1.0, 1.55),
             "Spotlight canvas wheel steps must update the complete mask configuration");
@@ -9185,6 +9380,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--recording-controls-only"))) {
+        recordingSessionStatusMakesInvalidCombinationsUnrepresentable();
         recordingEffectSettingsModal();
         recordingControlsRemainLaidOutAcrossStateChanges();
         recordingExportSettingsAndDrawingAvailabilityFollowSessionState();
@@ -9278,6 +9474,11 @@ int main(int argc, char** argv) {
         confirmActionRemainsSeparatedAndCallableForPinnedEditing();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--spotlight-wheel-only"))) {
+        spotlightControlsMatchMaskConfigurationBehavior();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--toolbar-layout-only"))) {
         drawingModeSelectionsSurviveToolbarReentry();
         drawingGroupClicksActivateOnceAfterPointerReentry();
@@ -9295,6 +9496,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--action-toolbar-layout-only"))) {
+        pinnedActionLayoutUsesGenericStacks();
         screenshotToolbarUsesCanonicalOrderAndSectionSeparators();
         toolbarStacksFollowConfiguredBottomToTopOrder();
         actionStacksKeepEnabledAlternativesReachable();
@@ -9314,6 +9516,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     colorPresetEditorsPreserveCommandsAcrossRebinding();
+    recordingSessionStatusMakesInvalidCombinationsUnrepresentable();
     recordingControlsRemainLaidOutAcrossStateChanges();
     translucentColorSwatchesShowCheckerboardUnderlay();
     recordingExportSettingsAndDrawingAvailabilityFollowSessionState();

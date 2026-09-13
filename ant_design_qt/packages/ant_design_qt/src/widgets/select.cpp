@@ -1,5 +1,7 @@
 #include "select.h"
 
+#include "detail/popup_geometry.h"
+
 #include "detail/select_models.h"
 #include "detail/select_option_utils.h"
 #include "detail/select_selection_controller.h"
@@ -123,18 +125,6 @@ QPixmap renderIconPixmap(const adqt::icons::IconRef& icon, int iconSize, qreal d
 }
 
 QString syntheticRoleFieldName(int role) { return QStringLiteral("__role_%1").arg(role); }
-
-QRect widgetGlobalRect(const QWidget* widget) {
-  if (!widget) {
-    return QRect();
-  }
-  return QRect(widget->mapToGlobal(QPoint(0, 0)), widget->size());
-}
-
-bool widgetContainsGlobalPos(const QWidget* widget, const QPoint& globalPos) {
-  const QRect globalRect = widgetGlobalRect(widget);
-  return globalRect.isValid() && globalRect.contains(globalPos);
-}
 
 QPixmap appendFeedbackIconPixmap(const QPixmap& leadingPixmap,
                                  const adqt::icons::IconRef& feedbackIcon, int iconSize, int gap,
@@ -5593,15 +5583,17 @@ void AdSelect::syncPopupGeometry() {
     return;
   }
 
+  const auto localAnchor = detail::PopupWidgetRect::whole(this);
+  const auto screenAnchor =
+      useTopLevelToolLayer ? localAnchor.onScreen() : detail::PopupScreenRect{};
+  const QRect anchorRect =
+      useTopLevelToolLayer ? screenAnchor.rect : localAnchor.mappedTo(popupParent);
   detail::PopupPlacementInput placementInput;
-  placementInput.anchorTopLeft =
-      useTopLevelToolLayer ? mapToGlobal(QPoint(0, 0)) : mapTo(popupParent, QPoint(0, 0));
-  placementInput.anchorSize = QSize(width(), height());
+  placementInput.anchorTopLeft = anchorRect.topLeft();
+  placementInput.anchorSize = anchorRect.size();
   placementInput.popupSize = visualPopupSize;
-  const QRect anchorRect(placementInput.anchorTopLeft, placementInput.anchorSize);
-  QScreen* toolScreen = nullptr;
+  QScreen* toolScreen = screenAnchor.screen;
   if (useTopLevelToolLayer) {
-    toolScreen = detail::popupScreenForGlobalRect(this, anchorRect);
     if (toolScreen && popup_->isWindow() && popup_->screen() != toolScreen) {
       popup_->setScreen(toolScreen);
     }
@@ -5741,7 +5733,8 @@ bool AdSelect::popupWantsHostFrameRelayout() const {
 }
 
 bool AdSelect::popupContainsGlobalPos(const QPoint& globalPos) const {
-  return widgetContainsGlobalPos(this, globalPos) || widgetContainsGlobalPos(popup_, globalPos);
+  return detail::widgetContainsGlobalPos(this, globalPos) ||
+         detail::widgetContainsGlobalPos(popup_, globalPos);
 }
 
 void AdSelect::popupCloseFromHost(detail::PopupCloseReason reason) {

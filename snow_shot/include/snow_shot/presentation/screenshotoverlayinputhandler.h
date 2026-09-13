@@ -43,8 +43,6 @@ struct ScreenshotOverlayInputActions {
     std::function<bool(int delta)> stepPenFilterStrokeWidth = [](int) { return false; };
     std::function<bool(int delta)> stepWatermarkFontSize = [](int) { return false; };
     std::function<void()> copySelectionToClipboard = []() {};
-    std::function<void(const QString& action)> executeConfiguredCompletionAction =
-        [](const QString&) {};
     std::function<bool()> localShortcutInputAllowed = []() { return true; };
     // Toolbar commands dispatch through the palette's button action path.
     std::function<bool(const QString& actionId)> activateScreenshotShortcut = [](const QString&) {
@@ -162,6 +160,7 @@ class ScreenshotOverlayInputHandler final {
     void cancelCanvasColorSampling();
 
   private:
+    void executeConfiguredCompletionAction(const QString& action);
     void beginSelectionDrag(ScreenshotOverlayWindow* overlay, const QPointF& virtualPosition,
                             ScreenshotSelectionDragMode dragMode);
     void handleIntelligentSelectionPress(const QPointF& virtualPosition);

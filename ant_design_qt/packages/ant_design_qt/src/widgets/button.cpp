@@ -1,5 +1,7 @@
 #include "button.h"
 
+#include "detail/popup_geometry.h"
+
 #include "button_style.h"
 #include "detail/button_grouping.h"
 #include "detail/button_rendering.h"
@@ -174,8 +176,8 @@ QColor compositeOn(const QColor& foreground, const QColor& background) {
   return mixed;
 }
 
-int resolveIconSide(const QAbstractButton* button, const QFontMetrics& fm,
-                    const QFont& contentFont, const QSize& referenceIconSize) {
+int resolveIconSide(const QAbstractButton* button, const QFontMetrics& fm, const QFont& contentFont,
+                    const QSize& referenceIconSize) {
   int iconSide = contentFont.pixelSize();
   if (iconSide <= 0) {
     const qreal pointSize = contentFont.pointSizeF();
@@ -532,7 +534,11 @@ class BusyIndicatorSurface final : public QWidget {
       }
     }
 
-    const QRect globalRect(button_->mapToGlobal(indicatorRect.topLeft()), indicatorRect.size());
+    const auto placement = PopupWidgetRect{button_, indicatorRect}.onScreen();
+    if (placement.screen && screen() != placement.screen) {
+      setScreen(placement.screen);
+    }
+    const QRect globalRect = placement.rect;
     if (geometry() != globalRect) {
       setGeometry(globalRect);
     }

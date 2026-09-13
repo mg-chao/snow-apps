@@ -918,6 +918,7 @@ fn new_recording_worker(
     let mut invalid_config_error = false;
     let mut control_stop = false;
     let mut last_observed_ts_ms: Option<u64> = None;
+    let mut enqueue_error: Option<ScreenRecorderError> = None;
 
     loop {
         while let Ok(cmd) = control_rx.try_recv() {
@@ -975,12 +976,18 @@ fn new_recording_worker(
                         if let Some(cursor_sample) = frame.metadata().cursor() {
                             cursor.record_frame(ts_ms, cursor_sample);
                         }
-                        if !frame.metadata().is_duplicate() {
-                            enqueue_video_frame(
+                        if !frame.metadata().is_duplicate()
+                            && let Err(err) = enqueue_video_frame(
                                 &video_tx,
                                 &video_drop_rx,
                                 VideoWorkerCommand::Frame { frame, ts_ms },
-                            )?;
+                            )
+                        {
+                            // Record the failure and fall through to the stop
+                            // sequence below; returning here would leak the
+                            // multiplexer and capture threads.
+                            enqueue_error = Some(err);
+                            break;
                         }
                     }
                     CaptureEvent::Paused { at } => {
@@ -1038,12 +1045,17 @@ fn new_recording_worker(
                     if let Some(cursor_sample) = frame.metadata().cursor() {
                         cursor.record_frame(ts_ms, cursor_sample);
                     }
-                    if !frame.metadata().is_duplicate() {
-                        enqueue_video_frame(
+                    if !frame.metadata().is_duplicate()
+                        && let Err(err) = enqueue_video_frame(
                             &video_tx,
                             &video_drop_rx,
                             VideoWorkerCommand::Frame { frame, ts_ms },
-                        )?;
+                        )
+                    {
+                        // The video worker is gone; draining further frames is
+                        // pointless, but the finalize path below still runs.
+                        enqueue_error.get_or_insert(err);
+                        break;
                     }
                 }
                 CaptureEvent::Paused { at } => {
@@ -1085,15 +1097,8 @@ fn new_recording_worker(
         &mut last_observed_ts_ms,
         clock.active_elapsed_ms(finalize_at),
     );
-    video_tx
-        .send(VideoWorkerCommand::Finalize { final_ts_ms })
-        .map_err(|_| {
-            ScreenRecorderError::Encode("video worker stopped before finalization".to_string())
-        })?;
-
-    let video_outcome = video_handle
-        .join()
-        .map_err(|_| ScreenRecorderError::Encode("video worker thread panicked".to_string()))??;
+    let video_outcome =
+        finalize_video_worker(&video_tx, video_handle, final_ts_ms, enqueue_error.take())?;
 
     let mouse_store = cursor.into_mouse_store();
     let audio_artifact = finish_audio_recording_if_available(audio_recording);
@@ -1135,6 +1140,37 @@ fn enqueue_video_frame(
         Err(TrySendError::Disconnected(_)) => Err(ScreenRecorderError::Encode(
             "video worker queue disconnected".to_string(),
         )),
+    }
+}
+
+/// Send the finalize command, join the video worker, and surface the most
+/// informative failure.
+///
+/// `enqueue_error` carries a failure observed while feeding frames (the queue
+/// disconnecting after a worker error, or staying full after a drop). When the
+/// worker itself exited with an error, that error wins because it is the root
+/// cause; when the worker finalized cleanly, a pending enqueue error still
+/// fails the recording because frames were lost.
+fn finalize_video_worker(
+    video_tx: &Sender<VideoWorkerCommand>,
+    video_handle: JoinHandle<Result<VideoWorkerOutcome>>,
+    final_ts_ms: u64,
+    enqueue_error: Option<ScreenRecorderError>,
+) -> Result<VideoWorkerOutcome> {
+    let finalize_delivered = video_tx
+        .send(VideoWorkerCommand::Finalize { final_ts_ms })
+        .is_ok();
+    let worker_result = video_handle
+        .join()
+        .map_err(|_| ScreenRecorderError::Encode("video worker thread panicked".to_string()))
+        .and_then(|result| result);
+
+    match (worker_result, finalize_delivered) {
+        (Ok(outcome), true) => enqueue_error.map_or(Ok(outcome), Err),
+        (Ok(_), false) => Err(ScreenRecorderError::Encode(
+            "video worker stopped before finalization".to_string(),
+        )),
+        (Err(err), _) => Err(err),
     }
 }
 
@@ -1282,6 +1318,113 @@ mod tests {
             RecordingState::Stopped,
         ] {
             assert_eq!(state, RecordingState::from_u8(state.as_u8()));
+        }
+    }
+
+    #[test]
+    fn finalize_video_worker_returns_outcome_on_success() {
+        let (video_tx, video_rx) = crossbeam_channel::bounded(8);
+        let handle = std::thread::spawn(move || -> Result<VideoWorkerOutcome> {
+            while let Ok(command) = video_rx.recv() {
+                if matches!(command, VideoWorkerCommand::Finalize { .. }) {
+                    return Ok(VideoWorkerOutcome {
+                        width: 1920,
+                        height: 1080,
+                    });
+                }
+            }
+            Err(ScreenRecorderError::Encode(
+                "video worker channel closed before finalization".to_string(),
+            ))
+        });
+
+        let outcome = finalize_video_worker(&video_tx, handle, 42, None).unwrap();
+
+        assert_eq!((outcome.width, outcome.height), (1920, 1080));
+    }
+
+    #[test]
+    fn finalize_video_worker_prefers_the_worker_error() {
+        let (video_tx, video_rx) = crossbeam_channel::bounded(8);
+        // Dropping the receiver models a video worker that already exited, so
+        // the finalize command cannot be delivered.
+        drop(video_rx);
+        let handle = std::thread::spawn(move || -> Result<VideoWorkerOutcome> {
+            Err(ScreenRecorderError::Encode("encoder exploded".to_string()))
+        });
+
+        let err = finalize_video_worker(
+            &video_tx,
+            handle,
+            42,
+            Some(ScreenRecorderError::Encode(
+                "video worker queue disconnected".to_string(),
+            )),
+        )
+        .unwrap_err();
+
+        match err {
+            ScreenRecorderError::Encode(message) => assert_eq!(message, "encoder exploded"),
+            other => panic!("expected the worker error, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn finalize_video_worker_fails_after_enqueue_error_despite_clean_finalize() {
+        let (video_tx, video_rx) = crossbeam_channel::bounded(8);
+        let handle = std::thread::spawn(move || -> Result<VideoWorkerOutcome> {
+            while let Ok(command) = video_rx.recv() {
+                if matches!(command, VideoWorkerCommand::Finalize { .. }) {
+                    return Ok(VideoWorkerOutcome {
+                        width: 640,
+                        height: 480,
+                    });
+                }
+            }
+            Err(ScreenRecorderError::Encode(
+                "video worker channel closed before finalization".to_string(),
+            ))
+        });
+
+        let err = finalize_video_worker(
+            &video_tx,
+            handle,
+            42,
+            Some(ScreenRecorderError::Encode(
+                "video worker queue remained full after drop".to_string(),
+            )),
+        )
+        .unwrap_err();
+
+        match err {
+            ScreenRecorderError::Encode(message) => {
+                assert_eq!(message, "video worker queue remained full after drop");
+            }
+            other => panic!("expected the enqueue error, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn finalize_video_worker_reports_stalled_worker() {
+        let (video_tx, video_rx) = crossbeam_channel::bounded(8);
+        drop(video_rx);
+        // A worker that returns Ok without receiving Finalize cannot happen
+        // through run_video_worker; it pins down the defensive arm of the
+        // error selection.
+        let handle = std::thread::spawn(move || -> Result<VideoWorkerOutcome> {
+            Ok(VideoWorkerOutcome {
+                width: 16,
+                height: 16,
+            })
+        });
+
+        let err = finalize_video_worker(&video_tx, handle, 42, None).unwrap_err();
+
+        match err {
+            ScreenRecorderError::Encode(message) => {
+                assert_eq!(message, "video worker stopped before finalization");
+            }
+            other => panic!("expected the stalled-worker error, got: {other:?}"),
         }
     }
 

@@ -7,10 +7,13 @@
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 
 #include <QCursor>
+#include <QGuiApplication>
 #include <QScreen>
 #include <QTimer>
 #include <QVector>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <utility>
 
@@ -144,8 +147,40 @@ void scheduleOverlayActivation(ScreenshotOverlayWindow* overlay) {
     });
 }
 
-void showOverlayWindow(ScreenshotOverlayWindow& overlay) {
-    overlay.showPreparedFrame();
+constexpr qreal kFramePacedFallbackRefreshRate = 60.0;
+
+int framePacedActivationDelayMs() {
+    const QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
+    const qreal rate = screen != nullptr ? screen->refreshRate() : 0.0;
+    return std::max(1, static_cast<int>(std::ceil(
+                           1000.0 / (rate > 0.0 ? rate : kFramePacedFallbackRefreshRate))));
+}
+
+void commitInitialSelectionCursorOn(ScreenshotOverlayWindow* overlay) {
+    if (overlay != nullptr) {
+        overlay->commitInitialSelectionCursor();
+    }
+}
+
+void scheduleFramePacedOverlayActivation(ScreenshotOverlayWindow* overlay) {
+    if (overlay == nullptr) {
+        return;
+    }
+    // Foreground and focus negotiation is slow on Windows and is not needed
+    // while a global-mouse drag runs on hook input. Keep the cursor sprite and
+    // the raise() above immediate, but run activation one frame after the
+    // reveal so the first paced drag updates are not queued behind it.
+    QTimer::singleShot(framePacedActivationDelayMs(), overlay, [overlay]() {
+        if (overlay == nullptr || !overlay->isVisible()) {
+            return;
+        }
+
+        activateAndFocusOverlayWindow(*overlay);
+    });
+}
+
+void showOverlayWindow(ScreenshotOverlayWindow& overlay, bool deferFirstPaint) {
+    overlay.showPreparedFrame(deferFirstPaint);
 }
 
 struct ActiveOverlayEntry {
@@ -181,41 +216,45 @@ qsizetype preferredOverlayEntryIndex(const QVector<ActiveOverlayEntry>& entries,
     return cursorIndex >= 0 || entries.isEmpty() ? cursorIndex : 0;
 }
 
-void showCapturedImageOverlayNow(ScreenshotOverlayWindow& overlay) {
-    showOverlayWindow(overlay);
+void showCapturedImageOverlayNow(ScreenshotOverlayWindow& overlay, bool framePaced) {
+    showOverlayWindow(overlay, framePaced);
     raiseOverlayWindow(overlay);
+    if (framePaced) {
+        commitInitialSelectionCursorOn(&overlay);
+        scheduleFramePacedOverlayActivation(&overlay);
+        return;
+    }
     scheduleOverlayActivation(&overlay);
 }
 
-void showCapturedImageOverlayDeferred(ScreenshotOverlayWindow* overlay) {
+void showCapturedImageOverlayDeferred(ScreenshotOverlayWindow* overlay, bool framePaced) {
     if (overlay == nullptr) {
         return;
     }
 
-    QTimer::singleShot(0, overlay, [overlay]() {
+    QTimer::singleShot(0, overlay, [overlay, framePaced]() {
         if (overlay == nullptr) {
             return;
         }
 
-        showOverlayWindow(*overlay);
-        raiseOverlayWindow(*overlay);
-        scheduleOverlayActivation(overlay);
+        showCapturedImageOverlayNow(*overlay, framePaced);
     });
 }
 
-void showCapturedImageOverlaysForDisplaySession(const ScreenshotDisplaySession& displaySession) {
+void showCapturedImageOverlaysForDisplaySession(const ScreenshotDisplaySession& displaySession,
+                                                bool framePaced) {
     const QVector<ActiveOverlayEntry> entries = activeOverlayEntries(displaySession);
     const qsizetype preferredIndex = preferredOverlayEntryIndex(entries, QCursor::pos());
 
     if (preferredIndex >= 0 && preferredIndex < entries.size()) {
-        showCapturedImageOverlayNow(*entries.at(preferredIndex).overlay);
+        showCapturedImageOverlayNow(*entries.at(preferredIndex).overlay, framePaced);
     }
 
     for (qsizetype index = 0; index < entries.size(); ++index) {
         if (index == preferredIndex) {
             continue;
         }
-        showCapturedImageOverlayDeferred(entries.at(index).overlay);
+        showCapturedImageOverlayDeferred(entries.at(index).overlay, framePaced);
     }
 }
 
@@ -228,8 +267,10 @@ void showOverlayWindowsForDisplaySession(const ScreenshotDisplaySession& display
             });
         return;
     }
-    if (mode == ScreenshotOverlayShowMode::CapturedImage) {
-        showCapturedImageOverlaysForDisplaySession(displaySession);
+    if (mode == ScreenshotOverlayShowMode::CapturedImage ||
+        mode == ScreenshotOverlayShowMode::CapturedImageFramePaced) {
+        showCapturedImageOverlaysForDisplaySession(
+            displaySession, mode == ScreenshotOverlayShowMode::CapturedImageFramePaced);
         return;
     }
 
@@ -238,7 +279,7 @@ void showOverlayWindowsForDisplaySession(const ScreenshotDisplaySession& display
             const bool wasVisible = overlay->isVisible();
 
             if (!wasVisible) {
-                showOverlayWindow(*overlay);
+                showOverlayWindow(*overlay, false);
             }
 
             if (mode == ScreenshotOverlayShowMode::PreparedPreview) {

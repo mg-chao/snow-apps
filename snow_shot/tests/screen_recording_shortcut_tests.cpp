@@ -363,9 +363,9 @@ void recordingControlShortcutsFollowButtonsAndSettings() {
             "paused shortcuts must export, resume, copy or end exactly once");
     const int before = total();
     pressAll(toolbar, true);
-    palette.setRecordingBusy(true);
+    palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::pausedStopping());
     pressAll(toolbar);
-    palette.setRecordingBusy(false);
+    palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::paused());
     area.setDrawingBlocked(true);
     pressAll(area);
     area.setDrawingBlocked(false);

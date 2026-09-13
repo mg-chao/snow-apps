@@ -45,7 +45,7 @@ bool platformFocusedFullscreenWindowExists() {
 constexpr int MAX_SHORTCUTS_PER_ACTION = 2;
 constexpr int FIRST_REGISTRATION_ID = 0x2200;
 constexpr int LAST_REGISTRATION_ID = 0xBFFF;
-constexpr std::size_t ACTION_COUNT = 14;
+constexpr std::size_t ACTION_COUNT = 16;
 
 constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::Screenshot,
@@ -58,10 +58,12 @@ constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::ScreenshotFocusedWindow,
     GlobalShortcutAction::ScreenRecord,
     GlobalShortcutAction::ScreenRecordCopy,
+    GlobalShortcutAction::OpenScreenRecordingFolder,
     GlobalShortcutAction::OpenCaptureHistory,
     GlobalShortcutAction::OpenSettings,
     GlobalShortcutAction::PinClipboardContent,
     GlobalShortcutAction::TranslateSelectedText,
+    GlobalShortcutAction::PinSelectedFiles,
 };
 
 std::size_t actionIndex(GlobalShortcutAction action) {
@@ -86,14 +88,18 @@ std::size_t actionIndex(GlobalShortcutAction action) {
         return 8;
     case GlobalShortcutAction::ScreenRecordCopy:
         return 9;
-    case GlobalShortcutAction::OpenCaptureHistory:
+    case GlobalShortcutAction::OpenScreenRecordingFolder:
         return 10;
-    case GlobalShortcutAction::OpenSettings:
+    case GlobalShortcutAction::OpenCaptureHistory:
         return 11;
-    case GlobalShortcutAction::PinClipboardContent:
+    case GlobalShortcutAction::OpenSettings:
         return 12;
-    case GlobalShortcutAction::TranslateSelectedText:
+    case GlobalShortcutAction::PinClipboardContent:
         return 13;
+    case GlobalShortcutAction::TranslateSelectedText:
+        return 14;
+    case GlobalShortcutAction::PinSelectedFiles:
+        return 15;
     }
     return 0;
 }
@@ -574,12 +580,16 @@ QStringList persistedShortcuts(const snow_shot::storage::ShortcutSettings& setti
         return settings.screenRecord();
     case GlobalShortcutAction::ScreenRecordCopy:
         return settings.screenRecordCopy();
+    case GlobalShortcutAction::OpenScreenRecordingFolder:
+        return settings.openScreenRecordingFolder();
     case GlobalShortcutAction::OpenCaptureHistory:
         return settings.openCaptureHistory();
     case GlobalShortcutAction::OpenSettings:
         return settings.openSettings();
     case GlobalShortcutAction::PinClipboardContent:
         return settings.pinClipboardContent();
+    case GlobalShortcutAction::PinSelectedFiles:
+        return settings.pinSelectedFiles();
     case GlobalShortcutAction::TranslateSelectedText:
         return settings.translateSelectedText();
     }
@@ -609,12 +619,16 @@ bool persistShortcuts(const snow_shot::storage::ShortcutSettings& settings,
         return settings.setScreenRecord(shortcuts);
     case GlobalShortcutAction::ScreenRecordCopy:
         return settings.setScreenRecordCopy(shortcuts);
+    case GlobalShortcutAction::OpenScreenRecordingFolder:
+        return settings.setOpenScreenRecordingFolder(shortcuts);
     case GlobalShortcutAction::OpenCaptureHistory:
         return settings.setOpenCaptureHistory(shortcuts);
     case GlobalShortcutAction::OpenSettings:
         return settings.setOpenSettings(shortcuts);
     case GlobalShortcutAction::PinClipboardContent:
         return settings.setPinClipboardContent(shortcuts);
+    case GlobalShortcutAction::PinSelectedFiles:
+        return settings.setPinSelectedFiles(shortcuts);
     case GlobalShortcutAction::TranslateSelectedText:
         return settings.setTranslateSelectedText(shortcuts);
     }

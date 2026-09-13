@@ -15,6 +15,8 @@ class ExtendedFeaturesSettings final {
   public:
     [[nodiscard]] bool translationPageEnabled() const;
     bool setTranslationPageEnabled(bool enabled) const;
+    [[nodiscard]] bool standaloneTranslationWindow() const;
+    bool setStandaloneTranslationWindow(bool enabled) const;
 };
 
 class TextRecognitionSettings final {
@@ -45,6 +47,7 @@ struct ScreenshotToolbarLayout {
 };
 
 enum class ScreenshotToolbarLayoutKind {
+    PinnedActionTools,
     DrawingTools,
     ActionTools,
 };
@@ -92,12 +95,16 @@ class ShortcutSettings final {
     bool setScreenRecord(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList screenRecordCopy() const;
     bool setScreenRecordCopy(const QStringList& shortcuts) const;
+    [[nodiscard]] QStringList openScreenRecordingFolder() const;
+    bool setOpenScreenRecordingFolder(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList openCaptureHistory() const;
     bool setOpenCaptureHistory(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList openSettings() const;
     bool setOpenSettings(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList pinClipboardContent() const;
     bool setPinClipboardContent(const QStringList& shortcuts) const;
+    [[nodiscard]] QStringList pinSelectedFiles() const;
+    bool setPinSelectedFiles(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList translateSelectedText() const;
     bool setTranslateSelectedText(const QStringList& shortcuts) const;
 };
@@ -142,6 +149,8 @@ class ScreenshotSettings final {
     bool setSaveAsFileDialog(const QString& dialog) const;
     [[nodiscard]] QVector<ScreenshotSavePathShortcut> savePathShortcuts() const;
     bool setSavePathShortcuts(const QVector<ScreenshotSavePathShortcut>& shortcuts) const;
+    [[nodiscard]] QString pdfPageSize() const;
+    bool setPdfPageSize(const QString& pageSize) const;
     [[nodiscard]] QString imageFormat() const;
     bool setImageFormat(const QString& format) const;
     [[nodiscard]] QString manualSaveFilenameFormat() const;
@@ -328,6 +337,8 @@ class PinToScreenSettings final {
     bool setMiddleMouseButtonAction(const QString& action) const;
     [[nodiscard]] QColor borderColor() const;
     bool setBorderColor(const QColor& color) const;
+    [[nodiscard]] QColor borderActiveColor() const;
+    bool setBorderActiveColor(const QColor& color) const;
     [[nodiscard]] QString mouseWheelZoomMode() const;
     bool setMouseWheelZoomMode(const QString& mode) const;
     [[nodiscard]] bool automaticTextRecognition() const;

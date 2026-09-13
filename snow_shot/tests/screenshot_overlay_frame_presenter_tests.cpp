@@ -231,6 +231,53 @@ void concealedUpdatesPaintImageAndSelectionTogether() {
     }
 }
 
+void framePacedRevealDefersFirstPaintUntilTheEventLoopDrains() {
+    // Fresh-show path: the reveal must not synchronously paint the first frame.
+    {
+        RevealProbeWindow window;
+        window.resize(192, 128);
+        window.setFrameColor(Qt::red);
+        window.setSelection(QRect(24, 24, 96, 64));
+
+        ScreenshotOverlayFramePresenter presenter(window);
+        presenter.presentPreparedFrame(true);
+        require(window.isVisible(), "frame-paced reveal left the fresh probe hidden");
+        require(window.paintCount() == 0,
+                "frame-paced reveal must not synchronously paint the first frame");
+        QApplication::processEvents();
+        require(window.paintCount() == 1, "the queued first paint must publish exactly one frame");
+        require(window.paintedPixel(QPoint(8, 8)) == QColor(Qt::red) &&
+                    window.paintedPixel(QPoint(24, 24)) == QColor(Qt::yellow),
+                "the deferred first paint must contain the image and selection box");
+    }
+
+    // Warmed path: opacity is restored without the synchronous posted update.
+    {
+        RevealProbeWindow window;
+        window.resize(192, 128);
+        window.setFrameColor(Qt::red);
+        window.show();
+        QApplication::processEvents();
+        window.setWindowOpacity(0.0);
+        window.setUpdatesEnabled(false);
+        window.setFrameColor(Qt::green);
+        window.setSelection(QRect(24, 24, 96, 64));
+        window.resetPaintCount();
+
+        ScreenshotOverlayFramePresenter presenter(window);
+        presenter.presentPreparedFrame(true);
+        require(window.paintCount() == 0, "frame-paced warmed reveal must defer the posted update");
+        require(qAbs(window.windowOpacity() - 1.0) < 0.001,
+                "frame-paced warmed reveal must restore full window opacity");
+        QApplication::processEvents();
+        require(window.paintCount() == 1,
+                "the re-enabled updates must publish exactly one queued frame");
+        require(window.paintedPixel(QPoint(8, 8)) == QColor(Qt::green) &&
+                    window.paintedPixel(QPoint(24, 24)) == QColor(Qt::yellow),
+                "the deferred warmed paint must contain the image and selection box");
+    }
+}
+
 #if defined(Q_OS_WIN)
 QPoint nativeGlobalPosition(QWidget& window, const QPoint& localPosition) {
     const HWND hwnd = reinterpret_cast<HWND>(window.winId());
@@ -420,5 +467,6 @@ int main(int argc, char** argv) {
     revealStrategiesHaveExplicitCommitPlans();
     opaqueRgb32BlitMatchesArgb32();
     concealedUpdatesPaintImageAndSelectionTogether();
+    framePacedRevealDefersFirstPaintUntilTheEventLoopDrains();
     return 0;
 }

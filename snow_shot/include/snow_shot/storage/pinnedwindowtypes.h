@@ -53,6 +53,9 @@ struct PinnedWindowRecord final {
     int opacityPercent = 100;
     QTransform imageTransform;
     int quarterTurns = 0;
+    bool hideToTopMode = false;
+    QRect hideToTopHandleNativeGeometry;
+    int hideToTopAccentIndex = -1;
     bool thumbnailMode = false;
     QRect preThumbnailNativeGeometry;
     QByteArray resultStyle;

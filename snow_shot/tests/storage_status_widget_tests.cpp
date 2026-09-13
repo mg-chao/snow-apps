@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "snow_shot/presentation/components/storagestatussettingswidget.h"
 #include "snow_shot/presentation/components/settingscustomwidget.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
@@ -390,6 +391,40 @@ void widgetShowsScanningStateAndForwardsRefresh() {
             "a settled status must restore the total usage");
 }
 
+void pinnedToolbarSectionResetRefreshesEditor() {
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    const auto kind = storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
+    presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    const auto& registry = settings::builtInSettingsRegistry();
+    settings::SettingsRuntimeSession session(registry, backend);
+    const auto renderer = settings::SettingsCustomRenderer::PinnedToolbarEditor;
+    const auto* field = registry.fieldForCustom(renderer);
+    require(field != nullptr, "pinned editor field must exist");
+    std::unique_ptr<SettingsCustomWidget> editor(
+        createSettingsCustomWidget(renderer, registry, *field->definition, session));
+    const auto screenshotLayout =
+        backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools);
+    const storage::ScreenshotToolbarLayout hidden{{}, layout::defaultOrder(kind)};
+    require(session.applyToolbarLayout(kind, hidden),
+            "pinned editor writes must reach the real backend");
+    flushEvents();
+    auto* table = editor->findChild<QAbstractButton*>(
+        QStringLiteral("settings-pinned-toolbar-item-table-recognition"));
+    require(backend.toolbarLayout(kind) == hidden && table != nullptr &&
+                !table->property("screenshotToolbarMainButton").toBool(),
+            "accepted hidden layout must update the editor preview");
+    require(backend.resetSection(settings::SettingsSectionReset::PinToScreen),
+            "Pin to Screen section reset must succeed");
+    flushEvents();
+    require(backend.toolbarLayout(kind) == layout::normalizedLayout({}, kind) &&
+                session.toolbarLayout(kind) == backend.toolbarLayout(kind) &&
+                table->property("screenshotToolbarMainButton").toBool() &&
+                backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools) ==
+                    screenshotLayout,
+            "section reset must restore the pinned preview without changing the screenshot layout");
+}
+
 void toolbarEditorsUseSeparateDefinitionsAndRetranslate() {
     const settings::SettingsRegistry& registry = settings::builtInSettingsRegistry();
     FakeSettingsBackend backend;
@@ -430,9 +465,36 @@ void toolbarEditorsUseSeparateDefinitionsAndRetranslate() {
                 table->property("screenshotToolbarMainButton").toBool(),
             "the default screenshot preview must stack Barcode below the visible Table trigger");
 
+    auto pinnedEditor = createEditor(settings::SettingsCustomRenderer::PinnedToolbarEditor);
+    require(pinnedEditor != nullptr, "the pinned renderer must reuse the toolbar editor");
+    for (const QString& id :
+         {QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
+          QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html"),
+          QStringLiteral("text-recognition"), QStringLiteral("text-translation")}) {
+        require(pinnedEditor->findChild<QAbstractButton*>(
+                    QStringLiteral("settings-pinned-toolbar-item-%1").arg(id)) != nullptr,
+                "the pinned editor must expose each of its six tools");
+    }
+    require(pinnedEditor->findChild<QAbstractButton*>(
+                QStringLiteral("settings-pinned-toolbar-item-save-as-file")) == nullptr &&
+                pinnedEditor->findChild<QAbstractButton*>(
+                    QStringLiteral("settings-pinned-toolbar-item-record-screen")) == nullptr,
+            "the pinned editor must not offer fixed or screenshot-only actions");
+    auto* pinnedTable = pinnedEditor->findChild<QAbstractButton*>(
+        QStringLiteral("settings-pinned-toolbar-item-table-recognition"));
+    require(pinnedTable->property("screenshotToolbarMainButton").toBool(),
+            "pinned preview must show Table as the default stack entry");
+
     ToolbarEditorTranslator translator;
     require(QCoreApplication::installTranslator(&translator),
             "the toolbar editor test translator must install");
+    QEvent pinnedLanguageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(pinnedEditor.get(), &pinnedLanguageChange);
+    require(pinnedEditor
+                    ->findChild<QAbstractButton*>(
+                        QStringLiteral("settings-pinned-toolbar-item-barcode-recognition"))
+                    ->accessibleName() == QStringLiteral("Translated barcode recognition"),
+            "pinned tool labels must retranslate on language change");
     QEvent drawingLanguageChange(QEvent::LanguageChange);
     QCoreApplication::sendEvent(drawingEditor.get(), &drawingLanguageChange);
     QEvent screenshotLanguageChange(QEvent::LanguageChange);
@@ -555,6 +617,7 @@ int main(int argc, char** argv) {
     widgetRendersAppUsageBreakdown();
     widgetShowsScanningStateAndForwardsRefresh();
     toolbarEditorsUseSeparateDefinitionsAndRetranslate();
+    pinnedToolbarSectionResetRefreshesEditor();
     diagnosticsStateAndCopyFeedback();
     copyPublishesStableFileAndPreservesClipboardOnFailure();
     storage::ApplicationStorage::instance().shutdown();

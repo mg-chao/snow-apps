@@ -1,5 +1,6 @@
 #ifndef SNOW_RECORDING_EFFECTS_H
 #define SNOW_RECORDING_EFFECTS_H
+#include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
@@ -69,6 +70,8 @@ int32_t snow_recording_effects_frame_keyboard_info(const SnowRecordingEffectsFra
                                                    SnowRecordingEffectsFrameInfo* info);
 void snow_recording_effects_release_frame(SnowRecordingEffectsFrame* frame);
 const char* snow_recording_effects_last_error(void);
+// Live handles created and not yet destroyed; for leak diagnostics in tests.
+size_t snow_recording_effects_live_handle_count(void);
 #ifdef __cplusplus
 }
 #endif

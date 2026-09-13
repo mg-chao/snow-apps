@@ -106,6 +106,9 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     }
 
     bool switchValue(settings::SettingsSwitchBinding binding) const override {
+        if (binding == settings::SettingsSwitchBinding::TranslationPageEnabled) {
+            return m_translationPageEnabled;
+        }
         if (binding == settings::SettingsSwitchBinding::HistoryKeepPermanently) {
             return m_keepPermanently;
         }
@@ -120,6 +123,11 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     }
 
     bool applySwitchValue(settings::SettingsSwitchBinding binding, bool value) override {
+        if (binding == settings::SettingsSwitchBinding::TranslationPageEnabled) {
+            return applyField(
+                QStringLiteral("extended-features.translation-page"), value,
+                [this](const QVariant& next) { m_translationPageEnabled = next.toBool(); });
+        }
         if (binding == settings::SettingsSwitchBinding::HistoryKeepPermanently) {
             m_keepPermanently = value;
             emit synchronized();
@@ -207,6 +215,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
 
     storage::ScreenshotToolbarLayout
     toolbarLayout(storage::ScreenshotToolbarLayoutKind kind) const override {
+        if (kind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools)
+            return m_pinnedToolbar;
         return kind == storage::ScreenshotToolbarLayoutKind::DrawingTools ? m_drawingToolbar
                                                                           : m_actionToolbar;
     }
@@ -417,6 +427,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
             m_trayOptions = value.toList();
         } else if (fieldId == QStringLiteral("toolbar")) {
             m_drawingToolbar = value.value<storage::ScreenshotToolbarLayout>();
+        } else if (fieldId == QStringLiteral("pinned-toolbar")) {
+            m_pinnedToolbar = value.value<storage::ScreenshotToolbarLayout>();
         } else if (fieldId == QStringLiteral("action-toolbar")) {
             m_actionToolbar = value.value<storage::ScreenshotToolbarLayout>();
         } else if (fieldId.startsWith(QStringLiteral("global-mouse."))) {
@@ -439,6 +451,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     }
 
     static QString toolbarFieldId(storage::ScreenshotToolbarLayoutKind kind) {
+        if (kind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools)
+            return QStringLiteral("pinned-toolbar");
         return kind == storage::ScreenshotToolbarLayoutKind::DrawingTools
                    ? QStringLiteral("toolbar")
                    : QStringLiteral("action-toolbar");
@@ -446,6 +460,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
 
     storage::ScreenshotToolbarLayout&
     toolbarLayoutStorage(storage::ScreenshotToolbarLayoutKind kind) {
+        if (kind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools)
+            return m_pinnedToolbar;
         return kind == storage::ScreenshotToolbarLayoutKind::DrawingTools ? m_drawingToolbar
                                                                           : m_actionToolbar;
     }
@@ -453,10 +469,12 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     QString m_theme = QStringLiteral("system");
     bool m_trayEnabled = true;
     bool m_keepPermanently = false;
+    bool m_translationPageEnabled = false;
     int m_delay = 3;
     QVariantList m_trayOptions{QStringLiteral("quick.screenshot")};
     storage::ScreenshotToolbarLayout m_drawingToolbar{{{QStringLiteral("select")}},
                                                       {QStringLiteral("eraser")}};
+    storage::ScreenshotToolbarLayout m_pinnedToolbar;
     storage::ScreenshotToolbarLayout m_actionToolbar{
         {{QStringLiteral("table-recognition")}, {QStringLiteral("save-as-file")}},
         {QStringLiteral("barcode-recognition")}};
@@ -533,6 +551,13 @@ testRegistry(settings::SettingsSectionReset reset = settings::SettingsSectionRes
           {},
           QStringLiteral("screenshot_toolbar/layout"),
           toolbar},
+         {QStringLiteral("pinned-toolbar"),
+          text("Pinned toolbar"),
+          text("Pinned toolbar"),
+          {},
+          QStringLiteral("pin_to_screen/action_tools_layout"),
+          settings::SettingsCustomDefinition{
+              settings::SettingsCustomRenderer::PinnedToolbarEditor}},
          {QStringLiteral("action-toolbar"),
           text("Action toolbar"),
           text("Action toolbar"),
@@ -956,6 +981,20 @@ void deterministicDirtyOrderAndCustomValues() {
                     actionLayout &&
                 session.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools) == layout,
             "drawing and screenshot toolbar compatibility bindings must be independent");
+    const storage::ScreenshotToolbarLayout pinnedLayout{
+        {{QStringLiteral("text-translation"), QStringLiteral("table-recognition")}},
+        {QStringLiteral("barcode-recognition")}};
+    require(session.applyToolbarLayout(storage::ScreenshotToolbarLayoutKind::PinnedActionTools,
+                                       pinnedLayout) &&
+                session.toolbarLayout(storage::ScreenshotToolbarLayoutKind::PinnedActionTools) ==
+                    pinnedLayout &&
+                session.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools) ==
+                    actionLayout &&
+                session.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools) ==
+                    layout &&
+                session.state(QStringLiteral("pinned-toolbar")).phase ==
+                    settings::SettingsWritePhase::Clean,
+            "pinned toolbar values must use their own runtime descriptor and accepted state");
 }
 
 void toolbarLayoutsMaintainIndependentWriteState() {
@@ -1310,9 +1349,39 @@ void customModelsPreserveAcceptedStateOnRejectedWrites() {
             "failed deletion draft can be discarded");
 }
 
+void categoryResetFailuresRetainAcceptedValues() {
+    FakeSettingsBackend backend;
+    const auto registry = settings::buildBuiltInSettingsRegistry();
+    settings::SettingsRuntimeSession session(registry, backend);
+    const QString modelsId = QStringLiteral("api.custom-models");
+    const QString featureId = QStringLiteral("extended-features.translation-page");
+    const snow_shot::CustomAiModels models{{QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                            QStringLiteral("Model"),
+                                            QStringLiteral("http://localhost:1234/v1"),
+                                            {},
+                                            QStringLiteral("local"),
+                                            false}};
+    require(session.applyCustomAiModels(models) && session.submitDraft(featureId, true),
+            "prepare nondefault category values");
+    backend.setResetAccepted(false);
+    for (const auto group : {settings::SettingsSectionReset::CustomAiModels,
+                             settings::SettingsSectionReset::ExtendedTranslation}) {
+        const auto id =
+            group == settings::SettingsSectionReset::CustomAiModels ? modelsId : featureId;
+        require(!session.reset(group), "failed category reset must report rejection");
+        backend.notify();
+        require(session.state(id).phase == settings::SettingsWritePhase::Rejected &&
+                    !session.state(id).error.isEmpty() && session.customAiModels() == models &&
+                    session.state(featureId).acceptedValue.toBool(),
+                "failed reset retains persisted values and exposes a stable field error");
+        require(session.discard(id), "reset failure can be dismissed through the shared session");
+    }
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     customModelsPreserveAcceptedStateOnRejectedWrites();
+    categoryResetFailuresRetainAcceptedValues();
     initialStateAndNoOp();
     permanentHistoryDisablesOnlyLimitControls();
     storageUsagePropagation();

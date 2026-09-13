@@ -42,6 +42,7 @@
 #include <chrono>
 #include <cstdint>
 #include <future>
+#include <memory>
 #include <utility>
 
 namespace {
@@ -188,8 +189,18 @@ QString chooseRecordingOutputPath(const QStringList& directories, const QString&
     return {};
 }
 
+// Owns the native recording session (capture pipeline, input hooks while
+// running, and worker threads) through its destroy entry point on every path.
+struct RecordingSessionDeleter {
+    void operator()(SnowCaptureRecordingSession* session) const {
+        snow_capture_recording_session_destroy(session);
+    }
+};
+using RecordingSessionHandle =
+    std::unique_ptr<SnowCaptureRecordingSession, RecordingSessionDeleter>;
+
 struct StartAttemptResult {
-    SnowCaptureRecordingSession* session = nullptr;
+    RecordingSessionHandle session;
     QString outputPath;
     QString error;
 };
@@ -256,7 +267,7 @@ struct ScreenRecordingController::Impl {
             if (pollSessionLiveness()) {
                 return;
             }
-            if (state != ScreenshotToolPalette::RecordingState::Recording) {
+            if (sessionStatus.state() != ScreenshotToolPalette::RecordingState::Recording) {
                 return;
             }
             durationMilliseconds += kDurationTickMilliseconds;
@@ -277,25 +288,22 @@ struct ScreenRecordingController::Impl {
             startFuture.wait();
             // A session that finished starting while the controller was being
             // destroyed is adopted so the regular destroy path cancels it.
-            if (SnowCaptureRecordingSession* session = startFuture.get().session;
-                session != nullptr && recordingSession == nullptr) {
-                recordingSession = session;
+            StartAttemptResult result = startFuture.get();
+            if (result.session != nullptr && recordingSession == nullptr) {
+                recordingSession.reset(result.session.release());
             }
         }
         if (finalizationFuture.valid()) {
             finalizationFuture.wait();
             finalizationFuture.get();
         }
-        if (recordingSession != nullptr) {
-            snow_capture_recording_session_destroy(recordingSession);
-        }
-        recordingSession = nullptr;
+        recordingSession.reset();
         destroyUi();
     }
 
     void open(const QRect& region) {
-        if (region.width() < 2 || region.height() < 2 || busy ||
-            state != ScreenshotToolPalette::RecordingState::Idle) {
+        if (region.width() < 2 || region.height() < 2 || sessionStatus.busy() ||
+            sessionStatus.state() != ScreenshotToolPalette::RecordingState::Idle) {
             return;
         }
         cancelPendingStart();
@@ -337,7 +345,7 @@ struct ScreenRecordingController::Impl {
         uiSession->shortcuts =
             std::make_unique<ScreenRecordingShortcutController>(*areaWindow, *toolbarWindow);
 
-        state = ScreenshotToolPalette::RecordingState::Idle;
+        sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::idle();
         durationMilliseconds = 0;
         syncUi();
 
@@ -367,7 +375,9 @@ struct ScreenRecordingController::Impl {
                          });
         QObject::connect(areaWindow, &ScreenRecordingAreaWindow::physicalRegionChanged,
                          uiSession->connections.get(), [this](const QRect& region) {
-                             if (state != ScreenshotToolPalette::RecordingState::Idle || busy) {
+                             if (sessionStatus.state() !=
+                                     ScreenshotToolPalette::RecordingState::Idle ||
+                                 sessionStatus.busy()) {
                                  return;
                              }
                              physicalRegion = region;
@@ -600,8 +610,8 @@ struct ScreenRecordingController::Impl {
     }
 
     void start() {
-        if (!isOpen() || state != ScreenshotToolPalette::RecordingState::Idle || busy ||
-            startScheduled || recordingSession != nullptr) {
+        if (!isOpen() || sessionStatus.state() != ScreenshotToolPalette::RecordingState::Idle ||
+            sessionStatus.busy() || startScheduled || recordingSession != nullptr) {
             return;
         }
         startScheduled = true;
@@ -617,11 +627,11 @@ struct ScreenRecordingController::Impl {
                 return;
             }
             startScheduled = false;
-            if (state != ScreenshotToolPalette::RecordingState::Idle || busy ||
-                recordingSession != nullptr || !isOpen()) {
+            if (sessionStatus.state() != ScreenshotToolPalette::RecordingState::Idle ||
+                sessionStatus.busy() || recordingSession != nullptr || !isOpen()) {
                 return;
             }
-            busy = true;
+            sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::starting();
             syncUi();
 
             // Snapshot every UI and storage value on the GUI thread; the worker
@@ -702,10 +712,12 @@ struct ScreenRecordingController::Impl {
                     config.output_file_utf8 = outputUtf8.constData();
                     config.keyboard_labels = labels.entries.constData();
                     config.keyboard_label_count = static_cast<uint32_t>(labels.entries.size());
+                    SnowCaptureRecordingSession* created = nullptr;
                     const SnowCaptureResult createResult =
-                        snow_capture_recording_session_create_direct(&config, &result.session);
+                        snow_capture_recording_session_create_direct(&config, &created);
+                    result.session.reset(created);
                     if (createResult != SNOW_CAPTURE_RESULT_OK || result.session == nullptr ||
-                        snow_capture_recording_session_start(result.session) == 0) {
+                        snow_capture_recording_session_start(result.session.get()) == 0) {
                         result.error = captureError();
                         return result;
                     }
@@ -721,34 +733,28 @@ struct ScreenRecordingController::Impl {
             return;
         }
         startPollTimer.stop();
-        const StartAttemptResult result = startFuture.get();
+        StartAttemptResult result = startFuture.get();
         if (uiSession == nullptr) {
             // The UI was retired while the backend was starting. A session that
-            // did start is shut down through the regular finalization path.
+            // did start is shut down through the regular finalization path; any
+            // other attempt is destroyed when this result is dropped.
             if (result.session != nullptr && result.error.isEmpty()) {
-                recordingSession = result.session;
+                recordingSession.reset(result.session.release());
                 pendingOutputPath = result.outputPath;
-                state = ScreenshotToolPalette::RecordingState::Recording;
-                busy = false;
+                sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::recording();
                 stop(false);
                 return;
             }
-            if (result.session != nullptr) {
-                snow_capture_recording_session_destroy(result.session);
-            }
             restoreToolbarCaptureVisibility();
-            busy = false;
+            sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::idle();
             if (!result.error.isEmpty()) {
                 report(QStringLiteral("recording.failed"), QtWarningMsg);
             }
             return;
         }
         if (result.session == nullptr || !result.error.isEmpty()) {
-            if (result.session != nullptr) {
-                snow_capture_recording_session_destroy(result.session);
-            }
             restoreToolbarCaptureVisibility();
-            busy = false;
+            sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::idle();
             syncUi();
             if (areaWindow != nullptr) {
                 areaWindow->show();
@@ -762,11 +768,10 @@ struct ScreenRecordingController::Impl {
             return;
         }
 
-        recordingSession = result.session;
+        recordingSession.reset(result.session.release());
         pendingOutputPath = result.outputPath;
         durationMilliseconds = 0;
-        state = ScreenshotToolPalette::RecordingState::Recording;
-        busy = false;
+        sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::recording();
         syncUi();
         if (areaWindow != nullptr) {
             areaWindow->show();
@@ -781,52 +786,56 @@ struct ScreenRecordingController::Impl {
 
     void pause() {
         if (recordingSession == nullptr ||
-            state != ScreenshotToolPalette::RecordingState::Recording || busy) {
+            sessionStatus.state() != ScreenshotToolPalette::RecordingState::Recording ||
+            sessionStatus.busy()) {
             return;
         }
-        if (snow_capture_recording_session_pause(recordingSession) == 0) {
+        if (snow_capture_recording_session_pause(recordingSession.get()) == 0) {
             showError(captureError());
             return;
         }
-        state = ScreenshotToolPalette::RecordingState::Paused;
+        sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::paused();
         report(QStringLiteral("recording.paused"));
         syncUi();
     }
 
     void resume() {
-        if (recordingSession == nullptr || state != ScreenshotToolPalette::RecordingState::Paused ||
-            busy) {
+        if (recordingSession == nullptr ||
+            sessionStatus.state() != ScreenshotToolPalette::RecordingState::Paused ||
+            sessionStatus.busy()) {
             return;
         }
-        if (snow_capture_recording_session_resume(recordingSession) == 0) {
+        if (snow_capture_recording_session_resume(recordingSession.get()) == 0) {
             showError(captureError());
             return;
         }
-        state = ScreenshotToolPalette::RecordingState::Recording;
+        sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::recording();
         report(QStringLiteral("recording.resumed"));
         durationTimer.start();
         syncUi();
     }
 
     void stop(bool copyToClipboard) {
-        if (busy) {
+        if (sessionStatus.busy()) {
             return;
         }
-        if (state == ScreenshotToolPalette::RecordingState::Idle || recordingSession == nullptr) {
+        if (sessionStatus.state() == ScreenshotToolPalette::RecordingState::Idle ||
+            recordingSession == nullptr) {
             return;
         }
 
         durationTimer.stop();
         // Keep the final duration on screen while the file is finalized;
         // pollFinalization resets it once the operation completes.
-        busy = true;
+        sessionStatus = sessionStatus.finishing(copyToClipboard);
         syncUi();
-        SnowCaptureRecordingSession* session = recordingSession;
+        // The member keeps ownership; pollFinalization destroys the session
+        // only after the asynchronous stop has joined the worker.
+        SnowCaptureRecordingSession* session = recordingSession.get();
         finalizationFuture = std::async(std::launch::async, [session]() {
             const bool ok = snow_capture_recording_session_stop(session) == SNOW_CAPTURE_RESULT_OK;
             return std::make_pair(ok, ok ? QString() : captureError());
         });
-        pendingCopyToClipboard = copyToClipboard;
         finalizationPollTimer.start();
     }
 
@@ -841,13 +850,11 @@ struct ScreenRecordingController::Impl {
         if (ok)
             report(QStringLiteral("recording.export_finished"));
         const QString& error = result.second;
-        if (recordingSession != nullptr) {
-            snow_capture_recording_session_destroy(recordingSession);
-            recordingSession = nullptr;
-        }
+        recordingSession.reset();
         restoreToolbarCaptureVisibility();
-        state = ScreenshotToolPalette::RecordingState::Idle;
-        busy = false;
+        const bool shouldCopy =
+            sessionStatus.busyOperation() == ScreenshotToolPalette::RecordingBusyOperation::Copying;
+        sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::idle();
         durationMilliseconds = 0;
         syncUi();
 
@@ -855,18 +862,18 @@ struct ScreenRecordingController::Impl {
             showError(error);
             return;
         }
-        if (pendingCopyToClipboard) {
+        if (shouldCopy) {
             copyFileToClipboard(pendingOutputPath);
         }
     }
 
     bool pollSessionLiveness() {
-        if (recordingSession == nullptr || busy ||
-            state == ScreenshotToolPalette::RecordingState::Idle) {
+        if (recordingSession == nullptr || sessionStatus.busy() ||
+            sessionStatus.state() == ScreenshotToolPalette::RecordingState::Idle) {
             return false;
         }
         SnowCaptureRecordingState nativeState = SNOW_CAPTURE_RECORDING_STATE_CREATED;
-        if (snow_capture_recording_session_state(recordingSession, &nativeState) == 0 ||
+        if (snow_capture_recording_session_state(recordingSession.get(), &nativeState) == 0 ||
             nativeState != SNOW_CAPTURE_RECORDING_STATE_STOPPED) {
             return false;
         }
@@ -919,8 +926,9 @@ struct ScreenRecordingController::Impl {
         if (uiSession == nullptr) {
             return;
         }
-        const bool eligible = state == ScreenshotToolPalette::RecordingState::Idle && !busy &&
-                              !startScheduled && recordingSession == nullptr;
+        const bool eligible =
+            sessionStatus.state() == ScreenshotToolPalette::RecordingState::Idle &&
+            !sessionStatus.busy() && !startScheduled && recordingSession == nullptr;
         if (!eligible) {
             uiSession->preview->setEligible(false);
             return;
@@ -947,13 +955,13 @@ struct ScreenRecordingController::Impl {
     void syncUi() {
         syncPreview();
         if (areaWindow != nullptr) {
-            areaWindow->setRecordingState(state);
-            areaWindow->setDrawingBlocked(busy);
+            areaWindow->setRecordingState(sessionStatus.state());
+            areaWindow->setDrawingBlocked(sessionStatus.busy());
         }
         ScreenshotToolPalette* palette =
             toolbarWindow != nullptr ? toolbarWindow->palette() : nullptr;
         if (palette != nullptr) {
-            palette->setRecordingState(state);
+            palette->setRecordingSession(sessionStatus);
             palette->setRecordingDuration(durationMilliseconds);
             palette->setRecordingMicrophoneEnabled(microphoneEnabled);
             palette->setRecordingSystemAudioEnabled(systemAudioEnabled);
@@ -966,7 +974,6 @@ struct ScreenRecordingController::Impl {
             palette->setRecordingMouseClickColor(mouseClickColor);
             palette->setRecordingCursorVisible(showCursor);
             palette->setRecordingKeyboardVisible(showKeyboard);
-            palette->setRecordingBusy(busy);
         }
     }
 
@@ -989,7 +996,7 @@ struct ScreenRecordingController::Impl {
     RecordingUiSession* uiSession = nullptr;
     ScreenRecordingAreaWindow* areaWindow = nullptr;
     ScreenRecordingToolbarWindow* toolbarWindow = nullptr;
-    SnowCaptureRecordingSession* recordingSession = nullptr;
+    RecordingSessionHandle recordingSession;
     QRect physicalRegion;
     QRect captureRegion;
     QTimer durationTimer;
@@ -997,7 +1004,8 @@ struct ScreenRecordingController::Impl {
     QTimer startPollTimer;
     std::future<std::pair<bool, QString>> finalizationFuture;
     std::future<StartAttemptResult> startFuture;
-    ScreenshotToolPalette::RecordingState state = ScreenshotToolPalette::RecordingState::Idle;
+    ScreenshotToolPalette::RecordingSessionStatus sessionStatus =
+        ScreenshotToolPalette::RecordingSessionStatus::idle();
     qint64 durationMilliseconds = 0;
     QString pendingOutputPath;
     bool microphoneEnabled = false;
@@ -1015,7 +1023,6 @@ struct ScreenRecordingController::Impl {
     QColor sessionMouseTrailColor{0, 0, 0, 0};
     QColor sessionMouseClickColor{0, 0, 0, 0};
     bool sessionShowCursor = true;
-    bool busy = false;
     void report(const QString& event, QtMsgType level = QtInfoMsg) const {
         snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.recording"), event,
                                          {{QStringLiteral("operation"), operation},
@@ -1033,7 +1040,6 @@ struct ScreenRecordingController::Impl {
     QElapsedTimer operationTimer;
     bool startScheduled = false;
     quint64 startGeneration = 0;
-    bool pendingCopyToClipboard = false;
     snow_shot::presentation::WindowCaptureExclusion captureExclusion{
 #if defined(Q_OS_WIN) || defined(_WIN32)
         snow_shot::platform::windows::setWindowExcludedFromCapture
@@ -1060,7 +1066,7 @@ bool ScreenRecordingController::isOpen() const {
 }
 
 bool ScreenRecordingController::isRecording() const {
-    return m_impl->state != ScreenshotToolPalette::RecordingState::Idle;
+    return m_impl->sessionStatus.state() != ScreenshotToolPalette::RecordingState::Idle;
 }
 
 void ScreenRecordingController::startRecording() {
@@ -1069,4 +1075,8 @@ void ScreenRecordingController::startRecording() {
 
 void ScreenRecordingController::stopRecordingAndCopy() {
     m_impl->stop(true);
+}
+
+void ScreenRecordingController::openRecordingFolder() {
+    m_impl->openFolder();
 }

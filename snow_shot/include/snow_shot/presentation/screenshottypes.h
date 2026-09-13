@@ -29,6 +29,11 @@ enum class ScreenshotOverlayShowMode {
     // opacity 0 after capture is dispatched, so first-show cost overlaps frame
     // acquisition instead of sitting on the reveal path.
     WarmSurface,
+    // Reveals the captured image like CapturedImage, but the first frame is
+    // published by the next queued paint instead of a synchronous commit.
+    // Used while a global-mouse drag is in progress so paced drag updates are
+    // not queued behind the full-surface first paint.
+    CapturedImageFramePaced,
 };
 
 enum class ScreenshotCaptureBackend {

@@ -1,9 +1,11 @@
 #include "snow_shot/presentation/screenshotocrassets.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
+#include "../src/presentation/ocr/screenshotocrassets_p.h"
 
 #include <QCryptographicHash>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
 #include <QGuiApplication>
@@ -11,6 +13,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLockFile>
 #include <QPainter>
 #include <QProcess>
 #include <QTemporaryDir>
@@ -148,6 +151,36 @@ bool prepare(ScreenshotOcrAssets& manager, ScreenshotOcrResolvedAssets* assets =
     manager.prepare();
     loop.exec();
     return ready;
+}
+
+void cacheLockContentionHonorsInterruption() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "cache lock fixture must have an isolated temporary directory");
+    const QString path = QDir(temporary.path()).filePath(QStringLiteral(".assets.lock"));
+    QLockFile owner(path);
+    owner.setStaleLockTime(0);
+    require(snow_shot::presentation::detail::lockOcrCacheFile(owner, [] { return false; }) &&
+                owner.isLocked(),
+            "an available OCR cache lock must be acquired normally");
+
+    QLockFile waiter(path);
+    waiter.setStaleLockTime(0);
+    int interruptionChecks = 0;
+    QElapsedTimer elapsed;
+    elapsed.start();
+    const bool acquired = snow_shot::presentation::detail::lockOcrCacheFile(
+        waiter, [&] { return ++interruptionChecks == 2; });
+    require(
+        !acquired && interruptionChecks == 2 && waiter.error() == QLockFile::LockFailedError &&
+            elapsed.elapsed() < 5000,
+        "a contended cache lock must observe interruption after one short wait, not 120 seconds");
+    require(owner.isLocked() && owner.staleLockTime() == 0 && waiter.staleLockTime() == 0 &&
+                !waiter.tryLock(0),
+            "cancelling a waiter must preserve the owner's lock and configured stale-lock policy");
+    owner.unlock();
+    require(snow_shot::presentation::detail::lockOcrCacheFile(waiter, [] { return false; }) &&
+                waiter.isLocked(),
+            "a later explicit attempt must acquire the cache once its previous owner releases it");
 }
 
 void managedModelsDownloadVerifyAndReuse() {
@@ -395,6 +428,7 @@ int main(int argc, char* argv[]) {
         return EXIT_SUCCESS;
     }
     managedModelsDownloadVerifyAndReuse();
+    cacheLockContentionHonorsInterruption();
     rejectsUntrustedBundleAndModels();
     concurrentAcquisitionUsesOneCache();
     defaultServiceFindsInstalledBundle();

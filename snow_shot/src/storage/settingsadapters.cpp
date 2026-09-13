@@ -75,6 +75,7 @@ const QStringList& screenshotShortcutActionIds() {
         QStringLiteral("text_recognition"),
         QStringLiteral("text_translation"),
         QStringLiteral("scrolling_screenshot"),
+        QStringLiteral("quick_save"),
         QStringLiteral("save_as_file"),
         QStringLiteral("pin_to_screen"),
         QStringLiteral("cancel_screenshot"),
@@ -90,9 +91,9 @@ const QStringList& pinToScreenShortcutActionIds() {
         QStringLiteral("copy_to_clipboard"), QStringLiteral("copy_original_content"),
         QStringLiteral("save_as_file"),      QStringLiteral("show_text_recognition_results"),
         QStringLiteral("drawing_mode"),      QStringLiteral("thumbnail_mode"),
-        QStringLiteral("close_window"),      QStringLiteral("move_cursor_up"),
-        QStringLiteral("move_cursor_down"),  QStringLiteral("move_cursor_left"),
-        QStringLiteral("move_cursor_right"),
+        QStringLiteral("hide_to_top"),       QStringLiteral("close_window"),
+        QStringLiteral("move_cursor_up"),    QStringLiteral("move_cursor_down"),
+        QStringLiteral("move_cursor_left"),  QStringLiteral("move_cursor_right"),
     };
     return ids;
 }
@@ -348,6 +349,15 @@ bool ShortcutSettings::setScreenRecordCopy(const QStringList& shortcuts) const {
     return setShortcutValue(QStringLiteral("global_shortcuts/screen_record_copy"), shortcuts);
 }
 
+QStringList ShortcutSettings::openScreenRecordingFolder() const {
+    return shortcutValue(QStringLiteral("global_shortcuts/open_screen_recording_folder"));
+}
+
+bool ShortcutSettings::setOpenScreenRecordingFolder(const QStringList& shortcuts) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/open_screen_recording_folder"),
+                            shortcuts);
+}
+
 QStringList ShortcutSettings::openCaptureHistory() const {
     return shortcutValue(QStringLiteral("global_shortcuts/open_capture_history"));
 }
@@ -370,6 +380,17 @@ bool ExtendedFeaturesSettings::translationPageEnabled() const {
         .toBool(false);
 }
 
+bool ExtendedFeaturesSettings::standaloneTranslationWindow() const {
+    return cache()
+        .value(QStringLiteral("extended_features/standalone_translation_window"))
+        .toBool();
+}
+
+bool ExtendedFeaturesSettings::setStandaloneTranslationWindow(bool enabled) const {
+    return cache().setValue(QStringLiteral("extended_features/standalone_translation_window"),
+                            enabled);
+}
+
 bool ExtendedFeaturesSettings::setTranslationPageEnabled(bool enabled) const {
     return cache().setValue(QStringLiteral("extended_features/translation_page_enabled"), enabled);
 }
@@ -384,6 +405,14 @@ bool ShortcutSettings::setTranslateSelectedText(const QStringList& shortcuts) co
 
 QStringList ShortcutSettings::pinClipboardContent() const {
     return shortcutValue(QStringLiteral("global_shortcuts/pin_clipboard_content"));
+}
+
+QStringList ShortcutSettings::pinSelectedFiles() const {
+    return shortcutValue(QStringLiteral("global_shortcuts/pin_selected_files"));
+}
+
+bool ShortcutSettings::setPinSelectedFiles(const QStringList& shortcuts) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/pin_selected_files"), shortcuts);
 }
 
 bool ShortcutSettings::setPinClipboardContent(const QStringList& shortcuts) const {
@@ -533,6 +562,13 @@ bool ScreenshotSettings::setSavePathShortcuts(
 
 bool ScreenshotSettings::setLastManualSaveDirectory(const QString& directory) const {
     return cache().setValue(QStringLiteral("screenshot/last_manual_save_directory"), directory);
+}
+
+QString ScreenshotSettings::pdfPageSize() const {
+    return cache().value(QStringLiteral("screenshot/pdf_page_size")).toString();
+}
+bool ScreenshotSettings::setPdfPageSize(const QString& pageSize) const {
+    return cache().setValue(QStringLiteral("screenshot/pdf_page_size"), pageSize);
 }
 
 QString ScreenshotSettings::imageFormat() const {
@@ -1199,6 +1235,8 @@ QString screenshotToolbarLayoutKey(ScreenshotToolbarLayoutKind kind) {
         return QStringLiteral("screenshot_toolbar/layout");
     case ScreenshotToolbarLayoutKind::ActionTools:
         return QStringLiteral("screenshot_toolbar/action_tools_layout");
+    case ScreenshotToolbarLayoutKind::PinnedActionTools:
+        return QStringLiteral("pin_to_screen/action_tools_layout");
     }
     return {};
 }
@@ -1285,6 +1323,14 @@ QColor PinToScreenSettings::borderColor() const {
 
 bool PinToScreenSettings::setBorderColor(const QColor& color) const {
     return setColorValue(QStringLiteral("pin_to_screen/border_color"), color);
+}
+
+QColor PinToScreenSettings::borderActiveColor() const {
+    return colorValue(QStringLiteral("pin_to_screen/border_active_color"));
+}
+
+bool PinToScreenSettings::setBorderActiveColor(const QColor& color) const {
+    return setColorValue(QStringLiteral("pin_to_screen/border_active_color"), color);
 }
 
 QString PinToScreenSettings::mouseWheelZoomMode() const {

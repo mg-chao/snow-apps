@@ -11,13 +11,6 @@ namespace adqt::widgets::detail {
 
 namespace {
 
-QRect widgetGlobalRect(const QWidget* widget) {
-  if (!widget) {
-    return QRect();
-  }
-  return QRect(widget->mapToGlobal(QPoint(0, 0)), widget->size());
-}
-
 QPoint placementTopLeft(PopupPlacement placement, const QPoint& anchorTopLeft,
                         const QSize& anchorSize, const QSize& popupSize) {
   const int anchorWidth = std::max(0, anchorSize.width());
@@ -224,16 +217,6 @@ QWidget* resolvePopupScopeWindow(const QWidget* owner) {
   }
   QWidget* scopeWindow = owner->window();
   return scopeWindow ? scopeWindow : const_cast<QWidget*>(owner);
-}
-
-QRect popupBoundsInGlobal(const QWidget* scopeWindow) {
-  if (scopeWindow) {
-    const QRect scopeRect = widgetGlobalRect(scopeWindow);
-    if (scopeRect.isValid()) {
-      return scopeRect;
-    }
-  }
-  return fallbackBounds();
 }
 
 QScreen* popupScreenForGlobalRect(const QWidget* owner, const QRect& globalRect) {

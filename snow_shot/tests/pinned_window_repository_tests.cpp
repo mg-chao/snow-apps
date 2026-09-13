@@ -326,6 +326,65 @@ void thumbnailStateSurvivesRestartAndExit() {
                 loaded->nativeGeometry == record.nativeGeometry,
             "thumbnail exit must survive another repository restart");
 }
+void hideToTopRoundTripsAndRecoversLegacyMetadata() {
+    QTemporaryDir directory;
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    auto record = recordWithId(id, patternedImage(QSize(200, 100), 2));
+    record.nativeGeometry = QRect(-900, 46, 200, 100);
+    record.hideToTopMode = true;
+    record.hideToTopHandleNativeGeometry = QRect(-900, 40, 30, 6);
+    {
+        storage::PinnedWindowRepository repository(directory.path());
+        record.hideToTopAccentIndex = repository.allocateHideToTopAccent();
+        require(record.hideToTopAccentIndex == 0, "first accent starts at blue");
+        require(repository.upsert(record).success && repository.flush().success,
+                "hide-to-top metadata must commit");
+    }
+    {
+        storage::PinnedWindowRepository repository(directory.path());
+        const auto loaded = repository.loadRecord(id);
+        require(loaded && loaded->hideToTopMode && loaded->hideToTopAccentIndex == 0 &&
+                    loaded->hideToTopHandleNativeGeometry == record.hideToTopHandleNativeGeometry &&
+                    loaded->nativeGeometry == record.nativeGeometry,
+                "hide-to-top geometry and accent must survive restart");
+        for (int i = 1; i < 14; ++i) {
+            require(repository.allocateHideToTopAccent() == i % 13,
+                    "accent allocation must continue across restart and wrap at thirteen");
+        }
+        record.hideToTopMode = false;
+        require(repository.updateState(record).success && repository.flush().success,
+                "exit must persist while retaining the assigned color");
+    }
+    const QString manifest =
+        QDir(directory.path()).filePath(QStringLiteral("pinned_windows/index.json"));
+    const auto original = QJsonDocument::fromJson(readBytes(manifest)).object();
+    for (int scenario = 0; scenario < 3; ++scenario) {
+        auto root = original;
+        auto records = root.value(QStringLiteral("records")).toArray();
+        auto item = records.at(0).toObject();
+        if (scenario == 0) {
+            item.remove(QStringLiteral("hide_to_top_mode"));
+            item.remove(QStringLiteral("hide_to_top_handle_geometry"));
+            item.remove(QStringLiteral("hide_to_top_accent_index"));
+            root.remove(QStringLiteral("next_hide_to_top_accent"));
+        } else {
+            item.insert(QStringLiteral("hide_to_top_mode"), true);
+            item.insert(scenario == 1 ? QStringLiteral("hide_to_top_accent_index")
+                                      : QStringLiteral("hide_to_top_handle_geometry"),
+                        QStringLiteral("invalid"));
+        }
+        records.replace(0, item);
+        root.insert(QStringLiteral("records"), records);
+        QFile file(manifest);
+        require(file.open(QIODevice::WriteOnly | QIODevice::Truncate), "open test manifest");
+        file.write(QJsonDocument(root).toJson());
+        file.close();
+        storage::PinnedWindowRepository repository(directory.path());
+        const auto loaded = repository.loadRecord(id);
+        require(loaded && !loaded->hideToTopMode && loaded->nativeGeometry == record.nativeGeometry,
+                "legacy and malformed hide metadata must retain a recoverable normal window");
+    }
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -337,5 +396,6 @@ int main(int argc, char* argv[]) {
     removedRecordsPruneTheirPayloads();
     recognitionVisibilityRoundTripsAndDefaultsToHidden();
     thumbnailStateSurvivesRestartAndExit();
+    hideToTopRoundTripsAndRecoversLegacyMetadata();
     return 0;
 }

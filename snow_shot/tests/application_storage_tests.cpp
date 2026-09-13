@@ -210,11 +210,17 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
                 QJsonArray{QStringLiteral("Ctrl+F1")} &&
             defaultValue("global_shortcuts/pin_clipboard_content").toArray() ==
                 QJsonArray{QStringLiteral("F3")} &&
+            defaultValue("global_shortcuts/pin_selected_files").toArray().isEmpty() &&
+            defaultValue("global_shortcuts/open_screen_recording_folder").toArray().isEmpty() &&
             defaultValue("screenshot/auto_execute_after_text_recognition").toString() ==
                 QStringLiteral("no_action") &&
             defaultValue("screenshot/double_click_action").toString() == QStringLiteral("copy") &&
             defaultValue("screenshot/middle_mouse_button_action").toString() ==
                 QStringLiteral("pin") &&
+            defaultValue("screenshot_shortcuts/quick_save").toArray() ==
+                QJsonArray{QStringLiteral("Ctrl+Shift+S")} &&
+            defaultValue("screenshot_shortcuts/save_as_file").toArray() ==
+                QJsonArray{QStringLiteral("Ctrl+S")} &&
             !defaultValue("screenshot/auto_save_after_copy").toBool() &&
             !defaultValue("screenshot/copy_image_file_to_clipboard").toBool() &&
             defaultValue("screenshot/image_save_directory").toString() ==
@@ -335,6 +341,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         {QStringLiteral("show_text_recognition_results"), QJsonArray{QStringLiteral("Ctrl+D")}},
         {QStringLiteral("drawing_mode"), QJsonArray{QStringLiteral("Space")}},
         {QStringLiteral("thumbnail_mode"), QJsonArray{QStringLiteral("R")}},
+        {QStringLiteral("hide_to_top"), QJsonArray{QStringLiteral("H")}},
         {QStringLiteral("close_window"), QJsonArray{QStringLiteral("Esc")}},
         {QStringLiteral("move_cursor_up"), QJsonArray{QStringLiteral("W"), QStringLiteral("Up")}},
         {QStringLiteral("move_cursor_down"),
@@ -404,9 +411,10 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
     const QMap<QString, QStringList> allowedStringValues{
         {QStringLiteral("pin_to_screen/middle_mouse_button_action"),
          {QStringLiteral("none"), QStringLiteral("reset_zoom"), QStringLiteral("thumbnail_mode"),
-          QStringLiteral("close")}},
+          QStringLiteral("hide_to_top"), QStringLiteral("close")}},
         {QStringLiteral("pin_to_screen/double_click_action"),
-         {QStringLiteral("none"), QStringLiteral("thumbnail_mode"), QStringLiteral("close")}},
+         {QStringLiteral("none"), QStringLiteral("thumbnail_mode"), QStringLiteral("hide_to_top"),
+          QStringLiteral("close")}},
         {QStringLiteral("text_recognition/fill_style"),
          {QStringLiteral("blur"), QStringLiteral("background_fill")}},
         {QStringLiteral("text_recognition/model_type"),
@@ -419,14 +427,15 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
           QStringLiteral("quick_copy_text_and_end_screenshot"),
           QStringLiteral("enable_edit_mode")}},
         {QStringLiteral("screenshot/double_click_action"),
-         {QStringLiteral("copy"), QStringLiteral("save"), QStringLiteral("pin"),
-          QStringLiteral("none")}},
+         {QStringLiteral("copy"), QStringLiteral("save"), QStringLiteral("quick_save"),
+          QStringLiteral("pin"), QStringLiteral("none")}},
         {QStringLiteral("screenshot/middle_mouse_button_action"),
-         {QStringLiteral("copy"), QStringLiteral("save"), QStringLiteral("pin"),
-          QStringLiteral("none")}},
+         {QStringLiteral("copy"), QStringLiteral("save"), QStringLiteral("quick_save"),
+          QStringLiteral("pin"), QStringLiteral("none")}},
         {QStringLiteral("screenshot/image_format"),
          {QStringLiteral("png"), QStringLiteral("jpeg"), QStringLiteral("bmp"),
-          QStringLiteral("webp"), QStringLiteral("jxl"), QStringLiteral("avif")}},
+          QStringLiteral("webp"), QStringLiteral("jxl"), QStringLiteral("avif"),
+          QStringLiteral("pdf")}},
         {QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"),
          {QStringLiteral("mouse_position"), QStringLiteral("top_left"), QStringLiteral("top_right"),
           QStringLiteral("bottom_left"), QStringLiteral("bottom_right"), QStringLiteral("center")}},
@@ -769,6 +778,39 @@ void screenshotUiAdaptersRoundTripTypedValues() {
                 toolbar.layout(storage::ScreenshotToolbarLayoutKind::DrawingTools) ==
                     expectedLayout,
             "drawing and action toolbar layouts must round-trip independently");
+    const auto pinnedKind = storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
+    const auto pinnedDefault = toolbar.layout(pinnedKind);
+    require(pinnedDefault.positions.size() == 3 && pinnedDefault.hidden.isEmpty() &&
+                pinnedDefault.positions.first().last() == QStringLiteral("table-recognition"),
+            "pinned defaults must expose three positions with Table as the stack entry");
+    // This valid layout resembles a historical screenshot default; pinned layouts must not migrate.
+    const storage::ScreenshotToolbarLayout pinnedLayout{
+        {{QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
+         {QStringLiteral("convert-to-markdown")},
+         {QStringLiteral("convert-to-html")},
+         {QStringLiteral("text-recognition")},
+         {QStringLiteral("text-translation")}},
+        {}};
+    require(toolbar.setLayout(pinnedKind, pinnedLayout) &&
+                toolbar.layout(pinnedKind) == pinnedLayout,
+            "pinned layouts must not inherit screenshot conversion migrations");
+    auto malformedPinned = pinnedLayout;
+    malformedPinned.positions.prepend({QStringLiteral("save-as-file"), QStringLiteral("unknown")});
+    malformedPinned.positions.last().append(QStringLiteral("table-recognition"));
+    malformedPinned.hidden = {QStringLiteral("text-recognition"), QStringLiteral("unknown")};
+    require(
+        toolbar.setLayout(pinnedKind, malformedPinned) &&
+            toolbar.layout(pinnedKind) == pinnedLayout,
+        "pinned normalization must remove unknown IDs and duplicates, preferring visible tools");
+    storage::ScreenshotToolbarLayout hiddenPinned;
+    for (const auto& position : pinnedLayout.positions)
+        hiddenPinned.hidden.append(position);
+    require(toolbar.setLayout(pinnedKind, hiddenPinned) &&
+                toolbar.layout(pinnedKind) == hiddenPinned &&
+                toolbar.layout(storage::ScreenshotToolbarLayoutKind::ActionTools) == actionLayout,
+            "all-hidden pinned layouts must remain empty and independent of screenshot layouts");
+    require(toolbar.setLayout(pinnedKind, {}) && toolbar.layout(pinnedKind) == pinnedDefault,
+            "restoring pinned defaults must recover the original arrangement");
 }
 
 void screenshotTranslationSettingsRoundTripSupportedValues() {
@@ -824,7 +866,7 @@ void verifyPinToScreenShortcutSettings() {
     const storage::PinToScreenShortcutSettings shortcuts;
     const QMap<QString, QStringList> defaults = shortcuts.allShortcuts();
     require(
-        defaults.size() == 11 &&
+        defaults.size() == 12 &&
             defaults.value(QStringLiteral("copy_to_clipboard")) ==
                 QStringList{QStringLiteral("Ctrl+C")} &&
             defaults.value(QStringLiteral("copy_original_content")) ==
@@ -836,6 +878,7 @@ void verifyPinToScreenShortcutSettings() {
             defaults.value(QStringLiteral("drawing_mode")) ==
                 QStringList{QStringLiteral("Space")} &&
             defaults.value(QStringLiteral("thumbnail_mode")) == QStringList{QStringLiteral("R")} &&
+            defaults.value(QStringLiteral("hide_to_top")) == QStringList{QStringLiteral("H")} &&
             defaults.value(QStringLiteral("close_window")) == QStringList{QStringLiteral("Esc")} &&
             defaults.value(QStringLiteral("move_cursor_up")) ==
                 QStringList{QStringLiteral("W"), QStringLiteral("Up")} &&
@@ -951,8 +994,8 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     const storage::PinToScreenSettings pin;
     require(pin.doubleClickAction() == QStringLiteral("thumbnail_mode"),
             "pinned double-click must default to thumbnail mode");
-    for (const QString& action :
-         {QStringLiteral("none"), QStringLiteral("thumbnail_mode"), QStringLiteral("close")}) {
+    for (const QString& action : {QStringLiteral("none"), QStringLiteral("thumbnail_mode"),
+                                  QStringLiteral("hide_to_top"), QStringLiteral("close")}) {
         require(pin.setDoubleClickAction(action) && pin.doubleClickAction() == action,
                 "pinned double-click actions must round-trip through storage");
     }
@@ -961,8 +1004,9 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             "invalid pinned double-click actions must preserve the saved choice");
     require(pin.middleMouseButtonAction() == QStringLiteral("reset_zoom"),
             "pinned middle-click must default to reset zoom");
-    for (const QString& action : {QStringLiteral("none"), QStringLiteral("reset_zoom"),
-                                  QStringLiteral("thumbnail_mode"), QStringLiteral("close")}) {
+    for (const QString& action :
+         {QStringLiteral("none"), QStringLiteral("reset_zoom"), QStringLiteral("thumbnail_mode"),
+          QStringLiteral("hide_to_top"), QStringLiteral("close")}) {
         require(pin.setMiddleMouseButtonAction(action) && pin.middleMouseButtonAction() == action,
                 "pinned middle-click actions must round-trip through storage");
     }
@@ -1073,7 +1117,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     const storage::ScreenshotShortcutSettings screenshotShortcuts;
     const QMap<QString, QStringList> screenshotDefaults = screenshotShortcuts.allShortcuts();
     require(
-        screenshotDefaults.size() == 24 &&
+        screenshotDefaults.size() == 25 &&
             screenshotShortcuts.moveTool() ==
                 QStringList{QStringLiteral("M"), QStringLiteral("Ctrl+E")} &&
             screenshotShortcuts.moveCursorUp() ==
@@ -1096,6 +1140,10 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             screenshotShortcuts.copyColor() == QStringList{QStringLiteral("C")} &&
             screenshotDefaults.value(QStringLiteral("pin_to_screen")) ==
                 QStringList{QStringLiteral("Ctrl+F")} &&
+            screenshotDefaults.value(QStringLiteral("quick_save")) ==
+                QStringList{QStringLiteral("Ctrl+Shift+S")} &&
+            screenshotDefaults.value(QStringLiteral("save_as_file")) ==
+                QStringList{QStringLiteral("Ctrl+S")} &&
             screenshotDefaults.value(QStringLiteral("cancel_screenshot")) ==
                 QStringList{QStringLiteral("Esc")} &&
             screenshotDefaults.value(QStringLiteral("copy_to_clipboard")) ==

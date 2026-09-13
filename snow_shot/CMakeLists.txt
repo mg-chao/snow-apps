@@ -378,13 +378,9 @@ if(NOT SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC)
         find_package(PNG REQUIRED)
         target_link_libraries(snow_shot_image_codec_backend PRIVATE PNG::PNG)
     endif()
-    if(NOT SNOW_IMAGE_LINK_JPEG_DEPENDENCIES)
-        find_package(libjpeg-turbo CONFIG REQUIRED)
-        target_link_libraries(snow_shot_image_codec_backend PRIVATE
-            $<IF:$<TARGET_EXISTS:libjpeg-turbo::jpeg>,libjpeg-turbo::jpeg,libjpeg-turbo::jpeg-static>
-            $<IF:$<TARGET_EXISTS:libjpeg-turbo::turbojpeg>,libjpeg-turbo::turbojpeg,libjpeg-turbo::turbojpeg-static>
-        )
-    endif()
+    # Snow Image selects its JPEG headers and library together, including Qt's
+    # bundled libjpeg when requested. Its static target propagates those link
+    # dependencies; adding vcpkg libjpeg here would override the matching ABI.
 endif()
 if(SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC)
     target_compile_definitions(snow_shot_image_codec_backend PUBLIC
@@ -718,6 +714,10 @@ target_link_libraries(snow_shot_settings_search PUBLIC
 )
 
 set(SNOW_SHOT_SETTINGS_SOURCES
+    include/snow_shot/presentation/selectedtexttranslationcoordinator.h
+    src/presentation/services/selectedtexttranslationcoordinator.cpp
+    include/snow_shot/presentation/components/standalonetranslationwindow.h
+    src/presentation/components/standalonetranslationwindow.cpp
     include/snow_shot/presentation/components/translationpagewidget.h
     src/presentation/components/translationpagewidget.cpp
     include/snow_shot/presentation/components/aboutpagewidget.h
@@ -947,6 +947,8 @@ set(PROJECT_HEADERS
 )
 
 set(PROJECT_CXX_SOURCES
+    src/platform/windows/selectedfiles.cpp
+    src/presentation/services/screenshotfilepinbatch.cpp
     src/presentation/capture/directcapturecontroller.cpp
     src/presentation/capture/directcapturenative.cpp
     src/presentation/capture/directcaptureworkflow.cpp
@@ -997,6 +999,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/ocr/screenshotrecognitionimage.cpp
     src/presentation/services/screenshotexportscrollingsource.cpp
     src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
     src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
     src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
     src/presentation/core/screenshotgeometry.cpp
@@ -1023,6 +1026,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/pinned/screenshotpinnededitcontroller.cpp
     src/presentation/pinned/screenshotpinnedresizegeometry.cpp
     src/presentation/pinned/screenshotpinnedrestoregeometry.cpp
+    src/presentation/pinned/screenshotpinnedhidetotopcontroller.cpp
     src/presentation/pinned/screenshotpinnedwindow.cpp
     src/presentation/pinned/screenshotpintoperfinstrumentation.cpp
     src/presentation/services/screenshotpresentationservices.cpp
@@ -1141,6 +1145,9 @@ target_link_libraries(snow_shot PRIVATE
     MINIZIP::minizip-ng
 )
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotUpdates.cmake")
+if(WIN32)
+    target_link_libraries(snow_shot PRIVATE ole32 oleaut32 shell32 uuid)
+endif()
 target_compile_definitions(snow_shot PRIVATE
     QT_MESSAGELOGCONTEXT
     SNOW_DIAGNOSTICS_VERSION="${SNOW_SHOT_VERSION}"
@@ -2150,6 +2157,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-direct-capture-native-tests
         tests/direct_capture_native_tests.cpp
         src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
         src/presentation/capture/directcapturenative.cpp)
     target_include_directories(snow-shot-direct-capture-native-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -2384,7 +2392,14 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screenshot-history-tests --direct-capture-only
     )
     snow_shot_import_offscreen_platform(snow-shot-screenshot-history-tests)
-    set_tests_properties(snow-shot-direct-capture-history-tests PROPERTIES
+    add_test(
+        NAME snow-shot-screenshot-completion-gesture-tests
+        COMMAND snow-shot-screenshot-history-tests --completion-gestures-only
+    )
+    set_tests_properties(
+        snow-shot-direct-capture-history-tests
+        snow-shot-screenshot-completion-gesture-tests
+        PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
@@ -2694,6 +2709,8 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-pinned-window-tests
         src/presentation/services/screenshothistoryimageeditor.cpp
+        tests/screenshot_pinned_hide_to_top_tests.cpp
+        src/presentation/services/screenshotfilepinbatch.cpp
         tests/screenshot_pinned_window_tests.cpp
         tests/original_image_translation_tests.cpp
         include/snow_shot/presentation/components/pathinput.h
@@ -2741,6 +2758,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
         src/presentation/services/screenshotclipboardservice.cpp
         src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
         src/presentation/services/screenshotmessageservice.cpp
         src/presentation/selection/screenshotselectiongeometry.cpp
         src/presentation/selection/screenshotselectionmodel.cpp
@@ -2754,6 +2772,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/pinned/screenshotpinnednativegeometrycontroller.cpp
         src/presentation/pinned/screenshotpinnedresizegeometry.cpp
         src/presentation/pinned/screenshotpinnedrestoregeometry.cpp
+        src/presentation/pinned/screenshotpinnedhidetotopcontroller.cpp
         src/presentation/pinned/screenshotpinnedwindow.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
         src/presentation/pinned/screenshotpinnedwindownative.cpp
@@ -2817,6 +2836,18 @@ if(SNOW_SHOT_BUILD_TESTS)
         set_tests_properties(snow-shot-macos-pinned-move-retina-tests PROPERTIES
             LABELS "unit" TIMEOUT 30 ENVIRONMENT "QT_SCALE_FACTOR=2")
     endif()
+    add_test(NAME snow-shot-file-pin-presentation-tests
+        COMMAND snow-shot-pinned-window-tests --file-pin-batch-only)
+    set_tests_properties(snow-shot-file-pin-presentation-tests PROPERTIES
+        LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-pinned-hide-to-top-tests
+        COMMAND snow-shot-pinned-window-tests --hide-to-top-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-hide-to-top-tests PROPERTIES LABELS "unit"
+        RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-pinned-hide-to-top-native-tests
+        COMMAND snow-shot-pinned-window-tests --hide-to-top-native-only -platform windows)
+    set_tests_properties(snow-shot-pinned-hide-to-top-native-tests PROPERTIES LABELS "unit;windows"
+        RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-pinned-shortcut-display-tests
         COMMAND snow-shot-pinned-window-tests --shortcut-display-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-shortcut-display-tests PROPERTIES LABELS "unit")
@@ -2887,10 +2918,23 @@ if(SNOW_SHOT_BUILD_TESTS)
         )
     endif()
 
+    add_executable(snow-shot-pdf-export-tests
+        tests/screenshot_pdf_export_tests.cpp
+        src/presentation/services/screenshotpdfexport.cpp
+        src/presentation/services/screenshotimagefileservice.cpp
+    )
+    target_include_directories(snow-shot-pdf-export-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include" "${CMAKE_CURRENT_SOURCE_DIR}/src/image")
+    target_link_libraries(snow-shot-pdf-export-tests PRIVATE snow_shot_storage snow_shot_image_codec Qt6::Gui)
+    add_test(NAME snow-shot-pdf-export-tests COMMAND snow-shot-pdf-export-tests)
+    set_tests_properties(snow-shot-pdf-export-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(snow-shot-screenshot-image-file-service-tests
         tests/screenshot_image_file_service_tests.cpp
         include/snow_shot/presentation/screenshotimagefileservice.h
         src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
     )
     target_include_directories(snow-shot-screenshot-image-file-service-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -2909,6 +2953,46 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+
+    add_executable(snow-shot-file-pin-settings-tests tests/file_pin_settings_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-file-pin-settings-tests PRIVATE snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-file-pin-settings-tests)
+    add_test(NAME snow-shot-file-pin-settings-tests COMMAND snow-shot-file-pin-settings-tests)
+    set_tests_properties(snow-shot-file-pin-settings-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+    add_executable(snow-shot-file-pin-batch-tests
+        tests/screenshot_file_pin_batch_tests.cpp
+        src/platform/windows/selectedfiles.cpp
+        src/presentation/services/screenshotfilepinbatch.cpp
+        src/presentation/services/screenshotexportcoordinator.cpp
+        include/snow_shot/presentation/screenshotexportcoordinator.h
+        src/presentation/services/screenshotclipboardcontent.cpp
+        src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
+    )
+    target_include_directories(snow-shot-file-pin-batch-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow-shot-file-pin-batch-tests PRIVATE snow_shot_image_codec Qt6::Widgets)
+    if(WIN32)
+        target_link_libraries(snow-shot-file-pin-batch-tests PRIVATE ole32 oleaut32 shell32 uuid)
+        add_executable(snow-shot-selected-files-native-smoke-tests
+            tests/selected_files_native_smoke_tests.cpp src/platform/windows/selectedfiles.cpp)
+        target_include_directories(snow-shot-selected-files-native-smoke-tests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        target_link_libraries(snow-shot-selected-files-native-smoke-tests PRIVATE
+            Qt6::Core ole32 oleaut32 shell32 uuid user32)
+        add_test(NAME snow-shot-selected-files-native-smoke-tests
+            COMMAND snow-shot-selected-files-native-smoke-tests)
+        set_tests_properties(snow-shot-selected-files-native-smoke-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60)
+    endif()
+    snow_shot_import_offscreen_platform(snow-shot-file-pin-batch-tests)
+    add_test(NAME snow-shot-file-pin-batch-tests COMMAND snow-shot-file-pin-batch-tests)
+    set_tests_properties(snow-shot-file-pin-batch-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
     add_executable(snow-shot-clipboard-content-tests
         tests/screenshot_clipboard_content_tests.cpp
@@ -2992,6 +3076,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --invalid-ocr-restore-only)
     add_test(NAME snow-shot-pinned-cached-ocr-provider-tests
         COMMAND snow-shot-pinned-window-tests --cached-ocr-provider-only)
+    add_test(NAME snow-shot-pinned-toolbar-layout-tests
+        COMMAND snow-shot-pinned-window-tests --pinned-toolbar-layout-only)
+    set_tests_properties(snow-shot-pinned-toolbar-layout-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-pinned-recognition-shortcut-tests
         COMMAND snow-shot-pinned-window-tests --recognition-shortcut-only)
     add_test(NAME snow-shot-pinned-recognition-shortcut-offscreen-tests
@@ -3025,6 +3113,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-pinned-passive-geometry-tests
         COMMAND snow-shot-pinned-window-tests --passive-geometry-only)
+    add_test(NAME snow-shot-pinned-pointer-presence-offscreen-tests
+        COMMAND snow-shot-pinned-window-tests --pointer-presence-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-pointer-presence-offscreen-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     set_tests_properties(snow-shot-pinned-passive-geometry-tests PROPERTIES
         LABELS "unit"
         RUN_SERIAL TRUE
@@ -3036,6 +3130,15 @@ if(SNOW_SHOT_BUILD_TESTS)
         add_test(NAME snow-shot-pinned-passive-native-geometry-tests
             COMMAND snow-shot-pinned-window-tests --passive-geometry-only)
         set_tests_properties(snow-shot-pinned-passive-native-geometry-tests PROPERTIES
+            LABELS "unit;windows"
+            RUN_SERIAL TRUE
+            TIMEOUT 30
+            ENVIRONMENT "QT_QPA_PLATFORM=windows"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+        add_test(NAME snow-shot-pinned-pointer-presence-tests
+            COMMAND snow-shot-pinned-window-tests --pointer-presence-only)
+        set_tests_properties(snow-shot-pinned-pointer-presence-tests PROPERTIES
             LABELS "unit;windows"
             RUN_SERIAL TRUE
             TIMEOUT 30
@@ -3121,6 +3224,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/services/screenshotclipboardservice.cpp
         src/presentation/services/screenshotexportartifact.cpp
         src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
         src/presentation/services/screenshotexportcoordinator.cpp
         src/presentation/services/screenshotexportpinnedsource.cpp
         src/presentation/ocr/screenshotrecognitionimage.cpp
@@ -3134,6 +3238,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_shot_image_codec snow_shot_settings snow_draw_engine_qt_canvas Qt6::Widgets
     )
     snow_shot_import_offscreen_platform(snow-shot-export-dialog-workflow-tests)
+    add_test(NAME snow-shot-pdf-dialog-tests COMMAND snow-shot-export-dialog-workflow-tests --pdf)
+    set_tests_properties(snow-shot-pdf-dialog-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-export-dialog-workflow-tests
         COMMAND snow-shot-export-dialog-workflow-tests)
     add_test(NAME snow-shot-save-format-tests
@@ -3172,6 +3280,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/services/screenshotclipboardservice.cpp
         src/presentation/services/screenshotexportartifact.cpp
         src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
         src/presentation/services/screenshotexportcoordinator.cpp
         src/presentation/services/screenshotexportpinnedsource.cpp
         src/presentation/ocr/screenshotrecognitionimage.cpp
@@ -3251,6 +3360,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screenshot-tool-palette-tests
         COMMAND snow-shot-screenshot-tool-palette-tests
     )
+    add_test(NAME snow-shot-spotlight-wheel-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --spotlight-wheel-only -platform offscreen)
+    set_tests_properties(snow-shot-spotlight-wheel-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-toolbar-popup-recovery-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --popup-recovery-only -platform offscreen)
     set_tests_properties(snow-shot-toolbar-popup-recovery-tests PROPERTIES LABELS "unit" TIMEOUT 60
@@ -3958,6 +4070,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettehost.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
         src/platform/windows/windowchrome.cpp
     )
     target_include_directories(snow-shot-screen-recording-controller-tests PRIVATE
@@ -4443,6 +4556,22 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
     )
 
+    add_executable(snow-shot-standalone-translation-tests
+        tests/standalone_translation_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-standalone-translation-tests PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    if(WIN32)
+        target_link_libraries(snow-shot-standalone-translation-tests PRIVATE PkgConfig::SNOW_SHOT_FFMPEG)
+    endif()
+    target_compile_definitions(snow-shot-standalone-translation-tests PRIVATE
+        SNOW_SHOT_TEST_TRANSLATIONS_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+    add_dependencies(snow-shot-standalone-translation-tests snow_shot_release_translations)
+    snow_shot_import_offscreen_platform(snow-shot-standalone-translation-tests)
+    add_test(NAME snow-shot-standalone-translation-tests COMMAND snow-shot-standalone-translation-tests)
+    set_tests_properties(snow-shot-standalone-translation-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+
     add_executable(snow-shot-translation-page-streaming-tests
         tests/translation_page_streaming_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp)
@@ -4857,6 +4986,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         tests/screenshot_save_to_file_performance_benchmark.cpp
         src/presentation/services/screenshotsaveexportpipeline.cpp
         src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
         src/presentation/services/screenshotexportcoordinator.cpp
     )
     target_include_directories(snow-shot-save-to-file-performance-benchmark PRIVATE
@@ -4869,6 +4999,130 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         snow_shot_storage
         Qt6::Gui
     )
+
+    # This is intentionally not registered with CTest. It drives the real
+    # file-pin batch snapshot/decode/presentation pipeline with real pinned
+    # windows and reports hardware-sensitive medians for explicit Release
+    # sessions.
+    add_executable(snow-shot-file-pin-batch-performance-benchmark
+        tests/screenshot_file_pin_batch_performance_benchmark.cpp
+        src/platform/windows/selectedfiles.cpp
+        src/presentation/services/screenshotfilepinbatch.cpp
+        include/snow_shot/presentation/components/pathinput.h
+        src/presentation/components/pathinput.cpp
+        include/snow_shot/presentation/screenshotsavepreviewcanvas.h
+        src/presentation/services/screenshotsaveasfiledialog.cpp
+        src/presentation/services/screenshotsaveexportpipeline.cpp
+        src/presentation/services/screenshotsavepreviewcanvas.cpp
+        src/platform/physicalcursor.cpp
+        include/snow_shot/presentation/screenshotfloatingtoolpalettewindow.h
+        include/snow_shot/presentation/screenshotcanvascolorsampler.h
+        include/snow_shot/presentation/screenshotcanvascolorsamplerwindow.h
+        include/snow_shot/presentation/languagemanager.h
+        include/snow_shot/presentation/screenshotpinnededitcontroller.h
+        include/snow_shot/presentation/screenshotpinnedwindow.h
+        include/snow_shot/presentation/pinnedwindowgroupmanager.h
+        include/snow_shot/presentation/screenshotrecognitionsessioncontroller.h
+        include/snow_shot/presentation/screenshotrecognitionwindow.h
+        include/snow_shot/presentation/screenshottableeditor.h
+        include/snow_shot/presentation/screenshotmessageservice.h
+        include/snow_shot/presentation/screenshotselectiongeometry.h
+        include/snow_shot/presentation/screenshotselectionmodel.h
+        include/snow_shot/presentation/screenshotselectionparams.h
+        include/snow_shot/presentation/screenshottoolpalette.h
+        include/snow_shot/presentation/screenshottoolpalettehost.h
+        include/snow_shot/presentation/styles/thememanager.h
+        src/presentation/components/icons/snowshoticons.cpp
+        src/presentation/core/screenshotgeometry.cpp
+        src/presentation/core/screenshotcanvastoolstyles.cpp
+        src/presentation/ocr/screenshotocrpresentation.cpp
+        src/presentation/ocr/screenshotocrvisuals.cpp
+        src/presentation/ocr/screenshotocrtexteditingsession.cpp
+        src/presentation/ocr/screenshotocrtexttransform.cpp
+        src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp
+        src/presentation/ocr/screenshotocrlayout.cpp
+        src/presentation/ocr/screenshotrecognitionwindow.cpp
+        src/presentation/ocr/screenshottabledocument.cpp
+        src/presentation/ocr/screenshottableeditor.cpp
+        src/presentation/ocr/screenshotocrtextlayout.cpp
+        src/presentation/overlay/screenshotcanvasrenderer.cpp
+        src/presentation/overlay/screenshotselectionshadowrenderer.cpp
+        src/presentation/services/screenshotcanvascolorsampler.cpp
+        src/presentation/services/screenshotcanvascolorsamplerwindow.cpp
+        src/presentation/services/screenshotclipboardcontent.cpp
+        src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+        src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
+        src/presentation/services/screenshotmessageservice.cpp
+        src/presentation/selection/screenshotselectiongeometry.cpp
+        src/presentation/selection/screenshotselectionmodel.cpp
+        src/presentation/selection/screenshotselectionparams.cpp
+        src/presentation/pinned/screenshotpinnededitcontroller.cpp
+        src/presentation/services/screenshotexportcoordinator.cpp
+        src/presentation/services/screenshotexportartifact.cpp
+        src/presentation/services/screenshotexportpinnedsource.cpp
+        src/presentation/ocr/screenshotrecognitionimage.cpp
+        src/presentation/selection/screenshotselectionexportuiservices.cpp
+        src/presentation/pinned/screenshotpinnednativegeometrycontroller.cpp
+        src/presentation/pinned/screenshotpinnedresizegeometry.cpp
+        src/presentation/pinned/screenshotpinnedrestoregeometry.cpp
+        src/presentation/pinned/screenshotpinnedhidetotopcontroller.cpp
+        src/presentation/pinned/screenshotpinnedwindow.cpp
+        src/presentation/services/pinnedwindowgroupmanager.cpp
+        src/presentation/pinned/screenshotpinnedwindownative.cpp
+        src/presentation/services/languagemanager.cpp
+        src/presentation/styles/buttonborder.cpp
+        src/presentation/styles/themecolorscheme.cpp
+        src/presentation/styles/thememanager.cpp
+        src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
+        src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
+        src/presentation/tools/screenshottoolbarmainpanel.cpp
+        src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/tools/screenshottoolpalettebuttons.cpp
+        src/presentation/tools/screenshottoolpalettehost.cpp
+        src/presentation/tools/screenshottoolpalettestylecontrols.cpp
+        src/presentation/tools/screenshottoolpalettestylecomponents.cpp
+        src/presentation/tools/screenshottoolpalettestylemodel.cpp
+        src/presentation/tools/screenshottoolpalettestylepresets.cpp
+    )
+    target_include_directories(snow-shot-file-pin-batch-performance-benchmark PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-shot-file-pin-batch-performance-benchmark PRIVATE
+        snow_shot_translation
+        adqt_icon_core
+        ant_design_icons_qt
+        ant_design_qt
+        Qt6::Network
+        Qt6::Widgets
+        snow_draw_engine_qt_canvas
+        snow_shot_image_codec
+        snow_shot_storage
+        snow_shot_window_shortcuts
+    )
+    if(WIN32)
+        target_link_libraries(snow-shot-file-pin-batch-performance-benchmark PRIVATE
+            Qt6::GuiPrivate
+            comctl32
+            dwmapi
+            user32
+            ole32
+            oleaut32
+            shell32
+            uuid
+        )
+    endif()
+    if(QT_FEATURE_static)
+        # Static Qt registers platform plugins at link time; the benchmark
+        # presents real windows, so it must import the windows integration.
+        target_link_libraries(snow-shot-file-pin-batch-performance-benchmark PRIVATE
+            Qt6::QWindowsIntegrationPlugin
+        )
+        qt_import_plugins(snow-shot-file-pin-batch-performance-benchmark
+            INCLUDE Qt6::QWindowsIntegrationPlugin
+        )
+    endif()
 endif()
 
 target_include_directories(snow_shot PRIVATE
@@ -5170,7 +5424,8 @@ if(WIN32)
     foreach(_snow_shot_ffmpeg_toolbar_benchmark IN ITEMS
             snow-shot-table-preparation-benchmark
             snow-shot-screenshot-toolbar-render-benchmark
-            snow-shot-screenshot-toolbar-display-benchmark)
+            snow-shot-screenshot-toolbar-display-benchmark
+            snow-shot-file-pin-batch-performance-benchmark)
         if(TARGET ${_snow_shot_ffmpeg_toolbar_benchmark})
             target_link_libraries(${_snow_shot_ffmpeg_toolbar_benchmark} PRIVATE
                 PkgConfig::SNOW_SHOT_FFMPEG
@@ -5544,7 +5799,8 @@ install(DIRECTORY
 )
 
 foreach(_conversion_view_target IN ITEMS snow_shot snow-shot-recognition-window-tests
-        snow-shot-recognition-session-controller-tests snow-shot-pinned-window-tests)
+        snow-shot-recognition-session-controller-tests snow-shot-pinned-window-tests
+        snow-shot-file-pin-batch-performance-benchmark)
     if(TARGET ${_conversion_view_target})
         target_sources(${_conversion_view_target} PRIVATE
             include/snow_shot/presentation/screenshotimageconversion.h
@@ -5553,7 +5809,8 @@ foreach(_conversion_view_target IN ITEMS snow_shot snow-shot-recognition-window-
     endif()
 endforeach()
 foreach(_conversion_controller_target IN ITEMS snow_shot
-        snow-shot-recognition-session-controller-tests snow-shot-pinned-window-tests)
+        snow-shot-recognition-session-controller-tests snow-shot-pinned-window-tests
+        snow-shot-file-pin-batch-performance-benchmark)
     if(TARGET ${_conversion_controller_target})
         target_sources(${_conversion_controller_target} PRIVATE
             include/snow_shot/presentation/components/screenshottranslationsettingsdialog.h

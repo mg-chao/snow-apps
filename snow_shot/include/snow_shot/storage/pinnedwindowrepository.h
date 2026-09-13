@@ -33,6 +33,7 @@ class PinnedWindowRepository final {
     [[nodiscard]] std::optional<PinnedWindowRecord> loadRecord(const QString& id) const;
     [[nodiscard]] QVector<PinnedWindowSummary> summaries() const;
     [[nodiscard]] quint64 revision() const;
+    [[nodiscard]] int allocateHideToTopAccent();
     [[nodiscard]] QVector<PinnedWindowGroup> groups() const;
     [[nodiscard]] QString activeGroupId() const;
     [[nodiscard]] StorageResult setActiveGroup(const QString& groupId);

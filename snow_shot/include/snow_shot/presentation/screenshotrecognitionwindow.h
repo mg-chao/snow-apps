@@ -44,20 +44,33 @@ class WindowShortcutManager;
 }
 
 struct ScreenshotRecognitionWindowActions {
-    std::function<void()> handleCancel = []() {};
-    std::function<void(const QString&)> handleTextEdited = [](const QString&) {};
+    // Named defaults keep partially initialized action aggregates consistent across
+    // translation units, including MSVC builds with different lambda instantiations.
+    static void noAction() {}
+    static void ignoreText(const QString&) {}
+    static void ignoreLink(const QUrl&) {}
+    static ScreenshotSelectionDragMode noResizeHandle(const QPointF&) {
+        return ScreenshotSelectionDragMode::None;
+    }
+    static bool declineResize(const QPointF&) {
+        return false;
+    }
+    static void ignoreResize(const QPointF&) {}
+
+    std::function<void()> handleCancel = noAction;
+    std::function<void(const QString&)> handleTextEdited = ignoreText;
     std::function<void(const ScreenshotTableCommandState&)> handleTableCommandStateChanged;
-    std::function<void(const QString&)> handleTableOperationRejected = [](const QString&) {};
-    std::function<void(const QUrl&)> handleLinkActivated = [](const QUrl&) {};
-    std::function<void()> handleUndoTextEdit = []() {};
-    std::function<void()> handleRedoTextEdit = []() {};
+    std::function<void(const QString&)> handleTableOperationRejected = ignoreText;
+    std::function<void(const QUrl&)> handleLinkActivated = ignoreLink;
+    std::function<void()> handleUndoTextEdit = noAction;
+    std::function<void()> handleRedoTextEdit = noAction;
     std::function<ScreenshotSelectionDragMode(const QPointF&)> selectionResizeDragMode =
-        [](const QPointF&) { return ScreenshotSelectionDragMode::None; };
-    std::function<bool(const QPointF&)> beginSelectionResize = [](const QPointF&) { return false; };
-    std::function<void(const QPointF&)> updateSelectionResize = [](const QPointF&) {};
-    std::function<void(const QPointF&)> finishSelectionResize = [](const QPointF&) {};
-    std::function<void()> selectionResizeFinished = []() {};
-    std::function<void()> handleCopy = []() {};
+        noResizeHandle;
+    std::function<bool(const QPointF&)> beginSelectionResize = declineResize;
+    std::function<void(const QPointF&)> updateSelectionResize = ignoreResize;
+    std::function<void(const QPointF&)> finishSelectionResize = ignoreResize;
+    std::function<void()> selectionResizeFinished = noAction;
+    std::function<void()> handleCopy = noAction;
 };
 
 class ScreenshotRecognitionWindow final : public QWidget {

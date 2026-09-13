@@ -65,6 +65,13 @@ void ScreenshotSavePreviewCanvas::setSource(QImage image, QSize pixels) {
     m_readout->hide();
     fitImage();
 }
+void ScreenshotSavePreviewCanvas::setPdfLayout(screenshot_pdf::Layout layout) {
+    if (layout.pagePoints == m_pdfLayout.pagePoints &&
+        layout.imagePoints == m_pdfLayout.imagePoints)
+        return;
+    m_pdfLayout = layout;
+    update();
+}
 void ScreenshotSavePreviewCanvas::setOutput(QImage image) {
     m_output = std::move(image);
     update();
@@ -80,8 +87,8 @@ void ScreenshotSavePreviewCanvas::fitImage(bool showZoomReadout) {
     const double previousZoom = m_zoom;
     m_fit = true;
     m_pan = {};
-    m_zoom = std::min({1.0, std::max(1, width() - 40) / double(m_sourcePixels.width()),
-                       std::max(1, height() - 40) / double(m_sourcePixels.height())});
+    m_zoom = std::min({1.0, double(std::max(1, width() - 40)) / m_sourcePixels.width(),
+                       double(std::max(1, height() - 40)) / m_sourcePixels.height()});
     updateReadout();
     if (showZoomReadout && !qFuzzyCompare(previousZoom, m_zoom))
         showReadout();
@@ -112,7 +119,7 @@ void ScreenshotSavePreviewCanvas::paintEvent(QPaintEvent*) {
     painter.fillRect(rect(), QBrush(m_checkerboard));
     if (m_sourcePixels.isEmpty() || m_original.isNull())
         return;
-    const QSizeF dimensions(m_sourcePixels.width() * m_zoom, m_sourcePixels.height() * m_zoom);
+    const QSizeF dimensions = QSizeF(m_sourcePixels) * m_zoom;
     const QPointF center = QRectF(rect()).center() + m_pan;
     const QRectF bounds(center.x() - dimensions.width() / 2, center.y() - dimensions.height() / 2,
                         dimensions.width(), dimensions.height());
@@ -124,6 +131,16 @@ void ScreenshotSavePreviewCanvas::paintEvent(QPaintEvent*) {
     painter.restore();
     painter.save();
     painter.setClipRect(QRectF(split, 0, width() - split, height()));
+    if (!m_pdfLayout.pagePoints.isEmpty() && !m_pdfLayout.imagePoints.isEmpty()) {
+        // Map paper into the shared image bounds; paper never owns the comparison viewport.
+        const double scaleX = bounds.width() / m_pdfLayout.imagePoints.width();
+        const double scaleY = bounds.height() / m_pdfLayout.imagePoints.height();
+        const QRectF pageBounds(bounds.topLeft() - QPointF(m_pdfLayout.imagePoints.x() * scaleX,
+                                                           m_pdfLayout.imagePoints.y() * scaleY),
+                                QSizeF(m_pdfLayout.pagePoints.width() * scaleX,
+                                       m_pdfLayout.pagePoints.height() * scaleY));
+        painter.fillRect(pageBounds, Qt::white);
+    }
     painter.drawImage(bounds, m_output.isNull() ? m_original : m_output);
     painter.restore();
 

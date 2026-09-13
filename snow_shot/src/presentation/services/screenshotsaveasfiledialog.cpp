@@ -58,7 +58,8 @@ constexpr int kAspectRatioLockButtonSize = 32;
 constexpr int kMaximumDimension = 1000000;
 
 bool formatSupportsLossless(Format format) {
-    return format == Format::Webp || format == Format::Jxl || format == Format::Avif;
+    return format == Format::Pdf || format == Format::Webp || format == Format::Jxl ||
+           format == Format::Avif;
 }
 
 QString translated(const char* text) {
@@ -200,7 +201,10 @@ class SaveContent final : public QWidget {
         });
         connect(m_filename, &AdLineEdit::textChanged, this, [this](const QString& value) {
             m_state.filename = value;
-            validateFields();
+            if (m_state.output.format == Format::Pdf)
+                changed();
+            else
+                validateFields();
         });
         connect(m_format, &AdSelect::currentValueChanged, this, [this](const QVariant& value) {
             m_state.output.format = ScreenshotImageFileService::formatForKey(value.toString());
@@ -406,7 +410,8 @@ class SaveContent final : public QWidget {
                                   {"bmp", "BMP"},
                                   {"webp", "WebP"},
                                   {"jxl", "JPEG XL"},
-                                  {"avif", "AVIF"}}) {
+                                  {"avif", "AVIF"},
+                                  {"pdf", "PDF"}}) {
             AdSelect::Option option;
             option.value = QString::fromLatin1(entry.first);
             option.label = translated(entry.second);
@@ -744,6 +749,11 @@ class SaveContent final : public QWidget {
             {{m_quality->minimum(), minimumMark}, {m_quality->maximum(), maximumMark}});
     }
     void changed() {
+        m_state.output.pdfTitle = QFileInfo(m_state.outputPath()).completeBaseName();
+        m_preview->setPdfLayout(
+            m_state.output.format == Format::Pdf
+                ? screenshot_pdf::layout(m_state.output.size, m_state.output.pdfPageSize)
+                : screenshot_pdf::Layout{});
         updateControls();
         if (m_closed || m_saving || !m_source.rows.isValid())
             return;
@@ -835,7 +845,7 @@ class SaveContent final : public QWidget {
         m_renderRunning = true;
         m_job = ScreenshotExportCoordinator::shared().submit(
             this, ScreenshotExportCoordinator::Priority::Foreground,
-            [source = m_source, options, prepared,
+            [source = m_source, options, prepared, cachedPdf = m_encoded ? m_encoded->pdf : nullptr,
              encoded](const ScreenshotExportCancellation& cancellation) {
                 ScreenshotExportTaskResult result;
                 auto pixels = prepared;
@@ -843,8 +853,8 @@ class SaveContent final : public QWidget {
                     pixels =
                         pipeline::preparePixels(source, options.size, cancellation, &result.error);
                 if (pixels)
-                    *encoded =
-                        pipeline::render(std::move(pixels), options, cancellation, &result.error);
+                    *encoded = pipeline::render(std::move(pixels), options, cancellation,
+                                                &result.error, cachedPdf);
                 if (!*encoded)
                     result.failureStage = ScreenshotExportFailureStage::Render;
                 return result;
@@ -972,9 +982,19 @@ class SaveContent final : public QWidget {
             [encoded = m_encoded, path = m_savePath, sourceSize = m_state.sourceSize,
              adoptedPng](const ScreenshotExportCancellation& cancellation) {
                 ScreenshotExportTaskResult result;
-                const auto saved = ScreenshotImageFileService::writeEncodedFile(
-                    encoded->path, path, encoded->options.format,
-                    [&cancellation] { return cancellation.isCancellationRequested(); });
+                const auto cancelled = [&cancellation] {
+                    return cancellation.isCancellationRequested();
+                };
+                const auto saved =
+                    encoded->pdf ? ScreenshotImageFileService::writePdf(
+                                       *encoded->pdf, path,
+                                       ScreenshotPdfOptions{encoded->options.pdfPageSize,
+                                                            encoded->options.quality,
+                                                            {},
+                                                            QDateTime::currentDateTimeUtc()},
+                                       cancelled)
+                                 : ScreenshotImageFileService::writeEncodedFile(
+                                       encoded->path, path, encoded->options.format, cancelled);
                 result.savedPath = saved.path;
                 result.error = saved.error;
                 if (!saved.succeeded())
@@ -1058,6 +1078,7 @@ class SaveContent final : public QWidget {
 [[maybe_unused]] constexpr const char* labels[] = {
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "Save path"),
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "File name"),
+    QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "PDF"),
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "Image format"),
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "Width"),
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "Height"),
@@ -1086,6 +1107,7 @@ ScreenshotSaveDialogState ScreenshotSaveDialogState::initial(QSize size) {
         result.directory = ScreenshotImageFileService::saveDialogDirectory({}, configured);
     result.filename =
         ScreenshotImageFileService::suggestedBaseName(settings.manualSaveFilenameFormat());
+    result.output.pdfPageSize = screenshot_pdf::pageSizeForKey(settings.pdfPageSize());
     result.sourceSize = size;
     result.output.size = size;
     result.output.format =

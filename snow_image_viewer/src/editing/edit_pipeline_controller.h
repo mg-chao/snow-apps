@@ -56,6 +56,9 @@ struct EditPipelineOptions final {
     std::size_t memoryBudgetBytes = 0;
     std::size_t cacheBudgetBytes = 0;
     int workerTimeoutMs = 120000;
+    // Bound on waiting for an in-flight decode at shutdown before the pool
+    // is abandoned.
+    int shutdownTimeoutMs = 5000;
     QString workerExecutablePath;
     QString workerTestMode;
     bool allowSourceRasterReuse = true;
@@ -256,7 +259,7 @@ class EditPipelineController final : public QObject {
     bool evictOldestCachePortion();
     void clearCache();
 
-    QThreadPool pool_;
+    std::unique_ptr<QThreadPool> pool_ = std::make_unique<QThreadPool>();
     EditPipelineOptions options_;
     QTimer exactTimer_;
     QElapsedTimer exactDelayTimer_;

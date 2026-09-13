@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::ptr;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     mpsc,
 };
 use std::thread::{self, JoinHandle};
@@ -2500,6 +2500,18 @@ fn ffi_recording_state(state: RecordingState) -> SnowCaptureRecordingState {
     }
 }
 
+// Makes the exactly-once recording session destroy contract observable: a missed
+// destroy leaves the count above its baseline and a repeated destroy wraps it far
+// below, so tests can fail loudly instead of leaking capture pipelines and input
+// hooks silently.
+static LIVE_RECORDING_SESSIONS: AtomicUsize = AtomicUsize::new(0);
+
+/// Live recording sessions created and not yet destroyed.
+#[unsafe(no_mangle)]
+pub extern "C" fn snow_capture_recording_session_live_count() -> usize {
+    LIVE_RECORDING_SESSIONS.load(Ordering::Relaxed)
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_capture_recording_session_create(
     config: *const SnowCaptureRecordingConfig,
@@ -2570,6 +2582,7 @@ pub unsafe extern "C" fn snow_capture_recording_session_create(
     match RecordingSession::create(recording_config) {
         Ok(recording) => {
             clear_last_error();
+            LIVE_RECORDING_SESSIONS.fetch_add(1, Ordering::Relaxed);
             Box::into_raw(Box::new(SnowCaptureRecordingSessionImpl {
                 recording: Some(RecordingSessionKind::Legacy(Box::new(recording))),
                 state: RecordingState::Created,
@@ -2589,6 +2602,7 @@ pub unsafe extern "C" fn snow_capture_recording_session_destroy(
     if session.is_null() {
         return;
     }
+    LIVE_RECORDING_SESSIONS.fetch_sub(1, Ordering::Relaxed);
     let mut session = unsafe { Box::from_raw(session) };
     if matches!(
         session.state,
@@ -2972,6 +2986,7 @@ pub unsafe extern "C" fn snow_capture_recording_session_create_direct(
     };
     match DirectRecordingSession::create(config) {
         Ok(recording) => {
+            LIVE_RECORDING_SESSIONS.fetch_add(1, Ordering::Relaxed);
             unsafe {
                 *out_session = Box::into_raw(Box::new(SnowCaptureRecordingSessionImpl {
                     recording: Some(RecordingSessionKind::Direct(recording)),
@@ -3646,6 +3661,33 @@ mod tests {
             unsafe { snow_capture_recording_session_create_direct(&config, ptr::null_mut()) },
             SnowCaptureResult::InvalidArgument
         );
+    }
+
+    #[test]
+    fn recording_session_live_count_tracks_create_and_destroy_exactly_once() {
+        let output = CString::new("recording.mp4").unwrap();
+        let config = direct_config(&output);
+        let baseline = snow_capture_recording_session_live_count();
+        let mut first = ptr::null_mut();
+        let mut second = ptr::null_mut();
+        assert_eq!(
+            unsafe { snow_capture_recording_session_create_direct(&config, &mut first) },
+            SnowCaptureResult::Ok
+        );
+        assert!(!first.is_null());
+        assert_eq!(
+            unsafe { snow_capture_recording_session_create_direct(&config, &mut second) },
+            SnowCaptureResult::Ok
+        );
+        assert!(!second.is_null());
+        assert_eq!(snow_capture_recording_session_live_count(), baseline + 2);
+        // A null destroy must not disturb the count; destroy pairs with create once.
+        unsafe { snow_capture_recording_session_destroy(ptr::null_mut()) };
+        assert_eq!(snow_capture_recording_session_live_count(), baseline + 2);
+        unsafe { snow_capture_recording_session_destroy(first) };
+        assert_eq!(snow_capture_recording_session_live_count(), baseline + 1);
+        unsafe { snow_capture_recording_session_destroy(second) };
+        assert_eq!(snow_capture_recording_session_live_count(), baseline);
     }
 
     fn test_result() -> *mut SnowCaptureScreenshotResultImpl {

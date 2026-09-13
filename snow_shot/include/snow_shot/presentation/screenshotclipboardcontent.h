@@ -8,6 +8,7 @@
 #include <QList>
 #include <QSize>
 #include <QString>
+#include <QStringList>
 
 #include <functional>
 #include <memory>
@@ -92,14 +93,19 @@ struct ScreenshotClipboardContentSnapshot final {
 
     [[nodiscard]] bool isValid() const {
         return !encodedImages.isEmpty() || (nativeDib.has_value() && nativeDib->isValid()) ||
-               !detachedImage.isNull() || localImage.has_value() ||
-               !html.isEmpty() || !text.isEmpty();
+               !detachedImage.isNull() || localImage.has_value() || !html.isEmpty() ||
+               !text.isEmpty();
     }
 };
 
 class ScreenshotClipboardContentReader final {
   public:
     using CancellationCheck = std::function<bool()>;
+
+    [[nodiscard]] static QStringList localFilePaths(const QMimeData* mimeData);
+    // File metadata is independent of GUI state and may be captured on a worker.
+    [[nodiscard]] static QList<ScreenshotClipboardLocalImage>
+    snapshotLocalFiles(const QStringList& paths, CancellationCheck cancelled = {});
 
     // Snapshot methods must run on the GUI thread. Their return value owns all
     // MIME data needed by decode(), which is safe to run on an export worker.

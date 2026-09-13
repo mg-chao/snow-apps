@@ -35,6 +35,7 @@ class TranslationPageWidget final : public QWidget {
     void setSourceText(const QString& text);
     void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme);
     void retranslateUi();
+    void copyResult(bool closeWindow);
 
   signals:
     void closeWindowRequested();
@@ -53,7 +54,6 @@ class TranslationPageWidget final : public QWidget {
     void updateLayout();
     void updateResultOverlays();
     void updateResult(const QString& text);
-    void copyResult(bool closeWindow);
     void dismissPopups();
     bool ownsFocusWidget(const QWidget* widget) const;
 

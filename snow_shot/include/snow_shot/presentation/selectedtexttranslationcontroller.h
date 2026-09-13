@@ -43,10 +43,15 @@ class SelectedTextTranslationController final : public QObject {
     ~SelectedTextTranslationController() override;
     void capture();
     void shutdown();
+    void cancel();
+    [[nodiscard]] bool pending() const {
+        return m_pending;
+    }
 
   signals:
+    // Emitted when a capture finishes; text is empty when nothing was retrieved.
+    // Missing permission instead requests guidance without activating the destination.
     void textReady(const QString& text);
-    void operationFailed(const QString& message);
     void permissionRequired();
 
   private:

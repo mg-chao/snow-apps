@@ -244,6 +244,19 @@ void globalMouseNativeActivationKeyTests() {
     }
 }
 
+void globalMouseNativeStopFromWorkerThreadTests() {
+    NativeInput input;
+    input.scenario = [&] {
+        // The scenario runs on the hook thread, so stopping must retire the
+        // hooks inline instead of blocking on a queued invocation to itself.
+        input.backend->stop();
+        require(input.mouse == nullptr && input.keyboard == nullptr,
+                "a worker-thread stop must unhook synchronously");
+    };
+    input.run();
+    require(input.failures == 0, "a worker-thread stop reported a failure");
+}
+
 void globalMouseNativePerformanceTests() {
     {
         NativeInput input;

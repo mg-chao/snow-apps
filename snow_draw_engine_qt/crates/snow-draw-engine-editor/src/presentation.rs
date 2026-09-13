@@ -138,6 +138,12 @@ impl Editor {
                 (stroke_width.is_finite() && stroke_width > 0.0).then_some(EditorStrokeCursor {
                     position,
                     stroke_width,
+                    stroke_color: match self.state.active_tool {
+                        ActiveTool::FreeDraw | ActiveTool::PenHighlight => {
+                            Some(self.shape_style(document).stroke)
+                        }
+                        _ => None,
+                    },
                 })
             });
         EditorPresentationState {

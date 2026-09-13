@@ -1,9 +1,13 @@
+#include "snow_shot/presentation/screenshottoolbarmainpanel.h"
+#include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "close_release_native_test_support.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenshothistoryimageeditor.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include "../src/presentation/pinned/screenshotpinnedwindownative.h"
+#include "../src/presentation/pinned/screenshotpinnedhidetotopcontroller.h"
+#include "../src/presentation/pinned/screenshotpinnedpointerpresence.h"
 #include "../src/presentation/pinned/screenshotpinnednativegeometrycontroller.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
@@ -17,6 +21,7 @@
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/presentation/screenshotselectionexportuiservices.h"
+#include "snow_shot/presentation/screenshotfilepinbatch.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -84,7 +89,12 @@
 #include <utility>
 #include <vector>
 
+#if defined(Q_OS_WIN) || defined(_WIN32)
+#include <qt_windows.h>
+#endif
+
 void runPinnedOriginalImageTranslationTests();
+void runPinnedHideToTopControllerTests();
 
 // Offscreen tests exercise restored state and queued DPI notifications without
 // installing the Windows HWND hooks required by present().
@@ -123,6 +133,108 @@ class ScreenshotPinnedWindowTestAccess {
         window.applyScale(percent);
     }
 #endif
+    static ScreenshotPinnedHideToTopController& hideToTop(ScreenshotPinnedWindow& window) {
+        return *window.m_hideToTop;
+    }
+    static void scaleForHideTest(ScreenshotPinnedWindow& window, bool wheel) {
+        window.m_mouseWheelZoomMode = QStringLiteral("bottom_right");
+        if (wheel) {
+            window.applyWheelScale(150, QPointF(200, 200));
+        } else {
+            window.applyScale(100);
+        }
+    }
+    static void transformForHideTest(ScreenshotPinnedWindow& window, bool reset) {
+        if (reset) {
+            window.resetImageTransform();
+        } else {
+            window.applyImageOperation(QTransform().rotate(90), 1);
+        }
+    }
+    static void opacityForHideTest(ScreenshotPinnedWindow& window) {
+        window.setOpacityPercent(50);
+    }
+    static void editForHideTest(ScreenshotPinnedWindow& window) {
+        window.setEditMode(true);
+    }
+    static void recognitionForHideTest(ScreenshotPinnedWindow& window) {
+        window.activateRecognitionMode(0);
+    }
+    static void thumbnailForHideTest(ScreenshotPinnedWindow& window, bool enabled) {
+        window.setThumbnailMode(enabled, false);
+    }
+    static void doubleForHideTest(ScreenshotPinnedWindow& window) {
+        static_cast<void>(window.handleDoubleClick(window.rect().center()));
+    }
+    static void middleForHideTest(ScreenshotPinnedWindow& window) {
+        static_cast<void>(window.handleMiddleClick(window.rect().center()));
+    }
+#ifdef Q_OS_WIN
+    static bool nativeMoveForHideTest(ScreenshotPinnedWindow& window, bool move) {
+        POINT cursor{};
+        if (!GetCursorPos(&cursor) ||
+            !window.m_nativeGeometryController->beginMove(QPoint(cursor.x, cursor.y))) {
+            return false;
+        }
+        window.m_windowDragActive = true;
+        if (move) {
+            SetCursorPos(cursor.x + 10, cursor.y + 10);
+        }
+        const QRect original =
+            window.currentNativeGeometry().translated(move ? QPoint(10, 10) : QPoint());
+        RECT proposed{original.x(), original.y(), original.x() + original.width(),
+                      original.y() + original.height()};
+        MSG message{};
+        message.hwnd = reinterpret_cast<HWND>(window.winId());
+        message.message = WM_MOVING;
+        message.lParam = reinterpret_cast<LPARAM>(&proposed);
+        qintptr result = 0;
+        const bool handled =
+            window.nativeEvent(QByteArrayLiteral("windows_generic_MSG"), &message, &result);
+        const bool continued = window.m_windowDragActive &&
+                               window.m_nativeGeometryController->hasInteractiveTransaction();
+        static_cast<void>(window.finishNativeGeometryInteraction());
+        window.finishWindowMove();
+        return handled && continued;
+    }
+    static bool nativeResizeForHideTest(ScreenshotPinnedWindow& window) {
+        if (!window.m_nativeGeometryController->beginResize(
+                screenshot_pinned_resize_geometry::DragHandle::BottomRight)) {
+            return false;
+        }
+        const QRect original = window.currentNativeGeometry();
+        RECT proposed{original.x(), original.y(), original.x() + original.width() + 40,
+                      original.y() + original.height() + 30};
+        MSG message{};
+        message.hwnd = reinterpret_cast<HWND>(window.winId());
+        message.message = WM_SIZING;
+        message.wParam = WMSZ_BOTTOMRIGHT;
+        message.lParam = reinterpret_cast<LPARAM>(&proposed);
+        qintptr result = 0;
+        const bool handled =
+            window.nativeEvent(QByteArrayLiteral("windows_generic_MSG"), &message, &result);
+        const bool continued = window.m_nativeGeometryController->hasInteractiveTransaction();
+        static_cast<void>(window.finishNativeGeometryInteraction());
+        window.m_systemSizingActive = false;
+        return handled && continued;
+    }
+#endif
+    static bool pointerInside(const ScreenshotPinnedWindow& window) {
+        return window.m_pointerInside;
+    }
+    static QTimer& pointerPresenceTimer(ScreenshotPinnedWindow& window) {
+        return window.m_pointerPresence->timer();
+    }
+    static bool moveWindow(ScreenshotPinnedWindow& window, const QRect& nativeGeometry) {
+        return window.applyWindowGeometry(nativeGeometry,
+                                          ScreenshotPinnedWindow::GeometryMutation::Move);
+    }
+    static bool geometrySettled(const ScreenshotPinnedWindow& window) {
+        const auto* controller = window.m_nativeGeometryController.get();
+        return window.interactiveResizingEnabled() && controller != nullptr &&
+               controller->phase() == ScreenshotPinnedNativeGeometryController::Phase::Stable &&
+               controller->committedGeometry() == window.currentNativeGeometry();
+    }
     static QTimer* showReadout(ScreenshotPinnedWindow& window, bool opacity) {
         window.m_scalePercent = 125;
         window.m_opacityPercent = 80;
@@ -339,6 +451,21 @@ QRect physicalPinGeometry(QScreen& screen, const QPoint& logicalOffset, const QS
                  physicalSize);
 }
 
+// Clipboard transfers are asynchronous (delayed rendering and ownership
+// handoff), so the payload may not be readable immediately after a copy.
+bool clipboardReceivesText(const QString& expected) {
+    QElapsedTimer settle;
+    settle.start();
+    while (settle.elapsed() < 2000) {
+        if (QApplication::clipboard()->text() == expected) {
+            return true;
+        }
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(10);
+    }
+    return QApplication::clipboard()->text() == expected;
+}
+
 class CursorPositionRestorer final {
   public:
     CursorPositionRestorer() : m_position(systemCursorPosition()) {}
@@ -448,7 +575,7 @@ void pinnedQrResultCopiesWithKeyboardShortcut() {
     QApplication::clipboard()->setText(QStringLiteral("stale clipboard text"));
     QKeyEvent copy(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
     QApplication::sendEvent(browser, &copy);
-    require(copy.isAccepted() && QApplication::clipboard()->text() == expected,
+    require(copy.isAccepted() && clipboardReceivesText(expected),
             "Ctrl+C should copy all pinned QR result text");
 
     QKeyEvent selectAll(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
@@ -755,6 +882,15 @@ void pinnedSelectionRendersCachedOcrInCanvasCoordinates(bool restoreFromStorage 
                     "ordinary pinned resize borders must retain priority over caption dragging");
             }
 #endif
+            // The inherited overlay visibility is applied by the deferred
+            // presentation setup, which lands on a loop iteration after the
+            // presentation completion. Give it a bounded window to land.
+            QElapsedTimer visibilitySettle;
+            visibilitySettle.start();
+            while (action->isChecked() != initiallyVisible && visibilitySettle.elapsed() < 2000) {
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+                QThread::msleep(5);
+            }
             require(action->isChecked() == initiallyVisible,
                     "a pin must inherit visibility independently of its OCR cache");
             if (!initiallyVisible) {
@@ -890,7 +1026,7 @@ void pinnedSelectionRendersCachedOcrInCanvasCoordinates(bool restoreFromStorage 
             }
             require(hasTextPixels, "cached OCR should paint text pixels in the pinned viewport");
             require(recognitionContent->copyVisibleContentToClipboard() &&
-                        QApplication::clipboard()->text() == text,
+                        clipboardReceivesText(text),
                     "the rendered cached OCR text should remain copyable");
             require(recognition.requests == 0,
                     "pinning cached OCR should not recognize the screenshot again");
@@ -1014,6 +1150,63 @@ ScreenshotPinnedWindow::Config cachedOcrPinConfig(ScreenshotOcrRecognitionPort* 
     config.recognitionResults.key = QStringLiteral("cached-ocr-audit");
     config.recognitionResults.text = ScreenshotOcrRecognitionResult{presentation, {}, {}, {}};
     return config;
+}
+
+void pinnedToolbarLayoutReloadsAndResetsIndependently() {
+    namespace storage = snow_shot::storage;
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    const auto kind = storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
+    const storage::ScreenshotToolbarSettings toolbarSettings;
+    const auto originalPinned = toolbarSettings.layout(kind);
+    const auto originalScreenshot =
+        toolbarSettings.layout(storage::ScreenshotToolbarLayoutKind::ActionTools);
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(toolbarSettings.setLayout(kind, originalPinned));
+        static_cast<void>(toolbarSettings.setLayout(
+            storage::ScreenshotToolbarLayoutKind::ActionTools, originalScreenshot));
+    });
+    const storage::ScreenshotToolbarLayout hidden{{}, layout::defaultOrder(kind)};
+    require(toolbarSettings.setLayout(kind, hidden),
+            "must persist a hidden pinned layout before lazy creation");
+    ScreenshotPinnedWindow window;
+    SnowCanvasWidget canvas;
+    snow_shot::presentation::WindowShortcutManager manager;
+    ScreenshotPinnedEditController controller(window, canvas, manager);
+    require(controller.toolbarWindow() == nullptr,
+            "layout settings must not eagerly create a toolbar");
+    const auto positions = [&]() {
+        QVector<QStringList> result;
+        auto* panel = controller.toolbarWindow()->palette()->mainPanel();
+        for (auto* button : panel->findChildren<adqt::widgets::AdButton*>()) {
+            const auto ids = button->property("screenshotToolbarPositionItems").toStringList();
+            if (!button->isHidden() && !ids.isEmpty() &&
+                layout::defaultOrder(kind).contains(ids.first()))
+                result.append(ids);
+        }
+        return result;
+    };
+    controller.setEditMode(true);
+    require(positions().isEmpty(), "lazy pinned toolbar must load the saved hidden layout");
+    const storage::ScreenshotToolbarLayout custom{
+        {{QStringLiteral("text-translation"), QStringLiteral("table-recognition")}},
+        {QStringLiteral("text-recognition"), QStringLiteral("barcode-recognition"),
+         QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")}};
+    require(toolbarSettings.setLayout(kind, custom), "must save the custom pinned layout");
+    QCoreApplication::processEvents();
+    require(positions() == custom.positions,
+            "existing pinned toolbar must reload its custom layout");
+    require(toolbarSettings.setLayout(storage::ScreenshotToolbarLayoutKind::ActionTools, {}),
+            "must update screenshot settings independently");
+    require(positions() == custom.positions, "screenshot settings must not change pinned groups");
+    controller.setEditMode(false);
+    controller.setEditMode(true);
+    require(positions() == custom.positions,
+            "recreated pinned toolbar must reload the persisted layout");
+    require(toolbarSettings.setLayout(kind, {}) &&
+                toolbarSettings.layout(kind) == layout::normalizedLayout({}, kind),
+            "pinned toolbar defaults must be restorable");
+    require(positions().size() == 3, "restoring defaults must refresh an existing pinned toolbar");
+    controller.setEditMode(false);
 }
 
 void pinnedEditingRecognitionShortcutsUsePaletteCommands() {
@@ -1246,10 +1439,10 @@ void cachedPinnedOcrAvailableWithoutRecognitionProvider() {
         }
     });
     require(window->present(config), "the provider-free cached pin should present");
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     QAction* action = pinnedMenuActionNamed(*window, QStringLiteral("screenshotPinnedOcrAction"));
     require(action != nullptr && action->isEnabled(),
-            "cached text must remain available without a recognition provider");
+            "cached text must be available before deferred setup without a recognition provider");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     action->trigger();
     auto* content = window->findChild<ScreenshotRecognitionWindow*>(
         QStringLiteral("screenshotPinnedRecognitionContent"));
@@ -1414,6 +1607,82 @@ void transformedPinnedOcrTracksCanvasViewport() {
             action->trigger();
             verifyAlignment();
         }
+    }
+}
+
+void fileBatchCreatesIndependentCenteredWindows() {
+    QTemporaryDir directory;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(directory.isValid() && screen != nullptr,
+            "file pin fixtures need a screen and directory");
+    require(topLevelPinnedWindows().isEmpty(), "file pin test must start without windows");
+    QStringList paths;
+    for (int index = 0; index < 3; ++index) {
+        QImage image(QSize(120 + index * 20, 80 + index * 10), QImage::Format_ARGB32_Premultiplied);
+        image.fill(QColor(30 + index * 50, 120, 180));
+        const QString path = directory.filePath(QStringLiteral("pin-%1.png").arg(index));
+        require(image.save(path, "PNG"), "file pin fixture must encode");
+        paths.append(path);
+    }
+    ScreenshotSelectionExportUiServices services;
+    for (bool autoResize : {true, false}) {
+        ScreenshotFilePinBatch batch;
+        QHash<QString, QRect> expectedGeometry;
+        int completed = 0;
+        batch.start(paths, [&](ScreenshotClipboardContent content) {
+            const auto fit =
+                autoResize
+                    ? ScreenshotGeometryMapper::fitImageToAvailableGeometry(
+                          content.image.size(), screen->availableGeometry(), screen->geometry(),
+                          ScreenshotGeometryMapper::physicalRectForScreen(*screen), 16)
+                    : ScreenshotGeometryMapper::centerImageAtFullResolution(
+                          content.image.size(), screen->availableGeometry(), screen->geometry(),
+                          ScreenshotGeometryMapper::physicalRectForScreen(*screen));
+            require(fit.valid, "each file must have valid centered geometry");
+            expectedGeometry.insert(content.originalContent.localFilePath, fit.nativeGeometry);
+            require(services.presentPinnedImage(content.image, screen, fit.nativeGeometry,
+                                                fit.fullResolutionSize, {}, {}, 1.0,
+                                                std::move(content.originalContent), {},
+                                                [&](bool success, QImage image) {
+                                                    require(success && !image.isNull(),
+                                                            "each file must complete presentation");
+                                                    ++completed;
+                                                }),
+                    "each file must present independently");
+            return true;
+        });
+        QElapsedTimer timer;
+        timer.start();
+        while ((batch.active() || completed != paths.size()) && timer.elapsed() < 10000) {
+            waitForUi(10);
+        }
+        require(!batch.active() && completed == paths.size(), "all file pins must finish");
+        QSet<QString> identities;
+        QStringList originals;
+        QVector<ScreenshotPinnedWindow*> visible;
+        for (auto* window : topLevelPinnedWindows()) {
+            if (!window->isVisible()) {
+                continue;
+            }
+            visible.append(window);
+            const auto record = window->persistenceSnapshot();
+            require(!record.id.isEmpty() && !identities.contains(record.id),
+                    "file pins need unique persistence identities");
+            identities.insert(record.id);
+            originals.append(record.originalFilePath);
+            require(window->currentNativeGeometry() ==
+                        expectedGeometry.value(record.originalFilePath),
+                    "each independent file window must retain its centered geometry");
+        }
+        originals.sort();
+        QStringList sortedPaths = paths;
+        sortedPaths.sort();
+        require(originals == sortedPaths,
+                "each window must retain only its own original file path");
+        for (auto* window : visible) {
+            window->close();
+        }
+        waitForUi(100);
     }
 }
 
@@ -1657,6 +1926,40 @@ QImage waitForClipboardImage(const std::function<bool(const QImage&)>& predicate
 }
 
 void setPinnedWindowHovered(ScreenshotPinnedWindow& window, bool hovered) {
+    const auto settlePresence = qScopeGuard([]() { waitForUi(120); });
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    // Presence resolves from the live cursor, so the native backend places the
+    // system pointer and then delivers the production NC mouse move. Message
+    // coordinates are not a second source of truth. The offscreen backend has
+    // no native window and keeps the event-driven simulation.
+    if (QGuiApplication::platformName() == QStringLiteral("windows") &&
+        window.internalWinId() != 0) {
+        const HWND hwnd = toNativeHwnd(window.internalWinId());
+        const QRect nativeGeometry = window.currentNativeGeometry();
+        require(nativeGeometry.isValid() && !nativeGeometry.isEmpty(),
+                "hover simulation requires a presented pinned window");
+        QPoint position = nativeGeometry.center();
+        if (!hovered) {
+            QScreen* screen = window.screen();
+            if (screen == nullptr) {
+                screen = QGuiApplication::primaryScreen();
+            }
+            require(screen != nullptr, "hover simulation requires a screen");
+            position = ScreenshotGeometryMapper::physicalRectForScreen(*screen).bottomRight() -
+                       QPoint(8, 8);
+            if (nativeGeometry.contains(position)) {
+                position = nativeGeometry.topLeft() - QPoint(64, 64);
+            }
+            require(!nativeGeometry.contains(position),
+                    "hover-leave simulation needs a point outside the window");
+        }
+        setSystemCursorPosition(position);
+        SendMessageW(
+            hwnd, WM_NCMOUSEMOVE, HTCAPTION,
+            MAKELPARAM(static_cast<short>(position.x()), static_cast<short>(position.y())));
+        return;
+    }
+#endif
     if (hovered) {
         const QPointF center(window.rect().center());
         QEnterEvent enter(center, center, QPointF(window.mapToGlobal(center.toPoint())));
@@ -1665,6 +1968,11 @@ void setPinnedWindowHovered(ScreenshotPinnedWindow& window, bool hovered) {
     }
     QEvent leave(QEvent::Leave);
     QCoreApplication::sendEvent(&window, &leave);
+}
+
+void setPinnedWindowActive(ScreenshotPinnedWindow& window, bool active) {
+    QEvent activation(active ? QEvent::WindowActivate : QEvent::WindowDeactivate);
+    QCoreApplication::sendEvent(&window, &activation);
 }
 
 void pinnedLargeImageRemainsOpenWhenEnteringDrawingMode(SnowCanvasRuntime&) {
@@ -2505,8 +2813,7 @@ void pinnedControlsMatchReferenceStyle(SnowCanvasRuntime&) {
                 canvas->testAttribute(Qt::WA_NoSystemBackground),
             "pinned result widgets should use per-pixel transparency");
     require(border->geometry() == pinnedWindow->rect() && border->isVisible() &&
-                border->testAttribute(Qt::WA_TransparentForMouseEvents) &&
-                !border->mask().contains(border->rect().center()),
+                border->testAttribute(Qt::WA_TransparentForMouseEvents) && border->mask().isEmpty(),
             "the pinned border should cover the edges without obstructing the canvas");
     require(editButton->shape() == adqt::widgets::AdButton::Shape::Circle &&
                 closeButton->shape() == adqt::widgets::AdButton::Shape::Circle &&
@@ -2515,6 +2822,9 @@ void pinnedControlsMatchReferenceStyle(SnowCanvasRuntime&) {
     require(panel->geometry().topRight() == QPoint(pinnedWindow->width() - 17, 16),
             "pinned controls should use the reference 16 pixel top-right inset");
 
+    // Pinning activates the window on window managers that grant focus, so drive the
+    // activation state explicitly to keep the border assertions platform-independent.
+    setPinnedWindowActive(*pinnedWindow, false);
     const QImage pinnedWindowImage = renderWidget(*pinnedWindow);
     const int middleY = pinnedWindowImage.height() / 2;
     const QColor borderColor(QStringLiteral("#DBDBDB"));
@@ -2533,6 +2843,29 @@ void pinnedControlsMatchReferenceStyle(SnowCanvasRuntime&) {
     requireColorNear(recoloredPinnedWindow.pixelColor(0, middleY), liveBorderColor, 0,
                      "a live border-color update should repaint the pinned border");
     ScreenshotPinnedWindow::setRuntimeBorderColor(borderColor);
+
+    const QColor defaultActiveBorderColor(QStringLiteral("#69B1FF"));
+    setPinnedWindowActive(*pinnedWindow, true);
+    require(border->property("borderColor").value<QColor>() == defaultActiveBorderColor,
+            "an activated pinned window should draw the active border color");
+    const QImage activatedPinnedWindow = renderWidget(*pinnedWindow);
+    requireColorNear(activatedPinnedWindow.pixelColor(0, middleY), defaultActiveBorderColor, 0,
+                     "an activated pinned window should repaint with the active border color");
+    const QColor liveActiveBorderColor(QStringLiteral("#276EF1"));
+    ScreenshotPinnedWindow::setRuntimeBorderActiveColor(liveActiveBorderColor);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    require(border->property("borderColor").value<QColor>() == liveActiveBorderColor,
+            "a live active border-color update should reach an activated pinned window");
+    const QImage activeRecoloredPinnedWindow = renderWidget(*pinnedWindow);
+    requireColorNear(activeRecoloredPinnedWindow.pixelColor(0, middleY), liveActiveBorderColor, 0,
+                     "a live active border-color update should repaint the pinned border");
+    setPinnedWindowActive(*pinnedWindow, false);
+    require(border->property("borderColor").value<QColor>() == borderColor,
+            "a deactivated pinned window should return to the regular border color");
+    const QImage deactivatedPinnedWindow = renderWidget(*pinnedWindow);
+    requireColorNear(deactivatedPinnedWindow.pixelColor(0, middleY), borderColor, 0,
+                     "a deactivated pinned window should repaint with the regular border color");
+    ScreenshotPinnedWindow::setRuntimeBorderActiveColor(defaultActiveBorderColor);
 
     const QColor mask = adqt::theme::ThemeManager::instance().resolveTheme(editButton).colorBgMask;
     const QImage editNormal = renderWidget(*editButton);
@@ -2564,6 +2897,124 @@ void pinnedControlsMatchReferenceStyle(SnowCanvasRuntime&) {
             "pinned window was not deleted after the control style test");
 }
 
+void pinnedBorderUsesTwoPhysicalPixels(SnowCanvasRuntime&) {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+
+    const QColor borderColor(QStringLiteral("#DBDBDB"));
+    ScreenshotPinnedWindow::setRuntimeBorderColor(borderColor);
+
+    const auto presentWindow = [&screen](int physicalSide) {
+        QImage background(physicalSide, physicalSide, QImage::Format_ARGB32_Premultiplied);
+        background.fill(QColor(42, 84, 126));
+        auto* pinnedWindow = new ScreenshotPinnedWindow();
+        ScreenshotPinnedWindow::Config config;
+        config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), background.size());
+        config.canvasSourceRect = QRectF(QPointF(0.0, 0.0), QSizeF(background.size()));
+        config.imageSource = ScreenshotImageSource::fromImage(background, config.canvasSourceRect);
+        config.screen = screen;
+        config.enableEditing = false;
+        require(pinnedWindow->present(config), "pinned window presentation failed");
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        setPinnedWindowActive(*pinnedWindow, false);
+        return pinnedWindow;
+    };
+    const auto renderAtScale = [](ScreenshotPinnedWindow& pinnedWindow, qreal deviceScale) {
+        // The image mirrors the paint surface the border frame anchors to:
+        // the window's device extent with each edge qRound-ed, the same
+        // convention the border frame uses.
+        QImage rendered(qRound(pinnedWindow.width() * deviceScale),
+                        qRound(pinnedWindow.height() * deviceScale),
+                        QImage::Format_ARGB32_Premultiplied);
+        rendered.setDevicePixelRatio(deviceScale);
+        rendered.fill(Qt::transparent);
+        {
+            QPainter painter(&rendered);
+            pinnedWindow.render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
+        }
+        rendered.setDevicePixelRatio(1.0);
+        return rendered;
+    };
+
+    // Scales at or below unity keep the synthetic surface within the window's
+    // native client on every screen, so the assertions below hold regardless
+    // of the monitor's scale factor.
+    const qreal renderScales[]{1.0, 0.8, 0.75};
+    for (const qreal renderScale : renderScales) {
+        auto* pinnedWindow = presentWindow(400);
+        QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
+        const QImage rendered = renderAtScale(*pinnedWindow, renderScale);
+
+        const int lastColumn = rendered.width() - 1;
+        const int lastRow = rendered.height() - 1;
+        const int middleX = rendered.width() / 2;
+        const int middleY = rendered.height() / 2;
+        for (int inset = 0; inset < 2; ++inset) {
+            requireColorNear(rendered.pixelColor(inset, middleY), borderColor, 0,
+                             "the pinned border left edge must cover two full device pixels");
+            requireColorNear(rendered.pixelColor(lastColumn - inset, middleY), borderColor, 0,
+                             "the pinned border right edge must cover two full device pixels");
+            requireColorNear(rendered.pixelColor(middleX, inset), borderColor, 0,
+                             "the pinned border top edge must cover two full device pixels");
+            requireColorNear(rendered.pixelColor(middleX, lastRow - inset), borderColor, 0,
+                             "the pinned border bottom edge must cover two full device pixels");
+        }
+        require(rendered.pixelColor(2, middleY) != borderColor &&
+                    rendered.pixelColor(lastColumn - 2, middleY) != borderColor &&
+                    rendered.pixelColor(middleX, 2) != borderColor &&
+                    rendered.pixelColor(middleX, lastRow - 2) != borderColor,
+                qPrintable(
+                    QStringLiteral("the pinned border must stop after two device pixels (scale %1)")
+                        .arg(renderScale)));
+
+        pinnedWindow->close();
+        require(processUntilDeleted(guardedWindow, 2000), "physical border pin was not deleted");
+    }
+
+    // The pinned window preserves physical pixel counts, so at fractional
+    // scale factors Qt's integer logical size maps one device row past the
+    // native client edge and the backing store is one pixel wider than the
+    // client. The border must hug the client edge, not the store edge.
+    const qreal screenScale = screen->devicePixelRatio();
+    if (qFuzzyCompare(screenScale, 1.0)) {
+        return;
+    }
+    for (int physicalSide = 400; physicalSide <= 412; ++physicalSide) {
+        auto* pinnedWindow = presentWindow(physicalSide);
+        QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
+        const int clientWidth = pinnedWindow->currentNativeGeometry().width();
+        const QImage store = renderAtScale(*pinnedWindow, screenScale);
+        const bool overshoots = clientWidth < store.width();
+        if (!overshoots) {
+            pinnedWindow->close();
+            require(processUntilDeleted(guardedWindow, 2000),
+                    "physical border pin was not deleted");
+            continue;
+        }
+
+        const int middleX = store.width() / 2;
+        const int middleY = store.height() / 2;
+        requireColorNear(store.pixelColor(clientWidth - 1, middleY), borderColor, 0,
+                         "the border must end at the native client edge, not the store edge");
+        requireColorNear(store.pixelColor(clientWidth - 2, middleY), borderColor, 0,
+                         "the border must be two device pixels wide at the native client edge");
+        require(store.pixelColor(clientWidth - 3, middleY) != borderColor,
+                "the border must stop after two device pixels before the client edge");
+        require(store.pixelColor(clientWidth, middleY) != borderColor,
+                "the store overshoot column past the client edge must stay border-free");
+        requireColorNear(store.pixelColor(middleX, clientWidth - 1), borderColor, 0,
+                         "the bottom border must end at the native client edge");
+        requireColorNear(store.pixelColor(middleX, clientWidth - 2), borderColor, 0,
+                         "the bottom border must be two device pixels wide at the client edge");
+        requireColorNear(store.pixelColor(0, middleY), borderColor, 0,
+                         "the left border must stay anchored at the client origin");
+
+        pinnedWindow->close();
+        require(processUntilDeleted(guardedWindow, 2000), "client-edge border pin was not deleted");
+        return;
+    }
+}
+
 void pinnedShortcutDisplayUsesSettingsFormat() {
     ScreenshotPinnedWindow window;
     auto* action = window.findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction"));
@@ -2573,11 +3024,19 @@ void pinnedShortcutDisplayUsesSettingsFormat() {
     require(shortcuts.setShortcuts(QStringLiteral("drawing_mode"),
                                    {QStringLiteral("Ctrl++"), QStringLiteral("Num+1")}),
             "the pinned shortcut should accept plus and keypad keys");
-    require(action->text().endsWith(QStringLiteral("\tCtrl+Plus / Num 1")),
+#ifdef Q_OS_MACOS
+    const QString expectedShortcutText =
+        QCoreApplication::testAttribute(Qt::AA_MacDontSwapCtrlAndMeta)
+            ? QStringLiteral("\tControl+Plus / Num 1")
+            : QStringLiteral("\tCommand+Plus / Num 1");
+#else
+    const QString expectedShortcutText = QStringLiteral("\tCtrl+Plus / Num 1");
+#endif
+    require(action->text().endsWith(expectedShortcutText),
             "pinned menus must use the settings key names and alternative separator");
     QEvent languageChange(QEvent::LanguageChange);
     QCoreApplication::sendEvent(&window, &languageChange);
-    require(action->text().endsWith(QStringLiteral("\tCtrl+Plus / Num 1")),
+    require(action->text().endsWith(expectedShortcutText),
             "pinned key display must retain the settings format after retranslation");
     require(shortcuts.setShortcuts(QStringLiteral("drawing_mode"), original),
             "the pinned shortcut fixture should restore its original shortcuts");
@@ -2738,6 +3197,20 @@ void pinnedNativeDragAcceptsCursorMovementShortcuts(SnowCanvasRuntime&) {
     require(screen != nullptr, "a primary screen is required");
     const CursorPositionRestorer restoreCursor;
 
+    // The move loop tracks the pointer through GetCursorPos, and the cursor
+    // shortcuts relocate it through the platform cursor APIs. Track every
+    // delta in that same platform cursor space; reading the physical cursor
+    // here instead can disagree by a scaling factor on hosts whose reported
+    // display scale does not match the active mode.
+    const auto platformCursorPosition = []() {
+        POINT position{};
+        require(GetCursorPos(&position) != FALSE, "failed to read the platform cursor position");
+        return QPoint(position.x, position.y);
+    };
+    const auto setPlatformCursorPosition = [](const QPoint& position) {
+        require(SetCursorPos(position.x(), position.y()) != FALSE,
+                "failed to set the platform cursor position");
+    };
     const snow_shot::storage::PinToScreenShortcutSettings shortcuts;
     const QString actionId = QStringLiteral("move_cursor_up");
     const QStringList previousShortcuts = shortcuts.shortcuts(actionId);
@@ -2761,7 +3234,7 @@ void pinnedNativeDragAcceptsCursorMovementShortcuts(SnowCanvasRuntime&) {
 
     const QRect startingGeometry = pinnedWindow->currentNativeGeometry();
     const QPoint startingCursor = startingGeometry.center();
-    setSystemCursorPosition(startingCursor);
+    setPlatformCursorPosition(startingCursor);
     waitForUi(50);
 
     static_cast<void>(SendMessageW(
@@ -2771,10 +3244,10 @@ void pinnedNativeDragAcceptsCursorMovementShortcuts(SnowCanvasRuntime&) {
     SendMessageW(hwnd, WM_CAPTURECHANGED, 0, 0);
     static_cast<void>(SendMessageW(hwnd, WM_ENTERSIZEMOVE, 0, 0));
 
-    const QPoint cursorBeforeShortcut = systemCursorPosition();
+    const QPoint cursorBeforeShortcut = platformCursorPosition();
     const QPoint windowPositionBeforeShortcut = pinnedWindow->currentNativeGeometry().topLeft();
     sendShortcut(*pinnedWindow, Qt::Key_W);
-    const QPoint cursorAfterShortcuts = systemCursorPosition();
+    const QPoint cursorAfterShortcuts = platformCursorPosition();
     // USER32 reacts to cursor movement with WM_MOVING on its next iteration.
     RECT shortcutProposal =
         nativeRectForQRect(startingGeometry.translated(cursorAfterShortcuts - startingCursor));
@@ -2792,8 +3265,8 @@ void pinnedNativeDragAcceptsCursorMovementShortcuts(SnowCanvasRuntime&) {
     // the application the proposed rectangle through WM_MOVING; emulate that
     // proposal for the follow-up pointer movement.
     const QPoint pointerDelta(7, 3);
-    const QPoint cursorBeforePointerMove = systemCursorPosition();
-    setSystemCursorPosition(cursorAfterShortcuts + pointerDelta);
+    const QPoint cursorBeforePointerMove = platformCursorPosition();
+    setPlatformCursorPosition(cursorAfterShortcuts + pointerDelta);
     RECT movingProposal =
         nativeRectForQRect(pinnedWindow->currentNativeGeometry().translated(pointerDelta));
     require(SendMessageW(hwnd, WM_MOVING, 0, reinterpret_cast<LPARAM>(&movingProposal)) == TRUE,
@@ -2801,10 +3274,10 @@ void pinnedNativeDragAcceptsCursorMovementShortcuts(SnowCanvasRuntime&) {
     const RECT acceptedMove = movingProposal;
     SetWindowPos(hwnd, nullptr, acceptedMove.left, acceptedMove.top, 0, 0,
                  SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-    const QPoint actualPointerDelta = systemCursorPosition() - cursorBeforePointerMove;
-    const bool windowFollowedPointer =
-        pinnedWindow->currentNativeGeometry().topLeft() - windowPositionAfterShortcuts ==
-        actualPointerDelta;
+    const QPoint actualPointerDelta = platformCursorPosition() - cursorBeforePointerMove;
+    const QPoint pointerWindowDelta =
+        pinnedWindow->currentNativeGeometry().topLeft() - windowPositionAfterShortcuts;
+    const bool windowFollowedPointer = pointerWindowDelta == actualPointerDelta;
     static_cast<void>(SendMessageW(hwnd, WM_EXITSIZEMOVE, 0, 0));
     static_cast<void>(SendMessageW(hwnd, WM_LBUTTONUP, 0, 0));
     waitForUi(50);
@@ -3671,6 +4144,8 @@ void pinnedGeometryQueriesDoNotCreateNativeWindows() {
     QCoreApplication::sendEvent(&window, &enter);
     require(window.internalWinId() == 0,
             "hover delivery must not create an unpresented native window");
+    require(ScreenshotPinnedWindowTestAccess::pointerInside(window),
+            "hover delivery without a native window must apply event-derived presence immediately");
 
     window.show();
     window.close();
@@ -3679,11 +4154,15 @@ void pinnedGeometryQueriesDoNotCreateNativeWindows() {
     }
     require(window.internalWinId() == 0, "the closed fixture must have no native window");
     QCoreApplication::sendEvent(&window, &enter);
+    require(!ScreenshotPinnedWindowTestAccess::pointerPresenceTimer(window).isActive(),
+            "late hover delivery must not schedule a transition after close");
     QEvent leave(QEvent::Leave);
     QCoreApplication::sendEvent(&window, &leave);
     static_cast<void>(window.currentNativeGeometry());
     require(window.internalWinId() == 0,
             "late hover and geometry queries must not recreate a closed native window");
+    require(!ScreenshotPinnedWindowTestAccess::pointerInside(window),
+            "leave delivery without a native window must clear event-derived presence");
 
     // Full pin presentation installs HWND hooks and cannot run with the offscreen backend.
     // The Windows registration also exercises passive reconciliation after native destruction.
@@ -3710,6 +4189,154 @@ void pinnedGeometryQueriesDoNotCreateNativeWindows() {
     require(presentedWindow.internalWinId() == 0,
             "passive geometry reconciliation must not recreate a native window");
     presentedWindow.close();
+}
+
+void pinnedPointerPresenceIsDebounced() {
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    auto& timer = ScreenshotPinnedWindowTestAccess::pointerPresenceTimer(window);
+    const auto inside = [&]() { return ScreenshotPinnedWindowTestAccess::pointerInside(window); };
+    const auto expire = [&]() {
+        timer.stop();
+        require(QMetaObject::invokeMethod(&timer, "timeout"), "deliver presence timeout");
+    };
+    QEnterEvent enter(QPointF(10, 10), QPointF(10, 10), QPointF(10, 10));
+    QEvent leave(QEvent::Leave);
+    require(timer.interval() == 100 && timer.isSingleShot() &&
+                timer.timerType() == Qt::PreciseTimer,
+            "hiding must wait at least 100 ms");
+    QCoreApplication::sendEvent(&window, &enter);
+    require(inside() && !timer.isActive(), "enter must reveal controls immediately");
+    QCoreApplication::sendEvent(&window, &enter);
+    require(inside() && !timer.isActive(), "repeated entry must not schedule hiding");
+    QCoreApplication::sendEvent(&window, &leave);
+    require(inside() && timer.isActive(), "leave must not change presence immediately");
+    const auto timerId = timer.id();
+    QCoreApplication::sendEvent(&window, &leave);
+    require(timer.id() == timerId, "repeated leave must not restart the delay");
+    QCoreApplication::sendEvent(&window, &enter);
+    require(inside() && !timer.isActive(), "brief exit must cancel without hiding controls");
+    QCoreApplication::sendEvent(&window, &leave);
+    expire();
+    require(!inside(), "stable exit must commit on timeout");
+    QCoreApplication::sendEvent(&window, &enter);
+    QCoreApplication::sendEvent(&window, &leave);
+    QEvent hide(QEvent::Hide);
+    QCoreApplication::sendEvent(&window, &hide);
+    require(!inside() && !timer.isActive(), "hiding must cancel pending presence");
+    QCoreApplication::sendEvent(&window, &enter);
+    QCoreApplication::sendEvent(&window, &leave);
+    window.close();
+    require(!inside() && !timer.isActive(), "closing must cancel pending presence");
+}
+
+void pinnedControlsPresenceFollowsLiveCursor() {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    // Regression for the unstable hover reveal: USER32's leave tracking and
+    // Qt's synthesized Enter/Leave both follow the client area and are queued,
+    // while the pinned image surface is non-client. Presence must therefore be
+    // resolved from the live cursor against the complete window frame instead
+    // of the stale event semantics.
+    if (QGuiApplication::platformName() != QStringLiteral("windows")) {
+        return; // The regression needs a real HWND and the system cursor.
+    }
+    const auto settleInto = [](const std::function<bool()>& condition, const char* what) {
+        QElapsedTimer elapsed;
+        elapsed.start();
+        while (elapsed.elapsed() < 2000) {
+            QApplication::processEvents(QEventLoop::AllEvents, 20);
+            if (condition()) {
+                return;
+            }
+            QThread::msleep(1);
+        }
+        require(condition(), what);
+    };
+    const CursorPositionRestorer cursorRestorer;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "the pointer presence fixture needs a screen");
+    QImage background(600, 400, QImage::Format_ARGB32_Premultiplied);
+    background.fill(Qt::white);
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    ScreenshotPinnedWindow::Config config;
+    config.screen = screen;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), background.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
+    config.imageSource = ScreenshotImageSource::fromImage(background, config.canvasSourceRect);
+    config.automaticTextRecognition = false;
+    require(window.present(config), "the pointer presence fixture must present");
+    waitForUi(200);
+
+    auto* controlsPanel =
+        window.findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
+    require(controlsPanel != nullptr, "the pointer presence fixture needs a controls panel");
+
+    const QRect nativeGeometry = window.currentNativeGeometry();
+    const QPoint outsidePoint =
+        ScreenshotGeometryMapper::physicalRectForScreen(*screen).bottomRight() - QPoint(8, 8);
+    require(!nativeGeometry.contains(outsidePoint),
+            "the pointer presence fixture window must not cover the screen corner");
+
+    setSystemCursorPosition(outsidePoint);
+    settleInto([&] { return !controlsPanel->isVisible(); },
+               "controls must stay hidden while the cursor is outside the window");
+
+    setSystemCursorPosition(nativeGeometry.center());
+    settleInto([&] { return controlsPanel->isVisible(); },
+               "hovering inside the window must reveal the controls");
+
+    const HWND hwnd = toNativeHwnd(window.internalWinId());
+    require(hwnd != nullptr, "the pointer presence fixture needs a native window");
+    SendMessageW(
+        hwnd, WM_NCMOUSEMOVE, HTCAPTION,
+        MAKELPARAM(static_cast<short>(outsidePoint.x()), static_cast<short>(outsidePoint.y())));
+    require(controlsPanel->isVisible(),
+            "stale mouse-message coordinates must not hide controls while the cursor is inside");
+
+    // A queued leave delivered while the cursor still rests inside the window
+    // (the observed instability) must not hide the controls.
+    QEvent leave(QEvent::Leave);
+    QCoreApplication::sendEvent(&window, &leave);
+    require(controlsPanel->isVisible(),
+            "a queued leave while the cursor is inside must keep the controls visible");
+
+    // Leaving across the resize frame and the non-client image must hide them.
+    setSystemCursorPosition(outsidePoint);
+    settleInto([&] { return !controlsPanel->isVisible(); },
+               "leaving the window must hide the controls");
+
+    SendMessageW(hwnd, WM_NCMOUSEMOVE, HTCAPTION,
+                 MAKELPARAM(static_cast<short>(nativeGeometry.center().x()),
+                            static_cast<short>(nativeGeometry.center().y())));
+    require(!controlsPanel->isVisible(),
+            "stale mouse-message coordinates must not reveal controls while the cursor is outside");
+
+    // A queued enter delivered after the pointer already left must not show them.
+    QEnterEvent enter(QPointF(10, 10), QPointF(10, 10), QPointF(10, 10));
+    QCoreApplication::sendEvent(&window, &enter);
+    require(!controlsPanel->isVisible(),
+            "a queued enter while the cursor is outside must keep the controls hidden");
+
+    // Relocating geometry under a stationary pointer (thumbnail transition,
+    // keyboard move, restore animation) produces no mouse message; presence
+    // must be re-evaluated as the geometry settles.
+    setSystemCursorPosition(nativeGeometry.center());
+    settleInto([&] { return controlsPanel->isVisible(); },
+               "hovering inside the window must reveal the controls");
+    auto* thumbnail = window.findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
+    require(thumbnail != nullptr, "the pointer presence fixture needs the thumbnail action");
+    thumbnail->setChecked(true);
+    waitForUi(300);
+    thumbnail->setChecked(false);
+    settleInto(
+        [&] {
+            return window.currentNativeGeometry() == nativeGeometry && controlsPanel->isVisible();
+        },
+        "controls must reappear once geometry settles back under the stationary cursor");
+
+    window.close();
+#endif
 }
 
 void pinnedEscapeBurst(bool nativeKeys = false) {
@@ -4096,6 +4723,46 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
             "system resizing requires WS_THICKFRAME on the pinned HWND");
     require(nativeChildWindowCount(pinnedHwnd) == 0,
             "the scaling pin should contain no native child windows");
+    // The 500 and 10 percent clamp cycles above keep the pin anchored at its
+    // top-left, which can park the window outside the region a system cursor
+    // can reach. Hover presence resolves from the live cursor, so bring the
+    // pin back inside the primary display through the programmatic move path
+    // before the native interaction checks. The reachable bounds come from
+    // USER32 rather than Qt: the two can disagree about the active display
+    // mode, and the cursor can only reach what the OS actually drives. The
+    // primary monitor is used because the input stack on some hosts confines
+    // the cursor to it even when further monitors are attached.
+    const QRect reachableBounds(0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+    require(reachableBounds.isValid() && !reachableBounds.isEmpty(),
+            "the native interaction checks need a non-empty primary display");
+    {
+        const QRect windowGeometry = pinnedWindow->currentNativeGeometry();
+        const QPoint desiredTopLeft(
+            reachableBounds.left() +
+                std::max(0, (reachableBounds.width() - windowGeometry.width()) / 2),
+            reachableBounds.top() +
+                std::max(0, (reachableBounds.height() - windowGeometry.height()) / 2));
+        require(ScreenshotPinnedWindowTestAccess::moveWindow(
+                    *pinnedWindow, QRect(desiredTopLeft, windowGeometry.size())),
+                "the reposition onto the reachable display was not accepted");
+        waitForUi(80);
+    }
+    // Crossing monitors can leave a DPI transition settling. Wait for the controller
+    // to commit the actual native rectangle before sending any resize proposals.
+    const auto repositionSettled = [pinnedWindow] {
+        return ScreenshotPinnedWindowTestAccess::geometrySettled(*pinnedWindow);
+    };
+    {
+        QElapsedTimer settleTimer;
+        settleTimer.start();
+        while (!repositionSettled() && settleTimer.elapsed() < 3000) {
+            QApplication::processEvents(QEventLoop::AllEvents, 20);
+            QThread::msleep(5);
+        }
+    }
+    require(repositionSettled(), "the pin should settle after moving onto the reachable display");
+    require(reachableBounds.contains(pinnedWindow->currentNativeGeometry().center()),
+            "the native interaction checks need a pin the system cursor can reach");
     PaintEventCounter canvasPaints(*canvas);
 
     const auto nativeHitTest = [pinnedHwnd](const QPoint& position) {
@@ -4131,15 +4798,14 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
             "ordinary image content should hit the single pinned surface as a caption");
     {
         const CursorPositionRestorer restoreCursorPosition;
-        QCursor::setPos(pinnedWindow->mapToGlobal(pinnedWindow->rect().center()));
-        waitForUi(20);
-
         setPinnedWindowHovered(*pinnedWindow, false);
         require(controlsPanel->isHidden(),
                 "the native caption hover test should start with hidden controls");
+        setSystemCursorPosition(hitTestCenter);
         SendMessage(
             pinnedHwnd, WM_NCMOUSEMOVE, HTCAPTION,
             MAKELPARAM(static_cast<WORD>(hitTestCenter.x()), static_cast<WORD>(hitTestCenter.y())));
+        waitForUi(120);
         require(controlsPanel->isVisible(),
                 "a native caption hover should reveal the pinned controls");
 
@@ -4706,6 +5372,235 @@ void restoredPinnedWindowIgnoresMonitorDpiChange(SnowCanvasRuntime&) {
     closeRestoredPinnedWindow(restoredWindow, record.id);
 }
 
+void pinnedHideToTopIntegration(bool native) {
+    const snow_shot::storage::PinToScreenSettings settings;
+    const snow_shot::storage::PinToScreenShortcutSettings shortcuts;
+    const QString oldDouble = settings.doubleClickAction();
+    const QString oldMiddle = settings.middleMouseButtonAction();
+    require(settings.setDoubleClickAction(QStringLiteral("hide_to_top")) &&
+                settings.setMiddleMouseButtonAction(QStringLiteral("hide_to_top")),
+            "mouse settings must accept hide-to-top");
+    QScreen* screen = QGuiApplication::primaryScreen();
+    const auto monitor = screenshot_pinned_hide_to_top::screenGeometry(screen);
+    ScreenshotPinnedWindow::Config config;
+    config.screen = screen;
+    config.nativeGeometry = QRect(monitor.workArea.topLeft() + QPoint(80, 160), QSize(320, 240));
+    config.canvasSourceRect = QRectF(0, 0, 320, 240);
+    config.fullResolutionScaleBasis = QSize(320, 240);
+    QImage image(320, 240, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    config.automaticTextRecognition = false;
+    config.restorePersistentState = true;
+    ScreenshotPinnedWindow window;
+    if (native) {
+        require(window.present(config), "native hide-to-top pin must present");
+        window.setAttribute(Qt::WA_DeleteOnClose, false);
+        waitForUi(40);
+    } else {
+        ScreenshotPinnedWindowTestAccess::restoreOffscreen(window, config);
+        require(ScreenshotPinnedWindowTestAccess::moveWindow(window, config.nativeGeometry),
+                "offscreen hide-to-top pin must start at its configured geometry");
+        window.show();
+    }
+    auto& controller = ScreenshotPinnedWindowTestAccess::hideToTop(window);
+    auto* action = window.findChild<QAction*>(QStringLiteral("screenshotPinnedHideToTopAction"));
+    auto* thumbnail = window.findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
+    auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedContextMenu"));
+    require(action && thumbnail && menu &&
+                menu->actions().indexOf(action) == menu->actions().indexOf(thumbnail) + 1,
+            "Hide to Top must immediately follow Thumbnail mode");
+    const auto enter = [&] {
+        action->trigger();
+        require(controller.active(), "menu action must enter hide-to-top");
+        controller.animation().pause();
+    };
+    enter();
+    controller.animation().setCurrentTime(125);
+    const auto enteringSnapshot = window.persistenceSnapshot();
+    require(enteringSnapshot.hideToTopMode && enteringSnapshot.opacityPercent == 100 &&
+                enteringSnapshot.nativeGeometry.top() ==
+                    enteringSnapshot.hideToTopHandleNativeGeometry.bottom() + 1,
+            "entry persistence must use configured opacity and shown geometry");
+    action->trigger();
+    require(!controller.active() && window.currentNativeGeometry() == config.nativeGeometry,
+            "canceling entry must restore original geometry");
+    ScreenshotPinnedWindowTestAccess::doubleForHideTest(window);
+    require(controller.active(), "double-click must toggle mode on");
+    ScreenshotPinnedWindowTestAccess::doubleForHideTest(window);
+    require(!controller.active(), "stationary double-click must toggle mode off");
+    ScreenshotPinnedWindowTestAccess::middleForHideTest(window);
+    require(controller.active(), "middle-click must toggle mode on");
+    ScreenshotPinnedWindowTestAccess::middleForHideTest(window);
+    require(!controller.active(), "middle-click must toggle mode off");
+    enter();
+    controller.animation().resume();
+    controller.animation().setCurrentTime(250);
+    require(!window.isVisible() && !window.isActiveWindow(),
+            "hidden pin must release visibility and activation");
+#ifdef Q_OS_WIN
+    std::optional<CursorPositionRestorer> cursorRestorer;
+    if (native) {
+        cursorRestorer.emplace();
+        const QPoint hover = controller.handleGeometry().center();
+        require(SetCursorPos(hover.x(), hover.y()) != FALSE, "position cursor on native handle");
+    }
+#endif
+    const auto hoverHandle = [&](bool inside) {
+        const QPoint position = inside ? controller.handleGeometry().center()
+                                       : monitor.workArea.bottomRight() - QPoint(8, 8);
+        // Hold the test cursor in the region while native messages settle.
+        // A single warp can be displaced by queued desktop pointer input.
+        QElapsedTimer elapsed;
+        elapsed.start();
+        do {
+            if (native) {
+                setSystemCursorPosition(position);
+            } else {
+                QCursor::setPos(position);
+            }
+            controller.updatePointer(position);
+            waitForUi(10);
+        } while (elapsed.elapsed() < 2000 && window.isVisible() != inside);
+    };
+    hoverHandle(true);
+    require(window.isVisible() &&
+                controller.state() == ScreenshotPinnedHideToTopController::State::Revealed,
+            "handle must reveal the real pinned window");
+#ifdef Q_OS_WIN
+    if (native) {
+        require(GetForegroundWindow() == toNativeHwnd(window.winId()),
+                "hover must activate the native pin");
+    }
+#endif
+#ifdef Q_OS_WIN
+    if (native) {
+        require(screenshot_pinned_window_native::currentClientGeometry(
+                    controller.handleWidget()->winId()) ==
+                    screenshot_pinned_hide_to_top::hitGeometry(controller.handleGeometry(),
+                                                               monitor.workArea, monitor.dpi),
+                "native handle must occupy its DPI-scaled hover rectangle");
+    }
+#endif
+    const QPoint anchor = window.currentNativeGeometry().topLeft();
+    ScreenshotPinnedWindowTestAccess::scaleForHideTest(window, true);
+    require(controller.active() && window.currentNativeGeometry().topLeft() == anchor &&
+                window.currentNativeGeometry().size() == QSize(480, 360),
+            "wheel scaling must retain the top-left anchor and mode");
+    ScreenshotPinnedWindowTestAccess::scaleForHideTest(window, false);
+    ScreenshotPinnedWindowTestAccess::transformForHideTest(window, false);
+    require(controller.active() && window.persistenceSnapshot().nativeGeometry.topLeft() == anchor,
+            "rotation must preserve hide-to-top and its anchor");
+    ScreenshotPinnedWindowTestAccess::transformForHideTest(window, true);
+    ScreenshotPinnedWindowTestAccess::opacityForHideTest(window);
+    require(controller.active() && window.persistenceSnapshot().opacityPercent == 50,
+            "opacity adjustment must retain mode and configured opacity");
+    QWheelEvent opacityWheel(
+        QPointF(window.rect().center()), QPointF(window.mapToGlobal(window.rect().center())),
+        QPoint(), QPoint(0, 120), Qt::NoButton, Qt::ControlModifier, Qt::NoScrollPhase, false);
+    QCoreApplication::sendEvent(&window, &opacityWheel);
+    require(opacityWheel.isAccepted() && controller.active() &&
+                window.persistenceSnapshot().opacityPercent == 55,
+            "Ctrl+wheel must change configured opacity without leaving hide-to-top");
+    hoverHandle(false);
+    require(!window.isVisible(), "leaving the real window must hide it after the delay");
+    hoverHandle(true);
+    QKeyEvent move(QEvent::KeyPress, Qt::Key_D, Qt::NoModifier);
+    QCoreApplication::sendEvent(&window, &move);
+    require(!controller.active() && window.isVisible(), "keyboard movement must exit the mode");
+#ifdef Q_OS_WIN
+    if (native) {
+        enter();
+        controller.animation().resume();
+        controller.animation().setCurrentTime(250);
+        hoverHandle(true);
+        require(ScreenshotPinnedWindowTestAccess::nativeMoveForHideTest(window, false) &&
+                    controller.active(),
+                "a stationary native move transaction must retain the mode");
+        require(ScreenshotPinnedWindowTestAccess::nativeMoveForHideTest(window, true) &&
+                    !controller.active(),
+                "accepted native movement must exit without interrupting its transaction");
+        enter();
+        require(ScreenshotPinnedWindowTestAccess::nativeResizeForHideTest(window) &&
+                    !controller.active(),
+                "accepted native resizing must exit without interrupting its transaction");
+    }
+#endif
+    enter();
+    ScreenshotPinnedWindowTestAccess::thumbnailForHideTest(window, true);
+    require(!controller.active() && window.persistenceSnapshot().thumbnailMode,
+            "thumbnail entry must exit hide-to-top");
+    const QRect expanded = window.persistenceSnapshot().preThumbnailNativeGeometry;
+    enter();
+    if (window.currentNativeGeometry() != expanded) {
+        qWarning() << "Hide-to-top expanded geometry" << expanded << "actual"
+                   << window.currentNativeGeometry() << "state"
+                   << static_cast<int>(controller.state()) << "time"
+                   << controller.animation().currentTime();
+    }
+    require(!window.persistenceSnapshot().thumbnailMode &&
+                window.currentNativeGeometry() == expanded,
+            "hide-to-top must restore expanded thumbnail geometry first");
+    controller.exit(true);
+    enter();
+    QMetaObject::invokeMethod(menu, "aboutToShow", Qt::DirectConnection);
+    require(!controller.active() && !action->isChecked(),
+            "opening a menu must exit before refreshing checks");
+    enter();
+    ScreenshotPinnedWindowTestAccess::recognitionForHideTest(window);
+    require(!controller.active(), "recognition entry must immediately exit");
+    enter();
+    ScreenshotPinnedWindowTestAccess::editForHideTest(window);
+    require(!controller.active(), "editing must immediately exit");
+    require(shortcuts.setShortcuts(QStringLiteral("hide_to_top"), {QStringLiteral("Ctrl+Alt+H")}),
+            "hide-to-top shortcut must be remappable");
+    require(action->property("screenshotPinnedShortcutDisplay")
+                    .toString()
+                    .contains(QStringLiteral("H")) &&
+                action->property("screenshotPinnedShortcutDisplay").toString() !=
+                    QStringLiteral("H"),
+            "remapping must update the menu shortcut display");
+    const auto sendKey = [&](Qt::KeyboardModifiers modifiers) {
+        QKeyEvent press(QEvent::KeyPress, Qt::Key_H, modifiers);
+        QCoreApplication::sendEvent(&window, &press);
+        QKeyEvent release(QEvent::KeyRelease, Qt::Key_H, modifiers);
+        QCoreApplication::sendEvent(&window, &release);
+    };
+    sendKey(Qt::ControlModifier | Qt::AltModifier);
+    require(controller.active(), "the remapped local shortcut must enter hide-to-top");
+    sendKey(Qt::NoModifier);
+    require(controller.active(), "the previous shortcut must stop toggling after remapping");
+    sendKey(Qt::ControlModifier | Qt::AltModifier);
+    require(!controller.active(), "the remapped shortcut must toggle off during animation");
+    require(shortcuts.setShortcuts(QStringLiteral("hide_to_top"), {QStringLiteral("H")}),
+            "restore default hide shortcut");
+    require(settings.setDoubleClickAction(oldDouble) &&
+                settings.setMiddleMouseButtonAction(oldMiddle),
+            "restore mouse action settings");
+    if (native) {
+#ifdef Q_OS_WIN
+        const QPoint away = monitor.workArea.bottomRight() - QPoint(20, 20);
+        require(SetCursorPos(away.x(), away.y()) != FALSE,
+                "move cursor away before hidden restore");
+#endif
+        ScreenshotPinnedWindow restored;
+        config.persistedHideToTopMode = true;
+        config.persistedHideToTopHandleNativeGeometry =
+            enteringSnapshot.hideToTopHandleNativeGeometry;
+        config.persistedHideToTopAccentIndex = enteringSnapshot.hideToTopAccentIndex;
+        bool completed = false;
+        require(restored.present(config, [&](bool success, QImage) { completed = success; }),
+                "hidden restoration must present successfully");
+        restored.setAttribute(Qt::WA_DeleteOnClose, false);
+        waitForUi(80);
+        auto& restoredController = ScreenshotPinnedWindowTestAccess::hideToTop(restored);
+        require(completed && restoredController.active() && !restored.isVisible() &&
+                    restoredController.handleWidget()->isVisible(),
+                "native first-frame completion must restore directly to the hidden state");
+    }
+}
+
 void restoredThumbnailStateOffscreen(const QString& scenario) {
     ScreenshotPinnedWindow::Config config;
     config.nativeGeometry = QRect(40, 30, 120, 120);
@@ -4853,8 +5748,15 @@ void thumbnailReentryPreservesExpandedGeometry(bool scaleDuringExpansion = false
         scale->actions().at(3)->trigger();
         require(animation->state() == QAbstractAnimation::Stopped,
                 "scaling during thumbnail expansion must cancel the pending animation");
+        const QRect applied = window->currentNativeGeometry();
         waitForUi(250);
         const QRect expected(expanded.topLeft(), record.initialPhysicalSize);
+        if (window->currentNativeGeometry() != expected ||
+            window->persistenceSnapshot().nativeGeometry != expected) {
+            qWarning() << "Interrupted thumbnail scale" << "expected" << expected << "applied"
+                       << applied << "settled" << window->currentNativeGeometry() << "snapshot"
+                       << window->persistenceSnapshot().nativeGeometry;
+        }
         require(window->currentNativeGeometry() == expected &&
                     window->persistenceSnapshot().nativeGeometry == expected,
                 "a new scale command must replace the pending expansion in live and saved state");
@@ -5314,6 +6216,11 @@ void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
 
     QPushButton* confirmButton = buttonNamed(*toolbar, QStringLiteral("Confirm edit"));
     require(confirmButton != nullptr, "pinned edit confirm button was not found");
+    // The controls panel follows live pointer presence, and the editing
+    // sequence above takes long enough for the pointer state to re-resolve.
+    // Re-establish the hover so the assertion below covers the edit exit, not
+    // unrelated pointer drift.
+    setPinnedWindowHovered(*pinnedWindow, true);
     confirmButton->click();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     require(controlsPanel->isVisible(), "pinned controls should return after confirming the edit");
@@ -5967,12 +6874,26 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 #endif
+        if (app.arguments().contains(QStringLiteral("--hide-to-top-only"))) {
+            runPinnedHideToTopControllerTests();
+            pinnedHideToTopIntegration(false);
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--hide-to-top-native-only"))) {
+            pinnedHideToTopIntegration(true);
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--scale-readout-only"))) {
             pinnedReadoutOffscreen();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--passive-geometry-only"))) {
             pinnedGeometryQueriesDoNotCreateNativeWindows();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--pointer-presence-only"))) {
+            pinnedPointerPresenceIsDebounced();
+            pinnedControlsPresenceFollowsLiveCursor();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--escape-activation-only"))) {
@@ -6057,6 +6978,10 @@ int main(int argc, char* argv[]) {
             pinnedWindowPoolReusesAndReplenishesPreparedShell();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--scaling-resize-only"))) {
+            pinnedScalingAndAspectLockedResizing(sourceRuntime);
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--qr-copy-only"))) {
             pinnedQrResultCopiesWithKeyboardShortcut();
             return 0;
@@ -6079,6 +7004,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--invalid-ocr-restore-only"))) {
             restoredInvalidOcrDoesNotSuppressRecognition();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--pinned-toolbar-layout-only"))) {
+            pinnedToolbarLayoutReloadsAndResetsIndependently();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--recognition-shortcut-only"))) {
@@ -6120,6 +7049,11 @@ int main(int argc, char* argv[]) {
             restoredThumbnailScaleMenuStaysConsistentThroughExit(sourceRuntime);
             restoredFractionalScaleCopiesTheDisplayedViewport(sourceRuntime);
             restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(sourceRuntime);
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--file-pin-batch-only"))) {
+            fileBatchCreatesIndependentCenteredWindows();
+            ScreenshotExportCoordinator::shared().shutdown();
             return 0;
         }
         for (const QString& scenario : {QStringLiteral("appearance"), QStringLiteral("dpi"),
@@ -6167,6 +7101,7 @@ int main(int argc, char* argv[]) {
         }
         pinnedContextMenuPreservesNativeGeometry(sourceRuntime);
         pinnedPhysicalPixelsFillClientArea(sourceRuntime);
+        pinnedBorderUsesTwoPhysicalPixels(sourceRuntime);
         pinnedScalingAndAspectLockedResizing(sourceRuntime);
         pinnedSettledWheelScalingAdvancesPastRoundedLevel(sourceRuntime);
         pinnedWheelScalingUsesConfiguredAnchor(sourceRuntime);

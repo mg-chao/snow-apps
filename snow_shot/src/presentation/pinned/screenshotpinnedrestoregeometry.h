@@ -23,11 +23,13 @@ struct SavedState {
     // Empty when the record did not capture the saving monitor; such
     // records are restored at their saved coordinates without re-basing.
     QRect screenPhysicalBounds;
+    QRect hideToTopHandleNativeGeometry;
 };
 
 struct RestoredState {
     QRect nativeGeometry;
     QRect preThumbnailNativeGeometry;
+    QRect hideToTopHandleNativeGeometry;
 };
 
 // Re-bases every persisted geometry from the saving monitor onto the target
