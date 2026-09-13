@@ -32,6 +32,7 @@
 #include <QDir>
 #include <QStandardPaths>
 #include <QSysInfo>
+#include "snow_capture.h"
 
 #ifdef Q_OS_WIN
 #include <Windows.h>
@@ -61,6 +62,40 @@ int main(int argc, char* argv[]) {
     }
     QCoreApplication::setApplicationName(applicationName);
     QCoreApplication::setApplicationVersion(QStringLiteral(SNOW_DIAGNOSTICS_VERSION));
+    // Package QA uses the ordinary FFI and linked vendor encoders, without
+    // opening UI, taking the singleton, or modifying the user's settings.
+    if ((argc == 4 || argc == 5) && QString::fromLocal8Bit(argv[1]) == u"--recording-gpu-probe") {
+        QCoreApplication probe(argc, argv);
+        const QByteArray path = QString::fromLocal8Bit(argv[2]).toUtf8();
+        const QString backend = QString::fromLocal8Bit(argv[3]);
+        if (backend != u"dxgi" && backend != u"wgc") {
+            return 2;
+        }
+        const bool recover = argc == 5;
+        if (recover && QString::fromLocal8Bit(argv[4]) != u"recover") {
+            return 2;
+        }
+        SnowCaptureDirectRecordingConfig config{};
+        config.version = SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION;
+        config.struct_size = sizeof(config);
+        config.width = 640;
+        config.height = 480;
+        config.capture_backend = backend == u"dxgi" ? 1 : 2;
+        config.output_file_utf8 = path.constData();
+        config.capture_fps = 30;
+        config.output_fps = 30;
+        config.preset = 1;
+        config.encoder_preference = 1;
+        config.enable_system_audio = 1;
+        config.show_cursor = 1;
+        config.mouse_trail_duration_ms = 500;
+        config.keyboard_size = 64;
+        const auto result = snow_capture_recording_gpu_probe(&config, recover ? 1 : 0);
+        if (result != SNOW_CAPTURE_RESULT_OK) {
+            qWarning().noquote() << snow_capture_last_error_message();
+        }
+        return result == SNOW_CAPTURE_RESULT_OK ? 0 : 1;
+    }
     // A probe runs before diagnostics, singleton acquisition, or any live user-state access.
     if (argc == 3 && QString::fromLocal8Bit(argv[1]) == u"--update-probe") {
         if (QString::fromLocal8Bit(argv[2]) != QCoreApplication::applicationVersion()) {

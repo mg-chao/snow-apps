@@ -8024,8 +8024,8 @@ fn select_software_h264_codec(priority: SoftwareH264Priority) -> Option<ffmpeg::
 }
 
 fn select_hardware_h264_codec() -> Option<ffmpeg::Codec> {
-    // Only h264_mf is part of the shipped FFmpeg build; the remaining entries
-    // cover FFmpeg builds that also enable the vendor-specific encoders.
+    // Preserve the CPU-input callers' Media Foundation preference. Direct GPU
+    // recording separately selects the encoder matching its D3D11 adapter.
     ["h264_mf", "h264_nvenc", "h264_qsv", "h264_amf"]
         .into_iter()
         .find_map(ffmpeg::encoder::find_by_name)

@@ -4,6 +4,8 @@ pub mod config;
 pub mod editing;
 pub mod error;
 pub mod export;
+#[cfg(windows)]
+pub mod gpu;
 pub mod resize;
 pub mod streaming;
 

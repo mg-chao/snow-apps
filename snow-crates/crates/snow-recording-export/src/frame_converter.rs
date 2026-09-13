@@ -17,6 +17,9 @@ impl Drop for FrameConverter {
 }
 
 impl FrameConverter {
+    pub(crate) fn use_bt709(&mut self) -> Result<()> {
+        unsafe { crate::streaming::configure_bt709_scaler(self.context) }
+    }
     #[cfg(any(test, feature = "bench-experiments"))]
     pub(crate) fn thread_count(&self) -> Option<usize> {
         // SAFETY: this converter owns its initialized context.

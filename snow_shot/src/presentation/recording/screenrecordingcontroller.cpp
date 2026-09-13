@@ -206,6 +206,14 @@ struct StartAttemptResult {
 QString captureError() {
     const char* error = snow_capture_last_error_message();
     const QString message = QString::fromUtf8(error != nullptr ? error : "");
+    const QString recoveryMarker = QStringLiteral("recoverable media is retained in ");
+    if (message.contains(recoveryMarker)) {
+        return QCoreApplication::translate(
+                   "ScreenRecordingController",
+                   "The recording could not be finalized. Recoverable media and its timeline "
+                   "were saved in:\n%1\n\nKeep this folder to recover the recording.")
+            .arg(message.section(recoveryMarker, 1).trimmed());
+    }
     if (message.contains(QStringLiteral("keyboard recording:"))) {
         return QCoreApplication::translate("ScreenRecordingController",
                                            "Keyboard recording failed: %1")

@@ -110,20 +110,18 @@ impl PipelineTimings {
     /// Records one captured frame's journey through the worker.
     pub fn observe_capture(
         &mut self,
-        frame: &snow_capture::CapturedFrame,
+        metadata: &snow_capture::FrameMetadata,
         received: std::time::Instant,
     ) {
-        if let Some(queued) = frame.metadata().queued_at() {
+        if let Some(queued) = metadata.queued_at() {
             self.queue_dwell
                 .push(received.saturating_duration_since(queued));
         }
-        self.capture_backend = frame.metadata().backend_kind().as_str().to_owned();
+        self.capture_backend = metadata.backend_kind().as_str().to_owned();
         self.captures
-            .push((frame.metadata().sequence(), frame.metadata().is_duplicate()));
-        self.capture_contents.push((
-            frame.metadata().sequence(),
-            frame.metadata().content_generation(),
-        ));
+            .push((metadata.sequence(), metadata.is_duplicate()));
+        self.capture_contents
+            .push((metadata.sequence(), metadata.content_generation()));
     }
 
     pub fn observe_frame(

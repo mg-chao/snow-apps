@@ -86,7 +86,7 @@ pub struct SnowCaptureRecordingSessionImpl {
 
 enum RecordingSessionKind {
     Legacy(Box<RecordingSession>),
-    Direct(DirectRecordingSession),
+    Direct(Box<DirectRecordingSession>),
 }
 
 pub struct SnowCaptureStreamImpl {
@@ -2989,7 +2989,7 @@ pub unsafe extern "C" fn snow_capture_recording_session_create_direct(
             LIVE_RECORDING_SESSIONS.fetch_add(1, Ordering::Relaxed);
             unsafe {
                 *out_session = Box::into_raw(Box::new(SnowCaptureRecordingSessionImpl {
-                    recording: Some(RecordingSessionKind::Direct(recording)),
+                    recording: Some(RecordingSessionKind::Direct(Box::new(recording))),
                     state: RecordingState::Created,
                 }));
             }
@@ -3031,6 +3031,93 @@ pub extern "C" fn snow_capture_recording_session_stop(
         Ok(_) => {
             clear_last_error();
             SnowCaptureResult::Ok
+        }
+        Err(error) => {
+            let result = direct_result_for_error(&error);
+            set_last_error(error);
+            result
+        }
+    }
+}
+
+/// Disposable packaged-runtime diagnostic. Uses the ordinary direct session,
+/// including startup negotiation, pause/resume, audio and MP4 finalization.
+///
+/// # Safety
+/// `config` and its strings must satisfy the same contract as create_direct.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_recording_gpu_probe(
+    config: *const SnowCaptureDirectRecordingConfig,
+    recover: u32,
+) -> SnowCaptureResult {
+    if recover > 1 {
+        set_last_error("GPU probe recovery mode must be 0 or 1");
+        return SnowCaptureResult::InvalidArgument;
+    }
+    let config = match unsafe { read_direct_recording_config(config) }
+        .and_then(|config| parse_direct_recording_config(&config))
+    {
+        Ok(config)
+            if config.prefer_hardware_encoder
+                && config.format == ExportFormat::Mp4
+                && config.codec == VideoCodec::H264 =>
+        {
+            config
+        }
+        Ok(_) => {
+            set_last_error("GPU probe requires hardware H.264 MP4");
+            return SnowCaptureResult::InvalidArgument;
+        }
+        Err(error) => {
+            set_last_error(error);
+            return SnowCaptureResult::InvalidArgument;
+        }
+    };
+    let result = (|| {
+        let mut session = DirectRecordingSession::create(config)?;
+        session.start()?;
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        session.pause()?;
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        session.resume()?;
+        if recover == 1 {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            session.disconnect_gpu_capture_for_diagnostics()?;
+            std::thread::sleep(std::time::Duration::from_millis(400));
+        } else {
+            std::thread::sleep(std::time::Duration::from_millis(600));
+        }
+        session.stop()
+    })();
+    match result {
+        Ok(report) => {
+            eprintln!(
+                "recording_probe pipeline={} adapter={:?} encoder={} frames={} recovery={} fallback={:?}",
+                report.selected_pipeline,
+                report.adapter,
+                report.video_encoder,
+                report.encoded_frames,
+                report.recovery_count,
+                report.fallback_reason
+            );
+            let expected = if recover == 1 {
+                "d3d11_to_software"
+            } else {
+                "d3d11"
+            };
+            if report.selected_pipeline == expected
+                && report.recovery_count == recover
+                && report.encoded_frames > 0
+            {
+                clear_last_error();
+                SnowCaptureResult::Ok
+            } else {
+                set_last_error(format!(
+                    "GPU probe selected {}: {:?}",
+                    report.selected_pipeline, report.fallback_reason
+                ));
+                SnowCaptureResult::InternalError
+            }
         }
         Err(error) => {
             let result = direct_result_for_error(&error);
@@ -3528,6 +3615,27 @@ mod tests {
             mouse_trail_duration_ms: 500,
             keyboard_size: 64,
         }
+    }
+
+    #[test]
+    fn gpu_probe_rejects_invalid_and_software_configs_before_capture() {
+        assert_eq!(
+            unsafe { snow_capture_recording_gpu_probe(ptr::null(), 0) },
+            SnowCaptureResult::InvalidArgument
+        );
+        let output = CString::new("unused-gpu-probe.mp4").unwrap();
+        let mut config = direct_config(&output);
+        config.encoder_preference = 0;
+        assert_eq!(
+            unsafe { snow_capture_recording_gpu_probe(&config, 0) },
+            SnowCaptureResult::InvalidArgument
+        );
+        config.encoder_preference = 1;
+        assert_eq!(
+            unsafe { snow_capture_recording_gpu_probe(&config, 2) },
+            SnowCaptureResult::InvalidArgument
+        );
+        assert_eq!(snow_capture_recording_session_live_count(), 0);
     }
 
     #[test]

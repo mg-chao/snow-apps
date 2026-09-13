@@ -42,6 +42,10 @@ use super::region_pipeline::{self, RegionPipelineState, RegionSlot, RegionStagin
 use super::rotation;
 use super::surface::{self, StagingSampleDesc};
 
+#[path = "duplication_gpu.rs"]
+mod gpu;
+pub(crate) use gpu::GpuDxgiCapturer;
+
 #[inline(always)]
 fn surface_options(
     hdr_to_sdr: Option<HdrFrameContext>,

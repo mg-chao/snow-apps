@@ -58,6 +58,12 @@ use damage::{History, Rows, TrackedSurface};
 #[path = "direct_buffer.rs"]
 mod buffer;
 use buffer::VideoBuffer;
+#[path = "direct_capture.rs"]
+mod capture;
+#[cfg(windows)]
+#[path = "direct_gpu.rs"]
+mod gpu;
+use capture::{DirectCapture, DirectCaptureEvent, DirectFrame};
 
 const AUDIO_SAMPLE_RATE: u32 = 48_000;
 const AUDIO_CHANNELS: u16 = 2;
@@ -285,6 +291,17 @@ impl DirectRecordingConfig {
 
 #[derive(Clone, Debug, Default)]
 pub struct DirectRecordingReport {
+    #[cfg(feature = "bench-pipeline-timing")]
+    pub pixel_counters: snow_capture::pixel_counters::PixelCounters,
+    pub gpu_memory_bytes: u64,
+    pub recovery_count: u32,
+    pub adapter: Option<String>,
+    pub selected_pipeline: String,
+    pub fallback_reason: Option<String>,
+    pub fallback_stage: Option<String>,
+    pub encoder_attempts: Vec<String>,
+    pub abandoned_video_frames: u64,
+    pub overlay_upload_bytes: u64,
     pub requested_video_encoder: String,
     pub half_resize: bool,
     pub direct_output: bool,
@@ -329,6 +346,9 @@ pub struct DirectRecordingReport {
 
 #[derive(Clone, Copy, Debug)]
 enum ControlCommand {
+    DiagnosticDisconnectGpuCapture,
+    #[cfg(all(windows, any(test, feature = "bench-synthetic-input")))]
+    InjectGpuFailure(snow_recording_export::streaming::GpuFailureStage),
     Pause,
     Resume,
     Stop,
@@ -371,6 +391,38 @@ pub struct DirectRecordingSession {
 }
 
 impl DirectRecordingSession {
+    /// Disconnect the GPU source to qualify recovery in the packaged runtime.
+    /// This diagnostic is never used by normal recording controls.
+    #[doc(hidden)]
+    pub fn disconnect_gpu_capture_for_diagnostics(&self) -> Result<()> {
+        self.runtime
+            .lock()
+            .map_err(|_| ScreenRecorderError::Encode("recording runtime lock poisoned".into()))?
+            .as_ref()
+            .ok_or_else(|| ScreenRecorderError::Encode("recording has not started".into()))?
+            .control_tx
+            .send(ControlCommand::DiagnosticDisconnectGpuCapture)
+            .map_err(|error| ScreenRecorderError::Encode(error.to_string()))
+    }
+
+    #[cfg(all(windows, any(test, feature = "bench-synthetic-input")))]
+    pub fn inject_gpu_failure(&self) -> Result<()> {
+        self.inject_gpu_failure_at(snow_recording_export::streaming::GpuFailureStage::Capture)
+    }
+    #[cfg(all(windows, any(test, feature = "bench-synthetic-input")))]
+    pub fn inject_gpu_failure_at(
+        &self,
+        stage: snow_recording_export::streaming::GpuFailureStage,
+    ) -> Result<()> {
+        self.runtime
+            .lock()
+            .map_err(|_| ScreenRecorderError::Encode("recording runtime lock poisoned".into()))?
+            .as_ref()
+            .ok_or_else(|| ScreenRecorderError::Encode("recording has not started".into()))?
+            .control_tx
+            .send(ControlCommand::InjectGpuFailure(stage))
+            .map_err(|error| ScreenRecorderError::Encode(error.to_string()))
+    }
     pub fn create(config: DirectRecordingConfig) -> Result<Self> {
         config
             .validate()
@@ -623,37 +675,10 @@ impl DirectRecordingSession {
         } else {
             None
         };
-        let capture_system = CaptureSystem::builder()
-            .with_backend_kind(self.config.capture_backend)
-            .with_auto_backend_policy(crate::recording::recording_auto_backend_policy(
-                crate::recording::RecordingCapturePath::Direct,
-            ))
-            .build()?;
-        let capture_session = capture_system.open_session(
-            resolve_capture_target(&RecordingTarget::Region(self.config.region))?,
-            CaptureOptions {
-                workload: CaptureWorkload::Continuous,
-                #[cfg(feature = "bench-stage-timing")]
-                record_stage_timings: true,
-                ..CaptureOptions::default()
-            },
-        )?;
         #[cfg(feature = "bench-synthetic-input")]
         let include_cursor = !self.bench_skip_cursor || self.config.needs_cursor_observations();
         #[cfg(not(feature = "bench-synthetic-input"))]
         let include_cursor = true;
-        let capture_stream = CaptureStream::spawn(
-            capture_session,
-            CaptureStreamConfig {
-                target_fps: self.config.capture_fps,
-                min_fps: self.config.output_fps.min(self.config.capture_fps).max(1),
-                buffer_depth: 2,
-                max_consecutive_errors: 30,
-                adaptive_fps: false,
-                pause_on_resolution_change: false,
-                include_cursor,
-            },
-        )?;
         let (click_tx, click_rx) = crossbeam_channel::bounded(CLICK_QUEUE_DEPTH);
         #[cfg(feature = "bench-synthetic-input")]
         let bench_click_tx = self.bench_synthetic_input.then(|| click_tx.clone());
@@ -703,7 +728,6 @@ impl DirectRecordingSession {
             (None, None)
         };
         let (control_tx, control_rx) = crossbeam_channel::unbounded();
-        let audio_stream = start_optional_audio_stream(&self.config);
         let config = self.config.clone();
         let mut streaming_config = StreamingEncoder::builder(self.encoder_config());
         if let Some(threads) = self.software_fallback_threads() {
@@ -724,7 +748,6 @@ impl DirectRecordingSession {
         let automatic_policies = self.bench_automatic_policies;
         #[cfg(not(feature = "bench-synthetic-input"))]
         let automatic_policies = VALIDATED_RESIZE_DEFAULT;
-        let clock = RecordingClock::new(Instant::now());
         let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
         let worker_state = Arc::clone(&self.state);
         #[cfg(feature = "bench-synthetic-input")]
@@ -767,9 +790,58 @@ impl DirectRecordingSession {
                             }
                         }
                     }
+                    #[cfg(windows)]
+                    let mut negotiation = gpu::Negotiation::default();
+                    #[cfg(windows)]
+                    let gpu_setup = if gpu::eligible(&config) {
+                        if bench_encoding.1 {
+                            Err(ScreenRecorderError::Encode(
+                                "injected GPU initialization failure".into(),
+                            ))
+                        } else {
+                            gpu::prepare(&config, include_cursor, &mut compositor, &mut negotiation)
+                        }
+                    } else {
+                        Ok(None)
+                    };
+                    #[cfg(windows)]
+                    let (
+                        mut capture_stream,
+                        mut gpu_compositor,
+                        streaming_config,
+                        mut fallback_reason,
+                    ) = match gpu_setup {
+                        Ok(Some((stream, processor, device))) => (
+                            DirectCapture::Gpu(stream),
+                            Some(processor),
+                            streaming_config
+                                .gpu_input(snow_recording_export::gpu::GpuInputConfig { device })
+                                .recoverable(),
+                            None,
+                        ),
+                        result => {
+                            let reason = result.err().map(|error| error.to_string());
+                            if gpu::eligible(&config) {
+                                streaming_config = streaming_config.software_only();
+                            }
+                            (
+                                DirectCapture::cpu(&config, include_cursor)?,
+                                None,
+                                streaming_config,
+                                reason,
+                            )
+                        }
+                    };
+                    #[cfg(not(windows))]
+                    let capture_stream = DirectCapture::cpu(&config, include_cursor)?;
+                    let clock = RecordingClock::new(Instant::now());
+                    #[cfg(windows)]
+                    let fallback_config = streaming_config.clone().software_only();
+                    #[cfg(windows)]
+                    let asynchronous = asynchronous && gpu_compositor.is_none();
                     let created = RecordingEncoder::new(
                         streaming_config,
-                        audio_stream,
+                        start_optional_audio_stream(&config),
                         (config.enable_system_audio, config.enable_microphone),
                         clock.clone(),
                         asynchronous,
@@ -777,6 +849,22 @@ impl DirectRecordingSession {
                     );
                     let encoder = match created {
                         Ok(encoder) => encoder,
+                        #[cfg(windows)]
+                        Err(error) if gpu_compositor.is_some() => {
+                            capture_stream.stop();
+                            gpu_compositor.take();
+                            capture_stream = DirectCapture::cpu(&config, include_cursor)?;
+                            fallback_reason = Some(format!("encoder startup: {error}"));
+                            negotiation.stage = Some("encoder_startup".into());
+                            RecordingEncoder::new(
+                                fallback_config,
+                                start_optional_audio_stream(&config),
+                                (config.enable_system_audio, config.enable_microphone),
+                                clock.clone(),
+                                false,
+                                bench_encoding,
+                            )?
+                        }
                         Err(error) => {
                             let message = error.to_string();
                             let _ = ready_tx.send(Err(message));
@@ -837,6 +925,12 @@ impl DirectRecordingSession {
                         click_rx,
                         keyboard_input,
                         compositor,
+                        #[cfg(windows)]
+                        gpu_compositor,
+                        #[cfg(windows)]
+                        fallback_reason,
+                        #[cfg(windows)]
+                        negotiation,
                         control_rx,
                         clock,
                         asynchronous,
@@ -1099,11 +1193,17 @@ struct DirectWorkerInputs {
     align_capture: bool,
     config: DirectRecordingConfig,
     encoder: RecordingEncoder,
-    capture_stream: CaptureStream,
+    capture_stream: DirectCapture,
     mouse_hook: MouseHookObserver,
     click_rx: Receiver<MouseClickObservation>,
     keyboard_input: Option<KeyboardInput>,
     compositor: VisualCompositor,
+    #[cfg(windows)]
+    gpu_compositor: Option<gpu::GpuVisualCompositor>,
+    #[cfg(windows)]
+    fallback_reason: Option<String>,
+    #[cfg(windows)]
+    negotiation: gpu::Negotiation,
     control_rx: Receiver<ControlCommand>,
     clock: RecordingClock,
     asynchronous: bool,
@@ -1118,17 +1218,29 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         align_capture,
         config,
         mut encoder,
-        capture_stream,
+        mut capture_stream,
         mouse_hook,
         click_rx,
         mut keyboard_input,
         mut compositor,
+        #[cfg(windows)]
+        mut gpu_compositor,
+        #[cfg(windows)]
+        mut fallback_reason,
+        #[cfg(windows)]
+        mut negotiation,
         control_rx,
         clock,
         asynchronous,
         #[cfg(feature = "bench-synthetic-input")]
         bench_cursor_rx,
     } = inputs;
+    #[cfg(windows)]
+    let adapter = negotiation.adapter.take();
+    #[cfg(windows)]
+    let mut gpu_metrics = gpu::Metrics::default();
+    #[cfg(feature = "bench-pipeline-timing")]
+    let pixel_start = snow_capture::pixel_counters::snapshot();
     let _mouse_hook = mouse_hook;
     // Synthetic cursor positions replace the capture-attached samples so the
     // trail and cursor overlays follow the benchmark's sweep, not the
@@ -1173,8 +1285,33 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
     pipeline_timings.begin();
 
     while !stopping && !canceled {
+        #[cfg(windows)]
+        gpu_metrics.sample(gpu_compositor.as_ref());
+        #[cfg(windows)]
+        let mut gpu_failure: Option<String> = None;
         while let Ok(command) = control_rx.try_recv() {
             match command {
+                ControlCommand::DiagnosticDisconnectGpuCapture =>
+                {
+                    #[cfg(windows)]
+                    if gpu_compositor.is_some() {
+                        capture_stream.stop();
+                    }
+                }
+                #[cfg(all(windows, any(test, feature = "bench-synthetic-input")))]
+                ControlCommand::InjectGpuFailure(stage) => {
+                    if let Some(compositor) = gpu_compositor.as_mut() {
+                        use snow_recording_export::streaming::GpuFailureStage;
+                        match stage {
+                            GpuFailureStage::CaptureDisconnected => capture_stream.stop(),
+                            GpuFailureStage::Capture => {
+                                gpu_failure = Some("injected GPU capture failure".to_owned())
+                            }
+                            GpuFailureStage::Composition => compositor.inject_failure = true,
+                            stage => encoder.inject_gpu_failure(stage),
+                        }
+                    }
+                }
                 ControlCommand::Pause if !paused => {
                     let at = Instant::now();
                     captures.clear();
@@ -1279,8 +1416,27 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                     .push_back(event.event(clock.active_elapsed_ms(event.at), style));
             }
         }
-        encoder.tick()?;
+        if !stopping
+            && !canceled
+            && let Err(error) = encoder.tick()
+        {
+            return Err(encoder.preserve_failure(error));
+        }
+        #[cfg(windows)]
+        if !canceled
+            && gpu_compositor.is_some()
+            && let Err(error) = encoder.poll_gpu_packets()
+        {
+            gpu_failure = Some(error.to_string());
+        }
         if stopping || canceled {
+            #[cfg(windows)]
+            if !canceled && let Some(reason) = gpu_failure {
+                encoder.recover_to_software(&reason)?;
+                gpu_metrics.sample(gpu_compositor.as_ref());
+                gpu_compositor.take();
+                fallback_reason = Some(reason);
+            }
             break;
         }
         let elapsed = clock.active_elapsed_duration(Instant::now());
@@ -1293,7 +1449,16 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
             Ok(event) => Some(event),
             Err(snow_core::error::RecvTimeoutError::Timeout) => None,
             Err(snow_core::error::RecvTimeoutError::Disconnected) => {
-                stopping = true;
+                #[cfg(windows)]
+                if gpu_compositor.is_some() {
+                    gpu_failure = Some("GPU capture worker disconnected".into());
+                } else {
+                    stopping = true;
+                }
+                #[cfg(not(windows))]
+                {
+                    stopping = true;
+                }
                 None
             }
         };
@@ -1302,7 +1467,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
             .chain(std::iter::from_fn(|| capture_stream.try_recv().ok()))
         {
             match event {
-                CaptureEvent::Frame(frame) => {
+                DirectCaptureEvent::Frame(frame) => {
                     capture_backend = frame.metadata().backend_kind().as_str().to_owned();
                     #[cfg(feature = "bench-stage-timing")]
                     for stage in frame.metadata().stage_timings() {
@@ -1310,12 +1475,12 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                     }
                     let received = Instant::now();
                     #[cfg(feature = "bench-pipeline-timing")]
-                    pipeline_timings.observe_capture(&frame, received);
+                    pipeline_timings.observe_capture(frame.metadata(), received);
                     if !paused
                         && frame
                             .metadata()
                             .observation_started_at()
-                            .unwrap_or_else(|| frame_instant(&frame))
+                            .unwrap_or_else(|| frame.instant())
                             >= fresh_since
                     {
                         if let Some(cursor) = frame.metadata().cursor().filter(|_| !bench_cursor) {
@@ -1327,13 +1492,51 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                         captures.push(frame, received);
                     }
                 }
-                CaptureEvent::FramesDropped { count, .. } => {
+                DirectCaptureEvent::FramesDropped { count, .. } => {
                     dropped_capture_frames += u64::from(count)
                 }
-                CaptureEvent::Error(error) => return Err(ScreenRecorderError::Capture(error)),
-                CaptureEvent::StreamEnded => stopping = true,
+                DirectCaptureEvent::Error(error) => {
+                    #[cfg(windows)]
+                    if gpu_compositor.is_some() {
+                        gpu_failure = Some(error.to_string());
+                        break;
+                    }
+                    return Err(encoder.preserve_failure(ScreenRecorderError::Capture(error)));
+                }
+                DirectCaptureEvent::StreamEnded => {
+                    #[cfg(windows)]
+                    if gpu_compositor.is_some() {
+                        gpu_failure = Some("GPU capture stream ended unexpectedly".into());
+                        break;
+                    }
+                    stopping = true;
+                }
                 _ => {}
             }
+        }
+        #[cfg(windows)]
+        if let Some(reason) = gpu_failure {
+            captures.clear();
+            cursors.frames.clear();
+            latest_frame = None;
+            capture_stream.stop();
+            dropped_capture_frames += capture_stream.gpu_dropped_frames();
+            encoder.recover_to_software(&reason)?;
+            gpu_metrics.sample(gpu_compositor.as_ref());
+            gpu_compositor.take();
+            capture_stream = DirectCapture::cpu(&config, include_cursor)
+                .map_err(|error| encoder.preserve_failure(error))?;
+            if paused {
+                capture_stream.pause();
+            }
+            if align_capture {
+                capture_stream.set_pacing_origin(
+                    Instant::now().checked_sub(clock.active_elapsed_duration(Instant::now())),
+                );
+            }
+            fallback_reason = Some(reason);
+            fresh_since = Instant::now();
+            continue;
         }
         if paused || stopping {
             continue;
@@ -1349,52 +1552,112 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
             latest_cursor = Some(cursor);
         }
         if let Some((frame, _received)) = new_frame {
-            changed |= latest_frame
-                .as_ref()
-                .is_none_or(|previous: &CapturedFrame| {
-                    !frame.metadata().is_duplicate()
-                        || previous.metadata().content_generation()
-                            != frame.metadata().content_generation()
-                });
+            changed |= latest_frame.as_ref().is_none_or(|previous: &DirectFrame| {
+                !frame.metadata().is_duplicate()
+                    || previous.metadata().content_generation()
+                        != frame.metadata().content_generation()
+            });
             latest_frame = Some(frame);
         }
         let timestamp_ms = slot.at.as_millis() as u64;
         let active = compositor.has_active_animation(&config, timestamp_ms);
-        if (changed || active || overlay_was_active)
+        #[cfg(windows)]
+        let needs_recovery_image = encoder.needs_recovery_image();
+        #[cfg(not(windows))]
+        let needs_recovery_image = false;
+        if (changed || active || overlay_was_active || needs_recovery_image)
             && let Some(frame) = latest_frame.as_ref()
         {
             #[cfg(feature = "bench-pipeline-timing")]
             let compose_started = Instant::now();
             #[cfg(any(test, feature = "bench-synthetic-input"))]
             std::mem::swap(&mut compositor.damage, &mut captures.damage);
-            let rgba = compositor.compose_with_cursor(
-                &config,
-                frame,
-                timestamp_ms,
-                latest_cursor.as_ref(),
-            )?;
+            let submitted: Result<bool> = (|| {
+                match frame {
+                    DirectFrame::Cpu(frame) => {
+                        let rgba = compositor.compose_with_cursor(
+                            &config,
+                            frame,
+                            timestamp_ms,
+                            latest_cursor.as_ref(),
+                        )?;
+                        let recycled = encoder.push_owned_rgba_frame_at_pts(
+                            slot.pts,
+                            VideoBuffer {
+                                pixels: rgba,
+                                history: compositor.output_history.take(),
+                            },
+                        )?;
+                        compositor.rgba = recycled.pixels;
+                        compositor.buffer_history = recycled.history;
+                    }
+                    #[cfg(windows)]
+                    DirectFrame::Gpu(frame) => {
+                        let Some(surface) = encoder.allocate_gpu_frame()? else {
+                            dropped_capture_frames += 1;
+                            return Ok(false);
+                        };
+                        gpu_compositor
+                            .as_mut()
+                            .ok_or_else(|| {
+                                ScreenRecorderError::Encode("GPU compositor is unavailable".into())
+                            })?
+                            .compose(
+                                &mut compositor,
+                                &config,
+                                frame,
+                                timestamp_ms,
+                                latest_cursor.as_ref(),
+                                &surface,
+                            )?;
+                        encoder.push_gpu_frame_at_pts(slot.pts, surface)?;
+                    }
+                };
+                Ok(true)
+            })();
+            match submitted {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(error) => {
+                    #[cfg(windows)]
+                    if gpu_compositor.is_some() {
+                        let reason = error.to_string();
+                        captures.clear();
+                        cursors.frames.clear();
+                        latest_frame = None;
+                        capture_stream.stop();
+                        dropped_capture_frames += capture_stream.gpu_dropped_frames();
+                        encoder.recover_to_software(&reason)?;
+                        gpu_metrics.sample(gpu_compositor.as_ref());
+                        gpu_compositor.take();
+                        capture_stream = DirectCapture::cpu(&config, include_cursor)
+                            .map_err(|error| encoder.preserve_failure(error))?;
+                        if align_capture {
+                            capture_stream.set_pacing_origin(
+                                Instant::now()
+                                    .checked_sub(clock.active_elapsed_duration(Instant::now())),
+                            );
+                        }
+                        fallback_reason = Some(reason);
+                        fresh_since = Instant::now();
+                        continue;
+                    }
+                    return Err(encoder.preserve_failure(error));
+                }
+            }
             #[cfg(any(test, feature = "bench-synthetic-input"))]
             std::mem::swap(&mut compositor.damage, &mut captures.damage);
             #[cfg(feature = "bench-pipeline-timing")]
             let composed = Instant::now();
             #[cfg(feature = "bench-pipeline-timing")]
-            output_instants.insert(slot.pts as i64, frame_instant(frame));
-            let recycled = encoder.push_owned_rgba_frame_at_pts(
-                slot.pts,
-                VideoBuffer {
-                    pixels: rgba,
-                    history: compositor.output_history.take(),
-                },
-            )?;
-            compositor.rgba = recycled.pixels;
-            compositor.buffer_history = recycled.history;
+            output_instants.insert(slot.pts as i64, frame.instant());
             #[cfg(feature = "bench-pipeline-timing")]
             {
                 pipeline_timings
                     .compositions
                     .push((slot.pts, compose_started, composed));
                 pipeline_timings.observe_frame(
-                    frame_instant(frame),
+                    frame.instant(),
                     compose_started,
                     composed,
                     Instant::now(),
@@ -1407,7 +1670,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                         .content_generation()
                         .unwrap_or(frame.metadata().sequence()),
                     clock
-                        .active_elapsed_duration(frame_instant(frame))
+                        .active_elapsed_duration(frame.instant())
                         .as_nanos()
                         .min(u128::from(u64::MAX)) as u64,
                 ));
@@ -1432,9 +1695,25 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
     #[cfg(feature = "bench-pipeline-timing")]
     let stream_stats = capture_stream.stats().snapshot();
     // Captures after the accepted stop boundary must not extend the recording.
+    #[cfg(windows)]
+    {
+        dropped_capture_frames += capture_stream.gpu_dropped_frames();
+    }
+    #[cfg(windows)]
+    gpu_metrics.sample(gpu_compositor.as_ref());
     for event in capture_stream.stop_and_drain() {
-        if let CaptureEvent::Error(error) = event {
-            return Err(ScreenRecorderError::Capture(error));
+        if let DirectCaptureEvent::Error(error) = event {
+            #[cfg(windows)]
+            if gpu_compositor.is_some() {
+                let reason = format!("capture at stop: {error}");
+                encoder.recover_to_software(&reason)?;
+                fallback_reason = Some(reason);
+                gpu_compositor.take();
+                captures.clear();
+                latest_frame.take();
+                continue;
+            }
+            return Err(encoder.preserve_failure(ScreenRecorderError::Capture(error)));
         }
     }
     let audio_frames_dropped = 0;
@@ -1470,6 +1749,48 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         #[cfg(feature = "bench-pipeline-timing")]
         Some(pipeline_timings.stats(&stream_stats)),
     );
+    #[cfg(windows)]
+    {
+        report.selected_pipeline = if report.recovery_count > 0 {
+            "d3d11_to_software"
+        } else if gpu_compositor.is_some() {
+            "d3d11"
+        } else {
+            "software"
+        }
+        .into();
+        report.fallback_reason = fallback_reason.or(report.fallback_reason);
+        report.hardware_fallback |= report.fallback_reason.is_some();
+        report.adapter = adapter;
+        if negotiation.encoder_attempts.last() != Some(&report.video_encoder) {
+            negotiation
+                .encoder_attempts
+                .push(report.video_encoder.clone());
+        }
+        report.encoder_attempts = negotiation.encoder_attempts;
+        report.fallback_stage = negotiation.stage.or_else(|| {
+            report.fallback_reason.as_deref().map(|reason| {
+                if reason.contains("stop") || reason.contains("Stop") {
+                    "stop"
+                } else if reason.contains("composition") || reason.contains("VideoProcessor") {
+                    "composition"
+                } else if reason.contains("packet") || reason.contains("Drain") {
+                    "encoder_drain"
+                } else if reason.contains("submission") || reason.contains("Submission") {
+                    "encoder_submission"
+                } else {
+                    "capture"
+                }
+                .into()
+            })
+        });
+        report.gpu_memory_bytes = gpu_metrics.memory_bytes;
+        report.overlay_upload_bytes = gpu_metrics.overlay_bytes;
+    }
+    #[cfg(feature = "bench-pipeline-timing")]
+    {
+        report.pixel_counters = snow_capture::pixel_counters::snapshot().since(pixel_start);
+    }
     report.asynchronous = asynchronous;
     #[cfg(any(test, feature = "bench-synthetic-input"))]
     {
@@ -1496,6 +1817,17 @@ fn report_from_encoder(
     #[cfg(feature = "bench-pipeline-timing")] pipeline: Option<CapturePipelineStats>,
 ) -> DirectRecordingReport {
     DirectRecordingReport {
+        #[cfg(feature = "bench-pipeline-timing")]
+        pixel_counters: Default::default(),
+        gpu_memory_bytes: 0,
+        recovery_count: report.recovery_count,
+        adapter: None,
+        selected_pipeline: "software".into(),
+        fallback_reason: report.recovery_reason,
+        fallback_stage: None,
+        encoder_attempts: Vec::new(),
+        abandoned_video_frames: report.abandoned_frames,
+        overlay_upload_bytes: 0,
         half_resize: false,
         direct_output: false,
         partial_composition: false,
@@ -1783,7 +2115,7 @@ fn frame_instant(frame: &CapturedFrame) -> Instant {
 
 #[derive(Default)]
 struct CaptureInbox {
-    frames: VecDeque<(CapturedFrame, Instant, Instant)>,
+    frames: VecDeque<(DirectFrame, Instant, Instant)>,
     superseded: u64,
     #[cfg(any(test, feature = "bench-synthetic-input"))]
     damage: Damage,
@@ -1800,7 +2132,8 @@ impl CaptureInbox {
         }
     }
 
-    fn push(&mut self, frame: CapturedFrame, received: Instant) {
+    fn push(&mut self, frame: impl Into<DirectFrame>, received: Instant) {
+        let frame = frame.into();
         // Keep enough history to select the most recent frame at the output deadline,
         // including one frame that arrived just after it. No unbounded backlog.
         if self.frames.len() == 2 {
@@ -1812,12 +2145,12 @@ impl CaptureInbox {
             self.frames.pop_front();
             self.superseded += 1;
         }
-        let at = frame_instant(&frame);
+        let at = frame.instant();
         self.frames.push_back((frame, received, at));
     }
 
     #[cfg(any(test, feature = "bench-synthetic-input"))]
-    fn observe_damage(&mut self, frame: &CapturedFrame) {
+    fn observe_damage(&mut self, frame: &DirectFrame) {
         if !self.track_damage {
             return;
         }
@@ -1830,7 +2163,7 @@ impl CaptureInbox {
         );
     }
 
-    fn select(&mut self, clock: &RecordingClock, at: Duration) -> Option<(CapturedFrame, Instant)> {
+    fn select(&mut self, clock: &RecordingClock, at: Duration) -> Option<(DirectFrame, Instant)> {
         let mut selected = None;
         while self
             .frames
@@ -2384,6 +2717,9 @@ fn mark_cursor_rows(
     let Some(shape) = shape else {
         return;
     };
+    if !cursor.visible {
+        return;
+    }
     let size = rows.size();
     let (x, y) = scale_point(cursor.x, cursor.y, source_size, size);
     let left = x.saturating_sub(scale_coordinate(
@@ -2429,6 +2765,9 @@ fn draw_cursor(
     let Some(shape) = shape else {
         return;
     };
+    if !cursor.visible {
+        return;
+    }
     let (cursor_x, cursor_y) = scale_point(cursor.x, cursor.y, source_size, output_size);
     let scaled_width = ((u64::from(shape.width) * u64::from(output_size.0))
         / u64::from(source_size.0.max(1)))
@@ -2526,6 +2865,23 @@ mod tests {
     use super::*;
     use crate::mouse_hook::ObservedMouseButton;
     use snow_cursor::CursorShapeId;
+
+    #[test]
+    fn hidden_cursor_retains_shape_without_drawing_it() {
+        let shape =
+            CursorShape::from_rgba(0, 0, 1, 1, CursorCompositionMode::AlphaBlend, vec![255; 4]);
+        let sample = AttachedCursorSample {
+            x: 0,
+            y: 0,
+            visible: false,
+            shape: CursorShapeState::Embedded(shape.clone()),
+        };
+        let mut shapes = HashMap::new();
+        let mut pixels = [10, 20, 30, 255];
+        draw_cursor(&mut pixels, (1, 1), (1, 1), &sample, &mut shapes);
+        assert_eq!(pixels, [10, 20, 30, 255]);
+        assert_eq!(shapes.get(&shape.shape_id.get()), Some(&shape));
+    }
 
     fn config() -> DirectRecordingConfig {
         DirectRecordingConfig {
@@ -3810,15 +4166,16 @@ mod scheduling_tests {
         let mut inbox = CaptureInbox::default();
         inbox
             .frames
-            .push_back((frame(1), start, start + Duration::from_millis(30)));
+            .push_back((frame(1).into(), start, start + Duration::from_millis(30)));
         inbox
             .frames
-            .push_back((frame(2), start, start + Duration::from_millis(35)));
+            .push_back((frame(2).into(), start, start + Duration::from_millis(35)));
         assert_eq!(
             inbox
                 .select(&clock, Duration::from_millis(33))
                 .unwrap()
                 .0
+                .expect_cpu()
                 .as_rgba_bytes()[0],
             1
         );
@@ -3828,6 +4185,7 @@ mod scheduling_tests {
                 .select(&clock, Duration::from_millis(66))
                 .unwrap()
                 .0
+                .expect_cpu()
                 .as_rgba_bytes()[0],
             2
         );
@@ -3848,6 +4206,7 @@ mod scheduling_tests {
                 .select(&clock, Duration::from_secs(1))
                 .unwrap()
                 .0
+                .expect_cpu()
                 .as_rgba_bytes()[0],
             19
         );
@@ -3861,7 +4220,7 @@ mod scheduling_tests {
         let clock = RecordingClock::new(start);
         let mut desktop = CaptureInbox::default();
         desktop.frames.push_back((
-            frame(42),
+            frame(42).into(),
             start + Duration::from_millis(35),
             start + Duration::from_millis(30),
         ));
@@ -3880,6 +4239,7 @@ mod scheduling_tests {
                 .select(&clock, Duration::from_millis(33))
                 .unwrap()
                 .0
+                .expect_cpu()
                 .as_rgba_bytes()[0],
             42
         );

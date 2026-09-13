@@ -23,6 +23,16 @@
             <translation>螢幕錄製</translation>
         </message>
         <message>
+            <source>The recording could not be finalized. Recoverable media and its timeline were saved in:
+%1
+
+Keep this folder to recover the recording.</source>
+            <translation>無法完成錄製檔案。可復原的媒體及其時間軸已儲存於：
+%1
+
+請保留此資料夾，以便復原錄製內容。</translation>
+        </message>
+        <message>
             <source>The recording operation failed</source>
             <translation>錄製作業失敗</translation>
         </message>

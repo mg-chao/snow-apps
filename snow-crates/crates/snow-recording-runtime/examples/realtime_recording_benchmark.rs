@@ -1304,6 +1304,70 @@ fn write_summary_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<P
                 "hardware_fallback".into(),
                 u8::from(row.report.hardware_fallback).to_string(),
             ),
+            (
+                "gpu_memory_bytes".into(),
+                row.report.gpu_memory_bytes.to_string(),
+            ),
+            (
+                "selected_pipeline".into(),
+                row.report.selected_pipeline.clone(),
+            ),
+            (
+                "adapter".into(),
+                row.report.adapter.clone().unwrap_or_default(),
+            ),
+            (
+                "fallback_reason".into(),
+                row.report.fallback_reason.clone().unwrap_or_default(),
+            ),
+            (
+                "fallback_stage".into(),
+                row.report.fallback_stage.clone().unwrap_or_default(),
+            ),
+            (
+                "encoder_attempts".into(),
+                row.report.encoder_attempts.join(" -> "),
+            ),
+            (
+                "abandoned_video_frames".into(),
+                row.report.abandoned_video_frames.to_string(),
+            ),
+            #[cfg(feature = "bench-pipeline-timing")]
+            (
+                "cpu_encoder_conversions".into(),
+                row.report.encoder_timings.cpu_conversions.to_string(),
+            ),
+            #[cfg(feature = "bench-pipeline-timing")]
+            (
+                "gpu_surface_submissions".into(),
+                row.report
+                    .encoder_timings
+                    .gpu_surface_submissions
+                    .to_string(),
+            ),
+            (
+                "recovery_count".into(),
+                row.report.recovery_count.to_string(),
+            ),
+            (
+                "overlay_upload_bytes".into(),
+                row.report.overlay_upload_bytes.to_string(),
+            ),
+            #[cfg(feature = "bench-pipeline-timing")]
+            (
+                "captured_pixel_readbacks".into(),
+                row.report.pixel_counters.captured_readbacks.to_string(),
+            ),
+            #[cfg(feature = "bench-pipeline-timing")]
+            (
+                "captured_host_transfers".into(),
+                row.report.pixel_counters.host_transfers.to_string(),
+            ),
+            #[cfg(feature = "bench-pipeline-timing")]
+            (
+                "capture_cpu_conversions".into(),
+                row.report.pixel_counters.cpu_conversions.to_string(),
+            ),
             ("pixel_format".into(), row.report.pixel_format.clone()),
             (
                 "effective_encode_threads".into(),

@@ -46,10 +46,7 @@ $expected = @(foreach ($kind in $components.Keys) {
 $expected = @($expected | Sort-Object)
 foreach ($audit in @(
     @{ Name = "dependency"; Symbols = $expected },
-    @{ Name = "registration configuration"; Symbols = @(
-        $registrations
-        $components.PARSER | ForEach-Object { "ff_$($_.ToLowerInvariant())_parser" }
-    ) | Sort-Object }
+    @{ Name = "registration configuration"; Symbols = @($registrations | Sort-Object) }
 )) {
     $difference = @(Compare-Object -ReferenceObject $actual -DifferenceObject $audit.Symbols)
     if ($difference.Count -gt 0) {

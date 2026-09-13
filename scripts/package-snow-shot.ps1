@@ -153,7 +153,7 @@ function Assert-SnowShotStaticDependencies {
     $expectedFfmpegComponents = [ordered]@{
         BSF = @("AAC_ADTSTOASC", "H264_MP4TOANNEXB", "PGS_FRAME_MERGE", "VP9_SUPERFRAME")
         DECODER = @("APNG", "GIF", "H264", "PNG", "VP8", "WEBP", "WEBP_ANIM")
-        ENCODER = @("AAC", "APNG", "GIF", "H263", "H264_MF", "LIBWEBP_ANIM", "LIBX264", "LIBX265", "MP3_MF", "MPEG4")
+        ENCODER = @("AAC", "APNG", "GIF", "H263", "H264_MF", "H264_AMF", "H264_NVENC", "H264_QSV", "LIBWEBP_ANIM", "LIBX264", "LIBX265", "MP3_MF", "MPEG4")
         HWACCEL = @("H264_D3D11VA", "H264_D3D11VA2", "H264_DXVA2")
         PARSER = @("AAC", "AC3", "H264", "MPEGAUDIO")
         DEMUXER = @("APNG", "GIF", "MATROSKA", "MOV", "WEBP_ANIM")
@@ -408,6 +408,7 @@ $allowedSystemImports = @(
     "d3d9.dll",
     "d3d11.dll",
     "d3d12.dll",
+    "d3dcompiler_47.dll",
     "dbghelp.dll",
     "dnsapi.dll",
     "dwrite.dll",
@@ -522,8 +523,8 @@ $linkedFfmpegRegistrations = @(Select-String -LiteralPath $linkMapPath `
     -Pattern $ffmpegRegistrationPattern | ForEach-Object {
         $_.Matches[0].Groups["Name"].Value
     })
-# The library component audit above still requires all four configured parsers.
-# Whole-program optimization removes their unused registrations from this application.
+# Native hardware encoding retains the configured parser registrations, so the
+# optimized application must match the same restricted component set as FFmpeg.
 $expectedFfmpegRegistrations = @(
     "ff_aac_adtstoasc_bsf",
     "ff_h264_mp4toannexb_bsf",
@@ -541,6 +542,9 @@ $expectedFfmpegRegistrations = @(
     "ff_gif_encoder",
     "ff_h263_encoder",
     "ff_h264_mf_encoder",
+    "ff_h264_amf_encoder",
+    "ff_h264_nvenc_encoder",
+    "ff_h264_qsv_encoder",
     "ff_libwebp_anim_encoder",
     "ff_libx264_encoder",
     "ff_libx265_encoder",
@@ -549,6 +553,10 @@ $expectedFfmpegRegistrations = @(
     "ff_h264_d3d11va_hwaccel",
     "ff_h264_d3d11va2_hwaccel",
     "ff_h264_dxva2_hwaccel",
+    "ff_aac_parser",
+    "ff_ac3_parser",
+    "ff_h264_parser",
+    "ff_mpegaudio_parser",
     "ff_apng_demuxer",
     "ff_gif_demuxer",
     "ff_matroska_demuxer",
@@ -897,8 +905,8 @@ if ($PrepareOcrRuntimeOnly) {
     }
 }
 $ocrVersionOutput = & (Join-Path $runtimeWork $ocrRuntimeFileName) --version 2>$null
-if ($LASTEXITCODE -ne 0 -or $ocrVersionOutput -notmatch
-    '^snow-ocr-process 1\.0\.5 windows-x86_64 protocol 2$') {
+if ($LASTEXITCODE -ne 0 -or $ocrVersionOutput -cne
+    "snow-ocr-process $ocrRuntimeVersion windows-x86_64 protocol 2") {
     throw "The staged OCR runtime reported an unexpected version: $ocrVersionOutput"
 }
 $ocrRuntimeVersionInfo = (Get-Item -LiteralPath (Join-Path $runtimeWork $ocrRuntimeFileName)).VersionInfo

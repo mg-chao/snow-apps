@@ -207,6 +207,7 @@ impl CanonicalSurface {
         &mut self,
         device: &ID3D11Device,
         context: &ID3D11DeviceContext,
+        shared_device: Option<&snow_d3d11::SharedDevice>,
         frame: &Direct3D11CaptureFrame,
         source: &ID3D11Texture2D,
         source_desc: D3D11_TEXTURE2D_DESC,
@@ -241,6 +242,10 @@ impl CanonicalSurface {
             Vec::new()
         };
 
+        // WGC property access above and FramePacket::drop/Close in the caller
+        // must run outside this lock. WGC callbacks acquire their own lock
+        // before D3D11; holding D3D11 across frame Close reverses that order.
+        let _device_lock = shared_device.map(snow_d3d11::SharedDevice::lock);
         match self.continuity.classify(
             contract,
             identity,

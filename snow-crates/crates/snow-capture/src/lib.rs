@@ -7,6 +7,8 @@ pub mod convert;
 mod cursor_compositor;
 pub mod error;
 pub mod frame;
+#[cfg(windows)]
+pub mod gpu;
 pub mod monitor;
 mod platform;
 pub mod region;
@@ -58,3 +60,6 @@ pub fn capture_once(target: &CaptureTarget) -> CaptureResult<Frame> {
     let mut session = system.open_session(target.clone(), CaptureOptions::default())?;
     session.capture()
 }
+
+#[cfg(feature = "stage-timing")]
+pub mod pixel_counters;

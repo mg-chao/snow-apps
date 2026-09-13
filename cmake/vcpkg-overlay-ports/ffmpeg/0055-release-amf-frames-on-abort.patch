@@ -1,0 +1,81 @@
+AMF stores AVFrame pointers as integer surface properties. Terminate can discard
+outputs without returning those properties, so keep an owning list for abort/close.
+Normal packet delivery removes and releases exactly the returned reference.
+
+--- a/libavcodec/amfenc.h
++++ b/libavcodec/amfenc.h
+@@ -62,6 +62,9 @@
+     int64_t             submitted_frame;
+     int64_t             encoded_frame;
+     AVFifo             *output_list;
++    // Own attached AVFrames even if Terminate discards their output buffers.
++    AVFrame           **attached_frames;
++    int                 nb_attached_frames;
+ 
+     // common encoder options
+ 
+--- a/libavcodec/amfenc.c
++++ b/libavcodec/amfenc.c
+@@ -147,6 +147,11 @@
+         ctx->encoder = NULL;
+     }
+ 
++    for (int i = 0; i < ctx->nb_attached_frames; i++)
++        av_frame_free(&ctx->attached_frames[i]);
++    av_freep(&ctx->attached_frames);
++    ctx->nb_attached_frames = 0;
++
+     av_buffer_unref(&ctx->device_ctx_ref);
+     av_fifo_freep2(&ctx->timestamp_list);
+ 
+@@ -370,9 +375,18 @@
+     AMF_RESULT res = AMF_FAIL;
+     int64_t data;
+     AVFrame *frame_ref = av_frame_clone(frame);
+-    if (frame_ref) {
+-        memcpy(&data, &frame_ref, sizeof(frame_ref)); // store pointer in 8 bytes
+-        AMF_ASSIGN_PROPERTY_INT64(res, surface, ctx->av_frame_property_name, data);
++    if (!frame_ref)
++        return AMF_OUT_OF_MEMORY;
++    if (av_dynarray_add_nofree(&ctx->attached_frames, &ctx->nb_attached_frames,
++                              frame_ref) < 0) {
++        av_frame_free(&frame_ref);
++        return AMF_OUT_OF_MEMORY;
++    }
++    memcpy(&data, &frame_ref, sizeof(frame_ref)); // store pointer in 8 bytes
++    AMF_ASSIGN_PROPERTY_INT64(res, surface, ctx->av_frame_property_name, data);
++    if (res != AMF_OK) {
++        ctx->nb_attached_frames--;
++        av_frame_free(&frame_ref);
+     }
+     return res;
+ }
+@@ -384,7 +398,14 @@
+     if(res == AMF_OK && var.int64Value){
+         AVFrame *frame_ref;
+         memcpy(&frame_ref, &var.int64Value, sizeof(frame_ref));
+-        av_frame_free(&frame_ref);
++        for (int i = 0; i < ctx->nb_attached_frames; i++) {
++            if (ctx->attached_frames[i] == frame_ref) {
++                av_frame_free(&ctx->attached_frames[i]);
++                ctx->attached_frames[i] = ctx->attached_frames[--ctx->nb_attached_frames];
++                return AMF_OK;
++            }
++        }
++        return AMF_FAIL;
+     }
+     return res;
+ }
+@@ -443,7 +464,11 @@
+         break;
+     }
+     if (hw_surface) {
+-        amf_store_attached_frame_ref(ctx, frame, surface);
++        res = amf_store_attached_frame_ref(ctx, frame, surface);
++        if (res != AMF_OK) {
++            surface->pVtbl->Release(surface);
++            return AVERROR(ENOMEM);
++        }
+         ctx->hwsurfaces_in_queue++;
+         // input HW surfaces can be vertically aligned by 16; tell AMF the real size
+         surface->pVtbl->SetCrop(surface, 0, 0, frame->width, frame->height);

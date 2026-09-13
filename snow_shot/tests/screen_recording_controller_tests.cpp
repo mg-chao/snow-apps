@@ -88,10 +88,12 @@ ScreenshotToolPalette* palette() {
 class ErrorObserver final : public QObject {
   public:
     int shown = 0;
+    QString lastText;
     bool eventFilter(QObject* watched, QEvent* event) override {
         if (event->type() == QEvent::Show) {
             if (auto* dialog = qobject_cast<QMessageBox*>(watched)) {
                 ++shown;
+                lastText = dialog->text();
                 QTimer::singleShot(0, dialog, &QMessageBox::accept);
             }
         }
@@ -234,6 +236,12 @@ void closeAndStopHaveIndependentUiLifetimes() {
                     "backend must be destroyed exactly once");
             require(errors.shown == previousErrors + (failure ? 1 : 0),
                     "export failure must be reported even after Close");
+            if (failure) {
+                require(
+                    errors.lastText.contains(QStringLiteral("Keep this folder")) &&
+                        errors.lastText.contains(QStringLiteral("D:/recordings/recovery")),
+                    "failed recovery must show an actionable translated message and media path");
+            }
             require(recordingWindowCount() == (close ? 0 : 2),
                     "completion must not recreate closed UI");
             if (!close) {
@@ -1085,14 +1093,18 @@ uint8_t snow_capture_recording_session_resume(SnowCaptureRecordingSession*) {
     return 1;
 }
 SnowCaptureResult snow_capture_recording_session_stop(SnowCaptureRecordingSession*) {
-    ++exports;
+    // Snapshot the gate before publishing entry. The UI may release and clear
+    // the global shared_future as soon as exportEntered becomes ready.
+    const auto gate = exportGate;
+    const bool failure = failExport.load();
     if (exportEntered != nullptr) {
         exportEntered->set_value();
     }
-    if (exportGate.valid()) {
-        exportGate.wait();
+    if (gate.valid()) {
+        gate.wait();
     }
-    return failExport ? SNOW_CAPTURE_RESULT_INVALID_ARGUMENT : SNOW_CAPTURE_RESULT_OK;
+    ++exports;
+    return failure ? SNOW_CAPTURE_RESULT_INVALID_ARGUMENT : SNOW_CAPTURE_RESULT_OK;
 }
 uint8_t snow_capture_recording_session_state(const SnowCaptureRecordingSession*,
                                              SnowCaptureRecordingState* state) {
@@ -1100,6 +1112,10 @@ uint8_t snow_capture_recording_session_state(const SnowCaptureRecordingSession*,
     return 1;
 }
 const char* snow_capture_last_error_message() {
+    if (failExport) {
+        return "recording recovery: finalization failed; recoverable media is retained in "
+               "D:/recordings/recovery";
+    }
     return "test backend";
 }
 }

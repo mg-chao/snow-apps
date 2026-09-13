@@ -637,8 +637,11 @@
           "name": "ffmpeg",
           "default-features": false,
           "features": [
+            "amf",
             "avcodec",
             "avformat",
+            "nvcodec",
+            "qsv",
             "swresample",
             "swscale",
             "webp",

@@ -458,6 +458,13 @@ uint8_t
 snow_capture_recording_session_stop_and_export(SnowCaptureRecordingSession* session,
                                                const SnowCaptureRecordingExportConfig* config);
 SnowCaptureResult snow_capture_recording_session_stop(SnowCaptureRecordingSession* session);
+/* Disposable one-second native-GPU diagnostic using the regular direct recording
+ * path. Publishes to the supplied path without overwriting, and returns OK only
+ * if the complete GPU pipeline produced video. Set recover to 1 to disconnect
+ * GPU capture and require successful software recovery; otherwise use 0.
+ * Existing config layouts are unchanged. */
+SnowCaptureResult snow_capture_recording_gpu_probe(const SnowCaptureDirectRecordingConfig* config,
+                                                 uint32_t recover);
 /* Live recording sessions created and not yet destroyed; for leak diagnostics in tests. */
 size_t snow_capture_recording_session_live_count(void);
 

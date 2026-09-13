@@ -742,10 +742,10 @@ fn stream_loop(
     store_queue_fill(stats, queue.push(CaptureEvent::StreamEnded).data_len);
 }
 
-struct AlignedCaptureCadence {
-    origin: Instant,
-    fps: u32,
-    next: u64,
+pub(crate) struct AlignedCaptureCadence {
+    pub(crate) origin: Instant,
+    pub(crate) fps: u32,
+    pub(crate) next: u64,
 }
 impl AlignedCaptureCadence {
     fn offset(index: u64, fps: u32) -> Duration {
@@ -755,7 +755,7 @@ impl AlignedCaptureCadence {
                 .min(u128::from(u64::MAX)) as u64,
         )
     }
-    fn wait(&mut self, now: Instant) -> Duration {
+    pub(crate) fn wait(&mut self, now: Instant) -> Duration {
         let elapsed = now.saturating_duration_since(self.origin);
         let current = (elapsed.as_nanos() * u128::from(self.fps) * 4).saturating_sub(1_000_000_000)
             / (4 * 1_000_000_000u128);

@@ -212,6 +212,8 @@ fn map_resource_read_with_spin(
         match map_result {
             Ok(()) => {
                 update_adaptive_map_spin_polls(max_polls, Some(attempt));
+                #[cfg(feature = "stage-timing")]
+                crate::pixel_counters::readback();
                 return Ok(mapped);
             }
             Err(error) if error.code() == DXGI_ERROR_WAS_STILL_DRAWING => {
@@ -233,6 +235,8 @@ fn map_resource_read_with_spin(
     unsafe { context.Map(resource, 0, D3D11_MAP_READ, 0, Some(&mut mapped)) }
         .context(map_context)
         .map_err(CaptureError::platform)?;
+    #[cfg(feature = "stage-timing")]
+    crate::pixel_counters::readback();
     Ok(mapped)
 }
 
@@ -246,6 +250,8 @@ fn map_resource_read_blocking(
     unsafe { context.Map(resource, 0, D3D11_MAP_READ, 0, Some(&mut mapped)) }
         .context(map_context)
         .map_err(CaptureError::platform)?;
+    #[cfg(feature = "stage-timing")]
+    crate::pixel_counters::readback();
     Ok(mapped)
 }
 

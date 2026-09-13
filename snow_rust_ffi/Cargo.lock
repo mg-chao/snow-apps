@@ -776,6 +776,7 @@ dependencies = [
  "rustc-hash",
  "snow-core",
  "snow-cursor",
+ "snow-d3d11",
  "windows",
 ]
 
@@ -804,6 +805,14 @@ name = "snow-cursor"
 version = "0.1.0"
 dependencies = [
  "snow-core",
+ "windows",
+]
+
+[[package]]
+name = "snow-d3d11"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
  "windows",
 ]
 
@@ -930,10 +939,12 @@ dependencies = [
  "rayon",
  "serde",
  "snow-audio-recorder",
+ "snow-d3d11",
  "snow-recording-model",
  "tempfile",
  "thiserror",
  "uuid",
+ "windows",
  "zstd",
 ]
 
@@ -959,6 +970,7 @@ dependencies = [
  "snow-capture",
  "snow-core",
  "snow-cursor",
+ "snow-d3d11",
  "snow-pipeline",
  "snow-recording-effects",
  "snow-recording-export",

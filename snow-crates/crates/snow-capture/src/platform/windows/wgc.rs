@@ -176,6 +176,9 @@ enum WorkerTarget {
     },
 }
 
+mod gpu;
+pub(crate) use gpu::GpuWgcCapturer;
+
 impl WorkerTarget {
     fn hdr_to_sdr(self) -> Option<HdrFrameContext> {
         match self {
@@ -533,6 +536,7 @@ impl SourcePhase {
 struct WgcWorker {
     device: ID3D11Device,
     context: ID3D11DeviceContext,
+    shared_device: Option<snow_d3d11::SharedDevice>,
     winrt_device: IDirect3DDevice,
     item: GraphicsCaptureItem,
     frame_pool: Direct3D11CaptureFramePool,
@@ -567,6 +571,13 @@ struct WgcWorker {
 
 impl WgcWorker {
     fn new(target: WorkerTarget) -> CaptureResult<Self> {
+        Self::new_with_device(target, None)
+    }
+
+    fn new_with_device(
+        target: WorkerTarget,
+        shared: Option<&snow_d3d11::SharedDevice>,
+    ) -> CaptureResult<Self> {
         let com = CoInitGuard::init_multithreaded().map_err(CaptureError::platform)?;
         let hdr_to_sdr = target.hdr_to_sdr();
         let (device, context, item) = match target {
@@ -576,8 +587,12 @@ impl WgcWorker {
                 ..
             } => {
                 let adapter = super::monitor::resolve_adapter_by_luid(adapter_luid)?;
-                let (device, context) = d3d11::create_d3d11_device_for_adapter(&adapter, false)
-                    .map_err(CaptureError::platform)?;
+                let (device, context) = if let Some(shared) = shared {
+                    (shared.device().clone(), shared.context().clone())
+                } else {
+                    d3d11::create_d3d11_device_for_adapter(&adapter, false)
+                        .map_err(CaptureError::platform)?
+                };
                 let monitor = HMONITOR(monitor as *mut c_void);
                 let item = create_monitor_capture_item(monitor)?;
                 (device, context, item)
@@ -665,6 +680,7 @@ impl WgcWorker {
         Ok(Self {
             device,
             context,
+            shared_device: shared.cloned(),
             winrt_device,
             item,
             frame_pool,
@@ -1023,6 +1039,7 @@ impl WgcWorker {
         let outcome = self.canonical.apply(
             &self.device,
             &self.context,
+            self.shared_device.as_ref(),
             &packet.frame,
             &texture,
             source_desc,

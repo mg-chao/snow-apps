@@ -23,6 +23,16 @@
             <translation>Screen recording</translation>
         </message>
         <message>
+            <source>The recording could not be finalized. Recoverable media and its timeline were saved in:
+%1
+
+Keep this folder to recover the recording.</source>
+            <translation>The recording could not be finalized. Recoverable media and its timeline were saved in:
+%1
+
+Keep this folder to recover the recording.</translation>
+        </message>
+        <message>
             <source>The recording operation failed</source>
             <translation>The recording operation failed</translation>
         </message>

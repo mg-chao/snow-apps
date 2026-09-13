@@ -5349,6 +5349,9 @@ if(WIN32)
         libswresample
         libswscale
         libavutil
+        # FFmpeg's generated static .pc files omit this private QSV dependency.
+        # Keep it on the shared imported target for every Rust FFI consumer.
+        vpl
     )
     set(ENV{PKG_CONFIG_PATH} "${_SNOW_SHOT_SAVED_PKG_CONFIG_PATH}")
     unset(_SNOW_SHOT_SAVED_PKG_CONFIG_PATH)
@@ -5403,6 +5406,7 @@ if(WIN32)
             "libwebp*.dll"
             "libsharpyuv*.dll"
             "openh264-*.dll"
+            "vpl*.dll"
         )
         set(SNOW_SHOT_FFMPEG_DLLS)
         foreach(_ffmpeg_dll_pattern IN LISTS SNOW_SHOT_FFMPEG_DLL_PATTERNS)

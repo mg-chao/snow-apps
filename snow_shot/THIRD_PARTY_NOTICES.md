@@ -52,6 +52,14 @@ reuse crossbeam-channel (MIT OR Apache-2.0) and Microsoft windows-rs (MIT OR
 Apache-2.0) for bounded input observation and native font rendering. Their
 resolved licenses are included in the generated Rust dependency bundle.
 
+GPU screen recording uses the repository's Apache-2.0 `snow-d3d11` crate and
+Microsoft windows-rs (MIT OR Apache-2.0). The restricted FFmpeg 9.0 build enables
+native H.264 surfaces using AMD AMF headers 1.5.2 (MIT), NVIDIA nv-codec-headers
+13.0.19.0 (MIT), and Intel oneVPL dispatcher 2.17.0 (MIT). The headers and
+dispatcher notices are collected from the resolved vcpkg packages, including
+the full copyright notices. Vendor display drivers supply the hardware codec
+implementations; those drivers are not distributed with Snow Shot.
+
 The generated bundle is authoritative for a particular binary because its
 contents are produced from that build environment. Dependency licenses and
 copyright notices remain the property of their respective owners.

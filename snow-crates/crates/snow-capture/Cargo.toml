@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 snow-core = { path = "../snow-core" }
+snow-d3d11 = { path = "../snow-d3d11" }
 snow-cursor = { path = "../snow-cursor" }
 anyhow.workspace = true
 rustc-hash.workspace = true

@@ -54,6 +54,13 @@ struct OwnedEncoder {
 }
 
 impl OwnedEncoder {
+    fn preserve_failure(&mut self, cause: ScreenRecorderError) -> ScreenRecorderError {
+        self.encoder
+            .preserve_recovery_failure(&cause.to_string())
+            .map(ScreenRecorderError::from)
+            .unwrap_or(cause)
+    }
+
     fn new(
         config: StreamingEncoderBuilder,
         audio: Option<AudioStreamHandle>,
@@ -138,6 +145,15 @@ impl OwnedEncoder {
     }
 
     fn finish(mut self, endpoint: u64) -> Result<StreamingEncoderReport> {
+        // Device shutdown can take time after the accepted video boundary.
+        // RecordingClock::finalize closes pauses; it does not freeze elapsed time.
+        // Flush audio to the same integer PTS boundary as video, independently
+        // of capture/audio teardown and recovery latency.
+        let fps = u64::from(self.encoder.fps());
+        let audio_endpoint = Duration::new(
+            endpoint / fps,
+            ((endpoint % fps) * 1_000_000_000 / fps) as u32,
+        );
         let mut dropped_audio = 0;
         if let Some(audio) = self.audio.take() {
             let stats = Arc::clone(audio.stats());
@@ -147,11 +163,9 @@ impl OwnedEncoder {
             dropped_audio = stats.snapshot().frames_dropped;
         }
         if let Some(mixer) = self.mixer.as_mut() {
-            mixer.emit_ready(
-                self.clock.active_elapsed_duration(Instant::now()),
-                true,
-                &mut self.encoder,
-            )?;
+            if let Err(error) = mixer.emit_ready(audio_endpoint, true, &mut self.encoder) {
+                return Err(self.preserve_failure(error));
+            }
             dropped_audio += mixer.dropped_frames;
         }
         let mut report = self.encoder.finish_at_pts(endpoint)?;
@@ -218,6 +232,75 @@ pub(super) struct RecordingEncoder {
 }
 
 impl RecordingEncoder {
+    pub(super) fn preserve_failure(&mut self, cause: ScreenRecorderError) -> ScreenRecorderError {
+        match self.driver.as_mut().expect("encoder driver") {
+            Driver::Inline(owned) => owned.preserve_failure(cause),
+            #[cfg(any(test, feature = "bench-synthetic-input"))]
+            Driver::Threaded(_) => cause,
+        }
+    }
+    #[cfg(all(windows, any(test, feature = "bench-synthetic-input")))]
+    pub(super) fn inject_gpu_failure(
+        &mut self,
+        stage: snow_recording_export::streaming::GpuFailureStage,
+    ) {
+        if let Driver::Inline(owned) = self.driver.as_mut().expect("encoder driver") {
+            owned.encoder.inject_gpu_failure(stage);
+        }
+    }
+    #[cfg(windows)]
+    pub(super) fn recover_to_software(&mut self, reason: &str) -> Result<()> {
+        match self.driver.as_mut().expect("encoder driver") {
+            Driver::Inline(owned) => Ok(owned.encoder.recover_to_software(reason)?),
+            #[cfg(any(test, feature = "bench-synthetic-input"))]
+            Driver::Threaded(_) => Err(ScreenRecorderError::Encode(
+                "GPU recovery requires the inline encoder owner".into(),
+            )),
+        }
+    }
+    #[cfg(windows)]
+    pub(super) fn poll_gpu_packets(&mut self) -> Result<()> {
+        match self.driver.as_mut().expect("encoder driver") {
+            Driver::Inline(owned) => Ok(owned.encoder.poll_gpu_packets()?),
+            #[cfg(any(test, feature = "bench-synthetic-input"))]
+            Driver::Threaded(_) => Ok(()),
+        }
+    }
+    #[cfg(windows)]
+    pub(super) fn needs_recovery_image(&self) -> bool {
+        match self.driver.as_ref().expect("encoder driver") {
+            Driver::Inline(owned) => owned.encoder.needs_recovery_image(),
+            #[cfg(any(test, feature = "bench-synthetic-input"))]
+            Driver::Threaded(_) => false,
+        }
+    }
+    #[cfg(windows)]
+    pub(super) fn allocate_gpu_frame(
+        &mut self,
+    ) -> Result<Option<snow_recording_export::gpu::GpuEncoderFrame>> {
+        match self.driver.as_mut().expect("encoder driver") {
+            Driver::Inline(owned) => Ok(owned.encoder.allocate_gpu_frame()?),
+            #[cfg(any(test, feature = "bench-synthetic-input"))]
+            Driver::Threaded(_) => Err(ScreenRecorderError::Encode(
+                "GPU surfaces require the inline encoder owner".into(),
+            )),
+        }
+    }
+
+    #[cfg(windows)]
+    pub(super) fn push_gpu_frame_at_pts(
+        &mut self,
+        pts: u64,
+        frame: snow_recording_export::gpu::GpuEncoderFrame,
+    ) -> Result<()> {
+        match self.driver.as_mut().expect("encoder driver") {
+            Driver::Inline(owned) => Ok(owned.encoder.push_gpu_frame_at_pts(pts, frame)?),
+            #[cfg(any(test, feature = "bench-synthetic-input"))]
+            Driver::Threaded(_) => Err(ScreenRecorderError::Encode(
+                "GPU surfaces require the inline encoder owner".into(),
+            )),
+        }
+    }
     pub(super) fn new(
         config: impl Into<StreamingEncoderBuilder>,
         audio: Option<AudioStreamHandle>,
@@ -484,6 +567,122 @@ mod tests {
             encode_threads: 1,
             audio: None,
         }
+    }
+
+    #[test]
+    fn audio_finalization_uses_video_endpoint_after_delayed_shutdown_and_recovery() {
+        use ffmpeg_next::Rescale;
+
+        let directory = tempfile::tempdir().unwrap();
+        for fps in [10, 30] {
+            for recover in [false, true] {
+                let path = directory
+                    .path()
+                    .join(format!("endpoint-{fps}-{recover}.mp4"));
+                let mut settings = config(path.clone());
+                settings.fps = fps;
+                settings.audio = Some(snow_recording_export::streaming::StreamingAudioConfig {
+                    sample_rate_hz: AUDIO_SAMPLE_RATE,
+                    channels: AUDIO_CHANNELS,
+                    bitrate_kbps: 128,
+                });
+                // A completed one-second active timeline followed by slow device
+                // teardown. No sleeps or hardware are needed to reproduce the
+                // old flush extending audio to the still-advancing wall clock.
+                let started = Instant::now() - Duration::from_secs(5);
+                let clock = RecordingClock::new(started);
+                clock
+                    .controller()
+                    .mark_pause(started + Duration::from_millis(400));
+                clock
+                    .controller()
+                    .mark_resume(started + Duration::from_millis(600));
+                clock
+                    .controller()
+                    .finalize(started + Duration::from_millis(1200));
+                let mut owned = OwnedEncoder::new(
+                    StreamingEncoder::builder(settings).recoverable(),
+                    None,
+                    (true, false),
+                    clock,
+                    (0, false),
+                )
+                .unwrap();
+                for pts in [0, 1] {
+                    owned
+                        .encoder
+                        .push_owned_rgba_frame_at_pts(pts, vec![80; 16 * 16 * 4])
+                        .unwrap();
+                }
+                if recover {
+                    owned
+                        .encoder
+                        .recover_to_software("delayed shutdown fixture")
+                        .unwrap();
+                    owned
+                        .encoder
+                        .push_owned_rgba_frame_at_pts(u64::from(fps / 2), vec![90; 16 * 16 * 4])
+                        .unwrap();
+                }
+                let report = owned.finish(u64::from(fps)).unwrap();
+                assert_eq!(report.encoded_audio_frames, u64::from(AUDIO_SAMPLE_RATE));
+                assert_eq!(report.recovery_count, u32::from(recover));
+                let mut media = ffmpeg_next::format::input(&path).unwrap();
+                let mut audio_pts = Vec::new();
+                let mut audio_end = 0;
+                let mut video_end = 0;
+                for (stream, packet) in media.packets() {
+                    let end = (packet.pts().unwrap() + packet.duration())
+                        .rescale(stream.time_base(), (1, 1000));
+                    if stream.parameters().medium() == ffmpeg_next::media::Type::Audio {
+                        audio_pts.push(packet.pts().unwrap());
+                        audio_end = end;
+                    } else {
+                        video_end = end;
+                    }
+                }
+                assert_eq!(video_end, 1000);
+                assert!(audio_pts.len() >= 47);
+                assert!(audio_pts.windows(2).all(|pair| pair[1] - pair[0] == 1024));
+                // AAC may pad the final 1024-sample frame, at most 22 ms.
+                assert!((1000..=1022).contains(&audio_end), "audio end {audio_end}");
+            }
+        }
+    }
+
+    #[test]
+    fn audio_finalization_failure_retains_recoverable_video() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("unpublished.mp4");
+        let mut owned = OwnedEncoder::new(
+            StreamingEncoder::builder(config(path.clone())).recoverable(),
+            None,
+            (false, false),
+            RecordingClock::new(Instant::now() - Duration::from_millis(100)),
+            (0, false),
+        )
+        .unwrap();
+        for pts in [0, 1] {
+            owned
+                .encoder
+                .push_owned_rgba_frame_at_pts(pts, vec![80; 16 * 16 * 4])
+                .unwrap();
+        }
+        // Inject a failed audio sink: the mixer has data but the encoder has no
+        // audio track. The stop boundary must retain already emitted video.
+        owned.mixer = Some(LiveAudioMixer::new(true, false));
+        let error = owned.finish(10).unwrap_err().to_string();
+        assert!(error.contains("without an audio track"), "{error}");
+        assert!(error.contains("recoverable media is retained"), "{error}");
+        assert!(!path.exists());
+        let retained = std::fs::read_dir(directory.path())
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let manifest = std::fs::read_to_string(retained.join("timeline.txt")).unwrap();
+        assert!(manifest.contains("video\t0\t1\t"), "{manifest}");
     }
 
     #[test]

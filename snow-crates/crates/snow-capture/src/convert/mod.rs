@@ -1334,6 +1334,8 @@ pub(crate) unsafe fn convert_surface_to_rgba_unchecked(
     layout: SurfaceLayout,
     options: SurfaceConversionOptions,
 ) {
+    #[cfg(feature = "stage-timing")]
+    crate::pixel_counters::conversion();
     if layout.is_empty() {
         return;
     }
