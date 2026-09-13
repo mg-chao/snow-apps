@@ -10,19 +10,21 @@
 #include "widgets/button.h"
 #include "widgets/popconfirm.h"
 #include "widgets/switch.h"
+#include "theme/theme_manager.h"
 
 #include <QAbstractButton>
 #include <QApplication>
 #include <QMouseEvent>
 #include <QDir>
 #include <QHash>
+#include <QImage>
 #include <QTemporaryDir>
 
 #include <cstdlib>
 #include <iostream>
 
 namespace {
-void clickReset(QWidget* button) {
+void clickWidget(QWidget* button) {
     const QPointF local = button->rect().center();
     const QPointF global = button->mapToGlobal(local.toPoint());
     QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton, Qt::LeftButton,
@@ -37,6 +39,21 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(EXIT_FAILURE);
     }
+}
+
+bool thumbIsOnRight(adqt::widgets::AdSwitch* toggle) {
+    const QImage image = toggle->grab().toImage();
+    int left = 0;
+    int right = 0;
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            if (image.pixelColor(x, y) == QColor(Qt::magenta)) {
+                (x < image.width() / 2 ? left : right)++;
+            }
+        }
+    }
+    require(left + right > 0, "rendered switch contains the test thumb color");
+    return right > left;
 }
 class FakeTranslationHotkeyBackend final : public snow_shot::presentation::GlobalShortcutBackend {
   public:
@@ -148,13 +165,17 @@ void selectedTextShortcutSettings() {
                         confirmation != nullptr && toggle != nullptr && toggle->isChecked() &&
                         reset->geometry().right() == header->contentsRect().right(),
                     "extended category uses the shared right-aligned reset and generated toggle");
-            clickReset(reset);
+            adqt::widgets::AdSwitch::ComponentTokens tokens;
+            tokens.colors.thumb = QColor(Qt::magenta);
+            toggle->setComponentTokens(tokens);
+            require(thumbIsOnRight(toggle), "enabled translation renders the thumb on the right");
+            clickWidget(reset);
             QCoreApplication::processEvents();
             require(confirmation->isVisible(), "extended reset opens shared confirmation");
             confirmation->button(adqt::widgets::AdPopconfirm::StandardButton::Cancel)->click();
             require(storage::ExtendedFeaturesSettings().translationPageEnabled(),
                     "cancel extended category reset preserves feature opt-in");
-            clickReset(reset);
+            clickWidget(reset);
             QCoreApplication::processEvents();
             confirmation->button(adqt::widgets::AdPopconfirm::StandardButton::Ok)->click();
             QCoreApplication::processEvents();
@@ -166,8 +187,14 @@ void selectedTextShortcutSettings() {
                         !input->registrations.values().contains(keys.first()) &&
                         persisted.translateSelectedText() == keys,
                     "reset disables translation, refreshes UI and hotkeys, and preserves bindings");
-            require(session.submitDraft(QStringLiteral("extended-features.translation-page"), true),
-                    "generated feature field can be enabled again after reset");
+            require(!thumbIsOnRight(toggle), "reset moves the translation thumb to the left");
+            for (const bool enabled : {true, false, true}) {
+                clickWidget(toggle);
+                QCoreApplication::processEvents();
+                require(toggle->isChecked() == enabled && thumbIsOnRight(toggle) == enabled &&
+                            storage::ExtendedFeaturesSettings().translationPageEnabled() == enabled,
+                        "clicking translation after reset updates both rendering and storage");
+            }
             QCoreApplication::processEvents();
         }
         require(session.state(standaloneId).enabled, "master on enables standalone switch live");
@@ -244,6 +271,9 @@ void selectedTextShortcutSettings() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    auto themeConfig = adqt::theme::ThemeManager::instance().config();
+    themeConfig.motion = false;
+    adqt::theme::ThemeManager::instance().setConfig(themeConfig);
     QTemporaryDir temporary;
     require(temporary.isValid(), "create isolated translation settings storage");
     const QString executable = QDir(temporary.path()).filePath(QStringLiteral("bin"));

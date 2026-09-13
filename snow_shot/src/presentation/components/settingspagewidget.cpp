@@ -990,7 +990,6 @@ class SettingsPageWidget::Impl {
                 const auto* definition =
                     std::get_if<settings::SettingsSwitchDefinition>(&runtime.definition->payload);
                 if (definition != nullptr) {
-                    const QSignalBlocker blocker(runtime.switchControl);
                     runtime.switchControl->setChecked(
                         runtimeSession.switchValue(definition->binding));
                     runtime.switchControl->setEnabled(
