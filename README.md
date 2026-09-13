@@ -4,6 +4,9 @@ Snow Apps repository, providing source code for Snow Shot and Snow Image Viewer.
 
 <div style="font-size: 128px">🏗️🚧🦺</div>
 
+The Apple Silicon port supports screenshots, recording, and managed OCR; see the
+[macOS build and packaging instructions](docs/macos.md).
+
 ## Open Source Licenses
 
 This is a multi-license repository. See [LICENSE.md](LICENSE.md) for the

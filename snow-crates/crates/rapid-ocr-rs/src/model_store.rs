@@ -63,6 +63,7 @@ fn acquire_download_guard(save_dir: &Path) -> Result<DownloadGuard> {
 
     #[cfg(not(target_os = "windows"))]
     {
+        let _ = save_dir;
         let guard = DOWNLOAD_LOCK
             .get_or_init(|| Mutex::new(()))
             .lock()

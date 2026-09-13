@@ -241,7 +241,12 @@ void builtInCatalogIsCompleteAndValid() {
                 windowElementSelect->binding == settings::SettingsSelectBinding::WindowElementApi &&
                 windowElementSelect->options.size() == 2 &&
                 windowElementSelect->options.at(0).value == QStringLiteral("msaa") &&
-                windowElementSelect->options.at(0).label.translated() == QStringLiteral("MSAA") &&
+                windowElementSelect->options.at(0).label.translated() ==
+#ifdef Q_OS_MACOS
+                    QStringLiteral("macOS Accessibility") &&
+#else
+                    QStringLiteral("MSAA") &&
+#endif
                 windowElementSelect->options.at(1).value == QStringLiteral("uia") &&
                 windowElementSelect->options.at(1).label.translated() == QStringLiteral("UIA") &&
                 storage::ConfigurationSchema::defaultValue(windowElementApi->configurationKey) ==
@@ -889,7 +894,7 @@ void globalMouseSettingsHaveStableContracts() {
             history->pageId == QStringLiteral("screenshot-history"),
         "navigation order must be Global hotkeys, Global mouse, Screenshot history, Translation");
 
-    for (qsizetype index = 0; index < std::size(expectations); ++index) {
+    for (qsizetype index = 0; index < std::ssize(expectations); ++index) {
         const auto& expected = expectations[index];
         const auto& item = index < section->items.size() ? section->items.at(index)
                                                          : recording->items.constFirst();

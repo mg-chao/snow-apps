@@ -17,7 +17,9 @@ impl CursorCaptureError {
 impl fmt::Display for CursorCaptureError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnsupportedPlatform => write!(f, "cursor capture is only supported on Windows"),
+            Self::UnsupportedPlatform => {
+                write!(f, "cursor capture is unsupported on this platform")
+            }
             Self::Platform(message) => write!(f, "{message}"),
         }
     }

@@ -23,7 +23,7 @@ struct StorageInitializationOptions {
     QString executableDirectory;
     QString appDataDirectory;
     int debounceMilliseconds = 1000;
-    std::shared_ptr<const StorageDirectorySelection> resolvedDirectory;
+    std::shared_ptr<const StorageDirectorySelection> resolvedDirectory{};
 };
 
 enum class StorageMode {

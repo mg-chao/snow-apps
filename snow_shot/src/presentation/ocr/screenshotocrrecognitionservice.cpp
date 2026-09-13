@@ -150,8 +150,9 @@ QPolygonF quadFromValues(const float* points, const QRectF& canvasRect, const QS
     QPolygonF polygon;
     polygon.reserve(4);
     for (int index = 0; index < 4; ++index) {
-        polygon.push_back(QPointF(canvasRect.left() + points[index * 2] * scaleX,
-                                  canvasRect.top() + points[index * 2 + 1] * scaleY));
+        polygon.push_back(
+            QPointF(canvasRect.left() + static_cast<qreal>(points[index * 2]) * scaleX,
+                    canvasRect.top() + static_cast<qreal>(points[index * 2 + 1]) * scaleY));
     }
     return polygon;
 }
@@ -284,7 +285,8 @@ class ScreenshotOcrTransport final : public QObject {
         uchar* header = m_mapping + slot * m_slotBytes;
         writeU32(header + kSlotStateOffset, kSlotFree);
         for (int row = 0; row < image.height(); ++row)
-            std::memcpy(header + kSlotHeaderBytes + row * stride, image.constScanLine(row), stride);
+            std::memcpy(header + kSlotHeaderBytes + row * stride, image.constScanLine(row),
+                        static_cast<std::size_t>(stride));
         writeU64(header + kSlotSequenceOffset, sequence);
         writeU32(header + kSlotWidthOffset, static_cast<quint32>(image.width()));
         writeU32(header + kSlotHeightOffset, static_cast<quint32>(image.height()));
@@ -344,7 +346,7 @@ class ScreenshotOcrRecognitionService::Impl final {
           m_proxyUrl(options.proxyUrl), m_modelType(options.modelType),
           m_backendPreference(preference) {
         m_queueClock.start();
-        m_slots.resize(m_workerLimit);
+        m_slots.resize(static_cast<std::size_t>(m_workerLimit));
         m_transportThread.setObjectName(QStringLiteral("snow-ocr-transport"));
         m_localPool->setMaxThreadCount(m_workerLimit);
         if (!options.processPath.trimmed().isEmpty() &&
@@ -362,14 +364,24 @@ class ScreenshotOcrRecognitionService::Impl final {
             m_assets.stateDirectory = options.stateDirectory;
             m_assetStatus = {ScreenshotOcrAssetPhase::ReadyCached, QStringLiteral("assets")};
         } else {
-            const QString offlineRoot = options.offlineRoot.trimmed().isEmpty()
-                                            ? QDir(QCoreApplication::applicationDirPath())
-                                                  .filePath(QStringLiteral("assets/ocr"))
-                                            : options.offlineRoot;
-            m_assetManager = std::make_unique<ScreenshotOcrAssets>(
-                ScreenshotOcrAssets::Options{offlineRoot, options.cacheRoot, options.proxyUrl,
-                                             options.modelType},
-                owner);
+            const QDir applicationDirectory(QCoreApplication::applicationDirPath());
+#ifdef Q_OS_MACOS
+            const QString defaultAssetRoot =
+                applicationDirectory.filePath(QStringLiteral("../Resources/assets/ocr"));
+#else
+            const QString defaultAssetRoot =
+                applicationDirectory.filePath(QStringLiteral("assets/ocr"));
+#endif
+            const QString offlineRoot =
+                options.offlineRoot.trimmed().isEmpty() ? defaultAssetRoot : options.offlineRoot;
+            ScreenshotOcrAssets::Options assetOptions{offlineRoot, options.cacheRoot,
+                                                      options.proxyUrl, options.modelType};
+#ifdef Q_OS_MACOS
+            assetOptions.bundledRuntimeDirectory = options.bundledRuntimeDirectory.isEmpty()
+                                                       ? applicationDirectory.absolutePath()
+                                                       : options.bundledRuntimeDirectory;
+#endif
+            m_assetManager = std::make_unique<ScreenshotOcrAssets>(std::move(assetOptions), owner);
             connect(m_assetManager.get(), &ScreenshotOcrAssets::statusChanged, owner,
                     [this](const ScreenshotOcrAssetStatus& status) { m_assetStatus = status; });
             connect(m_assetManager.get(), &ScreenshotOcrAssets::ready, owner,
@@ -541,7 +553,7 @@ class ScreenshotOcrRecognitionService::Impl final {
                 m_ready = false;
                 m_processStopReason = ProcessStopReason::Cancelled;
                 m_jobs.erase(it);
-                m_slots[job->slot].reset();
+                m_slots[static_cast<std::size_t>(job->slot)].reset();
                 m_runningCount = 0;
             }
         }
@@ -723,7 +735,8 @@ class ScreenshotOcrRecognitionService::Impl final {
                      {{QStringLiteral("child_pid"), pid},
                       {QStringLiteral("slot_count"), static_cast<int>(m_slots.size())},
                       {QStringLiteral("shared_memory_bytes"),
-                       static_cast<qint64>(m_slotBytes * m_slots.size())}});
+                       static_cast<qint64>(static_cast<std::size_t>(m_slotBytes) *
+                                           m_slots.size())}});
              },
              [this, valid](QByteArray bytes) {
                  if (valid())
@@ -765,6 +778,8 @@ class ScreenshotOcrRecognitionService::Impl final {
             m_transportThread.start();
         const auto& diagnostics = snow_shot::diagnostics::DiagnosticsService::instance();
         auto environment = QProcessEnvironment::systemEnvironment();
+        if (!m_assets.onnxRuntimePath.isEmpty())
+            environment.insert(QStringLiteral("ORT_DYLIB_PATH"), m_assets.onnxRuntimePath);
         environment.insert(QStringLiteral("SNOW_SHOT_CRASHPAD_PIPE"), diagnostics.crashPipeName());
         environment.insert(QStringLiteral("SNOW_SHOT_DIAGNOSTICS_SESSION"),
                            diagnostics.status().sessionId);
@@ -807,7 +822,7 @@ class ScreenshotOcrRecognitionService::Impl final {
 
     int acquireSlot() const {
         for (int index = 0; index < static_cast<int>(m_slots.size()); ++index)
-            if (!m_slots[index])
+            if (!m_slots[static_cast<std::size_t>(index)])
                 return index;
         return -1;
     }
@@ -930,8 +945,8 @@ class ScreenshotOcrRecognitionService::Impl final {
                 }
                 return;
             }
-            const quint64 sequence = ++m_slotSequences[slot];
-            m_slots[slot] = job;
+            const quint64 sequence = ++m_slotSequences[static_cast<std::size_t>(slot)];
+            m_slots[static_cast<std::size_t>(slot)] = job;
             job->slot = slot;
             job->running = true;
             job->processSubmitted = true;
@@ -974,12 +989,12 @@ class ScreenshotOcrRecognitionService::Impl final {
                 (static_cast<quint32>(static_cast<quint8>(m_readBuffer.at(1))) << 8) |
                 (static_cast<quint32>(static_cast<quint8>(m_readBuffer.at(2))) << 16) |
                 (static_cast<quint32>(static_cast<quint8>(m_readBuffer.at(3))) << 24);
-            const quint16 version =
+            const quint16 version = static_cast<quint16>(
                 static_cast<quint16>(static_cast<quint8>(m_readBuffer.at(4))) |
-                (static_cast<quint16>(static_cast<quint8>(m_readBuffer.at(5))) << 8);
-            const quint16 kind =
+                (static_cast<quint16>(static_cast<quint8>(m_readBuffer.at(5))) << 8));
+            const quint16 kind = static_cast<quint16>(
                 static_cast<quint16>(static_cast<quint8>(m_readBuffer.at(6))) |
-                (static_cast<quint16>(static_cast<quint8>(m_readBuffer.at(7))) << 8);
+                (static_cast<quint16>(static_cast<quint8>(m_readBuffer.at(7))) << 8));
             qsizetype offset = 8;
             quint64 id = 0;
             quint32 length = 0;
@@ -1086,7 +1101,7 @@ class ScreenshotOcrRecognitionService::Impl final {
                         }
                     ScreenshotOcrLine line;
                     line.text = std::move(text);
-                    line.confidence = confidence;
+                    line.confidence = static_cast<qreal>(confidence);
                     line.quad =
                         quadFromValues(points, job->request.canvasRect, job->request.image.size());
                     line.direction = textDirectionForQuad(line.quad);
@@ -1098,7 +1113,7 @@ class ScreenshotOcrRecognitionService::Impl final {
                                                            "Text recognition failed");
             }
             if (job->slot >= 0) {
-                m_slots[job->slot].reset();
+                m_slots[static_cast<std::size_t>(job->slot)].reset();
             }
             job->slot = -1;
             job->running = false;
@@ -1194,7 +1209,7 @@ class ScreenshotOcrRecognitionService::Impl final {
             QStringLiteral("ocr.failed"), error, fields);
         m_pending.erase(std::remove(m_pending.begin(), m_pending.end(), job), m_pending.end());
         if (job->slot >= 0) {
-            m_slots[job->slot].reset();
+            m_slots[static_cast<std::size_t>(job->slot)].reset();
             job->slot = -1;
             job->running = false;
             job->processSubmitted = false;

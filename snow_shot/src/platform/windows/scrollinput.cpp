@@ -2,6 +2,8 @@
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include <qt_windows.h>
+#elif defined(Q_OS_MACOS)
+#include "../macos/scrollinput_p.h"
 #endif
 
 namespace snow_shot::platform::windows {
@@ -48,6 +50,8 @@ ScrollInputResult sendScrollingWheelStep(const QRect& physicalSelection, const Q
                       MAKEWPARAM(0, static_cast<WORD>(delta)), MAKELPARAM(center.x(), center.y())))
         return {ScrollInputResult::Status::PostFailed, GetLastError()};
     return {ScrollInputResult::Status::Posted, 0};
+#elif defined(Q_OS_MACOS)
+    return macos::sendScrollingWheelStep(physicalSelection, wheelDelta);
 #else
     Q_UNUSED(physicalSelection);
     Q_UNUSED(wheelDelta);

@@ -110,6 +110,42 @@
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
         "SNOW_RUST_RELEASE_PROFILE": "release-fast"
       }
+    },
+    {
+      "name": "macos-arm64",
+      "displayName": "Snow Shot macOS Apple Silicon",
+      "environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_PROFILE_RELEASE_FAST_DEBUG": "0",
+        "CARGO_PROFILE_RELEASE_FAST_CODEGEN_UNITS": "4",
+        "CARGO_PROFILE_RELEASE_FAST_INCREMENTAL": "false"
+      },
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/macos-arm64",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/.tools/macos-deps;${sourceDir}/.tools/qt/6.11.2/macos;$env{SNOW_MACOS_BREW_PREFIX}",
+        "ZLIB_INCLUDE_DIR": "${sourceDir}/.tools/macos-deps/include",
+        "ZLIB_LIBRARY_RELEASE": "${sourceDir}/.tools/macos-deps/lib/libz.dylib",
+        "VCPKG_TARGET_TRIPLET": "arm64-osx",
+        "SNOW_FFMPEG_ROOT": "$env{SNOW_MACOS_FFMPEG_PREFIX}",
+        "SNOW_APPS_BUILD_IMAGE_VIEWER": "OFF",
+        "SNOW_APPS_BUILD_TESTS": "OFF",
+        "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
+        "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "OFF",
+        "SNOW_APPS_STRICT_COMPILE": "ON",
+        "SNOW_ENABLE_UNITY_BUILD": "OFF",
+        "SNOW_IMAGE_PROFILE": "redistributable",
+        "SNOW_RUST_RELEASE_PROFILE": "release-fast",
+        "SNOW_APPS_API_BASE_URL": "https://snowshot.top"
+      }
     }
   ],
   "buildPresets": [
@@ -136,6 +172,13 @@
       "configurePreset": "snow-shot-msvc-fast",
       "configuration": "Release",
       "targets": ["snow_shot"]
+    },
+    {
+      "name": "build-macos-arm64",
+      "configurePreset": "macos-arm64",
+      "targets": [
+        "snow_shot"
+      ]
     }
   ],
   "testPresets": [

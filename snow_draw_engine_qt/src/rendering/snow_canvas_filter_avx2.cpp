@@ -269,6 +269,7 @@ int interpolateAndBlendMaskedAvx2(const QRgb* first, const QRgb* second, QRgb* d
 
 namespace {
 
+#if defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)
 inline QRgb grayscalePixel(QRgb pixel) {
     const int alpha = qAlpha(pixel);
     const int luminance =
@@ -295,8 +296,6 @@ inline QRgb blendPixel(QRgb current, QRgb effect, int mix) {
         blendPair((current >> 8) & 0x00ff00ffu, (effect >> 8) & 0x00ff00ffu);
     return redBlue | (alphaGreen << 8);
 }
-
-#if defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)
 
 __m256i grayscalePixels(__m256i pixels) {
     const __m256i byteMask = _mm256_set1_epi32(0xff);

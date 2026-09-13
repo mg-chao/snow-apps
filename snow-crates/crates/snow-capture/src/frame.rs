@@ -42,6 +42,7 @@ pub enum ColorSpace {
 /// Minimum allocation size to attempt large-page backing.
 /// 4K RGBA = 3840x2160x4 ~= 33 MB - well above the 2 MB large page size.
 /// We only bother for allocations >= 4 MB to avoid overhead on small captures.
+#[cfg(windows)]
 const LARGE_PAGE_MIN_BYTES: usize = 4 * 1024 * 1024;
 
 /// A rectangle describing a dirty (changed) region of the screen.
@@ -294,6 +295,7 @@ impl FrameBufferStorage {
         }
     }
 
+    #[cfg(windows)]
     fn as_mut_ptr(&mut self) -> *mut u8 {
         match self {
             FrameBufferStorage::Vec(v) => v.as_mut_ptr(),
@@ -383,6 +385,7 @@ impl FrameBuffer {
         self.make_unique_with_len(len);
     }
 
+    #[cfg(windows)]
     fn as_mut_ptr(&mut self) -> *mut u8 {
         self.make_unique_with_len(self.len());
         Arc::get_mut(&mut self.storage)
@@ -507,6 +510,7 @@ impl Frame {
         crate::cursor_compositor::composite(self, &cursor)
     }
 
+    #[cfg(windows)]
     pub(crate) fn as_mut_rgba_ptr(&mut self) -> *mut u8 {
         self.data.as_mut_ptr()
     }

@@ -30,6 +30,7 @@ class SelectedTextTranslationCoordinator final : public QObject {
 
   signals:
     void mainTranslationRequested(const QString& text);
+    void permissionRequired();
 
   private:
     storage::ConfigurationStore& m_configuration;

@@ -1,4 +1,5 @@
 #include "snow_shot/app/applicationcontroller.h"
+#include "snow_shot/app/applicationlaunchpolicy.h"
 #include "snow_shot/update/updatetransaction.h"
 #include <QTemporaryDir>
 #include <QProcess>
@@ -10,7 +11,7 @@
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/settings/applicationpriority.h"
-#include "snow_shot/platform/windows/autostartregistration.h"
+#include "snow_shot/platform/autostartregistration.h"
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/diagnostics/diagnostics.h"
@@ -35,6 +36,9 @@
 
 #ifdef Q_OS_WIN
 #include <Windows.h>
+#endif
+#ifdef Q_OS_MACOS
+#include "snow_shot/platform/macos/applicationreopenhandler.h"
 #endif
 
 extern "C" void snow_diagnostics_install_panic_hook(void (*callback)(const unsigned char*, size_t));
@@ -165,6 +169,9 @@ int main(int argc, char* argv[]) {
     // into OS-level input interceptors.
     QCoreApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
 
+#ifdef Q_OS_MACOS
+    snow_shot::platform::macos::ApplicationReopenHandler reopenHandler;
+#endif
     QApplication app(argc, argv);
     snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.app"),
                                      QStringLiteral("application.platform"),
@@ -205,34 +212,51 @@ int main(int argc, char* argv[]) {
             shutdownScreenshotHistoryTasks();
         }
     } historyTaskDrain;
-    if (snow_shot::platform::windows::AutoStartRegistration::isSupported()) {
+#ifndef Q_OS_MACOS
+    if (snow_shot::platform::AutoStartRegistration::isSupported()) {
         const bool enabled = snow_shot::storage::SystemSettings().autoStartAtBoot();
         QString error;
-        if ((!enabled ||
-             !snow_shot::platform::windows::AutoStartRegistration::matchesExpectedCommand()) &&
-            !snow_shot::platform::windows::AutoStartRegistration::setEnabled(enabled, &error)) {
+        if ((!enabled || !snow_shot::platform::AutoStartRegistration::matchesExpectedCommand()) &&
+            !snow_shot::platform::AutoStartRegistration::setEnabled(enabled, &error)) {
             qWarning().noquote() << error;
         }
     }
+#endif
     static_cast<void>(snow_shot::presentation::settings::applyConfiguredApplicationPriority());
     QApplication::setQuitOnLastWindowClosed(false);
+#ifndef Q_OS_MACOS
+    // Cocoa uses the padded bundle icon. Installing the full-bleed shared SVG here would
+    // replace it in the Dock as soon as the process starts.
     QApplication::setWindowIcon(
         adqt::icons::makeIcon(snow_shot::presentation::icons::custom::app::ApplicationIcon()));
+#endif
     adqt::locale::LocaleManager::instance().applyTo(app);
     snow_shot::presentation::LanguageManager::instance().initialize();
     snow_shot::presentation::styles::ThemeManager::instance().initialize(app);
     adqt::widgets::AdTooltip::installApplicationTooltips();
 
     snow_shot::app::ApplicationController applicationController(app);
+#ifdef Q_OS_MACOS
+    reopenHandler.setHandler(&applicationController, [&applicationController]() {
+        applicationController.showMainWindow();
+    });
+#endif
     singleInstance.setLaunchRequestHandler([&applicationController](const QStringList& arguments) {
         applicationController.handleLaunchRequest(arguments);
     });
     applicationController.start();
     snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.app"),
                                      QStringLiteral("application.ready"));
-    if (!QApplication::arguments().contains(QStringLiteral("--autostart")) &&
-        QApplication::arguments().contains(QStringLiteral("--show-main-window"))) {
+#ifdef Q_OS_MACOS
+    reopenHandler.setStartupHandler(&applicationController, [&applicationController](bool atLogin) {
+        if (snow_shot::app::shouldShowMainWindowOnStartup(QApplication::arguments(), atLogin)) {
+            applicationController.showMainWindow();
+        }
+    });
+#else
+    if (snow_shot::app::shouldShowMainWindowOnStartup(QApplication::arguments())) {
         applicationController.showMainWindow();
     }
+#endif
     return QApplication::exec();
 }

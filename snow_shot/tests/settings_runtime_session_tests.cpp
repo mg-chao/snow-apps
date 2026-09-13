@@ -53,6 +53,8 @@ QString globalMouseFieldId(settings::SettingsGlobalMouseAction action) {
         return QStringLiteral("global-mouse.screenshot-save");
     case settings::SettingsGlobalMouseAction::ScreenshotQuickSave:
         return QStringLiteral("global-mouse.screenshot-quick-save");
+    case settings::SettingsGlobalMouseAction::ScreenRecording:
+        return QStringLiteral("global-mouse.screen-recording");
     }
     return {};
 }
@@ -1206,7 +1208,35 @@ void globalMouseCombinationsUseTypedStateAndRejectDuplicates() {
         {{QStringLiteral("ctrl"), QStringLiteral("alt")}, QStringLiteral("left_drag")},
     };
 
-    const settings::SettingsRegistry& registry = settings::builtInSettingsRegistry();
+    // Exercise the typed runtime independently of the host's native capability catalog.
+    settings::SettingsSectionDefinition section{QStringLiteral("screenshot"),
+                                                text("Screenshot"),
+                                                text("Mouse gestures"),
+                                                settings::SettingsSectionReset::GlobalMouse,
+                                                {}};
+    for (const Action action : actions) {
+        const QString id = globalMouseFieldId(action);
+        QString key = id.mid(QStringLiteral("global-mouse.").size());
+        key.replace(u'-', u'_');
+        section.items.push_back({id,
+                                 text("Mouse gesture"),
+                                 text("Mouse gesture"),
+                                 {},
+                                 QStringLiteral("global_mouse/") + key,
+                                 settings::SettingsGlobalMouseActionDefinition{action}});
+    }
+    settings::SettingsPageDefinition page{QStringLiteral("global-mouse"),
+                                          QStringLiteral("/global-mouse"),
+                                          text("Global mouse"),
+                                          text("Global mouse settings"),
+                                          {section}};
+    settings::SettingsNavigationPageDefinition navigation{
+        QStringLiteral("nav.global-mouse"), page.id,
+        [] { return adqt::icons::antd::outlined::Appstore(); }};
+    const auto registry = settings::SettingsRegistry::fromCatalog(
+        settings::SettingsCatalog({page}, {navigation}, {page.id, section.id, {}}),
+        QStringLiteral("test-provider"));
+    require(registry.isValid(), "the typed global mouse fixture must validate");
     FakeSettingsBackend backend;
     settings::SettingsRuntimeSession session(registry, backend);
     for (const Action action : actions) {

@@ -38,8 +38,8 @@ struct ScreenshotRecognitionTarget {
     QString key;
     QImage image;
     QRectF canvasRect;
-    std::shared_ptr<QTextDocument> formattedTextDocument;
-    QString formattedPlainText;
+    std::shared_ptr<QTextDocument> formattedTextDocument{};
+    QString formattedPlainText{};
 
     [[nodiscard]] bool isValid() const {
         return !key.isEmpty() && !image.isNull() && canvasRect.isValid() && !canvasRect.isEmpty();

@@ -2807,6 +2807,7 @@ name = "snow-audio-recorder"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cc",
  "criterion",
  "proptest",
  "snow-core",
@@ -2831,6 +2832,7 @@ dependencies = [
  "rustc-hash",
  "snow-core",
  "snow-cursor",
+ "snow-macos",
  "windows",
 ]
 
@@ -2860,6 +2862,7 @@ name = "snow-cursor"
 version = "0.1.0"
 dependencies = [
  "snow-core",
+ "snow-macos",
  "windows",
 ]
 
@@ -2872,6 +2875,13 @@ name = "snow-diagnostics-test"
 version = "0.1.0"
 dependencies = [
  "snow-diagnostics",
+]
+
+[[package]]
+name = "snow-macos"
+version = "0.1.0"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
@@ -2904,7 +2914,9 @@ dependencies = [
 name = "snow-recording-effects"
 version = "0.1.0"
 dependencies = [
+ "cc",
  "crossbeam-channel",
+ "snow-macos",
  "windows",
 ]
 
@@ -3036,6 +3048,7 @@ dependencies = [
 name = "snow-ui-selector-c"
 version = "0.1.0"
 dependencies = [
+ "snow-macos",
  "snow-ui-selector",
  "windows",
 ]

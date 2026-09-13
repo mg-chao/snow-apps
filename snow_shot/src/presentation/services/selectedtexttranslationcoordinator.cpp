@@ -33,6 +33,11 @@ SelectedTextTranslationCoordinator::SelectedTextTranslationCoordinator(
                     emit mainTranslationRequested(text);
                 }
             });
+    connect(m_capture, &SelectedTextTranslationController::permissionRequired, this, [this] {
+        if (!m_shutdown && m_configuration.value(kMasterKey).toBool()) {
+            emit permissionRequired();
+        }
+    });
     connect(&configuration, &storage::ConfigurationStore::valueChanged, this,
             [this](const QString& key, const QJsonValue&) {
                 if (key != kMasterKey && key != kStandaloneKey) {

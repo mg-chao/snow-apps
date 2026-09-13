@@ -12,7 +12,8 @@ struct ScrollInputResult {
         TargetNotFound,
         CoordinateFailure,
         PostFailed,
-        Unsupported
+        Unsupported,
+        PermissionDenied
     };
     Status status = Status::Unsupported;
     quint32 error = 0;

@@ -447,6 +447,63 @@ void synchronousCaptureFailureDoesNotRestartSelectorRefresh() {
             "synchronous failure cleanup must restore the prepared overlay surface state");
 }
 
+void captureFailureIsReportedAfterCleanupAndIgnoresObsoleteResults() {
+    for (const bool synchronous : {false, true}) {
+        ScreenshotCaptureState state;
+        ScreenshotDisplaySession displays;
+        ScreenshotGeometryMapper geometry;
+        ScreenshotInteractionState interaction;
+        ScreenshotSelectionModel selection;
+        ScreenshotIntelligentSelectionModel intelligent;
+        CaptureRuntime runtime;
+        runtime.failCaptureSynchronously = synchronous;
+        ScreenshotCaptureWorkflowContext context{state,       runtime,   geometry,    displays,
+                                                 interaction, selection, intelligent, {}};
+        int failures = 0;
+        QString reportedError;
+        context.captureFailed = [&](const QString& error) {
+            ++failures;
+            reportedError = error;
+            require(!state.captureInProgress && interaction.inactive() &&
+                        state.sessionState == ScreenshotSessionState::IdlePrepared &&
+                        runtime.hideOverlayImmediatelyCalls > 0 &&
+                        runtime.prewarmDisplayPoolSawRuntimeReset,
+                    "capture failure feedback must run only after overlay and session cleanup");
+        };
+        ScreenshotCaptureWorkflow workflow(context);
+        workflow.startCapture();
+        ScreenshotCaptureResult failed;
+        failed.requestId = runtime.lastCaptureRequest.requestId;
+        failed.errorMessage = QStringLiteral("Native screenshot failure");
+        if (!synchronous) {
+            runtime.eventSink->handleCaptureFinished(failed);
+        }
+        require(failures == 1 &&
+                    reportedError == (synchronous
+                                          ? QStringLiteral("Synchronous capture setup failure")
+                                          : failed.errorMessage),
+                "capture failure must preserve the native diagnostic exactly once");
+        runtime.eventSink->handleCaptureFinished(failed);
+        require(failures == 1, "duplicate failed results must not repeat user feedback");
+        runtime.failCaptureSynchronously = false;
+        workflow.startCapture();
+        runtime.eventSink->handleCaptureFinished(failed);
+        require(failures == 1 && state.captureInProgress,
+                "an obsolete failure must not interrupt or report against a new capture");
+        failed.requestId = state.sessionId;
+        workflow.cancelCapture();
+        runtime.eventSink->handleCaptureFinished(failed);
+        require(failures == 1, "a cancelled capture must not present late failure feedback");
+        workflow.startCapture();
+        failed.requestId = state.sessionId;
+        failed.errorMessage.clear();
+        failed.succeeded = true;
+        runtime.eventSink->handleCaptureFinished(failed);
+        require(failures == 2 && reportedError.isEmpty(),
+                "an empty captured display list must request generic failure feedback");
+    }
+}
+
 void restartingCaptureReleasesPreviousSelectorCache() {
     ScreenshotCaptureState state;
     state.sessionState = ScreenshotSessionState::Editing;
@@ -1111,6 +1168,7 @@ int main() {
     exportCancellationDefersExpensiveCleanup();
     captureOverlapsSelectorInitialization();
     synchronousCaptureFailureDoesNotRestartSelectorRefresh();
+    captureFailureIsReportedAfterCleanupAndIgnoresObsoleteResults();
     restartingCaptureReleasesPreviousSelectorCache();
     capturePresentedRunsAfterCapturedOverlayIsShown();
     capturedOverlayWaitsForImageAndSelectionInEitherOrder();

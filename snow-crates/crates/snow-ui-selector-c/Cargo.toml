@@ -8,7 +8,11 @@ license.workspace = true
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
+[target.'cfg(windows)'.dependencies]
 snow-ui-selector = { path = "../snow-ui-selector" }
 windows = { workspace = true, features = [
     "Win32_Foundation",
 ] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+snow-macos = { path = "../snow-macos" }

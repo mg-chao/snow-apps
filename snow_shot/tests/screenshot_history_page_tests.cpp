@@ -138,6 +138,41 @@ void emptyStateRemainsVisibleAfterFilteringEmptyHistory() {
         "an emptied repository must restore the unfiltered empty-state prompt");
 }
 
+void metadataDistinguishesSourceDisplaysAndHistoryStorage() {
+    struct SizeExample {
+        qint64 bytes;
+        const char* text;
+    };
+    for (const auto& example :
+         {SizeExample{1023, "1023 B"}, SizeExample{1024, "1.0 KiB"}, SizeExample{38628, "37.7 KiB"},
+          SizeExample{12906387, "12.3 MiB"}, SizeExample{13237237, "12.6 MiB"}}) {
+        MutableHistoryDataSource dataSource;
+        storage::CaptureHistoryRecord record;
+        record.id = QStringLiteral("history-metadata-fixture");
+        record.createdUtc = QDateTime::currentDateTimeUtc();
+        record.selection.rectangle = QRect(2400, 4558, 851, 598);
+        record.displays.resize(2);
+        record.totalBytes = example.bytes;
+        dataSource.setRecords({record});
+        ScreenshotHistoryPageWidget page(&dataSource, nullptr);
+        page.resize(720, 600);
+        page.show();
+        page.setActive(true);
+        flushEvents();
+
+        auto* summary = page.findChild<QLabel*>(QStringLiteral("screenshotHistoryEntrySummary"));
+        auto* metadata = page.findChild<QLabel*>(QStringLiteral("screenshotHistoryEntryMetadata"));
+        require(summary != nullptr && metadata != nullptr,
+                "history rows must expose result dimensions and storage metadata");
+        require(summary->text() == QStringLiteral("851 x 598 px  ·  2 source display(s)"),
+                "display count must identify stored source displays rather than result dimensions");
+        require(
+            metadata->text() == QStringLiteral("Position 2400, 4558  ·  History storage: %1")
+                                    .arg(QString::fromLatin1(example.text)),
+            "row size must name total history storage and use units matching its binary divisor");
+    }
+}
+
 void waitUntil(const std::function<bool()>& complete, const char* message) {
     QElapsedTimer deadline;
     deadline.start();
@@ -275,6 +310,7 @@ int main(int argc, char** argv) {
                 .success,
             "isolated application storage must initialize");
     emptyStateRemainsVisibleAfterFilteringEmptyHistory();
+    metadataDistinguishesSourceDisplaysAndHistoryStorage();
     imageFailuresRespectCacheFallbackAndCancellation();
     shutdownDrainsBacklogThenRejectsNewWork();
     storage::ApplicationStorage::instance().shutdown();

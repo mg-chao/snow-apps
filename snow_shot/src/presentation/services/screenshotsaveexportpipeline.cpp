@@ -201,7 +201,8 @@ Source prepare(const ScreenshotImageRowSource& rows,
         }
         uchar* pixels = preview.scanLine(y);
         for (size_t x = 0; x < sums.size(); ++x)
-            pixels[x] = uchar((sums[x] + (end - first) / 2) / (end - first));
+            pixels[x] = uchar((sums[x] + static_cast<quint64>((end - first) / 2)) /
+                              static_cast<quint64>(end - first));
     }
     preview = preview.convertToFormat(QImage::Format_RGBA8888);
     preview.setColorSpace(QColorSpace::SRgb);

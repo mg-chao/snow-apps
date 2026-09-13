@@ -345,6 +345,7 @@ struct SettingsItemDefinition {
     QVector<TranslatableText> aliases;
     QString configurationKey;
     SettingsItemPayload payload;
+    bool platformAvailable = true;
 };
 
 enum class SettingsSectionReset {

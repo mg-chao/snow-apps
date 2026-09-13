@@ -33,6 +33,7 @@ namespace {
 struct CaptureState {
     SelectedTextCaptureResult initial;
     SelectedTextCaptureResult result;
+    std::function<void()> onStart;
     int starts = 0;
     int polls = 0;
     int cancellations = 0;
@@ -42,6 +43,9 @@ class FakeCaptureBackend final : public SelectedTextCaptureBackend {
     explicit FakeCaptureBackend(std::shared_ptr<CaptureState> state) : m_state(std::move(state)) {}
     SelectedTextCaptureResult start() override {
         ++m_state->starts;
+        if (m_state->onStart) {
+            m_state->onStart();
+        }
         return m_state->initial;
     }
     SelectedTextCaptureResult poll() override {
@@ -183,6 +187,91 @@ void routingAndCancellation() {
     coordinator.shutdown();
     coordinator.capture();
     require(!modal->isOpen(), "shutdown closes presentation and prevents subsequent captures");
+    flushEvents();
+}
+
+void permissionGuidanceDoesNotActivateEitherTranslationDestination() {
+    Server server;
+    SnowShotApiClient client(server.url());
+    auto state = std::make_shared<CaptureState>();
+    SelectedTextTranslationCoordinator coordinator(
+        storage::ApplicationStorage::instance().configuration(), &client, nullptr,
+        std::make_unique<FakeCaptureBackend>(state));
+    auto* modal = coordinator.findChild<AdModal*>();
+    auto* capture = coordinator.findChild<SelectedTextTranslationController*>();
+    require(modal && capture, "coordinator must own its capture and standalone destination");
+    state->onStart = [&] {
+        require(
+            !modal->isOpen(),
+            "capture must begin before activating the destination over the selected application");
+    };
+    int permissions = 0;
+    int mainRequests = 0;
+    QObject::connect(&coordinator, &SelectedTextTranslationCoordinator::permissionRequired,
+                     &coordinator, [&] { ++permissions; });
+    QObject::connect(&coordinator, &SelectedTextTranslationCoordinator::mainTranslationRequested,
+                     &coordinator, [&] { ++mainRequests; });
+    const storage::ExtendedFeaturesSettings settings;
+    require(settings.setTranslationPageEnabled(true), "enable permission routing fixture");
+    for (const bool standalone : {false, true}) {
+        require(settings.setStandaloneTranslationWindow(standalone),
+                "set the permission routing destination");
+        for (const bool immediate : {false, true}) {
+            state->initial =
+                immediate ? SelectedTextCaptureResult{SelectedTextStatus::PermissionDenied, {}}
+                          : SelectedTextCaptureResult{};
+            state->result = {SelectedTextStatus::PermissionDenied, {}};
+            const int beforePermissions = permissions;
+            const int beforeMainRequests = mainRequests;
+            coordinator.capture();
+            if (!immediate) {
+                require(
+                    permissions == beforePermissions && !modal->isOpen(),
+                    "an unfinished AX read must not activate a window or report permission early");
+            }
+            waitUntil([&] { return permissions == beforePermissions + 1; },
+                      "the coordinator must forward immediate and asynchronous permission denial");
+            require(!modal->isOpen() && mainRequests == beforeMainRequests,
+                    "permission guidance must not be replaced by a translation page or duplicate "
+                    "toast");
+
+            state->initial = {SelectedTextStatus::PermissionDenied, {}};
+            coordinator.capture();
+            require(permissions == beforePermissions + 2 && !modal->isOpen() &&
+                        mainRequests == beforeMainRequests,
+                    "every explicit retry without permission must forward guidance again");
+            state->initial = {SelectedTextStatus::Selected,
+                              QStringLiteral("after granting access")};
+            coordinator.capture();
+            require(permissions == beforePermissions + 2 && modal->isOpen() == standalone &&
+                        mainRequests == beforeMainRequests + (standalone ? 0 : 1),
+                    "granting access must retain the selected standalone or main-page route");
+            modal->close();
+            flushEvents();
+        }
+    }
+
+    state->initial = {};
+    state->result = {SelectedTextStatus::PermissionDenied, {}};
+    coordinator.capture();
+    require(capture->pending(), "the cancellation fixture must have a pending capture");
+    const int beforePermissions = permissions;
+    const int beforePolls = state->polls;
+    require(settings.setTranslationPageEnabled(false), "disabling translation cancels the AX read");
+    bool ticked = false;
+    QTimer::singleShot(60, &coordinator, [&] { ticked = true; });
+    waitUntil([&] { return ticked; }, "cancelled permission read must leave Qt responsive");
+    require(!capture->pending() && permissions == beforePermissions && state->polls == beforePolls,
+            "a permission result arriving after configuration cancellation must not prompt");
+    capture->permissionRequired();
+    require(permissions == beforePermissions,
+            "a disabled coordinator must suppress stale permission signals");
+    require(settings.setTranslationPageEnabled(true), "restore translation after cancellation");
+    coordinator.shutdown();
+    capture->permissionRequired();
+    coordinator.capture();
+    require(permissions == beforePermissions && !modal->isOpen(),
+            "shutdown must suppress both guidance and translation presentation");
     flushEvents();
 }
 
@@ -390,6 +479,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     routingAndCancellation();
+    permissionGuidanceDoesNotActivateEitherTranslationDestination();
     pageActionsAndLifecycle();
     storage.shutdown();
     return 0;

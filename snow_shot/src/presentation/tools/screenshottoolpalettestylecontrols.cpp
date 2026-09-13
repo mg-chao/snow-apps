@@ -34,7 +34,7 @@
 #include <type_traits>
 
 namespace {
-quint64 propertyGroupCount(quint32 groups, quint32 allGroups) {
+[[maybe_unused]] quint64 propertyGroupCount(quint32 groups, quint32 allGroups) {
     quint64 count = 0;
     for (quint32 remaining = groups & allGroups; remaining != 0; remaining &= remaining - 1) {
         ++count;
@@ -737,9 +737,9 @@ void ScreenshotToolPaletteStyleControls::prepareStyleReconcile(int sourceTool, i
             sharedRoles.push_back(role);
         }
     }
-    m_lastReconcileStats.retained = sharedRoles.size();
-    m_lastReconcileStats.destroyed = sourceRoles.size() - sharedRoles.size();
-    m_lastReconcileStats.created = destinationRoles.size() - sharedRoles.size();
+    m_lastReconcileStats.retained = static_cast<int>(sharedRoles.size());
+    m_lastReconcileStats.destroyed = static_cast<int>(sourceRoles.size() - sharedRoles.size());
+    m_lastReconcileStats.created = static_cast<int>(destinationRoles.size() - sharedRoles.size());
     for (int index = 0; index < m_lastReconcileStats.retained; ++index) {
         SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.editor_retained");
     }
@@ -2399,7 +2399,7 @@ void ScreenshotToolPaletteStyleControls::registerShapeEntries() {
     const auto mixed = [this](quint32 property) { return hasMixedProperty(property); };
     m_shapeEntries = {
         {ShapeModeRefresh,
-         [this, mixed]() {
+         [this]() {
              SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.shape.mode_refresh");
              if (m_shapeButtonGroup == nullptr) {
                  return;

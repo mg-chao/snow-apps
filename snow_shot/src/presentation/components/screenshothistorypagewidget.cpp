@@ -233,10 +233,14 @@ QColor colorOnBackground(const QColor& foreground, const QColor& background) {
     if (!background.isValid() || foreground.alpha() >= 255) {
         return foreground;
     }
-    const qreal alpha = foreground.alphaF();
-    return QColor::fromRgbF(foreground.redF() * alpha + background.redF() * (1.0 - alpha),
-                            foreground.greenF() * alpha + background.greenF() * (1.0 - alpha),
-                            foreground.blueF() * alpha + background.blueF() * (1.0 - alpha));
+    const qreal alpha = static_cast<qreal>(foreground.alphaF());
+    const auto blend = [alpha](float front, float back) {
+        return static_cast<float>(static_cast<qreal>(front) * alpha +
+                                  static_cast<qreal>(back) * (1.0 - alpha));
+    };
+    return QColor::fromRgbF(blend(foreground.redF(), background.redF()),
+                            blend(foreground.greenF(), background.greenF()),
+                            blend(foreground.blueF(), background.blueF()));
 }
 
 adqt::widgets::AdSelect::Option sourceOption(const QString& value, const QString& label) {
@@ -267,10 +271,10 @@ QString formattedBytes(qint64 bytes) {
         return ScreenshotHistoryPageWidget::tr("%1 B").arg(bytes);
     }
     if (bytes < 1024 * 1024) {
-        return ScreenshotHistoryPageWidget::tr("%1 KB").arg(static_cast<double>(bytes) / 1024.0, 0,
-                                                            'f', 1);
+        return ScreenshotHistoryPageWidget::tr("%1 KiB").arg(static_cast<double>(bytes) / 1024.0, 0,
+                                                             'f', 1);
     }
-    return ScreenshotHistoryPageWidget::tr("%1 MB").arg(
+    return ScreenshotHistoryPageWidget::tr("%1 MiB").arg(
         static_cast<double>(bytes) / (1024.0 * 1024.0), 0, 'f', 1);
 }
 
@@ -724,7 +728,7 @@ class HistoryEntryWidget final : public QFrame {
         detailsLayout->addWidget(m_sourceLabel, 0, Qt::AlignLeft);
 
         const QRect selection = record.selection.rectangle;
-        m_summaryLabel = new QLabel(HistoryEntryWidget::tr("%1 x %2 px  ·  %3 display(s)")
+        m_summaryLabel = new QLabel(HistoryEntryWidget::tr("%1 x %2 px  ·  %3 source display(s)")
                                         .arg(selection.width())
                                         .arg(selection.height())
                                         .arg(record.displays.size()),
@@ -732,7 +736,7 @@ class HistoryEntryWidget final : public QFrame {
         m_summaryLabel->setObjectName(QStringLiteral("screenshotHistoryEntrySummary"));
         detailsLayout->addWidget(m_summaryLabel);
 
-        m_metaLabel = new QLabel(HistoryEntryWidget::tr("Position %1, %2  ·  %3")
+        m_metaLabel = new QLabel(HistoryEntryWidget::tr("Position %1, %2  ·  History storage: %3")
                                      .arg(selection.x())
                                      .arg(selection.y())
                                      .arg(formattedBytes(record.totalBytes)),
@@ -1283,7 +1287,7 @@ void ScreenshotHistoryPageWidget::rebuildFilteredRecords(bool resetPage) {
     if (resetPage) {
         m_pagination->setCurrentPage(1);
     }
-    m_pagination->setTotal(m_filteredRecords.size());
+    m_pagination->setTotal(static_cast<int>(m_filteredRecords.size()));
     m_updatingPagination = false;
     updateHeader();
     rebuildEntries();
@@ -1499,7 +1503,7 @@ void ScreenshotHistoryPageWidget::updateEmptyStateMinimumHeight() {
 
 void ScreenshotHistoryPageWidget::updateHeader() {
     if (m_countLabel != nullptr) {
-        m_countLabel->setText(tr("%n screenshot(s)", nullptr, m_records.size()));
+        m_countLabel->setText(tr("%n screenshot(s)", nullptr, static_cast<int>(m_records.size())));
     }
     const auto status = storage::ApplicationStorage::instance().status();
     const bool canClear =

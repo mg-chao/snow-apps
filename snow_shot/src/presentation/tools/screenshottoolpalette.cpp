@@ -166,7 +166,6 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
 };
 constexpr int TOOLBAR_SEPARATOR_HEIGHT = 16;
 constexpr int TOOLBAR_SEPARATOR_WIDTH = 1;
-constexpr int TOOLBAR_SEPARATOR_SIDE_SPACING = 12;
 constexpr int RECORDING_DURATION_HORIZONTAL_PADDING = 2;
 constexpr int RECORDING_DURATION_FONT_SIZE = 14;
 constexpr int TOOLBAR_ROW_SPACING = 6;
@@ -1851,6 +1850,15 @@ void ScreenshotToolPalette::setScrollingRecognitionMode(ScreenshotScrollingRecog
 
 ScreenshotScrollingRecognitionMode ScreenshotToolPalette::scrollingRecognitionMode() const {
     return m_scrollingRecognitionMode;
+}
+
+void ScreenshotToolPalette::setScrollingAutoScroll(bool enabled) {
+    enabled = enabled && m_scrollingScreenshotMode;
+    if (m_scrollingAutoScroll == enabled)
+        return;
+    m_scrollingAutoScroll = enabled;
+    updateScrollingRecognitionButtons();
+    emit scrollingAutoScrollChanged(enabled);
 }
 
 void ScreenshotToolPalette::updateScrollingRecognitionButtons() {
@@ -3934,7 +3942,7 @@ adqt::widgets::AdButton* ScreenshotToolPalette::createActionToolGroup(const QStr
         return nullptr;
     }
     m_actionToolGroups.push_back(group);
-    refreshActionToolGroup(m_actionToolGroups.size() - 1);
+    refreshActionToolGroup(static_cast<int>(m_actionToolGroups.size() - 1));
     return group.trigger;
 }
 
@@ -4065,7 +4073,7 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         group.trigger->show();
         layout->addWidget(group.trigger);
         m_drawingToolGroups.push_back(group);
-        refreshDrawingToolGroup(m_drawingToolGroups.size() - 1);
+        refreshDrawingToolGroup(static_cast<int>(m_drawingToolGroups.size() - 1));
         hasContent = true;
         separated = false;
         hasDrawingPositions = true;
@@ -5931,11 +5939,8 @@ void ScreenshotToolPalette::createScrollingRecognitionActionFamily() {
                                          actionButtonMetrics(1.0).buttonSize * 3 +
                                              STYLE_GROUP_SPACING * 4 + STYLE_ITEM_SPACING +
                                              TOOLBAR_SEPARATOR_WIDTH);
-    connect(m_scrollingAutoScrollButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-        m_scrollingAutoScroll = !m_scrollingAutoScroll;
-        updateScrollingRecognitionButtons();
-        emit scrollingAutoScrollChanged(m_scrollingAutoScroll);
-    });
+    connect(m_scrollingAutoScrollButton, &adqt::widgets::AdButton::clicked, this,
+            [this]() { setScrollingAutoScroll(!m_scrollingAutoScroll); });
     connect(m_scrollingVerticalButton, &adqt::widgets::AdButton::clicked, this, [this]() {
         setScrollingRecognitionMode(ScreenshotScrollingRecognitionMode::Vertical);
     });

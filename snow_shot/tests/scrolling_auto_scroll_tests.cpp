@@ -111,6 +111,8 @@ int main(int argc, char** argv) {
             ++steps;
             target = selection;
             delta = wheelDelta;
+            return snow_shot::platform::windows::ScrollInputResult{
+                snow_shot::platform::windows::ScrollInputResult::Status::Posted, 0};
         });
     auto* timer = scroller.findChild<QTimer*>();
     require(timer && timer->interval() == 200 && timer->timerType() == Qt::PreciseTimer,
@@ -159,5 +161,41 @@ int main(int argc, char** argv) {
     scroller.start(selection, Mode::Horizontal);
     tick();
     require(steps == 4, "capture restart must not restore prior activation");
+    using Result = snow_shot::platform::windows::ScrollInputResult;
+    int failedSteps = 0;
+    int warnings = 0;
+    Result failure{Result::Status::PermissionDenied, 0};
+    snow_shot::capture_detail::ScreenshotScrollingAutoScroller failing(
+        [&](const QRect&, const QPoint&) {
+            ++failedSteps;
+            return failure;
+        },
+        [&](Result error) {
+            ++warnings;
+            require(!snow_shot::capture_detail::autoScrollFailureMessage(error).isEmpty(),
+                    "dispatch failures must provide a user-visible explanation");
+        });
+    auto* failedTimer = failing.findChild<QTimer*>();
+    failing.start(selection, Mode::Vertical);
+    failing.setEnabled(true);
+    const auto failedTick = [&] {
+        require(QMetaObject::invokeMethod(failedTimer, "timeout", Qt::DirectConnection),
+                "failure timer must be invokable");
+    };
+    failedTick();
+    failedTick();
+    require(failedSteps == 1 && warnings == 1 && !failedTimer->isActive(),
+            "permission failure must stop auto-scroll and report once rather than silently loop");
+    failure = {Result::Status::PostFailed, 5};
+    failing.setEnabled(true);
+    failedTick();
+    require(failedSteps == 2 && warnings == 2 && !failedTimer->isActive() &&
+                snow_shot::capture_detail::autoScrollFailureMessage(failure).contains(u'5'),
+            "a deliberate retry must report delivery failure with its error code");
+    failure = {Result::Status::Posted, 0};
+    failing.setEnabled(true);
+    failedTick();
+    require(failedSteps == 3 && warnings == 2 && failedTimer->isActive(),
+            "a successful retry must resume scrolling without a stale failure");
     return 0;
 }

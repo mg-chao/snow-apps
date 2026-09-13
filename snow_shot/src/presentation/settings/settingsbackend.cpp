@@ -2,7 +2,7 @@
 #include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/settings/applicationpriority.h"
 #include "snow_shot/presentation/settings/textrecognitionacceleration.h"
-#include "snow_shot/platform/windows/autostartregistration.h"
+#include "snow_shot/platform/autostartregistration.h"
 
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
@@ -122,7 +122,7 @@ storage::CaptureHistoryPolicy defaultHistoryPolicy() {
 }
 
 bool applyAutoStartAtBoot(bool enabled) {
-    using snow_shot::platform::windows::AutoStartRegistration;
+    using snow_shot::platform::AutoStartRegistration;
     auto& configuration = storage::ApplicationStorage::instance().configuration();
     const bool previousConfiguredValue =
         configuration.value(QStringLiteral("system/auto_start_at_boot")).toBool();
@@ -147,6 +147,15 @@ bool applyAutoStartAtBoot(bool enabled) {
 BuiltInSettingsBackend::BuiltInSettingsBackend(
     ::snow_shot::presentation::GlobalShortcutManager& shortcutManager, QObject* parent)
     : SettingsBackend(parent), m_shortcutManager(shortcutManager) {
+#ifdef Q_OS_MACOS
+    if (auto* app = qobject_cast<QGuiApplication*>(QCoreApplication::instance())) {
+        connect(app, &QGuiApplication::applicationStateChanged, this,
+                [this](Qt::ApplicationState state) {
+                    if (state == Qt::ApplicationActive)
+                        emit synchronized();
+                });
+    }
+#endif
     auto& themeManager = styles::ThemeManager::instance();
     connect(&themeManager, &styles::ThemeManager::themeModeChanged, this,
             [this](styles::ThemeMode) { emit synchronized(); });
@@ -209,7 +218,12 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
     case SettingsSelectBinding::ScreenshotApiMode:
         return storage::ScreenshotSettings().apiMode();
     case SettingsSelectBinding::WindowElementApi:
+#ifdef Q_OS_MACOS
+        // The stored Windows preference stays portable; the macOS backend always uses AX.
+        return QStringLiteral("msaa");
+#else
         return storage::ScreenshotSettings().windowElementApi();
+#endif
     case SettingsSelectBinding::ScreenshotToolbarSize:
         return storage::ScreenshotUiSettings().toolbarSize();
     case SettingsSelectBinding::OcrFillStyle:
@@ -273,6 +287,14 @@ BuiltInSettingsBackend::dynamicSelectOptions(SettingsSelectBinding binding) cons
 
 bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
                                               const QVariant& value) {
+#ifdef Q_OS_MACOS
+    if (binding == SettingsSelectBinding::ApplicationPriority ||
+        binding == SettingsSelectBinding::UpdateMode ||
+        binding == SettingsSelectBinding::ScreenshotApiMode ||
+        binding == SettingsSelectBinding::WindowElementApi) {
+        return false;
+    }
+#endif
     switch (binding) {
     case SettingsSelectBinding::TranslationLayoutProcessing:
         return storage::ScreenshotTranslationSettings().setLayoutProcessing(value.toString());
@@ -410,23 +432,35 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
         return storage::GlobalShortcutSettings().disableOnFocusedFullscreenWindow();
     case SettingsSwitchBinding::AutoStartAtBoot:
+#ifdef Q_OS_MACOS
+        return snow_shot::platform::AutoStartRegistration::matchesExpectedCommand();
+#else
         return storage::SystemSettings().autoStartAtBoot();
+#endif
     }
     return false;
 }
 
 bool BuiltInSettingsBackend::switchEnabled(SettingsSwitchBinding binding) const {
+#ifdef Q_OS_MACOS
+    if (binding == SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors) {
+        return false;
+    }
+#endif
     if (binding == SettingsSwitchBinding::StandaloneTranslationWindow) {
         return storage::ExtendedFeaturesSettings().translationPageEnabled();
     }
     if (binding == SettingsSwitchBinding::AutoStartAtBoot) {
-        return snow_shot::platform::windows::AutoStartRegistration::isSupported();
+        return snow_shot::platform::AutoStartRegistration::isSupported();
     }
     return binding != SettingsSwitchBinding::DirectMlAcceleration ||
            directMlTextRecognitionSupported();
 }
 
 bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, bool value) {
+    if (!switchEnabled(binding)) {
+        return false;
+    }
     if (binding == SettingsSwitchBinding::ScreenshotShutterSoundNotification) {
         return storage::ScreenshotSettings().setShutterSoundNotification(value);
     }
@@ -956,6 +990,11 @@ void BuiltInSettingsBackend::refreshStorageStatusIfStale() {
 }
 
 bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
+#ifdef Q_OS_MACOS
+    if (reset == SettingsSectionReset::SystemSettings) {
+        return true;
+    }
+#endif
     switch (reset) {
     case SettingsSectionReset::ScreenshotShortcuts: {
         bool accepted = true;
@@ -1350,12 +1389,16 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                 QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window"))
                 .toBool());
     case SettingsSectionReset::SystemGeneral:
-        return applySelectValue(SettingsSelectBinding::UpdateMode, QStringLiteral("download")) &&
-               applyAutoStartAtBoot(storage::ConfigurationSchema::defaultValue(
-                                        QStringLiteral("system/auto_start_at_boot"))
-                                        .toBool());
+        return
+#ifndef Q_OS_MACOS
+            applySelectValue(SettingsSelectBinding::UpdateMode, QStringLiteral("download")) &&
+#endif
+            applyAutoStartAtBoot(storage::ConfigurationSchema::defaultValue(
+                                     QStringLiteral("system/auto_start_at_boot"))
+                                     .toBool());
     case SettingsSectionReset::ScreenshotCapture:
         return storage::ApplicationStorage::instance().configuration().setValues({
+#ifndef Q_OS_MACOS
             {QStringLiteral("screenshot/api_mode"),
              storage::ConfigurationSchema::defaultValue(QStringLiteral("screenshot/api_mode"))},
             {QStringLiteral("screenshot/window_element_api"),
@@ -1364,6 +1407,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("screenshot/restore_original_screen_colors"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot/restore_original_screen_colors"))},
+#endif
             {QStringLiteral("screenshot/capture_cursor"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot/capture_cursor"))},
@@ -1402,9 +1446,11 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("text_recognition/model_type"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("text_recognition/model_type"))},
+#ifndef Q_OS_MACOS
             {QStringLiteral("text_recognition/direct_ml_acceleration"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("text_recognition/direct_ml_acceleration"))},
+#endif
         });
         if (accepted) {
             emit synchronized();

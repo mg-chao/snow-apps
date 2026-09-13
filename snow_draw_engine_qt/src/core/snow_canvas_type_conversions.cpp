@@ -235,6 +235,9 @@ SnowCanvasArrowhead toCanvasArrowhead(SnowArrowhead arrowhead) {
         return SnowCanvasArrowhead::CrowfootMany;
     case SNOW_ARROWHEAD_CROWFOOT_ONE_OR_MANY:
         return SnowCanvasArrowhead::CrowfootOneOrMany;
+    case SNOW_ARROWHEAD_SQUARE:
+    case SNOW_ARROWHEAD_INVERTED_TRIANGLE:
+        return SnowCanvasArrowhead::None;
     }
     return SnowCanvasArrowhead::None;
 }
@@ -674,17 +677,17 @@ bool toEngineStyleDefaults(const SnowCanvasStyleDefaults& defaults,
     engineDefaults.watermark.color = toEngineColor(defaults.watermark.color);
     const QByteArray watermarkText = defaults.watermark.text.toUtf8();
     engineDefaults.watermark.text_utf8_len = static_cast<std::uint32_t>(watermarkText.size());
-    std::copy_n(
-        watermarkText.constData(),
-        std::min<std::size_t>(watermarkText.size(), sizeof(engineDefaults.watermark.text_utf8)),
-        engineDefaults.watermark.text_utf8);
+    std::copy_n(watermarkText.constData(),
+                std::min(static_cast<std::size_t>(watermarkText.size()),
+                         sizeof(engineDefaults.watermark.text_utf8)),
+                engineDefaults.watermark.text_utf8);
     engineDefaults.watermark.font_size = defaults.watermark.fontSize;
     const QByteArray watermarkFamily = defaults.watermark.fontFamily.toUtf8();
     engineDefaults.watermark.font_family_utf8_len =
         static_cast<std::uint32_t>(watermarkFamily.size());
     std::copy_n(watermarkFamily.constData(),
-                std::min<std::size_t>(watermarkFamily.size(),
-                                      sizeof(engineDefaults.watermark.font_family_utf8)),
+                std::min(static_cast<std::size_t>(watermarkFamily.size()),
+                         sizeof(engineDefaults.watermark.font_family_utf8)),
                 engineDefaults.watermark.font_family_utf8);
     engineDefaults.watermark.angle = defaults.watermark.angle;
     engineDefaults.watermark.gap = defaults.watermark.gap;

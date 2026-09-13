@@ -2,6 +2,8 @@
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "close_release_native_test_support.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/screenshothistoryimageeditor.h"
+#include "snow_shot/storage/capturehistoryrepository.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include "../src/presentation/pinned/screenshotpinnedwindownative.h"
 #include "../src/presentation/pinned/screenshotpinnedhidetotopcontroller.h"
@@ -45,6 +47,7 @@
 #include <QDataStream>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QEnterEvent>
 #include <QEvent>
 #include <QFrame>
@@ -97,6 +100,39 @@ void runPinnedHideToTopControllerTests();
 // installing the Windows HWND hooks required by present().
 class ScreenshotPinnedWindowTestAccess {
   public:
+    static bool imageEditing(const ScreenshotPinnedWindow& window) {
+        return window.m_editController != nullptr && window.m_editController->editMode();
+    }
+
+    static QImage originalImage(const ScreenshotPinnedWindow& window) {
+        return window.m_originalImage;
+    }
+#ifdef Q_OS_MACOS
+    static bool beginSystemMove(ScreenshotPinnedWindow& window) {
+        window.m_windowDragActive = window.m_nativeGeometryController->beginMove(QCursor::pos());
+        if (window.m_windowDragActive) {
+            // Keep real button state out of this deterministic test; inject it below.
+            window.m_windowMoveSettleTimer->start(60000);
+        }
+        return window.m_windowDragActive;
+    }
+
+    static void observeMoveButton(ScreenshotPinnedWindow& window, bool pressed) {
+        window.finishWindowMoveIfReleased(pressed);
+    }
+
+    static bool moveActive(const ScreenshotPinnedWindow& window) {
+        return window.m_windowDragActive || window.m_windowMoveSettleTimer->isActive();
+    }
+
+    static QRect committedGeometry(const ScreenshotPinnedWindow& window) {
+        return window.m_nativeGeometryController->committedGeometry();
+    }
+
+    static void scale(ScreenshotPinnedWindow& window, int percent) {
+        window.applyScale(percent);
+    }
+#endif
     static ScreenshotPinnedHideToTopController& hideToTop(ScreenshotPinnedWindow& window) {
         return *window.m_hideToTop;
     }
@@ -641,7 +677,7 @@ void groupMenuActionsExposeIconsAndCleanupState() {
         QStringLiteral("screenshotPinnedContextMenu"));
     require(contextMenu != nullptr, "the pinned window should own its context menu");
     const QList<QAction*> contextActions = contextMenu->actions();
-    const int groupIndex = contextActions.indexOf(groupHeader);
+    const qsizetype groupIndex = contextActions.indexOf(groupHeader);
     require(groupIndex >= 0 && groupIndex + 1 < contextActions.size() &&
                 contextActions.at(groupIndex + 1)->objectName() ==
                     QStringLiteral("screenshotPinnedThumbnailAction"),
@@ -2988,11 +3024,19 @@ void pinnedShortcutDisplayUsesSettingsFormat() {
     require(shortcuts.setShortcuts(QStringLiteral("drawing_mode"),
                                    {QStringLiteral("Ctrl++"), QStringLiteral("Num+1")}),
             "the pinned shortcut should accept plus and keypad keys");
-    require(action->text().endsWith(QStringLiteral("\tCtrl+Plus / Num 1")),
+#ifdef Q_OS_MACOS
+    const QString expectedShortcutText =
+        QCoreApplication::testAttribute(Qt::AA_MacDontSwapCtrlAndMeta)
+            ? QStringLiteral("\tControl+Plus / Num 1")
+            : QStringLiteral("\tCommand+Plus / Num 1");
+#else
+    const QString expectedShortcutText = QStringLiteral("\tCtrl+Plus / Num 1");
+#endif
+    require(action->text().endsWith(expectedShortcutText),
             "pinned menus must use the settings key names and alternative separator");
     QEvent languageChange(QEvent::LanguageChange);
     QCoreApplication::sendEvent(&window, &languageChange);
-    require(action->text().endsWith(QStringLiteral("\tCtrl+Plus / Num 1")),
+    require(action->text().endsWith(expectedShortcutText),
             "pinned key display must retain the settings format after retranslation");
     require(shortcuts.setShortcuts(QStringLiteral("drawing_mode"), original),
             "the pinned shortcut fixture should restore its original shortcuts");
@@ -4187,6 +4231,7 @@ void pinnedPointerPresenceIsDebounced() {
 }
 
 void pinnedControlsPresenceFollowsLiveCursor() {
+#if defined(Q_OS_WIN) || defined(_WIN32)
     // Regression for the unstable hover reveal: USER32's leave tracking and
     // Qt's synthesized Enter/Leave both follow the client area and are queued,
     // while the pinned image surface is non-client. Presence must therefore be
@@ -4291,6 +4336,7 @@ void pinnedControlsPresenceFollowsLiveCursor() {
         "controls must reappear once geometry settles back under the stationary cursor");
 
     window.close();
+#endif
 }
 
 void pinnedEscapeBurst(bool nativeKeys = false) {
@@ -4970,11 +5016,11 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
                 reinterpret_cast<LPARAM>(&disabledThumbnailNative));
     require(qRectForNativeRect(disabledThumbnailNative) == disabledThumbnailProposal,
             "thumbnail mode should leave WM_SIZING proposals unchanged");
-#endif
     sendWheel(canvas->rect().center(), QPoint(), QPoint(0, 120));
     require(!thumbnailAction->isChecked() &&
                 pinnedWindow->currentNativeGeometry().size() == expectedSize(110, true),
             "thumbnail wheel input should restore the pin and apply cursor scaling");
+#endif
 
     menu->actions().constLast()->trigger();
     require(processUntilDeleted(guardedWindow, 2000),
@@ -5353,6 +5399,8 @@ void pinnedHideToTopIntegration(bool native) {
         waitForUi(40);
     } else {
         ScreenshotPinnedWindowTestAccess::restoreOffscreen(window, config);
+        require(ScreenshotPinnedWindowTestAccess::moveWindow(window, config.nativeGeometry),
+                "offscreen hide-to-top pin must start at its configured geometry");
         window.show();
     }
     auto& controller = ScreenshotPinnedWindowTestAccess::hideToTop(window);
@@ -6640,6 +6688,159 @@ void pinnedCloseReleaseNative() {
 
 } // namespace
 
+#ifdef Q_OS_MACOS
+namespace {
+void pinnedMacosSystemMovesKeepTheirDestination() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a screen is required for the pinned move regression");
+    QImage image(320, 180, QImage::Format_ARGB32_Premultiplied);
+    image.fill(QColor(42, 84, 126));
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    ScreenshotPinnedWindow::Config config;
+    config.screen = screen;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(100, 100), image.size());
+    config.canvasSourceRect = QRectF(QPointF(), image.size());
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    config.automaticTextRecognition = false;
+    require(window.present(config), "the pinned move fixture must present");
+    QApplication::processEvents();
+
+    for (int iteration = 0; iteration < 5; ++iteration) {
+        if (iteration == 2) {
+            ScreenshotPinnedWindowTestAccess::scale(window, 150);
+            QApplication::processEvents();
+        }
+        require(ScreenshotPinnedWindowTestAccess::beginSystemMove(window),
+                "a new drag must be available after the preceding drag or scale");
+        // Model the native window server's geometry notification without synthesizing OS input.
+        const QPoint initialPosition = window.pos();
+        if (iteration != 3) {
+            window.move(window.pos() + (iteration == 1 ? QPoint(1, 2) : QPoint(80, 40)));
+        }
+        if (iteration == 4) {
+            window.move(initialPosition);
+        }
+        QApplication::processEvents();
+        const QRect destination = window.currentNativeGeometry();
+        ScreenshotPinnedWindowTestAccess::observeMoveButton(window, true);
+        require(ScreenshotPinnedWindowTestAccess::moveActive(window),
+                "a held pointer must not finish the system move");
+        if (iteration == 0) {
+            const QPoint position(40, 40);
+            QMouseEvent release(QEvent::MouseButtonRelease, QPointF(position),
+                                QPointF(window.mapToGlobal(position)), Qt::LeftButton, Qt::NoButton,
+                                Qt::NoModifier);
+            QApplication::sendEvent(&window, &release);
+        } else {
+            // AppKit may consume mouse-up; the release observer must finish it too.
+            ScreenshotPinnedWindowTestAccess::observeMoveButton(window, false);
+        }
+        QApplication::processEvents();
+        require(window.currentNativeGeometry() == destination &&
+                    ScreenshotPinnedWindowTestAccess::committedGeometry(window) == destination &&
+                    window.persistenceSnapshot().nativeGeometry == destination,
+                "releasing a macOS pinned drag must keep and commit its actual destination");
+        require(!ScreenshotPinnedWindowTestAccess::moveActive(window),
+                "finishing a drag must clear its state and stop release polling");
+    }
+    window.close();
+}
+
+void savedHistoryOpensAnIndependentImageEditor() {
+    using namespace snow_shot::storage;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "history editing requires a screen");
+    auto& repository = ApplicationStorage::instance().captureHistory();
+    QImage saved(320, 180, QImage::Format_ARGB32);
+    saved.fill(QColor(180, 30, 90));
+    QImage desktop(saved.size(), saved.format());
+    desktop.fill(Qt::blue);
+    SnowCanvasRuntime runtime;
+    CaptureHistoryDraft draft;
+    draft.contentKind = CaptureHistoryContentKind::Image;
+    draft.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    draft.createdUtc = QDateTime::currentDateTimeUtc();
+    draft.canvasBounds = QRect(-8000, -4000, saved.width(), saved.height());
+    draft.selection.rectangle = draft.canvasBounds;
+    draft.selection.shadowColor = Qt::black;
+    draft.canvasHistory = runtime.serializeDocumentHistory();
+    draft.displays.push_back({QStringLiteral("disconnected-display"), QStringLiteral("Old display"),
+                              desktop, draft.canvasBounds.topLeft()});
+    draft.resultImage = saved;
+    const auto publication = repository.publish(draft).get();
+    require(publication.storage.success, "history fixture publication must succeed");
+
+    QObject lifetime;
+    QString error;
+    QPointer<ScreenshotPinnedWindow> editor =
+        openScreenshotHistoryImageEditor(repository, publication.record.id, screen, &lifetime,
+                                         [&error](const QString& message) { error = message; });
+    require(editor != nullptr, "a saved result must open without a desktop capture");
+    QElapsedTimer elapsed;
+    elapsed.start();
+    while (editor != nullptr && !ScreenshotPinnedWindowTestAccess::imageEditing(*editor) &&
+           elapsed.elapsed() < 5000) {
+        waitForUi(10);
+    }
+    require(error.isEmpty() && editor != nullptr &&
+                ScreenshotPinnedWindowTestAccess::imageEditing(*editor),
+            "history must enter drawing mode after the saved image loads");
+    require(ScreenshotPinnedWindowTestAccess::originalImage(*editor).convertToFormat(
+                QImage::Format_ARGB32) == saved,
+            "history editing must use the saved result, not display pixels or another capture");
+    require(screen->availableGeometry().contains(editor->frameGeometry()) &&
+                editor->persistenceSnapshot().nativeGeometry.topLeft() !=
+                    publication.record.selection.rectangle.topLeft(),
+            "the editor must fit the current screen, independent of the old capture position");
+    require(repository.records().size() == 1,
+            "opening an editor must not publish or replace a history record");
+    editor->close();
+    require(processUntilDeleted(editor, 2000), "the history editor must close normally");
+    for (int closeMode = 0; closeMode < 3; ++closeMode) {
+        draft.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        const auto broken = repository.publish(draft).get();
+        require(broken.storage.success, "failure fixture publication must succeed");
+        const auto assets = repository.displayAssets(broken.record);
+        require(assets && assets->result &&
+                    QFile::remove(assets->result->localFileUrl.toLocalFile()),
+                "the isolated saved image must be removed to simulate a failed load");
+        auto temporaryLifetime = std::make_unique<QObject>();
+        error.clear();
+        editor = openScreenshotHistoryImageEditor(
+            repository, broken.record.id, screen, temporaryLifetime.get(),
+            [&error](const QString& message) { error = message; });
+        require(editor != nullptr, "a load failure must be reported asynchronously");
+        elapsed.restart();
+        // Let the worker finish, keeping its completion queued until after close/destruction.
+        while (ScreenshotExportCoordinator::shared().pendingJobCount() != 0 &&
+               elapsed.elapsed() < 5000) {
+            QThread::msleep(5);
+        }
+        require(ScreenshotExportCoordinator::shared().pendingJobCount() == 0,
+                "the isolated image load must finish before tearing down its storage");
+        if (closeMode == 1) {
+            editor->close();
+        } else if (closeMode == 2) {
+            temporaryLifetime.reset();
+        }
+        require(processUntilDeleted(editor, 2000),
+                "failed or cancelled history editors must close");
+        waitForUi(20);
+        require(closeMode == 0 ? !error.isEmpty() : error.isEmpty(),
+                "only a live editor may report a failed load; closed owners ignore late results");
+        repository.drain();
+    }
+    error.clear();
+    require(openScreenshotHistoryImageEditor(
+                repository, QStringLiteral("missing"), screen, &lifetime,
+                [&error](const QString& message) { error = message; }) == nullptr &&
+                !error.isEmpty(),
+            "unavailable history must report an error instead of starting another capture");
+}
+} // namespace
+#endif
+
 int main(int argc, char* argv[]) {
     PinnedWindowTestApplication app(argc, argv);
 #ifdef Q_OS_WIN
@@ -6663,6 +6864,16 @@ int main(int argc, char* argv[]) {
 #endif
         SnowCanvasRuntime sourceRuntime;
         require(sourceRuntime.isValid(), "source runtime creation failed");
+#ifdef Q_OS_MACOS
+        if (app.arguments().contains(QStringLiteral("--macos-system-move-only"))) {
+            pinnedMacosSystemMovesKeepTheirDestination();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--history-image-editor-only"))) {
+            savedHistoryOpensAnIndependentImageEditor();
+            return 0;
+        }
+#endif
         if (app.arguments().contains(QStringLiteral("--hide-to-top-only"))) {
             runPinnedHideToTopControllerTests();
             pinnedHideToTopIntegration(false);

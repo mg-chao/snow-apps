@@ -89,33 +89,6 @@ QPainterPath canvasPathFromCommands(double startX, double startY,
     return path;
 }
 
-bool sameFilterStyle(const SnowSceneDisplayItem& left, const SnowSceneDisplayItem& right) {
-    return left.kind == SNOW_SCENE_DISPLAY_ITEM_FILTER &&
-           right.kind == SNOW_SCENE_DISPLAY_ITEM_FILTER && left.is_free_draw != 0 &&
-           right.is_free_draw != 0 && left.element_id.index == right.element_id.index &&
-           left.element_id.generation == right.element_id.generation &&
-           left.stroke_width == right.stroke_width && left.rotation == right.rotation &&
-           left.opacity == right.opacity && left.filter.filter_type == right.filter.filter_type &&
-           left.filter.strength == right.filter.strength &&
-           left.filter.mosaic_block_size == right.filter.mosaic_block_size &&
-           left.filter.blur_sigma == right.filter.blur_sigma &&
-           left.filter.sampling_radius == right.filter.sampling_radius;
-}
-
-bool isExactPointPrefix(const std::vector<SnowArrowPoint>& oldPoints,
-                        const SnowSceneDisplayItem& next) {
-    if (next.arrow_points == nullptr || next.arrow_point_count <= oldPoints.size()) {
-        return false;
-    }
-    for (std::size_t index = 0; index < oldPoints.size(); ++index) {
-        if (oldPoints[index].x != next.arrow_points[index].x ||
-            oldPoints[index].y != next.arrow_points[index].y) {
-            return false;
-        }
-    }
-    return true;
-}
-
 bool hasUniformRadii(const SnowCornerRadii& radii) {
     return fuzzyEqual(radii.top_left, radii.top_right) &&
            fuzzyEqual(radii.top_left, radii.bottom_right) &&

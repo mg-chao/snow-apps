@@ -271,8 +271,7 @@ void shutdownDropsQueuedWorkWhenAbandoned() {
                         countBlockerCompletion)
                 .isValid(),
             "shutdown straggler blocker was not admitted");
-    require(processUntil(
-                [workerCount, &entered]() { return entered.load(std::memory_order_acquire) >= 1; }),
+    require(processUntil([&entered]() { return entered.load(std::memory_order_acquire) >= 1; }),
             "shutdown straggler first blocker did not start");
     // A second blocker keeps every pool worker wedged so the straggler below is
     // guaranteed to stay queued, never started.

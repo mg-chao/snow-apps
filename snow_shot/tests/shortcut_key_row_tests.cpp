@@ -124,15 +124,23 @@ stateFor(shortcuts::GlobalShortcutStatus status,
 void keyDisplayUsesCanonicalLabels() {
     const auto scheme = styles::ThemeManager::instance().themeColorScheme();
     const auto metrics = styles::buildMainWindowComponentMetricToken(scheme);
+#ifdef Q_OS_MACOS
+    const bool swap = !QCoreApplication::testAttribute(Qt::AA_MacDontSwapCtrlAndMeta);
+    const QString controlLabel = swap ? QStringLiteral("Command") : QStringLiteral("Control");
+    const QString metaLabel = swap ? QStringLiteral("Control") : QStringLiteral("Command");
+#else
+    const QString controlLabel = QStringLiteral("Ctrl");
+    const QString metaLabel = QStringLiteral("Win");
+#endif
     const QList<QPair<QString, QString>> cases{
         {QStringLiteral("+"), QStringLiteral("Plus")},
-        {QStringLiteral("Ctrl++"), QStringLiteral("Ctrl+Plus")},
+        {QStringLiteral("Ctrl++"), controlLabel + QStringLiteral("+Plus")},
         {QStringLiteral("Num+1"), QStringLiteral("Num 1")},
         {QStringLiteral("Num++"), QStringLiteral("Num Plus")},
         {QStringLiteral("Shift+Shift"), QStringLiteral("Shift")},
         {QStringLiteral("Period"), QStringLiteral(".")},
         {QStringLiteral("Comma"), QStringLiteral(",")},
-        {QStringLiteral("Meta+Shift+S"), QStringLiteral("Win+Shift+S")},
+        {QStringLiteral("Meta+Shift+S"), metaLabel + QStringLiteral("+Shift+S")},
     };
     for (const auto& displayCase : cases) {
         ShortcutKeyRowConfig config;
@@ -163,15 +171,13 @@ void statusPresentationUsesSemanticTokens() {
     };
     const auto registeredState =
         stateFor(shortcuts::GlobalShortcutStatus::Registered, {firstSuccess, secondSuccess});
-    const ShortcutKeyRowConfig config{
-        QStringLiteral("Screenshot"),
-        {},
-        registeredState.shortcuts,
-        registeredState,
-        QStringLiteral("normal"),
-        true,
-        2,
-    };
+    ShortcutKeyRowConfig config;
+    config.title = QStringLiteral("Screenshot");
+    config.shortcuts = registeredState.shortcuts;
+    config.registrationState = registeredState;
+    config.rowState = QStringLiteral("normal");
+    config.useStableBorder = true;
+    config.maxShortcutCount = 2;
 
     ShortcutKeyRow row(config, scheme.metricAlias, mainWindowMetric);
     row.resize(720, row.height());
@@ -240,6 +246,16 @@ void statusPresentationUsesSemanticTokens() {
     require(shortcutButton->accentRole() == adqt::widgets::AdButton::AccentRole::Danger,
             "failed registrations should use the reference danger dashed-button role");
     require(row.height() == stableHeight, "status changes must not resize the shortcut row");
+
+#ifdef Q_OS_MACOS
+    auto invalid = failed;
+    invalid.failureReason = shortcuts::GlobalShortcutFailureReason::InvalidShortcut;
+    row.setRegistrationState(stateFor(shortcuts::GlobalShortcutStatus::Failed, {invalid}));
+    require(statusTrigger->tooltipText().contains(
+                QStringLiteral("not supported as a global shortcut")) &&
+                !statusTrigger->tooltipText().contains(QStringLiteral("Windows")),
+            "macOS shortcut registration errors must not claim a Windows restriction");
+#endif
 
     const auto requireFullShortcutTextCapacity = [shortcutButton](const char* message) {
         const QString shortcutText = shortcutButton->text();
@@ -386,13 +402,20 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
                 validationInfo->geometry().right() < keyButton->width(),
             "the recorder info trigger should sit inside the key button after its text");
     auto* const validationTooltip = validationInfo->tooltipHost();
+#ifdef Q_OS_MACOS
+    const QString globalShortcutReason = QStringLiteral("as a global shortcut");
+    require(!validationInfo->tooltipText().contains(QStringLiteral("Windows")),
+            "the macOS shortcut recorder must not present Windows-specific failures");
+#else
+    const QString globalShortcutReason = QStringLiteral("Windows global shortcut");
+#endif
     require(keyButton->toolTip().isEmpty() &&
-                validationInfo->tooltipText().contains(QStringLiteral("Windows global shortcut")) &&
+                validationInfo->tooltipText().contains(globalShortcutReason) &&
                 validationTooltip != nullptr &&
                 validationTooltip->placement() == adqt::widgets::AdTooltip::Placement::Top &&
                 validationTooltip->hoverOpenDelayMs() == 0,
             "the recorder info icon should own an immediate upward tooltip");
-    require(keyButton->accessibleDescription().contains(QStringLiteral("Windows global shortcut")),
+    require(keyButton->accessibleDescription().contains(globalShortcutReason),
             "a rejected key should expose an understandable validation reason");
     require(!actionButton->isEnabled(), "a backend-rejected key must not be confirmable");
     require(!modal->acceptButton()->isEnabled(),
@@ -1071,7 +1094,14 @@ void compactTitleAndKeyButtonStylesMatchReference() {
                 shortcutButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Outline &&
                 shortcutButton->accentRole() == adqt::widgets::AdButton::AccentRole::Neutral &&
                 shortcutButton->height() == scheme.metricAlias.controlHeight &&
-                shortcutButton->text() == QStringLiteral("Ctrl+Shift+S"),
+                shortcutButton->text() ==
+#ifdef Q_OS_MACOS
+                    (QCoreApplication::testAttribute(Qt::AA_MacDontSwapCtrlAndMeta)
+                         ? QStringLiteral("Control+Shift+S")
+                         : QStringLiteral("Command+Shift+S")),
+#else
+                    QStringLiteral("Ctrl+Shift+S"),
+#endif
             "compact shortcut titles and key buttons must match the reference presentation");
 
     const QString originalText = shortcutButton->text();

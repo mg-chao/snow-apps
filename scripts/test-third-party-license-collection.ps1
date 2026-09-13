@@ -49,7 +49,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not stage dependency fixture' }
 git -C $dependencyRepository -c user.name=Fixture -c user.email=fixture@example.invalid `
     commit --quiet -m 'Create dependency fixture'
 if ($LASTEXITCODE -ne 0) { throw 'Could not commit dependency fixture' }
-$dependencyUrl = ([Uri]$dependencyRepository).AbsoluteUri
+$dependencyUrl = ([UriBuilder]::new('file', '', -1, $dependencyRepository)).Uri.AbsoluteUri
 
 $manifests = @()
 $cargoOptions = @{}
@@ -110,3 +110,45 @@ if ($cargoDirectories.Count -ne 3) {
     throw 'Collect only the selected packages: exclude unshipped workspace features and private roots'
 }
 Write-Output 'License collection regression passed: selected packages, multiple roots, and Git dependencies.'
+
+Write-Fixture 'native/codec-1.0/COPYING' 'Native macOS license fixture'
+Write-Fixture 'native/ffmpeg-8.1.2/COPYING.GPLv3' 'FFmpeg GPLv3 license fixture'
+Write-Fixture 'native/ffmpeg-8.1.2/source-build.json' @'
+{"version":"8.1.2","license":"GPL-3.0-or-later","configure_args":["--enable-gpl","--enable-version3","--enable-libwebp"]}
+'@
+Write-Fixture 'native/ffmpeg-8.1.2/ffmpeg-8.1.2.tar.xz' 'Corresponding FFmpeg source archive fixture'
+$nativeDestination = Join-Path $fixtureRoot 'macos/third-party'
+& (Join-Path $PSScriptRoot 'collect-third-party-licenses.ps1') `
+    -Destination $nativeDestination -AllowedRoot $fixtureRoot `
+    -NativeLicenseRoot (Join-Path $fixtureRoot 'native') -QtPrefix (Join-Path $fixtureRoot 'qt') `
+    -CargoManifest $manifests -CargoOptions $cargoOptions -CargoTarget aarch64-apple-darwin `
+    -AntDesignNotice (Join-Path $fixtureRoot 'ant-notice.md') `
+    -FallbackLicenseDirectory (Join-Path $fixtureRoot 'fallback')
+$nativeManifest = Get-Content (Join-Path $nativeDestination 'manifest.json') -Raw | ConvertFrom-Json
+if ($nativeManifest.NativePackages -ne 2 -or $nativeManifest.VcpkgPackages -ne 0 -or
+    $nativeManifest.ExternalRustPackages -ne 3 -or
+    !(Test-Path (Join-Path $nativeDestination 'native/codec-1.0/COPYING'))) {
+    throw 'macOS collection must preserve native notices and the selected Cargo dependency graph'
+}
+Write-Output 'macOS license collection regression passed.'
+foreach ($name in @('COPYING.GPLv3', 'source-build.json', 'ffmpeg-8.1.2.tar.xz')) {
+    $source = Join-Path $fixtureRoot "native/ffmpeg-8.1.2/$name"
+    $collected = Join-Path $nativeDestination "native/ffmpeg-8.1.2/$name"
+    if (!(Test-Path -LiteralPath $collected) -or
+        (Get-FileHash -Algorithm SHA256 $source).Hash -cne
+        (Get-FileHash -Algorithm SHA256 $collected).Hash) {
+        throw "Native collection must preserve FFmpeg licenses, configuration, and corresponding source: $name"
+    }
+}
+Write-Output 'Local FFmpeg source and license collection regression passed.'
+
+foreach ($bundle in @($destination, $nativeDestination)) {
+    $modelLicense = Join-Path $bundle 'models/rapidocr/LICENSE'
+    $sourceLicense = Join-Path $repoRoot 'snow_shot/packaging/ocr-model-LICENSE'
+    if (!(Test-Path -LiteralPath $modelLicense) -or
+        (Get-FileHash -Algorithm SHA256 $modelLicense).Hash -cne
+        (Get-FileHash -Algorithm SHA256 $sourceLicense).Hash) {
+        throw 'Windows and macOS bundles must preserve the OCR model copyright and license'
+    }
+}
+Write-Output 'OCR model license collection regression passed.'

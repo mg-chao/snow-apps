@@ -277,7 +277,11 @@ mod platform {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+#[path = "keyboard_rasterizer_macos.rs"]
+mod platform;
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod platform {
     use super::*;
     pub fn create(_: &KeyboardOverlayConfig) -> Result<Box<dyn KeycapRasterizer>, String> {

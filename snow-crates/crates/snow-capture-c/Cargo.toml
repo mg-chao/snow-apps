@@ -12,6 +12,7 @@ snow-capture = { path = "../snow-capture" }
 snow-core = { path = "../snow-core" }
 snow-screen-recorder = { path = "../snow-screen-recorder" }
 anyhow.workspace = true
+[target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_System_ProcessStatus",

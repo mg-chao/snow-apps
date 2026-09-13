@@ -741,22 +741,6 @@ Result<void> publish_packed_heif_image(const heif_image* decoded, const PixelFor
                            std::span(reinterpret_cast<const std::byte*>(source), source_size));
 }
 
-DocumentInfo document_info_from_document(const Document& document) {
-    DocumentInfo info;
-    info.format = document.format;
-    info.canvas_width = document.canvas_width;
-    info.canvas_height = document.canvas_height;
-    info.loop_count = document.loop_count;
-    info.metadata = document.metadata;
-    info.color = document.color;
-    for (const Frame& frame : document.frames) {
-        info.frames.push_back({frame.image.width(), frame.image.height(), frame.x, frame.y,
-                               frame.duration, frame.image.format(),
-                               frame.image.format().alpha != AlphaMode::none, std::nullopt});
-    }
-    return info;
-}
-
 Result<DocumentInfo> inspect_collection(ParsedHeif& parsed, Format format,
                                         const DecodeOptions& options) {
     Result<std::vector<heif_item_id>> ids = top_level_ids(parsed.context.get(), options.limits);

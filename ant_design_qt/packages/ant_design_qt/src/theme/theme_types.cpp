@@ -32,7 +32,7 @@ QColor compositeOn(const QColor& foreground, const QColor& background, qreal opa
 
   const float alpha = std::clamp(
       static_cast<float>(static_cast<qreal>(foreground.alphaF()) * opacityScale), 0.0F, 1.0F);
-  if (alpha >= 0.999) {
+  if (static_cast<double>(alpha) >= 0.999) {
     QColor opaque = foreground;
     opaque.setAlpha(255);
     return opaque;
@@ -58,7 +58,7 @@ QColor alphaColor(const QColor& base, qreal alpha) {
 
 FastColorLite toFastColor(const QColor& color) {
   const QColor rgb = color.toRgb();
-  return FastColorLite(rgb.red(), rgb.green(), rgb.blue(), rgb.alphaF());
+  return FastColorLite(rgb.red(), rgb.green(), rgb.blue(), static_cast<double>(rgb.alphaF()));
 }
 
 QColor solidColor(const QColor& base, double amountPercent, bool raiseLightness = false) {

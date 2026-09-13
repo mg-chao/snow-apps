@@ -167,6 +167,44 @@ void shortcutMovementAfterDpiUsesTheAdoptedTargetAsItsAnchor() {
             "a rebased move must still roll back to the original committed geometry");
 }
 
+void observedSystemMovesKeepExactGeometry() {
+    auto controller = initializedController();
+    const QRect original = controller.committedGeometry();
+    require(!controller.adoptSystemMoveTarget(original.translated(20, 30)),
+            "a system move observation must require an active move");
+    require(controller.beginMove(QPoint(40, 40)), "system move did not begin");
+    require(!controller.adoptSystemMoveTarget({}), "invalid observations must be rejected");
+    require(controller.adoptSystemMoveTarget(original) &&
+                !controller.hasAcceptedInteractiveGeometry(),
+            "a click without movement must remain pending");
+    const QRect smallMove = original.translated(1, 2);
+    require(
+        controller.adoptSystemMoveTarget(smallMove) &&
+            controller.finishInteractiveTarget() == smallMove,
+        "observed movement must retain even a one-pixel displacement without cursor correction");
+    const QRect otherDisplay(-1250, -980, 649, 369);
+    require(controller.adoptSystemMoveTarget(otherDisplay) &&
+                controller.finishInteractiveTarget() == otherDisplay,
+            "system moves must adopt negative display origins and changed physical sizes");
+    const auto change = controller.commitTarget();
+    require(change.positionChanged && change.sizeChanged && change.geometry == otherDisplay,
+            "cross-display movement must commit both position and physical size");
+    require(controller.beginMove(QPoint()), "a second system move must begin");
+    require(controller.adoptSystemMoveTarget(otherDisplay.translated(80, 40)) &&
+                controller.adoptSystemMoveTarget(otherDisplay) &&
+                controller.finishInteractiveTarget() == otherDisplay,
+            "dragging back to the origin must retain that final observation");
+    static_cast<void>(controller.commitTarget());
+    require(controller.beginMove(QPoint()) && controller.adoptSystemMoveTarget(original),
+            "a further system move must begin");
+    controller.prepareRollback();
+    require(controller.finishRollback().geometry == otherDisplay,
+            "system move rollback must restore the preceding committed destination");
+    controller.beginClosing();
+    require(!controller.adoptSystemMoveTarget(original),
+            "late observations must not reopen a closing transaction");
+}
+
 void failedTransactionsRollBackDeterministically() {
     auto controller = initializedController();
     require(
@@ -195,6 +233,7 @@ int main() {
         midDragDpiTargetKeepsTheSystemGeometry();
         shortcutMovementAfterDpiUsesTheAdoptedTargetAsItsAnchor();
         failedTransactionsRollBackDeterministically();
+        observedSystemMovesKeepExactGeometry();
     } catch (const std::exception& error) {
         std::cerr << "screenshot pinned native geometry controller test failure: " << error.what()
                   << '\n';

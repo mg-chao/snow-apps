@@ -3322,7 +3322,66 @@ QStringList SettingsCatalog::validationErrors() const {
 }
 
 SettingsCatalog buildBuiltInSettingsCatalog() {
-    return {builtInPages(),
+    auto pages = builtInPages();
+#ifdef Q_OS_MACOS
+    // Keep every setting discoverable. Platform-specific integrations describe
+    // their native equivalent or explain why the control is unavailable.
+    const QMap<QString, const char*> unavailable = {
+        {QStringLiteral("system/application_priority"),
+         QT_TRANSLATE_NOOP(
+             "SettingsCatalog",
+             "These process priority classes are specific to Windows. macOS schedules work with "
+             "quality-of-service policies and does not provide equivalent process classes.")},
+        {QStringLiteral("updates/mode"),
+         QT_TRANSLATE_NOOP(
+             "SettingsCatalog",
+             "Automatic updates are not yet implemented for macOS. This version uses a "
+             "Windows-only update feed and installer; install new macOS versions from a DMG.")},
+        {QStringLiteral("screenshot/api_mode"),
+         QT_TRANSLATE_NOOP("SettingsCatalog", "macOS uses ScreenCaptureKit. DXGI, WGC and GDI are "
+                                              "Windows APIs and cannot be selected on macOS.")},
+        {QStringLiteral("screenshot/window_element_api"),
+         QT_TRANSLATE_NOOP("SettingsCatalog",
+                           "macOS uses Accessibility for window elements. Allow Accessibility "
+                           "access to select controls; MSAA and UIA are Windows APIs.")},
+        {QStringLiteral("screenshot/restore_original_screen_colors"),
+         QT_TRANSLATE_NOOP("SettingsCatalog",
+                           "This macOS build captures in sRGB. Original display color restoration "
+                           "is not yet implemented for this capture path; the Windows gamma "
+                           "restoration setting does not apply.")},
+        {QStringLiteral("text_recognition/direct_ml_acceleration"),
+         QT_TRANSLATE_NOOP("SettingsCatalog", "DirectML is a Windows-only acceleration API. This "
+                                              "macOS build runs text recognition on the CPU.")},
+    };
+    for (auto& page : pages) {
+        for (auto& section : page.sections) {
+            for (auto& item : section.items) {
+                const auto reason = unavailable.constFind(item.configurationKey);
+                if (reason != unavailable.cend()) {
+                    item.platformAvailable = false;
+                    item.description = settingsText(*reason);
+                }
+                if (item.configurationKey == QStringLiteral("system/auto_start_at_boot")) {
+                    item.title =
+                        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Launch at login"));
+                    item.description = settingsText(QT_TRANSLATE_NOOP(
+                        "SettingsCatalog", "Start Snow Shot in the background when you log in to "
+                                           "macOS. If approval is required, allow Snow Shot in "
+                                           "System Settings > General > Login Items."));
+                }
+                if (item.configurationKey == QStringLiteral("screenshot/api_mode")) {
+                    std::get<SettingsSelectDefinition>(item.payload).options.front().label =
+                        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "ScreenCaptureKit"));
+                }
+                if (item.configurationKey == QStringLiteral("screenshot/window_element_api")) {
+                    std::get<SettingsSelectDefinition>(item.payload).options.front().label =
+                        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "macOS Accessibility"));
+                }
+            }
+        }
+    }
+#endif
+    return {std::move(pages),
             builtInNavigation(),
             {QString::fromLatin1(GLOBAL_HOTKEYS_PAGE_ID), QStringLiteral("screenshot"),
              QStringLiteral("quick.screenshot")}};

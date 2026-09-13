@@ -87,7 +87,7 @@ QImage buildShadowAsset(const ShadowKey& key) {
     asset.fill(Qt::transparent);
 
     QColor color = QColor::fromRgba(key.color);
-    const qreal peakAlpha = kPeakAlphaScale * color.alphaF();
+    const qreal peakAlpha = kPeakAlphaScale * static_cast<double>(color.alphaF());
     // Pixel centers range from 0.5 to size - 0.5, so the asset's geometric
     // center is size / 2. Keeping the one-pixel center slice inside the shape
     // is especially important for radius 0: that slice is stretched across

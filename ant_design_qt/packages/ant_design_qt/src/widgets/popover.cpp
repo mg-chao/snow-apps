@@ -1331,7 +1331,7 @@ void AdPopover::bindOwnedWidgetDestroyed(QPointer<QWidget>& widget,
   }
 
   destroyedConnection = connect(widget, &QObject::destroyed, this,
-                                [this, &widget, &destroyedConnection, onDestroyed](QObject*) {
+                                [&widget, &destroyedConnection, onDestroyed](QObject*) {
                                   QObject::disconnect(destroyedConnection);
                                   destroyedConnection = QMetaObject::Connection();
                                   widget.clear();

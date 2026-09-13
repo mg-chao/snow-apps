@@ -1,6 +1,9 @@
 #include "snow_shot/presentation/globalmousegesture.h"
 
 #include <utility>
+#ifdef Q_OS_MACOS
+#include "snow_shot/platform/macos/modifierkeys.h"
+#endif
 
 namespace snow_shot::presentation {
 std::optional<GlobalMouseBinding>
@@ -12,9 +15,17 @@ globalMouseBinding(settings::SettingsGlobalMouseAction action,
     }
     for (const QString& key : combination.activationKeys) {
         if (key == QStringLiteral("windows")) {
+#ifdef Q_OS_MACOS
+            binding.modifiers |= snow_shot::platform::macos::commandModifier();
+#else
             binding.modifiers |= Qt::MetaModifier;
+#endif
         } else if (key == QStringLiteral("ctrl")) {
+#ifdef Q_OS_MACOS
+            binding.modifiers |= snow_shot::platform::macos::controlModifier();
+#else
             binding.modifiers |= Qt::ControlModifier;
+#endif
         } else if (key == QStringLiteral("alt")) {
             binding.modifiers |= Qt::AltModifier;
         } else if (key == QStringLiteral("shift")) {
@@ -87,7 +98,7 @@ GlobalMouseInputResult GlobalMouseGesture::handle(const GlobalMouseInput& input,
         if (input.kind == GlobalMouseInput::Kind::Press) {
             m_consumedButtons |= input.button;
         } else if (input.kind == GlobalMouseInput::Kind::Move) {
-            // Windows must still advance the cursor. The swallowed button sequence
+            // The platform must still advance the cursor. The swallowed button sequence
             // prevents this motion from becoming a drag in the foreground application.
             result.consumed = false;
             result.event = GlobalMouseDragEvent{GlobalMouseDragEvent::Kind::Update, m_activeId,
@@ -125,8 +136,10 @@ GlobalMouseInputResult GlobalMouseGesture::handle(const GlobalMouseInput& input,
     m_button = input.button;
     m_consumedButtons |= m_button;
     result.consumed = true;
+#ifndef Q_OS_MACOS
     result.maskActivationKey =
         input.modifiers.testFlag(Qt::MetaModifier) || input.modifiers.testFlag(Qt::AltModifier);
+#endif
     result.event = GlobalMouseDragEvent{GlobalMouseDragEvent::Kind::Begin, m_activeId, m_action,
                                         input.position};
     return result;

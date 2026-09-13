@@ -60,7 +60,7 @@ QColor deriveAlphaColor(const QColor& frontColor, const QColor& backgroundColor)
     return fallback;
   }
 
-  if (frontColor.alphaF() < 0.999) {
+  if (static_cast<double>(frontColor.alphaF()) < 0.999) {
     return frontColor;
   }
 

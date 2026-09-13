@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "snow-capture"
 version = "0.2.0"
 edition = "2024"
@@ -14,6 +14,7 @@ rayon.workspace = true
 num_cpus.workspace = true
 nalgebra = { version = "0.33.3", default-features = false, features = ["std"] }
 crossbeam-channel.workspace = true
+[target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [
     "Foundation",
     "Foundation_Collections",
@@ -105,3 +106,6 @@ name = "convert_benchmark"
 
 [[example]]
 name = "dxgi_region_dirty_rect_benchmark"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+snow-macos = { path = "../snow-macos" }

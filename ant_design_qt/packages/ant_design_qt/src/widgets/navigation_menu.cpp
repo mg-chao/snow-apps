@@ -3033,9 +3033,10 @@ bool AdNavigationMenu::Private::handleBarKey(QKeyEvent* event) {
 
 void AdNavigationMenu::Private::hidePopupLevelsFrom(int levelIndex) {
   for (int i = levelIndex; i < static_cast<int>(popupLevels.size()); ++i) {
-    if (popupLevels[i] && popupLevels[i]->shell) {
-      popupLevels[i]->shell->hide();
-      popupLevels[i]->submenuIndex = QModelIndex();
+    if (popupLevels[static_cast<std::size_t>(i)] &&
+        popupLevels[static_cast<std::size_t>(i)]->shell) {
+      popupLevels[static_cast<std::size_t>(i)]->shell->hide();
+      popupLevels[static_cast<std::size_t>(i)]->submenuIndex = QModelIndex();
     }
   }
 }
@@ -3100,7 +3101,7 @@ void AdNavigationMenu::Private::syncPopupVisibility() {
   auto* anchorView = qobject_cast<QAbstractItemView*>(activeViewWidget());
   for (int i = 0; i < chain.size(); ++i) {
     ensurePopupLevel(i);
-    PopupLevel& level = *popupLevels[i];
+    PopupLevel& level = *popupLevels[static_cast<std::size_t>(i)];
     if (level.shell && level.shell->parentWidget() != scopeWindow) {
       level.shell->hide();
       level.shell->setParent(scopeWindow);
@@ -3112,7 +3113,9 @@ void AdNavigationMenu::Private::syncPopupVisibility() {
     }
 
     QAbstractItemView* currentAnchorView =
-        (i == 0) ? anchorView : qobject_cast<QAbstractItemView*>(popupLevels[i - 1]->view.data());
+        (i == 0) ? anchorView
+                 : qobject_cast<QAbstractItemView*>(
+                       popupLevels[static_cast<std::size_t>(i - 1)]->view.data());
     QModelIndex anchorIndex = chain.at(i);
     if (currentAnchorView == barView) {
       anchorIndex = mapFromSourceIndex(barView->model(), anchorIndex);
@@ -3453,12 +3456,12 @@ void AdNavigationMenuItemDelegate::paint(QPainter* painter, const QStyleOptionVi
     groupFont.setPixelSize(std::max(10, style.metrics.groupTitleFontSize));
     painter->setFont(groupFont);
     painter->setPen(style.groupTitleColor);
-    painter->drawText(contentRowRect.adjusted(style.metrics.groupTitleHorizontalPadding,
-                                              style.metrics.groupTitleVerticalPadding,
-                                              -style.metrics.groupTitleHorizontalPadding,
-                                              -style.metrics.groupTitleVerticalPadding),
-                      QStyle::visualAlignment(direction, Qt::AlignVCenter | Qt::AlignLeft),
-                      displayTextForIndex(sourceIndex));
+    painter->drawText(
+        contentRowRect.adjusted(
+            style.metrics.groupTitleHorizontalPadding, style.metrics.groupTitleVerticalPadding,
+            -style.metrics.groupTitleHorizontalPadding, -style.metrics.groupTitleVerticalPadding),
+        static_cast<int>(QStyle::visualAlignment(direction, Qt::AlignVCenter | Qt::AlignLeft)),
+        displayTextForIndex(sourceIndex));
     painter->restore();
     return;
   }
@@ -3632,8 +3635,10 @@ void AdNavigationMenuItemDelegate::paint(QPainter* painter, const QStyleOptionVi
     QRect logicalExtraRect(std::max(textLeft, textRight - extraWidth), logicalContentRect.top(),
                            extraWidth, logicalContentRect.height());
     const QRect extraRect = QStyle::visualRect(direction, fillRect, logicalExtraRect);
-    painter->drawText(extraRect,
-                      QStyle::visualAlignment(direction, Qt::AlignVCenter | Qt::AlignRight), extra);
+    painter->drawText(
+        extraRect,
+        static_cast<int>(QStyle::visualAlignment(direction, Qt::AlignVCenter | Qt::AlignRight)),
+        extra);
     textRight = logicalExtraRect.left() - 4;
   }
 
@@ -3652,9 +3657,10 @@ void AdNavigationMenuItemDelegate::paint(QPainter* painter, const QStyleOptionVi
   const QRect logicalTextRect(textLeft, logicalContentRect.top(), std::max(0, textRight - textLeft),
                               logicalContentRect.height());
   const QRect textRect = QStyle::visualRect(direction, fillRect, logicalTextRect);
-  const int textFlags = collapsedInlineRoot && !hasIcon
-                            ? Qt::AlignCenter
-                            : QStyle::visualAlignment(direction, Qt::AlignVCenter | Qt::AlignLeft);
+  const int textFlags =
+      static_cast<int>(collapsedInlineRoot && !hasIcon
+                           ? Qt::AlignCenter
+                           : QStyle::visualAlignment(direction, Qt::AlignVCenter | Qt::AlignLeft));
   const QFontMetrics textMetrics(textFont);
   const int paintedTextWidth = label.isEmpty() ? 0
                                                : std::max(textMetrics.horizontalAdvance(label),

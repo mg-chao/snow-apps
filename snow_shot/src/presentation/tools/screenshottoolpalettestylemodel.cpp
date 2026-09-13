@@ -51,7 +51,6 @@ void ScreenshotToolPaletteStyleState::reset(const SnowCanvasStyleDefaults& defau
 }
 
 namespace {
-constexpr double kMinRectangleStrokeWidth = 1.0;
 constexpr double kMaxRectangleStrokeWidth = 72.0;
 constexpr int kMinRectangleCornerRadius = 0;
 constexpr int kMaxRectangleCornerRadius = 83;

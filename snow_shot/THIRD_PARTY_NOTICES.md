@@ -15,6 +15,20 @@ share/snow-shot/licenses/third-party/
 license file. The bundle includes the Ant Design Icons MIT notice from
 `ant_design_qt/THIRD_PARTY_NOTICES.md`.
 
+macOS app bundles place the same index under
+`Contents/Resources/licenses/third-party/`. Their native notices are collected
+from the exact Homebrew Cellar revisions included in the bundle, the pinned
+zlib-ng source, locally built FFmpeg dependencies, and the matching Qt release's
+REUSE metadata and license texts. Local FFmpeg notices include its matching
+source archive, SHA-256, build configuration, source patches (if any), and the
+license selected by that configuration. The GPL-enabled macOS FFmpeg build
+includes libwebp support for animated WebP recording exports.
+The macOS kit uses Qt 6.11.2; its Qt Base and Qt SVG notices are collected from
+the corresponding upstream release tags.
+The macOS capture bridge (`snow-macos`, Apache-2.0) uses Apple's system frameworks
+and the existing `cc` build dependency (MIT OR Apache-2.0); Apple system
+frameworks are not redistributed in the app.
+
 Screen color restoration uses nalgebra (Apache-2.0) for fixed-size matrix
 inversion and validation. Its license and resolved dependencies are included
 in the generated Rust dependency notice bundle.
@@ -25,6 +39,13 @@ https://github.com/mg-chao/ort with a native diagnostic-decoding and logger-cate
 fix. Cargo retrieves their source and original license files from that fork.
 The release collector includes the selected Rust FFI and static OCR-worker
 dependency graphs, including these Git dependencies.
+
+The PP-OCR model payloads are mirrored by mgchao/SnowShotOCR from RapidOCR.
+The RapidAI/RapidOCR ModelScope model card declares Apache License 2.0; the
+upstream copyright and license text are included in `packaging/ocr-model-LICENSE`
+(from RapidAI/RapidOCR revision `4a3070f304467e6d426e78a82afea5cb1181f305`).
+macOS bundles the hash-pinned Small V6 model and downloads other selections on
+demand using the same trusted manifest as Windows.
 
 The optional PP-OCRv4 and PP-OCRv5 detector/recognizer models and dictionaries
 are redistributed from RapidAI/RapidOCR's ModelScope release `v3.9.2`, whose

@@ -32,7 +32,6 @@
 #include <utility>
 
 namespace {
-constexpr auto kRecognitionMessageKey = "screenshot-recognition-session";
 
 std::shared_ptr<ScreenshotOcrPresentation>
 copyTextPresentation(const std::shared_ptr<ScreenshotOcrPresentation>& presentation) {
@@ -1880,6 +1879,9 @@ void ScreenshotRecognitionSessionController::handleRecognitionProviderDestroyed(
         requestWasPending = m_qrRequestToken != 0;
         m_qrRequestToken = 0;
         ++m_qrGeneration;
+        break;
+    case Mode::Markdown:
+    case Mode::Html:
         break;
     }
 

@@ -44,10 +44,6 @@ QStringList stringListValue(const QVariant& value) {
     return result;
 }
 
-QString localShortcutKey(SettingsLocalShortcutScope scope, const QString& shortcutId) {
-    return QString::number(static_cast<int>(scope)) + QLatin1Char('\x1f') + shortcutId;
-}
-
 QVariant globalMouseCombinationVariant(const SettingsGlobalMouseCombination& combination) {
     return QVariant::fromValue(combination);
 }
@@ -468,7 +464,7 @@ void SettingsRuntimeSession::forgetRetiredTarget(const SettingsFieldDescriptor& 
         return;
     }
     QVector<RetiredWrite>& writes = found.value();
-    for (int index = writes.size() - 1; index >= 0; --index) {
+    for (qsizetype index = writes.size() - 1; index >= 0; --index) {
         if (matchesValue(descriptor, writes.at(index).target, target)) {
             writes.removeAt(index);
         }
@@ -492,7 +488,7 @@ bool SettingsRuntimeSession::suppressRetiredCompletion(const SettingsFieldDescri
     // current value. A transition away from it is observable evidence that a
     // later matching update is a new external change, not another notification
     // for the old completion.
-    for (int index = writes.size() - 1; index >= 0; --index) {
+    for (qsizetype index = writes.size() - 1; index >= 0; --index) {
         if (writes.at(index).completionObserved &&
             !matchesValue(descriptor, writes.at(index).target, external)) {
             writes.removeAt(index);
@@ -504,7 +500,7 @@ bool SettingsRuntimeSession::suppressRetiredCompletion(const SettingsFieldDescri
     if (!backendPending && (activeWrite == nullptr || activeSettled)) {
         // No retired request remains in flight. Unobserved targets that do not
         // match the backend can no longer produce a stale completion.
-        for (int index = writes.size() - 1; index >= 0; --index) {
+        for (qsizetype index = writes.size() - 1; index >= 0; --index) {
             if (!writes.at(index).completionObserved &&
                 !matchesValue(descriptor, writes.at(index).target, external)) {
                 writes.removeAt(index);
@@ -740,6 +736,9 @@ void SettingsRuntimeSession::refreshField(const QString& fieldId,
                 std::get_if<SettingsSwitchDefinition>(&descriptor->definition->payload)) {
             next.enabled = next.enabled && m_backend.switchEnabled(switchDefinition->binding);
         }
+    }
+    if (descriptor->definition != nullptr) {
+        next.enabled = next.enabled && descriptor->definition->platformAvailable;
     }
     if (next.phase == SettingsWritePhase::Pending && !next.busy && next.dirty) {
         next.phase = SettingsWritePhase::Failed;
@@ -1067,7 +1066,7 @@ bool SettingsRuntimeSession::valuesEqual(const SettingsFieldDescriptor& descript
 }
 
 bool SettingsRuntimeSession::isReadOnly(const SettingsFieldDescriptor& descriptor) const {
-    if (descriptor.definition == nullptr) {
+    if (descriptor.definition == nullptr || !descriptor.definition->platformAvailable) {
         return true;
     }
     if (std::holds_alternative<SettingsActionDefinition>(descriptor.definition->payload)) {

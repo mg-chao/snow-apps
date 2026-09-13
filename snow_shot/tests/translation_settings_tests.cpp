@@ -63,6 +63,7 @@ class FakeTranslationHotkeyBackend final : public snow_shot::presentation::Globa
 };
 
 void selectedTextShortcutSettings() {
+
     using namespace snow_shot::presentation;
     namespace storage = snow_shot::storage;
     const auto action = GlobalShortcutAction::TranslateSelectedText;
@@ -370,11 +371,20 @@ int main(int argc, char** argv) {
                         QStringLiteral("text_recognition/direct_ml_acceleration"), true) &&
                     backend.resetSection(settings::SettingsSectionReset::TextRecognition) &&
                     backend.selectValue(settings::SettingsSelectBinding::OcrModelType).toString() ==
-                        QStringLiteral("small") &&
-                    !applicationStorage.configuration()
-                         .value(QStringLiteral("text_recognition/direct_ml_acceleration"))
-                         .toBool(),
-                "reset Text Recognition should restore Small and disable DirectML acceleration");
+                        QStringLiteral("small"),
+                "reset Text Recognition must restore the Small model");
+#ifdef Q_OS_MACOS
+        require(applicationStorage.configuration()
+                        .value(QStringLiteral("text_recognition/direct_ml_acceleration"))
+                        .toBool() &&
+                    !backend.switchValue(settings::SettingsSwitchBinding::DirectMlAcceleration),
+                "macOS reset must preserve the inactive DirectML preference while using CPU OCR");
+#else
+        require(!applicationStorage.configuration()
+                     .value(QStringLiteral("text_recognition/direct_ml_acceleration"))
+                     .toBool(),
+                "Windows reset must disable DirectML acceleration");
+#endif
     }
     require(storage::PinToScreenSettings().setDoubleClickAction(QStringLiteral("close")),
             "save pinned double-click action before restart");

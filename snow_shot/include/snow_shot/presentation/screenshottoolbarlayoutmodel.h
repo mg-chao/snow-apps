@@ -390,14 +390,14 @@ struct ItemLocation {
                                                const QString& itemId) {
     ItemLocation result;
     for (int positionIndex = 0; positionIndex < layout.positions.size(); ++positionIndex) {
-        const int itemIndex = layout.positions.at(positionIndex).indexOf(itemId);
+        const int itemIndex = static_cast<int>(layout.positions.at(positionIndex).indexOf(itemId));
         if (itemIndex >= 0) {
             result.positionIndex = positionIndex;
             result.itemIndex = itemIndex;
             return result;
         }
     }
-    result.hiddenIndex = layout.hidden.indexOf(itemId);
+    result.hiddenIndex = static_cast<int>(layout.hidden.indexOf(itemId));
     return result;
 }
 } // namespace detail

@@ -106,7 +106,10 @@ unsafe fn convert_row(
 ) {
     let source_bgra = format == SurfacePixelFormat::Bgra8;
     let target_bgra = output == CapturePixelFormat::Bgra8;
+    #[cfg(target_arch = "x86_64")]
     let mut start = 0;
+    #[cfg(not(target_arch = "x86_64"))]
+    let start = 0;
     #[cfg(target_arch = "x86_64")]
     if transform.inverted {
         use std::arch::x86_64::*;

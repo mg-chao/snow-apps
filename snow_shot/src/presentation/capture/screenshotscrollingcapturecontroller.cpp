@@ -20,6 +20,7 @@
 #include <QElapsedTimer>
 #include "windowcaptureexclusion.h"
 #include "../pinned/screenshotpintoperfinstrumentation.h"
+#include "widgets/message.h"
 
 #include <QCoreApplication>
 #include <QLoggingCategory>
@@ -483,6 +484,19 @@ struct ScreenshotScrollingCaptureController::Impl {
                     result.status == snow_shot::platform::windows::ScrollInputResult::Status::Posted
                         ? QtInfoMsg
                         : QtWarningMsg);
+            }
+            return result;
+        },
+        [this](snow_shot::platform::windows::ScrollInputResult result) {
+            auto* toolbar = context.overlayCoordinator.toolbar();
+            if (toolbar != nullptr) {
+                if (auto* palette = toolbar->palette())
+                    palette->setScrollingAutoScroll(false);
+                adqt::widgets::AdMessage::Request request;
+                request.key = QStringLiteral("scrolling-auto-scroll-error");
+                request.content = snow_shot::capture_detail::autoScrollFailureMessage(result);
+                request.durationMs = 8000;
+                adqt::widgets::AdMessageService::warning(std::move(request), toolbar);
             }
         }};
     int lastScrollStatus = -1;

@@ -2,6 +2,10 @@
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/screenshotglobalmousedrag.h"
 #include "snow_shot/storage/applicationstorage.h"
+#ifdef Q_OS_MACOS
+#include "snow_shot/platform/macos/globalmousebackend.h"
+#include "snow_shot/platform/macos/modifierkeys.h"
+#endif
 
 #include <QApplication>
 #include <QJsonObject>
@@ -31,6 +35,21 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(1);
     }
+}
+
+Qt::KeyboardModifier physicalControlModifier() {
+#ifdef Q_OS_MACOS
+    return snow_shot::platform::macos::controlModifier();
+#else
+    return Qt::ControlModifier;
+#endif
+}
+Qt::KeyboardModifier platformSystemModifier() {
+#ifdef Q_OS_MACOS
+    return snow_shot::platform::macos::commandModifier();
+#else
+    return Qt::MetaModifier;
+#endif
 }
 
 GlobalMouseConfiguration configured(Qt::MouseButton button = Qt::LeftButton) {
@@ -68,9 +87,14 @@ void everyCombinationMatchesExactlyAndLatchesItsAction() {
                             begin.event->position == press.position &&
                             begin.event->action == action,
                         "the press must latch its coordinates and action");
+#ifdef Q_OS_MACOS
+                require(!begin.maskActivationKey,
+                        "macOS gestures must not inject a Windows menu mask");
+#else
                 require(begin.maskActivationKey ==
                             (key == QStringLiteral("windows") || key == QStringLiteral("alt")),
                         "only Win and Alt need a menu mask");
+#endif
                 config.bindings.clear();
                 config.captureAvailable = false;
                 auto move = gesture.handle({InputKind::Move, {70, 80}}, config);
@@ -88,7 +112,7 @@ void everyCombinationMatchesExactlyAndLatchesItsAction() {
                 require(
                     !gesture.handle({InputKind::Release, {72, 83}, binding->button}, config).event,
                     "duplicate releases must never execute twice");
-                auto cancel = gesture.handle({InputKind::Cancel}, config);
+                auto cancel = gesture.handle({InputKind::Cancel, {}}, config);
                 require(cancel.event && cancel.event->id == begin.event->id,
                         "Escape must cancel a released gesture still awaiting capture readiness");
             }
@@ -104,11 +128,11 @@ void everyCombinationMatchesExactlyAndLatchesItsAction() {
 void multipleKeysMustBeHeldTogetherOnlyAtActivation() {
     const std::array keys{QStringLiteral("ctrl"), QStringLiteral("shift"), QStringLiteral("alt"),
                           QStringLiteral("windows")};
-    const std::array modifiers{Qt::ControlModifier, Qt::ShiftModifier, Qt::AltModifier,
-                               Qt::MetaModifier};
+    const std::array modifiers{physicalControlModifier(), Qt::ShiftModifier, Qt::AltModifier,
+                               platformSystemModifier()};
     for (int configuredMask = 1; configuredMask < 16; ++configuredMask) {
         QStringList selected;
-        for (int bit = 0; bit < 4; ++bit) {
+        for (std::size_t bit = 0; bit < keys.size(); ++bit) {
             if ((configuredMask & (1 << bit)) != 0) {
                 selected.push_back(keys[bit]);
             }
@@ -120,7 +144,7 @@ void multipleKeysMustBeHeldTogetherOnlyAtActivation() {
         for (int heldMask = 0; heldMask < 16; ++heldMask) {
             GlobalMouseGesture gesture;
             Qt::KeyboardModifiers held;
-            for (int bit = 0; bit < 4; ++bit) {
+            for (std::size_t bit = 0; bit < modifiers.size(); ++bit) {
                 if ((heldMask & (1 << bit)) != 0) {
                     held |= modifiers[bit];
                 }
@@ -260,6 +284,9 @@ class FakeBackend final : public GlobalMouseBackend {
         handler = std::move(callback);
         failure = std::move(error);
         ++starts;
+        if (startFailure != 0) {
+            failure(startFailure);
+        }
     }
     void stop() override {
         ++stops;
@@ -271,6 +298,9 @@ class FakeBackend final : public GlobalMouseBackend {
         cancelled = id;
     }
     void beginButtonDrag(Action action) override {
+        if (startFailure != 0) {
+            return;
+        }
         buttonAction = action;
         ++buttonDrags;
     }
@@ -282,7 +312,74 @@ class FakeBackend final : public GlobalMouseBackend {
     quint64 cancelled = 0;
     int starts = 0;
     int stops = 0;
+    quint32 startFailure = 0;
 };
+
+#ifdef Q_OS_MACOS
+void failedMacMouseInputRetriesOnlyForUserActions() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "permission retry test storage must be available");
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    static_cast<void>(
+        storage.initialize({temporary.filePath(QStringLiteral("bin")), temporary.path()}));
+    require(storage.isInitialized(), "permission retry test storage must initialize");
+    {
+        auto backend = std::make_unique<FakeBackend>();
+        auto* input = backend.get();
+        input->startFailure = static_cast<quint32>(
+            snow_shot::platform::macos::GlobalMouseError::AccessibilityPermission);
+        GlobalMouseManager manager(std::move(backend));
+        int prompts = 0;
+        QObject::connect(&manager, &GlobalMouseManager::inputPermissionRequired, &manager,
+                         [&prompts](const QString&) { ++prompts; });
+        manager.setCaptureAvailable(true);
+        manager.initialize();
+        QCoreApplication::processEvents();
+        require(input->starts == 1 && prompts == 1,
+                "the first failed initialization must report permission once");
+        for (int i = 0; i < 3; ++i) {
+            manager.setCaptureAvailable(false);
+            manager.setCaptureAvailable(true);
+            QCoreApplication::processEvents();
+        }
+        require(input->starts == 1 && prompts == 1,
+                "background availability changes must not retry or loop permission prompts");
+
+        auto& store = storage.configuration();
+        require(store.setValue(QStringLiteral("global_mouse/screenshot_copy"), QJsonObject{}),
+                "a user-edited mouse combination must persist");
+        QCoreApplication::processEvents();
+        require(input->starts == 2 && input->stops == 1 && prompts == 2,
+                "editing a combination after failure must retry and report missing access again");
+        const auto obsoleteFailure = input->failure;
+
+        manager.beginButtonDrag(Action::ScreenshotOcr);
+        QCoreApplication::processEvents();
+        require(input->starts == 3 && prompts == 3 && input->buttonDrags == 0,
+                "a direct drag attempt must retry and re-prompt while access is still missing");
+
+        input->startFailure = 0;
+        manager.beginButtonDrag(Action::ScreenshotFixed);
+        obsoleteFailure(static_cast<quint32>(
+            snow_shot::platform::macos::GlobalMouseError::AccessibilityPermission));
+        QCoreApplication::processEvents();
+        require(input->starts == 4 && input->buttonDrags == 1 &&
+                    input->buttonAction == Action::ScreenshotFixed && prompts == 3,
+                "granted access must resume the user action and ignore obsolete failure callbacks");
+        require(store.setValue(QStringLiteral("global_mouse/screenshot_fixed"), QJsonObject{}),
+                "a later mouse configuration must persist");
+        manager.beginButtonDrag(Action::ScreenshotCopy);
+        require(input->starts == 4 && input->buttonDrags == 2,
+                "a healthy backend must keep its existing listener for configuration and actions");
+        manager.shutdown();
+        manager.beginButtonDrag(Action::ScreenshotCopy);
+        QCoreApplication::processEvents();
+        require(input->starts == 4 && input->stops == 4 && prompts == 3,
+                "shutdown must prevent user-action retries from reviving the listener");
+    }
+    storage.shutdown();
+}
+#endif
 
 class FakeHotkeyBackend final : public GlobalShortcutBackend {
   public:
@@ -331,7 +428,7 @@ void hotkeySuppressionNeverDisablesMouseGestures() {
         const auto requireMouseActivation = [&]() {
             GlobalMouseGesture gesture;
             const GlobalMouseInput press{
-                InputKind::Press, {10, 20}, Qt::LeftButton, Qt::MetaModifier};
+                InputKind::Press, {10, 20}, Qt::LeftButton, platformSystemModifier()};
             const auto result = gesture.handle(press, mouseInput->configuration);
             require(result.consumed && result.event &&
                         result.event->action == Action::ScreenshotCopy,
@@ -357,7 +454,7 @@ void hotkeySuppressionNeverDisablesMouseGestures() {
         mouse.setCaptureAvailable(false);
         GlobalMouseGesture gesture;
         require(!gesture
-                     .handle({InputKind::Press, {}, Qt::LeftButton, Qt::MetaModifier},
+                     .handle({InputKind::Press, {}, Qt::LeftButton, platformSystemModifier()},
                              mouseInput->configuration)
                      .event,
                 "busy capture must still block mouse activation");
@@ -385,9 +482,12 @@ void managerLoadsLiveSettingsAndCoalescesOnlyMovement() {
     const std::array defaultButtons{Qt::LeftButton, Qt::MiddleButton, Qt::RightButton};
     for (qsizetype index = 0; index < 3; ++index) {
         const auto& binding = input->configuration.bindings[index];
-        require(binding.action == defaultActions[index] && binding.modifiers == Qt::MetaModifier &&
-                    binding.button == defaultButtons[index],
-                "default bindings must reach the backend as Windows plus left, middle, and right");
+        const auto arrayIndex = static_cast<std::size_t>(index);
+        require(binding.action == defaultActions[arrayIndex] &&
+                    binding.modifiers == platformSystemModifier() &&
+                    binding.button == defaultButtons[arrayIndex],
+                "default bindings must reach the backend as the platform system key plus left, "
+                "middle, and right");
     }
     for (const auto* key : {"global_mouse/screenshot_copy", "global_mouse/screenshot_fixed",
                             "global_mouse/screenshot_ocr"}) {
@@ -416,7 +516,8 @@ void managerLoadsLiveSettingsAndCoalescesOnlyMovement() {
                                     QJsonArray{QStringLiteral("ctrl"), QStringLiteral("shift")}},
                                    {QStringLiteral("mouse_button"), QStringLiteral("wheel_drag")}}),
         "multiple activation keys must persist");
-    require(input->configuration.bindings[0].modifiers == (Qt::ControlModifier | Qt::ShiftModifier),
+    require(input->configuration.bindings[0].modifiers ==
+                (physicalControlModifier() | Qt::ShiftModifier),
             "all persisted activation keys must reach the native backend");
     require(store.setValue(
                 QStringLiteral("global_mouse/screen_recording"),
@@ -655,6 +756,9 @@ int main(int argc, char** argv) {
     revealRefreshCatchesUpToLiveCursorOnlyWhileDragging();
     hotkeySuppressionNeverDisablesMouseGestures();
     managerLoadsLiveSettingsAndCoalescesOnlyMovement();
+#ifdef Q_OS_MACOS
+    failedMacMouseInputRetriesOnlyForUserActions();
+#endif
     managerPacesSustainedMovementAndDeliversTerminalEventsImmediately();
     return 0;
 }

@@ -8,6 +8,8 @@
 
 #ifdef Q_OS_WIN
 #include "globalmousebackend_p.h"
+#elif defined(Q_OS_MACOS)
+#include "snow_shot/platform/macos/globalmousebackend.h"
 #endif
 
 namespace snow_shot::presentation {
@@ -78,16 +80,11 @@ class NativeGlobalMouseBackend final : public GlobalMouseBackend {
             onFailure = {};
             return;
         }
-        if (worker != nullptr) {
-            QMetaObject::invokeMethod(
-                worker,
-                [this]() {
 #ifdef Q_OS_WIN
-                    unhook();
-#endif
-                },
-                Qt::BlockingQueuedConnection);
+        if (worker != nullptr) {
+            QMetaObject::invokeMethod(worker, [this]() { unhook(); }, Qt::BlockingQueuedConnection);
         }
+#endif
         thread.quit();
         if (!thread.wait(kStopTimeoutMilliseconds)) {
             qWarning("Global mouse worker thread did not stop within %lu milliseconds",
@@ -429,6 +426,10 @@ detail::createGlobalMouseBackend(detail::GlobalMouseNativeApi api) {
 #endif
 
 std::unique_ptr<GlobalMouseBackend> createGlobalMouseBackend() {
+#ifdef Q_OS_MACOS
+    return snow_shot::platform::macos::createGlobalMouseBackend();
+#else
     return std::make_unique<NativeGlobalMouseBackend>();
+#endif
 }
 } // namespace snow_shot::presentation

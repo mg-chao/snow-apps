@@ -1,5 +1,8 @@
 #include "snow_shot/presentation/globalmousemanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#ifdef Q_OS_MACOS
+#include "snow_shot/platform/macos/globalmousebackend.h"
+#endif
 
 #include <QJsonObject>
 #include <QCursor>
@@ -149,6 +152,9 @@ struct GlobalMouseManager::Impl {
     bool pacing = false;
     bool deliveryQueued = false;
     bool started = false;
+#ifdef Q_OS_MACOS
+    bool inputInitializationFailed = false;
+#endif
 };
 
 GlobalMouseManager::GlobalMouseManager(QObject* parent) : GlobalMouseManager(nullptr, parent) {}
@@ -164,6 +170,9 @@ void GlobalMouseManager::initialize() {
         return;
     }
     impl.started = true;
+#ifdef Q_OS_MACOS
+    impl.inputInitializationFailed = false;
+#endif
     const quint64 epoch = impl.generation;
     impl.reload();
     impl.configurationConnection =
@@ -171,6 +180,12 @@ void GlobalMouseManager::initialize() {
                 &storage::ConfigurationStore::valueChanged, this,
                 [this](const QString& key, const QJsonValue&) {
                     if (key.startsWith(QStringLiteral("global_mouse/"))) {
+#ifdef Q_OS_MACOS
+                        if (m_impl->inputInitializationFailed) {
+                            retryInitialization();
+                            return;
+                        }
+#endif
                         m_impl->reload();
                     }
                 });
@@ -182,6 +197,19 @@ void GlobalMouseManager::initialize() {
                 [this, code, epoch]() {
                     if (m_impl->started && epoch == m_impl->generation) {
                         qWarning("Global mouse input initialization failed: %u", code);
+#ifdef Q_OS_MACOS
+                        using Error = snow_shot::platform::macos::GlobalMouseError;
+                        if (code == static_cast<quint32>(Error::AccessibilityPermission) ||
+                            code == static_cast<quint32>(Error::EventTapUnavailable) ||
+                            code == static_cast<quint32>(Error::EventTapDisabled)) {
+                            m_impl->inputInitializationFailed = true;
+                            emit inputPermissionRequired(
+                                tr("Global mouse gestures require Accessibility access. "
+                                   "Allow Snow Shot in System Settings > Privacy & Security > "
+                                   "Accessibility, then retry."));
+                            return;
+                        }
+#endif
                         emit operationFailed(
                             tr("Global mouse input is unavailable (error %1).").arg(code));
                     }
@@ -190,7 +218,17 @@ void GlobalMouseManager::initialize() {
         });
 }
 
+void GlobalMouseManager::retryInitialization() {
+    shutdown();
+    initialize();
+}
+
 void GlobalMouseManager::beginButtonDrag(settings::SettingsGlobalMouseAction action) {
+#ifdef Q_OS_MACOS
+    if (m_impl->started && m_impl->inputInitializationFailed) {
+        retryInitialization();
+    }
+#endif
     if (m_impl->started && m_impl->configuration.captureAvailable) {
         m_impl->backend->beginButtonDrag(action);
     }

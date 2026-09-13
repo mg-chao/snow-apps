@@ -23,8 +23,9 @@ QColor textColorForBackground(const QColor& background) {
   if (!background.isValid()) {
     return QColor("#ffffff");
   }
-  const qreal luminance =
-      (0.299 * background.redF() + 0.587 * background.greenF() + 0.114 * background.blueF());
+  const qreal luminance = (0.299 * static_cast<double>(background.redF()) +
+                           0.587 * static_cast<double>(background.greenF()) +
+                           0.114 * static_cast<double>(background.blueF()));
   return luminance < 0.5 ? QColor("#ffffff") : QColor("#000000");
 }
 

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key><string>snow_shot</string>
+    <key>CFBundleIdentifier</key><string>com.snowshot.snow_shot</string>
+    <key>CFBundleName</key><string>Snow Shot</string>
+    <key>CFBundleDisplayName</key><string>Snow Shot</string>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>zh-Hans</string>
+        <string>zh-Hant</string>
+    </array>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleIconFile</key><string>snow-shot.icns</string>
+    <key>CFBundleVersion</key><string>@SNOW_SHOT_VERSION_NUMERIC@</string>
+    <key>CFBundleShortVersionString</key><string>@SNOW_SHOT_VERSION_NUMERIC@</string>
+    <key>LSMinimumSystemVersion</key><string>@CMAKE_OSX_DEPLOYMENT_TARGET@</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSMicrophoneUsageDescription</key><string>Snow Shot records microphone audio when you enable it for a screen recording.</string>
+    <key>NSPrincipalClass</key><string>NSApplication</string>
+</dict>
+</plist>

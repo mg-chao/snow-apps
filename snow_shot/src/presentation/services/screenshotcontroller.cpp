@@ -29,6 +29,9 @@
 #include "widgets/modal.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshothistoryservice.h"
+#ifdef Q_OS_MACOS
+#include "snow_shot/presentation/screenshothistoryimageeditor.h"
+#endif
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistorytypes.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -883,8 +886,6 @@ bool ScreenshotController::Impl::ensureRecognitionFeature() {
         screenshotOcrModelTypeFromValue(applicationStorage.configuration()
                                             .value(QStringLiteral("text_recognition/model_type"))
                                             .toString());
-    ocrOptions.offlineRoot =
-        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("assets/ocr"));
     if (applicationStorage.isInitialized() &&
         !applicationStorage.configurationDirectory().trimmed().isEmpty()) {
         ocrOptions.cacheRoot = QDir(applicationStorage.configurationDirectory())
@@ -1256,6 +1257,7 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
             []() { return snow_shot::storage::ScreenshotSettings().restoreOriginalScreenColors(); },
             []() { return snow_shot::storage::ScreenshotSettings().captureCursor(); },
             [this]() { return m_selectionSettings->selectionTarget(); },
+            [this](const QString& message) { emit owner.captureFailed(message); },
         });
 }
 
@@ -1273,11 +1275,18 @@ void ScreenshotController::Impl::startHistoryEdit(const QString& recordId) {
     }
 
     resetPendingCaptureRequest();
+#ifdef Q_OS_MACOS
+    static_cast<void>(openScreenshotHistoryImageEditor(
+        snow_shot::storage::ApplicationStorage::instance().captureHistory(), recordId,
+        QGuiApplication::screenAt(QCursor::pos()), &owner,
+        [this](const QString& message) { emit owner.captureFailed(message); }));
+#else
     m_pendingHistoryEditRecordId = recordId;
     invalidateRecognitionSession();
     m_historyService->resetCaptureNavigation();
     emit owner.captureAvailabilityChanged(false);
     m_captureWorkflow->startCapture();
+#endif
 }
 
 void ScreenshotController::Impl::handleCapturePresented() {
@@ -2200,7 +2209,7 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
         SNOW_SHOT_PIN_PERF_MILESTONE("controller.presentation_hidden");
         return;
     }
-    const QRect perfSelection = m_selection.pixelSelection();
+    [[maybe_unused]] const QRect perfSelection = m_selection.pixelSelection();
     SNOW_SHOT_PIN_PERF_BEGIN("normal-selection", perfSelection.width(), perfSelection.height());
     SNOW_SHOT_PIN_PERF_MILESTONE("controller.enter");
     SNOW_SHOT_PIN_PERF_SCOPE("controller.pin_selection");
@@ -2780,7 +2789,7 @@ void ScreenshotController::Impl::saveSelectionToFile() {
 
     const QPointer<ScreenshotController> receiver(&owner);
     const auto imageReady = [receiver, generation = *exportGeneration, outputPath, format, pdf,
-                             historyCandidate, historySource](QImage image) mutable {
+                             historyCandidate](QImage image) mutable {
         if (receiver.isNull() || receiver->m_impl == nullptr ||
             !receiver->m_impl->imageExportCurrent(generation)) {
             return;
@@ -2799,8 +2808,8 @@ void ScreenshotController::Impl::saveSelectionToFile() {
             });
     } else if (m_scrollingCaptureController != nullptr && m_scrollingCaptureController->active()) {
         scheduled = m_scrollingCaptureController->requestTrimmedSnapshot(
-            [receiver, generation = *exportGeneration, outputPath, format, pdf, historyCandidate,
-             historySource](ScreenshotScrollingSnapshot snapshot) mutable {
+            [receiver, generation = *exportGeneration, outputPath, format, pdf,
+             historyCandidate](ScreenshotScrollingSnapshot snapshot) mutable {
                 if (receiver.isNull() || receiver->m_impl == nullptr ||
                     !receiver->m_impl->imageExportCurrent(generation)) {
                     return;

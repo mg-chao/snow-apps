@@ -677,7 +677,18 @@ QRect ScreenshotGeometryMapper::physicalRectForScreen(const QScreen& screen) {
         return logicalGeometry;
     }
 
-    return QRect(logicalGeometry.left(), logicalGeometry.top(),
+    QPoint physicalOrigin = logicalGeometry.topLeft();
+#ifdef Q_OS_MACOS
+    // Cocoa reports desktop origins in points. A shared origin scale prevents overlapping
+    // physical monitor rectangles while each display keeps its native backing resolution.
+    qreal desktopScale = 1.0;
+    for (const QScreen* candidate : QGuiApplication::screens()) {
+        desktopScale = std::max(desktopScale, candidate->devicePixelRatio());
+    }
+    physicalOrigin = QPoint(qRound(logicalGeometry.x() * desktopScale),
+                            qRound(logicalGeometry.y() * desktopScale));
+#endif
+    return QRect(physicalOrigin.x(), physicalOrigin.y(),
                  qRound(static_cast<qreal>(logicalGeometry.width()) * devicePixelRatio),
                  qRound(static_cast<qreal>(logicalGeometry.height()) * devicePixelRatio));
 }

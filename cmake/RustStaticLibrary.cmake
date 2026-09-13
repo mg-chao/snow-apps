@@ -1,4 +1,5 @@
 include_guard(GLOBAL)
+include(SnowRustTarget)
 
 function(snow_add_rust_static_libraries batch_name)
     set(options STRIP_MSVC_DIRECTIVES)
@@ -45,13 +46,7 @@ function(snow_add_rust_static_libraries batch_name)
         set(SNOW_LIBCLANG_BIN_DIR "${SNOW_VCPKG_ROOT}/../llvm/bin")
     endif()
 
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|MinGW")
-        set(SNOW_RUST_TARGET "x86_64-pc-windows-gnu")
-    elseif(MSVC)
-        set(SNOW_RUST_TARGET "x86_64-pc-windows-msvc")
-    else()
-        set(SNOW_RUST_TARGET "x86_64-unknown-linux-gnu")
-    endif()
+    snow_rust_target(SNOW_RUST_TARGET)
 
     execute_process(
         COMMAND "${CARGO_EXECUTABLE}" metadata --format-version 1
@@ -275,13 +270,7 @@ function(snow_add_rust_executable target_name)
         set(SNOW_RUST_RELEASE_PROFILE "release" CACHE STRING
             "Cargo profile used for non-Debug Rust builds.")
     endif()
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|MinGW")
-        set(_rust_target "x86_64-pc-windows-gnu")
-    elseif(MSVC)
-        set(_rust_target "x86_64-pc-windows-msvc")
-    else()
-        set(_rust_target "x86_64-unknown-linux-gnu")
-    endif()
+    snow_rust_target(_rust_target)
     if(SNOW_RUST_PERFORMANCE_PROFILE)
         # The executable is performance-critical and independent of the CMake
         # configuration, so always build it with the release profile.

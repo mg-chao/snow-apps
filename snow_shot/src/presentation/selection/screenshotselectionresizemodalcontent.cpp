@@ -727,7 +727,7 @@ void ScreenshotSelectionResizeModalContent::openCreatePresetModal() {
     nameItem->setItemLayout(adqt::widgets::AdFormItem::ItemLayout::Vertical);
     nameItem->setRequired(true);
     nameItem->setRequiredMessage(tr("Please enter a preset name"));
-    nameItem->setFormValidator([this](const QVariant& value, adqt::widgets::AdFormItem*) {
+    nameItem->setFormValidator([](const QVariant& value, adqt::widgets::AdFormItem*) {
         adqt::widgets::AdFormItem::ValidationResult result;
         if (value.toString().trimmed().isEmpty()) {
             result.status = adqt::widgets::AdFormItem::ValidateStatus::Error;

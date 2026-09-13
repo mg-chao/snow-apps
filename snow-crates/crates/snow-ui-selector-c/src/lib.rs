@@ -5,8 +5,14 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
+#[cfg(windows)]
 use snow_ui_selector::{AccessibilityBackend, ElementRegionService, HitTestMode};
-use windows::Win32::Foundation::{HWND, POINT};
+#[cfg(windows)]
+use windows::Win32::Foundation::{HWND as WindowHandle, POINT as ScreenPoint};
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+use macos::{AccessibilityBackend, ElementRegionService, HitTestMode, ScreenPoint, WindowHandle};
 
 pub struct SnowUiSelectorServiceImpl {
     sender: mpsc::Sender<WorkerRequest>,
@@ -186,7 +192,7 @@ fn refresh_service(
 ) -> Result<(), String> {
     let hwnds = excluded_hwnds
         .into_iter()
-        .map(|raw| HWND(raw as *mut c_void))
+        .map(|raw| WindowHandle(raw as *mut c_void))
         .collect::<Vec<_>>();
 
     if let Some(existing) = service
@@ -219,7 +225,7 @@ fn hit_test_service(
         .ok_or_else(|| "selector service has not been refreshed".to_owned())
         .and_then(|service| {
             service
-                .hit_test_point(POINT { x, y }, mode)
+                .hit_test_point(ScreenPoint { x, y }, mode)
                 .map(|path| {
                     path.map(|rects| {
                         rects

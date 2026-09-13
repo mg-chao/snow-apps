@@ -14,7 +14,9 @@
 #endif
 
 namespace {
+#if defined(SNOW_SHOT_CAPTURE_PERF_INSTRUMENTATION) || defined(SNOW_SHOT_BENCH_INTERNALS)
 constexpr auto kRevealStrategyEnvironment = "SNOW_SHOT_CAPTURE_REVEAL_STRATEGY";
+#endif
 
 class ShowPaintSuppression final : public QObject {
   public:

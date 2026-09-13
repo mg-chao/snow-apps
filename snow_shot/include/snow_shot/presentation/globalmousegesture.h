@@ -11,7 +11,7 @@
 namespace snow_shot::presentation {
 struct GlobalMouseBinding {
     settings::SettingsGlobalMouseAction action;
-    Qt::KeyboardModifiers modifiers;
+    Qt::KeyboardModifiers modifiers{};
     Qt::MouseButton button = Qt::NoButton;
 };
 
@@ -29,9 +29,9 @@ struct GlobalMouseInput {
     Kind kind = Kind::Other;
     QPoint position;
     Qt::MouseButton button = Qt::NoButton;
-    Qt::KeyboardModifiers modifiers;
+    Qt::KeyboardModifiers modifiers{};
     bool injected = false;
-    Qt::MouseButtons heldButtons;
+    Qt::MouseButtons heldButtons{};
 };
 
 struct GlobalMouseDragEvent {
@@ -64,6 +64,9 @@ class GlobalMouseGesture final {
     }
     [[nodiscard]] bool needsMouseInput() const {
         return active() || m_consumedButtons != Qt::NoButton;
+    }
+    [[nodiscard]] bool hasConsumedPress(Qt::MouseButton button) const {
+        return button != Qt::NoButton && m_consumedButtons.testFlag(button);
     }
     void reset() {
         const quint64 nextId = m_nextId;

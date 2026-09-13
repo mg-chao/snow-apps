@@ -13,6 +13,7 @@ enum class SelectedTextStatus {
     Selected,
     NoSelection,
     Unsupported,
+    PermissionDenied,
     Busy,
     TimedOut,
     Failed
@@ -49,7 +50,9 @@ class SelectedTextTranslationController final : public QObject {
 
   signals:
     // Emitted when a capture finishes; text is empty when nothing was retrieved.
+    // Missing permission instead requests guidance without activating the destination.
     void textReady(const QString& text);
+    void permissionRequired();
 
   private:
     void acceptResult(const SelectedTextCaptureResult& result);

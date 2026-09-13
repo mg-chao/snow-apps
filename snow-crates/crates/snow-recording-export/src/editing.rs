@@ -8120,7 +8120,11 @@ fn should_use_x265_options(codec: &ffmpeg::Codec) -> bool {
 
 pub(crate) fn is_hardware_h264_encoder(codec: &ffmpeg::Codec) -> bool {
     let name = codec.name().to_ascii_lowercase();
-    name.contains("nvenc") || name.contains("qsv") || name.contains("amf") || name.contains("mf")
+    name.contains("nvenc")
+        || name.contains("qsv")
+        || name.contains("amf")
+        || name.contains("mf")
+        || name.contains("videotoolbox")
 }
 
 fn is_hardware_video_encoder(codec: &ffmpeg::Codec) -> bool {
@@ -8138,7 +8142,11 @@ fn select_software_h264_codec(priority: SoftwareH264Priority) -> Option<ffmpeg::
 }
 
 fn select_hardware_h264_codec() -> Option<ffmpeg::Codec> {
-    // Only h264_mf is part of the shipped FFmpeg build; the remaining entries
+    #[cfg(target_os = "macos")]
+    if let Some(codec) = ffmpeg::encoder::find_by_name("h264_videotoolbox") {
+        return Some(codec);
+    }
+    // Only h264_mf is part of the shipped Windows FFmpeg build; the remaining entries
     // cover FFmpeg builds that also enable the vendor-specific encoders.
     ["h264_mf", "h264_nvenc", "h264_qsv", "h264_amf"]
         .into_iter()
@@ -8196,6 +8204,12 @@ fn apply_hardware_encoder_speed_options(
     codec: &ffmpeg::Codec,
 ) -> bool {
     let name = codec.name().to_ascii_lowercase();
+    if name.contains("videotoolbox") {
+        options.set("realtime", "1");
+        options.set("allow_sw", "0");
+        options.set("bf", "0");
+        return true;
+    }
     if name.contains("nvenc") {
         options.set("preset", "p1");
         options.set("tune", "ull");

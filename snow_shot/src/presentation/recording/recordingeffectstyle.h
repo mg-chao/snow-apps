@@ -30,7 +30,11 @@ struct RecordingKeyboardLabels {
             {0x0D, "Enter"},
             {0x10, "Shift"},
             {0x11, "Ctrl"},
+#ifdef Q_OS_MACOS
+            {0x12, "Option"},
+#else
             {0x12, "Alt"},
+#endif
             {0x13, "Pause"},
             {0x14, "Caps Lock"},
             {0x1B, "Esc"},
@@ -46,7 +50,11 @@ struct RecordingKeyboardLabels {
             {0x2C, "Print Screen"},
             {0x2D, "Insert"},
             {0x2E, "Delete"},
+#ifdef Q_OS_MACOS
+            {0x5B, "Cmd"},
+#else
             {0x5B, "Win"},
+#endif
             {0x5D, "Menu"},
             {0x6A, "Num *"},
             {0x6B, "Num +"},
@@ -56,7 +64,11 @@ struct RecordingKeyboardLabels {
             {0x6F, "Num /"},
             {0x90, "Num Lock"},
             {0x91, "Scroll Lock"},
+#ifdef Q_OS_MACOS
+            {0xA5, "Option"},
+#else
             {0xA5, "AltGr"},
+#endif
             {0xAD, "Mute"},
             {0xAE, "Volume Down"},
             {0xAF, "Volume Up"},

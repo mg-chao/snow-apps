@@ -214,7 +214,11 @@ mod platform {
     fn _assert_hook_is_handle(_: HHOOK) {}
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+#[path = "mouse_hook_macos.rs"]
+mod platform;
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod platform {
     use crossbeam_channel::Sender;
 

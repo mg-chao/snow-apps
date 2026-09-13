@@ -7,6 +7,11 @@
 #include <QStandardPaths>
 #include <QCryptographicHash>
 #include <QMessageBox>
+#ifdef Q_OS_MACOS
+#include "snow_shot/app/deferredpermissionprompt.h"
+#include "snow_shot/platform/macos/capturefailuremessage.h"
+#include "snow_shot/platform/macos/accessibilitypermissionmessage.h"
+#endif
 
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/globalmousemanager.h"
@@ -116,6 +121,14 @@ class ApplicationController::Impl {
         QObject::connect(
             &globalMouseManager, &presentation::GlobalMouseManager::operationFailed, &q,
             [this](const QString& message) { systemTray.showCaptureMessage(message, true); });
+#ifdef Q_OS_MACOS
+        QObject::connect(&globalMouseManager,
+                         &presentation::GlobalMouseManager::inputPermissionRequired, &q,
+                         [this](const QString&) {
+                             globalMousePermissionPrompt.request();
+                             presentPendingGlobalMousePermission();
+                         });
+#endif
         QObject::connect(&globalMouseManager, &presentation::GlobalMouseManager::dragEvent, &q,
                          [this](const presentation::GlobalMouseDragEvent& event) {
                              auto* controller = ensureScreenshotController();
@@ -156,8 +169,6 @@ class ApplicationController::Impl {
         // instances receive a consumer of this service instead of creating a
         // second child process for each controller.
         ScreenshotOcrRecognitionService::Options ocrOptions;
-        ocrOptions.offlineRoot =
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("assets/ocr"));
         if (applicationStorage.isInitialized() &&
             !applicationStorage.configurationDirectory().trimmed().isEmpty()) {
             ocrOptions.cacheRoot = QDir(applicationStorage.configurationDirectory())
@@ -290,6 +301,16 @@ class ApplicationController::Impl {
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::globalMouseCaptureEnded, &globalMouseManager,
                              &presentation::GlobalMouseManager::cancelGesture);
+#ifdef Q_OS_MACOS
+            QObject::connect(screenshotController.get(), &ScreenshotController::captureFailed, &q,
+                             [this](const QString& message) {
+                                 if (!captureFailureMessage) {
+                                     captureFailureMessage =
+                                         std::make_unique<platform::macos::CaptureFailureMessage>();
+                                 }
+                                 captureFailureMessage->present(message);
+                             });
+#endif
         }
         return screenshotController.get();
     }
@@ -341,6 +362,21 @@ class ApplicationController::Impl {
         }
     }
 
+#ifdef Q_OS_MACOS
+    void presentPendingGlobalMousePermission() {
+        if (!globalMousePermissionPrompt.takeIfWindowVisible(mainWindow &&
+                                                             mainWindow->isVisible())) {
+            return;
+        }
+        if (!accessibilityPermissionMessage) {
+            accessibilityPermissionMessage =
+                std::make_unique<platform::macos::AccessibilityPermissionMessage>();
+        }
+        accessibilityPermissionMessage->present(
+            [this] { globalMouseManager.retryInitialization(); });
+    }
+#endif
+
     MainWindow& ensureMainWindow() {
         if (mainWindow == nullptr) {
             ensureSettingsRuntime();
@@ -366,6 +402,12 @@ class ApplicationController::Impl {
                                  }
                              });
         }
+#ifdef Q_OS_MACOS
+        // All callers show the window after obtaining it, including the tray's direct
+        // settings action. Login startup never creates this window. Check visibility
+        // after that caller returns so background initialization cannot take focus.
+        QTimer::singleShot(0, &q, [this] { presentPendingGlobalMousePermission(); });
+#endif
         return *mainWindow;
     }
 
@@ -477,6 +519,17 @@ class ApplicationController::Impl {
                         ensureMainWindow().showTranslation(text);
                     }
                 });
+#ifdef Q_OS_MACOS
+            QObject::connect(
+                selectedTextTranslationCoordinator.get(),
+                &presentation::SelectedTextTranslationCoordinator::permissionRequired, &q, [this] {
+                    if (!accessibilityPermissionMessage) {
+                        accessibilityPermissionMessage =
+                            std::make_unique<platform::macos::AccessibilityPermissionMessage>();
+                    }
+                    accessibilityPermissionMessage->present();
+                });
+#endif
             QObject::connect(&app, &QCoreApplication::aboutToQuit,
                              selectedTextTranslationCoordinator.get(),
                              &presentation::SelectedTextTranslationCoordinator::shutdown);
@@ -532,6 +585,11 @@ class ApplicationController::Impl {
     std::unique_ptr<presentation::SelectedTextTranslationCoordinator>
         selectedTextTranslationCoordinator;
     QPointer<MainWindow> mainWindow;
+#ifdef Q_OS_MACOS
+    DeferredPermissionPrompt globalMousePermissionPrompt;
+    std::unique_ptr<platform::macos::CaptureFailureMessage> captureFailureMessage;
+    std::unique_ptr<platform::macos::AccessibilityPermissionMessage> accessibilityPermissionMessage;
+#endif
     bool started = false;
     update::UpdateService* updates = nullptr;
 };

@@ -1,9 +1,14 @@
 #include "snow_shot/presentation/selectedtexttranslationcontroller.h"
 
+#ifdef Q_OS_MACOS
+#include "snow_shot/platform/macos/selectedtextcapturebackend.h"
+#else
 #include "snow_selected_text.h"
+#endif
 
 namespace snow_shot::presentation {
 namespace {
+#ifndef Q_OS_MACOS
 // The 2 s FFI default budget is sized for the slower strategies; the clipboard
 // roundtrip only waits for the target app to answer the injected Ctrl+C.
 constexpr uint32_t kClipboardCaptureTimeoutMs = 800;
@@ -95,11 +100,19 @@ class NativeSelectedTextCaptureBackend final : public SelectedTextCaptureBackend
     std::unique_ptr<SnowSelectedTextRequest, decltype(&snow_selected_text_request_destroy)>
         m_request{nullptr, snow_selected_text_request_destroy};
 };
+#endif
+
+std::unique_ptr<SelectedTextCaptureBackend> createNativeSelectedTextCaptureBackend() {
+#ifdef Q_OS_MACOS
+    return platform::macos::createSelectedTextCaptureBackend();
+#else
+    return std::make_unique<NativeSelectedTextCaptureBackend>();
+#endif
+}
 } // namespace
 
 SelectedTextTranslationController::SelectedTextTranslationController(QObject* parent)
-    : SelectedTextTranslationController(std::make_unique<NativeSelectedTextCaptureBackend>(),
-                                        parent) {}
+    : SelectedTextTranslationController(createNativeSelectedTextCaptureBackend(), parent) {}
 
 SelectedTextTranslationController::SelectedTextTranslationController(
     std::unique_ptr<SelectedTextCaptureBackend> backend, QObject* parent)
@@ -141,7 +154,13 @@ void SelectedTextTranslationController::acceptResult(const SelectedTextCaptureRe
     }
     m_pollTimer.stop();
     m_pending = false;
-    // Every completed capture hands off, even with empty text; the destination opens the
+    if (result.status == SelectedTextStatus::PermissionDenied) {
+        // Do not activate a translation window over the application whose selection
+        // the user will retry after granting Accessibility access.
+        emit permissionRequired();
+        return;
+    }
+    // Other completed captures hand off, even with empty text; the destination opens the
     // translation page and warns there when nothing was retrieved.
     emit textReady(result.text);
 }

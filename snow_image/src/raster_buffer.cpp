@@ -83,7 +83,9 @@ class BinaryWriter final {
         U encoded = static_cast<U>(value);
         for (std::size_t index = 0; index < sizeof(T); ++index) {
             bytes_.push_back(static_cast<std::byte>(encoded & U{0xFF}));
-            encoded >>= 8U;
+            if constexpr (sizeof(U) > 1) {
+                encoded >>= 8U;
+            }
         }
     }
 
