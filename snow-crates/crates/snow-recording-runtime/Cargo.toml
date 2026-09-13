@@ -37,6 +37,8 @@ windows = { workspace = true, features = [
 ] }
 
 [dev-dependencies]
+snow-recording-effects = { path = "../snow-recording-effects", features = ["bench-experiments"] }
+snow-recording-export = { path = "../snow-recording-export", features = ["bench-experiments"] }
 anyhow.workspace = true
 proptest = "1.11.0"
 tempfile.workspace = true
@@ -49,6 +51,8 @@ required-features = ["bench-synthetic-input"]
 
 [target.'cfg(windows)'.dev-dependencies]
 windows = { workspace = true, features = [
+    "Win32_Media_MediaFoundation",
+    "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
     "Win32_UI_HiDpi",
     "Win32_System_LibraryLoader",
@@ -76,4 +80,4 @@ bench-pipeline-timing = ["snow-capture/stage-timing", "snow-recording-export/ben
 # inputs (cursor, clicks, keys) with synthetic observations instead of OS
 # input injection. Sessions opt in explicitly; production builds that enable
 # none of the bench features compile the hooks-only path unchanged.
-bench-synthetic-input = ["snow-recording-effects/bench-synthetic-input"]
+bench-synthetic-input = ["snow-recording-effects/bench-synthetic-input", "snow-recording-effects/bench-experiments", "snow-recording-export/bench-experiments"]

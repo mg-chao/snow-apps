@@ -7,6 +7,7 @@ build = "build.rs"
 
 [features]
 bench-timing = []
+bench-experiments = []
 
 [dependencies]
 snow-audio-recorder = { path = "../snow-audio-recorder" }

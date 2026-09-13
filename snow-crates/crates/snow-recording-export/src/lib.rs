@@ -11,6 +11,8 @@ pub mod streaming;
 pub mod bench_timing;
 
 pub(crate) mod ffmpeg_util;
+#[cfg(any(test, feature = "bench-experiments"))]
+mod frame_converter;
 pub(crate) mod video_quality;
 
 pub use config::{
@@ -24,6 +26,6 @@ pub use export::{
     ExportStageDurationsMs, ExportTask,
 };
 pub use streaming::{
-    StreamingAudioConfig, StreamingEncoder, StreamingEncoderConfig, StreamingEncoderReport,
-    cleanup_stale_staging_files, scaled_output_dimensions,
+    StreamingAudioConfig, StreamingEncoder, StreamingEncoderBuilder, StreamingEncoderConfig,
+    StreamingEncoderReport, cleanup_stale_staging_files, scaled_output_dimensions,
 };

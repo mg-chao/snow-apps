@@ -21,8 +21,8 @@ use snow_cursor::{AttachedCursorSample, CursorCompositionMode, CursorShape, Curs
 use snow_recording_export::resize::NearestResizePlan;
 use snow_recording_export::{
     ExportExecutionMode, ExportFormat, SoftwareH264Priority, StreamingAudioConfig,
-    StreamingEncoder, StreamingEncoderConfig, StreamingEncoderReport, VideoCodec,
-    scaled_output_dimensions,
+    StreamingEncoder, StreamingEncoderBuilder, StreamingEncoderConfig, StreamingEncoderReport,
+    VideoCodec, scaled_output_dimensions,
 };
 use snow_recording_model::{VideoEncodeConfig, VideoEncodingSpeed};
 
@@ -47,10 +47,28 @@ use crate::recording::RecordingState;
 use snow_recording_effects::mouse_effects::{
     CLICK_ANIMATION_MS, CLICK_QUEUE_DEPTH, RenderClick, draw_clicks, scale_coordinate, scale_point,
 };
+#[path = "direct_encoder.rs"]
+mod encoding;
+use encoding::RecordingEncoder;
+#[path = "direct_damage.rs"]
+mod damage;
+#[cfg(any(test, feature = "bench-synthetic-input"))]
+use damage::Damage;
+use damage::{History, Rows, TrackedSurface};
+#[path = "direct_buffer.rs"]
+mod buffer;
+use buffer::VideoBuffer;
+
 const AUDIO_SAMPLE_RATE: u32 = 48_000;
 const AUDIO_CHANNELS: u16 = 2;
 const AUDIO_SLOT_MS: u64 = 10;
 const AUDIO_JITTER_MS: u64 = 100;
+// Ten-pair confirmations validate these policies only in the startup and frame
+// domains below. Explicit Rust overrides and other domains retain their policy.
+#[cfg(not(feature = "bench-synthetic-input"))]
+const VALIDATED_RESIZE_DEFAULT: bool = true;
+#[cfg(not(feature = "bench-synthetic-input"))]
+const VALIDATED_RESTORATION_DEFAULT: bool = true;
 /// Synthetic cursor queue depth; the worker drains once per output slot, so
 /// this only needs to absorb brief worker stalls (`bench-synthetic-input`).
 #[cfg(feature = "bench-synthetic-input")]
@@ -79,6 +97,11 @@ pub struct DirectRecordingConfig {
 }
 
 impl DirectRecordingConfig {
+    #[cfg(any(test, feature = "bench-synthetic-input"))]
+    fn needs_cursor_observations(&self) -> bool {
+        self.show_cursor || self.mouse_trail_rgba[3] != 0
+    }
+
     pub fn validate(&self) -> std::result::Result<(), String> {
         if !(100..=2000).contains(&self.mouse_trail_duration_ms) {
             return Err("trail duration must be between 100 and 2000 ms".into());
@@ -155,52 +178,104 @@ impl DirectRecordingConfig {
         }
     }
 
-    fn automatic_encode_threads(&self) -> u8 {
+    fn software_policy_domain(&self) -> bool {
         let (width, height) = self.output_dimensions();
-        // Two threads reduce the measured live H.264 working set without losing
-        // cadence. Keep other rates, sizes, speeds, codecs, and hardware on the
-        // encoder's existing automatic policy until they have equivalent evidence.
-        if self.format != ExportFormat::Mp4
-            || self.codec != VideoCodec::H264
-            || self.prefer_hardware_encoder
-            || self.preset != VideoEncodingSpeed::VeryFast
-            || self.output_fps > 30
-            || u64::from(width) * u64::from(height) > 1920 * 1080
-        {
-            return 0;
-        }
+        self.format == ExportFormat::Mp4
+            && self.codec == VideoCodec::H264
+            && !self.prefer_hardware_encoder
+            && self.preset == VideoEncodingSpeed::VeryFast
+            && self.output_fps <= 30
+            && u64::from(width) * u64::from(height) <= 1920 * 1080
+    }
+
+    fn available_physical_workers() -> usize {
         let logical = std::thread::available_parallelism().map_or(1, |value| value.get());
         let physical = num_cpus::get_physical();
-        let available = if physical == 0 {
+        if physical == 0 {
             logical
         } else {
             physical.min(logical)
-        };
-        available.clamp(1, 2) as u8
+        }
     }
 
-    fn automatic_resize_threads(&self) -> u8 {
+    fn downscaled_software_policy_domain(&self) -> bool {
         let output = self.output_dimensions();
-        // The live 4K-to-1080p comparison supports two row workers in this
-        // software encoding budget. Native and small images stay serial.
-        if self.automatic_encode_threads() == 2
+        self.software_policy_domain()
+            && Self::available_physical_workers() >= 2
             && std::thread::available_parallelism().is_ok_and(|value| value.get() >= 4)
             && output != (self.region.width, self.region.height)
             && u64::from(output.0) * u64::from(output.1) >= 1_000_000
-        {
+    }
+
+    fn automatic_encode_threads(&self) -> u8 {
+        // Preserve the preceding default until a fresh-throughput comparison
+        // supports changing it. Hardware preference (including fallback) keeps
+        // the encoder's automatic count; explicit Rust overrides are separate.
+        if self.software_policy_domain() {
+            Self::available_physical_workers().clamp(1, 2) as u8
+        } else {
+            0
+        }
+    }
+
+    fn automatic_software_fallback_threads(&self) -> u8 {
+        // Fallback screens did not support the software-only 30-fps cap in
+        // this domain. Keep the exporter's physical-core policy, independently
+        // of the setting selected for the initial hardware encoder.
+        0
+    }
+
+    fn automatic_resize_threads(&self) -> u8 {
+        // Select from the validated configuration domain, independently of the
+        // encoder's worker count. Retuning one mechanism must not retune another.
+        if self.downscaled_software_policy_domain() {
             2
         } else {
             0
         }
     }
 
+    fn resolved_resize_threads(
+        &self,
+        current: u8,
+        explicit: bool,
+        opened_encoder: (&str, bool),
+        physical_workers: usize,
+    ) -> u8 {
+        let supported_encoder = matches!(opened_encoder, ("libx264", false) | ("h264_mf", true));
+        if !explicit
+            && physical_workers >= 4
+            && self.format == ExportFormat::Mp4
+            && self.codec == VideoCodec::H264
+            && self.preset == VideoEncodingSpeed::VeryFast
+            && self.capture_fps == 60
+            && self.output_fps == 60
+            && (self.region.width, self.region.height) == (3840, 2160)
+            && self.output_dimensions() == (1920, 1080)
+            && supported_encoder
+        {
+            4
+        } else {
+            current
+        }
+    }
+
+    fn restoration_policy_domain(&self, opened_encoder: (&str, bool)) -> bool {
+        opened_encoder == ("h264_mf", true)
+            && self.capture_backend == CaptureBackendKind::Auto
+            && self.format == ExportFormat::Mp4
+            && self.codec == VideoCodec::H264
+            && self.preset == VideoEncodingSpeed::VeryFast
+            && self.capture_fps == 60
+            && self.output_fps == 60
+            && (self.region.width, self.region.height) == (3840, 2160)
+            && self.output_dimensions() == (1920, 1080)
+    }
+
     fn aligned_capture(&self) -> bool {
-        // The combined clock/thread/resize/owned-conversion gate passed for
-        // matched 30 fps downscaled DXGI/Auto recording. Keep other workloads
-        // on their existing acquisition clock until separately measured.
         self.capture_fps == self.output_fps
             && self.output_fps == 30
-            && self.automatic_resize_threads() == 2
+            && self.downscaled_software_policy_domain()
             && matches!(
                 self.capture_backend,
                 CaptureBackendKind::Auto | CaptureBackendKind::DxgiDuplication
@@ -210,6 +285,25 @@ impl DirectRecordingConfig {
 
 #[derive(Clone, Debug, Default)]
 pub struct DirectRecordingReport {
+    pub requested_video_encoder: String,
+    pub half_resize: bool,
+    pub direct_output: bool,
+    pub partial_composition: bool,
+    pub restoration_only: bool,
+    pub cursor_attachment_requested: bool,
+    pub asynchronous: bool,
+    pub queued_video_replacements: u64,
+    pub conversion_threads: u8,
+    pub conversion_backend: String,
+    pub effective_conversion_threads: Option<usize>,
+    pub pixel_format: String,
+    pub effective_encode_threads: usize,
+    pub hardware_fallback: bool,
+    pub capture_backend: String,
+    /// Largest resize worker count selected for a composed frame. Automatic
+    /// pools are used only within their immutable backend/geometry domain.
+    pub resize_threads: usize,
+    pub aligned_capture: bool,
     #[cfg(feature = "bench-pipeline-timing")]
     pub encoder_timings: snow_recording_export::bench_timing::EncoderTimings,
     pub encoded_frames: u64,
@@ -252,10 +346,26 @@ struct RuntimeHandles {
 pub struct DirectRecordingSession {
     config: DirectRecordingConfig,
     encode_threads: u8,
+    encode_threads_explicit: bool,
     resize_threads: u8,
+    resize_threads_explicit: bool,
     align_capture: bool,
     #[cfg(feature = "bench-synthetic-input")]
     bench_synthetic_input: bool,
+    #[cfg(feature = "bench-synthetic-input")]
+    bench_encoding: (u8, bool),
+    #[cfg(feature = "bench-synthetic-input")]
+    bench_async: bool,
+    #[cfg(feature = "bench-synthetic-input")]
+    bench_automatic_policies: bool,
+    #[cfg(feature = "bench-synthetic-input")]
+    bench_partial: bool,
+    #[cfg(feature = "bench-synthetic-input")]
+    bench_restoration_only: bool,
+    #[cfg(feature = "bench-synthetic-input")]
+    bench_skip_cursor: bool,
+    #[cfg(feature = "bench-synthetic-input")]
+    bench_pixel_paths: (bool, bool),
     state: Arc<AtomicU8>,
     runtime: Mutex<Option<RuntimeHandles>>,
 }
@@ -270,16 +380,33 @@ impl DirectRecordingSession {
         Ok(Self {
             config,
             encode_threads: 0,
+            encode_threads_explicit: false,
             resize_threads,
+            resize_threads_explicit: false,
             align_capture,
             #[cfg(feature = "bench-synthetic-input")]
             bench_synthetic_input: false,
+            #[cfg(feature = "bench-synthetic-input")]
+            bench_encoding: (0, false),
+            #[cfg(feature = "bench-synthetic-input")]
+            bench_async: false,
+            #[cfg(feature = "bench-synthetic-input")]
+            bench_automatic_policies: false,
+            #[cfg(feature = "bench-synthetic-input")]
+            bench_partial: false,
+            #[cfg(feature = "bench-synthetic-input")]
+            bench_restoration_only: false,
+            #[cfg(feature = "bench-synthetic-input")]
+            bench_skip_cursor: false,
+            #[cfg(feature = "bench-synthetic-input")]
+            bench_pixel_paths: (false, false),
             state: Arc::new(AtomicU8::new(state_to_u8(RecordingState::Created))),
             runtime: Mutex::new(None),
         })
     }
 
-    /// Override encoder worker count before startup; zero keeps automatic selection.
+    /// Override encoder workers before startup; zero requests the exporter's
+    /// physical-core policy, including in domains with an application limit.
     /// This Rust-only control leaves the recording settings and C ABI unchanged.
     pub fn set_encode_threads(&mut self, threads: u8) -> Result<()> {
         if self.state() != RecordingState::Created {
@@ -288,7 +415,21 @@ impl DirectRecordingSession {
             ));
         }
         self.encode_threads = threads;
+        self.encode_threads_explicit = true;
         Ok(())
+    }
+
+    fn encoder_config(&self) -> StreamingEncoderConfig {
+        let mut config = self.config.streaming_config();
+        if self.encode_threads_explicit {
+            config.encode_threads = self.encode_threads;
+        }
+        config
+    }
+
+    fn software_fallback_threads(&self) -> Option<u8> {
+        (self.config.prefer_hardware_encoder && !self.encode_threads_explicit)
+            .then(|| self.config.automatic_software_fallback_threads())
     }
 
     /// Override whether capture acquisition is aligned to this session's output clock.
@@ -311,12 +452,92 @@ impl DirectRecordingSession {
             ));
         }
         self.resize_threads = threads;
+        self.resize_threads_explicit = true;
+        Ok(())
+    }
+
+    #[cfg(feature = "bench-synthetic-input")]
+    pub fn set_bench_automatic_policies(&mut self, enabled: bool) -> Result<()> {
+        if self.state() != RecordingState::Created {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "automatic policies must be selected before startup".into(),
+            ));
+        }
+        self.bench_automatic_policies = enabled;
         Ok(())
     }
 
     /// Bench-only (`bench-synthetic-input` builds): drive the overlay inputs
     /// with synthetic observations instead of OS input injection. The hooks
     /// stay installed; only the event source changes.
+    #[cfg(feature = "bench-synthetic-input")]
+    pub fn set_bench_pixel_paths(&mut self, half_resize: bool, direct_output: bool) -> Result<()> {
+        if self.state() != RecordingState::Created {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "pixel paths must be selected before startup".into(),
+            ));
+        }
+        self.bench_pixel_paths = (half_resize, direct_output);
+        Ok(())
+    }
+
+    #[cfg(feature = "bench-synthetic-input")]
+    pub fn set_bench_skip_unneeded_cursor(&mut self, enabled: bool) -> Result<()> {
+        if self.state() != RecordingState::Created {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "cursor attachment must be selected before startup".into(),
+            ));
+        }
+        self.bench_skip_cursor = enabled;
+        Ok(())
+    }
+
+    #[cfg(feature = "bench-synthetic-input")]
+    pub fn set_bench_restoration_only(&mut self, enabled: bool) -> Result<()> {
+        if self.state() != RecordingState::Created {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "overlay restoration must be selected before startup".into(),
+            ));
+        }
+        self.bench_restoration_only = enabled;
+        Ok(())
+    }
+
+    #[cfg(feature = "bench-synthetic-input")]
+    pub fn set_bench_partial_composition(&mut self, enabled: bool) -> Result<()> {
+        if self.state() != RecordingState::Created {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "partial composition must be selected before startup".into(),
+            ));
+        }
+        self.bench_partial = enabled;
+        Ok(())
+    }
+
+    #[cfg(feature = "bench-synthetic-input")]
+    pub fn set_bench_async_encoding(&mut self, enabled: bool) -> Result<()> {
+        if self.state() != RecordingState::Created {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "encoder execution must be selected before startup".into(),
+            ));
+        }
+        self.bench_async = enabled;
+        Ok(())
+    }
+
+    #[cfg(feature = "bench-synthetic-input")]
+    pub fn set_bench_encoding(
+        &mut self,
+        conversion_threads: u8,
+        force_hardware_failure: bool,
+    ) -> Result<()> {
+        if self.state() != RecordingState::Created || conversion_threads > 4 {
+            return Err(ScreenRecorderError::InvalidConfig("benchmark encoding controls require an unstarted session and at most four conversion workers".into()));
+        }
+        self.bench_encoding = (conversion_threads, force_hardware_failure);
+        Ok(())
+    }
+
     #[cfg(feature = "bench-synthetic-input")]
     pub fn set_bench_synthetic_input(&mut self, enabled: bool) -> Result<()> {
         if self.state() != RecordingState::Created {
@@ -417,6 +638,10 @@ impl DirectRecordingSession {
                 ..CaptureOptions::default()
             },
         )?;
+        #[cfg(feature = "bench-synthetic-input")]
+        let include_cursor = !self.bench_skip_cursor || self.config.needs_cursor_observations();
+        #[cfg(not(feature = "bench-synthetic-input"))]
+        let include_cursor = true;
         let capture_stream = CaptureStream::spawn(
             capture_session,
             CaptureStreamConfig {
@@ -426,7 +651,7 @@ impl DirectRecordingSession {
                 max_consecutive_errors: 30,
                 adaptive_fps: false,
                 pause_on_resolution_change: false,
-                include_cursor: true,
+                include_cursor,
             },
         )?;
         let (click_tx, click_rx) = crossbeam_channel::bounded(CLICK_QUEUE_DEPTH);
@@ -480,17 +705,53 @@ impl DirectRecordingSession {
         let (control_tx, control_rx) = crossbeam_channel::unbounded();
         let audio_stream = start_optional_audio_stream(&self.config);
         let config = self.config.clone();
-        let encode_threads = self.encode_threads;
+        let mut streaming_config = StreamingEncoder::builder(self.encoder_config());
+        if let Some(threads) = self.software_fallback_threads() {
+            streaming_config = streaming_config.software_fallback_threads(threads);
+        }
+        #[cfg(feature = "bench-synthetic-input")]
+        let bench_encoding = self.bench_encoding;
+        #[cfg(not(feature = "bench-synthetic-input"))]
+        let bench_encoding = (0, false);
+        #[cfg(feature = "bench-synthetic-input")]
+        let asynchronous = self.bench_async;
+        #[cfg(not(feature = "bench-synthetic-input"))]
+        let asynchronous = false;
         let align_capture = self.align_capture;
+        let initial_resize_threads = self.resize_threads;
+        let resize_threads_explicit = self.resize_threads_explicit;
+        #[cfg(feature = "bench-synthetic-input")]
+        let automatic_policies = self.bench_automatic_policies;
+        #[cfg(not(feature = "bench-synthetic-input"))]
+        let automatic_policies = VALIDATED_RESIZE_DEFAULT;
         let clock = RecordingClock::new(Instant::now());
         let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
         let worker_state = Arc::clone(&self.state);
+        #[cfg(feature = "bench-synthetic-input")]
+        let bench_partial = self.bench_partial;
+        #[cfg(feature = "bench-synthetic-input")]
+        let restoration_only = self.bench_restoration_only;
+        #[cfg(not(feature = "bench-synthetic-input"))]
+        let restoration_only = VALIDATED_RESTORATION_DEFAULT;
+        #[cfg(feature = "bench-synthetic-input")]
+        let automatic_restoration = self.bench_automatic_policies;
+        #[cfg(not(feature = "bench-synthetic-input"))]
+        let automatic_restoration = VALIDATED_RESTORATION_DEFAULT;
+        #[cfg(feature = "bench-synthetic-input")]
+        let bench_pixel_paths = self.bench_pixel_paths;
         let worker = std::thread::Builder::new()
             .name("snow-direct-recording".to_string())
             .spawn(move || {
                 let result = (|| {
                     let mut compositor = VisualCompositor::new(config.output_dimensions());
                     compositor.resize_pool = resize_pool;
+                    compositor.restoration_only = restoration_only;
+                    #[cfg(feature = "bench-synthetic-input")]
+                    {
+                        compositor.partial = bench_partial;
+                        compositor.half_resize = bench_pixel_paths.0;
+                        compositor.direct_output = bench_pixel_paths.1;
+                    }
                     if let Some(style) = config.keyboard.as_ref() {
                         match crate::keyboard_rasterizer::create(style) {
                             Ok(rasterizer) => {
@@ -506,22 +767,68 @@ impl DirectRecordingSession {
                             }
                         }
                     }
-                    let mut streaming_config = config.streaming_config();
-                    if encode_threads != 0 {
-                        streaming_config.encode_threads = encode_threads;
-                    }
-                    let encoder = match StreamingEncoder::create(streaming_config) {
-                        Ok(encoder) => {
-                            let _ = ready_tx.send(Ok(()));
-                            encoder
-                        }
+                    let created = RecordingEncoder::new(
+                        streaming_config,
+                        audio_stream,
+                        (config.enable_system_audio, config.enable_microphone),
+                        clock.clone(),
+                        asynchronous,
+                        bench_encoding,
+                    );
+                    let encoder = match created {
+                        Ok(encoder) => encoder,
                         Err(error) => {
                             let message = error.to_string();
                             let _ = ready_tx.send(Err(message));
-                            return Err(ScreenRecorderError::from(error));
+                            return Err(error);
                         }
                     };
+                    if automatic_restoration
+                        && config.restoration_policy_domain(encoder.opened_video_encoder())
+                    {
+                        compositor.restoration_only = true;
+                        compositor.restoration_domain = Some(ResizeFrameDomain {
+                            source: (config.region.width, config.region.height),
+                            output: config.output_dimensions(),
+                        });
+                    }
+                    #[cfg(not(feature = "bench-synthetic-input"))]
+                    if compositor.restoration_domain.is_none() {
+                        compositor.restoration_only = false;
+                    }
+                    if automatic_policies {
+                        let selected = config.resolved_resize_threads(
+                            initial_resize_threads,
+                            resize_threads_explicit,
+                            encoder.opened_video_encoder(),
+                            DirectRecordingConfig::available_physical_workers(),
+                        );
+                        if selected != initial_resize_threads {
+                            // Resolve and allocate the pool before acknowledging
+                            // startup. Auto capture may not have produced a frame
+                            // yet. An immutable eligibility rule restricts pool
+                            // use to actual DXGI frames at the measured geometry;
+                            // fallback and later geometry changes use the original
+                            // serial path without retuning or replacing the pool.
+                            compositor.resize_domain = Some(ResizeFrameDomain {
+                                source: (config.region.width, config.region.height),
+                                output: config.output_dimensions(),
+                            });
+                            compositor.resize_pool = Some(
+                                rayon::ThreadPoolBuilder::new()
+                                    .num_threads(usize::from(selected))
+                                    .build()
+                                    .map_err(|error| {
+                                        let message = format!("resize pool: {error}");
+                                        let _ = ready_tx.send(Err(message.clone()));
+                                        ScreenRecorderError::Encode(message)
+                                    })?,
+                            );
+                        }
+                    }
+                    let _ = ready_tx.send(Ok(()));
                     run_direct_worker(DirectWorkerInputs {
+                        include_cursor,
                         config,
                         encoder,
                         align_capture,
@@ -532,7 +839,7 @@ impl DirectRecordingSession {
                         compositor,
                         control_rx,
                         clock,
-                        audio_stream,
+                        asynchronous,
                         #[cfg(feature = "bench-synthetic-input")]
                         bench_cursor_rx,
                     })
@@ -788,9 +1095,10 @@ fn state_from_u8(value: u8) -> RecordingState {
 }
 
 struct DirectWorkerInputs {
+    include_cursor: bool,
     align_capture: bool,
     config: DirectRecordingConfig,
-    encoder: StreamingEncoder,
+    encoder: RecordingEncoder,
     capture_stream: CaptureStream,
     mouse_hook: MouseHookObserver,
     click_rx: Receiver<MouseClickObservation>,
@@ -798,7 +1106,7 @@ struct DirectWorkerInputs {
     compositor: VisualCompositor,
     control_rx: Receiver<ControlCommand>,
     clock: RecordingClock,
-    audio_stream: Option<AudioStreamHandle>,
+    asynchronous: bool,
     /// Synthetic cursor positions (`bench-synthetic-input` builds only).
     #[cfg(feature = "bench-synthetic-input")]
     bench_cursor_rx: Option<Receiver<(Instant, i32, i32)>>,
@@ -806,6 +1114,7 @@ struct DirectWorkerInputs {
 
 fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport> {
     let DirectWorkerInputs {
+        include_cursor,
         align_capture,
         config,
         mut encoder,
@@ -816,7 +1125,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         mut compositor,
         control_rx,
         clock,
-        mut audio_stream,
+        asynchronous,
         #[cfg(feature = "bench-synthetic-input")]
         bench_cursor_rx,
     } = inputs;
@@ -842,7 +1151,14 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
     let mut canceled = false;
     let mut input_end = None;
     let mut dropped_capture_frames = 0u64;
-    let mut captures = CaptureInbox::default();
+    let mut capture_backend = String::new();
+    #[cfg(feature = "bench-pipeline-timing")]
+    let mut output_instants = BTreeMap::new();
+    let mut captures = CaptureInbox {
+        #[cfg(any(test, feature = "bench-synthetic-input"))]
+        track_damage: compositor.partial,
+        ..Default::default()
+    };
     let mut cursors = CursorInbox::default();
     let mut latest_cursor = None;
     let mut latest_frame = None;
@@ -855,10 +1171,6 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
     let mut pipeline_timings = PipelineTimings::default();
     #[cfg(feature = "bench-pipeline-timing")]
     pipeline_timings.begin();
-
-    let mut audio_mixer = encoder
-        .has_audio()
-        .then(|| LiveAudioMixer::new(config.enable_system_audio, config.enable_microphone));
 
     while !stopping && !canceled {
         while let Ok(command) = control_rx.try_recv() {
@@ -874,18 +1186,13 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                     compositor.trail.clear();
                     overlay_was_active = false;
                     capture_stream.pause();
-                    if let Some(audio) = audio_stream.as_ref() {
-                        audio.pause();
-                    }
                     reset_keyboard(
                         keyboard_input.as_ref(),
                         &mut compositor,
                         clock.active_elapsed_ms(at),
                     );
                     clock_controller.mark_pause(at);
-                    if let Some(mixer) = audio_mixer.as_mut() {
-                        mixer.reset_alignment(None);
-                    }
+                    encoder.pause()?;
                     paused = true;
                 }
                 ControlCommand::Resume if paused => {
@@ -907,9 +1214,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                         &mut compositor,
                         clock.active_elapsed_ms(at),
                     );
-                    if let Some(audio) = audio_stream.as_ref() {
-                        audio.resume();
-                    }
+                    encoder.resume()?;
                     capture_stream.resume();
                     paused = false;
                 }
@@ -974,14 +1279,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                     .push_back(event.event(clock.active_elapsed_ms(event.at), style));
             }
         }
-        drain_audio_events(audio_stream.as_ref(), &clock, paused, audio_mixer.as_mut());
-        if !paused && let Some(mixer) = audio_mixer.as_mut() {
-            mixer.emit_ready(
-                clock.active_elapsed_duration(Instant::now()),
-                false,
-                &mut encoder,
-            )?;
-        }
+        encoder.tick()?;
         if stopping || canceled {
             break;
         }
@@ -1005,6 +1303,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         {
             match event {
                 CaptureEvent::Frame(frame) => {
+                    capture_backend = frame.metadata().backend_kind().as_str().to_owned();
                     #[cfg(feature = "bench-stage-timing")]
                     for stage in frame.metadata().stage_timings() {
                         capture_stage_timings.record(stage.name, stage.duration);
@@ -1064,18 +1363,36 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         if (changed || active || overlay_was_active)
             && let Some(frame) = latest_frame.as_ref()
         {
+            #[cfg(feature = "bench-pipeline-timing")]
             let compose_started = Instant::now();
+            #[cfg(any(test, feature = "bench-synthetic-input"))]
+            std::mem::swap(&mut compositor.damage, &mut captures.damage);
             let rgba = compositor.compose_with_cursor(
                 &config,
                 frame,
                 timestamp_ms,
                 latest_cursor.as_ref(),
             )?;
+            #[cfg(any(test, feature = "bench-synthetic-input"))]
+            std::mem::swap(&mut compositor.damage, &mut captures.damage);
             #[cfg(feature = "bench-pipeline-timing")]
             let composed = Instant::now();
-            compositor.rgba = encoder.push_owned_rgba_frame_at_pts(slot.pts, rgba)?;
+            #[cfg(feature = "bench-pipeline-timing")]
+            output_instants.insert(slot.pts as i64, frame_instant(frame));
+            let recycled = encoder.push_owned_rgba_frame_at_pts(
+                slot.pts,
+                VideoBuffer {
+                    pixels: rgba,
+                    history: compositor.output_history.take(),
+                },
+            )?;
+            compositor.rgba = recycled.pixels;
+            compositor.buffer_history = recycled.history;
             #[cfg(feature = "bench-pipeline-timing")]
             {
+                pipeline_timings
+                    .compositions
+                    .push((slot.pts, compose_started, composed));
                 pipeline_timings.observe_frame(
                     frame_instant(frame),
                     compose_started,
@@ -1098,7 +1415,6 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                     pipeline_timings.synthetic_overlay_frames += 1;
                 }
             }
-            let _ = compose_started;
             overlay_was_active = active;
         }
     }
@@ -1107,9 +1423,6 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
     drop(keyboard_input.take());
     if canceled {
         capture_stream.stop();
-        if let Some(audio) = audio_stream.take() {
-            audio.stop();
-        }
         return Err(ScreenRecorderError::ExportCanceled);
     }
 
@@ -1124,19 +1437,28 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
             return Err(ScreenRecorderError::Capture(error));
         }
     }
-    let mut audio_frames_dropped = 0u64;
-    if let Some(audio) = audio_stream.take() {
-        audio_frames_dropped = audio.stats().snapshot().frames_dropped;
-        for event in audio.stop_and_drain() {
-            process_audio_event(event, &clock, false, audio_mixer.as_mut());
-        }
-    }
-    if let Some(mixer) = audio_mixer.as_mut() {
-        mixer.emit_ready(clock.active_elapsed_duration(final_at), true, &mut encoder)?;
-    }
-    audio_frames_dropped = audio_frames_dropped
-        .saturating_add(audio_mixer.as_ref().map_or(0, |mixer| mixer.dropped_frames));
+    let audio_frames_dropped = 0;
     let report = encoder.finish_at_pts(endpoint)?;
+    #[cfg(feature = "bench-pipeline-timing")]
+    let report = {
+        let mut report = report;
+        let mut observed_packets = std::collections::BTreeSet::new();
+        for (pts, packet_at) in &report.timings.packets {
+            if observed_packets.insert(*pts)
+                && let Some(source_at) = output_instants.get(pts)
+            {
+                let latency = packet_at.saturating_duration_since(*source_at);
+                pipeline_timings.packet_latencies.push((*pts, latency));
+                report
+                    .timings
+                    .stages
+                    .entry("pipeline.capture_to_packet")
+                    .or_default()
+                    .push(latency);
+            }
+        }
+        report
+    };
     let mut report = report_from_encoder(
         report,
         dropped_capture_frames,
@@ -1148,6 +1470,18 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         #[cfg(feature = "bench-pipeline-timing")]
         Some(pipeline_timings.stats(&stream_stats)),
     );
+    report.asynchronous = asynchronous;
+    #[cfg(any(test, feature = "bench-synthetic-input"))]
+    {
+        report.partial_composition = compositor.partial;
+    }
+    report.restoration_only = compositor.restoration_only;
+    report.half_resize = compositor.half_resize;
+    report.direct_output = compositor.direct_output;
+    report.cursor_attachment_requested = include_cursor;
+    report.capture_backend = capture_backend;
+    report.resize_threads = compositor.effective_resize_threads;
+    report.aligned_capture = align_capture;
     report.superseded_capture_frames = captures.superseded;
     report.missed_output_slots = schedule.missed_slots;
     Ok(report)
@@ -1162,6 +1496,11 @@ fn report_from_encoder(
     #[cfg(feature = "bench-pipeline-timing")] pipeline: Option<CapturePipelineStats>,
 ) -> DirectRecordingReport {
     DirectRecordingReport {
+        half_resize: false,
+        direct_output: false,
+        partial_composition: false,
+        restoration_only: false,
+        cursor_attachment_requested: true,
         #[cfg(feature = "bench-pipeline-timing")]
         encoder_timings: report.timings,
         encoded_frames: report.encoded_frames,
@@ -1170,6 +1509,18 @@ fn report_from_encoder(
         coalesced_frames: report.coalesced_frames,
         dropped_capture_frames,
         video_encoder: report.video_encoder,
+        requested_video_encoder: report.requested_video_encoder,
+        pixel_format: report.pixel_format,
+        conversion_threads: report.conversion_threads,
+        conversion_backend: report.conversion_backend,
+        effective_conversion_threads: report.effective_conversion_threads,
+        queued_video_replacements: report.queued_video_replacements,
+        asynchronous: false,
+        effective_encode_threads: report.effective_encode_threads,
+        hardware_fallback: report.hardware_fallback,
+        capture_backend: String::new(),
+        resize_threads: 1,
+        aligned_capture: false,
         used_hardware_video_encoder: report.used_hardware_video_encoder,
         encoded_audio_frames: report.encoded_audio_frames,
         inserted_silence_frames: report.inserted_silence_frames,
@@ -1434,22 +1785,49 @@ fn frame_instant(frame: &CapturedFrame) -> Instant {
 struct CaptureInbox {
     frames: VecDeque<(CapturedFrame, Instant, Instant)>,
     superseded: u64,
+    #[cfg(any(test, feature = "bench-synthetic-input"))]
+    damage: Damage,
+    #[cfg(any(test, feature = "bench-synthetic-input"))]
+    track_damage: bool,
 }
 
 impl CaptureInbox {
     fn clear(&mut self) {
         self.frames.clear();
+        #[cfg(any(test, feature = "bench-synthetic-input"))]
+        {
+            self.damage = Damage::default();
+        }
     }
 
     fn push(&mut self, frame: CapturedFrame, received: Instant) {
         // Keep enough history to select the most recent frame at the output deadline,
         // including one frame that arrived just after it. No unbounded backlog.
         if self.frames.len() == 2 {
+            #[cfg(any(test, feature = "bench-synthetic-input"))]
+            if let Some((frame, _, _)) = self.frames.pop_front() {
+                self.observe_damage(&frame);
+            }
+            #[cfg(not(any(test, feature = "bench-synthetic-input")))]
             self.frames.pop_front();
             self.superseded += 1;
         }
         let at = frame_instant(&frame);
         self.frames.push_back((frame, received, at));
+    }
+
+    #[cfg(any(test, feature = "bench-synthetic-input"))]
+    fn observe_damage(&mut self, frame: &CapturedFrame) {
+        if !self.track_damage {
+            return;
+        }
+        let metadata = frame.metadata();
+        self.damage.observe(
+            metadata.sequence(),
+            frame.dimensions(),
+            metadata.is_duplicate(),
+            metadata.dirty_rects(),
+        );
     }
 
     fn select(&mut self, clock: &RecordingClock, at: Duration) -> Option<(CapturedFrame, Instant)> {
@@ -1462,10 +1840,11 @@ impl CaptureInbox {
             if selected.is_some() {
                 self.superseded += 1;
             }
-            selected = self
-                .frames
-                .pop_front()
-                .map(|(frame, received, _)| (frame, received));
+            if let Some((frame, received, _)) = self.frames.pop_front() {
+                #[cfg(any(test, feature = "bench-synthetic-input"))]
+                self.observe_damage(&frame);
+                selected = Some((frame, received));
+            }
         }
         selected
     }
@@ -1530,13 +1909,53 @@ fn drain_click_observations(
     }
 }
 
+#[derive(Clone, Copy)]
+struct ResizeFrameDomain {
+    source: (u32, u32),
+    output: (u32, u32),
+}
+
+impl ResizeFrameDomain {
+    fn permits_restoration(
+        self,
+        backend: CaptureBackendKind,
+        source: (u32, u32),
+        output: (u32, u32),
+    ) -> bool {
+        matches!(
+            backend,
+            CaptureBackendKind::DxgiDuplication | CaptureBackendKind::WindowsGraphicsCapture
+        ) && source == self.source
+            && output == self.output
+    }
+
+    fn permits(self, backend: CaptureBackendKind, source: (u32, u32), output: (u32, u32)) -> bool {
+        backend == CaptureBackendKind::DxgiDuplication
+            && source == self.source
+            && output == self.output
+    }
+}
+
 struct VisualCompositor {
     output_size: (u32, u32),
     background: Vec<u8>,
     rgba: Vec<u8>,
     resize_plan: Option<NearestResizePlan>,
     resize_pool: Option<rayon::ThreadPool>,
+    resize_domain: Option<ResizeFrameDomain>,
+    effective_resize_threads: usize,
     background_sequence: Option<u64>,
+    #[cfg(any(test, feature = "bench-synthetic-input"))]
+    partial: bool,
+    restoration_only: bool,
+    restoration_domain: Option<ResizeFrameDomain>,
+    half_resize: bool,
+    direct_output: bool,
+    #[cfg(any(test, feature = "bench-synthetic-input"))]
+    damage: Damage,
+    background_generation: u64,
+    buffer_history: Option<History>,
+    output_history: Option<History>,
     trail: LaserTrail,
     clicks: VecDeque<RenderClick>,
     cursor_shapes: HashMap<u64, CursorShape>,
@@ -1554,7 +1973,20 @@ impl VisualCompositor {
             rgba: Vec::new(),
             resize_plan: None,
             resize_pool: None,
+            resize_domain: None,
+            effective_resize_threads: 1,
             background_sequence: None,
+            #[cfg(any(test, feature = "bench-synthetic-input"))]
+            partial: false,
+            restoration_only: false,
+            restoration_domain: None,
+            half_resize: false,
+            direct_output: false,
+            #[cfg(any(test, feature = "bench-synthetic-input"))]
+            damage: Damage::default(),
+            background_generation: 0,
+            buffer_history: None,
+            output_history: None,
             trail: LaserTrail::default(),
             clicks: VecDeque::new(),
             cursor_shapes: HashMap::new(),
@@ -1584,6 +2016,18 @@ impl VisualCompositor {
     ) -> Result<Vec<u8>> {
         self.trail.set_lifetime_ms(config.mouse_trail_duration_ms);
         let source_size = frame.dimensions();
+        let resize_pool = self.resize_pool.as_ref().filter(|_| {
+            self.resize_domain.is_none_or(|domain| {
+                domain.permits(
+                    frame.metadata().backend_kind(),
+                    source_size,
+                    self.output_size,
+                )
+            })
+        });
+        self.effective_resize_threads = self
+            .effective_resize_threads
+            .max(resize_pool.map_or(1, rayon::ThreadPool::current_num_threads));
         #[cfg(feature = "bench-compositor-timing")]
         let stage = Instant::now();
         let sequence = frame
@@ -1602,23 +2046,130 @@ impl VisualCompositor {
                 self.output_size.1,
             ));
         }
+        #[cfg(any(test, feature = "bench-synthetic-input"))]
+        self.resize_plan
+            .as_mut()
+            .unwrap()
+            .set_bench_half_specialization(self.half_resize);
         let bytes = self.output_size.0 as usize * self.output_size.1 as usize * 4;
-        self.background.resize(bytes, 0);
-        if geometry_changed
-            || self.background_sequence.is_none()
-            || self.background_sequence != Some(sequence)
+        #[cfg(any(test, feature = "bench-synthetic-input"))]
+        if self.direct_output
+            && !config.show_cursor
+            && config.mouse_trail_rgba[3] == 0
+            && config.mouse_click_rgba[3] == 0
+            && self.keyboard.is_none()
         {
+            // A pristine background is needed only when restoring overlays.
+            // Fill the returned encoder storage directly when nothing is drawn.
+            self.background_sequence = None;
+            self.rgba.resize(bytes, 0);
             let plan = self.resize_plan.as_ref().expect("resize plan");
-            if let Some(pool) = self.resize_pool.as_ref() {
-                plan.resize_into_with_pool(frame.as_rgba_bytes(), &mut self.background, pool);
+            if let Some(pool) = resize_pool {
+                plan.resize_into_with_pool(frame.as_rgba_bytes(), &mut self.rgba, pool);
             } else {
-                plan.resize_into(frame.as_rgba_bytes(), &mut self.background);
+                plan.resize_into(frame.as_rgba_bytes(), &mut self.rgba);
+            }
+            #[cfg(feature = "bench-compositor-timing")]
+            {
+                self.timings
+                    .record("compose.resize_pixels", stage.elapsed());
+                self.timings.record("compose.restore", Duration::ZERO);
+                self.timings.record("compose.resize", stage.elapsed());
+            }
+            self.buffer_history = None;
+            self.output_history = None;
+            if self.damage.covers_sequence(frame.metadata().sequence()) {
+                self.damage.consumed();
+            }
+            return Ok(std::mem::take(&mut self.rgba));
+        }
+        self.background.resize(bytes, 0);
+        let background_changed = geometry_changed
+            || self.background_sequence.is_none()
+            || self.background_sequence != Some(sequence);
+        if background_changed {
+            self.background_generation = self
+                .background_generation
+                .checked_add(1)
+                .expect("background generation overflow");
+            let plan = self.resize_plan.as_ref().expect("resize plan");
+            #[cfg(any(test, feature = "bench-synthetic-input"))]
+            let partial_updated = if self.partial
+                && !geometry_changed
+                && self.background_sequence.is_some()
+                && self
+                    .damage
+                    .is_sparse(resize_pool.map_or(1, rayon::ThreadPool::current_num_threads))
+                && self.damage.covers_sequence(frame.metadata().sequence())
+            {
+                for rect in &self.damage.rects {
+                    plan.resize_source_rect_into(
+                        frame.as_rgba_bytes(),
+                        &mut self.background,
+                        (rect.x, rect.y, rect.width, rect.height),
+                    );
+                }
+                true
+            } else {
+                false
+            };
+            #[cfg(not(any(test, feature = "bench-synthetic-input")))]
+            let partial_updated = false;
+            if !partial_updated {
+                if let Some(pool) = resize_pool {
+                    plan.resize_into_with_pool(frame.as_rgba_bytes(), &mut self.background, pool);
+                } else {
+                    plan.resize_into(frame.as_rgba_bytes(), &mut self.background);
+                }
             }
         }
         self.background_sequence = Some(sequence);
+        #[cfg(any(test, feature = "bench-synthetic-input"))]
+        if self.damage.covers_sequence(frame.metadata().sequence()) {
+            self.damage.consumed();
+        }
+        #[cfg(feature = "bench-compositor-timing")]
+        self.timings
+            .record("compose.resize_pixels", stage.elapsed());
+        #[cfg(feature = "bench-compositor-timing")]
+        let restore_started = Instant::now();
+        // A newly changed background cannot benefit from restoration.
+        // Recycled buffers become eligible only after recording their coverage
+        // against this exact pristine-background generation.
+        let partial_overlays = self.restoration_only
+            && !background_changed
+            && self.restoration_domain.is_none_or(|domain| {
+                domain.permits_restoration(
+                    frame.metadata().backend_kind(),
+                    source_size,
+                    self.output_size,
+                )
+            });
+        #[cfg(any(test, feature = "bench-synthetic-input"))]
+        let partial_overlays = partial_overlays || self.partial;
         self.rgba.resize(bytes, 0);
-        self.rgba.copy_from_slice(&self.background);
+        if partial_overlays
+            && self
+                .buffer_history
+                .as_ref()
+                .is_some_and(|history| history.generation == self.background_generation)
+        {
+            self.buffer_history
+                .as_ref()
+                .unwrap()
+                .overlays
+                .restore(&self.background, &mut self.rgba);
+        } else {
+            self.rgba.copy_from_slice(&self.background);
+        }
+        {
+            self.buffer_history = None;
+        }
+        let mut touched = partial_overlays.then(|| Rows::new(self.output_size));
         let mut rgba = std::mem::take(&mut self.rgba);
+        #[cfg(feature = "bench-compositor-timing")]
+        self.timings
+            .record("compose.restore", restore_started.elapsed());
         #[cfg(feature = "bench-compositor-timing")]
         self.timings.record("compose.resize", stage.elapsed());
         let cursor = cursor.cloned();
@@ -1644,12 +2195,23 @@ impl VisualCompositor {
         #[cfg(feature = "bench-compositor-timing")]
         let stage = Instant::now();
         if config.mouse_trail_rgba[3] != 0 {
-            self.trail.draw(
-                &mut rgba,
-                self.output_size,
-                timestamp_ms,
-                config.mouse_trail_rgba,
-            );
+            if partial_overlays {
+                self.trail.draw_dense_to(
+                    &mut TrackedSurface {
+                        pixels: &mut rgba,
+                        rows: touched.as_mut().unwrap(),
+                    },
+                    timestamp_ms,
+                    config.mouse_trail_rgba,
+                );
+            } else {
+                self.trail.draw(
+                    &mut rgba,
+                    self.output_size,
+                    timestamp_ms,
+                    config.mouse_trail_rgba,
+                );
+            }
         }
         #[cfg(feature = "bench-compositor-timing")]
         self.timings.record("compose.trail_draw", stage.elapsed());
@@ -1662,14 +2224,27 @@ impl VisualCompositor {
             self.clicks.pop_front();
         }
         if config.mouse_click_rgba[3] != 0 {
-            draw_clicks(
-                &mut rgba,
-                self.output_size,
-                &self.clicks,
-                timestamp_ms,
-                config.mouse_click_rgba,
-                source_size,
-            );
+            if partial_overlays {
+                snow_recording_effects::mouse_effects::draw_clicks_to(
+                    &mut TrackedSurface {
+                        pixels: &mut rgba,
+                        rows: touched.as_mut().unwrap(),
+                    },
+                    &self.clicks,
+                    timestamp_ms,
+                    config.mouse_click_rgba,
+                    source_size,
+                );
+            } else {
+                draw_clicks(
+                    &mut rgba,
+                    self.output_size,
+                    &self.clicks,
+                    timestamp_ms,
+                    config.mouse_click_rgba,
+                    source_size,
+                );
+            }
         }
         #[cfg(feature = "bench-compositor-timing")]
         self.timings.record("compose.clicks", stage.elapsed());
@@ -1686,6 +2261,15 @@ impl VisualCompositor {
                 cursor,
                 &mut self.cursor_shapes,
             );
+            if partial_overlays {
+                // Cursor coverage includes masked/XOR pixels, not only alpha.
+                mark_cursor_rows(
+                    touched.as_mut().unwrap(),
+                    source_size,
+                    cursor,
+                    &self.cursor_shapes,
+                );
+            }
         }
         #[cfg(feature = "bench-compositor-timing")]
         self.timings.record("compose.cursor", stage.elapsed());
@@ -1704,7 +2288,18 @@ impl VisualCompositor {
                     .model
                     .event(self.pending_keys.pop_front().expect("pending key"));
             }
-            keyboard.draw(&mut rgba, timestamp_ms).map_err(|error| {
+            let result = if partial_overlays {
+                keyboard.draw_to(
+                    &mut TrackedSurface {
+                        pixels: &mut rgba,
+                        rows: touched.as_mut().unwrap(),
+                    },
+                    timestamp_ms,
+                )
+            } else {
+                keyboard.draw(&mut rgba, timestamp_ms)
+            };
+            result.map_err(|error| {
                 ScreenRecorderError::Encode(format!("keyboard recording: {error}"))
             })?;
             #[cfg(feature = "bench-compositor-timing")]
@@ -1720,6 +2315,12 @@ impl VisualCompositor {
         }
         #[cfg(feature = "bench-compositor-timing")]
         self.timings.record("compose.keyboard", stage.elapsed());
+        {
+            self.output_history = touched.map(|overlays| History {
+                generation: self.background_generation,
+                overlays,
+            });
+        }
         Ok(rgba)
     }
 
@@ -1767,6 +2368,47 @@ fn resize_rgba(source: &[u8], source_size: (u32, u32), output_size: (u32, u32)) 
         }
     }
     output
+}
+
+fn mark_cursor_rows(
+    rows: &mut Rows,
+    source_size: (u32, u32),
+    cursor: &AttachedCursorSample,
+    shapes: &HashMap<u64, CursorShape>,
+) {
+    let shape = match &cursor.shape {
+        CursorShapeState::Embedded(shape) => Some(shape),
+        CursorShapeState::Cached(id) => shapes.get(&id.get()),
+        CursorShapeState::Unavailable => None,
+    };
+    let Some(shape) = shape else {
+        return;
+    };
+    let size = rows.size();
+    let (x, y) = scale_point(cursor.x, cursor.y, source_size, size);
+    let left = x.saturating_sub(scale_coordinate(
+        shape.hotspot_x.min(i32::MAX as u32) as i32,
+        source_size.0,
+        size.0,
+    ));
+    let top = y.saturating_sub(scale_coordinate(
+        shape.hotspot_y.min(i32::MAX as u32) as i32,
+        source_size.1,
+        size.1,
+    ));
+    let width =
+        (u64::from(shape.width) * u64::from(size.0) / u64::from(source_size.0.max(1))).max(1);
+    let height =
+        (u64::from(shape.height) * u64::from(size.1) / u64::from(source_size.1.max(1))).max(1);
+    let right = (i64::from(left) + width as i64).clamp(0, i64::from(size.0)) as u32;
+    let bottom = (i64::from(top) + height as i64).clamp(0, i64::from(size.1)) as u32;
+    for row in top.max(0) as u32..bottom {
+        rows.mark(
+            left.max(0) as u32,
+            row,
+            right.saturating_sub(left.max(0) as u32),
+        );
+    }
 }
 
 fn draw_cursor(
@@ -1909,6 +2551,109 @@ mod tests {
     }
 
     #[test]
+    fn partial_composition_matches_full_restore_with_recycled_buffers_cursor_effect_expiry_and_geometry()
+     {
+        check_recycled_overlay_restoration(false);
+    }
+
+    #[test]
+    fn restoration_only_matches_full_pixels_and_skips_history_on_changed_backgrounds() {
+        check_recycled_overlay_restoration(true);
+    }
+
+    fn check_recycled_overlay_restoration(restoration_only: bool) {
+        let output = (160, 90);
+        let mut config = config();
+        config.mouse_trail_rgba = [255, 85, 0, 255];
+        config.mouse_click_rgba = [255, 0, 0, 255];
+        let mut full = VisualCompositor::new(output);
+        let mut partial = VisualCompositor::new(output);
+        partial.partial = !restoration_only;
+        partial.restoration_only = restoration_only;
+        for compositor in [&mut full, &mut partial] {
+            compositor.keyboard = Some(KeyboardOverlay::new(
+                output,
+                Box::new(KeyboardTestRasterizer),
+            ));
+            compositor.pending_keys.push_back(KeyEvent {
+                at_ms: 0,
+                key: 65,
+                down: true,
+                label: "A".into(),
+                modifiers: vec![],
+            });
+            compositor.pending_keys.push_back(KeyEvent {
+                at_ms: 150,
+                key: 65,
+                down: false,
+                label: "A".into(),
+                modifiers: vec![],
+            });
+            compositor.clicks.push_back(RenderClick {
+                timestamp_ms: 50,
+                x: 50,
+                y: 40,
+                button: ObservedMouseButton::Left,
+            });
+        }
+        let mut recycled: VecDeque<VideoBuffer> = (0..3).map(|_| VideoBuffer::default()).collect();
+        for (index, timestamp) in [0, 33, 66, 100, 150, 250, 400, 600, 1800, 2000, 2200, 2400]
+            .into_iter()
+            .enumerate()
+        {
+            let source = if index < 9 { (320, 180) } else { (181, 321) };
+            let pixels: Vec<_> = (0..source.0 * source.1 * 4)
+                .map(|value| (value % 251) as u8)
+                .collect();
+            let frame = CapturedFrame::from(
+                snow_capture::frame::Frame::from_rgba8(source.0, source.1, pixels).unwrap(),
+            );
+            let cursor = AttachedCursorSample {
+                x: 10 + index as i32 * 15,
+                y: 40,
+                visible: true,
+                shape: CursorShapeState::Embedded(CursorShape {
+                    shape_id: CursorShapeId::from_raw(1),
+                    hotspot_x: 2,
+                    hotspot_y: 2,
+                    width: 8,
+                    height: 8,
+                    composition_mode: CursorCompositionMode::MaskedColor,
+                    shape_rgba: vec![125; 8 * 8 * 4].into(),
+                }),
+            };
+            let old = recycled.pop_front().unwrap();
+            partial.rgba = old.pixels;
+            partial.buffer_history = old.history;
+            if index == 8 {
+                // Pause/resume discards the background and all cached image history.
+                full.background_sequence = None;
+                partial.background_sequence = None;
+            }
+            let cursor = (index < 7).then_some(&cursor);
+            let expected = full
+                .compose_with_cursor(&config, &frame, timestamp, cursor)
+                .unwrap();
+            let actual = partial
+                .compose_with_cursor(&config, &frame, timestamp, cursor)
+                .unwrap();
+            assert_eq!(actual, expected, "frame {index}, timestamp {timestamp}");
+            if restoration_only {
+                assert_eq!(
+                    partial.output_history.is_none(),
+                    matches!(index, 0 | 8 | 9),
+                    "changed backgrounds must use ordinary drawing without coverage allocation",
+                );
+            }
+            recycled.push_back(VideoBuffer {
+                pixels: actual,
+                history: partial.output_history.take(),
+            });
+            full.rgba = expected;
+        }
+    }
+
+    #[test]
     fn direct_config_rejects_incomplete_caps_and_wrong_extension() {
         let mut value = config();
         value.maximum_width = Some(1920);
@@ -1917,6 +2662,21 @@ mod tests {
         assert!(value.validate().is_ok());
         value.output_path = PathBuf::from("recording.gif");
         assert!(value.validate().is_err());
+    }
+
+    #[test]
+    fn cursor_attachment_is_unneeded_for_clicks_without_cursor_or_trail() {
+        let mut config = config();
+        for show in [false, true] {
+            for trail in [0, 255] {
+                for clicks in [0, 255] {
+                    config.show_cursor = show;
+                    config.mouse_trail_rgba[3] = trail;
+                    config.mouse_click_rgba[3] = clicks;
+                    assert_eq!(config.needs_cursor_observations(), show || trail != 0);
+                }
+            }
+        }
     }
 
     #[test]
@@ -1941,12 +2701,12 @@ mod tests {
     }
 
     #[test]
-    fn resize_workers_require_a_large_resized_image_and_the_validated_encode_budget() {
+    fn resize_workers_require_the_validated_geometry_and_available_workers() {
         let mut value = config();
         value.region = RecordingRegion::new(0, 0, 3840, 2160);
         value.maximum_width = Some(1920);
         value.maximum_height = Some(1080);
-        let expected = if value.automatic_encode_threads() == 2
+        let expected = if DirectRecordingConfig::available_physical_workers() >= 2
             && std::thread::available_parallelism().is_ok_and(|value| value.get() >= 4)
         {
             2
@@ -1967,6 +2727,234 @@ mod tests {
         value.maximum_width = Some(960);
         value.maximum_height = Some(540);
         assert_eq!(value.automatic_resize_threads(), 0);
+    }
+
+    #[test]
+    fn explicit_processing_overrides_do_not_retune_other_policies() {
+        let mut value = config();
+        value.region = RecordingRegion::new(0, 0, 3840, 2160);
+        value.maximum_width = Some(1920);
+        value.maximum_height = Some(1080);
+        let mut session = DirectRecordingSession::create(value).unwrap();
+        let resize = session.resize_threads;
+        let aligned = session.align_capture;
+        assert!(!session.encode_threads_explicit);
+        assert!((1..=2).contains(&session.encoder_config().encode_threads));
+        for count in [1, 2, 4, 0] {
+            session.set_encode_threads(count).unwrap();
+            assert_eq!(session.encode_threads, count);
+            assert_eq!(session.encoder_config().encode_threads, count);
+            assert_eq!(session.resize_threads, resize);
+            assert_eq!(session.align_capture, aligned);
+        }
+        session.set_resize_threads(4).unwrap();
+        assert_eq!(session.encode_threads, 0);
+        assert_eq!(session.align_capture, aligned);
+        session.set_aligned_capture(!aligned).unwrap();
+        assert_eq!(session.resize_threads, 4);
+        assert_eq!(session.encode_threads, 0);
+    }
+
+    #[test]
+    fn automatic_fallback_policy_is_separate_and_never_replaces_an_explicit_override() {
+        for preferred in [false, true] {
+            let mut value = config();
+            value.prefer_hardware_encoder = preferred;
+            let mut session = DirectRecordingSession::create(value).unwrap();
+            assert_eq!(session.software_fallback_threads(), preferred.then_some(0));
+            for threads in [1, 2, 4, 0] {
+                session.set_encode_threads(threads).unwrap();
+                assert_eq!(session.software_fallback_threads(), None);
+                assert_eq!(session.encoder_config().encode_threads, threads);
+            }
+        }
+    }
+
+    #[test]
+    fn resolved_resize_policy_uses_opened_encoder_and_preserves_overrides() {
+        let mut value = config();
+        value.region = RecordingRegion::new(0, 0, 3840, 2160);
+        value.maximum_width = Some(1920);
+        value.maximum_height = Some(1080);
+        value.capture_fps = 60;
+        value.output_fps = 60;
+        for preferred in [false, true] {
+            value.prefer_hardware_encoder = preferred;
+            for opened in [("libx264", false), ("h264_mf", true)] {
+                assert_eq!(value.resolved_resize_threads(1, false, opened, 12), 4);
+                for count in [0, 1, 2, 4] {
+                    assert_eq!(
+                        value.resolved_resize_threads(count, true, opened, 12),
+                        count
+                    );
+                }
+            }
+        }
+        for opened in [
+            ("libopenh264", false),
+            ("h264_mf", false),
+            ("libx264", true),
+            ("h264_nvenc", true),
+        ] {
+            assert_eq!(value.resolved_resize_threads(1, false, opened, 12), 1);
+        }
+        assert_eq!(
+            value.resolved_resize_threads(1, false, ("libx264", false), 3),
+            1
+        );
+        for unsupported in [
+            DirectRecordingConfig {
+                capture_fps: 30,
+                ..value.clone()
+            },
+            DirectRecordingConfig {
+                output_fps: 30,
+                ..value.clone()
+            },
+            DirectRecordingConfig {
+                region: RecordingRegion::new(0, 0, 2160, 3840),
+                ..value.clone()
+            },
+            DirectRecordingConfig {
+                maximum_width: Some(1280),
+                maximum_height: Some(720),
+                ..value.clone()
+            },
+            DirectRecordingConfig {
+                format: ExportFormat::Gif,
+                ..value.clone()
+            },
+        ] {
+            assert_eq!(
+                unsupported.resolved_resize_threads(1, false, ("libx264", false), 12),
+                1
+            );
+        }
+        let mut session = DirectRecordingSession::create(value).unwrap();
+        assert!(!session.resize_threads_explicit);
+        session.set_resize_threads(0).unwrap();
+        assert!(
+            session.resize_threads_explicit,
+            "an explicit serial override must survive policy selection"
+        );
+    }
+
+    #[test]
+    fn restoration_policy_rejects_unmeasured_encoder_rate_and_frame_domains() {
+        let mut value = config();
+        value.region = RecordingRegion::new(0, 0, 3840, 2160);
+        value.maximum_width = Some(1920);
+        value.maximum_height = Some(1080);
+        value.capture_fps = 60;
+        value.output_fps = 60;
+        assert!(value.restoration_policy_domain(("h264_mf", true)));
+        for opened in [("libx264", false), ("h264_mf", false), ("h264_nvenc", true)] {
+            assert!(!value.restoration_policy_domain(opened));
+        }
+        for rate in [30, 59, 120] {
+            let mut unsupported = value.clone();
+            unsupported.output_fps = rate;
+            assert!(!unsupported.restoration_policy_domain(("h264_mf", true)));
+        }
+        let domain = ResizeFrameDomain {
+            source: (3840, 2160),
+            output: (1920, 1080),
+        };
+        for backend in [
+            CaptureBackendKind::DxgiDuplication,
+            CaptureBackendKind::WindowsGraphicsCapture,
+        ] {
+            assert!(domain.permits_restoration(backend, domain.source, domain.output));
+            assert!(!domain.permits_restoration(backend, (2160, 3840), domain.output));
+            assert!(!domain.permits_restoration(backend, domain.source, (1280, 720)));
+        }
+        assert!(!domain.permits_restoration(
+            CaptureBackendKind::Auto,
+            domain.source,
+            domain.output
+        ));
+        value.capture_backend = CaptureBackendKind::WindowsGraphicsCapture;
+        assert!(
+            !value.restoration_policy_domain(("h264_mf", true)),
+            "explicit WGC was not measured"
+        );
+    }
+
+    #[test]
+    fn resize_domain_requires_actual_backend_and_exact_frame_geometry() {
+        let domain = ResizeFrameDomain {
+            source: (3840, 2160),
+            output: (1920, 1080),
+        };
+        assert!(domain.permits(
+            CaptureBackendKind::DxgiDuplication,
+            domain.source,
+            domain.output
+        ));
+        for backend in [
+            CaptureBackendKind::Auto,
+            CaptureBackendKind::WindowsGraphicsCapture,
+            CaptureBackendKind::Gdi,
+        ] {
+            assert!(!domain.permits(backend, domain.source, domain.output));
+        }
+        for geometry in [(2160, 3840), (1920, 1080), (3839, 2160), (0, 0)] {
+            assert!(!domain.permits(CaptureBackendKind::DxgiDuplication, geometry, domain.output));
+        }
+        assert!(!domain.permits(
+            CaptureBackendKind::DxgiDuplication,
+            domain.source,
+            (1280, 720)
+        ));
+    }
+
+    #[test]
+    fn guarded_resize_pool_preserves_pixels_and_serial_fallback_without_reallocation() {
+        let value = config();
+        let mut compositor = VisualCompositor::new((7, 5));
+        compositor.resize_domain = Some(ResizeFrameDomain {
+            source: (14, 10),
+            output: (7, 5),
+        });
+        compositor.resize_pool = Some(
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(4)
+                .build()
+                .unwrap(),
+        );
+        let mut serial = VisualCompositor::new((7, 5));
+        // Offscreen frames carry an unknown backend, which must remain serial
+        // even when their geometry matches a prepared automatic pool.
+        for (width, height) in [(14, 10), (7, 5), (10, 14), (14, 10)] {
+            let pixels = (0..width * height * 4)
+                .map(|i| (i * 37 % 251) as u8)
+                .collect();
+            let frame = CapturedFrame::from(
+                snow_capture::frame::Frame::from_rgba8(width, height, pixels).unwrap(),
+            );
+            let actual = compositor.compose(&value, &frame, 0).unwrap();
+            let expected = serial.compose(&value, &frame, 0).unwrap();
+            assert_eq!(actual, expected);
+            assert_eq!(compositor.effective_resize_threads, 1);
+            assert_eq!(
+                compositor
+                    .resize_pool
+                    .as_ref()
+                    .unwrap()
+                    .current_num_threads(),
+                4
+            );
+            compositor.rgba = actual;
+            serial.rgba = expected;
+        }
+        // An explicit pool has no domain restriction and still selects four
+        // workers for caller-provided frames.
+        compositor.resize_domain = None;
+        let frame = CapturedFrame::from(
+            snow_capture::frame::Frame::from_rgba8(14, 10, vec![23; 14 * 10 * 4]).unwrap(),
+        );
+        compositor.compose(&value, &frame, 0).unwrap();
+        assert_eq!(compositor.effective_resize_threads, 4);
     }
 
     #[test]
@@ -2025,6 +3013,32 @@ mod tests {
             compositor.compose(&config(), &resumed, 100).unwrap(),
             vec![60; 16]
         );
+    }
+
+    #[test]
+    fn no_overlay_composition_matches_restoration_across_recycled_buffers_and_geometry() {
+        let mut without_cursor = config();
+        without_cursor.show_cursor = false;
+        let with_cursor = config(); // No cursor metadata: identical visible output.
+        for output in [(7, 5), (5, 7), (2, 2), (1, 1)] {
+            let mut direct = VisualCompositor::new(output);
+            direct.direct_output = true;
+            let mut restored = VisualCompositor::new(output);
+            for (width, height) in [(14, 10), (7, 5), (13, 17), (14, 10)] {
+                let pixels = (0..width * height * 4)
+                    .map(|i| (i * 37 % 251) as u8)
+                    .collect();
+                let frame = CapturedFrame::from(
+                    snow_capture::frame::Frame::from_rgba8(width, height, pixels).unwrap(),
+                );
+                let actual = direct.compose(&without_cursor, &frame, 33).unwrap();
+                let expected = restored.compose(&with_cursor, &frame, 33).unwrap();
+                assert_eq!(actual, expected);
+                direct.rgba = actual;
+                direct.rgba.fill(165);
+                restored.rgba = expected;
+            }
+        }
     }
 
     #[test]

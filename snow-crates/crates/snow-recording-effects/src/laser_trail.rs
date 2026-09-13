@@ -150,6 +150,10 @@ impl LaserTrail {
     pub fn draw_to(&mut self, surface: &mut impl Surface, timestamp_ms: u64, color: [u8; 4]) {
         self.render::<false>(surface, timestamp_ms, color);
     }
+    /// Preserve dense video coverage storage while allowing damage-tracked writes.
+    pub fn draw_dense_to(&mut self, surface: &mut impl Surface, timestamp_ms: u64, color: [u8; 4]) {
+        self.render::<true>(surface, timestamp_ms, color);
+    }
     fn render<const DENSE: bool>(
         &mut self,
         surface: &mut impl Surface,

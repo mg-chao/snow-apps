@@ -18,6 +18,16 @@ param(
     [ValidateRange(0, 4)][int]$ResizeThreads = 0,
     [switch]$AlignCapture,
     [switch]$FreeRunningCapture,
+    [ValidateRange(0, 4)][int]$ConversionThreads = 0,
+    [switch]$ForceHardwareFailure,
+    [switch]$AsyncEncoder,
+    [switch]$AutomaticPolicies,
+    [switch]$PartialComposition,
+    [switch]$RestorationOnly,
+    [switch]$HalfResize,
+    [switch]$DirectOutput,
+    [switch]$SkipUnneededCursor,
+    [string]$RegionSize = "",
     [switch]$BuildOnly,
     [string]$Executable = ""
 )
@@ -51,10 +61,20 @@ if (-not [string]::IsNullOrWhiteSpace($Scenario)) {
     $benchmarkArguments += @("--scenario", $Scenario)
 }
 if ($Audio) { $benchmarkArguments += "--audio" }
-if ($EncodeThreads -gt 0) { $benchmarkArguments += @("--encode-threads", $EncodeThreads) }
-if ($ResizeThreads -gt 0) { $benchmarkArguments += @("--resize-threads", $ResizeThreads) }
+if ($PSBoundParameters.ContainsKey('EncodeThreads')) { $benchmarkArguments += @("--encode-threads", $EncodeThreads) }
+if ($PSBoundParameters.ContainsKey('ResizeThreads')) { $benchmarkArguments += @("--resize-threads", $ResizeThreads) }
 if ($AlignCapture) { $benchmarkArguments += "--align-capture" }
 if ($FreeRunningCapture) { $benchmarkArguments += "--free-running-capture" }
+if ($ConversionThreads -gt 0) { $benchmarkArguments += @("--conversion-threads", $ConversionThreads) }
+if ($ForceHardwareFailure) { $benchmarkArguments += "--force-hardware-failure" }
+if ($AsyncEncoder) { $benchmarkArguments += "--async-encoder" }
+if ($AutomaticPolicies) { $benchmarkArguments += "--automatic-policies" }
+if ($PartialComposition) { $benchmarkArguments += "--partial-composition" }
+if ($RestorationOnly) { $benchmarkArguments += "--restoration-only" }
+if ($HalfResize) { $benchmarkArguments += "--half-resize" }
+if ($DirectOutput) { $benchmarkArguments += "--direct-output" }
+if ($SkipUnneededCursor) { $benchmarkArguments += "--skip-unneeded-cursor" }
+if ($RegionSize) { $benchmarkArguments += @("--region-size", $RegionSize) }
 if ($PreferHardware) {
     $benchmarkArguments += "--prefer-hardware"
 }

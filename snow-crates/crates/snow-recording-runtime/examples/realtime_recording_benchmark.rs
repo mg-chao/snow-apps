@@ -8,9 +8,9 @@
 //! benchmark never injects OS input: the physical mouse and keyboard stay in
 //! the user's hands, and the workload window never takes focus.
 //!
-//! * `mouse-only`  — cursor + mouse trail/click effects; synthetic cursor
+//! * `mouse-only`  â€” cursor + mouse trail/click effects; synthetic cursor
 //!   movement and clicks, no keyboard overlay.
-//! * `all-effects` — everything above plus the keyboard overlay, with
+//! * `all-effects` â€” everything above plus the keyboard overlay, with
 //!   synthetic key presses and periodic Ctrl+Shift chords.
 //!
 //! Detailed metric groups are compile-time gated (see the `bench-*-timing`
@@ -25,10 +25,10 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::SyncSender;
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use snow_capture::region::MonitorGeometry;
@@ -46,6 +46,7 @@ use snow_recording_runtime::{
     RecordingRegion,
 };
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Graphics::Dwm::{DWMWA_EXCLUDED_FROM_PEEK, DwmSetWindowAttribute};
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateSolidBrush, DeleteDC,
     DeleteObject, Ellipse, EndPaint, FillRect, GetStockObject, HBITMAP, HDC, InvalidateRect,
@@ -60,11 +61,11 @@ use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetThreadDpiAwarenessContext,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CREATESTRUCTW, CreateWindowExW, DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetMessageW,
-    GetWindowLongPtrW, IDC_ARROW, LoadCursorW, MSG, PostMessageW, PostQuitMessage, RegisterClassW,
-    SW_SHOW, SetTimer, SetWindowLongPtrW, ShowWindow, WM_CLOSE, WM_DESTROY, WM_ERASEBKGND,
-    WM_NCCREATE, WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-    WS_POPUP, WS_VISIBLE,
+    CREATESTRUCTW, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GWLP_USERDATA,
+    GetMessageW, GetWindowLongPtrW, IDC_ARROW, LoadCursorW, MSG, PostMessageW, PostQuitMessage,
+    RegisterClassW, SW_SHOW, SetTimer, SetWindowLongPtrW, ShowWindow, WM_CLOSE, WM_DESTROY,
+    WM_ERASEBKGND, WM_NCCREATE, WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
 };
 use windows::core::w;
 
@@ -89,6 +90,10 @@ const KEYBOARD_BORDER_RGBA: [u8; 4] = [255, 255, 255, 128];
 const TRAIL_DURATION_MS: u64 = 500;
 
 const WORKLOAD_TIMER_ID: usize = 1;
+static WORKLOAD_PUBLISHED: AtomicU64 = AtomicU64::new(0);
+static WORKLOAD_FAILURES: AtomicU64 = AtomicU64::new(0);
+static WORKLOAD_PUBLICATIONS: std::sync::Mutex<Vec<(u64, Instant)>> =
+    std::sync::Mutex::new(Vec::new());
 
 #[derive(Clone, Copy)]
 enum Clarity {
@@ -120,6 +125,7 @@ impl Clarity {
 }
 
 struct Options {
+    region_size: Option<(u32, u32)>,
     duration_seconds: u64,
     warmup_seconds: u64,
     samples: usize,
@@ -127,7 +133,16 @@ struct Options {
     clarity: Clarity,
     backend: CaptureBackendKind,
     prefer_hardware: bool,
-    encode_threads: u8,
+    encode_threads: Option<u8>,
+    conversion_threads: u8,
+    force_hardware_failure: bool,
+    asynchronous: bool,
+    automatic_policies: bool,
+    partial_composition: bool,
+    restoration_only: bool,
+    skip_unneeded_cursor: bool,
+    half_resize: bool,
+    direct_output: bool,
     resize_threads: Option<u8>,
     align_capture: Option<bool>,
     scenario_filter: Option<String>,
@@ -148,10 +163,19 @@ fn print_usage() {
 bench-stage-timing,bench-compositor-timing,bench-pipeline-timing \
 --example realtime_recording_benchmark -- [options]\n\
   --duration-seconds <n>     measured recording length per sample (default: {DEFAULT_DURATION_SECONDS})\n\
-  --encode-threads <n>       encoder threads; 0 keeps automatic selection\n\
+  --encode-threads <n>       override encoder threads; 0 requests automatic worker selection\n\
   --resize-threads <n>       override row workers; 0/1 serial, maximum 4\n\
   --align-capture            experimental acquisition/output clock alignment\n\
   --free-running-capture     disable acquisition/output clock alignment\n\
+  --conversion-threads <n>   experimental frame converter: 1, 2, or 4 workers; 0 uses legacy\n\
+  --async-encoder            experimental encoder worker with one waiting video frame\n\
+  --automatic-policies       opt in to provisional validated-domain policy selection\n\
+  --half-resize              experimental exact 2:1 resize specialization\n\
+  --direct-output            experimental direct resize when overlays are absent\n\
+  --partial-composition      experimental conservative damage updates and restoration\n\
+  --restoration-only         restore overlays only while the background is unchanged\n\
+  --skip-unneeded-cursor     omit cursor observations when cursor and trail are disabled\n\
+  --force-hardware-failure    simulate failure of the preferred hardware encoder\n\
   --warmup-seconds <n>       discarded warmup recording per scenario, 0 disables (default: \
 {DEFAULT_WARMUP_SECONDS})\n\
   --samples <n>              measured samples per scenario (default: {DEFAULT_SAMPLES})\n\
@@ -159,7 +183,10 @@ bench-stage-timing,bench-compositor-timing,bench-pipeline-timing \
   --clarity <kind>           output cap: 4k, 2k, 1080p, 720p, 480p, native (default: 1080p)\n\
   --backend <kind>           capture backend: auto, dxgi, wgc, gdi (default: auto)\n\
   --prefer-hardware          prefer a hardware H.264 encoder\n\
-  --scenario <name>          run only one scenario: mouse-only or all-effects\n\
+  --scenario <name>          application-default, no-effects, mouse-only, or all-effects\n\
+  --workload <name>          continuous, static, or sparse (default: continuous)\n\
+  --region-size <WxH>        source region within the leftmost monitor, at least 528x96\n\
+  --audio                    include system audio in the recording\n\
   --move-interval-ms <n>     simulated mouse move interval (default: {DEFAULT_MOVE_INTERVAL_MS})\n\
   --click-interval-ms <n>    simulated left click interval (default: {DEFAULT_CLICK_INTERVAL_MS})\n\
   --key-interval-ms <n>      simulated key tap interval, all-effects only (default: \
@@ -174,6 +201,7 @@ bench-stage-timing,bench-compositor-timing,bench-pipeline-timing \
 
 fn parse_args() -> Result<Options> {
     let mut options = Options {
+        region_size: None,
         duration_seconds: DEFAULT_DURATION_SECONDS,
         warmup_seconds: DEFAULT_WARMUP_SECONDS,
         samples: DEFAULT_SAMPLES,
@@ -181,7 +209,16 @@ fn parse_args() -> Result<Options> {
         clarity: Clarity::Fixed(1920, 1080),
         backend: CaptureBackendKind::Auto,
         prefer_hardware: false,
-        encode_threads: 0,
+        encode_threads: None,
+        conversion_threads: 0,
+        force_hardware_failure: false,
+        asynchronous: false,
+        automatic_policies: false,
+        partial_composition: false,
+        restoration_only: false,
+        skip_unneeded_cursor: false,
+        half_resize: false,
+        direct_output: false,
         resize_threads: None,
         align_capture: None,
         scenario_filter: None,
@@ -224,10 +261,32 @@ fn parse_args() -> Result<Options> {
                 );
             }
             "--free-running-capture" => options.align_capture = Some(false),
-            "--encode-threads" => {
-                options.encode_threads = next_value("--encode-threads", &args, &mut index)?
+            "--region-size" => {
+                let value = next_value("--region-size", &args, &mut index)?;
+                let (width, height) = value
+                    .split_once('x')
+                    .context("--region-size requires WIDTHxHEIGHT")?;
+                options.region_size = Some((width.parse()?, height.parse()?));
+            }
+            "--half-resize" => options.half_resize = true,
+            "--direct-output" => options.direct_output = true,
+            "--skip-unneeded-cursor" => options.skip_unneeded_cursor = true,
+            "--partial-composition" => options.partial_composition = true,
+            "--restoration-only" => options.restoration_only = true,
+            "--async-encoder" => options.asynchronous = true,
+            "--automatic-policies" => options.automatic_policies = true,
+            "--force-hardware-failure" => options.force_hardware_failure = true,
+            "--conversion-threads" => {
+                options.conversion_threads = next_value("--conversion-threads", &args, &mut index)?
                     .parse()
-                    .context("--encode-threads")?;
+                    .context("--conversion-threads")?;
+            }
+            "--encode-threads" => {
+                options.encode_threads = Some(
+                    next_value("--encode-threads", &args, &mut index)?
+                        .parse()
+                        .context("--encode-threads")?,
+                );
             }
             "--warmup-seconds" => {
                 options.warmup_seconds = next_value("--warmup-seconds", &args, &mut index)?
@@ -293,7 +352,9 @@ fn parse_args() -> Result<Options> {
     if let Some(filter) = options.scenario_filter.as_deref()
         && SCENARIOS.iter().all(|scenario| scenario.name != filter)
     {
-        bail!("unknown scenario '{filter}' (expected mouse-only or all-effects)");
+        bail!(
+            "unknown scenario '{filter}' (expected application-default, no-effects, mouse-only or all-effects)"
+        );
     }
     if !["continuous", "static", "sparse"].contains(&options.workload.as_str()) {
         bail!("--workload must be continuous, static, or sparse");
@@ -345,7 +406,13 @@ struct Scenario {
     simulate_keys: bool,
 }
 
-const SCENARIOS: [Scenario; 3] = [
+const SCENARIOS: [Scenario; 4] = [
+    Scenario {
+        name: "application-default",
+        mouse_effects: false,
+        keyboard_overlay: false,
+        simulate_keys: false,
+    },
     Scenario {
         name: "no-effects",
         mouse_effects: false,
@@ -385,6 +452,9 @@ struct ProcessUsage {
 
 struct SampleResult {
     workload: String,
+    published_frames: u64,
+    workload_failures: u64,
+    requested_hardware: bool,
     scenario: &'static str,
     sample: usize,
     duration_seconds: u64,
@@ -411,12 +481,6 @@ struct SampleResult {
     used_hardware_video_encoder: bool,
     input: InputOutcome,
     usage: ProcessUsage,
-    /// Kept for the compile-time gated metric groups; unread otherwise.
-    #[cfg(any(
-        feature = "bench-stage-timing",
-        feature = "bench-compositor-timing",
-        feature = "bench-pipeline-timing"
-    ))]
     report: snow_recording_runtime::DirectRecordingReport,
 }
 
@@ -428,6 +492,9 @@ fn main() -> Result<()> {
     let arguments: Vec<_> = std::env::args().collect();
     if arguments.get(1).is_some_and(|arg| arg == "--inspect-media") {
         return inspect_media(Path::new(arguments.get(2).context("missing media file")?));
+    }
+    if arguments.get(1).is_some_and(|arg| arg == "--inspect-audio") {
+        return inspect_audio(Path::new(arguments.get(2).context("missing media file")?));
     }
     if arguments.get(1).is_some_and(|arg| arg == "--inspect") {
         let result = decode_frame_ids(
@@ -450,13 +517,12 @@ fn main() -> Result<()> {
     // benchmark covers one screen with its workload window.
     let monitor =
         select_recording_monitor(&layout).context("monitor layout contains no monitors")?;
+    let (width, height) = options
+        .region_size
+        .unwrap_or((monitor.width, monitor.height));
+    validate_workload_region(width, height, monitor.width, monitor.height)?;
     // Even dimensions, matching screenRecordingCompatibleCaptureRegion.
-    let region = RecordingRegion::new(
-        monitor.x,
-        monitor.y,
-        monitor.width & !1,
-        monitor.height & !1,
-    );
+    let region = RecordingRegion::new(monitor.x, monitor.y, width & !1, height & !1);
 
     println!(
         "region: {}x{} at ({}, {}) on the leftmost monitor; virtual desktop {}x{} at ({}, {})",
@@ -492,10 +558,9 @@ fn main() -> Result<()> {
 
     let timer_ms = match options.workload.as_str() {
         "static" => 0,
-        "sparse" => 250,
         _ => options.window_timer_ms,
     };
-    let window = WorkloadWindow::spawn(region, timer_ms)?;
+    let window = WorkloadWindow::spawn(region, timer_ms, options.workload == "sparse")?;
     // Let the first frames reach the compositor before capturing or injecting.
     std::thread::sleep(Duration::from_millis(750));
 
@@ -509,7 +574,7 @@ fn main() -> Result<()> {
     fs::write(
         options.output_directory.join("run-metadata.txt"),
         format!(
-            "schema_version=5\nrevision={}\nrelease={}\nbackend={:?}\nworkload={}\naudio={}\nsynthetic_input={}\nfeatures=stage:{},compose:{},pipeline:{}\nencode_threads={}\nalign_capture_override={:?}\nresize_threads_override={:?}\n",
+            "schema_version=10\nrevision={}\nrelease={}\nbackend={:?}\nworkload={}\naudio={}\nsynthetic_input={}\nfeatures=stage:{},compose:{},pipeline:{}\nencode_threads={}\nencode_threads_override={:?}\nalign_capture_override={:?}\nresize_threads_override={:?}\n",
             option_env!("SNOW_BENCH_REVISION").unwrap_or("unknown"),
             !cfg!(debug_assertions),
             options.backend,
@@ -519,6 +584,7 @@ fn main() -> Result<()> {
             cfg!(feature = "bench-stage-timing"),
             cfg!(feature = "bench-compositor-timing"),
             cfg!(feature = "bench-pipeline-timing"),
+            options.encode_threads.unwrap_or(0),
             options.encode_threads,
             options.align_capture,
             options.resize_threads
@@ -537,14 +603,17 @@ fn main() -> Result<()> {
                 "[{}] warming up for {} s",
                 scenario.name, options.warmup_seconds
             );
-            let warmup = run_sample(&options, scenario, region, 0, true)?;
+            let warmup = run_sample(&options, scenario, region, &window, 0, true)?;
             if let Err(error) = validate_sample(&warmup, true) {
-                eprintln!("{error:#}");
-                validation_errors.push(format!("{error:#}"));
+                fs::write(
+                    options.output_directory.join("validation-errors.txt"),
+                    format!("{error:#}\n"),
+                )?;
+                return Err(error);
             }
         }
         for sample in 0..options.samples {
-            let result = run_sample(&options, scenario, region, sample, false)?;
+            let result = run_sample(&options, scenario, region, &window, sample, false)?;
             // Print first so a gate failure still shows the sample's numbers.
             print_sample(&result);
             let validation = validate_sample(&result, false);
@@ -639,6 +708,185 @@ fn inspect_media(path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug)]
+struct AudioInspection {
+    sample_values: u64,
+    nonzero_values: u64,
+    rms: f64,
+    peak: f64,
+    longest_silent_frames: u64,
+    start_seconds: f64,
+    end_seconds: f64,
+    discontinuities: u64,
+}
+
+fn inspect_audio(path: &Path) -> Result<()> {
+    let result = read_audio(path)?;
+    println!(
+        "sample_values,nonzero_values,rms,peak,longest_silent_frames,start_seconds,end_seconds,discontinuities"
+    );
+    println!(
+        "{},{},{:.9},{:.9},{},{:.9},{:.9},{}",
+        result.sample_values,
+        result.nonzero_values,
+        result.rms,
+        result.peak,
+        result.longest_silent_frames,
+        result.start_seconds,
+        result.end_seconds,
+        result.discontinuities
+    );
+    Ok(())
+}
+
+fn read_audio(path: &Path) -> Result<AudioInspection> {
+    let path = path.to_owned();
+    std::thread::spawn(move || read_audio_mta(&path))
+        .join()
+        .map_err(|_| anyhow::anyhow!("audio inspection worker panicked"))?
+}
+
+fn read_audio_mta(path: &Path) -> Result<AudioInspection> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::Media::MediaFoundation::*;
+    use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx, CoUninitialize};
+    struct Apartment;
+    impl Drop for Apartment {
+        fn drop(&mut self) {
+            unsafe {
+                CoUninitialize();
+            }
+        }
+    }
+    struct Foundation;
+    impl Drop for Foundation {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = MFShutdown();
+            }
+        }
+    }
+    // The deployed FFmpeg intentionally has no AAC decoder. Use the installed
+    // Windows decoder only for offline validation, on its own COM apartment.
+    unsafe {
+        CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
+        let _apartment = Apartment;
+        MFStartup(MF_VERSION, MFSTARTUP_LITE)?;
+        let _foundation = Foundation;
+        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+        let source = MFCreateSourceReaderFromURL(windows::core::PCWSTR(wide.as_ptr()), None)?;
+        let audio = MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32;
+        source.SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS.0 as u32, false)?;
+        source.SetStreamSelection(audio, true)?;
+        let requested = MFCreateMediaType()?;
+        requested.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio)?;
+        requested.SetGUID(&MF_MT_SUBTYPE, &MFAudioFormat_PCM)?;
+        requested.SetUINT32(&MF_MT_AUDIO_BITS_PER_SAMPLE, 16)?;
+        source.SetCurrentMediaType(audio, None, &requested)?;
+        let format = source.GetCurrentMediaType(audio)?;
+        let channels = format.GetUINT32(&MF_MT_AUDIO_NUM_CHANNELS)? as usize;
+        let rate = format.GetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND)?;
+        if channels == 0 || rate == 0 || format.GetUINT32(&MF_MT_AUDIO_BITS_PER_SAMPLE)? != 16 {
+            bail!("audio inspection requires negotiated 16-bit PCM");
+        }
+        let mut result = AudioInspection {
+            sample_values: 0,
+            nonzero_values: 0,
+            rms: 0.0,
+            peak: 0.0,
+            longest_silent_frames: 0,
+            start_seconds: 0.0,
+            end_seconds: 0.0,
+            discontinuities: 0,
+        };
+        let mut squares = 0.0;
+        let mut silent_frames = 0u64;
+        loop {
+            let mut flags = 0;
+            let mut timestamp = 0;
+            let mut sample = None;
+            source.ReadSample(
+                audio,
+                0,
+                None,
+                Some(&mut flags),
+                Some(&mut timestamp),
+                Some(&mut sample),
+            )?;
+            if flags & MF_SOURCE_READERF_ERROR.0 as u32 != 0 {
+                bail!("audio source reader failed");
+            }
+            if let Some(sample) = sample {
+                let current = source.GetCurrentMediaType(audio)?;
+                if current.GetUINT32(&MF_MT_AUDIO_NUM_CHANNELS)? as usize != channels
+                    || current.GetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND)? != rate
+                    || current.GetUINT32(&MF_MT_AUDIO_BITS_PER_SAMPLE)? != 16
+                {
+                    bail!("audio format changed during inspection");
+                }
+                let buffer = sample.ConvertToContiguousBuffer()?;
+                let mut data = std::ptr::null_mut();
+                let mut length = 0;
+                buffer.Lock(&mut data, None, Some(&mut length))?;
+                if !(length as usize).is_multiple_of(channels * 2)
+                    || (data.is_null() && length != 0)
+                {
+                    buffer.Unlock()?;
+                    bail!("invalid decoded PCM buffer");
+                }
+                let frames = length as usize / (channels * 2);
+                if length != 0 {
+                    let bytes = std::slice::from_raw_parts(data, length as usize);
+                    for frame in bytes.chunks_exact(channels * 2) {
+                        let mut audible = false;
+                        for sample in frame.chunks_exact(2) {
+                            let value =
+                                f64::from(i16::from_le_bytes([sample[0], sample[1]])) / 32768.0;
+                            result.sample_values += 1;
+                            squares += value * value;
+                            result.peak = result.peak.max(value.abs());
+                            if value != 0.0 {
+                                result.nonzero_values += 1;
+                                audible = true;
+                            }
+                        }
+                        silent_frames = if audible { 0 } else { silent_frames + 1 };
+                        result.longest_silent_frames =
+                            result.longest_silent_frames.max(silent_frames);
+                    }
+                }
+                buffer.Unlock()?;
+                let start = timestamp as f64 / 10_000_000.0;
+                if result.sample_values == (frames * channels) as u64 {
+                    result.start_seconds = start;
+                } else if (start - result.end_seconds).abs() > 2.0 / f64::from(rate) {
+                    result.discontinuities += 1;
+                }
+                result.end_seconds = start + frames as f64 / f64::from(rate);
+            }
+            if flags & MF_SOURCE_READERF_ENDOFSTREAM.0 as u32 != 0 {
+                break;
+            }
+        }
+        if result.sample_values == 0 {
+            bail!("audio stream decoded no samples");
+        }
+        result.rms = (squares / result.sample_values as f64).sqrt();
+        Ok(result)
+    }
+}
+
+/// Encoder traces use the first admission as their origin. Composition may
+/// precede it; retaining the sign keeps those earlier boundaries distinguishable.
+#[cfg(any(test, feature = "bench-pipeline-timing"))]
+fn trace_elapsed_ns(at: Instant, origin: Instant) -> i128 {
+    if at >= origin {
+        at.duration_since(origin).as_nanos() as i128
+    } else {
+        -(origin.duration_since(at).as_nanos() as i128)
+    }
+}
+
 fn print_compiled_metric_groups() {
     let group = |enabled: bool| if enabled { "on" } else { "off" };
     println!(
@@ -663,19 +911,24 @@ fn run_sample(
     options: &Options,
     scenario: &Scenario,
     region: RecordingRegion,
+    window: &WorkloadWindow,
     sample: usize,
     warmup: bool,
 ) -> Result<SampleResult> {
     let output_path = if warmup {
-        options.output_directory.join("warmup.mp4")
+        options
+            .output_directory
+            .join(format!("{}-warmup.mp4", scenario.name))
     } else {
         options
             .output_directory
             .join(format!("{}-sample-{}.mp4", scenario.name, sample + 1))
     };
     if output_path.is_file() {
-        fs::remove_file(&output_path)
-            .with_context(|| format!("failed to replace {}", output_path.display()))?;
+        bail!(
+            "recording artifact already exists: {}; choose a new output directory",
+            output_path.display()
+        );
     }
 
     let (maximum_width, maximum_height) = options.clarity.maximum_dimensions();
@@ -712,7 +965,7 @@ fn run_sample(
         prefer_hardware_encoder: options.prefer_hardware,
         enable_microphone: false,
         enable_system_audio: options.audio,
-        show_cursor: scenario.mouse_effects,
+        show_cursor: scenario.mouse_effects || scenario.name == "application-default",
         keyboard,
         mouse_trail_rgba: if scenario.mouse_effects {
             TRAIL_RGBA
@@ -727,10 +980,20 @@ fn run_sample(
         },
     };
 
+    let window_started = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs_f64();
     let (usage_running, usage_thread) = spawn_usage_sampler(Duration::from_millis(500));
     let setup_started = Instant::now();
     let mut session = DirectRecordingSession::create(config)?;
-    session.set_encode_threads(options.encode_threads)?;
+    if let Some(threads) = options.encode_threads {
+        session.set_encode_threads(threads)?;
+    }
+    session.set_bench_encoding(options.conversion_threads, options.force_hardware_failure)?;
+    session.set_bench_async_encoding(options.asynchronous)?;
+    session.set_bench_automatic_policies(options.automatic_policies)?;
+    session.set_bench_partial_composition(options.partial_composition)?;
+    session.set_bench_restoration_only(options.restoration_only)?;
+    session.set_bench_skip_unneeded_cursor(options.skip_unneeded_cursor)?;
+    session.set_bench_pixel_paths(options.half_resize, options.direct_output)?;
     if let Some(threads) = options.resize_threads {
         session.set_resize_threads(threads)?;
     }
@@ -745,7 +1008,16 @@ fn run_sample(
         .context("starting direct recording session")?;
     let setup_ms = elapsed_ms(setup_started);
 
+    WORKLOAD_PUBLICATIONS.lock().unwrap().clear();
+    let published_start = WORKLOAD_PUBLISHED.load(Ordering::Acquire);
+    let failure_start = WORKLOAD_FAILURES.load(Ordering::Acquire);
     let recording_started = Instant::now();
+    if options.workload == "static" {
+        // Establish the static image after this session's acquisition and
+        // recording clock start. An image painted only before startup may not
+        // produce a usable first DXGI presentation. No timer runs afterward.
+        window.publish_once()?;
+    }
     let input = simulate_input(
         &session,
         &InputPlan {
@@ -760,11 +1032,28 @@ fn run_sample(
     )?;
 
     let measured_seconds = recording_started.elapsed().as_secs_f64();
+    let published_frames = WORKLOAD_PUBLISHED
+        .load(Ordering::Acquire)
+        .saturating_sub(published_start);
+    let workload_failures = WORKLOAD_FAILURES
+        .load(Ordering::Acquire)
+        .saturating_sub(failure_start);
+    let recording_ended = Instant::now();
+    let publications = WORKLOAD_PUBLICATIONS.lock().unwrap().clone();
     let stop_started = Instant::now();
     let report = session
         .stop()
         .context("stopping direct recording session")?;
     let stop_ms = elapsed_ms(stop_started);
+    let window_stopped = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs_f64();
+    // Preserve setup and drain as part of the protected recording window.
+    // Offline decoding below does not affect already completed recording work.
+    fs::write(
+        output_path.with_extension("recording-window.csv"),
+        format!(
+            "started_unix_seconds,stopped_unix_seconds\n{window_started:.9},{window_stopped:.9}\n"
+        ),
+    )?;
 
     usage_running.store(false, Ordering::Release);
     let usage = usage_thread
@@ -775,17 +1064,37 @@ fn run_sample(
         usage_csv.push_str(&format!("{seconds:.6},{working},{private}\n"));
     }
     fs::write(output_path.with_extension("usage.csv"), usage_csv)?;
+    let mut workload_csv = String::from("source_id,publication_seconds,interval_ms\n");
+    let mut previous = None;
+    for (id, at) in publications {
+        if at < recording_started || at > recording_ended {
+            continue;
+        }
+        let interval = previous
+            .map(|previous| at.duration_since(previous).as_secs_f64() * 1000.0)
+            .unwrap_or(0.0);
+        previous = Some(at);
+        workload_csv.push_str(&format!(
+            "{id},{:.9},{interval:.6}\n",
+            at.duration_since(recording_started).as_secs_f64()
+        ));
+    }
+    fs::write(output_path.with_extension("workload.csv"), workload_csv)?;
+    fs::write(
+        output_path.with_extension("session-report.txt"),
+        format!("{report:#?}\n"),
+    )?;
     let output_bytes = fs::metadata(&output_path)
         .with_context(|| format!("failed to stat {}", output_path.display()))?
         .len();
     let (decoded_frames, fresh_frames, unreadable_ids) =
         decode_frame_ids(&output_path, region.width, region.height)?;
-    if warmup {
-        let _ = fs::remove_file(&output_path);
-    }
 
     Ok(SampleResult {
         workload: options.workload.clone(),
+        published_frames,
+        workload_failures,
+        requested_hardware: options.prefer_hardware,
         scenario: scenario.name,
         sample: sample + 1,
         duration_seconds,
@@ -812,11 +1121,6 @@ fn run_sample(
         used_hardware_video_encoder: report.used_hardware_video_encoder,
         input,
         usage,
-        #[cfg(any(
-            feature = "bench-stage-timing",
-            feature = "bench-compositor-timing",
-            feature = "bench-pipeline-timing"
-        ))]
         report,
     })
 }
@@ -827,6 +1131,9 @@ fn validate_sample(result: &SampleResult, warmup: bool) -> Result<()> {
     } else {
         format!("{} sample {}", result.scenario, result.sample)
     };
+    if result.workload_failures != 0 || result.published_frames == 0 {
+        bail!("{label} workload failed to publish frames");
+    }
     if result.unreadable_ids != 0 {
         bail!(
             "{label} has {} unreadable source identifiers; workload was obstructed or pixels were corrupted",
@@ -968,7 +1275,89 @@ fn write_summary_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<P
     let mut cells = Vec::with_capacity(rows.len());
     for row in rows {
         let base_columns: Vec<(String, String)> = vec![
-            ("schema_version".into(), "5".into()),
+            ("schema_version".into(), "10".into()),
+            (
+                "requested_video_encoder".into(),
+                row.report.requested_video_encoder.clone(),
+            ),
+            (
+                "half_resize".into(),
+                u8::from(row.report.half_resize).to_string(),
+            ),
+            (
+                "direct_output".into(),
+                u8::from(row.report.direct_output).to_string(),
+            ),
+            (
+                "workload_published_fps".into(),
+                format!("{:.6}", row.published_frames as f64 / row.measured_seconds),
+            ),
+            (
+                "workload_failures".into(),
+                row.workload_failures.to_string(),
+            ),
+            (
+                "hardware_requested".into(),
+                u8::from(row.requested_hardware).to_string(),
+            ),
+            (
+                "hardware_fallback".into(),
+                u8::from(row.report.hardware_fallback).to_string(),
+            ),
+            ("pixel_format".into(), row.report.pixel_format.clone()),
+            (
+                "effective_encode_threads".into(),
+                row.report.effective_encode_threads.to_string(),
+            ),
+            (
+                "effective_resize_threads".into(),
+                row.report.resize_threads.to_string(),
+            ),
+            (
+                "effective_conversion_threads".into(),
+                row.report
+                    .effective_conversion_threads
+                    .map(|value| value.to_string())
+                    .unwrap_or_default(),
+            ),
+            (
+                "configured_conversion_threads".into(),
+                row.report.conversion_threads.to_string(),
+            ),
+            (
+                "conversion_backend".into(),
+                row.report.conversion_backend.clone(),
+            ),
+            (
+                "aligned_capture".into(),
+                u8::from(row.report.aligned_capture).to_string(),
+            ),
+            (
+                "partial_composition".into(),
+                u8::from(row.report.partial_composition).to_string(),
+            ),
+            (
+                "cursor_attachment_requested".into(),
+                u8::from(row.report.cursor_attachment_requested).to_string(),
+            ),
+            (
+                "execution_mode".into(),
+                if row.report.asynchronous {
+                    "asynchronous"
+                } else {
+                    "synchronous"
+                }
+                .into(),
+            ),
+            (
+                "queued_video_replacements".into(),
+                row.report.queued_video_replacements.to_string(),
+            ),
+            (
+                "restoration_only".into(),
+                u8::from(row.report.restoration_only).to_string(),
+            ),
+            ("capture_backend".into(), row.report.capture_backend.clone()),
             ("scenario".into(), row.scenario.to_string()),
             ("workload".into(), row.workload.clone()),
             (
@@ -1073,7 +1462,6 @@ fn write_summary_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<P
         #[cfg(feature = "bench-pipeline-timing")]
         if let Some(pipeline) = row.report.pipeline.as_ref() {
             columns.extend([
-                ("capture_backend".into(), pipeline.capture_backend.clone()),
                 (
                     "encoder_copied_bytes".into(),
                     row.report.encoder_timings.copied_bytes.to_string(),
@@ -1148,7 +1536,46 @@ fn write_summary_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<P
 ))]
 fn write_stages_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<PathBuf> {
     let mut csv = String::from("scenario,sample,group,stage,count,p50_ms,p95_ms,max_ms\n");
+    let mut raw = String::from("scenario,sample,group,stage,index,duration_ns\n");
     for row in rows {
+        let mut emit_raw = |group: &str, stages: &BTreeMap<&str, Vec<Duration>>| {
+            for (stage, samples) in stages {
+                for (index, duration) in samples.iter().enumerate() {
+                    raw.push_str(&format!(
+                        "{},{},{group},{stage},{index},{}\n",
+                        row.scenario,
+                        row.sample,
+                        duration.as_nanos()
+                    ));
+                }
+            }
+        };
+        #[cfg(feature = "bench-stage-timing")]
+        if let Some(timings) = &row.report.capture_stage_timings {
+            emit_raw("capture", timings.raw_samples());
+        }
+        #[cfg(feature = "bench-compositor-timing")]
+        if let Some(timings) = &row.report.compositor_timings {
+            emit_raw("compositor", timings.raw_samples());
+        }
+        #[cfg(feature = "bench-pipeline-timing")]
+        {
+            emit_raw("encoder", &row.report.encoder_timings.stages);
+            if let Some(pipeline) = &row.report.pipeline {
+                emit_raw("pipeline", &pipeline.raw_stages);
+                let mut latencies = String::from("output_pts,capture_to_first_packet_ns\n");
+                for (pts, duration) in &pipeline.packet_latencies {
+                    latencies.push_str(&format!("{pts},{}\n", duration.as_nanos()));
+                }
+                fs::write(
+                    output_directory.join(format!(
+                        "{}-{}-packet-latencies.csv",
+                        row.scenario, row.sample
+                    )),
+                    latencies,
+                )?;
+            }
+        }
         let mut emit = |group: &str, stage: &str, stats: &SampleStats| {
             csv.push_str(&format!(
                 "{},{},{},{},{},{:.3},{:.3},{:.3}\n",
@@ -1173,6 +1600,47 @@ fn write_stages_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<Pa
                     trace.push_str(&format!("{kind},{index},{value}\n"));
                 }
             }
+            let mut packet_trace = String::from("kind,pts,elapsed_ns\n");
+            let origin = row
+                .report
+                .encoder_timings
+                .admissions
+                .first()
+                .map(|(_, at)| *at);
+            if let Some(origin) = origin {
+                for (kind, events) in [
+                    ("admission", &row.report.encoder_timings.admissions),
+                    ("submission", &row.report.encoder_timings.submissions),
+                    ("packet", &row.report.encoder_timings.packets),
+                ] {
+                    for (pts, at) in events {
+                        packet_trace.push_str(&format!(
+                            "{kind},{pts},{}\n",
+                            at.saturating_duration_since(origin).as_nanos()
+                        ));
+                    }
+                }
+            }
+            fs::write(
+                output_directory.join(format!("{}-{}-packets.csv", row.scenario, row.sample)),
+                packet_trace,
+            )?;
+            let mut composition_trace = String::from(
+                "output_pts,composition_start_elapsed_ns,composition_end_elapsed_ns\n",
+            );
+            if let (Some(origin), Some(pipeline)) = (origin, &row.report.pipeline) {
+                for (pts, started, finished) in &pipeline.compositions {
+                    composition_trace.push_str(&format!(
+                        "{pts},{},{}\n",
+                        trace_elapsed_ns(*started, origin),
+                        trace_elapsed_ns(*finished, origin),
+                    ));
+                }
+            }
+            fs::write(
+                output_directory.join(format!("{}-{}-composition.csv", row.scenario, row.sample)),
+                composition_trace,
+            )?;
             if let Some(pipeline) = &row.report.pipeline {
                 for (sequence, duplicate) in &pipeline.capture_sequences {
                     trace.push_str(&format!("capture,{sequence},{}\n", u8::from(*duplicate)));
@@ -1235,6 +1703,10 @@ fn write_stages_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<Pa
         }
     }
     let path = output_directory.join("realtime-recording-stages.csv");
+    fs::write(
+        output_directory.join("realtime-recording-stage-samples.csv"),
+        raw,
+    )?;
     fs::write(&path, csv).with_context(|| format!("failed to write {}", path.display()))?;
     Ok(path)
 }
@@ -1395,6 +1867,88 @@ mod synthetic_input_tests {
     use super::*;
 
     #[test]
+    fn composition_trace_preserves_boundaries_before_encoder_admission() {
+        let started = Instant::now();
+        let composed = started + Duration::from_millis(3);
+        let admitted = composed + Duration::from_millis(2);
+        assert_eq!(trace_elapsed_ns(started, admitted), -5_000_000);
+        assert_eq!(trace_elapsed_ns(composed, admitted), -2_000_000);
+        assert_eq!(trace_elapsed_ns(admitted, admitted), 0);
+        assert_eq!(
+            trace_elapsed_ns(admitted + Duration::from_millis(1), admitted),
+            1_000_000
+        );
+    }
+
+    #[test]
+    fn audio_inspection_distinguishes_continuous_aac_signal_from_silence() {
+        use snow_recording_export::{
+            ExportExecutionMode, SoftwareH264Priority, StreamingAudioConfig, StreamingEncoder,
+            StreamingEncoderConfig,
+        };
+        use snow_recording_model::VideoEncodeConfig;
+        let directory = tempfile::tempdir().unwrap();
+        for signal in [false, true] {
+            let path = directory.path().join(format!("audio-{signal}.mp4"));
+            let mut encoder = StreamingEncoder::create(StreamingEncoderConfig {
+                output_path: path.clone(),
+                format: ExportFormat::Mp4,
+                width: 16,
+                height: 16,
+                fps: 10,
+                codec: VideoCodec::H264,
+                prefer_hardware_h264: false,
+                execution_mode: ExportExecutionMode::SoftwareOnly,
+                software_h264_priority: SoftwareH264Priority::X264First,
+                video: VideoEncodeConfig {
+                    quality: 80,
+                    speed: VideoEncodingSpeed::VeryFast,
+                },
+                encode_threads: 1,
+                audio: Some(StreamingAudioConfig {
+                    sample_rate_hz: 48_000,
+                    channels: 2,
+                    bitrate_kbps: 160,
+                }),
+            })
+            .unwrap();
+            encoder
+                .push_owned_rgba_frame_at_pts(0, vec![128; 16 * 16 * 4])
+                .unwrap();
+            for block in 0..100u64 {
+                let samples: Vec<i16> = (0..960)
+                    .map(|value| {
+                        if signal {
+                            (2000.0 * (std::f64::consts::TAU * (value / 2) as f64 / 48.0).sin())
+                                as i16
+                        } else {
+                            0
+                        }
+                    })
+                    .collect();
+                encoder.push_audio_pcm_i16(block * 10, &samples).unwrap();
+            }
+            encoder.finish_at_pts(10).unwrap();
+            let inspection = read_audio(&path).unwrap();
+            assert!(inspection.sample_values >= 96_000, "{inspection:?}");
+            assert_eq!(inspection.discontinuities, 0, "{inspection:?}");
+            assert!(inspection.start_seconds.abs() < 0.03, "{inspection:?}");
+            assert!(
+                (inspection.end_seconds - 1.0).abs() < 0.03,
+                "{inspection:?}"
+            );
+            if signal {
+                assert!(inspection.nonzero_values > 80_000, "{inspection:?}");
+                assert!((0.03..0.06).contains(&inspection.rms), "{inspection:?}");
+                assert!(inspection.longest_silent_frames < 1024, "{inspection:?}");
+            } else {
+                assert_eq!(inspection.nonzero_values, 0, "{inspection:?}");
+                assert_eq!(inspection.rms, 0.0, "{inspection:?}");
+            }
+        }
+    }
+
+    #[test]
     fn sweep_stays_inside_the_region_with_margin() {
         let region = RecordingRegion::new(-1920, 500, 1920, 1080);
         for ms in (0..20_000u64).step_by(97) {
@@ -1454,6 +2008,32 @@ mod monitor_selection_tests {
         assert_eq!(select_recording_monitor(&single).map(|m| m.x), Some(0));
         assert!(select_recording_monitor(&layout(Vec::new())).is_none());
     }
+
+    #[test]
+    fn workload_region_contains_identifier_strip_and_fits_monitor() {
+        for (width, height) in [(528, 96), (529, 97), (1080, 1920), (3840, 2160)] {
+            assert!(validate_workload_region(width, height, 3840, 2160).is_ok());
+        }
+        for (width, height) in [(0, 0), (527, 1080), (1920, 95), (3841, 2160), (1080, 2161)] {
+            assert!(validate_workload_region(width, height, 3840, 2160).is_err());
+        }
+    }
+}
+
+fn validate_workload_region(
+    width: u32,
+    height: u32,
+    monitor_width: u32,
+    monitor_height: u32,
+) -> Result<()> {
+    // All 32 identifier cells occupy [16, 528) x [64, 96). A truncated
+    // strip can retain its eight-bit sentinel while silently losing source ID bits.
+    if width < 528 || height < 96 || width > monitor_width || height > monitor_height {
+        bail!(
+            "--region-size must fit within the leftmost monitor and contain the 528x96 identifier strip"
+        );
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -1577,6 +2157,8 @@ struct WindowState {
     width: i32,
     height: i32,
     tick: u64,
+    animate: bool,
+    sparse: bool,
 }
 
 struct WorkloadWindow {
@@ -1585,13 +2167,25 @@ struct WorkloadWindow {
 }
 
 impl WorkloadWindow {
-    fn spawn(region: RecordingRegion, timer_ms: u32) -> Result<Self> {
+    fn publish_once(&self) -> Result<()> {
+        unsafe {
+            PostMessageW(
+                Some(HWND(self.handle as *mut _)),
+                WM_TIMER,
+                WPARAM(WORKLOAD_TIMER_ID),
+                LPARAM(0),
+            )
+        }
+        .context("requesting the initial static workload presentation")
+    }
+
+    fn spawn(region: RecordingRegion, timer_ms: u32, sparse: bool) -> Result<Self> {
         let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
         let thread = std::thread::Builder::new()
             .name("snow-bench-workload-window".to_string())
             .spawn(move || {
                 let _dpi = ThreadDpiAwareness::per_monitor_v2();
-                if let Err(error) = run_window_thread(region, timer_ms, &ready_tx) {
+                if let Err(error) = run_window_thread(region, timer_ms, sparse, &ready_tx) {
                     // The parent may already have timed out; surface it anyway.
                     let _ = ready_tx.send(Err(error));
                 }
@@ -1635,6 +2229,7 @@ impl Drop for WorkloadWindow {
 fn run_window_thread(
     region: RecordingRegion,
     timer_ms: u32,
+    sparse: bool,
     ready: &SyncSender<Result<isize, String>>,
 ) -> Result<(), String> {
     unsafe {
@@ -1657,6 +2252,8 @@ fn run_window_thread(
             width: region.width as i32,
             height: region.height as i32,
             tick: 0,
+            animate: timer_ms != 0,
+            sparse,
         });
         let state_raw = Box::into_raw(state);
         // The window must stay visible for capture but never steal focus: no
@@ -1683,6 +2280,19 @@ fn run_window_thread(
             }
         };
 
+        // A nonactivating tool window can remain WS_VISIBLE while desktop
+        // Peek removes it from composition. Keep this controlled workload
+        // present without moving the physical pointer or taking focus.
+        let excluded_from_peek = 1i32;
+        if let Err(error) = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_EXCLUDED_FROM_PEEK,
+            (&excluded_from_peek as *const i32).cast(),
+            std::mem::size_of::<i32>() as u32,
+        ) {
+            let _ = DestroyWindow(hwnd);
+            return Err(format!("exclude workload from Peek: {error}"));
+        }
         let _ = ShowWindow(hwnd, SW_SHOW);
         if timer_ms > 0 {
             SetTimer(Some(hwnd), WORKLOAD_TIMER_ID, timer_ms, None);
@@ -1711,7 +2321,19 @@ unsafe extern "system" fn workload_wnd_proc(
                 DefWindowProcW(hwnd, message, wparam, lparam)
             }
             WM_TIMER => {
-                let _ = InvalidateRect(Some(hwnd), None, false);
+                let damage = window_state(hwnd)
+                    .filter(|state| (**state).sparse)
+                    .map(|_| RECT {
+                        left: 0,
+                        top: 0,
+                        right: 768,
+                        bottom: 384,
+                    });
+                let _ = InvalidateRect(
+                    Some(hwnd),
+                    damage.as_ref().map(|rect| rect as *const RECT),
+                    false,
+                );
                 LRESULT(0)
             }
             WM_ERASEBKGND => LRESULT(1),
@@ -1731,18 +2353,32 @@ unsafe extern "system" fn workload_wnd_proc(
                         });
                     }
                     let memory = state.surface.as_ref().unwrap().dc;
-                    render_workload_frame(memory, state);
-                    let _ = BitBlt(
+                    // Repainting a static window publishes its existing image;
+                    // exposure or the startup presentation must not invent new
+                    // source content or increment the decoded identifier.
+                    if state.tick == 0 || state.animate {
+                        render_workload_frame(memory, state);
+                    }
+                    let published = BitBlt(
                         dc,
-                        0,
-                        0,
-                        state.width,
-                        state.height,
+                        paint.rcPaint.left,
+                        paint.rcPaint.top,
+                        paint.rcPaint.right - paint.rcPaint.left,
+                        paint.rcPaint.bottom - paint.rcPaint.top,
                         Some(memory),
-                        0,
-                        0,
+                        paint.rcPaint.left,
+                        paint.rcPaint.top,
                         SRCCOPY,
                     );
+                    if published.is_ok() {
+                        WORKLOAD_PUBLISHED.fetch_add(1, Ordering::Release);
+                        WORKLOAD_PUBLICATIONS
+                            .lock()
+                            .unwrap()
+                            .push((state.tick, Instant::now()));
+                    } else {
+                        WORKLOAD_FAILURES.fetch_add(1, Ordering::Release);
+                    }
                 }
                 let _ = EndPaint(hwnd, &paint);
                 LRESULT(0)
@@ -1771,16 +2407,29 @@ unsafe fn render_workload_frame(dc: HDC, state: &mut WindowState) {
     unsafe {
         state.tick = state.tick.wrapping_add(1);
         let tick = state.tick;
+        if state.sparse && tick == 1 {
+            fill_rect(dc, 0, 0, state.width, state.height, rgb(32, 32, 32));
+        }
+        let width = if state.sparse {
+            state.width.min(768)
+        } else {
+            state.width
+        };
+        let height = if state.sparse {
+            state.height.min(384)
+        } else {
+            state.height
+        };
         let background = rgb(
             (tick.wrapping_mul(3) % 256) as u8,
             (tick.wrapping_mul(5) % 256) as u8,
             (tick.wrapping_mul(7) % 256) as u8,
         );
-        fill_rect(dc, 0, 0, state.width, state.height, background);
+        fill_rect(dc, 0, 0, width, height, background);
 
-        let rect_size = (state.width / 6).max(40);
-        let rect_x = (tick.wrapping_mul(11) % ((state.width - rect_size).max(1) as u64)) as i32;
-        let rect_y = (tick.wrapping_mul(7) % ((state.height - rect_size).max(1) as u64)) as i32;
+        let rect_size = (width / 6).max(40);
+        let rect_x = (tick.wrapping_mul(11) % ((width - rect_size).max(1) as u64)) as i32;
+        let rect_y = (tick.wrapping_mul(7) % ((height - rect_size).max(1) as u64)) as i32;
         fill_rect(
             dc,
             rect_x,
@@ -1794,11 +2443,9 @@ unsafe fn render_workload_frame(dc: HDC, state: &mut WindowState) {
             ),
         );
 
-        let ellipse_size = (state.width / 7).max(34);
-        let ellipse_x =
-            (tick.wrapping_mul(5) % ((state.width - ellipse_size).max(1) as u64)) as i32;
-        let ellipse_y =
-            (tick.wrapping_mul(13) % ((state.height - ellipse_size).max(1) as u64)) as i32;
+        let ellipse_size = (width / 7).max(34);
+        let ellipse_x = (tick.wrapping_mul(5) % ((width - ellipse_size).max(1) as u64)) as i32;
+        let ellipse_y = (tick.wrapping_mul(13) % ((height - ellipse_size).max(1) as u64)) as i32;
         draw_ellipse(
             dc,
             ellipse_x,
@@ -1918,6 +2565,18 @@ fn decode_frame_ids(path: &Path, source_width: u32, source_height: u32) -> Resul
                 u8::from(code & 255 == 0xa5)
             ));
             if code & 255 != 0xa5 {
+                if unreadable == 0 {
+                    let mut ppm =
+                        format!("P6\n{} {}\n255\n", rgb.width(), rgb.height()).into_bytes();
+                    for row in rgb
+                        .data(0)
+                        .chunks(rgb.stride(0))
+                        .take(rgb.height() as usize)
+                    {
+                        ppm.extend_from_slice(&row[..rgb.width() as usize * 3]);
+                    }
+                    fs::write(path.with_extension("first-invalid.ppm"), ppm)?;
+                }
                 unreadable += 1;
                 continue;
             }

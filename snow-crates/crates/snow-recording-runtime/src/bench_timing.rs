@@ -63,6 +63,11 @@ impl StageHistogram {
         self.samples.values().all(Vec::is_empty)
     }
 
+    /// Samples in observation order, retained for independent offline analysis.
+    pub fn raw_samples(&self) -> &BTreeMap<&'static str, Vec<Duration>> {
+        &self.samples
+    }
+
     /// Per-stage summaries, ordered by stage name.
     pub fn snapshot(&self) -> BTreeMap<&'static str, SampleStats> {
         self.samples
@@ -82,6 +87,9 @@ pub struct PipelineTimings {
     pub captures: Vec<(u64, bool)>,
     pub capture_contents: Vec<(u64, Option<u64>)>,
     pub output_sources: Vec<(u64, u64, u64, u64)>,
+    /// Output PTS and composition boundaries on the same clock as encoder events.
+    pub compositions: Vec<(u64, std::time::Instant, std::time::Instant)>,
+    pub packet_latencies: Vec<(i64, Duration)>,
     compose: Vec<Duration>,
     encode_push: Vec<Duration>,
     end_to_end: Vec<Duration>,
@@ -153,6 +161,15 @@ impl PipelineTimings {
             capture_sequences: self.captures.clone(),
             capture_contents: self.capture_contents.clone(),
             output_sources: self.output_sources.clone(),
+            compositions: self.compositions.clone(),
+            packet_latencies: self.packet_latencies.clone(),
+            raw_stages: BTreeMap::from([
+                ("pipeline.source_age", self.source_age.clone()),
+                ("pipeline.queue_dwell", self.queue_dwell.clone()),
+                ("pipeline.compose", self.compose.clone()),
+                ("pipeline.encode_push", self.encode_push.clone()),
+                ("pipeline.end_to_end", self.end_to_end.clone()),
+            ]),
             compose: SampleStats::from_samples(&mut compose),
             encode_push: SampleStats::from_samples(&mut encode_push),
             end_to_end: SampleStats::from_samples(&mut end_to_end),
@@ -183,6 +200,10 @@ pub struct CapturePipelineStats {
     pub capture_contents: Vec<(u64, Option<u64>)>,
     /// Output PTS, capture sequence, content generation, and active source time in nanoseconds.
     pub output_sources: Vec<(u64, u64, u64, u64)>,
+    pub compositions: Vec<(u64, std::time::Instant, std::time::Instant)>,
+    /// Output PTS and elapsed time from source capture to first packet availability.
+    pub packet_latencies: Vec<(i64, Duration)>,
+    pub raw_stages: BTreeMap<&'static str, Vec<Duration>>,
     /// Overlay compositing inside the worker.
     pub compose: SampleStats,
     /// `StreamingEncoder::push_rgba_frame` duration.
@@ -255,6 +276,7 @@ mod tests {
         let composed = received + Duration::from_millis(7);
         let pushed = composed + Duration::from_millis(3);
         timings.observe_frame(captured, received, composed, pushed);
+        timings.compositions.push((6, received, composed));
         timings.synthetic_overlay_frames = 2;
 
         let stats = timings.stats(&snow_capture::CaptureStreamStatsSnapshot::default());
@@ -263,6 +285,7 @@ mod tests {
         assert_eq!(stats.encode_push.max, Duration::from_millis(3));
         assert_eq!(stats.end_to_end.max, Duration::from_millis(15));
         assert_eq!(stats.synthetic_overlay_frames, 2);
+        assert_eq!(stats.compositions, vec![(6, received, composed)]);
         // The session start and the test's `start` are two adjacent clock reads, so
         // the first-frame span is 115 ms minus a few nanoseconds.
         assert!(stats.time_to_first_handoff.unwrap() >= Duration::from_millis(100));

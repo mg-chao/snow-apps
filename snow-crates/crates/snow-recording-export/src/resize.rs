@@ -4,6 +4,8 @@ use std::ptr;
 
 #[derive(Clone, Debug)]
 pub struct NearestResizePlan {
+    #[cfg(any(test, feature = "bench-experiments"))]
+    half_specialization: bool,
     src_w: u32,
     src_h: u32,
     dst_w: u32,
@@ -13,6 +15,42 @@ pub struct NearestResizePlan {
 }
 
 impl NearestResizePlan {
+    /// Enable the exact 2:1 kernel for an isolated benchmark experiment.
+    #[cfg(any(test, feature = "bench-experiments"))]
+    pub fn set_bench_half_specialization(&mut self, enabled: bool) {
+        self.half_specialization = enabled;
+    }
+
+    /// Update exactly the destination pixels selected from a changed source rectangle.
+    /// Callers must establish complete damage since the destination's generation.
+    #[cfg(any(test, feature = "bench-experiments"))]
+    pub fn resize_source_rect_into(
+        &self,
+        source: &[u8],
+        output: &mut [u8],
+        rect: (u32, u32, u32, u32),
+    ) {
+        assert_eq!(source.len(), self.src_w as usize * self.src_h as usize * 4);
+        assert_eq!(output.len(), self.dst_w as usize * self.dst_h as usize * 4);
+        let (x, y, width, height) = rect;
+        let right = x.saturating_add(width).min(self.src_w);
+        let bottom = y.saturating_add(height).min(self.src_h);
+        let map = |value: u32, source: u32, output: u32| {
+            (u64::from(value) * u64::from(output)).div_ceil(u64::from(source)) as usize
+        };
+        for dy in
+            map(y.min(self.src_h), self.src_h, self.dst_h)..map(bottom, self.src_h, self.dst_h)
+        {
+            for dx in
+                map(x.min(self.src_w), self.src_w, self.dst_w)..map(right, self.src_w, self.dst_w)
+            {
+                let from = self.src_row_byte_offsets[dy] + self.src_x_byte_offsets[dx];
+                let to = (dy * self.dst_w as usize + dx) * 4;
+                output[to..to + 4].copy_from_slice(&source[from..from + 4]);
+            }
+        }
+    }
+
     /// Returns whether this plan selects pixels for the supplied geometry.
     pub fn matches(&self, source: (u32, u32), output: (u32, u32)) -> bool {
         (self.src_w, self.src_h) == source && (self.dst_w, self.dst_h) == output
@@ -66,6 +104,8 @@ impl NearestResizePlan {
             .collect();
 
         Self {
+            #[cfg(any(test, feature = "bench-experiments"))]
+            half_specialization: false,
             src_w: src_w.max(1),
             src_h: src_h.max(1),
             dst_w: dst_w.max(1),
@@ -119,6 +159,29 @@ fn resize_rgba_with_plan(
     let should_parallel = process_pool.is_some()
         && (plan.dst_w as usize * plan.dst_h as usize) >= 1_000_000
         && plan.dst_h >= 256;
+    #[cfg(any(test, feature = "bench-experiments"))]
+    if plan.half_specialization
+        && plan.src_w == plan.dst_w.saturating_mul(2)
+        && plan.src_h == plan.dst_h.saturating_mul(2)
+    {
+        let source_stride = plan.src_w as usize * 4;
+        let row = |y: usize, output: &mut [u8]| {
+            let offset = y * 2 * source_stride;
+            resize_half_row(&src[offset..offset + source_stride], output);
+        };
+        if should_parallel {
+            process_pool.expect("checked Some above").install(|| {
+                out.par_chunks_exact_mut(dst_row_bytes)
+                    .enumerate()
+                    .for_each(|(y, output)| row(y, output));
+            });
+        } else {
+            for (y, output) in out.chunks_exact_mut(dst_row_bytes).enumerate() {
+                row(y, output);
+            }
+        }
+        return;
+    }
     if should_parallel {
         let pool = process_pool.expect("checked Some above");
         pool.install(|| {
@@ -158,6 +221,37 @@ fn resize_rgba_with_plan(
     }
 }
 
+/// Select even pixels without filtering, exactly matching the general plan.
+#[cfg(any(test, feature = "bench-experiments"))]
+fn resize_half_row(source: &[u8], output: &mut [u8]) {
+    debug_assert_eq!(source.len(), output.len() * 2);
+    let mut offset = 0;
+    #[cfg(target_arch = "x86_64")]
+    {
+        use std::arch::x86_64::*;
+        while offset + 16 <= output.len() {
+            // SAFETY: SSE2 is mandatory on x86-64. Each iteration reads eight
+            // in-bounds source pixels and writes four disjoint output pixels.
+            // Unaligned loads/stores support arbitrary Vec/slice alignment.
+            unsafe {
+                let first = _mm_loadu_si128(source.as_ptr().add(offset * 2).cast());
+                let second = _mm_loadu_si128(source.as_ptr().add(offset * 2 + 16).cast());
+                let first = _mm_shuffle_epi32::<0x88>(first);
+                let second = _mm_shuffle_epi32::<0x88>(second);
+                _mm_storeu_si128(
+                    output.as_mut_ptr().add(offset).cast(),
+                    _mm_unpacklo_epi64(first, second),
+                );
+            }
+            offset += 16;
+        }
+    }
+    while offset < output.len() {
+        output[offset..offset + 4].copy_from_slice(&source[offset * 2..offset * 2 + 4]);
+        offset += 4;
+    }
+}
+
 fn resize_rgba_scalar(src: &[u8], src_w: u32, src_h: u32, dst_w: u32, dst_h: u32, out: &mut [u8]) {
     let dst_row_bytes = dst_w.max(1) as usize * 4;
     for (y, row) in out.chunks_exact_mut(dst_row_bytes).enumerate() {
@@ -179,7 +273,53 @@ fn resize_rgba_scalar(src: &[u8], src_w: u32, src_h: u32, dst_w: u32, dst_h: u32
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn source_damage_matches_full_resize_for_odd_portrait_native_and_upscaled_images() {
+        for (sw, sh, dw, dh) in [
+            (17, 9, 8, 4),
+            (9, 17, 4, 8),
+            (8, 4, 8, 4),
+            (3, 5, 7, 11),
+            (16, 8, 8, 4),
+        ] {
+            let plan = NearestResizePlan::new(sw, sh, dw, dh);
+            let mut source: Vec<_> = (0..sw * sh * 4).map(|value| (value % 251) as u8).collect();
+            let mut partial = vec![0; (dw * dh * 4) as usize];
+            plan.resize_into(&source, &mut partial);
+            for y in 0..sh {
+                for x in 0..sw {
+                    let pixel = (y * sw + x) as usize * 4;
+                    source[pixel..pixel + 4].fill(255);
+                    plan.resize_source_rect_into(&source, &mut partial, (x, y, 1, 1));
+                    let mut full = vec![0; partial.len()];
+                    plan.resize_into(&source, &mut full);
+                    assert_eq!(
+                        partial, full,
+                        "source {sw}x{sh}, output {dw}x{dh}, damage at {x},{y}"
+                    );
+                }
+            }
+        }
+    }
+
     use super::*;
+
+    #[test]
+    fn half_resize_matches_nearest_for_unaligned_rows_and_all_vector_tails() {
+        for width in 1..=65 {
+            let source: Vec<_> = (0..width * 8 + 1).map(|i| (i * 37 % 251) as u8).collect();
+            let mut output = vec![165; width * 4 + 3];
+            resize_half_row(&source[1..], &mut output[1..width * 4 + 1]);
+            for x in 0..width {
+                assert_eq!(
+                    &output[1 + x * 4..1 + x * 4 + 4],
+                    &source[1 + x * 8..1 + x * 8 + 4]
+                );
+            }
+            assert_eq!(output[0], 165);
+            assert_eq!(&output[width * 4 + 1..], &[165, 165]);
+        }
+    }
 
     #[test]
     fn planned_pixels_match_integer_nearest_neighbor_for_all_geometries() {

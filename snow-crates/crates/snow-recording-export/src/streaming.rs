@@ -59,6 +59,50 @@ pub struct StreamingEncoderConfig {
     pub audio: Option<StreamingAudioConfig>,
 }
 
+/// Startup policies separate from the stable streaming configuration. This
+/// builder contains only Rust configuration; create it on any thread and open
+/// the encoder on its owning thread with `create`.
+pub struct StreamingEncoderBuilder {
+    config: StreamingEncoderConfig,
+    software_fallback_threads: Option<u8>,
+    force_hardware_failure: bool,
+}
+
+impl From<StreamingEncoderConfig> for StreamingEncoderBuilder {
+    fn from(config: StreamingEncoderConfig) -> Self {
+        Self {
+            config,
+            software_fallback_threads: None,
+            force_hardware_failure: false,
+        }
+    }
+}
+
+impl StreamingEncoderBuilder {
+    /// Select threads for a software encoder opened under hardware preference,
+    /// including software selected when no hardware codec is available. Zero
+    /// uses the exporter's physical-core policy. The initial hardware and audio
+    /// settings remain those in `StreamingEncoderConfig::encode_threads`.
+    pub fn software_fallback_threads(mut self, threads: u8) -> Self {
+        self.software_fallback_threads = Some(threads);
+        self
+    }
+
+    #[cfg(feature = "bench-experiments")]
+    pub fn force_hardware_failure(mut self, enabled: bool) -> Self {
+        self.force_hardware_failure = enabled;
+        self
+    }
+
+    pub fn create(self) -> Result<StreamingEncoder> {
+        StreamingEncoder::create_inner(
+            self.config,
+            self.force_hardware_failure,
+            self.software_fallback_threads,
+        )
+    }
+}
+
 pub fn scaled_output_dimensions(
     source_width: u32,
     source_height: u32,
@@ -115,6 +159,15 @@ impl StreamingEncoderConfig {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct StreamingEncoderReport {
+    pub requested_video_encoder: String,
+    pub queued_video_replacements: u64,
+    pub conversion_threads: u8,
+    /// Backend selection is separate from the worker count reported by FFmpeg.
+    pub conversion_backend: String,
+    pub effective_conversion_threads: Option<usize>,
+    pub pixel_format: String,
+    pub effective_encode_threads: usize,
+    pub hardware_fallback: bool,
     #[cfg(feature = "bench-timing")]
     pub timings: crate::bench_timing::EncoderTimings,
     pub encoded_frames: u64,
@@ -125,6 +178,31 @@ pub struct StreamingEncoderReport {
     pub encoded_audio_frames: u64,
     pub inserted_silence_frames: u64,
     pub dropped_audio_frames: u64,
+}
+
+/// Read the initialized context's worker setting. Zero/unknown automatic
+/// settings remain unknown instead of being reported as zero active workers.
+///
+/// # Safety
+/// `context` must refer to a live initialized SwsContext for the duration of this call.
+pub(crate) unsafe fn swscale_thread_count(
+    context: *const ffmpeg::ffi::SwsContext,
+) -> Option<usize> {
+    let mut count = 0i64;
+    // SAFETY: the caller keeps the SwsContext alive; FFmpeg only reads options.
+    let code = unsafe {
+        ffmpeg::ffi::av_opt_get_int(
+            context.cast_mut().cast(),
+            c"threads".as_ptr(),
+            0,
+            &mut count,
+        )
+    };
+    if code >= 0 && count > 0 {
+        usize::try_from(count).ok()
+    } else {
+        None
+    }
 }
 
 struct PendingFrame {
@@ -152,6 +230,8 @@ pub struct StreamingEncoder {
     encoder: ffmpeg::encoder::video::Encoder,
     stream_index: usize,
     stream_time_base: ffmpeg::Rational,
+    #[cfg(any(test, feature = "bench-experiments"))]
+    frame_converter: Option<crate::frame_converter::FrameConverter>,
     scaler: ffmpeg::software::scaling::Context,
     encode_frame: ffmpeg::frame::Video,
     width: u32,
@@ -169,7 +249,38 @@ pub struct StreamingEncoder {
 }
 
 impl StreamingEncoder {
+    /// Identity of the encoder that actually opened, including hardware fallback.
+    /// This is fixed before any frame is admitted.
+    pub fn opened_video_encoder(&self) -> (&str, bool) {
+        (
+            &self.report.video_encoder,
+            self.report.used_hardware_video_encoder,
+        )
+    }
+
     pub fn create(config: StreamingEncoderConfig) -> Result<Self> {
+        Self::builder(config).create()
+    }
+
+    pub fn builder(config: StreamingEncoderConfig) -> StreamingEncoderBuilder {
+        config.into()
+    }
+
+    #[cfg(feature = "bench-experiments")]
+    pub fn create_for_benchmark(
+        config: StreamingEncoderConfig,
+        force_hardware_failure: bool,
+    ) -> Result<Self> {
+        Self::builder(config)
+            .force_hardware_failure(force_hardware_failure)
+            .create()
+    }
+
+    fn create_inner(
+        config: StreamingEncoderConfig,
+        force_hardware_failure: bool,
+        software_fallback_threads: Option<u8>,
+    ) -> Result<Self> {
         config
             .validate()
             .map_err(RecordingExportError::InvalidConfig)?;
@@ -183,7 +294,12 @@ impl StreamingEncoder {
         fs::create_dir_all(output_directory)?;
         cleanup_stale_staging_files(output_directory)?;
         let staging_path = create_staging_path(&config.output_path)?;
-        match Self::create_at_path(config, staging_path.clone()) {
+        match Self::create_at_path(
+            config,
+            staging_path.clone(),
+            force_hardware_failure,
+            software_fallback_threads,
+        ) {
             Ok(mut encoder) => {
                 encoder.staging_path = Some(staging_path);
                 Ok(encoder)
@@ -195,7 +311,12 @@ impl StreamingEncoder {
         }
     }
 
-    fn create_at_path(config: StreamingEncoderConfig, staging_path: PathBuf) -> Result<Self> {
+    fn create_at_path(
+        config: StreamingEncoderConfig,
+        staging_path: PathBuf,
+        force_hardware_failure: bool,
+        software_fallback_threads: Option<u8>,
+    ) -> Result<Self> {
         let mut output = ffmpeg::format::output(&staging_path).map_err(|error| {
             RecordingExportError::Encode(format!(
                 "failed to create streaming output context {}: {error}",
@@ -218,6 +339,7 @@ impl StreamingEncoder {
             config.execution_mode,
             config.software_h264_priority,
         )?;
+        let requested_video_encoder = video_codec.name().to_owned();
         let mut pixel_format = choose_video_pixel_format(
             config.format,
             video_codec.video().map_err(|error| {
@@ -245,9 +367,18 @@ impl StreamingEncoder {
             encoder.set_format(pixel);
             encoder.set_time_base(video_time_base);
             encoder.set_frame_rate(Some(video_frame_rate));
+            // Resolve against the codec being opened, never an already-opened
+            // hardware context's effective thread count. The fallback may also
+            // have been selected during codec discovery, before an open fails.
+            let encode_threads = if config.prefer_hardware_h264 && !is_hardware_h264_encoder(&codec)
+            {
+                software_fallback_threads.unwrap_or(config.encode_threads)
+            } else {
+                config.encode_threads
+            };
             configure_codec_threads(
                 &mut encoder,
-                config.encode_threads,
+                encode_threads,
                 ffmpeg::codec::threading::Type::Frame,
             );
             if !config.format.is_animated_image() {
@@ -265,7 +396,14 @@ impl StreamingEncoder {
             open_video_encoder(encoder, &codec, &effective_video)
         };
 
-        let encoder = match make_encoder(video_codec, pixel_format) {
+        let primary = if force_hardware_failure && is_hardware_h264_encoder(&video_codec) {
+            Err(RecordingExportError::Encode(
+                "benchmark forced hardware initialization failure".into(),
+            ))
+        } else {
+            make_encoder(video_codec, pixel_format)
+        };
+        let encoder = match primary {
             Ok(encoder) => encoder,
             Err(primary_error)
                 if config.prefer_hardware_h264 && is_hardware_h264_encoder(&video_codec) =>
@@ -350,6 +488,8 @@ impl StreamingEncoder {
             RecordingExportError::Encode(format!("failed to create streaming RGBA scaler: {error}"))
         })?;
 
+        // SAFETY: the initialized scaler exclusively owns this live context.
+        let effective_conversion_threads = unsafe { swscale_thread_count(scaler.as_ptr()) };
         let report = StreamingEncoderReport::default();
         #[cfg(feature = "bench-timing")]
         let report = {
@@ -358,12 +498,15 @@ impl StreamingEncoder {
             report
         };
         let used_hardware_video_encoder = opened_video_encoder_uses_hardware(&encoder);
+        let effective_encode_threads = unsafe { (*encoder.as_ptr()).thread_count.max(0) as usize };
         Ok(Self {
             output: Some(output),
             encoder,
             stream_index,
             stream_time_base,
             scaler,
+            #[cfg(any(test, feature = "bench-experiments"))]
+            frame_converter: None,
             encode_frame: ffmpeg::frame::Video::new(pixel_format, config.width, config.height),
             width: config.width,
             height: config.height,
@@ -376,7 +519,14 @@ impl StreamingEncoder {
             staging_path: None,
             final_path: config.output_path,
             report: StreamingEncoderReport {
+                requested_video_encoder,
                 video_encoder: video_codec.name().to_string(),
+                pixel_format: format!("{pixel_format:?}"),
+                conversion_threads: 0,
+                conversion_backend: "legacy_sws_scale".into(),
+                effective_conversion_threads,
+                effective_encode_threads,
+                hardware_fallback: config.prefer_hardware_h264 && !used_hardware_video_encoder,
                 used_hardware_video_encoder,
                 audio_encoder: config
                     .audio
@@ -387,6 +537,49 @@ impl StreamingEncoder {
             },
             finished: false,
         })
+    }
+
+    #[cfg(any(test, feature = "bench-experiments"))]
+    pub fn set_conversion_threads(&mut self, threads: u8) -> Result<()> {
+        if self.pending.is_some() || self.report.encoded_frames != 0 || threads > 4 {
+            return Err(RecordingExportError::InvalidConfig(
+                "conversion workers require an unstarted encoder and at most four threads".into(),
+            ));
+        }
+        self.frame_converter = if threads == 0 {
+            None
+        } else {
+            Some(crate::frame_converter::FrameConverter::new(
+                self.width,
+                self.height,
+                self.encode_frame.format(),
+                threads,
+            )?)
+        };
+        self.report.conversion_threads = threads;
+        self.report.conversion_backend = if self.frame_converter.is_some() {
+            "legacy_sws_scale_frame"
+        } else {
+            "legacy_sws_scale"
+        }
+        .into();
+        self.report.effective_conversion_threads = if let Some(converter) = &self.frame_converter {
+            converter.thread_count()
+        } else {
+            // SAFETY: the initialized scaler owns its live context.
+            unsafe { swscale_thread_count(self.scaler.as_ptr()) }
+        };
+        Ok(())
+    }
+
+    #[cfg(feature = "bench-timing")]
+    pub fn record_worker_queue_time(&mut self, duration: std::time::Duration) {
+        self.report
+            .timings
+            .stages
+            .entry("pipeline.encoder_queue")
+            .or_default()
+            .push(duration);
     }
 
     pub fn push_rgba_frame(&mut self, timestamp_ms: u64, rgba: &[u8]) -> Result<()> {
@@ -435,7 +628,13 @@ impl StreamingEncoder {
             )));
         }
         #[cfg(feature = "bench-timing")]
-        self.report.timings.submitted_pts.push(pts);
+        {
+            self.report.timings.submitted_pts.push(pts);
+            self.report
+                .timings
+                .admissions
+                .push((pts, std::time::Instant::now()));
+        }
         if let Some(pending) = self.pending.as_mut() {
             if pts <= pending.pts {
                 self.report.coalesced_frames = self.report.coalesced_frames.saturating_add(1);
@@ -518,7 +717,7 @@ impl StreamingEncoder {
                 |packet| {
                     apply_packet_duration(packet, &mut self.pending_timed_durations);
                     #[cfg(feature = "bench-timing")]
-                    self.report.timings.packet();
+                    self.report.timings.packet(packet.pts());
                 },
             )?;
             output.write_trailer().map_err(|error| {
@@ -574,12 +773,55 @@ impl StreamingEncoder {
         #[cfg(feature = "bench-timing")]
         let convert_started = std::time::Instant::now();
         ensure_video_frame_writable(&mut self.encode_frame)?;
+        #[cfg(feature = "bench-timing")]
+        self.report
+            .timings
+            .record("encode.writable", convert_started);
+        #[cfg(any(test, feature = "bench-experiments"))]
+        if let Some(converter) = self.frame_converter.as_mut() {
+            #[cfg(feature = "bench-timing")]
+            let writable_started = std::time::Instant::now();
+            converter.ensure_input_writable()?;
+            #[cfg(feature = "bench-timing")]
+            self.report
+                .timings
+                .record("encode.input_writable", writable_started);
+            #[cfg(feature = "bench-timing")]
+            let copy_started = std::time::Instant::now();
+            converter.copy_input(&pending.rgba)?;
+            #[cfg(feature = "bench-timing")]
+            {
+                self.report
+                    .timings
+                    .record("encode.input_copy", copy_started);
+                self.report.timings.copied_bytes +=
+                    u64::from(self.width) * u64::from(self.height) * 4;
+            }
+        }
+        #[cfg(feature = "bench-timing")]
+        let color_started = std::time::Instant::now();
+        #[cfg(any(test, feature = "bench-experiments"))]
+        if let Some(converter) = self.frame_converter.as_mut() {
+            converter.convert_prepared(&mut self.encode_frame)?;
+        } else {
+            convert_owned_rgba(&mut self.scaler, &pending.rgba, &mut self.encode_frame)?;
+        }
+        #[cfg(not(any(test, feature = "bench-experiments")))]
         convert_owned_rgba(&mut self.scaler, &pending.rgba, &mut self.encode_frame)?;
         #[cfg(feature = "bench-timing")]
         self.report
             .timings
             .record("encode.convert", convert_started);
+        #[cfg(feature = "bench-timing")]
+        self.report
+            .timings
+            .record("encode.color_convert", color_started);
         self.encode_frame.set_pts(Some(pending.pts));
+        #[cfg(feature = "bench-timing")]
+        self.report
+            .timings
+            .submissions
+            .push((pending.pts, std::time::Instant::now()));
         #[cfg(feature = "bench-timing")]
         let send_started = std::time::Instant::now();
         self.encoder
@@ -609,7 +851,7 @@ impl StreamingEncoder {
             |packet| {
                 apply_packet_duration(packet, &mut self.pending_timed_durations);
                 #[cfg(feature = "bench-timing")]
-                self.report.timings.packet();
+                self.report.timings.packet(packet.pts());
             },
         )?;
         #[cfg(feature = "bench-timing")]
@@ -1140,6 +1382,31 @@ mod tests {
     }
 
     #[test]
+    fn conversion_report_tracks_opened_worker_setting_and_restores_legacy_metadata() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut encoder = StreamingEncoder::create(encoder_config(
+            directory.path().join("workers.mp4"),
+            ExportFormat::Mp4,
+        ))
+        .unwrap();
+        let legacy_threads = encoder.report.effective_conversion_threads;
+        assert_eq!(encoder.report.conversion_threads, 0);
+        assert_eq!(encoder.report.conversion_backend, "legacy_sws_scale");
+        for count in [1, 2, 4] {
+            encoder.set_conversion_threads(count).unwrap();
+            assert_eq!(encoder.report.conversion_backend, "legacy_sws_scale_frame");
+            assert_eq!(
+                encoder.report.effective_conversion_threads,
+                Some(usize::from(count))
+            );
+        }
+        encoder.set_conversion_threads(0).unwrap();
+        assert_eq!(encoder.report.conversion_threads, 0);
+        assert_eq!(encoder.report.conversion_backend, "legacy_sws_scale");
+        assert_eq!(encoder.report.effective_conversion_threads, legacy_threads);
+    }
+
+    #[test]
     #[ignore = "Release performance benchmark; requires SNOW_CONVERSION_BENCH_OUTPUT"]
     fn benchmark_owned_rgba_conversion() {
         use std::hint::black_box;
@@ -1277,6 +1544,17 @@ mod tests {
                     packed(&candidate),
                     "{width}x{height} {format:?}"
                 );
+                for threads in [1, 2, 4] {
+                    let mut converter =
+                        crate::frame_converter::FrameConverter::new(width, height, format, threads)
+                            .unwrap();
+                    converter.convert(&padded, &mut candidate).unwrap();
+                    assert_eq!(
+                        packed(&baseline),
+                        packed(&candidate),
+                        "frame API {width}x{height} {format:?} threads={threads}"
+                    );
+                }
                 assert!(convert_owned_rgba(&mut make_scaler(), &pixels, &mut candidate).is_err());
             }
             assert_eq!(&padded[..pixels.len()], pixels);
@@ -1610,5 +1888,53 @@ mod tests {
         let report = encoder.finish().unwrap();
         assert_eq!(report.video_encoder, "libx264");
         assert!(!report.used_hardware_video_encoder);
+    }
+
+    #[test]
+    fn forced_hardware_failure_exposes_opened_software_identity_and_keeps_explicit_threads() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = encoder_config(directory.path().join("fallback.mp4"), ExportFormat::Mp4);
+        config.prefer_hardware_h264 = true;
+        config.execution_mode = ExportExecutionMode::HardwarePreferred;
+        config.encode_threads = 2;
+        // Skip hardware initialization itself, so this test needs no display/GPU.
+        let mut encoder = StreamingEncoder::create_inner(config, true, None).unwrap();
+        assert_eq!(encoder.opened_video_encoder(), ("libx264", false));
+        assert_eq!(encoder.report.effective_encode_threads, 2);
+        assert!(encoder.report.hardware_fallback);
+        write_test_frames(&mut encoder);
+        let report = encoder.finish().unwrap();
+        assert_eq!(report.video_encoder, "libx264");
+        assert!(!report.used_hardware_video_encoder);
+    }
+
+    #[test]
+    fn software_fallback_threads_are_selected_only_for_actual_software_fallback() {
+        let directory = tempfile::tempdir().unwrap();
+        for preferred in [false, true] {
+            let mut config = encoder_config(
+                directory.path().join(format!("policy-{preferred}.mp4")),
+                ExportFormat::Mp4,
+            );
+            config.prefer_hardware_h264 = preferred;
+            config.execution_mode = if preferred {
+                ExportExecutionMode::HardwarePreferred
+            } else {
+                ExportExecutionMode::SoftwareOnly
+            };
+            config.encode_threads = 1;
+            let mut builder = StreamingEncoder::builder(config).software_fallback_threads(4);
+            // The private test setting skips hardware initialization itself;
+            // no display or GPU is needed to exercise the failure path.
+            builder.force_hardware_failure = true;
+            let mut encoder = builder.create().unwrap();
+            assert_eq!(encoder.opened_video_encoder(), ("libx264", false));
+            assert_eq!(
+                encoder.report.effective_encode_threads,
+                if preferred { 4 } else { 1 }
+            );
+            write_test_frames(&mut encoder);
+            encoder.finish().unwrap();
+        }
     }
 }
