@@ -2242,6 +2242,77 @@ class ExposedPatternBackdropRenderer final : public SnowCanvasCustomRenderer {
     const QImage& m_image;
 };
 
+void tiledFiltersCoverFractionalDevicePixels() {
+    class Backdrop final : public SnowCanvasCustomRenderer {
+      public:
+        void renderBeforeCanvas(QPainter& painter, const SnowCanvasRenderContext&) override {
+            painter.fillRect(QRect(0, 0, 1100, 1100), QColor(37, 89, 143));
+        }
+    } backdrop;
+    for (const qreal dpr : {1.0, 1.125, 1.25, 1.5, 1.75, 2.0}) {
+        const QSize logicalSize(820, 820);
+        const QSize physicalSize(qCeil(logicalSize.width() * dpr),
+                                 qCeil(logicalSize.height() * dpr));
+        SceneDisplayInfo info{};
+        info.surface_width = logicalSize.width();
+        info.surface_height = logicalSize.height();
+        info.camera_zoom = 1.0;
+        SnowSceneDisplayItem raw{};
+        raw.kind = SNOW_SCENE_DISPLAY_ITEM_FILTER;
+        raw.width = 3000;
+        raw.height = 3000;
+        raw.opacity = 1.0;
+        SnowCanvasRenderContext context;
+        for (int filterType : {0, 1, 2, 3}) {
+            raw.filter = snow_filter_render_spec_resolve(filterType, 0.7);
+            const SnowCanvasSceneItem item(raw);
+            int namespaceToken = 0;
+            snow_canvas_filter_tile_cache::clear();
+            snow_canvas_filter_render::RenderWorkspace workspace;
+            const QRegion all(QRect(QPoint(), logicalSize));
+            const auto render = [&](bool tiled, const QRegion& exposed) {
+                QImage output(physicalSize, QImage::Format_ARGB32_Premultiplied);
+                output.setDevicePixelRatio(dpr);
+                output.fill(Qt::white);
+                QPainter painter(&output);
+                painter.setClipRegion(exposed);
+                snow_canvas_renderer::SceneRenderRequest request;
+                request.painter = &painter;
+                request.displayInfo = &info;
+                request.sceneItems = &item;
+                request.sceneItemCount = 1;
+                request.exposedRegion = exposed;
+                request.backgroundRenderer = &backdrop;
+                request.backgroundContext = &context;
+                request.workspace = &workspace;
+                request.cacheNamespace = &namespaceToken;
+                if (tiled) {
+                    snow_canvas_renderer::renderSceneItemsTiled(request);
+                } else {
+                    snow_canvas_renderer::renderSceneItems(request);
+                }
+                painter.end();
+                return output;
+            };
+            const QImage expected = render(false, all);
+            for (int frame = 0; frame < 2; ++frame) {
+                const QImage actual = render(true, all);
+                if (actual != expected) {
+                    std::cerr << "Tile coverage mismatch at DPR " << dpr << ", filter "
+                              << filterType << ", frame " << frame << '\n';
+                }
+                require(actual == expected,
+                        "cold and retained tiled filters must cover every physical pixel");
+            }
+            // At 125%, the exclusive edge lands at physical pixel 257, just inside a new tile.
+            const QRegion partial(QRect(0, 0, 205, 205));
+            require(render(true, partial) == render(false, partial),
+                    "partial repaints must include tiles touched by the final logical pixel");
+        }
+        snow_canvas_filter_tile_cache::clear();
+    }
+}
+
 void tiledRenderMatchesFullRender() {
     const QSize surfaceSize(1024, 1024);
     QImage background(surfaceSize, QImage::Format_ARGB32_Premultiplied);
@@ -2340,6 +2411,7 @@ int main(int argc, char** argv) {
     publicRegionFilterApiRestrictsEffectsToTheRequestedRegion();
     regionFilterSupportPixelsMatchesGaussianPlan();
     croppedRegionFilterMatchesFullFrameRender();
+    tiledFiltersCoverFractionalDevicePixels();
     tiledRenderMatchesFullRender();
     inversionPreservesPremultipliedAlpha();
     grayscalePreservesPremultipliedAlpha();

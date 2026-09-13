@@ -1732,11 +1732,12 @@ void renderSceneItemsTiled(const SceneRenderRequest& request) {
                                            snow_canvas_filter_tile_cache::kTilePhysicalSize);
     const int firstTileY = std::max(0, qFloor(exposedBounds.top() * dpr) /
                                            snow_canvas_filter_tile_cache::kTilePhysicalSize);
+    // QRect's inclusive right/bottom omit part of the final logical pixel at fractional DPR.
     const int lastTileX =
-        std::max(firstTileX, qFloor(exposedBounds.right() * dpr) /
+        std::max(firstTileX, (qCeil((exposedBounds.x() + exposedBounds.width()) * dpr) - 1) /
                                  snow_canvas_filter_tile_cache::kTilePhysicalSize);
     const int lastTileY =
-        std::max(firstTileY, qFloor(exposedBounds.bottom() * dpr) /
+        std::max(firstTileY, (qCeil((exposedBounds.y() + exposedBounds.height()) * dpr) - 1) /
                                  snow_canvas_filter_tile_cache::kTilePhysicalSize);
     const std::uint64_t fullFingerprint =
         filterDependencyFingerprint(request.sceneItems, request.sceneItemCount);
@@ -1755,9 +1756,12 @@ void renderSceneItemsTiled(const SceneRenderRequest& request) {
             if (physicalRect.isEmpty()) {
                 continue;
             }
-            const QRect logicalRect(
-                qFloor(physicalRect.left() / dpr), qFloor(physicalRect.top() / dpr),
-                qCeil(physicalRect.width() / dpr), qCeil(physicalRect.height() / dpr));
+            // Round the edges together: rounding the origin down and the size up separately
+            // can clip the last physical row/column of a tile at fractional DPR.
+            const QRect logicalRect =
+                QRectF(physicalRect.x() / dpr, physicalRect.y() / dpr, physicalRect.width() / dpr,
+                       physicalRect.height() / dpr)
+                    .toAlignedRect();
             QImage tileImage;
             try {
                 tileImage = QImage(physicalRect.size(), QImage::Format_ARGB32_Premultiplied);
