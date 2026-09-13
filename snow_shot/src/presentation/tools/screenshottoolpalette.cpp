@@ -68,6 +68,8 @@ constexpr int kRecordingSettingsColorPickerWidth = 154;
 [[maybe_unused]] constexpr const char* kScreenshotToolPaletteTranslations[] = {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle filter"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Auto Filter"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Fill regions"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter type"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mosaic"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Gaussian blur"),
@@ -276,6 +278,7 @@ bool toolUsesStyleToolbar(ScreenshotToolPalette::Tool tool) {
     case ScreenshotToolPalette::Tool::RectangleHighlight:
     case ScreenshotToolPalette::Tool::PenHighlight:
     case ScreenshotToolPalette::Tool::Spotlight:
+    case ScreenshotToolPalette::Tool::AutoFilter:
     case ScreenshotToolPalette::Tool::RectangleFilter:
     case ScreenshotToolPalette::Tool::PenFilter:
     case ScreenshotToolPalette::Tool::Watermark:
@@ -454,6 +457,7 @@ QString drawingToolItemId(ScreenshotToolPalette::Tool tool) {
         return QStringLiteral("text");
     case ScreenshotToolPalette::Tool::SerialNumber:
         return QStringLiteral("serial-number");
+    case ScreenshotToolPalette::Tool::AutoFilter:
     case ScreenshotToolPalette::Tool::RectangleFilter:
     case ScreenshotToolPalette::Tool::PenFilter:
         return QStringLiteral("filter");
@@ -966,8 +970,10 @@ bool ScreenshotToolPalette::stepSpotlightOpacity(int direction) {
 }
 
 bool ScreenshotToolPalette::stepFilterIntensity(int direction) {
-    if (direction == 0 || m_activeTool != Tool::RectangleFilter ||
-        m_filterEditor.intensitySlider == nullptr || !m_filterEditor.intensitySlider->isEnabled()) {
+    FilterEditor& editor = m_activeTool == Tool::AutoFilter ? m_autoFilterEditor : m_filterEditor;
+    if (direction == 0 ||
+        (m_activeTool != Tool::RectangleFilter && m_activeTool != Tool::AutoFilter) ||
+        editor.intensitySlider == nullptr || !editor.intensitySlider->isEnabled()) {
         return false;
     }
 
@@ -976,9 +982,11 @@ bool ScreenshotToolPalette::stepFilterIntensity(int direction) {
     if (next != current) {
         m_styleControls->styleState().rectangleFilterStyle.strength = next / 100.0;
         m_styleControls->styleState().creationRectangleFilterStyle.strength = next / 100.0;
+        m_styleControls->styleState().creationPenFilterStyle.strength = next / 100.0;
+        m_styleControls->styleState().penFilterStyle.strength = next / 100.0;
         {
-            const QSignalBlocker blocker(m_filterEditor.intensitySlider);
-            m_filterEditor.intensitySlider->setValue(next);
+            const QSignalBlocker blocker(editor.intensitySlider);
+            editor.intensitySlider->setValue(next);
         }
         emit filterStyleChanged(m_styleControls->styleState().rectangleFilterStyle,
                                 SnowCanvasFilterStylePropertyStrength);
@@ -1265,14 +1273,17 @@ bool ScreenshotToolPalette::prepareStyleControlsForActivation(Tool destinationTo
     }
 
     const bool filterPair =
-        (sourceTool == Tool::RectangleFilter || sourceTool == Tool::PenFilter) &&
-        (destinationTool == Tool::RectangleFilter || destinationTool == Tool::PenFilter);
+        (sourceTool == Tool::AutoFilter || sourceTool == Tool::RectangleFilter ||
+         sourceTool == Tool::PenFilter) &&
+        (destinationTool == Tool::AutoFilter || destinationTool == Tool::RectangleFilter ||
+         destinationTool == Tool::PenFilter);
     if (filterPair && sourceControls != nullptr) {
         m_styleControls->stageExternalStyleEditorWidget(
             "filter-mode", "radio:filter-mode",
             sourceControls->findChild<QWidget*>(QStringLiteral("screenshotFilterModeSelector")));
-        FilterEditor& sourceEditor =
-            sourceTool == Tool::PenFilter ? m_penFilterEditor : m_filterEditor;
+        FilterEditor& sourceEditor = sourceTool == Tool::PenFilter    ? m_penFilterEditor
+                                     : sourceTool == Tool::AutoFilter ? m_autoFilterEditor
+                                                                      : m_filterEditor;
         m_styleControls->stageExternalStyleEditorWidget("filter-type", "select:filter-types",
                                                         sourceEditor.typeSelect);
         m_styleControls->stageExternalStyleEditorWidget(
@@ -1311,7 +1322,8 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     }
     if (tool == Tool::RectangleHighlight || tool == Tool::PenHighlight) {
         m_lastHighlightTool = tool;
-    } else if (tool == Tool::RectangleFilter || tool == Tool::PenFilter) {
+    } else if (tool == Tool::AutoFilter || tool == Tool::RectangleFilter ||
+               tool == Tool::PenFilter) {
         m_lastFilterTool = tool;
     }
     const bool activeToolNoop = m_activeTool.has_value() && *m_activeTool == tool &&
@@ -1414,6 +1426,7 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     case Tool::Eraser:
         activeButton = drawingToolEntryButton(tool);
         break;
+    case Tool::AutoFilter:
     case Tool::RectangleFilter:
     case Tool::PenFilter:
         activeButton = drawingToolEntryButton(tool);
@@ -2045,7 +2058,12 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
         const bool penFilterSource =
             state.source == SnowCanvasStyleToolbarSource::DefaultPenFilter ||
             state.source == SnowCanvasStyleToolbarSource::SelectedPenFilter;
-        const Tool filterTool = penFilterSource ? Tool::PenFilter : Tool::RectangleFilter;
+        const Tool filterTool = penFilterSource                    ? Tool::PenFilter
+                                : m_activeTool == Tool::AutoFilter ? Tool::AutoFilter
+                                                                   : Tool::RectangleFilter;
+        FilterEditor& activeFilterEditor = filterTool == Tool::AutoFilter ? m_autoFilterEditor
+                                           : penFilterSource              ? m_penFilterEditor
+                                                                          : m_filterEditor;
         if (styleToolbarActive) {
             static_cast<void>(prepareStyleControlsForActivation(filterTool));
             static_cast<void>(ensureStyleFamily(filterTool));
@@ -2053,10 +2071,8 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
         SnowCanvasFilterStyle& currentStyle =
             penFilterSource ? m_styleControls->styleState().penFilterStyle
                             : m_styleControls->styleState().rectangleFilterStyle;
-        adqt::widgets::AdSelect* typeSelect =
-            penFilterSource ? m_penFilterEditor.typeSelect : m_filterEditor.typeSelect;
-        adqt::widgets::AdSlider* intensitySlider =
-            penFilterSource ? m_penFilterEditor.intensitySlider : m_filterEditor.intensitySlider;
+        adqt::widgets::AdSelect* typeSelect = activeFilterEditor.typeSelect;
+        adqt::widgets::AdSlider* intensitySlider = activeFilterEditor.intensitySlider;
         const bool sourceChanged = m_styleControls->styleState().filterStyleSource != state.source;
         const quint32 mixedChanged =
             m_styleControls->styleState().filterStyleMixed ^ state.filterStyleMixed;
@@ -2079,7 +2095,7 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
             intensitySlider->setEnabled(mixedType ||
                                         filterTypeSupportsIntensity(state.filterStyle.type));
         }
-        FilterEditor& editor = penFilterSource ? m_penFilterEditor : m_filterEditor;
+        FilterEditor& editor = activeFilterEditor;
         updateFilterIntensityIcon(editor);
         if (!typeChanged && !strengthChanged && !opacityChanged && !strokeWidthChanged &&
             m_activeStyleTool == filterTool) {
@@ -2095,6 +2111,13 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
             m_styleControls->styleState().creationPenFilterStyle = state.filterStyle;
         } else if (state.source == SnowCanvasStyleToolbarSource::DefaultRectangleFilter) {
             m_styleControls->styleState().creationRectangleFilterStyle = state.filterStyle;
+        }
+        if (state.source == SnowCanvasStyleToolbarSource::DefaultPenFilter ||
+            state.source == SnowCanvasStyleToolbarSource::DefaultRectangleFilter) {
+            m_styleControls->styleState().creationRectangleFilterStyle.strength =
+                state.filterStyle.strength;
+            m_styleControls->styleState().creationPenFilterStyle.strength =
+                state.filterStyle.strength;
         }
         m_styleControls->styleState().filterStyleMixed = state.filterStyleMixed;
         if ((state.source == SnowCanvasStyleToolbarSource::SelectedRectangleFilter ||
@@ -2979,7 +3002,7 @@ bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
         event->accept();
         return true;
     }
-    if (m_activeTool == Tool::RectangleFilter) {
+    if (m_activeTool == Tool::RectangleFilter || m_activeTool == Tool::AutoFilter) {
         if (!stepFilterIntensity(direction)) {
             return false;
         }
@@ -3364,6 +3387,9 @@ void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
     case Tool::Eraser:
         emit eraserRequested();
         break;
+    case Tool::AutoFilter:
+        emit autoFilterRequested();
+        break;
     case Tool::RectangleFilter:
         emit rectangleFilterRequested();
         break;
@@ -3410,7 +3436,7 @@ bool ScreenshotToolPalette::isRecordingUnavailableTool(Tool tool) const {
         return false;
     }
     return tool == Tool::RectangleHighlight || tool == Tool::PenHighlight ||
-           tool == Tool::RectangleFilter || tool == Tool::PenFilter;
+           tool == Tool::AutoFilter || tool == Tool::RectangleFilter || tool == Tool::PenFilter;
 }
 
 void ScreenshotToolPalette::refreshRecordingToolAvailability(adqt::widgets::AdButton* button,
@@ -3433,7 +3459,7 @@ ScreenshotToolPalette::Tool ScreenshotToolPalette::rememberedDrawingMode(Tool to
     if (tool == Tool::RectangleHighlight || tool == Tool::PenHighlight) {
         return m_lastHighlightTool;
     }
-    if (tool == Tool::RectangleFilter || tool == Tool::PenFilter) {
+    if (tool == Tool::AutoFilter || tool == Tool::RectangleFilter || tool == Tool::PenFilter) {
         return m_lastFilterTool;
     }
     return tool;
@@ -4689,7 +4715,7 @@ SnowCanvasFilterStyle& ScreenshotToolPalette::filterStyleForEditor(const FilterE
 }
 
 void ScreenshotToolPalette::synchronizeFilterModeGroups(Tool tool) {
-    if (tool != Tool::RectangleFilter && tool != Tool::PenFilter) {
+    if (tool != Tool::AutoFilter && tool != Tool::RectangleFilter && tool != Tool::PenFilter) {
         return;
     }
 
@@ -4717,9 +4743,26 @@ void ScreenshotToolPalette::refreshFilterEditorMetrics(FilterEditor& editor) {
 
 void ScreenshotToolPalette::refreshFilterEditorState(FilterEditor& editor, bool refreshWidth) {
     const SnowCanvasFilterStyle& style = filterStyleForEditor(editor);
+    const quint32 mixed = m_styleControls->styleState().filterStyleMixed;
+    const bool mixedType = (mixed & SnowCanvasFilterStylePropertyType) != 0;
+    // Newly materialized controls must reflect the cached style even when the
+    // next canvas state update contains no changed properties.
+    if (editor.typeSelect != nullptr) {
+        const QSignalBlocker blocker(editor.typeSelect);
+        if (mixedType) {
+            editor.typeSelect->setCurrentIndex(-1);
+        } else {
+            editor.typeSelect->setCurrentData(static_cast<int>(style.type),
+                                              adqt::widgets::AdSelect::DefaultValueRole);
+        }
+    }
     if (editor.intensitySlider != nullptr) {
-        const bool mixedType = (m_styleControls->styleState().filterStyleMixed &
-                                SnowCanvasFilterStylePropertyType) != 0;
+        const QSignalBlocker blocker(editor.intensitySlider);
+        editor.intensitySlider->setValue(qRound(style.strength * 100.0));
+        editor.intensitySlider->setAccessibleDescription(
+            QStringLiteral("%1%").arg(editor.intensitySlider->value()));
+        editor.intensitySlider->setProperty("mixed",
+                                            (mixed & SnowCanvasFilterStylePropertyStrength) != 0);
         editor.intensitySlider->setEnabled(mixedType || filterTypeSupportsIntensity(style.type));
     }
     updateFilterIntensityIcon(editor);
@@ -4753,6 +4796,9 @@ QWidget* ScreenshotToolPalette::createStyleModeSelector(
         case Tool::PenHighlight:
             emit penHighlightRequested();
             break;
+        case Tool::AutoFilter:
+            emit autoFilterRequested();
+            break;
         case Tool::RectangleFilter:
             emit rectangleFilterRequested();
             break;
@@ -4772,13 +4818,19 @@ ScreenshotToolPalette::createFilterEditor(const FilterEditorConfig& config) {
     const Tool tool = config.tool;
     ScreenshotToolPaletteFilterCallbacks callbacks;
     callbacks.setType = [this, tool](int typeValue) {
-        FilterEditor& target = tool == Tool::PenFilter ? m_penFilterEditor : m_filterEditor;
+        FilterEditor& target = tool == Tool::PenFilter    ? m_penFilterEditor
+                               : tool == Tool::AutoFilter ? m_autoFilterEditor
+                                                          : m_filterEditor;
         SnowCanvasFilterStyle& style = filterStyleForEditor(target);
         style.type = static_cast<SnowCanvasFilterType>(typeValue);
-        if (tool == Tool::PenFilter) {
-            m_styleControls->styleState().creationPenFilterStyle.type = style.type;
-        } else {
-            m_styleControls->styleState().creationRectangleFilterStyle.type = style.type;
+        const auto source = m_styleControls->styleState().filterStyleSource;
+        if (source != SnowCanvasStyleToolbarSource::SelectedRectangleFilter &&
+            source != SnowCanvasStyleToolbarSource::SelectedPenFilter) {
+            if (tool == Tool::PenFilter) {
+                m_styleControls->styleState().creationPenFilterStyle.type = style.type;
+            } else {
+                m_styleControls->styleState().creationRectangleFilterStyle.type = style.type;
+            }
         }
         if (target.intensitySlider != nullptr) {
             target.intensitySlider->setEnabled(filterTypeSupportsIntensity(style.type));
@@ -4787,14 +4839,15 @@ ScreenshotToolPalette::createFilterEditor(const FilterEditorConfig& config) {
         emit filterStyleChanged(style, SnowCanvasFilterStylePropertyType);
     };
     callbacks.setStrength = [this, tool](double strength) {
-        FilterEditor& target = tool == Tool::PenFilter ? m_penFilterEditor : m_filterEditor;
+        FilterEditor& target = tool == Tool::PenFilter    ? m_penFilterEditor
+                               : tool == Tool::AutoFilter ? m_autoFilterEditor
+                                                          : m_filterEditor;
         SnowCanvasFilterStyle& style = filterStyleForEditor(target);
         style.strength = qBound(0.0, strength, 1.0);
-        if (tool == Tool::PenFilter) {
-            m_styleControls->styleState().creationPenFilterStyle.strength = style.strength;
-        } else {
-            m_styleControls->styleState().creationRectangleFilterStyle.strength = style.strength;
-        }
+        m_styleControls->styleState().creationRectangleFilterStyle.strength = style.strength;
+        m_styleControls->styleState().creationPenFilterStyle.strength = style.strength;
+        m_styleControls->styleState().rectangleFilterStyle.strength = style.strength;
+        m_styleControls->styleState().penFilterStyle.strength = style.strength;
         emit filterStyleChanged(style, SnowCanvasFilterStylePropertyStrength);
     };
     const auto setPenFilterWidth = [this, tool](double width) {
@@ -5375,6 +5428,8 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
 
     m_filterEditor = {};
     m_penFilterEditor = {};
+    m_autoFilterEditor = {};
+    m_fillRegionsSelect = nullptr;
     m_activeStyleControlsWidget = nullptr;
     m_activeStyleTool.reset();
     m_shapeStyleGroupSeparator = nullptr;
@@ -5408,6 +5463,7 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_textStyleControlsWidget = nullptr;
     m_serialNumberStyleControlsWidget = nullptr;
     m_filterStyleControlsWidget = nullptr;
+    m_autoFilterStyleControlsWidget = nullptr;
     m_penFilterStyleControlsWidget = nullptr;
     m_watermarkStyleControlsWidget = nullptr;
     m_spotlightOpacityIcon = nullptr;
@@ -5586,6 +5642,11 @@ bool ScreenshotToolPalette::evictStyleToolbarContentsExcept(QWidget* retainedCon
     if (removedRows.contains(m_penFilterEditor.controls)) {
         m_penFilterEditor = {};
     }
+    if (removedRows.contains(m_autoFilterEditor.controls)) {
+        m_autoFilterEditor = {};
+        m_fillRegionsSelect = nullptr;
+    }
+    clearRemoved(m_autoFilterStyleControlsWidget);
     // The pre-activation eviction retains no row. Both row pointers are then null,
     // which must not be mistaken for retaining Spotlight's controls.
     if (retainedControls == nullptr || retainedControls != m_spotlightStyleControlsWidget) {
@@ -6140,6 +6201,61 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
             m_rectangleStylePanel, makeHost(m_highlightModeGroups),
             styleButtonMetrics(m_physicalScale));
         registerStyleFamily(m_serialNumberStyleControlsWidget, {Tool::SerialNumber});
+        return;
+    }
+    if (tool == Tool::AutoFilter && m_autoFilterStyleControlsWidget == nullptr) {
+        m_autoFilterEditor = createFilterEditor(
+            {Tool::AutoFilter, QStringLiteral("screenshotAutoFilterStyleControls"),
+             QStringLiteral("screenshotAutoFilterTypeSelect"),
+             QStringLiteral("screenshotAutoFilterIntensityIcon"),
+             QStringLiteral("screenshotAutoFilterIntensitySlider"), false});
+        m_autoFilterStyleControlsWidget = m_autoFilterEditor.controls;
+        auto* layout = static_cast<QHBoxLayout*>(m_autoFilterStyleControlsWidget->layout());
+        layout->addWidget(createStyleToolbarSeparator(m_autoFilterStyleControlsWidget));
+        ScreenshotToolPaletteSelectEditorConfig config;
+        config.objectName = QStringLiteral("screenshotFillRegionsSelect");
+        config.placeholder = QStringLiteral("Fill regions");
+        config.accessibleName = QStringLiteral("Fill regions");
+        config.tooltip = QStringLiteral("Fill regions");
+        m_fillRegionsSelect =
+            createScreenshotToolPaletteSelectEditor(m_autoFilterStyleControlsWidget, config,
+                                                    styleButtonMetrics(m_physicalScale))
+                .select;
+        auto* model = new QStandardItemModel(m_fillRegionsSelect);
+        const char* keys[] = {"text", "text_in_box", "image",     "avatar",
+                              "icon", "message_box", "text_block"};
+        const char* labels[] = {QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Text"),
+                                QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Text in box"),
+                                QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Image"),
+                                QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Avatar"),
+                                QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Icon"),
+                                QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Message box"),
+                                QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Text block")};
+        for (int i = 0; i < 7; ++i) {
+            const ScreenshotToolPaletteTranslationText text(labels[i]);
+            auto* item = new QStandardItem(text.translated());
+            setScreenshotToolPaletteItemTranslationSource(item, text);
+            item->setData(QString::fromLatin1(keys[i]), adqt::widgets::AdSelect::DefaultValueRole);
+            model->appendRow(item);
+        }
+        m_fillRegionsSelect->setModel(model);
+        m_fillRegionsSelect->setEnabled(m_autoFilterAvailable);
+        layout->addWidget(m_fillRegionsSelect);
+        connect(m_fillRegionsSelect, &adqt::widgets::AdSelect::currentValueChanged,
+                m_autoFilterStyleControlsWidget, [this](const QVariant& value) {
+                    if (!value.isValid()) {
+                        return;
+                    }
+                    if (m_autoFilterAvailable) {
+                        emit autoFilterCategoryRequested(value.toString());
+                    }
+                    if (m_fillRegionsSelect) {
+                        const QSignalBlocker blocker(m_fillRegionsSelect);
+                        m_fillRegionsSelect->setCurrentValue(QVariant());
+                    }
+                });
+        refreshFilterEditorState(m_autoFilterEditor, false);
+        registerStyleFamily(m_autoFilterStyleControlsWidget, {Tool::AutoFilter});
         return;
     }
     if (tool == Tool::RectangleFilter && m_filterStyleControlsWidget == nullptr) {
@@ -6852,4 +6968,11 @@ ScreenshotToolbarPlacementSnapshot ScreenshotToolPalette::buildPlacementSnapshot
     snapshot.top =
         ScreenshotToolbarPlacementGeometry{topMain, topSecondary, occupied(topMain, topSecondary)};
     return snapshot;
+}
+
+void ScreenshotToolPalette::setAutoFilterAvailable(bool available) {
+    m_autoFilterAvailable = available;
+    if (m_fillRegionsSelect) {
+        m_fillRegionsSelect->setEnabled(available);
+    }
 }

@@ -24,6 +24,7 @@ enum class ScreenshotActiveTool {
     Spotlight,
     Markdown,
     Html,
+    AutoFilter,
 };
 
 [[nodiscard]] inline bool isScreenshotRecognitionTool(ScreenshotActiveTool tool) {

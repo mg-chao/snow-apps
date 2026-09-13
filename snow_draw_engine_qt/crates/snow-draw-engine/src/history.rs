@@ -298,6 +298,16 @@ fn filter_updates(transaction: &Transaction) -> Option<Vec<(ElementId, FilterDat
 }
 
 fn filter_coalesce_key(undo: &Transaction, redo: &Transaction) -> Option<FilterCoalesceKey> {
+    let updates_auto_fill = redo.operations().iter().any(|op| match op {
+        Operation::UpdateElementData {
+            data: ElementData::Filter(fill),
+            ..
+        } => fill.auto_region_id.is_some(),
+        _ => false,
+    });
+    if updates_auto_fill {
+        return None;
+    }
     let mut old_updates = filter_updates(undo)?;
     let mut new_updates = filter_updates(redo)?;
     if old_updates.len() != new_updates.len() {

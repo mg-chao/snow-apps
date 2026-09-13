@@ -29,6 +29,7 @@ pub enum ActiveTool {
     Text,
     SerialNumber,
     Spotlight,
+    AutoFilter,
 }
 
 impl ActiveTool {
@@ -336,6 +337,7 @@ pub struct EditorPresentationState {
     pub preview_arrows: Vec<SelectionArrowState>,
     pub preview_elements: Vec<SelectionRectState>,
     pub preview_text_font_sizes: Vec<TextPreviewFontSize>,
+    pub auto_filter_highlights: Vec<RectangleData>,
     pub marquee: Option<RectangleData>,
     pub marquee_candidate_elements: Vec<SelectionRectState>,
     pub marquee_candidate_arrows: Vec<SelectionArrowState>,

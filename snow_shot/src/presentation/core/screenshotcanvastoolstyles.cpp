@@ -30,12 +30,11 @@ constexpr quint32 kLineShapeProperties =
 constexpr quint32 kRectangleHighlightProperties = SnowCanvasShapeStylePropertyFillColor |
                                                   SnowCanvasShapeStylePropertyStrokeColor |
                                                   SnowCanvasShapeStylePropertyStrokeWidth;
-constexpr quint32 kPenHighlightProperties = SnowCanvasShapeStylePropertyStrokeColor |
-                                             SnowCanvasShapeStylePropertyStrokeWidth;
-constexpr quint32 kAllFilterProperties = SnowCanvasFilterStylePropertyType |
-                                         SnowCanvasFilterStylePropertyStrength |
-                                         SnowCanvasFilterStylePropertyOpacity |
-                                         SnowCanvasFilterStylePropertyStrokeWidth;
+constexpr quint32 kPenHighlightProperties =
+    SnowCanvasShapeStylePropertyStrokeColor | SnowCanvasShapeStylePropertyStrokeWidth;
+constexpr quint32 kAllFilterProperties =
+    SnowCanvasFilterStylePropertyType | SnowCanvasFilterStylePropertyStrength |
+    SnowCanvasFilterStylePropertyOpacity | SnowCanvasFilterStylePropertyStrokeWidth;
 
 const QString kShapeKey = QStringLiteral("drawing/shape_style");
 const QString kArrowKey = QStringLiteral("drawing/arrow_style");
@@ -69,13 +68,17 @@ bool colorValue(const QJsonValue& value, QColor* color) {
     }
     bool ok = false;
     const int red = text.mid(1, 2).toInt(&ok, 16);
-    if (!ok) return false;
+    if (!ok)
+        return false;
     const int green = text.mid(3, 2).toInt(&ok, 16);
-    if (!ok) return false;
+    if (!ok)
+        return false;
     const int blue = text.mid(5, 2).toInt(&ok, 16);
-    if (!ok) return false;
+    if (!ok)
+        return false;
     const int alpha = text.mid(7, 2).toInt(&ok, 16);
-    if (!ok) return false;
+    if (!ok)
+        return false;
     *color = QColor(red, green, blue, alpha);
     return color->isValid();
 }
@@ -99,8 +102,7 @@ double bounded(double value, double minimum, double maximum) {
     return std::isfinite(value) ? std::clamp(value, minimum, maximum) : minimum;
 }
 
-template <typename Enum>
-void putEnum(QJsonObject* object, const QString& key, Enum value) {
+template <typename Enum> void putEnum(QJsonObject* object, const QString& key, Enum value) {
     if (object != nullptr) {
         object->insert(key, static_cast<int>(value));
     }
@@ -129,7 +131,8 @@ QJsonObject cornerRadiiValue(const SnowCanvasCornerRadii& radii) {
 }
 
 void readCornerRadii(const QJsonObject& object, SnowCanvasCornerRadii* radii) {
-    if (radii == nullptr) return;
+    if (radii == nullptr)
+        return;
     const QJsonObject value = object.value(QStringLiteral("corner_radii")).toObject();
     readDouble(value, QStringLiteral("top_left"), &radii->topLeft);
     readDouble(value, QStringLiteral("top_right"), &radii->topRight);
@@ -155,10 +158,13 @@ QJsonObject shapeValue(const SnowCanvasShapeStyle& style) {
 }
 
 void readShapeValue(const QJsonObject& object, SnowCanvasShapeStyle* style) {
-    if (style == nullptr) return;
+    if (style == nullptr)
+        return;
     QColor color;
-    if (colorValue(object.value(QStringLiteral("fill")), &color)) style->fill = color;
-    if (colorValue(object.value(QStringLiteral("stroke")), &color)) style->stroke = color;
+    if (colorValue(object.value(QStringLiteral("fill")), &color))
+        style->fill = color;
+    if (colorValue(object.value(QStringLiteral("stroke")), &color))
+        style->stroke = color;
     readDouble(object, QStringLiteral("stroke_width"), &style->strokeWidth);
     readCornerRadii(object, &style->cornerRadii);
     readEnum(object, QStringLiteral("fill_style"), static_cast<int>(SnowCanvasFillStyle::Solid),
@@ -188,7 +194,8 @@ QJsonObject filterValue(const SnowCanvasFilterStyle& style) {
 }
 
 void readFilterValue(const QJsonObject& object, SnowCanvasFilterStyle* style) {
-    if (style == nullptr) return;
+    if (style == nullptr)
+        return;
     readEnum(object, QStringLiteral("type"), static_cast<int>(SnowCanvasFilterType::Inversion),
              &style->type);
     readDouble(object, QStringLiteral("strength"), &style->strength);
@@ -213,11 +220,15 @@ QJsonObject textValue(const SnowCanvasTextStyle& style) {
 }
 
 void readTextValue(const QJsonObject& object, SnowCanvasTextStyle* style) {
-    if (style == nullptr) return;
+    if (style == nullptr)
+        return;
     QColor color;
-    if (colorValue(object.value(QStringLiteral("color")), &color)) style->color = color;
-    if (colorValue(object.value(QStringLiteral("fill")), &color)) style->fill = color;
-    if (colorValue(object.value(QStringLiteral("stroke")), &color)) style->stroke = color;
+    if (colorValue(object.value(QStringLiteral("color")), &color))
+        style->color = color;
+    if (colorValue(object.value(QStringLiteral("fill")), &color))
+        style->fill = color;
+    if (colorValue(object.value(QStringLiteral("stroke")), &color))
+        style->stroke = color;
     readDouble(object, QStringLiteral("font_size"), &style->fontSize);
     if (object.value(QStringLiteral("font_family")).isString())
         style->fontFamily = object.value(QStringLiteral("font_family")).toString();
@@ -247,18 +258,21 @@ QJsonObject serialNumberValue(const SnowCanvasSerialNumberStyle& style) {
 }
 
 void readSerialNumberValue(const QJsonObject& object, SnowCanvasSerialNumberStyle* style) {
-    if (style == nullptr) return;
+    if (style == nullptr)
+        return;
     QColor color;
-    if (colorValue(object.value(QStringLiteral("color")), &color)) style->color = color;
-    if (colorValue(object.value(QStringLiteral("fill")), &color)) style->fill = color;
+    if (colorValue(object.value(QStringLiteral("color")), &color))
+        style->color = color;
+    if (colorValue(object.value(QStringLiteral("fill")), &color))
+        style->fill = color;
     readEnum(object, QStringLiteral("fill_style"), static_cast<int>(SnowCanvasFillStyle::Solid),
              &style->fillStyle);
     readDouble(object, QStringLiteral("font_size"), &style->fontSize);
     if (object.value(QStringLiteral("font_family")).isString())
         style->fontFamily = object.value(QStringLiteral("font_family")).toString();
     readDouble(object, QStringLiteral("stroke_width"), &style->strokeWidth);
-    readEnum(object, QStringLiteral("stroke_style"), static_cast<int>(SnowCanvasStrokeStyle::Dotted),
-             &style->strokeStyle);
+    readEnum(object, QStringLiteral("stroke_style"),
+             static_cast<int>(SnowCanvasStrokeStyle::Dotted), &style->strokeStyle);
     readDouble(object, QStringLiteral("opacity"), &style->opacity);
 }
 
@@ -267,7 +281,8 @@ void readSerialNumberValue(const QJsonObject& object, SnowCanvasSerialNumberStyl
 SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
     SnowCanvasStyleDefaults defaults = screenshotCanvasStyleDefaults();
     auto& storage = storage::ApplicationStorage::instance();
-    if (!storage.isInitialized()) return defaults;
+    if (!storage.isInitialized())
+        return defaults;
     const auto& configuration = storage.configuration();
     readShapeValue(configuration.value(kShapeKey).toObject(), &defaults.rectangle);
     readShapeValue(configuration.value(kArrowKey).toObject(), &defaults.arrow);
@@ -280,6 +295,20 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
     readFilterValue(configuration.value(kPenFilterKey).toObject(), &defaults.penFilter);
     readTextValue(configuration.value(kTextKey).toObject(), &defaults.text);
     readSerialNumberValue(configuration.value(kSerialNumberKey).toObject(), &defaults.serialNumber);
+    double sharedStrength = screenshotCanvasStyleDefaults().rectangleFilter.strength;
+    const auto readStrength = [&](const QString& key) {
+        double value = 0.0;
+        if (!readDouble(configuration.value(key).toObject(), QStringLiteral("strength"), &value) ||
+            value < 0.0 || value > 1.0) {
+            return false;
+        }
+        sharedStrength = value;
+        return true;
+    };
+    if (!readStrength(kRectangleFilterKey)) {
+        readStrength(kPenFilterKey);
+    }
+    defaults.rectangleFilter.strength = defaults.penFilter.strength = sharedStrength;
     const auto normalizeShape = [](SnowCanvasShapeStyle& style, bool rectangle) {
         style.strokeWidth = bounded(style.strokeWidth, 0.0, 72.0);
         style.cornerRadii.topLeft = bounded(style.cornerRadii.topLeft, 0.0, 83.0);
@@ -309,7 +338,8 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
     defaults.text.strokeWidth = bounded(defaults.text.strokeWidth, 0.0, 72.0);
     defaults.text.cornerRadii.topLeft = bounded(defaults.text.cornerRadii.topLeft, 0.0, 83.0);
     defaults.text.cornerRadii.topRight = bounded(defaults.text.cornerRadii.topRight, 0.0, 83.0);
-    defaults.text.cornerRadii.bottomRight = bounded(defaults.text.cornerRadii.bottomRight, 0.0, 83.0);
+    defaults.text.cornerRadii.bottomRight =
+        bounded(defaults.text.cornerRadii.bottomRight, 0.0, 83.0);
     defaults.text.cornerRadii.bottomLeft = bounded(defaults.text.cornerRadii.bottomLeft, 0.0, 83.0);
     defaults.text.opacity = bounded(defaults.text.opacity, 0.0, 1.0);
     defaults.serialNumber.fontSize = bounded(defaults.serialNumber.fontSize, 6.0, 512.0);
@@ -320,7 +350,10 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
 
 bool persistScreenshotCanvasToolStyles(const SnowCanvasStyleDefaults& defaults) {
     auto& storage = storage::ApplicationStorage::instance();
-    if (!storage.isInitialized()) return false;
+    if (!storage.isInitialized())
+        return false;
+    SnowCanvasFilterStyle penFilter = defaults.penFilter;
+    penFilter.strength = defaults.rectangleFilter.strength;
     const QMap<QString, QJsonValue> values{
         {kShapeKey, shapeValue(defaults.rectangle)},
         {kArrowKey, shapeValue(defaults.arrow)},
@@ -329,7 +362,7 @@ bool persistScreenshotCanvasToolStyles(const SnowCanvasStyleDefaults& defaults) 
         {kRectangleHighlightKey, shapeValue(defaults.rectangleHighlight)},
         {kPenHighlightKey, shapeValue(defaults.penHighlight)},
         {kRectangleFilterKey, filterValue(defaults.rectangleFilter)},
-        {kPenFilterKey, filterValue(defaults.penFilter)},
+        {kPenFilterKey, filterValue(penFilter)},
         {kTextKey, textValue(defaults.text)},
         {kSerialNumberKey, serialNumberValue(defaults.serialNumber)},
     };

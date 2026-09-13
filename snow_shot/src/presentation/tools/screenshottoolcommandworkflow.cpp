@@ -82,6 +82,10 @@ void ScreenshotToolCommandWorkflow::setRectangleFilterTool() {
     setCanvasTool(ScreenshotActiveTool::RectangleFilter, SnowCanvasTool::RectangleFilter);
 }
 
+void ScreenshotToolCommandWorkflow::setAutoFilterTool() {
+    setCanvasTool(ScreenshotActiveTool::AutoFilter, SnowCanvasTool::AutoFilter);
+}
+
 void ScreenshotToolCommandWorkflow::setPenFilterTool() {
     setCanvasTool(ScreenshotActiveTool::PenFilter, SnowCanvasTool::PenFilter);
 }

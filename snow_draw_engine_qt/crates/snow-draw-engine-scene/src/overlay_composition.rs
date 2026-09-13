@@ -110,6 +110,12 @@ pub(crate) fn compose_overlay_items(
         )));
     }
 
+    for highlight in &presentation.auto_filter_highlights {
+        items.push(OverlayDisplayItem::Rectangle(ui_rect_item(
+            UiShapeKind::SelectionMarquee,
+            *highlight,
+        )));
+    }
     if let Some(marquee) = presentation.marquee {
         items.push(OverlayDisplayItem::Rectangle(ui_rect_item(
             UiShapeKind::SelectionMarquee,

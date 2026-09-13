@@ -39,6 +39,7 @@ class ScreenshotToolCommandWorkflow final {
     void setFilterTool();
     void setRectangleFilterTool();
     void setPenFilterTool();
+    void setAutoFilterTool();
     void setWatermarkTool();
     void setWatermarkConfigFromToolbar(const SnowCanvasWatermarkConfig& config);
     void setSpotlightConfigFromToolbar(const SnowCanvasSpotlightConfig& config);

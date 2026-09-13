@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
 
 #include "snow_shot/presentation/screenshotcanvascolorsamplerwindow.h"
@@ -16,6 +17,7 @@
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 
 #include "widgets/color_picker.h"
+#include "widgets/message.h"
 
 #include <QApplication>
 #include <QEvent>
@@ -86,6 +88,23 @@ ScreenshotPinnedEditController::ScreenshotPinnedEditController(
     snow_shot::presentation::WindowShortcutManager& shortcutManager, QObject* parent)
     : QObject(parent), m_pinnedWindow(pinnedWindow), m_canvas(canvas),
       m_shortcutManager(shortcutManager) {
+    m_autoFilterController = std::make_unique<ScreenshotAutoFilterController>(
+        [this]() { return m_pinnedWindow.autoFilterSourceBounds(); },
+        [this](ScreenshotAutoFilterController::ImageCompletion completion) {
+            m_pinnedWindow.requestAutoFilterSource(std::move(completion));
+        },
+        this);
+    m_autoFilterController->attachCanvas(&m_canvas);
+    connect(m_autoFilterController.get(), &ScreenshotAutoFilterController::detectionFailed, this,
+            [this](const QString& message) {
+                adqt::widgets::AdMessageService::error(message, -1, &m_pinnedWindow);
+            });
+    connect(m_autoFilterController.get(), &ScreenshotAutoFilterController::availabilityChanged,
+            this, [this](bool available) {
+                if (m_toolbarWindow && m_toolbarWindow->palette()) {
+                    m_toolbarWindow->palette()->setAutoFilterAvailable(available);
+                }
+            });
     m_canvas.installEventFilter(this);
     connect(&m_canvas, &SnowCanvasWidget::activeToolChanged, this,
             &ScreenshotPinnedEditController::syncPaletteFromCanvasTool);
@@ -212,6 +231,7 @@ bool ScreenshotPinnedEditController::eventFilter(QObject* watched, QEvent* event
                     handled = host->stepSpotlightOpacity(direction);
                     break;
                 case SnowCanvasTool::RectangleFilter:
+                case SnowCanvasTool::AutoFilter:
                     handled = host->stepFilterIntensity(direction);
                     break;
                 case SnowCanvasTool::PenFilter:
@@ -352,6 +372,13 @@ void ScreenshotPinnedEditController::ensureToolbar() {
                 [this]() { m_canvas.setCanvasTool(SnowCanvasTool::Filter); });
         connect(toolbar, &ScreenshotToolPalette::rectangleFilterRequested, this,
                 [this]() { m_canvas.setCanvasTool(SnowCanvasTool::RectangleFilter); });
+        toolbar->setAutoFilterAvailable(m_autoFilterController->available());
+        connect(toolbar, &ScreenshotToolPalette::autoFilterRequested, this, [this]() {
+            m_canvas.setCanvasTool(SnowCanvasTool::AutoFilter);
+            m_autoFilterController->validate();
+        });
+        connect(toolbar, &ScreenshotToolPalette::autoFilterCategoryRequested,
+                m_autoFilterController.get(), &ScreenshotAutoFilterController::fillCategory);
         connect(toolbar, &ScreenshotToolPalette::penFilterRequested, this,
                 [this]() { m_canvas.setCanvasTool(SnowCanvasTool::PenFilter); });
         connect(toolbar, &ScreenshotToolPalette::filterStyleChanged, this,
@@ -640,6 +667,9 @@ void ScreenshotPinnedEditController::syncPaletteFromCanvasTool() {
         break;
     case SnowCanvasTool::Eraser:
         host->setActiveTool(ScreenshotToolPalette::Tool::Eraser);
+        break;
+    case SnowCanvasTool::AutoFilter:
+        host->setActiveTool(ScreenshotToolPalette::Tool::AutoFilter);
         break;
     case SnowCanvasTool::RectangleFilter:
         host->setActiveTool(ScreenshotToolPalette::Tool::RectangleFilter);

@@ -134,6 +134,7 @@ impl EditorSession {
         state.default_filter = persisted.filter;
         state.default_filter_stroke_width = persisted.rectangle_filter_stroke_width;
         state.default_pen_filter = persisted.pen_filter;
+        state.default_pen_filter.strength = state.default_filter.strength;
         state.default_text = persisted.text;
         state.default_serial_number = persisted.serial_number;
         session.reset_editing_state();

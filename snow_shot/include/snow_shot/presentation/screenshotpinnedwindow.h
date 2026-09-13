@@ -88,6 +88,10 @@ class ScreenshotPinnedWindow final : public QWidget {
     Q_OBJECT
 
   public:
+    QRectF autoFilterSourceBounds() const {
+        return m_backgroundCanvasRect;
+    }
+    void requestAutoFilterSource(std::function<void(QImage)> completion);
     struct Config {
         QRect nativeGeometry;
         QRectF canvasSourceRect;

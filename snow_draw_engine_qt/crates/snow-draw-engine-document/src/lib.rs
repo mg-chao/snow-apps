@@ -26,8 +26,10 @@ mod arrow_operations;
 mod arrow_render_core;
 #[path = "arrow/state_core.rs"]
 mod arrow_state_core;
+mod auto_filter;
 mod bindings;
 mod document;
+pub use auto_filter::*;
 mod document_geometry;
 mod free_draw;
 mod transaction;

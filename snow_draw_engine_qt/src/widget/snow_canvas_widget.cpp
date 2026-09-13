@@ -340,6 +340,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool hasViewport() const;
     void syncAfterEngineMutation() override;
     void syncAfterEngineMutation(bool emitSignals);
+    quint64 autoFilterGeneration = 0;
     void refreshStateFromEngine(bool emitSignals) override;
     void syncChangedViewports(SnowChangedViewportList changedViewports);
     bool setSurfaceSizeAndSync(const QSize& size, bool emitSignals);
@@ -367,6 +368,10 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool setCanvasShapeStylePatch(const SnowCanvasShapeStyle& style, quint32 properties,
                                   SnowCanvasShapeKind kind);
     bool setCanvasFilterStyle(const SnowCanvasFilterStyle& style, quint32 properties);
+    quint64 readAutoFilterGeneration() const;
+    std::optional<SnowCanvasAutoFilterRecord> autoFilterRegions() const;
+    bool setAutoFilterRegions(const std::optional<SnowCanvasAutoFilterRecord>& record);
+    bool fillAutoFilterCategory(const QString& category);
     bool setCanvasTextStyle(const SnowCanvasTextStyle& style);
     bool setCanvasSerialNumberStyle(const SnowCanvasSerialNumberStyle& style);
     SnowCanvasHistoryState canvasHistoryState() const;
@@ -1897,6 +1902,13 @@ void SnowCanvasWidget::Impl::refreshStateFromEngine(bool emitSignals) {
         return;
     }
 
+    const quint64 generation = widget.autoFilterGeneration();
+    if (autoFilterGeneration != generation) {
+        autoFilterGeneration = generation;
+        if (emitSignals) {
+            emit widget.autoFilterRegionsChanged();
+        }
+    }
     snow_canvas_state::Changes changes;
     if (!displayState.refreshState(runtimeBinding.engine(), runtimeBinding.viewportHandle(),
                                    &changes)) {
@@ -2262,6 +2274,9 @@ bool SnowCanvasWidget::Impl::handleMousePress(QMouseEvent* event) {
 }
 
 void SnowCanvasWidget::mousePressEvent(QMouseEvent* event) {
+    if (canvasTool() == SnowCanvasTool::AutoFilter && event->button() == Qt::LeftButton) {
+        emit autoFilterInteractionStarting();
+    }
     if (event != nullptr && event->button() == Qt::MiddleButton) {
         m_impl->beginMiddleClickTracking(event->position());
     }
@@ -2725,4 +2740,101 @@ void SnowCanvasWidget::Impl::setShowDirtyRects(bool show) {
 
 void SnowCanvasWidget::setShowDirtyRects(bool show) {
     m_impl->setShowDirtyRects(show);
+}
+
+namespace {
+SnowAutoFilterBounds autoFilterBounds(const QRectF& r) {
+    return {r.left(), r.top(), r.right(), r.bottom()};
+}
+QRectF autoFilterRect(const SnowAutoFilterBounds& r) {
+    return QRectF(QPointF(r.left, r.top), QPointF(r.right, r.bottom));
+}
+} // namespace
+quint64 SnowCanvasWidget::Impl::readAutoFilterGeneration() const {
+    uint64_t generation = 0;
+    uint8_t identified = 0;
+    SnowAutoFilterBounds bounds{};
+    size_t count = 0;
+    snow_runtime_get_auto_filter_regions(runtimeBinding.engine(), &generation, &identified, &bounds,
+                                         nullptr, 0, &count);
+    return generation;
+}
+std::optional<SnowCanvasAutoFilterRecord> SnowCanvasWidget::Impl::autoFilterRegions() const {
+    uint64_t generation = 0;
+    uint8_t identified = 0;
+    SnowAutoFilterBounds bounds{};
+    size_t count = 0;
+    const auto runtime = runtimeBinding.engine();
+    if (snow_runtime_get_auto_filter_regions(runtime, &generation, &identified, &bounds, nullptr, 0,
+                                             &count) != SNOW_OK ||
+        !identified) {
+        return std::nullopt;
+    }
+    std::vector<SnowAutoFilterRegion> regions(count);
+    if (snow_runtime_get_auto_filter_regions(runtime, &generation, &identified, &bounds,
+                                             regions.data(), regions.size(), &count) != SNOW_OK) {
+        return std::nullopt;
+    }
+    SnowCanvasAutoFilterRecord record;
+    record.sourceBounds = autoFilterRect(bounds);
+    for (const auto& region : regions) {
+        record.regions.append(
+            {region.id, autoFilterRect(region.bounds),
+             QString::fromUtf8(reinterpret_cast<const char*>(region.category),
+                               static_cast<qsizetype>(
+                                   strnlen(reinterpret_cast<const char*>(region.category), 128)))});
+    }
+    return record;
+}
+bool SnowCanvasWidget::Impl::setAutoFilterRegions(
+    const std::optional<SnowCanvasAutoFilterRecord>& record) {
+    std::vector<SnowAutoFilterRegion> regions;
+    SnowAutoFilterBounds bounds{};
+    if (record) {
+        bounds = autoFilterBounds(record->sourceBounds);
+        for (const auto& region : record->regions) {
+            SnowAutoFilterRegion value{};
+            value.id = region.id;
+            value.bounds = autoFilterBounds(region.bounds);
+            const QByteArray category = region.category.toUtf8();
+            if (category.size() > 127) {
+                return false;
+            }
+            std::memcpy(value.category, category.constData(), static_cast<size_t>(category.size()));
+            regions.push_back(value);
+        }
+    }
+    SnowChangedViewportList changed = nullptr;
+    snow_canvas_commands::MutationResult result;
+    result.success =
+        snow_viewport_set_auto_filter_regions(
+            runtimeBinding.engine(), runtimeBinding.viewportHandle(), record ? &bounds : nullptr,
+            regions.data(), regions.size(), &changed) == SNOW_OK;
+    result.changedViewports.reset(changed);
+    return applyMutationResult(std::move(result));
+}
+bool SnowCanvasWidget::Impl::fillAutoFilterCategory(const QString& category) {
+    const QByteArray bytes = category.toUtf8();
+    SnowChangedViewportList changed = nullptr;
+    snow_canvas_commands::MutationResult result;
+    result.success = snow_viewport_fill_auto_filter_category(
+                         runtimeBinding.engine(), runtimeBinding.viewportHandle(),
+                         reinterpret_cast<const uint8_t*>(bytes.constData()),
+                         static_cast<size_t>(bytes.size()), &changed) == SNOW_OK;
+    result.changedViewports.reset(changed);
+    return applyMutationResult(std::move(result));
+}
+
+quint64 SnowCanvasWidget::autoFilterGeneration() const {
+    return m_impl->readAutoFilterGeneration();
+}
+std::optional<SnowCanvasAutoFilterRecord> SnowCanvasWidget::autoFilterRegions() const {
+    return m_impl->autoFilterRegions();
+}
+bool SnowCanvasWidget::setAutoFilterRegions(
+    const std::optional<SnowCanvasAutoFilterRecord>& record) {
+    return m_impl->setAutoFilterRegions(record);
+}
+bool SnowCanvasWidget::fillAutoFilterCategory(const QString& category) {
+    return m_impl->fillAutoFilterCategory(category);
 }

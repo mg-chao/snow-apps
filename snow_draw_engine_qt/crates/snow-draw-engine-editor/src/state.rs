@@ -400,6 +400,7 @@ pub(crate) enum InteractionState {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct EditorState {
+    pub auto_filter: crate::auto_filter_workflow::AutoFilterInteraction,
     pub(crate) active_tool: ActiveTool,
     pub(crate) selection: SelectionState,
     pub(crate) creation_preview: Option<ElementCreationPreview>,
@@ -438,7 +439,7 @@ impl EditorState {
         };
         let default_pen_filter = PenFilterData {
             filter_type: default_styles.pen_filter.filter_type,
-            strength: default_styles.pen_filter.strength,
+            strength: default_styles.rectangle_filter.strength,
             opacity: default_styles.pen_filter.opacity,
             stroke_width: default_styles.pen_filter.stroke_width,
             ..PenFilterData::default()
@@ -471,6 +472,7 @@ impl EditorState {
         };
 
         Self {
+            auto_filter: Default::default(),
             active_tool: ActiveTool::default(),
             selection: SelectionState::default(),
             creation_preview: None,

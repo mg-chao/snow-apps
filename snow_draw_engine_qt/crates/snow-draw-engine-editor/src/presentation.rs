@@ -147,6 +147,7 @@ impl Editor {
                 })
             });
         EditorPresentationState {
+            auto_filter_highlights: self.auto_filter_highlights(document),
             arrow_text_previews: self.arrow_text_previews(document),
             creation_preview: self
                 .pen_filter_creation_preview()

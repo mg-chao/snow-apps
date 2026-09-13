@@ -1031,6 +1031,7 @@ pub(crate) fn snow_active_tool_to_rust(value: SnowActiveTool) -> ActiveTool {
         SnowActiveTool::RectangleFilter => ActiveTool::RectangleFilter,
         SnowActiveTool::PenFilter => ActiveTool::PenFilter,
         SnowActiveTool::Spotlight => ActiveTool::Spotlight,
+        SnowActiveTool::AutoFilter => ActiveTool::AutoFilter,
         SnowActiveTool::Watermark => ActiveTool::Watermark,
         SnowActiveTool::Text => ActiveTool::Text,
         SnowActiveTool::SerialNumber => ActiveTool::SerialNumber,
@@ -1050,6 +1051,7 @@ pub(crate) fn snow_active_tool_from_rust(value: ActiveTool) -> SnowActiveTool {
         ActiveTool::RectangleFilter => SnowActiveTool::RectangleFilter,
         ActiveTool::PenFilter => SnowActiveTool::PenFilter,
         ActiveTool::Spotlight => SnowActiveTool::Spotlight,
+        ActiveTool::AutoFilter => SnowActiveTool::AutoFilter,
         ActiveTool::Watermark => SnowActiveTool::Watermark,
         ActiveTool::Text => SnowActiveTool::Text,
         ActiveTool::SerialNumber => SnowActiveTool::SerialNumber,
@@ -1057,7 +1059,7 @@ pub(crate) fn snow_active_tool_from_rust(value: ActiveTool) -> SnowActiveTool {
 }
 
 pub(crate) fn snow_active_tool_mask_to_rust(value: u64) -> u64 {
-    const TOOLS: [SnowActiveTool; 14] = [
+    const TOOLS: [SnowActiveTool; 15] = [
         SnowActiveTool::Select,
         SnowActiveTool::Shape,
         SnowActiveTool::Arrow,
@@ -1072,6 +1074,7 @@ pub(crate) fn snow_active_tool_mask_to_rust(value: u64) -> u64 {
         SnowActiveTool::PenHighlight,
         SnowActiveTool::PenFilter,
         SnowActiveTool::Spotlight,
+        SnowActiveTool::AutoFilter,
     ];
 
     TOOLS.into_iter().fold(0, |mask, tool| {

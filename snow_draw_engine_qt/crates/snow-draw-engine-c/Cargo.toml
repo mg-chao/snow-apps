@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+snow-draw-engine-core = { path = "../snow-draw-engine-core" }
+snow-draw-engine-document = { path = "../snow-draw-engine-document" }
 snow-draw-engine = { path = "../snow-draw-engine" }
 
 [lib]

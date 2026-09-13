@@ -486,7 +486,8 @@ bool ScreenshotOverlayInputHandler::handleWheel(ScreenshotOverlayWindow* overlay
     if (m_context.interaction.activeTool() == ScreenshotActiveTool::Spotlight && deltaY != 0) {
         return m_context.actions.stepSpotlightOpacity(deltaY > 0 ? 1 : -1);
     }
-    if (m_context.interaction.activeTool() == ScreenshotActiveTool::RectangleFilter &&
+    if ((m_context.interaction.activeTool() == ScreenshotActiveTool::RectangleFilter ||
+         m_context.interaction.activeTool() == ScreenshotActiveTool::AutoFilter) &&
         deltaY != 0) {
         return m_context.actions.stepFilterIntensity(deltaY > 0 ? 1 : -1);
     }

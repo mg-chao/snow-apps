@@ -9183,6 +9183,7 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
             "canvas tool styles should be accepted by configuration storage");
 
     SnowCanvasStyleDefaults expected = styles;
+    expected.penFilter.strength = styles.rectangleFilter.strength;
     const SnowCanvasStyleDefaults globalDefaults =
         snow_shot::presentation::screenshotCanvasStyleDefaults();
     expected.watermark = globalDefaults.watermark;
@@ -9320,6 +9321,175 @@ void fontFamilyListIsCachedForEditorBuilds() {
     expected.sort(Qt::CaseInsensitive);
     require(first == expected, "font family cache should match the normalized system families");
 }
+void autoFilterLegacyStrengthMigration() {
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    const QString rectangleKey = QStringLiteral("drawing/rectangle_filter_style");
+    const QString penKey = QStringLiteral("drawing/pen_filter_style");
+    const auto rectangle = configuration.value(rectangleKey);
+    const auto pen = configuration.value(penKey);
+    const auto check = [&](QJsonValue rectangleStrength, QJsonValue penStrength, double expected) {
+        require(configuration.setValue(
+                    rectangleKey, QJsonObject{{QStringLiteral("strength"), rectangleStrength}}),
+                "save legacy rectangle strength");
+        require(
+            configuration.setValue(penKey, QJsonObject{{QStringLiteral("strength"), penStrength}}),
+            "save legacy pen strength");
+        const auto defaults = snow_shot::presentation::screenshotCanvasToolStyleDefaults();
+        require(defaults.rectangleFilter.strength == expected &&
+                    defaults.penFilter.strength == expected,
+                "legacy strengths normalize to one valid value");
+    };
+    check(0.2, 0.8, 0.2);
+    check(QJsonValue(), 0.8, 0.8);
+    check(5.0, 0.8, 0.8);
+    check(QJsonValue(), -1.0,
+          snow_shot::presentation::screenshotCanvasStyleDefaults().rectangleFilter.strength);
+    require(configuration.setValue(rectangleKey, rectangle) && configuration.setValue(penKey, pen),
+            "restore saved filter settings");
+}
+
+void filterEditorsRestoreValuesAfterToolSwitch() {
+    using Tool = ScreenshotToolPalette::Tool;
+    for (const Tool tool : {Tool::RectangleFilter, Tool::PenFilter, Tool::AutoFilter}) {
+        ScreenshotToolPalette::Options options;
+        options.showFilterTool = true;
+        ScreenshotToolPalette palette(options);
+        palette.setActiveTool(tool);
+        SnowCanvasStyleToolbarState state;
+        state.source = tool == Tool::PenFilter
+                           ? SnowCanvasStyleToolbarSource::DefaultPenFilter
+                           : SnowCanvasStyleToolbarSource::DefaultRectangleFilter;
+        int edits = 0;
+        QObject::connect(&palette, &ScreenshotToolPalette::filterStyleChanged, [&]() { ++edits; });
+        for (const auto type : {SnowCanvasFilterType::Mosaic, SnowCanvasFilterType::GaussianBlur,
+                                SnowCanvasFilterType::Grayscale, SnowCanvasFilterType::Inversion}) {
+            state.filterStyle.type = type;
+            state.filterStyle.strength = 0.37;
+            palette.setStyleToolbarState(state);
+            for (const Tool other : {Tool::Shape, Tool::Move, Tool::Text}) {
+                palette.setActiveTool(other);
+                palette.setActiveTool(tool);
+                palette.setStyleToolbarState(state);
+                const QString prefix =
+                    tool == Tool::PenFilter    ? QStringLiteral("screenshotPenFilter")
+                    : tool == Tool::AutoFilter ? QStringLiteral("screenshotAutoFilter")
+                                               : QStringLiteral("screenshotFilter");
+                auto* select = palette.findChild<adqt::widgets::AdSelect*>(
+                    prefix + QStringLiteral("TypeSelect"));
+                auto* slider = palette.findChild<adqt::widgets::AdSlider*>(
+                    prefix + QStringLiteral("IntensitySlider"));
+                require(select && select->currentValue().isValid() &&
+                            select->currentValue().toInt() == static_cast<int>(type),
+                        "returning to a filter tool restores the unchanged filter type");
+                require(slider && slider->value() == 37,
+                        "returning to a filter tool restores the unchanged intensity");
+            }
+        }
+        require(edits == 0, "restoring filter controls must not emit style edits");
+    }
+}
+
+void selectedFilterTypeDoesNotReplaceCreationDefault() {
+    ScreenshotToolPalette::Options options;
+    options.showFilterTool = true;
+    ScreenshotToolPalette palette(options);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::RectangleFilter);
+    const auto before = palette.creationStyleDefaults().rectangleFilter;
+    SnowCanvasStyleToolbarState selected;
+    selected.source = SnowCanvasStyleToolbarSource::SelectedRectangleFilter;
+    selected.filterStyle = before;
+    selected.filterStyle.type = SnowCanvasFilterType::Inversion;
+    selected.filterStyle.strength = 0.1;
+    palette.setStyleToolbarState(selected);
+    require(palette.creationStyleDefaults().rectangleFilter == before,
+            "selecting an older filter preserves creation preferences");
+    auto* type =
+        palette.findChild<adqt::widgets::AdSelect*>(QStringLiteral("screenshotFilterTypeSelect"));
+    require(type != nullptr, "selected filter exposes its type control");
+    type->setCurrentValue(static_cast<int>(SnowCanvasFilterType::Grayscale));
+    require(palette.creationStyleDefaults().rectangleFilter.type == before.type,
+            "selected filter type edit preserves creation type");
+}
+
+void autoFilterControlsShareStylesAndKeepCategoryUnselected() {
+    using Tool = ScreenshotToolPalette::Tool;
+    ScreenshotToolPalette::Options options;
+    options.showFilterTool = true;
+    ScreenshotToolPalette palette(options);
+    SnowCanvasWidget canvas;
+    QObject::connect(&palette, &ScreenshotToolPalette::autoFilterRequested, &canvas,
+                     [&]() { canvas.setCanvasTool(SnowCanvasTool::AutoFilter); });
+    QObject::connect(&palette, &ScreenshotToolPalette::filterStyleChanged, &canvas,
+                     [&](const SnowCanvasFilterStyle& style, quint32 properties) {
+                         canvas.setCanvasFilterStyle(style, properties);
+                     });
+    QObject::connect(&canvas, &SnowCanvasWidget::styleToolbarStateChanged, &palette,
+                     [&]() { palette.setStyleToolbarState(canvas.canvasStyleToolbarState()); });
+    for (const Tool tool :
+         {Tool::AutoFilter, Tool::RectangleFilter, Tool::PenFilter, Tool::AutoFilter}) {
+        palette.setActiveTool(tool);
+        canvas.setCanvasTool(tool == Tool::AutoFilter  ? SnowCanvasTool::AutoFilter
+                             : tool == Tool::PenFilter ? SnowCanvasTool::PenFilter
+                                                       : SnowCanvasTool::RectangleFilter);
+        palette.setStyleToolbarState(canvas.canvasStyleToolbarState());
+    }
+    auto* controls =
+        palette.findChild<QWidget*>(QStringLiteral("screenshotAutoFilterStyleControls"));
+    auto* category =
+        palette.findChild<adqt::widgets::AdSelect*>(QStringLiteral("screenshotFillRegionsSelect"));
+    auto* type = palette.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotAutoFilterTypeSelect"));
+    auto* strength = palette.findChild<adqt::widgets::AdSlider*>(
+        QStringLiteral("screenshotAutoFilterIntensitySlider"));
+    require(controls && category && type && strength,
+            "Auto Filter owns a complete style row after repeated switches");
+    require(!category->isEnabled() && category->model()->rowCount() == 7,
+            "category actions start disabled and include all detector categories");
+    palette.setAutoFilterAvailable(true);
+    int categoryActions = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::autoFilterCategoryRequested,
+                     [&](const QString& key) {
+                         require(key == QStringLiteral("text"), "category action uses stable id");
+                         ++categoryActions;
+                     });
+    category->setCurrentValue(QStringLiteral("text"));
+    require(categoryActions == 1 && !category->currentValue().isValid(),
+            "category activation returns to unselected placeholder");
+    type->setCurrentValue(1);
+    strength->setValue(37);
+    require(canvas.canvasStyleToolbarState().filterStyle.type ==
+                    SnowCanvasFilterType::GaussianBlur &&
+                qAbs(canvas.canvasStyleToolbarState().filterStyle.strength - 0.37) < 0.001,
+            "Auto Filter forwards type and strength edits");
+    require(qAbs(palette.creationStyleDefaults().penFilter.strength - 0.37) < 0.001,
+            "Auto Filter shares persistent pen strength");
+    auto* modes = controls->findChild<adqt::widgets::AdRadioButtonGroup*>();
+    require(modes && modes->buttons().size() == 3 &&
+                modes->buttons()[1] == modes->button(static_cast<int>(Tool::RectangleFilter)) &&
+                modes->buttons()[2] == modes->button(static_cast<int>(Tool::AutoFilter)),
+            "Auto Filter sits to the right of Rectangle Filter");
+    palette.show();
+    QCoreApplication::processEvents();
+    auto& languageManager = snow_shot::presentation::LanguageManager::instance();
+    for (const auto& language :
+         {QStringLiteral("zh_CN"), QStringLiteral("zh_TW"), QStringLiteral("en_US")}) {
+        require(languageManager.setLanguage(language), "Auto Filter translation catalog loads");
+        QCoreApplication::processEvents();
+        require(category->placeholder() ==
+                    QCoreApplication::translate("ScreenshotToolPalette", "Fill regions"),
+                "category placeholder retranslates in place");
+        require(category->model()
+                        ->index(1, 0)
+                        .data(adqt::widgets::AdSelect::DefaultLabelRole)
+                        .toString() ==
+                    QCoreApplication::translate("ScreenshotToolPalette", "Text in box"),
+                "category labels retranslate in place");
+        require(!category->currentValue().isValid(), "language changes keep category unselected");
+    }
+    if (const QString path = qEnvironmentVariable("SNOW_AUTO_FILTER_SNAPSHOT"); !path.isEmpty()) {
+        require(palette.grab().save(path), "save Auto Filter toolbar inspection image");
+    }
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -9340,6 +9510,17 @@ int main(int argc, char** argv) {
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
             "the font editor tests require a system TrueType font");
 #endif
+    if (application.arguments().contains(QStringLiteral("--auto-filter-only"))) {
+        filterEditorsRestoreValuesAfterToolSwitch();
+        autoFilterLegacyStrengthMigration();
+        selectedFilterTypeDoesNotReplaceCreationDefault();
+        autoFilterControlsShareStylesAndKeepCategoryUnselected();
+        filterToolExposesTypeAndIntensityControls();
+        filterStyleEditorsMatchShapeAndSpotlightMetrics();
+        canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--color-input-only"))) {
         colorPickerChannelKeyboardInput();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -9560,6 +9741,7 @@ int main(int argc, char** argv) {
     spotlightControlsMatchMaskConfigurationBehavior();
     highlightStyleToolbarWidthTracksActiveMode();
     eraserToolIsDiscoverableAndHidesStyleControls();
+    filterEditorsRestoreValuesAfterToolSwitch();
     filterToolExposesTypeAndIntensityControls();
     drawingModeSelectionsSurviveToolbarReentry();
     filterStyleEditorsMatchShapeAndSpotlightMetrics();

@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/screenshottoolbarmainpanel.h"
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "close_release_native_test_support.h"
@@ -6638,6 +6639,57 @@ void pinnedCloseReleaseNative() {
 }
 #endif
 
+void pinnedAutoFilterPreservesBackgroundAndSession() {
+    QImage background(120, 80, QImage::Format_ARGB32_Premultiplied);
+    background.fill(QColor(20, 40, 60));
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = QRect(0, 0, 120, 80);
+    config.canvasSourceRect = QRectF(10, 20, 120, 80);
+    config.fullResolutionScaleBasis = background.size();
+    config.imageSource = ScreenshotImageSource::fromImage(background, config.canvasSourceRect);
+    ScreenshotPinnedWindow window;
+    ScreenshotPinnedWindowTestAccess::restoreOffscreen(window, config);
+    ScreenshotPinnedWindowTestAccess::editForHideTest(window);
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    auto* controller = window.findChild<ScreenshotAutoFilterController*>();
+    require(canvas && controller, "pinned editor owns its Auto Filter coordinator");
+    const SnowCanvasAutoFilterRecord record{config.canvasSourceRect,
+                                            {{1, QRectF(20, 30, 30, 20), QStringLiteral("text")}}};
+    require(canvas->setAutoFilterRegions(record), "seed pinned detection record");
+    require(canvas->setCanvasTool(SnowCanvasTool::AutoFilter) && controller->available(),
+            "pinned activation reuses matching regions");
+    auto style = canvas->canvasStyleToolbarState().filterStyle;
+    style.type = SnowCanvasFilterType::Inversion;
+    require(canvas->setCanvasFilterStyle(style, SnowCanvasFilterStylePropertyType),
+            "set pinned fill effect");
+    controller->fillCategory(QStringLiteral("text"));
+    QImage source;
+    window.requestAutoFilterSource([&](QImage image) { source = std::move(image); });
+    QCoreApplication::processEvents();
+    require(source == background,
+            "pinned detection receives original pixels before filter elements");
+    const auto snapshot = window.persistenceSnapshot();
+    require(!snapshot.canvasSession.isEmpty(), "pinned snapshot contains engine session");
+    canvas->setViewportCamera(70, 60, 2);
+    window.move(50, 80);
+    require(controller->available(), "pinned zoom and window movement preserve record validity");
+    ScreenshotPinnedWindow restored;
+    config.restorePersistentState = true;
+    config.persistedCanvasSession = snapshot.canvasSession;
+    ScreenshotPinnedWindowTestAccess::restoreOffscreen(restored, config);
+    auto* restoredCanvas = restored.findChild<SnowCanvasWidget*>();
+    require(restoredCanvas->autoFilterRegions().has_value() &&
+                restoredCanvas->autoFilterRegions()->sourceBounds == record.sourceBounds,
+            "pinned restore preserves detection bounds");
+    require(restoredCanvas->undo() && restoredCanvas->autoFilterRegions().has_value(),
+            "first restored undo removes fill only");
+    require(restoredCanvas->undo() && !restoredCanvas->autoFilterRegions(),
+            "second restored undo removes identification");
+    ScreenshotPinnedWindowTestAccess::rotateRecognitionOffscreen(window);
+    require(!controller->available() && canvas->autoFilterRegions().has_value(),
+            "changed background dimensions make record stale without clearing it");
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -6661,6 +6713,10 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 #endif
+        if (app.arguments().contains(QStringLiteral("--auto-filter-only"))) {
+            pinnedAutoFilterPreservesBackgroundAndSession();
+            return 0;
+        }
         SnowCanvasRuntime sourceRuntime;
         require(sourceRuntime.isValid(), "source runtime creation failed");
         if (app.arguments().contains(QStringLiteral("--hide-to-top-only"))) {

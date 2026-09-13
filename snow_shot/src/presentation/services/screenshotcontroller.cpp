@@ -1,3 +1,5 @@
+#include "snow_shot/presentation/screenshotautofiltercontroller.h"
+#include "snow_shot/presentation/screenshotsourceimagecomposer.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
 #include "snow_shot/presentation/screenshotglobalmousedrag.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
@@ -175,6 +177,8 @@ ScreenshotToolPalette::Tool paletteToolForActiveTool(ScreenshotActiveTool tool) 
         return ScreenshotToolPalette::Tool::PenHighlight;
     case ScreenshotActiveTool::Eraser:
         return ScreenshotToolPalette::Tool::Eraser;
+    case ScreenshotActiveTool::AutoFilter:
+        return ScreenshotToolPalette::Tool::AutoFilter;
     case ScreenshotActiveTool::RectangleFilter:
         return ScreenshotToolPalette::Tool::RectangleFilter;
     case ScreenshotActiveTool::Watermark:
@@ -319,6 +323,12 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void setFilterTool() override;
     void setRectangleFilterTool() override;
     void setPenFilterTool() override;
+    void setAutoFilterTool() override;
+    void fillAutoFilterCategory(const QString& category) override {
+        if (m_autoFilterController) {
+            m_autoFilterController->fillCategory(category);
+        }
+    }
     void setWatermarkTool() override;
     void setWatermarkConfigFromToolbar(const SnowCanvasWatermarkConfig& config) override;
     void setSpotlightConfigFromToolbar(const SnowCanvasSpotlightConfig& config) override;
@@ -487,6 +497,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     quint64 m_ocrActivationId = 0;
     quint64 m_ocrAutoActionHandledActivationId = 0;
     SnowCanvasRuntime m_canvasRuntime;
+    std::unique_ptr<ScreenshotAutoFilterController> m_autoFilterController;
     ScreenshotGeometryMapper m_geometry;
     ScreenshotDisplaySession m_displaySession;
     ScreenshotInteractionState m_interaction;
@@ -1604,6 +1615,9 @@ bool ScreenshotController::Impl::activateToolForSelectionResize(ScreenshotActive
         break;
     case ScreenshotActiveTool::Eraser:
         setEraserTool();
+        break;
+    case ScreenshotActiveTool::AutoFilter:
+        setAutoFilterTool();
         break;
     case ScreenshotActiveTool::RectangleFilter:
         setRectangleFilterTool();
@@ -3104,6 +3118,9 @@ void ScreenshotController::Impl::publishHistoryResult(
 void ScreenshotController::Impl::cancelCapture() {
     if (auto cancel = std::exchange(m_cancelSaveDialog, {}))
         cancel();
+    if (m_autoFilterController) {
+        m_autoFilterController->resetSession();
+    }
     ++m_captureEpoch;
     clearCanvasColorSampling();
     if (m_overlayInputHandler != nullptr) {
@@ -3846,6 +3863,9 @@ bool ScreenshotController::Impl::beginCapture(PendingSelectionAction action,
         return false;
     }
 
+    if (m_autoFilterController) {
+        m_autoFilterController->resetSession();
+    }
     ++m_captureEpoch;
     clearCanvasColorSampling();
     if (m_overlayInputHandler != nullptr) {
@@ -4014,6 +4034,7 @@ void ScreenshotController::Impl::shutdown() {
     m_exportService.reset();
     m_selectionSettings.reset();
     m_screenRecordingController.reset();
+    m_autoFilterController.reset();
     m_overlayCoordinator.reset();
     m_overlayEventAdapter.reset();
 }
@@ -4237,4 +4258,41 @@ void ScreenshotController::Impl::resetCanvas() {
             handled = true;
         }
     });
+}
+
+void ScreenshotController::Impl::setAutoFilterTool() {
+    deactivateRecognition();
+    const bool stopped = stopScrollingCapture(true);
+    if (!m_autoFilterController) {
+        m_autoFilterController = std::make_unique<ScreenshotAutoFilterController>(
+            [this]() { return QRectF(m_selection.pixelSelection()); },
+            [this](ScreenshotAutoFilterController::ImageCompletion completion) {
+                completion(composeScreenshotSourceSelection(m_displaySession,
+                                                            m_selection.pixelSelection()));
+            },
+            &owner);
+        QObject::connect(m_autoFilterController.get(),
+                         &ScreenshotAutoFilterController::detectionFailed, &owner,
+                         [this](const QString& message) {
+                             m_messages->error(QStringLiteral("auto-filter"), message);
+                         });
+        QObject::connect(m_autoFilterController.get(),
+                         &ScreenshotAutoFilterController::availabilityChanged, &owner,
+                         [this](bool available) {
+                             if (auto* toolbar = m_overlayCoordinator->toolbar()) {
+                                 if (auto* palette = toolbar->palette()) {
+                                     palette->setAutoFilterAvailable(available);
+                                 }
+                             }
+                         });
+    }
+    m_displaySession.forEachActiveOverlay(
+        [this](qsizetype, const CapturedDisplayModel&, ScreenshotOverlayWindow* overlay) {
+            if (overlay) {
+                m_autoFilterController->attachCanvas(overlay->canvas());
+            }
+        });
+    m_toolCommandWorkflow->setAutoFilterTool();
+    m_autoFilterController->validate();
+    restoreToolUiAfterScrollingCapture(stopped);
 }

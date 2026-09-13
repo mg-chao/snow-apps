@@ -2,6 +2,7 @@
 name = "visual-region-detector"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 
 [features]
 # The detector is usable on a stock Rust installation. `opencv` is an

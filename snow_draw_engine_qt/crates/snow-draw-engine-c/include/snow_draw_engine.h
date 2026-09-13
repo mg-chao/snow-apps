@@ -50,6 +50,14 @@ typedef enum SnowZoomFocus {
     SNOW_ZOOM_FOCUS_CENTER = 1
 } SnowZoomFocus;
 
+typedef struct SnowAutoFilterBounds {
+    double left, top, right, bottom;
+} SnowAutoFilterBounds;
+typedef struct SnowAutoFilterRegion {
+    uint64_t id;
+    SnowAutoFilterBounds bounds;
+    uint8_t category[128];
+} SnowAutoFilterRegion;
 typedef enum SnowActiveTool {
     SNOW_ACTIVE_TOOL_SELECT = 0,
     SNOW_ACTIVE_TOOL_SHAPE = 1,
@@ -64,7 +72,8 @@ typedef enum SnowActiveTool {
     SNOW_ACTIVE_TOOL_WATERMARK = 10,
     SNOW_ACTIVE_TOOL_PEN_HIGHLIGHT = 11,
     SNOW_ACTIVE_TOOL_PEN_FILTER = 12,
-    SNOW_ACTIVE_TOOL_SPOTLIGHT = 13
+    SNOW_ACTIVE_TOOL_SPOTLIGHT = 13,
+    SNOW_ACTIVE_TOOL_AUTO_FILTER = 14
 } SnowActiveTool;
 #define SNOW_ACTIVE_TOOL_FILTER SNOW_ACTIVE_TOOL_RECTANGLE_FILTER
 #define SNOW_ACTIVE_TOOL_HIGHLIGHT SNOW_ACTIVE_TOOL_RECTANGLE_HIGHLIGHT
@@ -1048,6 +1057,18 @@ SnowError snow_viewport_get_grid_config(SnowRuntime runtime, SnowViewport viewpo
 SnowError snow_viewport_set_grid_config_ex(SnowRuntime runtime, SnowViewport viewport,
                                            const SnowGridConfig* config,
                                            SnowChangedViewportList* out_changed_viewports);
+
+SnowError snow_runtime_get_auto_filter_regions(SnowRuntime runtime, uint64_t* generation,
+                                               uint8_t* identified, SnowAutoFilterBounds* bounds,
+                                               SnowAutoFilterRegion* regions, size_t capacity,
+                                               size_t* count);
+SnowError snow_viewport_set_auto_filter_regions(SnowRuntime runtime, SnowViewport viewport,
+                                                const SnowAutoFilterBounds* bounds,
+                                                const SnowAutoFilterRegion* regions, size_t count,
+                                                SnowChangedViewportList* changed);
+SnowError snow_viewport_fill_auto_filter_category(SnowRuntime runtime, SnowViewport viewport,
+                                                  const uint8_t* category, size_t length,
+                                                  SnowChangedViewportList* changed);
 
 SnowError snow_runtime_get_history_state(SnowRuntime runtime, SnowHistoryState* out_state);
 

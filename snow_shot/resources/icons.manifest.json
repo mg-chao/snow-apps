@@ -400,6 +400,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "MagicWand",
+      "name": "magic-wand",
+      "source": "../src/presentation/components/icons/resources/magic-wand.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Markdown",
       "name": "markdown",
       "source": "../src/presentation/components/icons/resources/markdown.svg",

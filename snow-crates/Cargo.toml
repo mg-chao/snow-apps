@@ -1,5 +1,7 @@
 ﻿[workspace]
 members = [
+    "crates/visual-region-detector",
+    "crates/snow-visual-region-detector-c",
     "crates/snow-core",
     "crates/snow-diagnostics",
     "crates/snow-diagnostics-test",

@@ -83,7 +83,7 @@ impl SnapGuide {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DrawRect {
     pub min_x: f64,
     pub min_y: f64,
@@ -100,7 +100,6 @@ impl DrawRect {
             max_y,
         }
     }
-
 
     pub fn from_center(center: Point<f64>, width: f64, height: f64) -> Self {
         Self::new(

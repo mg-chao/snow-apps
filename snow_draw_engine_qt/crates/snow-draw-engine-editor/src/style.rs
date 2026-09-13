@@ -672,7 +672,10 @@ impl Editor {
             StyleToolbarSource::DefaultPenHighlight
         } else if self.state.active_tool == ActiveTool::PenFilter {
             StyleToolbarSource::DefaultPenFilter
-        } else if self.state.active_tool == ActiveTool::RectangleFilter {
+        } else if matches!(
+            self.state.active_tool,
+            ActiveTool::RectangleFilter | ActiveTool::AutoFilter
+        ) {
             StyleToolbarSource::DefaultRectangleFilter
         } else if self.state.active_tool == ActiveTool::Arrow {
             StyleToolbarSource::DefaultArrow
@@ -797,6 +800,10 @@ impl Editor {
             return Err(ErrorCode::InvalidArgument);
         }
         let strength = FilterData::normalized_strength(style.strength);
+        if properties & FILTER_STYLE_PROPERTY_STRENGTH != 0 {
+            self.state.default_filter.strength = strength;
+            self.state.default_pen_filter.strength = strength;
+        }
         let selected_ids = self
             .state
             .selection

@@ -2,6 +2,7 @@ mod active_text;
 mod api;
 mod arrow_ops;
 mod arrow_text;
+mod auto_filter_workflow;
 pub use arrow_text::ArrowTextLayoutRequest;
 mod creation_workflow;
 mod defaults;
@@ -262,6 +263,7 @@ impl Editor {
         document: &DocumentModel,
         snapshot: &DocumentSyncSnapshot,
     ) {
+        self.invalidate_auto_filter_gesture(document);
         self.sync_selection_after_document_change(document, &snapshot.selection);
         self.bump_scene_state_revision();
         self.bump_overlay_state_revision();
@@ -288,6 +290,8 @@ impl Editor {
     }
 
     fn cancel_interaction(&mut self) {
+        self.state.auto_filter = Default::default();
+        self.bump_overlay_state_revision();
         let had_selection_edit = matches!(
             &self.state.interaction,
             InteractionState::PendingSelectionMove(_)

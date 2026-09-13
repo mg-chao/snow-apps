@@ -102,3 +102,60 @@ impl Engine {
         }
     }
 }
+
+impl Engine {
+    pub fn auto_filter_regions(
+        &self,
+    ) -> Option<&snow_draw_engine_document::AutoFilterRegionRecord> {
+        self.model.auto_filter_regions()
+    }
+    pub fn auto_filter_generation(&self) -> u64 {
+        self.model.auto_filter_generation()
+    }
+    pub fn set_auto_filter_regions(
+        &mut self,
+        viewport: ViewportId,
+        record: Option<snow_draw_engine_document::AutoFilterRegionRecord>,
+    ) -> Result<MutationResult, ErrorCode> {
+        self.ensure_viewport(viewport)?;
+        let transaction = self.model.auto_filter_record_transaction(record)?;
+        self.apply_editor_command(
+            viewport,
+            EditorCommand::ApplyTransaction(ApplyTransactionCommand {
+                transaction,
+                history_undo_snapshot: None,
+            }),
+        )
+    }
+    pub fn fill_auto_filter_category(
+        &mut self,
+        viewport: ViewportId,
+        category: &str,
+    ) -> Result<MutationResult, ErrorCode> {
+        let style = self.viewport_style_toolbar_state(viewport)?.filter_style;
+        let ids: Vec<_> = self
+            .model
+            .auto_filter_regions()
+            .map(|r| {
+                r.regions
+                    .iter()
+                    .filter(|r| r.category == category)
+                    .map(|r| r.id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let transaction =
+            self.model
+                .auto_filter_fill_transaction(&ids, style.filter_type, style.strength, false);
+        if transaction.is_empty() {
+            return Ok(MutationResult::default());
+        }
+        self.apply_editor_command(
+            viewport,
+            EditorCommand::ApplyTransaction(ApplyTransactionCommand {
+                transaction,
+                history_undo_snapshot: None,
+            }),
+        )
+    }
+}

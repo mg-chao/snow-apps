@@ -21,6 +21,7 @@ class ScreenshotFloatingToolPaletteWindow;
 class ScreenshotPinnedWindow;
 class ScreenshotToolPaletteHost;
 class SnowCanvasWidget;
+class ScreenshotAutoFilterController;
 namespace adqt::widgets {
 class AdColorPicker;
 }
@@ -95,6 +96,7 @@ class ScreenshotPinnedEditController final : public QObject {
     QPointer<adqt::widgets::AdColorPicker> m_canvasColorSamplingTarget;
     QMetaObject::Connection m_canvasColorSamplingDestroyedConnection;
     QPoint m_globalContentPosition;
+    std::unique_ptr<ScreenshotAutoFilterController> m_autoFilterController;
     bool m_editMode = false;
     bool m_manuallyPlaced = false;
     bool m_updatingPlacement = false;

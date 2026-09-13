@@ -30,6 +30,7 @@ enum class SnowCanvasTool {
     PenHighlight,
     PenFilter,
     Spotlight,
+    AutoFilter,
 };
 
 enum class SnowCanvasCursorLayer {
@@ -507,4 +508,14 @@ struct SnowCanvasSnapConfig {
 struct SnowCanvasGridConfig {
     bool enabled = false;
     double size = 20.0;
+};
+
+struct SnowCanvasAutoFilterRegion {
+    quint64 id = 0;
+    QRectF bounds;
+    QString category;
+};
+struct SnowCanvasAutoFilterRecord {
+    QRectF sourceBounds;
+    QList<SnowCanvasAutoFilterRegion> regions;
 };

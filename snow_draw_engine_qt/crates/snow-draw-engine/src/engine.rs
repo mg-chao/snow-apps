@@ -15,6 +15,8 @@ use snow_draw_engine_interaction::{InputEvent, InteractionOutput};
 use snow_draw_engine_model::DocumentModel;
 use snow_draw_engine_scene::{DocumentSceneCache, ViewportComposer};
 
+#[cfg(test)]
+mod auto_filter_tests;
 mod document_commands;
 mod input;
 mod mutations;
@@ -462,7 +464,14 @@ mod tests {
 
         for (tool, style) in [
             (ActiveTool::RectangleFilter, expected.rectangle_filter),
-            (ActiveTool::PenFilter, expected.pen_filter),
+            (ActiveTool::AutoFilter, expected.rectangle_filter),
+            (
+                ActiveTool::PenFilter,
+                FilterStyle {
+                    strength: expected.rectangle_filter.strength,
+                    ..expected.pen_filter
+                },
+            ),
         ] {
             engine.set_viewport_active_tool(viewport, tool).unwrap();
             assert_eq!(
@@ -538,6 +547,7 @@ mod tests {
         let mut expected_editor = config.style_defaults.editor.clone();
         expected_editor.rectangle = changed_rectangle;
         expected_editor.pen_filter = changed_filter;
+        expected_editor.rectangle_filter.strength = changed_filter.strength;
         assert_editor_defaults(&mut engine, viewport, &expected_editor);
         assert_eq!(engine.watermark_config(), &config.style_defaults.watermark);
         assert_eq!(engine.spotlight_config(), config.style_defaults.spotlight);

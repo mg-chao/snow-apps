@@ -183,6 +183,8 @@ pub enum CanvasFilterType {
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FilterData {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_region_id: Option<u64>,
     pub center: Point<f64>,
     pub width: f64,
     pub height: f64,
@@ -195,6 +197,7 @@ pub struct FilterData {
 impl Default for FilterData {
     fn default() -> Self {
         Self {
+            auto_region_id: None,
             center: Point::default(),
             width: 1.0,
             height: 1.0,
@@ -521,7 +524,13 @@ impl ElementData {
     pub fn kind(&self) -> ElementKind {
         match self {
             Self::Rectangle(rect) => rect.element_kind(),
-            Self::Filter(_) => ElementKind::Filter,
+            Self::Filter(filter) => {
+                if filter.auto_region_id.is_some() {
+                    ElementKind::AutoFilter
+                } else {
+                    ElementKind::Filter
+                }
+            }
             Self::PenFilter(_) => ElementKind::PenFilter,
             Self::Arrow(arrow) => arrow.element_kind(),
             Self::FreeDraw(_) => ElementKind::FreeDraw,
@@ -620,6 +629,7 @@ pub enum ElementKind {
     Text,
     SerialNumber,
     Spotlight,
+    AutoFilter,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -653,6 +663,8 @@ pub struct Document {
     next_index: u32,
     watermark: WatermarkConfig,
     spotlight: SpotlightConfig,
+    #[serde(default)]
+    pub(crate) auto_filter_regions: Option<crate::AutoFilterRegionRecord>,
 }
 
 impl Document {
@@ -667,6 +679,7 @@ impl Document {
         }
         validate_watermark_config(&self.watermark)?;
         validate_spotlight_config(&self.spotlight)?;
+        self.validate_auto_filters()?;
 
         let mut active_ids = HashSet::with_capacity(self.paint_order.len());
         for (index, slot) in self.slots.iter().enumerate() {
@@ -1028,7 +1041,10 @@ impl Document {
             }
         }
 
-        if let Err(error) = self.synchronize_arrow_text(&mut inverse, &mut changes) {
+        if let Err(error) = self
+            .validate_auto_filters()
+            .and_then(|()| self.synchronize_arrow_text(&mut inverse, &mut changes))
+        {
             for operation in inverse.iter().rev() {
                 self.apply_operation(operation, &mut DocumentDelta::default())
                     .expect("document rollback must succeed");
@@ -1038,6 +1054,7 @@ impl Document {
             self.slots.truncate(start_slots_len);
             return Err(error);
         }
+        self.normalize_auto_filter_order(&mut changes);
         inverse.reverse();
         self.revision.0 = self.revision.0.wrapping_add(1);
         let document_revision = self.revision;
@@ -1167,6 +1184,13 @@ impl Document {
         changes: &mut ChangeSet,
     ) -> Result<Operation, ErrorCode> {
         match operation {
+            Operation::UpdateAutoFilterRegions { record } => {
+                if let Some(record) = record {
+                    record.validate()?;
+                }
+                let inverse = std::mem::replace(&mut self.auto_filter_regions, record.clone());
+                Ok(Operation::UpdateAutoFilterRegions { record: inverse })
+            }
             Operation::UpdateWatermark { config } => {
                 let normalized = config.clone().normalized();
                 validate_watermark_config(&normalized)?;

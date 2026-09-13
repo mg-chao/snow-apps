@@ -846,6 +846,7 @@ mod tests {
     #[test]
     fn filter_display_item_preserves_effect_and_normalizes_strength() {
         let filter = FilterData {
+            auto_region_id: None,
             center: Point::new(12.0, 18.0),
             width: 80.0,
             height: 40.0,

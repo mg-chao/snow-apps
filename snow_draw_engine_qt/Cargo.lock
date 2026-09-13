@@ -95,6 +95,8 @@ name = "snow-draw-engine-c"
 version = "0.2.0"
 dependencies = [
  "snow-draw-engine",
+ "snow-draw-engine-core",
+ "snow-draw-engine-document",
 ]
 
 [[package]]

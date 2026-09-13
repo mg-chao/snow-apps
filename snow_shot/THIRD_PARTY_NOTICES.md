@@ -113,3 +113,10 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+Auto Filter uses the repository's Apache-2.0 `visual-region-detector` and
+`snow-visual-region-detector-c` crates with the pure Rust backend. Its image
+boundary uses the existing `image` dependency (MIT OR Apache-2.0); JPEG support
+adds `zune-core` and `zune-jpeg` (MIT OR Apache-2.0 OR Zlib). Their resolved
+licenses are included in the Rust dependency notice bundle. OpenCV is not
+required by this feature.

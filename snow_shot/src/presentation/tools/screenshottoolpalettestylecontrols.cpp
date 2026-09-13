@@ -134,6 +134,7 @@ QVector<QByteArray> styleEditorRoles(ScreenshotToolPalette::Tool tool) {
                 "text-stroke",        kRoleTextFill, kRoleCornerRadius};
     case Tool::SerialNumber:
         return {kRoleForegroundColor, "serial-value", kRoleTextFont, kRoleTextFill};
+    case Tool::AutoFilter:
     case Tool::RectangleFilter:
         return {"filter-mode", "filter-type", "filter-intensity"};
     case Tool::PenFilter:
@@ -936,6 +937,7 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         stageComponent(kRoleTextFont, kSignatureTextFont, m_serialNumberFontEditor);
         stageComponent(kRoleTextFill, kSignatureTextFill, m_serialNumberFillEditor);
         break;
+    case Tool::AutoFilter:
     case Tool::RectangleFilter:
         stageWidget(kRoleFilterMode, kSignatureFilterMode);
         stageWidget(kRoleFilterType, kSignatureFilterType);
@@ -2213,6 +2215,8 @@ ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buil
          outlined_icons::Highlight()},
         {static_cast<int>(ScreenshotToolPalette::Tool::RectangleFilter),
          QStringLiteral("Rectangle filter"), custom_outlined_icons::ShapeRectangle()},
+        {static_cast<int>(ScreenshotToolPalette::Tool::AutoFilter), QStringLiteral("Auto Filter"),
+         custom_outlined_icons::MagicWand()},
     };
     QWidget* modeSelector =
         takeReusableWidget("filter-mode", kSignatureFilterMode, layout, result.controls);

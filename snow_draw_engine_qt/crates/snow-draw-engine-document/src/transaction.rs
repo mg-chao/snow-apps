@@ -8,6 +8,9 @@ use crate::document::{
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Operation {
+    UpdateAutoFilterRegions {
+        record: Option<crate::AutoFilterRegionRecord>,
+    },
     InsertElement {
         id: ElementId,
         meta: ElementMeta,

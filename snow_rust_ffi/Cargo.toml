@@ -8,6 +8,7 @@ license = "Apache-2.0"
 crate-type = ["staticlib"]
 
 [dependencies]
+snow-visual-region-detector-c = { path = "../snow-crates/crates/snow-visual-region-detector-c" }
 snow-recording-effects-c = { path = "../snow-crates/crates/snow-recording-effects-c" }
 snow-diagnostics = { path = "../snow-crates/crates/snow-diagnostics" }
 snow-capture-c = { path = "../snow-crates/crates/snow-capture-c" }

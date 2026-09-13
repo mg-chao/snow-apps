@@ -11,13 +11,23 @@ use snow_draw_engine_document::{
 pub struct DocumentModel {
     document: Document,
     queries: QueryStore,
+    auto_filter_generation: u64,
+}
+
+fn next_region_generation() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 impl Clone for DocumentModel {
     fn clone(&self) -> Self {
         let document = self.document.clone();
         let queries = QueryStore::new(&document);
-        Self { document, queries }
+        Self {
+            document,
+            queries,
+            auto_filter_generation: next_region_generation(),
+        }
     }
 }
 
@@ -25,7 +35,11 @@ impl Default for DocumentModel {
     fn default() -> Self {
         let document = Document::new();
         let queries = QueryStore::new(&document);
-        Self { document, queries }
+        Self {
+            document,
+            queries,
+            auto_filter_generation: next_region_generation(),
+        }
     }
 }
 
@@ -37,7 +51,15 @@ impl DocumentModel {
     pub fn from_document(document: Document) -> Result<Self, ErrorCode> {
         document.validate_session()?;
         let queries = QueryStore::new(&document);
-        Ok(Self { document, queries })
+        Ok(Self {
+            document,
+            queries,
+            auto_filter_generation: next_region_generation(),
+        })
+    }
+
+    pub fn auto_filter_generation(&self) -> u64 {
+        self.auto_filter_generation
     }
 
     pub fn document(&self) -> &Document {
@@ -75,6 +97,14 @@ impl DocumentModel {
         transaction: &Transaction,
     ) -> Result<ApplyResult, ErrorCode> {
         let apply_result = self.document.apply(transaction)?;
+        if transaction.operations().iter().any(|op| {
+            matches!(
+                op,
+                snow_draw_engine_document::Operation::UpdateAutoFilterRegions { .. }
+            )
+        }) {
+            self.auto_filter_generation = next_region_generation();
+        }
         self.queries.refresh(&self.document, &apply_result.changes);
         Ok(apply_result)
     }

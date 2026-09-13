@@ -1,6 +1,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 mod abi {
+    pub(crate) mod auto_filter_exports;
     pub(crate) mod convert;
     pub(crate) mod document_exports;
     pub(crate) mod exports;
@@ -15,11 +16,10 @@ mod abi {
     pub(crate) mod types;
 }
 
+pub use abi::auto_filter_exports::*;
 pub use abi::document_exports::*;
 pub use abi::exports::*;
-pub use abi::handles::{
-    SnowChangedViewportList, SnowPatchHandle, SnowRuntime, SnowViewport,
-};
+pub use abi::handles::{SnowChangedViewportList, SnowPatchHandle, SnowRuntime, SnowViewport};
 pub use abi::history_exports::*;
 pub use abi::input_exports::*;
 pub use abi::patch_exports::*;

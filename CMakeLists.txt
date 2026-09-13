@@ -140,7 +140,8 @@ if(SNOW_APPS_BUILD_SNOW_SHOT)
             snow_ui_selector_c
             snow_selected_text_c
             snow_stitch_images_c
-            snow_draw_engine_c)
+            snow_draw_engine_c
+            snow_visual_region_detector_c)
         add_library("${_snow_rust_ffi_target}" INTERFACE)
         target_link_libraries("${_snow_rust_ffi_target}" INTERFACE
             snow_shot_rust_ffi_bundle)

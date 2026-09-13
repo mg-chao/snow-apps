@@ -66,6 +66,14 @@ impl Editor {
                 allow_shift_toggle: true,
                 default_cursor: CursorStyle::Crosshair,
             },
+            ActiveTool::AutoFilter => ToolPolicy {
+                selection_scope: ToolSelectionScope::FilterOnly,
+                quick_selection_enabled: false,
+                clear_selection_on_activate: true,
+                empty_canvas_action: ToolEmptyCanvasAction::MarqueeSelect,
+                allow_shift_toggle: false,
+                default_cursor: CursorStyle::Crosshair,
+            },
             ActiveTool::RectangleFilter => ToolPolicy {
                 selection_scope: ToolSelectionScope::FilterOnly,
                 quick_selection_enabled: true,
@@ -142,6 +150,9 @@ impl Editor {
     }
 
     pub(crate) fn selection_scope_matches(scope: ToolSelectionScope, kind: ElementKind) -> bool {
+        if kind == ElementKind::AutoFilter {
+            return false;
+        }
         match scope {
             ToolSelectionScope::None => false,
             ToolSelectionScope::All => true,
@@ -167,6 +178,9 @@ impl Editor {
         id: ElementId,
         kind: ElementKind,
     ) -> bool {
+        if kind == ElementKind::AutoFilter {
+            return false;
+        }
         match scope {
             ToolSelectionScope::SerialNumberOnly => {
                 kind == ElementKind::SerialNumber

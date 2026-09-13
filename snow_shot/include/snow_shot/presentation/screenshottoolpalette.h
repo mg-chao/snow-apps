@@ -81,6 +81,7 @@ class ScreenshotToolPalette final : public QWidget {
         Spotlight,
         Markdown,
         Html,
+        AutoFilter,
     };
 
     enum class RecordingState {
@@ -270,6 +271,7 @@ class ScreenshotToolPalette final : public QWidget {
     bool stepSelectionOpacity(int direction);
     bool stepSpotlightOpacity(int direction);
     bool stepFilterIntensity(int direction);
+    void setAutoFilterAvailable(bool available);
     bool stepPenFilterStrokeWidth(int direction);
     bool stepWatermarkFontSize(int direction);
     void setStyleToolbarAboveMain(bool above);
@@ -379,6 +381,8 @@ class ScreenshotToolPalette final : public QWidget {
     void eraserRequested();
     void filterRequested();
     void rectangleFilterRequested();
+    void autoFilterRequested();
+    void autoFilterCategoryRequested(const QString& category);
     void penFilterRequested();
     void watermarkRequested();
     void textRequested();
@@ -681,6 +685,7 @@ class ScreenshotToolPalette final : public QWidget {
     QWidget* m_textStyleControlsWidget = nullptr;
     QWidget* m_serialNumberStyleControlsWidget = nullptr;
     QWidget* m_filterStyleControlsWidget = nullptr;
+    QWidget* m_autoFilterStyleControlsWidget = nullptr;
     QWidget* m_penFilterStyleControlsWidget = nullptr;
     QWidget* m_watermarkStyleControlsWidget = nullptr;
     QWidget* m_activeStyleControlsWidget = nullptr;
@@ -855,6 +860,9 @@ class ScreenshotToolPalette final : public QWidget {
     QVector<ActionToolGroup> m_actionToolGroups;
     FilterEditor m_filterEditor;
     FilterEditor m_penFilterEditor;
+    FilterEditor m_autoFilterEditor;
+    QPointer<adqt::widgets::AdSelect> m_fillRegionsSelect;
+    bool m_autoFilterAvailable = false;
     QPointer<QLabel> m_spotlightOpacityIcon;
     QPointer<adqt::widgets::AdSlider> m_spotlightOpacitySlider;
 

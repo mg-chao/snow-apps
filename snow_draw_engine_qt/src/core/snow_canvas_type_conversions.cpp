@@ -93,6 +93,8 @@ SnowCanvasTool toCanvasTool(SnowActiveTool tool) {
         return SnowCanvasTool::Text;
     case SNOW_ACTIVE_TOOL_SERIAL_NUMBER:
         return SnowCanvasTool::SerialNumber;
+    case SNOW_ACTIVE_TOOL_AUTO_FILTER:
+        return SnowCanvasTool::AutoFilter;
     case SNOW_ACTIVE_TOOL_SPOTLIGHT:
         return SnowCanvasTool::Spotlight;
     }
@@ -127,6 +129,8 @@ SnowActiveTool toEngineTool(SnowCanvasTool tool) {
         return SNOW_ACTIVE_TOOL_TEXT;
     case SnowCanvasTool::SerialNumber:
         return SNOW_ACTIVE_TOOL_SERIAL_NUMBER;
+    case SnowCanvasTool::AutoFilter:
+        return SNOW_ACTIVE_TOOL_AUTO_FILTER;
     case SnowCanvasTool::Spotlight:
         return SNOW_ACTIVE_TOOL_SPOTLIGHT;
     }

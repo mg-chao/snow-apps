@@ -24,6 +24,7 @@ pub enum SnowActiveTool {
     PenHighlight = 11,
     PenFilter = 12,
     Spotlight = 13,
+    AutoFilter = 14,
 }
 
 impl SnowActiveTool {

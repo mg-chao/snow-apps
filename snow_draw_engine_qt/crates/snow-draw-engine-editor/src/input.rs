@@ -31,6 +31,9 @@ impl Editor {
         document: &DocumentModel,
         event: PointerEvent,
     ) -> Result<InteractionOutput, ErrorCode> {
+        if self.state.active_tool == ActiveTool::AutoFilter {
+            return self.process_auto_filter_pointer_event(document, event);
+        }
         if self.state.active_tool == ActiveTool::Eraser {
             return self.process_eraser_pointer_event(document, event);
         }

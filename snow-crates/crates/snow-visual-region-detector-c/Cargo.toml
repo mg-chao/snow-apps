@@ -1,0 +1,11 @@
+[package]
+name = "snow-visual-region-detector-c"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+visual-region-detector = { path = "../visual-region-detector" }

@@ -31,6 +31,8 @@ class ScreenshotToolbarCommandSink {
         setFilterTool();
     }
     virtual void setPenFilterTool() {}
+    virtual void setAutoFilterTool() {}
+    virtual void fillAutoFilterCategory(const QString&) {}
     virtual void setWatermarkTool() = 0;
     virtual void setWatermarkConfigFromToolbar(const SnowCanvasWatermarkConfig& config) = 0;
     virtual void previewWatermarkFromToolbar(const SnowCanvasWatermarkConfig& config) = 0;

@@ -60,6 +60,10 @@ class SnowCanvasWidget : public QWidget {
     bool setCanvasSerialNumberStyle(const SnowCanvasSerialNumberStyle& style);
 
     SnowCanvasHistoryState canvasHistoryState() const;
+    quint64 autoFilterGeneration() const;
+    std::optional<SnowCanvasAutoFilterRecord> autoFilterRegions() const;
+    bool setAutoFilterRegions(const std::optional<SnowCanvasAutoFilterRecord>& record);
+    bool fillAutoFilterCategory(const QString& category);
 
     SnowCanvasSnapConfig canvasSnapConfig() const;
     bool setCanvasSnapConfig(const SnowCanvasSnapConfig& config);
@@ -133,6 +137,8 @@ class SnowCanvasWidget : public QWidget {
     void setShowDirtyRects(bool show);
 
   signals:
+    void autoFilterRegionsChanged();
+    void autoFilterInteractionStarting();
     void activeToolChanged();
     void styleToolbarStateChanged();
     void historyStateChanged();

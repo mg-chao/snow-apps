@@ -174,6 +174,10 @@ if(NOT TARGET snow_capture_c)
     )
 endif()
 
+if(NOT TARGET snow_visual_region_detector_c)
+    snow_add_rust_static_library(snow_visual_region_detector_c PACKAGE snow-visual-region-detector-c MANIFEST_DIR "${SNOW_SHOT_CAPTURE_CRATES_DIR}" OUTPUT_NAME snow_visual_region_detector_c)
+endif()
+
 if(NOT TARGET snow_selected_text_c)
     snow_add_rust_static_library(snow_selected_text_c
         PACKAGE snow-selected-text-c
@@ -1056,6 +1060,8 @@ set(PROJECT_CXX_SOURCES
     src/presentation/selector/screenshotselectorworkflow.cpp
     src/presentation/toolbar/screenshottoolbarpresenter.cpp
     src/presentation/toolbar/screenshottoolbarpresentationstatefactory.cpp
+    src/presentation/tools/screenshotautofiltercontroller.cpp
+    include/snow_shot/presentation/screenshotautofiltercontroller.h
     src/presentation/tools/screenshottoolcommandworkflow.cpp
     src/presentation/tools/screenshottoolbarmainpanel.cpp
     src/presentation/tools/screenshottoolpalettebuttons.cpp
@@ -5072,6 +5078,7 @@ endif()
 target_include_directories(snow_shot PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include"
+    "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-visual-region-detector-c/include"
     "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-ui-selector-c/include"
     "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-stitch-images-c/include"
 )
@@ -5101,6 +5108,7 @@ target_link_libraries(
         snow_draw_engine_qt_canvas
         snow_capture_c
         snow_ui_selector_c
+        snow_visual_region_detector_c
         snow_stitch_images_c
         ZXing::ZXing
         Qt6::Widgets
@@ -5763,3 +5771,38 @@ foreach(_conversion_controller_target IN ITEMS snow_shot
 endforeach()
 
 qt_finalize_executable(snow_shot)
+
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-auto-filter-tests
+        tests/screenshot_auto_filter_tests.cpp
+        src/presentation/tools/screenshotautofiltercontroller.cpp
+        include/snow_shot/presentation/screenshotautofiltercontroller.h)
+    target_include_directories(snow-shot-auto-filter-tests PRIVATE include "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-visual-region-detector-c/include")
+    target_link_libraries(snow-shot-auto-filter-tests PRIVATE snow_draw_engine_qt_canvas snow_visual_region_detector_c Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-auto-filter-tests)
+    add_test(NAME snow-shot-auto-filter-tests COMMAND snow-shot-auto-filter-tests)
+    set_tests_properties(snow-shot-auto-filter-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit;windows")
+endif()
+
+if(SNOW_SHOT_BUILD_TESTS)
+    add_test(NAME snow-shot-auto-filter-toolbar-tests COMMAND snow-shot-screenshot-tool-palette-tests --auto-filter-only)
+    set_tests_properties(snow-shot-auto-filter-toolbar-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit;windows")
+endif()
+
+foreach(_auto_filter_host_target IN ITEMS snow-shot-pinned-window-tests
+        snow-shot-file-pin-batch-performance-benchmark)
+    if(TARGET ${_auto_filter_host_target})
+        target_sources(${_auto_filter_host_target} PRIVATE
+            src/presentation/tools/screenshotautofiltercontroller.cpp
+            include/snow_shot/presentation/screenshotautofiltercontroller.h)
+        target_include_directories(${_auto_filter_host_target} PRIVATE
+            "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-visual-region-detector-c/include")
+        target_link_libraries(${_auto_filter_host_target} PRIVATE snow_visual_region_detector_c)
+    endif()
+endforeach()
+if(SNOW_SHOT_BUILD_TESTS)
+    add_test(NAME snow-shot-auto-filter-pinned-tests
+        COMMAND snow-shot-pinned-window-tests --auto-filter-only -platform offscreen)
+    set_tests_properties(snow-shot-auto-filter-pinned-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit;windows" TIMEOUT 60)
+endif()

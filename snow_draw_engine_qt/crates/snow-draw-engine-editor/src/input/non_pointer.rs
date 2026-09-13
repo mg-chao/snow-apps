@@ -22,7 +22,7 @@ impl Editor {
             && !event.modifiers.shift
             && matches!(
                 self.state.active_tool,
-                ActiveTool::RectangleFilter | ActiveTool::PenFilter
+                ActiveTool::RectangleFilter | ActiveTool::PenFilter | ActiveTool::AutoFilter
             )
         {
             let mut style = self.filter_style(document);
@@ -219,23 +219,25 @@ mod tests {
     #[test]
     fn rectangle_filter_wheel_steps_only_strength_and_skips_disabled_types() {
         let document = DocumentModel::new();
-        let mut editor = editor_for(ActiveTool::RectangleFilter);
+        for tool in [ActiveTool::RectangleFilter, ActiveTool::AutoFilter] {
+            let mut editor = editor_for(tool);
 
-        let update = editor.process_input(&document, wheel(120.0)).unwrap();
-        assert!(update.interaction.consumed);
-        assert!(update.command.is_none());
-        assert_eq!(editor.filter_style(&document).strength, 0.51);
-        assert_eq!(editor.filter_style(&document).stroke_width, 2.0);
+            let update = editor.process_input(&document, wheel(120.0)).unwrap();
+            assert!(update.interaction.consumed);
+            assert!(update.command.is_none());
+            assert_eq!(editor.filter_style(&document).strength, 0.51);
+            assert_eq!(editor.filter_style(&document).stroke_width, 2.0);
 
-        let mut grayscale = editor.filter_style(&document);
-        grayscale.filter_type = CanvasFilterType::Grayscale;
-        editor
-            .set_filter_style(&document, grayscale, FILTER_STYLE_PROPERTY_TYPE)
-            .unwrap();
-        let before = editor.filter_style(&document);
-        let update = editor.process_input(&document, wheel(-120.0)).unwrap();
-        assert!(!update.interaction.consumed);
-        assert_eq!(editor.filter_style(&document), before);
+            let mut grayscale = editor.filter_style(&document);
+            grayscale.filter_type = CanvasFilterType::Grayscale;
+            editor
+                .set_filter_style(&document, grayscale, FILTER_STYLE_PROPERTY_TYPE)
+                .unwrap();
+            let before = editor.filter_style(&document);
+            let update = editor.process_input(&document, wheel(-120.0)).unwrap();
+            assert!(!update.interaction.consumed);
+            assert_eq!(editor.filter_style(&document), before);
+        }
     }
 
     #[test]

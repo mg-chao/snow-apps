@@ -281,6 +281,12 @@ void ScreenshotToolbarWindow::connectStyleCommands(ScreenshotToolPalette& toolPa
         m_commands.setRectangleFilterTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::RectangleFilter);
     });
+    connect(&toolPalette, &ScreenshotToolPalette::autoFilterRequested, this, [this]() {
+        m_commands.setAutoFilterTool();
+        setActiveToolAndReposition(ScreenshotToolPalette::Tool::AutoFilter);
+    });
+    connect(&toolPalette, &ScreenshotToolPalette::autoFilterCategoryRequested, this,
+            [this](const QString& category) { m_commands.fillAutoFilterCategory(category); });
     connect(&toolPalette, &ScreenshotToolPalette::penFilterRequested, this, [this]() {
         m_commands.setPenFilterTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::PenFilter);

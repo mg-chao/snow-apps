@@ -83,7 +83,11 @@ impl Editor {
             let id = document
                 .and_then(|document| document.arrow_id_for_text(id))
                 .unwrap_or(id);
-            let missing = document.is_some_and(|document| document.element(id).is_err());
+            let missing = document.is_some_and(|document| {
+                document.element(id).map_or(true, |e| {
+                    e.data.kind() == snow_draw_engine_document::ElementKind::AutoFilter
+                })
+            });
             if next_ids.contains(&id) || missing {
                 continue;
             }

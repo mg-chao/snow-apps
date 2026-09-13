@@ -30,3 +30,7 @@ pub mod selected_text {
 pub mod recording_effects {
     pub use snow_recording_effects_c::*;
 }
+
+pub mod visual_region_detector {
+    pub use snow_visual_region_detector_c::*;
+}

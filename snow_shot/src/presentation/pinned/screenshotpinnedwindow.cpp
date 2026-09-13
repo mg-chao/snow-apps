@@ -5611,3 +5611,10 @@ bool ScreenshotPinnedWindow::isControlsPanelPosition(const QPoint& position) con
     return m_controlsPanel != nullptr && m_controlsPanel->isVisible() &&
            m_controlsPanel->geometry().contains(position);
 }
+
+void ScreenshotPinnedWindow::requestAutoFilterSource(std::function<void(QImage)> completion) {
+    requestMaterializedImage([this, completion = std::move(completion)](bool success) {
+        completion(success ? (m_transformedImage.isNull() ? m_originalImage : m_transformedImage)
+                           : QImage());
+    });
+}
