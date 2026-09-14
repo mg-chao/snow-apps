@@ -128,6 +128,7 @@ enum class SettingsSwitchBinding {
     OriginalImageTranslation,
     TranslationPageEnabled,
     StandaloneTranslationWindow,
+    LoopAnimatedImages,
     ScreenRecordingCaptureToolbar,
     DisableHotkeysOnFocusedFullscreen,
     AutoStartAtBoot,

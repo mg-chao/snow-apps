@@ -1111,6 +1111,14 @@ bool RecordingSettings::setAnimatedImageFrameRate(int frameRate) const {
                             frameRate);
 }
 
+bool RecordingSettings::loopAnimatedImages() const {
+    return cache().value(QStringLiteral("screen_recording/loop_animated_images")).toBool();
+}
+
+bool RecordingSettings::setLoopAnimatedImages(bool enabled) const {
+    return cache().setValue(QStringLiteral("screen_recording/loop_animated_images"), enabled);
+}
+
 QString RecordingSettings::outputFormat() const {
     return cache().value(QStringLiteral("screen_recording/output_format")).toString();
 }

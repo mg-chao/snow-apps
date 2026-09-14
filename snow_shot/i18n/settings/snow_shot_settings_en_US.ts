@@ -1374,6 +1374,10 @@
             <translation>Locale</translation>
         </message>
         <message>
+            <source>Loop Animated Images</source>
+            <translation>Loop Animated Images</translation>
+        </message>
+        <message>
             <source>MSAA</source>
             <translation>MSAA</translation>
         </message>
@@ -1660,6 +1664,10 @@
         <message>
             <source>Play a shutter sound when capturing the focused window or current display.</source>
             <translation>Play a shutter sound when capturing the focused window or current display.</translation>
+        </message>
+        <message>
+            <source>Play saved GIF, APNG, and WebP recordings repeatedly.</source>
+            <translation>Play saved GIF, APNG, and WebP recordings repeatedly.</translation>
         </message>
         <message>
             <source>Portrait A4</source>

@@ -5608,6 +5608,7 @@ where
             fs::remove_file(output_path)?;
         }
         let mut encoder = StreamingEncoder::create(StreamingEncoderConfig {
+            loop_animated_images: true,
             output_path: output_path.to_path_buf(),
             format,
             width,

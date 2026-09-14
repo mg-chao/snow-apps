@@ -1041,7 +1041,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     require(recording.screenRecordingClarity() == QStringLiteral("1080p") &&
                 recording.frameRate() == 30 &&
                 recording.animatedImageClarity() == QStringLiteral("720p") &&
-                recording.animatedImageFrameRate() == 10 &&
+                recording.animatedImageFrameRate() == 10 && recording.loopAnimatedImages() &&
                 recording.outputFormat() == QStringLiteral("mp4") &&
                 recording.mouseTrailColor() == QColor(0, 0, 0, 0) &&
                 recording.mouseClickColor() == QColor(0, 0, 0, 0) && recording.showCursor() &&
@@ -1056,7 +1056,8 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     require(
         recording.setScreenRecordingClarity(QStringLiteral("2k")) && recording.setFrameRate(83) &&
             recording.setAnimatedImageClarity(QStringLiteral("480p")) &&
-            recording.setAnimatedImageFrameRate(24) &&
+            recording.setAnimatedImageFrameRate(24) && recording.setLoopAnimatedImages(false) &&
+            !storage::RecordingSettings().loopAnimatedImages() &&
             recording.setOutputFormat(QStringLiteral("webp")) &&
             recording.setMouseTrailColor(QColor(1, 2, 3, 4)) &&
             recording.setMouseClickColor(QColor(5, 6, 7, 128)) && recording.setShowCursor(false) &&
@@ -1079,6 +1080,9 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             recording.videoSaveDirectory() == QStringLiteral("D:/Recordings") &&
             recording.videoFilenameFormat() == QStringLiteral("Recording_{yyyyMMdd}"),
         "recording adapters must round-trip every requested option");
+    require(recording.setLoopAnimatedImages(true) &&
+                storage::RecordingSettings().loopAnimatedImages(),
+            "recording loop preference must round-trip enabled");
     require(recording.setEncoder(QStringLiteral("h264_hw")) &&
                 recording.encoder() == QStringLiteral("h264_hw") &&
                 recording.setEncoder(QStringLiteral("h264")) &&

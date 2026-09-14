@@ -238,6 +238,7 @@ fn run_sample(config: &Config, scenario: Scenario, sample: usize) -> Result<Benc
     let mut memory_peak = memory_start;
     let initialize_started = Instant::now();
     let mut encoder = StreamingEncoder::create(StreamingEncoderConfig {
+        loop_animated_images: true,
         output_path: output_path.clone(),
         format: scenario.format,
         width: scenario.width,

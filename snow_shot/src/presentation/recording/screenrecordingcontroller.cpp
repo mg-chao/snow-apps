@@ -695,6 +695,7 @@ struct ScreenRecordingController::Impl {
                 0,
                 static_cast<uint32_t>(mouseTrailDurationMs),
                 static_cast<uint32_t>(keyboardSize),
+                static_cast<uint32_t>(settings.loopAnimatedImages()),
             };
             // Exclude before the worker starts capturing so no frame can ever
             // contain the toolbar; a failed start restores visibility.

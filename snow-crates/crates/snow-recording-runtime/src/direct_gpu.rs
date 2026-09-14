@@ -711,6 +711,7 @@ mod tests {
 
     fn config(path: PathBuf, backend: CaptureBackendKind) -> DirectRecordingConfig {
         DirectRecordingConfig {
+            loop_animated_images: true,
             region: RecordingRegion {
                 x: 0,
                 y: 0,

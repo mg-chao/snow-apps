@@ -1155,6 +1155,12 @@ QVector<SettingsItemDefinition> screenRecordingItems() {
             QT_TRANSLATE_NOOP("SettingsCatalog", "Set the frame rate of exported animated images"),
             QStringLiteral("screen_recording/animated_image_frame_rate"),
             SettingsSelectBinding::AnimatedImageFrameRate, frameRateOptions({10, 15, 24})),
+        switchItem(QStringLiteral("screen-recording.loop-animated-images"),
+                   QT_TRANSLATE_NOOP("SettingsCatalog", "Loop Animated Images"),
+                   QT_TRANSLATE_NOOP("SettingsCatalog",
+                                     "Play saved GIF, APNG, and WebP recordings repeatedly."),
+                   QStringLiteral("screen_recording/loop_animated_images"),
+                   SettingsSwitchBinding::LoopAnimatedImages),
         fixedSelectItem(
             QStringLiteral("screen-recording.encoder"),
             QT_TRANSLATE_NOOP("SettingsCatalog", "Encoder"),
@@ -2987,6 +2993,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::OriginalImageTranslation:
                         expectedKey =
                             QStringLiteral("screenshot_translation/original_image_translation");
+                        break;
+                    case SettingsSwitchBinding::LoopAnimatedImages:
+                        expectedKey = QStringLiteral("screen_recording/loop_animated_images");
                         break;
                     case SettingsSwitchBinding::ScreenRecordingCaptureToolbar:
                         expectedKey =

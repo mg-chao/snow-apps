@@ -1374,6 +1374,10 @@
             <translation>区域设置</translation>
         </message>
         <message>
+            <source>Loop Animated Images</source>
+            <translation>循环播放动图</translation>
+        </message>
+        <message>
             <source>MSAA</source>
             <translation>MSAA</translation>
         </message>
@@ -1660,6 +1664,10 @@
         <message>
             <source>Play a shutter sound when capturing the focused window or current display.</source>
             <translation>截取焦点窗口或当前显示器时播放快门声音。</translation>
+        </message>
+        <message>
+            <source>Play saved GIF, APNG, and WebP recordings repeatedly.</source>
+            <translation>循环播放保存的 GIF、APNG 和 WebP 录制文件。</translation>
         </message>
         <message>
             <source>Portrait A4</source>

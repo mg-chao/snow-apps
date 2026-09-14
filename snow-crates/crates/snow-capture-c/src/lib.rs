@@ -567,6 +567,7 @@ pub struct SnowCaptureDirectRecordingConfig {
     keyboard_label_count: u32,
     mouse_trail_duration_ms: u32,
     keyboard_size: u32,
+    loop_animated_images: u32,
 }
 
 #[repr(C)]
@@ -576,7 +577,13 @@ struct SnowCaptureDirectRecordingConfigHeader {
     struct_size: u32,
 }
 
-pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 4;
+pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 5;
+const DIRECT_RECORDING_CONFIG_V4_FIELDS_SIZE: usize =
+    std::mem::offset_of!(SnowCaptureDirectRecordingConfig, loop_animated_images);
+const DIRECT_RECORDING_CONFIG_V4_SIZE: u32 = (DIRECT_RECORDING_CONFIG_V4_FIELDS_SIZE
+    .div_ceil(std::mem::align_of::<SnowCaptureDirectRecordingConfig>())
+    * std::mem::align_of::<SnowCaptureDirectRecordingConfig>())
+    as u32;
 const DIRECT_RECORDING_CONFIG_V1_FIELDS_SIZE: usize =
     std::mem::offset_of!(SnowCaptureDirectRecordingConfig, show_keyboard);
 // The original structure has pointer alignment and may contain tail padding. Validate its
@@ -590,6 +597,7 @@ fn direct_config_size(version: u32) -> Result<u32, String> {
     match version {
         1 => Ok(DIRECT_RECORDING_CONFIG_V1_SIZE),
         2 | 3 => Ok(std::mem::offset_of!(SnowCaptureDirectRecordingConfig, keyboard_size) as u32),
+        4 => Ok(DIRECT_RECORDING_CONFIG_V4_SIZE),
         DIRECT_RECORDING_CONFIG_VERSION => Ok(DIRECT_RECORDING_CONFIG_SIZE),
         _ => Err(format!(
             "unsupported direct recording config version: {version}"
@@ -2865,7 +2873,17 @@ fn parse_direct_recording_config(
         }
     };
 
+    let loop_animated_images = if config.version < 5 {
+        true
+    } else {
+        match config.loop_animated_images {
+            0 => false,
+            1 => true,
+            value => return Err(format!("invalid animated image loop flag: {value}")),
+        }
+    };
     let direct = DirectRecordingConfig {
+        loop_animated_images,
         region: RecordingRegion::new(config.x, config.y, config.width, config.height),
         capture_backend,
         output_path,
@@ -2913,6 +2931,8 @@ unsafe fn read_direct_recording_config(
     let mut value: SnowCaptureDirectRecordingConfig = unsafe { std::mem::zeroed() };
     let copy_size = if header.version == 1 {
         DIRECT_RECORDING_CONFIG_V1_FIELDS_SIZE
+    } else if header.version == 4 {
+        DIRECT_RECORDING_CONFIG_V4_FIELDS_SIZE
     } else {
         required_size as usize
     };
@@ -3614,6 +3634,7 @@ mod tests {
             keyboard_label_count: 0,
             mouse_trail_duration_ms: 500,
             keyboard_size: 64,
+            loop_animated_images: 1,
         }
     }
 
@@ -3636,6 +3657,34 @@ mod tests {
             SnowCaptureResult::InvalidArgument
         );
         assert_eq!(snow_capture_recording_session_live_count(), 0);
+    }
+
+    #[test]
+    fn direct_config_loop_flag_and_legacy_padding() {
+        let output = CString::new("recording.mp4").unwrap();
+        for version in 1..=DIRECT_RECORDING_CONFIG_VERSION {
+            for enabled in [false, true] {
+                let mut config = direct_config(&output);
+                config.version = version;
+                if version == 2 {
+                    config.mouse_trail_duration_ms = 0;
+                }
+                config.struct_size = direct_config_size(version).unwrap();
+                config.loop_animated_images = u32::from(enabled);
+                if version < 5 {
+                    // This occupies v4 tail padding on x64 and is absent in older versions.
+                    config.loop_animated_images = u32::MAX;
+                }
+                let read = unsafe { read_direct_recording_config(&config) }.unwrap();
+                let parsed = parse_direct_recording_config(&read).unwrap();
+                assert_eq!(parsed.loop_animated_images, version < 5 || enabled);
+            }
+        }
+        let mut config = direct_config(&output);
+        config.loop_animated_images = 2;
+        assert!(parse_direct_recording_config(&config).is_err());
+        config.struct_size = DIRECT_RECORDING_CONFIG_SIZE - 1;
+        assert!(unsafe { read_direct_recording_config(&config) }.is_err());
     }
 
     #[test]

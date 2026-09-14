@@ -97,6 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let hardware = args.get(4).is_some_and(|v| v == "1");
     let setup = Instant::now();
     let mut encoder = StreamingEncoder::create(StreamingEncoderConfig {
+        loop_animated_images: true,
         output_path: path.clone(),
         format: ExportFormat::Mp4,
         width: 1920,

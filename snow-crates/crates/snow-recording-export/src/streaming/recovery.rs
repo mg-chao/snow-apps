@@ -543,6 +543,7 @@ mod tests {
     use super::*;
     fn config(path: PathBuf) -> StreamingEncoderConfig {
         StreamingEncoderConfig {
+            loop_animated_images: true,
             output_path: path,
             format: ExportFormat::Mp4,
             width: 32,

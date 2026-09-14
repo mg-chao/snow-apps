@@ -58,6 +58,8 @@ impl StreamingAudioConfig {
 
 #[derive(Clone, Debug)]
 pub struct StreamingEncoderConfig {
+    /// Whether animated image outputs repeat indefinitely.
+    pub loop_animated_images: bool,
     pub output_path: PathBuf,
     pub format: ExportFormat,
     pub width: u32,
@@ -593,6 +595,33 @@ impl StreamingEncoder {
             config.encode_threads,
         )?;
         let mut options = ffmpeg::Dictionary::new();
+        match config.format {
+            ExportFormat::Gif => options.set(
+                "loop",
+                if config.loop_animated_images {
+                    "0"
+                } else {
+                    "-1"
+                },
+            ),
+            ExportFormat::Apng => options.set(
+                "plays",
+                if config.loop_animated_images {
+                    "0"
+                } else {
+                    "1"
+                },
+            ),
+            ExportFormat::Webp => options.set(
+                "loop",
+                if config.loop_animated_images {
+                    "0"
+                } else {
+                    "1"
+                },
+            ),
+            ExportFormat::Mp4 | ExportFormat::Avi => {}
+        }
         if fragmented {
             options.set("movflags", "frag_every_frame+empty_moov+default_base_moof");
         }
@@ -1807,6 +1836,7 @@ mod tests {
 
     fn encoder_config(output_path: PathBuf, format: ExportFormat) -> StreamingEncoderConfig {
         StreamingEncoderConfig {
+            loop_animated_images: true,
             output_path,
             format,
             width: 16,
@@ -2072,6 +2102,93 @@ mod tests {
             .unwrap();
         assert_eq!(cleanup_stale_staging_files(directory.path()).unwrap(), 0);
         assert!(ordinary.exists());
+    }
+
+    #[test]
+    fn animated_image_loop_metadata_matches_preference() {
+        let directory = tempfile::tempdir().unwrap();
+        for format in [ExportFormat::Gif, ExportFormat::Apng, ExportFormat::Webp] {
+            let mut normalized_files = Vec::new();
+            for enabled in [false, true] {
+                let path = directory
+                    .path()
+                    .join(format!("loop-{enabled}.{}", format.file_extension()));
+                let mut config = encoder_config(path.clone(), format);
+                config.loop_animated_images = enabled;
+                let mut encoder = StreamingEncoder::create(config).unwrap();
+                write_test_frames(&mut encoder);
+                assert_eq!(encoder.finish().unwrap().encoded_frames, 3);
+                let mut bytes = fs::read(&path).unwrap();
+                match format {
+                    ExportFormat::Gif => {
+                        let extension = bytes.windows(11).position(|v| v == b"NETSCAPE2.0");
+                        if enabled {
+                            let offset =
+                                extension.expect("looping GIF needs a Netscape extension") + 11;
+                            assert_eq!(&bytes[offset..offset + 5], &[3, 1, 0, 0, 0]);
+                            bytes.drain(offset - 14..offset + 5);
+                        } else {
+                            assert!(
+                                extension.is_none(),
+                                "play-once GIF must omit the loop extension"
+                            );
+                        }
+                    }
+                    ExportFormat::Apng => {
+                        let mut offset = 8;
+                        let mut plays = None;
+                        while offset + 12 <= bytes.len() {
+                            let size =
+                                u32::from_be_bytes(bytes[offset..offset + 4].try_into().unwrap())
+                                    as usize;
+                            if &bytes[offset + 4..offset + 8] == b"acTL" {
+                                assert_eq!(
+                                    u32::from_be_bytes(
+                                        bytes[offset + 8..offset + 12].try_into().unwrap()
+                                    ),
+                                    3
+                                );
+                                plays = Some(u32::from_be_bytes(
+                                    bytes[offset + 12..offset + 16].try_into().unwrap(),
+                                ));
+                                // Normalize only play count and its dependent acTL CRC.
+                                bytes[offset + 12..offset + 20].fill(0);
+                            }
+                            offset += 12 + size;
+                        }
+                        assert_eq!(plays, Some(u32::from(!enabled)));
+                    }
+                    ExportFormat::Webp => {
+                        let mut offset = 12;
+                        let mut loops = None;
+                        let mut frames = 0;
+                        while offset + 8 <= bytes.len() {
+                            let size = u32::from_le_bytes(
+                                bytes[offset + 4..offset + 8].try_into().unwrap(),
+                            ) as usize;
+                            match &bytes[offset..offset + 4] {
+                                b"ANIM" => {
+                                    loops = Some(u16::from_le_bytes(
+                                        bytes[offset + 12..offset + 14].try_into().unwrap(),
+                                    ));
+                                    bytes[offset + 12..offset + 14].fill(0);
+                                }
+                                b"ANMF" => frames += 1,
+                                _ => {}
+                            }
+                            offset += 8 + size + (size & 1);
+                        }
+                        assert_eq!(loops, Some(u16::from(!enabled)));
+                        assert_eq!(frames, 3);
+                    }
+                    ExportFormat::Mp4 | ExportFormat::Avi => unreachable!(),
+                }
+                normalized_files.push(bytes);
+            }
+            // Encoded frames, timing and final-frame content must be identical
+            // after normalizing only the container looping metadata.
+            assert_eq!(normalized_files[0], normalized_files[1], "{format:?}");
+        }
     }
 
     #[test]

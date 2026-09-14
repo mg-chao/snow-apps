@@ -313,7 +313,7 @@ typedef struct SnowCaptureRecordingExportConfig {
     uint8_t reserved[32];
 } SnowCaptureRecordingExportConfig;
 
-#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 4u
+#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 5u
 
 /* Strings are bounded UTF-8 key names, copied during session creation. */
 typedef struct SnowCaptureKeyboardLabel {
@@ -358,6 +358,8 @@ typedef struct SnowCaptureDirectRecordingConfig {
     uint32_t mouse_trail_duration_ms;
     /* Version 4: keycap height in pixels (32..128). */
     uint32_t keyboard_size;
+    /* Version 5: 0 plays once, 1 loops infinitely. Older versions loop infinitely. */
+    uint32_t loop_animated_images;
 } SnowCaptureDirectRecordingConfig;
 
 SnowCaptureDesktopSession*
@@ -464,7 +466,7 @@ SnowCaptureResult snow_capture_recording_session_stop(SnowCaptureRecordingSessio
  * GPU capture and require successful software recovery; otherwise use 0.
  * Existing config layouts are unchanged. */
 SnowCaptureResult snow_capture_recording_gpu_probe(const SnowCaptureDirectRecordingConfig* config,
-                                                 uint32_t recover);
+                                                   uint32_t recover);
 /* Live recording sessions created and not yet destroyed; for leak diagnostics in tests. */
 size_t snow_capture_recording_session_live_count(void);
 

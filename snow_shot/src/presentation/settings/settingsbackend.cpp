@@ -422,6 +422,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ExtendedFeaturesSettings().translationPageEnabled();
     case SettingsSwitchBinding::OriginalImageTranslation:
         return storage::ScreenshotTranslationSettings().originalImageTranslationEnabled();
+    case SettingsSwitchBinding::LoopAnimatedImages:
+        return storage::RecordingSettings().loopAnimatedImages();
     case SettingsSwitchBinding::ScreenRecordingCaptureToolbar:
         return storage::RecordingSettings().captureToolbarInRecording();
     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
@@ -516,6 +518,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::OriginalImageTranslation) {
         return storage::ScreenshotTranslationSettings().setOriginalImageTranslationEnabled(value);
     }
+    if (binding == SettingsSwitchBinding::LoopAnimatedImages) {
+        return storage::RecordingSettings().setLoopAnimatedImages(value);
+    }
     if (binding == SettingsSwitchBinding::ScreenRecordingCaptureToolbar) {
         return storage::RecordingSettings().setCaptureToolbarInRecording(value);
     }
@@ -554,6 +559,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::TranslationPageEnabled:
     case SettingsSwitchBinding::StandaloneTranslationWindow:
     case SettingsSwitchBinding::OriginalImageTranslation:
+    case SettingsSwitchBinding::LoopAnimatedImages:
     case SettingsSwitchBinding::ScreenRecordingCaptureToolbar:
     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
     case SettingsSwitchBinding::AutoStartAtBoot:
@@ -1337,6 +1343,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("screen_recording/animated_image_frame_rate"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/animated_image_frame_rate"))},
+            {QStringLiteral("screen_recording/loop_animated_images"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/loop_animated_images"))},
             {QStringLiteral("screen_recording/output_format"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/output_format"))},

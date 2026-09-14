@@ -952,6 +952,7 @@ fn run_sample(
         options.duration_seconds
     };
     let config = DirectRecordingConfig {
+        loop_animated_images: true,
         region,
         capture_backend: options.backend,
         output_path: output_path.clone(),
@@ -1955,6 +1956,7 @@ mod synthetic_input_tests {
         for signal in [false, true] {
             let path = directory.path().join(format!("audio-{signal}.mp4"));
             let mut encoder = StreamingEncoder::create(StreamingEncoderConfig {
+                loop_animated_images: true,
                 output_path: path.clone(),
                 format: ExportFormat::Mp4,
                 width: 16,

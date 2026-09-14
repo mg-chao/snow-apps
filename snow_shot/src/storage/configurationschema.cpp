@@ -314,6 +314,8 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      {QStringLiteral("1080p"), QStringLiteral("720p"), QStringLiteral("480p")}},
     {QStringLiteral("screen_recording/animated_image_frame_rate"), 10,
      ConfigurationValueKind::Integer},
+    {QStringLiteral("screen_recording/loop_animated_images"), true,
+     ConfigurationValueKind::Boolean},
     {QStringLiteral("screen_recording/output_format"),
      QStringLiteral("mp4"),
      ConfigurationValueKind::String,

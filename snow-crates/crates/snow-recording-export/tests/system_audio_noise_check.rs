@@ -74,6 +74,7 @@ fn streaming_system_audio_does_not_add_noise_to_the_source() {
             .path()
             .join(format!("streaming-{sample_rate_hz}.mp4"));
         let mut encoder = StreamingEncoder::create(StreamingEncoderConfig {
+            loop_animated_images: true,
             output_path: path.clone(),
             format: ExportFormat::Mp4,
             width: 16,

@@ -218,6 +218,8 @@ void closeAndStopHaveIndependentUiLifetimes() {
             const int previousErrors = errors.shown;
             controller.startRecording();
             waitForRecording(controller);
+            require(lastDirectConfig.loop_animated_images == 0,
+                    "subsequent recordings must snapshot disabled looping");
             if (close) {
                 // Exercise the native close path as well as the toolbar command.
                 toolbar->close();
@@ -1369,6 +1371,11 @@ int main(int argc, char** argv) {
         controller.startRecording();
         waitForRecording(controller);
         require(starts == 1 && controller.isRecording(), "a fresh request must start exactly once");
+        require(lastDirectConfig.loop_animated_images == 1, "recordings must default to looping");
+        require(snow_shot::storage::RecordingSettings().setLoopAnimatedImages(false),
+                "disable looping for subsequent recordings");
+        require(lastDirectConfig.loop_animated_images == 1,
+                "active recording must retain its loop preference snapshot");
         require(lastDirectConfig.mouse_trail_duration_ms == 2000 &&
                     lastDirectConfig.keyboard_background_rgba == 0x28507880 &&
                     lastDirectConfig.keyboard_text_rgba == 0xf0e6dcc8 &&
@@ -1400,6 +1407,8 @@ int main(int argc, char** argv) {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     require(starts == 1, "destroying the controller must cancel a queued recording start");
     closeAndStopHaveIndependentUiLifetimes();
+    require(snow_shot::storage::RecordingSettings().setLoopAnimatedImages(true),
+            "restore recording loop preference");
     stopAndCopyBusyIndicatorsStayOnTheInitiatingControl();
     ApplicationStorage::instance().shutdown();
     return 0;

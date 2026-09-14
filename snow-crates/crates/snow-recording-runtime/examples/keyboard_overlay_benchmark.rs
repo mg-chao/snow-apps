@@ -126,6 +126,7 @@ fn encode_fixture(output: &Path, format: ExportFormat) -> Result<(), String> {
     let config = style(true);
     let mut overlay = KeyboardOverlay::new(size, keyboard_rasterizer::create(&config)?);
     let mut encoder = StreamingEncoder::create(StreamingEncoderConfig {
+        loop_animated_images: true,
         output_path: output.join(format!("keyboard.{}", format.file_extension())),
         format,
         width: size.0,

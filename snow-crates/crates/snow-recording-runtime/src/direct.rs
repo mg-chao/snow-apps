@@ -82,6 +82,8 @@ const BENCH_CURSOR_QUEUE_DEPTH: usize = 64;
 
 #[derive(Clone, Debug)]
 pub struct DirectRecordingConfig {
+    /// Whether animated image outputs repeat indefinitely.
+    pub loop_animated_images: bool,
     pub region: RecordingRegion,
     pub capture_backend: CaptureBackendKind,
     pub output_path: PathBuf,
@@ -156,6 +158,7 @@ impl DirectRecordingConfig {
     fn streaming_config(&self) -> StreamingEncoderConfig {
         let (width, height) = self.output_dimensions();
         StreamingEncoderConfig {
+            loop_animated_images: self.loop_animated_images,
             output_path: self.output_path.clone(),
             format: self.format,
             width,
@@ -2883,8 +2886,18 @@ mod tests {
         assert_eq!(shapes.get(&shape.shape_id.get()), Some(&shape));
     }
 
+    #[test]
+    fn animated_image_loop_preference_reaches_streaming_encoder() {
+        for enabled in [false, true] {
+            let mut config = config();
+            config.loop_animated_images = enabled;
+            assert_eq!(config.streaming_config().loop_animated_images, enabled);
+        }
+    }
+
     fn config() -> DirectRecordingConfig {
         DirectRecordingConfig {
+            loop_animated_images: true,
             region: RecordingRegion::new(0, 0, 4, 4),
             capture_backend: CaptureBackendKind::Auto,
             output_path: PathBuf::from("recording.mp4"),

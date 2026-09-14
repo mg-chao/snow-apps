@@ -317,6 +317,27 @@ void builtInCatalogIsCompleteAndValid() {
                           QStringLiteral("screen-recording-settings"),
                           QStringLiteral("screen-recording.hide-toolbar")}) == nullptr,
             "the retired hide-toolbar switch must no longer appear in Function settings");
+    const auto* loopImages = catalog.item(
+        {QStringLiteral("function-settings"), QStringLiteral("screen-recording-settings"),
+         QStringLiteral("screen-recording.loop-animated-images")});
+    require(loopImages != nullptr &&
+                loopImages->configurationKey ==
+                    QStringLiteral("screen_recording/loop_animated_images") &&
+                std::get<settings::SettingsSwitchDefinition>(loopImages->payload).binding ==
+                    settings::SettingsSwitchBinding::LoopAnimatedImages &&
+                storage::ConfigurationSchema::defaultValue(loopImages->configurationKey).toBool(),
+            "screen recording must expose the enabled-by-default animated image loop switch");
+    const auto* recordingSection = catalog.section(QStringLiteral("function-settings"),
+                                                   QStringLiteral("screen-recording-settings"));
+    require(recordingSection != nullptr, "screen recording section must exist");
+    const auto frameRate = std::find_if(
+        recordingSection->items.cbegin(), recordingSection->items.cend(), [](const auto& item) {
+            return item.id == QStringLiteral("screen-recording.animated-image-frame-rate");
+        });
+    require(frameRate != recordingSection->items.cend() &&
+                std::next(frameRate) != recordingSection->items.cend() &&
+                std::next(frameRate)->id == QStringLiteral("screen-recording.loop-animated-images"),
+            "loop switch must immediately follow animated image frame rate");
     const auto* functionPage = catalog.page(QStringLiteral("function-settings"));
     const auto* shutterSound =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),

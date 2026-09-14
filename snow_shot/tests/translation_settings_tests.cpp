@@ -287,6 +287,15 @@ int main(int argc, char** argv) {
     {
         snow_shot::presentation::GlobalShortcutManager shortcuts;
         settings::BuiltInSettingsBackend backend(shortcuts);
+        const auto loopImages = settings::SettingsSwitchBinding::LoopAnimatedImages;
+        require(backend.switchEnabled(loopImages) && backend.switchValue(loopImages) &&
+                    backend.applySwitchValue(loopImages, false) &&
+                    !storage::RecordingSettings().loopAnimatedImages() &&
+                    !backend.switchValue(loopImages),
+                "animated image loop switch defaults on and persists disabled");
+        require(backend.resetSection(settings::SettingsSectionReset::ScreenRecording) &&
+                    backend.switchValue(loopImages),
+                "screen recording reset restores animated image looping");
         const auto recognitionSave = settings::SettingsSwitchBinding::SaveRecognitionResultAsImage;
         require(backend.switchValue(recognitionSave), "recognition image export defaults on");
         require(backend.applySwitchValue(recognitionSave, false) &&
