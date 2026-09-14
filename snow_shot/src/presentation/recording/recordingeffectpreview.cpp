@@ -369,11 +369,15 @@ bool RecordingEffectPreview::eventFilter(QObject* watched, QEvent* event) {
             break;
         }
     }
-    if (auto* dialog = qobject_cast<QDialog*>(watched); dialog != nullptr && dialog->isModal()) {
-        if (event->type() == QEvent::Show) {
-            stopAndClear();
-        }
-        if (event->type() == QEvent::Show || event->type() == QEvent::Hide) {
+    // This filter is installed on the application, so it sees every event in the
+    // process. Only Show and Hide are handled below; test the cheap event type
+    // before the cast rather than casting on every delivery.
+    if (event->type() == QEvent::Show || event->type() == QEvent::Hide) {
+        if (auto* dialog = qobject_cast<QDialog*>(watched);
+            dialog != nullptr && dialog->isModal()) {
+            if (event->type() == QEvent::Show) {
+                stopAndClear();
+            }
             m_configurationTimer.start();
         }
     }

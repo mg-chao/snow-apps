@@ -361,6 +361,7 @@ void ScreenRecordingAreaWindow::scheduleGeometrySynchronization() {
         this,
         [this]() {
             m_geometrySyncPending = false;
+            SNOW_SHOT_RECORDING_PERF_MILESTONE("area.geometry_sync_entered");
             synchronizeWindowGeometry();
             SNOW_SHOT_RECORDING_PERF_MILESTONE("area.geometry_synchronized");
         },
@@ -559,7 +560,13 @@ void ScreenRecordingAreaWindow::paintEvent(QPaintEvent* event) {
     QPainter painter(this);
     painter.setCompositionMode(QPainter::CompositionMode_Source);
     painter.fillRect(rect(), Qt::transparent);
-    painter.fillRect(m_selectionRect, inputSurfaceColor());
+    // The clear above already left the selection fully transparent. Repainting it
+    // with a zero-alpha surface colour would rewrite most of the window for no
+    // visible change, which dominates the first paint on large regions.
+    const QColor surface = inputSurfaceColor();
+    if (surface.alpha() != 0) {
+        painter.fillRect(m_selectionRect, surface);
+    }
     painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
     painter.setRenderHint(QPainter::Antialiasing, false);
     const auto border = snow_shot::presentation::recording::screenRecordingAreaBorderGeometry(

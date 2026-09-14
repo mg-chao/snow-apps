@@ -363,6 +363,10 @@ class ScreenshotToolPalette final : public QWidget {
     [[nodiscard]] MaterializationState actionFamilyStateForTests(ActionFamily family) const;
     [[nodiscard]] MaterializationState styleFamilyStateForTests(Tool tool) const;
     [[nodiscard]] StyleReconcileStats lastStyleReconcileStatsForTests() const;
+    // Null until the recording effect settings dialog has been built, and null
+    // again once it closes. Lets tests assert absence without waiting for the
+    // deferred deletion to run.
+    [[nodiscard]] adqt::widgets::AdModal* recordingEffectSettingsModalForTests() const;
 #endif
 
   signals:
@@ -504,9 +508,13 @@ class ScreenshotToolPalette final : public QWidget {
     void refreshDrawingToolGroup(int groupIndex);
     void addRecordingControls(QBoxLayout* layout);
     void createRecordingExportSettingsToolbar();
+    // Builds the recording effect settings dialog on first use; it is destroyed
+    // again when the dialog closes. Returns false when the export row is absent.
+    [[nodiscard]] bool ensureRecordingEffectSettingsModal();
     void setRecordingExportSettingsVisible(bool visible);
     void updateRecordingExportSettingsControls();
     void refreshRecordingExportSettingsText();
+    void refreshRecordingEffectSettingsModalText();
     bool activateTableQrTool(Tool tool, bool toggleVisibleButton = true);
     void setTableQrEntryTool(Tool tool);
     void refreshTableQrTrigger();

@@ -414,9 +414,7 @@ void recordingEffectSettingsModal() {
         palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingShowKeyboard"));
     auto* separator =
         palette.findChild<QFrame*>(QStringLiteral("screenRecordingExportSettingsSeparator"));
-    auto* modal = palette.findChild<adqt::widgets::AdModal*>(
-        QStringLiteral("screenRecordingEffectSettingsModal"));
-    require(button && keyboard && separator && modal,
+    require(button && keyboard && separator,
             "recording settings must expose a button and separator");
     require(button->text().isEmpty() && button->accessibleName() == QStringLiteral("Settings") &&
                 separator->x() > keyboard->x() && button->x() > separator->x(),
@@ -432,12 +430,84 @@ void recordingEffectSettingsModal() {
         QCoreApplication::sendEvent(widget, &release);
         QCoreApplication::processEvents();
     };
+    const auto flushLayout = []() {
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::PolishRequest);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+        QCoreApplication::processEvents();
+    };
+    // The dialog is destroyed with deleteLater(), so child lookups only settle
+    // once the deferred deletion has run.
+    const auto flushDeletes = []() {
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCoreApplication::processEvents();
+    };
+    const auto requireSettingsAbsent = [&](const char* message) {
+        flushDeletes();
+        require(palette.recordingEffectSettingsModalForTests() == nullptr &&
+                    palette.findChild<adqt::widgets::AdModal*>(
+                        QStringLiteral("screenRecordingEffectSettingsModal")) == nullptr &&
+                    palette.findChild<adqt::widgets::AdForm*>(
+                        QStringLiteral("screenRecordingEffectSettingsForm")) == nullptr,
+                message);
+    };
+
+    // Building the dialog dominated the recording window open path, so it must
+    // not exist until the Settings button is actually used.
+    requireSettingsAbsent("constructing and displaying the palette must not build settings");
+    require(palette.findChildren<adqt::widgets::AdColorPicker*>().size() == 2,
+            "only the export row pickers exist before settings is opened");
+    // Retranslation walks the export row on every language change; it must not
+    // touch, or materialize, the absent dialog.
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(&palette, &languageChange);
+    QCoreApplication::processEvents();
+    require(button->accessibleName() == QStringLiteral("Settings"),
+            "the settings button must retranslate without the dialog");
+    requireSettingsAbsent("retranslation must not build settings");
+
+    struct Settings {
+        adqt::widgets::AdModal* modal = nullptr;
+        adqt::widgets::AdForm* form = nullptr;
+        adqt::widgets::AdInputNumber* duration = nullptr;
+        adqt::widgets::AdInputNumber* keyboardSize = nullptr;
+        adqt::widgets::AdColorPicker* background = nullptr;
+        adqt::widgets::AdColorPicker* foreground = nullptr;
+    };
+    // Every open rebuilds the dialog, so pointers must be re-acquired and never
+    // cached across a close.
+    const auto openSettings = [&]() {
+        click(button);
+        flushLayout();
+        Settings settings;
+        settings.modal = palette.recordingEffectSettingsModalForTests();
+        require(settings.modal != nullptr && settings.modal->isOpen(),
+                "clicking Settings must build and open the modal");
+        require(settings.modal == palette.findChild<adqt::widgets::AdModal*>(
+                                      QStringLiteral("screenRecordingEffectSettingsModal")),
+                "the rebuilt modal must keep its object name");
+        settings.form = qobject_cast<adqt::widgets::AdForm*>(settings.modal->contentWidget());
+        require(settings.form != nullptr, "settings must use the Ant Design form");
+        settings.duration = settings.form->findChild<adqt::widgets::AdInputNumber*>(
+            QStringLiteral("screenRecordingMouseTrailDuration"));
+        settings.keyboardSize = settings.form->findChild<adqt::widgets::AdInputNumber*>(
+            QStringLiteral("screenRecordingKeyboardSize"));
+        settings.background = settings.form->findChild<adqt::widgets::AdColorPicker*>(
+            QStringLiteral("screenRecordingKeyboardBackgroundColor"));
+        settings.foreground = settings.form->findChild<adqt::widgets::AdColorPicker*>(
+            QStringLiteral("screenRecordingKeyboardForegroundColor"));
+        require(settings.duration && settings.keyboardSize && settings.background &&
+                    settings.foreground,
+                "the rebuilt form must expose every effect control");
+        return settings;
+    };
+
     QWidget recordingOwner;
     recordingOwner.setGeometry(40, 40, 600, 500);
     recordingOwner.show();
     palette.setRecordingSettingsOwnerWindow(&recordingOwner);
-    click(button);
-    require(modal->isOpen(), "clicking Settings must open the modal");
+    const Settings opened = openSettings();
+    adqt::widgets::AdModal* modal = opened.modal;
+    adqt::widgets::AdForm* form = opened.form;
     require(modal->mode() == adqt::widgets::AdModal::Mode::Window &&
                 modal->windowModality() == Qt::ApplicationModal && modal->centered() &&
                 !modal->maskVisible() && !modal->closeOnMaskClick() &&
@@ -445,8 +515,6 @@ void recordingEffectSettingsModal() {
                 modal->windowTitle() == QStringLiteral("Settings") &&
                 modal->standardButtons() == adqt::widgets::AdModal::StandardButton::Ok,
             "settings must use the selection editor's Windows-style modal conventions");
-    auto* form = qobject_cast<adqt::widgets::AdForm*>(modal->contentWidget());
-    require(form != nullptr, "settings must use the Ant Design form");
     require((modal->contentWidget()->window()->frameGeometry().center() -
              recordingOwner.frameGeometry().center())
                     .manhattanLength() <= 4,
@@ -459,13 +527,14 @@ void recordingEffectSettingsModal() {
                 keyboardSize->maximum() == 128,
             "keyboard size must expose pixel bounds and default");
     int sizeChanges = 0;
+    int lastSize = 0;
     QObject::connect(&palette, &ScreenshotToolPalette::recordingKeyboardSizeChanged, &palette,
                      [&](int value) {
-                         require(value == 96, "size edit signal");
+                         lastSize = value;
                          ++sizeChanges;
                      });
     keyboardSize->setValue(96);
-    require(sizeChanges == 1 && palette.recordingKeyboardSize() == 96,
+    require(sizeChanges == 1 && lastSize == 96 && palette.recordingKeyboardSize() == 96,
             "size edits apply immediately");
     palette.setRecordingKeyboardSize(48);
     require(keyboardSize->value() == 48 && sizeChanges == 1,
@@ -516,13 +585,20 @@ void recordingEffectSettingsModal() {
                 foreground->value().solidColor == QColor(Qt::white),
             "keyboard defaults must preserve alpha");
     int changes = 0;
+    int lastDuration = 0;
     QObject::connect(&palette, &ScreenshotToolPalette::recordingMouseTrailDurationMsChanged,
                      &palette, [&](int value) {
-                         require(value == 1200, "duration signal must carry the edit");
+                         lastDuration = value;
                          ++changes;
                      });
+    int backgroundChanges = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingKeyboardBackgroundColorChanged,
+                     &palette, [&](const QColor&) { ++backgroundChanges; });
+    int foregroundChanges = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingKeyboardForegroundColorChanged,
+                     &palette, [&](const QColor&) { ++foregroundChanges; });
     duration->setValue(1200);
-    require(changes == 1 && palette.recordingMouseTrailDurationMs() == 1200,
+    require(changes == 1 && lastDuration == 1200 && palette.recordingMouseTrailDurationMs() == 1200,
             "duration edits apply immediately");
     background->setPopupVisible(true);
     QCoreApplication::processEvents();
@@ -533,31 +609,63 @@ void recordingEffectSettingsModal() {
                 modal->isOpen(),
             "color edits must preserve alpha without dismissing settings");
     background->setPopupVisible(false);
+    QCoreApplication::processEvents();
     form->window()->activateWindow();
     duration->setFocus();
     QCoreApplication::processEvents();
     QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QCoreApplication::sendEvent(QApplication::focusWidget(), &escape);
     QCoreApplication::processEvents();
-    require(!modal->isOpen(), "Escape must dismiss settings");
-    click(button);
-    require(modal->isOpen(), "settings must reopen");
+    // Escape dismisses the dialog, which destroys it; the local pointers are
+    // stale from here on.
+    requireSettingsAbsent("Escape must destroy settings");
+
+    const int changesBeforeRebuild = changes;
+    const int sizeChangesBeforeRebuild = sizeChanges;
+    const int backgroundChangesBeforeRebuild = backgroundChanges;
+    const int foregroundChangesBeforeRebuild = foregroundChanges;
+    const Settings reopened = openSettings();
+    require(reopened.duration->value() == 1200 && reopened.keyboardSize->value() == 48 &&
+                reopened.background->value().solidColor == QColor(40, 80, 120, 128) &&
+                reopened.foreground->value().solidColor == QColor(Qt::white),
+            "reopening settings must re-seed every value from the palette state");
+    require(changes == changesBeforeRebuild && sizeChanges == sizeChangesBeforeRebuild &&
+                backgroundChanges == backgroundChangesBeforeRebuild &&
+                foregroundChanges == foregroundChangesBeforeRebuild,
+            "rebuilding settings must not emit effect change signals");
+    require(!reopened.form->disabled() &&
+                reopened.modal->windowTitle() == QStringLiteral("Settings") &&
+                !reopened.duration->suffixText().isEmpty() &&
+                !reopened.keyboardSize->suffixText().isEmpty(),
+            "a rebuilt form must be enabled and retranslated before it is shown");
+    require(palette.findChildren<adqt::widgets::AdColorPicker*>().size() == 2,
+            "dialog content must stay outside the palette widget tree");
+    for (auto* picker : reopened.form->findChildren<adqt::widgets::AdColorPicker*>()) {
+        require(picker->popupLayerMode() == adqt::widgets::AdColorPicker::PopupLayerMode::QtTool,
+                "keyboard color pickers must use Qt Tool windows");
+    }
+
     click(keyboard);
-    require(modal->isOpen(), "outside clicks must not dismiss the modal");
-    modal->accept();
+    require(reopened.modal->isOpen(), "outside clicks must not dismiss the modal");
+    reopened.modal->accept();
     QCoreApplication::processEvents();
-    require(!modal->isOpen() && palette.recordingMouseTrailDurationMs() == 1200,
-            "OK closes the modal and retains applied settings");
-    click(button);
+    requireSettingsAbsent("OK must destroy settings");
+    require(palette.recordingMouseTrailDurationMs() == 1200, "OK retains applied settings");
+
+    const Settings idle = openSettings();
+    require(!idle.form->disabled(), "settings must be editable while recording is idle");
     palette.setRecordingState(ScreenshotToolPalette::RecordingState::Recording);
-    require(!modal->isOpen() && !button->isEnabled() && form->disabled(),
-            "recording locks and closes settings");
-    palette.setRecordingState(ScreenshotToolPalette::RecordingState::Idle);
+    requireSettingsAbsent("recording must close and destroy settings");
+    require(!button->isEnabled(), "recording must lock the settings button");
     click(button);
+    requireSettingsAbsent("a disabled settings button must not build the dialog");
+    palette.setRecordingState(ScreenshotToolPalette::RecordingState::Idle);
+
+    static_cast<void>(openSettings());
     require(palette.activateDrawingShortcut(QStringLiteral("shape")),
             "drawing must hide export settings");
     QCoreApplication::processEvents();
-    require(!modal->isOpen(), "hiding the export toolbar closes settings");
+    requireSettingsAbsent("hiding the export toolbar destroys settings");
 }
 
 void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
@@ -1142,6 +1250,8 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
                 cursor->accessibleName() == QStringLiteral("Show cursor in recording") &&
                 keyboard->accessibleName() == QStringLiteral("Show keystrokes in recording"),
             "recording export controls should retranslate after LanguageChange");
+    require(palette.recordingEffectSettingsModalForTests() == nullptr,
+            "retranslation should not materialize the effect settings dialog");
     require(findPresets(trail) == trailPresets && findPresets(click) == clickPresets,
             "retranslation should preserve the toolbar presets and keep their labels current");
     verifyColorIconTooltips();

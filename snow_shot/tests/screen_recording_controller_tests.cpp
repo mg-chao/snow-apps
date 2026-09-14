@@ -646,6 +646,52 @@ void effectsPreviewLifecycle() {
     require(state->active, "a fresh activation must recover after preview failure");
 }
 
+// The window clears itself fully before painting the border, so a zero-alpha
+// input surface needs no second fill. Skipping it must not change the pixels
+// the compositor sees in any input mode.
+void areaWindowPaintsInputSurfaceOnlyWhenItIsVisible() {
+    ScreenRecordingAreaWindow area;
+    area.setPhysicalRegion(QRect(32, 32, 320, 240));
+    area.show();
+    QCoreApplication::processEvents();
+    for (const auto mode : {ScreenRecordingAreaWindow::InputMode::PassThrough,
+                            ScreenRecordingAreaWindow::InputMode::Drawing,
+                            ScreenRecordingAreaWindow::InputMode::RegionEditing}) {
+        area.setInputMode(mode);
+        area.repaint();
+        QCoreApplication::processEvents();
+        const int expectedAlpha = area.inputSurfaceColor().alpha();
+        const QRect selection = area.selectionRect().toAlignedRect();
+        const QImage painted = area.grab().toImage().convertToFormat(QImage::Format_ARGB32);
+        require(!painted.isNull() && selection.isValid(), "the area window must paint a selection");
+        require(painted.pixelColor(selection.center()).alpha() == expectedAlpha,
+                "the painted selection must match the input surface colour in every mode");
+    }
+}
+
+// The preview filters the whole application, so it must not cast on every event.
+void previewIgnoresEventsOtherThanDialogVisibility() {
+    ScreenRecordingAreaWindow area;
+    area.setPhysicalRegion(QRect(32, 32, 320, 240));
+    auto state = std::make_shared<RecordingEffectTestState>();
+    RecordingEffectPreview preview(area, std::make_unique<RecordingEffectTestSource>(state));
+    preview.configure(area.physicalRegion(), QSize(320, 240), Qt::red, Qt::transparent, false);
+    preview.setEligible(true);
+    area.show();
+    pumpPreview();
+    require(state->active, "the preview must be running before the filter is exercised");
+    const int startsBefore = state->starts;
+    QWidget unrelated;
+    for (const auto type :
+         {QEvent::Enter, QEvent::Leave, QEvent::FocusIn, QEvent::WindowActivate}) {
+        QEvent event(type);
+        QCoreApplication::sendEvent(&unrelated, &event);
+    }
+    pumpPreview();
+    require(state->active && state->starts == startsBefore,
+            "events other than dialog show and hide must not reconfigure the preview");
+}
+
 void recordingKeyboardColorsFollowBackground() {
     const RecordingKeyboardTheme defaults;
     require(defaults.background == QColor(0, 0, 0, 204) && defaults.text == QColor(Qt::white),
@@ -1198,6 +1244,8 @@ int main(int argc, char** argv) {
                 "key legends must use English names");
         app.removeTranslator(&translator);
         effectsPreviewLifecycle();
+        areaWindowPaintsInputSurfaceOnlyWhenItIsVisible();
+        previewIgnoresEventsOtherThanDialogVisibility();
         recordingKeyboardColorsFollowBackground();
         controllerPreviewTransitions();
         ApplicationStorage::instance().shutdown();

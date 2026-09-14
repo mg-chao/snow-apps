@@ -225,7 +225,9 @@ struct SampleResult {
     QMap<QString, double> counters;
 };
 
-// Consecutive open() milestones whose deltas form the startup phase metrics.
+// Consecutive milestones whose deltas form the startup phase metrics. Append
+// only: inserting a boundary redefines the phase that used to span it while
+// keeping its name, which silently breaks comparison against older reports.
 const std::vector<std::pair<QString, QString>>& phaseBoundaries() {
     static const std::vector<std::pair<QString, QString>> phases{
         {QStringLiteral("phase.construct_ui"), QStringLiteral("open.ui_session_constructed")},
@@ -235,6 +237,12 @@ const std::vector<std::pair<QString, QString>>& phaseBoundaries() {
         {QStringLiteral("phase.create_shortcuts"), QStringLiteral("open.shortcuts_created")},
         {QStringLiteral("phase.sync_ui"), QStringLiteral("open.ui_synced")},
         {QStringLiteral("phase.show_windows"), QStringLiteral("open.show_returned")},
+        // Everything past show_windows used to be unattributed: the queued
+        // geometry synchronization and then the native show -> first paint.
+        {QStringLiteral("phase.await_geometry_sync"), QStringLiteral("area.geometry_sync_entered")},
+        {QStringLiteral("phase.geometry_sync"), QStringLiteral("area.geometry_synchronized")},
+        {QStringLiteral("phase.await_first_paint"), QStringLiteral("area.first_paint_begin")},
+        {QStringLiteral("phase.first_paint"), QStringLiteral("area.first_paint_end")},
     };
     return phases;
 }
@@ -298,11 +306,20 @@ SampleResult collectSample(PaintObserver& observer, SampleSink& sink, const QStr
     QCoreApplication::processEvents(QEventLoop::AllEvents);
 
     static const QStringList requiredMilestones{
-        QStringLiteral("open.before_ui_session"), QStringLiteral("open.ui_session_constructed"),
-        QStringLiteral("open.preview_created"),   QStringLiteral("open.region_applied"),
-        QStringLiteral("open.toolbar_connected"), QStringLiteral("open.shortcuts_created"),
-        QStringLiteral("open.ui_synced"),         QStringLiteral("open.show_returned"),
-        QStringLiteral("area.first_paint_end"),   QStringLiteral("preview.first_frame_received"),
+        QStringLiteral("open.before_ui_session"),
+        QStringLiteral("open.ui_session_constructed"),
+        QStringLiteral("open.preview_created"),
+        QStringLiteral("open.region_applied"),
+        QStringLiteral("open.toolbar_connected"),
+        QStringLiteral("open.shortcuts_created"),
+        QStringLiteral("open.ui_synced"),
+        QStringLiteral("open.show_returned"),
+        QStringLiteral("area.first_paint_end"),
+        QStringLiteral("preview.first_frame_received"),
+        QStringLiteral("area.geometry_sync_entered"),
+        QStringLiteral("area.geometry_synchronized"),
+        QStringLiteral("area.first_paint_begin"),
+        QStringLiteral("toolbar.first_paint"),
     };
     for (const QString& name : requiredMilestones) {
         require(sink.hasMilestone(name), "startup milestone missing from the sample");
@@ -357,6 +374,32 @@ std::vector<QString> namesWithPrefix(const QMap<QString, std::vector<double>>& v
                 names.push_back(name);
                 break;
             }
+        }
+    }
+    return names;
+}
+
+// Metrics are printed by prefix, so a metric matching none of the groups above
+// would reach the JSON report and never the console. Collect the leftovers so a
+// new milestone cannot go unnoticed.
+std::vector<QString> namesWithoutGroup(const QMap<QString, std::vector<double>>& values,
+                                       const std::vector<std::vector<QString>>& groupedPrefixes) {
+    std::vector<QString> names;
+    for (const QString& name : values.keys()) {
+        bool grouped = false;
+        for (const std::vector<QString>& prefixes : groupedPrefixes) {
+            for (const QString& prefix : prefixes) {
+                if (name.startsWith(prefix)) {
+                    grouped = true;
+                    break;
+                }
+            }
+            if (grouped) {
+                break;
+            }
+        }
+        if (!grouped) {
+            names.push_back(name);
         }
     }
     return names;
@@ -437,21 +480,27 @@ int runRecordingWindowStartupPerformanceBenchmark(QApplication& app) {
 
             std::cout << "scenario=" << scenario.name << " warmups=" << warmups
                       << " samples=" << samples << '\n';
+            const std::vector<QString> phasePrefixes{QStringLiteral("phase.")};
+            const std::vector<QString> milestonePrefixes{
+                QStringLiteral("open."), QStringLiteral("area."), QStringLiteral("preview.first"),
+                QStringLiteral("toolbar.show"), QStringLiteral("toolbar.first")};
+            const std::vector<QString> paintPrefixes{QStringLiteral("paint."),
+                                                     QStringLiteral("sample.")};
+            const std::vector<QString> spanPrefixes{QStringLiteral("toolbar.place"),
+                                                    QStringLiteral("palette."),
+                                                    QStringLiteral("preview.synchronize")};
             printMetricGroup("phases_ms", metricValues,
-                             namesWithPrefix(metricValues, {QStringLiteral("phase.")}));
-            printMetricGroup(
-                "milestones_ms", metricValues,
-                namesWithPrefix(metricValues,
-                                {QStringLiteral("open."), QStringLiteral("area."),
-                                 QStringLiteral("preview.first"), QStringLiteral("toolbar.show")}));
+                             namesWithPrefix(metricValues, phasePrefixes));
+            printMetricGroup("milestones_ms", metricValues,
+                             namesWithPrefix(metricValues, milestonePrefixes));
             printMetricGroup("paints_ms", metricValues,
-                             namesWithPrefix(metricValues, {QStringLiteral("paint."),
-                                                            QStringLiteral("sample.")}));
-            printMetricGroup(
-                "spans_ms", metricValues,
-                namesWithPrefix(metricValues,
-                                {QStringLiteral("toolbar.place"), QStringLiteral("palette."),
-                                 QStringLiteral("preview.synchronize")}));
+                             namesWithPrefix(metricValues, paintPrefixes));
+            printMetricGroup("spans_ms", metricValues, namesWithPrefix(metricValues, spanPrefixes));
+            const std::vector<QString> ungrouped = namesWithoutGroup(
+                metricValues, {phasePrefixes, milestonePrefixes, paintPrefixes, spanPrefixes});
+            if (!ungrouped.empty()) {
+                printMetricGroup("other_ms", metricValues, ungrouped);
+            }
             std::cout << "  counters(median/max)";
             for (const QString& name : counterValues.keys()) {
                 const Statistics statistics = summarize(counterValues.value(name));

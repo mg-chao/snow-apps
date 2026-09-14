@@ -7,6 +7,7 @@
 #include "snow_shot/storage/settingsadapters.h"
 
 #include "screenshottoolbarperfinstrumentation.h"
+#include "../recording/screenrecordingperfinstrumentation.h"
 
 #include "widgets/control_scale.h"
 #include "widgets/dpi_stable_window_controller.h"
@@ -558,6 +559,7 @@ void ScreenshotFloatingToolPaletteWindow::showEvent(QShowEvent* event) {
 
 void ScreenshotFloatingToolPaletteWindow::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
+    SNOW_SHOT_RECORDING_PERF_MILESTONE("toolbar.first_paint");
 
     QPainter painter(this);
     painter.setCompositionMode(QPainter::CompositionMode_Source);
