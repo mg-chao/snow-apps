@@ -573,6 +573,7 @@ impl From<SnowFilterStyle> for FilterStyle {
                 SnowFilterType::GaussianBlur => CanvasFilterType::GaussianBlur,
                 SnowFilterType::Grayscale => CanvasFilterType::Grayscale,
                 SnowFilterType::Inversion => CanvasFilterType::Inversion,
+                SnowFilterType::Emboss => CanvasFilterType::Emboss,
             },
             strength: value.strength,
             opacity: value.opacity,
@@ -589,6 +590,7 @@ impl From<FilterStyle> for SnowFilterStyle {
                 CanvasFilterType::GaussianBlur => SnowFilterType::GaussianBlur,
                 CanvasFilterType::Grayscale => SnowFilterType::Grayscale,
                 CanvasFilterType::Inversion => SnowFilterType::Inversion,
+                CanvasFilterType::Emboss => SnowFilterType::Emboss,
             },
             strength: value.strength,
             opacity: value.opacity,
@@ -818,8 +820,8 @@ unsafe fn runtime_style_default_enums_are_valid(defaults: *const SnowStyleDefaul
         raw_c_enum_in_range(
             std::ptr::addr_of!((*defaults).rectangle_filter.filter_type),
             0,
-            3,
-        ) && raw_c_enum_in_range(std::ptr::addr_of!((*defaults).pen_filter.filter_type), 0, 3)
+            4,
+        ) && raw_c_enum_in_range(std::ptr::addr_of!((*defaults).pen_filter.filter_type), 0, 4)
             && raw_c_enum_in_range(std::ptr::addr_of!((*defaults).text.fill_style), 0, 2)
             && raw_c_enum_in_range(std::ptr::addr_of!((*defaults).text.horizontal_align), 0, 2)
             && raw_c_enum_in_range(std::ptr::addr_of!((*defaults).text.vertical_align), 0, 2)
@@ -1455,8 +1457,10 @@ mod tests {
         expected.editor.free_draw.stroke_width = 6.0;
         expected.editor.rectangle_highlight.stroke_width = 7.0;
         expected.editor.pen_highlight.stroke_width = 8.0;
+        expected.editor.rectangle_filter.filter_type = CanvasFilterType::Emboss;
         expected.editor.rectangle_filter.strength = 0.41;
         expected.editor.rectangle_filter.stroke_width = 9.0;
+        expected.editor.pen_filter.filter_type = CanvasFilterType::Emboss;
         expected.editor.pen_filter.strength = 0.42;
         expected.editor.pen_filter.stroke_width = 10.0;
         expected.editor.text.font_family = Some("C Text Font".to_owned());
@@ -1468,6 +1472,11 @@ mod tests {
 
         let c_defaults: SnowStyleDefaults = expected.clone().into();
         assert_eq!(c_defaults.rectangle.fill.a, 0);
+        assert_eq!(
+            c_defaults.rectangle_filter.filter_type,
+            SnowFilterType::Emboss
+        );
+        assert_eq!(c_defaults.pen_filter.filter_type, SnowFilterType::Emboss);
         assert_eq!(c_defaults.text.font_family_truncated, 0);
         assert_eq!(c_defaults.serial_number.font_family_truncated, 0);
         let c_config = SnowRuntimeConfig {

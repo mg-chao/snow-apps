@@ -181,6 +181,7 @@ pub enum DisplayFilterType {
     GaussianBlur,
     Grayscale,
     Inversion,
+    Emboss = 4,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -205,7 +206,9 @@ impl FilterRenderSpec {
         };
         let strength = match filter_type {
             DisplayFilterType::Grayscale | DisplayFilterType::Inversion => 1.0,
-            DisplayFilterType::Mosaic | DisplayFilterType::GaussianBlur => normalized_strength,
+            DisplayFilterType::Mosaic
+            | DisplayFilterType::GaussianBlur
+            | DisplayFilterType::Emboss => normalized_strength,
         };
         let mosaic_block_size = 2.0 + 10.0 * strength;
         let blur_sigma = 0.5 + 18.0 * strength;
@@ -213,6 +216,7 @@ impl FilterRenderSpec {
             DisplayFilterType::Mosaic => (mosaic_block_size + 1.0) / 2.0,
             DisplayFilterType::GaussianBlur => 3.0 * blur_sigma + 1.0,
             DisplayFilterType::Grayscale | DisplayFilterType::Inversion => 0.0,
+            DisplayFilterType::Emboss => 1.0,
         };
         Self {
             filter_type,
@@ -260,30 +264,35 @@ mod filter_render_spec_tests {
         let blur = FilterRenderSpec::resolve(DisplayFilterType::GaussianBlur, 1.0);
         assert_eq!(blur.blur_sigma, 18.5);
         assert_eq!(blur.sampling_radius, 56.5);
+
+        let emboss = FilterRenderSpec::resolve(DisplayFilterType::Emboss, 0.5);
+        assert_eq!(DisplayFilterType::Emboss as u32, 4);
+        assert_eq!(emboss.strength, 0.5);
+        assert_eq!(emboss.sampling_radius, 1.0);
     }
 
     #[test]
     fn normalizes_non_finite_and_out_of_range_strengths_for_strength_based_filters() {
-        assert_eq!(
-            FilterRenderSpec::resolve(DisplayFilterType::Mosaic, f64::NAN).strength,
-            1.0
-        );
-        assert_eq!(
-            FilterRenderSpec::resolve(DisplayFilterType::Mosaic, f64::NEG_INFINITY).strength,
-            0.0
-        );
-        assert_eq!(
-            FilterRenderSpec::resolve(DisplayFilterType::Mosaic, f64::INFINITY).strength,
-            1.0
-        );
-        assert_eq!(
-            FilterRenderSpec::resolve(DisplayFilterType::Mosaic, -2.0).strength,
-            0.0
-        );
-        assert_eq!(
-            FilterRenderSpec::resolve(DisplayFilterType::Mosaic, 2.0).strength,
-            1.0
-        );
+        for filter_type in [
+            DisplayFilterType::Mosaic,
+            DisplayFilterType::GaussianBlur,
+            DisplayFilterType::Emboss,
+        ] {
+            assert_eq!(
+                FilterRenderSpec::resolve(filter_type, f64::NAN).strength,
+                1.0
+            );
+            assert_eq!(
+                FilterRenderSpec::resolve(filter_type, f64::NEG_INFINITY).strength,
+                0.0
+            );
+            assert_eq!(
+                FilterRenderSpec::resolve(filter_type, f64::INFINITY).strength,
+                1.0
+            );
+            assert_eq!(FilterRenderSpec::resolve(filter_type, -2.0).strength, 0.0);
+            assert_eq!(FilterRenderSpec::resolve(filter_type, 2.0).strength, 1.0);
+        }
     }
 
     #[test]

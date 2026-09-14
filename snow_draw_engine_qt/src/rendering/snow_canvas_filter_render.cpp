@@ -31,6 +31,7 @@ namespace {
 
 constexpr std::size_t kParallelPixelThreshold = 64u * 1024u;
 constexpr std::size_t kTargetPixelsPerJob = 64u * 1024u;
+constexpr double kEmbossStrengthScale = 10.0;
 thread_local bool g_insideFilterWorker = false;
 
 class FilterWorkerPool {
@@ -320,13 +321,17 @@ inline QRgb blendPremultiplied(QRgb current, QRgb to, int mix) {
     return redBlue | (alphaGreen << 8);
 }
 
-int normalizedStrengthMix(double strength) {
+double normalizedStrength(double strength) {
     if (std::isnan(strength)) {
         strength = 1.0;
     } else if (!std::isfinite(strength)) {
         strength = strength < 0.0 ? 0.0 : 1.0;
     }
-    return qBound(0, qRound(qBound(0.0, strength, 1.0) * 255.0), 255);
+    return qBound(0.0, strength, 1.0);
+}
+
+int normalizedStrengthMix(double strength) {
+    return qBound(0, qRound(normalizedStrength(strength) * 255.0), 255);
 }
 
 inline int combineCoverage(int first, int second) {
@@ -344,6 +349,92 @@ inline QRgb transformedColor(QRgb pixel, std::uint32_t type) {
         return qRgba(alpha - qRed(pixel), alpha - qGreen(pixel), alpha - qBlue(pixel), alpha);
     }
     return pixel;
+}
+
+int embossSamplingRadius(const Parameters& parameters) {
+    return qMax(1, qCeil(qMax(0.0, parameters.logicalSamplingRadius) *
+                         qMax<qreal>(1.0, parameters.devicePixelRatio)));
+}
+
+// CPU adaptation of PixiJS Filters' emboss shader:
+// https://github.com/pixijs/filters/tree/main/src/emboss
+inline QRgb embossPixel(ConstImageView source, int x, int y, int samplingRadius, double strength) {
+    const int negativeX = qMax(0, x - samplingRadius);
+    const int negativeY = qMax(0, y - samplingRadius);
+    const int positiveX = qMin(source.width - 1, x + samplingRadius);
+    const int positiveY = qMin(source.height - 1, y + samplingRadius);
+    const auto* negativeLine = reinterpret_cast<const QRgb*>(
+        source.data + static_cast<qsizetype>(negativeY) * source.stride);
+    const auto* positiveLine = reinterpret_cast<const QRgb*>(
+        source.data + static_cast<qsizetype>(positiveY) * source.stride);
+    const auto* centerLine =
+        reinterpret_cast<const QRgb*>(source.data + static_cast<qsizetype>(y) * source.stride);
+    const QRgb negative = negativeLine[negativeX];
+    const QRgb positive = positiveLine[positiveX];
+    const int channelDelta = qRed(positive) + qGreen(positive) + qBlue(positive) - qRed(negative) -
+                             qGreen(negative) - qBlue(negative);
+    const double gray = qBound(0.0, 0.5 + strength * channelDelta / (3.0 * 255.0), 1.0);
+    const int alpha = qAlpha(centerLine[x]);
+    const int premultipliedGray = qBound(0, qRound(gray * alpha), alpha);
+    return qRgba(premultipliedGray, premultipliedGray, premultipliedGray, alpha);
+}
+
+std::size_t embossRect(const QImage& source, QImage& destination, const QRect& pixels,
+                       const Parameters& parameters, int constantMix, bool singleThreaded) {
+    if (pixels.isEmpty() || constantMix <= 0) {
+        return 0;
+    }
+    const ConstImageView sourceView{source.constBits(), source.width(), source.height(),
+                                    source.bytesPerLine()};
+    const ImageView destinationView{destination.bits(), destination.width(), destination.height(),
+                                    destination.bytesPerLine()};
+    const int samplingRadius = embossSamplingRadius(parameters);
+    const double strength = normalizedStrength(parameters.strength) * kEmbossStrengthScale;
+    return parallelRows(pixels.height(), pixels.width(), singleThreaded, [&](int begin, int end) {
+        for (int localY = begin; localY < end; ++localY) {
+            const int y = pixels.top() + localY;
+            auto* destinationLine = reinterpret_cast<QRgb*>(
+                destinationView.data + static_cast<qsizetype>(y) * destinationView.stride);
+            for (int x = pixels.left(); x <= pixels.right(); ++x) {
+                const QRgb embossed = embossPixel(sourceView, x, y, samplingRadius, strength);
+                destinationLine[x] = constantMix >= 255 ? embossed
+                                                        : blendPremultiplied(destinationLine[x],
+                                                                             embossed, constantMix);
+            }
+        }
+    });
+}
+
+std::size_t embossMaskedRect(const QImage& source, QImage& destination, AlphaView mask,
+                             const QPoint& maskOriginPixels, const QRect& pixels,
+                             const Parameters& parameters, bool singleThreaded) {
+    if (pixels.isEmpty()) {
+        return 0;
+    }
+    const ConstImageView sourceView{source.constBits(), source.width(), source.height(),
+                                    source.bytesPerLine()};
+    const ImageView destinationView{destination.bits(), destination.width(), destination.height(),
+                                    destination.bytesPerLine()};
+    const int samplingRadius = embossSamplingRadius(parameters);
+    const double strength = normalizedStrength(parameters.strength) * kEmbossStrengthScale;
+    return parallelRows(pixels.height(), pixels.width(), singleThreaded, [&](int begin, int end) {
+        for (int localY = begin; localY < end; ++localY) {
+            const int y = pixels.top() + localY;
+            auto* destinationLine = reinterpret_cast<QRgb*>(
+                destinationView.data + static_cast<qsizetype>(y) * destinationView.stride);
+            const auto* alphaLine =
+                mask.data + static_cast<qsizetype>(y - maskOriginPixels.y()) * mask.stride;
+            for (int x = pixels.left(); x <= pixels.right(); ++x) {
+                const int mix = alphaLine[x - maskOriginPixels.x()];
+                if (mix == 0) {
+                    continue;
+                }
+                const QRgb embossed = embossPixel(sourceView, x, y, samplingRadius, strength);
+                destinationLine[x] =
+                    mix == 255 ? embossed : blendPremultiplied(destinationLine[x], embossed, mix);
+            }
+        }
+    });
 }
 
 std::size_t horizontalBoxBlur(const QImage& source, QImage& destination, int radius,
@@ -1306,6 +1397,9 @@ int samplingRadiusPixels(const Parameters& parameters) {
     if (parameters.type == 1) {
         return makeGaussianBlurPlan(parameters).physicalSupportRadius;
     }
+    if (parameters.type == 4) {
+        return embossSamplingRadius(parameters);
+    }
     return qMax(0, qCeil(parameters.logicalSamplingRadius * parameters.devicePixelRatio));
 }
 
@@ -1348,6 +1442,13 @@ void apply(QImage& image, const Parameters& parameters, RenderWorkspace* workspa
         }
         break;
     }
+    case 4: {
+        const QImage source = image;
+        image.detach();
+        diagnostics.parallelJobs +=
+            embossRect(source, image, image.rect(), parameters, 255, options.singleThreaded);
+        break;
+    }
     default:
         break;
     }
@@ -1385,6 +1486,10 @@ bool applyMasked(const QImage& source, QImage& destination, const QImage& mask,
     if (colorEffectType && strengthMix == 0) {
         return true;
     }
+    QImage embossSource;
+    if (parameters.type == 4 && source.constBits() == destination.constBits()) {
+        embossSource = source;
+    }
     destination.detach();
     RenderWorkspace localWorkspace(0);
     RenderWorkspace& activeWorkspace = workspace != nullptr ? *workspace : localWorkspace;
@@ -1397,6 +1502,16 @@ bool applyMasked(const QImage& source, QImage& destination, const QImage& mask,
             localWorkspace.finishFrame(true);
         }
         return succeeded;
+    }
+    if (parameters.type == 4) {
+        const QImage& sampledSource = embossSource.isNull() ? source : embossSource;
+        diagnostics.parallelJobs +=
+            embossMaskedRect(sampledSource, destination, alphaView(mask), maskOriginPixels, pixels,
+                             parameters, options.singleThreaded);
+        if (workspace == nullptr) {
+            localWorkspace.finishFrame(true);
+        }
+        return true;
     }
     const ConstImageView sourceView = view(source);
     const ImageView destinationView = view(destination);
@@ -1537,6 +1652,10 @@ bool applyMaskedSparse(const QImage& source, QImage& destination, const QImage& 
         return true;
     }
 
+    QImage embossSource;
+    if (parameters.type == 4 && source.constBits() == destination.constBits()) {
+        embossSource = source;
+    }
     destination.detach();
     RenderWorkspace localWorkspace(0);
     RenderWorkspace& activeWorkspace = workspace != nullptr ? *workspace : localWorkspace;
@@ -1642,6 +1761,43 @@ bool applyMaskedSparse(const QImage& source, QImage& destination, const QImage& 
             return true;
         }
 
+        if (parameters.type == 4) {
+            const QImage& sampledSource = embossSource.isNull() ? source : embossSource;
+            const ConstImageView embossSourceView = view(sampledSource);
+            const int samplingRadius = embossSamplingRadius(parameters);
+            const double strength = normalizedStrength(parameters.strength) * kEmbossStrengthScale;
+            for (const MaskSpan& span : spans) {
+                if (span.y < pixels.top() || span.y > pixels.bottom()) {
+                    continue;
+                }
+                const int begin = qMax(span.beginX, pixels.left());
+                const int end = qMin(span.endX, pixels.right() + 1);
+                if (begin >= end) {
+                    continue;
+                }
+                auto* destinationLine = reinterpret_cast<QRgb*>(
+                    destinationView.data + static_cast<qsizetype>(span.y) * destinationView.stride);
+                const auto* alphaLine =
+                    maskView.data +
+                    static_cast<qsizetype>(span.y - maskOriginPixels.y()) * maskView.stride;
+                for (int x = begin; x < end; ++x) {
+                    const int mix = alphaLine[x - maskOriginPixels.x()];
+                    if (mix == 0) {
+                        continue;
+                    }
+                    const QRgb embossed =
+                        embossPixel(embossSourceView, x, span.y, samplingRadius, strength);
+                    destinationLine[x] =
+                        mix == 255 ? embossed
+                                   : blendPremultiplied(destinationLine[x], embossed, mix);
+                }
+            }
+            if (workspace == nullptr) {
+                localWorkspace.finishFrame(true);
+            }
+            return true;
+        }
+
         bool simdExecuted = false;
         const bool useAvx2 =
             colorEffectType && !options.forceScalar && selectedSimdBackend() == SimdBackend::Avx2;
@@ -1703,7 +1859,8 @@ bool applyMaskedSparse(const QImage& source, QImage& destination, const QImage& 
 bool applyRect(const QImage& source, QImage& destination, const QRect& destinationPixels,
                double opacity, const Parameters& parameters, RenderWorkspace* workspace,
                const ExecutionOptions& options) {
-    const bool supported = parameters.type == 1 || parameters.type == 2 || parameters.type == 3;
+    const bool supported = parameters.type == 1 || parameters.type == 2 || parameters.type == 3 ||
+                           parameters.type == 4;
     if (!supported || source.size() != destination.size() ||
         source.format() != QImage::Format_ARGB32_Premultiplied ||
         destination.format() != QImage::Format_ARGB32_Premultiplied) {
@@ -1717,6 +1874,10 @@ bool applyRect(const QImage& source, QImage& destination, const QRect& destinati
     if (pixels.isEmpty() || mix == 0) {
         return true;
     }
+    QImage embossSource;
+    if (parameters.type == 4 && source.constBits() == destination.constBits()) {
+        embossSource = source;
+    }
     destination.detach();
     RenderWorkspace localWorkspace(0);
     RenderWorkspace& activeWorkspace = workspace != nullptr ? *workspace : localWorkspace;
@@ -1724,6 +1885,12 @@ bool applyRect(const QImage& source, QImage& destination, const QRect& destinati
     if (parameters.type == 1) {
         succeeded = blurMasked(source, destination, {}, {}, QRegion(pixels), mix, parameters,
                                activeWorkspace, options);
+    } else if (parameters.type == 4) {
+        KernelDiagnostics& diagnostics =
+            const_cast<KernelDiagnostics&>(activeWorkspace.diagnostics());
+        const QImage& sampledSource = embossSource.isNull() ? source : embossSource;
+        diagnostics.parallelJobs +=
+            embossRect(sampledSource, destination, pixels, parameters, mix, options.singleThreaded);
     } else {
         bool usedSimd = false;
         KernelDiagnostics& diagnostics =
@@ -1744,7 +1911,8 @@ bool applyRect(const QImage& source, QImage& destination, const QRect& destinati
 bool applyRegion(const QImage& source, QImage& destination, const QRegion& destinationPixels,
                  const Parameters& parameters, RenderWorkspace* workspace,
                  const ExecutionOptions& options) {
-    const bool supported = parameters.type == 1 || parameters.type == 2 || parameters.type == 3;
+    const bool supported = parameters.type == 1 || parameters.type == 2 || parameters.type == 3 ||
+                           parameters.type == 4;
     if (!supported || source.size() != destination.size() ||
         source.format() != QImage::Format_ARGB32_Premultiplied ||
         destination.format() != QImage::Format_ARGB32_Premultiplied) {
@@ -1760,6 +1928,10 @@ bool applyRegion(const QImage& source, QImage& destination, const QRegion& desti
     if (colorMix == 0) {
         return true;
     }
+    QImage embossSource;
+    if (parameters.type == 4 && source.constBits() == destination.constBits()) {
+        embossSource = source;
+    }
     destination.detach();
     RenderWorkspace localWorkspace(0);
     RenderWorkspace& activeWorkspace = workspace != nullptr ? *workspace : localWorkspace;
@@ -1767,6 +1939,14 @@ bool applyRegion(const QImage& source, QImage& destination, const QRegion& desti
     if (parameters.type == 1) {
         succeeded = blurMasked(source, destination, {}, {}, pixels, 255, parameters,
                                activeWorkspace, options);
+    } else if (parameters.type == 4) {
+        KernelDiagnostics& diagnostics =
+            const_cast<KernelDiagnostics&>(activeWorkspace.diagnostics());
+        const QImage& sampledSource = embossSource.isNull() ? source : embossSource;
+        for (const QRect& rect : pixels) {
+            diagnostics.parallelJobs += embossRect(sampledSource, destination, rect, parameters,
+                                                   255, options.singleThreaded);
+        }
     } else {
         bool usedSimd = false;
         KernelDiagnostics& diagnostics =

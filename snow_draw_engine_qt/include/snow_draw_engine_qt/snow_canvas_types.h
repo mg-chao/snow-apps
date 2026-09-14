@@ -154,6 +154,7 @@ enum class SnowCanvasFilterType {
     GaussianBlur,
     Grayscale,
     Inversion,
+    Emboss = 4,
 };
 
 enum SnowCanvasFilterStyleProperty : quint32 {

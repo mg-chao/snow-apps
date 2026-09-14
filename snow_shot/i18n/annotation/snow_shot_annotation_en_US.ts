@@ -204,6 +204,10 @@
             <translation>Ellipse</translation>
         </message>
         <message>
+            <source>Emboss</source>
+            <translation>Emboss</translation>
+        </message>
+        <message>
             <source>End arrowhead</source>
             <translation>End arrowhead</translation>
         </message>

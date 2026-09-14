@@ -897,6 +897,69 @@ mod tests {
             assert_eq!(item.filter.sampling_radius, 0.0);
         }
     }
+
+    #[test]
+    fn emboss_display_items_preserve_strength_and_spatial_support() {
+        let filter = FilterData {
+            filter_type: CanvasFilterType::Emboss,
+            strength: 0.5,
+            ..FilterData::default()
+        };
+        let SceneDisplayItem::Filter(item) = scene_item_from_filter(
+            ElementId {
+                index: 9,
+                generation: 5,
+            },
+            filter,
+        ) else {
+            panic!("expected an emboss display item");
+        };
+
+        assert_eq!(item.filter.filter_type, DisplayFilterType::Emboss);
+        assert_eq!(item.filter.strength, 0.5);
+        assert_eq!(item.filter.sampling_radius, 1.0);
+
+        let pen_filter = PenFilterData::from_global_points(
+            &[Point::new(1.0, 2.0), Point::new(8.0, 13.0)],
+            CanvasFilterType::Emboss,
+            0.25,
+            6.0,
+            0.8,
+        )
+        .unwrap();
+        let SceneDisplayItem::Filter(pen_item) = scene_item_from_pen_filter(
+            ElementId {
+                index: 10,
+                generation: 5,
+            },
+            pen_filter,
+        ) else {
+            panic!("expected an emboss pen-filter display item");
+        };
+        assert_eq!(pen_item.filter.filter_type, DisplayFilterType::Emboss);
+        assert_eq!(pen_item.filter.strength, 0.25);
+        assert_eq!(pen_item.filter.sampling_radius, 1.0);
+
+        let preview = PenFilterPreview {
+            global_points: vec![Point::new(2.0, 3.0), Point::new(9.0, 14.0)],
+            filter_type: CanvasFilterType::Emboss,
+            strength: 0.75,
+            stroke_width: 7.0,
+            opacity: 0.6,
+        };
+        let Some((SceneDisplayItem::Filter(preview_item), _)) = scene_item_from_pen_filter_preview(
+            ElementId {
+                index: 11,
+                generation: 5,
+            },
+            &preview,
+        ) else {
+            panic!("expected an emboss pen-filter preview display item");
+        };
+        assert_eq!(preview_item.filter.filter_type, DisplayFilterType::Emboss);
+        assert_eq!(preview_item.filter.strength, 0.75);
+        assert_eq!(preview_item.filter.sampling_radius, 1.0);
+    }
 }
 
 pub(crate) fn scene_item_from_filter(id: ElementId, filter: FilterData) -> SceneDisplayItem {
@@ -916,6 +979,7 @@ pub(crate) fn scene_item_from_filter(id: ElementId, filter: FilterData) -> Scene
                 CanvasFilterType::GaussianBlur => DisplayFilterType::GaussianBlur,
                 CanvasFilterType::Grayscale => DisplayFilterType::Grayscale,
                 CanvasFilterType::Inversion => DisplayFilterType::Inversion,
+                CanvasFilterType::Emboss => DisplayFilterType::Emboss,
             },
             FilterData::normalized_strength(filter.strength),
         ),
@@ -945,6 +1009,7 @@ pub(crate) fn scene_item_from_pen_filter(id: ElementId, filter: PenFilterData) -
                 CanvasFilterType::GaussianBlur => DisplayFilterType::GaussianBlur,
                 CanvasFilterType::Grayscale => DisplayFilterType::Grayscale,
                 CanvasFilterType::Inversion => DisplayFilterType::Inversion,
+                CanvasFilterType::Emboss => DisplayFilterType::Emboss,
             },
             FilterData::normalized_strength(filter.strength),
         ),
@@ -1006,6 +1071,7 @@ pub(crate) fn scene_item_from_pen_filter_preview(
                     CanvasFilterType::GaussianBlur => DisplayFilterType::GaussianBlur,
                     CanvasFilterType::Grayscale => DisplayFilterType::Grayscale,
                     CanvasFilterType::Inversion => DisplayFilterType::Inversion,
+                    CanvasFilterType::Emboss => DisplayFilterType::Emboss,
                 },
                 FilterData::normalized_strength(preview.strength),
             ),

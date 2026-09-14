@@ -204,6 +204,10 @@
             <translation>椭圆</translation>
         </message>
         <message>
+            <source>Emboss</source>
+            <translation>浮雕</translation>
+        </message>
+        <message>
             <source>End arrowhead</source>
             <translation>末端箭头</translation>
         </message>

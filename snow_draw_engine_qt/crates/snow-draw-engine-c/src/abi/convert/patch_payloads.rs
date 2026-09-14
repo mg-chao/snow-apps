@@ -227,6 +227,7 @@ pub(crate) fn snow_scene_display_item_from_rust(
                 snow_draw_engine::DisplayFilterType::GaussianBlur => 1,
                 snow_draw_engine::DisplayFilterType::Grayscale => 2,
                 snow_draw_engine::DisplayFilterType::Inversion => 3,
+                snow_draw_engine::DisplayFilterType::Emboss => 4,
             };
             out.filter.strength = item.filter.strength;
             out.filter.mosaic_block_size = item.filter.mosaic_block_size;
@@ -722,6 +723,22 @@ mod tests {
         assert_eq!((item.view.center_x, item.view.center_y), (21.0, 34.0));
         assert_eq!((item.view.width, item.view.height), (55.0, 89.0));
         assert_eq!(item.view.rotation, 0.75);
+    }
+
+    #[test]
+    fn emboss_display_item_uses_the_appended_abi_value() {
+        let item = snow_scene_display_item_from_rust(
+            &SceneDisplayItem::Filter(FilterDisplayItem {
+                filter: snow_draw_engine::FilterRenderSpec::resolve(DisplayFilterType::Emboss, 0.5),
+                ..FilterDisplayItem::default()
+            }),
+            false,
+            false,
+        );
+
+        assert_eq!(item.view.filter.filter_type, 4);
+        assert_eq!(item.view.filter.strength, 0.5);
+        assert_eq!(item.view.filter.sampling_radius, 1.0);
     }
 
     #[test]

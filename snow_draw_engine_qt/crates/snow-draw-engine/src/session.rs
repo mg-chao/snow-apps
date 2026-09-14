@@ -137,8 +137,8 @@ mod tests {
     use super::*;
     use snow_draw_engine_core::{ColorRgba8, CornerRadii, Point};
     use snow_draw_engine_document::{
-        ElementMeta, FillStyle, HighlightShape, RectangleData, RectangleElementKind, StrokeStyle,
-        Transaction,
+        CanvasFilterType, ElementMeta, FillStyle, FilterData, HighlightShape, RectangleData,
+        RectangleElementKind, StrokeStyle, Transaction,
     };
     use snow_draw_engine_editor::ActiveTool;
 
@@ -229,6 +229,55 @@ mod tests {
 
         let oversized = vec![b' '; MAX_DOCUMENT_SESSION_BYTES + 1];
         assert!(Engine::from_serialized_document_session(&oversized).is_err());
+    }
+
+    #[test]
+    fn emboss_document_and_editor_session_round_trip_preserves_filter_variants() {
+        assert_eq!(CanvasFilterType::Emboss as u32, 4);
+        let mut config = RuntimeEngineConfig::default();
+        config.style_defaults.editor.rectangle_filter.filter_type = CanvasFilterType::Emboss;
+        config.style_defaults.editor.rectangle_filter.strength = 0.75;
+        config.style_defaults.editor.pen_filter.filter_type = CanvasFilterType::Emboss;
+        config.style_defaults.editor.pen_filter.strength = 0.75;
+        let mut engine = Engine::new(config);
+
+        let emboss_id = engine.model.allocate_element_id();
+        let mut transaction = Transaction::new("emboss filter");
+        transaction.insert_filter(
+            emboss_id,
+            ElementMeta::default(),
+            FilterData {
+                filter_type: CanvasFilterType::Emboss,
+                strength: 0.75,
+                ..FilterData::default()
+            },
+        );
+        engine.model.apply_transaction(transaction).unwrap();
+
+        let bytes = engine.serialize_document_session().unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let serialized = json.to_string();
+        assert!(serialized.matches("\"Emboss\"").count() >= 3);
+
+        let restored = Engine::from_serialized_document_session(&bytes).unwrap();
+        assert_eq!(
+            restored.model.filter(emboss_id).unwrap().filter_type,
+            CanvasFilterType::Emboss
+        );
+        assert_eq!(restored.editor.persisted(), engine.editor.persisted());
+
+        for (filter_type, representation) in [
+            (CanvasFilterType::Mosaic, "Mosaic"),
+            (CanvasFilterType::GaussianBlur, "GaussianBlur"),
+            (CanvasFilterType::Grayscale, "Grayscale"),
+            (CanvasFilterType::Inversion, "Inversion"),
+            (CanvasFilterType::Emboss, "Emboss"),
+        ] {
+            assert_eq!(
+                serde_json::to_value(filter_type).unwrap(),
+                serde_json::Value::String(representation.to_owned())
+            );
+        }
     }
 
     #[test]

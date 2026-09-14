@@ -179,6 +179,7 @@ pub enum CanvasFilterType {
     GaussianBlur,
     Grayscale,
     Inversion,
+    Emboss = 4,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

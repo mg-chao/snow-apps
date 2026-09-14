@@ -1349,6 +1349,10 @@ bool isColorEffect(std::uint32_t type) {
     return type == 2 || type == 3;
 }
 
+bool isEmbossEffect(std::uint32_t type) {
+    return type == 4;
+}
+
 double colorFilterCoverage(const SnowCanvasSceneItem& item) {
     return qBound(0.0, item.opacity, 1.0);
 }
@@ -2062,6 +2066,8 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
         struct EffectGroup {
             std::uint32_t type = 0;
             int blockPixels = 0;
+            int samplingRadiusPixels = 0;
+            double strength = 0.0;
             snow_canvas_filter_render::GaussianBlurPlan gaussianPlan;
             std::vector<std::uint32_t> indices;
         };
@@ -2277,6 +2283,10 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                     if (key.type == 1) {
                         key.gaussianPlan = snow_canvas_filter_render::gaussianBlurPlan(
                             filterParameters(displayInfo, filter, devicePixelRatio, {}));
+                    } else if (isEmbossEffect(key.type)) {
+                        key.strength = filter.filter.strength;
+                        key.samplingRadiusPixels = snow_canvas_filter_render::samplingRadiusPixels(
+                            filterParameters(displayInfo, filter, devicePixelRatio, {}));
                     }
                     auto found =
                         std::find_if(groups.begin(), groups.end(), [&](const EffectGroup& group) {
@@ -2295,6 +2305,10 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                                        std::equal(std::begin(group.gaussianPlan.radii),
                                                   std::end(group.gaussianPlan.radii),
                                                   std::begin(key.gaussianPlan.radii));
+                            }
+                            if (isEmbossEffect(key.type)) {
+                                return group.strength == key.strength &&
+                                       group.samplingRadiusPixels == key.samplingRadiusPixels;
                             }
                             return true;
                         });
@@ -2327,7 +2341,8 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                             }
                             const double physicalOutset =
                                 effect.type == 1 ? effect.gaussianPlan.physicalSupportRadius + 0.5
-                                                 : 0.5;
+                                : isEmbossEffect(effect.type) ? effect.samplingRadiusPixels + 0.5
+                                                              : 0.5;
                             const double logicalOutset = physicalOutset / devicePixelRatio;
                             const QRectF leftSource = leftBounds.adjusted(
                                 -logicalOutset, -logicalOutset, logicalOutset, logicalOutset);
@@ -2460,7 +2475,8 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                     }
                     bool applied = false;
                     const SnowCanvasSceneItem& onlyFilter = sceneItems[group.indices.front()];
-                    bool opaqueRectangles = group.type == 1 || isColorEffect(group.type);
+                    bool opaqueRectangles =
+                        group.type == 1 || isColorEffect(group.type) || isEmbossEffect(group.type);
                     QRegion opaqueRegion;
                     for (std::uint32_t filterIndex : group.indices) {
                         const bool directRectangle =
@@ -2478,7 +2494,8 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                     }
                     const bool constantRectangle =
                         group.indices.size() == 1 &&
-                        (group.type == 1 || isColorEffect(group.type)) &&
+                        (group.type == 1 || isColorEffect(group.type) ||
+                         isEmbossEffect(group.type)) &&
                         cachedFilter(group.indices.front()).axisAlignedRect &&
                         (group.type == 1 ||
                          cachedFilter(group.indices.front()).devicePixelAlignedRect);

@@ -251,6 +251,126 @@ void colorEffectStrengthHasExactEndpointsAndInterpolation() {
     }
 }
 
+void embossMatchesPixiFormulaAndPreservesPremultipliedAlpha() {
+    QImage source(QSize(3, 3), QImage::Format_ARGB32_Premultiplied);
+    source.fill(qRgb(102, 102, 102));
+    source.setPixel(0, 0, qRgb(100, 100, 100));
+    source.setPixel(1, 1, qRgba(20, 40, 60, 100));
+    source.setPixel(2, 2, qRgb(105, 105, 105));
+
+    snow_canvas_filter_render::Parameters parameters;
+    parameters.type = 4;
+    parameters.logicalSamplingRadius = 1.0;
+    for (double strength : {0.0, 0.5, 1.0}) {
+        QImage output = source;
+        parameters.strength = strength;
+        snow_canvas_filter_render::apply(output, parameters);
+        const double pixiStrength = strength * 10.0;
+        const int expectedGray =
+            qRound(qBound(0.0, 0.5 + pixiStrength * 15.0 / (3.0 * 255.0), 1.0) * 100.0);
+        const QRgb center = output.pixel(1, 1);
+        require(center == qRgba(expectedGray, expectedGray, expectedGray, 100),
+                "emboss must use PixiJS diagonal sampling and map intensity to strength 0-10");
+        for (int y = 0; y < output.height(); ++y) {
+            for (int x = 0; x < output.width(); ++x) {
+                const QRgb pixel = output.pixel(x, y);
+                require(qRed(pixel) == qGreen(pixel) && qGreen(pixel) == qBlue(pixel),
+                        "emboss output must be grayscale");
+                require(qRed(pixel) <= qAlpha(pixel),
+                        "emboss must preserve the premultiplied alpha invariant");
+            }
+        }
+    }
+
+    parameters.devicePixelRatio = 2.0;
+    require(snow_canvas_filter_render::samplingRadiusPixels(parameters) == 2,
+            "emboss sampling support must follow logical pixel and DPR scaling");
+    parameters.logicalSamplingRadius = 0.0;
+    require(snow_canvas_filter_render::samplingRadiusPixels(parameters) == 1,
+            "emboss must retain a minimum one-pixel sampling support");
+
+    QImage edgeClamped(QSize(2, 2), QImage::Format_ARGB32_Premultiplied);
+    edgeClamped.fill(qRgb(10, 10, 10));
+    edgeClamped.setPixel(1, 1, qRgb(13, 13, 13));
+    parameters.devicePixelRatio = 1.0;
+    parameters.logicalSamplingRadius = 1.0;
+    parameters.strength = 0.5;
+    snow_canvas_filter_render::apply(edgeClamped, parameters);
+    require(edgeClamped.pixel(0, 0) == qRgb(143, 143, 143),
+            "emboss must clamp diagonal samples to the image edge");
+
+    for (bool ascending : {false, true}) {
+        QImage clamped(QSize(3, 3), QImage::Format_ARGB32_Premultiplied);
+        clamped.fill(qRgb(127, 127, 127));
+        clamped.setPixel(0, 0, ascending ? qRgb(0, 0, 0) : qRgb(255, 255, 255));
+        clamped.setPixel(2, 2, ascending ? qRgb(255, 255, 255) : qRgb(0, 0, 0));
+        parameters.strength = 1.0;
+        snow_canvas_filter_render::apply(clamped, parameters);
+        require(clamped.pixel(1, 1) == (ascending ? qRgb(255, 255, 255) : qRgb(0, 0, 0)),
+                "emboss must clamp the computed grayscale channel at both endpoints");
+    }
+}
+
+void embossRenderingPathsShareOneImmutableSource() {
+    const QImage source = noisyPatternImage(QSize(40, 30));
+    const QRect coverage(7, 5, 18, 14);
+    snow_canvas_filter_render::Parameters parameters;
+    parameters.type = 4;
+    parameters.strength = 0.37;
+    parameters.logicalSamplingRadius = 1.0;
+
+    QImage mask(source.size(), QImage::Format_Alpha8);
+    mask.fill(0);
+    for (int y = coverage.top(); y <= coverage.bottom(); ++y) {
+        std::fill(mask.scanLine(y) + coverage.left(), mask.scanLine(y) + coverage.right() + 1,
+                  static_cast<uchar>(255));
+    }
+    std::vector<snow_canvas_filter_render::MaskSpan> spans;
+    for (int y = coverage.top(); y <= coverage.bottom(); ++y) {
+        spans.push_back({y, coverage.left(), coverage.right() + 1});
+    }
+
+    QImage rectangular = source;
+    QImage regional = source;
+    QImage masked = source;
+    QImage sparse = source;
+    QImage aliased = source;
+    require(snow_canvas_filter_render::applyRect(source, rectangular, coverage, 1.0, parameters),
+            "opaque rectangular emboss rendering must succeed");
+    require(snow_canvas_filter_render::applyRegion(source, regional, QRegion(coverage), parameters),
+            "opaque regional emboss rendering must succeed");
+    require(snow_canvas_filter_render::applyMasked(source, masked, mask, coverage, parameters),
+            "dense masked emboss rendering must succeed");
+    require(snow_canvas_filter_render::applyMaskedSparse(source, sparse, mask, QPoint(), coverage,
+                                                         spans, {coverage}, parameters),
+            "sparse masked emboss rendering must succeed");
+    require(snow_canvas_filter_render::applyRect(aliased, aliased, coverage, 1.0, parameters),
+            "in-place rectangular emboss rendering must succeed");
+    require(rectangular == regional && regional == masked && masked == sparse && sparse == aliased,
+            "every emboss rendering path must sample the same immutable source pixels");
+
+    QImage partialMask = mask.copy(coverage);
+    partialMask.fill(117);
+    QImage maskedPartial = source;
+    QImage directPartial = source;
+    require(snow_canvas_filter_render::applyMasked(source, maskedPartial, partialMask,
+                                                   coverage.topLeft(), coverage, parameters) &&
+                snow_canvas_filter_render::applyRect(source, directPartial, coverage, 117.0 / 255.0,
+                                                     parameters),
+            "partial-opacity emboss rendering must succeed");
+    require(maskedPartial == directPartial,
+            "emboss opacity and Alpha8 mask coverage must use identical blending");
+
+    for (int y = 0; y < source.height(); ++y) {
+        for (int x = 0; x < source.width(); ++x) {
+            if (!coverage.contains(x, y)) {
+                require(rectangular.pixel(x, y) == source.pixel(x, y),
+                        "emboss must preserve pixels outside its destination coverage");
+            }
+        }
+    }
+}
+
 void partialFilterRenderUsesABoundedSurface() {
     QImage image(QSize(1000, 1000), QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::transparent);
@@ -875,6 +995,57 @@ void mosaicPlanningCropsDirtyOutputAndBatchesEquivalentBlocks() {
             "mosaics with equal physical blocks must share one effect dispatch");
 }
 
+void embossBatchingRequiresEqualNormalizedStrength() {
+    const QSize size(160, 120);
+    QImage background(size, QImage::Format_ARGB32_Premultiplied);
+    background.fill(QColor(40, 90, 160));
+    SceneDisplayInfo displayInfo{};
+    displayInfo.surface_width = size.width();
+    displayInfo.surface_height = size.height();
+    displayInfo.camera_zoom = 1.0;
+
+    const auto render = [&](double secondStrength) {
+        SnowSceneDisplayItem first{};
+        first.kind = SNOW_SCENE_DISPLAY_ITEM_FILTER;
+        first.width = 96.0;
+        first.height = 96.0;
+        first.filter = snow_filter_render_spec_resolve(4, 0.5);
+        first.opacity = 1.0;
+        SnowSceneDisplayItem second = first;
+        second.center_x = 4.0;
+        second.filter = snow_filter_render_spec_resolve(4, secondStrength);
+        const SnowCanvasSceneItem items[] = {
+            SnowCanvasSceneItem(first),
+            SnowCanvasSceneItem(second),
+        };
+        QImage output(size, QImage::Format_ARGB32_Premultiplied);
+        output.fill(Qt::transparent);
+        QPainter painter(&output);
+        snow_canvas_renderer::renderSceneItems(snow_canvas_renderer::SceneRenderRequest{
+            &painter,
+            &displayInfo,
+            items,
+            2,
+            QRegion(output.rect()),
+            nullptr,
+            0,
+            &background,
+        });
+        painter.end();
+        return snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread();
+    };
+
+    const auto equalStrength = render(0.5);
+    require(equalStrength.originalFilterCount == 2 && equalStrength.effectDispatchCount == 1 &&
+                equalStrength.batchedFilterCount == 1,
+            "overlapping emboss regions with equal strengths must share one effect dispatch");
+    const auto differentStrength = render(0.6);
+    require(differentStrength.originalFilterCount == 2 &&
+                differentStrength.effectDispatchCount == 2 &&
+                differentStrength.batchedFilterCount == 0,
+            "overlapping emboss regions with different strengths must use separate dispatches");
+}
+
 void filteredBackgroundIsCompositedOnce() {
     QImage image(QSize(80, 80), QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::transparent);
@@ -1406,14 +1577,14 @@ void scalarAvx2AndThreadingProduceIdenticalPixels() {
                                 static_cast<int>(generator() % (alpha + 1)), alpha);
             }
         }
-        for (std::uint32_t type : {0u, 1u, 2u, 3u}) {
+        for (std::uint32_t type : {0u, 1u, 2u, 3u, 4u}) {
             QImage scalar = source;
             QImage optimized = source;
             snow_canvas_filter_render::Parameters parameters;
             parameters.type = type;
             parameters.logicalBlockSize = 7.0;
             parameters.logicalSigma = 18.5;
-            parameters.logicalSamplingRadius = type == 0 ? 7.0 : 56.5;
+            parameters.logicalSamplingRadius = type == 0 ? 7.0 : type == 4 ? 1.0 : 56.5;
             snow_canvas_filter_render::apply(
                 scalar, parameters, nullptr,
                 snow_canvas_filter_render::ExecutionOptions{true, true});
@@ -1475,7 +1646,7 @@ void maskedKernelsMatchAcrossBackendsAndRespectBlurMemoryBound() {
     }
     const QRect affected(3, 2, size.width() - 8, size.height() - 7);
     const QImage croppedMask = mask.copy(affected);
-    for (std::uint32_t type : {2u, 3u}) {
+    for (std::uint32_t type : {2u, 3u, 4u}) {
         for (double strength : {0.0, 0.5, 1.0}) {
             snow_canvas_filter_render::Parameters parameters;
             parameters.type = type;
@@ -1485,13 +1656,13 @@ void maskedKernelsMatchAcrossBackendsAndRespectBlurMemoryBound() {
             require(snow_canvas_filter_render::applyMasked(
                         source, scalar, mask, affected, parameters, nullptr,
                         snow_canvas_filter_render::ExecutionOptions{true, true}),
-                    "the scalar masked color kernel must accept detached premultiplied buffers");
+                    "the scalar masked effect kernel must accept detached premultiplied buffers");
             require(snow_canvas_filter_render::applyMasked(
                         source, optimized, croppedMask, affected.topLeft(), affected, parameters,
                         nullptr, snow_canvas_filter_render::ExecutionOptions{false, false}),
-                    "the selected masked color kernel must accept cropped mask origins");
+                    "the selected masked effect kernel must accept cropped mask origins");
             require(scalar == optimized,
-                    "masked scalar and AVX2 color kernels must produce identical pixels");
+                    "masked scalar and selected effect kernels must produce identical pixels");
         }
     }
 
@@ -1709,7 +1880,7 @@ void croppedCoverageWorkspaceAndFailurePathsStayValid() {
     require(maskedRegion == directRegion,
             "opaque-region reconstruction must match its Alpha8 union mask");
 
-    for (std::uint32_t type : {2u, 3u}) {
+    for (std::uint32_t type : {2u, 3u, 4u}) {
         snow_canvas_filter_render::Parameters color;
         color.type = type;
         color.strength = 0.5;
@@ -2391,6 +2562,7 @@ void tiledRenderMatchesFullRender() {
     runCase(1, 0.7, "blur strength 0.7");
     runCase(1, 0.2, "blur strength 0.2");
     runCase(2, 0.5, "grayscale");
+    runCase(4, 0.5, "emboss strength 0.5");
 }
 } // namespace
 
@@ -2410,6 +2582,9 @@ int main(int argc, char** argv) {
     inversionPreservesPremultipliedAlpha();
     grayscalePreservesPremultipliedAlpha();
     colorEffectStrengthHasExactEndpointsAndInterpolation();
+    embossMatchesPixiFormulaAndPreservesPremultipliedAlpha();
+    embossRenderingPathsShareOneImmutableSource();
+    embossBatchingRequiresEqualNormalizedStrength();
     partialFilterRenderUsesABoundedSurface();
     uniformGaussianBlurPreservesColor();
     approximateGaussianMeetsReferenceQualityFloor();
