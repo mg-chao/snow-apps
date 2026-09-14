@@ -413,7 +413,7 @@
         <name>PinnedToolbarEditorSettingsWidget</name>
         <message>
             <source>Drag tools here to hide them from the pinned toolbar.</source>
-            <translation>将工具拖到此处，即可在贴图工具栏中隐藏。</translation>
+            <translation>将工具拖到此处，即可在固定到屏幕工具栏中隐藏。</translation>
         </message>
         <message>
             <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</source>
@@ -421,7 +421,7 @@
         </message>
         <message>
             <source>Hidden pinned toolbar tools</source>
-            <translation>隐藏的贴图工具栏工具</translation>
+            <translation>隐藏的固定到屏幕工具栏工具</translation>
         </message>
         <message>
             <source>Hidden tools</source>
@@ -433,7 +433,7 @@
         </message>
         <message>
             <source>Pin to Screen toolbar preview</source>
-            <translation>贴图工具栏预览</translation>
+            <translation>固定到屏幕工具栏预览</translation>
         </message>
     </context>
     <context>
@@ -810,7 +810,7 @@
         </message>
         <message>
             <source>Choose the action for double-clicking a draggable area of a pinned screenshot</source>
-            <translation>选择双击贴图可拖动区域时执行的操作</translation>
+            <translation>选择双击固定截图可拖动区域时执行的操作</translation>
         </message>
         <message>
             <source>Choose the action for double-clicking while moving or drawing in a screenshot</source>
@@ -818,7 +818,7 @@
         </message>
         <message>
             <source>Choose the action for middle-clicking a draggable area of a pinned screenshot</source>
-            <translation>选择在贴图可拖动区域单击鼠标中键时执行的操作</translation>
+            <translation>选择在固定截图可拖动区域单击鼠标中键时执行的操作</translation>
         </message>
         <message>
             <source>Choose the action for middle-clicking while moving or drawing in a screenshot</source>
@@ -878,7 +878,7 @@
         </message>
         <message>
             <source>Choose when recognized text can be selected on pinned screenshots.</source>
-            <translation>选择何时可以在贴图上选择识别出的文本。</translation>
+            <translation>选择何时可以在固定截图上选择识别出的文本。</translation>
         </message>
         <message>
             <source>Choose where images are written for automatic save and copy-file actions</source>
@@ -1066,7 +1066,7 @@
         </message>
         <message>
             <source>Custom pinned toolbar</source>
-            <translation>自定义贴图工具栏</translation>
+            <translation>自定义固定到屏幕工具栏</translation>
         </message>
         <message>
             <source>Custom screenshot toolbar</source>
@@ -1166,7 +1166,7 @@
         </message>
         <message>
             <source>Drag pinned tools to reorder them or stack them in the same toolbar position.</source>
-            <translation>拖动贴图工具以调整顺序，或将其堆叠在同一工具栏位置。</translation>
+            <translation>拖动固定到屏幕工具栏中的工具以调整顺序，或将其堆叠在同一工具栏位置。</translation>
         </message>
         <message>
             <source>Drag screenshot tools to reorder them or stack them in the same toolbar position.</source>
@@ -1714,7 +1714,7 @@
         </message>
         <message>
             <source>Pin Selected Files to Screen</source>
-            <translation>将选中的文件贴到屏幕</translation>
+            <translation>固定选中文件到屏幕</translation>
         </message>
         <message>
             <source>Pin clipboard</source>
@@ -1726,11 +1726,11 @@
         </message>
         <message>
             <source>Pin images, image files, formatted text, or HTML from the clipboard to the screen</source>
-            <translation>将剪贴板中的图像、图像文件、格式化文本或 HTML 贴到屏幕</translation>
+            <translation>固定剪贴板中的图像、图像文件、格式化文本或 HTML 到屏幕</translation>
         </message>
         <message>
             <source>Pin selected image files from File Explorer or the desktop to the screen</source>
-            <translation>将文件资源管理器或桌面中选中的图像文件贴到屏幕</translation>
+            <translation>固定文件资源管理器或桌面中选中的图像文件到屏幕</translation>
         </message>
         <message>
             <source>Pin selection</source>
@@ -1738,7 +1738,7 @@
         </message>
         <message>
             <source>Pin the confirmed screenshot selection to the screen</source>
-            <translation>将确认的截图选区固定到屏幕</translation>
+            <translation>固定确认的截图选区到屏幕</translation>
         </message>
         <message>
             <source>Pin to Screen</source>
@@ -1746,7 +1746,7 @@
         </message>
         <message>
             <source>Pin to Screen toolbar settings</source>
-            <translation>贴图工具栏设置</translation>
+            <translation>固定到屏幕工具栏设置</translation>
         </message>
         <message>
             <source>Pin to screen</source>

@@ -413,7 +413,7 @@
         <name>PinnedToolbarEditorSettingsWidget</name>
         <message>
             <source>Drag tools here to hide them from the pinned toolbar.</source>
-            <translation>將工具拖曳到此處，即可在貼圖工具列中隱藏。</translation>
+            <translation>將工具拖曳到此處，即可在釘選工具列中隱藏。</translation>
         </message>
         <message>
             <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</source>
@@ -421,7 +421,7 @@
         </message>
         <message>
             <source>Hidden pinned toolbar tools</source>
-            <translation>隱藏的貼圖工具列工具</translation>
+            <translation>隱藏的釘選工具列工具</translation>
         </message>
         <message>
             <source>Hidden tools</source>
@@ -433,7 +433,7 @@
         </message>
         <message>
             <source>Pin to Screen toolbar preview</source>
-            <translation>貼圖工具列預覽</translation>
+            <translation>釘選工具列預覽</translation>
         </message>
     </context>
     <context>
@@ -810,7 +810,7 @@
         </message>
         <message>
             <source>Choose the action for double-clicking a draggable area of a pinned screenshot</source>
-            <translation>選擇按兩下貼圖可拖曳區域時執行的操作</translation>
+            <translation>選擇按兩下釘選截圖可拖曳區域時執行的操作</translation>
         </message>
         <message>
             <source>Choose the action for double-clicking while moving or drawing in a screenshot</source>
@@ -878,7 +878,7 @@
         </message>
         <message>
             <source>Choose when recognized text can be selected on pinned screenshots.</source>
-            <translation>選擇何時可以在貼圖上選取辨識出的文字。</translation>
+            <translation>選擇何時可以在釘選截圖上選取辨識出的文字。</translation>
         </message>
         <message>
             <source>Choose where images are written for automatic save and copy-file actions</source>
@@ -1066,7 +1066,7 @@
         </message>
         <message>
             <source>Custom pinned toolbar</source>
-            <translation>自訂貼圖工具列</translation>
+            <translation>自訂釘選工具列</translation>
         </message>
         <message>
             <source>Custom screenshot toolbar</source>
@@ -1166,7 +1166,7 @@
         </message>
         <message>
             <source>Drag pinned tools to reorder them or stack them in the same toolbar position.</source>
-            <translation>拖曳貼圖工具以調整順序，或將其堆疊在同一工具列位置。</translation>
+            <translation>拖曳釘選工具列中的工具以調整順序，或將其堆疊在同一工具列位置。</translation>
         </message>
         <message>
             <source>Drag screenshot tools to reorder them or stack them in the same toolbar position.</source>
@@ -1714,7 +1714,7 @@
         </message>
         <message>
             <source>Pin Selected Files to Screen</source>
-            <translation>將選取的檔案貼到螢幕</translation>
+            <translation>釘選選取的檔案到螢幕</translation>
         </message>
         <message>
             <source>Pin clipboard</source>
@@ -1726,11 +1726,11 @@
         </message>
         <message>
             <source>Pin images, image files, formatted text, or HTML from the clipboard to the screen</source>
-            <translation>將剪貼簿中的影像、影像檔案、格式化文字或 HTML 貼到螢幕</translation>
+            <translation>釘選剪貼簿中的影像、影像檔案、格式化文字或 HTML 到螢幕</translation>
         </message>
         <message>
             <source>Pin selected image files from File Explorer or the desktop to the screen</source>
-            <translation>將檔案總管或桌面中選取的影像檔案貼到螢幕</translation>
+            <translation>釘選檔案總管或桌面中選取的影像檔案到螢幕</translation>
         </message>
         <message>
             <source>Pin selection</source>
@@ -1738,7 +1738,7 @@
         </message>
         <message>
             <source>Pin the confirmed screenshot selection to the screen</source>
-            <translation>將確認的截圖選取範圍釘選到螢幕</translation>
+            <translation>釘選確認的截圖選取範圍到螢幕</translation>
         </message>
         <message>
             <source>Pin to Screen</source>
@@ -1746,7 +1746,7 @@
         </message>
         <message>
             <source>Pin to Screen toolbar settings</source>
-            <translation>貼圖工具列設定</translation>
+            <translation>釘選工具列設定</translation>
         </message>
         <message>
             <source>Pin to screen</source>
