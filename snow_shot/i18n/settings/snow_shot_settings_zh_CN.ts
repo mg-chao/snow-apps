@@ -2,6 +2,117 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_CN" sourcelanguage="en_US">
     <context>
+        <name>AdministratorLaunch</name>
+        <message>
+            <source> Recovery failed: %1</source>
+            <translation> 恢复失败：%1</translation>
+        </message>
+        <message>
+            <source> Settings recovery failed. Retry before closing Snow Shot.</source>
+            <translation> 设置恢复失败。请在关闭 Snow Shot 前重试。</translation>
+        </message>
+        <message>
+            <source>Administrator authorization was declined.</source>
+            <translation>已拒绝管理员授权。</translation>
+        </message>
+        <message>
+            <source>Administrator launch is only supported on Windows.</source>
+            <translation>仅 Windows 支持以管理员身份启动。</translation>
+        </message>
+        <message>
+            <source>An interrupted startup change needs administrator authorization. Reapply your startup setting.</source>
+            <translation>中断的自启动设置更改需要管理员授权。请重新应用自启动设置。</translation>
+        </message>
+        <message>
+            <source>An interrupted startup change needs recovery</source>
+            <translation>中断的自启动更改需要恢复</translation>
+        </message>
+        <message>
+            <source>Another administrator operation is in progress.</source>
+            <translation>另一项管理员操作正在进行。</translation>
+        </message>
+        <message>
+            <source>Could not clear startup recovery record</source>
+            <translation>无法清除自启动恢复记录</translation>
+        </message>
+        <message>
+            <source>Could not create the administrator handoff.</source>
+            <translation>无法创建管理员进程交接。</translation>
+        </message>
+        <message>
+            <source>Could not save startup recovery record</source>
+            <translation>无法保存自启动恢复记录</translation>
+        </message>
+        <message>
+            <source>Could not start the administrator helper.</source>
+            <translation>无法启动管理员辅助进程。</translation>
+        </message>
+        <message>
+            <source>Elevated</source>
+            <translation>已提权</translation>
+        </message>
+        <message>
+            <source>Elevated auto-start needs repair. Turn Launch as administrator off and on again.</source>
+            <translation>管理员自启动需要修复。请关闭后重新开启“以管理员身份启动”。</translation>
+        </message>
+        <message>
+            <source>Finish capturing, recording, exporting, or updating before restarting.</source>
+            <translation>请完成截图、录制、导出或更新后再重启。</translation>
+        </message>
+        <message>
+            <source>Privilege handoff disconnected</source>
+            <translation>权限交接连接已断开</translation>
+        </message>
+        <message>
+            <source>Privilege handoff timed out or disconnected</source>
+            <translation>权限交接超时或连接已断开</translation>
+        </message>
+        <message>
+            <source>Restart</source>
+            <translation>重启</translation>
+        </message>
+        <message>
+            <source>Settings could not be saved.</source>
+            <translation>无法保存设置。</translation>
+        </message>
+        <message>
+            <source>Settings could not be saved. The administrator operation was cancelled.</source>
+            <translation>无法保存设置。管理员操作已取消。</translation>
+        </message>
+        <message>
+            <source>Startup task ownership mismatch</source>
+            <translation>自启动任务所属用户不匹配</translation>
+        </message>
+        <message>
+            <source>Startup task target mismatch</source>
+            <translation>自启动任务目标不匹配</translation>
+        </message>
+        <message>
+            <source>The administrator handoff could not be verified.</source>
+            <translation>无法验证管理员进程交接。</translation>
+        </message>
+        <message>
+            <source>The administrator helper did not become ready.</source>
+            <translation>管理员辅助进程未能就绪。</translation>
+        </message>
+        <message>
+            <source>The administrator operation failed: %1</source>
+            <translation>管理员操作失败：%1</translation>
+        </message>
+        <message>
+            <source>The destination already has a startup task</source>
+            <translation>目标位置已有自启动任务</translation>
+        </message>
+        <message>
+            <source>This feature requires membership in the Administrators group.</source>
+            <translation>此功能要求当前用户属于 Administrators 管理员组。</translation>
+        </message>
+        <message>
+            <source>Turn on Auto start at boot first.</source>
+            <translation>请先开启“开机自启动”。</translation>
+        </message>
+    </context>
+    <context>
         <name>CustomAiModelsSettingsWidget</name>
         <message>
             <source>%1 (Copy %2)</source>
@@ -1346,6 +1457,10 @@
             <translation>语言</translation>
         </message>
         <message>
+            <source>Launch as administrator</source>
+            <translation>以管理员身份启动</translation>
+        </message>
+        <message>
             <source>Layout Processing</source>
             <translation>排版处理</translation>
         </message>
@@ -1782,6 +1897,18 @@
             <translation>自动调整滚动截图窗口大小，使其保持在显示器范围内</translation>
         </message>
         <message>
+            <source>Restart</source>
+            <translation>重启</translation>
+        </message>
+        <message>
+            <source>Restart Snow Shot with administrator privileges</source>
+            <translation>以管理员权限重启 Snow Shot</translation>
+        </message>
+        <message>
+            <source>Restart as administrator</source>
+            <translation>以管理员身份重启</translation>
+        </message>
+        <message>
             <source>Restore original screen colors</source>
             <translation>还原屏幕原始颜色</translation>
         </message>
@@ -2144,6 +2271,10 @@
         <message>
             <source>Start Snow Shot in the background when Windows starts</source>
             <translation>Windows 启动时在后台启动 Snow Shot</translation>
+        </message>
+        <message>
+            <source>Start Snow Shot with administrator privileges when you sign in</source>
+            <translation>登录时以管理员权限启动 Snow Shot</translation>
         </message>
         <message>
             <source>Start a screen recording from a confirmed selection</source>

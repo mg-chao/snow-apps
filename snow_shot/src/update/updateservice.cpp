@@ -1,3 +1,4 @@
+#include "snow_shot/platform/windows/administratorlaunch.h"
 #include "snow_shot/update/updateservice.h"
 #include "snow_shot/update/updatetransaction.h"
 
@@ -474,6 +475,14 @@ void UpdateService::beginApply() {
         disconnect(&m_server, nullptr, this, nullptr);
         connect(&m_server, &QLocalServer::newConnection, this, [this] {
             while (auto* socket = m_server.nextPendingConnection()) {
+                if (!platform::windows::verifyLocalPeer(
+                        *socket, false,
+                        QDir(m_options.root).filePath(QStringLiteral("bin/snow-shot-updater.exe")),
+                        true)) {
+                    socket->disconnectFromServer();
+                    socket->deleteLater();
+                    continue;
+                }
                 const auto read = [this, socket] {
                     if (!socket->canReadLine()) {
                         return;

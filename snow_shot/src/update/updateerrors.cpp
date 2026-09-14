@@ -4,6 +4,9 @@
 // The worker sends English diagnostic identifiers; the receiving application translates them.
 namespace {
 [[maybe_unused]] const char* const updateErrorSources[] = {
+    QT_TRANSLATE_NOOP("UpdateErrors", "The update coordinator identity could not be verified"),
+    QT_TRANSLATE_NOOP("UpdateErrors", "Could not verify the running update coordinator"),
+    QT_TRANSLATE_NOOP("UpdateErrors", "Invalid previous installation path"),
     QT_TRANSLATE_NOOP("UpdateErrors", "Invalid semantic version"),
     QT_TRANSLATE_NOOP("UpdateErrors", "Invalid update file size"),
     QT_TRANSLATE_NOOP("UpdateErrors", "Invalid update checksum"),

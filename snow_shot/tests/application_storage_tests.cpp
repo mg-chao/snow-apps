@@ -919,6 +919,21 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     require(QDir().mkpath(executable), "failed to create settings executable directory");
     auto& applicationStorage = initialize(executable, temporary.path());
 
+    const storage::SystemSettings system;
+    require(system.autoStartAtBoot() && !system.launchAsAdministrator(),
+            "elevated startup must default off");
+    require(system.setLaunchAsAdministrator(true) && system.launchAsAdministrator(),
+            "elevated startup preference must persist");
+    require(applicationStorage.flushNow().success, "startup preferences must flush");
+    applicationStorage.shutdown();
+    static_cast<void>(initialize(executable, temporary.path()));
+    require(system.launchAsAdministrator(),
+            "elevated startup preference must survive storage restart");
+    require(system.setAutoStartAtBoot(false) && !system.launchAsAdministrator() &&
+                !system.setLaunchAsAdministrator(true),
+            "disabling auto-start must reset and gate administrator launch");
+    require(system.setAutoStartAtBoot(true) && !system.launchAsAdministrator(),
+            "re-enabling auto-start must not restore elevation implicitly");
     const storage::ScreenshotSettings screenshot;
     require(!screenshot.captureCursor(), "cursor capture must default off");
     require(screenshot.setCaptureCursor(true) && storage::ScreenshotSettings().captureCursor(),

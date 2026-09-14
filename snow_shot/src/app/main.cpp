@@ -11,6 +11,8 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/settings/applicationpriority.h"
 #include "snow_shot/platform/windows/autostartregistration.h"
+#include "snow_shot/platform/windows/administratorlaunch.h"
+#include "widgets/message.h"
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/diagnostics/diagnostics.h"
@@ -62,6 +64,15 @@ int main(int argc, char* argv[]) {
     }
     QCoreApplication::setApplicationName(applicationName);
     QCoreApplication::setApplicationVersion(QStringLiteral(SNOW_DIAGNOSTICS_VERSION));
+    bool administratorRestart = false;
+    if (argc > 1 && QString::fromLocal8Bit(argv[1]) == u"--administrator-helper") {
+        QCoreApplication helper(argc, argv);
+        const int result =
+            snow_shot::platform::windows::dispatchAdministratorHelper(helper.arguments());
+        if (result != -1)
+            return result;
+        administratorRestart = true;
+    }
     // Package QA uses the ordinary FFI and linked vendor encoders, without
     // opening UI, taking the singleton, or modifying the user's settings.
     if ((argc == 4 || argc == 5) && QString::fromLocal8Bit(argv[1]) == u"--recording-gpu-probe") {
@@ -112,6 +123,13 @@ int main(int argc, char* argv[]) {
             return 5;
         }
         snow_shot::presentation::LanguageManager::instance().initialize();
+        const auto startupSettings = snow_shot::storage::SystemSettings();
+        const auto startupResult = snow_shot::platform::windows::reconcileStartupMode(
+            !startupSettings.autoStartAtBoot() ? snow_shot::platform::windows::StartupMode::Off
+            : startupSettings.launchAsAdministrator()
+                ? snow_shot::platform::windows::StartupMode::ElevatedTask
+                : snow_shot::platform::windows::StartupMode::Registry);
+
         snow_shot::presentation::styles::ThemeManager::instance().initialize(probe);
         storage.shutdown();
         return 0;
@@ -240,21 +258,19 @@ int main(int argc, char* argv[]) {
             shutdownScreenshotHistoryTasks();
         }
     } historyTaskDrain;
-    if (snow_shot::platform::windows::AutoStartRegistration::isSupported()) {
-        const bool enabled = snow_shot::storage::SystemSettings().autoStartAtBoot();
-        QString error;
-        if ((!enabled ||
-             !snow_shot::platform::windows::AutoStartRegistration::matchesExpectedCommand()) &&
-            !snow_shot::platform::windows::AutoStartRegistration::setEnabled(enabled, &error)) {
-            qWarning().noquote() << error;
-        }
-    }
     static_cast<void>(snow_shot::presentation::settings::applyConfiguredApplicationPriority());
     QApplication::setQuitOnLastWindowClosed(false);
     QApplication::setWindowIcon(
         adqt::icons::makeIcon(snow_shot::presentation::icons::custom::app::ApplicationIcon()));
     adqt::locale::LocaleManager::instance().applyTo(app);
     snow_shot::presentation::LanguageManager::instance().initialize();
+    const auto startupSettings = snow_shot::storage::SystemSettings();
+    const auto startupResult = snow_shot::platform::windows::reconcileStartupMode(
+        !startupSettings.autoStartAtBoot() ? snow_shot::platform::windows::StartupMode::Off
+        : startupSettings.launchAsAdministrator()
+            ? snow_shot::platform::windows::StartupMode::ElevatedTask
+            : snow_shot::platform::windows::StartupMode::Registry);
+
     snow_shot::presentation::styles::ThemeManager::instance().initialize(app);
     adqt::widgets::AdTooltip::installApplicationTooltips();
 
@@ -263,6 +279,17 @@ int main(int argc, char* argv[]) {
         applicationController.handleLaunchRequest(arguments);
     });
     applicationController.start();
+    if (!startupResult.success) {
+        qWarning().noquote() << startupResult.error;
+        QTimer::singleShot(0, &app, [error = startupResult.error] {
+            adqt::widgets::AdMessage::Request request;
+            request.content = error;
+            adqt::widgets::AdMessageService::error(std::move(request),
+                                                   QApplication::activeWindow());
+        });
+    }
+    if (administratorRestart)
+        applicationController.showMainWindow();
     snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.app"),
                                      QStringLiteral("application.ready"));
     if (!QApplication::arguments().contains(QStringLiteral("--autostart")) &&

@@ -212,6 +212,10 @@
             <translation>Could not update the registered application version</translation>
         </message>
         <message>
+            <source>Could not verify the running update coordinator</source>
+            <translation>Could not verify the running update coordinator</translation>
+        </message>
+        <message>
             <source>Could not write update archive entry</source>
             <translation>Could not write update archive entry</translation>
         </message>
@@ -230,6 +234,10 @@
         <message>
             <source>Invalid Snow Shot installation root</source>
             <translation>Invalid Snow Shot installation root</translation>
+        </message>
+        <message>
+            <source>Invalid previous installation path</source>
+            <translation>Invalid previous installation path</translation>
         </message>
         <message>
             <source>Invalid release public key</source>
@@ -338,6 +346,10 @@
         <message>
             <source>The server returned an invalid download range</source>
             <translation>The server returned an invalid download range</translation>
+        </message>
+        <message>
+            <source>The update coordinator identity could not be verified</source>
+            <translation>The update coordinator identity could not be verified</translation>
         </message>
         <message>
             <source>The update download was interrupted</source>

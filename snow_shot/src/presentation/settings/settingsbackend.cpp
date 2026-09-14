@@ -3,6 +3,7 @@
 #include "snow_shot/presentation/settings/applicationpriority.h"
 #include "snow_shot/presentation/settings/textrecognitionacceleration.h"
 #include "snow_shot/platform/windows/autostartregistration.h"
+#include "snow_shot/platform/windows/administratorlaunch.h"
 
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
@@ -121,27 +122,33 @@ storage::CaptureHistoryPolicy defaultHistoryPolicy() {
     return policy;
 }
 
-bool applyAutoStartAtBoot(bool enabled) {
-    using snow_shot::platform::windows::AutoStartRegistration;
+platform::windows::AdministratorResult applyStartupSettings(bool enabled, bool elevated) {
+    using namespace platform::windows;
     auto& configuration = storage::ApplicationStorage::instance().configuration();
-    const bool previousConfiguredValue =
-        configuration.value(QStringLiteral("system/auto_start_at_boot")).toBool();
-    const auto previous = AutoStartRegistration::snapshot();
-    if (!previous.valid || !AutoStartRegistration::setEnabled(enabled)) {
-        return false;
+    const bool oldEnabled = storage::SystemSettings().autoStartAtBoot();
+    const bool oldElevated = storage::SystemSettings().launchAsAdministrator();
+    const auto save = [&](bool start, bool admin) {
+        return configuration.setValues(
+                   {{QStringLiteral("system/auto_start_at_boot"), start},
+                    {QStringLiteral("system/launch_as_administrator"), admin}}) &&
+               configuration.flushNow().success;
+    };
+    const auto result = changeStartupMode(!enabled   ? StartupMode::Off
+                                          : elevated ? StartupMode::ElevatedTask
+                                                     : StartupMode::Registry,
+                                          [&] { return save(enabled, enabled && elevated); });
+    const auto observed = result.success ? std::optional<StartupMode>() : observedStartupMode();
+    const bool restoredEnabled = observed ? *observed != StartupMode::Off : oldEnabled;
+    const bool restoredElevated = observed ? *observed == StartupMode::ElevatedTask : oldElevated;
+    if (!result.success && !save(restoredEnabled, restoredElevated)) {
+        auto failed = result;
+        failed.error += QCoreApplication::translate(
+            "AdministratorLaunch", " Settings recovery failed. Retry before closing Snow Shot.");
+        return failed;
     }
-    if (storage::SystemSettings().setAutoStartAtBoot(enabled) && configuration.flushNow().success) {
-        return true;
-    }
-    static_cast<void>(AutoStartRegistration::restore(previous));
-    if (configuration.value(QStringLiteral("system/auto_start_at_boot")).toBool() !=
-        previousConfiguredValue) {
-        static_cast<void>(configuration.setValue(QStringLiteral("system/auto_start_at_boot"),
-                                                 previousConfiguredValue));
-        static_cast<void>(configuration.flushNow());
-    }
-    return false;
+    return result;
 }
+
 } // namespace
 
 BuiltInSettingsBackend::BuiltInSettingsBackend(
@@ -428,18 +435,41 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::GlobalShortcutSettings().disableOnFocusedFullscreenWindow();
     case SettingsSwitchBinding::AutoStartAtBoot:
         return storage::SystemSettings().autoStartAtBoot();
+    case SettingsSwitchBinding::LaunchAsAdministrator:
+        return storage::SystemSettings().launchAsAdministrator();
     }
     return false;
 }
 
+bool BuiltInSettingsBackend::fieldPending(const QString& fieldId) const {
+    return platform::windows::administratorOperationPending() &&
+           (fieldId == u"system.auto-start-at-boot" ||
+            fieldId == u"system.launch-as-administrator" ||
+            fieldId == u"system.restart-as-administrator");
+}
+QString BuiltInSettingsBackend::switchHint(SettingsSwitchBinding binding) const {
+    if (binding != SettingsSwitchBinding::LaunchAsAdministrator)
+        return {};
+    return platform::windows::administratorPresentation(
+               platform::windows::administratorState(), storage::SystemSettings().autoStartAtBoot(),
+               platform::windows::administratorOperationPending())
+        .launchHint;
+}
 bool BuiltInSettingsBackend::switchEnabled(SettingsSwitchBinding binding) const {
+    if (binding == SettingsSwitchBinding::LaunchAsAdministrator)
+        return platform::windows::administratorPresentation(
+                   platform::windows::administratorState(),
+                   storage::SystemSettings().autoStartAtBoot(),
+                   platform::windows::administratorOperationPending())
+            .launchEnabled;
     if (binding == SettingsSwitchBinding::OcrModelHotStart)
         return switchValue(SettingsSwitchBinding::OcrResidentProcess);
     if (binding == SettingsSwitchBinding::StandaloneTranslationWindow) {
         return storage::ExtendedFeaturesSettings().translationPageEnabled();
     }
     if (binding == SettingsSwitchBinding::AutoStartAtBoot) {
-        return snow_shot::platform::windows::AutoStartRegistration::isSupported();
+        return snow_shot::platform::windows::AutoStartRegistration::isSupported() &&
+               !platform::windows::administratorOperationPending();
     }
     return binding != SettingsSwitchBinding::DirectMlAcceleration ||
            directMlTextRecognitionSupported();
@@ -522,8 +552,22 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen) {
         return storage::GlobalShortcutSettings().setDisableOnFocusedFullscreenWindow(value);
     }
-    if (binding == SettingsSwitchBinding::AutoStartAtBoot) {
-        return applyAutoStartAtBoot(value);
+    if (binding == SettingsSwitchBinding::AutoStartAtBoot ||
+        binding == SettingsSwitchBinding::LaunchAsAdministrator) {
+        if (!switchEnabled(binding))
+            return false;
+        emit synchronized();
+        const auto result =
+            applyStartupSettings(binding == SettingsSwitchBinding::AutoStartAtBoot
+                                     ? value
+                                     : storage::SystemSettings().autoStartAtBoot(),
+                                 binding == SettingsSwitchBinding::LaunchAsAdministrator
+                                     ? value
+                                     : storage::SystemSettings().launchAsAdministrator());
+        if (!result.success)
+            emit operationMessage(result.error, false);
+        emit synchronized();
+        return result.success;
     }
 
     auto policy = storage::ApplicationStorage::instance().captureHistoryPolicy();
@@ -557,6 +601,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::ScreenRecordingCaptureToolbar:
     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
     case SettingsSwitchBinding::AutoStartAtBoot:
+    case SettingsSwitchBinding::LaunchAsAdministrator:
         return false;
     }
     return storage::ApplicationStorage::instance().requestCaptureHistoryPolicy(policy);
@@ -886,6 +931,14 @@ bool BuiltInSettingsBackend::applyGlobalMouseCombination(
 SettingsActionState BuiltInSettingsBackend::actionState(SettingsActionBinding binding) const {
     const storage::StorageStatus status = storage::ApplicationStorage::instance().status();
     switch (binding) {
+    case SettingsActionBinding::RestartAsAdministrator: {
+        const auto state = platform::windows::administratorPresentation(
+            platform::windows::administratorState(), storage::SystemSettings().autoStartAtBoot(),
+            platform::windows::administratorOperationPending());
+        return {state.restartEnabled,
+                platform::windows::administratorOperationPending() && !state.elevated,
+                state.restartLabel, state.restartHint, state.elevated};
+    }
     case SettingsActionBinding::ClearCaptureHistory:
         return {
             status.writeAvailable && !status.historyClearing,
@@ -909,6 +962,15 @@ SettingsActionState BuiltInSettingsBackend::actionState(SettingsActionBinding bi
 
 bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding) {
     switch (binding) {
+    case SettingsActionBinding::RestartAsAdministrator: {
+        emit synchronized();
+        const auto result = platform::windows::restartAsAdministrator(
+            [] { return storage::ApplicationStorage::instance().flushNow().success; });
+        if (!result.success)
+            emit operationMessage(result.error, result.cancelled);
+        emit synchronized();
+        return result.success;
+    }
     case SettingsActionBinding::CopyTodayLog: {
         if (!actionState(binding).enabled)
             return false;
@@ -1390,11 +1452,18 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             storage::ConfigurationSchema::defaultValue(
                 QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window"))
                 .toBool());
-    case SettingsSectionReset::SystemGeneral:
-        return applySelectValue(SettingsSelectBinding::UpdateMode, QStringLiteral("download")) &&
-               applyAutoStartAtBoot(storage::ConfigurationSchema::defaultValue(
-                                        QStringLiteral("system/auto_start_at_boot"))
-                                        .toBool());
+    case SettingsSectionReset::SystemGeneral: {
+        emit synchronized();
+        const auto result = applyStartupSettings(
+            storage::ConfigurationSchema::defaultValue(QStringLiteral("system/auto_start_at_boot"))
+                .toBool(),
+            false);
+        if (!result.success)
+            emit operationMessage(result.error, false);
+        emit synchronized();
+        return result.success &&
+               applySelectValue(SettingsSelectBinding::UpdateMode, QStringLiteral("download"));
+    }
     case SettingsSectionReset::ScreenshotCapture:
         return storage::ApplicationStorage::instance().configuration().setValues({
             {QStringLiteral("screenshot/api_mode"),

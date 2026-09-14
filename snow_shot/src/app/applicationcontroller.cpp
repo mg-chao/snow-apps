@@ -1,4 +1,5 @@
 #include "snow_shot/app/applicationcontroller.h"
+#include "snow_shot/platform/windows/administratorlaunch.h"
 #include "snow_shot/translation/translationservice.h"
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/update/updateservice.h"
@@ -194,7 +195,14 @@ class ApplicationController::Impl {
             systemTray.showUpdateMessage(ApplicationController::tr(
                 "An update is ready. Open About to restart and update Snow Shot."));
         });
+        platform::windows::setAdministratorRestartGuard([this] {
+            return updates->status().state != update::UpdateState::Applying &&
+                   !(screenshotController && screenshotController->blocksApplicationUpdate()) &&
+                   !(directCaptureController && directCaptureController->blocksApplicationUpdate());
+        });
         QObject::connect(updates, &update::UpdateService::restartRequested, &q, [this] {
+            if (platform::windows::administratorOperationPending())
+                return;
             if ((screenshotController != nullptr &&
                  screenshotController->blocksApplicationUpdate()) ||
                 (directCaptureController != nullptr &&
@@ -252,6 +260,7 @@ class ApplicationController::Impl {
     }
 
     ~Impl() {
+        platform::windows::setAdministratorRestartGuard({});
         if (mainWindow != nullptr) {
             mainWindow->setAttribute(Qt::WA_DeleteOnClose, false);
             delete mainWindow;

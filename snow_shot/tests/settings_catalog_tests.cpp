@@ -171,8 +171,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 38 && itemCount == 154 && foundUpdates,
-            "catalog must contain thirty-eight sections and one hundred fifty-four items");
+    require(sectionCount == 38 && itemCount == 156 && foundUpdates,
+            "catalog must contain thirty-eight sections and one hundred fifty-six items");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
                       QStringLiteral("interface.pin-to-screen.pinned-toolbar-editor")});
@@ -1362,7 +1362,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 204 && index.search(QString()).size() == 204,
+    require(index.entries().size() == 206 && index.search(QString()).size() == 206,
             "search must generate all catalog nodes in catalog order");
     const auto pdfPaper = index.search(QStringLiteral("Landscape A4"));
     require(!pdfPaper.isEmpty() && pdfPaper.constFirst().location.itemId ==
@@ -1422,7 +1422,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 38 && items == 154,
+    require(pages == 12 && sections == 38 && items == 156,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));
@@ -1883,6 +1883,26 @@ void emptyRegistryBuilderIsExplicitlyInvalid() {
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    const auto adminCatalog = settings::buildBuiltInSettingsCatalog();
+    bool foundAdministratorControls = false;
+    for (const auto& page : adminCatalog.pages()) {
+        for (const auto& section : page.sections) {
+            for (qsizetype i = 0; i + 2 < section.items.size(); ++i) {
+                if (section.items[i].id != u"system.auto-start-at-boot")
+                    continue;
+                require(section.items[i + 1].id == u"system.launch-as-administrator" &&
+                            section.items[i + 2].id == u"system.restart-as-administrator",
+                        "administrator controls must immediately follow auto-start");
+                require(!storage::ConfigurationSchema::defaultValue(
+                             section.items[i + 1].configurationKey)
+                             .toBool(true),
+                        "administrator startup must default off");
+                foundAdministratorControls = true;
+            }
+        }
+    }
+    require(foundAdministratorControls,
+            "administrator controls must exist in the settings catalog");
     builtInCatalogIsCompleteAndValid();
     globalMouseSettingsHaveStableContracts();
     globalHotkeyShortcutsHaveStableContracts();

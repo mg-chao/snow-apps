@@ -1208,6 +1208,28 @@ SettingsItemDefinition fullscreenHotkeySuppressionItem() {
         SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen);
 }
 
+SettingsItemDefinition launchAsAdministratorItem() {
+    return switchItem(
+        QStringLiteral("system.launch-as-administrator"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Launch as administrator"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Start Snow Shot with administrator privileges when you sign in"),
+        QStringLiteral("system/launch_as_administrator"),
+        SettingsSwitchBinding::LaunchAsAdministrator);
+}
+SettingsItemDefinition restartAsAdministratorItem() {
+    SettingsActionDefinition payload;
+    payload.binding = SettingsActionBinding::RestartAsAdministrator;
+    payload.iconFactory = [] { return outlined_icons::Reload(); };
+    payload.buttonText = settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Restart"));
+    return {QStringLiteral("system.restart-as-administrator"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Restart as administrator")),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                           "Restart Snow Shot with administrator privileges")),
+            {},
+            {},
+            payload};
+}
 SettingsItemDefinition autoStartItem() {
     return switchItem(QStringLiteral("system.auto-start-at-boot"),
                       QT_TRANSLATE_NOOP("SettingsCatalog", "Auto start at boot"),
@@ -2082,7 +2104,8 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                                    "General system integration settings")),
                     SettingsSectionReset::SystemGeneral,
-                    {autoStartItem(), updateModeItem()},
+                    {autoStartItem(), launchAsAdministratorItem(), restartAsAdministratorItem(),
+                     updateModeItem()},
                 },
                 {
                     QStringLiteral("screenshot-capture"),
@@ -2995,6 +3018,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
                         expectedKey =
                             QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window");
+                        break;
+                    case SettingsSwitchBinding::LaunchAsAdministrator:
+                        expectedKey = QStringLiteral("system/launch_as_administrator");
                         break;
                     case SettingsSwitchBinding::AutoStartAtBoot:
                         expectedKey = QStringLiteral("system/auto_start_at_boot");

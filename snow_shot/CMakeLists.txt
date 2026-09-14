@@ -725,7 +725,6 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/styles/mainwindowcomponenttoken.cpp
     src/presentation/styles/themecolorscheme.cpp
     src/presentation/styles/thememanager.cpp
-    src/platform/windows/autostartregistration.cpp
     src/platform/windows/printscreenshortcutrecorder.cpp
 )
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/components/screenshothistorypagewidget.cpp"
@@ -738,6 +737,22 @@ if(NOT _snow_shot_history_global_pool_call EQUAL -1)
 endif()
 unset(_snow_shot_history_source)
 unset(_snow_shot_history_global_pool_call)
+add_library(snow_shot_administrator STATIC
+    include/snow_shot/platform/windows/privilegedlocalserver.h
+    src/platform/windows/privilegedlocalserver.cpp
+    src/platform/windows/autostartregistration.cpp
+    src/platform/windows/administratorlaunch.cpp)
+target_include_directories(snow_shot_administrator PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(snow_shot_administrator PUBLIC Qt6::Core Qt6::Network)
+if(WIN32)
+    target_link_libraries(snow_shot_administrator PRIVATE taskschd ole32 oleaut32 advapi32 shell32 uuid comsuppw)
+endif()
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-administrator-launch-tests tests/administrator_launch_tests.cpp)
+    target_link_libraries(snow-shot-administrator-launch-tests PRIVATE snow_shot_administrator)
+    add_test(NAME snow-shot-administrator-launch-tests COMMAND snow-shot-administrator-launch-tests)
+    set_tests_properties(snow-shot-administrator-launch-tests PROPERTIES LABELS "unit;windows" TIMEOUT 30)
+endif()
 add_library(snow_shot_settings STATIC ${SNOW_SHOT_SETTINGS_SOURCES})
 qt_add_resources(snow_shot_settings "snow_shot_about_assets"
     PREFIX "/snow_shot/about"
@@ -748,7 +763,7 @@ target_compile_definitions(snow_shot_settings PRIVATE
     SNOW_SHOT_WEBSITE_URL="${SNOW_SHOT_WEBSITE_URL}"
     SNOW_SHOT_PROJECT_URL="${SNOW_SHOT_PROJECT_URL}"
 )
-target_link_libraries(snow_shot_settings PRIVATE Qt6::Svg Qt6::Network)
+target_link_libraries(snow_shot_settings PRIVATE Qt6::Svg Qt6::Network snow_shot_administrator)
 add_library(snow_shot_global_mouse STATIC
     include/snow_shot/presentation/globalmousemanager.h
     include/snow_shot/presentation/globalmousegesture.h

@@ -80,6 +80,7 @@ class AdButton : public QPushButton, public AdControlScaleParticipant {
     Geekblue,
     Lime,
     Gold,
+    Success,
   };
   Q_ENUM(AccentRole)
 

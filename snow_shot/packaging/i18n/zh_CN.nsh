@@ -17,3 +17,5 @@ LangString SnowShotRegistryEntry 2052 "设置安装注册表项：将 '$1' 设�
 LangString SnowShotEnvironmentAll 2052 "已选择所有用户的环境"
 LangString SnowShotEnvironmentCurrent 2052 "已选择仅当前用户的环境"
 LangString SnowShotDownloadFailed 2052 "下载失败：$1"
+LangString SnowShotDesktopLaunchFailed 2052 "无法在您的桌面上启动 Snow Shot。请从开始菜单启动。"
+LangString SnowShotStartupCleanupFailed 2052 "无法完成 Snow Shot 清理。请关闭 Snow Shot 并使用管理员权限重试。"

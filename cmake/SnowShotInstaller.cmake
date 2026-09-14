@@ -105,6 +105,25 @@ snow_shot_nsis_replace([=[CreateShortCut "$SMPROGRAMS\$STARTMENU_FOLDER\$(SnowSh
   CreateShortCut "$SMPROGRAMS\$STARTMENU_FOLDER\$(SnowShotUninstallShortcut).lnk"]=])
 snow_shot_nsis_replace([=[Delete "$SMPROGRAMS\$MUI_TEMP\Uninstall.lnk"]=]
     [=[!insertmacro SnowShotDeleteUninstallShortcuts "$SMPROGRAMS\$MUI_TEMP"]=])
+# Carry upgrade intent through the old uninstaller; final uninstall removes startup registrations.
+snow_shot_nsis_replace([=[ExecWait '"$0" /S _?=$3']=]
+    [=[StrCpy $SnowShotPreviousRoot $3
+  ExecWait '"$0" /S /SNOWUPGRADE _?=$3' $2
+  StrCmp $2 0 +2
+    Goto uninst_failed]=])
+snow_shot_nsis_replace("@CPACK_NSIS_INSTALLER_MUI_FINISHPAGE_RUN_CODE@" [=[
+!define MUI_FINISHPAGE_RUN
+!define MUI_FINISHPAGE_RUN_FUNCTION SnowShotLaunchDesktop
+Function SnowShotLaunchDesktop
+  ClearErrors
+  ExecWait '"$INSTDIR\bin\snow-shot-updater.exe" --launch-desktop --target "$INSTDIR"' $0
+  IfErrors snowDesktopFailed
+  StrCmp $0 0 snowDesktopDone
+snowDesktopFailed:
+  MessageBox MB_OK|MB_ICONEXCLAMATION "$(SnowShotDesktopLaunchFailed)" /SD IDOK
+snowDesktopDone:
+FunctionEnd
+]=])
 # Future self-updates can add files that this uninstaller did not know at build time.
 # Run a copy of the installed helper before CPack's original file deletion list.
 snow_shot_nsis_replace("@CPACK_NSIS_DELETE_FILES@" [=[
@@ -117,10 +136,18 @@ snow_shot_nsis_replace("@CPACK_NSIS_DELETE_FILES@" [=[
     ClearErrors
     CopyFiles /SILENT "$INSTDIR\bin\snow-shot-updater.exe" "$PLUGINSDIR\snow-shot-updater.exe"
     IfErrors snowOwnedFailed
-    ExecWait '"$PLUGINSDIR\snow-shot-updater.exe" --uninstall --target "$INSTDIR"' $0
+    StrCpy $1 ""
+    ${GetParameters} $2
+    ClearErrors
+    ${GetOptions} $2 "/SNOWUPGRADE" $3
+    IfErrors +2
+      StrCpy $1 "--upgrade"
+    ClearErrors
+    ExecWait '"$PLUGINSDIR\snow-shot-updater.exe" --uninstall --target "$INSTDIR" $1' $0
     IfErrors snowOwnedFailed
     StrCmp $0 0 snowOwnedDone
 snowOwnedFailed:
+    MessageBox MB_OK|MB_ICONSTOP "$(SnowShotStartupCleanupFailed)" /SD IDOK
     SetErrorLevel 12
     Quit
 snowOwnedDone:
@@ -135,7 +162,7 @@ set(_snow_nsis_localization "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/In
 cmake_path(NATIVE_PATH _snow_nsis_localization NORMALIZE _snow_nsis_localization_native)
 set(_snow_nsis_directory "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/InstallDirectory.nsh")
 cmake_path(NATIVE_PATH _snow_nsis_directory NORMALIZE _snow_nsis_directory_native)
-string(APPEND CPACK_NSIS_DEFINES "\nUnicode true\n!include \"${_snow_nsis_guard_native}\"\n"
+string(APPEND CPACK_NSIS_DEFINES "\nVar SnowShotPreviousRoot\n!include \"FileFunc.nsh\"\nUnicode true\n!include \"${_snow_nsis_guard_native}\"\n"
     "!include \"${_snow_nsis_directory_native}\"\n"
     "!include \"${_snow_nsis_localization_native}\"\n"
     "!define MUI_LANGDLL_REGISTRY_ROOT SHCTX\n"
@@ -147,3 +174,17 @@ set(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS
     "Push \"$INSTDIR\\bin\\${SNOW_SHOT_EXECUTABLE_NAME}.exe\"\nCall SnowShotEnsureAppClosed\nPush \"$INSTDIR\\bin\\crashpad_handler.exe\"\nCall SnowShotEnsureAppClosed")
 set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS
     "Push \"$INSTDIR\\bin\\${SNOW_SHOT_EXECUTABLE_NAME}.exe\"\nCall un.SnowShotEnsureAppClosed\nPush \"$INSTDIR\\bin\\crashpad_handler.exe\"\nCall un.SnowShotEnsureAppClosed")
+
+string(APPEND CPACK_NSIS_EXTRA_INSTALL_COMMANDS [=[
+  StrCmp $SnowShotPreviousRoot "" snowStartupMigrated
+  StrCmp $SnowShotPreviousRoot $INSTDIR snowStartupMigrated
+  ClearErrors
+  ExecWait '"$INSTDIR\bin\snow-shot-updater.exe" --migrate-startup --previous "$SnowShotPreviousRoot" --target "$INSTDIR"' $0
+  IfErrors snowStartupMigrationFailed
+  StrCmp $0 0 snowStartupMigrated
+snowStartupMigrationFailed:
+  MessageBox MB_OK|MB_ICONSTOP "$(SnowShotStartupCleanupFailed)" /SD IDOK
+  SetErrorLevel 13
+  Abort
+snowStartupMigrated:
+]=])

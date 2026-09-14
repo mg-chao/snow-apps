@@ -1,4 +1,6 @@
 #include "widgets/button.h"
+#include "widgets/button_style.h"
+#include "theme/theme_types.h"
 #include "widgets/popover.h"
 
 #include <QApplication>
@@ -120,6 +122,18 @@ void retainedPopoverButtonsForgetHover() {
 int main(int argc, char* argv[]) {
   QApplication app(argc, argv);
   try {
+    adqt::widgets::detail::ButtonStyleInput successInput;
+    successInput.accentRole = adqt::widgets::AdButton::AccentRole::Success;
+    adqt::theme::ResolvedTheme successTheme;
+    successTheme.values.colorSuccess = QColor("#123456");
+    successTheme.values.colorSuccessHover = QColor("#234567");
+    successTheme.values.colorSuccessActive = QColor("#345678");
+    const auto successStyle =
+        adqt::widgets::detail::resolveButtonVisualStyle(successInput, successTheme);
+    require(successStyle.normal.text == QColor("#123456") &&
+                successStyle.hover.text == QColor("#234567") &&
+                successStyle.active.text == QColor("#345678"),
+            "success buttons must use semantic success tokens");
     cursorOverlayMayBeDestroyedBeforeButton();
     retainedPopoverButtonsForgetHover();
     std::cout << "Button lifetime tests passed\n";

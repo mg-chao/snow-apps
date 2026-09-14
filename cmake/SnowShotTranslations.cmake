@@ -59,6 +59,7 @@ function(snow_shot_add_translations target)
     )
     qt_add_lupdate(
         SOURCE_TARGETS
+            snow_shot_administrator
             snow_shot
             snow_shot_storage
             snow_shot_settings_catalog

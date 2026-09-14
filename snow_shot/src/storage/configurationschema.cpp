@@ -121,6 +121,7 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      {QStringLiteral("normal"), QStringLiteral("above_normal"), QStringLiteral("high"),
       QStringLiteral("real_time")}},
     {QStringLiteral("system/auto_start_at_boot"), true, ConfigurationValueKind::Boolean},
+    {QStringLiteral("system/launch_as_administrator"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("updates/mode"),
      QStringLiteral("download"),
      ConfigurationValueKind::String,

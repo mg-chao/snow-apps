@@ -15,6 +15,7 @@
     "snow_shot::presentation::SystemTrayController"
   ],
   "settings": [
+    "AdministratorLaunch",
     "CustomAiModelsSettingsWidget",
     "DrawingToolbarEditorSettingsWidget",
     "GlobalMouseRow",

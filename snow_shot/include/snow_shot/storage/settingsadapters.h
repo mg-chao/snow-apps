@@ -370,6 +370,8 @@ class TraySettings final {
 class SystemSettings final {
   public:
     [[nodiscard]] bool autoStartAtBoot() const;
+    [[nodiscard]] bool launchAsAdministrator() const;
+    [[nodiscard]] bool setLaunchAsAdministrator(bool enabled) const;
     bool setAutoStartAtBoot(bool enabled) const;
 };
 

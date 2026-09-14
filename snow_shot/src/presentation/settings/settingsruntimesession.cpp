@@ -81,6 +81,8 @@ SettingsRuntimeSession::SettingsRuntimeSession(const SettingsRegistry& registry,
     qRegisterMetaType<SettingsCommandKind>();
     qRegisterMetaType<storage::ScreenshotToolbarLayout>();
     qRegisterMetaType<SettingsGlobalMouseCombination>();
+    connect(&m_backend, &SettingsBackend::operationMessage, this,
+            &SettingsRuntimeSession::operationMessage);
     connect(&m_backend, &SettingsBackend::actionFinished, this,
             &SettingsRuntimeSession::actionFinished);
     connect(
@@ -1184,6 +1186,10 @@ bool SettingsRuntimeSession::switchValue(SettingsSwitchBinding binding) const {
 
 bool SettingsRuntimeSession::switchEnabled(SettingsSwitchBinding binding) const {
     return m_backend.switchEnabled(binding);
+}
+
+QString SettingsRuntimeSession::switchHint(SettingsSwitchBinding binding) const {
+    return m_backend.switchHint(binding);
 }
 
 bool SettingsRuntimeSession::applySwitchValue(SettingsSwitchBinding binding, bool value) {

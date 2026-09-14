@@ -14,6 +14,7 @@
 #include "snow_shot/storage/configurationschema.h"
 
 #include "widgets/button.h"
+#include "widgets/message.h"
 #include "widgets/color_picker.h"
 #include "widgets/divider.h"
 #include "widgets/input_number.h"
@@ -748,6 +749,17 @@ class SettingsPageWidget::Impl {
     }
 
     void connectServices() {
+        QObject::connect(&runtimeSession, &settings::SettingsRuntimeSession::operationMessage, &q,
+                         [this](const QString& message, bool warning) {
+                             if (!q.isVisible())
+                                 return;
+                             adqt::widgets::AdMessage::Request request;
+                             request.content = message;
+                             if (warning)
+                                 adqt::widgets::AdMessageService::warning(std::move(request), &q);
+                             else
+                                 adqt::widgets::AdMessageService::error(std::move(request), &q);
+                         });
         auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
         QObject::connect(&themeManager,
                          &snow_shot::presentation::styles::ThemeManager::themeChanged, &q,
@@ -995,6 +1007,11 @@ class SettingsPageWidget::Impl {
                     runtime.switchControl->setEnabled(
                         fieldEnabled && definition != nullptr &&
                         runtimeSession.switchEnabled(definition->binding));
+                    const QString hint = runtimeSession.switchHint(definition->binding);
+                    runtime.switchControl->setToolTip(hint);
+                    if (runtime.description)
+                        runtime.description->setText(
+                            hint.isEmpty() ? runtime.definition->description.translated() : hint);
                 }
             }
             if (runtime.integerControl != nullptr) {
@@ -1113,6 +1130,15 @@ class SettingsPageWidget::Impl {
                         runtimeSession.actionState(definition->binding);
                     runtime.actionControl->setBusy(state.busy);
                     runtime.actionControl->setEnabled(state.enabled);
+                    if (!state.label.isEmpty())
+                        runtime.actionControl->setText(state.label);
+                    runtime.actionControl->setToolTip(state.hint);
+                    if (!state.label.isEmpty())
+                        runtime.actionControl->setAccentRole(
+                            state.successAccent ? adqt::widgets::AdButton::AccentRole::Success
+                                                : adqt::widgets::AdButton::AccentRole::Neutral);
+                    if (!state.hint.isEmpty() && runtime.description)
+                        runtime.description->setText(state.hint);
                 }
             }
         }
@@ -1431,6 +1457,7 @@ void SettingsPageWidget::applyTheme(
 
 void SettingsPageWidget::retranslateUi() {
     m_impl->retranslateUi();
+    m_impl->syncValues();
 }
 
 void SettingsPageWidget::changeEvent(QEvent* event) {

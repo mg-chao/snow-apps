@@ -171,5 +171,12 @@ if ($LASTEXITCODE -ne 0) { throw "Generated installer compilation failed: $compi
 if (($compileOutput -join "`n") -match 'warning 6040|LangString .*not set') {
     throw "NSIS reported missing translations."
 }
+foreach ($hook in 'MUI_FINISHPAGE_RUN_FUNCTION SnowShotLaunchDesktop',
+    '--launch-desktop --target "$INSTDIR"', '/S /SNOWUPGRADE _?=$3',
+    '${GetOptions} $2 "/SNOWUPGRADE" $3', 'StrCpy $1 "--upgrade"',
+    '--uninstall --target "$INSTDIR" $1', '--migrate-startup --previous "$SnowShotPreviousRoot" --target "$INSTDIR"', '$(SnowShotStartupCleanupFailed)') {
+    if (-not $generated.Contains($hook)) { throw "Missing privilege lifecycle hook: $hook" }
+}
+Write-Output "PASS: installer uses desktop-shell launch, explicit upgrade context, and checked startup cleanup."
 Write-Output "PASS: CPack compiles complete language tables and localizes prompts before upgrade handling."
 Write-Output "Installer language test artifacts: $testRoot"

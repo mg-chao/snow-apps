@@ -212,6 +212,10 @@
             <translation>無法更新已註冊的應用程式版本</translation>
         </message>
         <message>
+            <source>Could not verify the running update coordinator</source>
+            <translation>無法驗證正在執行的更新協調處理程序</translation>
+        </message>
+        <message>
             <source>Could not write update archive entry</source>
             <translation>無法寫入更新壓縮包項目</translation>
         </message>
@@ -230,6 +234,10 @@
         <message>
             <source>Invalid Snow Shot installation root</source>
             <translation>無效的 Snow Shot 安裝目錄</translation>
+        </message>
+        <message>
+            <source>Invalid previous installation path</source>
+            <translation>先前的安裝路徑無效</translation>
         </message>
         <message>
             <source>Invalid release public key</source>
@@ -338,6 +346,10 @@
         <message>
             <source>The server returned an invalid download range</source>
             <translation>伺服器返回了無效的下載範圍</translation>
+        </message>
+        <message>
+            <source>The update coordinator identity could not be verified</source>
+            <translation>無法驗證更新協調處理程序的身分</translation>
         </message>
         <message>
             <source>The update download was interrupted</source>

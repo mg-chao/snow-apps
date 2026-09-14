@@ -31,6 +31,9 @@ struct SettingsRuntimeOption {
 struct SettingsActionState {
     bool enabled = false;
     bool busy = false;
+    QString label;
+    QString hint;
+    bool successAccent = false;
 };
 
 class SettingsBackend : public QObject {
@@ -50,6 +53,9 @@ class SettingsBackend : public QObject {
     [[nodiscard]] virtual bool switchEnabled(SettingsSwitchBinding binding) const {
         Q_UNUSED(binding);
         return true;
+    }
+    virtual QString switchHint(SettingsSwitchBinding) const {
+        return {};
     }
     [[nodiscard]] virtual bool applySwitchValue(SettingsSwitchBinding binding, bool value) = 0;
 
@@ -146,6 +152,7 @@ class SettingsBackend : public QObject {
     }
 
   signals:
+    void operationMessage(const QString& message, bool warning);
     void synchronized();
     void actionFinished(snow_shot::presentation::settings::SettingsActionBinding action,
                         bool success, const QString& error);
@@ -167,6 +174,8 @@ class BuiltInSettingsBackend final : public SettingsBackend {
                                         const QVariant& value) override;
     [[nodiscard]] bool switchValue(SettingsSwitchBinding binding) const override;
     [[nodiscard]] bool switchEnabled(SettingsSwitchBinding binding) const override;
+    QString switchHint(SettingsSwitchBinding binding) const override;
+    bool fieldPending(const QString& fieldId) const override;
     [[nodiscard]] bool applySwitchValue(SettingsSwitchBinding binding, bool value) override;
     [[nodiscard]] QVariantList multiSelectValue(SettingsMultiSelectBinding binding) const override;
     [[nodiscard]] bool applyMultiSelectValue(SettingsMultiSelectBinding binding,

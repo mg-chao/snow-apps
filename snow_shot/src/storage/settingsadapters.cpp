@@ -1420,11 +1420,23 @@ bool TraySettings::setMenuOptions(const QStringList& options) const {
     return cache().setValue(QStringLiteral("tray/menu_options"), stringArray(options));
 }
 
+bool SystemSettings::launchAsAdministrator() const {
+    return autoStartAtBoot() &&
+           cache().value(QStringLiteral("system/launch_as_administrator")).toBool();
+}
+bool SystemSettings::setLaunchAsAdministrator(bool enabled) const {
+    if (enabled && !autoStartAtBoot())
+        return false;
+    return cache().setValue(QStringLiteral("system/launch_as_administrator"), enabled);
+}
 bool SystemSettings::autoStartAtBoot() const {
     return cache().value(QStringLiteral("system/auto_start_at_boot")).toBool();
 }
 
 bool SystemSettings::setAutoStartAtBoot(bool enabled) const {
+    if (!enabled)
+        return cache().setValues({{QStringLiteral("system/auto_start_at_boot"), false},
+                                  {QStringLiteral("system/launch_as_administrator"), false}});
     return cache().setValue(QStringLiteral("system/auto_start_at_boot"), enabled);
 }
 

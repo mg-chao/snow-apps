@@ -1,7 +1,10 @@
 #include "snow_shot/update/updatecontract.h"
+#include "snow_shot/platform/windows/administratorlaunch.h"
+#include "snow_shot/platform/windows/privilegedlocalserver.h"
 #include "snow_shot/update/updatetransaction.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -60,10 +63,22 @@ QStringList replaceMode(QStringList args, const QString& mode) {
     return args;
 }
 
+QStringList invocation;
+void verifyCoordinator(QLocalSocket& socket, const QString& pipe) {
+    const bool workerPipe = pipe.endsWith(u"-worker");
+    const QString expected = QDir(option(invocation, QStringLiteral("--target")))
+                                 .filePath(workerPipe ? QStringLiteral("bin/snow-shot-updater.exe")
+                                                      : QStringLiteral("bin/snow_shot.exe"));
+    const quint32 parent = workerPipe ? 0 : option(invocation, QStringLiteral("--parent")).toUInt();
+    requireUpdate(
+        snow_shot::platform::windows::verifyLocalPeer(socket, true, expected, workerPipe, parent),
+        "The update coordinator identity could not be verified");
+}
 void sendLine(const QString& pipe, const QByteArray& line) {
     QLocalSocket socket;
     socket.connectToServer(pipe);
     requireUpdate(socket.waitForConnected(10000), "Could not contact the update coordinator");
+    verifyCoordinator(socket, pipe);
     socket.write(line + '\n');
     requireUpdate(socket.waitForBytesWritten(5000), "Could not send updater status");
 }
@@ -72,6 +87,7 @@ QByteArray exchangeLine(const QString& pipe, const QByteArray& line) {
     QLocalSocket socket;
     socket.connectToServer(pipe);
     requireUpdate(socket.waitForConnected(10000), "Could not contact the update coordinator");
+    verifyCoordinator(socket, pipe);
     socket.write(line + '\n');
     requireUpdate(socket.waitForBytesWritten(5000) &&
                       (socket.canReadLine() || socket.waitForReadyRead(30000)),
@@ -209,9 +225,14 @@ int worker(const QStringList& args) {
 
 int broker(QCoreApplication& app, const QStringList& args) {
     const QString root = option(args, QStringLiteral("--target"));
+    QFile originalHelper(app.applicationFilePath());
+    QCryptographicHash originalHash(QCryptographicHash::Sha256);
+    requireUpdate(originalHelper.open(QIODevice::ReadOnly) && originalHash.addData(&originalHelper),
+                  "Could not verify the running update coordinator");
+    const QByteArray workerDigest = originalHash.result();
+    originalHelper.close();
     const QString pipe = option(args, QStringLiteral("--pipe"));
-    QLocalServer server;
-    server.setSocketOptions(QLocalServer::UserAccessOption);
+    snow_shot::platform::windows::PrivilegedLocalServer server;
     requireUpdate(server.listen(pipe + QStringLiteral("-worker")),
                   "Could not create updater coordinator");
     bool handedOff = false;
@@ -245,37 +266,48 @@ int broker(QCoreApplication& app, const QStringList& args) {
             finish(QByteArrayLiteral("failed:The update helper timed out"));
         }
     });
-    QObject::connect(&server, &QLocalServer::newConnection, &app, [&]() {
-        while (auto* socket = server.nextPendingConnection()) {
-            auto read = [&, socket]() {
-                if (!socket->canReadLine()) {
-                    return;
+    QObject::connect(
+        &server, &snow_shot::platform::windows::PrivilegedLocalServer::newConnection, &app, [&]() {
+            while (auto* socket = server.nextPendingConnection()) {
+                if (!snow_shot::platform::windows::verifyLocalPeer(
+                        *socket, false,
+                        QDir(root).filePath(QStringLiteral("bin/snow-shot-updater.exe")), true, 0,
+                        workerDigest)) {
+                    socket->disconnectFromServer();
+                    socket->deleteLater();
+                    continue;
                 }
-                const QByteArray status = socket->readLine(4096).trimmed();
-                if (status == "ready") {
-                    try {
-                        const QByteArray answer = exchangeLine(pipe, status);
-                        socket->write(answer + '\n');
-                        socket->flush();
-                        handedOff = answer == "go";
-                        if (handedOff) {
-                            timeout.start(15 * 60 * 1000);
-                        } else {
-                            finish(QByteArrayLiteral(
-                                "failed:Application cancelled the update handoff"));
-                        }
-                    } catch (...) {
-                        finish(QByteArrayLiteral("failed:Application coordinator disconnected"));
+                auto read = [&, socket]() {
+                    if (!socket->canReadLine()) {
+                        return;
                     }
-                } else {
-                    finish(status);
-                }
-            };
-            QObject::connect(socket, &QLocalSocket::readyRead, &app, read);
-            QObject::connect(socket, &QLocalSocket::disconnected, socket, &QObject::deleteLater);
-            read();
-        }
-    });
+                    const QByteArray status = socket->readLine(4096).trimmed();
+                    if (status == "ready") {
+                        try {
+                            const QByteArray answer = exchangeLine(pipe, status);
+                            socket->write(answer + '\n');
+                            socket->flush();
+                            handedOff = answer == "go";
+                            if (handedOff) {
+                                timeout.start(15 * 60 * 1000);
+                            } else {
+                                finish(QByteArrayLiteral(
+                                    "failed:Application cancelled the update handoff"));
+                            }
+                        } catch (...) {
+                            finish(
+                                QByteArrayLiteral("failed:Application coordinator disconnected"));
+                        }
+                    } else {
+                        finish(status);
+                    }
+                };
+                QObject::connect(socket, &QLocalSocket::readyRead, &app, read);
+                QObject::connect(socket, &QLocalSocket::disconnected, socket,
+                                 &QObject::deleteLater);
+                read();
+            }
+        });
     const QString original = QDir(root).filePath(QStringLiteral("bin/snow-shot-updater.exe"));
     requireUpdate(
         QProcess::startDetached(original, replaceMode(args, QStringLiteral("--bootstrap"))),
@@ -287,6 +319,7 @@ int broker(QCoreApplication& app, const QStringList& args) {
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     const QStringList args = app.arguments().mid(1);
+    invocation = args;
     try {
         requireUpdate(!args.isEmpty(), "Missing updater operation");
         if (args.first() == u"--verify-release") {
@@ -299,7 +332,28 @@ int main(int argc, char** argv) {
             return 0;
         }
         const QString root = QDir::cleanPath(option(args, QStringLiteral("--target")));
+        if (args.first() == u"--migrate-startup") {
+            validateInstallationRoot(root);
+            const QString previous = option(args, QStringLiteral("--previous"));
+            requireUpdate(QDir::isAbsolutePath(previous), "Invalid previous installation path");
+            const auto migrated =
+                snow_shot::platform::windows::migrateInstallationStartup(previous, root);
+            requireUpdate(migrated.success, migrated.error.toUtf8().constData());
+            return 0;
+        }
+        if (args.first() == u"--launch-desktop") {
+            validateInstallationRoot(root);
+            return snow_shot::platform::windows::launchOnInteractiveDesktop(
+                       QDir(root).filePath(QStringLiteral("bin/snow_shot.exe")))
+                       ? 0
+                       : 1;
+        }
         if (args.first() == u"--uninstall") {
+            validateInstallationRoot(root);
+            if (!args.contains(QStringLiteral("--upgrade"))) {
+                const auto cleanup = snow_shot::platform::windows::removeInstallationStartup(root);
+                requireUpdate(cleanup.success, cleanup.error.toUtf8().constData());
+            }
             uninstallOwnedFiles(root);
             return 0;
         }

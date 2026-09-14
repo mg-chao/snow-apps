@@ -89,6 +89,7 @@ class SettingsRuntimeSession final : public QObject {
     [[nodiscard]] bool applySelectValue(SettingsSelectBinding binding, const QVariant& value);
     [[nodiscard]] bool switchValue(SettingsSwitchBinding binding) const;
     [[nodiscard]] bool switchEnabled(SettingsSwitchBinding binding) const;
+    QString switchHint(SettingsSwitchBinding binding) const;
     [[nodiscard]] bool applySwitchValue(SettingsSwitchBinding binding, bool value);
     [[nodiscard]] QVariantList multiSelectValue(SettingsMultiSelectBinding binding) const;
     [[nodiscard]] bool applyMultiSelectValue(SettingsMultiSelectBinding binding,
@@ -139,6 +140,7 @@ class SettingsRuntimeSession final : public QObject {
     void refreshStorageStatusIfStale();
 
   signals:
+    void operationMessage(const QString& message, bool warning);
     void fieldChanged(const QString& fieldId,
                       const snow_shot::presentation::settings::SettingsFieldState& state);
     void optionsChanged(const QString& fieldId,

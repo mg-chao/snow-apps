@@ -271,6 +271,39 @@ ColorFamily makeDangerFamily(const ThemeMapToken& map) {
   return family;
 }
 
+ColorFamily makeSuccessFamily(const ThemeMapToken& map) {
+  ColorFamily family;
+  const QColor containerBg = toColor(map.colorBgContainer, QColor("#ffffff"));
+
+  family.base = toColor(map.colorSuccess, QColor("#52c41a"));
+  family.hover = toColor(map.colorSuccessHover, QColor("#95de64"));
+  family.active = toColor(map.colorSuccessActive, QColor("#389e0d"));
+  family.light = toColor(map.colorSuccessBg, QColor("#f6ffed"));
+  family.lightHover = toColor(map.colorSuccessBgHover, QColor("#d9f7be"));
+  family.lightActive = toColor(map.colorSuccessBorder, QColor("#b7eb8f"));
+
+  family.outlinedText = family.base;
+  family.outlinedTextHover = family.hover;
+  family.outlinedTextActive = family.active;
+
+  family.filledText = family.base;
+  family.filledTextHover = family.hover;
+  family.filledTextActive = family.active;
+
+  family.textText = family.base;
+  family.textTextHover = family.hover;
+  family.textTextActive = family.active;
+
+  family.solidText = toColor(map.colorTextLightSolid, toColor(map.colorWhite, QColor("#ffffff")));
+  family.solidBg = family.base;
+  family.solidBgHover = family.hover;
+  family.solidBgActive = family.active;
+
+  family.shadow = resolveAlphaColor(toColor(map.colorSuccessBg, QColor("#f6ffed")), containerBg);
+
+  return family;
+}
+
 ColorFamily makePresetFamily(AdButton::AccentRole accentRole, const ThemeMapToken& map,
                              const ThemeSeedToken& seed) {
   const QColor preset = presetSeed(accentRole, seed);
@@ -317,6 +350,8 @@ ColorFamily makePresetFamily(AdButton::AccentRole accentRole, const ThemeMapToke
 ColorFamily makeFamily(AdButton::AccentRole accentRole, const ThemeMapToken& map,
                        const ThemeSeedToken& seed) {
   switch (accentRole) {
+    case AdButton::AccentRole::Success:
+      return makeSuccessFamily(map);
     case AdButton::AccentRole::Primary:
       return makePrimaryFamily(map);
     case AdButton::AccentRole::Danger:

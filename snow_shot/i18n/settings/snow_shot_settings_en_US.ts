@@ -2,6 +2,117 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="en_US" sourcelanguage="en_US">
     <context>
+        <name>AdministratorLaunch</name>
+        <message>
+            <source> Recovery failed: %1</source>
+            <translation> Recovery failed: %1</translation>
+        </message>
+        <message>
+            <source> Settings recovery failed. Retry before closing Snow Shot.</source>
+            <translation> Settings recovery failed. Retry before closing Snow Shot.</translation>
+        </message>
+        <message>
+            <source>Administrator authorization was declined.</source>
+            <translation>Administrator authorization was declined.</translation>
+        </message>
+        <message>
+            <source>Administrator launch is only supported on Windows.</source>
+            <translation>Administrator launch is only supported on Windows.</translation>
+        </message>
+        <message>
+            <source>An interrupted startup change needs administrator authorization. Reapply your startup setting.</source>
+            <translation>An interrupted startup change needs administrator authorization. Reapply your startup setting.</translation>
+        </message>
+        <message>
+            <source>An interrupted startup change needs recovery</source>
+            <translation>An interrupted startup change needs recovery</translation>
+        </message>
+        <message>
+            <source>Another administrator operation is in progress.</source>
+            <translation>Another administrator operation is in progress.</translation>
+        </message>
+        <message>
+            <source>Could not clear startup recovery record</source>
+            <translation>Could not clear startup recovery record</translation>
+        </message>
+        <message>
+            <source>Could not create the administrator handoff.</source>
+            <translation>Could not create the administrator handoff.</translation>
+        </message>
+        <message>
+            <source>Could not save startup recovery record</source>
+            <translation>Could not save startup recovery record</translation>
+        </message>
+        <message>
+            <source>Could not start the administrator helper.</source>
+            <translation>Could not start the administrator helper.</translation>
+        </message>
+        <message>
+            <source>Elevated</source>
+            <translation>Elevated</translation>
+        </message>
+        <message>
+            <source>Elevated auto-start needs repair. Turn Launch as administrator off and on again.</source>
+            <translation>Elevated auto-start needs repair. Turn Launch as administrator off and on again.</translation>
+        </message>
+        <message>
+            <source>Finish capturing, recording, exporting, or updating before restarting.</source>
+            <translation>Finish capturing, recording, exporting, or updating before restarting.</translation>
+        </message>
+        <message>
+            <source>Privilege handoff disconnected</source>
+            <translation>Privilege handoff disconnected</translation>
+        </message>
+        <message>
+            <source>Privilege handoff timed out or disconnected</source>
+            <translation>Privilege handoff timed out or disconnected</translation>
+        </message>
+        <message>
+            <source>Restart</source>
+            <translation>Restart</translation>
+        </message>
+        <message>
+            <source>Settings could not be saved.</source>
+            <translation>Settings could not be saved.</translation>
+        </message>
+        <message>
+            <source>Settings could not be saved. The administrator operation was cancelled.</source>
+            <translation>Settings could not be saved. The administrator operation was cancelled.</translation>
+        </message>
+        <message>
+            <source>Startup task ownership mismatch</source>
+            <translation>Startup task ownership mismatch</translation>
+        </message>
+        <message>
+            <source>Startup task target mismatch</source>
+            <translation>Startup task target mismatch</translation>
+        </message>
+        <message>
+            <source>The administrator handoff could not be verified.</source>
+            <translation>The administrator handoff could not be verified.</translation>
+        </message>
+        <message>
+            <source>The administrator helper did not become ready.</source>
+            <translation>The administrator helper did not become ready.</translation>
+        </message>
+        <message>
+            <source>The administrator operation failed: %1</source>
+            <translation>The administrator operation failed: %1</translation>
+        </message>
+        <message>
+            <source>The destination already has a startup task</source>
+            <translation>The destination already has a startup task</translation>
+        </message>
+        <message>
+            <source>This feature requires membership in the Administrators group.</source>
+            <translation>This feature requires membership in the Administrators group.</translation>
+        </message>
+        <message>
+            <source>Turn on Auto start at boot first.</source>
+            <translation>Turn on Auto start at boot first.</translation>
+        </message>
+    </context>
+    <context>
         <name>CustomAiModelsSettingsWidget</name>
         <message>
             <source>%1 (Copy %2)</source>
@@ -1346,6 +1457,10 @@
             <translation>Language</translation>
         </message>
         <message>
+            <source>Launch as administrator</source>
+            <translation>Launch as administrator</translation>
+        </message>
+        <message>
             <source>Layout Processing</source>
             <translation>Layout Processing</translation>
         </message>
@@ -1782,6 +1897,18 @@
             <translation>Resize scrolling screenshots automatically to remain inside the monitor</translation>
         </message>
         <message>
+            <source>Restart</source>
+            <translation>Restart</translation>
+        </message>
+        <message>
+            <source>Restart Snow Shot with administrator privileges</source>
+            <translation>Restart Snow Shot with administrator privileges</translation>
+        </message>
+        <message>
+            <source>Restart as administrator</source>
+            <translation>Restart as administrator</translation>
+        </message>
+        <message>
             <source>Restore original screen colors</source>
             <translation>Restore original screen colors</translation>
         </message>
@@ -2144,6 +2271,10 @@
         <message>
             <source>Start Snow Shot in the background when Windows starts</source>
             <translation>Start Snow Shot in the background when Windows starts</translation>
+        </message>
+        <message>
+            <source>Start Snow Shot with administrator privileges when you sign in</source>
+            <translation>Start Snow Shot with administrator privileges when you sign in</translation>
         </message>
         <message>
             <source>Start a screen recording from a confirmed selection</source>

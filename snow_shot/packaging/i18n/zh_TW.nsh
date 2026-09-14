@@ -17,3 +17,5 @@ LangString SnowShotRegistryEntry 1028 "設定安裝登錄項目：將 '$1' 設�
 LangString SnowShotEnvironmentAll 1028 "已選擇所有使用者的環境"
 LangString SnowShotEnvironmentCurrent 1028 "已選擇僅目前使用者的環境"
 LangString SnowShotDownloadFailed 1028 "下載失敗：$1"
+LangString SnowShotDesktopLaunchFailed 1028 "無法在您的桌面上啟動 Snow Shot。請從開始功能表啟動。"
+LangString SnowShotStartupCleanupFailed 1028 "無法完成 Snow Shot 清理。請關閉 Snow Shot 並使用系統管理員權限重試。"
