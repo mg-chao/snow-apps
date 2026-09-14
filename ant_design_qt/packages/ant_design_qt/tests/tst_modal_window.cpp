@@ -48,6 +48,21 @@ QWidget* visibleOverlaySurface(const QString& title = {}) {
   return nullptr;
 }
 
+QWidget* modalSection(QWidget* surface, const char* objectName) {
+  if (surface == nullptr) {
+    return nullptr;
+  }
+  return surface->findChild<QWidget*>(QString::fromLatin1(objectName));
+}
+
+QMargins sectionMargins(QWidget* surface, const char* objectName) {
+  QWidget* section = modalSection(surface, objectName);
+  if (section == nullptr || section->layout() == nullptr) {
+    return {};
+  }
+  return section->layout()->contentsMargins();
+}
+
 // A window-mode modal must show a dialog surface even when no owner window
 // can be resolved: tray-menu actions and background notifications open
 // dialogs while the application has no active or visible window.
@@ -253,6 +268,81 @@ class TstModalWindow : public QObject {
     QVERIFY(contentWithoutGap.y() <= contentWithGap.y());
     QCOMPARE(contentWithoutGap.x(), contentWithGap.x());
     modal.close();
+  }
+
+  // The panel's outer vertical inset lives on the header top and footer
+  // bottom. Confirm dialogs hide that header (window-mode Confirm, or any
+  // confirm-like preset with the close button off), so the body must inherit
+  // the same inset instead of sitting flush against the panel edge.
+  void hiddenEdgeSectionsInheritOuterVerticalInset() {
+    AdModal reference;
+    reference.setMode(AdModal::Mode::Window);
+    reference.setWindowTitle(QStringLiteral("Reference"));
+    reference.setText(QStringLiteral("Body"));
+    reference.open();
+    QWidget* referenceSurface = visibleOverlaySurface(QStringLiteral("Reference"));
+    QVERIFY(referenceSurface != nullptr);
+    auto* referenceHeader = modalSection(referenceSurface, "ad-modal-header");
+    auto* referenceBody = modalSection(referenceSurface, "ad-modal-body");
+    auto* referenceFooter = modalSection(referenceSurface, "ad-modal-footer");
+    QVERIFY(referenceHeader != nullptr && !referenceHeader->isHidden());
+    QVERIFY(referenceBody != nullptr);
+    QVERIFY(referenceFooter != nullptr && !referenceFooter->isHidden());
+    const int outerTop = sectionMargins(referenceSurface, "ad-modal-header").top();
+    const int outerBottom = sectionMargins(referenceSurface, "ad-modal-footer").bottom();
+    QVERIFY(outerTop > 0);
+    QVERIFY(outerBottom > 0);
+    QCOMPARE(sectionMargins(referenceSurface, "ad-modal-body").top(), 0);
+    QCOMPARE(sectionMargins(referenceSurface, "ad-modal-body").bottom(), 0);
+    reference.close();
+
+    AdModal confirm;
+    confirm.setMode(AdModal::Mode::Window);
+    confirm.setPreset(AdModal::Preset::Confirm);
+    confirm.setWindowTitle(QStringLiteral("Delete preset"));
+    confirm.setText(QStringLiteral("Delete preset \"1049 x 700\"? This action cannot be undone"));
+    confirm.open();
+    QWidget* confirmSurface = visibleOverlaySurface(QStringLiteral("Delete preset"));
+    QVERIFY(confirmSurface != nullptr);
+    auto* confirmHeader = modalSection(confirmSurface, "ad-modal-header");
+    auto* confirmBody = modalSection(confirmSurface, "ad-modal-body");
+    auto* confirmFooter = modalSection(confirmSurface, "ad-modal-footer");
+    auto* confirmPanel = modalSection(confirmSurface, "ad-modal-panel");
+    auto* confirmIcon = modalSection(confirmSurface, "ad-modal-title-icon");
+    QVERIFY(confirmHeader != nullptr && confirmHeader->isHidden());
+    QVERIFY(confirmBody != nullptr);
+    QVERIFY(confirmFooter != nullptr && !confirmFooter->isHidden());
+    QVERIFY(confirmPanel != nullptr);
+    QVERIFY(confirmIcon != nullptr);
+    QCOMPARE(sectionMargins(confirmSurface, "ad-modal-body").top(), outerTop);
+    QCOMPARE(sectionMargins(confirmSurface, "ad-modal-body").bottom(), 0);
+    QCOMPARE(confirmIcon->mapTo(confirmPanel, QPoint(0, 0)).y(), outerTop);
+
+    confirm.setFooterVisible(false);
+    QVERIFY(confirmFooter->isHidden());
+    QCOMPARE(sectionMargins(confirmSurface, "ad-modal-body").top(), outerTop);
+    QCOMPARE(sectionMargins(confirmSurface, "ad-modal-body").bottom(), outerBottom);
+    confirm.close();
+
+    QWidget owner;
+    owner.resize(800, 600);
+    owner.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&owner));
+
+    AdModal overlayConfirm(&owner);
+    overlayConfirm.setOwnerWindow(&owner);
+    overlayConfirm.setPreset(AdModal::Preset::Confirm);
+    overlayConfirm.setCloseButtonVisible(false);
+    overlayConfirm.setWindowTitle(QStringLiteral("Overlay confirm"));
+    overlayConfirm.setText(QStringLiteral("This action cannot be undone"));
+    overlayConfirm.open();
+    QWidget* overlaySurface = owner.findChild<QWidget*>(QString::fromLatin1(kOverlayObjectName));
+    QVERIFY(overlaySurface != nullptr);
+    auto* overlayHeader = modalSection(overlaySurface, "ad-modal-header");
+    QVERIFY(overlayHeader != nullptr && overlayHeader->isHidden());
+    QCOMPARE(sectionMargins(overlaySurface, "ad-modal-body").top(), outerTop);
+    QCOMPARE(sectionMargins(overlaySurface, "ad-modal-body").bottom(), 0);
+    overlayConfirm.close();
   }
 
   // Taskbar visibility swaps the detached Qt::Tool surface for a plain
