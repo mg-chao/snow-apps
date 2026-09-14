@@ -22,6 +22,7 @@
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
+#include "theme/theme_manager.h"
 #include "widgets/message.h"
 
 #include <QApplication>
@@ -1329,6 +1330,44 @@ void screenshotImageMaskAndSelectionRenderInTheirOwnedPasses() {
             "reset should restore standard rendering");
     require(!renderer.maskVisible(), "reset should clear mask state");
     require(!renderer.hasSelection(), "reset should clear selection state");
+    canvas.setCustomRenderer(nullptr);
+}
+
+void selectionBorderAndHandlesFollowTheThemePrimaryColor() {
+    auto& themeManager = adqt::theme::ThemeManager::instance();
+    const auto originalConfig = themeManager.config();
+    auto themedConfig = originalConfig;
+    themedConfig.primary = QColor(184, 28, 136);
+    themeManager.setConfig(themedConfig);
+    const QColor primary = themeManager.resolveTheme().colorPrimary;
+    require(primary.isValid() && primary != QColor(0x40, 0x96, 0xff) &&
+                primary != QColor(0, 80, 240),
+            "the themed selection test requires a distinctive primary color");
+
+    SnowCanvasWidget canvas;
+    canvas.resize(80, 80);
+    canvas.setClearBackgroundEnabled(false);
+    require(canvas.setViewportCamera(0.0, 0.0, 1.0),
+            "the themed selection test should initialize the camera");
+
+    ScreenshotCanvasRenderer renderer(canvas);
+    canvas.setCustomRenderer(&renderer);
+    QImage screenshot(80, 80, QImage::Format_RGBA8888);
+    screenshot.fill(QColor(0, 80, 240));
+    renderer.setImage(std::move(screenshot), QRectF(-40.0, -40.0, 80.0, 80.0));
+    renderer.setSelection(QRectF(-20.0, -20.0, 40.0, 40.0));
+
+    const QImage output = renderCanvas(canvas);
+    require(output.pixelColor(20, 40) == primary,
+            "the selection border must paint the theme primary color on its left edge");
+    require(output.pixelColor(40, 20) == primary,
+            "the selection border must paint the theme primary color on its top edge");
+    require(output.pixelColor(20, 20) == primary,
+            "the selection corner handle must paint the theme primary color");
+    require(output.pixelColor(40, 40) == QColor(0, 80, 240),
+            "the themed border must leave the selection interior untouched");
+
+    themeManager.setConfig(originalConfig);
     canvas.setCustomRenderer(nullptr);
 }
 
@@ -3847,6 +3886,7 @@ int main(int argc, char** argv) {
     ocrBackgroundFillSamplesRobustlyAndChoosesContrastingText();
     ocrSolidFillRendersAdaptiveTextPerBlock();
     screenshotImageMaskAndSelectionRenderInTheirOwnedPasses();
+    selectionBorderAndHandlesFollowTheThemePrimaryColor();
     rendererCoversTheWidgetRectOnceAScreenshotFillsTheViewport();
     overlayPaintSkipsRedundantTransparentClearWhenRendererCoversTheRect();
     layeredImageSourceMatchesMaterializedOutput();

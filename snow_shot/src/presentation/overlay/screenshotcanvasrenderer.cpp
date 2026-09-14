@@ -108,7 +108,10 @@ std::size_t regionPixelCount(const QRegion& region) {
 #endif
 
 QColor selectionAccentColor(int alpha = 255) {
-    return QColor(0x40, 0x96, 0xff, alpha);
+    const QColor primary = adqt::theme::ThemeManager::instance().resolveTheme().colorPrimary;
+    QColor accent = primary.isValid() ? primary : QColor(0x40, 0x96, 0xff);
+    accent.setAlpha(alpha);
+    return accent;
 }
 
 QPainterPath selectionShapePath(const QRectF& selection, int cornerRadius,
@@ -1473,12 +1476,13 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
                                   &context.exposedRegion);
     }
     if (m_renderMode == RenderMode::Standard && m_selectionState.present) {
+        const QColor selectionAccent = selectionAccentColor();
         const QRectF selectionView = context.canvasToViewTransform.mapRect(m_selectionState.bounds);
         if (m_selectionState.toolbarHovered) {
             renderSelectionShadow(painter, context, m_selectionState.bounds, visibleCornerRadius,
                                   m_selectionState.shadowWidth, m_selectionState.shadowColor);
         } else if (m_selectionState.borderVisible) {
-            painter.setPen(QPen(selectionAccentColor(), kSelectionBorderWidth));
+            painter.setPen(QPen(selectionAccent, kSelectionBorderWidth));
             painter.setBrush(Qt::NoBrush);
             painter.drawPath(selectionShapePath(m_selectionState.bounds,
                                                 selectionBorderCornerRadius,
@@ -1503,7 +1507,7 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
             handles[handleCount++] = QPointF(selectionView.left(), selectionView.center().y());
         }
         if (handleCount != 0) {
-            painter.setBrush(selectionAccentColor());
+            painter.setBrush(selectionAccent);
             painter.setPen(QPen(Qt::white, kSelectionHandleStrokeWidth));
             for (std::size_t index = 0; index < handleCount; ++index) {
                 painter.drawEllipse(handles[index], kSelectionHandleRadius, kSelectionHandleRadius);
