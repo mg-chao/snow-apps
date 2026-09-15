@@ -1198,7 +1198,7 @@ void penFilterUsesRawRoundStrokeMaskForEveryEffect() {
         return output;
     };
 
-    for (const std::uint32_t type : {0u, 1u, 2u, 3u}) {
+    for (const std::uint32_t type : {0u, 1u, 2u, 3u, 4u}) {
         const QImage output = render(type, 12.0);
         require(output.pixel(38, 48) != background.pixel(38, 48),
                 "every filter effect must be applied through a pen stroke");
@@ -1220,6 +1220,70 @@ void penFilterUsesRawRoundStrokeMaskForEveryEffect() {
     require(
         diagnostics.maskPixelCount > 0 && diagnostics.opaqueRectDispatchCount == 0,
         "pen filters must use the general path-mask branch rather than the rectangle fast path");
+}
+
+void penSpatialFiltersUseSingleImmutableSource() {
+    const QSize imageSize(320, 320);
+    const QImage background = noisyPatternImage(imageSize);
+    SceneDisplayInfo displayInfo{};
+    displayInfo.surface_width = imageSize.width();
+    displayInfo.surface_height = imageSize.height();
+    displayInfo.camera_zoom = 1.0;
+
+    const auto render = [&](std::uint32_t type, bool freeDraw, bool tiled) {
+        const SnowArrowPoint points[] = {
+            {-320.0, 0.0},
+            {320.0, 0.0},
+        };
+        SnowSceneDisplayItem filter{};
+        filter.kind = SNOW_SCENE_DISPLAY_ITEM_FILTER;
+        filter.center_x = 0.0;
+        filter.center_y = 0.0;
+        filter.width = 640.0;
+        filter.height = 640.0;
+        filter.is_free_draw = freeDraw ? 1 : 0;
+        filter.arrow_points = freeDraw ? points : nullptr;
+        filter.arrow_point_count = freeDraw ? static_cast<std::uint32_t>(std::size(points)) : 0;
+        filter.stroke_width = 640.0;
+        filter.filter = snow_filter_render_spec_resolve(type, 0.75);
+        filter.opacity = 1.0;
+        const SnowCanvasSceneItem item(filter);
+
+        QImage output(imageSize, QImage::Format_ARGB32_Premultiplied);
+        output.fill(Qt::transparent);
+        QPainter painter(&output);
+        int cacheNamespace = 0;
+        snow_canvas_renderer::SceneRenderRequest request;
+        request.painter = &painter;
+        request.displayInfo = &displayInfo;
+        request.sceneItems = &item;
+        request.sceneItemCount = 1;
+        request.exposedRegion = QRegion(output.rect());
+        request.backgroundImage = &background;
+        request.cacheNamespace = tiled ? &cacheNamespace : nullptr;
+        if (tiled) {
+            snow_canvas_filter_tile_cache::clear();
+            snow_canvas_renderer::renderSceneItemsTiled(request);
+            snow_canvas_filter_tile_cache::clear();
+        } else {
+            snow_canvas_renderer::renderSceneItems(request);
+        }
+        painter.end();
+        return output;
+    };
+
+    for (const std::uint32_t type : {0u, 4u}) {
+        const QImage rectangle = render(type, false, false);
+        const QImage pen = render(type, true, false);
+        const QImage tiledPen = render(type, true, true);
+        require(pen == rectangle, type == 0
+                                      ? "tiled Pen Mosaic dispatches must sample one immutable "
+                                        "pre-effect image"
+                                      : "tiled Pen Emboss dispatches must sample one immutable "
+                                        "pre-effect image");
+        require(tiledPen == rectangle,
+                "canvas-tiled spatial Pen Filters must match the full-surface result");
+    }
 }
 
 void penFilterGeometryCacheRebuildsOnlyTheFinalChunk() {
@@ -1448,7 +1512,7 @@ void sparseAndForcedDensePenFiltersMatch() {
     info.surface_height = size.height();
     info.camera_zoom = 1.0;
 
-    for (std::uint32_t type : {0u, 1u, 2u, 3u}) {
+    for (std::uint32_t type : {0u, 1u, 2u, 3u, 4u}) {
         SnowSceneDisplayItem filter{};
         filter.kind = SNOW_SCENE_DISPLAY_ITEM_FILTER;
         filter.element_id = SnowElementId{100 + type, 1};
@@ -2637,6 +2701,7 @@ int main(int argc, char** argv) {
     filteredBackgroundIsCompositedOnce();
     emptySceneStillRendersBackgroundOnce();
     penFilterUsesRawRoundStrokeMaskForEveryEffect();
+    penSpatialFiltersUseSingleImmutableSource();
     penFilterGeometryCacheRebuildsOnlyTheFinalChunk();
     retainedPenFilterMaskSkipsRasterAndScanOnReuse();
     penMaskRasterizersAndTailInvalidationStayDeterministic();
