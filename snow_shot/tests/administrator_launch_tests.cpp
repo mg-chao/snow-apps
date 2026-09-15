@@ -7,6 +7,7 @@
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
 #include <aclapi.h>
+#include <sddl.h>
 #endif
 #include <QTranslator>
 #include <QLocalServer>
@@ -241,6 +242,52 @@ void privilegedPipe() {
     server.close();
 #endif
 }
+void accountIdentity() {
+#ifdef Q_OS_WIN
+    HANDLE token = nullptr;
+    require(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token) != FALSE,
+            "process token must be queryable");
+    DWORD size = 0;
+    GetTokenInformation(token, TokenUser, nullptr, 0, &size);
+    QByteArray data(static_cast<qsizetype>(size), '\0');
+    require(GetTokenInformation(token, TokenUser, data.data(), size, &size) != FALSE,
+            "TokenUser must be readable");
+    CloseHandle(token);
+    PSID processSid = reinterpret_cast<TOKEN_USER*>(data.data())->User.Sid;
+    LPWSTR sidText = nullptr;
+    require(ConvertSidToStringSidW(processSid, &sidText) != FALSE, "process SID must stringify");
+    const QString sid = QString::fromWCharArray(sidText);
+    LocalFree(sidText);
+    wchar_t name[256];
+    wchar_t domain[256];
+    DWORD nameSize = 256;
+    DWORD domainSize = 256;
+    SID_NAME_USE use = SidTypeInvalid;
+    require(LookupAccountSidW(nullptr, processSid, name, &nameSize, domain, &domainSize, &use) !=
+                FALSE,
+            "process SID must resolve to an account name");
+    const QString account = QString::fromWCharArray(name);
+    const QString qualified = QString::fromWCharArray(domain) + QLatin1Char('\\') + account;
+    require(!account.isEmpty() && account.compare(sid, Qt::CaseInsensitive) != 0,
+            "Windows account names are not SID strings");
+    require(sameAccountSid(sid, sid), "identical SIDs must match");
+    require(sameAccountSid(sid.toLower(), sid), "SID string comparison must ignore case");
+    require(sameAccountSid(account, sid),
+            "Task Scheduler UserId account names must match the process SID");
+    require(sameAccountSid(qualified, sid), "DOMAIN\\user UserId must match the process SID");
+    require(sameAccountSid(sid, account) && sameAccountSid(qualified, account),
+            "account identity comparison must be commutative");
+    require(canonicalAccountSid(account) == sid && canonicalAccountSid(qualified) == sid &&
+                canonicalAccountSid(sid) == sid,
+            "canonical account SID must match ConvertSidToStringSid of TokenUser");
+    require(!sameAccountSid(sid, QStringLiteral("S-1-5-18")) &&
+                !sameAccountSid(sid, QStringLiteral("NT AUTHORITY\\SYSTEM")),
+            "Local System must not match the current user");
+    require(!sameAccountSid(sid, {}) && !sameAccountSid({}, sid) &&
+                !sameAccountSid(QStringLiteral("missing-snow-shot-user"), sid),
+            "unknown or empty principals must fail closed");
+#endif
+}
 void translations() {
     Translator translator;
     QCoreApplication::installTranslator(&translator);
@@ -258,6 +305,7 @@ int main(int argc, char** argv) {
         restartFailures();
         pipeIdentity();
         privilegedPipe();
+        accountIdentity();
         translations();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

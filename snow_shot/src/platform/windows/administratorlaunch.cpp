@@ -89,6 +89,33 @@ QString userSid(HANDLE process = GetCurrentProcess()) {
     LocalFree(sid);
     return value;
 }
+QByteArray accountSidBytes(const QString& account) {
+    if (account.isEmpty())
+        return {};
+    const std::wstring text = account.toStdWString();
+    PSID sid = nullptr;
+    if (ConvertStringSidToSidW(text.c_str(), &sid)) {
+        QByteArray bytes(reinterpret_cast<const char*>(sid),
+                         static_cast<qsizetype>(GetLengthSid(sid)));
+        LocalFree(sid);
+        return bytes;
+    }
+    DWORD sidSize = 0;
+    DWORD domainSize = 0;
+    SID_NAME_USE use = SidTypeInvalid;
+    LookupAccountNameW(nullptr, text.c_str(), nullptr, &sidSize, nullptr, &domainSize, &use);
+    if (sidSize == 0)
+        return {};
+    QByteArray bytes(static_cast<qsizetype>(sidSize), '\0');
+    QByteArray domain(static_cast<qsizetype>(domainSize) * static_cast<qsizetype>(sizeof(wchar_t)),
+                      '\0');
+    if (!LookupAccountNameW(nullptr, text.c_str(), reinterpret_cast<PSID>(bytes.data()), &sidSize,
+                            reinterpret_cast<LPWSTR>(domain.data()), &domainSize, &use) ||
+        !IsValidSid(reinterpret_cast<PSID>(bytes.data())))
+        return {};
+    bytes.resize(static_cast<qsizetype>(GetLengthSid(reinterpret_cast<PSID>(bytes.data()))));
+    return bytes;
+}
 bool sameProcessIdentity(HANDLE process) {
     const QString sid = userSid();
     return !sid.isEmpty() && userSid(process) == sid &&
@@ -144,7 +171,8 @@ struct Tasks {
         check(definition->get_Actions(&actions));
         LONG count = 0;
         check(actions->get_Count(&count));
-        if (owner != sid || count != 1)
+        // Task Scheduler returns a SAM/UPN name even when the task XML stores a SID.
+        if (!sameAccountSid(owner, sid) || count != 1)
             throw std::runtime_error(
                 QT_TRANSLATE_NOOP("AdministratorLaunch", "Startup task ownership mismatch"));
         ComPtr<IAction> action;
@@ -419,6 +447,38 @@ AdministratorResult withHelper(const QByteArray& operation, const std::function<
 }
 #endif
 } // namespace
+
+QString canonicalAccountSid(const QString& accountOrSid) {
+#ifdef Q_OS_WIN
+    QByteArray bytes = accountSidBytes(accountOrSid);
+    if (bytes.isEmpty())
+        return {};
+    LPWSTR text = nullptr;
+    if (!ConvertSidToStringSidW(reinterpret_cast<PSID>(bytes.data()), &text))
+        return {};
+    const QString result = QString::fromWCharArray(text);
+    LocalFree(text);
+    return result;
+#else
+    Q_UNUSED(accountOrSid);
+    return {};
+#endif
+}
+bool sameAccountSid(const QString& left, const QString& right) {
+#ifdef Q_OS_WIN
+    QByteArray first = accountSidBytes(left);
+    QByteArray second = accountSidBytes(right);
+    return !first.isEmpty() && !second.isEmpty() &&
+           IsValidSid(reinterpret_cast<PSID>(first.data())) &&
+           IsValidSid(reinterpret_cast<PSID>(second.data())) &&
+           EqualSid(reinterpret_cast<PSID>(first.data()), reinterpret_cast<PSID>(second.data())) !=
+               FALSE;
+#else
+    Q_UNUSED(left);
+    Q_UNUSED(right);
+    return false;
+#endif
+}
 
 AdministratorResult runRestartTransaction(
     const std::function<AdministratorResult(const std::function<bool()>&)>& prepare,
@@ -781,11 +841,11 @@ static AdministratorResult updateInstallationStartup(const QString& root,
             check(task->get_Definition(&definition));
             ComPtr<IPrincipal> principal;
             check(definition->get_Principal(&principal));
-            BSTR sid = nullptr;
-            check(principal->get_UserId(&sid));
-            tasks.sid = QString::fromWCharArray(sid);
-            SysFreeString(sid);
-            if (candidate != taskName(tasks.executable, tasks.sid))
+            BSTR user = nullptr;
+            check(principal->get_UserId(&user));
+            tasks.sid = canonicalAccountSid(QString::fromWCharArray(user));
+            SysFreeString(user);
+            if (tasks.sid.isEmpty() || candidate != taskName(tasks.executable, tasks.sid))
                 continue;
             tasks.name = candidate;
             tasks.validate(task.Get());

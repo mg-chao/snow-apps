@@ -46,6 +46,9 @@ std::optional<StartupMode> observedStartupMode();
 bool verifyLocalPeer(QLocalSocket& socket, bool serverPeer, const QString& expectedExecutable,
                      bool allowVerifiedCopy = false, quint32 expectedPid = 0,
                      const QByteArray& expectedDigest = {});
+// Task Scheduler UserId may be a SID, DOMAIN\user, UPN, or SAM account name.
+QString canonicalAccountSid(const QString& accountOrSid);
+bool sameAccountSid(const QString& left, const QString& right);
 bool administratorOperationPending();
 void setAdministratorRestartGuard(std::function<bool()> guard);
 AdministratorResult changeStartupMode(StartupMode mode, const std::function<bool()>& persist);
