@@ -2323,6 +2323,10 @@ QWidget* ScreenshotToolPaletteStyleControls::buildWatermarkFamily(
         layout->addWidget(m_watermarkTemplateSelect);
         m_watermarkTemplateSelect->setMode(adqt::widgets::AdSelect::Mode::Single);
         m_watermarkTemplateSelect->setEditable(true);
+        m_watermarkTemplateSelect->setSearchPolicy(adqt::widgets::AdSelect::SearchPolicy::External);
+        m_watermarkTemplateSelect->setAutoClearSearchValue(false);
+        m_watermarkTemplateSelect->setPopupLayerMode(
+            adqt::widgets::AdSelect::PopupLayerMode::QtTool);
         m_watermarkTemplateSelect->setPopupMatchSelectWidth(false);
         m_watermarkTemplateSelect->setPopupWidth(kWatermarkTemplatePopupWidth);
 
@@ -2389,12 +2393,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildWatermarkFamily(
     setScreenshotToolPaletteTooltipSource(m_watermarkTemplateSelect, "Template");
     setScreenshotToolPaletteAccessibleNameSource(m_watermarkTemplateSelect, "Template");
     QObject::connect(m_watermarkTemplateSelect, &adqt::widgets::AdSelect::popupOpening, controls,
-                     [this]() {
-                         refreshWatermarkTemplateOptions();
-                         if (m_watermarkTemplateSelect != nullptr) {
-                             m_watermarkTemplateSelect->setSearchText(QString());
-                         }
-                     });
+                     [this]() { refreshWatermarkTemplateOptions(); });
     QObject::connect(m_watermarkTemplateSelect, &adqt::widgets::AdSelect::selected, controls,
                      [this](const QVariant& selected, const QString&) {
                          const int index = watermarkTemplateIndex(selected.toString());
@@ -2403,18 +2402,23 @@ QWidget* ScreenshotToolPaletteStyleControls::buildWatermarkFamily(
                              return;
                          }
                          const QString templateValue = m_watermarkTemplates.at(index).value;
-                         const QSignalBlocker blocker(m_watermarkTemplateSelect);
-                         m_watermarkTemplateSelect->setCurrentValue(QVariant());
-                         if (m_watermarkTemplateSelect->lineEdit() != nullptr) {
-                             m_watermarkTemplateSelect->lineEdit()->setText(templateValue);
-                         }
+                         syncWatermarkTemplateEditorValue(templateValue);
                          setWatermarkTemplateValue(templateValue);
                      });
     if (m_watermarkTemplateSelect->lineEdit() != nullptr) {
-        QObject::connect(
-            m_watermarkTemplateSelect->lineEdit(), &QLineEdit::textEdited, controls,
-            [this](const QString& templateValue) { setWatermarkTemplateValue(templateValue); });
+        QObject::connect(m_watermarkTemplateSelect->lineEdit(), &QLineEdit::textEdited, controls,
+                         [this](const QString& templateValue) {
+                             syncWatermarkTemplateEditorValue(templateValue);
+                             setWatermarkTemplateValue(templateValue);
+                         });
     }
+    QObject::connect(m_watermarkTemplateSelect, &adqt::widgets::AdSelect::popupVisibleChanged,
+                     controls, [this](bool visible) {
+                         if (!visible) {
+                             syncWatermarkTemplateEditorValue(
+                                 m_state.m_watermarkConfig.templateValue);
+                         }
+                     });
     refreshWatermarkTemplateOptions();
     retranslateWatermarkTemplateUi();
 
@@ -3010,10 +3014,7 @@ void ScreenshotToolPaletteStyleControls::registerWatermarkEntries() {
              }
              if (m_watermarkTemplateSelect != nullptr &&
                  m_watermarkTemplateSelect->lineEdit() != nullptr) {
-                 const QSignalBlocker blocker(m_watermarkTemplateSelect);
-                 const QSignalBlocker lineEditBlocker(m_watermarkTemplateSelect->lineEdit());
-                 m_watermarkTemplateSelect->setCurrentValue(QVariant());
-                 m_watermarkTemplateSelect->lineEdit()->setText(config.templateValue);
+                 syncWatermarkTemplateEditorValue(config.templateValue);
              }
              if (m_watermarkAngleEditor != nullptr) {
                  m_watermarkAngleEditor->setValue(qBound(-90, qRound(config.angle), 90));
@@ -4230,6 +4231,21 @@ void ScreenshotToolPaletteStyleControls::setWatermarkFontFamily(const QString& f
     });
 }
 
+void ScreenshotToolPaletteStyleControls::syncWatermarkTemplateEditorValue(
+    const QString& templateValue) {
+    if (m_watermarkTemplateSelect == nullptr) {
+        return;
+    }
+    const QSignalBlocker blocker(m_watermarkTemplateSelect);
+    m_watermarkTemplateSelect->setCurrentValue(templateValue);
+    m_watermarkTemplateSelect->setSearchText(templateValue);
+    if (QLineEdit* editor = m_watermarkTemplateSelect->lineEdit();
+        editor != nullptr && editor->text() != templateValue) {
+        const QSignalBlocker editorBlocker(editor);
+        editor->setText(templateValue);
+    }
+}
+
 std::optional<SnowCanvasWatermarkTemplateApplicationTime>
 ScreenshotToolPaletteStyleControls::watermarkTemplateApplicationTime() const {
     const QDateTime current =
@@ -4276,11 +4292,7 @@ void ScreenshotToolPaletteStyleControls::refreshWatermarkTemplateOptions() {
     const QString currentValue = m_state.m_watermarkConfig.templateValue;
     const QSignalBlocker blocker(m_watermarkTemplateSelect);
     m_watermarkTemplateSelect->setOptions(options);
-    m_watermarkTemplateSelect->setCurrentValue(QVariant());
-    if (m_watermarkTemplateSelect->lineEdit() != nullptr) {
-        const QSignalBlocker lineEditBlocker(m_watermarkTemplateSelect->lineEdit());
-        m_watermarkTemplateSelect->lineEdit()->setText(currentValue);
-    }
+    syncWatermarkTemplateEditorValue(currentValue);
     if (m_watermarkTemplateEmptyLabel != nullptr) {
         m_watermarkTemplateEmptyLabel->setText(watermarkTemplateText("No templates yet"));
     }
@@ -4352,7 +4364,10 @@ void ScreenshotToolPaletteStyleControls::openCreateWatermarkTemplateModal() {
 
     auto* modal = new adqt::widgets::AdModal(m_watermarkTemplateSelect);
     modal->setObjectName(QStringLiteral("screenshotWatermarkTemplateCreateModal"));
-    modal->setOwnerWindow(m_watermarkTemplateSelect->window());
+    QWidget* modalOwner = m_callbacks.watermarkTemplateModalOwnerWindow
+                              ? m_callbacks.watermarkTemplateModalOwnerWindow()
+                              : m_watermarkTemplateSelect->window();
+    modal->setOwnerWindow(modalOwner);
     modal->setMode(adqt::widgets::AdModal::Mode::Window);
     modal->setWindowModality(Qt::ApplicationModal);
     modal->setCentered(true);
@@ -4394,13 +4409,7 @@ void ScreenshotToolPaletteStyleControls::openCreateWatermarkTemplateModal() {
                              return;
                          }
                          m_watermarkTemplates = templates;
-                         if (m_watermarkTemplateSelect != nullptr) {
-                             const QSignalBlocker blocker(m_watermarkTemplateSelect);
-                             m_watermarkTemplateSelect->setCurrentValue(QVariant());
-                             if (m_watermarkTemplateSelect->lineEdit() != nullptr) {
-                                 m_watermarkTemplateSelect->lineEdit()->setText(templateValue);
-                             }
-                         }
+                         syncWatermarkTemplateEditorValue(templateValue);
                          setWatermarkTemplateValue(templateValue);
                          refreshWatermarkTemplateOptions();
                          modal->accept();
@@ -4498,10 +4507,12 @@ void ScreenshotToolPaletteStyleControls::retranslateWatermarkTemplateUi() {
         m_watermarkTemplateAddButton->setToolTip(watermarkTemplateText("Add template"));
         m_watermarkTemplateAddButton->setAccessibleName(watermarkTemplateText("Add template"));
     }
-    if (m_watermarkTemplateSelect != nullptr && m_watermarkTemplateSelect->window() != nullptr) {
-        const auto addButtons =
-            m_watermarkTemplateSelect->window()->findChildren<adqt::widgets::AdButton*>(
-                QStringLiteral("screenshotWatermarkTemplateAddButton"));
+    QListView* templateView =
+        m_watermarkTemplateSelect != nullptr ? m_watermarkTemplateSelect->view() : nullptr;
+    QWidget* templatePopup = templateView != nullptr ? templateView->window() : nullptr;
+    if (templatePopup != nullptr) {
+        const auto addButtons = templatePopup->findChildren<adqt::widgets::AdButton*>(
+            QStringLiteral("screenshotWatermarkTemplateAddButton"));
         for (adqt::widgets::AdButton* addButton : addButtons) {
             addButton->setText(watermarkTemplateText("Add"));
             addButton->setToolTip(watermarkTemplateText("Add template"));

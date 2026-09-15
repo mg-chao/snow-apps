@@ -207,6 +207,9 @@ void ScreenshotFloatingToolPaletteWindow::setOwnerWindow(QWidget* owner) {
 
 void ScreenshotFloatingToolPaletteWindow::setTransientOwnerWindow(QWidget* owner) {
     m_transientOwnerWindow = owner;
+    if (ScreenshotToolPalette* toolPalette = palette()) {
+        toolPalette->setWatermarkTemplateModalOwnerWindow(owner);
+    }
 
     QWindow* ownerHandle = nullptr;
     if (owner != nullptr) {

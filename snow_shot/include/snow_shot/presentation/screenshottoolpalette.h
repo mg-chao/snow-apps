@@ -299,6 +299,7 @@ class ScreenshotToolPalette final : public QWidget {
     void setRectangleStyle(const SnowCanvasShapeStyle& style);
     void setStyleToolbarState(const SnowCanvasStyleToolbarState& state);
     void setWatermarkConfig(const SnowCanvasWatermarkConfig& config);
+    void setWatermarkTemplateModalOwnerWindow(QWidget* owner);
     void setSpotlightConfig(const SnowCanvasSpotlightConfig& config);
     void setSelectionOpacity(qreal opacity, bool mixed = false);
     void installWheelFilters(QObject* receiver, QWidget* scope = nullptr);
@@ -801,6 +802,7 @@ class ScreenshotToolPalette final : public QWidget {
     QVector<SpacingItem> m_styleSpacingItems;
     QVector<StyleLayoutProfile> m_styleLayoutProfiles;
     std::unique_ptr<ScreenshotToolPaletteStyleControls> m_styleControls;
+    QPointer<QWidget> m_watermarkTemplateModalOwnerWindow;
     QMargins m_baseShadowMargins;
     QMargins m_shadowMargins;
     QHash<QWidget*, quint64> m_styleMetricRevisions;

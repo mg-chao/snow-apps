@@ -83,6 +83,7 @@ struct ScreenshotToolPaletteStyleControlCallbacks {
     std::function<void(const SnowCanvasWatermarkConfig& config)> watermarkPreviewChanged;
     std::function<void()> visibleContentChanged;
     std::function<void(adqt::widgets::AdColorPicker* picker)> canvasColorSamplingRequested;
+    std::function<QWidget*()> watermarkTemplateModalOwnerWindow;
 };
 
 // Palette-owned row services used by the family builders. The palette supplies
@@ -363,6 +364,7 @@ class ScreenshotToolPaletteStyleControls final {
     void setWatermarkFontSize(double fontSize);
     void cycleWatermarkFontSize();
     void setWatermarkFontFamily(const QString& fontFamily);
+    void syncWatermarkTemplateEditorValue(const QString& templateValue);
     void setWatermarkTemplateValue(const QString& templateValue);
     [[nodiscard]] std::optional<SnowCanvasWatermarkTemplateApplicationTime>
     watermarkTemplateApplicationTime() const;

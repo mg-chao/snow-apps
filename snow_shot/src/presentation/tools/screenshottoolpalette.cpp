@@ -712,6 +712,11 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
                 [this](adqt::widgets::AdColorPicker* picker) {
                     emit canvasColorSamplingRequested(picker);
                 },
+                [this]() {
+                    return m_watermarkTemplateModalOwnerWindow
+                               ? m_watermarkTemplateModalOwnerWindow.data()
+                               : window();
+                },
             },
             m_styleDefaults, options.watermarkTemplateClock);
     }
@@ -2254,6 +2259,10 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
 
 void ScreenshotToolPalette::setWatermarkConfig(const SnowCanvasWatermarkConfig& config) {
     m_styleControls->setWatermarkConfig(config);
+}
+
+void ScreenshotToolPalette::setWatermarkTemplateModalOwnerWindow(QWidget* owner) {
+    m_watermarkTemplateModalOwnerWindow = owner;
 }
 
 void ScreenshotToolPalette::setSpotlightConfig(const SnowCanvasSpotlightConfig& config) {

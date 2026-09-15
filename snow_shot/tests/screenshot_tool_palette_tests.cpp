@@ -5691,6 +5691,11 @@ void watermarkToolExposesSharedStyleControls() {
     require(templateSelect->editable(), "Watermark templates should be editable");
     require(templateSelect->searchEnabled(),
             "Watermark templates should use the editable AdSelect input mode");
+    require(templateSelect->searchPolicy() == adqt::widgets::AdSelect::SearchPolicy::External &&
+                !templateSelect->autoClearSearchValue(),
+            "Watermark template input should preserve text without locally filtering options");
+    require(templateSelect->popupLayerMode() == adqt::widgets::AdSelect::PopupLayerMode::QtTool,
+            "Watermark template shortcuts should open in a native Qt tool window");
     require(templateSelect->placeholder() == QStringLiteral("Template") &&
                 templateSelect->toolTip() == QStringLiteral("Template") &&
                 templateSelect->accessibleName() == QStringLiteral("Template"),
@@ -6100,6 +6105,10 @@ void watermarkTemplateLibraryAndEditorApplySnapshotsDeterministically() {
                          QTimeZone::LocalTime);
     };
     ScreenshotToolPalette palette(options);
+    QWidget selectionDisplayOverlay;
+    selectionDisplayOverlay.setGeometry(40, 40, 600, 500);
+    selectionDisplayOverlay.show();
+    palette.setWatermarkTemplateModalOwnerWindow(&selectionDisplayOverlay);
     palette.setActiveTool(ScreenshotToolPalette::Tool::Watermark);
     palette.show();
     QCoreApplication::processEvents();
@@ -6127,24 +6136,56 @@ void watermarkTemplateLibraryAndEditorApplySnapshotsDeterministically() {
     select->lineEdit()->setText(QStringLiteral("  {text} typed  "));
     emit select->lineEdit()->textEdited(QStringLiteral("  {text} typed  "));
     require(commits == 1 && clockCalls == 1 &&
+                select->currentValue().toString() == QStringLiteral("{text} typed") &&
+                select->lineEdit()->text() == QStringLiteral("  {text} typed  ") &&
                 applied.templateValue == QStringLiteral("  {text} typed  ") &&
                 applied.templateApplicationTime == expectedTime(10),
-            "manual template edits should preserve whitespace and capture the injected clock");
+            "manual template edits should commit the normalized selector value while preserving "
+            "the exact template and capturing the injected clock");
 
     SnowCanvasWatermarkConfig external = applied;
     external.templateValue = QStringLiteral("external {DD}");
     external.templateApplicationTime =
         SnowCanvasWatermarkTemplateApplicationTime{2024, 2, 29, 1, 2, 3};
     palette.setWatermarkConfig(external);
-    require(commits == 1 && clockCalls == 1 && select->lineEdit()->text() == external.templateValue,
-            "engine synchronization should update the template editor without recapturing time");
+    require(commits == 1 && clockCalls == 1 &&
+                select->currentValue().toString() == external.templateValue &&
+                select->lineEdit()->text() == external.templateValue &&
+                select->searchText() == external.templateValue,
+            "engine synchronization should update the manual template value without recapturing "
+            "time");
+
+    select->hidePopup();
+    select->showPopup();
+    QCoreApplication::processEvents();
+    QStringList visibleTemplateKeys;
+    for (int row = 0; row < select->view()->model()->rowCount(); ++row) {
+        const QString key = select->view()->model()->index(row, 0).data(Qt::UserRole).toString();
+        if (!key.isEmpty()) {
+            visibleTemplateKeys.push_back(key);
+        }
+    }
+    require(select->currentValue().toString() == external.templateValue &&
+                select->lineEdit()->text() == external.templateValue &&
+                select->searchText() == external.templateValue &&
+                visibleTemplateKeys == QStringList{QStringLiteral("watermark-template:0"),
+                                                   QStringLiteral("watermark-template:1")} &&
+                select->view()->window()->isWindow() &&
+                select->view()->window()->windowType() == Qt::Tool,
+            "opening template shortcuts should preserve manual input and show every option in a "
+            "native Qt tool window");
+    select->hidePopup();
+    require(select->currentValue().toString() == external.templateValue &&
+                select->lineEdit()->text() == external.templateValue,
+            "closing template shortcuts should restore the committed manual input");
 
     emit select->selected(QVariant(QStringLiteral("watermark-template:1")),
                           QStringLiteral("Duplicate"));
     require(commits == 2 && clockCalls == 2 &&
+                select->currentValue().toString() == QStringLiteral("{text}-{YYYY}") &&
                 applied.templateValue == QStringLiteral("{text}-{YYYY}") &&
                 applied.templateApplicationTime == expectedTime(11),
-            "selecting a duplicate row should apply its value once with a fresh time");
+            "selecting a shortcut should replace the manual value once with a fresh time");
 
     select->lineEdit()->clear();
     emit select->lineEdit()->textEdited(QString());
@@ -6152,10 +6193,15 @@ void watermarkTemplateLibraryAndEditorApplySnapshotsDeterministically() {
                 applied.templateApplicationTime == expectedTime(12),
             "clearing the editable template should capture a new application time");
 
+    const auto findAddButton = [select]() {
+        QWidget* popup = select->view() != nullptr ? select->view()->window() : nullptr;
+        return popup != nullptr ? popup->findChild<adqt::widgets::AdButton*>(
+                                      QStringLiteral("screenshotWatermarkTemplateAddButton"))
+                                : nullptr;
+    };
     select->showPopup();
     QCoreApplication::processEvents();
-    auto* addButton = palette.findChild<adqt::widgets::AdButton*>(
-        QStringLiteral("screenshotWatermarkTemplateAddButton"));
+    auto* addButton = findAddButton();
     require(addButton != nullptr && addButton->isVisible() &&
                 addButton->text() == QStringLiteral("Add") &&
                 addButton->accentRole() == adqt::widgets::AdButton::AccentRole::Primary &&
@@ -6166,8 +6212,7 @@ void watermarkTemplateLibraryAndEditorApplySnapshotsDeterministically() {
     require(languageManager.setLanguage(QStringLiteral("zh_CN")),
             "Simplified Chinese watermark-template language setup should succeed");
     QCoreApplication::processEvents();
-    addButton = palette.findChild<adqt::widgets::AdButton*>(
-        QStringLiteral("screenshotWatermarkTemplateAddButton"));
+    addButton = findAddButton();
     auto* emptyLabel = qobject_cast<QLabel*>(select->notFoundContentWidget());
     require(select->placeholder() == QStringLiteral("模板") &&
                 select->toolTip() == QStringLiteral("模板") &&
@@ -6184,8 +6229,7 @@ void watermarkTemplateLibraryAndEditorApplySnapshotsDeterministically() {
     require(languageManager.setLanguage(QStringLiteral("en_US")),
             "English watermark-template language restoration should succeed");
     QCoreApplication::processEvents();
-    addButton = palette.findChild<adqt::widgets::AdButton*>(
-        QStringLiteral("screenshotWatermarkTemplateAddButton"));
+    addButton = findAddButton();
     require(addButton != nullptr, "the translated Add footer should remain available");
     addButton->click();
     QCoreApplication::processEvents();
@@ -6216,11 +6260,17 @@ void watermarkTemplateLibraryAndEditorApplySnapshotsDeterministically() {
     require(nameItem != nullptr && valueItem != nullptr,
             "Add template should expose its named form items");
     require(createModal->mode() == adqt::widgets::AdModal::Mode::Window &&
-                createModal->windowModality() == Qt::ApplicationModal &&
+                createModal->windowModality() == Qt::ApplicationModal && createModal->centered() &&
+                createModal->ownerWindow() == &selectionDisplayOverlay &&
                 createModal->windowTitle() == QStringLiteral("Add template") &&
                 createModal->acceptButton()->text() == QStringLiteral("Add") &&
                 createModal->rejectButton()->text() == QStringLiteral("Cancel"),
-            "Add template should use the specified application-modal window presentation");
+            "Add template should center its application-modal window on the selection display "
+            "overlay");
+    require((createModal->contentWidget()->window()->frameGeometry().center() -
+             selectionDisplayOverlay.frameGeometry().center())
+                    .manhattanLength() <= 4,
+            "Add template should be geometrically centered on the selection display overlay");
     require(nameInput->text() == QStringLiteral("Template 3") && nameInput->maxLength() == 80 &&
                 valueInput->text() == QStringLiteral("{text}") && nameItem->required() &&
                 valueItem->required(),
@@ -6337,8 +6387,7 @@ void watermarkTemplateLibraryAndEditorApplySnapshotsDeterministically() {
     select->showPopup();
     QCoreApplication::processEvents();
     emptyLabel = qobject_cast<QLabel*>(select->notFoundContentWidget());
-    addButton = palette.findChild<adqt::widgets::AdButton*>(
-        QStringLiteral("screenshotWatermarkTemplateAddButton"));
+    addButton = findAddButton();
     require(select->options().isEmpty() && emptyLabel != nullptr &&
                 emptyLabel->text() == QStringLiteral("No templates yet") &&
                 emptyLabel->isVisible() && addButton != nullptr && addButton->isVisible(),
