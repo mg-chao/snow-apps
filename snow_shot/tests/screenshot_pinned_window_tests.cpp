@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include "../src/presentation/pinned/screenshotpinnedwindownative.h"
+#include "../src/presentation/pinned/screenshotpinnedclickthroughgeometry.h"
 #include "../src/presentation/pinned/screenshotpinnedhidetotopcontroller.h"
 #include "../src/presentation/pinned/screenshotpinnedpointerpresence.h"
 #include "../src/presentation/pinned/screenshotpinnednativegeometrycontroller.h"
@@ -23,6 +24,7 @@
 #include "snow_shot/presentation/screenshotfilepinbatch.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
+#include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/storage/pinnedwindowtypes.h"
@@ -176,6 +178,18 @@ class ScreenshotPinnedWindowTestAccess {
     static void thumbnailForHideTest(ScreenshotPinnedWindow& window, bool enabled) {
         window.setThumbnailMode(enabled, false);
     }
+    static bool setClickThrough(ScreenshotPinnedWindow& window, bool enabled) {
+        return window.setClickThroughMode(enabled);
+    }
+    static bool clickThroughActive(const ScreenshotPinnedWindow& window) {
+        return window.m_clickThroughActive;
+    }
+    static adqt::widgets::AdButton* clickThroughExitButton(ScreenshotPinnedWindow& window) {
+        return window.m_clickThroughExitButton.get();
+    }
+    static void setRecognitionInteraction(ScreenshotPinnedWindow& window, bool enabled) {
+        window.m_ocrMode = enabled;
+    }
     static void doubleForHideTest(ScreenshotPinnedWindow& window) {
         static_cast<void>(window.handleDoubleClick(window.rect().center()));
     }
@@ -271,6 +285,9 @@ class ScreenshotPinnedWindowTestAccess {
         window.m_initialPhysicalSize = config.fullResolutionScaleBasis;
         window.m_originalImage = config.imageSource.materializedImage;
         window.m_transformedImage = window.m_originalImage;
+        window.m_persistenceId = config.persistenceId;
+        window.m_persistenceWriter = config.persistenceWriter;
+        window.m_persistenceRemover = config.persistenceRemover;
         window.m_screenshotRenderer->setImageSource(config.imageSource);
         window.m_screenshotRenderer->setPinnedResultSurface(
             config.canvasSourceRect, config.canvasSourceRect, config.resultStyle);
@@ -5733,6 +5750,366 @@ void pinnedHideToTopIntegration(bool native) {
     }
 }
 
+void pinnedClickThroughGeometry() {
+    using screenshot_pinned_click_through::exitButtonGeometry;
+
+    require(exitButtonGeometry(QRect(100, 100, 200, 120), QRect(0, 0, 1920, 1080), 1.0) ==
+                QRect(252, 52, 32, 32),
+            "DPR 1 placement must mirror the Close button above the pin");
+    require(exitButtonGeometry(QRect(100, 100, 300, 180), QRect(0, 0, 2560, 1440), 1.5) ==
+                QRect(328, 28, 48, 48),
+            "fractional-DPR placement must round size and inset independently");
+    require(exitButtonGeometry(QRect(-1920, 0, 200, 120), QRect(-1920, 0, 1920, 1080), 1.0) ==
+                QRect(-1768, 0, 32, 32),
+            "top-edge clamping must work on a display with a negative origin");
+    require(exitButtonGeometry(QRect(-100, 100, 2500, 120), QRect(-1920, 0, 1920, 1080), 1.0) ==
+                QRect(-32, 52, 32, 32),
+            "right-edge clamping must keep the complete button on its display");
+    require(exitButtonGeometry(QRect(-2100, 100, 200, 120), QRect(-1920, 0, 1920, 1080), 2.0) ==
+                QRect(-1920, 4, 64, 64),
+            "left-edge clamping must preserve the full high-DPI button");
+
+    const QRect bounds(-1600, -900, 1600, 900);
+    for (const QRect& pin :
+         {QRect(-2000, -1200, 100, 100), QRect(-1600, -900, 400, 300), QRect(-40, -20, 800, 600)}) {
+        const QRect result = exitButtonGeometry(pin, bounds, 1.25);
+        require(result.isValid() && bounds.contains(result),
+                "every placement must remain wholly inside the full display bounds");
+    }
+}
+
+ScreenshotPinnedWindow::Config clickThroughTestConfig(QScreen& screen) {
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = physicalPinGeometry(screen, QPoint(100, 120), QSize(400, 400));
+    config.canvasSourceRect = QRectF(0, 0, 400, 400);
+    config.fullResolutionScaleBasis = QSize(400, 400);
+    QImage image(400, 400, QImage::Format_ARGB32_Premultiplied);
+    image.fill(QColor(42, 84, 126));
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    config.screen = &screen;
+    config.enableEditing = true;
+    config.automaticTextRecognition = false;
+    return config;
+}
+
+void pinnedClickThroughOffscreen() {
+    pinnedClickThroughGeometry();
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "click-through needs a primary screen");
+    int persistenceWrites = 0;
+    snow_shot::storage::PinnedWindowRecord lastPersisted;
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    ScreenshotPinnedWindow::Config config = clickThroughTestConfig(*screen);
+    config.persistenceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    config.persistenceWriter = [&](const snow_shot::storage::PinnedWindowRecord& record) {
+        ++persistenceWrites;
+        lastPersisted = record;
+    };
+    ScreenshotPinnedWindowTestAccess::restoreOffscreen(window, config);
+    window.show();
+    waitForUi(20);
+
+    auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedContextMenu"));
+    auto* hideToTop = window.findChild<QAction*>(QStringLiteral("screenshotPinnedHideToTopAction"));
+    auto* clickThrough =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedClickThroughAction"));
+    auto* thumbnail = window.findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
+    auto* drawing = window.findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction"));
+    auto* controls = window.findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
+    require(menu != nullptr && hideToTop != nullptr && clickThrough != nullptr &&
+                thumbnail != nullptr && drawing != nullptr && controls != nullptr &&
+                menu->actions().indexOf(clickThrough) == menu->actions().indexOf(hideToTop) + 1,
+            "Click-through must immediately follow Hide to Top in the pinned menu");
+    require(clickThrough->property("screenshotPinnedShortcutDisplay")
+                .toString()
+                .contains(QStringLiteral("M")),
+            "Click-through must show its default M shortcut");
+
+    setPinnedWindowHovered(window, true);
+    require(controls->isVisible(), "normal pinned controls should be visible before entry");
+    clickThrough->trigger();
+    waitForUi(20);
+    auto* exitButton = ScreenshotPinnedWindowTestAccess::clickThroughExitButton(window);
+    require(ScreenshotPinnedWindowTestAccess::clickThroughActive(window) &&
+                clickThrough->isChecked() && controls->isHidden() && exitButton != nullptr &&
+                exitButton->isVisible() && exitButton->parentWidget() == nullptr &&
+                exitButton->isWindow(),
+            "entry must hide normal controls and expose a separate top-level exit button");
+    require(exitButton->windowFlags().testFlag(Qt::Tool) &&
+                exitButton->windowFlags().testFlag(Qt::FramelessWindowHint) &&
+                exitButton->windowFlags().testFlag(Qt::WindowStaysOnTopHint) &&
+                exitButton->windowFlags().testFlag(Qt::WindowDoesNotAcceptFocus) &&
+                exitButton->testAttribute(Qt::WA_TranslucentBackground) &&
+                exitButton->testAttribute(Qt::WA_ShowWithoutActivating) &&
+                exitButton->focusPolicy() == Qt::NoFocus,
+            "the exit button must use the non-activating top-level tool-window contract");
+    require(exitButton->shape() == adqt::widgets::AdButton::Shape::Circle &&
+                exitButton->sizeClass() == adqt::widgets::AdButton::SizeClass::Medium &&
+                exitButton->size() == QSize(32, 32) &&
+                exitButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text &&
+                exitButton->accentRole() == adqt::widgets::AdButton::AccentRole::Neutral &&
+                adqt::icons::describeIcon(exitButton->iconRef()).key.name ==
+                    QStringLiteral("mouse") &&
+                exitButton->iconRef().colors().primarySlot() == QColor(Qt::white) &&
+                exitButton->toolTip() == QStringLiteral("Exit click-through mode") &&
+                exitButton->accessibleName() == QStringLiteral("Exit click-through mode"),
+            "the exit button must match the primary pinned control style and mouse artwork");
+    require(window.testAttribute(Qt::WA_TransparentForMouseEvents),
+            "entry must make the pinned Qt surface transparent to mouse input");
+    require(window.persistenceSnapshot().clickThroughMode,
+            "entry must be represented in the pinned persistence snapshot");
+    waitForUi(300);
+    require(persistenceWrites > 0 && lastPersisted.clickThroughMode,
+            "entry must schedule durable click-through state");
+
+    const QRect physicalBounds = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+    const QRect expectedPhysicalGeometry = screenshot_pinned_click_through::exitButtonGeometry(
+        window.currentNativeGeometry(), physicalBounds, screen->devicePixelRatio());
+    const QRect expectedLogicalGeometry =
+        ScreenshotGeometryMapper::logicalRectForPhysicalRect(expectedPhysicalGeometry, screen);
+    exitButton->move(QPoint(-10000, -10000));
+    QEvent screenChanged(QEvent::ScreenChangeInternal);
+    QCoreApplication::sendEvent(&window, &screenChanged);
+    waitForUi(20);
+    require(exitButton->geometry().topLeft() == expectedLogicalGeometry.topLeft(),
+            "screen reassignment must reposition the exit button after Qt updates the screen");
+
+    exitButton->setToolTip(QStringLiteral("stale"));
+    exitButton->setAccessibleName(QStringLiteral("stale"));
+    clickThrough->setText(QStringLiteral("stale"));
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(&window, &languageChange);
+    require(exitButton->toolTip() == QStringLiteral("Exit click-through mode") &&
+                exitButton->accessibleName() == QStringLiteral("Exit click-through mode") &&
+                clickThrough->text().startsWith(QStringLiteral("Click-through")) &&
+                clickThrough->text().contains(QStringLiteral("M")),
+            "language changes must retranslate Click-through and its exit metadata");
+
+    exitButton->click();
+    waitForUi(20);
+    require(!ScreenshotPinnedWindowTestAccess::clickThroughActive(window) &&
+                !clickThrough->isChecked() && exitButton->isHidden() &&
+                !window.testAttribute(Qt::WA_TransparentForMouseEvents) && controls->isVisible(),
+            "the exit button must restore ordinary pinned interaction and hover controls");
+    require(!window.persistenceSnapshot().clickThroughMode,
+            "exit must be represented in the pinned persistence snapshot");
+    const int entryPersistenceWrites = persistenceWrites;
+    waitForUi(300);
+    require(persistenceWrites > entryPersistenceWrites && !lastPersisted.clickThroughMode,
+            "exit must schedule durable interactive state");
+
+    sendShortcut(window, Qt::Key_M);
+    require(ScreenshotPinnedWindowTestAccess::clickThroughActive(window),
+            "the default M shortcut must enter click-through");
+    sendShortcut(window, Qt::Key_M);
+    require(!ScreenshotPinnedWindowTestAccess::clickThroughActive(window),
+            "the default M shortcut must toggle click-through off while focus remains local");
+    const snow_shot::storage::PinToScreenShortcutSettings shortcuts;
+    require(shortcuts.setShortcuts(QStringLiteral("click_through"), {QStringLiteral("Ctrl+Alt+M")}),
+            "the click-through shortcut must be remappable");
+    sendShortcut(window, Qt::Key_M);
+    require(!ScreenshotPinnedWindowTestAccess::clickThroughActive(window),
+            "the previous binding must stop toggling after remapping");
+    sendShortcut(window, Qt::Key_M, Qt::ControlModifier | Qt::AltModifier);
+    require(ScreenshotPinnedWindowTestAccess::clickThroughActive(window),
+            "the remapped shortcut must take effect immediately");
+    sendShortcut(window, Qt::Key_M, Qt::ControlModifier | Qt::AltModifier);
+    require(!ScreenshotPinnedWindowTestAccess::clickThroughActive(window),
+            "the remapped shortcut must also toggle off");
+    require(shortcuts.setShortcuts(QStringLiteral("click_through"), {QStringLiteral("M")}),
+            "restore the default click-through shortcut");
+
+    require(ScreenshotPinnedWindowTestAccess::setClickThrough(window, true),
+            "thumbnail exclusion fixture must enter click-through");
+    thumbnail->trigger();
+    require(!ScreenshotPinnedWindowTestAccess::clickThroughActive(window) && thumbnail->isChecked(),
+            "entering thumbnail mode must exit click-through");
+    require(ScreenshotPinnedWindowTestAccess::setClickThrough(window, true) &&
+                !thumbnail->isChecked(),
+            "entering click-through must immediately restore expanded thumbnail geometry");
+    static_cast<void>(ScreenshotPinnedWindowTestAccess::setClickThrough(window, false));
+
+    hideToTop->trigger();
+    require(ScreenshotPinnedWindowTestAccess::hideToTop(window).active(),
+            "hide-to-top exclusion fixture must enter its mode");
+    require(ScreenshotPinnedWindowTestAccess::setClickThrough(window, true) &&
+                !ScreenshotPinnedWindowTestAccess::hideToTop(window).active(),
+            "entering click-through must exit Hide to Top");
+    hideToTop->trigger();
+    require(!ScreenshotPinnedWindowTestAccess::clickThroughActive(window) &&
+                ScreenshotPinnedWindowTestAccess::hideToTop(window).active(),
+            "entering Hide to Top must exit click-through");
+    ScreenshotPinnedWindowTestAccess::hideToTop(window).exit(true);
+
+    drawing->trigger();
+    require(drawing->isChecked(), "drawing exclusion fixture must enter editing");
+    require(ScreenshotPinnedWindowTestAccess::setClickThrough(window, true) &&
+                !drawing->isChecked(),
+            "entering click-through must leave drawing mode");
+    drawing->trigger();
+    require(!ScreenshotPinnedWindowTestAccess::clickThroughActive(window) && drawing->isChecked(),
+            "entering drawing mode must exit click-through");
+    drawing->trigger();
+
+    ScreenshotPinnedWindowTestAccess::setRecognitionInteraction(window, true);
+    require(ScreenshotPinnedWindowTestAccess::setClickThrough(window, true),
+            "OCR exclusion fixture must enter click-through");
+    require(!window.persistenceSnapshot().recognitionVisible,
+            "entering click-through must deactivate OCR interaction");
+    ScreenshotPinnedWindowTestAccess::recognitionForHideTest(window);
+    require(!ScreenshotPinnedWindowTestAccess::clickThroughActive(window),
+            "starting OCR interaction must exit click-through first");
+
+    require(ScreenshotPinnedWindowTestAccess::setClickThrough(window, true),
+            "visibility fixture must enter click-through");
+    exitButton = ScreenshotPinnedWindowTestAccess::clickThroughExitButton(window);
+    window.hide();
+    waitForUi(20);
+    require(exitButton->isHidden(), "hiding a live pin must hide its separate exit surface");
+    window.show();
+    waitForUi(20);
+    require(ScreenshotPinnedWindowTestAccess::clickThroughActive(window) && exitButton->isVisible(),
+            "showing the same live pin must restore and reposition its exit surface");
+
+    QPointer<adqt::widgets::AdButton> guardedExit(exitButton);
+    window.close();
+    require(guardedExit.isNull(), "closing the pin must destroy the separate exit surface");
+}
+
+#if defined(Q_OS_WIN) || defined(_WIN32)
+void pinnedClickThroughRecreationNative() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "click-through recreation needs a primary screen");
+    IsolatedPinnedStorage storage;
+    auto record = savedPinnedRecord(*screen, 1.0, QSize(400, 240), 100.0, QPoint(120, 160));
+    record.clickThroughMode = true;
+
+    ScreenshotSelectionExportUiServices services;
+    ScreenshotPinnedWindow* restored = restoreSeededPinnedWindow(services, record);
+    auto* action =
+        restored->findChild<QAction*>(QStringLiteral("screenshotPinnedClickThroughAction"));
+    auto* controls = restored->findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
+    auto* exitButton = ScreenshotPinnedWindowTestAccess::clickThroughExitButton(*restored);
+    require(ScreenshotPinnedWindowTestAccess::clickThroughActive(*restored) && action != nullptr &&
+                action->isChecked() && controls != nullptr && controls->isHidden() &&
+                exitButton != nullptr && exitButton->isVisible() &&
+                restored->testAttribute(Qt::WA_TransparentForMouseEvents) &&
+                !restored->isActiveWindow() && restored->persistenceSnapshot().clickThroughMode,
+            "recreation must restore the complete non-activating click-through contract");
+
+    closeRestoredPinnedWindow(restored, record.id);
+}
+
+void pinnedClickThroughNative() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "native click-through needs a primary screen");
+    const ScreenshotPinnedWindow::Config config = clickThroughTestConfig(*screen);
+    class MouseProbe final : public QWidget {
+      public:
+        int presses = 0;
+
+      protected:
+        void mousePressEvent(QMouseEvent* event) override {
+            ++presses;
+            QWidget::mousePressEvent(event);
+        }
+    } lowerWindow;
+    lowerWindow.setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    lowerWindow.setScreen(screen);
+    lowerWindow.setGeometry(
+        ScreenshotGeometryMapper::logicalRectForPhysicalRect(config.nativeGeometry, screen));
+    lowerWindow.show();
+    require(screenshot_pinned_window_native::applyClientGeometry(lowerWindow.winId(),
+                                                                 config.nativeGeometry),
+            "lower native click fixture must occupy the pinned rectangle");
+
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    require(window.present(config), "native click-through pin must present");
+    waitForUi(40);
+    const HWND pinnedHwnd = toNativeHwnd(window.winId());
+    const LONG_PTR originalExtendedStyles = GetWindowLongPtrW(pinnedHwnd, GWL_EXSTYLE);
+    const QRect pinnedGeometry = window.currentNativeGeometry();
+    require(ScreenshotPinnedWindowTestAccess::setClickThrough(window, true),
+            "native click-through entry must succeed");
+    waitForUi(20);
+    const LONG_PTR transparentStyles = WS_EX_TRANSPARENT | WS_EX_NOACTIVATE;
+    const LONG_PTR clickThroughExtendedStyles = GetWindowLongPtrW(pinnedHwnd, GWL_EXSTYLE);
+    require(toNativeHwnd(window.winId()) == pinnedHwnd &&
+                (clickThroughExtendedStyles & transparentStyles) == transparentStyles &&
+                (clickThroughExtendedStyles & ~transparentStyles) ==
+                    (originalExtendedStyles & ~transparentStyles),
+            "entry must preserve the pinned HWND, unrelated styles, and pass-through styles");
+    const QPoint pinPoint = pinnedGeometry.center();
+    require(SendMessageW(pinnedHwnd, WM_NCHITTEST, 0,
+                         MAKELPARAM(static_cast<short>(pinPoint.x()),
+                                    static_cast<short>(pinPoint.y()))) == HTTRANSPARENT,
+            "the complete pinned native frame must return HTTRANSPARENT");
+    CursorPositionRestorer cursorRestorer;
+    INPUT clicks[2]{};
+    clicks[0].type = INPUT_MOUSE;
+    clicks[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+    clicks[1].type = INPUT_MOUSE;
+    clicks[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+    for (int attempt = 0; lowerWindow.presses == 0 && attempt < 3; ++attempt) {
+        setSystemCursorPosition(pinPoint);
+        require(SendInput(2, clicks, sizeof(INPUT)) == 2,
+                "native click-through fixture must inject a complete click");
+        QElapsedTimer lowerClickDelivery;
+        lowerClickDelivery.start();
+        while (lowerWindow.presses == 0 && lowerClickDelivery.elapsed() < 750) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+            QThread::msleep(1);
+        }
+    }
+    const HWND lowerHwnd = toNativeHwnd(lowerWindow.winId());
+    require(lowerWindow.presses == 1,
+            "native mouse input away from the exit button must reach the lower window");
+    require(GetForegroundWindow() == lowerHwnd,
+            "click-through input must activate the lower window");
+
+    auto* exitButton = ScreenshotPinnedWindowTestAccess::clickThroughExitButton(window);
+    require(exitButton != nullptr && exitButton->isVisible(),
+            "native click-through must expose its separate exit HWND");
+    const HWND exitHwnd = toNativeHwnd(exitButton->winId());
+    const QRect exitGeometry =
+        screenshot_pinned_window_native::currentClientGeometry(exitButton->winId());
+    POINT exitPoint{exitGeometry.center().x(), exitGeometry.center().y()};
+    const HWND hitHwnd = WindowFromPoint(exitPoint);
+    require(exitHwnd != pinnedHwnd && hitHwnd != nullptr &&
+                GetAncestor(hitHwnd, GA_ROOT) == exitHwnd &&
+                SendMessageW(exitHwnd, WM_NCHITTEST, 0,
+                             MAKELPARAM(static_cast<short>(exitPoint.x),
+                                        static_cast<short>(exitPoint.y))) != HTTRANSPARENT,
+            "the separate exit HWND must remain topmost and hit-testable");
+    for (int attempt = 0;
+         ScreenshotPinnedWindowTestAccess::clickThroughActive(window) && attempt < 3; ++attempt) {
+        setSystemCursorPosition(QPoint(exitPoint.x, exitPoint.y));
+        require(SendInput(2, clicks, sizeof(INPUT)) == 2,
+                "the native exit button must accept an injected click");
+        QElapsedTimer exitClickDelivery;
+        exitClickDelivery.start();
+        while (ScreenshotPinnedWindowTestAccess::clickThroughActive(window) &&
+               exitClickDelivery.elapsed() < 750) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+            QThread::msleep(1);
+        }
+    }
+    require(!ScreenshotPinnedWindowTestAccess::clickThroughActive(window) &&
+                toNativeHwnd(window.winId()) == pinnedHwnd && GetForegroundWindow() == lowerHwnd &&
+                GetWindowLongPtrW(pinnedHwnd, GWL_EXSTYLE) == originalExtendedStyles,
+            "exit must preserve the pinned HWND, restore native styles, and avoid activation");
+    require(SendMessageW(pinnedHwnd, WM_NCHITTEST, 0,
+                         MAKELPARAM(static_cast<short>(pinPoint.x()),
+                                    static_cast<short>(pinPoint.y()))) != HTTRANSPARENT,
+            "after exit the same native point must target the pin normally");
+    window.close();
+    lowerWindow.close();
+}
+#endif
+
 void restoredThumbnailStateOffscreen(const QString& scenario) {
     ScreenshotPinnedWindow::Config config;
     config.nativeGeometry = QRect(40, 30, 120, 120);
@@ -7476,6 +7853,17 @@ int main(int argc, char* argv[]) {
             pinnedHideToTopIntegration(true);
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--click-through-only"))) {
+            pinnedClickThroughOffscreen();
+            return 0;
+        }
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        if (app.arguments().contains(QStringLiteral("--click-through-native-only"))) {
+            pinnedClickThroughRecreationNative();
+            pinnedClickThroughNative();
+            return 0;
+        }
+#endif
         if (app.arguments().contains(QStringLiteral("--scale-readout-only"))) {
             pinnedReadoutOffscreen();
             return 0;

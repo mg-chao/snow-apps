@@ -921,6 +921,10 @@
             <translation>清除縮圖快取</translation>
         </message>
         <message>
+            <source>Click-through</source>
+            <translation>滑鼠穿透</translation>
+        </message>
+        <message>
             <source>Clipboard</source>
             <translation>剪貼簿</translation>
         </message>

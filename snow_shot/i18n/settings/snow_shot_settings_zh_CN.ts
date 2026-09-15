@@ -921,6 +921,10 @@
             <translation>清除缩略图缓存</translation>
         </message>
         <message>
+            <source>Click-through</source>
+            <translation>鼠标穿透</translation>
+        </message>
+        <message>
             <source>Clipboard</source>
             <translation>剪贴板</translation>
         </message>

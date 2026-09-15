@@ -383,6 +383,7 @@ QJsonObject recordToJson(const PinnedWindowRecord& record, const QJsonObject& pa
          rectToJson(record.hideToTopHandleNativeGeometry)},
         {QStringLiteral("hide_to_top_accent_index"), record.hideToTopAccentIndex},
         {QStringLiteral("thumbnail_mode"), record.thumbnailMode},
+        {QStringLiteral("click_through_mode"), record.clickThroughMode},
         {QStringLiteral("recognition_visible"), record.recognitionVisible},
         {QStringLiteral("translation_visible"), record.translationVisible},
         {QStringLiteral("pre_thumbnail_geometry"), rectToJson(record.preThumbnailNativeGeometry)},
@@ -681,6 +682,7 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
         return false;
     }
     record.thumbnailMode = object.value(QStringLiteral("thumbnail_mode")).toBool();
+    record.clickThroughMode = object.value(QStringLiteral("click_through_mode")).toBool(false);
     const auto accentValue = object.value(QStringLiteral("hide_to_top_accent_index"));
     const int accent = accentValue.toInt(-1);
     record.hideToTopAccentIndex =
@@ -692,6 +694,9 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
         record.thumbnailMode) {
         record.hideToTopMode = false;
         record.hideToTopHandleNativeGeometry = {};
+    }
+    if (record.thumbnailMode || record.hideToTopMode) {
+        record.clickThroughMode = false;
     }
     record.recognitionVisible = object.value(QStringLiteral("recognition_visible")).toBool(false);
     record.translationVisible = object.value(QStringLiteral("translation_visible")).toBool(false);

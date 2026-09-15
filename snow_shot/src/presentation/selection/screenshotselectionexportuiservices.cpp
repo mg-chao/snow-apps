@@ -949,6 +949,7 @@ void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
         config.persistedHideToTopHandleNativeGeometry = restored.hideToTopHandleNativeGeometry;
         config.persistedHideToTopAccentIndex = record.hideToTopAccentIndex;
         config.persistedThumbnailMode = record.thumbnailMode;
+        config.persistedClickThroughMode = record.clickThroughMode;
         config.persistedPreThumbnailNativeGeometry = restored.preThumbnailNativeGeometry;
         config.persistedFirstCreationTextDpi = record.firstCreationTextDpi;
         config.persistedCanvasSession = record.canvasSession;

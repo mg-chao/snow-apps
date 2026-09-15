@@ -171,8 +171,9 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 38 && itemCount == 157 && foundUpdates,
-            "catalog must contain thirty-eight sections and one hundred fifty-seven items");
+    require(sectionCount == 38, "catalog must contain thirty-eight sections");
+    require(itemCount == 158, "catalog must contain one hundred fifty-eight items");
+    require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
                       QStringLiteral("interface.pin-to-screen.pinned-toolbar-editor")});
@@ -768,7 +769,7 @@ void builtInCatalogIsCompleteAndValid() {
                     .scope == settings::SettingsLocalShortcutScope::Screenshot &&
             drawingShortcuts != nullptr && drawingShortcuts->items.size() == 10 &&
             drawingShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
-            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 12 &&
+            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 13 &&
             pinToScreenShortcuts->itemLayout ==
                 settings::SettingsSectionItemLayout::TwoColumnGrid &&
             pinToScreenShortcuts->title.translated() == QStringLiteral("Pin to screen") &&
@@ -779,6 +780,18 @@ void builtInCatalogIsCompleteAndValid() {
                 QStringLiteral("pin_to_screen_shortcuts/save_as_file") &&
             pinToScreenShortcuts->items.at(3).configurationKey ==
                 QStringLiteral("pin_to_screen_shortcuts/show_text_recognition_results") &&
+            pinToScreenShortcuts->items.at(7).id ==
+                QStringLiteral("pin-to-screen-shortcut.click_through") &&
+            pinToScreenShortcuts->items.at(7).title.translated() ==
+                QStringLiteral("Click-through") &&
+            pinToScreenShortcuts->items.at(7).configurationKey ==
+                QStringLiteral("pin_to_screen_shortcuts/click_through") &&
+            std::get<settings::SettingsLocalShortcutDefinition>(
+                pinToScreenShortcuts->items.at(7).payload)
+                .iconFactory &&
+            std::get<settings::SettingsLocalShortcutDefinition>(
+                pinToScreenShortcuts->items.at(7).payload)
+                    .iconFactory() == snow_shot::presentation::icons::custom::outlined::Mouse() &&
             std::get<settings::SettingsLocalShortcutDefinition>(
                 pinToScreenShortcuts->items.constFirst().payload)
                     .scope == settings::SettingsLocalShortcutScope::PinToScreen &&
@@ -1394,7 +1407,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 207 && index.search(QString()).size() == 207,
+    require(index.entries().size() == 208 && index.search(QString()).size() == 208,
             "search must generate all catalog nodes in catalog order");
     const auto pdfPaper = index.search(QStringLiteral("Landscape A4"));
     require(!pdfPaper.isEmpty() && pdfPaper.constFirst().location.itemId ==
@@ -1454,7 +1467,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 38 && items == 157,
+    require(pages == 12 && sections == 38 && items == 158,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

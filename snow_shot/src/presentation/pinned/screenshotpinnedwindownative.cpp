@@ -295,6 +295,50 @@ bool screenshot_pinned_window_native::applySystemResizeStyle(WId windowId) {
 #endif
 }
 
+bool screenshot_pinned_window_native::setInputTransparent(WId windowId, bool transparent) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (QGuiApplication::platformName() != QStringLiteral("windows")) {
+        return true;
+    }
+    const HWND hwnd = toNativeHwnd(windowId);
+    if (hwnd == nullptr) {
+        return false;
+    }
+
+    SetLastError(ERROR_SUCCESS);
+    const LONG_PTR currentStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+    if (currentStyle == 0 && GetLastError() != ERROR_SUCCESS) {
+        return false;
+    }
+    constexpr LONG_PTR passThroughStyles = WS_EX_TRANSPARENT | WS_EX_NOACTIVATE;
+    const LONG_PTR requestedStyle =
+        transparent ? currentStyle | passThroughStyles : currentStyle & ~passThroughStyles;
+    if (requestedStyle != currentStyle) {
+        SetLastError(ERROR_SUCCESS);
+        const LONG_PTR previousStyle = SetWindowLongPtr(hwnd, GWL_EXSTYLE, requestedStyle);
+        if (previousStyle == 0 && GetLastError() != ERROR_SUCCESS) {
+            return false;
+        }
+    }
+    if (SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+                     SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) ==
+        FALSE) {
+        return false;
+    }
+    SetLastError(ERROR_SUCCESS);
+    const LONG_PTR appliedStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+    if (appliedStyle == 0 && GetLastError() != ERROR_SUCCESS) {
+        return false;
+    }
+    return transparent ? (appliedStyle & passThroughStyles) == passThroughStyles
+                       : (appliedStyle & passThroughStyles) == 0;
+#else
+    Q_UNUSED(windowId);
+    Q_UNUSED(transparent);
+    return true;
+#endif
+}
+
 bool screenshot_pinned_window_native::activateWindow(WId windowId) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
     const HWND hwnd = toNativeHwnd(windowId);

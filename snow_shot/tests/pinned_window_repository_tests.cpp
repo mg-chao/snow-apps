@@ -292,6 +292,76 @@ void recognitionVisibilityRoundTripsAndDefaultsToHidden() {
     require(loaded.has_value() && !loaded->recognitionVisible && !loaded->translationVisible,
             "records without recognition visibility must default to hidden");
 }
+void clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary click-through storage is unavailable");
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    auto record = recordWithId(id, patternedImage(QSize(200, 100), 7));
+    record.clickThroughMode = true;
+    record.preThumbnailNativeGeometry = record.nativeGeometry;
+    record.hideToTopHandleNativeGeometry = QRect(record.nativeGeometry.topLeft(), QSize(30, 6));
+    record.hideToTopAccentIndex = 0;
+    const QString manifest =
+        QDir(directory.path()).filePath(QStringLiteral("pinned_windows/index.json"));
+    {
+        storage::PinnedWindowRepository repository(directory.path());
+        require(repository.upsert(record).success && repository.flush().success,
+                "click-through state must be committed to disk");
+        const auto demoted = repository.loadRecord(id);
+        require(demoted.has_value() && demoted->clickThroughMode,
+                "click-through state must survive payload demotion");
+
+        record.clickThroughMode = false;
+        require(repository.updateState(record).success && repository.flush().success,
+                "exiting click-through must update persisted metadata");
+        require(!repository.loadRecord(id)->clickThroughMode,
+                "the repository must expose the persisted click-through exit");
+
+        record.clickThroughMode = true;
+        require(repository.updateState(record).success && repository.flush().success,
+                "re-entering click-through must update persisted metadata");
+    }
+    {
+        storage::PinnedWindowRepository repository(directory.path());
+        const auto loaded = repository.loadRecord(id);
+        require(loaded.has_value() && loaded->clickThroughMode,
+                "click-through state must survive repository recreation");
+    }
+
+    const auto original = QJsonDocument::fromJson(readBytes(manifest)).object();
+    for (int scenario = 0; scenario < 3; ++scenario) {
+        auto root = original;
+        auto records = root.value(QStringLiteral("records")).toArray();
+        auto item = records.at(0).toObject();
+        if (scenario == 0) {
+            item.remove(QStringLiteral("click_through_mode"));
+        } else if (scenario == 1) {
+            item.insert(QStringLiteral("thumbnail_mode"), true);
+        } else {
+            item.insert(QStringLiteral("hide_to_top_mode"), true);
+        }
+        records.replace(0, item);
+        root.insert(QStringLiteral("records"), records);
+        QFile file(manifest);
+        require(file.open(QIODevice::WriteOnly | QIODevice::Truncate),
+                "open click-through compatibility fixture");
+        const QByteArray bytes = QJsonDocument(root).toJson();
+        require(file.write(bytes) == bytes.size(), "write click-through compatibility fixture");
+        file.close();
+
+        storage::PinnedWindowRepository repository(directory.path());
+        const auto loaded = repository.loadRecord(id);
+        require(loaded.has_value() && !loaded->clickThroughMode,
+                "legacy and conflicting records must restore as interactive windows");
+        if (scenario == 1) {
+            require(loaded->thumbnailMode,
+                    "thumbnail mode must win a conflicting click-through record");
+        } else if (scenario == 2) {
+            require(loaded->hideToTopMode,
+                    "Hide to Top must win a conflicting click-through record");
+        }
+    }
+}
 void thumbnailStateSurvivesRestartAndExit() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary thumbnail storage is unavailable");
@@ -395,6 +465,7 @@ int main(int argc, char* argv[]) {
     changedPayloadsRecommitAndStayLazy();
     removedRecordsPruneTheirPayloads();
     recognitionVisibilityRoundTripsAndDefaultsToHidden();
+    clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata();
     thumbnailStateSurvivesRestartAndExit();
     hideToTopRoundTripsAndRecoversLegacyMetadata();
     return 0;
