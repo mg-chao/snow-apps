@@ -136,6 +136,7 @@ if(SNOW_APPS_BUILD_SNOW_SHOT)
     )
     foreach(_snow_rust_ffi_target IN ITEMS
             snow_capture_c
+            snow_recording_c
             snow_recording_effects_c
             snow_ui_selector_c
             snow_selected_text_c
