@@ -88,7 +88,10 @@ pub(super) fn capture(context: &Context, deadline: Instant) -> Result<Probe, Sel
 }
 
 fn read_edit(context: &Context, deadline: Instant) -> Result<Probe, SelectionError> {
-    let window = hwnd(context.source.focused_control);
+    let Some(focus) = context.source.native_focus else {
+        return Ok(Probe::Unsupported);
+    };
+    let window = hwnd(focus);
     check_password(window)?;
     if !class_name(window).eq_ignore_ascii_case("edit") {
         return Ok(Probe::Unsupported);

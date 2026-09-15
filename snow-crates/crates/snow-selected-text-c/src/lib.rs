@@ -48,8 +48,8 @@ pub struct SnowSelectedTextOptions {
     pub copy_fallback: u32,
     pub strategy: u32,
     pub max_text_bytes: usize,
-    pub excluded_windows: *const usize,
-    pub excluded_window_count: usize,
+    pub excluded_native_windows: *const usize,
+    pub excluded_native_window_count: usize,
     pub excluded_executables: *const SnowSelectedTextBytes,
     pub excluded_executable_count: usize,
 }
@@ -63,8 +63,8 @@ impl Default for SnowSelectedTextOptions {
             copy_fallback: 1,
             strategy: CaptureStrategy::Auto as u32,
             max_text_bytes: 1024 * 1024,
-            excluded_windows: ptr::null(),
-            excluded_window_count: 0,
+            excluded_native_windows: ptr::null(),
+            excluded_native_window_count: 0,
             excluded_executables: ptr::null(),
             excluded_executable_count: 0,
         }
@@ -96,9 +96,9 @@ impl From<&SelectionError> for SnowSelectedTextError {
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct SnowSelectedTextMetadata {
-    pub window: usize,
+    pub native_window: usize,
     pub process_id: u32,
-    pub focused_control: usize,
+    pub native_focus: usize,
     pub method: u32,
     pub clipboard_status: u32,
     pub executable: SnowSelectedTextBytes,
@@ -162,15 +162,15 @@ unsafe fn options(
     }
     let strategy = match options.strategy {
         0 => CaptureStrategy::Auto,
-        1 => CaptureStrategy::Uia,
-        2 => CaptureStrategy::NativeEdit,
+        1 => CaptureStrategy::Accessibility,
+        2 => CaptureStrategy::NativeControl,
         3 => CaptureStrategy::Clipboard,
         _ => return Err(invalid()),
     };
-    let windows = unsafe {
+    let native_windows = unsafe {
         array(
-            options.excluded_windows,
-            options.excluded_window_count,
+            options.excluded_native_windows,
+            options.excluded_native_window_count,
             1024,
         )
     }?
@@ -195,7 +195,7 @@ unsafe fn options(
         copy_fallback: options.copy_fallback != 0,
         strategy,
         max_text_bytes: options.max_text_bytes,
-        excluded_windows: windows,
+        excluded_native_windows: native_windows,
         excluded_executables: executables,
     };
     options.validate()?;
@@ -444,9 +444,9 @@ pub unsafe extern "C" fn snow_selected_text_result_metadata(
         return 0;
     };
     *output = SnowSelectedTextMetadata {
-        window: text.source.window,
+        native_window: text.source.native_window.unwrap_or(0),
         process_id: text.source.process_id,
-        focused_control: text.source.focused_control,
+        native_focus: text.source.native_focus.unwrap_or(0),
         method: text.method as u32,
         clipboard_status: text.clipboard_status as u32,
         executable: SnowSelectedTextBytes::view(&text.source.executable),
@@ -537,13 +537,13 @@ mod tests {
                     height: 10.0,
                 }],
             }],
-            source: SourceWindow {
-                window: 1,
+            source: SourceApplication {
+                native_window: Some(1),
                 process_id: 2,
-                focused_control: 3,
+                native_focus: Some(3),
                 executable: "edit.exe".into(),
             },
-            method: RetrievalMethod::Uia,
+            method: RetrievalMethod::Accessibility,
             clipboard_status: ClipboardStatus::Unchanged,
         }))))
     }
@@ -556,8 +556,8 @@ mod tests {
         );
         for strategy in [
             CaptureStrategy::Auto,
-            CaptureStrategy::Uia,
-            CaptureStrategy::NativeEdit,
+            CaptureStrategy::Accessibility,
+            CaptureStrategy::NativeControl,
             CaptureStrategy::Clipboard,
         ] {
             for copy_fallback in [0, 1] {
@@ -574,8 +574,8 @@ mod tests {
         for strategy in [4, u32::MAX] {
             let config = SnowSelectedTextOptions {
                 strategy,
-                excluded_windows: std::ptr::dangling(),
-                excluded_window_count: 1,
+                excluded_native_windows: std::ptr::dangling(),
+                excluded_native_window_count: 1,
                 ..Default::default()
             };
             assert_eq!(
@@ -587,6 +587,13 @@ mod tests {
 
     #[test]
     fn options_defaults_match_rust_and_validate_abi_prefix_before_arrays() {
+        assert_eq!(CaptureStrategy::Auto as u32, 0);
+        assert_eq!(CaptureStrategy::Accessibility as u32, 1);
+        assert_eq!(CaptureStrategy::NativeControl as u32, 2);
+        assert_eq!(CaptureStrategy::Clipboard as u32, 3);
+        assert_eq!(RetrievalMethod::Accessibility as u32, 1);
+        assert_eq!(RetrievalMethod::NativeControl as u32, 2);
+        assert_eq!(RetrievalMethod::Clipboard as u32, 3);
         let mut config = SnowSelectedTextOptions::default();
         unsafe {
             assert_eq!(snow_selected_text_options_init(&mut config), 1);
@@ -613,9 +620,9 @@ mod tests {
                     ErrorKind::InvalidConfiguration
                 );
             }
-            config.excluded_window_count = 1;
+            config.excluded_native_window_count = 1;
             assert!(options(&config).is_err());
-            config.excluded_window_count = 0;
+            config.excluded_native_window_count = 0;
             config.timeout_ms = 0;
             assert!(options(&config).is_err());
         }
@@ -626,14 +633,14 @@ mod tests {
         let windows = [1usize, 2];
         let name = SnowSelectedTextBytes::view("APP.EXE");
         let config = SnowSelectedTextOptions {
-            excluded_windows: windows.as_ptr(),
-            excluded_window_count: windows.len(),
+            excluded_native_windows: windows.as_ptr(),
+            excluded_native_window_count: windows.len(),
             excluded_executables: &name,
             excluded_executable_count: 1,
             ..Default::default()
         };
         let parsed = unsafe { options(&config) }.unwrap();
-        assert_eq!(parsed.excluded_windows, windows);
+        assert_eq!(parsed.excluded_native_windows, windows);
         assert_eq!(parsed.excluded_executables, ["APP.EXE"]);
         let bytes = [255u8];
         let name = SnowSelectedTextBytes {
@@ -669,7 +676,9 @@ mod tests {
                 1
             );
             assert_eq!(metadata.range_count, 1);
-            assert_eq!(metadata.window, 1);
+            assert_eq!(metadata.native_window, 1);
+            assert_eq!(metadata.native_focus, 3);
+            assert_eq!(metadata.method, 1);
             assert_eq!(
                 snow_selected_text_result_range(&result, 0, &mut text, &mut count),
                 1

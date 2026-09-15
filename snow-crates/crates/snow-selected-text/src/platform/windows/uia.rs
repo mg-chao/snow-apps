@@ -68,12 +68,13 @@ impl Automation {
             let native = unsafe { element.CurrentNativeWindowHandle() }
                 .map_err(|e| api_error("UIA native window", e))?;
             if !native.is_invalid()
-                && (native == hwnd(context.source.window)
-                    || unsafe { GetAncestor(native, GA_ROOT) } == hwnd(context.source.window))
+                && (native == hwnd(context.source.native_window.unwrap())
+                    || unsafe { GetAncestor(native, GA_ROOT) }
+                        == hwnd(context.source.native_window.unwrap()))
             {
                 belongs = true;
             }
-            let at_root = native == hwnd(context.source.window);
+            let at_root = native == hwnd(context.source.native_window.unwrap());
             ancestors.push(element.clone());
             if at_root {
                 break;

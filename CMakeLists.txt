@@ -151,6 +151,18 @@ if(SNOW_APPS_BUILD_SNOW_SHOT)
         "${CMAKE_CURRENT_SOURCE_DIR}/snow-crates/crates/snow-recording-effects-c/include")
     target_include_directories(snow_selected_text_c INTERFACE
         "${CMAKE_CURRENT_SOURCE_DIR}/snow-crates/crates/snow-selected-text-c/include")
+    if(APPLE)
+        find_library(SNOW_SELECTED_TEXT_APPKIT_FRAMEWORK NAMES AppKit REQUIRED)
+        find_library(SNOW_SELECTED_TEXT_APPLICATION_SERVICES_FRAMEWORK
+            NAMES ApplicationServices REQUIRED)
+        find_library(SNOW_SELECTED_TEXT_CORE_FOUNDATION_FRAMEWORK NAMES CoreFoundation REQUIRED)
+        find_library(SNOW_SELECTED_TEXT_CORE_GRAPHICS_FRAMEWORK NAMES CoreGraphics REQUIRED)
+        target_link_libraries(snow_selected_text_c INTERFACE
+            "${SNOW_SELECTED_TEXT_APPKIT_FRAMEWORK}"
+            "${SNOW_SELECTED_TEXT_APPLICATION_SERVICES_FRAMEWORK}"
+            "${SNOW_SELECTED_TEXT_CORE_FOUNDATION_FRAMEWORK}"
+            "${SNOW_SELECTED_TEXT_CORE_GRAPHICS_FRAMEWORK}")
+    endif()
 endif()
 
 if(SNOW_APPS_BUILD_IMAGE_VIEWER AND NOT SNOW_APPS_BUILD_SNOW_IMAGE)
@@ -288,10 +300,15 @@ if(NOT TARGET snow-all)
     foreach(_snow_target IN LISTS _snow_workspace_targets)
         if(TARGET ${_snow_target})
             get_target_property(_snow_target_type "${_snow_target}" TYPE)
+            get_target_property(
+                _snow_target_exclude_from_all "${_snow_target}" EXCLUDE_FROM_ALL)
         endif()
-        if(_snow_target_type MATCHES "^(EXECUTABLE|STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY)$")
+        if(NOT _snow_target_exclude_from_all AND
+           _snow_target_type MATCHES
+           "^(EXECUTABLE|STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY)$")
             add_dependencies(snow-all ${_snow_target})
         endif()
+        unset(_snow_target_exclude_from_all)
         unset(_snow_target_type)
     endforeach()
     unset(_snow_workspace_targets)

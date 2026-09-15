@@ -1,13 +1,13 @@
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(any(windows, test))]
+#[cfg(any(windows, target_os = "macos", test))]
 use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Instant;
 
 use crate::model::*;
-#[cfg(any(windows, test))]
+#[cfg(any(windows, target_os = "macos", test))]
 use crate::policy::{Backend, Context, acquire};
 
 pub(crate) struct RequestState {
@@ -19,7 +19,7 @@ pub(crate) struct RequestState {
 }
 
 impl RequestState {
-    #[cfg(any(windows, test))]
+    #[cfg(any(windows, target_os = "macos", test))]
     pub(crate) fn new(deadline: Instant) -> Self {
         Self {
             deadline,
@@ -52,7 +52,7 @@ impl RequestState {
         error
     }
 
-    #[cfg(any(windows, test))]
+    #[cfg(any(windows, target_os = "macos", test))]
     fn finish(&self, result: CaptureResult) {
         let mut slot = self.result.lock().unwrap_or_else(|e| e.into_inner());
         if slot.is_none() {
@@ -118,22 +118,22 @@ impl Drop for CaptureRequest {
     }
 }
 
-#[cfg(any(windows, test))]
+#[cfg(any(windows, target_os = "macos", test))]
 struct BusyGuard(Arc<AtomicBool>);
-#[cfg(any(windows, test))]
+#[cfg(any(windows, target_os = "macos", test))]
 impl Drop for BusyGuard {
     fn drop(&mut self) {
         self.0.store(false, Ordering::Release);
     }
 }
 
-#[cfg(any(windows, test))]
+#[cfg(any(windows, target_os = "macos", test))]
 struct Job {
     context: Context,
     _busy: BusyGuard,
 }
 
-#[cfg(any(windows, test))]
+#[cfg(any(windows, target_os = "macos", test))]
 impl Drop for Job {
     fn drop(&mut self) {
         // Also resolve pending callers if an unexpected unwind exits the backend.
@@ -144,13 +144,13 @@ impl Drop for Job {
     }
 }
 
-#[cfg(any(windows, test))]
+#[cfg(any(windows, target_os = "macos", test))]
 struct Runtime {
     sender: mpsc::SyncSender<Job>,
     busy: Arc<AtomicBool>,
 }
 
-#[cfg(any(windows, test))]
+#[cfg(any(windows, target_os = "macos", test))]
 impl Runtime {
     fn spawn<B: Backend + 'static>(
         factory: impl FnOnce() -> Result<B, SelectionError> + Send + 'static,
@@ -178,7 +178,7 @@ impl Runtime {
     fn submit(
         &self,
         options: CaptureOptions,
-        capture_source: impl FnOnce() -> Result<SourceWindow, SelectionError>,
+        capture_source: impl FnOnce() -> Result<SourceApplication, SelectionError>,
     ) -> Result<CaptureRequest, SelectionError> {
         options.validate()?;
         let deadline = Instant::now() + options.timeout;
@@ -187,8 +187,11 @@ impl Runtime {
             .map_err(|_| SelectionError::new(ErrorKind::Busy, "capture submission"))?;
         let busy = BusyGuard(self.busy.clone());
         let source = capture_source()?;
-        if options.excluded_windows.contains(&source.window)
-            || options.excluded_windows.contains(&source.focused_control)
+        if source
+            .native_window
+            .into_iter()
+            .chain(source.native_focus)
+            .any(|window| options.excluded_native_windows.contains(&window))
             || options
                 .excluded_executables
                 .iter()
@@ -218,13 +221,13 @@ impl Runtime {
 /// Cheap, cloneable access to the process-wide fixed worker runtime.
 #[derive(Clone)]
 pub struct SelectedTextService {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     runtime: Arc<Runtime>,
 }
 
 impl SelectedTextService {
     pub fn new() -> Result<Self, SelectionError> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         {
             static RUNTIME: OnceLock<Result<Arc<Runtime>, SelectionError>> = OnceLock::new();
             Ok(Self {
@@ -233,7 +236,7 @@ impl SelectedTextService {
                     .clone()?,
             })
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "macos")))]
         Err(SelectionError::new(
             ErrorKind::UnsupportedPlatform,
             "service creation",
@@ -242,12 +245,12 @@ impl SelectedTextService {
 
     /// Capture foreground context now; perform cross-process acquisition on workers.
     pub fn start_capture(&self, options: CaptureOptions) -> Result<CaptureRequest, SelectionError> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         {
             self.runtime
                 .submit(options, crate::platform::capture_source)
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "macos")))]
         {
             let _ = options;
             Err(SelectionError::new(
@@ -272,12 +275,12 @@ mod tests {
         fn validate_target(&mut self, _: &Context) -> Result<(), SelectionError> {
             Ok(())
         }
-        fn uia(&mut self, _: &Context, _: Instant) -> Result<Probe, SelectionError> {
+        fn accessibility(&mut self, _: &Context, _: Instant) -> Result<Probe, SelectionError> {
             self.entered.send(()).unwrap();
             self.release.recv().unwrap();
             Ok(Probe::Empty)
         }
-        fn native(&mut self, _: &Context, _: Instant) -> Result<Probe, SelectionError> {
+        fn native_control(&mut self, _: &Context, _: Instant) -> Result<Probe, SelectionError> {
             panic!("late native call")
         }
         fn copy(&mut self, _: &Context) -> CaptureResult {
@@ -285,11 +288,11 @@ mod tests {
         }
     }
 
-    fn source() -> Result<SourceWindow, SelectionError> {
-        Ok(SourceWindow {
-            window: 1,
+    fn source() -> Result<SourceApplication, SelectionError> {
+        Ok(SourceApplication {
+            native_window: Some(1),
             process_id: 2,
-            focused_control: 3,
+            native_focus: Some(3),
             executable: "edit.exe".into(),
         })
     }
@@ -364,11 +367,11 @@ mod tests {
         assert!(!runtime.busy.load(Ordering::Acquire));
         for options in [
             CaptureOptions {
-                excluded_windows: vec![1],
+                excluded_native_windows: vec![1],
                 ..Default::default()
             },
             CaptureOptions {
-                excluded_windows: vec![3],
+                excluded_native_windows: vec![3],
                 ..Default::default()
             },
             CaptureOptions {

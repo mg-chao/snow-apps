@@ -15,6 +15,7 @@
 
 #include <QAbstractItemModel>
 #include <QAbstractProxyModel>
+#include <QAccessible>
 #include <QApplication>
 #include <QCursor>
 #include <QDebug>
@@ -518,6 +519,10 @@ class AdMenuTreeView final : public QTreeView {
   }
 
   void refreshLayout() {
+    QAccessibleInterface* accessible =
+        QAccessible::isActive() ? QAccessible::queryAccessibleInterface(this) : nullptr;
+    QAccessibleTableInterface* table = accessible ? accessible->tableInterface() : nullptr;
+    const int previousRows = table ? table->rowCount() : 0;
     suppressChrome();
     scheduleDelayedItemsLayout();
     doItemsLayout();
@@ -526,6 +531,13 @@ class AdMenuTreeView final : public QTreeView {
     suppressChrome();
     if (viewport()) {
       viewport()->update();
+    }
+    // Qt defers its accessibility reset until the next event-loop turn. Menu
+    // setup can select a row before then, while Cocoa still caches zero rows.
+    // Publish our explicit layout refresh now, outside accessibility queries.
+    if (table && table->rowCount() != previousRows) {
+      QAccessibleTableModelChangeEvent event(this, QAccessibleTableModelChangeEvent::ModelReset);
+      QAccessible::updateAccessibility(&event);
     }
   }
 

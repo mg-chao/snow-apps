@@ -73,9 +73,9 @@ impl EditFixture {
 
     pub fn context(&self) -> Context {
         Context {
-            source: SourceWindow {
-                window: self.window,
-                focused_control: self.window,
+            source: SourceApplication {
+                native_window: Some(self.window),
+                native_focus: Some(self.window),
                 process_id: std::process::id(),
                 executable: "test.exe".into(),
             },

@@ -995,10 +995,12 @@ void AdRadio::paintDefaultVariant(QPainter* painter) const {
       defaultRadioIndicatorRectForRadio(this, style, labelContent, effectiveFill());
   const QRectF indicatorBackgroundRect =
       snapRectToDevicePixels(indicatorRect.adjusted(0.5, 0.5, -0.5, -0.5), dpr, paintOrigin);
-  const qreal iconStrokeInset = style.metrics.borderWidth / 2.0 + 0.5;
-  const QRectF indicatorBorderRect = snapRectToDevicePixels(
-      indicatorRect.adjusted(iconStrokeInset, iconStrokeInset, -iconStrokeInset, -iconStrokeInset),
-      dpr, paintOrigin);
+  // Snap the outer shape once. Snapping concentric shapes independently can
+  // move their centers by half a device pixel when their pixel diameters have
+  // different parity. Keep the border and dot centered on the snapped fill.
+  const qreal borderInset = style.metrics.borderWidth / 2.0;
+  const QRectF indicatorBorderRect =
+      indicatorBackgroundRect.adjusted(borderInset, borderInset, -borderInset, -borderInset);
 
   painter->setPen(Qt::NoPen);
   painter->setBrush(dotState.backgroundColor);
@@ -1016,8 +1018,7 @@ void AdRadio::paintDefaultVariant(QPainter* painter) const {
     const qreal dotSize =
         static_cast<qreal>(std::min(style.metrics.dotSize, style.metrics.radioSize - 4));
     const qreal alignedDotSize = snapToDevicePixelSize(dotSize, dpr);
-    const QRectF dotRect = snapRectToDevicePixels(
-        centeredSquare(indicatorBackgroundRect.center(), alignedDotSize), dpr, paintOrigin);
+    const QRectF dotRect = centeredSquare(indicatorBackgroundRect.center(), alignedDotSize);
     painter->setPen(Qt::NoPen);
     painter->setBrush(dotState.dotColor);
     painter->drawEllipse(dotRect);

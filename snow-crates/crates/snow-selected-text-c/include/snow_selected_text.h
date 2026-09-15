@@ -20,15 +20,16 @@ enum {
     SNOW_SELECTED_TEXT_FAILED = 4,
     SNOW_SELECTED_TEXT_INVALID_ARGUMENT = 5
 };
+/* NATIVE_CONTROL is Windows-only in both method and strategy constants. */
 enum {
-    SNOW_SELECTED_TEXT_UIA = 1,
-    SNOW_SELECTED_TEXT_NATIVE_EDIT = 2,
+    SNOW_SELECTED_TEXT_ACCESSIBILITY = 1,
+    SNOW_SELECTED_TEXT_NATIVE_CONTROL = 2,
     SNOW_SELECTED_TEXT_CLIPBOARD = 3
 };
 enum {
     SNOW_SELECTED_TEXT_STRATEGY_AUTO = 0,
-    SNOW_SELECTED_TEXT_STRATEGY_UIA = 1,
-    SNOW_SELECTED_TEXT_STRATEGY_NATIVE_EDIT = 2,
+    SNOW_SELECTED_TEXT_STRATEGY_ACCESSIBILITY = 1,
+    SNOW_SELECTED_TEXT_STRATEGY_NATIVE_CONTROL = 2,
     SNOW_SELECTED_TEXT_STRATEGY_CLIPBOARD = 3
 };
 enum {
@@ -73,8 +74,9 @@ typedef struct SnowSelectedTextOptions {
     uint32_t copy_fallback; /* 0 or 1; default 1; only applies to AUTO */
     uint32_t strategy;      /* STRATEGY_*; default AUTO; explicit strategies never fall back */
     size_t max_text_bytes;  /* 1..64 MiB; default 1 MiB */
-    const uintptr_t* excluded_windows;
-    size_t excluded_window_count;
+    /* Platform-native window/control IDs. macOS currently exposes none in results. */
+    const uintptr_t* excluded_native_windows;
+    size_t excluded_native_window_count;
     const SnowSelectedTextBytes* excluded_executables; /* UTF-8 basenames */
     size_t excluded_executable_count;                  /* Both lists are limited to 1024 entries. */
 } SnowSelectedTextOptions;
@@ -88,9 +90,9 @@ typedef struct SnowSelectedTextError {
 } SnowSelectedTextError;
 
 typedef struct SnowSelectedTextMetadata {
-    uintptr_t window;
+    uintptr_t native_window; /* Zero when the platform exposes no stable native identifier. */
     uint32_t process_id;
-    uintptr_t focused_control;
+    uintptr_t native_focus;  /* Zero when unavailable. */
     uint32_t method;
     uint32_t clipboard_status;
     SnowSelectedTextBytes executable;
@@ -98,6 +100,7 @@ typedef struct SnowSelectedTextMetadata {
 } SnowSelectedTextMetadata;
 
 typedef struct SnowSelectedTextRect {
+    /* Screen coordinates: physical pixels on Windows, Accessibility points on macOS. */
     double left;
     double top;
     double width;

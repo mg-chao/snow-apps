@@ -10,6 +10,7 @@ using snow_shot::presentation::SelectedTextTranslationController;
 
 namespace {
 int submissions = 0;
+int completions = 0;
 
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -49,8 +50,15 @@ uint32_t snow_selected_text_start(const SnowSelectedTextService*,
                                   const SnowSelectedTextOptions* options,
                                   SnowSelectedTextRequest** output, SnowSelectedTextError*) {
     ++submissions;
-    require(options != nullptr && options->strategy == SNOW_SELECTED_TEXT_STRATEGY_CLIPBOARD,
-            "Snow Shot must explicitly submit clipboard-only capture on every request");
+#if defined(Q_OS_MACOS)
+    require(options != nullptr && options->strategy == SNOW_SELECTED_TEXT_STRATEGY_AUTO &&
+                options->timeout_ms == 2000,
+            "macOS must retain Accessibility-first defaults");
+#else
+    require(options != nullptr && options->strategy == SNOW_SELECTED_TEXT_STRATEGY_CLIPBOARD &&
+                options->timeout_ms == 800,
+            "non-macOS platforms must retain clipboard-only capture and its short timeout");
+#endif
     *output = nullptr;
     return SNOW_SELECTED_TEXT_ERROR_COPY_BLOCKED;
 }
@@ -80,16 +88,16 @@ uint8_t snow_selected_text_result_error(const SnowSelectedTextResult*, SnowSelec
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     SelectedTextTranslationController controller;
-    int failures = 0;
-    QObject::connect(&controller, &SelectedTextTranslationController::operationFailed, &controller,
-                     [&]() { ++failures; });
     QObject::connect(&controller, &SelectedTextTranslationController::textReady, &controller,
-                     [&]() { require(false, "blocked Copy must not deliver text"); });
+                     [&](const QString& text) {
+                         require(text.isEmpty(), "failed capture must not deliver a payload");
+                         ++completions;
+                     });
     controller.capture();
-    require(submissions == 1 && failures == 1,
-            "blocked Copy must report failure without submitting another strategy");
+    require(submissions == 1 && completions == 1,
+            "failed capture must complete without submitting another strategy");
     controller.capture();
-    require(submissions == 2 && failures == 2,
-            "an explicit retry must still use clipboard-only capture");
+    require(submissions == 2 && completions == 2,
+            "an explicit retry must preserve the platform strategy");
     return 0;
 }

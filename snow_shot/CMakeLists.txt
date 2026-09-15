@@ -196,6 +196,18 @@ if(NOT TARGET snow_selected_text_c)
         STRIP_MSVC_DIRECTIVES)
     target_include_directories(snow_selected_text_c INTERFACE
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-selected-text-c/include")
+    if(APPLE)
+        find_library(SNOW_SELECTED_TEXT_APPKIT_FRAMEWORK NAMES AppKit REQUIRED)
+        find_library(SNOW_SELECTED_TEXT_APPLICATION_SERVICES_FRAMEWORK
+            NAMES ApplicationServices REQUIRED)
+        find_library(SNOW_SELECTED_TEXT_CORE_FOUNDATION_FRAMEWORK NAMES CoreFoundation REQUIRED)
+        find_library(SNOW_SELECTED_TEXT_CORE_GRAPHICS_FRAMEWORK NAMES CoreGraphics REQUIRED)
+        target_link_libraries(snow_selected_text_c INTERFACE
+            "${SNOW_SELECTED_TEXT_APPKIT_FRAMEWORK}"
+            "${SNOW_SELECTED_TEXT_APPLICATION_SERVICES_FRAMEWORK}"
+            "${SNOW_SELECTED_TEXT_CORE_FOUNDATION_FRAMEWORK}"
+            "${SNOW_SELECTED_TEXT_CORE_GRAPHICS_FRAMEWORK}")
+    endif()
 endif()
 
 # zxing-cpp backs the in-process barcode recognition service (QR, DataMatrix,

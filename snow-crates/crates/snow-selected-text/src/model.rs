@@ -7,8 +7,10 @@ use std::time::Duration;
 pub enum CaptureStrategy {
     #[default]
     Auto = 0,
-    Uia = 1,
-    NativeEdit = 2,
+    /// Use UI Automation on Windows or the Accessibility API on macOS.
+    Accessibility = 1,
+    /// Use standard native controls. This strategy is supported only on Windows.
+    NativeControl = 2,
     Clipboard = 3,
 }
 
@@ -22,8 +24,8 @@ pub struct CaptureOptions {
     pub max_text_bytes: usize,
     /// Case-insensitive executable basenames, for example `example.exe`.
     pub excluded_executables: Vec<String>,
-    /// Native HWND values, valid only for the current process session.
-    pub excluded_windows: Vec<usize>,
+    /// Platform-native window/control identifiers, valid only for the current process session.
+    pub excluded_native_windows: Vec<usize>,
 }
 
 impl Default for CaptureOptions {
@@ -34,19 +36,19 @@ impl Default for CaptureOptions {
             copy_fallback: true,
             max_text_bytes: 1024 * 1024,
             excluded_executables: Vec::new(),
-            excluded_windows: Vec::new(),
+            excluded_native_windows: Vec::new(),
         }
     }
 }
 
 impl CaptureOptions {
-    /// Validate resource limits and exclusion names without accessing Windows.
+    /// Validate resource limits and exclusion names without accessing the operating system.
     pub fn validate(&self) -> Result<(), SelectionError> {
         if self.timeout.is_zero()
             || self.timeout > Duration::from_secs(60)
             || self.max_text_bytes == 0
             || self.max_text_bytes > 64 * 1024 * 1024
-            || self.excluded_windows.len() > 1024
+            || self.excluded_native_windows.len() > 1024
             || self.excluded_executables.len() > 1024
             || self.excluded_executables.iter().any(|name| {
                 name.is_empty() || name.len() > 1024 || name.contains(['\0', '/', '\\'])
@@ -62,14 +64,18 @@ impl CaptureOptions {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourceWindow {
-    pub window: usize,
+pub struct SourceApplication {
+    /// Platform-native window identifier, or `None` when the platform cannot expose one safely.
+    pub native_window: Option<usize>,
     pub process_id: u32,
-    pub focused_control: usize,
+    /// Platform-native focused-control identifier, or `None` when unavailable.
+    pub native_focus: Option<usize>,
+    /// Executable basename captured with the process identity.
     pub executable: String,
 }
 
-/// Physical screen coordinates. Geometry is optional and never required for text success.
+/// Platform screen coordinates. Windows reports physical pixels; macOS reports AX screen points.
+/// Geometry is optional and never required for text success.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SelectionRect {
     pub left: f64,
@@ -87,8 +93,10 @@ pub struct SelectedRange {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum RetrievalMethod {
-    Uia = 1,
-    NativeEdit = 2,
+    /// Windows UI Automation or the macOS Accessibility API.
+    Accessibility = 1,
+    /// Standard native-control extraction on Windows.
+    NativeControl = 2,
     Clipboard = 3,
 }
 
@@ -109,7 +117,7 @@ pub enum ClipboardStatus {
 pub struct SelectedText {
     pub text: String,
     pub ranges: Vec<SelectedRange>,
-    pub source: SourceWindow,
+    pub source: SourceApplication,
     pub method: RetrievalMethod,
     pub clipboard_status: ClipboardStatus,
 }
@@ -149,7 +157,7 @@ pub enum ErrorKind {
 pub struct SelectionError {
     pub kind: ErrorKind,
     pub operation: &'static str,
-    /// HRESULT bit pattern or Win32 error, depending on the named operation.
+    /// HRESULT/Win32 bit pattern or macOS AX error, depending on the named operation.
     pub native_code: Option<i32>,
     pub clipboard_status: ClipboardStatus,
 }
@@ -179,10 +187,10 @@ impl std::error::Error for SelectionError {}
 
 pub type CaptureResult = Result<SelectionOutcome, SelectionError>;
 
-#[cfg(any(windows, test))]
+#[cfg(any(windows, target_os = "macos", test))]
 pub(crate) fn assemble(
     ranges: Vec<SelectedRange>,
-    source: SourceWindow,
+    source: SourceApplication,
     method: RetrievalMethod,
     clipboard_status: ClipboardStatus,
     limit: usize,

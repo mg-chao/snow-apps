@@ -4,9 +4,11 @@
 
 namespace snow_shot::presentation {
 namespace {
-// The 2 s FFI default budget is sized for the slower strategies; the clipboard
-// roundtrip only waits for the target app to answer the injected Ctrl+C.
+// Existing platforms retain the established clipboard-only path and its shorter budget.
+// macOS keeps the FFI defaults so Accessibility runs before guarded clipboard fallback.
+#if !defined(Q_OS_MACOS)
 constexpr uint32_t kClipboardCaptureTimeoutMs = 800;
+#endif
 
 SelectedTextStatus errorStatus(uint32_t kind) {
     switch (kind) {
@@ -40,8 +42,10 @@ class NativeSelectedTextCaptureBackend final : public SelectedTextCaptureBackend
         if (!snow_selected_text_options_init(&options)) {
             return {SelectedTextStatus::Failed, {}};
         }
+#if !defined(Q_OS_MACOS)
         options.strategy = SNOW_SELECTED_TEXT_STRATEGY_CLIPBOARD;
         options.timeout_ms = kClipboardCaptureTimeoutMs;
+#endif
         SnowSelectedTextRequest* request = nullptr;
         const auto error = snow_selected_text_start(m_service.get(), &options, &request, nullptr);
         m_request.reset(request);

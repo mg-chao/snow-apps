@@ -2,8 +2,11 @@
 #include "widgets/image.h"
 
 #include <QBuffer>
+#include <QRegularExpression>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTest>
 #include <QTimer>
 #include <QTranslator>
@@ -93,6 +96,69 @@ class ImageTests final : public QObject {
   Q_OBJECT
 
  private slots:
+  void closedTlsConnectionFailsCleanly() {
+    QTest::failOnWarning(QRegularExpression(QStringLiteral("QIODevice::read.*device not open")));
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost));
+    connect(&server, &QTcpServer::newConnection, &server, [&server]() {
+      auto* socket = server.nextPendingConnection();
+      connect(socket, &QTcpSocket::readyRead, socket, [socket]() {
+        socket->readAll();
+        socket->disconnectFromHost();
+      });
+      connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+    });
+    QObject owner;
+    auto* reply = defaultAdImageLoader()->load(
+        QUrl(QStringLiteral("https://127.0.0.1:%1/image.png").arg(server.serverPort())),
+        AdImageLoadOptions{}, &owner);
+    QSignalSpy finished(reply, &AdImageReply::finished);
+    QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 1, 10000);
+    QVERIFY(!reply->isSuccessful());
+    QVERIFY(!reply->errorString().isEmpty());
+  }
+
+  void reloadDuringTlsHandshakeKeepsReplacementImage() {
+    QTest::failOnWarning(QRegularExpression(QStringLiteral("QIODevice::read.*device not open")));
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost));
+    bool handshakeStarted = false;
+    QPointer<QTcpSocket> connection;
+    connect(&server, &QTcpServer::newConnection, &server, [&]() {
+      auto* socket = server.nextPendingConnection();
+      connection = socket;
+      connect(socket, &QTcpSocket::readyRead, socket,
+              [&, socket]() { handshakeStarted = !socket->readAll().isEmpty(); });
+      connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+    });
+    AdImage image;
+    image.setLoadingPolicy(AdImage::LoadingPolicy::Immediate);
+    image.setSource(
+        QUrl(QStringLiteral("https://127.0.0.1:%1/image.png").arg(server.serverPort())));
+    QTRY_VERIFY_WITH_TIMEOUT(handshakeStarted, 10000);
+    auto* pendingReply = image.findChild<AdImageReply*>();
+    QVERIFY(pendingReply);
+    QImage replacement(32, 24, QImage::Format_ARGB32_Premultiplied);
+    replacement.fill(Qt::green);
+    QByteArray bytes;
+    QBuffer buffer(&bytes);
+    QVERIFY(buffer.open(QIODevice::WriteOnly));
+    QVERIFY(replacement.save(&buffer, "BMP"));
+    image.setSource(
+        QUrl(QStringLiteral("data:image/bmp;base64,") + QString::fromLatin1(bytes.toBase64())));
+    QVERIFY(pendingReply->isFinished());
+    QVERIFY(!pendingReply->isSuccessful());
+    QTRY_VERIFY_WITH_TIMEOUT(!image.loading(), 10000);
+    QVERIFY(!image.loadFailed());
+    // The manager may retain a pooled connection after cancelling a request.
+    // Closing that old connection must not fail the replacement image.
+    if (connection) {
+      connection->disconnectFromHost();
+    }
+    QCoreApplication::processEvents();
+    QVERIFY(!image.loadFailed());
+  }
+
   void defaultPreviewTextTracksLanguageAndPreservesOverrides() {
     AdImage image;
     QCOMPARE(image.previewText(), QStringLiteral("Preview"));

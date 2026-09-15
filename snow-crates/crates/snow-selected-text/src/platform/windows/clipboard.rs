@@ -195,8 +195,9 @@ impl NativeClipboard {
             GetWindowThreadProcessId(owner, Some(&mut process_id));
         }
         process_id == context.source.process_id
-            || unsafe { GetAncestor(owner, GA_ROOT) } == hwnd(context.source.window)
-            || unsafe { GetAncestor(owner, GA_ROOTOWNER) } == hwnd(context.source.window)
+            || unsafe { GetAncestor(owner, GA_ROOT) } == hwnd(context.source.native_window.unwrap())
+            || unsafe { GetAncestor(owner, GA_ROOTOWNER) }
+                == hwnd(context.source.native_window.unwrap())
     }
 }
 

@@ -20,6 +20,16 @@ int main(void) {
     assert(options.struct_size == sizeof(options));
     assert(options.abi_version == 1 && options.timeout_ms == 2000 && options.copy_fallback == 1);
     assert(options.strategy == SNOW_SELECTED_TEXT_STRATEGY_AUTO);
+    assert(SNOW_SELECTED_TEXT_ACCESSIBILITY == 1 && SNOW_SELECTED_TEXT_NATIVE_CONTROL == 2 &&
+           SNOW_SELECTED_TEXT_CLIPBOARD == 3);
+    assert(SNOW_SELECTED_TEXT_STRATEGY_ACCESSIBILITY == 1 &&
+           SNOW_SELECTED_TEXT_STRATEGY_NATIVE_CONTROL == 2 &&
+           SNOW_SELECTED_TEXT_STRATEGY_CLIPBOARD == 3);
+    assert(options.excluded_native_windows == NULL && options.excluded_native_window_count == 0);
+    {
+        SnowSelectedTextMetadata metadata = {0};
+        assert(metadata.native_window == 0 && metadata.native_focus == 0);
+    }
     assert(snow_selected_text_service_create(&service, &error) == 0);
     /* Exercise real bundle symbols without reading another application or touching the clipboard.
      */

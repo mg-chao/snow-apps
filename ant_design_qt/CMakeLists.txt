@@ -104,12 +104,49 @@ if(MSVC)
     target_compile_options(ant_design_qt PRIVATE /utf-8)
 endif()
 
+file(GLOB ADQT_THEME_DEMO_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/examples/theme-demo/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/examples/theme-demo/*.h"
+)
+add_executable(theme-demo WIN32 EXCLUDE_FROM_ALL ${ADQT_THEME_DEMO_SOURCES})
+target_link_libraries(theme-demo PRIVATE adqt::widgets Qt6::Widgets)
+if(MSVC)
+    target_compile_options(theme-demo PRIVATE /utf-8)
+    target_precompile_headers(theme-demo PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/examples/theme-demo/theme_demo_pch.h"
+    )
+endif()
+
 if(ADQT_BUILD_TESTS)
     enable_testing()
     find_package(Qt6 REQUIRED COMPONENTS Test)
     # Test binaries must report failures as stderr output plus a non-zero
     # exit code instead of blocking on modal dialogs.
     snow_link_test_cli_guard(qt)
+    add_executable(adqt-widget-diagnostics-tests tests/widget_diagnostics_tests.cpp)
+    target_link_libraries(adqt-widget-diagnostics-tests PRIVATE adqt::widgets Qt6::Widgets)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-widget-diagnostics-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-widget-diagnostics-tests COMMAND adqt-widget-diagnostics-tests)
+    set_tests_properties(adqt-widget-diagnostics-tests PROPERTIES
+        LABELS "unit"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+    add_executable(adqt-radio-rendering-tests tests/radio_rendering_tests.cpp)
+    target_link_libraries(adqt-radio-rendering-tests PRIVATE adqt::widgets Qt6::Widgets)
+    get_target_property(_adqt_radio_qt_core_type Qt6::Core TYPE)
+    if(_adqt_radio_qt_core_type STREQUAL "STATIC_LIBRARY" AND TARGET Qt6::QOffscreenIntegrationPlugin)
+        target_link_libraries(adqt-radio-rendering-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-radio-rendering-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-radio-rendering-tests COMMAND adqt-radio-rendering-tests)
+    set_tests_properties(adqt-radio-rendering-tests PROPERTIES
+        LABELS "unit"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
     add_executable(adqt-button-lifetime-tests tests/button_lifetime_tests.cpp)
     target_link_libraries(adqt-button-lifetime-tests PRIVATE adqt::widgets Qt6::Widgets)
     if(TARGET Qt6::QOffscreenIntegrationPlugin)

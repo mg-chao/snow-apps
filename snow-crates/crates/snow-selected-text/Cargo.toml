@@ -3,7 +3,16 @@ name = "snow-selected-text"
 version = "0.1.0"
 edition = "2024"
 license.workspace = true
-description = "Bounded Windows selected-text acquisition with guarded clipboard fallback"
+description = "Bounded cross-platform selected-text acquisition with guarded clipboard fallback"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+accessibility-sys = "0.2.0"
+core-foundation = "0.10.1"
+objc2 = "0.6.3"
+objc2-app-kit = "0.3.2"
+objc2-core-foundation = "0.3.2"
+objc2-core-graphics = "0.3.2"
+objc2-foundation = "0.3.2"
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [

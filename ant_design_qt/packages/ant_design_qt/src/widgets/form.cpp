@@ -1932,9 +1932,7 @@ void AdFormItem::refreshLabel() {
     return;
   }
 
-  QFont requiredMarkFont = style.metrics.labelFont;
-  requiredMarkFont.setFamily(QStringLiteral("SimSun"));
-  requiredMarkWidget_->setFont(requiredMarkFont);
+  requiredMarkWidget_->setFont(style.metrics.labelFont);
   labelWidget_->setFont(style.metrics.labelFont);
   optionalWidget_->setFont(style.metrics.labelFont);
   colonWidget_->setFont(style.metrics.labelFont);

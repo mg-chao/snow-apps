@@ -42,9 +42,13 @@ Qt-independent OCR bridge and shared Rust panic hook are Apache-2.0 code under
 
 Selected-text acquisition and its C bridge (`snow-selected-text` and
 `snow-selected-text-c`) are Apache-2.0 code under `snow-crates/`. They use the
-existing Microsoft windows-rs dependency (MIT OR Apache-2.0) for UI Automation,
-native edit controls, and clipboard interoperability. Their resolved notices
-are included in the generated Rust dependency bundle.
+existing Microsoft windows-rs dependency (MIT OR Apache-2.0) for Windows UI
+Automation, native edit controls, and clipboard interoperability. On macOS they
+use accessibility-sys (MIT OR Apache-2.0), core-foundation (MIT OR Apache-2.0),
+and the existing objc2 framework bindings (Zlib OR Apache-2.0 OR MIT) for
+Accessibility and pasteboard interoperability. Their resolved notices are
+included in the generated Rust dependency bundle. Apple system frameworks are
+provided by macOS and are not redistributed.
 
 Mouse and keyboard effect rendering and its C bridge (`snow-recording-effects`
 and `snow-recording-effects-c`) are Apache-2.0 code under `snow-crates/`. They

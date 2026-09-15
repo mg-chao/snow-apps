@@ -6,10 +6,10 @@ use crate::model::*;
 use crate::policy::*;
 use crate::runtime::RequestState;
 
-fn source() -> SourceWindow {
-    SourceWindow {
-        window: 1,
-        focused_control: 2,
+fn source() -> SourceApplication {
+    SourceApplication {
+        native_window: Some(1),
+        native_focus: Some(2),
         process_id: 3,
         executable: "editor.exe".into(),
     }
@@ -45,11 +45,11 @@ impl Backend for FakeBackend {
             Ok(())
         }
     }
-    fn uia(&mut self, _: &Context, _: Instant) -> Result<Probe, SelectionError> {
-        self.calls.push("uia");
+    fn accessibility(&mut self, _: &Context, _: Instant) -> Result<Probe, SelectionError> {
+        self.calls.push("accessibility");
         self.probes.pop_front().unwrap()
     }
-    fn native(&mut self, _: &Context, _: Instant) -> Result<Probe, SelectionError> {
+    fn native_control(&mut self, _: &Context, _: Instant) -> Result<Probe, SelectionError> {
         self.calls.push("native");
         self.probes.pop_front().unwrap()
     }
@@ -76,10 +76,14 @@ fn backend(probes: Vec<Result<Probe, SelectionError>>) -> FakeBackend {
 #[test]
 fn explicit_provider_strategies_never_attempt_other_methods() {
     for (strategy, method, call) in [
-        (CaptureStrategy::Uia, RetrievalMethod::Uia, "uia"),
         (
-            CaptureStrategy::NativeEdit,
-            RetrievalMethod::NativeEdit,
+            CaptureStrategy::Accessibility,
+            RetrievalMethod::Accessibility,
+            "accessibility",
+        ),
+        (
+            CaptureStrategy::NativeControl,
+            RetrievalMethod::NativeControl,
             "native",
         ),
     ] {
@@ -100,6 +104,7 @@ fn explicit_provider_strategies_never_attempt_other_methods() {
                 ),
                 Probe::Empty => Ok(SelectionOutcome::NoSelection),
                 Probe::Unsupported => Ok(SelectionOutcome::Unsupported),
+                Probe::Recoverable(error) => Err(error.clone()),
             };
             let mut backend = backend(vec![Ok(probe)]);
             assert_eq!(acquire(&mut backend, &context), expected);
@@ -118,7 +123,7 @@ fn clipboard_strategy_skips_providers_regardless_of_auto_fallback_flag() {
         let mut context = context();
         context.options.strategy = CaptureStrategy::Clipboard;
         context.options.copy_fallback = copy_fallback;
-        // No probes are available: invoking UIA or native extraction would panic.
+        // No probes are available: invoking accessibility or native extraction would panic.
         let mut backend = backend(Vec::new());
         let SelectionOutcome::Selected(text) = acquire(&mut backend, &context).unwrap() else {
             panic!()
@@ -159,7 +164,7 @@ fn clipboard_strategy_preserves_target_deadline_and_error_handling() {
 }
 
 #[test]
-fn uia_success_preserves_unicode_whitespace_and_range_order_without_copy() {
+fn accessibility_success_preserves_unicode_whitespace_and_range_order_without_copy() {
     let mut backend = backend(vec![Ok(Probe::Selected(vec![
         range("你好😀\r\n"),
         range(""),
@@ -171,9 +176,55 @@ fn uia_success_preserves_unicode_whitespace_and_range_order_without_copy() {
     };
     assert_eq!(text.text, "你好😀\r\n\n  ");
     assert_eq!(text.ranges.len(), 2);
-    assert_eq!(text.method, RetrievalMethod::Uia);
+    assert_eq!(text.method, RetrievalMethod::Accessibility);
     assert_eq!(text.clipboard_status, ClipboardStatus::Unchanged);
-    assert_eq!(backend.calls, ["validate", "uia", "validate"]);
+    assert_eq!(backend.calls, ["validate", "accessibility", "validate"]);
+}
+
+#[test]
+fn recoverable_accessibility_failures_fall_back_only_in_auto_with_copy_enabled() {
+    let transient = SelectionError {
+        kind: ErrorKind::TimedOut,
+        operation: "transient accessibility provider",
+        native_code: Some(-25204),
+        clipboard_status: ClipboardStatus::Unchanged,
+    };
+
+    let mut automatic = backend(vec![
+        Ok(Probe::Recoverable(transient.clone())),
+        Ok(Probe::Unsupported),
+    ]);
+    let SelectionOutcome::Selected(text) = acquire(&mut automatic, &context()).unwrap() else {
+        panic!()
+    };
+    assert_eq!(text.method, RetrievalMethod::Clipboard);
+    assert_eq!(
+        automatic.calls,
+        [
+            "validate",
+            "accessibility",
+            "validate",
+            "native",
+            "validate",
+            "validate",
+            "copy"
+        ]
+    );
+
+    let mut explicit_context = context();
+    explicit_context.options.strategy = CaptureStrategy::Accessibility;
+    let mut explicit = backend(vec![Ok(Probe::Recoverable(transient.clone()))]);
+    assert_eq!(
+        acquire(&mut explicit, &explicit_context),
+        Err(transient.clone())
+    );
+    assert!(!explicit.calls.contains(&"copy"));
+
+    let mut disabled_context = context();
+    disabled_context.options.copy_fallback = false;
+    let mut disabled = backend(vec![Ok(Probe::Recoverable(transient.clone()))]);
+    assert_eq!(acquire(&mut disabled, &disabled_context), Err(transient));
+    assert!(!disabled.calls.contains(&"copy"));
 }
 
 #[test]
@@ -200,7 +251,7 @@ fn native_selection_precedes_default_copy_and_disabled_copy_returns_unsupported(
     let SelectionOutcome::Selected(text) = acquire(&mut native, &context()).unwrap() else {
         panic!()
     };
-    assert_eq!(text.method, RetrievalMethod::NativeEdit);
+    assert_eq!(text.method, RetrievalMethod::NativeControl);
     let mut copy = backend(vec![Ok(Probe::Unsupported), Ok(Probe::Unsupported)]);
     let SelectionOutcome::Selected(text) = acquire(&mut copy, &context()).unwrap() else {
         panic!()
@@ -235,7 +286,7 @@ fn protected_denied_stale_failed_and_timed_out_providers_never_inject_copy() {
         };
         let mut backend = backend(vec![Err(expected.clone())]);
         assert_eq!(acquire(&mut backend, &context()), Err(expected));
-        assert_eq!(backend.calls, ["validate", "uia"]);
+        assert_eq!(backend.calls, ["validate", "accessibility"]);
     }
 }
 
@@ -270,7 +321,7 @@ fn limits_include_range_separators_and_do_not_truncate() {
         assemble(
             vec![range("ab"), range("cd")],
             source(),
-            RetrievalMethod::Uia,
+            RetrievalMethod::Accessibility,
             ClipboardStatus::Unchanged,
             5
         )
@@ -280,7 +331,7 @@ fn limits_include_range_separators_and_do_not_truncate() {
         assemble(
             vec![range("ab"), range("cd")],
             source(),
-            RetrievalMethod::Uia,
+            RetrievalMethod::Accessibility,
             ClipboardStatus::Unchanged,
             4
         )
@@ -292,7 +343,7 @@ fn limits_include_range_separators_and_do_not_truncate() {
         assemble(
             vec![range("x"); 129],
             source(),
-            RetrievalMethod::Uia,
+            RetrievalMethod::Accessibility,
             ClipboardStatus::Unchanged,
             1000
         )
