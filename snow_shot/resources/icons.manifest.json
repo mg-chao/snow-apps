@@ -432,6 +432,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "PinClipboard",
+      "name": "pin-clipboard",
+      "source": "../src/presentation/components/icons/resources/pin-clipboard.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "PinToScreen",
       "name": "pin-to-screen",
       "source": "../src/presentation/components/icons/resources/pin-to-screen.svg",
@@ -595,6 +603,14 @@
       "symbol": "ScrollingVertical",
       "name": "scrolling-vertical",
       "source": "../src/presentation/components/icons/resources/scrolling-vertical.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "Select",
+      "name": "select",
+      "source": "../src/presentation/components/icons/resources/select.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },

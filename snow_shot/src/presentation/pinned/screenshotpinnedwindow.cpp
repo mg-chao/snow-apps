@@ -2832,7 +2832,8 @@ void ScreenshotPinnedWindow::createContextMenu() {
     setActionTranslationSource(loadFile, "Image file");
     loadFile->setObjectName(QStringLiteral("screenshotPinnedLoadImageFileAction"));
     connect(loadFile, &QAction::triggered, this, &ScreenshotPinnedWindow::loadImageFile);
-    QAction* loadClipboard = loadMenu->addItem(tr("Clipboard"), outlined_icons::Copy());
+    QAction* loadClipboard =
+        loadMenu->addItem(tr("Clipboard"), custom_outlined_icons::PinClipboard());
     setActionTranslationSource(loadClipboard, "Clipboard");
     loadClipboard->setObjectName(QStringLiteral("screenshotPinnedLoadClipboardAction"));
     connect(loadClipboard, &QAction::triggered, this,

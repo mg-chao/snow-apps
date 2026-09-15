@@ -27,6 +27,7 @@
 #include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/storage/pinnedwindowtypes.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/presentation/components/icons/snowshoticons.h"
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -6977,6 +6978,9 @@ void pinnedContentReplacement() {
     auto* close = window.findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
     require(menu && load && file && clipboard && close && load->isEnabled(),
             "replacement submenu must be available after materialization");
+    require(menu->actionIcon(clipboard) ==
+                snow_shot::presentation::icons::custom::outlined::PinClipboard(),
+            "clipboard replacement must use the pin-clipboard outlined icon");
     for (const bool tray : {false, true, false}) {
         ScreenshotPinnedWindow::setRuntimeTrayEnabled(tray);
         require(menu->actions().indexOf(load) + 1 == menu->actions().indexOf(close),
