@@ -64,6 +64,7 @@ class ScreenRecordingAreaWindow final : public QWidget {
     friend class ScreenRecordingAreaWindowTestAccess;
 
     void applyInputMode();
+    void applyQuickSelectionPreferences();
     void applyNativePassThrough(bool enabled);
     [[nodiscard]] bool regionEditingEnabled() const;
     [[nodiscard]] Qt::Edges resizeEdgesAt(const QPointF& position) const;

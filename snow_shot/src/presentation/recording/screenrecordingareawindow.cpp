@@ -1,7 +1,10 @@
 #include "snow_shot/presentation/screenrecordingareawindow.h"
 
+#include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "screenrecordinggeometry.h"
 #include "screenrecordingperfinstrumentation.h"
 
@@ -58,7 +61,8 @@ QRect nativeClientGeometry(const QWidget& window) {
 ScreenRecordingAreaWindow::ScreenRecordingAreaWindow(QWidget* parent)
     : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
                           Qt::NoDropShadowWindowHint),
-      m_canvasRuntime(std::make_unique<SnowCanvasRuntime>()),
+      m_canvasRuntime(std::make_unique<SnowCanvasRuntime>(
+          SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasStyleDefaults()})),
       m_canvas(new SnowCanvasWidget(*m_canvasRuntime, this)) {
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
@@ -76,10 +80,33 @@ ScreenRecordingAreaWindow::ScreenRecordingAreaWindow(QWidget* parent)
     m_canvas->installEventFilter(this);
     snow_shot::presentation::applyScreenshotCanvasToolStyles(
         *m_canvas, snow_shot::presentation::screenshotCanvasToolStyleDefaults());
+    applyQuickSelectionPreferences();
+    auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
+    if (applicationStorage.isInitialized()) {
+        connect(&applicationStorage.configuration(),
+                &snow_shot::storage::ConfigurationStore::valueChanged, this,
+                [this](const QString& key, const QJsonValue&) {
+                    if (key == QStringLiteral("drawing/quick_selection_disabled_tools")) {
+                        applyQuickSelectionPreferences();
+                    }
+                });
+    }
     applyInputMode();
 }
 
 ScreenRecordingAreaWindow::~ScreenRecordingAreaWindow() = default;
+
+void ScreenRecordingAreaWindow::applyQuickSelectionPreferences() {
+    auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
+    if (!applicationStorage.isInitialized() || m_canvasRuntime == nullptr) {
+        return;
+    }
+    const auto tools = snow_shot::presentation::screenshotQuickSelectionDisabledTools(
+        snow_shot::storage::DrawingSettings().quickSelectionDisabledTools());
+    if (!m_canvasRuntime->setQuickSelectionDisabledTools(tools)) {
+        qWarning("Failed to apply screen recording drawing quick-selection preferences");
+    }
+}
 
 QRect ScreenRecordingAreaWindow::physicalRegion() const {
     return m_physicalRegion;
