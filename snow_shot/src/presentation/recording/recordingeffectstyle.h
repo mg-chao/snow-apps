@@ -1,6 +1,7 @@
 #ifndef SNOW_SHOT_RECORDINGEFFECTSTYLE_H
 #define SNOW_SHOT_RECORDINGEFFECTSTYLE_H
 #include "snow_capture.h"
+#include "snow_recording.h"
 #include "snow_recording_effects.h"
 #include <QString>
 #include <QVector>
