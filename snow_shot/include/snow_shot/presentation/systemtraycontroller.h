@@ -46,7 +46,8 @@ class SystemTrayController final : public QObject {
     void setMiddleClickAction(const QString& action);
     void setScreenshotDelaySeconds(int seconds);
     [[nodiscard]] int screenshotDelaySeconds() const;
-    void setGlobalShortcuts(GlobalShortcutAction action, const QStringList& shortcuts);
+    void setGlobalShortcuts(GlobalShortcutAction action,
+                            const shortcuts::ShortcutBindingList& shortcuts);
     void setMenuOptions(const QStringList& options);
     [[nodiscard]] QStringList menuOptions() const;
     [[nodiscard]] bool globalHotkeysDisabled() const;

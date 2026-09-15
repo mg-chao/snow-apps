@@ -674,34 +674,28 @@ void ScreenshotTableEditor::keyPressEvent(QKeyEvent* event) {
     if (event == nullptr) {
         return;
     }
-    const bool command = event->modifiers().testFlag(Qt::ControlModifier) ||
-                         event->modifiers().testFlag(Qt::MetaModifier);
-    if (command && event->key() == Qt::Key_A) {
+    if (event->matches(QKeySequence::SelectAll)) {
         selectAll();
         event->accept();
         return;
     }
-    if (command && event->key() == Qt::Key_C) {
+    if (event->matches(QKeySequence::Copy)) {
         copySelection();
         event->accept();
         return;
     }
-    if (command && event->key() == Qt::Key_V) {
+    if (event->matches(QKeySequence::Paste)) {
         pasteSelection();
         event->accept();
         return;
     }
-    if (command && event->key() == Qt::Key_Z) {
-        if (event->modifiers().testFlag(Qt::ShiftModifier)) {
-            redoEdit();
-        } else {
-            undoEdit();
-        }
+    if (event->matches(QKeySequence::Redo)) {
+        redoEdit();
         event->accept();
         return;
     }
-    if (command && event->key() == Qt::Key_Y) {
-        redoEdit();
+    if (event->matches(QKeySequence::Undo)) {
+        undoEdit();
         event->accept();
         return;
     }

@@ -548,8 +548,7 @@ void applyScreenshotShortcutTooltip(QWidget* widget, const QString& source,
 
     widget->setProperty("snowShotScreenshotShortcutTooltipSource", source);
     widget->setProperty("snowShotScreenshotShortcutTooltipActionId", actionId);
-    const QStringList shortcuts =
-        snow_shot::storage::ScreenshotShortcutSettings().shortcuts(actionId);
+    const auto shortcuts = snow_shot::storage::ScreenshotShortcutSettings().shortcuts(actionId);
     const QString displayShortcuts =
         snow_shot::presentation::formatShortcutListDisplayText(shortcuts);
     const QString title = ScreenshotToolPaletteTranslationText(source).translated();
@@ -573,8 +572,7 @@ void applyPinToScreenShortcutTooltip(QWidget* widget, const QString& source,
         return;
     }
 
-    const QStringList shortcuts =
-        snow_shot::storage::PinToScreenShortcutSettings().shortcuts(actionId);
+    const auto shortcuts = snow_shot::storage::PinToScreenShortcutSettings().shortcuts(actionId);
     const QString displayShortcuts =
         snow_shot::presentation::formatShortcutListDisplayText(shortcuts);
     const QString title = ScreenshotToolPaletteTranslationText(source).translated();
@@ -597,7 +595,7 @@ void applyScreenRecordingShortcutTooltip(QWidget* widget, const QString& source,
         return;
     }
 
-    const QStringList shortcuts =
+    const auto shortcuts =
         snow_shot::storage::ScreenRecordingShortcutSettings().shortcuts(actionId);
     const QString displayShortcuts =
         snow_shot::presentation::formatShortcutListDisplayText(shortcuts);
@@ -628,7 +626,7 @@ void applyDrawingShortcutTooltip(QWidget* widget, const QString& source,
     }
 
     widget->setProperty("snowShotDrawingShortcutTooltipSource", source);
-    const QStringList shortcuts = snow_shot::storage::DrawingShortcutSettings().shortcuts(toolId);
+    const auto shortcuts = snow_shot::storage::DrawingShortcutSettings().shortcuts(toolId);
     const QString displayShortcuts =
         snow_shot::presentation::formatShortcutListDisplayText(shortcuts);
 
@@ -763,6 +761,9 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
                 configureScreenshotToolPaletteSliderEditor(spotlightEditor,
                                                            styleButtonMetrics(m_physicalScale));
             });
+    connect(&snow_shot::shortcuts::ShortcutDisplayService::instance(),
+            &snow_shot::shortcuts::ShortcutDisplayService::displayChanged, this,
+            &ScreenshotToolPalette::refreshShortcutTooltips);
 
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (storage.isInitialized()) {

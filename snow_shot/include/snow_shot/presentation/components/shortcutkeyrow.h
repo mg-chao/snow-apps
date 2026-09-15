@@ -4,6 +4,7 @@
 #include "icon_core.h"
 #include "snow_shot/presentation/globalshortcuttypes.h"
 #include "snow_shot/presentation/components/actionrow.h"
+#include "snow_shot/shortcuts/shortcutbinding.h"
 
 #include <QString>
 #include <QStringList>
@@ -38,13 +39,16 @@ struct ShortcutKeyRowConfig {
 
     QString title;
     adqt::icons::IconRef iconRef;
-    QStringList shortcuts;
+    snow_shot::shortcuts::ShortcutBindingList shortcuts;
     snow_shot::presentation::GlobalShortcutRegistrationState registrationState;
     QString rowState;
     bool useStableBorder = false;
     int maxShortcutCount = 2;
-    std::function<snow_shot::presentation::GlobalShortcutValidationResult(const QString&)>
+    std::function<snow_shot::presentation::GlobalShortcutValidationResult(
+        const snow_shot::shortcuts::ShortcutBinding&)>
         shortcutValidator;
+    std::function<quint64()> suspendGlobalShortcuts;
+    std::function<void(quint64)> resumeGlobalShortcuts;
     bool adjustableDelay = false;
     int delaySeconds = 3;
     std::function<bool(int)> delaySetter;
@@ -71,7 +75,7 @@ class ShortcutKeyRow : public ActionRow {
     [[nodiscard]] int delaySeconds() const;
 
   signals:
-    void shortcutsChanged(const QStringList& shortcuts);
+    void shortcutsChanged(const snow_shot::shortcuts::ShortcutBindingList& shortcuts);
     void delaySecondsChanged(int seconds);
 
   protected:
@@ -99,8 +103,11 @@ class ShortcutKeyRow : public ActionRow {
     bool m_delayTitleHovered = false;
     int m_delaySeconds = 3;
     std::function<bool(int)> m_delaySetter;
-    std::function<snow_shot::presentation::GlobalShortcutValidationResult(const QString&)>
+    std::function<snow_shot::presentation::GlobalShortcutValidationResult(
+        const snow_shot::shortcuts::ShortcutBinding&)>
         m_shortcutValidator;
+    std::function<quint64()> m_suspendGlobalShortcuts;
+    std::function<void(quint64)> m_resumeGlobalShortcuts;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_COMPONENTS_SHORTCUTKEYROW_H

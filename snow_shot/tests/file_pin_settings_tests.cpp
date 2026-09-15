@@ -21,14 +21,16 @@ void require(bool condition, const char* message) {
 class Backend final : public GlobalShortcutBackend {
   public:
     ActivationHandler handler;
-    QHash<int, QString> registrations;
+    QHash<int, snow_shot::shortcuts::ShortcutBinding> registrations;
     void setActivationHandler(ActivationHandler value) override {
         handler = std::move(value);
     }
-    GlobalShortcutValidationResult validateShortcut(const QString& value) const override {
-        return {value, true, GlobalShortcutFailureReason::None};
+    GlobalShortcutValidationResult
+    validateShortcut(const snow_shot::shortcuts::ShortcutBinding& value) const override {
+        return {value.portableText, true, GlobalShortcutFailureReason::None, value};
     }
-    GlobalShortcutBackendResult registerShortcut(int id, const QString& value) override {
+    GlobalShortcutBackendResult
+    registerShortcut(int id, const snow_shot::shortcuts::ShortcutBinding& value) override {
         if (registrations.values().contains(value)) {
             return {false, GlobalShortcutFailureReason::AlreadyInUse};
         }
@@ -94,7 +96,8 @@ void shortcutSettings() {
     menu.append(id);
     require(tray.setMenuOptions(menu) && tray.menuOptions() == menu,
             "new tray option must persist");
-    const QStringList keys{QStringLiteral("Ctrl+Alt+P"), QStringLiteral("Ctrl+Shift+P")};
+    const snow_shot::shortcuts::ShortcutBindingList keys{QStringLiteral("Ctrl+Alt+P"),
+                                                         QStringLiteral("Ctrl+Shift+P")};
     {
         auto native = std::make_unique<Backend>();
         auto* input = native.get();

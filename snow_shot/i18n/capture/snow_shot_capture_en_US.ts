@@ -237,48 +237,56 @@
     <context>
         <name>ScreenshotShortcutHintsWidget</name>
         <message>
-            <source>Auto-align: Ctrl</source>
-            <translation>Auto-align: Ctrl</translation>
+            <source>%1 + %2</source>
+            <translation>%1 + %2</translation>
         </message>
         <message>
-            <source>Delete selected elements: Delete</source>
-            <translation>Delete selected elements: Delete</translation>
+            <source>Auto-align</source>
+            <translation>Auto-align</translation>
         </message>
         <message>
-            <source>Draw straight line: Shift</source>
-            <translation>Draw straight line: Shift</translation>
+            <source>Delete selected elements</source>
+            <translation>Delete selected elements</translation>
         </message>
         <message>
-            <source>Fixed-angle rotation: Shift</source>
-            <translation>Fixed-angle rotation: Shift</translation>
+            <source>Draw straight line</source>
+            <translation>Draw straight line</translation>
         </message>
         <message>
-            <source>Horizontal scroll: Shift + mouse wheel</source>
-            <translation>Horizontal scroll: Shift + mouse wheel</translation>
+            <source>Fixed-angle rotation</source>
+            <translation>Fixed-angle rotation</translation>
         </message>
         <message>
-            <source>Maintain aspect ratio: Shift</source>
-            <translation>Maintain aspect ratio: Shift</translation>
+            <source>Horizontal scroll</source>
+            <translation>Horizontal scroll</translation>
         </message>
         <message>
-            <source>Scale from center: Alt</source>
-            <translation>Scale from center: Alt</translation>
+            <source>Maintain aspect ratio</source>
+            <translation>Maintain aspect ratio</translation>
         </message>
         <message>
-            <source>Switch color format: Shift</source>
-            <translation>Switch color format: Shift</translation>
+            <source>Scale from center</source>
+            <translation>Scale from center</translation>
         </message>
         <message>
-            <source>Switch element level: mouse wheel</source>
-            <translation>Switch element level: mouse wheel</translation>
+            <source>Switch color format</source>
+            <translation>Switch color format</translation>
+        </message>
+        <message>
+            <source>Switch element level</source>
+            <translation>Switch element level</translation>
         </message>
         <message>
             <source>Switch screenshot history</source>
             <translation>Switch screenshot history</translation>
         </message>
         <message>
-            <source>Vertical scroll: mouse wheel</source>
-            <translation>Vertical scroll: mouse wheel</translation>
+            <source>Vertical scroll</source>
+            <translation>Vertical scroll</translation>
+        </message>
+        <message>
+            <source>mouse wheel</source>
+            <translation>mouse wheel</translation>
         </message>
     </context>
     <context>

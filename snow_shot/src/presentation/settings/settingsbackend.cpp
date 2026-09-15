@@ -45,14 +45,10 @@ styles::ThemeMode themeModeForValue(const QVariant& value) {
     return styles::ThemeMode::FollowSystem;
 }
 
-QStringList stringListDefault(const QString& key) {
-    QStringList result;
-    const QJsonArray values = storage::ConfigurationSchema::defaultValue(key).toArray();
-    result.reserve(values.size());
-    for (const QJsonValue& value : values) {
-        result.push_back(value.toString());
-    }
-    return result;
+shortcuts::ShortcutBindingList shortcutListDefault(const QString& key) {
+    const bool allowModifierOnlyShift = key.startsWith(QStringLiteral("screenshot_shortcuts/"));
+    return shortcuts::shortcutBindingsFromJson(storage::ConfigurationSchema::defaultValue(key),
+                                               allowModifierOnlyShift, 2);
 }
 
 QString localShortcutKey(SettingsLocalShortcutScope scope, const QString& shortcutId) {
@@ -840,18 +836,19 @@ BuiltInSettingsBackend::shortcutState(GlobalShortcutAction action) const {
 }
 
 GlobalShortcutValidationResult
-BuiltInSettingsBackend::validateShortcut(const QString& shortcut) const {
-    return m_shortcutManager.validateShortcut(shortcut);
+BuiltInSettingsBackend::validateShortcut(GlobalShortcutAction action,
+                                         const shortcuts::ShortcutBinding& shortcut) const {
+    return m_shortcutManager.validateShortcut(action, shortcut);
 }
 
 bool BuiltInSettingsBackend::applyShortcuts(GlobalShortcutAction action,
-                                            const QStringList& shortcuts) {
-    m_shortcutManager.setShortcuts(action, shortcuts);
-    return m_shortcutManager.state(action).shortcuts == shortcuts;
+                                            const shortcuts::ShortcutBindingList& shortcuts) {
+    return m_shortcutManager.setShortcuts(action, shortcuts);
 }
 
-QStringList BuiltInSettingsBackend::localShortcuts(SettingsLocalShortcutScope scope,
-                                                   const QString& shortcutId) const {
+shortcuts::ShortcutBindingList
+BuiltInSettingsBackend::localShortcuts(SettingsLocalShortcutScope scope,
+                                       const QString& shortcutId) const {
     if (scope == SettingsLocalShortcutScope::Screenshot) {
         return storage::ScreenshotShortcutSettings().shortcuts(shortcutId);
     }
@@ -864,21 +861,25 @@ QStringList BuiltInSettingsBackend::localShortcuts(SettingsLocalShortcutScope sc
     return storage::PinToScreenShortcutSettings().shortcuts(shortcutId);
 }
 
-GlobalShortcutValidationResult BuiltInSettingsBackend::validateLocalShortcut(
-    SettingsLocalShortcutScope scope, const QString& shortcutId, const QString& shortcut) const {
+GlobalShortcutValidationResult
+BuiltInSettingsBackend::validateLocalShortcut(SettingsLocalShortcutScope scope,
+                                              const QString& shortcutId,
+                                              const shortcuts::ShortcutBinding& shortcut) const {
     const QString key = localShortcutKey(scope, shortcutId);
-    const storage::ConfigurationNormalization normalized =
-        storage::ConfigurationSchema::normalize(key, QJsonArray{shortcut});
-    if (!normalized.valid || normalized.value.toArray().isEmpty()) {
-        return {shortcut, false, GlobalShortcutFailureReason::InvalidShortcut};
+    const bool allowModifierOnlyShift = scope == SettingsLocalShortcutScope::Screenshot;
+    const shortcuts::ShortcutBinding canonical =
+        shortcuts::canonicalBinding(shortcut, allowModifierOnlyShift);
+    if (canonical.portableText.isEmpty()) {
+        return {shortcut.portableText, false, GlobalShortcutFailureReason::InvalidShortcut,
+                canonical};
     }
-    const QString canonical = normalized.value.toArray().first().toString();
     if (scope != SettingsLocalShortcutScope::PinToScreen &&
         scope != SettingsLocalShortcutScope::ScreenRecording &&
         storage::ScreenshotShortcutSettings::isReservedShortcut(canonical) &&
         (scope != SettingsLocalShortcutScope::Screenshot ||
          !storage::ScreenshotShortcutSettings::isReservedShortcutAllowed(shortcutId, canonical))) {
-        return {canonical, false, GlobalShortcutFailureReason::InvalidShortcut};
+        return {canonical.portableText, false, GlobalShortcutFailureReason::InvalidShortcut,
+                canonical};
     }
     const auto all = scope == SettingsLocalShortcutScope::Screenshot
                          ? storage::ScreenshotShortcutSettings().allShortcuts()
@@ -891,19 +892,20 @@ GlobalShortcutValidationResult BuiltInSettingsBackend::validateLocalShortcut(
         if (it.key() == shortcutId) {
             continue;
         }
-        for (const QString& existing : it.value()) {
-            if (existing.compare(canonical, Qt::CaseInsensitive) == 0) {
-                return {canonical, false, GlobalShortcutFailureReason::AlreadyInUse};
+        for (const shortcuts::ShortcutBinding& existing : it.value()) {
+            if (shortcuts::bindingsConflict(existing, canonical)) {
+                return {canonical.portableText, false, GlobalShortcutFailureReason::AlreadyInUse,
+                        canonical};
             }
         }
     }
-    return {canonical, true, GlobalShortcutFailureReason::None};
+    return {canonical.portableText, true, GlobalShortcutFailureReason::None, canonical};
 }
 
 bool BuiltInSettingsBackend::applyLocalShortcuts(SettingsLocalShortcutScope scope,
                                                  const QString& shortcutId,
-                                                 const QStringList& shortcuts) {
-    for (const QString& shortcut : shortcuts) {
+                                                 const shortcuts::ShortcutBindingList& shortcuts) {
+    for (const shortcuts::ShortcutBinding& shortcut : shortcuts) {
         const GlobalShortcutValidationResult validation =
             validateLocalShortcut(scope, shortcutId, shortcut);
         if (!validation.supported) {
@@ -920,6 +922,14 @@ bool BuiltInSettingsBackend::applyLocalShortcuts(SettingsLocalShortcutScope scop
         return storage::ScreenRecordingShortcutSettings().setShortcuts(shortcutId, shortcuts);
     }
     return storage::PinToScreenShortcutSettings().setShortcuts(shortcutId, shortcuts);
+}
+
+quint64 BuiltInSettingsBackend::suspendGlobalShortcuts() {
+    return m_shortcutManager.suspendRegistrations();
+}
+
+void BuiltInSettingsBackend::resumeGlobalShortcuts(quint64 handle) {
+    m_shortcutManager.resumeRegistrations(handle);
 }
 
 SettingsGlobalMouseCombination
@@ -1065,7 +1075,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         bool accepted = true;
         const auto resetShortcut = [this, &accepted](GlobalShortcutAction action,
                                                      const QString& key) {
-            accepted = applyShortcuts(action, stringListDefault(key)) && accepted;
+            accepted = applyShortcuts(action, shortcutListDefault(key)) && accepted;
         };
         resetShortcut(GlobalShortcutAction::Screenshot,
                       QStringLiteral("global_shortcuts/screenshot"));
@@ -1108,7 +1118,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         bool accepted = true;
         const auto resetShortcut = [this, &accepted](GlobalShortcutAction action,
                                                      const QString& key) {
-            accepted = applyShortcuts(action, stringListDefault(key)) && accepted;
+            accepted = applyShortcuts(action, shortcutListDefault(key)) && accepted;
         };
         resetShortcut(GlobalShortcutAction::OpenCaptureHistory,
                       QStringLiteral("global_shortcuts/open_capture_history"));
@@ -1120,7 +1130,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         bool accepted = true;
         const auto resetShortcut = [this, &accepted](GlobalShortcutAction action,
                                                      const QString& key) {
-            accepted = applyShortcuts(action, stringListDefault(key)) && accepted;
+            accepted = applyShortcuts(action, shortcutListDefault(key)) && accepted;
         };
         resetShortcut(GlobalShortcutAction::PinClipboardContent,
                       QStringLiteral("global_shortcuts/pin_clipboard_content"));
@@ -1245,7 +1255,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                  QStringLiteral("drawing/quick_selection_disabled_tools"))},
         });
     case SettingsSectionReset::ScreenshotEditorShortcuts: {
-        QMap<QString, QStringList> defaults;
+        shortcuts::ShortcutBindingMap defaults;
         for (const QString& actionId :
              {QStringLiteral("move_tool"), QStringLiteral("move_cursor_up"),
               QStringLiteral("move_cursor_down"), QStringLiteral("move_cursor_left"),
@@ -1259,39 +1269,39 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
               QStringLiteral("scrolling_screenshot"), QStringLiteral("quick_save"),
               QStringLiteral("save_as_file"), QStringLiteral("cancel_screenshot"),
               QStringLiteral("copy_to_clipboard")}) {
-            defaults.insert(actionId,
-                            stringListDefault(QStringLiteral("screenshot_shortcuts/") + actionId));
+            defaults.insert(
+                actionId, shortcutListDefault(QStringLiteral("screenshot_shortcuts/") + actionId));
         }
-        QMap<QString, QStringList> all = storage::ScreenshotShortcutSettings().allShortcuts();
+        shortcuts::ShortcutBindingMap all = storage::ScreenshotShortcutSettings().allShortcuts();
         for (auto it = defaults.cbegin(); it != defaults.cend(); ++it) {
             all.insert(it.key(), it.value());
         }
         return storage::ScreenshotShortcutSettings().setAllShortcutsAtomic(all);
     }
     case SettingsSectionReset::ScreenshotOtherShortcuts: {
-        QMap<QString, QStringList> defaults;
+        shortcuts::ShortcutBindingMap defaults;
         for (const QString& actionId :
              {QStringLiteral("table_recognition"), QStringLiteral("qr_code_recognition"),
               QStringLiteral("text_recognition"), QStringLiteral("text_translation"),
               QStringLiteral("undo"), QStringLiteral("redo")}) {
-            defaults.insert(actionId,
-                            stringListDefault(QStringLiteral("screenshot_shortcuts/") + actionId));
+            defaults.insert(
+                actionId, shortcutListDefault(QStringLiteral("screenshot_shortcuts/") + actionId));
         }
-        QMap<QString, QStringList> all = storage::ScreenshotShortcutSettings().allShortcuts();
+        shortcuts::ShortcutBindingMap all = storage::ScreenshotShortcutSettings().allShortcuts();
         for (auto it = defaults.cbegin(); it != defaults.cend(); ++it) {
             all.insert(it.key(), it.value());
         }
         return storage::ScreenshotShortcutSettings().setAllShortcutsAtomic(all);
     }
     case SettingsSectionReset::DrawingShortcuts: {
-        QMap<QString, QStringList> defaults;
+        shortcuts::ShortcutBindingMap defaults;
         for (const QString& toolId :
              {QStringLiteral("select"), QStringLiteral("shape"), QStringLiteral("arrow"),
               QStringLiteral("brush"), QStringLiteral("highlight"), QStringLiteral("text"),
               QStringLiteral("serial_number"), QStringLiteral("filter"), QStringLiteral("eraser"),
               QStringLiteral("watermark")}) {
             defaults.insert(toolId,
-                            stringListDefault(QStringLiteral("drawing_shortcuts/") + toolId));
+                            shortcutListDefault(QStringLiteral("drawing_shortcuts/") + toolId));
         }
         return storage::DrawingShortcutSettings().setAllShortcutsAtomic(defaults);
     }
@@ -1299,12 +1309,12 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         auto defaults = storage::ScreenRecordingShortcutSettings().allShortcuts();
         for (auto it = defaults.begin(); it != defaults.end(); ++it) {
             it.value() =
-                stringListDefault(QStringLiteral("screen_recording_shortcuts/") + it.key());
+                shortcutListDefault(QStringLiteral("screen_recording_shortcuts/") + it.key());
         }
         return storage::ScreenRecordingShortcutSettings().setAllShortcutsAtomic(defaults);
     }
     case SettingsSectionReset::PinToScreenShortcuts: {
-        QMap<QString, QStringList> defaults;
+        shortcuts::ShortcutBindingMap defaults;
         for (const QString& actionId :
              {QStringLiteral("copy_to_clipboard"), QStringLiteral("copy_original_content"),
               QStringLiteral("save_as_file"), QStringLiteral("show_text_recognition_results"),
@@ -1313,8 +1323,8 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
               QStringLiteral("close_window"), QStringLiteral("move_cursor_up"),
               QStringLiteral("move_cursor_down"), QStringLiteral("move_cursor_left"),
               QStringLiteral("move_cursor_right")}) {
-            defaults.insert(
-                actionId, stringListDefault(QStringLiteral("pin_to_screen_shortcuts/") + actionId));
+            defaults.insert(actionId, shortcutListDefault(
+                                          QStringLiteral("pin_to_screen_shortcuts/") + actionId));
         }
         return storage::PinToScreenShortcutSettings().setAllShortcutsAtomic(defaults);
     }

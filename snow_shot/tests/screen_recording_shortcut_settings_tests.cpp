@@ -34,7 +34,8 @@ int main(int argc, char** argv) {
     const storage::ScreenRecordingShortcutSettings recording;
     const auto defaults = recording.allShortcuts();
     const QString exportId = QStringLiteral("export");
-    const QStringList custom = {QStringLiteral("F12"), QStringLiteral("Ctrl+F12")};
+    const snow_shot::shortcuts::ShortcutBindingList custom = {QStringLiteral("F12"),
+                                                              QStringLiteral("Ctrl+F12")};
     {
         snow_shot::presentation::GlobalShortcutManager globalShortcuts;
         settings::BuiltInSettingsBackend backend(globalShortcuts);

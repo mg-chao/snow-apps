@@ -171,23 +171,26 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     shortcutState(presentation::GlobalShortcutAction) const override {
         return {};
     }
-    presentation::GlobalShortcutValidationResult validateShortcut(const QString&) const override {
+    presentation::GlobalShortcutValidationResult
+    validateShortcut(presentation::GlobalShortcutAction,
+                     const snow_shot::shortcuts::ShortcutBinding&) const override {
         return {};
     }
-    bool applyShortcuts(presentation::GlobalShortcutAction, const QStringList&) override {
+    bool applyShortcuts(presentation::GlobalShortcutAction,
+                        const snow_shot::shortcuts::ShortcutBindingList&) override {
         return false;
     }
-    QStringList localShortcuts(settings::SettingsLocalShortcutScope,
-                               const QString&) const override {
+    snow_shot::shortcuts::ShortcutBindingList localShortcuts(settings::SettingsLocalShortcutScope,
+                                                             const QString&) const override {
         return {};
     }
     presentation::GlobalShortcutValidationResult
     validateLocalShortcut(settings::SettingsLocalShortcutScope, const QString&,
-                          const QString&) const override {
+                          const snow_shot::shortcuts::ShortcutBinding&) const override {
         return {};
     }
     bool applyLocalShortcuts(settings::SettingsLocalShortcutScope, const QString&,
-                             const QStringList&) override {
+                             const snow_shot::shortcuts::ShortcutBindingList&) override {
         return false;
     }
     settings::SettingsActionState

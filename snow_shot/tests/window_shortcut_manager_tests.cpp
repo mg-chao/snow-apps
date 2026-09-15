@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/windowshortcutmanager.h"
+#include "snow_shot/shortcuts/shortcutdisplayservice.h"
 
 #include <QApplication>
 #include <QKeyEvent>
@@ -24,9 +25,81 @@ void require(bool condition, const char* message) {
     }
 }
 
+void sharedShortcutDomainCanonicalizesIdentityAndDisplay() {
+    namespace shortcut_domain = snow_shot::shortcuts;
+    require(shortcut_domain::canonicalPortableText(QStringLiteral(" control+c ")) ==
+                    QStringLiteral("Ctrl+C") &&
+                shortcut_domain::canonicalPortableText(QStringLiteral("Command+C")) ==
+                    QStringLiteral("Ctrl+C") &&
+                shortcut_domain::canonicalPortableText(QStringLiteral("Ctrl++")) ==
+                    QStringLiteral("Ctrl++") &&
+                shortcut_domain::canonicalPortableText(QStringLiteral("Ctrl+K, Ctrl+C")).isEmpty(),
+            "portable shortcuts must canonicalize to one stroke");
+    require(shortcut_domain::canonicalPortableText(QStringLiteral("Shift")).isEmpty() &&
+                shortcut_domain::canonicalPortableText(QStringLiteral("Shift"), true) ==
+                    QStringLiteral("Shift"),
+            "modifier-only Shift must remain an explicit per-scope policy");
+
+#ifdef Q_OS_MACOS
+    shortcut_domain::ShortcutBinding physical{QStringLiteral("Ctrl+A")};
+    physical.physicalKeys.insert(shortcut_domain::ShortcutPlatform::MacOS, 8);
+    const shortcut_domain::ShortcutBinding legacyC =
+        shortcut_domain::bindingFromPortableText(QStringLiteral("Ctrl+C"));
+    require(shortcut_domain::bindingsConflict(physical, legacyC),
+            "saved macOS physical metadata must override the portable character identity");
+    require(shortcut_domain::ShortcutDisplayService::instance().modifierText(
+                Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier | Qt::MetaModifier) ==
+                    QStringLiteral("⌃⌥⇧⌘") &&
+                shortcut_domain::formatShortcutDisplayText(shortcut_domain::bindingFromPortableText(
+                    QStringLiteral("Ctrl+F1"))) == QStringLiteral("⌘F1"),
+            "macOS display must use native modifier glyphs and ordering");
+    require(shortcut_domain::formatShortcutDisplayText(
+                shortcut_domain::bindingFromPortableText(QStringLiteral("Num+1")))
+                    .startsWith(QStringLiteral("Num")) &&
+                shortcut_domain::formatShortcutDisplayText(
+                    shortcut_domain::bindingFromPortableText(QStringLiteral("Num+1"))) !=
+                    shortcut_domain::formatShortcutDisplayText(
+                        shortcut_domain::bindingFromPortableText(QStringLiteral("1"))),
+            "macOS display must preserve explicit keypad identity");
+
+    bool valid = false;
+    bool changed = false;
+    const shortcut_domain::ShortcutBinding roundTripped = shortcut_domain::shortcutBindingFromJson(
+        shortcut_domain::shortcutBindingToJson(physical), false, &valid, &changed);
+    require(valid && !changed && roundTripped == physical,
+            "structured shortcut JSON must preserve macOS physical metadata");
+    const shortcut_domain::ShortcutBinding repaired = shortcut_domain::shortcutBindingFromJson(
+        QJsonObject{{QStringLiteral("portable"), QStringLiteral("Ctrl+C")},
+                    {QStringLiteral("physical_keys"), QJsonObject{{QStringLiteral("macos"), 128}}}},
+        false, &valid, &changed);
+    require(valid && changed && repaired.portableText == QStringLiteral("Ctrl+C") &&
+                repaired.physicalKeys.isEmpty(),
+            "invalid physical metadata must be dropped without losing its portable fallback");
+#endif
+
+    int refreshes = 0;
+    auto& display = shortcut_domain::ShortcutDisplayService::instance();
+    const QMetaObject::Connection connection =
+        QObject::connect(&display, &shortcut_domain::ShortcutDisplayService::displayChanged,
+                         &display, [&refreshes] { ++refreshes; });
+    display.refresh();
+    QObject::disconnect(connection);
+    require(refreshes == 1, "a simulated layout change must publish exactly one refresh signal");
+}
+
 bool sendKey(QObject* receiver, QEvent::Type type, Qt::Key key,
              Qt::KeyboardModifiers modifiers = Qt::NoModifier, bool autoRepeat = false) {
     QKeyEvent event(type, key, modifiers, QString(), autoRepeat);
+    event.setAccepted(false);
+    const bool filtered = QCoreApplication::sendEvent(receiver, &event);
+    return filtered || event.isAccepted();
+}
+
+bool sendNativeKey(QObject* receiver, QEvent::Type type, Qt::Key logicalKey,
+                   Qt::KeyboardModifiers modifiers, quint32 nativeVirtualKey,
+                   bool autoRepeat = false) {
+    QKeyEvent event(type, logicalKey, modifiers, nativeVirtualKey, nativeVirtualKey, 0, QString(),
+                    autoRepeat);
     event.setAccepted(false);
     const bool filtered = QCoreApplication::sendEvent(receiver, &event);
     return filtered || event.isAccepted();
@@ -352,8 +425,8 @@ void heldBindingsReleaseByTriggerKey() {
 }
 
 void heldModifierParsingAndAdditionalModifiersAreScoped() {
-    const QList<QKeyCombination> shift =
-        WindowShortcutManager::keyCombinationsFromPortableText({QStringLiteral("Shift")});
+    const QList<QKeyCombination> shift = WindowShortcutManager::keyCombinationsFromBindings(
+        snow_shot::shortcuts::bindingsFromPortableText({QStringLiteral("Shift")}, true));
     require(shift.size() == 1 && shift.constFirst().key() == Qt::Key_Shift &&
                 shift.constFirst().keyboardModifiers() == Qt::ShiftModifier,
             "portable bare Shift did not normalize to a modifier-key binding");
@@ -407,6 +480,55 @@ void heldModifierParsingAndAdditionalModifiersAreScoped() {
             "exact binding registration failed");
     sendKey(&window, QEvent::KeyPress, Qt::Key_K, Qt::ShiftModifier);
     require(exactCount == 0, "ordinary bare shortcuts must retain exact modifier matching");
+}
+
+void macPhysicalBindingsSurviveLogicalLayoutChanges() {
+#ifdef Q_OS_MACOS
+    namespace shortcut_domain = snow_shot::shortcuts;
+    QWidget window;
+    WindowShortcutManager manager;
+    manager.addScopeWindow(&window);
+
+    shortcut_domain::ShortcutBinding physical{QStringLiteral("Ctrl+C")};
+    physical.physicalKeys.insert(shortcut_domain::ShortcutPlatform::MacOS, 8);
+    int activations = 0;
+    int releases = 0;
+    WindowShortcutManager::Binding item;
+    item.id = QStringLiteral("physical-layout-key");
+    item.shortcutBindings = {physical};
+    item.activate = [&activations](const auto&) {
+        ++activations;
+        return true;
+    };
+    item.cancel = [] {};
+    item.release = [&releases](const auto&) {
+        ++releases;
+        return true;
+    };
+    require(manager.addBinding(&window, std::move(item)) != 0,
+            "physical macOS binding registration failed");
+    require(sendNativeKey(&window, QEvent::KeyPress, Qt::Key_Q, Qt::ControlModifier, 8) &&
+                activations == 1,
+            "a macOS binding must follow its physical position after a logical layout change");
+    require(sendNativeKey(&window, QEvent::KeyRelease, Qt::Key_X, Qt::NoModifier, 8) &&
+                releases == 1,
+            "physical press and release identity must survive logical-key changes");
+    sendNativeKey(&window, QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier, 9);
+    require(activations == 1, "a different physical key must not match the portable character");
+
+    const shortcut_domain::ShortcutBinding ordinaryUp =
+        shortcut_domain::bindingFromPortableText(QStringLiteral("Up"));
+    QKeyEvent implicitKeypad(QEvent::KeyPress, Qt::Key_Up, Qt::KeypadModifier, 126, 126, 0);
+    require(shortcut_domain::shortcutMatchesEvent(ordinaryUp, implicitKeypad),
+            "Cocoa's implicit keypad modifier on navigation keys must be ignored");
+
+    shortcut_domain::ShortcutBinding keypadUp{QStringLiteral("Num+Up")};
+    keypadUp.physicalKeys.insert(shortcut_domain::ShortcutPlatform::MacOS, 91);
+    QKeyEvent explicitKeypad(QEvent::KeyPress, Qt::Key_Up, Qt::KeypadModifier, 91, 91, 0);
+    require(shortcut_domain::shortcutMatchesEvent(keypadUp, explicitKeypad) &&
+                !shortcut_domain::shortcutMatchesEvent(ordinaryUp, explicitKeypad),
+            "explicit keypad navigation must retain its distinct physical identity");
+#endif
 }
 
 void inputSuspensionBlocksDispatchAndClearsHeldState() {
@@ -983,6 +1105,7 @@ int main(int argc, char** argv) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
     }
     QApplication application(argc, argv);
+    sharedShortcutDomainCanonicalizesIdentityAndDisplay();
     canceledCloseDoesNotStealAnotherManagersFreshPress();
     releaseActivationOwnsTheWholeSequence();
     interruptedReleaseActivationNeverClosesLater();
@@ -1001,6 +1124,7 @@ int main(int argc, char** argv) {
     dispatchSurvivesBindingRemovalFromCallbacks();
     heldBindingsReleaseByTriggerKey();
     heldModifierParsingAndAdditionalModifiersAreScoped();
+    macPhysicalBindingsSurviveLogicalLayoutChanges();
     inputSuspensionBlocksDispatchAndClearsHeldState();
     childWindowOwnershipFallbackKeepsToolbarScope();
     transientToolWindowOwnershipKeepsScope();

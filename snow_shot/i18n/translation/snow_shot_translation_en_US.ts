@@ -98,12 +98,12 @@
             <translation>Auto Detect</translation>
         </message>
         <message>
-            <source>Copy (Ctrl+C)</source>
-            <translation>Copy (Ctrl+C)</translation>
+            <source>Copy (%1)</source>
+            <translation>Copy (%1)</translation>
         </message>
         <message>
-            <source>Copy and Close (Ctrl+Q)</source>
-            <translation>Copy and Close (Ctrl+Q)</translation>
+            <source>Copy and Close (%1)</source>
+            <translation>Copy and Close (%1)</translation>
         </message>
         <message>
             <source>Copy translated text</source>

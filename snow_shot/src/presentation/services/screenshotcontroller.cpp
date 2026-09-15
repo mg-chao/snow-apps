@@ -6,6 +6,7 @@
 #include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/translation/translationservice.h"
 #include "snow_shot/presentation/languagemanager.h"
+#include "snow_shot/shortcuts/shortcutdisplayservice.h"
 
 #include "snow_shot/platform/physicalcursor.h"
 #include "snow_shot/presentation/screenshotcaptureruntimeadapter.h"
@@ -870,6 +871,13 @@ void ScreenshotController::Impl::createPresentationInfrastructure() {
             m_intelligentSelection,
             m_quickSelectionDisabledTools,
         });
+    QObject::connect(&snow_shot::shortcuts::ShortcutDisplayService::instance(),
+                     &snow_shot::shortcuts::ShortcutDisplayService::displayChanged, &owner,
+                     [this]() {
+                         if (m_presentationServices != nullptr && !m_interaction.inactive()) {
+                             m_presentationServices->updateOverlayState();
+                         }
+                     });
 }
 
 bool ScreenshotController::Impl::ensureRecognitionFeature() {

@@ -98,12 +98,12 @@
             <translation>自動偵測</translation>
         </message>
         <message>
-            <source>Copy (Ctrl+C)</source>
-            <translation>複製 (Ctrl+C)</translation>
+            <source>Copy (%1)</source>
+            <translation>複製 (%1)</translation>
         </message>
         <message>
-            <source>Copy and Close (Ctrl+Q)</source>
-            <translation>複製並關閉 (Ctrl+Q)</translation>
+            <source>Copy and Close (%1)</source>
+            <translation>複製並關閉 (%1)</translation>
         </message>
         <message>
             <source>Copy translated text</source>

@@ -2608,8 +2608,8 @@ Unavailable: %2</source>
             <translation>此平台不支持全局快捷键</translation>
         </message>
         <message>
-            <source>not supported as a Windows global shortcut</source>
-            <translation>不支持作为 Windows 全局快捷键</translation>
+            <source>not supported as a global shortcut</source>
+            <translation>不支持作为全局快捷键</translation>
         </message>
         <message>
             <source>registration did not complete</source>

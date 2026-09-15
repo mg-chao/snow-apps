@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshotsmartselectiontransition.h"
 #include "snow_draw_engine_qt/snow_canvas_types.h"
 #include "snow_shot/presentation/screenshotuipreferences.h"
+#include "snow_shot/shortcuts/shortcutbinding.h"
 
 #include <QPoint>
 #include <QPointF>
@@ -67,7 +68,7 @@ class ScreenshotPresentationServices final {
     ScreenshotPresentationServicesContext m_context;
     ScreenshotSmartSelectionTransition m_smartSelectionTransition;
     ScreenshotUiPreferences m_uiPreferences;
-    std::optional<QMap<QString, QStringList>> m_configuredShortcuts;
+    std::optional<snow_shot::shortcuts::ShortcutBindingMap> m_configuredShortcuts;
     bool m_selectionToolbarHovered = false;
 };
 

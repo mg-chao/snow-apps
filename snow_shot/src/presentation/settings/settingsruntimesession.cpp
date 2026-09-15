@@ -24,15 +24,6 @@ SettingsCustomRenderer toolbarRenderer(storage::ScreenshotToolbarLayoutKind kind
     Q_UNREACHABLE();
 }
 
-QVariantList stringListVariant(const QStringList& values) {
-    QVariantList result;
-    result.reserve(values.size());
-    for (const QString& value : values) {
-        result.push_back(value);
-    }
-    return result;
-}
-
 QStringList stringListValue(const QVariant& value) {
     QStringList result;
     if (value.metaType() == QMetaType::fromType<QStringList>()) {
@@ -44,8 +35,15 @@ QStringList stringListValue(const QVariant& value) {
     return result;
 }
 
-QString localShortcutKey(SettingsLocalShortcutScope scope, const QString& shortcutId) {
-    return QString::number(static_cast<int>(scope)) + QLatin1Char('\x1f') + shortcutId;
+QVariant shortcutListVariant(const shortcuts::ShortcutBindingList& bindings) {
+    return QVariant::fromValue(bindings);
+}
+
+shortcuts::ShortcutBindingList shortcutListValue(const QVariant& value) {
+    if (value.canConvert<shortcuts::ShortcutBindingList>()) {
+        return value.value<shortcuts::ShortcutBindingList>();
+    }
+    return shortcuts::bindingsFromPortableText(stringListValue(value));
 }
 
 QVariant globalMouseCombinationVariant(const SettingsGlobalMouseCombination& combination) {
@@ -81,6 +79,8 @@ SettingsRuntimeSession::SettingsRuntimeSession(const SettingsRegistry& registry,
     qRegisterMetaType<SettingsCommandKind>();
     qRegisterMetaType<storage::ScreenshotToolbarLayout>();
     qRegisterMetaType<SettingsGlobalMouseCombination>();
+    qRegisterMetaType<shortcuts::ShortcutBinding>();
+    qRegisterMetaType<shortcuts::ShortcutBindingList>();
     connect(&m_backend, &SettingsBackend::operationMessage, this,
             &SettingsRuntimeSession::operationMessage);
     connect(&m_backend, &SettingsBackend::actionFinished, this,
@@ -893,9 +893,10 @@ QVariant SettingsRuntimeSession::readValue(const SettingsFieldDescriptor& descri
             } else if constexpr (std::is_same_v<Payload, SettingsTextDefinition>) {
                 return m_backend.textValue(payload.binding);
             } else if constexpr (std::is_same_v<Payload, SettingsShortcutActionDefinition>) {
-                return m_backend.shortcutState(payload.shortcutAction).shortcuts;
+                return shortcutListVariant(
+                    m_backend.shortcutState(payload.shortcutAction).shortcuts);
             } else if constexpr (std::is_same_v<Payload, SettingsLocalShortcutDefinition>) {
-                return stringListVariant(
+                return shortcutListVariant(
                     m_backend.localShortcuts(payload.scope, payload.shortcutId));
             } else if constexpr (std::is_same_v<Payload, SettingsGlobalMouseActionDefinition>) {
                 return globalMouseCombinationVariant(
@@ -958,10 +959,10 @@ bool SettingsRuntimeSession::writeValue(const SettingsFieldDescriptor& descripto
             } else if constexpr (std::is_same_v<Payload, SettingsTextDefinition>) {
                 return m_backend.applyTextValue(payload.binding, value.toString());
             } else if constexpr (std::is_same_v<Payload, SettingsShortcutActionDefinition>) {
-                return m_backend.applyShortcuts(payload.shortcutAction, stringListValue(value));
+                return m_backend.applyShortcuts(payload.shortcutAction, shortcutListValue(value));
             } else if constexpr (std::is_same_v<Payload, SettingsLocalShortcutDefinition>) {
                 return m_backend.applyLocalShortcuts(payload.scope, payload.shortcutId,
-                                                     stringListValue(value));
+                                                     shortcutListValue(value));
             } else if constexpr (std::is_same_v<Payload, SettingsGlobalMouseActionDefinition>) {
                 if (!value.canConvert<SettingsGlobalMouseCombination>()) {
                     return false;
@@ -1049,8 +1050,10 @@ bool SettingsRuntimeSession::valuesEqual(const SettingsFieldDescriptor& descript
                second.value<SettingsGlobalMouseCombination>();
     }
     if (std::holds_alternative<SettingsLocalShortcutDefinition>(descriptor.definition->payload) ||
-        std::holds_alternative<SettingsShortcutActionDefinition>(descriptor.definition->payload) ||
-        std::holds_alternative<SettingsMultiSelectDefinition>(descriptor.definition->payload)) {
+        std::holds_alternative<SettingsShortcutActionDefinition>(descriptor.definition->payload)) {
+        return shortcutListValue(first) == shortcutListValue(second);
+    }
+    if (std::holds_alternative<SettingsMultiSelectDefinition>(descriptor.definition->payload)) {
         return stringListValue(first) == stringListValue(second);
     }
     if (std::holds_alternative<SettingsCustomDefinition>(descriptor.definition->payload)) {
@@ -1328,7 +1331,7 @@ SettingsRuntimeSession::shortcutState(GlobalShortcutAction action) const {
     if (const auto* descriptor = descriptorForShortcut(action)) {
         const SettingsFieldState current = state(descriptor->id);
         if (current.dirty) {
-            result.shortcuts = stringListValue(current.draftValue);
+            result.shortcuts = shortcutListValue(current.draftValue);
             result.status = GlobalShortcutStatus::Failed;
         }
     }
@@ -1336,33 +1339,45 @@ SettingsRuntimeSession::shortcutState(GlobalShortcutAction action) const {
 }
 
 GlobalShortcutValidationResult
-SettingsRuntimeSession::validateShortcut(const QString& shortcut) const {
-    return m_backend.validateShortcut(shortcut);
+SettingsRuntimeSession::validateShortcut(GlobalShortcutAction action,
+                                         const shortcuts::ShortcutBinding& shortcut) const {
+    return m_backend.validateShortcut(action, shortcut);
 }
 
 bool SettingsRuntimeSession::applyShortcuts(GlobalShortcutAction action,
-                                            const QStringList& shortcuts) {
+                                            const shortcuts::ShortcutBindingList& shortcuts) {
     const auto* descriptor = descriptorForShortcut(action);
-    return descriptor != nullptr && submitDraft(descriptor->id, stringListVariant(shortcuts));
+    return descriptor != nullptr && submitDraft(descriptor->id, shortcutListVariant(shortcuts));
 }
 
-QStringList SettingsRuntimeSession::localShortcuts(SettingsLocalShortcutScope scope,
-                                                   const QString& shortcutId) const {
+shortcuts::ShortcutBindingList
+SettingsRuntimeSession::localShortcuts(SettingsLocalShortcutScope scope,
+                                       const QString& shortcutId) const {
     const auto* descriptor = descriptorForLocal(scope, shortcutId);
-    return descriptor != nullptr ? stringListValue(state(descriptor->id).draftValue)
-                                 : QStringList();
+    return descriptor != nullptr ? shortcutListValue(state(descriptor->id).draftValue)
+                                 : shortcuts::ShortcutBindingList();
 }
 
-GlobalShortcutValidationResult SettingsRuntimeSession::validateLocalShortcut(
-    SettingsLocalShortcutScope scope, const QString& shortcutId, const QString& shortcut) const {
+GlobalShortcutValidationResult
+SettingsRuntimeSession::validateLocalShortcut(SettingsLocalShortcutScope scope,
+                                              const QString& shortcutId,
+                                              const shortcuts::ShortcutBinding& shortcut) const {
     return m_backend.validateLocalShortcut(scope, shortcutId, shortcut);
 }
 
 bool SettingsRuntimeSession::applyLocalShortcuts(SettingsLocalShortcutScope scope,
                                                  const QString& shortcutId,
-                                                 const QStringList& shortcuts) {
+                                                 const shortcuts::ShortcutBindingList& shortcuts) {
     const auto* descriptor = descriptorForLocal(scope, shortcutId);
-    return descriptor != nullptr && submitDraft(descriptor->id, stringListVariant(shortcuts));
+    return descriptor != nullptr && submitDraft(descriptor->id, shortcutListVariant(shortcuts));
+}
+
+quint64 SettingsRuntimeSession::suspendGlobalShortcuts() {
+    return m_backend.suspendGlobalShortcuts();
+}
+
+void SettingsRuntimeSession::resumeGlobalShortcuts(quint64 handle) {
+    m_backend.resumeGlobalShortcuts(handle);
 }
 
 SettingsGlobalMouseCombination

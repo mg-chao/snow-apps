@@ -3,6 +3,7 @@
 
 #include "snow_shot/storage/capturehistorytypes.h"
 #include "snow_shot/storage/persistedselectioncodec.h"
+#include "snow_shot/shortcuts/shortcutbinding.h"
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -100,11 +101,11 @@ QString defaultOutputDirectory(QStandardPaths::StandardLocation primary) {
     return root;
 }
 
-const QVector<ConfigurationSchemaEntry> kEntries = {
+const QVector<ConfigurationSchemaEntry> kRawEntries = {
     {QStringLiteral("api_configuration/custom_models"), QJsonArray(),
      ConfigurationValueKind::Structured},
-    {QStringLiteral("storage/schema_version"), 1, ConfigurationValueKind::Integer,
-     ConfigurationIntegerRange{1, 1, 1}},
+    {QStringLiteral("storage/schema_version"), 2, ConfigurationValueKind::Integer,
+     ConfigurationIntegerRange{2, 2, 1}},
     {QStringLiteral("interface/theme_mode"),
      QStringLiteral("system"),
      ConfigurationValueKind::String,
@@ -919,6 +920,55 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
                                CaptureHistoryPolicy::MaximumDiskMiB, 1}},
 };
 
+bool shortcutConfigurationKey(const QString& key) {
+    return key.startsWith(QStringLiteral("global_shortcuts/")) ||
+           key.startsWith(QStringLiteral("drawing_shortcuts/")) ||
+           key.startsWith(QStringLiteral("screenshot_shortcuts/")) ||
+           key.startsWith(QStringLiteral("screen_recording_shortcuts/")) ||
+           key.startsWith(QStringLiteral("pin_to_screen_shortcuts/"));
+}
+
+QJsonArray shortcutDefaults(const QJsonValue& value) {
+    return snow_shot::shortcuts::shortcutBindingsToJson(
+        snow_shot::shortcuts::shortcutBindingsFromJson(value, true));
+}
+
+QJsonArray macGlobalShortcutDefault(const QString& portableText, quint32 virtualKey) {
+    snow_shot::shortcuts::ShortcutBinding binding{portableText};
+    binding.physicalKeys.insert(snow_shot::shortcuts::ShortcutPlatform::MacOS, virtualKey);
+    return snow_shot::shortcuts::shortcutBindingsToJson({binding});
+}
+
+QVector<ConfigurationSchemaEntry> buildEntries() {
+    QVector<ConfigurationSchemaEntry> result = kRawEntries;
+    for (ConfigurationSchemaEntry& entry : result) {
+        if (!shortcutConfigurationKey(entry.key)) {
+            continue;
+        }
+        entry.valueKind = ConfigurationValueKind::ShortcutList;
+        entry.defaultValue = shortcutDefaults(entry.defaultValue);
+    }
+#ifdef Q_OS_MACOS
+    const auto replaceDefault = [&result](const QString& key, const QJsonArray& value) {
+        const auto found = std::find_if(result.begin(), result.end(),
+                                        [&key](const auto& entry) { return entry.key == key; });
+        if (found != result.end()) {
+            found->defaultValue = value;
+        }
+    };
+    // Portable Meta maps to the physical Control key on Apple platforms.
+    replaceDefault(QStringLiteral("global_shortcuts/screenshot"),
+                   macGlobalShortcutDefault(QStringLiteral("Meta+Shift+1"), 18));
+    replaceDefault(QStringLiteral("global_shortcuts/screenshot_copy"),
+                   macGlobalShortcutDefault(QStringLiteral("Meta+Shift+2"), 19));
+    replaceDefault(QStringLiteral("global_shortcuts/pin_clipboard_content"),
+                   macGlobalShortcutDefault(QStringLiteral("Meta+Shift+3"), 20));
+#endif
+    return result;
+}
+
+const QVector<ConfigurationSchemaEntry> kEntries = buildEntries();
+
 const QHash<QString, int>& entryIndex() {
     static const QHash<QString, int> index = [] {
         QHash<QString, int> result;
@@ -998,64 +1048,13 @@ ConfigurationNormalization normalizeLanguage(const QJsonValue& value) {
     return {normalized, true, normalized != value.toString()};
 }
 
-QString canonicalShortcut(const QString& input, bool allowModifierOnlyShift) {
-    const QString trimmed = input.trimmed();
-    if (trimmed.isEmpty()) {
-        return {};
-    }
-    // Shift is intentionally supported as a modifier-only local shortcut. Qt
-    // reports its press as Key_Shift with ShiftModifier, which is distinct
-    // from an ordinary Shift-modified key combination.
-    if (allowModifierOnlyShift &&
-        trimmed.compare(QStringLiteral("Shift"), Qt::CaseInsensitive) == 0) {
-        return QStringLiteral("Shift");
-    }
-    QKeySequence sequence = QKeySequence::fromString(trimmed, QKeySequence::PortableText);
-    if (sequence.isEmpty()) {
-        sequence = QKeySequence::fromString(trimmed, QKeySequence::NativeText);
-    }
-    if (sequence.count() != 1) {
-        return {};
-    }
-    const QKeyCombination combination = sequence[0];
-    const Qt::Key key = combination.key();
-    if (allowModifierOnlyShift && key == Qt::Key_Shift &&
-        combination.keyboardModifiers() == Qt::ShiftModifier) {
-        return QStringLiteral("Shift");
-    }
-    if (key == Qt::Key_unknown || key == Qt::Key_Control || key == Qt::Key_Alt ||
-        key == Qt::Key_Shift || key == Qt::Key_Meta || key == Qt::Key_AltGr ||
-        key == Qt::Key_Super_L || key == Qt::Key_Super_R) {
-        return {};
-    }
-    const QString portable = sequence.toString(QKeySequence::PortableText).trimmed();
-    return portable;
-}
-
 ConfigurationNormalization normalizeShortcuts(const QJsonValue& value, int maximumItems,
                                               bool allowModifierOnlyShift) {
-    if (!value.isArray()) {
-        return {};
-    }
-    QJsonArray normalized;
-    QSet<QString> seen;
     bool changed = false;
-    for (const QJsonValue& item : value.toArray()) {
-        if (!item.isString()) {
-            changed = true;
-            continue;
-        }
-        const QString shortcut = canonicalShortcut(item.toString(), allowModifierOnlyShift);
-        if (shortcut.isEmpty() || seen.contains(shortcut) ||
-            (maximumItems >= 0 && normalized.size() >= maximumItems)) {
-            changed = true;
-            continue;
-        }
-        seen.insert(shortcut);
-        normalized.push_back(shortcut);
-        changed = changed || shortcut != item.toString();
-    }
-    return {normalized, true, changed};
+    bool valid = false;
+    const auto bindings = snow_shot::shortcuts::shortcutBindingsFromJson(
+        value, allowModifierOnlyShift, maximumItems, &valid, &changed);
+    return {snow_shot::shortcuts::shortcutBindingsToJson(bindings), valid, changed};
 }
 
 ConfigurationNormalization normalizeAllowedStringList(const ConfigurationSchemaEntry& schemaEntry,
@@ -1554,6 +1553,8 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
         return {normalizedValue, true, normalizedValue != value.toString()};
     }
     case ConfigurationValueKind::StringList:
+        return normalizeAllowedStringList(*schemaEntry, value);
+    case ConfigurationValueKind::ShortcutList:
         return normalizeShortcuts(value, schemaEntry->maximumListItems,
                                   key.startsWith(QStringLiteral("screenshot_shortcuts/")));
     case ConfigurationValueKind::Structured:

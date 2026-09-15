@@ -100,6 +100,16 @@ namespace {
 constexpr quint32 kTextTranslationPayloadMarker = 0x53535452;
 constexpr quint8 kTextTranslationPayloadVersion = 2;
 
+QList<QKeyCombination> standardKeyCombinations(QKeySequence::StandardKey standardKey) {
+    QList<QKeyCombination> combinations;
+    for (const QKeySequence& sequence : QKeySequence::keyBindings(standardKey)) {
+        if (sequence.count() == 1 && !combinations.contains(sequence[0])) {
+            combinations.push_back(sequence[0]);
+        }
+    }
+    return combinations;
+}
+
 QByteArray serializeResultStyle(const ScreenshotResultStyle& style) {
     QByteArray bytes;
     QDataStream stream(&bytes, QIODevice::WriteOnly);
@@ -849,6 +859,9 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
     m_shortcutManager->addScopeWindow(this);
     registerWindowShortcuts();
     reloadPinnedWindowShortcuts();
+    connect(&snow_shot::shortcuts::ShortcutDisplayService::instance(),
+            &snow_shot::shortcuts::ShortcutDisplayService::displayChanged, this,
+            &ScreenshotPinnedWindow::reloadPinnedWindowShortcuts);
     if (applicationStorage.isInitialized()) {
         connect(&applicationStorage.configuration(),
                 &snow_shot::storage::ConfigurationStore::valueChanged, this,
@@ -1034,10 +1047,7 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
 
     ShortcutManager::Binding selectAll;
     selectAll.id = QStringLiteral("pinned.ocr.select_all");
-    selectAll.keyCombinations = {
-        QKeyCombination(Qt::ControlModifier, Qt::Key_A),
-        QKeyCombination(Qt::MetaModifier, Qt::Key_A),
-    };
+    selectAll.keyCombinations = standardKeyCombinations(QKeySequence::SelectAll);
     selectAll.priority = ShortcutManager::StandardPriority::WindowCommand;
     selectAll.canActivate = ocrCommandsAllowed;
     selectAll.activate = [this](const auto& context) {
@@ -1059,10 +1069,7 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
 
     ShortcutManager::Binding copy;
     copy.id = QStringLiteral("pinned.ocr.copy");
-    copy.keyCombinations = {
-        QKeyCombination(Qt::ControlModifier, Qt::Key_C),
-        QKeyCombination(Qt::MetaModifier, Qt::Key_C),
-    };
+    copy.keyCombinations = standardKeyCombinations(QKeySequence::Copy);
     copy.priority = ShortcutManager::StandardPriority::WindowCommand;
     copy.canActivate = ocrCommandsAllowed;
     copy.activate = [this](const auto&) {
@@ -1096,14 +1103,14 @@ void ScreenshotPinnedWindow::reloadPinnedWindowShortcuts() {
     };
     for (const auto& action : actions) {
         const QString actionId = QString::fromLatin1(action.id);
-        const QStringList shortcuts = settings.shortcuts(actionId);
-        const auto combinations = ShortcutManager::keyCombinationsFromPortableText(shortcuts);
+        const snow_shot::shortcuts::ShortcutBindingList shortcuts = settings.shortcuts(actionId);
+        const auto combinations = ShortcutManager::keyCombinationsFromBindings(shortcuts);
         if (action.actionObjectName == nullptr) {
             movementCombinations.append(combinations);
         }
         const auto binding = m_pinnedShortcutBindings.constFind(actionId);
         if (binding != m_pinnedShortcutBindings.cend()) {
-            static_cast<void>(m_shortcutManager->setKeyCombinations(binding.value(), combinations));
+            static_cast<void>(m_shortcutManager->setShortcuts(binding.value(), shortcuts));
         }
         if (action.actionObjectName != nullptr) {
             setActionShortcutDisplay(

@@ -7,6 +7,7 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/translationlanguages.h"
 #include "snow_shot/presentation/translationpagecontroller.h"
+#include "snow_shot/shortcuts/shortcutdisplayservice.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "antd_icons.h"
 #include "widgets/alert.h"
@@ -233,6 +234,9 @@ TranslationPageWidget::TranslationPageWidget(QWidget* parent, SnowShotApiClient*
             &TranslationPageWidget::scheduleResultUpdate);
     connect(m_controller, &translation::TranslationPageController::stateChanged, this,
             &TranslationPageWidget::syncState);
+    connect(&snow_shot::shortcuts::ShortcutDisplayService::instance(),
+            &snow_shot::shortcuts::ShortcutDisplayService::displayChanged, this,
+            &TranslationPageWidget::retranslateUi);
     qApp->installEventFilter(this);
     retranslateUi();
     applyTheme(m_scheme);
@@ -319,7 +323,9 @@ bool TranslationPageWidget::eventFilter(QObject* watched, QEvent* event) {
     if (event->type() == QEvent::KeyPress || event->type() == QEvent::ShortcutOverride) {
         auto* key = static_cast<QKeyEvent*>(event);
         const bool copy = key->matches(QKeySequence::Copy);
-        const bool copyClose = key->key() == Qt::Key_Q && key->modifiers() == Qt::ControlModifier;
+        static const snow_shot::shortcuts::ShortcutBinding copyCloseBinding =
+            snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Ctrl+Q"));
+        const bool copyClose = snow_shot::shortcuts::shortcutMatchesEvent(copyCloseBinding, *key);
         if (copy) {
             if (const auto* editor = qobject_cast<QTextEdit*>(widget);
                 editor != nullptr && editor->textCursor().hasSelection()) {
@@ -477,8 +483,15 @@ void TranslationPageWidget::retranslateUi() {
     m_floating->setAccessibleName(tr("Translation actions"));
     m_resultCopy->setAccessibleName(tr("Copy translated text"));
     m_resultCopy->setToolTip(tr("Copy translated text"));
-    m_copy->setText(tr("Copy (Ctrl+C)"));
-    m_copyClose->setText(tr("Copy and Close (Ctrl+Q)"));
+    const auto copyBinding =
+        snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Ctrl+C"));
+    const auto copyCloseBinding =
+        snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Ctrl+Q"));
+    m_copy->setText(
+        tr("Copy (%1)").arg(snow_shot::shortcuts::formatShortcutDisplayText(copyBinding)));
+    m_copyClose->setText(
+        tr("Copy and Close (%1)")
+            .arg(snow_shot::shortcuts::formatShortcutDisplayText(copyCloseBinding)));
     m_retry->setText(tr("Retry"));
     m_controller->setLocale(translation::LanguageManager::instance().currentLocale());
     syncState();

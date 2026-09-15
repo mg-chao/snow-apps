@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/shortcuts/shortcutdisplayservice.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "../src/presentation/recording/screenrecordingselection.h"
@@ -302,13 +303,14 @@ void recordingControlShortcutsFollowButtonsAndSettings() {
     const snow_shot::storage::ScreenRecordingShortcutSettings settings;
     const auto defaults = settings.allShortcuts();
     require(defaults.size() == 4 &&
-                defaults.value(QStringLiteral("export")) == QStringList{QStringLiteral("Ctrl+E")} &&
-                defaults.value(QStringLiteral("toggle_recording")) ==
-                    QStringList{QStringLiteral("Ctrl+S")} &&
-                defaults.value(QStringLiteral("copy_to_clipboard")) ==
-                    QStringList{QStringLiteral("Ctrl+C")} &&
-                defaults.value(QStringLiteral("end_recording")) ==
-                    QStringList{QStringLiteral("Esc")},
+                snow_shot::shortcuts::portableTextList(defaults.value(QStringLiteral("export"))) ==
+                    QStringList{QStringLiteral("Ctrl+E")} &&
+                snow_shot::shortcuts::portableTextList(defaults.value(
+                    QStringLiteral("toggle_recording"))) == QStringList{QStringLiteral("Ctrl+S")} &&
+                snow_shot::shortcuts::portableTextList(defaults.value(QStringLiteral(
+                    "copy_to_clipboard"))) == QStringList{QStringLiteral("Ctrl+C")} &&
+                snow_shot::shortcuts::portableTextList(defaults.value(
+                    QStringLiteral("end_recording"))) == QStringList{QStringLiteral("Esc")},
             "recording controls must have the requested defaults");
     ScreenRecordingAreaWindow area;
     ScreenRecordingToolbarWindow toolbar;
@@ -415,7 +417,9 @@ void recordingControlShortcutsFollowButtonsAndSettings() {
         return static_cast<adqt::widgets::AdButton*>(nullptr);
     };
     auto* exportButton = findButton(QStringLiteral("Stop recording"));
-    require(exportButton != nullptr && exportButton->toolTip().contains(QStringLiteral("Ctrl+E")),
+    const QString originalExportDisplay = snow_shot::shortcuts::formatShortcutDisplayText(
+        snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Ctrl+E")));
+    require(exportButton != nullptr && exportButton->toolTip().contains(originalExportDisplay),
             "export tooltip must show its configured shortcut");
     require(settings.setShortcuts(QStringLiteral("export"),
                                   {QStringLiteral("F12"), QStringLiteral("Ctrl+F12")}),
@@ -430,7 +434,7 @@ void recordingControlShortcutsFollowButtonsAndSettings() {
     press(popup, Qt::Key_F12, Qt::ControlModifier);
     popup.hide();
     require(exports == 4 && exportButton->toolTip().contains(QStringLiteral("F12")) &&
-                !exportButton->toolTip().contains(QStringLiteral("Ctrl+E")),
+                !exportButton->toolTip().contains(originalExportDisplay),
             "both new keys and tooltip hints must update immediately, including popups");
     require(settings.setShortcuts(QStringLiteral("export"), {}),
             "recording shortcut may be cleared");

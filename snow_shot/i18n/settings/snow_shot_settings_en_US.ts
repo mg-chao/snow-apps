@@ -2608,8 +2608,8 @@ Unavailable: %2</translation>
             <translation>global shortcuts are not supported on this platform</translation>
         </message>
         <message>
-            <source>not supported as a Windows global shortcut</source>
-            <translation>not supported as a Windows global shortcut</translation>
+            <source>not supported as a global shortcut</source>
+            <translation>not supported as a global shortcut</translation>
         </message>
         <message>
             <source>registration did not complete</source>

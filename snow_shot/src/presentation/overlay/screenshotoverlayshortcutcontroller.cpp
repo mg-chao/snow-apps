@@ -332,24 +332,21 @@ struct ScreenshotOverlayShortcutController::Impl {
         const snow_shot::storage::ScreenshotShortcutSettings screenshotSettings;
         for (auto binding = screenshotBindings.cbegin(); binding != screenshotBindings.cend();
              ++binding) {
-            static_cast<void>(shortcutManager.setKeyCombinations(
-                binding.value(), ShortcutManager::keyCombinationsFromPortableText(
-                                     screenshotSettings.shortcuts(binding.key()))));
+            static_cast<void>(shortcutManager.setShortcuts(
+                binding.value(), screenshotSettings.shortcuts(binding.key())));
         }
 
         for (auto binding = externalBindings.cbegin(); binding != externalBindings.cend();
              ++binding) {
-            static_cast<void>(shortcutManager.setKeyCombinations(
-                binding.value(), ShortcutManager::keyCombinationsFromPortableText(
-                                     screenshotSettings.shortcuts(binding.key()))));
+            static_cast<void>(shortcutManager.setShortcuts(
+                binding.value(), screenshotSettings.shortcuts(binding.key())));
         }
 
         const snow_shot::storage::DrawingShortcutSettings drawingSettings;
         for (auto binding = drawingBindings.cbegin(); binding != drawingBindings.cend();
              ++binding) {
-            static_cast<void>(shortcutManager.setKeyCombinations(
-                binding.value(), ShortcutManager::keyCombinationsFromPortableText(
-                                     drawingSettings.shortcuts(binding.key()))));
+            static_cast<void>(shortcutManager.setShortcuts(
+                binding.value(), drawingSettings.shortcuts(binding.key())));
         }
     }
 

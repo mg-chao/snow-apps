@@ -17,9 +17,9 @@ class GlobalShortcutBackend {
 
     virtual void setActivationHandler(ActivationHandler handler) = 0;
     [[nodiscard]] virtual GlobalShortcutValidationResult
-    validateShortcut(const QString& portableShortcut) const = 0;
+    validateShortcut(const snow_shot::shortcuts::ShortcutBinding& binding) const = 0;
     [[nodiscard]] virtual GlobalShortcutBackendResult
-    registerShortcut(int registrationId, const QString& portableShortcut) = 0;
+    registerShortcut(int registrationId, const snow_shot::shortcuts::ShortcutBinding& binding) = 0;
     virtual void unregisterShortcut(int registrationId) = 0;
 };
 
@@ -27,6 +27,7 @@ class GlobalShortcutManager final : public QObject {
     Q_OBJECT
 
   public:
+    using RegistrationSuspensionHandle = quint64;
     explicit GlobalShortcutManager(QObject* parent = nullptr);
     GlobalShortcutManager(std::unique_ptr<GlobalShortcutBackend> backend, QObject* parent = nullptr,
                           std::function<bool()> focusedFullscreenDetector = {});
@@ -34,8 +35,14 @@ class GlobalShortcutManager final : public QObject {
 
     void initialize();
     [[nodiscard]] GlobalShortcutRegistrationState state(GlobalShortcutAction action) const;
+    [[nodiscard]] GlobalShortcutValidationResult
+    validateShortcut(GlobalShortcutAction action,
+                     const snow_shot::shortcuts::ShortcutBinding& shortcut) const;
     [[nodiscard]] GlobalShortcutValidationResult validateShortcut(const QString& shortcut) const;
-    void setShortcuts(GlobalShortcutAction action, const QStringList& shortcuts);
+    bool setShortcuts(GlobalShortcutAction action,
+                      const snow_shot::shortcuts::ShortcutBindingList& shortcuts);
+    [[nodiscard]] RegistrationSuspensionHandle suspendRegistrations();
+    void resumeRegistrations(RegistrationSuspensionHandle handle);
     void setGlobalHotkeysEnabled(bool enabled);
 
   signals:

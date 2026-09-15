@@ -589,28 +589,36 @@ class SettingsPageWidget::Impl {
                     const auto mainWindowMetric =
                         snow_shot::presentation::styles::buildMainWindowComponentMetricToken(
                             colorScheme);
-                    ShortcutKeyRowConfig config{
-                        definition.title.translated(),
-                        payload.iconFactory ? payload.iconFactory() : adqt::icons::IconRef(),
-                        shortcutState.shortcuts,
-                        shortcutState,
-                        QStringLiteral("normal"),
-                        true,
-                        2,
-                        [this](const QString& shortcut) {
-                            return runtimeSession.validateShortcut(shortcut);
-                        },
+                    ShortcutKeyRowConfig config;
+                    config.title = definition.title.translated();
+                    config.iconRef =
+                        payload.iconFactory ? payload.iconFactory() : adqt::icons::IconRef();
+                    config.shortcuts = shortcutState.shortcuts;
+                    config.registrationState = shortcutState;
+                    config.rowState = QStringLiteral("normal");
+                    config.useStableBorder = true;
+                    config.maxShortcutCount = 2;
+                    config.shortcutValidator =
+                        [this, action = payload.shortcutAction](const auto& shortcut) {
+                            return runtimeSession.validateShortcut(action, shortcut);
+                        };
+                    config.suspendGlobalShortcuts = [this]() {
+                        return runtimeSession.suspendGlobalShortcuts();
+                    };
+                    config.resumeGlobalShortcuts = [this](quint64 handle) {
+                        runtimeSession.resumeGlobalShortcuts(handle);
+                    };
+                    config.adjustableDelay =
                         payload.adjustment ==
-                            settings::SettingsShortcutAdjustment::ScreenshotDelaySeconds,
-                        payload.adjustment ==
-                                settings::SettingsShortcutAdjustment::ScreenshotDelaySeconds
+                        settings::SettingsShortcutAdjustment::ScreenshotDelaySeconds;
+                    config.delaySeconds =
+                        config.adjustableDelay
                             ? runtimeSession.integerValue(
                                   settings::SettingsIntegerBinding::ScreenshotDelaySeconds)
-                            : 3,
-                        [this](int value) {
-                            return runtimeSession.applyIntegerValue(
-                                settings::SettingsIntegerBinding::ScreenshotDelaySeconds, value);
-                        },
+                            : 3;
+                    config.delaySetter = [this](int value) {
+                        return runtimeSession.applyIntegerValue(
+                            settings::SettingsIntegerBinding::ScreenshotDelaySeconds, value);
                     };
                     auto* control = new ShortcutKeyRow(config, metric, mainWindowMetric, list);
                     control->setObjectName(settings::generatedObjectName(
@@ -623,14 +631,14 @@ class SettingsPageWidget::Impl {
                         control, &ShortcutKeyRow::clicked, &q,
                         [this, command = payload.command]() { emit q.commandRequested(command); });
                     connect(control, &ShortcutKeyRow::shortcutsChanged, &q,
-                            [this, action = payload.shortcutAction](const QStringList& shortcuts) {
+                            [this, action = payload.shortcutAction](const auto& shortcuts) {
                                 if (!runtimeSession.applyShortcuts(action, shortcuts)) {
                                     syncValues();
                                 }
                             });
                 } else if constexpr (std::is_same_v<Payload,
                                                     settings::SettingsLocalShortcutDefinition>) {
-                    const QStringList shortcuts =
+                    const snow_shot::shortcuts::ShortcutBindingList shortcuts =
                         runtimeSession.localShortcuts(payload.scope, payload.shortcutId);
                     snow_shot::presentation::GlobalShortcutRegistrationState displayState;
                     displayState.shortcuts = shortcuts;
@@ -653,7 +661,7 @@ class SettingsPageWidget::Impl {
                     config.maxShortcutCount = 2;
                     config.shortcutValidator = [this, scope = payload.scope,
                                                 shortcutId =
-                                                    payload.shortcutId](const QString& shortcut) {
+                                                    payload.shortcutId](const auto& shortcut) {
                         return runtimeSession.validateLocalShortcut(scope, shortcutId, shortcut);
                     };
                     config.showRegistrationStatus = false;
@@ -675,7 +683,7 @@ class SettingsPageWidget::Impl {
                     addItemWidget(control);
                     connect(control, &ShortcutKeyRow::shortcutsChanged, &q,
                             [this, scope = payload.scope,
-                             shortcutId = payload.shortcutId](const QStringList& next) {
+                             shortcutId = payload.shortcutId](const auto& next) {
                                 if (!runtimeSession.applyLocalShortcuts(scope, shortcutId, next)) {
                                     syncValues();
                                 }

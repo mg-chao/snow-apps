@@ -14,6 +14,19 @@ void require(bool condition, const char* message) {
     }
 }
 
+snow_shot::shortcuts::ShortcutBindingList
+shortcutBindings(std::initializer_list<QString> portableText) {
+    return snow_shot::shortcuts::bindingsFromPortableText(QStringList(portableText), true);
+}
+
+QString shortcutDisplay(std::initializer_list<QString> portableText) {
+    return snow_shot::shortcuts::formatShortcutListDisplayText(shortcutBindings(portableText));
+}
+
+QString shortcutLine(const QString& label, std::initializer_list<QString> portableText) {
+    return QStringLiteral("%1: %2").arg(label, shortcutDisplay(portableText));
+}
+
 QStringList hintLines(ScreenshotActiveTool tool,
                       std::initializer_list<SnowCanvasTool> disabled = {}) {
     ScreenshotShortcutHintContext context;
@@ -27,10 +40,13 @@ QStringList hintLines(ScreenshotActiveTool tool,
 
 QStringList withDefaultCursorHints(std::initializer_list<QString> remaining) {
     QStringList lines{
-        QStringLiteral("Move cursor up: W / Up"),
-        QStringLiteral("Move cursor down: S / Down"),
-        QStringLiteral("Move cursor left: A / Left"),
-        QStringLiteral("Move cursor right: D / Right"),
+        shortcutLine(QStringLiteral("Move cursor up"), {QStringLiteral("W"), QStringLiteral("Up")}),
+        shortcutLine(QStringLiteral("Move cursor down"),
+                     {QStringLiteral("S"), QStringLiteral("Down")}),
+        shortcutLine(QStringLiteral("Move cursor left"),
+                     {QStringLiteral("A"), QStringLiteral("Left")}),
+        shortcutLine(QStringLiteral("Move cursor right"),
+                     {QStringLiteral("D"), QStringLiteral("Right")}),
     };
     for (const QString& line : remaining) {
         lines.push_back(line);
@@ -40,11 +56,11 @@ QStringList withDefaultCursorHints(std::initializer_list<QString> remaining) {
 
 void toolMatrixMatchesRequestedVisibility() {
     const QStringList transformHints = withDefaultCursorHints({
-        QStringLiteral("Maintain aspect ratio: Shift"),
-        QStringLiteral("Fixed-angle rotation: Shift"),
-        QStringLiteral("Scale from center: Alt"),
-        QStringLiteral("Auto-align: Ctrl"),
-        QStringLiteral("Delete selected elements: Delete"),
+        shortcutLine(QStringLiteral("Maintain aspect ratio"), {QStringLiteral("Shift")}),
+        shortcutLine(QStringLiteral("Fixed-angle rotation"), {QStringLiteral("Shift")}),
+        shortcutLine(QStringLiteral("Scale from center"), {QStringLiteral("Alt")}),
+        shortcutLine(QStringLiteral("Auto-align"), {QStringLiteral("Ctrl")}),
+        shortcutLine(QStringLiteral("Delete selected elements"), {QStringLiteral("Delete")}),
     });
     require(hintLines(ScreenshotActiveTool::Select) == transformHints,
             "selection tool hint matrix changed");
@@ -59,67 +75,72 @@ void toolMatrixMatchesRequestedVisibility() {
     require(hintLines(ScreenshotActiveTool::RectangleFilter) == transformHints,
             "rectangle-filter hint matrix changed");
 
-    QStringList penTransformHints =
-        withDefaultCursorHints({QStringLiteral("Draw straight line: Shift")});
+    QStringList penTransformHints = withDefaultCursorHints(
+        {shortcutLine(QStringLiteral("Draw straight line"), {QStringLiteral("Shift")})});
     penTransformHints.append(transformHints.mid(4));
     require(hintLines(ScreenshotActiveTool::FreeDraw) == penTransformHints,
             "free-draw hint matrix changed");
     require(hintLines(ScreenshotActiveTool::PenFilter) == penTransformHints,
             "pen-filter hint matrix changed");
     require(hintLines(ScreenshotActiveTool::PenHighlight) ==
-                withDefaultCursorHints({QStringLiteral("Delete selected elements: Delete")}),
+                withDefaultCursorHints({shortcutLine(QStringLiteral("Delete selected elements"),
+                                                     {QStringLiteral("Delete")})}),
             "pen-highlighter hint matrix changed");
 
     const QStringList textTransformHints = withDefaultCursorHints({
-        QStringLiteral("Fixed-angle rotation: Shift"),
-        QStringLiteral("Scale from center: Alt"),
-        QStringLiteral("Auto-align: Ctrl"),
-        QStringLiteral("Delete selected elements: Delete"),
+        shortcutLine(QStringLiteral("Fixed-angle rotation"), {QStringLiteral("Shift")}),
+        shortcutLine(QStringLiteral("Scale from center"), {QStringLiteral("Alt")}),
+        shortcutLine(QStringLiteral("Auto-align"), {QStringLiteral("Ctrl")}),
+        shortcutLine(QStringLiteral("Delete selected elements"), {QStringLiteral("Delete")}),
     });
     require(hintLines(ScreenshotActiveTool::Text) == textTransformHints,
             "text hint matrix changed");
     require(hintLines(ScreenshotActiveTool::SerialNumber) == textTransformHints,
             "serial-number hint matrix changed");
 
-    require(hintLines(ScreenshotActiveTool::Shape, {SnowCanvasTool::Shape}) ==
-                withDefaultCursorHints({
-                    QStringLiteral("Maintain aspect ratio: Shift"),
-                    QStringLiteral("Scale from center: Alt"),
-                    QStringLiteral("Auto-align: Ctrl"),
-                }),
-            "shape quick-selection suppression changed");
+    require(
+        hintLines(ScreenshotActiveTool::Shape, {SnowCanvasTool::Shape}) ==
+            withDefaultCursorHints({
+                shortcutLine(QStringLiteral("Maintain aspect ratio"), {QStringLiteral("Shift")}),
+                shortcutLine(QStringLiteral("Scale from center"), {QStringLiteral("Alt")}),
+                shortcutLine(QStringLiteral("Auto-align"), {QStringLiteral("Ctrl")}),
+            }),
+        "shape quick-selection suppression changed");
     require(hintLines(ScreenshotActiveTool::Arrow, {SnowCanvasTool::Arrow}) ==
                 withDefaultCursorHints({
-                    QStringLiteral("Fixed-angle rotation: Shift"),
-                    QStringLiteral("Auto-align: Ctrl"),
+                    shortcutLine(QStringLiteral("Fixed-angle rotation"), {QStringLiteral("Shift")}),
+                    shortcutLine(QStringLiteral("Auto-align"), {QStringLiteral("Ctrl")}),
                 }),
             "arrow quick-selection suppression changed");
     require(hintLines(ScreenshotActiveTool::Line, {SnowCanvasTool::Line}) ==
                 withDefaultCursorHints({
-                    QStringLiteral("Fixed-angle rotation: Shift"),
-                    QStringLiteral("Auto-align: Ctrl"),
+                    shortcutLine(QStringLiteral("Fixed-angle rotation"), {QStringLiteral("Shift")}),
+                    shortcutLine(QStringLiteral("Auto-align"), {QStringLiteral("Ctrl")}),
                 }),
             "line quick-selection suppression changed");
     require(
         hintLines(ScreenshotActiveTool::RectangleHighlight, {SnowCanvasTool::RectangleHighlight}) ==
             withDefaultCursorHints({
-                QStringLiteral("Maintain aspect ratio: Shift"),
-                QStringLiteral("Scale from center: Alt"),
-                QStringLiteral("Auto-align: Ctrl"),
+                shortcutLine(QStringLiteral("Maintain aspect ratio"), {QStringLiteral("Shift")}),
+                shortcutLine(QStringLiteral("Scale from center"), {QStringLiteral("Alt")}),
+                shortcutLine(QStringLiteral("Auto-align"), {QStringLiteral("Ctrl")}),
             }),
         "rectangle-highlighter quick-selection suppression changed");
-    require(hintLines(ScreenshotActiveTool::RectangleFilter, {SnowCanvasTool::RectangleFilter}) ==
-                withDefaultCursorHints({
-                    QStringLiteral("Maintain aspect ratio: Shift"),
-                    QStringLiteral("Scale from center: Alt"),
-                    QStringLiteral("Auto-align: Ctrl"),
-                }),
-            "rectangle-filter quick-selection suppression changed");
+    require(
+        hintLines(ScreenshotActiveTool::RectangleFilter, {SnowCanvasTool::RectangleFilter}) ==
+            withDefaultCursorHints({
+                shortcutLine(QStringLiteral("Maintain aspect ratio"), {QStringLiteral("Shift")}),
+                shortcutLine(QStringLiteral("Scale from center"), {QStringLiteral("Alt")}),
+                shortcutLine(QStringLiteral("Auto-align"), {QStringLiteral("Ctrl")}),
+            }),
+        "rectangle-filter quick-selection suppression changed");
     require(hintLines(ScreenshotActiveTool::FreeDraw, {SnowCanvasTool::FreeDraw}) ==
-                withDefaultCursorHints({QStringLiteral("Draw straight line: Shift")}),
+                withDefaultCursorHints({shortcutLine(QStringLiteral("Draw straight line"),
+                                                     {QStringLiteral("Shift")})}),
             "free-draw quick-selection suppression changed");
     require(hintLines(ScreenshotActiveTool::PenFilter, {SnowCanvasTool::PenFilter}) ==
-                withDefaultCursorHints({QStringLiteral("Draw straight line: Shift")}),
+                withDefaultCursorHints({shortcutLine(QStringLiteral("Draw straight line"),
+                                                     {QStringLiteral("Shift")})}),
             "pen-filter quick-selection suppression changed");
     require(hintLines(ScreenshotActiveTool::PenHighlight, {SnowCanvasTool::PenHighlight}) ==
                 withDefaultCursorHints({}),
@@ -145,44 +166,51 @@ void configuredShortcutRowsUseActualValues() {
     ScreenshotShortcutHintContext context;
     context.activeTool = ScreenshotActiveTool::Move;
     context.captureMode = ScreenshotCaptureMode::ManualSelecting;
-    context.configuredShortcuts = QMap<QString, QStringList>{
-        {QStringLiteral("move_cursor_up"), {QStringLiteral("Ctrl+Alt+I"), QStringLiteral("Up")}},
-        {QStringLiteral("move_cursor_down"), {QStringLiteral("Ctrl+Alt+K")}},
-        {QStringLiteral("move_cursor_left"), {QStringLiteral("Ctrl+Alt+J")}},
-        {QStringLiteral("move_cursor_right"), {QStringLiteral("Ctrl+Alt+L")}},
-        {QStringLiteral("move_entire_selection"), {QStringLiteral("Ctrl+M")}},
-        {QStringLiteral("keep_selection_width_and_height_consistent"), {QStringLiteral("Alt+R")}},
-        {QStringLiteral("select_previously_selected_area"), {QStringLiteral("P")}},
-        {QStringLiteral("copy_color"), {QStringLiteral("Alt+C")}},
+    context.configuredShortcuts = snow_shot::shortcuts::ShortcutBindingMap{
+        {QStringLiteral("move_cursor_up"),
+         shortcutBindings({QStringLiteral("Ctrl+Alt+I"), QStringLiteral("Up")})},
+        {QStringLiteral("move_cursor_down"), shortcutBindings({QStringLiteral("Ctrl+Alt+K")})},
+        {QStringLiteral("move_cursor_left"), shortcutBindings({QStringLiteral("Ctrl+Alt+J")})},
+        {QStringLiteral("move_cursor_right"), shortcutBindings({QStringLiteral("Ctrl+Alt+L")})},
+        {QStringLiteral("move_entire_selection"), shortcutBindings({QStringLiteral("Ctrl+M")})},
+        {QStringLiteral("keep_selection_width_and_height_consistent"),
+         shortcutBindings({QStringLiteral("Alt+R")})},
+        {QStringLiteral("select_previously_selected_area"),
+         shortcutBindings({QStringLiteral("P")})},
+        {QStringLiteral("copy_color"), shortcutBindings({QStringLiteral("Alt+C")})},
         {QStringLiteral("previous_screenshot_history"),
-         {QStringLiteral("PgUp"), QStringLiteral("[")}},
+         shortcutBindings({QStringLiteral("PgUp"), QStringLiteral("[")})},
         {QStringLiteral("next_screenshot_history"),
-         {QStringLiteral("PgDown"), QStringLiteral("]")}},
+         shortcutBindings({QStringLiteral("PgDown"), QStringLiteral("]")})},
     };
 
     const QVector<ScreenshotShortcutHintRow> rows = screenshotShortcutHintRows(context);
     require(rows.size() == 10, "manual-selection configured hint row count changed");
     require(rows.at(0).label == QStringLiteral("Move cursor up") &&
-                rows.at(0).shortcut == QStringLiteral("Ctrl+Alt+I / Up") &&
+                rows.at(0).shortcut ==
+                    shortcutDisplay({QStringLiteral("Ctrl+Alt+I"), QStringLiteral("Up")}) &&
                 rows.at(1).label == QStringLiteral("Move cursor down") &&
-                rows.at(1).shortcut == QStringLiteral("Ctrl+Alt+K") &&
+                rows.at(1).shortcut == shortcutDisplay({QStringLiteral("Ctrl+Alt+K")}) &&
                 rows.at(2).label == QStringLiteral("Move cursor left") &&
-                rows.at(2).shortcut == QStringLiteral("Ctrl+Alt+J") &&
+                rows.at(2).shortcut == shortcutDisplay({QStringLiteral("Ctrl+Alt+J")}) &&
                 rows.at(3).label == QStringLiteral("Move cursor right") &&
-                rows.at(3).shortcut == QStringLiteral("Ctrl+Alt+L"),
+                rows.at(3).shortcut == shortcutDisplay({QStringLiteral("Ctrl+Alt+L")}),
             "cursor directions must use four independent configured rows");
-    require(rows.at(4).shortcut == QStringLiteral("Ctrl+M") &&
-                rows.at(5).shortcut == QStringLiteral("Alt+R") &&
-                rows.at(6).shortcut == QStringLiteral("P") &&
-                rows.at(7).shortcut == QStringLiteral("Alt+C"),
+    require(rows.at(4).shortcut == shortcutDisplay({QStringLiteral("Ctrl+M")}) &&
+                rows.at(5).shortcut == shortcutDisplay({QStringLiteral("Alt+R")}) &&
+                rows.at(6).shortcut == shortcutDisplay({QStringLiteral("P")}) &&
+                rows.at(7).shortcut == shortcutDisplay({QStringLiteral("Alt+C")}),
             "selection action hints must use configured shortcuts");
     require(rows.at(8).label == QStringLiteral("Switch color format") &&
-                rows.at(8).shortcut == QStringLiteral("Shift"),
+                rows.at(8).shortcut == shortcutDisplay({QStringLiteral("Shift")}),
             "the fixed color-format shortcut must remain visible");
     require(rows.at(9).label == QStringLiteral("Switch screenshot history") &&
-                rows.at(9).shortcut == QStringLiteral("PgUp / [ / PgDown / ]") &&
+                rows.at(9).shortcut ==
+                    shortcutDisplay({QStringLiteral("PgUp"), QStringLiteral("["),
+                                     QStringLiteral("PgDown"), QStringLiteral("]")}) &&
                 rows.at(9).shortcutChips ==
-                    QStringList{QStringLiteral("PgUp / ["), QStringLiteral("PgDown / ]")},
+                    QStringList{shortcutDisplay({QStringLiteral("PgUp"), QStringLiteral("[")}),
+                                shortcutDisplay({QStringLiteral("PgDown"), QStringLiteral("]")})},
             "history hint must split the previous and next shortcuts into separate chips");
 }
 
@@ -200,11 +228,11 @@ void unassignedConfiguredShortcutIsNotHinted() {
     ScreenshotShortcutHintContext context;
     context.activeTool = ScreenshotActiveTool::PenHighlight;
     context.captureMode = ScreenshotCaptureMode::Editing;
-    context.configuredShortcuts = QMap<QString, QStringList>{
-        {QStringLiteral("move_cursor_up"), {QStringLiteral("I")}},
+    context.configuredShortcuts = snow_shot::shortcuts::ShortcutBindingMap{
+        {QStringLiteral("move_cursor_up"), shortcutBindings({QStringLiteral("I")})},
         {QStringLiteral("move_cursor_down"), {}},
-        {QStringLiteral("move_cursor_left"), {QStringLiteral("J")}},
-        {QStringLiteral("move_cursor_right"), {QStringLiteral("L")}},
+        {QStringLiteral("move_cursor_left"), shortcutBindings({QStringLiteral("J")})},
+        {QStringLiteral("move_cursor_right"), shortcutBindings({QStringLiteral("L")})},
     };
 
     const QVector<ScreenshotShortcutHintRow> rows = screenshotShortcutHintRows(context);
@@ -230,12 +258,14 @@ void unconfiguredRowsFallBackToSchemaDefaults() {
         QStringLiteral("copy_color"),
     };
 
-    QMap<QString, QStringList> schemaDefaults;
+    snow_shot::shortcuts::ShortcutBindingMap schemaDefaults;
     for (const QString& actionId : hintActionIds) {
-        const QStringList defaults = screenshotShortcutSchemaDefaultKeys(actionId);
+        const snow_shot::shortcuts::ShortcutBindingList defaults =
+            screenshotShortcutSchemaDefaultKeys(actionId);
         require(!defaults.isEmpty(), "every hinted action must declare a schema default");
-        for (const QString& shortcut : defaults) {
-            require(!QKeySequence::fromString(shortcut, QKeySequence::PortableText).isEmpty(),
+        for (const snow_shot::shortcuts::ShortcutBinding& shortcut : defaults) {
+            require(!QKeySequence::fromString(shortcut.portableText, QKeySequence::PortableText)
+                         .isEmpty(),
                     "every schema default must parse as a portable key sequence");
         }
         schemaDefaults.insert(actionId, defaults);
@@ -251,7 +281,7 @@ void unconfiguredRowsFallBackToSchemaDefaults() {
                                            schemaDefaults, true),
             "unconfigured smart-selection rows must render the schema defaults");
 
-    QMap<QString, QStringList> partialMap = schemaDefaults;
+    snow_shot::shortcuts::ShortcutBindingMap partialMap = schemaDefaults;
     partialMap.remove(QStringLiteral("copy_color"));
     require(
         screenshotShortcutHintRows(ScreenshotShortcutHintMode::Selection, partialMap, true) ==
@@ -268,7 +298,9 @@ void scrollingHintsUseMouseWheelLabels() {
     require(screenshotShortcutHintLines(context) ==
                 QStringList{
                     QStringLiteral("Vertical scroll: mouse wheel"),
-                    QStringLiteral("Horizontal scroll: Shift + mouse wheel"),
+                    QStringLiteral("Horizontal scroll: %1 + mouse wheel")
+                        .arg(snow_shot::shortcuts::ShortcutDisplayService::instance().modifierText(
+                            Qt::ShiftModifier)),
                 },
             "scrolling capture hint labels changed");
 }
@@ -321,7 +353,8 @@ void disabledSmartSelectionHidesTheTargetSwitchHint() {
 
     const QStringList lines = screenshotShortcutHintLines(context);
     require(lines.contains(QStringLiteral("Switch element level: mouse wheel")) &&
-                !lines.contains(QStringLiteral("Select window/window sub-element: Tab")),
+                !lines.contains(shortcutLine(QStringLiteral("Select window/window sub-element"),
+                                             {QStringLiteral("Tab")})),
             "disabled Smart selection must hide only the Tab target-switch hint");
 }
 

@@ -15,6 +15,7 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/translationpagecontroller.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/shortcuts/shortcutdisplayservice.h"
 #include "snow_shot/translation/translationlanguages.h"
 #include "widgets/button.h"
 #include "widgets/input_text_edit.h"
@@ -808,10 +809,26 @@ void navigationThemesLanguagesAndGeometry() {
                         "load complete translation catalog");
                 QCoreApplication::installTranslator(&translator);
                 flushEvents();
-                require(
-                    child<QAction>(*page, "translationCopyAndClose")->text() ==
-                        translator.translate("TranslationPageWidget", "Copy and Close (Ctrl+Q)"),
-                    "floating actions retranslate immediately");
+                const QString copyCloseShortcut = snow_shot::shortcuts::formatShortcutDisplayText(
+                    snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Ctrl+Q")));
+                auto* copyAction = child<QAction>(*page, "translationCopy");
+                auto* copyCloseAction = child<QAction>(*page, "translationCopyAndClose");
+                require(copyCloseAction->text() ==
+                            translator.translate("TranslationPageWidget", "Copy and Close (%1)")
+                                .arg(copyCloseShortcut),
+                        "floating actions retranslate immediately");
+                copyAction->setText(QStringLiteral("stale copy legend"));
+                copyCloseAction->setText(QStringLiteral("stale copy-and-close legend"));
+                snow_shot::shortcuts::ShortcutDisplayService::instance().refresh();
+                const QString copyShortcut = snow_shot::shortcuts::formatShortcutDisplayText(
+                    snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Ctrl+C")));
+                require(copyAction->text() ==
+                                translator.translate("TranslationPageWidget", "Copy (%1)")
+                                    .arg(copyShortcut) &&
+                            copyCloseAction->text() ==
+                                translator.translate("TranslationPageWidget", "Copy and Close (%1)")
+                                    .arg(copyCloseShortcut),
+                        "a keyboard-layout refresh must update fixed translation shortcuts");
                 for (const bool collapsed : {false, true}) {
                     sidebar->setCollapsed(collapsed);
                     for (const QSize size : {QSize(900, 556), QSize(512, 316), QSize(1200, 900)}) {

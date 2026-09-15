@@ -1,29 +1,24 @@
 #include "snow_shot/presentation/globalshortcutmanager.h"
-#include "snow_shot/diagnostics/diagnostics.h"
-#include "snow_shot/platform/windows/focusedfullscreenwindow.h"
-#include "snow_shot/storage/settingsadapters.h"
-#include "snow_shot/storage/applicationstorage.h"
 
-#include <QAbstractNativeEventFilter>
-#include <QCoreApplication>
+#include "globalshortcutbackend_p.h"
+
+#include "snow_shot/diagnostics/diagnostics.h"
+#include "snow_shot/platform/focusedfullscreenwindow.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
+
 #include <QHash>
-#include <QKeyCombination>
-#include <QKeySequence>
+#include <QJsonDocument>
 #include <QSet>
 
 #include <algorithm>
 #include <array>
+#include <optional>
 #include <utility>
-
-#ifdef Q_OS_WIN
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#endif
 
 namespace snow_shot::presentation {
 namespace {
+
 constexpr int MAX_SHORTCUTS_PER_ACTION = 2;
 constexpr int FIRST_REGISTRATION_ID = 0x2200;
 constexpr int LAST_REGISTRATION_ID = 0xBFFF;
@@ -49,77 +44,21 @@ constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
 };
 
 int actionIndex(GlobalShortcutAction action) {
-    switch (action) {
-    case GlobalShortcutAction::Screenshot:
-        return 0;
-    case GlobalShortcutAction::ScreenshotDelay:
-        return 1;
-    case GlobalShortcutAction::ScreenshotFixed:
-        return 2;
-    case GlobalShortcutAction::ScreenshotOcr:
-        return 3;
-    case GlobalShortcutAction::ScreenshotTranslation:
-        return 4;
-    case GlobalShortcutAction::ScreenshotCopy:
-        return 5;
-    case GlobalShortcutAction::ScreenshotFullScreen:
-        return 6;
-    case GlobalShortcutAction::ScreenshotFocusedWindow:
-        return 7;
-    case GlobalShortcutAction::ScreenRecord:
-        return 8;
-    case GlobalShortcutAction::ScreenRecordCopy:
-        return 9;
-    case GlobalShortcutAction::OpenScreenRecordingFolder:
-        return 10;
-    case GlobalShortcutAction::OpenCaptureHistory:
-        return 11;
-    case GlobalShortcutAction::OpenSettings:
-        return 12;
-    case GlobalShortcutAction::PinClipboardContent:
-        return 13;
-    case GlobalShortcutAction::TranslateSelectedText:
-        return 14;
-    case GlobalShortcutAction::PinSelectedFiles:
-        return 15;
-    }
-    return 0;
+    const auto found = std::find(ALL_ACTIONS.cbegin(), ALL_ACTIONS.cend(), action);
+    return found == ALL_ACTIONS.cend()
+               ? 0
+               : static_cast<int>(std::distance(ALL_ACTIONS.cbegin(), found));
 }
 
-bool isModifierKey(Qt::Key key) {
-    return key == Qt::Key_Control || key == Qt::Key_Alt || key == Qt::Key_Shift ||
-           key == Qt::Key_Meta || key == Qt::Key_AltGr || key == Qt::Key_Super_L ||
-           key == Qt::Key_Super_R;
-}
-
-QString canonicalShortcut(const QString& shortcut) {
-    QString trimmed = shortcut.trimmed();
-    if (trimmed.isEmpty()) {
-        return {};
-    }
-
-    QKeySequence sequence = QKeySequence::fromString(trimmed, QKeySequence::PortableText);
-    if (sequence.isEmpty()) {
-        sequence = QKeySequence::fromString(trimmed, QKeySequence::NativeText);
-    }
-    if (sequence.count() != 1) {
-        return trimmed;
-    }
-
-    const QKeyCombination combination = sequence[0];
-    if (combination.key() == Qt::Key_unknown || isModifierKey(combination.key())) {
-        return trimmed;
-    }
-
-    const QString portable = sequence.toString(QKeySequence::PortableText).trimmed();
-    return portable.isEmpty() ? trimmed : portable;
-}
-
-QStringList canonicalShortcuts(const QStringList& shortcuts) {
-    QStringList result;
-    for (const QString& shortcut : shortcuts) {
-        const QString canonical = canonicalShortcut(shortcut);
-        if (canonical.isEmpty() || result.contains(canonical)) {
+shortcuts::ShortcutBindingList canonicalBindings(const shortcuts::ShortcutBindingList& bindings) {
+    shortcuts::ShortcutBindingList result;
+    for (const auto& binding : bindings) {
+        const auto canonical = shortcuts::canonicalBinding(binding);
+        const bool duplicate =
+            std::any_of(result.cbegin(), result.cend(), [&canonical](const auto& existing) {
+                return shortcuts::bindingsConflict(existing, canonical);
+            });
+        if (canonical.portableText.isEmpty() || duplicate) {
             continue;
         }
         result.push_back(canonical);
@@ -130,20 +69,35 @@ QStringList canonicalShortcuts(const QStringList& shortcuts) {
     return result;
 }
 
-bool bindingResultsEqual(const GlobalShortcutBindingResult& lhs,
-                         const GlobalShortcutBindingResult& rhs) {
-    return lhs.shortcut == rhs.shortcut && lhs.registered == rhs.registered &&
-           lhs.failureReason == rhs.failureReason && lhs.nativeErrorCode == rhs.nativeErrorCode;
+QString runtimeIdentityKey(const shortcuts::ShortcutBinding& binding) {
+    const shortcuts::ShortcutIdentity identity = shortcuts::effectiveIdentity(binding);
+    const QString key = identity.physicalKey.has_value()
+                            ? QStringLiteral("p:%1").arg(*identity.physicalKey)
+                            : QStringLiteral("q:%1").arg(static_cast<int>(identity.key));
+    return key + QStringLiteral(":m:%1").arg(static_cast<int>(identity.modifiers));
 }
 
-bool statesEqual(const GlobalShortcutRegistrationState& lhs,
-                 const GlobalShortcutRegistrationState& rhs) {
-    if (lhs.action != rhs.action || lhs.shortcuts != rhs.shortcuts || lhs.status != rhs.status ||
-        lhs.bindings.size() != rhs.bindings.size()) {
+QString ownerKey(GlobalShortcutAction action, const shortcuts::ShortcutBinding& binding) {
+    const QByteArray serialized =
+        QJsonDocument(shortcuts::shortcutBindingToJson(binding)).toJson(QJsonDocument::Compact);
+    return QString::number(actionIndex(action)) + QChar(0x1F) + QString::fromUtf8(serialized);
+}
+
+bool bindingResultsEqual(const GlobalShortcutBindingResult& first,
+                         const GlobalShortcutBindingResult& second) {
+    return first.binding == second.binding && first.shortcut == second.shortcut &&
+           first.registered == second.registered && first.failureReason == second.failureReason &&
+           first.nativeErrorCode == second.nativeErrorCode;
+}
+
+bool statesEqual(const GlobalShortcutRegistrationState& first,
+                 const GlobalShortcutRegistrationState& second) {
+    if (first.action != second.action || first.shortcuts != second.shortcuts ||
+        first.status != second.status || first.bindings.size() != second.bindings.size()) {
         return false;
     }
-    for (int index = 0; index < lhs.bindings.size(); ++index) {
-        if (!bindingResultsEqual(lhs.bindings[index], rhs.bindings[index])) {
+    for (int index = 0; index < first.bindings.size(); ++index) {
+        if (!bindingResultsEqual(first.bindings[index], second.bindings[index])) {
             return false;
         }
     }
@@ -154,391 +108,17 @@ GlobalShortcutStatus aggregateStatus(const QVector<GlobalShortcutBindingResult>&
     if (bindings.isEmpty()) {
         return GlobalShortcutStatus::Unset;
     }
-
-    const int registeredCount = static_cast<int>(
-        std::count_if(bindings.cbegin(), bindings.cend(),
-                      [](const GlobalShortcutBindingResult& result) { return result.registered; }));
-    if (registeredCount == bindings.size()) {
+    const int registered = static_cast<int>(std::count_if(
+        bindings.cbegin(), bindings.cend(), [](const auto& item) { return item.registered; }));
+    if (registered == bindings.size()) {
         return GlobalShortcutStatus::Registered;
     }
-    if (registeredCount > 0) {
-        return GlobalShortcutStatus::PartiallyRegistered;
-    }
-    return GlobalShortcutStatus::Failed;
+    return registered > 0 ? GlobalShortcutStatus::PartiallyRegistered
+                          : GlobalShortcutStatus::Failed;
 }
 
-QString ownerKey(GlobalShortcutAction action, const QString& shortcut) {
-    return QString::number(actionIndex(action)) + QChar(0x1F) + shortcut;
-}
-
-class UnsupportedGlobalShortcutBackend final : public GlobalShortcutBackend {
-  public:
-    void setActivationHandler(ActivationHandler) override {}
-
-    GlobalShortcutValidationResult
-    validateShortcut(const QString& portableShortcut) const override {
-        return {
-            portableShortcut,
-            false,
-            GlobalShortcutFailureReason::UnsupportedPlatform,
-        };
-    }
-
-    GlobalShortcutBackendResult registerShortcut(int, const QString&) override {
-        return {
-            false,
-            GlobalShortcutFailureReason::UnsupportedPlatform,
-            0,
-        };
-    }
-
-    void unregisterShortcut(int) override {}
-};
-
-#ifdef Q_OS_WIN
-UINT virtualKeyForQtKey(Qt::Key key, bool keypad) {
-    const int value = static_cast<int>(key);
-    if (keypad) {
-        if (key >= Qt::Key_0 && key <= Qt::Key_9) {
-            return static_cast<UINT>(VK_NUMPAD0 + value - static_cast<int>(Qt::Key_0));
-        }
-        switch (key) {
-        case Qt::Key_Plus:
-            return VK_ADD;
-        case Qt::Key_Minus:
-            return VK_SUBTRACT;
-        case Qt::Key_Asterisk:
-            return VK_MULTIPLY;
-        case Qt::Key_Slash:
-            return VK_DIVIDE;
-        case Qt::Key_Period:
-        case Qt::Key_Comma:
-            return VK_DECIMAL;
-        case Qt::Key_NumLock:
-            return VK_NUMLOCK;
-        default:
-            return 0;
-        }
-    }
-
-    if ((key >= Qt::Key_0 && key <= Qt::Key_9) || (key >= Qt::Key_A && key <= Qt::Key_Z)) {
-        return static_cast<UINT>(value);
-    }
-    if (key >= Qt::Key_F1 && key <= Qt::Key_F24) {
-        // Map every native function key. RegisterHotKey decides whether a particular
-        // combination is reserved or already owned, including debugger shortcuts.
-        return static_cast<UINT>(VK_F1 + value - static_cast<int>(Qt::Key_F1));
-    }
-
-    switch (key) {
-    case Qt::Key_Cancel:
-        return VK_CANCEL;
-    case Qt::Key_Backspace:
-        return VK_BACK;
-    case Qt::Key_Tab:
-    case Qt::Key_Backtab:
-        return VK_TAB;
-    case Qt::Key_Return:
-    case Qt::Key_Enter:
-        return VK_RETURN;
-    case Qt::Key_Escape:
-        return VK_ESCAPE;
-    case Qt::Key_Insert:
-        return VK_INSERT;
-    case Qt::Key_Delete:
-        return VK_DELETE;
-    case Qt::Key_Pause:
-        return VK_PAUSE;
-    case Qt::Key_Print:
-        return VK_SNAPSHOT;
-    case Qt::Key_Printer:
-        return VK_PRINT;
-    case Qt::Key_SysReq:
-        return VK_SNAPSHOT;
-    case Qt::Key_Clear:
-        return VK_CLEAR;
-    case Qt::Key_Home:
-        return VK_HOME;
-    case Qt::Key_End:
-        return VK_END;
-    case Qt::Key_Left:
-        return VK_LEFT;
-    case Qt::Key_Up:
-        return VK_UP;
-    case Qt::Key_Right:
-        return VK_RIGHT;
-    case Qt::Key_Down:
-        return VK_DOWN;
-    case Qt::Key_PageUp:
-        return VK_PRIOR;
-    case Qt::Key_PageDown:
-        return VK_NEXT;
-    case Qt::Key_CapsLock:
-        return VK_CAPITAL;
-    case Qt::Key_NumLock:
-        return VK_NUMLOCK;
-    case Qt::Key_ScrollLock:
-        return VK_SCROLL;
-    case Qt::Key_Menu:
-        return VK_APPS;
-    case Qt::Key_Help:
-        return VK_HELP;
-    case Qt::Key_Select:
-        return VK_SELECT;
-    case Qt::Key_Execute:
-        return VK_EXECUTE;
-    case Qt::Key_Sleep:
-    case Qt::Key_Standby:
-        return VK_SLEEP;
-    case Qt::Key_Space:
-        return VK_SPACE;
-    case Qt::Key_Comma:
-        return VK_OEM_COMMA;
-    case Qt::Key_Period:
-        return VK_OEM_PERIOD;
-    case Qt::Key_Minus:
-    case Qt::Key_Underscore:
-        return VK_OEM_MINUS;
-    case Qt::Key_Equal:
-    case Qt::Key_Plus:
-        return VK_OEM_PLUS;
-    case Qt::Key_Semicolon:
-    case Qt::Key_Colon:
-        return VK_OEM_1;
-    case Qt::Key_Slash:
-    case Qt::Key_Question:
-        return VK_OEM_2;
-    case Qt::Key_QuoteLeft:
-    case Qt::Key_AsciiTilde:
-        return VK_OEM_3;
-    case Qt::Key_BracketLeft:
-    case Qt::Key_BraceLeft:
-        return VK_OEM_4;
-    case Qt::Key_Backslash:
-    case Qt::Key_Bar:
-        return VK_OEM_5;
-    case Qt::Key_BracketRight:
-    case Qt::Key_BraceRight:
-        return VK_OEM_6;
-    case Qt::Key_Apostrophe:
-    case Qt::Key_QuoteDbl:
-        return VK_OEM_7;
-    case Qt::Key_VolumeMute:
-        return VK_VOLUME_MUTE;
-    case Qt::Key_VolumeDown:
-        return VK_VOLUME_DOWN;
-    case Qt::Key_VolumeUp:
-        return VK_VOLUME_UP;
-    case Qt::Key_Back:
-        return VK_BROWSER_BACK;
-    case Qt::Key_Forward:
-        return VK_BROWSER_FORWARD;
-    case Qt::Key_Refresh:
-        return VK_BROWSER_REFRESH;
-    case Qt::Key_Stop:
-        return VK_BROWSER_STOP;
-    case Qt::Key_Search:
-        return VK_BROWSER_SEARCH;
-    case Qt::Key_Favorites:
-        return VK_BROWSER_FAVORITES;
-    case Qt::Key_HomePage:
-        return VK_BROWSER_HOME;
-    case Qt::Key_MediaNext:
-        return VK_MEDIA_NEXT_TRACK;
-    case Qt::Key_MediaPrevious:
-        return VK_MEDIA_PREV_TRACK;
-    case Qt::Key_MediaStop:
-        return VK_MEDIA_STOP;
-    case Qt::Key_MediaPlay:
-    case Qt::Key_MediaPause:
-    case Qt::Key_MediaTogglePlayPause:
-        return VK_MEDIA_PLAY_PAUSE;
-    case Qt::Key_LaunchMail:
-        return VK_LAUNCH_MAIL;
-    case Qt::Key_LaunchMedia:
-        return VK_LAUNCH_MEDIA_SELECT;
-    case Qt::Key_Launch0:
-        return VK_LAUNCH_APP1;
-    case Qt::Key_Launch1:
-        return VK_LAUNCH_APP2;
-    case Qt::Key_Play:
-        return VK_PLAY;
-    case Qt::Key_Zoom:
-        return VK_ZOOM;
-    default:
-        return 0;
-    }
-}
-
-struct NativeShortcut {
-    UINT modifiers = 0;
-    UINT virtualKey = 0;
-};
-
-bool parseNativeShortcut(const QString& shortcut, NativeShortcut* output) {
-    if (output == nullptr) {
-        return false;
-    }
-
-    const QKeySequence sequence = QKeySequence::fromString(shortcut, QKeySequence::PortableText);
-    if (sequence.count() != 1) {
-        return false;
-    }
-
-    const QKeyCombination combination = sequence[0];
-    const Qt::Key key = combination.key();
-    if (key == Qt::Key_unknown || isModifierKey(key)) {
-        return false;
-    }
-
-    UINT modifiers = MOD_NOREPEAT;
-    const Qt::KeyboardModifiers qtModifiers = combination.keyboardModifiers();
-    if (qtModifiers.testFlag(Qt::ControlModifier)) {
-        modifiers |= MOD_CONTROL;
-    }
-    if (qtModifiers.testFlag(Qt::AltModifier)) {
-        modifiers |= MOD_ALT;
-    }
-    if (qtModifiers.testFlag(Qt::ShiftModifier)) {
-        modifiers |= MOD_SHIFT;
-    }
-    if (qtModifiers.testFlag(Qt::MetaModifier)) {
-        modifiers |= MOD_WIN;
-    }
-
-    const bool keypad = qtModifiers.testFlag(Qt::KeypadModifier);
-    UINT virtualKey = virtualKeyForQtKey(key, keypad);
-    if (virtualKey == 0 && !keypad) {
-        const int keyValue = static_cast<int>(key);
-        if (keyValue >= 0x20 && keyValue <= 0xFFFF) {
-            const SHORT scanResult =
-                VkKeyScanExW(static_cast<WCHAR>(keyValue), GetKeyboardLayout(0));
-            if (scanResult != -1) {
-                virtualKey = static_cast<UINT>(LOBYTE(scanResult));
-                const BYTE requiredModifiers = HIBYTE(scanResult);
-                if ((requiredModifiers & 0x01U) != 0) {
-                    modifiers |= MOD_SHIFT;
-                }
-                if ((requiredModifiers & 0x02U) != 0) {
-                    modifiers |= MOD_CONTROL;
-                }
-                if ((requiredModifiers & 0x04U) != 0) {
-                    modifiers |= MOD_ALT;
-                }
-            }
-        }
-    }
-    if (virtualKey == 0) {
-        return false;
-    }
-
-    output->modifiers = modifiers;
-    output->virtualKey = virtualKey;
-    return true;
-}
-
-class WindowsGlobalShortcutBackend final : public GlobalShortcutBackend,
-                                           public QAbstractNativeEventFilter {
-  public:
-    WindowsGlobalShortcutBackend() {
-        if (QCoreApplication::instance() != nullptr) {
-            QCoreApplication::instance()->installNativeEventFilter(this);
-            m_filterInstalled = true;
-        }
-    }
-
-    ~WindowsGlobalShortcutBackend() override {
-        for (int registrationId : std::as_const(m_registeredIds)) {
-            UnregisterHotKey(nullptr, registrationId);
-        }
-        if (m_filterInstalled && QCoreApplication::instance() != nullptr) {
-            QCoreApplication::instance()->removeNativeEventFilter(this);
-        }
-    }
-
-    void setActivationHandler(ActivationHandler handler) override {
-        m_handler = std::move(handler);
-    }
-
-    GlobalShortcutValidationResult
-    validateShortcut(const QString& portableShortcut) const override {
-        NativeShortcut nativeShortcut;
-        const bool supported = parseNativeShortcut(portableShortcut, &nativeShortcut);
-        return {
-            portableShortcut,
-            supported,
-            supported ? GlobalShortcutFailureReason::None
-                      : GlobalShortcutFailureReason::InvalidShortcut,
-        };
-    }
-
-    GlobalShortcutBackendResult registerShortcut(int registrationId,
-                                                 const QString& portableShortcut) override {
-        NativeShortcut nativeShortcut;
-        if (!parseNativeShortcut(portableShortcut, &nativeShortcut)) {
-            return {
-                false,
-                GlobalShortcutFailureReason::InvalidShortcut,
-                0,
-            };
-        }
-
-        SetLastError(ERROR_SUCCESS);
-        if (RegisterHotKey(nullptr, registrationId, nativeShortcut.modifiers,
-                           nativeShortcut.virtualKey) != FALSE) {
-            m_registeredIds.insert(registrationId);
-            return {
-                true,
-                GlobalShortcutFailureReason::None,
-                0,
-            };
-        }
-
-        const DWORD error = GetLastError();
-        return {
-            false,
-            error == ERROR_HOTKEY_ALREADY_REGISTERED ? GlobalShortcutFailureReason::AlreadyInUse
-                                                     : GlobalShortcutFailureReason::SystemError,
-            static_cast<quint32>(error),
-        };
-    }
-
-    void unregisterShortcut(int registrationId) override {
-        if (!m_registeredIds.remove(registrationId)) {
-            return;
-        }
-        UnregisterHotKey(nullptr, registrationId);
-    }
-
-    bool nativeEventFilter(const QByteArray&, void* message, qintptr*) override {
-        if (message == nullptr) {
-            return false;
-        }
-
-        const auto* nativeMessage = static_cast<const MSG*>(message);
-        if (nativeMessage->message == WM_HOTKEY && m_handler) {
-            m_handler(static_cast<int>(nativeMessage->wParam));
-        }
-        return false;
-    }
-
-  private:
-    ActivationHandler m_handler;
-    QSet<int> m_registeredIds;
-    bool m_filterInstalled = false;
-};
-#endif
-
-std::unique_ptr<GlobalShortcutBackend> createPlatformBackend() {
-#ifdef Q_OS_WIN
-    return std::make_unique<WindowsGlobalShortcutBackend>();
-#else
-    return std::make_unique<UnsupportedGlobalShortcutBackend>();
-#endif
-}
-
-QStringList persistedShortcuts(const snow_shot::storage::ShortcutSettings& settings,
-                               GlobalShortcutAction action) {
+shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSettings& settings,
+                                                  GlobalShortcutAction action) {
     switch (action) {
     case GlobalShortcutAction::Screenshot:
         return settings.screenshot();
@@ -576,94 +156,94 @@ QStringList persistedShortcuts(const snow_shot::storage::ShortcutSettings& setti
     return {};
 }
 
-bool persistShortcuts(const snow_shot::storage::ShortcutSettings& settings,
-                      GlobalShortcutAction action, const QStringList& shortcuts) {
+bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutAction action,
+                      const shortcuts::ShortcutBindingList& bindings) {
     switch (action) {
     case GlobalShortcutAction::Screenshot:
-        return settings.setScreenshot(shortcuts);
+        return settings.setScreenshot(bindings);
     case GlobalShortcutAction::ScreenshotDelay:
-        return settings.setScreenshotDelay(shortcuts);
+        return settings.setScreenshotDelay(bindings);
     case GlobalShortcutAction::ScreenshotFixed:
-        return settings.setScreenshotFixed(shortcuts);
+        return settings.setScreenshotFixed(bindings);
     case GlobalShortcutAction::ScreenshotOcr:
-        return settings.setScreenshotOcr(shortcuts);
+        return settings.setScreenshotOcr(bindings);
     case GlobalShortcutAction::ScreenshotTranslation:
-        return settings.setScreenshotTranslation(shortcuts);
+        return settings.setScreenshotTranslation(bindings);
     case GlobalShortcutAction::ScreenshotCopy:
-        return settings.setScreenshotCopy(shortcuts);
+        return settings.setScreenshotCopy(bindings);
     case GlobalShortcutAction::ScreenshotFullScreen:
-        return settings.setScreenshotFullScreen(shortcuts);
+        return settings.setScreenshotFullScreen(bindings);
     case GlobalShortcutAction::ScreenshotFocusedWindow:
-        return settings.setScreenshotFocusedWindow(shortcuts);
+        return settings.setScreenshotFocusedWindow(bindings);
     case GlobalShortcutAction::ScreenRecord:
-        return settings.setScreenRecord(shortcuts);
+        return settings.setScreenRecord(bindings);
     case GlobalShortcutAction::ScreenRecordCopy:
-        return settings.setScreenRecordCopy(shortcuts);
+        return settings.setScreenRecordCopy(bindings);
     case GlobalShortcutAction::OpenScreenRecordingFolder:
-        return settings.setOpenScreenRecordingFolder(shortcuts);
+        return settings.setOpenScreenRecordingFolder(bindings);
     case GlobalShortcutAction::OpenCaptureHistory:
-        return settings.setOpenCaptureHistory(shortcuts);
+        return settings.setOpenCaptureHistory(bindings);
     case GlobalShortcutAction::OpenSettings:
-        return settings.setOpenSettings(shortcuts);
+        return settings.setOpenSettings(bindings);
     case GlobalShortcutAction::PinClipboardContent:
-        return settings.setPinClipboardContent(shortcuts);
+        return settings.setPinClipboardContent(bindings);
     case GlobalShortcutAction::PinSelectedFiles:
-        return settings.setPinSelectedFiles(shortcuts);
+        return settings.setPinSelectedFiles(bindings);
     case GlobalShortcutAction::TranslateSelectedText:
-        return settings.setTranslateSelectedText(shortcuts);
+        return settings.setTranslateSelectedText(bindings);
     }
     return false;
 }
+
+GlobalShortcutValidationResult invalidValidation(const shortcuts::ShortcutBinding& binding,
+                                                 GlobalShortcutFailureReason reason) {
+    GlobalShortcutValidationResult result;
+    result.binding = binding;
+    result.shortcut = binding.portableText;
+    result.supported = false;
+    result.failureReason = reason;
+    return result;
+}
+
 } // namespace
 
 class GlobalShortcutManager::Impl {
   public:
     struct ActiveRegistration {
         GlobalShortcutAction action = GlobalShortcutAction::Screenshot;
-        QString shortcut;
+        shortcuts::ShortcutBinding binding;
         int registrationId = 0;
     };
 
     Impl(GlobalShortcutManager& owner, std::unique_ptr<GlobalShortcutBackend> backend,
-         std::function<bool()> focusedFullscreenDetector)
-        : q(owner), m_backend(backend != nullptr ? std::move(backend) : createPlatformBackend()),
+         std::function<bool()> fullscreenDetector)
+        : q(owner), m_backend(backend != nullptr ? std::move(backend)
+                                                 : createPlatformGlobalShortcutBackend()),
           m_focusedFullscreenDetector(
-              focusedFullscreenDetector
-                  ? std::move(focusedFullscreenDetector)
-                  : std::function<bool()>(
-                        &snow_shot::platform::windows::focusedFullscreenWindowExists)) {
+              fullscreenDetector
+                  ? std::move(fullscreenDetector)
+                  : std::function<bool()>(&platform::focusedFullscreenWindowExists)) {
         for (GlobalShortcutAction action : ALL_ACTIONS) {
-            GlobalShortcutRegistrationState initialState;
-            initialState.action = action;
-            m_states[actionIndex(action)] = initialState;
+            m_states[actionIndex(action)].action = action;
         }
-
         m_backend->setActivationHandler([this](int registrationId) {
             const QString activeKey = m_registrationKeysById.value(registrationId);
             const auto active = m_activeRegistrations.constFind(activeKey);
-            if (active != m_activeRegistrations.cend()) {
-                if (!m_globalHotkeysEnabled ||
-                    (active->action == GlobalShortcutAction::TranslateSelectedText &&
-                     !snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled())) {
-                    return;
-                }
-                const bool suppressionEnabled =
-                    snow_shot::storage::GlobalShortcutSettings().disableOnFocusedFullscreenWindow();
-                if (suppressionEnabled && m_focusedFullscreenDetector &&
-                    m_focusedFullscreenDetector()) {
-                    return;
-                }
+            if (active == m_activeRegistrations.cend() || !m_globalHotkeysEnabled ||
+                (active->action == GlobalShortcutAction::TranslateSelectedText &&
+                 !storage::ExtendedFeaturesSettings().translationPageEnabled())) {
+                return;
+            }
+            const bool suppress =
+                storage::GlobalShortcutSettings().disableOnFocusedFullscreenWindow();
+            if (!suppress || !m_focusedFullscreenDetector || !m_focusedFullscreenDetector()) {
                 emit q.activated(active->action);
             }
         });
     }
 
     ~Impl() {
-        for (const ActiveRegistration& registration : std::as_const(m_activeRegistrations)) {
-            m_backend->unregisterShortcut(registration.registrationId);
-        }
-        m_activeRegistrations.clear();
-        m_registrationKeysById.clear();
+        unregisterAll();
         m_backend->setActivationHandler({});
     }
 
@@ -671,14 +251,13 @@ class GlobalShortcutManager::Impl {
         if (m_initialized) {
             return;
         }
-
-        const snow_shot::storage::ShortcutSettings settings;
+        const storage::ShortcutSettings settings;
         for (GlobalShortcutAction action : ALL_ACTIONS) {
             m_shortcuts[actionIndex(action)] =
-                canonicalShortcuts(persistedShortcuts(settings, action));
+                canonicalBindings(persistedShortcuts(settings, action));
         }
-        QObject::connect(&snow_shot::storage::ApplicationStorage::instance().configuration(),
-                         &snow_shot::storage::ConfigurationStore::valueChanged, &q,
+        QObject::connect(&storage::ApplicationStorage::instance().configuration(),
+                         &storage::ConfigurationStore::valueChanged, &q,
                          [this](const QString& key, const QJsonValue&) {
                              if (m_initialized &&
                                  key ==
@@ -690,41 +269,73 @@ class GlobalShortcutManager::Impl {
         reconcile();
     }
 
-    void setShortcuts(GlobalShortcutAction action, const QStringList& shortcuts) {
+    bool setShortcuts(GlobalShortcutAction action, const shortcuts::ShortcutBindingList& bindings) {
         if (!m_initialized) {
             initialize();
         }
-
-        m_shortcuts[actionIndex(action)] = canonicalShortcuts(shortcuts);
-        const snow_shot::storage::ShortcutSettings settings;
-        static_cast<void>(persistShortcuts(settings, action, m_shortcuts[actionIndex(action)]));
+        const auto canonical = canonicalBindings(bindings);
+        if (!persistShortcuts(storage::ShortcutSettings(), action, canonical)) {
+            return false;
+        }
+        m_shortcuts[actionIndex(action)] = canonical;
         reconcile();
+        return true;
+    }
+
+    GlobalShortcutValidationResult
+    validateShortcut(std::optional<GlobalShortcutAction> owner,
+                     const shortcuts::ShortcutBinding& requested) const {
+        const auto binding = shortcuts::canonicalBinding(requested);
+        if (binding.portableText.isEmpty()) {
+            return invalidValidation(binding, GlobalShortcutFailureReason::InvalidShortcut);
+        }
+        GlobalShortcutValidationResult validation = m_backend->validateShortcut(binding);
+        validation.binding = binding;
+        validation.shortcut = binding.portableText;
+        if (!validation.supported) {
+            return validation;
+        }
+        if (owner.has_value()) {
+            for (GlobalShortcutAction action : ALL_ACTIONS) {
+                if (action == *owner) {
+                    continue;
+                }
+                const auto& configured = m_shortcuts[actionIndex(action)];
+                if (std::any_of(configured.cbegin(), configured.cend(),
+                                [&binding](const auto& existing) {
+                                    return shortcuts::bindingsConflict(existing, binding);
+                                })) {
+                    return invalidValidation(binding, GlobalShortcutFailureReason::AlreadyInUse);
+                }
+            }
+        }
+        return validation;
     }
 
     GlobalShortcutRegistrationState state(GlobalShortcutAction action) const {
         return m_states[actionIndex(action)];
     }
 
-    GlobalShortcutValidationResult validateShortcut(const QString& shortcut) const {
-        const QString canonical = canonicalShortcut(shortcut);
-        if (canonical.isEmpty()) {
-            return {
-                {},
-                false,
-                GlobalShortcutFailureReason::InvalidShortcut,
-            };
+    RegistrationSuspensionHandle suspendRegistrations() {
+        const RegistrationSuspensionHandle handle = m_nextSuspensionHandle++;
+        if (m_suspensions.isEmpty()) {
+            unregisterAll();
         }
+        m_suspensions.insert(handle);
+        return handle;
+    }
 
-        GlobalShortcutValidationResult result = m_backend->validateShortcut(canonical);
-        result.shortcut = canonical;
-        return result;
+    void resumeRegistrations(RegistrationSuspensionHandle handle) {
+        if (!m_suspensions.remove(handle) || !m_suspensions.isEmpty()) {
+            return;
+        }
+        reconcile();
     }
 
     int allocateRegistrationId() {
         const int capacity = LAST_REGISTRATION_ID - FIRST_REGISTRATION_ID + 1;
         for (int attempt = 0; attempt < capacity; ++attempt) {
-            const int candidate = m_nextRegistrationId;
-            ++m_nextRegistrationId;
+            const int candidate = m_nextRegistrationId++;
             if (m_nextRegistrationId > LAST_REGISTRATION_ID) {
                 m_nextRegistrationId = FIRST_REGISTRATION_ID;
             }
@@ -735,83 +346,97 @@ class GlobalShortcutManager::Impl {
         return 0;
     }
 
+    void unregisterAll() {
+        for (const auto& registration : std::as_const(m_activeRegistrations)) {
+            m_backend->unregisterShortcut(registration.registrationId);
+        }
+        m_activeRegistrations.clear();
+        m_registrationKeysById.clear();
+    }
+
     void reconcile() {
+        if (!m_initialized || !m_suspensions.isEmpty()) {
+            return;
+        }
         const bool translationEnabled =
-            snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled();
+            storage::ExtendedFeaturesSettings().translationPageEnabled();
+        QHash<QString, QString> winnerByIdentity;
         QSet<QString> desiredOwnerKeys;
+        QSet<QString> duplicateOwnerKeys;
         for (GlobalShortcutAction action : ALL_ACTIONS) {
             if (action == GlobalShortcutAction::TranslateSelectedText && !translationEnabled) {
                 continue;
             }
-            for (const QString& shortcut : m_shortcuts[actionIndex(action)]) {
-                desiredOwnerKeys.insert(ownerKey(action, shortcut));
+            for (const auto& binding : m_shortcuts[actionIndex(action)]) {
+                const QString activeOwner = ownerKey(action, binding);
+                const QString identity = runtimeIdentityKey(binding);
+                if (winnerByIdentity.contains(identity)) {
+                    duplicateOwnerKeys.insert(activeOwner);
+                } else {
+                    winnerByIdentity.insert(identity, activeOwner);
+                    desiredOwnerKeys.insert(activeOwner);
+                }
             }
         }
 
-        const QList<QString> activeOwnerKeys = m_activeRegistrations.keys();
-        for (const QString& activeOwnerKey : activeOwnerKeys) {
-            if (desiredOwnerKeys.contains(activeOwnerKey)) {
-                continue;
+        const QList<QString> activeKeys = m_activeRegistrations.keys();
+        for (const QString& key : activeKeys) {
+            if (!desiredOwnerKeys.contains(key)) {
+                const ActiveRegistration registration = m_activeRegistrations.take(key);
+                m_registrationKeysById.remove(registration.registrationId);
+                m_backend->unregisterShortcut(registration.registrationId);
             }
-            const ActiveRegistration registration = m_activeRegistrations.take(activeOwnerKey);
-            m_registrationKeysById.remove(registration.registrationId);
-            m_backend->unregisterShortcut(registration.registrationId);
         }
 
         std::array<GlobalShortcutRegistrationState, ACTION_COUNT> nextStates;
         for (GlobalShortcutAction action : ALL_ACTIONS) {
-            GlobalShortcutRegistrationState nextState;
-            nextState.action = action;
-            nextState.shortcuts = m_shortcuts[actionIndex(action)];
-
-            for (const QString& shortcut : nextState.shortcuts) {
-                if (action == GlobalShortcutAction::TranslateSelectedText && !translationEnabled) {
-                    break;
-                }
+            auto& state = nextStates[actionIndex(action)];
+            state.action = action;
+            state.shortcuts = m_shortcuts[actionIndex(action)];
+            if (action == GlobalShortcutAction::TranslateSelectedText && !translationEnabled) {
+                state.status = GlobalShortcutStatus::Unset;
+                continue;
+            }
+            for (const auto& bindingValue : state.shortcuts) {
                 GlobalShortcutBindingResult binding;
-                binding.shortcut = shortcut;
-
-                const QString activeOwnerKey = ownerKey(action, shortcut);
-                if (m_activeRegistrations.contains(activeOwnerKey)) {
-                    binding.registered = true;
-                    nextState.bindings.push_back(binding);
+                binding.binding = bindingValue;
+                binding.shortcut = bindingValue.portableText;
+                const QString activeOwner = ownerKey(action, bindingValue);
+                if (duplicateOwnerKeys.contains(activeOwner)) {
+                    binding.failureReason = GlobalShortcutFailureReason::AlreadyInUse;
+                    state.bindings.push_back(binding);
                     continue;
                 }
-
+                if (m_activeRegistrations.contains(activeOwner)) {
+                    binding.registered = true;
+                    state.bindings.push_back(binding);
+                    continue;
+                }
                 const int registrationId = allocateRegistrationId();
                 if (registrationId == 0) {
                     binding.failureReason = GlobalShortcutFailureReason::SystemError;
-                    nextState.bindings.push_back(binding);
+                    state.bindings.push_back(binding);
                     continue;
                 }
-
-                const GlobalShortcutBackendResult result =
-                    m_backend->registerShortcut(registrationId, shortcut);
+                const auto result = m_backend->registerShortcut(registrationId, bindingValue);
                 binding.registered = result.registered;
                 binding.failureReason = result.failureReason;
                 binding.nativeErrorCode = result.nativeErrorCode;
-                snow_shot::diagnostics::logEvent(
+                diagnostics::logEvent(
                     QStringLiteral("snow_shot.shortcuts"), QStringLiteral("shortcut.registration"),
                     {{QStringLiteral("operation"), QString::number(registrationId)},
-                     {QStringLiteral("code"), static_cast<qint64>(result.nativeErrorCode)},
+                     {QStringLiteral("code"), result.nativeErrorCode},
                      {QStringLiteral("outcome"),
                       result.registered ? QStringLiteral("registered") : QStringLiteral("failed")}},
                     result.registered ? QtInfoMsg : QtWarningMsg);
-                nextState.bindings.push_back(binding);
-
+                state.bindings.push_back(binding);
                 if (result.registered) {
-                    const ActiveRegistration registration{
-                        action,
-                        shortcut,
-                        registrationId,
-                    };
-                    m_activeRegistrations.insert(activeOwnerKey, registration);
-                    m_registrationKeysById.insert(registrationId, activeOwnerKey);
+                    m_activeRegistrations.insert(
+                        activeOwner, ActiveRegistration{action, bindingValue, registrationId});
+                    m_registrationKeysById.insert(registrationId, activeOwner);
                 }
             }
-
-            nextState.status = aggregateStatus(nextState.bindings);
-            nextStates[actionIndex(action)] = nextState;
+            state.status = aggregateStatus(state.bindings);
         }
 
         for (GlobalShortcutAction action : ALL_ACTIONS) {
@@ -827,11 +452,13 @@ class GlobalShortcutManager::Impl {
     GlobalShortcutManager& q;
     std::unique_ptr<GlobalShortcutBackend> m_backend;
     std::function<bool()> m_focusedFullscreenDetector;
-    std::array<QStringList, ACTION_COUNT> m_shortcuts;
+    std::array<shortcuts::ShortcutBindingList, ACTION_COUNT> m_shortcuts;
     std::array<GlobalShortcutRegistrationState, ACTION_COUNT> m_states;
     QHash<QString, ActiveRegistration> m_activeRegistrations;
     QHash<int, QString> m_registrationKeysById;
+    QSet<RegistrationSuspensionHandle> m_suspensions;
     int m_nextRegistrationId = FIRST_REGISTRATION_ID;
+    RegistrationSuspensionHandle m_nextSuspensionHandle = 1;
     bool m_initialized = false;
     bool m_globalHotkeysEnabled = true;
 };
@@ -841,9 +468,9 @@ GlobalShortcutManager::GlobalShortcutManager(QObject* parent)
 
 GlobalShortcutManager::GlobalShortcutManager(std::unique_ptr<GlobalShortcutBackend> backend,
                                              QObject* parent,
-                                             std::function<bool()> focusedFullscreenDetector)
-    : QObject(parent), m_impl(std::make_unique<Impl>(*this, std::move(backend),
-                                                     std::move(focusedFullscreenDetector))) {}
+                                             std::function<bool()> fullscreenDetector)
+    : QObject(parent),
+      m_impl(std::make_unique<Impl>(*this, std::move(backend), std::move(fullscreenDetector))) {}
 
 GlobalShortcutManager::~GlobalShortcutManager() = default;
 
@@ -856,13 +483,27 @@ GlobalShortcutRegistrationState GlobalShortcutManager::state(GlobalShortcutActio
 }
 
 GlobalShortcutValidationResult
-GlobalShortcutManager::validateShortcut(const QString& shortcut) const {
-    return m_impl->validateShortcut(shortcut);
+GlobalShortcutManager::validateShortcut(GlobalShortcutAction action,
+                                        const shortcuts::ShortcutBinding& shortcut) const {
+    return m_impl->validateShortcut(action, shortcut);
 }
 
-void GlobalShortcutManager::setShortcuts(GlobalShortcutAction action,
-                                         const QStringList& shortcuts) {
-    m_impl->setShortcuts(action, shortcuts);
+GlobalShortcutValidationResult
+GlobalShortcutManager::validateShortcut(const QString& shortcut) const {
+    return m_impl->validateShortcut(std::nullopt, shortcuts::ShortcutBinding{shortcut});
+}
+
+bool GlobalShortcutManager::setShortcuts(GlobalShortcutAction action,
+                                         const shortcuts::ShortcutBindingList& bindings) {
+    return m_impl->setShortcuts(action, bindings);
+}
+
+GlobalShortcutManager::RegistrationSuspensionHandle GlobalShortcutManager::suspendRegistrations() {
+    return m_impl->suspendRegistrations();
+}
+
+void GlobalShortcutManager::resumeRegistrations(RegistrationSuspensionHandle handle) {
+    m_impl->resumeRegistrations(handle);
 }
 
 void GlobalShortcutManager::setGlobalHotkeysEnabled(bool enabled) {

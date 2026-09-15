@@ -313,8 +313,8 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <context>
         <name>QObject</name>
         <message>
-            <source>%1 cannot be registered as a Windows global shortcut, try another key</source>
-            <translation>無法將 %1 註冊為 Windows 全域快速鍵，請嘗試其他按鍵</translation>
+            <source>%1 cannot be registered as a global shortcut, try another key</source>
+            <translation>無法將 %1 註冊為全域快速鍵，請嘗試其他按鍵</translation>
         </message>
         <message>
             <source>%1 cannot be used as a drawing shortcut, try another key</source>
@@ -381,8 +381,8 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>請按下按鍵</translation>
         </message>
         <message>
-            <source>This key cannot be registered as a Windows global shortcut, try another key</source>
-            <translation>無法將此按鍵註冊為 Windows 全域快速鍵，請嘗試其他按鍵</translation>
+            <source>This key cannot be registered as a global shortcut, try another key</source>
+            <translation>無法將此按鍵註冊為全域快速鍵，請嘗試其他按鍵</translation>
         </message>
         <message>
             <source>This key cannot be used as a drawing shortcut, try another key</source>

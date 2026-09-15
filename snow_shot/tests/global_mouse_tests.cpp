@@ -289,10 +289,12 @@ class FakeHotkeyBackend final : public GlobalShortcutBackend {
     void setActivationHandler(ActivationHandler value) override {
         handler = std::move(value);
     }
-    GlobalShortcutValidationResult validateShortcut(const QString& shortcut) const override {
-        return {shortcut, true, GlobalShortcutFailureReason::None};
+    GlobalShortcutValidationResult
+    validateShortcut(const snow_shot::shortcuts::ShortcutBinding& shortcut) const override {
+        return {shortcut.portableText, true, GlobalShortcutFailureReason::None, shortcut};
     }
-    GlobalShortcutBackendResult registerShortcut(int id, const QString&) override {
+    GlobalShortcutBackendResult
+    registerShortcut(int id, const snow_shot::shortcuts::ShortcutBinding&) override {
         registrationId = id;
         return {true};
     }

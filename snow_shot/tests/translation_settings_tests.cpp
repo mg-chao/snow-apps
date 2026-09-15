@@ -61,11 +61,12 @@ class FakeTranslationHotkeyBackend final : public snow_shot::presentation::Globa
         handler = std::move(value);
     }
     snow_shot::presentation::GlobalShortcutValidationResult
-    validateShortcut(const QString& shortcut) const override {
-        return {shortcut, true, snow_shot::presentation::GlobalShortcutFailureReason::None};
+    validateShortcut(const snow_shot::shortcuts::ShortcutBinding& shortcut) const override {
+        return {shortcut.portableText, true,
+                snow_shot::presentation::GlobalShortcutFailureReason::None, shortcut};
     }
     snow_shot::presentation::GlobalShortcutBackendResult
-    registerShortcut(int id, const QString& shortcut) override {
+    registerShortcut(int id, const snow_shot::shortcuts::ShortcutBinding& shortcut) override {
         if (registrations.values().contains(shortcut)) {
             return {false, snow_shot::presentation::GlobalShortcutFailureReason::AlreadyInUse};
         }
@@ -76,7 +77,7 @@ class FakeTranslationHotkeyBackend final : public snow_shot::presentation::Globa
         registrations.remove(id);
     }
     ActivationHandler handler;
-    QHash<int, QString> registrations;
+    QHash<int, snow_shot::shortcuts::ShortcutBinding> registrations;
 };
 
 void selectedTextShortcutSettings() {
@@ -95,7 +96,8 @@ void selectedTextShortcutSettings() {
     require(tray.setMenuOptions(menuWithTranslation) && tray.menuOptions().contains(menuId),
             "tray settings allow the selected text translation action");
     require(tray.setMenuOptions(defaultMenu), "restore default tray actions");
-    const QStringList keys{QStringLiteral("Ctrl+Alt+T"), QStringLiteral("Ctrl+Shift+T")};
+    const snow_shot::shortcuts::ShortcutBindingList keys{QStringLiteral("Ctrl+Alt+T"),
+                                                         QStringLiteral("Ctrl+Shift+T")};
     {
         auto native = std::make_unique<FakeTranslationHotkeyBackend>();
         auto* input = native.get();
@@ -459,8 +461,8 @@ int main(int argc, char** argv) {
             "save pinned double-click action before restart");
     require(storage::PinToScreenSettings().setMiddleMouseButtonAction(QStringLiteral("none")),
             "save pinned middle-click action before restart");
-    const QStringList selectedTextKeys{QStringLiteral("Ctrl+Alt+T"),
-                                       QStringLiteral("Ctrl+Shift+T")};
+    const snow_shot::shortcuts::ShortcutBindingList selectedTextKeys{
+        QStringLiteral("Ctrl+Alt+T"), QStringLiteral("Ctrl+Shift+T")};
     require(storage::ShortcutSettings().setTranslateSelectedText(selectedTextKeys),
             "save selected text shortcut bindings before restart");
     applicationStorage.shutdown();

@@ -114,15 +114,20 @@ class SettingsRuntimeSession final : public QObject {
     [[nodiscard]] bool applyToolbarLayout(storage::ScreenshotToolbarLayoutKind kind,
                                           const storage::ScreenshotToolbarLayout& layout);
     [[nodiscard]] GlobalShortcutRegistrationState shortcutState(GlobalShortcutAction action) const;
-    [[nodiscard]] GlobalShortcutValidationResult validateShortcut(const QString& shortcut) const;
-    [[nodiscard]] bool applyShortcuts(GlobalShortcutAction action, const QStringList& shortcuts);
-    [[nodiscard]] QStringList localShortcuts(SettingsLocalShortcutScope scope,
-                                             const QString& shortcutId) const;
+    [[nodiscard]] GlobalShortcutValidationResult
+    validateShortcut(GlobalShortcutAction action, const shortcuts::ShortcutBinding& shortcut) const;
+    [[nodiscard]] bool applyShortcuts(GlobalShortcutAction action,
+                                      const shortcuts::ShortcutBindingList& shortcuts);
+    [[nodiscard]] shortcuts::ShortcutBindingList localShortcuts(SettingsLocalShortcutScope scope,
+                                                                const QString& shortcutId) const;
     [[nodiscard]] GlobalShortcutValidationResult
     validateLocalShortcut(SettingsLocalShortcutScope scope, const QString& shortcutId,
-                          const QString& shortcut) const;
+                          const shortcuts::ShortcutBinding& shortcut) const;
     [[nodiscard]] bool applyLocalShortcuts(SettingsLocalShortcutScope scope,
-                                           const QString& shortcutId, const QStringList& shortcuts);
+                                           const QString& shortcutId,
+                                           const shortcuts::ShortcutBindingList& shortcuts);
+    [[nodiscard]] quint64 suspendGlobalShortcuts();
+    void resumeGlobalShortcuts(quint64 handle);
     [[nodiscard]] SettingsGlobalMouseCombination
     globalMouseCombination(SettingsGlobalMouseAction action) const;
     [[nodiscard]] bool
@@ -233,11 +238,11 @@ class SettingsRuntimeSession final : public QObject {
     bool m_hasStorageStatus = false;
 };
 
-Q_DECLARE_METATYPE(SettingsWritePhase)
-Q_DECLARE_METATYPE(SettingsFieldState)
-Q_DECLARE_METATYPE(SettingsOptions)
-Q_DECLARE_METATYPE(SettingsCommandState)
-
 } // namespace snow_shot::presentation::settings
+
+Q_DECLARE_METATYPE(snow_shot::presentation::settings::SettingsWritePhase)
+Q_DECLARE_METATYPE(snow_shot::presentation::settings::SettingsFieldState)
+Q_DECLARE_METATYPE(snow_shot::presentation::settings::SettingsOptions)
+Q_DECLARE_METATYPE(snow_shot::presentation::settings::SettingsCommandState)
 
 #endif // SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSRUNTIMESESSION_H

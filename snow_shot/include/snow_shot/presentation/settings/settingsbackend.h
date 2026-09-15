@@ -107,17 +107,22 @@ class SettingsBackend : public QObject {
     [[nodiscard]] virtual GlobalShortcutRegistrationState
     shortcutState(GlobalShortcutAction action) const = 0;
     [[nodiscard]] virtual GlobalShortcutValidationResult
-    validateShortcut(const QString& shortcut) const = 0;
+    validateShortcut(GlobalShortcutAction action,
+                     const shortcuts::ShortcutBinding& shortcut) const = 0;
     [[nodiscard]] virtual bool applyShortcuts(GlobalShortcutAction action,
-                                              const QStringList& shortcuts) = 0;
-    [[nodiscard]] virtual QStringList localShortcuts(SettingsLocalShortcutScope scope,
-                                                     const QString& shortcutId) const = 0;
+                                              const shortcuts::ShortcutBindingList& shortcuts) = 0;
+    [[nodiscard]] virtual shortcuts::ShortcutBindingList
+    localShortcuts(SettingsLocalShortcutScope scope, const QString& shortcutId) const = 0;
     [[nodiscard]] virtual GlobalShortcutValidationResult
     validateLocalShortcut(SettingsLocalShortcutScope scope, const QString& shortcutId,
-                          const QString& shortcut) const = 0;
-    [[nodiscard]] virtual bool applyLocalShortcuts(SettingsLocalShortcutScope scope,
-                                                   const QString& shortcutId,
-                                                   const QStringList& shortcuts) = 0;
+                          const shortcuts::ShortcutBinding& shortcut) const = 0;
+    [[nodiscard]] virtual bool
+    applyLocalShortcuts(SettingsLocalShortcutScope scope, const QString& shortcutId,
+                        const shortcuts::ShortcutBindingList& shortcuts) = 0;
+    [[nodiscard]] virtual quint64 suspendGlobalShortcuts() {
+        return 0;
+    }
+    virtual void resumeGlobalShortcuts(quint64) {}
 
     [[nodiscard]] virtual SettingsGlobalMouseCombination
     globalMouseCombination(SettingsGlobalMouseAction action) const {
@@ -204,17 +209,20 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     [[nodiscard]] GlobalShortcutRegistrationState
     shortcutState(GlobalShortcutAction action) const override;
     [[nodiscard]] GlobalShortcutValidationResult
-    validateShortcut(const QString& shortcut) const override;
+    validateShortcut(GlobalShortcutAction action,
+                     const shortcuts::ShortcutBinding& shortcut) const override;
     [[nodiscard]] bool applyShortcuts(GlobalShortcutAction action,
-                                      const QStringList& shortcuts) override;
-    [[nodiscard]] QStringList localShortcuts(SettingsLocalShortcutScope scope,
-                                             const QString& shortcutId) const override;
+                                      const shortcuts::ShortcutBindingList& shortcuts) override;
+    [[nodiscard]] shortcuts::ShortcutBindingList
+    localShortcuts(SettingsLocalShortcutScope scope, const QString& shortcutId) const override;
     [[nodiscard]] GlobalShortcutValidationResult
     validateLocalShortcut(SettingsLocalShortcutScope scope, const QString& shortcutId,
-                          const QString& shortcut) const override;
-    [[nodiscard]] bool applyLocalShortcuts(SettingsLocalShortcutScope scope,
-                                           const QString& shortcutId,
-                                           const QStringList& shortcuts) override;
+                          const shortcuts::ShortcutBinding& shortcut) const override;
+    [[nodiscard]] bool
+    applyLocalShortcuts(SettingsLocalShortcutScope scope, const QString& shortcutId,
+                        const shortcuts::ShortcutBindingList& shortcuts) override;
+    [[nodiscard]] quint64 suspendGlobalShortcuts() override;
+    void resumeGlobalShortcuts(quint64 handle) override;
     [[nodiscard]] SettingsGlobalMouseCombination
     globalMouseCombination(SettingsGlobalMouseAction action) const override;
     [[nodiscard]] bool

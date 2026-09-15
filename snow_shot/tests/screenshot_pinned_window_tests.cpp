@@ -24,6 +24,7 @@
 #include "snow_shot/presentation/screenshotfilepinbatch.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
+#include "snow_shot/shortcuts/shortcutdisplayservice.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
@@ -3220,15 +3221,18 @@ void pinnedShortcutDisplayUsesSettingsFormat() {
     auto* action = window.findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction"));
     require(action != nullptr, "the pinned menu should be available without showing a window");
     const snow_shot::storage::PinToScreenShortcutSettings shortcuts;
-    const QStringList original = shortcuts.shortcuts(QStringLiteral("drawing_mode"));
-    require(shortcuts.setShortcuts(QStringLiteral("drawing_mode"),
-                                   {QStringLiteral("Ctrl++"), QStringLiteral("Num+1")}),
+    const auto original = shortcuts.shortcuts(QStringLiteral("drawing_mode"));
+    const auto configured = snow_shot::shortcuts::bindingsFromPortableText(
+        {QStringLiteral("Ctrl++"), QStringLiteral("Num+1")});
+    require(shortcuts.setShortcuts(QStringLiteral("drawing_mode"), configured),
             "the pinned shortcut should accept plus and keypad keys");
-    require(action->text().endsWith(QStringLiteral("\tCtrl+Plus / Num 1")),
+    const QString expectedSuffix =
+        QStringLiteral("\t") + snow_shot::shortcuts::formatShortcutListDisplayText(configured);
+    require(action->text().endsWith(expectedSuffix),
             "pinned menus must use the settings key names and alternative separator");
     QEvent languageChange(QEvent::LanguageChange);
     QCoreApplication::sendEvent(&window, &languageChange);
-    require(action->text().endsWith(QStringLiteral("\tCtrl+Plus / Num 1")),
+    require(action->text().endsWith(expectedSuffix),
             "pinned key display must retain the settings format after retranslation");
     require(shortcuts.setShortcuts(QStringLiteral("drawing_mode"), original),
             "the pinned shortcut fixture should restore its original shortcuts");
@@ -3280,10 +3284,20 @@ void pinnedConfiguredShortcutUpdatesImmediately(SnowCanvasRuntime&) {
     require(shortcuts.setShortcuts(QStringLiteral("drawing_mode"), {QStringLiteral("Ctrl+Alt+E")}),
             "the pinned drawing-mode shortcut should be configurable");
     waitForUi(50);
-    require(drawingAction->text().endsWith(QStringLiteral("\tCtrl+Alt+E")),
+    const QString configuredDisplay = snow_shot::shortcuts::formatShortcutDisplayText(
+        snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Ctrl+Alt+E")));
+    require(drawingAction->text().endsWith(QStringLiteral("\t") + configuredDisplay),
             "an open pinned window should refresh its menu shortcut display immediately");
-    require(confirmButton->toolTip() == QStringLiteral("Confirm edit (Ctrl+Alt+E)"),
+    require(confirmButton->toolTip() == QStringLiteral("Confirm edit (%1)").arg(configuredDisplay),
             "pinned Confirm Edit should refresh its drawing-mode shortcut hint immediately");
+    drawingAction->setText(QStringLiteral("stale pinned action legend"));
+    confirmButton->setToolTip(QStringLiteral("stale pinned tooltip legend"));
+    snow_shot::shortcuts::ShortcutDisplayService::instance().refresh();
+    waitForUi(50);
+    require(drawingAction->text().endsWith(QStringLiteral("\t") + configuredDisplay) &&
+                confirmButton->toolTip() ==
+                    QStringLiteral("Confirm edit (%1)").arg(configuredDisplay),
+            "a keyboard-layout refresh must update pinned menus and editor shortcut hints");
     sendShortcut(*canvas, Qt::Key_E, Qt::ControlModifier);
     require(!drawingAction->isChecked(),
             "the previous pinned drawing-mode shortcut should stop activating immediately");
@@ -3345,8 +3359,9 @@ void pinnedMovementShortcutsMoveIdleWindow() {
 
     const snow_shot::storage::PinToScreenShortcutSettings shortcuts;
     const QString actionId = QStringLiteral("move_cursor_up");
-    const QStringList previousShortcuts = shortcuts.shortcuts(actionId);
-    require(shortcuts.setShortcuts(actionId, {QStringLiteral("Ctrl+Alt+U")}),
+    const auto previousShortcuts = shortcuts.shortcuts(actionId);
+    require(shortcuts.setShortcuts(actionId, snow_shot::shortcuts::bindingsFromPortableText(
+                                                 {QStringLiteral("Ctrl+Alt+U")})),
             "the window movement shortcut could not be configured");
     const QRect beforeCustomShortcut = pinnedWindow->currentNativeGeometry();
     sendShortcut(*canvas, Qt::Key_W);
@@ -3405,8 +3420,9 @@ void pinnedNativeDragAcceptsCursorMovementShortcuts(SnowCanvasRuntime&) {
     };
     const snow_shot::storage::PinToScreenShortcutSettings shortcuts;
     const QString actionId = QStringLiteral("move_cursor_up");
-    const QStringList previousShortcuts = shortcuts.shortcuts(actionId);
-    require(shortcuts.setShortcuts(actionId, {QStringLiteral("W")}),
+    const auto previousShortcuts = shortcuts.shortcuts(actionId);
+    require(shortcuts.setShortcuts(
+                actionId, snow_shot::shortcuts::bindingsFromPortableText({QStringLiteral("W")})),
             "the native-drag cursor shortcut fixture could not be configured");
 
     QImage background(240, 140, QImage::Format_ARGB32_Premultiplied);
@@ -3508,8 +3524,9 @@ void pinnedSystemMoveLoopAcceptsMovementShortcuts() {
 
     const snow_shot::storage::PinToScreenShortcutSettings shortcuts;
     const QString actionId = QStringLiteral("move_cursor_up");
-    const QStringList previousShortcuts = shortcuts.shortcuts(actionId);
-    require(shortcuts.setShortcuts(actionId, {QStringLiteral("W"), QStringLiteral("Up")}),
+    const auto previousShortcuts = shortcuts.shortcuts(actionId);
+    require(shortcuts.setShortcuts(actionId, snow_shot::shortcuts::bindingsFromPortableText(
+                                                 {QStringLiteral("W"), QStringLiteral("Up")})),
             "system move loop custom shortcut could not be configured");
     struct Movement {
         UINT key;
@@ -6516,10 +6533,12 @@ void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&, bool rot
 
     auto* translationButton = toolbar->findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotTextTranslationButton"));
-    require(translationButton != nullptr &&
-                translationButton->toolTip().contains(QStringLiteral("Text translation")) &&
-                translationButton->toolTip().contains(QStringLiteral("Ctrl+T")),
-            "pinned drawing toolbar should expose Text translation with its configured shortcut");
+    require(
+        translationButton != nullptr &&
+            translationButton->toolTip().contains(QStringLiteral("Text translation")) &&
+            translationButton->toolTip().contains(snow_shot::shortcuts::formatShortcutDisplayText(
+                snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Ctrl+T")))),
+        "pinned drawing toolbar should expose Text translation with its configured shortcut");
 
     const QPoint localPosition = canvas->rect().center();
     const auto sendWheel = [canvas, localPosition](int angleDelta) {

@@ -22,10 +22,12 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <system_error>
 #include <thread>
 
 namespace storage = snow_shot::storage;
+namespace shortcuts = snow_shot::shortcuts;
 
 namespace {
 void require(bool condition, const char* message) {
@@ -33,6 +35,26 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(1);
     }
+}
+
+QJsonObject shortcutObject(const QString& portable, std::optional<quint32> macKey = std::nullopt) {
+    shortcuts::ShortcutBinding binding{portable};
+    if (macKey.has_value()) {
+        binding.physicalKeys.insert(shortcuts::ShortcutPlatform::MacOS, *macKey);
+    }
+    return shortcuts::shortcutBindingToJson(binding);
+}
+
+QJsonArray structuredShortcuts(const QJsonArray& portableShortcuts) {
+    QJsonArray result;
+    for (const QJsonValue& value : portableShortcuts) {
+        result.push_back(shortcutObject(value.toString()));
+    }
+    return result;
+}
+
+QStringList portable(const shortcuts::ShortcutBindingList& bindings) {
+    return shortcuts::portableTextList(bindings);
 }
 
 QString systemSaveDirectory(QStandardPaths::StandardLocation location) {
@@ -50,8 +72,11 @@ void writeBytes(const QString& path, const QByteArray& bytes) {
 
 void setLastModified(const QString& path, const QDateTime& when) {
     namespace fs = std::filesystem;
-    const auto moment = std::chrono::clock_cast<fs::file_time_type::clock>(
-        std::chrono::system_clock::time_point{std::chrono::milliseconds(when.toMSecsSinceEpoch())});
+    const auto systemMoment =
+        std::chrono::system_clock::time_point{std::chrono::milliseconds(when.toMSecsSinceEpoch())};
+    const auto moment =
+        fs::file_time_type::clock::now() + std::chrono::duration_cast<fs::file_time_type::duration>(
+                                               systemMoment - std::chrono::system_clock::now());
     std::error_code error;
     fs::last_write_time(fs::path(path.toStdWString()), moment, error);
     require(!error, "failed to set test file timestamp");
@@ -130,7 +155,7 @@ void defaultsAndTypedRoundTrip() {
     require(root.value(QStringLiteral("storage"))
                         .toObject()
                         .value(QStringLiteral("schema_version"))
-                        .toInt() == 1 &&
+                        .toInt() == 2 &&
                 root.value(QStringLiteral("screenshot_selection"))
                     .toObject()
                     .value(QStringLiteral("smart_selection"))
@@ -206,12 +231,21 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             !defaultValue("text_recognition/resident_process").toBool() &&
             !defaultValue("text_recognition/model_hot_start").toBool() &&
             !defaultValue("global_shortcuts/disable_on_focused_fullscreen_window").toBool() &&
+#ifdef Q_OS_MACOS
             defaultValue("global_shortcuts/screenshot").toArray() ==
-                QJsonArray{QStringLiteral("F1")} &&
+                QJsonArray{shortcutObject(QStringLiteral("Meta+Shift+1"), 18)} &&
             defaultValue("global_shortcuts/screenshot_copy").toArray() ==
-                QJsonArray{QStringLiteral("Ctrl+F1")} &&
+                QJsonArray{shortcutObject(QStringLiteral("Meta+Shift+2"), 19)} &&
             defaultValue("global_shortcuts/pin_clipboard_content").toArray() ==
-                QJsonArray{QStringLiteral("F3")} &&
+                QJsonArray{shortcutObject(QStringLiteral("Meta+Shift+3"), 20)} &&
+#else
+            defaultValue("global_shortcuts/screenshot").toArray() ==
+                structuredShortcuts(QJsonArray{QStringLiteral("F1")}) &&
+            defaultValue("global_shortcuts/screenshot_copy").toArray() ==
+                structuredShortcuts(QJsonArray{QStringLiteral("Ctrl+F1")}) &&
+            defaultValue("global_shortcuts/pin_clipboard_content").toArray() ==
+                structuredShortcuts(QJsonArray{QStringLiteral("F3")}) &&
+#endif
             defaultValue("global_shortcuts/pin_selected_files").toArray().isEmpty() &&
             defaultValue("global_shortcuts/open_screen_recording_folder").toArray().isEmpty() &&
             defaultValue("screenshot/auto_execute_after_text_recognition").toString() ==
@@ -220,9 +254,9 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             defaultValue("screenshot/middle_mouse_button_action").toString() ==
                 QStringLiteral("pin") &&
             defaultValue("screenshot_shortcuts/quick_save").toArray() ==
-                QJsonArray{QStringLiteral("Ctrl+Shift+S")} &&
+                structuredShortcuts(QJsonArray{QStringLiteral("Ctrl+Shift+S")}) &&
             defaultValue("screenshot_shortcuts/save_as_file").toArray() ==
-                QJsonArray{QStringLiteral("Ctrl+S")} &&
+                structuredShortcuts(QJsonArray{QStringLiteral("Ctrl+S")}) &&
             !defaultValue("screenshot/auto_save_after_copy").toBool() &&
             !defaultValue("screenshot/copy_image_file_to_clipboard").toBool() &&
             defaultValue("screenshot/image_save_directory").toString() ==
@@ -294,7 +328,8 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
     for (auto it = drawingShortcutDefaults.cbegin(); it != drawingShortcutDefaults.cend(); ++it) {
         const QString key = QStringLiteral("drawing_shortcuts/") + it.key();
         const auto* entry = storage::ConfigurationSchema::entry(key);
-        require(entry != nullptr && entry->defaultValue.toArray() == it.value() &&
+        require(entry != nullptr &&
+                    entry->defaultValue.toArray() == structuredShortcuts(it.value()) &&
                     entry->maximumListItems == 2,
                 "drawing shortcut defaults and list limits must remain stable");
     }
@@ -334,7 +369,8 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
          ++it) {
         const QString key = QStringLiteral("screenshot_shortcuts/") + it.key();
         const auto* entry = storage::ConfigurationSchema::entry(key);
-        require(entry != nullptr && entry->defaultValue.toArray() == it.value() &&
+        require(entry != nullptr &&
+                    entry->defaultValue.toArray() == structuredShortcuts(it.value()) &&
                     entry->maximumListItems == 2,
                 "screenshot shortcut defaults and list limits must remain stable");
     }
@@ -361,7 +397,8 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
          ++it) {
         const QString key = QStringLiteral("pin_to_screen_shortcuts/") + it.key();
         const auto* entry = storage::ConfigurationSchema::entry(key);
-        require(entry != nullptr && entry->defaultValue.toArray() == it.value() &&
+        require(entry != nullptr &&
+                    entry->defaultValue.toArray() == structuredShortcuts(it.value()) &&
                     entry->maximumListItems == 2,
                 "pinned-window shortcut defaults and list limits must remain stable");
     }
@@ -869,38 +906,43 @@ void screenshotTranslationSettingsRoundTripSupportedValues() {
 }
 
 void verifyPinToScreenShortcutSettings() {
-    const storage::PinToScreenShortcutSettings shortcuts;
-    const QMap<QString, QStringList> defaults = shortcuts.allShortcuts();
+    const storage::PinToScreenShortcutSettings shortcutSettings;
+    const shortcuts::ShortcutBindingMap defaults = shortcutSettings.allShortcuts();
     require(
         defaults.size() == 13 &&
-            defaults.value(QStringLiteral("copy_to_clipboard")) ==
+            portable(defaults.value(QStringLiteral("copy_to_clipboard"))) ==
                 QStringList{QStringLiteral("Ctrl+C")} &&
-            defaults.value(QStringLiteral("copy_original_content")) ==
+            portable(defaults.value(QStringLiteral("copy_original_content"))) ==
                 QStringList{QStringLiteral("Ctrl+Shift+C")} &&
-            defaults.value(QStringLiteral("save_as_file")) ==
+            portable(defaults.value(QStringLiteral("save_as_file"))) ==
                 QStringList{QStringLiteral("Ctrl+S")} &&
-            defaults.value(QStringLiteral("show_text_recognition_results")) ==
+            portable(defaults.value(QStringLiteral("show_text_recognition_results"))) ==
                 QStringList{QStringLiteral("Ctrl+D")} &&
-            defaults.value(QStringLiteral("drawing_mode")) ==
+            portable(defaults.value(QStringLiteral("drawing_mode"))) ==
                 QStringList{QStringLiteral("Space")} &&
-            defaults.value(QStringLiteral("thumbnail_mode")) == QStringList{QStringLiteral("R")} &&
-            defaults.value(QStringLiteral("hide_to_top")) == QStringList{QStringLiteral("H")} &&
-            defaults.value(QStringLiteral("click_through")) == QStringList{QStringLiteral("M")} &&
-            defaults.value(QStringLiteral("close_window")) == QStringList{QStringLiteral("Esc")} &&
-            defaults.value(QStringLiteral("move_cursor_up")) ==
+            portable(defaults.value(QStringLiteral("thumbnail_mode"))) ==
+                QStringList{QStringLiteral("R")} &&
+            portable(defaults.value(QStringLiteral("hide_to_top"))) ==
+                QStringList{QStringLiteral("H")} &&
+            portable(defaults.value(QStringLiteral("click_through"))) ==
+                QStringList{QStringLiteral("M")} &&
+            portable(defaults.value(QStringLiteral("close_window"))) ==
+                QStringList{QStringLiteral("Esc")} &&
+            portable(defaults.value(QStringLiteral("move_cursor_up"))) ==
                 QStringList{QStringLiteral("W"), QStringLiteral("Up")} &&
-            defaults.value(QStringLiteral("move_cursor_right")) ==
+            portable(defaults.value(QStringLiteral("move_cursor_right"))) ==
                 QStringList{QStringLiteral("D"), QStringLiteral("Right")} &&
-            shortcuts.shortcuts(QStringLiteral("unsupported")).isEmpty() &&
-            !shortcuts.setShortcuts(QStringLiteral("unsupported"), {QStringLiteral("Q")}),
+            shortcutSettings.shortcuts(QStringLiteral("unsupported")).isEmpty() &&
+            !shortcutSettings.setShortcuts(QStringLiteral("unsupported"), {QStringLiteral("Q")}),
         "pinned-window shortcut adapter must expose thirteen stable actions and defaults");
-    require(shortcuts.setShortcuts(QStringLiteral("drawing_mode"), {QStringLiteral("Alt+E")}) &&
-                shortcuts.shortcuts(QStringLiteral("drawing_mode")) ==
-                    QStringList{QStringLiteral("Alt+E")},
-            "pinned-window shortcuts must round-trip through the typed adapter");
-    QMap<QString, QStringList> duplicates = shortcuts.allShortcuts();
+    require(
+        shortcutSettings.setShortcuts(QStringLiteral("drawing_mode"), {QStringLiteral("Alt+E")}) &&
+            portable(shortcutSettings.shortcuts(QStringLiteral("drawing_mode"))) ==
+                QStringList{QStringLiteral("Alt+E")},
+        "pinned-window shortcuts must round-trip through the typed adapter");
+    shortcuts::ShortcutBindingMap duplicates = shortcutSettings.allShortcuts();
     duplicates.insert(QStringLiteral("thumbnail_mode"), {QStringLiteral("Ctrl+C")});
-    require(!shortcuts.setAllShortcutsAtomic(duplicates),
+    require(!shortcutSettings.setAllShortcutsAtomic(duplicates),
             "pinned-window shortcuts must reject duplicate bindings atomically");
 }
 
@@ -926,10 +968,63 @@ void missingClickThroughShortcutKeepsLegacyConflict() {
                                          "}\n"));
     storage::ConfigurationStore store(config, true, true, 60000);
     require(store.value(QStringLiteral("pin_to_screen_shortcuts/thumbnail_mode")).toArray() ==
-                    QJsonArray{QStringLiteral("M")} &&
+                    structuredShortcuts(QJsonArray{QStringLiteral("M")}) &&
                 store.value(QStringLiteral("pin_to_screen_shortcuts/click_through")).toArray() ==
-                    QJsonArray{QStringLiteral("M")},
+                    structuredShortcuts(QJsonArray{QStringLiteral("M")}) &&
+                store.value(QStringLiteral("storage/schema_version")).toInt() == 2,
             "adding Click-through must retain an existing legacy M binding and its new default");
+}
+
+void shortcutSchemaMigrationAndPhysicalMetadataRoundTrip() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "failed to create shortcut migration directory");
+    const QString config = temporary.filePath(QStringLiteral("config.json"));
+    writeBytes(
+        config,
+        QByteArrayLiteral(
+            R"({"storage":{"schema_version":1},"global_shortcuts":{"screenshot":["Ctrl+Alt+K"]},"screenshot_shortcuts":{"copy_color":["Alt+C"]}})"));
+    {
+        storage::ConfigurationStore store(config, true, true, 60000);
+        require(store.value(QStringLiteral("storage/schema_version")).toInt() == 2 &&
+                    store.value(QStringLiteral("global_shortcuts/screenshot")).toArray() ==
+                        QJsonArray{shortcutObject(QStringLiteral("Ctrl+Alt+K"))} &&
+                    store.value(QStringLiteral("screenshot_shortcuts/copy_color")).toArray() ==
+                        QJsonArray{shortcutObject(QStringLiteral("Alt+C"))} &&
+                    !store.value(QStringLiteral("global_shortcuts/screenshot_copy"))
+                         .toArray()
+                         .isEmpty() &&
+                    store.isDirty() && store.flushNow().success,
+                "v1 shortcut migration must preserve explicit bindings and fill only missing keys");
+    }
+
+    const QJsonObject physicalWithUnknown{
+        {QStringLiteral("portable"), QStringLiteral("Ctrl+C")},
+        {QStringLiteral("physical_keys"),
+         QJsonObject{{QStringLiteral("macos"), 8}, {QStringLiteral("future"), 99}}},
+    };
+    const QJsonObject invalidPhysical{
+        {QStringLiteral("portable"), QStringLiteral("Alt+X")},
+        {QStringLiteral("physical_keys"), QJsonObject{{QStringLiteral("macos"), 128}}},
+    };
+    QJsonObject document = storage::ConfigurationSchema::completeDefaultDocument();
+    QJsonObject screenshot = document.value(QStringLiteral("screenshot_shortcuts")).toObject();
+    screenshot.insert(
+        QStringLiteral("copy_color"),
+        QJsonArray{physicalWithUnknown, invalidPhysical,
+                   QJsonObject{{QStringLiteral("portable"), QStringLiteral("Ctrl+K, Ctrl+C")}}});
+    document.insert(QStringLiteral("screenshot_shortcuts"), screenshot);
+    writeBytes(config, QJsonDocument(document).toJson(QJsonDocument::Indented));
+
+    storage::ConfigurationStore store(config, true, true, 60000);
+    const QJsonArray repaired =
+        store.value(QStringLiteral("screenshot_shortcuts/copy_color")).toArray();
+    require(repaired == QJsonArray{shortcutObject(QStringLiteral("Ctrl+C"), 8),
+                                   shortcutObject(QStringLiteral("Alt+X"))} &&
+                store.isDirty() && store.flushNow().success,
+            "v2 repair must retain portable fallbacks while dropping malformed metadata/items");
+    storage::ConfigurationStore reloaded(config, true, true, 60000);
+    require(reloaded.value(QStringLiteral("screenshot_shortcuts/copy_color")).toArray() == repaired,
+            "structured shortcut bindings must round-trip without losing physical metadata");
 }
 
 void settingsAdaptersRoundTripAndRejectInvalidValues() {
@@ -1167,42 +1262,45 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
 
     const storage::DrawingShortcutSettings drawingShortcuts;
     const storage::ScreenshotShortcutSettings screenshotShortcuts;
-    const QMap<QString, QStringList> screenshotDefaults = screenshotShortcuts.allShortcuts();
+    const shortcuts::ShortcutBindingMap screenshotDefaults = screenshotShortcuts.allShortcuts();
     require(
         screenshotDefaults.size() == 25 &&
-            screenshotShortcuts.moveTool() ==
+            portable(screenshotShortcuts.moveTool()) ==
                 QStringList{QStringLiteral("M"), QStringLiteral("Ctrl+E")} &&
-            screenshotShortcuts.moveCursorUp() ==
+            portable(screenshotShortcuts.moveCursorUp()) ==
                 QStringList{QStringLiteral("W"), QStringLiteral("Up")} &&
-            screenshotShortcuts.moveCursorDown() ==
+            portable(screenshotShortcuts.moveCursorDown()) ==
                 QStringList{QStringLiteral("S"), QStringLiteral("Down")} &&
-            screenshotShortcuts.moveCursorLeft() ==
+            portable(screenshotShortcuts.moveCursorLeft()) ==
                 QStringList{QStringLiteral("A"), QStringLiteral("Left")} &&
-            screenshotShortcuts.moveCursorRight() ==
+            portable(screenshotShortcuts.moveCursorRight()) ==
                 QStringList{QStringLiteral("D"), QStringLiteral("Right")} &&
-            screenshotShortcuts.moveEntireSelection() == QStringList{QStringLiteral("Space")} &&
-            screenshotShortcuts.keepSelectionWidthAndHeightConsistent() ==
+            portable(screenshotShortcuts.moveEntireSelection()) ==
+                QStringList{QStringLiteral("Space")} &&
+            portable(screenshotShortcuts.keepSelectionWidthAndHeightConsistent()) ==
                 QStringList{QStringLiteral("Shift")} &&
-            screenshotShortcuts.switchSelectionBetweenWindowAndWindowSubElement() ==
+            portable(screenshotShortcuts.switchSelectionBetweenWindowAndWindowSubElement()) ==
                 QStringList{QStringLiteral("Tab")} &&
-            screenshotShortcuts.previousScreenshotHistory() == QStringList{QStringLiteral(",")} &&
-            screenshotShortcuts.nextScreenshotHistory() == QStringList{QStringLiteral(".")} &&
-            screenshotShortcuts.selectPreviouslySelectedArea() ==
+            portable(screenshotShortcuts.previousScreenshotHistory()) ==
+                QStringList{QStringLiteral(",")} &&
+            portable(screenshotShortcuts.nextScreenshotHistory()) ==
+                QStringList{QStringLiteral(".")} &&
+            portable(screenshotShortcuts.selectPreviouslySelectedArea()) ==
                 QStringList{QStringLiteral("R")} &&
-            screenshotShortcuts.copyColor() == QStringList{QStringLiteral("C")} &&
-            screenshotDefaults.value(QStringLiteral("pin_to_screen")) ==
+            portable(screenshotShortcuts.copyColor()) == QStringList{QStringLiteral("C")} &&
+            portable(screenshotDefaults.value(QStringLiteral("pin_to_screen"))) ==
                 QStringList{QStringLiteral("Ctrl+F")} &&
-            screenshotDefaults.value(QStringLiteral("quick_save")) ==
+            portable(screenshotDefaults.value(QStringLiteral("quick_save"))) ==
                 QStringList{QStringLiteral("Ctrl+Shift+S")} &&
-            screenshotDefaults.value(QStringLiteral("save_as_file")) ==
+            portable(screenshotDefaults.value(QStringLiteral("save_as_file"))) ==
                 QStringList{QStringLiteral("Ctrl+S")} &&
-            screenshotDefaults.value(QStringLiteral("cancel_screenshot")) ==
+            portable(screenshotDefaults.value(QStringLiteral("cancel_screenshot"))) ==
                 QStringList{QStringLiteral("Esc")} &&
-            screenshotDefaults.value(QStringLiteral("copy_to_clipboard")) ==
+            portable(screenshotDefaults.value(QStringLiteral("copy_to_clipboard"))) ==
                 QStringList{QStringLiteral("Ctrl+C")} &&
-            screenshotDefaults.value(QStringLiteral("undo")) ==
+            portable(screenshotDefaults.value(QStringLiteral("undo"))) ==
                 QStringList{QStringLiteral("Ctrl+Z")} &&
-            screenshotDefaults.value(QStringLiteral("redo")) ==
+            portable(screenshotDefaults.value(QStringLiteral("redo"))) ==
                 QStringList{QStringLiteral("Ctrl+Y")} &&
             screenshotShortcuts.shortcuts(QStringLiteral("unsupported")).isEmpty() &&
             !screenshotShortcuts.setShortcuts(QStringLiteral("unsupported"), {QStringLiteral("Q")}),
@@ -1215,49 +1313,53 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             screenshotShortcuts.setShortcuts(QStringLiteral("undo"), {QStringLiteral("Ctrl+Z")}),
         "reserved screenshot commands must accept their own configurable defaults");
     require(screenshotShortcuts.setMoveTool({QStringLiteral("Alt+M")}) &&
-                screenshotShortcuts.moveTool() == QStringList{QStringLiteral("Alt+M")} &&
+                portable(screenshotShortcuts.moveTool()) == QStringList{QStringLiteral("Alt+M")} &&
                 screenshotShortcuts.setMoveCursorUp({QStringLiteral("Ctrl+Alt+Up")}) &&
-                screenshotShortcuts.moveCursorUp() == QStringList{QStringLiteral("Ctrl+Alt+Up")},
+                portable(screenshotShortcuts.moveCursorUp()) ==
+                    QStringList{QStringLiteral("Ctrl+Alt+Up")},
             "screenshot shortcuts must round-trip through the typed adapter");
     require(screenshotShortcuts.setMoveCursorRight({QStringLiteral("1")}) &&
-                screenshotShortcuts.moveCursorRight() == QStringList{QStringLiteral("1")},
+                portable(screenshotShortcuts.moveCursorRight()) == QStringList{QStringLiteral("1")},
             "screenshot shortcuts must allow a key assigned in the drawing category");
-    QMap<QString, QStringList> swappedHistoryShortcuts = screenshotShortcuts.allShortcuts();
+    shortcuts::ShortcutBindingMap swappedHistoryShortcuts = screenshotShortcuts.allShortcuts();
     swappedHistoryShortcuts.insert(QStringLiteral("previous_screenshot_history"),
                                    {QStringLiteral(".")});
     swappedHistoryShortcuts.insert(QStringLiteral("next_screenshot_history"),
                                    {QStringLiteral(",")});
     require(screenshotShortcuts.setAllShortcutsAtomic(swappedHistoryShortcuts) &&
-                screenshotShortcuts.previousScreenshotHistory() ==
+                portable(screenshotShortcuts.previousScreenshotHistory()) ==
                     QStringList{QStringLiteral(".")} &&
-                screenshotShortcuts.nextScreenshotHistory() == QStringList{QStringLiteral(",")},
+                portable(screenshotShortcuts.nextScreenshotHistory()) ==
+                    QStringList{QStringLiteral(",")},
             "history shortcuts must allow comma and period to be swapped atomically");
 
     verifyPinToScreenShortcutSettings();
 
-    const QMap<QString, QStringList> defaults = drawingShortcuts.allShortcuts();
+    const shortcuts::ShortcutBindingMap defaults = drawingShortcuts.allShortcuts();
     require(
         defaults.size() == 10 &&
-            defaults.value(QStringLiteral("select")) == QStringList{QStringLiteral("V")} &&
-            defaults.value(QStringLiteral("shape")) == QStringList{QStringLiteral("1")} &&
-            defaults.value(QStringLiteral("arrow")) == QStringList{QStringLiteral("2")} &&
-            defaults.value(QStringLiteral("watermark")) == QStringList{QStringLiteral("9")} &&
+            portable(defaults.value(QStringLiteral("select"))) ==
+                QStringList{QStringLiteral("V")} &&
+            portable(defaults.value(QStringLiteral("shape"))) == QStringList{QStringLiteral("1")} &&
+            portable(defaults.value(QStringLiteral("arrow"))) == QStringList{QStringLiteral("2")} &&
+            portable(defaults.value(QStringLiteral("watermark"))) ==
+                QStringList{QStringLiteral("9")} &&
             drawingShortcuts.shortcuts(QStringLiteral("unsupported")).isEmpty() &&
             !drawingShortcuts.setShortcuts(QStringLiteral("unsupported"), {QStringLiteral("Q")}),
         "drawing shortcut adapter must expose ten stable tools only");
 
     require(drawingShortcuts.setSelect({QStringLiteral("Ctrl+Shift+V")}) &&
-                drawingShortcuts.select() == QStringList{QStringLiteral("Ctrl+Shift+V")},
+                portable(drawingShortcuts.select()) == QStringList{QStringLiteral("Ctrl+Shift+V")},
             "Select drawing shortcuts must round-trip through the typed adapter");
 
     require(drawingShortcuts.setShape({QStringLiteral("Ctrl+Shift+K"), QStringLiteral("Alt+1")}) &&
-                drawingShortcuts.shape() ==
+                portable(drawingShortcuts.shape()) ==
                     QStringList{QStringLiteral("Ctrl+Shift+K"), QStringLiteral("Alt+1")},
             "drawing shortcut adapter must persist normalized tool shortcuts");
     require(drawingShortcuts.setWatermark({QStringLiteral("Alt+M")}) &&
-                drawingShortcuts.watermark() == QStringList{QStringLiteral("Alt+M")},
+                portable(drawingShortcuts.watermark()) == QStringList{QStringLiteral("Alt+M")},
             "drawing shortcuts must allow a key assigned in the screenshot category");
-    const QMap<QString, QStringList> beforeCollision = drawingShortcuts.allShortcuts();
+    const shortcuts::ShortcutBindingMap beforeCollision = drawingShortcuts.allShortcuts();
     require(!drawingShortcuts.setArrow({QStringLiteral("ctrl+shift+k")}) &&
                 drawingShortcuts.allShortcuts() == beforeCollision,
             "case-insensitive cross-tool collisions must reject the complete atomic update");
@@ -1270,13 +1372,13 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 "canvas and screenshot commands must remain reserved from drawing shortcuts");
     }
 
-    QMap<QString, QStringList> incomplete = beforeCollision;
+    shortcuts::ShortcutBindingMap incomplete = beforeCollision;
     incomplete.remove(QStringLiteral("watermark"));
     require(!drawingShortcuts.setAllShortcutsAtomic(incomplete) &&
                 drawingShortcuts.allShortcuts() == beforeCollision,
             "atomic drawing shortcut updates must require all ten tools");
 
-    QMap<QString, QStringList> emptyAssignment = beforeCollision;
+    shortcuts::ShortcutBindingMap emptyAssignment = beforeCollision;
     emptyAssignment.insert(QStringLiteral("shape"), {});
     require(drawingShortcuts.setAllShortcutsAtomic(emptyAssignment) &&
                 drawingShortcuts.shape().isEmpty(),
@@ -1321,9 +1423,9 @@ void invalidOcrModelConfigurationFallsBackToSmallWithoutAMigration() {
     storage::ConfigurationStore store(config, true, true, 60000);
     require(store.value(QStringLiteral("text_recognition/model_type")).toString() ==
                     QStringLiteral("small") &&
-                store.value(QStringLiteral("storage/schema_version")).toInt() == 1 &&
+                store.value(QStringLiteral("storage/schema_version")).toInt() == 2 &&
                 store.isDirty() && store.flushNow().success,
-            "invalid OCR model types must normalize to Small without changing schema version");
+            "invalid OCR model types must normalize while migrating the schema version");
 }
 
 void missingOcrModelConfigurationDefaultsToSmallWithoutAMigration() {
@@ -1339,9 +1441,9 @@ void missingOcrModelConfigurationDefaultsToSmallWithoutAMigration() {
     require(store.value(QStringLiteral("text_recognition/model_type")).toString() ==
                     QStringLiteral("small") &&
                 !store.value(QStringLiteral("text_recognition/direct_ml_acceleration")).toBool() &&
-                store.value(QStringLiteral("storage/schema_version")).toInt() == 1 &&
+                store.value(QStringLiteral("storage/schema_version")).toInt() == 2 &&
                 store.isDirty() && store.flushNow().success,
-            "missing OCR model types must insert Small without changing schema version or peers");
+            "missing OCR model types must insert Small while preserving peer settings");
 }
 
 void smartSelectionAccessorAndSignal() {
@@ -1406,7 +1508,7 @@ void malformedConfigurationIsCopiedAndReplaced() {
                                                 .value(QStringLiteral("storage"))
                                                 .toObject()
                                                 .value(QStringLiteral("schema_version"))
-                                                .toInt() == 1,
+                                                .toInt() == 2,
             "malformed configuration was not replaced cleanly");
 
     const QString expiredBackup =
@@ -1438,7 +1540,7 @@ void futureVersionIsReadOnly() {
     require(temporary.isValid(), "failed to create future-version directory");
     const QString config = QDir(temporary.path()).filePath(QStringLiteral("config.json"));
     writeBytes(config, QByteArrayLiteral("{\n"
-                                         "  \"storage\": {\"schema_version\": 2},\n"
+                                         "  \"storage\": {\"schema_version\": 3},\n"
                                          "  \"interface\": {\"theme_mode\": \"dark\"},\n"
                                          "  \"future\": {\"value\": 42}\n"
                                          "}\n"));
@@ -1809,6 +1911,7 @@ int main(int argc, char** argv) {
     defaultsAndTypedRoundTrip();
     settingsSchemaDefaultsAndValidationAreComplete();
     missingClickThroughShortcutKeepsLegacyConflict();
+    shortcutSchemaMigrationAndPhysicalMetadataRoundTrip();
     invalidTrayClickSettingsUseIndependentDefaults();
     trayClickSettingsSurviveRestart();
     watermarkTemplateSettingsRepairAndSurviveRestart();

@@ -1,11 +1,12 @@
 #ifndef SNOW_SHOT_PRESENTATION_WINDOWSHORTCUTMANAGER_H
 #define SNOW_SHOT_PRESENTATION_WINDOWSHORTCUTMANAGER_H
 
+#include "snow_shot/shortcuts/shortcutbinding.h"
+
 #include <QKeyCombination>
 #include <QList>
 #include <QObject>
 #include <QString>
-#include <QStringList>
 
 #include <functional>
 #include <memory>
@@ -40,6 +41,9 @@ class WindowShortcutManager final : public QObject {
         enum class ActivationTrigger { Press, Release };
 
         QString id;
+        shortcuts::ShortcutBindingList shortcutBindings;
+        // Compatibility input for fixed application commands. Configurable
+        // shortcuts use shortcutBindings so physical metadata survives.
         QList<QKeyCombination> keyCombinations;
         int priority = 0;
         bool autoRepeat = false;
@@ -77,12 +81,16 @@ class WindowShortcutManager final : public QObject {
     void resumeInput(InputSuspensionHandle handle);
 
     [[nodiscard]] BindingHandle addBinding(QObject* owner, Binding binding);
+    [[nodiscard]] bool setShortcuts(BindingHandle handle,
+                                    const shortcuts::ShortcutBindingList& shortcuts);
     [[nodiscard]] bool setKeyCombinations(BindingHandle handle,
                                           const QList<QKeyCombination>& keyCombinations);
     [[nodiscard]] bool removeBinding(BindingHandle handle);
 
     [[nodiscard]] static QList<QKeyCombination>
-    keyCombinationsFromPortableText(const QStringList& shortcuts);
+    keyCombinationsFromBindings(const shortcuts::ShortcutBindingList& shortcuts);
+    [[nodiscard]] static shortcuts::ShortcutBindingList
+    shortcutBindingsFromKeyCombinations(const QList<QKeyCombination>& keyCombinations);
 
     // Returns whether keyboard focus belongs to an editable text control.
     // Read-only text surfaces remain eligible for window command shortcuts.

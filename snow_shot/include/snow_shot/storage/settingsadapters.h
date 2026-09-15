@@ -2,6 +2,7 @@
 #define SNOW_SHOT_STORAGE_SETTINGSADAPTERS_H
 
 #include "snow_shot/customaimodelconfiguration.h"
+#include "snow_shot/shortcuts/shortcutbinding.h"
 
 #include <QColor>
 #include <QMap>
@@ -75,38 +76,38 @@ class InterfaceSettings final {
 
 class ShortcutSettings final {
   public:
-    [[nodiscard]] QStringList screenshot() const;
-    bool setScreenshot(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList screenshotDelay() const;
-    bool setScreenshotDelay(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList screenshotFixed() const;
-    bool setScreenshotFixed(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList screenshotOcr() const;
-    bool setScreenshotOcr(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList screenshotTranslation() const;
-    bool setScreenshotTranslation(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList screenshotCopy() const;
-    bool setScreenshotCopy(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList screenshotFullScreen() const;
-    bool setScreenshotFullScreen(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList screenshotFocusedWindow() const;
-    bool setScreenshotFocusedWindow(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList screenRecord() const;
-    bool setScreenRecord(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList screenRecordCopy() const;
-    bool setScreenRecordCopy(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList openScreenRecordingFolder() const;
-    bool setOpenScreenRecordingFolder(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList openCaptureHistory() const;
-    bool setOpenCaptureHistory(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList openSettings() const;
-    bool setOpenSettings(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList pinClipboardContent() const;
-    bool setPinClipboardContent(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList pinSelectedFiles() const;
-    bool setPinSelectedFiles(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList translateSelectedText() const;
-    bool setTranslateSelectedText(const QStringList& shortcuts) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList screenshot() const;
+    bool setScreenshot(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList screenshotDelay() const;
+    bool setScreenshotDelay(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList screenshotFixed() const;
+    bool setScreenshotFixed(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList screenshotOcr() const;
+    bool setScreenshotOcr(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList screenshotTranslation() const;
+    bool setScreenshotTranslation(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList screenshotCopy() const;
+    bool setScreenshotCopy(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList screenshotFullScreen() const;
+    bool setScreenshotFullScreen(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList screenshotFocusedWindow() const;
+    bool setScreenshotFocusedWindow(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList screenRecord() const;
+    bool setScreenRecord(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList screenRecordCopy() const;
+    bool setScreenRecordCopy(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList openScreenRecordingFolder() const;
+    bool setOpenScreenRecordingFolder(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList openCaptureHistory() const;
+    bool setOpenCaptureHistory(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList openSettings() const;
+    bool setOpenSettings(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList pinClipboardContent() const;
+    bool setPinClipboardContent(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList pinSelectedFiles() const;
+    bool setPinSelectedFiles(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList translateSelectedText() const;
+    bool setTranslateSelectedText(const shortcuts::ShortcutBindingList& bindings) const;
 };
 
 class GlobalShortcutSettings final {
@@ -169,66 +170,71 @@ class DrawingSettings final {
 
 class ScreenshotShortcutSettings final {
   public:
-    [[nodiscard]] static bool isReservedShortcut(const QString& shortcut);
+    [[nodiscard]] static bool isReservedShortcut(const shortcuts::ShortcutBinding& shortcut);
     [[nodiscard]] static bool isReservedShortcutAllowed(const QString& actionId,
-                                                        const QString& shortcut);
+                                                        const shortcuts::ShortcutBinding& shortcut);
 
-    [[nodiscard]] QStringList moveTool() const;
-    bool setMoveTool(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList moveCursorUp() const;
-    bool setMoveCursorUp(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList moveCursorDown() const;
-    [[nodiscard]] QStringList moveCursorLeft() const;
-    [[nodiscard]] QStringList moveCursorRight() const;
-    bool setMoveCursorRight(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList moveEntireSelection() const;
-    [[nodiscard]] QStringList keepSelectionWidthAndHeightConsistent() const;
-    bool setKeepSelectionWidthAndHeightConsistent(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList switchSelectionBetweenWindowAndWindowSubElement() const;
-    [[nodiscard]] QStringList previousScreenshotHistory() const;
-    [[nodiscard]] QStringList nextScreenshotHistory() const;
-    [[nodiscard]] QStringList selectPreviouslySelectedArea() const;
-    [[nodiscard]] QStringList copyColor() const;
+    [[nodiscard]] shortcuts::ShortcutBindingList moveTool() const;
+    bool setMoveTool(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList moveCursorUp() const;
+    bool setMoveCursorUp(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList moveCursorDown() const;
+    [[nodiscard]] shortcuts::ShortcutBindingList moveCursorLeft() const;
+    [[nodiscard]] shortcuts::ShortcutBindingList moveCursorRight() const;
+    bool setMoveCursorRight(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList moveEntireSelection() const;
+    [[nodiscard]] shortcuts::ShortcutBindingList keepSelectionWidthAndHeightConsistent() const;
+    bool
+    setKeepSelectionWidthAndHeightConsistent(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList
+    switchSelectionBetweenWindowAndWindowSubElement() const;
+    [[nodiscard]] shortcuts::ShortcutBindingList previousScreenshotHistory() const;
+    [[nodiscard]] shortcuts::ShortcutBindingList nextScreenshotHistory() const;
+    [[nodiscard]] shortcuts::ShortcutBindingList selectPreviouslySelectedArea() const;
+    [[nodiscard]] shortcuts::ShortcutBindingList copyColor() const;
 
-    [[nodiscard]] QStringList shortcuts(const QString& actionId) const;
-    bool setShortcuts(const QString& actionId, const QStringList& shortcuts) const;
-    [[nodiscard]] QMap<QString, QStringList> allShortcuts() const;
-    bool setAllShortcutsAtomic(const QMap<QString, QStringList>& shortcutsByAction) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList shortcuts(const QString& actionId) const;
+    bool setShortcuts(const QString& actionId,
+                      const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingMap allShortcuts() const;
+    bool setAllShortcutsAtomic(const shortcuts::ShortcutBindingMap& shortcutsByAction) const;
 };
 
 class DrawingShortcutSettings final {
   public:
-    [[nodiscard]] static bool isReservedShortcut(const QString& shortcut);
+    [[nodiscard]] static bool isReservedShortcut(const shortcuts::ShortcutBinding& shortcut);
 
-    [[nodiscard]] QStringList select() const;
-    bool setSelect(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList shape() const;
-    bool setShape(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList arrow() const;
-    bool setArrow(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList watermark() const;
-    bool setWatermark(const QStringList& shortcuts) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList select() const;
+    bool setSelect(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList shape() const;
+    bool setShape(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList arrow() const;
+    bool setArrow(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList watermark() const;
+    bool setWatermark(const shortcuts::ShortcutBindingList& bindings) const;
 
-    [[nodiscard]] QStringList shortcuts(const QString& toolId) const;
-    bool setShortcuts(const QString& toolId, const QStringList& shortcuts) const;
-    [[nodiscard]] QMap<QString, QStringList> allShortcuts() const;
-    bool setAllShortcutsAtomic(const QMap<QString, QStringList>& shortcutsByTool) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList shortcuts(const QString& toolId) const;
+    bool setShortcuts(const QString& toolId, const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingMap allShortcuts() const;
+    bool setAllShortcutsAtomic(const shortcuts::ShortcutBindingMap& shortcutsByTool) const;
 };
 
 class PinToScreenShortcutSettings final {
   public:
-    [[nodiscard]] QStringList shortcuts(const QString& actionId) const;
-    bool setShortcuts(const QString& actionId, const QStringList& shortcuts) const;
-    [[nodiscard]] QMap<QString, QStringList> allShortcuts() const;
-    bool setAllShortcutsAtomic(const QMap<QString, QStringList>& shortcutsByAction) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList shortcuts(const QString& actionId) const;
+    bool setShortcuts(const QString& actionId,
+                      const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingMap allShortcuts() const;
+    bool setAllShortcutsAtomic(const shortcuts::ShortcutBindingMap& shortcutsByAction) const;
 };
 
 class ScreenRecordingShortcutSettings final {
   public:
-    [[nodiscard]] QStringList shortcuts(const QString& actionId) const;
-    bool setShortcuts(const QString& actionId, const QStringList& shortcuts) const;
-    [[nodiscard]] QMap<QString, QStringList> allShortcuts() const;
-    bool setAllShortcutsAtomic(const QMap<QString, QStringList>& shortcutsByAction) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList shortcuts(const QString& actionId) const;
+    bool setShortcuts(const QString& actionId,
+                      const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingMap allShortcuts() const;
+    bool setAllShortcutsAtomic(const shortcuts::ShortcutBindingMap& shortcutsByAction) const;
 };
 
 struct ScreenshotTranslationConfiguration {

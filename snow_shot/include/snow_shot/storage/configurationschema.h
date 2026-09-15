@@ -15,6 +15,7 @@ enum class ConfigurationValueKind {
     Integer,
     String,
     StringList,
+    ShortcutList,
     Structured,
 };
 

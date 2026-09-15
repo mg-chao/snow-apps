@@ -11,6 +11,8 @@
 #include <QKeySequence>
 #include <QSet>
 
+#include <algorithm>
+
 namespace snow_shot::storage {
 namespace {
 ConfigurationStore& cache() {
@@ -37,12 +39,13 @@ QJsonArray stringArray(const QStringList& values) {
     return result;
 }
 
-QStringList shortcutValue(const QString& key) {
-    return stringList(cache().value(key));
+shortcuts::ShortcutBindingList shortcutValue(const QString& key) {
+    const bool allowModifierOnlyShift = key.startsWith(QStringLiteral("screenshot_shortcuts/"));
+    return shortcuts::shortcutBindingsFromJson(cache().value(key), allowModifierOnlyShift);
 }
 
-bool setShortcutValue(const QString& key, const QStringList& shortcuts) {
-    return cache().setValue(key, stringArray(shortcuts));
+bool setShortcutValue(const QString& key, const shortcuts::ShortcutBindingList& bindings) {
+    return cache().setValue(key, shortcuts::shortcutBindingsToJson(bindings));
 }
 
 const QStringList& drawingShortcutToolIds() {
@@ -132,17 +135,17 @@ QString pinToScreenShortcutKey(const QString& actionId) {
                : QString();
 }
 
-bool screenshotHistoryShortcutAllowed(const QString& actionId, const QString& shortcut) {
+bool screenshotHistoryShortcutAllowed(const QString& actionId,
+                                      const shortcuts::ShortcutBinding& shortcut) {
     const bool historyAction = actionId == QStringLiteral("previous_screenshot_history") ||
                                actionId == QStringLiteral("next_screenshot_history");
-    return historyAction && (shortcut == QStringLiteral(",") || shortcut == QStringLiteral("."));
+    return historyAction && (shortcut.portableText == QStringLiteral(",") ||
+                             shortcut.portableText == QStringLiteral("."));
 }
 
-bool isReservedLocalShortcut(const QString& shortcut) {
-    QKeySequence sequence = QKeySequence::fromString(shortcut, QKeySequence::PortableText);
-    if (sequence.isEmpty()) {
-        sequence = QKeySequence::fromString(shortcut, QKeySequence::NativeText);
-    }
+bool isReservedLocalShortcut(const shortcuts::ShortcutBinding& shortcut) {
+    const QKeySequence sequence =
+        QKeySequence::fromString(shortcut.portableText, QKeySequence::PortableText);
     if (sequence.count() != 1) {
         return false;
     }
@@ -269,110 +272,113 @@ bool InterfaceSettings::setSidebarCollapsed(bool collapsed) const {
     return cache().setValue(QStringLiteral("interface/sidebar_collapsed"), collapsed);
 }
 
-QStringList ShortcutSettings::screenshot() const {
+shortcuts::ShortcutBindingList ShortcutSettings::screenshot() const {
     return shortcutValue(QStringLiteral("global_shortcuts/screenshot"));
 }
 
-bool ShortcutSettings::setScreenshot(const QStringList& shortcuts) const {
-    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot"), shortcuts);
+bool ShortcutSettings::setScreenshot(const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot"), bindings);
 }
 
-QStringList ShortcutSettings::screenshotDelay() const {
+shortcuts::ShortcutBindingList ShortcutSettings::screenshotDelay() const {
     return shortcutValue(QStringLiteral("global_shortcuts/screenshot_delay"));
 }
 
-bool ShortcutSettings::setScreenshotDelay(const QStringList& shortcuts) const {
-    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_delay"), shortcuts);
+bool ShortcutSettings::setScreenshotDelay(const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_delay"), bindings);
 }
 
-QStringList ShortcutSettings::screenshotFixed() const {
+shortcuts::ShortcutBindingList ShortcutSettings::screenshotFixed() const {
     return shortcutValue(QStringLiteral("global_shortcuts/screenshot_fixed"));
 }
 
-bool ShortcutSettings::setScreenshotFixed(const QStringList& shortcuts) const {
-    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_fixed"), shortcuts);
+bool ShortcutSettings::setScreenshotFixed(const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_fixed"), bindings);
 }
 
-QStringList ShortcutSettings::screenshotOcr() const {
+shortcuts::ShortcutBindingList ShortcutSettings::screenshotOcr() const {
     return shortcutValue(QStringLiteral("global_shortcuts/screenshot_ocr"));
 }
 
-bool ShortcutSettings::setScreenshotOcr(const QStringList& shortcuts) const {
-    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_ocr"), shortcuts);
+bool ShortcutSettings::setScreenshotOcr(const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_ocr"), bindings);
 }
 
-QStringList ShortcutSettings::screenshotTranslation() const {
+shortcuts::ShortcutBindingList ShortcutSettings::screenshotTranslation() const {
     return shortcutValue(QStringLiteral("global_shortcuts/screenshot_translation"));
 }
 
-bool ShortcutSettings::setScreenshotTranslation(const QStringList& shortcuts) const {
-    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_translation"), shortcuts);
+bool ShortcutSettings::setScreenshotTranslation(
+    const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_translation"), bindings);
 }
 
-QStringList ShortcutSettings::screenshotCopy() const {
+shortcuts::ShortcutBindingList ShortcutSettings::screenshotCopy() const {
     return shortcutValue(QStringLiteral("global_shortcuts/screenshot_copy"));
 }
 
-bool ShortcutSettings::setScreenshotCopy(const QStringList& shortcuts) const {
-    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_copy"), shortcuts);
+bool ShortcutSettings::setScreenshotCopy(const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_copy"), bindings);
 }
 
-QStringList ShortcutSettings::screenshotFullScreen() const {
+shortcuts::ShortcutBindingList ShortcutSettings::screenshotFullScreen() const {
     return shortcutValue(QStringLiteral("global_shortcuts/screenshot_full_screen"));
 }
 
-bool ShortcutSettings::setScreenshotFullScreen(const QStringList& shortcuts) const {
-    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_full_screen"), shortcuts);
+bool ShortcutSettings::setScreenshotFullScreen(
+    const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_full_screen"), bindings);
 }
 
-QStringList ShortcutSettings::screenshotFocusedWindow() const {
+shortcuts::ShortcutBindingList ShortcutSettings::screenshotFocusedWindow() const {
     return shortcutValue(QStringLiteral("global_shortcuts/screenshot_focused_window"));
 }
 
-bool ShortcutSettings::setScreenshotFocusedWindow(const QStringList& shortcuts) const {
-    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_focused_window"),
-                            shortcuts);
+bool ShortcutSettings::setScreenshotFocusedWindow(
+    const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_focused_window"), bindings);
 }
 
-QStringList ShortcutSettings::screenRecord() const {
+shortcuts::ShortcutBindingList ShortcutSettings::screenRecord() const {
     return shortcutValue(QStringLiteral("global_shortcuts/screen_record"));
 }
 
-bool ShortcutSettings::setScreenRecord(const QStringList& shortcuts) const {
-    return setShortcutValue(QStringLiteral("global_shortcuts/screen_record"), shortcuts);
+bool ShortcutSettings::setScreenRecord(const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/screen_record"), bindings);
 }
 
-QStringList ShortcutSettings::screenRecordCopy() const {
+shortcuts::ShortcutBindingList ShortcutSettings::screenRecordCopy() const {
     return shortcutValue(QStringLiteral("global_shortcuts/screen_record_copy"));
 }
 
-bool ShortcutSettings::setScreenRecordCopy(const QStringList& shortcuts) const {
-    return setShortcutValue(QStringLiteral("global_shortcuts/screen_record_copy"), shortcuts);
+bool ShortcutSettings::setScreenRecordCopy(const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/screen_record_copy"), bindings);
 }
 
-QStringList ShortcutSettings::openScreenRecordingFolder() const {
+shortcuts::ShortcutBindingList ShortcutSettings::openScreenRecordingFolder() const {
     return shortcutValue(QStringLiteral("global_shortcuts/open_screen_recording_folder"));
 }
 
-bool ShortcutSettings::setOpenScreenRecordingFolder(const QStringList& shortcuts) const {
+bool ShortcutSettings::setOpenScreenRecordingFolder(
+    const shortcuts::ShortcutBindingList& bindings) const {
     return setShortcutValue(QStringLiteral("global_shortcuts/open_screen_recording_folder"),
-                            shortcuts);
+                            bindings);
 }
 
-QStringList ShortcutSettings::openCaptureHistory() const {
+shortcuts::ShortcutBindingList ShortcutSettings::openCaptureHistory() const {
     return shortcutValue(QStringLiteral("global_shortcuts/open_capture_history"));
 }
 
-bool ShortcutSettings::setOpenCaptureHistory(const QStringList& shortcuts) const {
-    return setShortcutValue(QStringLiteral("global_shortcuts/open_capture_history"), shortcuts);
+bool ShortcutSettings::setOpenCaptureHistory(const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/open_capture_history"), bindings);
 }
 
-QStringList ShortcutSettings::openSettings() const {
+shortcuts::ShortcutBindingList ShortcutSettings::openSettings() const {
     return shortcutValue(QStringLiteral("global_shortcuts/open_settings"));
 }
 
-bool ShortcutSettings::setOpenSettings(const QStringList& shortcuts) const {
-    return setShortcutValue(QStringLiteral("global_shortcuts/open_settings"), shortcuts);
+bool ShortcutSettings::setOpenSettings(const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/open_settings"), bindings);
 }
 
 bool ExtendedFeaturesSettings::translationPageEnabled() const {
@@ -396,28 +402,30 @@ bool ExtendedFeaturesSettings::setTranslationPageEnabled(bool enabled) const {
     return cache().setValue(QStringLiteral("extended_features/translation_page_enabled"), enabled);
 }
 
-QStringList ShortcutSettings::translateSelectedText() const {
+shortcuts::ShortcutBindingList ShortcutSettings::translateSelectedText() const {
     return shortcutValue(QStringLiteral("global_shortcuts/translate_selected_text"));
 }
 
-bool ShortcutSettings::setTranslateSelectedText(const QStringList& shortcuts) const {
-    return setShortcutValue(QStringLiteral("global_shortcuts/translate_selected_text"), shortcuts);
+bool ShortcutSettings::setTranslateSelectedText(
+    const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/translate_selected_text"), bindings);
 }
 
-QStringList ShortcutSettings::pinClipboardContent() const {
+shortcuts::ShortcutBindingList ShortcutSettings::pinClipboardContent() const {
     return shortcutValue(QStringLiteral("global_shortcuts/pin_clipboard_content"));
 }
 
-QStringList ShortcutSettings::pinSelectedFiles() const {
+shortcuts::ShortcutBindingList ShortcutSettings::pinSelectedFiles() const {
     return shortcutValue(QStringLiteral("global_shortcuts/pin_selected_files"));
 }
 
-bool ShortcutSettings::setPinSelectedFiles(const QStringList& shortcuts) const {
-    return setShortcutValue(QStringLiteral("global_shortcuts/pin_selected_files"), shortcuts);
+bool ShortcutSettings::setPinSelectedFiles(const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/pin_selected_files"), bindings);
 }
 
-bool ShortcutSettings::setPinClipboardContent(const QStringList& shortcuts) const {
-    return setShortcutValue(QStringLiteral("global_shortcuts/pin_clipboard_content"), shortcuts);
+bool ShortcutSettings::setPinClipboardContent(
+    const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/pin_clipboard_content"), bindings);
 }
 
 bool GlobalShortcutSettings::disableOnFocusedFullscreenWindow() const {
@@ -614,68 +622,72 @@ bool DrawingSettings::setQuickSelectionDisabledTools(const QStringList& tools) c
                             stringArray(tools));
 }
 
-QStringList ScreenshotShortcutSettings::moveTool() const {
+shortcuts::ShortcutBindingList ScreenshotShortcutSettings::moveTool() const {
     return shortcuts(QStringLiteral("move_tool"));
 }
 
-bool ScreenshotShortcutSettings::setMoveTool(const QStringList& value) const {
+bool ScreenshotShortcutSettings::setMoveTool(const shortcuts::ShortcutBindingList& value) const {
     return setShortcuts(QStringLiteral("move_tool"), value);
 }
 
-QStringList ScreenshotShortcutSettings::moveCursorUp() const {
+shortcuts::ShortcutBindingList ScreenshotShortcutSettings::moveCursorUp() const {
     return shortcuts(QStringLiteral("move_cursor_up"));
 }
 
-bool ScreenshotShortcutSettings::setMoveCursorUp(const QStringList& value) const {
+bool ScreenshotShortcutSettings::setMoveCursorUp(
+    const shortcuts::ShortcutBindingList& value) const {
     return setShortcuts(QStringLiteral("move_cursor_up"), value);
 }
 
-QStringList ScreenshotShortcutSettings::moveCursorDown() const {
+shortcuts::ShortcutBindingList ScreenshotShortcutSettings::moveCursorDown() const {
     return shortcuts(QStringLiteral("move_cursor_down"));
 }
 
-QStringList ScreenshotShortcutSettings::moveCursorLeft() const {
+shortcuts::ShortcutBindingList ScreenshotShortcutSettings::moveCursorLeft() const {
     return shortcuts(QStringLiteral("move_cursor_left"));
 }
 
-QStringList ScreenshotShortcutSettings::moveCursorRight() const {
+shortcuts::ShortcutBindingList ScreenshotShortcutSettings::moveCursorRight() const {
     return shortcuts(QStringLiteral("move_cursor_right"));
 }
 
-bool ScreenshotShortcutSettings::setMoveCursorRight(const QStringList& value) const {
+bool ScreenshotShortcutSettings::setMoveCursorRight(
+    const shortcuts::ShortcutBindingList& value) const {
     return setShortcuts(QStringLiteral("move_cursor_right"), value);
 }
 
-QStringList ScreenshotShortcutSettings::moveEntireSelection() const {
+shortcuts::ShortcutBindingList ScreenshotShortcutSettings::moveEntireSelection() const {
     return shortcuts(QStringLiteral("move_entire_selection"));
 }
 
-QStringList ScreenshotShortcutSettings::keepSelectionWidthAndHeightConsistent() const {
+shortcuts::ShortcutBindingList
+ScreenshotShortcutSettings::keepSelectionWidthAndHeightConsistent() const {
     return shortcuts(QStringLiteral("keep_selection_width_and_height_consistent"));
 }
 
 bool ScreenshotShortcutSettings::setKeepSelectionWidthAndHeightConsistent(
-    const QStringList& value) const {
+    const shortcuts::ShortcutBindingList& value) const {
     return setShortcuts(QStringLiteral("keep_selection_width_and_height_consistent"), value);
 }
 
-QStringList ScreenshotShortcutSettings::switchSelectionBetweenWindowAndWindowSubElement() const {
+shortcuts::ShortcutBindingList
+ScreenshotShortcutSettings::switchSelectionBetweenWindowAndWindowSubElement() const {
     return shortcuts(QStringLiteral("switch_selection_between_window_and_window_sub_element"));
 }
 
-QStringList ScreenshotShortcutSettings::previousScreenshotHistory() const {
+shortcuts::ShortcutBindingList ScreenshotShortcutSettings::previousScreenshotHistory() const {
     return shortcuts(QStringLiteral("previous_screenshot_history"));
 }
 
-QStringList ScreenshotShortcutSettings::nextScreenshotHistory() const {
+shortcuts::ShortcutBindingList ScreenshotShortcutSettings::nextScreenshotHistory() const {
     return shortcuts(QStringLiteral("next_screenshot_history"));
 }
 
-QStringList ScreenshotShortcutSettings::selectPreviouslySelectedArea() const {
+shortcuts::ShortcutBindingList ScreenshotShortcutSettings::selectPreviouslySelectedArea() const {
     return shortcuts(QStringLiteral("select_previously_selected_area"));
 }
 
-QStringList ScreenshotShortcutSettings::copyColor() const {
+shortcuts::ShortcutBindingList ScreenshotShortcutSettings::copyColor() const {
     return shortcuts(QStringLiteral("copy_color"));
 }
 
@@ -706,20 +718,18 @@ bool ScreenshotSettings::setWindowElementApi(const QString& api) const {
     return cache().setValue(QStringLiteral("screenshot/window_element_api"), api);
 }
 
-bool ScreenshotShortcutSettings::isReservedShortcut(const QString& shortcut) {
+bool ScreenshotShortcutSettings::isReservedShortcut(const shortcuts::ShortcutBinding& shortcut) {
     return isReservedLocalShortcut(shortcut);
 }
 
-bool ScreenshotShortcutSettings::isReservedShortcutAllowed(const QString& actionId,
-                                                           const QString& shortcut) {
+bool ScreenshotShortcutSettings::isReservedShortcutAllowed(
+    const QString& actionId, const shortcuts::ShortcutBinding& shortcut) {
     if (screenshotHistoryShortcutAllowed(actionId, shortcut)) {
         return true;
     }
 
-    QKeySequence sequence = QKeySequence::fromString(shortcut, QKeySequence::PortableText);
-    if (sequence.isEmpty()) {
-        sequence = QKeySequence::fromString(shortcut, QKeySequence::NativeText);
-    }
+    const QKeySequence sequence =
+        QKeySequence::fromString(shortcut.portableText, QKeySequence::PortableText);
     if (sequence.count() != 1) {
         return false;
     }
@@ -740,23 +750,24 @@ bool ScreenshotShortcutSettings::isReservedShortcutAllowed(const QString& action
     return false;
 }
 
-QStringList ScreenshotShortcutSettings::shortcuts(const QString& actionId) const {
+shortcuts::ShortcutBindingList
+ScreenshotShortcutSettings::shortcuts(const QString& actionId) const {
     const QString key = screenshotShortcutKey(actionId);
-    return key.isEmpty() ? QStringList{} : shortcutValue(key);
+    return key.isEmpty() ? shortcuts::ShortcutBindingList{} : shortcutValue(key);
 }
 
 bool ScreenshotShortcutSettings::setShortcuts(const QString& actionId,
-                                              const QStringList& value) const {
+                                              const shortcuts::ShortcutBindingList& value) const {
     if (screenshotShortcutKey(actionId).isEmpty()) {
         return false;
     }
-    QMap<QString, QStringList> next = allShortcuts();
+    shortcuts::ShortcutBindingMap next = allShortcuts();
     next.insert(actionId, value);
     return setAllShortcutsAtomic(next);
 }
 
-QMap<QString, QStringList> ScreenshotShortcutSettings::allShortcuts() const {
-    QMap<QString, QStringList> result;
+shortcuts::ShortcutBindingMap ScreenshotShortcutSettings::allShortcuts() const {
+    shortcuts::ShortcutBindingMap result;
     for (const QString& actionId : screenshotShortcutActionIds()) {
         result.insert(actionId, shortcutValue(screenshotShortcutKey(actionId)));
     }
@@ -764,88 +775,92 @@ QMap<QString, QStringList> ScreenshotShortcutSettings::allShortcuts() const {
 }
 
 bool ScreenshotShortcutSettings::setAllShortcutsAtomic(
-    const QMap<QString, QStringList>& shortcutsByAction) const {
+    const shortcuts::ShortcutBindingMap& shortcutsByAction) const {
     if (shortcutsByAction.size() != screenshotShortcutActionIds().size()) {
         return false;
     }
     QMap<QString, QJsonValue> values;
-    QSet<QString> seen;
+    shortcuts::ShortcutBindingList seen;
     for (const QString& actionId : screenshotShortcutActionIds()) {
         if (!shortcutsByAction.contains(actionId)) {
             return false;
         }
         const QString key = screenshotShortcutKey(actionId);
-        const ConfigurationNormalization normalized =
-            ConfigurationSchema::normalize(key, stringArray(shortcutsByAction.value(actionId)));
+        const ConfigurationNormalization normalized = ConfigurationSchema::normalize(
+            key, shortcuts::shortcutBindingsToJson(shortcutsByAction.value(actionId)));
         if (!normalized.valid) {
             return false;
         }
-        for (const QJsonValue& item : normalized.value.toArray()) {
-            const QString shortcut = item.toString();
-            const QString binding = shortcut.toCaseFolded();
-            if ((isReservedShortcut(shortcut) && !isReservedShortcutAllowed(actionId, shortcut)) ||
-                seen.contains(binding)) {
+        const auto normalizedBindings = shortcuts::shortcutBindingsFromJson(normalized.value, true);
+        for (const auto& binding : normalizedBindings) {
+            const bool duplicate =
+                std::any_of(seen.cbegin(), seen.cend(), [&binding](const auto& existing) {
+                    return shortcuts::bindingsConflict(existing, binding);
+                });
+            if ((isReservedShortcut(binding) && !isReservedShortcutAllowed(actionId, binding)) ||
+                duplicate) {
                 return false;
             }
-            seen.insert(binding);
+            seen.push_back(binding);
         }
         values.insert(key, normalized.value);
     }
     return cache().setValues(values);
 }
 
-QStringList DrawingShortcutSettings::select() const {
+shortcuts::ShortcutBindingList DrawingShortcutSettings::select() const {
     return shortcuts(QStringLiteral("select"));
 }
 
-bool DrawingShortcutSettings::setSelect(const QStringList& value) const {
+bool DrawingShortcutSettings::setSelect(const shortcuts::ShortcutBindingList& value) const {
     return setShortcuts(QStringLiteral("select"), value);
 }
 
-QStringList DrawingShortcutSettings::shape() const {
+shortcuts::ShortcutBindingList DrawingShortcutSettings::shape() const {
     return shortcuts(QStringLiteral("shape"));
 }
 
-bool DrawingShortcutSettings::setShape(const QStringList& value) const {
+bool DrawingShortcutSettings::setShape(const shortcuts::ShortcutBindingList& value) const {
     return setShortcuts(QStringLiteral("shape"), value);
 }
 
-QStringList DrawingShortcutSettings::arrow() const {
+shortcuts::ShortcutBindingList DrawingShortcutSettings::arrow() const {
     return shortcuts(QStringLiteral("arrow"));
 }
 
-bool DrawingShortcutSettings::setArrow(const QStringList& value) const {
+bool DrawingShortcutSettings::setArrow(const shortcuts::ShortcutBindingList& value) const {
     return setShortcuts(QStringLiteral("arrow"), value);
 }
 
-QStringList DrawingShortcutSettings::watermark() const {
+shortcuts::ShortcutBindingList DrawingShortcutSettings::watermark() const {
     return shortcuts(QStringLiteral("watermark"));
 }
 
-bool DrawingShortcutSettings::setWatermark(const QStringList& value) const {
+bool DrawingShortcutSettings::setWatermark(const shortcuts::ShortcutBindingList& value) const {
     return setShortcuts(QStringLiteral("watermark"), value);
 }
 
-bool DrawingShortcutSettings::isReservedShortcut(const QString& shortcut) {
+bool DrawingShortcutSettings::isReservedShortcut(const shortcuts::ShortcutBinding& shortcut) {
     return isReservedLocalShortcut(shortcut);
 }
 
-QStringList DrawingShortcutSettings::shortcuts(const QString& toolId) const {
+shortcuts::ShortcutBindingList DrawingShortcutSettings::shortcuts(const QString& toolId) const {
     const QString key = drawingShortcutKey(toolId);
-    return key.isEmpty() ? QStringList{} : shortcutValue(key);
+    return key.isEmpty() ? shortcuts::ShortcutBindingList{} : shortcutValue(key);
 }
 
-bool DrawingShortcutSettings::setShortcuts(const QString& toolId, const QStringList& value) const {
+bool DrawingShortcutSettings::setShortcuts(const QString& toolId,
+                                           const shortcuts::ShortcutBindingList& value) const {
     if (drawingShortcutKey(toolId).isEmpty()) {
         return false;
     }
-    QMap<QString, QStringList> next = allShortcuts();
+    shortcuts::ShortcutBindingMap next = allShortcuts();
     next.insert(toolId, value);
     return setAllShortcutsAtomic(next);
 }
 
-QMap<QString, QStringList> DrawingShortcutSettings::allShortcuts() const {
-    QMap<QString, QStringList> result;
+shortcuts::ShortcutBindingMap DrawingShortcutSettings::allShortcuts() const {
+    shortcuts::ShortcutBindingMap result;
     for (const QString& toolId : drawingShortcutToolIds()) {
         result.insert(toolId, shortcutValue(drawingShortcutKey(toolId)));
     }
@@ -853,55 +868,60 @@ QMap<QString, QStringList> DrawingShortcutSettings::allShortcuts() const {
 }
 
 bool DrawingShortcutSettings::setAllShortcutsAtomic(
-    const QMap<QString, QStringList>& shortcutsByTool) const {
+    const shortcuts::ShortcutBindingMap& shortcutsByTool) const {
     if (shortcutsByTool.size() != drawingShortcutToolIds().size()) {
         return false;
     }
     QMap<QString, QJsonValue> values;
-    QSet<QString> seen;
+    shortcuts::ShortcutBindingList seen;
     for (const QString& toolId : drawingShortcutToolIds()) {
         if (!shortcutsByTool.contains(toolId)) {
             return false;
         }
         const QString key = drawingShortcutKey(toolId);
-        const ConfigurationNormalization normalized =
-            ConfigurationSchema::normalize(key, stringArray(shortcutsByTool.value(toolId)));
+        const ConfigurationNormalization normalized = ConfigurationSchema::normalize(
+            key, shortcuts::shortcutBindingsToJson(shortcutsByTool.value(toolId)));
         if (!normalized.valid) {
             return false;
         }
-        for (const QJsonValue& item : normalized.value.toArray()) {
-            const QString shortcut = item.toString();
-            if (isReservedShortcut(shortcut)) {
+        const auto normalizedBindings =
+            shortcuts::shortcutBindingsFromJson(normalized.value, false);
+        for (const auto& binding : normalizedBindings) {
+            if (isReservedShortcut(binding)) {
                 return false;
             }
-            const QString binding = shortcut.toCaseFolded();
-            if (seen.contains(binding)) {
+            const bool duplicate =
+                std::any_of(seen.cbegin(), seen.cend(), [&binding](const auto& existing) {
+                    return shortcuts::bindingsConflict(existing, binding);
+                });
+            if (duplicate) {
                 return false;
             }
-            seen.insert(binding);
+            seen.push_back(binding);
         }
         values.insert(key, normalized.value);
     }
     return cache().setValues(values);
 }
 
-QStringList PinToScreenShortcutSettings::shortcuts(const QString& actionId) const {
+shortcuts::ShortcutBindingList
+PinToScreenShortcutSettings::shortcuts(const QString& actionId) const {
     const QString key = pinToScreenShortcutKey(actionId);
-    return key.isEmpty() ? QStringList{} : shortcutValue(key);
+    return key.isEmpty() ? shortcuts::ShortcutBindingList{} : shortcutValue(key);
 }
 
 bool PinToScreenShortcutSettings::setShortcuts(const QString& actionId,
-                                               const QStringList& value) const {
+                                               const shortcuts::ShortcutBindingList& value) const {
     if (pinToScreenShortcutKey(actionId).isEmpty()) {
         return false;
     }
-    QMap<QString, QStringList> next = allShortcuts();
+    shortcuts::ShortcutBindingMap next = allShortcuts();
     next.insert(actionId, value);
     return setAllShortcutsAtomic(next);
 }
 
-QMap<QString, QStringList> PinToScreenShortcutSettings::allShortcuts() const {
-    QMap<QString, QStringList> result;
+shortcuts::ShortcutBindingMap PinToScreenShortcutSettings::allShortcuts() const {
+    shortcuts::ShortcutBindingMap result;
     for (const QString& actionId : pinToScreenShortcutActionIds()) {
         result.insert(actionId, shortcutValue(pinToScreenShortcutKey(actionId)));
     }
@@ -909,51 +929,57 @@ QMap<QString, QStringList> PinToScreenShortcutSettings::allShortcuts() const {
 }
 
 bool PinToScreenShortcutSettings::setAllShortcutsAtomic(
-    const QMap<QString, QStringList>& shortcutsByAction) const {
+    const shortcuts::ShortcutBindingMap& shortcutsByAction) const {
     if (shortcutsByAction.size() != pinToScreenShortcutActionIds().size()) {
         return false;
     }
     QMap<QString, QJsonValue> values;
-    QSet<QString> seen;
+    shortcuts::ShortcutBindingList seen;
     for (const QString& actionId : pinToScreenShortcutActionIds()) {
         if (!shortcutsByAction.contains(actionId)) {
             return false;
         }
         const QString key = pinToScreenShortcutKey(actionId);
-        const ConfigurationNormalization normalized =
-            ConfigurationSchema::normalize(key, stringArray(shortcutsByAction.value(actionId)));
+        const ConfigurationNormalization normalized = ConfigurationSchema::normalize(
+            key, shortcuts::shortcutBindingsToJson(shortcutsByAction.value(actionId)));
         if (!normalized.valid) {
             return false;
         }
-        for (const QJsonValue& item : normalized.value.toArray()) {
-            const QString binding = item.toString().toCaseFolded();
-            if (seen.contains(binding)) {
+        const auto normalizedBindings =
+            shortcuts::shortcutBindingsFromJson(normalized.value, false);
+        for (const auto& binding : normalizedBindings) {
+            const bool duplicate =
+                std::any_of(seen.cbegin(), seen.cend(), [&binding](const auto& existing) {
+                    return shortcuts::bindingsConflict(existing, binding);
+                });
+            if (duplicate) {
                 return false;
             }
-            seen.insert(binding);
+            seen.push_back(binding);
         }
         values.insert(key, normalized.value);
     }
     return cache().setValues(values);
 }
 
-QStringList ScreenRecordingShortcutSettings::shortcuts(const QString& actionId) const {
+shortcuts::ShortcutBindingList
+ScreenRecordingShortcutSettings::shortcuts(const QString& actionId) const {
     const QString key = screenRecordingShortcutKey(actionId);
-    return key.isEmpty() ? QStringList{} : shortcutValue(key);
+    return key.isEmpty() ? shortcuts::ShortcutBindingList{} : shortcutValue(key);
 }
 
-bool ScreenRecordingShortcutSettings::setShortcuts(const QString& actionId,
-                                                   const QStringList& value) const {
+bool ScreenRecordingShortcutSettings::setShortcuts(
+    const QString& actionId, const shortcuts::ShortcutBindingList& value) const {
     if (screenRecordingShortcutKey(actionId).isEmpty()) {
         return false;
     }
-    QMap<QString, QStringList> next = allShortcuts();
+    shortcuts::ShortcutBindingMap next = allShortcuts();
     next.insert(actionId, value);
     return setAllShortcutsAtomic(next);
 }
 
-QMap<QString, QStringList> ScreenRecordingShortcutSettings::allShortcuts() const {
-    QMap<QString, QStringList> result;
+shortcuts::ShortcutBindingMap ScreenRecordingShortcutSettings::allShortcuts() const {
+    shortcuts::ShortcutBindingMap result;
     for (const QString& actionId : screenRecordingShortcutActionIds()) {
         result.insert(actionId, shortcutValue(screenRecordingShortcutKey(actionId)));
     }
@@ -961,28 +987,33 @@ QMap<QString, QStringList> ScreenRecordingShortcutSettings::allShortcuts() const
 }
 
 bool ScreenRecordingShortcutSettings::setAllShortcutsAtomic(
-    const QMap<QString, QStringList>& shortcutsByAction) const {
+    const shortcuts::ShortcutBindingMap& shortcutsByAction) const {
     if (shortcutsByAction.size() != screenRecordingShortcutActionIds().size()) {
         return false;
     }
     QMap<QString, QJsonValue> values;
-    QSet<QString> seen;
+    shortcuts::ShortcutBindingList seen;
     for (const QString& actionId : screenRecordingShortcutActionIds()) {
         if (!shortcutsByAction.contains(actionId)) {
             return false;
         }
         const QString key = screenRecordingShortcutKey(actionId);
-        const ConfigurationNormalization normalized =
-            ConfigurationSchema::normalize(key, stringArray(shortcutsByAction.value(actionId)));
+        const ConfigurationNormalization normalized = ConfigurationSchema::normalize(
+            key, shortcuts::shortcutBindingsToJson(shortcutsByAction.value(actionId)));
         if (!normalized.valid) {
             return false;
         }
-        for (const QJsonValue& item : normalized.value.toArray()) {
-            const QString binding = item.toString().toCaseFolded();
-            if (seen.contains(binding)) {
+        const auto normalizedBindings =
+            shortcuts::shortcutBindingsFromJson(normalized.value, false);
+        for (const auto& binding : normalizedBindings) {
+            const bool duplicate =
+                std::any_of(seen.cbegin(), seen.cend(), [&binding](const auto& existing) {
+                    return shortcuts::bindingsConflict(existing, binding);
+                });
+            if (duplicate) {
                 return false;
             }
-            seen.insert(binding);
+            seen.push_back(binding);
         }
         values.insert(key, normalized.value);
     }

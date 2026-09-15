@@ -8,6 +8,7 @@
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/shortcuts/shortcutdisplayservice.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "../src/presentation/tools/screenshottoolpalettebuttons.h"
@@ -87,6 +88,12 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(1);
     }
+}
+
+QString shortcutTooltip(const QString& label, const QStringList& portable) {
+    const QString display = snow_shot::shortcuts::formatShortcutListDisplayText(
+        snow_shot::shortcuts::bindingsFromPortableText(portable));
+    return display.isEmpty() ? label : QStringLiteral("%1 (%2)").arg(label, display);
 }
 
 QWidget* controlWithTooltip(ScreenshotToolPalette& palette, const char* tooltip);
@@ -2236,24 +2243,26 @@ void screenshotToolbarUsesCanonicalOrderAndSectionSeparators() {
     ScreenshotToolPalette palette(options);
     const QList<adqt::widgets::AdButton*> buttons = mainToolbarButtons(palette);
     const QStringList expected{
-        QStringLiteral("Edit selection (M / Ctrl+E)"),
-        QStringLiteral("Select elements (V)"),
-        QStringLiteral("Shape (1)"),
-        QStringLiteral("Arrow (2)"),
-        QStringLiteral("Pen (3 / P)"),
-        QStringLiteral("Highlight (4 / H)"),
-        QStringLiteral("Text (5 / T)"),
-        QStringLiteral("Serial number (6 / N)"),
-        QStringLiteral("Filter (7 / F)"),
-        QStringLiteral("Eraser (8 / E)"),
-        QStringLiteral("Watermark (9)"),
-        QStringLiteral("Table recognition (Ctrl+X)"),
-        QStringLiteral("Record screen (Ctrl+R)"),
-        QStringLiteral("Pin to screen (Ctrl+F)"),
-        QStringLiteral("Text recognition (Ctrl+D)"),
-        QStringLiteral("Scrolling screenshot (L)"),
-        QStringLiteral("Cancel screenshot (Esc)"),
-        QStringLiteral("Copy to clipboard (Ctrl+C)"),
+        shortcutTooltip(QStringLiteral("Edit selection"),
+                        {QStringLiteral("M"), QStringLiteral("Ctrl+E")}),
+        shortcutTooltip(QStringLiteral("Select elements"), {QStringLiteral("V")}),
+        shortcutTooltip(QStringLiteral("Shape"), {QStringLiteral("1")}),
+        shortcutTooltip(QStringLiteral("Arrow"), {QStringLiteral("2")}),
+        shortcutTooltip(QStringLiteral("Pen"), {QStringLiteral("3"), QStringLiteral("P")}),
+        shortcutTooltip(QStringLiteral("Highlight"), {QStringLiteral("4"), QStringLiteral("H")}),
+        shortcutTooltip(QStringLiteral("Text"), {QStringLiteral("5"), QStringLiteral("T")}),
+        shortcutTooltip(QStringLiteral("Serial number"),
+                        {QStringLiteral("6"), QStringLiteral("N")}),
+        shortcutTooltip(QStringLiteral("Filter"), {QStringLiteral("7"), QStringLiteral("F")}),
+        shortcutTooltip(QStringLiteral("Eraser"), {QStringLiteral("8"), QStringLiteral("E")}),
+        shortcutTooltip(QStringLiteral("Watermark"), {QStringLiteral("9")}),
+        shortcutTooltip(QStringLiteral("Table recognition"), {QStringLiteral("Ctrl+X")}),
+        shortcutTooltip(QStringLiteral("Record screen"), {QStringLiteral("Ctrl+R")}),
+        shortcutTooltip(QStringLiteral("Pin to screen"), {QStringLiteral("Ctrl+F")}),
+        shortcutTooltip(QStringLiteral("Text recognition"), {QStringLiteral("Ctrl+D")}),
+        shortcutTooltip(QStringLiteral("Scrolling screenshot"), {QStringLiteral("L")}),
+        shortcutTooltip(QStringLiteral("Cancel screenshot"), {QStringLiteral("Esc")}),
+        shortcutTooltip(QStringLiteral("Copy to clipboard"), {QStringLiteral("Ctrl+C")}),
     };
     require(buttons.size() == expected.size(),
             "canonical screenshot toolbar should expose one entry per main group");
@@ -2457,25 +2466,42 @@ void screenshotActionTooltipsUseConfiguredShortcuts() {
         qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Cancel screenshot"));
     auto* copy =
         qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Copy to clipboard"));
+    const auto tooltip = [](const QString& label, const QStringList& portable) {
+        return QStringLiteral("%1 (%2)").arg(
+            label, snow_shot::shortcuts::formatShortcutListDisplayText(
+                       snow_shot::shortcuts::bindingsFromPortableText(portable)));
+    };
     require(pin != nullptr && cancel != nullptr && copy != nullptr && undo != nullptr &&
-                redo != nullptr && pin->toolTip() == QStringLiteral("Pin to screen (Ctrl+F)") &&
-                cancel->toolTip() == QStringLiteral("Cancel screenshot (Esc)") &&
-                copy->toolTip() == QStringLiteral("Copy to clipboard (Ctrl+C)") &&
-                undo->toolTip() == QStringLiteral("Undo (Ctrl+Z)") &&
-                redo->toolTip() == QStringLiteral("Redo (Ctrl+Y)"),
+                redo != nullptr &&
+                pin->toolTip() ==
+                    tooltip(QStringLiteral("Pin to screen"), {QStringLiteral("Ctrl+F")}) &&
+                cancel->toolTip() ==
+                    tooltip(QStringLiteral("Cancel screenshot"), {QStringLiteral("Esc")}) &&
+                copy->toolTip() ==
+                    tooltip(QStringLiteral("Copy to clipboard"), {QStringLiteral("Ctrl+C")}) &&
+                undo->toolTip() == tooltip(QStringLiteral("Undo"), {QStringLiteral("Ctrl+Z")}) &&
+                redo->toolTip() == tooltip(QStringLiteral("Redo"), {QStringLiteral("Ctrl+Y")}),
             "screenshot toolbar actions must show their configured shortcuts");
 
+    pin->setToolTip(QStringLiteral("stale shortcut legend"));
+    snow_shot::shortcuts::ShortcutDisplayService::instance().refresh();
+    require(pin->toolTip() == tooltip(QStringLiteral("Pin to screen"), {QStringLiteral("Ctrl+F")}),
+            "a keyboard-layout refresh must rebuild screenshot toolbar shortcut legends");
+
     const snow_shot::storage::ScreenshotShortcutSettings shortcutSettings;
-    const QMap<QString, QStringList> originalShortcuts = shortcutSettings.allShortcuts();
+    const snow_shot::shortcuts::ShortcutBindingMap originalShortcuts =
+        shortcutSettings.allShortcuts();
     require(shortcutSettings.setShortcuts(QStringLiteral("pin_to_screen"),
                                           {QStringLiteral("Ctrl++"), QStringLiteral("Num+1")}),
             "pin shortcut fixture must support a non-default mapping");
-    require(shortcutSettings.shortcuts(QStringLiteral("pin_to_screen")) ==
+    require(snow_shot::shortcuts::portableTextList(
+                shortcutSettings.shortcuts(QStringLiteral("pin_to_screen"))) ==
                 QStringList{QStringLiteral("Ctrl++"), QStringLiteral("Num+1")},
             "pin shortcut fixture must expose the updated mapping immediately");
     QEvent languageChange(QEvent::LanguageChange);
     QCoreApplication::sendEvent(&palette, &languageChange);
-    require(pin->toolTip() == QStringLiteral("Pin to screen (Ctrl+Plus / Num 1)"),
+    require(pin->toolTip() == tooltip(QStringLiteral("Pin to screen"),
+                                      {QStringLiteral("Ctrl++"), QStringLiteral("Num+1")}),
             "screenshot toolbar shortcuts must survive runtime retranslation");
     require(shortcutSettings.setAllShortcutsAtomic(originalShortcuts),
             "pin shortcut fixture must restore the original mapping");
@@ -2496,21 +2522,26 @@ void screenshotActionTooltipsFollowStorageChangesWithoutRetranslation() {
         palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotPinToScreenButton"));
     auto* shape = qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Shape"));
     require(pin != nullptr && shape != nullptr &&
-                pin->toolTip() == QStringLiteral("Pin to screen (Ctrl+F)") &&
-                shape->toolTip() == QStringLiteral("Shape (1)"),
+                pin->toolTip() ==
+                    shortcutTooltip(QStringLiteral("Pin to screen"), {QStringLiteral("Ctrl+F")}) &&
+                shape->toolTip() == shortcutTooltip(QStringLiteral("Shape"), {QStringLiteral("1")}),
             "toolbar shortcuts should start from the configured defaults");
 
     const snow_shot::storage::ScreenshotShortcutSettings shortcutSettings;
     const snow_shot::storage::DrawingShortcutSettings drawingSettings;
-    const QMap<QString, QStringList> originalShortcuts = shortcutSettings.allShortcuts();
-    const QMap<QString, QStringList> originalDrawingShortcuts = drawingSettings.allShortcuts();
+    const snow_shot::shortcuts::ShortcutBindingMap originalShortcuts =
+        shortcutSettings.allShortcuts();
+    const snow_shot::shortcuts::ShortcutBindingMap originalDrawingShortcuts =
+        drawingSettings.allShortcuts();
     require(
         shortcutSettings.setShortcuts(QStringLiteral("pin_to_screen"), {QStringLiteral("Alt+F")}),
         "pin shortcut fixture must support a non-default mapping");
     require(drawingSettings.setShortcuts(QStringLiteral("shape"), {QStringLiteral("Ctrl+2")}),
             "shape shortcut fixture must support a non-default mapping");
-    require(pin->toolTip() == QStringLiteral("Pin to screen (Alt+F)") &&
-                shape->toolTip() == QStringLiteral("Shape (Ctrl+2)"),
+    require(pin->toolTip() ==
+                    shortcutTooltip(QStringLiteral("Pin to screen"), {QStringLiteral("Alt+F")}) &&
+                shape->toolTip() ==
+                    shortcutTooltip(QStringLiteral("Shape"), {QStringLiteral("Ctrl+2")}),
             "toolbar tooltips must follow storage changes without a retranslation event");
     require(shortcutSettings.setShortcuts(QStringLiteral("pin_to_screen"), {}),
             "pin shortcut fixture must support clearing the mapping");
@@ -2830,7 +2861,8 @@ void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
     auto* trigger =
         palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotTableQrButton"));
     require(trigger == mainButtons.front() &&
-                trigger->toolTip() == QStringLiteral("Table recognition (Ctrl+X)") &&
+                trigger->toolTip() == shortcutTooltip(QStringLiteral("Table recognition"),
+                                                      {QStringLiteral("Ctrl+X")}) &&
                 trigger->accessibleName() == QStringLiteral("Table recognition"),
             "the shared recognition slot should initially present Table recognition");
 
@@ -3421,7 +3453,8 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
     require(actionButtons.size() == 4 && mixedTrigger == actionButtons.at(0) &&
                 barcodeButton == actionButtons.at(1) && textTrigger == actionButtons.at(2) &&
                 mixedTrigger->accessibleName() == QStringLiteral("Table recognition") &&
-                mixedTrigger->toolTip() == QStringLiteral("Table recognition (Ctrl+X)") &&
+                mixedTrigger->toolTip() == shortcutTooltip(QStringLiteral("Table recognition"),
+                                                           {QStringLiteral("Ctrl+X")}) &&
                 mixedTrigger->property("screenshotToolbarPositionItems").toStringList() ==
                     QStringList{QStringLiteral("record-screen"), QStringLiteral("quick-save"),
                                 QStringLiteral("save-as-file"),
@@ -3458,7 +3491,8 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
             "an arbitrary action stack must lazily expose all available actions");
     saveOption->click();
     require(saveRequests == 1 && mixedTrigger->accessibleName() == QStringLiteral("Save as file") &&
-                mixedTrigger->toolTip() == QStringLiteral("Save as file (Ctrl+S)"),
+                mixedTrigger->toolTip() ==
+                    shortcutTooltip(QStringLiteral("Save as file"), {QStringLiteral("Ctrl+S")}),
             "choosing an action stack option must dispatch it and replace the current trigger");
     mixedTrigger->click();
     require(saveRequests == 2,
@@ -3516,7 +3550,8 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
                 directTable != nullptr && popoverForTrigger(directBarcode) == nullptr &&
                 popoverForTrigger(directTable) == nullptr &&
                 directBarcode->toolTip().startsWith(QStringLiteral("Barcode recognition")) &&
-                directTable->toolTip() == QStringLiteral("Table recognition (Ctrl+X)"),
+                directTable->toolTip() == shortcutTooltip(QStringLiteral("Table recognition"),
+                                                          {QStringLiteral("Ctrl+X")}),
             "runtime replacement must unstack Table and Barcode into stable direct controls");
     directTable->click();
     require(tableRequests == 2 && snow_shot::storage::ScreenshotToolbarSettings().tableQrTool() ==
@@ -4174,9 +4209,10 @@ void ocrToolReplacesSelectionActionToolbarContents() {
                 textSelects.size() == 2 && formattingSelect != nullptr &&
                 punctuationSelect != nullptr,
             "the shared action panel should contain the OCR editing controls");
-    require(undo->toolTip() == QStringLiteral("Undo (Ctrl+Z)") &&
-                redo->toolTip() == QStringLiteral("Redo (Ctrl+Y)"),
-            "toolbar history actions must show their configured shortcuts");
+    require(
+        undo->toolTip() == shortcutTooltip(QStringLiteral("Undo"), {QStringLiteral("Ctrl+Z")}) &&
+            redo->toolTip() == shortcutTooltip(QStringLiteral("Redo"), {QStringLiteral("Ctrl+Y")}),
+        "toolbar history actions must show their configured shortcuts");
     require(!edit->isHidden() && !translate->isHidden() && !reset->isHidden() &&
                 !settings->isHidden() && !textSelects.at(0)->isHidden() &&
                 !textSelects.at(1)->isHidden(),

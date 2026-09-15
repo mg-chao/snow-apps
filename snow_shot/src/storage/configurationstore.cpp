@@ -21,6 +21,7 @@
 
 namespace snow_shot::storage {
 namespace {
+constexpr int CURRENT_SCHEMA_VERSION = 2;
 QJsonValue valueAtPath(const QJsonObject& root, const QString& path, bool* present = nullptr) {
     if (present != nullptr) {
         *present = false;
@@ -304,7 +305,7 @@ void ConfigurationStore::load() {
                 qCWarning(storageLog) << error;
             } else {
                 document = parsedObject;
-                if (version > 1) {
+                if (version > CURRENT_SCHEMA_VERSION) {
                     compatibility = ConfigurationCompatibility::FutureVersion;
                     error = QStringLiteral("Configuration schema is newer than this application; "
                                            "storage is read-only");
@@ -352,6 +353,13 @@ void ConfigurationStore::load() {
                         insertPath(&document, entry.key, normalized.value);
                         dirty = true;
                     }
+                }
+                if (compatibility != ConfigurationCompatibility::FutureVersion &&
+                    version < CURRENT_SCHEMA_VERSION) {
+                    version = CURRENT_SCHEMA_VERSION;
+                    loaded.insert(QStringLiteral("storage/schema_version"), version);
+                    insertPath(&document, QStringLiteral("storage/schema_version"), version);
+                    dirty = true;
                 }
             }
         }

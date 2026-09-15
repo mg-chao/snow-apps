@@ -1,6 +1,8 @@
 #ifndef SNOW_SHOT_PRESENTATION_GLOBALSHORTCUTTYPES_H
 #define SNOW_SHOT_PRESENTATION_GLOBALSHORTCUTTYPES_H
 
+#include "snow_shot/shortcuts/shortcutbinding.h"
+
 #include <QMetaType>
 #include <QString>
 #include <QStringList>
@@ -45,12 +47,13 @@ struct GlobalShortcutBindingResult {
     QString shortcut;
     bool registered = false;
     GlobalShortcutFailureReason failureReason = GlobalShortcutFailureReason::None;
-    quint32 nativeErrorCode = 0;
+    qint64 nativeErrorCode = 0;
+    snow_shot::shortcuts::ShortcutBinding binding;
 };
 
 struct GlobalShortcutRegistrationState {
     GlobalShortcutAction action = GlobalShortcutAction::Screenshot;
-    QStringList shortcuts;
+    snow_shot::shortcuts::ShortcutBindingList shortcuts;
     GlobalShortcutStatus status = GlobalShortcutStatus::Unset;
     QVector<GlobalShortcutBindingResult> bindings;
 };
@@ -58,13 +61,14 @@ struct GlobalShortcutRegistrationState {
 struct GlobalShortcutBackendResult {
     bool registered = false;
     GlobalShortcutFailureReason failureReason = GlobalShortcutFailureReason::None;
-    quint32 nativeErrorCode = 0;
+    qint64 nativeErrorCode = 0;
 };
 
 struct GlobalShortcutValidationResult {
     QString shortcut;
     bool supported = false;
     GlobalShortcutFailureReason failureReason = GlobalShortcutFailureReason::InvalidShortcut;
+    snow_shot::shortcuts::ShortcutBinding binding;
 };
 } // namespace snow_shot::presentation
 

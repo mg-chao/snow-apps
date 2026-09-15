@@ -98,12 +98,12 @@
             <translation>自动检测</translation>
         </message>
         <message>
-            <source>Copy (Ctrl+C)</source>
-            <translation>复制 (Ctrl+C)</translation>
+            <source>Copy (%1)</source>
+            <translation>复制 (%1)</translation>
         </message>
         <message>
-            <source>Copy and Close (Ctrl+Q)</source>
-            <translation>复制并关闭 (Ctrl+Q)</translation>
+            <source>Copy and Close (%1)</source>
+            <translation>复制并关闭 (%1)</translation>
         </message>
         <message>
             <source>Copy translated text</source>

@@ -235,27 +235,31 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     }
 
     presentation::GlobalShortcutValidationResult
-    validateShortcut(const QString& shortcut) const override {
-        return {shortcut, true, presentation::GlobalShortcutFailureReason::None};
+    validateShortcut(presentation::GlobalShortcutAction,
+                     const snow_shot::shortcuts::ShortcutBinding& shortcut) const override {
+        return {shortcut.portableText, true, presentation::GlobalShortcutFailureReason::None,
+                shortcut};
     }
 
-    bool applyShortcuts(presentation::GlobalShortcutAction, const QStringList&) override {
+    bool applyShortcuts(presentation::GlobalShortcutAction,
+                        const snow_shot::shortcuts::ShortcutBindingList&) override {
         return false;
     }
 
-    QStringList localShortcuts(settings::SettingsLocalShortcutScope,
-                               const QString&) const override {
+    snow_shot::shortcuts::ShortcutBindingList localShortcuts(settings::SettingsLocalShortcutScope,
+                                                             const QString&) const override {
         return {};
     }
 
     presentation::GlobalShortcutValidationResult
     validateLocalShortcut(settings::SettingsLocalShortcutScope, const QString&,
-                          const QString& shortcut) const override {
-        return {shortcut, true, presentation::GlobalShortcutFailureReason::None};
+                          const snow_shot::shortcuts::ShortcutBinding& shortcut) const override {
+        return {shortcut.portableText, true, presentation::GlobalShortcutFailureReason::None,
+                shortcut};
     }
 
     bool applyLocalShortcuts(settings::SettingsLocalShortcutScope, const QString&,
-                             const QStringList&) override {
+                             const snow_shot::shortcuts::ShortcutBindingList&) override {
         return false;
     }
 

@@ -84,22 +84,19 @@ void ScreenRecordingShortcutController::reloadConfiguredShortcuts() {
     const snow_shot::storage::ScreenRecordingShortcutSettings recording;
     for (auto binding = m_recordingBindings.cbegin(); binding != m_recordingBindings.cend();
          ++binding) {
-        static_cast<void>(m_shortcutManager.setKeyCombinations(
-            binding.value(),
-            ShortcutManager::keyCombinationsFromPortableText(recording.shortcuts(binding.key()))));
+        static_cast<void>(
+            m_shortcutManager.setShortcuts(binding.value(), recording.shortcuts(binding.key())));
     }
     const snow_shot::storage::DrawingShortcutSettings drawing;
     for (auto binding = m_drawingBindings.cbegin(); binding != m_drawingBindings.cend();
          ++binding) {
-        static_cast<void>(m_shortcutManager.setKeyCombinations(
-            binding.value(),
-            ShortcutManager::keyCombinationsFromPortableText(drawing.shortcuts(binding.key()))));
+        static_cast<void>(
+            m_shortcutManager.setShortcuts(binding.value(), drawing.shortcuts(binding.key())));
     }
     const snow_shot::storage::ScreenshotShortcutSettings history;
     for (auto binding = m_historyBindings.cbegin(); binding != m_historyBindings.cend();
          ++binding) {
-        static_cast<void>(m_shortcutManager.setKeyCombinations(
-            binding.value(),
-            ShortcutManager::keyCombinationsFromPortableText(history.shortcuts(binding.key()))));
+        static_cast<void>(
+            m_shortcutManager.setShortcuts(binding.value(), history.shortcuts(binding.key())));
     }
 }

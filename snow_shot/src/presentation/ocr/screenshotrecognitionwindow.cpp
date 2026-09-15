@@ -84,24 +84,12 @@ bool isHttpUrl(const QString& text, QUrl* result = nullptr) {
     return valid;
 }
 
-QList<QKeyCombination> commandCombinations(Qt::Key key) {
+QList<QKeyCombination> standardCombinations(QKeySequence::StandardKey standardKey) {
     QList<QKeyCombination> combinations;
-    constexpr Qt::KeyboardModifier optionalModifiers[] = {
-        Qt::ShiftModifier,
-        Qt::AltModifier,
-        Qt::KeypadModifier,
-    };
-    for (int optionalMask = 0; optionalMask < 8; ++optionalMask) {
-        Qt::KeyboardModifiers optional;
-        for (int index = 0; index < 3; ++index) {
-            if ((optionalMask & (1 << index)) != 0) {
-                optional |= optionalModifiers[index];
-            }
+    for (const QKeySequence& sequence : QKeySequence::keyBindings(standardKey)) {
+        if (sequence.count() == 1 && !combinations.contains(sequence[0])) {
+            combinations.push_back(sequence[0]);
         }
-        combinations.push_back(QKeyCombination(optional | Qt::ControlModifier, key));
-        combinations.push_back(QKeyCombination(optional | Qt::MetaModifier, key));
-        combinations.push_back(
-            QKeyCombination(optional | Qt::ControlModifier | Qt::MetaModifier, key));
     }
     return combinations;
 }
@@ -650,7 +638,8 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
 
     ShortcutManager::Binding selectAll;
     selectAll.id = QStringLiteral("recognition.select_all");
-    selectAll.keyCombinations = commandCombinations(Qt::Key_A);
+    selectAll.keyCombinations = standardCombinations(QKeySequence::SelectAll);
+    selectAll.allowedAdditionalModifiers = Qt::ShiftModifier | Qt::AltModifier | Qt::KeypadModifier;
     selectAll.priority = ShortcutManager::StandardPriority::WindowCommand;
     selectAll.canActivate = recognitionCommandsAllowed;
     selectAll.activate = [this](const auto&) {
@@ -676,7 +665,8 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
 
     ShortcutManager::Binding copy;
     copy.id = QStringLiteral("recognition.copy");
-    copy.keyCombinations = commandCombinations(Qt::Key_C);
+    copy.keyCombinations = standardCombinations(QKeySequence::Copy);
+    copy.allowedAdditionalModifiers = Qt::ShiftModifier | Qt::AltModifier | Qt::KeypadModifier;
     copy.priority = ShortcutManager::StandardPriority::WindowCommand;
     copy.canActivate = copyCommandsAllowed;
     copy.activate = [this](const auto&) {
@@ -692,10 +682,7 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     };
     ShortcutManager::Binding undo;
     undo.id = QStringLiteral("recognition.text.undo");
-    undo.keyCombinations = {
-        QKeyCombination(Qt::ControlModifier, Qt::Key_Z),
-        QKeyCombination(Qt::MetaModifier, Qt::Key_Z),
-    };
+    undo.keyCombinations = standardCombinations(QKeySequence::Undo);
     undo.priority = ShortcutManager::StandardPriority::WindowCommand;
     undo.canActivate = textEditorActive;
     undo.activate = [this](const auto&) {
@@ -706,11 +693,7 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
 
     ShortcutManager::Binding redo;
     redo.id = QStringLiteral("recognition.text.redo");
-    redo.keyCombinations = {
-        QKeyCombination(Qt::ControlModifier, Qt::Key_Y),
-        QKeyCombination(Qt::ControlModifier | Qt::ShiftModifier, Qt::Key_Z),
-        QKeyCombination(Qt::MetaModifier | Qt::ShiftModifier, Qt::Key_Z),
-    };
+    redo.keyCombinations = standardCombinations(QKeySequence::Redo);
     redo.priority = ShortcutManager::StandardPriority::WindowCommand;
     redo.canActivate = textEditorActive;
     redo.activate = [this](const auto&) {

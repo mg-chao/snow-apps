@@ -10,9 +10,12 @@ set(CMAKE_AUTOUIC OFF)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_OBJCXX_STANDARD 20)
+set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+set(CMAKE_OBJCXX_EXTENSIONS OFF)
 
 option(SNOW_SHOT_ENABLE_STRICT_COMPILE "Enable strict compiler warnings and treat warnings as errors." ON)
 option(SNOW_SHOT_BUILD_TESTS "Build Snow Shot test executables." OFF)
@@ -611,12 +614,30 @@ set(SNOW_SHOT_STORAGE_SOURCES
     src/storage/storagelogging.cpp
     src/storage/storageusagetracker.cpp
 )
+add_library(snow_shot_shortcuts STATIC
+    include/snow_shot/shortcuts/shortcutbinding.h
+    include/snow_shot/shortcuts/shortcutdisplayservice.h
+    src/shortcuts/shortcutbinding.cpp
+    src/shortcuts/shortcutdisplayservice.cpp
+)
+target_include_directories(snow_shot_shortcuts PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(snow_shot_shortcuts PUBLIC Qt6::Core Qt6::Gui)
+if(APPLE)
+    find_library(SNOW_SHOT_CARBON_FRAMEWORK NAMES Carbon REQUIRED)
+    find_library(SNOW_SHOT_CORE_FOUNDATION_FRAMEWORK NAMES CoreFoundation REQUIRED)
+    target_link_libraries(snow_shot_shortcuts PRIVATE
+        "${SNOW_SHOT_CARBON_FRAMEWORK}"
+        "${SNOW_SHOT_CORE_FOUNDATION_FRAMEWORK}"
+    )
+endif()
+
 add_library(snow_shot_storage STATIC ${SNOW_SHOT_STORAGE_SOURCES})
 snow_enable_unity_build(snow_shot_storage)
 target_include_directories(snow_shot_storage PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(snow_shot_storage PUBLIC
     snow_shot_diagnostics
     snow_shot_image_codec
+    snow_shot_shortcuts
     Qt6::Core
     Qt6::Gui
 )
@@ -652,6 +673,7 @@ target_include_directories(snow_shot_window_shortcuts PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 target_link_libraries(snow_shot_window_shortcuts PUBLIC Qt6::Widgets)
+target_link_libraries(snow_shot_window_shortcuts PUBLIC snow_shot_shortcuts)
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotTranslations.cmake")
 
@@ -701,8 +723,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/platform/windows/autostartregistration.h
     include/snow_shot/platform/windows/focusedfullscreenwindow.h
     include/snow_shot/platform/windows/printscreenshortcutrecorder.h
-    include/snow_shot/presentation/globalshortcutmanager.h
-    include/snow_shot/presentation/globalshortcuttypes.h
+    include/snow_shot/shortcuts/shortcutrecorder.h
     include/snow_shot/presentation/components/pathinput.h
     include/snow_shot/presentation/components/globalmouserow.h
     include/snow_shot/presentation/components/toolbareditorsettingswidget.h
@@ -738,7 +759,6 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/components/shortcutkeyrow.cpp
     src/presentation/components/shortcutconfigurationbutton.cpp
     src/presentation/components/storagestatussettingswidget.cpp
-    src/presentation/services/globalshortcutmanager.cpp
     src/presentation/settings/settingsbackend.cpp
     src/presentation/settings/settingsruntimesession.cpp
     src/presentation/settings/applicationpriority.cpp
@@ -747,8 +767,32 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/styles/mainwindowcomponenttoken.cpp
     src/presentation/styles/themecolorscheme.cpp
     src/presentation/styles/thememanager.cpp
-    src/platform/windows/printscreenshortcutrecorder.cpp
+    src/presentation/services/shortcutrecorder.cpp
 )
+if(WIN32)
+    list(APPEND SNOW_SHOT_SETTINGS_SOURCES
+        src/platform/windows/printscreenshortcutrecorder.cpp)
+endif()
+set(SNOW_SHOT_GLOBAL_SHORTCUT_SOURCES
+    include/snow_shot/platform/focusedfullscreenwindow.h
+    include/snow_shot/presentation/globalshortcutmanager.h
+    include/snow_shot/presentation/globalshortcuttypes.h
+    src/presentation/services/globalshortcutbackend_p.h
+    src/presentation/services/globalshortcutbackend.cpp
+    src/presentation/services/globalshortcutmanager.cpp
+    src/platform/focusedfullscreenwindow.cpp
+)
+if(WIN32)
+    list(APPEND SNOW_SHOT_GLOBAL_SHORTCUT_SOURCES
+        src/platform/windows/globalshortcutbackend.cpp
+        src/platform/windows/focusedfullscreenwindow.cpp)
+elseif(APPLE)
+    enable_language(OBJCXX)
+    list(APPEND SNOW_SHOT_GLOBAL_SHORTCUT_SOURCES
+        src/platform/macos/globalshortcutbackend.cpp
+        src/platform/macos/focusedfullscreenwindow.mm)
+endif()
+list(APPEND SNOW_SHOT_SETTINGS_SOURCES ${SNOW_SHOT_GLOBAL_SHORTCUT_SOURCES})
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/components/screenshothistorypagewidget.cpp"
      _snow_shot_history_source)
 string(FIND "${_snow_shot_history_source}" "QThreadPool::globalInstance()"
@@ -793,12 +837,19 @@ add_library(snow_shot_global_mouse STATIC
     src/presentation/services/globalmousemanager.cpp
     src/presentation/services/globalmousegesture.cpp
     src/platform/windows/globalmousebackend.cpp
-    src/platform/windows/focusedfullscreenwindow.cpp
 )
 target_include_directories(snow_shot_global_mouse PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(snow_shot_global_mouse PUBLIC snow_shot_storage Qt6::Gui)
 if(WIN32)
     target_link_libraries(snow_shot_global_mouse PRIVATE dwmapi user32)
+endif()
+if(APPLE)
+    find_library(SNOW_SHOT_APPKIT_FRAMEWORK NAMES AppKit REQUIRED)
+    find_library(SNOW_SHOT_CORE_GRAPHICS_FRAMEWORK NAMES CoreGraphics REQUIRED)
+    target_link_libraries(snow_shot_settings PRIVATE
+        "${SNOW_SHOT_CARBON_FRAMEWORK}"
+        "${SNOW_SHOT_APPKIT_FRAMEWORK}"
+        "${SNOW_SHOT_CORE_GRAPHICS_FRAMEWORK}")
 endif()
 target_link_libraries(snow_shot_settings PRIVATE snow_shot_global_mouse)
 snow_enable_unity_build(snow_shot_settings)
@@ -1249,28 +1300,44 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-recognition-image-tests -platform offscreen)
     set_tests_properties(snow-shot-recognition-image-tests PROPERTIES LABELS "unit" TIMEOUT 60)
 
-    if(WIN32)
+    if(WIN32 OR APPLE)
+        if(APPLE)
+            set(_snow_shot_shortcut_platform_label macos)
+        else()
+            set(_snow_shot_shortcut_platform_label windows)
+        endif()
         add_executable(snow-shot-global-shortcut-manager-tests
             tests/global_shortcut_manager_tests.cpp
-            include/snow_shot/presentation/globalshortcutmanager.h
-            src/presentation/services/globalshortcutmanager.cpp)
+            ${SNOW_SHOT_GLOBAL_SHORTCUT_SOURCES})
         target_link_libraries(snow-shot-global-shortcut-manager-tests PRIVATE
             snow_shot_global_mouse Qt6::Widgets)
         add_test(NAME snow-shot-global-shortcut-manager-tests
             COMMAND snow-shot-global-shortcut-manager-tests)
         set_tests_properties(snow-shot-global-shortcut-manager-tests PROPERTIES
-            LABELS "unit;windows" TIMEOUT 60)
+            LABELS "unit;${_snow_shot_shortcut_platform_label}" TIMEOUT 60)
         add_test(NAME snow-shot-global-shortcut-native-smoke-tests
             COMMAND snow-shot-global-shortcut-manager-tests --native-registration-smoke)
         set_tests_properties(snow-shot-global-shortcut-native-smoke-tests PROPERTIES
-            LABELS "interactive;windows" TIMEOUT 60)
+            LABELS "interactive;${_snow_shot_shortcut_platform_label}" TIMEOUT 60)
+        if(APPLE)
+            target_link_libraries(snow-shot-global-shortcut-manager-tests PRIVATE
+                "${SNOW_SHOT_CARBON_FRAMEWORK}"
+                "${SNOW_SHOT_APPKIT_FRAMEWORK}"
+                "${SNOW_SHOT_CORE_GRAPHICS_FRAMEWORK}")
+        endif()
+        unset(_snow_shot_shortcut_platform_label)
     endif()
 
     add_executable(snow-shot-global-mouse-tests tests/global_mouse_tests.cpp
-        include/snow_shot/presentation/globalshortcutmanager.h
-        src/presentation/services/globalshortcutmanager.cpp
+        ${SNOW_SHOT_GLOBAL_SHORTCUT_SOURCES}
         src/presentation/capture/screenshotglobalmousedrag.cpp)
     target_link_libraries(snow-shot-global-mouse-tests PRIVATE snow_shot_global_mouse Qt6::Widgets)
+    if(APPLE)
+        target_link_libraries(snow-shot-global-mouse-tests PRIVATE
+            "${SNOW_SHOT_CARBON_FRAMEWORK}"
+            "${SNOW_SHOT_APPKIT_FRAMEWORK}"
+            "${SNOW_SHOT_CORE_GRAPHICS_FRAMEWORK}")
+    endif()
     add_test(NAME snow-shot-global-mouse-tests COMMAND snow-shot-global-mouse-tests)
     set_tests_properties(snow-shot-global-mouse-tests PROPERTIES
         LABELS "unit" TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -1977,7 +2044,7 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-shortcut-key-row-tests
         tests/shortcut_key_row_tests.cpp
-        src/platform/windows/printscreenshortcutrecorder.cpp
+        src/presentation/services/shortcutrecorder.cpp
         include/snow_shot/presentation/components/infotooltipicon.h
         include/snow_shot/presentation/components/actionrow.h
         include/snow_shot/presentation/components/shortcutkeyrow.h
@@ -2007,6 +2074,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         Qt6::Widgets
     )
     if(WIN32)
+        target_sources(snow-shot-shortcut-key-row-tests PRIVATE
+            src/platform/windows/printscreenshortcutrecorder.cpp)
         target_link_libraries(snow-shot-shortcut-key-row-tests PRIVATE user32)
     endif()
     add_test(

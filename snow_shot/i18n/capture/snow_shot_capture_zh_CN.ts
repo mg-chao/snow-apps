@@ -237,48 +237,56 @@
     <context>
         <name>ScreenshotShortcutHintsWidget</name>
         <message>
-            <source>Auto-align: Ctrl</source>
-            <translation>自动对齐：Ctrl</translation>
+            <source>%1 + %2</source>
+            <translation>%1 + %2</translation>
         </message>
         <message>
-            <source>Delete selected elements: Delete</source>
-            <translation>删除选中元素：Delete</translation>
+            <source>Auto-align</source>
+            <translation>自动对齐</translation>
         </message>
         <message>
-            <source>Draw straight line: Shift</source>
-            <translation>绘制直线：Shift</translation>
+            <source>Delete selected elements</source>
+            <translation>删除选中元素</translation>
         </message>
         <message>
-            <source>Fixed-angle rotation: Shift</source>
-            <translation>固定角度旋转：Shift</translation>
+            <source>Draw straight line</source>
+            <translation>绘制直线</translation>
         </message>
         <message>
-            <source>Horizontal scroll: Shift + mouse wheel</source>
-            <translation>水平滚动：Shift + 鼠标滚轮</translation>
+            <source>Fixed-angle rotation</source>
+            <translation>固定角度旋转</translation>
         </message>
         <message>
-            <source>Maintain aspect ratio: Shift</source>
-            <translation>保持宽高比：Shift</translation>
+            <source>Horizontal scroll</source>
+            <translation>水平滚动</translation>
         </message>
         <message>
-            <source>Scale from center: Alt</source>
-            <translation>从中心缩放：Alt</translation>
+            <source>Maintain aspect ratio</source>
+            <translation>保持宽高比</translation>
         </message>
         <message>
-            <source>Switch color format: Shift</source>
-            <translation>切换颜色格式：Shift</translation>
+            <source>Scale from center</source>
+            <translation>从中心缩放</translation>
         </message>
         <message>
-            <source>Switch element level: mouse wheel</source>
-            <translation>切换元素层级：鼠标滚轮</translation>
+            <source>Switch color format</source>
+            <translation>切换颜色格式</translation>
+        </message>
+        <message>
+            <source>Switch element level</source>
+            <translation>切换元素层级</translation>
         </message>
         <message>
             <source>Switch screenshot history</source>
             <translation>切换截图历史</translation>
         </message>
         <message>
-            <source>Vertical scroll: mouse wheel</source>
-            <translation>垂直滚动：鼠标滚轮</translation>
+            <source>Vertical scroll</source>
+            <translation>垂直滚动</translation>
+        </message>
+        <message>
+            <source>mouse wheel</source>
+            <translation>鼠标滚轮</translation>
         </message>
     </context>
     <context>

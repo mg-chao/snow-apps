@@ -18,3 +18,24 @@ IncludeBlocks: Preserve
 NamespaceIndentation: None
 FixNamespaceComments: true
 ReflowComments: true
+---
+BasedOnStyle: LLVM
+Language: ObjC
+Standard: Latest
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+BreakBeforeBraces: Attach
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+DerivePointerAlignment: false
+PointerAlignment: Left
+SortIncludes: Never
+IncludeBlocks: Preserve
+NamespaceIndentation: None
+FixNamespaceComments: true
+ReflowComments: true

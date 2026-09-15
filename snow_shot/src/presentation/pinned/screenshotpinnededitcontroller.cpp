@@ -281,10 +281,8 @@ void ScreenshotPinnedEditController::reloadDrawingShortcuts() {
     const snow_shot::storage::DrawingShortcutSettings settings;
     for (auto binding = m_drawingShortcutBindings.cbegin();
          binding != m_drawingShortcutBindings.cend(); ++binding) {
-        static_cast<void>(m_shortcutManager.setKeyCombinations(
-            binding.value(),
-            snow_shot::presentation::WindowShortcutManager::keyCombinationsFromPortableText(
-                settings.shortcuts(binding.key()))));
+        static_cast<void>(
+            m_shortcutManager.setShortcuts(binding.value(), settings.shortcuts(binding.key())));
     }
 }
 
@@ -319,10 +317,8 @@ void ScreenshotPinnedEditController::reloadRecognitionShortcuts() {
     const snow_shot::storage::ScreenshotShortcutSettings settings;
     for (auto binding = m_recognitionShortcutBindings.cbegin();
          binding != m_recognitionShortcutBindings.cend(); ++binding) {
-        static_cast<void>(m_shortcutManager.setKeyCombinations(
-            binding.value(),
-            snow_shot::presentation::WindowShortcutManager::keyCombinationsFromPortableText(
-                settings.shortcuts(binding.key()))));
+        static_cast<void>(
+            m_shortcutManager.setShortcuts(binding.value(), settings.shortcuts(binding.key())));
     }
 }
 

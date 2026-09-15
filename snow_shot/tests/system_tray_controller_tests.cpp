@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/systemtraycontroller.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/shortcuts/shortcutdisplayservice.h"
 
 #include "widgets/context_menu.h"
 
@@ -17,7 +18,6 @@
 #include <QFileDevice>
 #include <QFileInfo>
 #include <QImage>
-#include <QOperatingSystemVersion>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPushButton>
@@ -335,34 +335,33 @@ int main(int argc, char* argv[]) {
                       "Delayed screenshot should use the canonical shortcut title");
     requireActionText(recordingToggleMenuAction, QStringLiteral("Record/Copy Video"),
                       "Recording toggle should use the canonical shortcut title");
-    const QList<QPair<QString, QString>> displayCases{
-        {QStringLiteral("+"), QStringLiteral("Plus")},
-        {QStringLiteral("Shift++"), QStringLiteral("Shift+Plus")},
-        {QStringLiteral("Num+1"), QStringLiteral("Num 1")},
-        {QStringLiteral("Num++"), QStringLiteral("Num Plus")},
-        {QStringLiteral("Shift+Shift"), QStringLiteral("Shift")},
-        {QStringLiteral("Period"), QStringLiteral(".")},
-        {QStringLiteral("Comma"), QStringLiteral(",")},
-        {QStringLiteral("  Shift + F2  "), QStringLiteral("Shift+F2")},
+    const QStringList displayCases{
+        QStringLiteral("+"),     QStringLiteral("Shift++"),        QStringLiteral("Num+1"),
+        QStringLiteral("Num++"), QStringLiteral("Shift+Shift"),    QStringLiteral("Period"),
+        QStringLiteral("Comma"), QStringLiteral("  Shift + F2  "),
     };
-    for (const auto& displayCase : displayCases) {
+    for (const QString& portable : displayCases) {
         controller.setGlobalShortcuts(snow_shot::presentation::GlobalShortcutAction::Screenshot,
-                                      {QString(), displayCase.first, QStringLiteral("F3")});
+                                      {QString(), portable, QStringLiteral("F3")});
+        const auto configured =
+            snow_shot::shortcuts::bindingsFromPortableText({portable, QStringLiteral("F3")}, true);
         requireActionText(screenshotMenuAction,
-                          QStringLiteral("Screenshot\t") + displayCase.second +
-                              QStringLiteral(" / F3"),
+                          QStringLiteral("Screenshot\t") +
+                              snow_shot::shortcuts::formatShortcutListDisplayText(configured),
                           "tray key names and alternatives must use the settings display format");
     }
     const QString screenshotShortcut = QStringLiteral("Ctrl+Alt+1");
     const QString alternateScreenshotShortcut = QStringLiteral("Meta+Shift+S");
-    const QString screenshotShortcutHint =
-        QOperatingSystemVersion::currentType() == QOperatingSystemVersion::MacOS
-            ? QStringLiteral("Control+Option+1 / Command+Shift+S")
-            : QStringLiteral("Ctrl+Alt+1 / Win+Shift+S");
+    const QString screenshotShortcutHint = snow_shot::shortcuts::formatShortcutListDisplayText(
+        snow_shot::shortcuts::bindingsFromPortableText(
+            {screenshotShortcut, alternateScreenshotShortcut}));
     controller.setGlobalShortcuts(snow_shot::presentation::GlobalShortcutAction::Screenshot,
                                   {screenshotShortcut, alternateScreenshotShortcut});
     requireActionText(screenshotMenuAction, QStringLiteral("Screenshot\t") + screenshotShortcutHint,
                       "quick tray actions should display all configured global shortcuts");
+    snow_shot::shortcuts::ShortcutDisplayService::instance().refresh();
+    requireActionText(screenshotMenuAction, QStringLiteral("Screenshot\t") + screenshotShortcutHint,
+                      "tray shortcut labels must refresh after an input-layout change");
     require(screenshotMenuAction->shortcut().isEmpty(),
             "displayed global shortcuts must not become menu-local shortcuts");
     controller.setScreenshotDelaySeconds(7);

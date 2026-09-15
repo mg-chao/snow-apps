@@ -243,6 +243,9 @@ class SystemTrayController::Impl {
                          });
         QObject::connect(&LanguageManager::instance(), &LanguageManager::languageChanged, &q,
                          [this](const QString&, const QLocale&) { retranslateUi(); });
+        QObject::connect(&shortcuts::ShortcutDisplayService::instance(),
+                         &shortcuts::ShortcutDisplayService::displayChanged, &q,
+                         [this]() { retranslateUi(); });
         connectGroupManagerSignals();
     }
 
@@ -442,7 +445,8 @@ class SystemTrayController::Impl {
                     Q_ASSERT(!label.isEmpty());
                     const QString shortcut =
                         option.kind == settings::SettingsTrayMenuOptionKind::QuickAction
-                            ? shortcutText.value(option.shortcutAction)
+                            ? shortcuts::formatShortcutListDisplayText(
+                                  shortcutBindings.value(option.shortcutAction))
                             : QString();
                     action->setText(shortcut.isEmpty() ? label
                                                        : label + QLatin1Char('\t') + shortcut);
@@ -527,7 +531,7 @@ class SystemTrayController::Impl {
     adqt::widgets::AdContextMenu* deleteSpecifiedGroupMenu = nullptr;
     QAction* groupMenuAction = nullptr;
     QHash<QString, QAction*> actions;
-    QHash<GlobalShortcutAction, QString> shortcutText;
+    QHash<GlobalShortcutAction, shortcuts::ShortcutBindingList> shortcutBindings;
     QVector<QAction*> separatorsBeforeGroup;
     TrayImageCache iconCache;
     QAction* disableGlobalHotkeysAction = nullptr;
@@ -666,15 +670,14 @@ int SystemTrayController::screenshotDelaySeconds() const {
 }
 
 void SystemTrayController::setGlobalShortcuts(GlobalShortcutAction action,
-                                              const QStringList& shortcuts) {
-    const QString shortcutText = snow_shot::presentation::formatShortcutListDisplayText(shortcuts);
-    if (m_impl->shortcutText.value(action) == shortcutText) {
+                                              const shortcuts::ShortcutBindingList& shortcuts) {
+    if (m_impl->shortcutBindings.value(action) == shortcuts) {
         return;
     }
-    if (shortcutText.isEmpty()) {
-        m_impl->shortcutText.remove(action);
+    if (shortcuts.isEmpty()) {
+        m_impl->shortcutBindings.remove(action);
     } else {
-        m_impl->shortcutText.insert(action, shortcutText);
+        m_impl->shortcutBindings.insert(action, shortcuts);
     }
     m_impl->retranslateUi();
 }

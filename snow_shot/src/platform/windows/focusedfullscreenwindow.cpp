@@ -64,3 +64,11 @@ bool focusedFullscreenWindowExists() {
 }
 
 } // namespace snow_shot::platform::windows
+
+#if defined(Q_OS_WIN) || defined(_WIN32)
+namespace snow_shot::platform {
+bool focusedFullscreenWindowExists() {
+    return windows::focusedFullscreenWindowExists();
+}
+} // namespace snow_shot::platform
+#endif

@@ -1565,7 +1565,7 @@ void colorCopyEndsCaptureOnlyAfterSuccessfulCopy() {
 
 void sharedShiftShortcutChoosesResizeOrColorFormat() {
     const storage::ScreenshotShortcutSettings shortcutSettings;
-    const QStringList originalAspectShortcuts =
+    const snow_shot::shortcuts::ShortcutBindingList originalAspectShortcuts =
         shortcutSettings.keepSelectionWidthAndHeightConsistent();
     require(shortcutSettings.setKeepSelectionWidthAndHeightConsistent({QStringLiteral("Shift")}),
             "failed to establish the default aspect shortcut");
@@ -1688,8 +1688,9 @@ void sharedShiftShortcutChoosesResizeOrColorFormat() {
 
 void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitchOnly = false) {
     const storage::ScreenshotShortcutSettings shortcutSettings;
-    const QMap<QString, QStringList> originalShortcuts = shortcutSettings.allShortcuts();
-    QMap<QString, QStringList> defaults = originalShortcuts;
+    const snow_shot::shortcuts::ShortcutBindingMap originalShortcuts =
+        shortcutSettings.allShortcuts();
+    snow_shot::shortcuts::ShortcutBindingMap defaults = originalShortcuts;
     defaults.insert(QStringLiteral("move_entire_selection"), {QStringLiteral("Space")});
     defaults.insert(QStringLiteral("keep_selection_width_and_height_consistent"),
                     {QStringLiteral("Shift")});
@@ -1876,7 +1877,7 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
                 nextHistoryCalls == 1,
             "default history shortcuts did not navigate the previous and next entries");
 
-    QMap<QString, QStringList> remapped = shortcutSettings.allShortcuts();
+    snow_shot::shortcuts::ShortcutBindingMap remapped = shortcutSettings.allShortcuts();
     remapped.insert(QStringLiteral("switch_selection_between_window_and_window_sub_element"),
                     {QStringLiteral("J")});
     remapped.insert(QStringLiteral("select_previously_selected_area"), {QStringLiteral("K")});
@@ -1951,8 +1952,9 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
     shortcutManager.addScopeWindow(&shortcutWindow);
 
     const storage::ScreenshotShortcutSettings shortcutSettings;
-    const QMap<QString, QStringList> originalShortcuts = shortcutSettings.allShortcuts();
-    QMap<QString, QStringList> defaults = originalShortcuts;
+    const snow_shot::shortcuts::ShortcutBindingMap originalShortcuts =
+        shortcutSettings.allShortcuts();
+    snow_shot::shortcuts::ShortcutBindingMap defaults = originalShortcuts;
     defaults.insert(QStringLiteral("move_tool"), {QStringLiteral("M")});
     defaults.insert(QStringLiteral("move_cursor_up"), {QStringLiteral("W"), QStringLiteral("Up")});
     defaults.insert(QStringLiteral("move_cursor_down"),
@@ -1970,9 +1972,9 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
             "failed to establish screenshot shortcut defaults");
 
     const storage::DrawingShortcutSettings drawingShortcutSettings;
-    const QMap<QString, QStringList> originalDrawingShortcuts =
+    const snow_shot::shortcuts::ShortcutBindingMap originalDrawingShortcuts =
         drawingShortcutSettings.allShortcuts();
-    QMap<QString, QStringList> collidingDrawingShortcuts = originalDrawingShortcuts;
+    snow_shot::shortcuts::ShortcutBindingMap collidingDrawingShortcuts = originalDrawingShortcuts;
     for (auto shortcuts = collidingDrawingShortcuts.begin();
          shortcuts != collidingDrawingShortcuts.end(); ++shortcuts) {
         shortcuts.value().clear();
@@ -2117,7 +2119,7 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
             moveToolActivations == 2 && interaction.moveToolActive(),
         "customized Move shortcut must replace the default key immediately");
 
-    QMap<QString, QStringList> remappedCommands = shortcutSettings.allShortcuts();
+    snow_shot::shortcuts::ShortcutBindingMap remappedCommands = shortcutSettings.allShortcuts();
     remappedCommands.insert(QStringLiteral("pin_to_screen"), {QStringLiteral("Alt+F")});
     remappedCommands.insert(QStringLiteral("cancel_screenshot"), {QStringLiteral("Alt+Esc")});
     remappedCommands.insert(QStringLiteral("copy_to_clipboard"), {QStringLiteral("Alt+C")});
@@ -2373,9 +2375,9 @@ void cursorMovementEligibilityFollowsInteractionState() {
 
 void hiddenToolbarDisablesToolSwitchShortcutsDuringSelectionResize() {
     const storage::ScreenshotShortcutSettings screenshotSettings;
-    const QMap<QString, QStringList> originalScreenshotShortcuts =
+    const snow_shot::shortcuts::ShortcutBindingMap originalScreenshotShortcuts =
         screenshotSettings.allShortcuts();
-    QMap<QString, QStringList> screenshotShortcuts = originalScreenshotShortcuts;
+    snow_shot::shortcuts::ShortcutBindingMap screenshotShortcuts = originalScreenshotShortcuts;
     for (auto shortcuts = screenshotShortcuts.begin(); shortcuts != screenshotShortcuts.end();
          ++shortcuts) {
         shortcuts.value().clear();
@@ -2385,8 +2387,9 @@ void hiddenToolbarDisablesToolSwitchShortcutsDuringSelectionResize() {
             "failed to establish the toolbar-visibility screenshot shortcut fixture");
 
     const storage::DrawingShortcutSettings drawingSettings;
-    const QMap<QString, QStringList> originalDrawingShortcuts = drawingSettings.allShortcuts();
-    QMap<QString, QStringList> drawingShortcuts = originalDrawingShortcuts;
+    const snow_shot::shortcuts::ShortcutBindingMap originalDrawingShortcuts =
+        drawingSettings.allShortcuts();
+    snow_shot::shortcuts::ShortcutBindingMap drawingShortcuts = originalDrawingShortcuts;
     for (auto shortcuts = drawingShortcuts.begin(); shortcuts != drawingShortcuts.end();
          ++shortcuts) {
         shortcuts.value().clear();
