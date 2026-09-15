@@ -283,6 +283,7 @@ class ScreenshotTableDelegate final : public QStyledItemDelegate {
         editor->setVerticalScrollBar(new adqt::widgets::AdScrollBar(Qt::Vertical, editor));
         editor->setContentsMargins(0, 0, 0, 0);
         editor->document()->setDocumentMargin(0.0);
+        editor->setContextMenuPolicy(Qt::CustomContextMenu);
         editor->setProperty("snowShotTableRow", index.row());
         editor->setProperty("snowShotTableColumn", index.column());
         editor->setFont(m_font);
@@ -297,6 +298,15 @@ class ScreenshotTableDelegate final : public QStyledItemDelegate {
                 .arg(cssColor(m_text))
                 .arg(cssColor(m_focus))
                 .arg(cssColor(m_selectionText)));
+        const QPointer<ScreenshotTableEditor> tableEditor(m_editor);
+        connect(editor, &QWidget::customContextMenuRequested, editor,
+                [tableEditor, editor](const QPoint& position) {
+                    if (tableEditor != nullptr) {
+                        // QAbstractScrollArea reports this position in viewport coordinates.
+                        tableEditor->showCellEditorContextMenu(
+                            editor, editor->viewport()->mapToGlobal(position));
+                    }
+                });
         return editor;
     }
 
@@ -319,17 +329,6 @@ class ScreenshotTableDelegate final : public QStyledItemDelegate {
 
     bool eventFilter(QObject* watched, QEvent* event) override {
         auto* editor = qobject_cast<QPlainTextEdit*>(watched);
-        if (editor != nullptr && event != nullptr && event->type() == QEvent::ContextMenu) {
-            auto* contextEvent = static_cast<QContextMenuEvent*>(event);
-            if (m_editor != nullptr) {
-                const int row = editor->property("snowShotTableRow").toInt();
-                const int column = editor->property("snowShotTableColumn").toInt();
-                m_editor->showContextMenu(contextEvent->globalPos(),
-                                          m_editor->model()->index(row, column));
-            }
-            contextEvent->accept();
-            return true;
-        }
         if (editor != nullptr && event != nullptr && event->type() == QEvent::KeyPress) {
             auto* keyEvent = static_cast<QKeyEvent*>(event);
             if (keyEvent->key() == Qt::Key_Tab || keyEvent->key() == Qt::Key_Backtab) {
@@ -739,7 +738,6 @@ void ScreenshotTableEditor::showContextMenu(const QPoint& globalPosition,
         selectRange(m_session->document.spanRangeAt(clicked.row(), clicked.column()));
     }
 
-    const std::optional<QString> selectedEditorText = selectedCellEditorText();
     adqt::widgets::AdContextMenu menu(this);
     menu.setObjectName(QStringLiteral("screenshotTableContextMenu"));
     QAction* copyAction = menu.addItem(tr("Copy"), adqt::icons::antd::outlined::Copy());
@@ -752,19 +750,15 @@ void ScreenshotTableEditor::showContextMenu(const QPoint& globalPosition,
     QAction* splitAction =
         menu.addItem(tr("Split cells"), adqt::icons::antd::outlined::SplitCells());
     const ScreenshotTableCommandState state = commandState();
-    copyAction->setEnabled(selectedEditorText.has_value() || state.hasSelection);
+    copyAction->setEnabled(state.hasSelection);
     pasteAction->setEnabled(QApplication::clipboard() != nullptr &&
                             QApplication::clipboard()->mimeData() != nullptr);
     clearAction->setEnabled(state.hasSelection);
     mergeAction->setEnabled(state.canMerge);
     splitAction->setEnabled(state.canSplit);
 
-    connect(copyAction, &QAction::triggered, this, [this, selectedEditorText]() {
-        if (selectedEditorText.has_value()) {
-            if (QClipboard* clipboard = QApplication::clipboard()) {
-                clipboard->setText(*selectedEditorText);
-            }
-        } else if (selectionModel() != nullptr && !selectionModel()->selectedIndexes().isEmpty()) {
+    connect(copyAction, &QAction::triggered, this, [this]() {
+        if (selectionModel() != nullptr && !selectionModel()->selectedIndexes().isEmpty()) {
             static_cast<void>(copySelectionToClipboard());
         }
     });
@@ -775,14 +769,45 @@ void ScreenshotTableEditor::showContextMenu(const QPoint& globalPosition,
     menu.execAt(globalPosition);
 }
 
-std::optional<QString> ScreenshotTableEditor::selectedCellEditorText() const {
-    const auto* editor = findChild<QPlainTextEdit*>(QStringLiteral("snowShotTableCellEditor"));
-    if (editor == nullptr || !editor->textCursor().hasSelection()) {
-        return std::nullopt;
+void ScreenshotTableEditor::showCellEditorContextMenu(QPlainTextEdit* editor,
+                                                      const QPoint& globalPosition) {
+    if (editor == nullptr) {
+        return;
     }
-    QString selected = editor->textCursor().selectedText();
-    selected.replace(QChar::ParagraphSeparator, QLatin1Char('\n'));
-    return selected;
+
+    adqt::widgets::AdContextMenu menu(this);
+    menu.setObjectName(QStringLiteral("screenshotTableCellEditorContextMenu"));
+    QAction* copy = menu.addItem(tr("Copy"), adqt::icons::antd::outlined::Copy());
+    QAction* cut = menu.addItem(tr("Cut"), adqt::icons::antd::outlined::Scissor());
+    QAction* paste = menu.addItem(tr("Paste"), adqt::icons::antd::outlined::Snippets());
+    QAction* remove = menu.addItem(tr("Delete"), adqt::icons::antd::outlined::IconDelete());
+    menu.addSeparator();
+    QAction* selectAll = menu.addItem(tr("Select All"), adqt::icons::antd::outlined::Select());
+
+    const bool hasSelection = editor->textCursor().hasSelection();
+    const bool writable = !editor->isReadOnly();
+    copy->setEnabled(hasSelection);
+    cut->setEnabled(writable && hasSelection);
+    paste->setEnabled(writable && editor->canPaste());
+    remove->setEnabled(writable && hasSelection);
+    selectAll->setEnabled(!editor->document()->isEmpty());
+
+    connect(copy, &QAction::triggered, editor, &QPlainTextEdit::copy);
+    connect(cut, &QAction::triggered, editor, &QPlainTextEdit::cut);
+    connect(paste, &QAction::triggered, editor, &QPlainTextEdit::paste);
+    const QPointer<QPlainTextEdit> guardedEditor(editor);
+    connect(remove, &QAction::triggered, this, [guardedEditor]() {
+        if (guardedEditor == nullptr || guardedEditor->isReadOnly()) {
+            return;
+        }
+        QTextCursor cursor = guardedEditor->textCursor();
+        if (cursor.hasSelection()) {
+            cursor.removeSelectedText();
+            guardedEditor->setTextCursor(cursor);
+        }
+    });
+    connect(selectAll, &QAction::triggered, editor, &QPlainTextEdit::selectAll);
+    menu.execAt(globalPosition);
 }
 
 void ScreenshotTableEditor::wheelEvent(QWheelEvent* event) {

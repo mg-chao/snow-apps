@@ -64,6 +64,7 @@
 #include <QMouseEvent>
 #include <QMimeData>
 #include <QPainter>
+#include <QPlainTextEdit>
 #include <QPointer>
 #include <QPushButton>
 #include <QRegion>
@@ -1145,7 +1146,10 @@ ScreenshotPinnedWindow::Config cachedOcrPinConfig(ScreenshotOcrRecognitionPort* 
 void pinnedRecognitionContextMenuCopiesLocally() {
     IdleOcrRecognition recognition;
     ScreenshotPinnedWindow window;
-    const ScreenshotPinnedWindow::Config config = cachedOcrPinConfig(&recognition);
+    ScreenshotPinnedWindow::Config config = cachedOcrPinConfig(&recognition);
+    SnowShotTableResult tableResult;
+    tableResult.html = QStringLiteral("<table><tr><td>Saved table</td></tr></table>");
+    config.recognitionResults.table = tableResult;
     ScreenshotRecognitionSessionController* session =
         ScreenshotPinnedWindowTestAccess::hiddenSelectionOffscreen(window, config);
     require(session != nullptr, "pinned recognition context menu needs a recognition session");
@@ -1202,6 +1206,48 @@ void pinnedRecognitionContextMenuCopiesLocally() {
     require(QApplication::clipboard()->text() == QStringLiteral("Saved OCR") && session->active() &&
                 window.isVisible() && content->isVisible(),
             "pinned context Copy should copy locally without deactivating the pin or OCR result");
+
+    session->activate(ScreenshotRecognitionSessionController::Mode::Table);
+    QApplication::processEvents();
+    auto* table = content->findChild<QTableView*>(QStringLiteral("snowShotRecognizedTable"));
+    require(table != nullptr && table->isVisible(),
+            "cached pinned table should be visible before opening its edit menu");
+    table->setCurrentIndex(table->model()->index(0, 0));
+    QKeyEvent editEvent(QEvent::KeyPress, Qt::Key_F2, Qt::NoModifier);
+    QApplication::sendEvent(table, &editEvent);
+    QApplication::processEvents();
+    auto* cellEditor = table->findChild<QPlainTextEdit*>(QStringLiteral("snowShotTableCellEditor"));
+    require(cellEditor != nullptr, "cached pinned table should open its inline editor");
+
+    inspected = false;
+    QTimer::singleShot(0, &window, [&]() {
+        auto* menu = qobject_cast<adqt::widgets::AdContextMenu*>(QApplication::activePopupWidget());
+        require(menu != nullptr &&
+                    menu->objectName() == QStringLiteral("screenshotTableCellEditorContextMenu"),
+                "pinned inline table editing should open its local OCR-style menu");
+        QAction* copy = nullptr;
+        for (QAction* action : menu->actions()) {
+            if (action != nullptr && action->text() == QStringLiteral("Copy")) {
+                copy = action;
+                break;
+            }
+        }
+        require(copy != nullptr && copy->isEnabled(),
+                "selected pinned cell text should expose an enabled local Copy action");
+        copy->trigger();
+        inspected = true;
+        menu->close();
+    });
+    const QPoint cellPosition = cellEditor->viewport()->rect().center();
+    QContextMenuEvent cellEvent(QContextMenuEvent::Mouse, cellPosition,
+                                cellEditor->viewport()->mapToGlobal(cellPosition));
+    QApplication::sendEvent(cellEditor->viewport(), &cellEvent);
+    QApplication::processEvents();
+    require(inspected && cellEvent.isAccepted() && pinnedMenuShows == 0 && session->active() &&
+                session->tableModeActive() && content->isVisible() && window.isVisible(),
+            "pinned inline table editing should consume its menu without closing recognition");
+    require(QApplication::clipboard()->text() == QStringLiteral("Saved table"),
+            "pinned inline table context Copy should copy the selected cell text locally");
 }
 
 void pinnedToolbarLayoutReloadsAndResetsIndependently() {

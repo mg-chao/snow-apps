@@ -235,6 +235,14 @@
             <translation>複製</translation>
         </message>
         <message>
+            <source>Cut</source>
+            <translation>剪下</translation>
+        </message>
+        <message>
+            <source>Delete</source>
+            <translation>刪除</translation>
+        </message>
+        <message>
             <source>Edit cell</source>
             <translation>編輯儲存格</translation>
         </message>
@@ -257,6 +265,10 @@
         <message>
             <source>Reset table</source>
             <translation>重設表格</translation>
+        </message>
+        <message>
+            <source>Select All</source>
+            <translation>全選</translation>
         </message>
         <message>
             <source>Select the complete merged cell before pasting into this area</source>

@@ -13,6 +13,7 @@
 
 class QContextMenuEvent;
 class QMouseEvent;
+class QPlainTextEdit;
 class QWheelEvent;
 class ScreenshotTableModel;
 class ScreenshotTableDelegate;
@@ -120,7 +121,7 @@ class ScreenshotTableEditor final : public QTableView {
     void updateTableMetrics();
     void applyTheme();
     void showContextMenu(const QPoint& globalPosition, const QModelIndex& clicked);
-    [[nodiscard]] std::optional<QString> selectedCellEditorText() const;
+    void showCellEditorContextMenu(QPlainTextEdit* editor, const QPoint& globalPosition);
     [[nodiscard]] QModelIndex anchorIndex(const QModelIndex& index) const;
     [[nodiscard]] bool pasteDocument(const ScreenshotTableDocument& source);
     void selectRange(const ScreenshotTableRange& range);

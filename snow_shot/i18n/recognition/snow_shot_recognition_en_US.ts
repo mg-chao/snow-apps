@@ -235,6 +235,14 @@
             <translation>Copy</translation>
         </message>
         <message>
+            <source>Cut</source>
+            <translation>Cut</translation>
+        </message>
+        <message>
+            <source>Delete</source>
+            <translation>Delete</translation>
+        </message>
+        <message>
             <source>Edit cell</source>
             <translation>Edit cell</translation>
         </message>
@@ -257,6 +265,10 @@
         <message>
             <source>Reset table</source>
             <translation>Reset table</translation>
+        </message>
+        <message>
+            <source>Select All</source>
+            <translation>Select All</translation>
         </message>
         <message>
             <source>Select the complete merged cell before pasting into this area</source>

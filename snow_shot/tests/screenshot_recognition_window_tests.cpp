@@ -1683,15 +1683,66 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
     cellSelection.setPosition(5, QTextCursor::KeepAnchor);
     cellEditor->setTextCursor(cellSelection);
     inspectContextMenu(
-        *cellEditor, cellEditor->rect().center(), [](adqt::widgets::AdContextMenu& menu) {
-            require(menu.objectName() == QStringLiteral("screenshotTableContextMenu"),
-                    "inline table text should use the table Ant Design menu");
+        *cellEditor->viewport(), cellEditor->viewport()->rect().center(),
+        [](adqt::widgets::AdContextMenu& menu) {
+            require(menu.objectName() == QStringLiteral("screenshotTableCellEditorContextMenu") &&
+                        contextMenuActionTexts(menu) ==
+                            QStringList{QStringLiteral("Copy"), QStringLiteral("Cut"),
+                                        QStringLiteral("Paste"), QStringLiteral("Delete"),
+                                        QStringLiteral("|"), QStringLiteral("Select All")},
+                    "inline table text should use the OCR-style Ant Design edit menu");
+            requireContextMenuShortcutsHidden(menu);
+            require(contextMenuAction(menu, QStringLiteral("Copy"))->isEnabled() &&
+                        contextMenuAction(menu, QStringLiteral("Cut"))->isEnabled() &&
+                        contextMenuAction(menu, QStringLiteral("Paste"))->isEnabled() &&
+                        contextMenuAction(menu, QStringLiteral("Delete"))->isEnabled() &&
+                        contextMenuAction(menu, QStringLiteral("Select All"))->isEnabled(),
+                    "selected inline table text should enable every edit command");
             contextMenuAction(menu, QStringLiteral("Copy"))->trigger();
         });
     require(QApplication::clipboard()->text() == QStringLiteral("Alpha") &&
                 cellEditor->textCursor().selectedText() == QStringLiteral("Alpha") &&
                 copyCommandCalls == 0,
             "inline table context Copy should preserve and copy the character selection");
+    inspectContextMenu(*cellEditor->viewport(), cellEditor->viewport()->rect().center(),
+                       [](adqt::widgets::AdContextMenu& menu) {
+                           contextMenuAction(menu, QStringLiteral("Cut"))->trigger();
+                       });
+    require(cellEditor->toPlainText() == QStringLiteral(" cell") &&
+                QApplication::clipboard()->text() == QStringLiteral("Alpha"),
+            "inline table context Cut should remove and copy the character selection");
+    QApplication::clipboard()->setText(QStringLiteral("New"));
+    QTextCursor insertionCursor(cellEditor->document());
+    insertionCursor.setPosition(0);
+    cellEditor->setTextCursor(insertionCursor);
+    inspectContextMenu(*cellEditor->viewport(), cellEditor->viewport()->rect().center(),
+                       [](adqt::widgets::AdContextMenu& menu) {
+                           require(
+                               !contextMenuAction(menu, QStringLiteral("Copy"))->isEnabled() &&
+                                   !contextMenuAction(menu, QStringLiteral("Cut"))->isEnabled() &&
+                                   contextMenuAction(menu, QStringLiteral("Paste"))->isEnabled() &&
+                                   !contextMenuAction(menu, QStringLiteral("Delete"))->isEnabled(),
+                               "inline table text without a selection should enable only Paste");
+                           contextMenuAction(menu, QStringLiteral("Paste"))->trigger();
+                       });
+    require(cellEditor->toPlainText() == QStringLiteral("New cell"),
+            "inline table context Paste should insert clipboard text at the cursor");
+    QTextCursor deleteCursor(cellEditor->document());
+    deleteCursor.setPosition(0);
+    deleteCursor.setPosition(3, QTextCursor::KeepAnchor);
+    cellEditor->setTextCursor(deleteCursor);
+    inspectContextMenu(*cellEditor->viewport(), cellEditor->viewport()->rect().center(),
+                       [](adqt::widgets::AdContextMenu& menu) {
+                           contextMenuAction(menu, QStringLiteral("Delete"))->trigger();
+                       });
+    require(cellEditor->toPlainText() == QStringLiteral(" cell"),
+            "inline table context Delete should remove the character selection");
+    inspectContextMenu(*cellEditor->viewport(), cellEditor->viewport()->rect().center(),
+                       [](adqt::widgets::AdContextMenu& menu) {
+                           contextMenuAction(menu, QStringLiteral("Select All"))->trigger();
+                       });
+    require(cellEditor->textCursor().selectedText() == QStringLiteral(" cell"),
+            "inline table context Select All should select the cell text");
     QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(cellEditor, &escape);
     processEditorClose();
@@ -1731,6 +1782,27 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
     QApplication::sendEvent(formattedLayer->viewport(), &fallbackEvent);
     require(fallbackEvent.isAccepted() && forwardedMenus == 1,
             "unsupported embedded content should still forward to the pinned menu");
+
+    auto embeddedTableSession = std::make_shared<ScreenshotTableEditingSession>(
+        ScreenshotTableDocument::fromPlainText(QStringLiteral("Pinned cell\tB\nC\tD")));
+    embedded.setTableSession(embeddedTableSession);
+    QApplication::processEvents();
+    auto* embeddedTable =
+        embedded.findChild<ScreenshotTableEditor*>(QStringLiteral("snowShotRecognizedTable"));
+    require(embeddedTable != nullptr, "embedded context menu test should expose its table");
+    clickCell(*embeddedTable, 0, 0);
+    auto* embeddedCellEditor =
+        embeddedTable->findChild<QPlainTextEdit*>(QStringLiteral("snowShotTableCellEditor"));
+    require(embeddedCellEditor != nullptr,
+            "embedded context menu test should open the inline table editor");
+    inspectContextMenu(
+        *embeddedCellEditor->viewport(), embeddedCellEditor->viewport()->rect().center(),
+        [](adqt::widgets::AdContextMenu& menu) {
+            require(menu.objectName() == QStringLiteral("screenshotTableCellEditorContextMenu"),
+                    "embedded inline table text should own its OCR-style edit menu");
+        });
+    require(forwardedMenus == 1,
+            "embedded inline table editing should not forward to the pinned image menu");
 }
 
 void tableClipboardPreservesLargeValuesForWholeTableAndSelection() {
