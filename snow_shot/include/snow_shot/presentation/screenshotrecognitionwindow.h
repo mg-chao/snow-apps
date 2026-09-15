@@ -161,6 +161,10 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void synchronizeTextLayer();
     void updateTextEditorSpinGeometry();
     void installSelectionResizeEventFilters(QWidget* widget);
+    [[nodiscard]] bool activeContentOwnsContextMenu(const QObject* watched) const;
+    void showOcrContextMenu(const QPoint& globalPosition);
+    void showQrContextMenu(const QPoint& globalPosition);
+    void showTextEditorContextMenu(const QPoint& globalPosition);
     [[nodiscard]] ScreenshotSelectionDragMode
     selectionResizeDragModeAtLocalPoint(const QPointF& localPosition) const;
     [[nodiscard]] bool handleSelectionResizeEvent(QObject* watched, QEvent* event);

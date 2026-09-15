@@ -58,6 +58,7 @@
     "ScreenshotImageConversionController",
     "ScreenshotImageConversionView",
     "ScreenshotOcrController",
+    "ScreenshotRecognitionWindow",
     "ScreenshotRecognitionSessionController",
     "ScreenshotTableEditor"
   ],

@@ -5,7 +5,9 @@
 #include "snow_shot/presentation/screenshotocrtextlayer.h"
 #include "snow_shot/presentation/screenshottableeditor.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
+#include "antd_icons.h"
 #include "theme/theme_manager.h"
+#include "widgets/context_menu.h"
 #include "widgets/input_text_edit.h"
 #include "widgets/scroll_area.h"
 #include "widgets/spin.h"
@@ -535,6 +537,7 @@ void ScreenshotRecognitionWindow::showTextEditor(QTextDocument* document, bool r
         editor->setVariant(adqt::widgets::AdTextEdit::Variant::Borderless);
         m_textEditor->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
         m_textEditor->setAcceptRichText(false);
+        m_textEditor->setContextMenuPolicy(Qt::CustomContextMenu);
         editorLayout->addWidget(editor);
         m_textEditorSpin = new adqt::widgets::AdSpin(m_textEditorContainer);
         m_textEditorSpin->setObjectName(QStringLiteral("screenshotOcrTranslationSpin"));
@@ -550,6 +553,10 @@ void ScreenshotRecognitionWindow::showTextEditor(QTextDocument* document, bool r
         installSelectionResizeEventFilters(m_textEditorContainer);
         connect(editor, &adqt::widgets::AdTextEdit::textEdited, this,
                 [this](const QString& text) { m_actions.handleTextEdited(text); });
+        connect(m_textEditor, &QWidget::customContextMenuRequested, this,
+                [this](const QPoint& position) {
+                    showTextEditorContextMenu(m_textEditor->viewport()->mapToGlobal(position));
+                });
     }
     const QSignalBlocker blocker(m_textEditor);
     m_textEditor->setDocument(document);
@@ -765,10 +772,15 @@ void ScreenshotRecognitionWindow::showQrContents(const QStringList& contents) {
         m_qrBrowser->setOpenLinks(false);
         m_qrBrowser->setOpenExternalLinks(false);
         m_qrBrowser->setTextInteractionFlags(Qt::TextBrowserInteraction);
+        m_qrBrowser->setContextMenuPolicy(Qt::CustomContextMenu);
         m_stack->addWidget(m_qrBrowser);
         installSelectionResizeEventFilters(m_qrBrowser);
         connect(m_qrBrowser, &QTextBrowser::anchorClicked, this,
                 [this](const QUrl& url) { m_actions.handleLinkActivated(url); });
+        connect(m_qrBrowser, &QWidget::customContextMenuRequested, this,
+                [this](const QPoint& position) {
+                    showQrContextMenu(m_qrBrowser->viewport()->mapToGlobal(position));
+                });
     }
 
     const adqt::theme::ThemeMapToken theme =
@@ -906,6 +918,90 @@ bool ScreenshotRecognitionWindow::copyVisibleContentToClipboard() {
     return true;
 }
 
+bool ScreenshotRecognitionWindow::activeContentOwnsContextMenu(const QObject* watched) const {
+    const auto* widget = qobject_cast<const QWidget*>(watched);
+    return widget != nullptr &&
+           (focusInside(m_conversionView, widget) || focusInside(m_qrBrowser, widget) ||
+            focusInside(m_textEditor, widget) || focusInside(m_tableEditor, widget));
+}
+
+void ScreenshotRecognitionWindow::showOcrContextMenu(const QPoint& globalPosition) {
+    if (m_ocrPresentation == nullptr) {
+        return;
+    }
+    adqt::widgets::AdContextMenu menu(this);
+    menu.setObjectName(QStringLiteral("screenshotOcrContextMenu"));
+    QAction* copy = menu.addItem(tr("Copy"), adqt::icons::antd::outlined::Copy());
+    QAction* selectAll = menu.addItem(tr("Select All"), adqt::icons::antd::outlined::Select());
+    selectAll->setEnabled(!m_ocrPresentation->lines.isEmpty());
+    connect(copy, &QAction::triggered, this,
+            [this]() { static_cast<void>(copyVisibleContentToClipboard()); });
+    connect(selectAll, &QAction::triggered, this, [this]() {
+        if (m_ocrPresentation == nullptr) {
+            return;
+        }
+        const quint64 previousRevision = m_ocrPresentation->selectionRevision();
+        m_ocrPresentation->selectAll();
+        if (m_ocrPresentation->selectionRevision() != previousRevision) {
+            m_textLayer->updateSelection();
+        }
+    });
+    menu.execAt(globalPosition);
+}
+
+void ScreenshotRecognitionWindow::showQrContextMenu(const QPoint& globalPosition) {
+    if (m_qrBrowser == nullptr) {
+        return;
+    }
+    adqt::widgets::AdContextMenu menu(this);
+    menu.setObjectName(QStringLiteral("screenshotQrContextMenu"));
+    QAction* copy = menu.addItem(tr("Copy"), adqt::icons::antd::outlined::Copy());
+    QAction* selectAll = menu.addItem(tr("Select All"), adqt::icons::antd::outlined::Select());
+    selectAll->setEnabled(!m_qrBrowser->document()->isEmpty());
+    connect(copy, &QAction::triggered, this,
+            [this]() { static_cast<void>(copyVisibleContentToClipboard()); });
+    connect(selectAll, &QAction::triggered, m_qrBrowser, &QTextBrowser::selectAll);
+    menu.execAt(globalPosition);
+}
+
+void ScreenshotRecognitionWindow::showTextEditorContextMenu(const QPoint& globalPosition) {
+    if (m_textEditor == nullptr) {
+        return;
+    }
+    adqt::widgets::AdContextMenu menu(this);
+    menu.setObjectName(QStringLiteral("screenshotTextEditorContextMenu"));
+    QAction* copy = menu.addItem(tr("Copy"), adqt::icons::antd::outlined::Copy());
+    QAction* cut = menu.addItem(tr("Cut"), adqt::icons::antd::outlined::Scissor());
+    QAction* paste = menu.addItem(tr("Paste"), adqt::icons::antd::outlined::Snippets());
+    QAction* remove = menu.addItem(tr("Delete"), adqt::icons::antd::outlined::IconDelete());
+    menu.addSeparator();
+    QAction* selectAll = menu.addItem(tr("Select All"), adqt::icons::antd::outlined::Select());
+
+    const bool hasSelection = m_textEditor->textCursor().hasSelection();
+    const bool writable = !m_textEditor->isReadOnly();
+    copy->setEnabled(hasSelection);
+    cut->setEnabled(writable && hasSelection);
+    paste->setEnabled(writable && m_textEditor->canPaste());
+    remove->setEnabled(writable && hasSelection);
+    selectAll->setEnabled(!m_textEditor->document()->isEmpty());
+
+    connect(copy, &QAction::triggered, m_textEditor, &QTextEdit::copy);
+    connect(cut, &QAction::triggered, m_textEditor, &QTextEdit::cut);
+    connect(paste, &QAction::triggered, m_textEditor, &QTextEdit::paste);
+    connect(remove, &QAction::triggered, this, [this]() {
+        if (m_textEditor == nullptr || m_textEditor->isReadOnly()) {
+            return;
+        }
+        QTextCursor cursor = m_textEditor->textCursor();
+        if (cursor.hasSelection()) {
+            cursor.removeSelectedText();
+            m_textEditor->setTextCursor(cursor);
+        }
+    });
+    connect(selectAll, &QAction::triggered, m_textEditor, &QTextEdit::selectAll);
+    menu.execAt(globalPosition);
+}
+
 void ScreenshotRecognitionWindow::focusOutEvent(QFocusEvent* event) {
     if (m_ocrPresentation != nullptr && event->reason() != Qt::PopupFocusReason) {
         const quint64 previousRevision = m_ocrPresentation->selectionRevision();
@@ -1036,7 +1132,8 @@ bool ScreenshotRecognitionWindow::eventFilter(QObject* watched, QEvent* event) {
         }
     }
     if (event != nullptr && event->type() == QEvent::ContextMenu &&
-        m_presentationMode == PresentationMode::EmbeddedChild) {
+        m_presentationMode == PresentationMode::EmbeddedChild &&
+        !activeContentOwnsContextMenu(watched)) {
         auto* contextMenuEvent = static_cast<QContextMenuEvent*>(event);
         emit embeddedContextMenuRequested(contextMenuEvent->globalPos());
         contextMenuEvent->accept();
@@ -1049,7 +1146,15 @@ bool ScreenshotRecognitionWindow::eventFilter(QObject* watched, QEvent* event) {
 }
 
 void ScreenshotRecognitionWindow::contextMenuEvent(QContextMenuEvent* event) {
-    if (event != nullptr && m_presentationMode == PresentationMode::EmbeddedChild) {
+    if (event == nullptr) {
+        return;
+    }
+    if (m_ocrPresentation != nullptr) {
+        showOcrContextMenu(event->globalPos());
+        event->accept();
+        return;
+    }
+    if (m_presentationMode == PresentationMode::EmbeddedChild) {
         emit embeddedContextMenuRequested(event->globalPos());
         event->accept();
         return;

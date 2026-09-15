@@ -1,7 +1,9 @@
 #include "snow_shot/presentation/screenshotimageconversionview.h"
 
 #include "theme/theme_manager.h"
+#include "antd_icons.h"
 #include "widgets/button.h"
+#include "widgets/context_menu.h"
 #include "widgets/scroll_area.h"
 
 #include <QApplication>
@@ -48,6 +50,7 @@ ScreenshotImageConversionView::ScreenshotImageConversionView(QWidget* parent) : 
     m_browser->setHorizontalScrollBar(new adqt::widgets::AdScrollBar(Qt::Horizontal, m_browser));
     m_browser->setTextInteractionFlags(Qt::TextBrowserInteraction);
     m_browser->setLineWrapMode(QTextEdit::WidgetWidth);
+    m_browser->setContextMenuPolicy(Qt::CustomContextMenu);
     layout->addWidget(m_browser, 1);
     setFocusProxy(m_browser);
     connect(m_browser, &QTextBrowser::anchorClicked, this, [this](const QUrl& url) {
@@ -55,6 +58,9 @@ ScreenshotImageConversionView::ScreenshotImageConversionView(QWidget* parent) : 
             (url.scheme() == QStringLiteral("https") || url.scheme() == QStringLiteral("http"))) {
             emit linkActivated(url);
         }
+    });
+    connect(m_browser, &QWidget::customContextMenuRequested, this, [this](const QPoint& position) {
+        showContextMenu(m_browser->viewport()->mapToGlobal(position));
     });
     m_status = new QWidget(this);
     auto* statusLayout = new QHBoxLayout(m_status);
@@ -205,6 +211,18 @@ bool ScreenshotImageConversionView::copyToClipboard() const {
 
 void ScreenshotImageConversionView::selectAll() {
     m_browser->selectAll();
+}
+
+void ScreenshotImageConversionView::showContextMenu(const QPoint& globalPosition) {
+    adqt::widgets::AdContextMenu menu(this);
+    menu.setObjectName(QStringLiteral("screenshotImageConversionContextMenu"));
+    QAction* copy = menu.addItem(tr("Copy"), adqt::icons::antd::outlined::Copy());
+    QAction* selectAll = menu.addItem(tr("Select All"), adqt::icons::antd::outlined::Select());
+    copy->setEnabled(!m_source.isEmpty());
+    selectAll->setEnabled(!m_browser->document()->isEmpty());
+    connect(copy, &QAction::triggered, this, [this]() { static_cast<void>(copyToClipboard()); });
+    connect(selectAll, &QAction::triggered, this, &ScreenshotImageConversionView::selectAll);
+    menu.execAt(globalPosition);
 }
 
 void ScreenshotImageConversionView::changeEvent(QEvent* event) {
