@@ -8,6 +8,7 @@
 #include <QApplication>
 #include <QColor>
 #include <QImage>
+#include <QMimeData>
 #include <QPointF>
 #include <QTextCursor>
 #include <QTextBlockFormat>
@@ -426,6 +427,58 @@ void tableDocumentPreservesSpansAndExportsCoveredCoordinates() {
     require(roundTrip == document, "span-aware table HTML should round-trip without loss");
 }
 
+void tableDocumentExportsExcelTextCells() {
+    const QString value = QStringLiteral("251231312312321321321312312321");
+    const ScreenshotTableDocument document = ScreenshotTableDocument::fromHtml(
+        QStringLiteral("<table><tr><th colspan=\"2\">") + value +
+        QStringLiteral("</th></tr><tr><td>00123456789012345678</td>"
+                       "<td>-12345678901234567890</td></tr>"
+                       "<tr><td>1234567890123456.7890</td><td>42</td></tr>"
+                       "<tr><td>&lt;value&gt; &amp; text<br/>next</td><td></td></tr></table>"));
+    const QString original = document.toPlainText();
+    const auto mime = document.toClipboardMimeData();
+    require(mime != nullptr &&
+                mime->text() ==
+                    QLatin1Char('\'') + value +
+                        QStringLiteral("\t\n'00123456789012345678\t'-12345678901234567890\n"
+                                       "'1234567890123456.7890\t42\n<value> & text\nnext\t"),
+            "large numeric clipboard values should carry literal text prefixes, including TSV");
+    require(ScreenshotTableDocument::fromHtml(mime->html()).toPlainText() == mime->text(),
+            "HTML and plain-text consumers should receive the same protected values");
+    require(ScreenshotTableDocument::fromClipboardMimeData(*mime) == document &&
+                document.toPlainText() == original,
+            "internal copy/paste and the recognized document should preserve original values");
+
+    const ScreenshotTableRange selection{1, 0, 2, 1};
+    const auto selected = document.toClipboardMimeData(selection);
+    require(selected != nullptr && selected->text().startsWith(QStringLiteral("'001234")) &&
+                ScreenshotTableDocument::fromClipboardMimeData(*selected).toPlainText() ==
+                    document.toPlainText(selection),
+            "selected ranges should protect exported numbers and preserve internal values");
+
+    const ScreenshotTableDocument boundaries = ScreenshotTableDocument::fromPlainText(
+        QStringLiteral("99999999999\t100000000000\t+123456789012\t0.1234567890123456\n"
+                       "'123456789012\titem123456789012\t=123456789012\t30"));
+    const auto boundaryMime = boundaries.toClipboardMimeData();
+    require(boundaryMime->text() ==
+                QStringLiteral("99999999999\t'100000000000\t'+123456789012\t'0.1234567890123456\n"
+                               "'123456789012\titem123456789012\t=123456789012\t30"),
+            "only numeric cells with at least twelve digits should gain a prefix");
+    require(ScreenshotTableDocument::fromClipboardMimeData(*boundaryMime) == boundaries,
+            "existing literal apostrophes must not be stripped or duplicated internally");
+    QMimeData external;
+    external.setText(QStringLiteral("A\t30"));
+    require(ScreenshotTableDocument::fromClipboardMimeData(external).toPlainText() ==
+                external.text(),
+            "ordinary external TSV paste should still work");
+    external.setHtml(QStringLiteral("<table><tr><td>HTML</td></tr></table>"));
+    require(ScreenshotTableDocument::fromClipboardMimeData(external).cellText(0, 0) ==
+                QStringLiteral("HTML"),
+            "external HTML should retain priority over plain text");
+    require(!ScreenshotTableDocument().toClipboardMimeData() &&
+                !document.toClipboardMimeData(ScreenshotTableRange{}),
+            "empty documents and invalid selections should have no clipboard payload");
+}
 void tableDocumentMergeSplitClearAndValidationPolicies() {
     ScreenshotTableDocument document =
         ScreenshotTableDocument::fromPlainText(QStringLiteral("A\tB\nC\tD"));
@@ -474,6 +527,7 @@ int main(int argc, char** argv) {
     textEditingHistoryIgnoresEditorLayoutFormatting();
     translationHistoryEstablishesSuccessfulAndPartialBaselines();
     tableDocumentPreservesSpansAndExportsCoveredCoordinates();
+    tableDocumentExportsExcelTextCells();
     tableDocumentMergeSplitClearAndValidationPolicies();
     return 0;
 }

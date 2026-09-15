@@ -25,6 +25,7 @@
 #include <QImage>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QMimeData>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QPainter>
@@ -1341,11 +1342,44 @@ void selectionResizeKeepsMouseCaptureWhenContentIsCleared() {
         }
     }
 }
+void tableClipboardPreservesLargeValuesForWholeTableAndSelection() {
+    const QString value = QStringLiteral("251231312312321321321312312321");
+    auto session =
+        std::make_shared<ScreenshotTableEditingSession>(ScreenshotTableDocument::fromPlainText(
+            QStringLiteral("Value\tOther\n") + value + QStringLiteral("\t42")));
+    ScreenshotTableEditor editor;
+    editor.setSession(session);
+    require(editor.copySelectionToClipboard(), "whole-table copy should succeed");
+    const QMimeData* mime = QApplication::clipboard()->mimeData();
+    require(mime != nullptr && mime->hasHtml() && mime->hasText() &&
+                mime->text() ==
+                    QStringLiteral("Value\tOther\n'") + value + QStringLiteral("\t42") &&
+                ScreenshotTableDocument::fromHtml(mime->html()).toPlainText() == mime->text() &&
+                ScreenshotTableDocument::fromClipboardMimeData(*mime) == session->document,
+            "whole-table copy should publish the exact text and spreadsheet HTML payload");
+
+    const QModelIndex index = editor.model()->index(1, 0);
+    editor.selectionModel()->select(index, QItemSelectionModel::ClearAndSelect);
+    require(editor.copySelectionToClipboard(), "selected-cell copy should succeed");
+    mime = QApplication::clipboard()->mimeData();
+    require(mime != nullptr && mime->text() == QLatin1Char('\'') + value &&
+                ScreenshotTableDocument::fromHtml(mime->html()).cellText(0, 0) == mime->text(),
+            "selected-cell copy should retain every digit and the spreadsheet HTML payload");
+    editor.setCurrentIndex(editor.model()->index(1, 1));
+    editor.selectionModel()->clearSelection();
+    editor.pasteSelection();
+    require(session->document.cellText(1, 1) == value,
+            "pasting Snow Shot's protected clipboard should restore the unprefixed value");
+}
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
+    if (application.arguments().contains(QStringLiteral("--table-clipboard-only"))) {
+        tableClipboardPreservesLargeValuesForWholeTableAndSelection();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--selection-only-rendering"))) {
         selectionOnlyTextLayerPaintsOnlyHighlights();
         return 0;
@@ -1369,6 +1403,7 @@ int main(int argc, char** argv) {
     formattedClipboardTextUsesASelectableQtDocument();
     qrContentsUseStrictRichTextLinksAndPreserveOrder();
     emptyOcrResultCopiesEmptyText();
+    tableClipboardPreservesLargeValuesForWholeTableAndSelection();
     imageSnapshotTracksOnlyOriginalImageAndOwnsItsResult();
     return 0;
 }

@@ -1185,9 +1185,7 @@ std::unique_ptr<QMimeData> ScreenshotRecognitionSessionController::recognitionCl
         if (m_tableSession == nullptr || m_tableSession->document.empty()) {
             return {};
         }
-        mimeData->setHtml(m_tableSession->document.toHtml());
-        mimeData->setText(m_tableSession->document.toPlainText());
-        return mimeData;
+        return m_tableSession->document.toClipboardMimeData();
     }
 
     QString text;

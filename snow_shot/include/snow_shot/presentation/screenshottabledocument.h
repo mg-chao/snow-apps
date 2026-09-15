@@ -4,6 +4,9 @@
 #include <QPoint>
 #include <QString>
 #include <QVector>
+#include <memory>
+
+class QMimeData;
 
 struct ScreenshotTableRange {
     int top = -1;
@@ -52,6 +55,7 @@ class ScreenshotTableDocument final {
 
     [[nodiscard]] static ScreenshotTableDocument fromHtml(const QString& source);
     [[nodiscard]] static ScreenshotTableDocument fromPlainText(const QString& source);
+    [[nodiscard]] static ScreenshotTableDocument fromClipboardMimeData(const QMimeData& source);
 
     [[nodiscard]] int rowCount() const;
     [[nodiscard]] int columnCount() const;
@@ -77,6 +81,9 @@ class ScreenshotTableDocument final {
     [[nodiscard]] QString toHtml(const ScreenshotTableRange& range) const;
     [[nodiscard]] QString toPlainText() const;
     [[nodiscard]] QString toPlainText(const ScreenshotTableRange& range) const;
+    [[nodiscard]] std::unique_ptr<QMimeData> toClipboardMimeData() const;
+    [[nodiscard]] std::unique_ptr<QMimeData>
+    toClipboardMimeData(const ScreenshotTableRange& range) const;
 
     [[nodiscard]] bool operator==(const ScreenshotTableDocument& other) const;
     [[nodiscard]] bool operator!=(const ScreenshotTableDocument& other) const {
