@@ -12,6 +12,10 @@ pub const MIN_TEXT_FONT_SIZE: f64 = 6.0;
 pub const MIN_SERIAL_NUMBER_FONT_SIZE: f64 = MIN_TEXT_FONT_SIZE;
 const MIN_SERIAL_NUMBER_BOUND_TEXT_GAP: f64 = 18.0;
 const SERIAL_NUMBER_BOUND_TEXT_GAP_PER_FONT_SIZE: f64 = MIN_SERIAL_NUMBER_BOUND_TEXT_GAP / 21.0;
+const SERIAL_NUMBER_CANONICAL_FONT_SIZE: f64 = 16.0;
+const SERIAL_NUMBER_LABEL_WIDTH_PER_EM: f64 = 0.6;
+const SERIAL_NUMBER_DIAMETER_PADDING_PER_LINE_HEIGHT: f64 = 0.20;
+const SERIAL_NUMBER_STROKE_REFERENCE_FONT_SIZE: f64 = 20.0;
 const TEXT_BACKGROUND_HORIZONTAL_PADDING_PER_LINE_HEIGHT: f64 = 0.32;
 const TEXT_BACKGROUND_VERTICAL_PADDING_PER_LINE_HEIGHT: f64 = 0.1;
 
@@ -460,7 +464,7 @@ pub fn serial_number_with_selection_rect(
 }
 
 pub fn resolve_serial_number_stroke_width(serial: &SerialNumberData) -> f64 {
-    let scale = sanitize_non_negative(serial.font_size) / 16.0;
+    let scale = sanitize_non_negative(serial.font_size) / SERIAL_NUMBER_STROKE_REFERENCE_FONT_SIZE;
     sanitize_non_negative(serial.stroke_width * scale)
 }
 
@@ -481,12 +485,12 @@ pub fn serial_number_with_label_style(
 }
 
 pub fn resolve_serial_number_diameter(number: i64, font_size: f64, min_diameter: f64) -> f64 {
-    let canonical_font_size = 16.0;
-    let (width, height) = serial_number_label_size(number.max(0), canonical_font_size);
-    let line_height = text_line_height(canonical_font_size);
+    let (width, height) =
+        serial_number_label_size(number.max(0), SERIAL_NUMBER_CANONICAL_FONT_SIZE);
+    let line_height = text_line_height(SERIAL_NUMBER_CANONICAL_FONT_SIZE);
     let base = width.max(height.max(line_height));
-    let padding = line_height * 0.26;
-    let scale = sanitize_non_negative(font_size).max(1.0) / canonical_font_size;
+    let padding = line_height * SERIAL_NUMBER_DIAMETER_PADDING_PER_LINE_HEIGHT;
+    let scale = sanitize_non_negative(font_size).max(1.0) / SERIAL_NUMBER_CANONICAL_FONT_SIZE;
     sanitize_positive((base + padding * 2.0) * scale, min_diameter.max(0.0))
         .max(min_diameter.max(0.0))
 }
@@ -494,7 +498,10 @@ pub fn resolve_serial_number_diameter(number: i64, font_size: f64, min_diameter:
 fn serial_number_label_size(number: i64, font_size: f64) -> (f64, f64) {
     let digit_count = number.to_string().chars().count().max(1) as f64;
     let line_height = text_line_height(font_size);
-    (digit_count * font_size.max(1.0) * 0.6, line_height)
+    (
+        digit_count * font_size.max(1.0) * SERIAL_NUMBER_LABEL_WIDTH_PER_EM,
+        line_height,
+    )
 }
 
 pub fn text_hit_test(text: &TextData, point: Point<f64>, hit_tolerance: f64) -> bool {
@@ -1012,6 +1019,30 @@ mod tests {
                 a: 0xff,
             }
         );
+    }
+
+    #[test]
+    fn serial_number_diameter_scales_from_canonical_line_height() {
+        let font_size = 24.0;
+        let line_height = text_line_height(SERIAL_NUMBER_CANONICAL_FONT_SIZE);
+        let (width, height) = serial_number_label_size(1, SERIAL_NUMBER_CANONICAL_FONT_SIZE);
+        let base = width.max(height.max(line_height));
+        let padding = line_height * SERIAL_NUMBER_DIAMETER_PADDING_PER_LINE_HEIGHT;
+        let expected = (base + padding * 2.0) * (font_size / SERIAL_NUMBER_CANONICAL_FONT_SIZE);
+
+        assert!((resolve_serial_number_style_diameter(1, font_size) - expected).abs() < 1e-9);
+        assert!((expected - font_size * 1.68).abs() < 1e-9);
+    }
+
+    #[test]
+    fn serial_number_stroke_width_is_one_tenth_of_font_size_at_default_stroke() {
+        let serial = SerialNumberData {
+            font_size: 24.0,
+            stroke_width: 2.0,
+            ..SerialNumberData::default()
+        };
+
+        assert!((resolve_serial_number_stroke_width(&serial) - 2.4).abs() < 1e-9);
     }
 
     #[test]
