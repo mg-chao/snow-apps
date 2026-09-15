@@ -50,6 +50,9 @@ applyClientGeometry(WId windowId, const QRect& geometry,
 // pointer presence.
 [[nodiscard]] std::optional<bool> pointerInsideWindow(WId windowId);
 [[nodiscard]] bool applySystemResizeStyle(WId windowId);
+// Toggles only the input pass-through/no-activation extended styles. The HWND
+// and all unrelated native styles are preserved.
+[[nodiscard]] bool setInputTransparent(WId windowId, bool transparent);
 [[nodiscard]] bool activateWindow(WId windowId);
 [[nodiscard]] bool installSynchronizedResize(WId windowId, const bool* interactiveResizeActive);
 void removeSynchronizedResize(WId windowId);

@@ -16,6 +16,7 @@
 #include <QColor>
 #include <QImage>
 #include <QMap>
+#include <QMetaObject>
 #include <QPoint>
 #include <QPointer>
 #include <QRect>
@@ -285,6 +286,12 @@ class ScreenshotPinnedWindow final : public QWidget {
     void toggleHideToTop();
     void exitHideToTop();
     [[nodiscard]] bool hideToTopActive() const;
+    [[nodiscard]] bool setClickThroughMode(bool enabled);
+    void toggleClickThrough();
+    [[nodiscard]] bool ensureClickThroughExitButton();
+    [[nodiscard]] bool updateClickThroughExitButtonGeometry();
+    void setClickThroughScreen(QScreen* screen);
+    void shutdownClickThrough();
     void updateThumbnailPresentation();
     void setThumbnailMode(bool enabled, bool animate = true);
     void restoreFromThumbnailImmediately();
@@ -353,12 +360,14 @@ class ScreenshotPinnedWindow final : public QWidget {
     ScreenshotPinnedEditController* m_editController = nullptr;
     adqt::widgets::AdButton* m_editButton = nullptr;
     adqt::widgets::AdButton* m_closeButton = nullptr;
+    std::unique_ptr<adqt::widgets::AdButton> m_clickThroughExitButton;
     adqt::widgets::AdContextMenu* m_contextMenu = nullptr;
     adqt::widgets::AdContextMenu* m_groupMenu = nullptr;
     QAction* m_ocrAction = nullptr;
     QAction* m_drawingAction = nullptr;
     QAction* m_thumbnailAction = nullptr;
     QAction* m_hideToTopAction = nullptr;
+    QAction* m_clickThroughAction = nullptr;
     QAction* m_showMainInterfaceAction = nullptr;
     QAction* m_closeAction = nullptr;
     QActionGroup* m_opacityActions = nullptr;
@@ -425,6 +434,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_automaticTextRecognition = true;
     bool m_editingEnabled = true;
     bool m_thumbnailMode = false;
+    bool m_clickThroughActive = false;
     bool m_geometryAnimating = false;
     bool m_preserveScaleForSettledGeometry = false;
     bool m_presented = false;
@@ -441,6 +451,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_windowDragActive = false;
     bool m_windowDragCursorSet = false;
     bool m_pointerInside = false;
+    QPointer<QScreen> m_clickThroughScreen;
+    QMetaObject::Connection m_clickThroughScreenGeometryConnection;
+    QMetaObject::Connection m_clickThroughScreenDpiConnection;
     std::unique_ptr<ScreenshotPinnedPointerPresence> m_pointerPresence;
     bool m_windowActive = false;
     bool m_passiveGeometryReconciliationActive = false;

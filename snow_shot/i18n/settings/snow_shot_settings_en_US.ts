@@ -921,6 +921,10 @@
             <translation>Clear thumbnail cache</translation>
         </message>
         <message>
+            <source>Click-through</source>
+            <translation>Click-through</translation>
+        </message>
+        <message>
             <source>Clipboard</source>
             <translation>Clipboard</translation>
         </message>

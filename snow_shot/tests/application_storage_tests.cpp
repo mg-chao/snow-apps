@@ -347,6 +347,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         {QStringLiteral("drawing_mode"), QJsonArray{QStringLiteral("Space")}},
         {QStringLiteral("thumbnail_mode"), QJsonArray{QStringLiteral("R")}},
         {QStringLiteral("hide_to_top"), QJsonArray{QStringLiteral("H")}},
+        {QStringLiteral("click_through"), QJsonArray{QStringLiteral("M")}},
         {QStringLiteral("close_window"), QJsonArray{QStringLiteral("Esc")}},
         {QStringLiteral("move_cursor_up"), QJsonArray{QStringLiteral("W"), QStringLiteral("Up")}},
         {QStringLiteral("move_cursor_down"),
@@ -871,7 +872,7 @@ void verifyPinToScreenShortcutSettings() {
     const storage::PinToScreenShortcutSettings shortcuts;
     const QMap<QString, QStringList> defaults = shortcuts.allShortcuts();
     require(
-        defaults.size() == 12 &&
+        defaults.size() == 13 &&
             defaults.value(QStringLiteral("copy_to_clipboard")) ==
                 QStringList{QStringLiteral("Ctrl+C")} &&
             defaults.value(QStringLiteral("copy_original_content")) ==
@@ -884,6 +885,7 @@ void verifyPinToScreenShortcutSettings() {
                 QStringList{QStringLiteral("Space")} &&
             defaults.value(QStringLiteral("thumbnail_mode")) == QStringList{QStringLiteral("R")} &&
             defaults.value(QStringLiteral("hide_to_top")) == QStringList{QStringLiteral("H")} &&
+            defaults.value(QStringLiteral("click_through")) == QStringList{QStringLiteral("M")} &&
             defaults.value(QStringLiteral("close_window")) == QStringList{QStringLiteral("Esc")} &&
             defaults.value(QStringLiteral("move_cursor_up")) ==
                 QStringList{QStringLiteral("W"), QStringLiteral("Up")} &&
@@ -891,7 +893,7 @@ void verifyPinToScreenShortcutSettings() {
                 QStringList{QStringLiteral("D"), QStringLiteral("Right")} &&
             shortcuts.shortcuts(QStringLiteral("unsupported")).isEmpty() &&
             !shortcuts.setShortcuts(QStringLiteral("unsupported"), {QStringLiteral("Q")}),
-        "pinned-window shortcut adapter must expose eleven stable actions and defaults");
+        "pinned-window shortcut adapter must expose thirteen stable actions and defaults");
     require(shortcuts.setShortcuts(QStringLiteral("drawing_mode"), {QStringLiteral("Alt+E")}) &&
                 shortcuts.shortcuts(QStringLiteral("drawing_mode")) ==
                     QStringList{QStringLiteral("Alt+E")},
@@ -910,6 +912,24 @@ void pinToScreenShortcutSettingsRoundTrip() {
     static_cast<void>(initialize(executable, temporary.path()));
     verifyPinToScreenShortcutSettings();
     storage::ApplicationStorage::instance().shutdown();
+}
+
+void missingClickThroughShortcutKeepsLegacyConflict() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "failed to create pinned-shortcut upgrade directory");
+    const QString config = QDir(temporary.path()).filePath(QStringLiteral("config.json"));
+    writeBytes(config, QByteArrayLiteral("{\n"
+                                         "  \"storage\": {\"schema_version\": 1},\n"
+                                         "  \"pin_to_screen_shortcuts\": {\n"
+                                         "    \"thumbnail_mode\": [\"M\"]\n"
+                                         "  }\n"
+                                         "}\n"));
+    storage::ConfigurationStore store(config, true, true, 60000);
+    require(store.value(QStringLiteral("pin_to_screen_shortcuts/thumbnail_mode")).toArray() ==
+                    QJsonArray{QStringLiteral("M")} &&
+                store.value(QStringLiteral("pin_to_screen_shortcuts/click_through")).toArray() ==
+                    QJsonArray{QStringLiteral("M")},
+            "adding Click-through must retain an existing legacy M binding and its new default");
 }
 
 void settingsAdaptersRoundTripAndRejectInvalidValues() {
@@ -1781,12 +1801,14 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--pin-shortcuts-only"))) {
         settingsSchemaDefaultsAndValidationAreComplete();
         pinToScreenShortcutSettingsRoundTrip();
+        missingClickThroughShortcutKeepsLegacyConflict();
         storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
     markerResolutionAndStatus();
     defaultsAndTypedRoundTrip();
     settingsSchemaDefaultsAndValidationAreComplete();
+    missingClickThroughShortcutKeepsLegacyConflict();
     invalidTrayClickSettingsUseIndependentDefaults();
     trayClickSettingsSurviveRestart();
     watermarkTemplateSettingsRepairAndSurviveRestart();

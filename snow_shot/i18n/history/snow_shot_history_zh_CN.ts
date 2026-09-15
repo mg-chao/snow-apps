@@ -192,6 +192,10 @@
             <translation>%1%</translation>
         </message>
         <message>
+            <source>Click-through</source>
+            <translation>鼠标穿透</translation>
+        </message>
+        <message>
             <source>Close</source>
             <translation>关闭</translation>
         </message>
@@ -234,6 +238,10 @@
         <message>
             <source>Enable drawing mode</source>
             <translation>启用绘制模式</translation>
+        </message>
+        <message>
+            <source>Exit click-through mode</source>
+            <translation>退出鼠标穿透模式</translation>
         </message>
         <message>
             <source>Flip horizontally</source>

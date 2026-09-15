@@ -95,8 +95,8 @@ void everySnowShotEntryRenders() {
     const auto registered = icons::registerWith(renderer);
     require(registered.ok(), "Snow Shot pack registration should succeed");
     const adqt::icons::IconPack* staticPack = icons::pack().staticPack();
-    require(staticPack != nullptr && staticPack->entryCount == 100,
-            "Snow Shot pack should contain all 100 project-owned assets");
+    require(staticPack != nullptr && staticPack->entryCount == 102,
+            "Snow Shot pack should contain all 102 project-owned assets");
 
     adqt::icons::IconRenderRequest request;
     request.logicalSize = QSize(32, 32);
@@ -147,6 +147,13 @@ void projectIconColorsAndModelsArePreserved() {
                 opacityMetadata.key.name == QStringLiteral("opacity") &&
                 containsOpaqueColor(opacity, primary),
             "opacity should render from the Snow Shot pack with its primary slot");
+
+    const auto mouseRef = icons::outlined::Mouse(adqt::icons::IconColors::primary(primary));
+    const auto mouseMetadata = adqt::icons::describeIcon(mouseRef);
+    require(mouseMetadata.key.pack == QStringLiteral("snow-shot") &&
+                mouseMetadata.key.name == QStringLiteral("mouse") &&
+                containsOpaqueColor(render(mouseRef, QSize(32, 32)).toImage(), primary),
+            "mouse should expose a tintable project-owned icon factory");
 
     const QImage screenshot = snow_shot::presentation::icons::renderTintedIconPixmap(
                                   icons::twotone::ScreenshotFeature(), QSize(32, 32), 1.0, primary)

@@ -416,6 +416,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "Mouse",
+      "name": "mouse",
+      "source": "../src/presentation/components/icons/resources/mouse.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "OcrTranslate",
       "name": "ocr-translate",
       "source": "../src/presentation/components/icons/resources/ocr-translate.svg",

@@ -193,6 +193,10 @@
             <translation>%1%</translation>
         </message>
         <message>
+            <source>Click-through</source>
+            <translation>Click-through</translation>
+        </message>
+        <message>
             <source>Close</source>
             <translation>Close</translation>
         </message>
@@ -235,6 +239,10 @@
         <message>
             <source>Enable drawing mode</source>
             <translation>Enable drawing mode</translation>
+        </message>
+        <message>
+            <source>Exit click-through mode</source>
+            <translation>Exit click-through mode</translation>
         </message>
         <message>
             <source>Flip horizontally</source>

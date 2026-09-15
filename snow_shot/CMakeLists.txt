@@ -991,6 +991,8 @@ set(PROJECT_CXX_SOURCES
     src/presentation/ocr/screenshotocrtexteditingsession.cpp
     src/presentation/pinned/screenshotpinnednativegeometrycontroller.cpp
     src/presentation/pinned/screenshotpinnednativegeometrycontroller.h
+    src/presentation/pinned/screenshotpinnedclickthroughgeometry.cpp
+    src/presentation/pinned/screenshotpinnedclickthroughgeometry.h
     src/presentation/pinned/screenshotpinnedwindownative.cpp
     src/presentation/pinned/screenshotpinnededitcontroller.cpp
     src/presentation/pinned/screenshotpinnedresizegeometry.cpp
@@ -2715,6 +2717,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/ocr/screenshotrecognitionimage.cpp
         src/presentation/selection/screenshotselectionexportuiservices.cpp
         src/presentation/pinned/screenshotpinnednativegeometrycontroller.cpp
+        src/presentation/pinned/screenshotpinnedclickthroughgeometry.cpp
         src/presentation/pinned/screenshotpinnedresizegeometry.cpp
         src/presentation/pinned/screenshotpinnedrestoregeometry.cpp
         src/presentation/pinned/screenshotpinnedhidetotopcontroller.cpp
@@ -2780,6 +2783,14 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --hide-to-top-native-only -platform windows)
     set_tests_properties(snow-shot-pinned-hide-to-top-native-tests PROPERTIES LABELS "unit;windows"
         RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-pinned-click-through-tests
+        COMMAND snow-shot-pinned-window-tests --click-through-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-click-through-tests PROPERTIES LABELS "unit"
+        RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-pinned-click-through-native-tests
+        COMMAND snow-shot-pinned-window-tests --click-through-native-only -platform windows)
+    set_tests_properties(snow-shot-pinned-click-through-native-tests PROPERTIES
+        LABELS "unit;windows" RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-pinned-shortcut-display-tests
         COMMAND snow-shot-pinned-window-tests --shortcut-display-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-shortcut-display-tests PROPERTIES LABELS "unit")

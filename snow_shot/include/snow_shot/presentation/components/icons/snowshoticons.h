@@ -68,6 +68,7 @@ namespace outlined {
 [[nodiscard]] adqt::icons::IconRef LaserPointer(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef MagicWand(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Markdown(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef Mouse(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef OcrTranslate(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Opacity(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef PinToScreen(const adqt::icons::IconColors& colors = {});
