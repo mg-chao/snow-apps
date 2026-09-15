@@ -482,10 +482,23 @@ bool writePayload(const QString& root, const StoredRecord& stored) {
             return false;
         } else {
             const QString destination = QDir(directory).filePath(fileName);
-            if (QDir::cleanPath(record.originalFilePath) != QDir::cleanPath(destination) &&
-                !QFileInfo::exists(destination) &&
-                !QFile::copy(record.originalFilePath, destination)) {
-                return false;
+            if (QDir::cleanPath(record.originalFilePath) != QDir::cleanPath(destination)) {
+                // Replacements may retain the original filename. Atomically
+                // overwrite its private copy instead of reusing stale bytes.
+                QFile source(record.originalFilePath);
+                QSaveFile target(destination);
+                if (!source.open(QIODevice::ReadOnly) || !target.open(QIODevice::WriteOnly)) {
+                    return false;
+                }
+                while (!source.atEnd()) {
+                    const QByteArray bytes = source.read(1024 * 1024);
+                    if (bytes.isEmpty() || target.write(bytes) != bytes.size()) {
+                        return false;
+                    }
+                }
+                if (!target.commit()) {
+                    return false;
+                }
             }
             retainedFiles.insert(fileName);
         }

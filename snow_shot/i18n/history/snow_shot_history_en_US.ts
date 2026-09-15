@@ -193,6 +193,10 @@
             <translation>%1%</translation>
         </message>
         <message>
+            <source>Clipboard</source>
+            <translation>Clipboard</translation>
+        </message>
+        <message>
             <source>Close</source>
             <translation>Close</translation>
         </message>
@@ -265,8 +269,20 @@
             <translation>Hide to Top</translation>
         </message>
         <message>
+            <source>Image file</source>
+            <translation>Image file</translation>
+        </message>
+        <message>
+            <source>Image files (%1)</source>
+            <translation>Image files (%1)</translation>
+        </message>
+        <message>
             <source>Image size is too large.</source>
             <translation>Image size is too large.</translation>
+        </message>
+        <message>
+            <source>Load new content</source>
+            <translation>Load new content</translation>
         </message>
         <message>
             <source>New Group</source>
@@ -319,6 +335,10 @@
         <message>
             <source>Show main interface</source>
             <translation>Show main interface</translation>
+        </message>
+        <message>
+            <source>The new content could not be loaded</source>
+            <translation>The new content could not be loaded</translation>
         </message>
         <message>
             <source>The pinned image copy could not be started</source>
