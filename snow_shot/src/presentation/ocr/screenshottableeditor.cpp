@@ -590,10 +590,8 @@ bool ScreenshotTableEditor::copySelectionToClipboard() {
     if (!range.isValid()) {
         return false;
     }
-    auto* mimeData = new QMimeData;
-    mimeData->setHtml(m_session->document.toHtml(range));
-    mimeData->setText(m_session->document.toPlainText(range));
-    QApplication::clipboard()->setMimeData(mimeData);
+    auto mimeData = m_session->document.toClipboardMimeData(range);
+    QApplication::clipboard()->setMimeData(mimeData.release());
     return true;
 }
 
@@ -605,13 +603,8 @@ void ScreenshotTableEditor::pasteSelection() {
     if (mimeData == nullptr) {
         return;
     }
-    ScreenshotTableDocument source;
-    if (mimeData->hasHtml()) {
-        source = ScreenshotTableDocument::fromHtml(mimeData->html());
-    }
-    if (source.empty() && mimeData->hasText()) {
-        source = ScreenshotTableDocument::fromPlainText(mimeData->text());
-    }
+    const ScreenshotTableDocument source =
+        ScreenshotTableDocument::fromClipboardMimeData(*mimeData);
     if (!source.empty()) {
         static_cast<void>(pasteDocument(source));
     }

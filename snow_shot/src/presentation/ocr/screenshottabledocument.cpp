@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/screenshottabledocument.h"
 
 #include <QRegularExpression>
+#include <QMimeData>
 #include <QSet>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -11,6 +12,20 @@
 #include <algorithm>
 
 namespace {
+const QString tableClipboardFormat = QStringLiteral("application/x-snow-shot-table-html");
+
+bool needsSpreadsheetTextPrefix(const QString& text) {
+    static const QRegularExpression numericText(QStringLiteral("\\A[+-]?[0-9]+(?:\\.[0-9]+)?\\z"));
+    if (!numericText.match(text.trimmed()).hasMatch()) {
+        return false;
+    }
+    // General-format spreadsheet cells may use scientific notation from 12 digits;
+    // longer values can also exceed Excel's 15-digit precision. Never parse as a double.
+    return std::count_if(text.cbegin(), text.cend(), [](QChar character) {
+               return character >= QLatin1Char('0') && character <= QLatin1Char('9');
+           }) >= 12;
+}
+
 void collectTables(QTextFrame* frame, QVector<QTextTable*>* tables) {
     if (frame == nullptr || tables == nullptr) {
         return;
@@ -338,6 +353,49 @@ bool ScreenshotTableDocument::clear(const ScreenshotTableRange& source) {
         }
     }
     return changed;
+}
+
+ScreenshotTableDocument ScreenshotTableDocument::fromClipboardMimeData(const QMimeData& source) {
+    ScreenshotTableDocument result;
+    if (source.hasFormat(tableClipboardFormat)) {
+        result = fromHtml(QString::fromUtf8(source.data(tableClipboardFormat)));
+    }
+    if (result.empty() && source.hasHtml()) {
+        result = fromHtml(source.html());
+    }
+    if (result.empty() && source.hasText()) {
+        result = fromPlainText(source.text());
+    }
+    return result;
+}
+
+std::unique_ptr<QMimeData> ScreenshotTableDocument::toClipboardMimeData() const {
+    return toClipboardMimeData({0, 0, rowCount() - 1, columnCount() - 1});
+}
+
+std::unique_ptr<QMimeData>
+ScreenshotTableDocument::toClipboardMimeData(const ScreenshotTableRange& source) const {
+    const ScreenshotTableRange range = expandedRange(source);
+    if (!range.isValid()) {
+        return {};
+    }
+    auto mimeData = std::make_unique<QMimeData>();
+    // Keep an unmodified representation for copying back into the table editor.
+    mimeData->setData(tableClipboardFormat, toHtml(range).toUtf8());
+    ScreenshotTableDocument spreadsheet = *this;
+    for (int row = range.top; row <= range.bottom; ++row) {
+        for (int column = range.left; column <= range.right; ++column) {
+            if (spreadsheet.isAnchor(row, column)) {
+                QString& text = spreadsheet.m_slots[row][column].cell.text;
+                if (needsSpreadsheetTextPrefix(text)) {
+                    text.prepend(QLatin1Char('\''));
+                }
+            }
+        }
+    }
+    mimeData->setHtml(spreadsheet.toHtml(range));
+    mimeData->setText(spreadsheet.toPlainText(range));
+    return mimeData;
 }
 
 QString ScreenshotTableDocument::toHtml() const {
