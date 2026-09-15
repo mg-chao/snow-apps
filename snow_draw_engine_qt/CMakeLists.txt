@@ -133,6 +133,7 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_BENCHMARKS)
     target_link_libraries(snow-canvas-filter-benchmark PRIVATE
         snow_draw_engine_qt_canvas
     )
+    snow_shot_import_offscreen_platform(snow-canvas-filter-benchmark)
 
     add_executable(snow-canvas-pen-filter-pipeline-benchmark
         tests/snow_canvas_pen_filter_pipeline_benchmark.cpp

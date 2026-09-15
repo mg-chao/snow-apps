@@ -358,26 +358,51 @@ int embossSamplingRadius(const Parameters& parameters) {
 
 // CPU adaptation of PixiJS Filters' emboss shader:
 // https://github.com/pixijs/filters/tree/main/src/emboss
-inline QRgb embossPixel(ConstImageView source, int x, int y, int samplingRadius, double strength) {
-    const int negativeX = qMax(0, x - samplingRadius);
-    const int negativeY = qMax(0, y - samplingRadius);
-    const int positiveX = qMin(source.width - 1, x + samplingRadius);
-    const int positiveY = qMin(source.height - 1, y + samplingRadius);
-    const auto* negativeLine = reinterpret_cast<const QRgb*>(
-        source.data + static_cast<qsizetype>(negativeY) * source.stride);
-    const auto* positiveLine = reinterpret_cast<const QRgb*>(
-        source.data + static_cast<qsizetype>(positiveY) * source.stride);
-    const auto* centerLine =
-        reinterpret_cast<const QRgb*>(source.data + static_cast<qsizetype>(y) * source.stride);
-    const QRgb negative = negativeLine[negativeX];
-    const QRgb positive = positiveLine[positiveX];
-    const int channelDelta = qRed(positive) + qGreen(positive) + qBlue(positive) - qRed(negative) -
-                             qGreen(negative) - qBlue(negative);
-    const double gray = qBound(0.0, 0.5 + strength * channelDelta / (3.0 * 255.0), 1.0);
-    const int alpha = qAlpha(centerLine[x]);
-    const int premultipliedGray = qBound(0, qRound(gray * alpha), alpha);
-    return qRgba(premultipliedGray, premultipliedGray, premultipliedGray, alpha);
-}
+// The RGB-sum difference has only 1531 possible values. Resolve strength and
+// clamping once per dispatch, preserving the shader's floating-point ordering.
+class EmbossResponse {
+  public:
+    explicit EmbossResponse(double strength) {
+        for (int delta = -765; delta <= 765; ++delta) {
+            m_gray[static_cast<std::size_t>(delta + 765)] =
+                qBound(0.0, 0.5 + strength * delta / (3.0 * 255.0), 1.0);
+        }
+    }
+
+    QRgb pixel(QRgb negative, QRgb positive, int alpha) const {
+        const int delta = qRed(positive) + qGreen(positive) + qBlue(positive) - qRed(negative) -
+                          qGreen(negative) - qBlue(negative);
+        const int gray = qRound(m_gray[static_cast<std::size_t>(delta + 765)] * alpha);
+        return qRgba(gray, gray, gray, alpha);
+    }
+
+  private:
+    std::array<double, 1531> m_gray;
+};
+
+struct EmbossRow {
+    const QRgb* negative;
+    const QRgb* positive;
+    const QRgb* center;
+    int lastX;
+    int radius;
+
+    EmbossRow(ConstImageView source, int y, int samplingRadius)
+        : lastX(source.width - 1), radius(samplingRadius) {
+        const auto line = [source](int row) {
+            return reinterpret_cast<const QRgb*>(source.data +
+                                                 static_cast<qsizetype>(row) * source.stride);
+        };
+        negative = line(qMax(0, y - radius));
+        positive = line(qMin(source.height - 1, y + radius));
+        center = line(y);
+    }
+
+    QRgb pixel(int x, const EmbossResponse& response) const {
+        return response.pixel(negative[qMax(0, x - radius)], positive[qMin(lastX, x + radius)],
+                              qAlpha(center[x]));
+    }
+};
 
 std::size_t embossRect(const QImage& source, QImage& destination, const QRect& pixels,
                        const Parameters& parameters, int constantMix, bool singleThreaded) {
@@ -389,14 +414,15 @@ std::size_t embossRect(const QImage& source, QImage& destination, const QRect& p
     const ImageView destinationView{destination.bits(), destination.width(), destination.height(),
                                     destination.bytesPerLine()};
     const int samplingRadius = embossSamplingRadius(parameters);
-    const double strength = normalizedStrength(parameters.strength) * kEmbossStrengthScale;
+    const EmbossResponse response(normalizedStrength(parameters.strength) * kEmbossStrengthScale);
     return parallelRows(pixels.height(), pixels.width(), singleThreaded, [&](int begin, int end) {
         for (int localY = begin; localY < end; ++localY) {
             const int y = pixels.top() + localY;
+            const EmbossRow row(sourceView, y, samplingRadius);
             auto* destinationLine = reinterpret_cast<QRgb*>(
                 destinationView.data + static_cast<qsizetype>(y) * destinationView.stride);
             for (int x = pixels.left(); x <= pixels.right(); ++x) {
-                const QRgb embossed = embossPixel(sourceView, x, y, samplingRadius, strength);
+                const QRgb embossed = row.pixel(x, response);
                 destinationLine[x] = constantMix >= 255 ? embossed
                                                         : blendPremultiplied(destinationLine[x],
                                                                              embossed, constantMix);
@@ -416,10 +442,11 @@ std::size_t embossMaskedRect(const QImage& source, QImage& destination, AlphaVie
     const ImageView destinationView{destination.bits(), destination.width(), destination.height(),
                                     destination.bytesPerLine()};
     const int samplingRadius = embossSamplingRadius(parameters);
-    const double strength = normalizedStrength(parameters.strength) * kEmbossStrengthScale;
+    const EmbossResponse response(normalizedStrength(parameters.strength) * kEmbossStrengthScale);
     return parallelRows(pixels.height(), pixels.width(), singleThreaded, [&](int begin, int end) {
         for (int localY = begin; localY < end; ++localY) {
             const int y = pixels.top() + localY;
+            const EmbossRow row(sourceView, y, samplingRadius);
             auto* destinationLine = reinterpret_cast<QRgb*>(
                 destinationView.data + static_cast<qsizetype>(y) * destinationView.stride);
             const auto* alphaLine =
@@ -429,7 +456,7 @@ std::size_t embossMaskedRect(const QImage& source, QImage& destination, AlphaVie
                 if (mix == 0) {
                     continue;
                 }
-                const QRgb embossed = embossPixel(sourceView, x, y, samplingRadius, strength);
+                const QRgb embossed = row.pixel(x, response);
                 destinationLine[x] =
                     mix == 255 ? embossed : blendPremultiplied(destinationLine[x], embossed, mix);
             }
@@ -1765,7 +1792,8 @@ bool applyMaskedSparse(const QImage& source, QImage& destination, const QImage& 
             const QImage& sampledSource = embossSource.isNull() ? source : embossSource;
             const ConstImageView embossSourceView = view(sampledSource);
             const int samplingRadius = embossSamplingRadius(parameters);
-            const double strength = normalizedStrength(parameters.strength) * kEmbossStrengthScale;
+            const EmbossResponse response(normalizedStrength(parameters.strength) *
+                                          kEmbossStrengthScale);
             for (const MaskSpan& span : spans) {
                 if (span.y < pixels.top() || span.y > pixels.bottom()) {
                     continue;
@@ -1780,13 +1808,13 @@ bool applyMaskedSparse(const QImage& source, QImage& destination, const QImage& 
                 const auto* alphaLine =
                     maskView.data +
                     static_cast<qsizetype>(span.y - maskOriginPixels.y()) * maskView.stride;
+                const EmbossRow row(embossSourceView, span.y, samplingRadius);
                 for (int x = begin; x < end; ++x) {
                     const int mix = alphaLine[x - maskOriginPixels.x()];
                     if (mix == 0) {
                         continue;
                     }
-                    const QRgb embossed =
-                        embossPixel(embossSourceView, x, span.y, samplingRadius, strength);
+                    const QRgb embossed = row.pixel(x, response);
                     destinationLine[x] =
                         mix == 255 ? embossed
                                    : blendPremultiplied(destinationLine[x], embossed, mix);

@@ -70,3 +70,10 @@ keeps the reduced kernel compact, cached horizontal reconstruction avoids repeat
 and AVX2 performs opaque, constant-opacity, and Alpha8-mask reconstruction. The reference corpus
 must retain per-fixture premultiplied SSIM 0.85, mean SSIM 0.90, valid premultiplied alpha, and
 deterministic pixels within each execution backend.
+
+## Emboss
+
+Emboss scenarios cover 256x256, 1080p, and 4K kernels, single-threaded execution,
+opaque and partial-alpha masks, full-frame rendering, local rendering on a 4K surface,
+and a pen append at DPR 2. See [the emboss performance report](snow_canvas_emboss_benchmark.md)
+for Release preset commands, before/after results, and exact-output validation.

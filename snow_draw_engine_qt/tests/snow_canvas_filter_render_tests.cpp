@@ -311,6 +311,45 @@ void embossMatchesPixiFormulaAndPreservesPremultipliedAlpha() {
     }
 }
 
+// Exercise every possible sample RGB-sum difference and center alpha against
+// the original shader formula, including values near rounding boundaries.
+void embossMatchesReferenceAcrossChannelDeltasAndAlpha() {
+    constexpr int deltaCount = 1531;
+    QImage source(deltaCount * 3, 256 * 3, QImage::Format_ARGB32_Premultiplied);
+    source.fill(Qt::transparent);
+    const auto pixelWithSum = [](int sum) {
+        const int red = std::min(sum, 255);
+        const int green = std::min(sum - red, 255);
+        return qRgb(red, green, sum - red - green);
+    };
+    for (int alpha = 0; alpha <= 255; ++alpha) {
+        for (int delta = -765; delta <= 765; ++delta) {
+            const int x = (delta + 765) * 3 + 1;
+            const int y = alpha * 3 + 1;
+            source.setPixel(x - 1, y - 1, pixelWithSum(std::max(0, -delta)));
+            source.setPixel(x, y, qRgba(0, 0, 0, alpha));
+            source.setPixel(x + 1, y + 1, pixelWithSum(std::max(0, delta)));
+        }
+    }
+    snow_canvas_filter_render::Parameters parameters;
+    parameters.type = 4;
+    for (double strength : {0.0, 0.001, 0.05, 0.1, 0.37, 0.5, 1.0}) {
+        parameters.strength = strength;
+        QImage output = source;
+        snow_canvas_filter_render::apply(output, parameters);
+        for (int alpha = 0; alpha <= 255; ++alpha) {
+            for (int delta = -765; delta <= 765; ++delta) {
+                const double gray =
+                    qBound(0.0, 0.5 + (strength * 10.0) * delta / (3.0 * 255.0), 1.0);
+                const int channel = qRound(gray * alpha);
+                require(output.pixel((delta + 765) * 3 + 1, alpha * 3 + 1) ==
+                            qRgba(channel, channel, channel, alpha),
+                        "emboss must match the reference for every channel delta and alpha");
+            }
+        }
+    }
+}
+
 void embossRenderingPathsShareOneImmutableSource() {
     const QImage source = noisyPatternImage(QSize(40, 30));
     const QRect coverage(7, 5, 18, 14);
@@ -2583,6 +2622,7 @@ int main(int argc, char** argv) {
     grayscalePreservesPremultipliedAlpha();
     colorEffectStrengthHasExactEndpointsAndInterpolation();
     embossMatchesPixiFormulaAndPreservesPremultipliedAlpha();
+    embossMatchesReferenceAcrossChannelDeltasAndAlpha();
     embossRenderingPathsShareOneImmutableSource();
     embossBatchingRequiresEqualNormalizedStrength();
     partialFilterRenderUsesABoundedSurface();

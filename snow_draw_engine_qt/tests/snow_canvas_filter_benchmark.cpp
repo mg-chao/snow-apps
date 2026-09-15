@@ -108,6 +108,8 @@ std::string_view effectName(std::uint32_t type) {
         return "grayscale";
     case 3:
         return "inversion";
+    case 4:
+        return "emboss";
     }
     return "unknown";
 }
@@ -764,9 +766,13 @@ std::vector<Scenario> makeScenarios() {
         addKernel("kernel_gaussian_low_" + std::string(sizeName), 1, width, height, 0.2);
         addKernel("kernel_gaussian_high_" + std::string(sizeName), 1, width, height, 1.0);
         addKernel("kernel_grayscale_" + std::string(sizeName), 2, width, height, 0.5);
+        addKernel("kernel_emboss_" + std::string(sizeName), 4, width, height, 0.5);
         addKernel("kernel_inversion_" + std::string(sizeName), 3, width, height, 0.5);
         addKernel("kernel_blend_" + std::string(sizeName), 3, width, height, 0.55, true);
     }
+    addKernel("kernel_emboss_3840x2160", 4, 3840, 2160, 0.5);
+    addKernel("kernel_emboss_one_thread_1920x1080", 4, 1920, 1080, 0.5, false,
+              snow_canvas_filter_render::ExecutionOptions{true, true});
     addKernel("kernel_grayscale_scalar_1920x1080", 2, 1920, 1080, 0.5, false,
               snow_canvas_filter_render::ExecutionOptions{true, false});
     addKernel("kernel_grayscale_avx2_1920x1080", 2, 1920, 1080, 0.5, false,
@@ -775,7 +781,7 @@ std::vector<Scenario> makeScenarios() {
               snow_canvas_filter_render::ExecutionOptions{true, false});
     addKernel("kernel_inversion_avx2_1920x1080", 3, 1920, 1080, 0.5, false,
               snow_canvas_filter_render::ExecutionOptions{false, false});
-    for (std::uint32_t type : {2u, 3u}) {
+    for (std::uint32_t type : {2u, 3u, 4u}) {
         for (int maskAlpha : {127, 255}) {
             const std::string name =
                 "kernel_masked_" + std::string(effectName(type)) +
@@ -819,7 +825,7 @@ std::vector<Scenario> makeScenarios() {
             makeRendererRunner(std::move(config)),
         });
     };
-    for (std::uint32_t type = 0; type < 4; ++type) {
+    for (std::uint32_t type = 0; type < 5; ++type) {
         scenarios.push_back(Scenario{
             "renderer_pen_append_" + std::string(effectName(type)) + "_dpr2_4k",
             Suite::Renderer,
@@ -827,7 +833,7 @@ std::vector<Scenario> makeScenarios() {
             makePenAppendRunner(type),
         });
     }
-    for (std::uint32_t type = 0; type < 4; ++type) {
+    for (std::uint32_t type = 0; type < 5; ++type) {
         RendererConfig local;
         local.scenario = "renderer_local_" + std::string(effectName(type)) + "_4k";
         local.workload = "local_256_on_4k";
