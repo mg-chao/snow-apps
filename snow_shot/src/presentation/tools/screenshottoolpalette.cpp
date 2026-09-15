@@ -667,7 +667,8 @@ initialActionToolsLayout(const ScreenshotToolPalette::Options& options) {
 ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* parent)
     : QWidget(parent), m_styleDefaults(options.styleDefaults), m_options(options),
       m_toolbarLayout(initialToolbarLayout(options)),
-      m_actionToolsLayout(initialActionToolsLayout(options)) {
+      m_actionToolsLayout(initialActionToolsLayout(options)),
+      m_actionToolsLayoutExplicit(options.actionToolsLayout.has_value()) {
     const toolbar_settings::ScreenshotToolbarSettings settings;
     m_tableQrEntryTool = tableQrToolFromSetting(settings.tableQrTool());
 
@@ -711,8 +712,13 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
                 [this](adqt::widgets::AdColorPicker* picker) {
                     emit canvasColorSamplingRequested(picker);
                 },
+                [this]() {
+                    return m_watermarkTemplateModalOwnerWindow
+                               ? m_watermarkTemplateModalOwnerWindow.data()
+                               : window();
+                },
             },
-            m_styleDefaults);
+            m_styleDefaults, options.watermarkTemplateClock);
     }
 
     {
@@ -912,6 +918,7 @@ void ScreenshotToolPalette::setActionToolsLayout(
     const snow_shot::storage::ScreenshotToolbarLayout& layout) {
     const snow_shot::storage::ScreenshotToolbarLayout normalized =
         toolbar_layout::normalizedLayout(layout, m_options.actionToolsLayoutKind);
+    m_actionToolsLayoutExplicit = true;
     if (m_actionToolsLayout == normalized) {
         return;
     }
@@ -2254,6 +2261,10 @@ void ScreenshotToolPalette::setWatermarkConfig(const SnowCanvasWatermarkConfig& 
     m_styleControls->setWatermarkConfig(config);
 }
 
+void ScreenshotToolPalette::setWatermarkTemplateModalOwnerWindow(QWidget* owner) {
+    m_watermarkTemplateModalOwnerWindow = owner;
+}
+
 void ScreenshotToolPalette::setSpotlightConfig(const SnowCanvasSpotlightConfig& config) {
     m_styleControls->styleState().spotlightConfig = config;
     m_styleControls->updateSpotlightColorControls(config.color);
@@ -3152,6 +3163,9 @@ void ScreenshotToolPalette::changeEvent(QEvent* event) {
 
 void ScreenshotToolPalette::retranslateUi() {
     retranslateScreenshotToolPalette(this);
+    if (m_styleControls != nullptr) {
+        m_styleControls->retranslateWatermarkTemplateUi();
+    }
     if (m_mainPanel != nullptr) {
         retranslateScreenshotToolPalette(m_mainPanel);
     }
@@ -3910,6 +3924,12 @@ adqt::widgets::AdButton* ScreenshotToolPalette::createActionToolGroup(const QStr
     if (nativeRecognitionGroup) {
         group.trigger = m_tableButton;
         group.popover = m_tableQrPopover;
+        if (!m_actionToolsLayoutExplicit) {
+            const QString persistedEntry = actionToolItemId(m_tableQrEntryTool);
+            if (group.itemIds.contains(persistedEntry)) {
+                group.entryItemId = persistedEntry;
+            }
+        }
         m_tableQrEntryTool =
             group.entryItemId == QStringLiteral("barcode-recognition") ? Tool::Qr : Tool::Table;
         refreshTableQrTrigger();

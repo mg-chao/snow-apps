@@ -1703,6 +1703,60 @@ void trayClickSettingsSurviveRestart() {
     applicationStorage.shutdown();
 }
 
+void watermarkTemplateSettingsRepairAndSurviveRestart() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "temporary watermark-template settings directory");
+    const QString executable = temporary.filePath(QStringLiteral("app"));
+    require(QDir().mkpath(executable), "failed to create watermark-template executable directory");
+    const QString config = temporary.filePath(QStringLiteral("config.json"));
+    writeBytes(
+        config,
+        QByteArrayLiteral(
+            R"({"storage":{"schema_version":1},"drawing":{"watermark_templates":[{"name":"  Release  ","value":"  {text} {YYYY}  ","extra":true},7,{"name":"   ","value":"x"},{"name":"Bad","value":42},{"name":"Whitespace","value":"   "},{"name":"Release","value":"  {text} {YYYY}  "},{"name":"Release","value":"{DD}"}]}})"));
+
+    auto& applicationStorage = initialize(executable, temporary.path());
+    const storage::WatermarkTemplateSettings settings;
+    const QVector<storage::WatermarkTemplate> repaired = settings.templates();
+    require(repaired ==
+                QVector<storage::WatermarkTemplate>{
+                    {QStringLiteral("Release"), QStringLiteral("  {text} {YYYY}  ")},
+                    {QStringLiteral("Release"), QStringLiteral("  {text} {YYYY}  ")},
+                    {QStringLiteral("Release"), QStringLiteral("{DD}")},
+                },
+            "watermark-template repair must preserve valid order, duplicates, and exact values");
+    require(applicationStorage.flushNow().success,
+            "repaired watermark-template settings must flush");
+
+    const QJsonArray stored = readObject(config)
+                                  .value(QStringLiteral("drawing"))
+                                  .toObject()
+                                  .value(QStringLiteral("watermark_templates"))
+                                  .toArray();
+    require(stored.size() == 3 && stored.at(0).toObject().size() == 2 &&
+                stored.at(0).toObject().value(QStringLiteral("name")).toString() ==
+                    QStringLiteral("Release") &&
+                stored.at(0).toObject().value(QStringLiteral("value")).toString() ==
+                    QStringLiteral("  {text} {YYYY}  "),
+            "watermark-template repair must persist a canonical JSON array");
+
+    require(settings.setTemplates({
+                {QStringLiteral("  Duplicate  "), QStringLiteral(" {text} ")},
+                {QStringLiteral("Duplicate"), QStringLiteral(" {text} ")},
+                {QStringLiteral("Invalid"), QStringLiteral(" \t ")},
+                {QStringLiteral("   "), QStringLiteral("{YYYY}")},
+            }) &&
+                applicationStorage.flushNow().success,
+            "watermark-template settings must save valid entries");
+    static_cast<void>(initialize(executable, temporary.path()));
+    require(settings.templates() ==
+                QVector<storage::WatermarkTemplate>{
+                    {QStringLiteral("Duplicate"), QStringLiteral(" {text} ")},
+                    {QStringLiteral("Duplicate"), QStringLiteral(" {text} ")},
+                },
+            "watermark-template settings must survive restart without deduplicating");
+    applicationStorage.shutdown();
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShotTests"));
@@ -1735,6 +1789,7 @@ int main(int argc, char** argv) {
     settingsSchemaDefaultsAndValidationAreComplete();
     invalidTrayClickSettingsUseIndependentDefaults();
     trayClickSettingsSurviveRestart();
+    watermarkTemplateSettingsRepairAndSurviveRestart();
     globalMouseCombinationSchemaIsStrictAndPersistent();
     screenshotUiSchemaRepairsStructuredValues();
     screenshotUiAdaptersRoundTripTypedValues();

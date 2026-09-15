@@ -308,6 +308,10 @@ void ScreenshotToolbarWindow::connectStyleCommands(ScreenshotToolPalette& toolPa
     connect(&toolPalette, &ScreenshotToolPalette::watermarkConfigChanged, this,
             [this](const SnowCanvasWatermarkConfig& config) {
                 m_commands.setWatermarkConfigFromToolbar(config);
+                if (ScreenshotToolPalette* palette = this->palette()) {
+                    static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
+                        palette->creationStyleDefaults()));
+                }
             });
     connect(&toolPalette, &ScreenshotToolPalette::watermarkPreviewChanged, this,
             [this](const SnowCanvasWatermarkConfig& config) {
@@ -324,6 +328,10 @@ void ScreenshotToolbarWindow::connectStyleCommands(ScreenshotToolPalette& toolPa
     connect(&toolPalette, &ScreenshotToolPalette::spotlightConfigChanged, this,
             [this](const SnowCanvasSpotlightConfig& config) {
                 m_commands.setSpotlightConfigFromToolbar(config);
+                if (ScreenshotToolPalette* palette = this->palette()) {
+                    static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
+                        palette->creationStyleDefaults()));
+                }
             });
     connect(&toolPalette, &ScreenshotToolPalette::spotlightPreviewChanged, this,
             [this](const SnowCanvasSpotlightConfig& config) {

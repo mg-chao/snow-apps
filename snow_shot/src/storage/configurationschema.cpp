@@ -377,6 +377,10 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
     {QStringLiteral("drawing/text_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/serial_number_style"), QJsonObject(),
      ConfigurationValueKind::Structured},
+    {QStringLiteral("drawing/watermark_style"), QJsonObject(), ConfigurationValueKind::Structured},
+    {QStringLiteral("drawing/spotlight_style"), QJsonObject(), ConfigurationValueKind::Structured},
+    {QStringLiteral("drawing/watermark_templates"), QJsonArray(),
+     ConfigurationValueKind::Structured},
     {QStringLiteral("drawing_shortcuts/select"),
      QJsonArray{QStringLiteral("V")},
      ConfigurationValueKind::StringList,
@@ -1128,6 +1132,38 @@ ConfigurationNormalization normalizePresets(const QJsonValue& value) {
     return {result, true, changed};
 }
 
+ConfigurationNormalization normalizeWatermarkTemplates(const QJsonValue& value) {
+    if (!value.isArray()) {
+        return {};
+    }
+    QJsonArray result;
+    bool changed = false;
+    for (const QJsonValue& item : value.toArray()) {
+        if (!item.isObject()) {
+            changed = true;
+            continue;
+        }
+        const QJsonObject object = item.toObject();
+        const QJsonValue nameValue = object.value(QStringLiteral("name"));
+        const QJsonValue templateValue = object.value(QStringLiteral("value"));
+        if (!nameValue.isString() || !templateValue.isString()) {
+            changed = true;
+            continue;
+        }
+        const QString name = nameValue.toString().trimmed();
+        const QString templateText = templateValue.toString();
+        if (name.isEmpty() || templateText.trimmed().isEmpty()) {
+            changed = true;
+            continue;
+        }
+        const QJsonObject normalized{{QStringLiteral("name"), name},
+                                     {QStringLiteral("value"), templateText}};
+        result.push_back(normalized);
+        changed = changed || normalized != object;
+    }
+    return {result, true, changed};
+}
+
 bool isRgbaColorKey(const QString& key) {
     return key == QStringLiteral("interface/theme_primary_color") ||
            key == QStringLiteral("screenshot_ui/selection_mask_color") ||
@@ -1430,6 +1466,9 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
     }
     if (key == QStringLiteral("screenshot_selection/selection_rect_presets")) {
         return normalizePresets(value);
+    }
+    if (key == QStringLiteral("drawing/watermark_templates")) {
+        return normalizeWatermarkTemplates(value);
     }
     if (key == QStringLiteral("screenshot/save_path_shortcuts")) {
         if (!value.isArray()) {

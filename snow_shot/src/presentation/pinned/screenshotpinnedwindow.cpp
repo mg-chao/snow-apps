@@ -15,6 +15,7 @@
 #include "snow_shot/platform/physicalcursor.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
+#include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotimagefileservice.h"
@@ -722,8 +723,8 @@ QColor opaquePinnedBackground(const QWidget* widget) {
 } // namespace
 
 ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
-    : QWidget(parent),
-      m_runtime(SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasStyleDefaults()}),
+    : QWidget(parent), m_runtime(SnowCanvasRuntimeConfig{
+                           snow_shot::presentation::screenshotCanvasToolStyleDefaults()}),
       m_shortcutManager(std::make_unique<snow_shot::presentation::WindowShortcutManager>()),
       m_systemMoveKeyboard(std::make_unique<native::SystemMoveKeyboard>(this)),
       m_physicalCursor(std::make_unique<snow_shot::platform::PhysicalCursor>()), m_exportArtifact(),

@@ -333,6 +333,19 @@ class ScreenshotToolbarSettings final {
     bool setLayout(ScreenshotToolbarLayoutKind kind, const ScreenshotToolbarLayout& layout) const;
 };
 
+struct WatermarkTemplate {
+    QString name;
+    QString value;
+
+    friend bool operator==(const WatermarkTemplate&, const WatermarkTemplate&) = default;
+};
+
+class WatermarkTemplateSettings final {
+  public:
+    [[nodiscard]] QVector<WatermarkTemplate> templates() const;
+    bool setTemplates(const QVector<WatermarkTemplate>& templates) const;
+};
+
 class PinToScreenSettings final {
   public:
     [[nodiscard]] QString doubleClickAction() const;

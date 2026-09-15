@@ -3299,6 +3299,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-spotlight-wheel-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --spotlight-wheel-only -platform offscreen)
     set_tests_properties(snow-shot-spotlight-wheel-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-watermark-template-width-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --watermark-template-width-only
+            -platform offscreen)
+    set_tests_properties(snow-shot-watermark-template-width-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-toolbar-popup-recovery-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --popup-recovery-only -platform offscreen)
     set_tests_properties(snow-shot-toolbar-popup-recovery-tests PROPERTIES LABELS "unit" TIMEOUT 60

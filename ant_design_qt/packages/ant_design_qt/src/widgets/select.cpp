@@ -32,6 +32,7 @@
 #include <QItemSelectionModel>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLayout>
 #include <QLineEdit>
 #include <QListView>
 #include <QMouseEvent>
@@ -3615,11 +3616,10 @@ void AdSelect::syncPopupExtraContentWidget() {
   popupExtraContent_ = nullptr;
 
   if (previous) {
+    previous->hide();
     popupLayout_->removeWidget(previous);
-    if (previous == popupFooterWidget_) {
-      previous->hide();
-      previous->setParent(nullptr);
-    } else {
+    previous->setParent(nullptr);
+    if (previous != popupFooterWidget_) {
       previous->deleteLater();
     }
   }
@@ -5643,6 +5643,11 @@ void AdSelect::openPopup() {
   }
   if (!open_) {
     emit popupOpening();
+  }
+  // Opening callbacks can refresh the selector and invalidate its containing layout. Settle that
+  // layout before reading the anchor rectangle so the popup is never shown against stale geometry.
+  if (QWidget* parent = parentWidget(); parent && parent->layout()) {
+    parent->layout()->activate();
   }
   ensurePopup();
   refreshRows();

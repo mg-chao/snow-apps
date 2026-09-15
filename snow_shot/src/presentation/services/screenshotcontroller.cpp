@@ -520,7 +520,7 @@ ScreenshotController::Impl::Impl(ScreenshotController& controller,
     : owner(controller), m_groupManager(groupManager), m_ocrRecognition(sharedOcrRecognition),
       m_tableRecognition(sharedApiClient),
       m_canvasRuntime(
-          SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasStyleDefaults()}) {
+          SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasToolStyleDefaults()}) {
     createPresentationInfrastructure();
     reloadUiPreferences();
     reloadDrawingPreferences();

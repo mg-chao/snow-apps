@@ -1,6 +1,5 @@
 #include "snow_shot/presentation/screenrecordingareawindow.h"
 
-#include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -62,7 +61,7 @@ ScreenRecordingAreaWindow::ScreenRecordingAreaWindow(QWidget* parent)
     : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
                           Qt::NoDropShadowWindowHint),
       m_canvasRuntime(std::make_unique<SnowCanvasRuntime>(
-          SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasStyleDefaults()})),
+          SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasToolStyleDefaults()})),
       m_canvas(new SnowCanvasWidget(*m_canvasRuntime, this)) {
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);

@@ -273,9 +273,31 @@ inline bool operator!=(const SnowCanvasShapeStyle& lhs, const SnowCanvasShapeSty
     return !(lhs == rhs);
 }
 
+struct SnowCanvasWatermarkTemplateApplicationTime {
+    int year = 0;
+    int month = 0;
+    int day = 0;
+    int hour = 0;
+    int minute = 0;
+    int second = 0;
+};
+
+inline bool operator==(const SnowCanvasWatermarkTemplateApplicationTime& lhs,
+                       const SnowCanvasWatermarkTemplateApplicationTime& rhs) {
+    return lhs.year == rhs.year && lhs.month == rhs.month && lhs.day == rhs.day &&
+           lhs.hour == rhs.hour && lhs.minute == rhs.minute && lhs.second == rhs.second;
+}
+
+inline bool operator!=(const SnowCanvasWatermarkTemplateApplicationTime& lhs,
+                       const SnowCanvasWatermarkTemplateApplicationTime& rhs) {
+    return !(lhs == rhs);
+}
+
 struct SnowCanvasWatermarkConfig {
     QColor color = QColor(0, 0, 0, 255);
     QString text;
+    QString templateValue;
+    std::optional<SnowCanvasWatermarkTemplateApplicationTime> templateApplicationTime;
     double fontSize = 16.0;
     QString fontFamily;
     double angle = 30.0;
@@ -298,6 +320,8 @@ inline bool operator!=(const SnowCanvasSpotlightConfig& lhs, const SnowCanvasSpo
 
 inline bool operator==(const SnowCanvasWatermarkConfig& lhs, const SnowCanvasWatermarkConfig& rhs) {
     return lhs.color == rhs.color && lhs.text == rhs.text &&
+           lhs.templateValue == rhs.templateValue &&
+           lhs.templateApplicationTime == rhs.templateApplicationTime &&
            snowCanvasExactDoubleEqual(lhs.fontSize, rhs.fontSize) &&
            lhs.fontFamily == rhs.fontFamily && snowCanvasExactDoubleEqual(lhs.angle, rhs.angle) &&
            snowCanvasExactDoubleEqual(lhs.gap, rhs.gap) &&

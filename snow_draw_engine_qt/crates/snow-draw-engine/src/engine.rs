@@ -85,7 +85,12 @@ impl Engine {
         Self::try_new(config).expect("runtime config should be valid")
     }
 
-    pub fn try_new(config: EngineConfig) -> Result<Self, ErrorCode> {
+    pub fn try_new(mut config: EngineConfig) -> Result<Self, ErrorCode> {
+        config.style_defaults.watermark.template_application_time = config
+            .style_defaults
+            .watermark
+            .template_application_time
+            .filter(|time| time.is_valid());
         validate_style_defaults(&config.style_defaults)?;
         let mut model = DocumentModel::default();
         let mut initial_config = snow_draw_engine_document::Transaction::new("runtime defaults");
@@ -115,12 +120,23 @@ impl Engine {
 
     pub fn clear_document_preserving_viewports(&mut self) -> Result<MutationResult, ErrorCode> {
         // Clearing a document must discard document/transient state without
-        // discarding the user's current creation styles. Those styles live in
-        // the editor session rather than in the immutable runtime profile.
+        // discarding the user's current creation styles. Most styles live in
+        // the editor session; watermark appearance and spotlight style are
+        // document-wide configuration, so carry those fields explicitly while
+        // dropping the watermark content that belongs to the old document.
         let mut editor = self.editor.clone();
         editor.reset_editing_state();
+        let mut watermark = self.model.watermark_config().clone();
+        watermark.text.clear();
+        watermark.template_value.clear();
+        watermark.template_application_time = None;
+        let spotlight = self.model.spotlight_config();
         let mut replacement = Self::try_new(self.config.clone())?;
         replacement.editor = editor;
+        let mut retained_styles = snow_draw_engine_document::Transaction::new("retained styles");
+        retained_styles.update_watermark(watermark);
+        retained_styles.update_spotlight(spotlight);
+        replacement.model.apply_transaction(retained_styles)?;
         self.model = replacement.model;
         self.history = HistoryStore::default();
         self.editor = replacement.editor;
@@ -435,6 +451,13 @@ mod tests {
         }
     }
 
+    fn watermark_appearance(mut config: WatermarkConfig) -> WatermarkConfig {
+        config.text.clear();
+        config.template_value.clear();
+        config.template_application_time = None;
+        config
+    }
+
     fn assert_editor_defaults(
         engine: &mut Engine,
         viewport: ViewportId,
@@ -506,7 +529,7 @@ mod tests {
     }
 
     #[test]
-    fn configured_profile_is_authoritative_for_every_tool_and_reset() {
+    fn clear_preserves_current_creation_styles_without_watermark_content() {
         let config = custom_config(17);
         let mut engine = Engine::try_new(config.clone()).unwrap();
         assert_eq!(engine.style_defaults(), &config.style_defaults);
@@ -539,8 +562,29 @@ mod tests {
         engine
             .set_viewport_filter_style(viewport, changed_filter, FILTER_STYLE_PROPERTY_ALL)
             .unwrap();
+        let mut changed_watermark = config.style_defaults.watermark.clone();
+        changed_watermark.text = "old document".to_owned();
+        changed_watermark.template_value = "{text}-{YYYY}".to_owned();
+        changed_watermark.template_application_time = Some(
+            snow_draw_engine_document::WatermarkTemplateApplicationTime {
+                year: 2026,
+                month: 9,
+                day: 15,
+                hour: 12,
+                minute: 34,
+                second: 56,
+            },
+        );
+        changed_watermark.opacity = 0.87;
         engine
-            .set_viewport_watermark_config(viewport, WatermarkConfig::default())
+            .set_viewport_watermark_config(viewport, changed_watermark.clone())
+            .unwrap();
+        let changed_spotlight = SpotlightConfig {
+            opacity: 0.29,
+            ..config.style_defaults.spotlight
+        };
+        engine
+            .set_viewport_spotlight_config(viewport, changed_spotlight)
             .unwrap();
 
         engine.clear_document_preserving_viewports().unwrap();
@@ -549,8 +593,12 @@ mod tests {
         expected_editor.pen_filter = changed_filter;
         expected_editor.rectangle_filter.strength = changed_filter.strength;
         assert_editor_defaults(&mut engine, viewport, &expected_editor);
-        assert_eq!(engine.watermark_config(), &config.style_defaults.watermark);
-        assert_eq!(engine.spotlight_config(), config.style_defaults.spotlight);
+        assert_eq!(
+            engine.watermark_config(),
+            &watermark_appearance(changed_watermark)
+        );
+        assert_eq!(engine.spotlight_config(), changed_spotlight);
+        assert_eq!(engine.history_state(), HistoryState::default());
     }
 
     #[test]
@@ -587,10 +635,28 @@ mod tests {
             Engine::try_new(config).unwrap_err(),
             ErrorCode::InvalidArgument
         );
+
+        let mut config = custom_config(28);
+        config.style_defaults.watermark.template_application_time = Some(
+            snow_draw_engine_document::WatermarkTemplateApplicationTime {
+                year: 2025,
+                month: 2,
+                day: 29,
+                hour: 12,
+                minute: 34,
+                second: 56,
+            },
+        );
+        let engine = Engine::try_new(config).unwrap();
+        assert_eq!(
+            engine.style_defaults().watermark.template_application_time,
+            None
+        );
+        assert_eq!(engine.watermark_config().template_application_time, None);
     }
 
     #[test]
-    fn restore_and_clone_keep_current_state_but_use_target_reset_profile() {
+    fn restore_and_clone_clear_with_current_creation_styles() {
         let source_config = custom_config(31);
         let target_config = custom_config(71);
         let mut source = Engine::try_new(source_config).unwrap();
@@ -631,10 +697,8 @@ mod tests {
                 ..expected_full_editor
             },
         );
-        assert_eq!(
-            full.watermark_config(),
-            &target_config.style_defaults.watermark
-        );
+        let expected_watermark = watermark_appearance(edited_watermark.clone());
+        assert_eq!(full.watermark_config(), &expected_watermark);
 
         let mut history_only =
             Engine::from_serialized_document_history_with_config(&history, target_config.clone())
@@ -649,10 +713,7 @@ mod tests {
         );
         assert_eq!(history_only.watermark_config(), &edited_watermark);
         history_only.clear_document_preserving_viewports().unwrap();
-        assert_eq!(
-            history_only.watermark_config(),
-            &target_config.style_defaults.watermark
-        );
+        assert_eq!(history_only.watermark_config(), &expected_watermark);
 
         let mut cloned = source
             .clone_document_session_with_config(target_config.clone())
@@ -675,10 +736,7 @@ mod tests {
                 ..expected_clone_editor
             },
         );
-        assert_eq!(
-            cloned.watermark_config(),
-            &target_config.style_defaults.watermark
-        );
+        assert_eq!(cloned.watermark_config(), &expected_watermark);
     }
 }
 

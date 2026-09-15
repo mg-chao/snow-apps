@@ -9,6 +9,7 @@
 #include "snow_shot/storage/settingsadapters.h"
 
 #include <QColor>
+#include <QDateTime>
 #include <QMargins>
 #include <QHash>
 #include <QPoint>
@@ -20,6 +21,7 @@
 #include <QWidget>
 
 #include <memory>
+#include <functional>
 #include <initializer_list>
 #include <optional>
 
@@ -237,6 +239,7 @@ class ScreenshotToolPalette final : public QWidget {
         std::optional<snow_shot::storage::ScreenshotToolbarLayout> actionToolsLayout;
         SnowCanvasStyleDefaults styleDefaults =
             snow_shot::presentation::screenshotCanvasStyleDefaults();
+        std::function<QDateTime()> watermarkTemplateClock;
     };
 
     explicit ScreenshotToolPalette(const Options& options, QWidget* parent = nullptr);
@@ -296,6 +299,7 @@ class ScreenshotToolPalette final : public QWidget {
     void setRectangleStyle(const SnowCanvasShapeStyle& style);
     void setStyleToolbarState(const SnowCanvasStyleToolbarState& state);
     void setWatermarkConfig(const SnowCanvasWatermarkConfig& config);
+    void setWatermarkTemplateModalOwnerWindow(QWidget* owner);
     void setSpotlightConfig(const SnowCanvasSpotlightConfig& config);
     void setSelectionOpacity(qreal opacity, bool mixed = false);
     void installWheelFilters(QObject* receiver, QWidget* scope = nullptr);
@@ -798,6 +802,7 @@ class ScreenshotToolPalette final : public QWidget {
     QVector<SpacingItem> m_styleSpacingItems;
     QVector<StyleLayoutProfile> m_styleLayoutProfiles;
     std::unique_ptr<ScreenshotToolPaletteStyleControls> m_styleControls;
+    QPointer<QWidget> m_watermarkTemplateModalOwnerWindow;
     QMargins m_baseShadowMargins;
     QMargins m_shadowMargins;
     QHash<QWidget*, quint64> m_styleMetricRevisions;
@@ -863,6 +868,7 @@ class ScreenshotToolPalette final : public QWidget {
     const Options m_options;
     std::optional<snow_shot::storage::ScreenshotToolbarLayout> m_toolbarLayout;
     snow_shot::storage::ScreenshotToolbarLayout m_actionToolsLayout;
+    bool m_actionToolsLayoutExplicit = false;
     QVector<DrawingToolGroup> m_drawingToolGroups;
     QVector<ActionToolGroup> m_actionToolGroups;
     FilterEditor m_filterEditor;

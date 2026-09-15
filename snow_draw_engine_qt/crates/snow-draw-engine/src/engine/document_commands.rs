@@ -183,6 +183,7 @@ mod delete_all_elements_tests {
     use snow_draw_engine_core::{ColorRgba8, CornerRadii};
     use snow_draw_engine_document::{
         ElementMeta, FillStyle, RectangleData, RectangleElementKind, StrokeStyle, Transaction,
+        WatermarkConfig, WatermarkTemplateApplicationTime,
     };
 
     fn rectangle() -> RectangleData {
@@ -265,6 +266,48 @@ mod delete_all_elements_tests {
             .unwrap();
 
         assert_eq!(engine.watermark_config(), &watermark);
+    }
+
+    #[test]
+    fn watermark_template_value_and_application_time_undo_and_redo_together() {
+        let (mut engine, viewport) = engine_with_elements(0);
+        let first = WatermarkConfig {
+            text: "draft".to_owned(),
+            template_value: "{text}-{YYYY}".to_owned(),
+            template_application_time: Some(WatermarkTemplateApplicationTime {
+                year: 2025,
+                month: 1,
+                day: 2,
+                hour: 3,
+                minute: 4,
+                second: 5,
+            }),
+            ..WatermarkConfig::default()
+        };
+        let second = WatermarkConfig {
+            template_value: "{text}-{YYYY-MM-DD_HH-mm-ss}".to_owned(),
+            template_application_time: Some(WatermarkTemplateApplicationTime {
+                year: 2026,
+                month: 9,
+                day: 15,
+                hour: 12,
+                minute: 34,
+                second: 56,
+            }),
+            ..first.clone()
+        };
+
+        engine
+            .set_viewport_watermark_config(viewport, first.clone())
+            .unwrap();
+        engine
+            .set_viewport_watermark_config(viewport, second.clone())
+            .unwrap();
+        assert_eq!(engine.watermark_config(), &second);
+        engine.undo().unwrap();
+        assert_eq!(engine.watermark_config(), &first);
+        engine.redo().unwrap();
+        assert_eq!(engine.watermark_config(), &second);
     }
 
     #[test]

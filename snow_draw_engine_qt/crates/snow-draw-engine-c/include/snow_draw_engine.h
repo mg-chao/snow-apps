@@ -372,6 +372,16 @@ typedef struct SnowCornerRadii {
     double bottom_left;
 } SnowCornerRadii;
 
+typedef struct SnowWatermarkTemplateApplicationTime {
+    int32_t year;
+    uint8_t month;
+    uint8_t day;
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t second;
+    uint8_t reserved0[3];
+} SnowWatermarkTemplateApplicationTime;
+
 typedef struct SnowWatermarkConfig {
     SnowColorRgba8 color;
     uint32_t text_utf8_len;
@@ -382,6 +392,11 @@ typedef struct SnowWatermarkConfig {
     double angle;
     double gap;
     double opacity;
+    uint32_t template_value_utf8_len;
+    char template_value_utf8[1024];
+    uint8_t has_template_application_time;
+    uint8_t reserved0[3];
+    SnowWatermarkTemplateApplicationTime template_application_time;
 } SnowWatermarkConfig;
 
 typedef struct SnowSpotlightConfig {
