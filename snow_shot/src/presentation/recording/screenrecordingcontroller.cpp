@@ -317,6 +317,18 @@ struct ScreenRecordingController::Impl {
         if (uiSession != nullptr) {
             physicalRegion = region;
             updateCaptureRegion();
+            // Match the screenshot capture flow, which refreshes persisted
+            // creation styles on every capture, so style edits made elsewhere
+            // since the last session are picked up on reopen.
+            const SnowCanvasStyleDefaults defaults =
+                snow_shot::presentation::screenshotCanvasToolStyleDefaults();
+            if (areaWindow->canvas() != nullptr) {
+                snow_shot::presentation::applyScreenshotCanvasToolStyles(*areaWindow->canvas(),
+                                                                         defaults);
+            }
+            if (ScreenshotToolPalette* palette = toolbarWindow->palette()) {
+                palette->setCreationStyleDefaults(defaults);
+            }
             areaWindow->setPhysicalRegion(region);
             syncUi();
             toolbarWindow->placeForPhysicalRegion(region);

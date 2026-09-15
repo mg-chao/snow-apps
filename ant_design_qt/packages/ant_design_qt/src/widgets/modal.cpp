@@ -2394,6 +2394,20 @@ void AdModal::refreshTexts() {
   updateAccessibility();
 }
 
+bool AdModal::showsHeader() const {
+  const bool hasTitle = !windowTitle_.trimmed().isEmpty();
+  const bool confirmMode = preset_ != Preset::Plain;
+  const bool showPanelCloseButton =
+      closeButtonVisible_ && !(usesWindowSurface() && preset_ == Preset::Confirm);
+  return confirmMode ? showPanelCloseButton : (hasTitle || showPanelCloseButton);
+}
+
+bool AdModal::showsFooter() const {
+  const bool showButtonFooter = standardButtons_.testFlag(StandardButton::Ok) ||
+                                standardButtons_.testFlag(StandardButton::Cancel);
+  return footerVisible_ && (footerWidget_ || showButtonFooter);
+}
+
 void AdModal::refreshVisibility() {
   const bool hasTitle = !windowTitle_.trimmed().isEmpty();
   const bool confirmMode = preset_ != Preset::Plain;
@@ -2405,8 +2419,7 @@ void AdModal::refreshVisibility() {
   const bool showButtonFooter = showAcceptButton || showRejectButton;
 
   if (header_) {
-    const bool showHeader = confirmMode ? showPanelCloseButton : (hasTitle || showPanelCloseButton);
-    header_->setVisible(showHeader);
+    header_->setVisible(showsHeader());
   }
 
   if (titleLabel_) {
@@ -2447,7 +2460,7 @@ void AdModal::refreshVisibility() {
   }
 
   if (footer_) {
-    footer_->setVisible(footerVisible_ && (footerWidget_ || showButtonFooter));
+    footer_->setVisible(showsFooter());
   }
 
   if (footerButtonsHost_) {
@@ -2468,6 +2481,7 @@ void AdModal::refreshVisibility() {
 
   refreshTitleIcon();
   updateAccessibility();
+  applySectionInsets(resolveVisualStyle());
   refreshLayout();
 }
 
@@ -2673,6 +2687,37 @@ bool AdModal::focusNextPrevChildInModal(bool next) {
   return true;
 }
 
+void AdModal::applySectionInsets(const VisualStyle& style) {
+  if (panelLayout_) {
+    // The panel itself has no inset: every section carries its own padding so
+    // the content area can be re-padded without moving header or footer.
+    panelLayout_->setContentsMargins(0, 0, 0, 0);
+  }
+  if (headerLayout_) {
+    headerLayout_->setContentsMargins(
+        style.contentPaddingHorizontal + style.headerPaddingHorizontal,
+        style.contentPaddingVertical + style.headerPaddingVertical,
+        style.contentPaddingHorizontal + style.headerPaddingHorizontal,
+        style.headerPaddingVertical + style.headerMarginBottom);
+  }
+  if (bodyLayout_) {
+    const int outerTop = showsHeader() ? 0 : style.contentPaddingVertical;
+    const int outerBottom = showsFooter() ? 0 : style.contentPaddingVertical;
+    bodyLayout_->setContentsMargins(
+        style.contentAreaPaddingHorizontal + style.bodyPaddingHorizontal,
+        style.contentAreaPaddingVertical + style.bodyPaddingVertical + outerTop,
+        style.contentAreaPaddingHorizontal + style.bodyPaddingHorizontal,
+        style.contentAreaPaddingVertical + style.bodyPaddingVertical + outerBottom);
+  }
+  if (footerLayout_) {
+    footerLayout_->setContentsMargins(
+        style.contentPaddingHorizontal + style.footerPaddingHorizontal,
+        style.footerPaddingVertical + style.footerMarginTop,
+        style.contentPaddingHorizontal + style.footerPaddingHorizontal,
+        style.contentPaddingVertical + style.footerPaddingVertical);
+  }
+}
+
 void AdModal::applyVisualStyle() {
   if (!overlay_) {
     return;
@@ -2727,37 +2772,12 @@ void AdModal::applyVisualStyle() {
     }
   }
 
-  if (panelLayout_) {
-    // The panel itself has no inset: every section carries its own padding so
-    // the content area can be re-padded without moving header or footer.
-    panelLayout_->setContentsMargins(0, 0, 0, 0);
-  }
-  if (headerLayout_) {
-    headerLayout_->setContentsMargins(
-        style.contentPaddingHorizontal + style.headerPaddingHorizontal,
-        style.contentPaddingVertical + style.headerPaddingVertical,
-        style.contentPaddingHorizontal + style.headerPaddingHorizontal,
-        style.headerPaddingVertical + style.headerMarginBottom);
-  }
-  if (bodyLayout_) {
-    bodyLayout_->setContentsMargins(
-        style.contentAreaPaddingHorizontal + style.bodyPaddingHorizontal,
-        style.contentAreaPaddingVertical + style.bodyPaddingVertical,
-        style.contentAreaPaddingHorizontal + style.bodyPaddingHorizontal,
-        style.contentAreaPaddingVertical + style.bodyPaddingVertical);
-  }
+  applySectionInsets(style);
   if (confirmBodyLayout_) {
     confirmBodyLayout_->setSpacing(style.confirmIconGap);
   }
   if (confirmParagraphLayout_) {
     confirmParagraphLayout_->setSpacing(style.confirmParagraphGap);
-  }
-  if (footerLayout_) {
-    footerLayout_->setContentsMargins(
-        style.contentPaddingHorizontal + style.footerPaddingHorizontal,
-        style.footerPaddingVertical + style.footerMarginTop,
-        style.contentPaddingHorizontal + style.footerPaddingHorizontal,
-        style.contentPaddingVertical + style.footerPaddingVertical);
   }
   if (footerButtonsLayout_) {
     footerButtonsLayout_->setSpacing(style.footerButtonGap);
@@ -2866,8 +2886,10 @@ AdModal::VisualStyle AdModal::resolveVisualStyle() const {
   style.borderWidth = 0;
   style.contentPaddingHorizontal = wireframe ? 0 : std::max(0, qRound(map.sizeLG));
   style.contentPaddingVertical = wireframe ? 0 : std::max(0, qRound(map.sizeMD));
-  // The vertical theme inset belongs to the header top and footer bottom; the
-  // content area sits flush between the sections unless a token pads it.
+  // The vertical theme inset belongs to the current edge sections: header top
+  // and footer bottom when they are shown. The content area sits flush between
+  // them unless a token pads it. Hidden edge sections transfer that inset to
+  // the body so the panel never loses its outer padding.
   style.contentAreaPaddingHorizontal = style.contentPaddingHorizontal;
   style.contentAreaPaddingVertical = 0;
   style.headerPaddingHorizontal = wireframe ? std::max(0, qRound(map.sizeLG)) : 0;

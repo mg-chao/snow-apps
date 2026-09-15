@@ -1,16 +1,20 @@
 #include "snow_shot/presentation/screenrecordingareawindow.h"
 
 #include "snow_shot/presentation/screenshotgeometry.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "../src/presentation/recording/screenrecordinggeometry.h"
 
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDir>
 #include <QImage>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScreen>
+#include <QTemporaryDir>
 #include <QWheelEvent>
 #include <QTimer>
 #include <QDebug>
@@ -337,6 +341,69 @@ void drawingAcrossFrameEdgesRetainsDrawingOwnership() {
         "drawing through frame hit regions must complete the annotation without editing geometry");
 }
 
+void quickSelectionFollowsTheDrawingSetting() {
+    const snow_shot::storage::DrawingSettings drawingSettings;
+    const QStringList originalDisabledTools = drawingSettings.quickSelectionDisabledTools();
+    require(drawingSettings.setQuickSelectionDisabledTools({QStringLiteral("free-draw")}),
+            "disabling free-draw quick selection should persist");
+
+    // The window is constructed after the setting changed, so the very first
+    // click already exercises the initial application of the policy.
+    ScreenRecordingAreaWindow area;
+    area.setPhysicalRegion(testPhysicalRegion());
+    area.show();
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
+    QCoreApplication::processEvents();
+    SnowCanvasWidget* canvas = area.canvas();
+    require(canvas != nullptr, "recording area should own a canvas");
+
+    require(canvas->setCanvasTool(SnowCanvasTool::FreeDraw),
+            "recording canvas should accept the free-draw tool");
+    sendMouseEvent(*canvas, QEvent::MouseButtonPress, QPointF(20, 20), Qt::LeftButton,
+                   Qt::LeftButton);
+    sendMouseEvent(*canvas, QEvent::MouseMove, QPointF(70, 20), Qt::NoButton, Qt::LeftButton);
+    sendMouseEvent(*canvas, QEvent::MouseMove, QPointF(120, 20), Qt::NoButton, Qt::LeftButton);
+    sendMouseEvent(*canvas, QEvent::MouseButtonRelease, QPointF(120, 20), Qt::LeftButton,
+                   Qt::NoButton);
+    QCoreApplication::processEvents();
+    require(canvas->canvasHistoryState().canUndo, "the free-draw stroke should be drawn");
+
+    const auto clickStroke = [&]() {
+        require(canvas->resetEditingState() && canvas->setCanvasTool(SnowCanvasTool::FreeDraw),
+                "the fixture should restart free-draw creation without a selection");
+        require(canvas->canvasStyleToolbarState().source ==
+                    SnowCanvasStyleToolbarSource::DefaultFreeDraw,
+                "the fixture should start from the creation style state");
+        sendMouseEvent(*canvas, QEvent::MouseButtonPress, QPointF(70, 20), Qt::LeftButton,
+                       Qt::LeftButton);
+        sendMouseEvent(*canvas, QEvent::MouseButtonRelease, QPointF(70, 20), Qt::LeftButton,
+                       Qt::NoButton);
+        QCoreApplication::processEvents();
+    };
+
+    clickStroke();
+    require(canvas->canvasStyleToolbarState().source ==
+                SnowCanvasStyleToolbarSource::DefaultFreeDraw,
+            "the recording canvas must not select free-draw elements once disabled");
+
+    require(drawingSettings.setQuickSelectionDisabledTools({}),
+            "enabling free-draw quick selection should persist");
+    clickStroke();
+    require(canvas->canvasStyleToolbarState().source ==
+                SnowCanvasStyleToolbarSource::SelectedFreeDraw,
+            "quick selection should select the stroke while the setting keeps it enabled");
+
+    require(drawingSettings.setQuickSelectionDisabledTools({QStringLiteral("free-draw")}),
+            "re-disabling free-draw quick selection should persist");
+    clickStroke();
+    require(canvas->canvasStyleToolbarState().source ==
+                SnowCanvasStyleToolbarSource::DefaultFreeDraw,
+            "the recording canvas must follow live quick-selection changes");
+
+    require(drawingSettings.setQuickSelectionDisabledTools(originalDisabledTools),
+            "restoring the quick-selection setting should persist");
+}
+
 void ordinaryWindowGeometryPreservesAnnotations() {
     ScreenRecordingAreaWindow area;
     area.setPhysicalRegion(testPhysicalRegion());
@@ -520,9 +587,20 @@ void nativeWindowsGeometryAndInteraction() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    QTemporaryDir storageDirectory;
+    require(storageDirectory.isValid(), "failed to create recording area test storage directory");
+    const QString executableDirectory =
+        QDir(storageDirectory.path()).filePath(QStringLiteral("bin"));
+    require(QDir().mkpath(executableDirectory),
+            "failed to create recording area test executable directory");
+    require(snow_shot::storage::ApplicationStorage::instance()
+                .initialize({executableDirectory, storageDirectory.path(), 60000})
+                .success,
+            "failed to initialize isolated recording area test storage");
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (application.arguments().contains(QStringLiteral("--native-geometry-only"))) {
         nativeWindowsGeometryAndInteraction();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
 #endif
@@ -531,9 +609,11 @@ int main(int argc, char** argv) {
     drawingSurfaceFollowsEffectiveInputMode();
     wheelAndEscapeRespectDrawingOwnership();
     annotationsPersistAcrossStatesAndClearOnlyForANewRegion();
+    quickSelectionFollowsTheDrawingSetting();
     geometryEditingIsOneCapability();
     interactionBoundariesAreIdempotentAndCancelOnStateChanges();
     ordinaryWindowGeometryPreservesAnnotations();
     drawingAcrossFrameEdgesRetainsDrawingOwnership();
+    snow_shot::storage::ApplicationStorage::instance().shutdown();
     return 0;
 }

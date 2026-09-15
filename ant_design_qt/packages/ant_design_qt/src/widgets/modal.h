@@ -445,6 +445,9 @@ class AdModal final : public QObject {
   void refreshVisibility();
   void refreshTitleIcon();
   void applyVisualStyle();
+  void applySectionInsets(const VisualStyle& style);
+  [[nodiscard]] bool showsHeader() const;
+  [[nodiscard]] bool showsFooter() const;
   void updateAccessibility();
   void saveFocusBeforeOpen();
   void restoreFocusAfterClose();

@@ -347,7 +347,7 @@ mod tests {
     }
 
     #[test]
-    fn auto_filter_gesture_does_not_apply_new_detection_and_eraser_preserves_fill() {
+    fn auto_filter_gesture_does_not_apply_new_detection_and_eraser_removes_fill() {
         let (mut e, mut m) = setup();
         let reset = m.auto_filter_record_transaction(None).unwrap();
         m.apply_transaction(reset).unwrap();
@@ -363,14 +363,21 @@ mod tests {
         );
         let fill = m.auto_filter_fill_transaction(&[2], CanvasFilterType::GaussianBlur, 0.3, false);
         m.apply_transaction(fill).unwrap();
+        let fill_id = m.auto_filter_fill(2).unwrap().0;
         e.set_active_tool(ActiveTool::Eraser).unwrap();
         e.process_input(&m, pointer(PointerEventType::Down, 30.0, 30.0))
             .unwrap();
+        assert!(
+            e.presentation_state(&m)
+                .preview_elements
+                .iter()
+                .any(|preview| preview.id == fill_id)
+        );
         let up = e
             .process_input(&m, pointer(PointerEventType::Up, 30.0, 30.0))
             .unwrap();
         commit(&mut m, up);
-        assert!(m.auto_filter_fill(2).is_some());
+        assert!(m.auto_filter_fill(2).is_none());
         assert!(m.auto_filter_regions().is_some());
     }
     #[test]
