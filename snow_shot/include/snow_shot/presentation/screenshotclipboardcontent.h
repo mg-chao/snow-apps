@@ -102,6 +102,7 @@ class ScreenshotClipboardContentReader final {
   public:
     using CancellationCheck = std::function<bool()>;
 
+    [[nodiscard]] static QStringList supportedFileExtensions();
     [[nodiscard]] static QStringList localFilePaths(const QMimeData* mimeData);
     // File metadata is independent of GUI state and may be captured on a worker.
     [[nodiscard]] static QList<ScreenshotClipboardLocalImage>

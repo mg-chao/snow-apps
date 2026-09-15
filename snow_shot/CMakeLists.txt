@@ -2984,6 +2984,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-pinned-async-presentation-tests
         COMMAND snow-shot-pinned-window-tests --async-presentation-only
     )
+    add_test(NAME snow-shot-pinned-content-replacement-tests
+        COMMAND snow-shot-pinned-window-tests --content-replacement-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-content-replacement-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "unit" TIMEOUT 90)
     add_test(
         NAME snow-shot-pinned-window-pool-tests
         COMMAND snow-shot-pinned-window-tests --pooling-only
