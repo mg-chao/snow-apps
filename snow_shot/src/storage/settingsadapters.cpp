@@ -1313,6 +1313,31 @@ bool ScreenshotToolbarSettings::setLayout(ScreenshotToolbarLayoutKind kind,
                     {QStringLiteral("hidden"), stringArray(layout.hidden)}});
 }
 
+QVector<WatermarkTemplate> WatermarkTemplateSettings::templates() const {
+    QVector<WatermarkTemplate> result;
+    const QJsonArray array = cache().value(QStringLiteral("drawing/watermark_templates")).toArray();
+    result.reserve(array.size());
+    for (const QJsonValue& item : array) {
+        const QJsonObject object = item.toObject();
+        result.push_back({object.value(QStringLiteral("name")).toString(),
+                          object.value(QStringLiteral("value")).toString()});
+    }
+    return result;
+}
+
+bool WatermarkTemplateSettings::setTemplates(const QVector<WatermarkTemplate>& templates) const {
+    QJsonArray array;
+    for (const WatermarkTemplate& watermarkTemplate : templates) {
+        const QString name = watermarkTemplate.name.trimmed();
+        if (name.isEmpty() || watermarkTemplate.value.trimmed().isEmpty()) {
+            continue;
+        }
+        array.push_back(QJsonObject{{QStringLiteral("name"), name},
+                                    {QStringLiteral("value"), watermarkTemplate.value}});
+    }
+    return cache().setValue(QStringLiteral("drawing/watermark_templates"), array);
+}
+
 QString PinToScreenSettings::doubleClickAction() const {
     return cache().value(QStringLiteral("pin_to_screen/double_click_action")).toString();
 }

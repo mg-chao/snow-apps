@@ -16,15 +16,69 @@ use crate::{
 pub use snow_draw_engine_core::arrow::StrokeStyle;
 use snow_draw_engine_core::{ColorRgba8, CornerRadii, DrawRect, ErrorCode, Point};
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WatermarkTemplateApplicationTime {
+    pub year: i32,
+    pub month: u8,
+    pub day: u8,
+    pub hour: u8,
+    pub minute: u8,
+    pub second: u8,
+}
+
+impl WatermarkTemplateApplicationTime {
+    pub fn is_valid(self) -> bool {
+        if self.year < 1
+            || !(1..=12).contains(&self.month)
+            || self.hour > 23
+            || self.minute > 59
+            || self.second > 59
+        {
+            return false;
+        }
+        let days_in_month = match self.month {
+            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+            4 | 6 | 9 | 11 => 30,
+            2 if is_leap_year(self.year) => 29,
+            2 => 28,
+            _ => return false,
+        };
+        (1..=days_in_month).contains(&self.day)
+    }
+}
+
+fn is_leap_year(year: i32) -> bool {
+    year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WatermarkConfig {
     pub color: ColorRgba8,
     pub text: String,
+    #[serde(default)]
+    pub template_value: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_watermark_template_application_time"
+    )]
+    pub template_application_time: Option<WatermarkTemplateApplicationTime>,
     pub font_size: f64,
     pub font_family: String,
     pub angle: f64,
     pub gap: f64,
     pub opacity: f64,
+}
+
+fn deserialize_watermark_template_application_time<'de, D>(
+    deserializer: D,
+) -> Result<Option<WatermarkTemplateApplicationTime>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(
+        Option::<WatermarkTemplateApplicationTime>::deserialize(deserializer)?
+            .filter(|time| time.is_valid()),
+    )
 }
 
 impl Default for WatermarkConfig {
@@ -37,6 +91,8 @@ impl Default for WatermarkConfig {
                 a: 0xff,
             },
             text: String::new(),
+            template_value: String::new(),
+            template_application_time: None,
             font_size: 16.0,
             font_family: String::new(),
             angle: 30.0,
@@ -49,6 +105,9 @@ impl Default for WatermarkConfig {
 impl WatermarkConfig {
     pub fn normalized(mut self) -> Self {
         self.text = self.text.trim().to_owned();
+        self.template_application_time = self
+            .template_application_time
+            .filter(|time| time.is_valid());
         self.font_family = self.font_family.trim().to_owned();
         self.gap = if self.gap.is_finite() {
             self.gap.clamp(10.0, 200.0)
@@ -68,8 +127,98 @@ impl WatermarkConfig {
     }
 
     pub fn is_visible(&self) -> bool {
-        !self.text.trim().is_empty() && self.effective_alpha() >= 0.004
+        !self.resolved_text().trim().is_empty() && self.effective_alpha() >= 0.004
     }
+
+    pub fn resolved_text(&self) -> String {
+        resolve_watermark_template(
+            &self.template_value,
+            &self.text,
+            self.template_application_time
+                .filter(|time| time.is_valid()),
+        )
+    }
+}
+
+pub fn resolve_watermark_template(
+    template: &str,
+    text: &str,
+    application_time: Option<WatermarkTemplateApplicationTime>,
+) -> String {
+    if template.is_empty() {
+        return text.to_owned();
+    }
+
+    let mut resolved = String::with_capacity(template.len().saturating_add(text.len()));
+    let mut cursor = 0;
+    while let Some(relative_open) = template[cursor..].find('{') {
+        let open = cursor + relative_open;
+        resolved.push_str(&template[cursor..open]);
+
+        let mut depth = 0_u32;
+        let mut close = None;
+        let mut nested = false;
+        for (relative, ch) in template[open..].char_indices() {
+            match ch {
+                '{' => {
+                    depth += 1;
+                    nested |= depth > 1;
+                }
+                '}' => {
+                    if depth == 0 {
+                        continue;
+                    }
+                    depth -= 1;
+                    if depth == 0 {
+                        close = Some(open + relative);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let Some(close) = close else {
+            resolved.push_str(&template[open..]);
+            return resolved;
+        };
+        let placeholder = &template[open..=close];
+        if nested {
+            resolved.push_str(placeholder);
+        } else {
+            let content = &template[open + 1..close];
+            if content == "text" {
+                resolved.push_str(text);
+            } else if contains_timestamp_token(content) {
+                if let Some(time) = application_time {
+                    resolved.push_str(&expand_timestamp_tokens(content, time));
+                } else {
+                    resolved.push_str(placeholder);
+                }
+            } else {
+                resolved.push_str(placeholder);
+            }
+        }
+        cursor = close + 1;
+    }
+    resolved.push_str(&template[cursor..]);
+    resolved
+}
+
+fn contains_timestamp_token(value: &str) -> bool {
+    ["YYYY", "MM", "DD", "HH", "mm", "ss"]
+        .iter()
+        .any(|token| value.contains(token))
+}
+
+fn expand_timestamp_tokens(value: &str, time: WatermarkTemplateApplicationTime) -> String {
+    value
+        .replace("YYYY", &format!("{:04}", time.year))
+        .replace("MM", &format!("{:02}", time.month))
+        .replace("DD", &format!("{:02}", time.day))
+        .replace("HH", &format!("{:02}", time.hour))
+        .replace("mm", &format!("{:02}", time.minute))
+        .replace("ss", &format!("{:02}", time.second))
 }
 
 pub fn validate_watermark_config(config: &WatermarkConfig) -> Result<(), ErrorCode> {
@@ -78,6 +227,9 @@ pub fn validate_watermark_config(config: &WatermarkConfig) -> Result<(), ErrorCo
         && config.angle.is_finite()
         && config.gap.is_finite()
         && config.opacity.is_finite()
+        && config
+            .template_application_time
+            .is_none_or(WatermarkTemplateApplicationTime::is_valid)
     {
         Ok(())
     } else {
@@ -1795,5 +1947,110 @@ mod tests {
         assert_eq!(document.watermark_config(), &config);
         document.apply(&result.inverse).unwrap();
         assert_eq!(document.watermark_config(), &default);
+    }
+
+    #[test]
+    fn watermark_template_resolution_is_best_effort_and_time_is_fixed() {
+        let time = WatermarkTemplateApplicationTime {
+            year: 2026,
+            month: 9,
+            day: 5,
+            hour: 7,
+            minute: 8,
+            second: 9,
+        };
+        assert!(time.is_valid());
+        assert!(
+            !WatermarkTemplateApplicationTime {
+                day: 31,
+                month: 2,
+                ..time
+            }
+            .is_valid()
+        );
+        assert!(
+            WatermarkTemplateApplicationTime {
+                year: 2024,
+                day: 29,
+                month: 2,
+                ..time
+            }
+            .is_valid()
+        );
+
+        assert_eq!(resolve_watermark_template("", "draft", Some(time)), "draft");
+        assert_eq!(
+            resolve_watermark_template("{text} Design {YYYY-MM-DD_HH-mm-ss}", "test", Some(time)),
+            "test Design 2026-09-05_07-08-09"
+        );
+        assert_eq!(
+            resolve_watermark_template(
+                "{YYYY}/{MM}/{DD} {HH}:{mm}:{ss} {prefix-YYYY} {YYYYYYYY}",
+                "",
+                Some(time)
+            ),
+            "2026/09/05 07:08:09 prefix-2026 20262026"
+        );
+        assert_eq!(
+            resolve_watermark_template("{unknown} {Text} {} tail", "value", Some(time)),
+            "{unknown} {Text} {} tail"
+        );
+        assert_eq!(
+            resolve_watermark_template("before {YYYY after", "", Some(time)),
+            "before {YYYY after"
+        );
+        assert_eq!(
+            resolve_watermark_template("nested {outer-{YYYY}}", "", Some(time)),
+            "nested {outer-{YYYY}}"
+        );
+        assert_eq!(
+            resolve_watermark_template("{text} {YYYY}", "changed", None),
+            "changed {YYYY}"
+        );
+
+        let mut config = WatermarkConfig {
+            text: "first".to_owned(),
+            template_value: "{text}-{YYYY}".to_owned(),
+            template_application_time: Some(time),
+            ..WatermarkConfig::default()
+        };
+        assert_eq!(config.resolved_text(), "first-2026");
+        config.text = "second".to_owned();
+        assert_eq!(config.resolved_text(), "second-2026");
+        assert_eq!(config.template_application_time, Some(time));
+    }
+
+    #[test]
+    fn watermark_template_controls_visibility_and_preserves_value_whitespace() {
+        let time = WatermarkTemplateApplicationTime {
+            year: 2026,
+            month: 1,
+            day: 2,
+            hour: 3,
+            minute: 4,
+            second: 5,
+        };
+        let timestamp_only = WatermarkConfig {
+            template_value: "{YYYY}".to_owned(),
+            template_application_time: Some(time),
+            ..WatermarkConfig::default()
+        };
+        assert!(timestamp_only.is_visible());
+
+        let text_only = WatermarkConfig {
+            template_value: "{text}".to_owned(),
+            template_application_time: Some(time),
+            ..WatermarkConfig::default()
+        };
+        assert!(!text_only.is_visible());
+
+        let normalized = WatermarkConfig {
+            template_value: "  {text}  ".to_owned(),
+            template_application_time: Some(WatermarkTemplateApplicationTime { month: 13, ..time }),
+            ..WatermarkConfig::default()
+        }
+        .normalized();
+        assert_eq!(normalized.template_value, "  {text}  ");
+        assert_eq!(normalized.template_application_time, None);
     }
 }

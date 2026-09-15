@@ -124,6 +124,18 @@ pub struct SnowShapeStyle {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SnowWatermarkTemplateApplicationTime {
+    pub year: i32,
+    pub month: u8,
+    pub day: u8,
+    pub hour: u8,
+    pub minute: u8,
+    pub second: u8,
+    pub reserved0: [u8; 3],
+}
+
+#[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SnowWatermarkConfig {
     pub color: SnowColorRgba8,
@@ -135,6 +147,11 @@ pub struct SnowWatermarkConfig {
     pub angle: f64,
     pub gap: f64,
     pub opacity: f64,
+    pub template_value_utf8_len: u32,
+    pub template_value_utf8: [std::ffi::c_char; SNOW_WATERMARK_TEMPLATE_UTF8_CAPACITY],
+    pub has_template_application_time: u8,
+    pub reserved0: [u8; 3],
+    pub template_application_time: SnowWatermarkTemplateApplicationTime,
 }
 
 #[repr(C)]
@@ -156,6 +173,11 @@ impl Default for SnowWatermarkConfig {
             angle: 30.0,
             gap: 56.0,
             opacity: 0.16,
+            template_value_utf8_len: 0,
+            template_value_utf8: [0; SNOW_WATERMARK_TEMPLATE_UTF8_CAPACITY],
+            has_template_application_time: 0,
+            reserved0: [0; 3],
+            template_application_time: SnowWatermarkTemplateApplicationTime::default(),
         }
     }
 }

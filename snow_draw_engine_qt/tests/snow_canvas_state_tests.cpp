@@ -177,6 +177,9 @@ void publicCanvasDtosUseExactCompleteEquality() {
     } while (false)
     REQUIRE_WATERMARK_CHANGE(color, QColor(Qt::white));
     REQUIRE_WATERMARK_CHANGE(text, QStringLiteral("watermark"));
+    REQUIRE_WATERMARK_CHANGE(templateValue, QStringLiteral("{text} {YYYY}"));
+    REQUIRE_WATERMARK_CHANGE(templateApplicationTime,
+                             (SnowCanvasWatermarkTemplateApplicationTime{2026, 9, 15, 12, 34, 56}));
     REQUIRE_WATERMARK_CHANGE(fontSize, 17.0);
     REQUIRE_WATERMARK_CHANGE(fontFamily, QStringLiteral("Exact Watermark Font"));
     REQUIRE_WATERMARK_CHANGE(angle, 31.0);
@@ -268,6 +271,9 @@ SnowCanvasStyleDefaults customStyleDefaults() {
     defaults.serialNumber.fontFamily = QStringLiteral("Qt Serial Font");
     defaults.watermark.color = ink;
     defaults.watermark.text = QStringLiteral("Qt watermark");
+    defaults.watermark.templateValue = QStringLiteral("{text} {YYYY-MM-DD_HH-mm-ss}");
+    defaults.watermark.templateApplicationTime =
+        SnowCanvasWatermarkTemplateApplicationTime{2026, 9, 15, 12, 34, 56};
     defaults.watermark.fontFamily = QStringLiteral("Qt Watermark Font");
     defaults.watermark.opacity = 0.24;
     defaults.spotlight.color = ink;
@@ -305,6 +311,11 @@ void configuredRuntimeProfileFollowsRestoreAndResetLifecycle() {
     require(runtime.isValid(), "a complete configured runtime should be valid");
 
     SnowViewport viewport = createViewport(runtime);
+    SnowWatermarkConfig engineWatermark{};
+    require(snow_viewport_get_watermark_config(snow_canvas_runtime::Access::handle(runtime),
+                                               viewport, &engineWatermark) == SNOW_OK &&
+                snow_canvas_types::toCanvasWatermarkConfig(engineWatermark) == defaults.watermark,
+            "runtime watermark defaults must preserve the template snapshot and time");
     require(toolbarState(runtime, viewport, SNOW_ACTIVE_TOOL_SHAPE).shape_style.stroke_width ==
                 defaults.rectangle.strokeWidth,
             "rectangle should expose its configured creation style");
@@ -405,6 +416,44 @@ void configuredRuntimeProfileFollowsRestoreAndResetLifecycle() {
             "an invalid configured enum should be rejected before C ABI conversion");
 }
 
+void watermarkConfigurationConversionsPreserveSnapshotsAndUtf8Boundaries() {
+    SnowCanvasWatermarkConfig config;
+    config.color = QColor(12, 34, 56, 78);
+    config.text = QStringLiteral("watermark");
+    config.templateValue = QStringLiteral("  {text} @ {YYYY-MM-DD_HH-mm-ss}  ");
+    config.templateApplicationTime =
+        SnowCanvasWatermarkTemplateApplicationTime{2026, 9, 15, 12, 34, 56};
+    config.fontSize = 21.0;
+    config.fontFamily = QStringLiteral("Template Font");
+    config.angle = -17.0;
+    config.gap = 83.0;
+    config.opacity = 0.42;
+
+    const SnowWatermarkConfig engine = snow_canvas_types::toEngineWatermarkConfig(config);
+    require(snow_canvas_types::toCanvasWatermarkConfig(engine) == config,
+            "Qt/C watermark conversion must preserve the complete template snapshot");
+
+    const QString emoji = QString::fromUcs4(U"\U0001F600");
+    config.templateValue = emoji.repeated(300);
+    const SnowWatermarkConfig truncated = snow_canvas_types::toEngineWatermarkConfig(config);
+    const SnowCanvasWatermarkConfig roundTrip =
+        snow_canvas_types::toCanvasWatermarkConfig(truncated);
+    require(truncated.template_value_utf8_len == 1024 &&
+                roundTrip.templateValue == emoji.repeated(256) &&
+                !roundTrip.templateValue.contains(QChar::ReplacementCharacter),
+            "template ABI truncation must stop on a valid UTF-8 boundary");
+
+    snow_canvas_state::Snapshot before;
+    snow_canvas_state::Snapshot after = before;
+    after.watermarkConfig = engine;
+    require(snow_canvas_state::diffSnapshots(before, after).styleToolbarChanged,
+            "template snapshots must participate in C state diff detection");
+    before = after;
+    after.watermarkConfig.template_application_time.second = 57;
+    require(snow_canvas_state::diffSnapshots(before, after).styleToolbarChanged,
+            "template application time must participate in C state diff detection");
+}
+
 void defaultRuntimeUsesGenericEngineDefaults() {
     SnowStyleDefaults expected{};
     require(snow_runtime_style_defaults_default(&expected) == SNOW_OK,
@@ -424,6 +473,7 @@ void defaultRuntimeUsesGenericEngineDefaults() {
 int main() {
     filterStyleParticipatesInToolbarStateDiffs();
     publicCanvasDtosUseExactCompleteEquality();
+    watermarkConfigurationConversionsPreserveSnapshotsAndUtf8Boundaries();
     configuredRuntimeProfileFollowsRestoreAndResetLifecycle();
     defaultRuntimeUsesGenericEngineDefaults();
     return 0;

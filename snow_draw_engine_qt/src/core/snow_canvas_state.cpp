@@ -79,6 +79,16 @@ bool watermarkConfigsEqual(const SnowWatermarkConfig& lhs, const SnowWatermarkCo
            lhs.angle == rhs.angle && lhs.gap == rhs.gap && lhs.opacity == rhs.opacity &&
            snow_canvas_utf8::fieldsEqual(lhs.text_utf8, lhs.text_utf8_len, rhs.text_utf8,
                                          rhs.text_utf8_len, SNOW_WATERMARK_TEXT_CAPACITY) &&
+           snow_canvas_utf8::fieldsEqual(lhs.template_value_utf8, lhs.template_value_utf8_len,
+                                         rhs.template_value_utf8, rhs.template_value_utf8_len,
+                                         sizeof(lhs.template_value_utf8)) &&
+           lhs.has_template_application_time == rhs.has_template_application_time &&
+           lhs.template_application_time.year == rhs.template_application_time.year &&
+           lhs.template_application_time.month == rhs.template_application_time.month &&
+           lhs.template_application_time.day == rhs.template_application_time.day &&
+           lhs.template_application_time.hour == rhs.template_application_time.hour &&
+           lhs.template_application_time.minute == rhs.template_application_time.minute &&
+           lhs.template_application_time.second == rhs.template_application_time.second &&
            snow_canvas_utf8::fieldsEqual(lhs.font_family_utf8, lhs.font_family_utf8_len,
                                          rhs.font_family_utf8, rhs.font_family_utf8_len,
                                          SNOW_WATERMARK_FONT_FAMILY_CAPACITY);

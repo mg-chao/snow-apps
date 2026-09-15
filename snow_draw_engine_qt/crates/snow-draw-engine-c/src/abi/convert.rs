@@ -12,8 +12,8 @@ use snow_draw_engine::{
     PointerDevice, PointerEvent, PointerEventType, RectangleShapeStyle, RuntimeConfig,
     SerialNumberStyle, ShapeKind, ShapeStyle, SnapConfig, SpotlightConfig, StrokeStyle,
     StyleDefaults, StyleToolbarSource, TextElementInfo, TextHorizontalAlign, TextLayoutOverride,
-    TextLayoutSize, TextStyle, TextVerticalAlign, Vector2, WatermarkConfig, WheelDeltaKind,
-    WheelEvent, ZoomFocus, normalize_font_family,
+    TextLayoutSize, TextStyle, TextVerticalAlign, Vector2, WatermarkConfig,
+    WatermarkTemplateApplicationTime, WheelDeltaKind, WheelEvent, ZoomFocus, normalize_font_family,
 };
 
 use crate::abi::text::{
@@ -34,10 +34,23 @@ impl From<SnowColorRgba8> for ColorRgba8 {
 
 impl From<SnowWatermarkConfig> for WatermarkConfig {
     fn from(value: SnowWatermarkConfig) -> Self {
+        let template_application_time = if value.has_template_application_time != 0 {
+            let candidate: WatermarkTemplateApplicationTime =
+                value.template_application_time.into();
+            candidate.is_valid().then_some(candidate)
+        } else {
+            None
+        };
         Self {
             color: value.color.into(),
             text: string_from_c_char_field(&value.text_utf8, value.text_utf8_len)
                 .unwrap_or_default(),
+            template_value: string_from_c_char_field(
+                &value.template_value_utf8,
+                value.template_value_utf8_len,
+            )
+            .unwrap_or_default(),
+            template_application_time,
             font_size: value.font_size,
             font_family: string_from_c_char_field(
                 &value.font_family_utf8,
@@ -54,12 +67,15 @@ impl From<SnowWatermarkConfig> for WatermarkConfig {
 
 impl From<WatermarkConfig> for SnowWatermarkConfig {
     fn from(value: WatermarkConfig) -> Self {
+        let template_application_time = value.template_application_time;
         let mut out = Self {
             color: value.color.into(),
             font_size: value.font_size,
             angle: value.angle,
             gap: value.gap,
             opacity: value.opacity,
+            has_template_application_time: u8::from(template_application_time.is_some()),
+            template_application_time: template_application_time.unwrap_or_default().into(),
             ..Self::default()
         };
         let mut truncated = 0;
@@ -70,12 +86,45 @@ impl From<WatermarkConfig> for SnowWatermarkConfig {
             &value.text,
         );
         copy_str_to_c_char_field(
+            &mut out.template_value_utf8,
+            &mut out.template_value_utf8_len,
+            &mut truncated,
+            &value.template_value,
+        );
+        copy_str_to_c_char_field(
             &mut out.font_family_utf8,
             &mut out.font_family_utf8_len,
             &mut truncated,
             &value.font_family,
         );
         out
+    }
+}
+
+impl From<SnowWatermarkTemplateApplicationTime> for WatermarkTemplateApplicationTime {
+    fn from(value: SnowWatermarkTemplateApplicationTime) -> Self {
+        Self {
+            year: value.year,
+            month: value.month,
+            day: value.day,
+            hour: value.hour,
+            minute: value.minute,
+            second: value.second,
+        }
+    }
+}
+
+impl From<WatermarkTemplateApplicationTime> for SnowWatermarkTemplateApplicationTime {
+    fn from(value: WatermarkTemplateApplicationTime) -> Self {
+        Self {
+            year: value.year,
+            month: value.month,
+            day: value.day,
+            hour: value.hour,
+            minute: value.minute,
+            second: value.second,
+            reserved0: [0; 3],
+        }
     }
 }
 
@@ -869,6 +918,10 @@ pub(crate) fn runtime_config_from_c(
         &defaults.watermark.text_utf8,
         defaults.watermark.text_utf8_len,
     )?;
+    let watermark_template_value = strict_string_from_c_char_field(
+        &defaults.watermark.template_value_utf8,
+        defaults.watermark.template_value_utf8_len,
+    )?;
     let watermark_font_family = strict_string_from_c_char_field(
         &defaults.watermark.font_family_utf8,
         defaults.watermark.font_family_utf8_len,
@@ -914,6 +967,15 @@ pub(crate) fn runtime_config_from_c(
             watermark: WatermarkConfig {
                 color: defaults.watermark.color.into(),
                 text: watermark_text,
+                template_value: watermark_template_value,
+                template_application_time: if defaults.watermark.has_template_application_time != 0
+                {
+                    let candidate: WatermarkTemplateApplicationTime =
+                        defaults.watermark.template_application_time.into();
+                    candidate.is_valid().then_some(candidate)
+                } else {
+                    None
+                },
                 font_size: defaults.watermark.font_size,
                 font_family: watermark_font_family,
                 angle: defaults.watermark.angle,
@@ -1466,6 +1528,15 @@ mod tests {
         expected.editor.text.font_family = Some("C Text Font".to_owned());
         expected.editor.serial_number.font_family = Some("C Serial Font".to_owned());
         expected.watermark.text = "C watermark".to_owned();
+        expected.watermark.template_value = "  {text} {YYYY-MM-DD_HH-mm-ss}  ".to_owned();
+        expected.watermark.template_application_time = Some(WatermarkTemplateApplicationTime {
+            year: 2026,
+            month: 9,
+            day: 15,
+            hour: 12,
+            minute: 34,
+            second: 56,
+        });
         expected.watermark.font_family = "C Watermark Font".to_owned();
         expected.watermark.opacity = 0.24;
         expected.spotlight.opacity = 0.62;
@@ -1485,6 +1556,68 @@ mod tests {
         let converted = runtime_config_from_c(Some(&c_config)).unwrap();
 
         assert_eq!(converted.style_defaults, expected);
+    }
+
+    #[test]
+    fn watermark_template_round_trip_and_truncation_are_utf8_safe() {
+        let application_time = WatermarkTemplateApplicationTime {
+            year: 2026,
+            month: 9,
+            day: 15,
+            hour: 12,
+            minute: 34,
+            second: 56,
+        };
+        let expected = WatermarkConfig {
+            text: "watermark".to_owned(),
+            template_value: "  {text} {YYYY}  ".to_owned(),
+            template_application_time: Some(application_time),
+            ..WatermarkConfig::default()
+        };
+
+        let c_config: SnowWatermarkConfig = expected.clone().into();
+        assert_eq!(c_config.has_template_application_time, 1);
+        assert_eq!(WatermarkConfig::from(c_config), expected);
+
+        let prefix = "a".repeat(SNOW_WATERMARK_TEMPLATE_UTF8_CAPACITY - 1);
+        let c_config: SnowWatermarkConfig = WatermarkConfig {
+            template_value: format!("{prefix}😀"),
+            ..WatermarkConfig::default()
+        }
+        .into();
+        assert_eq!(
+            c_config.template_value_utf8_len,
+            (SNOW_WATERMARK_TEMPLATE_UTF8_CAPACITY - 1) as u32
+        );
+        assert_eq!(
+            string_from_c_char_field(
+                &c_config.template_value_utf8,
+                c_config.template_value_utf8_len
+            ),
+            Some(prefix)
+        );
+    }
+
+    #[test]
+    fn invalid_c_watermark_template_time_is_normalized_to_unset() {
+        let c_config = SnowWatermarkConfig {
+            has_template_application_time: 1,
+            template_application_time: SnowWatermarkTemplateApplicationTime {
+                year: 2025,
+                month: 2,
+                day: 29,
+                hour: 12,
+                minute: 34,
+                second: 56,
+                reserved0: [0; 3],
+            },
+            ..SnowWatermarkConfig::default()
+        };
+
+        assert_eq!(
+            WatermarkConfig::from(c_config).template_application_time,
+            None
+        );
     }
 
     #[test]

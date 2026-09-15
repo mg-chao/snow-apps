@@ -378,6 +378,8 @@ fn watermark_text_only_change(undo: &Transaction, redo: &Transaction) -> bool {
     };
     old.text != new.text
         && old.color == new.color
+        && old.template_value == new.template_value
+        && old.template_application_time == new.template_application_time
         && old.font_size == new.font_size
         && old.font_family == new.font_family
         && old.angle == new.angle

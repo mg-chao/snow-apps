@@ -7,8 +7,8 @@ use snow_draw_engine_model::DocumentModel;
 use crate::engine::EngineConfig as RuntimeEngineConfig;
 use crate::{Engine, history::HistoryStore};
 
-pub const DOCUMENT_SESSION_SCHEMA_VERSION: u32 = 3;
-pub const DOCUMENT_HISTORY_SCHEMA_VERSION: u32 = 3;
+pub const DOCUMENT_SESSION_SCHEMA_VERSION: u32 = 4;
+pub const DOCUMENT_HISTORY_SCHEMA_VERSION: u32 = 4;
 pub const MAX_DOCUMENT_SESSION_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
@@ -138,7 +138,8 @@ mod tests {
     use snow_draw_engine_core::{ColorRgba8, CornerRadii, Point};
     use snow_draw_engine_document::{
         CanvasFilterType, ElementMeta, FillStyle, FilterData, HighlightShape, RectangleData,
-        RectangleElementKind, StrokeStyle, Transaction,
+        RectangleElementKind, StrokeStyle, Transaction, WatermarkConfig,
+        WatermarkTemplateApplicationTime,
     };
     use snow_draw_engine_editor::ActiveTool;
 
@@ -341,6 +342,96 @@ mod tests {
             Engine::from_serialized_document_history(&serde_json::to_vec(&unsupported).unwrap())
                 .is_err()
         );
+    }
+
+    fn remove_watermark_template_fields(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(object) => {
+                object.remove("template_value");
+                object.remove("template_application_time");
+                for child in object.values_mut() {
+                    remove_watermark_template_fields(child);
+                }
+            }
+            serde_json::Value::Array(array) => {
+                for child in array {
+                    remove_watermark_template_fields(child);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn watermark_templates_round_trip_in_v4_and_legacy_payloads_use_plain_text() {
+        let mut engine = Engine::new(RuntimeEngineConfig::default());
+        let viewport = engine.create_viewport(Default::default()).unwrap();
+        let expected = WatermarkConfig {
+            text: "draft".to_owned(),
+            template_value: "{text} {YYYY-MM-DD_HH-mm-ss}".to_owned(),
+            template_application_time: Some(WatermarkTemplateApplicationTime {
+                year: 2026,
+                month: 9,
+                day: 15,
+                hour: 12,
+                minute: 34,
+                second: 56,
+            }),
+            ..WatermarkConfig::default()
+        };
+        engine
+            .set_viewport_watermark_config(viewport, expected.clone())
+            .unwrap();
+
+        let session = engine.serialize_document_session().unwrap();
+        let history = engine.serialize_document_history().unwrap();
+        let session_json: serde_json::Value = serde_json::from_slice(&session).unwrap();
+        let history_json: serde_json::Value = serde_json::from_slice(&history).unwrap();
+        assert_eq!(session_json["schemaVersion"], 4);
+        assert_eq!(history_json["schemaVersion"], 4);
+        assert_eq!(
+            Engine::from_serialized_document_session(&session)
+                .unwrap()
+                .watermark_config(),
+            &expected
+        );
+        assert_eq!(
+            Engine::from_serialized_document_history(&history)
+                .unwrap()
+                .watermark_config(),
+            &expected
+        );
+
+        let legacy_source = Engine::new(RuntimeEngineConfig::default());
+        for schema_version in 1..=3 {
+            let mut legacy_session: serde_json::Value =
+                serde_json::from_slice(&legacy_source.serialize_document_session().unwrap())
+                    .unwrap();
+            legacy_session["schemaVersion"] = serde_json::json!(schema_version);
+            remove_watermark_template_fields(&mut legacy_session);
+            let restored = Engine::from_serialized_document_session(
+                &serde_json::to_vec(&legacy_session).unwrap(),
+            )
+            .unwrap();
+            assert!(restored.watermark_config().template_value.is_empty());
+            assert_eq!(restored.watermark_config().template_application_time, None);
+            assert_eq!(
+                restored.watermark_config().resolved_text(),
+                restored.watermark_config().text
+            );
+
+            let mut legacy_history: serde_json::Value =
+                serde_json::from_slice(&legacy_source.serialize_document_history().unwrap())
+                    .unwrap();
+            legacy_history["schemaVersion"] = serde_json::json!(schema_version);
+            remove_watermark_template_fields(&mut legacy_history);
+            let restored = Engine::from_serialized_document_history(
+                &serde_json::to_vec(&legacy_history).unwrap(),
+            )
+            .unwrap();
+            assert!(restored.watermark_config().template_value.is_empty());
+            assert_eq!(restored.watermark_config().template_application_time, None);
+        }
     }
 
     #[test]

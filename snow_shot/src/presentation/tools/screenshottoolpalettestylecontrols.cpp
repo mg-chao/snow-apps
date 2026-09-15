@@ -9,21 +9,38 @@
 
 #include "antd_icons.h"
 #include "widgets/color_picker.h"
+#include "widgets/alert.h"
+#include "widgets/button.h"
+#include "widgets/form.h"
 #include "widgets/input_line_edit.h"
+#include "widgets/modal.h"
 #include "widgets/select.h"
 #include "widgets/slider.h"
 #include "widgets/radio_button_group.h"
+#include "theme/theme_manager.h"
 
+#include <QAbstractItemDelegate>
+#include <QAbstractButton>
 #include <QBoxLayout>
 #include <QCoreApplication>
+#include <QDate>
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QListView>
+#include <QMouseEvent>
 #include <QObject>
+#include <QPainter>
+#include <QPointer>
 #include <QRegularExpressionValidator>
 #include <QSignalBlocker>
 #include <QSpacerItem>
 #include <QStandardItem>
 #include <QStandardItemModel>
+#include <QStyle>
+#include <QStyleOptionViewItem>
+#include <QTime>
+#include <QVBoxLayout>
 #include <QWidget>
 
 #include <utility>
@@ -50,6 +67,10 @@ constexpr int kTextStrokeColorTrailingSpacing = 4;
 constexpr int kSerialNumberTrailingSpacing = 4;
 constexpr int kSerialNumberInputWidth = 64;
 constexpr int kWatermarkTextWidth = 135;
+constexpr int kWatermarkTemplateWidth = 160;
+constexpr int kWatermarkTemplatePopupWidth = 280;
+constexpr int kWatermarkTemplateActionWidth = 32;
+constexpr int kWatermarkTemplateActionIconSize = 16;
 constexpr int kOpacitySliderWidth = 96;
 constexpr int kCompactSliderIconSize = 16;
 constexpr int kCompactSliderWidth = 96;
@@ -81,6 +102,7 @@ constexpr char kRoleFilterType[] = "filter-type";
 constexpr char kRoleFilterIntensity[] = "filter-intensity";
 constexpr char kRoleWatermarkText[] = "watermark-text";
 constexpr char kRoleWatermarkFont[] = "watermark-font";
+constexpr char kRoleWatermarkTemplate[] = "watermark-template";
 constexpr char kRoleAngle[] = "angle";
 constexpr char kRoleGap[] = "gap";
 
@@ -108,6 +130,7 @@ constexpr char kSignatureFilterType[] = "select:filter-types";
 constexpr char kSignatureFilterIntensity[] = "slider:filter-intensity";
 constexpr char kSignatureWatermarkText[] = "line-edit:watermark";
 constexpr char kSignatureWatermarkFont[] = "font:watermark-presets";
+constexpr char kSignatureWatermarkTemplate[] = "select:watermark-template";
 constexpr char kSignatureAngle[] = "numeric:angle";
 constexpr char kSignatureGap[] = "numeric:gap";
 
@@ -140,12 +163,164 @@ QVector<QByteArray> styleEditorRoles(ScreenshotToolPalette::Tool tool) {
     case Tool::PenFilter:
         return {"filter-mode", "filter-type", kRoleBrushWidth, "filter-intensity"};
     case Tool::Watermark:
-        return {kRoleForegroundColor, "watermark-text", "watermark-font", "angle", "gap",
+        return {kRoleForegroundColor,
+                "watermark-text",
+                "watermark-font",
+                kRoleWatermarkTemplate,
+                "angle",
+                "gap",
                 kRoleOpacity};
     default:
         return {};
     }
 }
+
+QString watermarkTemplateText(const char* source) {
+    return QCoreApplication::translate("ScreenshotToolPalette", source);
+}
+
+bool isWatermarkTemplateKey(const QString& key) {
+    return key.startsWith(QStringLiteral("watermark-template:"));
+}
+
+int watermarkTemplateIndex(const QString& key) {
+    if (!isWatermarkTemplateKey(key)) {
+        return -1;
+    }
+    bool ok = false;
+    const int index = key.sliced(QStringLiteral("watermark-template:").size()).toInt(&ok);
+    return ok ? index : -1;
+}
+
+QRect watermarkTemplateActionRect(const QRect& optionRect) {
+    return QRect(optionRect.right() - kWatermarkTemplateActionWidth + 1, optionRect.top(),
+                 kWatermarkTemplateActionWidth, optionRect.height());
+}
+
+class WatermarkTemplateOptionActionDelegate final : public QAbstractItemDelegate {
+  public:
+    using DeleteRequested = std::function<void(const QString&)>;
+
+    WatermarkTemplateOptionActionDelegate(adqt::widgets::AdSelect* select, QListView* view,
+                                          QAbstractItemDelegate* baseDelegate,
+                                          DeleteRequested deleteRequested)
+        : QAbstractItemDelegate(select), m_select(select), m_view(view),
+          m_baseDelegate(baseDelegate), m_deleteRequested(std::move(deleteRequested)) {
+        if (m_view != nullptr && m_view->viewport() != nullptr) {
+            m_view->viewport()->installEventFilter(this);
+        }
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override {
+        return m_baseDelegate != nullptr ? m_baseDelegate->sizeHint(option, index) : QSize();
+    }
+
+    void paint(QPainter* painter, const QStyleOptionViewItem& option,
+               const QModelIndex& index) const override {
+        if (m_baseDelegate != nullptr) {
+            m_baseDelegate->paint(painter, option, index);
+        }
+        if (painter == nullptr || m_select == nullptr || m_view == nullptr ||
+            (option.state & QStyle::State_MouseOver) == 0) {
+            return;
+        }
+        const QString key = index.data(Qt::UserRole).toString();
+        if (!isWatermarkTemplateKey(key)) {
+            return;
+        }
+
+        const auto theme = adqt::theme::ThemeManager::instance().resolveTheme(m_view);
+        const bool actionHovered = m_hoveredActionKey == key;
+        const QRect actionRect = watermarkTemplateActionRect(option.rect);
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        painter->fillRect(actionRect.adjusted(-4, 0, 0, 0), theme.colorBgElevated);
+        painter->fillRect(actionRect.adjusted(-4, 0, 0, 0), theme.colorFillTertiary);
+        if (actionHovered) {
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(theme.colorErrorBgHover);
+            painter->drawRoundedRect(actionRect.adjusted(-4, 2, -2, -2), 4, 4);
+        }
+        const auto colors = adqt::icons::IconColors::primary(actionHovered ? theme.colorErrorHover
+                                                                           : theme.colorError);
+        const QPixmap icon = adqt::icons::renderIconPixmap(
+            outlined_icons::IconDelete(colors),
+            {QSize(kWatermarkTemplateActionIconSize, kWatermarkTemplateActionIconSize),
+             m_view->devicePixelRatioF()});
+        if (!icon.isNull()) {
+            painter->drawPixmap(
+                QPoint(actionRect.center().x() - kWatermarkTemplateActionIconSize / 2,
+                       actionRect.center().y() - kWatermarkTemplateActionIconSize / 2),
+                icon);
+        }
+        painter->restore();
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        QWidget* viewport = m_view != nullptr ? m_view->viewport() : nullptr;
+        if (watched != viewport || event == nullptr) {
+            return QAbstractItemDelegate::eventFilter(watched, event);
+        }
+        if (event->type() == QEvent::Leave) {
+            setHoveredActionKey(QString());
+            m_pressedActionKey.clear();
+            return false;
+        }
+        if (event->type() != QEvent::MouseMove && event->type() != QEvent::MouseButtonPress &&
+            event->type() != QEvent::MouseButtonRelease &&
+            event->type() != QEvent::MouseButtonDblClick) {
+            return false;
+        }
+
+        auto* mouseEvent = static_cast<QMouseEvent*>(event);
+        const QModelIndex index = m_view->indexAt(mouseEvent->position().toPoint());
+        const QString key = index.data(Qt::UserRole).toString();
+        const bool overAction = index.isValid() && isWatermarkTemplateKey(key) &&
+                                watermarkTemplateActionRect(m_view->visualRect(index))
+                                    .contains(mouseEvent->position().toPoint());
+        setHoveredActionKey(overAction ? key : QString());
+        if (event->type() == QEvent::MouseMove || mouseEvent->button() != Qt::LeftButton) {
+            return false;
+        }
+        if (event->type() == QEvent::MouseButtonPress ||
+            event->type() == QEvent::MouseButtonDblClick) {
+            if (!overAction) {
+                m_pressedActionKey.clear();
+                return false;
+            }
+            m_pressedActionKey = key;
+            return true;
+        }
+        if (event->type() == QEvent::MouseButtonRelease && !m_pressedActionKey.isEmpty()) {
+            const QString pressedKey = m_pressedActionKey;
+            m_pressedActionKey.clear();
+            if (overAction && key == pressedKey && m_deleteRequested) {
+                m_deleteRequested(key);
+            }
+            return true;
+        }
+        return false;
+    }
+
+  private:
+    void setHoveredActionKey(const QString& key) {
+        if (m_hoveredActionKey == key) {
+            return;
+        }
+        m_hoveredActionKey = key;
+        if (m_view != nullptr && m_view->viewport() != nullptr) {
+            m_view->viewport()->update();
+        }
+    }
+
+    QPointer<adqt::widgets::AdSelect> m_select;
+    QPointer<QListView> m_view;
+    QPointer<QAbstractItemDelegate> m_baseDelegate;
+    DeleteRequested m_deleteRequested;
+    QString m_hoveredActionKey;
+    QString m_pressedActionKey;
+};
 
 QWidget* createRawEditorRoot(QBoxLayout* layout, QWidget* parent, const char* role,
                              const char* signature) {
@@ -222,6 +397,23 @@ void finalizeRawEditorRoot(QWidget* root) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Watermark color %1"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Watermark text"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Watermark font family"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Template"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "No templates yet"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Add"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Add template"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Template Name"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Template Value"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Template %1"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Please enter a template name"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Please enter a template value"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette",
+                      "{text} represents the current watermark text; timestamp formats such as "
+                      "{YYYY-MM-DD_HH-mm-ss} are supported"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Cancel"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Delete"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Delete template"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette",
+                      "Delete template \"%1\"? This action cannot be undone"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Sequence number color"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Sequence number color %1"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Sequence number font size %1px"),
@@ -429,8 +621,10 @@ const char* arrowheadOptionTooltipSource(bool start, SnowCanvasArrowhead arrowhe
 } // namespace
 
 ScreenshotToolPaletteStyleControls::ScreenshotToolPaletteStyleControls(
-    ScreenshotToolPaletteStyleControlCallbacks callbacks, const SnowCanvasStyleDefaults& defaults)
-    : m_state(defaults), m_callbacks(std::move(callbacks)), m_defaults(defaults) {}
+    ScreenshotToolPaletteStyleControlCallbacks callbacks, const SnowCanvasStyleDefaults& defaults,
+    std::function<QDateTime()> watermarkTemplateClock)
+    : m_state(defaults), m_callbacks(std::move(callbacks)), m_defaults(defaults),
+      m_watermarkTemplateClock(std::move(watermarkTemplateClock)) {}
 
 ScreenshotToolPaletteStyleState& ScreenshotToolPaletteStyleControls::styleState() {
     return m_state;
@@ -954,6 +1148,7 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         stageComponent(kRoleForegroundColor, kSignatureForegroundColor, m_watermarkColorEditor);
         stageWidget(kRoleWatermarkText, kSignatureWatermarkText);
         stageComponent(kRoleWatermarkFont, kSignatureWatermarkFont, m_watermarkFontEditor);
+        stageWidget(kRoleWatermarkTemplate, kSignatureWatermarkTemplate);
         stageWidget(kRoleAngle, kSignatureAngle);
         stageWidget(kRoleGap, kSignatureGap);
         stageWidget(kRoleOpacity, kSignatureOpacity);
@@ -2121,6 +2316,108 @@ QWidget* ScreenshotToolPaletteStyleControls::buildWatermarkFamily(
     registerEditor(m_watermarkFontEditor.get());
     tagEditor(m_watermarkFontEditor.get(), kRoleWatermarkFont, kSignatureWatermarkFont);
 
+    m_watermarkTemplateSelect = dynamic_cast<adqt::widgets::AdSelect*>(
+        takeReusableWidget(kRoleWatermarkTemplate, kSignatureWatermarkTemplate, layout, controls));
+    if (m_watermarkTemplateSelect == nullptr) {
+        m_watermarkTemplateSelect = new adqt::widgets::AdSelect(controls);
+        layout->addWidget(m_watermarkTemplateSelect);
+        m_watermarkTemplateSelect->setMode(adqt::widgets::AdSelect::Mode::Single);
+        m_watermarkTemplateSelect->setEditable(true);
+        m_watermarkTemplateSelect->setPopupMatchSelectWidth(false);
+        m_watermarkTemplateSelect->setPopupWidth(kWatermarkTemplatePopupWidth);
+
+        m_watermarkTemplateEmptyLabel = new QLabel(m_watermarkTemplateSelect);
+        m_watermarkTemplateEmptyLabel->setObjectName(
+            QStringLiteral("screenshotWatermarkTemplateEmptyLabel"));
+        m_watermarkTemplateEmptyLabel->setAlignment(Qt::AlignCenter);
+        m_watermarkTemplateEmptyLabel->setContentsMargins(12, 8, 12, 8);
+        m_watermarkTemplateSelect->setNotFoundContentWidget(m_watermarkTemplateEmptyLabel);
+
+        m_watermarkTemplateSelect->setPopupExtraContentFactory([this](QWidget* parent) {
+            auto* addButton = new adqt::widgets::AdButton(parent);
+            addButton->setObjectName(QStringLiteral("screenshotWatermarkTemplateAddButton"));
+            addButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
+            addButton->setAccentRole(adqt::widgets::AdButton::AccentRole::Primary);
+            addButton->setIconRef(outlined_icons::Plus());
+            addButton->setIconPosition(adqt::widgets::AdButton::IconPosition::Leading);
+            addButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+            addButton->setText(watermarkTemplateText("Add"));
+            addButton->setToolTip(watermarkTemplateText("Add template"));
+            addButton->setAccessibleName(watermarkTemplateText("Add template"));
+            m_watermarkTemplateAddButton = addButton;
+            QObject::connect(addButton, &QAbstractButton::clicked, addButton, [this]() {
+                if (m_watermarkTemplateSelect != nullptr) {
+                    m_watermarkTemplateSelect->hidePopup();
+                }
+                openCreateWatermarkTemplateModal();
+            });
+            QObject::connect(addButton, &QObject::destroyed, addButton, [this, addButton]() {
+                if (m_watermarkTemplateAddButton == addButton) {
+                    m_watermarkTemplateAddButton = nullptr;
+                }
+            });
+            return addButton;
+        });
+
+        QListView* view = m_watermarkTemplateSelect->view();
+        auto* delegate = new WatermarkTemplateOptionActionDelegate(
+            m_watermarkTemplateSelect, view, view != nullptr ? view->itemDelegate() : nullptr,
+            [this](const QString& key) {
+                if (m_watermarkTemplateSelect != nullptr) {
+                    m_watermarkTemplateSelect->hidePopup();
+                }
+                openDeleteWatermarkTemplateModal(key);
+            });
+        m_watermarkTemplateSelect->setItemDelegate(delegate);
+    } else {
+        m_watermarkTemplateEmptyLabel = m_watermarkTemplateSelect->findChild<QLabel*>(
+            QStringLiteral("screenshotWatermarkTemplateEmptyLabel"));
+    }
+    m_watermarkTemplateSelect->setObjectName(QStringLiteral("screenshotWatermarkTemplateSelect"));
+    m_watermarkTemplateSelect->setProperty("screenshotStyleEditorRoot", true);
+    m_watermarkTemplateSelect->setProperty("screenshotStyleEditorRole", kRoleWatermarkTemplate);
+    m_watermarkTemplateSelect->setProperty("screenshotStyleEditorSignature",
+                                           kSignatureWatermarkTemplate);
+    m_watermarkTemplateSelect->setFocusPolicy(Qt::ClickFocus);
+    m_watermarkTemplateSelect->setControlSize(adqt::widgets::AdSelect::ControlSize::Small);
+    m_watermarkTemplateSelect->setVariant(adqt::widgets::AdSelect::Variant::Borderless);
+    m_watermarkTemplateSelect->setFixedSize(
+        qMax(1, qRound(static_cast<qreal>(kWatermarkTemplateWidth) * metrics.physicalScale)),
+        qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
+    stampScreenshotToolbarReferenceWidth(m_watermarkTemplateSelect, kWatermarkTemplateWidth);
+    setScreenshotToolPalettePlaceholderSource(m_watermarkTemplateSelect, "Template");
+    setScreenshotToolPaletteTooltipSource(m_watermarkTemplateSelect, "Template");
+    setScreenshotToolPaletteAccessibleNameSource(m_watermarkTemplateSelect, "Template");
+    QObject::connect(m_watermarkTemplateSelect, &adqt::widgets::AdSelect::popupOpening, controls,
+                     [this]() {
+                         refreshWatermarkTemplateOptions();
+                         if (m_watermarkTemplateSelect != nullptr) {
+                             m_watermarkTemplateSelect->setSearchText(QString());
+                         }
+                     });
+    QObject::connect(m_watermarkTemplateSelect, &adqt::widgets::AdSelect::selected, controls,
+                     [this](const QVariant& selected, const QString&) {
+                         const int index = watermarkTemplateIndex(selected.toString());
+                         if (index < 0 || index >= m_watermarkTemplates.size() ||
+                             m_watermarkTemplateSelect == nullptr) {
+                             return;
+                         }
+                         const QString templateValue = m_watermarkTemplates.at(index).value;
+                         const QSignalBlocker blocker(m_watermarkTemplateSelect);
+                         m_watermarkTemplateSelect->setCurrentValue(QVariant());
+                         if (m_watermarkTemplateSelect->lineEdit() != nullptr) {
+                             m_watermarkTemplateSelect->lineEdit()->setText(templateValue);
+                         }
+                         setWatermarkTemplateValue(templateValue);
+                     });
+    if (m_watermarkTemplateSelect->lineEdit() != nullptr) {
+        QObject::connect(
+            m_watermarkTemplateSelect->lineEdit(), &QLineEdit::textEdited, controls,
+            [this](const QString& templateValue) { setWatermarkTemplateValue(templateValue); });
+    }
+    refreshWatermarkTemplateOptions();
+    retranslateWatermarkTemplateUi();
+
     if (host.addGroupSeparator) {
         host.addGroupSeparator(layout);
     }
@@ -2711,6 +3008,13 @@ void ScreenshotToolPaletteStyleControls::registerWatermarkEntries() {
                  m_watermarkFontEditor->update(config.fontSize, config.fontFamily.trimmed(), false,
                                                false, 0x3u, 0x1u, 0x2u);
              }
+             if (m_watermarkTemplateSelect != nullptr &&
+                 m_watermarkTemplateSelect->lineEdit() != nullptr) {
+                 const QSignalBlocker blocker(m_watermarkTemplateSelect);
+                 const QSignalBlocker lineEditBlocker(m_watermarkTemplateSelect->lineEdit());
+                 m_watermarkTemplateSelect->setCurrentValue(QVariant());
+                 m_watermarkTemplateSelect->lineEdit()->setText(config.templateValue);
+             }
              if (m_watermarkAngleEditor != nullptr) {
                  m_watermarkAngleEditor->setValue(qBound(-90, qRound(config.angle), 90));
              }
@@ -2839,6 +3143,16 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_watermarkColorEditor.reset();
     m_watermarkTextEdit = nullptr;
     m_watermarkFontEditor.reset();
+    m_watermarkTemplateSelect = nullptr;
+    m_watermarkTemplateEmptyLabel = nullptr;
+    m_watermarkTemplateAddButton = nullptr;
+    m_createWatermarkTemplateModal = nullptr;
+    m_createWatermarkTemplateNameItem = nullptr;
+    m_createWatermarkTemplateValueItem = nullptr;
+    m_createWatermarkTemplateAlert = nullptr;
+    m_deleteWatermarkTemplateModal = nullptr;
+    m_deleteWatermarkTemplateName.clear();
+    m_watermarkTemplates.clear();
     m_watermarkAngleEditor = nullptr;
     m_watermarkGapEditor = nullptr;
     m_watermarkOpacityEditor = {};
@@ -2917,6 +3231,9 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
     if (!keepWatermark) {
         m_watermarkColorPreviewPending = false;
         m_watermarkTextEdit = nullptr;
+        m_watermarkTemplateSelect = nullptr;
+        m_watermarkTemplateEmptyLabel = nullptr;
+        m_watermarkTemplateAddButton = nullptr;
         m_watermarkAngleEditor = nullptr;
         m_watermarkGapEditor = nullptr;
         m_watermarkOpacityEditor = {};
@@ -3380,6 +3697,12 @@ void ScreenshotToolPaletteStyleControls::refreshToolbarMetrics(
             qMax(1, qRound(static_cast<qreal>(kWatermarkTextWidth) * metrics.physicalScale)),
             qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
         stampScreenshotToolbarReferenceWidth(m_watermarkTextEdit, kWatermarkTextWidth);
+    }
+    if (applies(m_watermarkTemplateSelect)) {
+        m_watermarkTemplateSelect->setFixedSize(
+            qMax(1, qRound(static_cast<qreal>(kWatermarkTemplateWidth) * metrics.physicalScale)),
+            qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
+        stampScreenshotToolbarReferenceWidth(m_watermarkTemplateSelect, kWatermarkTemplateWidth);
     }
     configureScreenshotToolPaletteCornerRadiusEditor(m_cornerRadiusEditor, metrics);
     configureScreenshotToolPaletteCornerRadiusEditor(m_textCornerRadiusEditor, metrics);
@@ -3905,6 +4228,325 @@ void ScreenshotToolPaletteStyleControls::setWatermarkFontFamily(const QString& f
         config.fontFamily = normalized;
         return true;
     });
+}
+
+std::optional<SnowCanvasWatermarkTemplateApplicationTime>
+ScreenshotToolPaletteStyleControls::watermarkTemplateApplicationTime() const {
+    const QDateTime current =
+        m_watermarkTemplateClock ? m_watermarkTemplateClock() : QDateTime::currentDateTime();
+    if (!current.isValid()) {
+        return std::nullopt;
+    }
+    const QDateTime local = current.toLocalTime();
+    const QDate date = local.date();
+    const QTime time = local.time();
+    if (!date.isValid() || !time.isValid()) {
+        return std::nullopt;
+    }
+    return SnowCanvasWatermarkTemplateApplicationTime{
+        date.year(), date.month(), date.day(), time.hour(), time.minute(), time.second(),
+    };
+}
+
+void ScreenshotToolPaletteStyleControls::setWatermarkTemplateValue(const QString& templateValue) {
+    m_state.m_watermarkConfig.templateValue = templateValue;
+    m_state.m_watermarkConfig.templateApplicationTime = watermarkTemplateApplicationTime();
+    notifyWatermarkConfigChanged();
+}
+
+void ScreenshotToolPaletteStyleControls::refreshWatermarkTemplateOptions() {
+    if (m_watermarkTemplateSelect == nullptr) {
+        return;
+    }
+    const snow_shot::storage::WatermarkTemplateSettings settings;
+    m_watermarkTemplates = settings.templates();
+    QVector<adqt::widgets::AdSelect::Option> options;
+    options.reserve(m_watermarkTemplates.size());
+    for (int index = 0; index < m_watermarkTemplates.size(); ++index) {
+        const snow_shot::storage::WatermarkTemplate& watermarkTemplate =
+            m_watermarkTemplates.at(index);
+        adqt::widgets::AdSelect::Option option;
+        option.value = QStringLiteral("watermark-template:") + QString::number(index);
+        option.label = watermarkTemplate.name;
+        option.group = watermarkTemplateText("Template");
+        option.metadata.insert(QStringLiteral("__selectedText"), watermarkTemplate.value);
+        options.push_back(option);
+    }
+
+    const QString currentValue = m_state.m_watermarkConfig.templateValue;
+    const QSignalBlocker blocker(m_watermarkTemplateSelect);
+    m_watermarkTemplateSelect->setOptions(options);
+    m_watermarkTemplateSelect->setCurrentValue(QVariant());
+    if (m_watermarkTemplateSelect->lineEdit() != nullptr) {
+        const QSignalBlocker lineEditBlocker(m_watermarkTemplateSelect->lineEdit());
+        m_watermarkTemplateSelect->lineEdit()->setText(currentValue);
+    }
+    if (m_watermarkTemplateEmptyLabel != nullptr) {
+        m_watermarkTemplateEmptyLabel->setText(watermarkTemplateText("No templates yet"));
+    }
+}
+
+void ScreenshotToolPaletteStyleControls::openCreateWatermarkTemplateModal() {
+    if (m_watermarkTemplateSelect == nullptr || m_createWatermarkTemplateModal != nullptr) {
+        return;
+    }
+    const snow_shot::storage::WatermarkTemplateSettings settings;
+    m_watermarkTemplates = settings.templates();
+
+    auto* form = new adqt::widgets::AdForm();
+    form->setObjectName(QStringLiteral("screenshotWatermarkTemplateCreateForm"));
+    form->setFixedWidth(352);
+    form->setFormLayout(adqt::widgets::AdForm::FormLayout::Vertical);
+    form->setLabelAlign(adqt::widgets::AdForm::LabelAlign::Left);
+    form->setRequiredMark(adqt::widgets::AdForm::RequiredMark::Visible);
+    form->setControlSize(adqt::widgets::AdForm::ControlSize::Medium);
+    form->setVariant(adqt::widgets::AdForm::Variant::Outlined);
+    form->setColon(false);
+    form->setScrollToFirstError(true);
+
+    auto* nameInput = new adqt::widgets::AdLineEdit(form);
+    nameInput->setObjectName(QStringLiteral("screenshotWatermarkTemplateNameInput"));
+    nameInput->setAllowClear(true);
+    nameInput->setMaxLength(80);
+    nameInput->setText(watermarkTemplateText("Template %1").arg(m_watermarkTemplates.size() + 1));
+    auto* nameItem = form->addField(watermarkTemplateText("Template Name"), nameInput,
+                                    QStringLiteral("templateName"));
+    nameItem->setItemLayout(adqt::widgets::AdFormItem::ItemLayout::Vertical);
+    nameItem->setRequired(true);
+    nameItem->setRequiredMessage(watermarkTemplateText("Please enter a template name"));
+    nameItem->setFormValidator([](const QVariant& value, adqt::widgets::AdFormItem*) {
+        adqt::widgets::AdFormItem::ValidationResult result;
+        if (value.toString().trimmed().isEmpty()) {
+            result.status = adqt::widgets::AdFormItem::ValidateStatus::Error;
+            result.errors.push_back(watermarkTemplateText("Please enter a template name"));
+        }
+        return result;
+    });
+
+    auto* valueInput = new adqt::widgets::AdLineEdit(form);
+    valueInput->setObjectName(QStringLiteral("screenshotWatermarkTemplateValueInput"));
+    valueInput->setAllowClear(true);
+    valueInput->setText(QStringLiteral("{text}"));
+    auto* valueItem = form->addField(watermarkTemplateText("Template Value"), valueInput,
+                                     QStringLiteral("templateValue"));
+    valueItem->setItemLayout(adqt::widgets::AdFormItem::ItemLayout::Vertical);
+    valueItem->setRequired(true);
+    valueItem->setRequiredMessage(watermarkTemplateText("Please enter a template value"));
+    valueItem->setFormValidator([](const QVariant& value, adqt::widgets::AdFormItem*) {
+        adqt::widgets::AdFormItem::ValidationResult result;
+        if (value.toString().trimmed().isEmpty()) {
+            result.status = adqt::widgets::AdFormItem::ValidateStatus::Error;
+            result.errors.push_back(watermarkTemplateText("Please enter a template value"));
+        }
+        return result;
+    });
+
+    auto* alert = new adqt::widgets::AdAlert(form);
+    alert->setObjectName(QStringLiteral("screenshotWatermarkTemplateInfoAlert"));
+    alert->setSeverity(adqt::widgets::AdAlert::Severity::Info);
+    alert->setIconMode(adqt::widgets::AdAlert::IconMode::Visible);
+    alert->setClosable(false);
+    if (auto* formLayout = qobject_cast<QBoxLayout*>(form->layout())) {
+        formLayout->insertWidget(formLayout->indexOf(valueItem), alert);
+    }
+
+    auto* modal = new adqt::widgets::AdModal(m_watermarkTemplateSelect);
+    modal->setObjectName(QStringLiteral("screenshotWatermarkTemplateCreateModal"));
+    modal->setOwnerWindow(m_watermarkTemplateSelect->window());
+    modal->setMode(adqt::widgets::AdModal::Mode::Window);
+    modal->setWindowModality(Qt::ApplicationModal);
+    modal->setCentered(true);
+    modal->setPreferredWidth(400);
+    modal->setMaskVisible(false);
+    modal->setCloseOnMaskClick(false);
+    modal->setClosePolicy(adqt::widgets::AdModal::ClosePolicy::Manual);
+    modal->setStandardButtons(adqt::widgets::AdModal::StandardButton::Ok |
+                              adqt::widgets::AdModal::StandardButton::Cancel);
+    modal->setContentWidget(form);
+    modal->setInitialFocusWidget(nameInput);
+
+    m_createWatermarkTemplateModal = modal;
+    m_createWatermarkTemplateNameItem = nameItem;
+    m_createWatermarkTemplateValueItem = valueItem;
+    m_createWatermarkTemplateAlert = alert;
+    retranslateWatermarkTemplateUi();
+
+    const QPointer<adqt::widgets::AdForm> formGuard(form);
+    const QPointer<adqt::widgets::AdLineEdit> nameGuard(nameInput);
+    const QPointer<adqt::widgets::AdLineEdit> valueGuard(valueInput);
+    QObject::connect(modal, &adqt::widgets::AdModal::closeRequested, modal,
+                     [this, modal, formGuard, nameGuard,
+                      valueGuard](adqt::widgets::AdModal::CloseReason reason) {
+                         if (reason != adqt::widgets::AdModal::CloseReason::OkAction) {
+                             modal->reject();
+                             return;
+                         }
+                         if (formGuard == nullptr || nameGuard == nullptr ||
+                             valueGuard == nullptr || !formGuard->submit()) {
+                             return;
+                         }
+                         const snow_shot::storage::WatermarkTemplateSettings settings;
+                         QVector<snow_shot::storage::WatermarkTemplate> templates =
+                             settings.templates();
+                         const QString templateValue = valueGuard->text();
+                         templates.push_back({nameGuard->text().trimmed(), templateValue});
+                         if (!settings.setTemplates(templates)) {
+                             return;
+                         }
+                         m_watermarkTemplates = templates;
+                         if (m_watermarkTemplateSelect != nullptr) {
+                             const QSignalBlocker blocker(m_watermarkTemplateSelect);
+                             m_watermarkTemplateSelect->setCurrentValue(QVariant());
+                             if (m_watermarkTemplateSelect->lineEdit() != nullptr) {
+                                 m_watermarkTemplateSelect->lineEdit()->setText(templateValue);
+                             }
+                         }
+                         setWatermarkTemplateValue(templateValue);
+                         refreshWatermarkTemplateOptions();
+                         modal->accept();
+                     });
+    QObject::connect(modal, &adqt::widgets::AdModal::finished, modal,
+                     [this, modal](adqt::widgets::AdModal::DialogCode) {
+                         if (m_createWatermarkTemplateModal == modal) {
+                             m_createWatermarkTemplateModal = nullptr;
+                             m_createWatermarkTemplateNameItem = nullptr;
+                             m_createWatermarkTemplateValueItem = nullptr;
+                             m_createWatermarkTemplateAlert = nullptr;
+                         }
+                         modal->deleteLater();
+                     });
+    modal->open();
+    nameInput->focusEditor(adqt::widgets::AdLineEdit::FocusSelection::SelectAll);
+}
+
+void ScreenshotToolPaletteStyleControls::openDeleteWatermarkTemplateModal(
+    const QString& templateKey) {
+    const int index = watermarkTemplateIndex(templateKey);
+    if (m_watermarkTemplateSelect == nullptr || m_deleteWatermarkTemplateModal != nullptr ||
+        index < 0 || index >= m_watermarkTemplates.size()) {
+        return;
+    }
+    auto* modal = new adqt::widgets::AdModal(m_watermarkTemplateSelect);
+    modal->setObjectName(QStringLiteral("screenshotWatermarkTemplateDeleteModal"));
+    modal->setOwnerWindow(m_watermarkTemplateSelect->window());
+    modal->setMode(adqt::widgets::AdModal::Mode::Window);
+    modal->setWindowModality(Qt::ApplicationModal);
+    modal->setCentered(true);
+    modal->setPreferredWidth(400);
+    modal->setMaskVisible(false);
+    modal->setCloseOnMaskClick(false);
+    modal->setClosePolicy(adqt::widgets::AdModal::ClosePolicy::Manual);
+    modal->setPreset(adqt::widgets::AdModal::Preset::Confirm);
+    modal->setAcceptAccentRole(adqt::widgets::AdButton::AccentRole::Danger);
+    modal->setStandardButtons(adqt::widgets::AdModal::StandardButton::Ok |
+                              adqt::widgets::AdModal::StandardButton::Cancel);
+    m_deleteWatermarkTemplateModal = modal;
+    m_deleteWatermarkTemplateName = m_watermarkTemplates.at(index).name;
+    retranslateWatermarkTemplateUi();
+
+    QObject::connect(modal, &adqt::widgets::AdModal::closeRequested, modal,
+                     [this, modal, templateKey](adqt::widgets::AdModal::CloseReason reason) {
+                         if (reason == adqt::widgets::AdModal::CloseReason::OkAction) {
+                             deleteWatermarkTemplate(templateKey);
+                             modal->accept();
+                             return;
+                         }
+                         modal->reject();
+                     });
+    QObject::connect(modal, &adqt::widgets::AdModal::finished, modal,
+                     [this, modal](adqt::widgets::AdModal::DialogCode) {
+                         if (m_deleteWatermarkTemplateModal == modal) {
+                             m_deleteWatermarkTemplateModal = nullptr;
+                             m_deleteWatermarkTemplateName.clear();
+                         }
+                         modal->deleteLater();
+                     });
+    modal->open();
+    if (modal->rejectButton() != nullptr) {
+        modal->rejectButton()->setFocus(Qt::OtherFocusReason);
+    }
+}
+
+void ScreenshotToolPaletteStyleControls::deleteWatermarkTemplate(const QString& templateKey) {
+    const int index = watermarkTemplateIndex(templateKey);
+    if (index < 0 || index >= m_watermarkTemplates.size()) {
+        return;
+    }
+    QVector<snow_shot::storage::WatermarkTemplate> templates = m_watermarkTemplates;
+    templates.removeAt(index);
+    const snow_shot::storage::WatermarkTemplateSettings settings;
+    if (!settings.setTemplates(templates)) {
+        return;
+    }
+    m_watermarkTemplates = templates;
+    refreshWatermarkTemplateOptions();
+}
+
+void ScreenshotToolPaletteStyleControls::retranslateWatermarkTemplateUi() {
+    if (m_watermarkTemplateSelect != nullptr) {
+        const QString label = watermarkTemplateText("Template");
+        m_watermarkTemplateSelect->setPlaceholder(label);
+        m_watermarkTemplateSelect->setToolTip(label);
+        m_watermarkTemplateSelect->setAccessibleName(label);
+        refreshWatermarkTemplateOptions();
+    }
+    if (m_watermarkTemplateEmptyLabel != nullptr) {
+        m_watermarkTemplateEmptyLabel->setText(watermarkTemplateText("No templates yet"));
+    }
+    if (m_watermarkTemplateAddButton != nullptr) {
+        m_watermarkTemplateAddButton->setText(watermarkTemplateText("Add"));
+        m_watermarkTemplateAddButton->setToolTip(watermarkTemplateText("Add template"));
+        m_watermarkTemplateAddButton->setAccessibleName(watermarkTemplateText("Add template"));
+    }
+    if (m_watermarkTemplateSelect != nullptr && m_watermarkTemplateSelect->window() != nullptr) {
+        const auto addButtons =
+            m_watermarkTemplateSelect->window()->findChildren<adqt::widgets::AdButton*>(
+                QStringLiteral("screenshotWatermarkTemplateAddButton"));
+        for (adqt::widgets::AdButton* addButton : addButtons) {
+            addButton->setText(watermarkTemplateText("Add"));
+            addButton->setToolTip(watermarkTemplateText("Add template"));
+            addButton->setAccessibleName(watermarkTemplateText("Add template"));
+            if (addButton->isVisible()) {
+                m_watermarkTemplateAddButton = addButton;
+            }
+        }
+    }
+    if (m_createWatermarkTemplateModal != nullptr) {
+        m_createWatermarkTemplateModal->setWindowTitle(watermarkTemplateText("Add template"));
+        m_createWatermarkTemplateModal->setAcceptText(watermarkTemplateText("Add"));
+        m_createWatermarkTemplateModal->setRejectText(watermarkTemplateText("Cancel"));
+    }
+    if (m_createWatermarkTemplateNameItem != nullptr) {
+        m_createWatermarkTemplateNameItem->setLabel(watermarkTemplateText("Template Name"));
+        m_createWatermarkTemplateNameItem->setRequiredMessage(
+            watermarkTemplateText("Please enter a template name"));
+        if (m_createWatermarkTemplateNameItem->validateStatus() ==
+            adqt::widgets::AdFormItem::ValidateStatus::Error) {
+            m_createWatermarkTemplateNameItem->validate();
+        }
+    }
+    if (m_createWatermarkTemplateValueItem != nullptr) {
+        m_createWatermarkTemplateValueItem->setLabel(watermarkTemplateText("Template Value"));
+        m_createWatermarkTemplateValueItem->setRequiredMessage(
+            watermarkTemplateText("Please enter a template value"));
+        if (m_createWatermarkTemplateValueItem->validateStatus() ==
+            adqt::widgets::AdFormItem::ValidateStatus::Error) {
+            m_createWatermarkTemplateValueItem->validate();
+        }
+    }
+    if (m_createWatermarkTemplateAlert != nullptr) {
+        m_createWatermarkTemplateAlert->setText(watermarkTemplateText(
+            "{text} represents the current watermark text; timestamp formats such as "
+            "{YYYY-MM-DD_HH-mm-ss} are supported"));
+    }
+    if (m_deleteWatermarkTemplateModal != nullptr) {
+        m_deleteWatermarkTemplateModal->setWindowTitle(watermarkTemplateText("Delete template"));
+        m_deleteWatermarkTemplateModal->setText(
+            watermarkTemplateText("Delete template \"%1\"? This action cannot be undone")
+                .arg(m_deleteWatermarkTemplateName));
+        m_deleteWatermarkTemplateModal->setAcceptText(watermarkTemplateText("Delete"));
+        m_deleteWatermarkTemplateModal->setRejectText(watermarkTemplateText("Cancel"));
+    }
 }
 
 void ScreenshotToolPaletteStyleControls::setWatermarkAngle(double angle) {

@@ -5,9 +5,11 @@
 #include "screenshottoolpalettestylemodel.h"
 
 #include "snow_draw_engine_qt/snow_canvas_types.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 #include <QColor>
 #include <QByteArray>
+#include <QDateTime>
 #include <QPoint>
 #include <QSet>
 #include <QVector>
@@ -28,6 +30,10 @@ class AdLineEdit;
 class AdSelect;
 class AdSlider;
 class AdRadioButtonGroup;
+class AdAlert;
+class AdButton;
+class AdFormItem;
+class AdModal;
 } // namespace adqt::widgets
 
 // The shared editor components live in snow_shot::presentation; surface them
@@ -167,7 +173,7 @@ class ScreenshotToolPaletteStyleControls final {
   public:
     explicit ScreenshotToolPaletteStyleControls(
         ScreenshotToolPaletteStyleControlCallbacks callbacks,
-        const SnowCanvasStyleDefaults& defaults);
+        const SnowCanvasStyleDefaults& defaults, std::function<QDateTime()> watermarkTemplateClock);
 
     [[nodiscard]] ScreenshotToolPaletteStyleState& styleState();
     [[nodiscard]] const ScreenshotToolPaletteStyleState& styleState() const;
@@ -251,6 +257,7 @@ class ScreenshotToolPaletteStyleControls final {
     // Popup content owns its window DPR and is intentionally excluded.
     void refreshToolbarMetrics(const ScreenshotToolPaletteButtonMetrics& metrics);
     void refreshThemeIcons(const ScreenshotToolPaletteButtonMetrics& metrics);
+    void retranslateWatermarkTemplateUi();
 
 #if defined(SNOW_SHOT_TEST_HOOKS)
     [[nodiscard]] quint64 styleStateNoopCount() const;
@@ -356,6 +363,13 @@ class ScreenshotToolPaletteStyleControls final {
     void setWatermarkFontSize(double fontSize);
     void cycleWatermarkFontSize();
     void setWatermarkFontFamily(const QString& fontFamily);
+    void setWatermarkTemplateValue(const QString& templateValue);
+    [[nodiscard]] std::optional<SnowCanvasWatermarkTemplateApplicationTime>
+    watermarkTemplateApplicationTime() const;
+    void refreshWatermarkTemplateOptions();
+    void openCreateWatermarkTemplateModal();
+    void openDeleteWatermarkTemplateModal(const QString& templateKey);
+    void deleteWatermarkTemplate(const QString& templateKey);
     void setWatermarkAngle(double angle);
     void setWatermarkGap(double gap);
     void setWatermarkOpacity(double opacity);
@@ -411,6 +425,7 @@ class ScreenshotToolPaletteStyleControls final {
     ScreenshotToolPaletteStyleState m_state;
     ScreenshotToolPaletteStyleControlCallbacks m_callbacks;
     const SnowCanvasStyleDefaults m_defaults;
+    std::function<QDateTime()> m_watermarkTemplateClock;
     QSet<QObject*> m_openTextStylePopups;
 
     struct ReusableEditor {
@@ -465,6 +480,16 @@ class ScreenshotToolPaletteStyleControls final {
     std::unique_ptr<ScreenshotToolPaletteColorEditor> m_watermarkColorEditor;
     adqt::widgets::AdLineEdit* m_watermarkTextEdit = nullptr;
     std::unique_ptr<ScreenshotToolPaletteFontEditor> m_watermarkFontEditor;
+    adqt::widgets::AdSelect* m_watermarkTemplateSelect = nullptr;
+    QLabel* m_watermarkTemplateEmptyLabel = nullptr;
+    adqt::widgets::AdButton* m_watermarkTemplateAddButton = nullptr;
+    adqt::widgets::AdModal* m_createWatermarkTemplateModal = nullptr;
+    adqt::widgets::AdFormItem* m_createWatermarkTemplateNameItem = nullptr;
+    adqt::widgets::AdFormItem* m_createWatermarkTemplateValueItem = nullptr;
+    adqt::widgets::AdAlert* m_createWatermarkTemplateAlert = nullptr;
+    adqt::widgets::AdModal* m_deleteWatermarkTemplateModal = nullptr;
+    QString m_deleteWatermarkTemplateName;
+    QVector<snow_shot::storage::WatermarkTemplate> m_watermarkTemplates;
     IconNumericValuePreviewButton* m_watermarkAngleEditor = nullptr;
     IconNumericValuePreviewButton* m_watermarkGapEditor = nullptr;
     ScreenshotToolPaletteSliderEditor m_watermarkOpacityEditor;

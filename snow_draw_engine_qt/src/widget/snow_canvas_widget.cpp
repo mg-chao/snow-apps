@@ -263,10 +263,9 @@ void applyWatermarkConfig(WatermarkDisplayInfo& displayInfo,
         static_cast<std::uint8_t>(config.color.blue()),
         static_cast<std::uint8_t>(config.color.alpha()),
     };
-    const QByteArray text = config.text.trimmed().toUtf8().left(SNOW_WATERMARK_TEXT_CAPACITY);
-    displayInfo.watermark_text.fill(0);
-    std::copy(text.begin(), text.end(), displayInfo.watermark_text.begin());
-    displayInfo.watermark_text_len = static_cast<std::uint16_t>(text.size());
+    // Transient watermark previews currently modify presentation properties only. Keep the
+    // engine-resolved template text from the retained display cache so a color preview cannot
+    // temporarily expose the raw watermark text.
     displayInfo.watermark_font_size = config.fontSize;
     const QByteArray family =
         config.fontFamily.trimmed().toUtf8().left(SNOW_WATERMARK_FONT_FAMILY_CAPACITY);
@@ -912,22 +911,11 @@ bool SnowCanvasWidget::Impl::setCanvasShapeStylePatch(const SnowCanvasShapeStyle
 
 SnowCanvasWatermarkConfig SnowCanvasWidget::Impl::canvasWatermarkConfig() const {
     SnowWatermarkConfig engineConfig{};
-    SnowCanvasWatermarkConfig config;
     if (snow_viewport_get_watermark_config(runtimeBinding.engine(), runtimeBinding.viewportHandle(),
                                            &engineConfig) != SNOW_OK) {
-        return config;
+        return {};
     }
-    config.color = QColor(engineConfig.color.r, engineConfig.color.g, engineConfig.color.b,
-                          engineConfig.color.a);
-    config.text =
-        QString::fromUtf8(engineConfig.text_utf8, static_cast<int>(engineConfig.text_utf8_len));
-    config.fontSize = engineConfig.font_size;
-    config.fontFamily = QString::fromUtf8(engineConfig.font_family_utf8,
-                                          static_cast<int>(engineConfig.font_family_utf8_len));
-    config.angle = engineConfig.angle;
-    config.gap = engineConfig.gap;
-    config.opacity = engineConfig.opacity;
-    return config;
+    return snow_canvas_types::toCanvasWatermarkConfig(engineConfig);
 }
 
 SnowCanvasWatermarkConfig SnowCanvasWidget::canvasWatermarkConfig() const {
@@ -942,21 +930,7 @@ bool SnowCanvasWidget::Impl::setCanvasWatermarkConfig(const SnowCanvasWatermarkC
     watermarkPreview.reset();
     watermarkPreviewTimer.stop();
     watermarkPreviewScheduled = false;
-    SnowWatermarkConfig engineConfig{};
-    engineConfig.color = SnowColorRgba8{static_cast<std::uint8_t>(config.color.red()),
-                                        static_cast<std::uint8_t>(config.color.green()),
-                                        static_cast<std::uint8_t>(config.color.blue()),
-                                        static_cast<std::uint8_t>(config.color.alpha())};
-    const QByteArray text = config.text.trimmed().toUtf8().left(SNOW_WATERMARK_TEXT_CAPACITY);
-    engineConfig.text_utf8_len = static_cast<std::uint32_t>(text.size());
-    std::copy(text.begin(), text.end(), engineConfig.text_utf8);
-    engineConfig.font_size = config.fontSize;
-    const QByteArray family = config.fontFamily.trimmed().toUtf8().left(128);
-    engineConfig.font_family_utf8_len = static_cast<std::uint32_t>(family.size());
-    std::copy(family.begin(), family.end(), engineConfig.font_family_utf8);
-    engineConfig.angle = config.angle;
-    engineConfig.gap = config.gap;
-    engineConfig.opacity = config.opacity;
+    const SnowWatermarkConfig engineConfig = snow_canvas_types::toEngineWatermarkConfig(config);
     const bool applied = applyMutationResult(snow_canvas_commands::setWatermarkConfig(
         runtimeBinding.engine(), runtimeBinding.viewportHandle(), engineConfig));
     if (applied && !previousPreviewRegion.isEmpty()) {

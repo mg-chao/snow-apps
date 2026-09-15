@@ -8,6 +8,14 @@
             <translation>%1 (unavailable)</translation>
         </message>
         <message>
+            <source>Add</source>
+            <translation>Add</translation>
+        </message>
+        <message>
+            <source>Add template</source>
+            <translation>Add template</translation>
+        </message>
+        <message>
             <source>Adjust filter intensity</source>
             <translation>Adjust filter intensity</translation>
         </message>
@@ -74,6 +82,10 @@
         <message>
             <source>Bring to front</source>
             <translation>Bring to front</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>Cancel</translation>
         </message>
         <message>
             <source>Cancel screenshot</source>
@@ -168,8 +180,20 @@
             <translation>Default</translation>
         </message>
         <message>
+            <source>Delete</source>
+            <translation>Delete</translation>
+        </message>
+        <message>
             <source>Delete selected elements</source>
             <translation>Delete selected elements</translation>
+        </message>
+        <message>
+            <source>Delete template</source>
+            <translation>Delete template</translation>
+        </message>
+        <message>
+            <source>Delete template "%1"? This action cannot be undone</source>
+            <translation>Delete template "%1"? This action cannot be undone</translation>
         </message>
         <message>
             <source>Diamond</source>
@@ -452,6 +476,10 @@
             <translation>Mouse trail color transparent</translation>
         </message>
         <message>
+            <source>No templates yet</source>
+            <translation>No templates yet</translation>
+        </message>
+        <message>
             <source>Opacity</source>
             <translation>Opacity</translation>
         </message>
@@ -498,6 +526,14 @@
         <message>
             <source>Pin to screen</source>
             <translation>Pin to screen</translation>
+        </message>
+        <message>
+            <source>Please enter a template name</source>
+            <translation>Please enter a template name</translation>
+        </message>
+        <message>
+            <source>Please enter a template value</source>
+            <translation>Please enter a template value</translation>
         </message>
         <message>
             <source>Punctuation</source>
@@ -744,6 +780,22 @@
             <translation>Table recognition</translation>
         </message>
         <message>
+            <source>Template</source>
+            <translation>Template</translation>
+        </message>
+        <message>
+            <source>Template %1</source>
+            <translation>Template %1</translation>
+        </message>
+        <message>
+            <source>Template Name</source>
+            <translation>Template Name</translation>
+        </message>
+        <message>
+            <source>Template Value</source>
+            <translation>Template Value</translation>
+        </message>
+        <message>
             <source>Text</source>
             <translation>Text</translation>
         </message>
@@ -878,6 +930,10 @@
         <message>
             <source>px</source>
             <translation>px</translation>
+        </message>
+        <message>
+            <source>{text} represents the current watermark text; timestamp formats such as {YYYY-MM-DD_HH-mm-ss} are supported</source>
+            <translation>{text} represents the current watermark text; timestamp formats such as {YYYY-MM-DD_HH-mm-ss} are supported</translation>
         </message>
     </context>
 </TS>

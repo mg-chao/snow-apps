@@ -8,6 +8,14 @@
             <translation>%1（無法使用）</translation>
         </message>
         <message>
+            <source>Add</source>
+            <translation>新增</translation>
+        </message>
+        <message>
+            <source>Add template</source>
+            <translation>新增範本</translation>
+        </message>
+        <message>
             <source>Adjust filter intensity</source>
             <translation>調整濾鏡強度</translation>
         </message>
@@ -74,6 +82,10 @@
         <message>
             <source>Bring to front</source>
             <translation>移至最上層</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>取消</translation>
         </message>
         <message>
             <source>Cancel screenshot</source>
@@ -168,8 +180,20 @@
             <translation>預設</translation>
         </message>
         <message>
+            <source>Delete</source>
+            <translation>刪除</translation>
+        </message>
+        <message>
             <source>Delete selected elements</source>
             <translation>刪除選取的元素</translation>
+        </message>
+        <message>
+            <source>Delete template</source>
+            <translation>刪除範本</translation>
+        </message>
+        <message>
+            <source>Delete template "%1"? This action cannot be undone</source>
+            <translation>刪除範本「%1」？此操作無法復原</translation>
         </message>
         <message>
             <source>Diamond</source>
@@ -452,6 +476,10 @@
             <translation>滑鼠軌跡顏色 透明</translation>
         </message>
         <message>
+            <source>No templates yet</source>
+            <translation>尚無範本</translation>
+        </message>
+        <message>
             <source>Opacity</source>
             <translation>透明度</translation>
         </message>
@@ -498,6 +526,14 @@
         <message>
             <source>Pin to screen</source>
             <translation>釘選到螢幕</translation>
+        </message>
+        <message>
+            <source>Please enter a template name</source>
+            <translation>請輸入範本名稱</translation>
+        </message>
+        <message>
+            <source>Please enter a template value</source>
+            <translation>請輸入範本值</translation>
         </message>
         <message>
             <source>Punctuation</source>
@@ -744,6 +780,22 @@
             <translation>表格辨識</translation>
         </message>
         <message>
+            <source>Template</source>
+            <translation>範本</translation>
+        </message>
+        <message>
+            <source>Template %1</source>
+            <translation>範本 %1</translation>
+        </message>
+        <message>
+            <source>Template Name</source>
+            <translation>範本名稱</translation>
+        </message>
+        <message>
+            <source>Template Value</source>
+            <translation>範本值</translation>
+        </message>
+        <message>
             <source>Text</source>
             <translation>文字</translation>
         </message>
@@ -878,6 +930,10 @@
         <message>
             <source>px</source>
             <translation>px</translation>
+        </message>
+        <message>
+            <source>{text} represents the current watermark text; timestamp formats such as {YYYY-MM-DD_HH-mm-ss} are supported</source>
+            <translation>{text} 代表目前的浮水印文字；支援 {YYYY-MM-DD_HH-mm-ss} 等時間戳記格式</translation>
         </message>
     </context>
 </TS>

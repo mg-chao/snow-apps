@@ -85,7 +85,12 @@ impl Engine {
         Self::try_new(config).expect("runtime config should be valid")
     }
 
-    pub fn try_new(config: EngineConfig) -> Result<Self, ErrorCode> {
+    pub fn try_new(mut config: EngineConfig) -> Result<Self, ErrorCode> {
+        config.style_defaults.watermark.template_application_time = config
+            .style_defaults
+            .watermark
+            .template_application_time
+            .filter(|time| time.is_valid());
         validate_style_defaults(&config.style_defaults)?;
         let mut model = DocumentModel::default();
         let mut initial_config = snow_draw_engine_document::Transaction::new("runtime defaults");
@@ -587,6 +592,24 @@ mod tests {
             Engine::try_new(config).unwrap_err(),
             ErrorCode::InvalidArgument
         );
+
+        let mut config = custom_config(28);
+        config.style_defaults.watermark.template_application_time = Some(
+            snow_draw_engine_document::WatermarkTemplateApplicationTime {
+                year: 2025,
+                month: 2,
+                day: 29,
+                hour: 12,
+                minute: 34,
+                second: 56,
+            },
+        );
+        let engine = Engine::try_new(config).unwrap();
+        assert_eq!(
+            engine.style_defaults().watermark.template_application_time,
+            None
+        );
+        assert_eq!(engine.watermark_config().template_application_time, None);
     }
 
     #[test]

@@ -601,6 +601,63 @@ SnowSpotlightConfig toEngineSpotlightConfig(const SnowCanvasSpotlightConfig& con
     return SnowSpotlightConfig{toEngineColor(config.color), config.opacity};
 }
 
+SnowCanvasWatermarkConfig toCanvasWatermarkConfig(const SnowWatermarkConfig& config) {
+    SnowCanvasWatermarkConfig canvasConfig;
+    canvasConfig.color = toQColor(config.color);
+    canvasConfig.text = snow_canvas_utf8::stringFromField(config.text_utf8, config.text_utf8_len,
+                                                          sizeof(config.text_utf8));
+    canvasConfig.templateValue = snow_canvas_utf8::stringFromField(
+        config.template_value_utf8, config.template_value_utf8_len,
+        sizeof(config.template_value_utf8));
+    if (config.has_template_application_time != 0) {
+        canvasConfig.templateApplicationTime = SnowCanvasWatermarkTemplateApplicationTime{
+            config.template_application_time.year,   config.template_application_time.month,
+            config.template_application_time.day,    config.template_application_time.hour,
+            config.template_application_time.minute, config.template_application_time.second,
+        };
+    }
+    canvasConfig.fontSize = config.font_size;
+    canvasConfig.fontFamily = snow_canvas_utf8::stringFromField(
+        config.font_family_utf8, config.font_family_utf8_len, sizeof(config.font_family_utf8));
+    canvasConfig.angle = config.angle;
+    canvasConfig.gap = config.gap;
+    canvasConfig.opacity = config.opacity;
+    return canvasConfig;
+}
+
+SnowWatermarkConfig toEngineWatermarkConfig(const SnowCanvasWatermarkConfig& config) {
+    SnowWatermarkConfig engineConfig{};
+    engineConfig.color = toEngineColor(config.color);
+    std::uint8_t truncated = 0;
+    snow_canvas_utf8::copyStringToField(config.text.trimmed(), engineConfig.text_utf8,
+                                        engineConfig.text_utf8_len, truncated,
+                                        sizeof(engineConfig.text_utf8));
+    snow_canvas_utf8::copyStringToField(config.templateValue, engineConfig.template_value_utf8,
+                                        engineConfig.template_value_utf8_len, truncated,
+                                        sizeof(engineConfig.template_value_utf8));
+    engineConfig.font_size = config.fontSize;
+    copyFontFamilyToEngine(config.fontFamily, engineConfig.font_family_utf8,
+                           engineConfig.font_family_utf8_len, truncated,
+                           sizeof(engineConfig.font_family_utf8));
+    engineConfig.angle = config.angle;
+    engineConfig.gap = config.gap;
+    engineConfig.opacity = config.opacity;
+    if (config.templateApplicationTime.has_value()) {
+        const SnowCanvasWatermarkTemplateApplicationTime& time = *config.templateApplicationTime;
+        engineConfig.has_template_application_time = 1;
+        engineConfig.template_application_time = SnowWatermarkTemplateApplicationTime{
+            time.year,
+            static_cast<std::uint8_t>(time.month),
+            static_cast<std::uint8_t>(time.day),
+            static_cast<std::uint8_t>(time.hour),
+            static_cast<std::uint8_t>(time.minute),
+            static_cast<std::uint8_t>(time.second),
+            {0, 0, 0},
+        };
+    }
+    return engineConfig;
+}
+
 bool toEngineStyleDefaults(const SnowCanvasStyleDefaults& defaults,
                            SnowStyleDefaults& engineDefaults) {
     const SnowCanvasShapeStyle* shapes[] = {
@@ -675,24 +732,7 @@ bool toEngineStyleDefaults(const SnowCanvasStyleDefaults& defaults,
     };
     engineDefaults.text = toEngineTextStyle(defaults.text);
     engineDefaults.serial_number = toEngineSerialNumberStyle(defaults.serialNumber);
-    engineDefaults.watermark.color = toEngineColor(defaults.watermark.color);
-    const QByteArray watermarkText = defaults.watermark.text.toUtf8();
-    engineDefaults.watermark.text_utf8_len = static_cast<std::uint32_t>(watermarkText.size());
-    std::copy_n(
-        watermarkText.constData(),
-        std::min<std::size_t>(watermarkText.size(), sizeof(engineDefaults.watermark.text_utf8)),
-        engineDefaults.watermark.text_utf8);
-    engineDefaults.watermark.font_size = defaults.watermark.fontSize;
-    const QByteArray watermarkFamily = defaults.watermark.fontFamily.toUtf8();
-    engineDefaults.watermark.font_family_utf8_len =
-        static_cast<std::uint32_t>(watermarkFamily.size());
-    std::copy_n(watermarkFamily.constData(),
-                std::min<std::size_t>(watermarkFamily.size(),
-                                      sizeof(engineDefaults.watermark.font_family_utf8)),
-                engineDefaults.watermark.font_family_utf8);
-    engineDefaults.watermark.angle = defaults.watermark.angle;
-    engineDefaults.watermark.gap = defaults.watermark.gap;
-    engineDefaults.watermark.opacity = defaults.watermark.opacity;
+    engineDefaults.watermark = toEngineWatermarkConfig(defaults.watermark);
     engineDefaults.spotlight = toEngineSpotlightConfig(defaults.spotlight);
     return true;
 }

@@ -58,6 +58,9 @@ SnowGridConfig toEngineGridConfig(const SnowCanvasGridConfig& config);
 SnowCanvasSpotlightConfig toCanvasSpotlightConfig(const SnowSpotlightConfig& config);
 SnowSpotlightConfig toEngineSpotlightConfig(const SnowCanvasSpotlightConfig& config);
 
+SnowCanvasWatermarkConfig toCanvasWatermarkConfig(const SnowWatermarkConfig& config);
+SnowWatermarkConfig toEngineWatermarkConfig(const SnowCanvasWatermarkConfig& config);
+
 bool toEngineStyleDefaults(const SnowCanvasStyleDefaults& defaults,
                            SnowStyleDefaults& engineDefaults);
 

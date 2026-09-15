@@ -59,6 +59,7 @@
 #include <QWidget>
 
 #include "widgets/button.h"
+#include "widgets/alert.h"
 #include "widgets/color_picker.h"
 #include "widgets/control_scale.h"
 #include "widgets/input_line_edit.h"
@@ -1749,9 +1750,9 @@ void styleToolReuseMapPreservesEveryCompatibleRole() {
            {"filter-mode", "filter-type", "filter-intensity"}, 0, 1);
     verify(Tool::Text, Tool::SerialNumber, {"foreground-color", "text-font", "text-fill"}, 3, 1);
     verify(Tool::PenHighlight, Tool::PenFilter, {"brush-width"}, 2, 3);
-    verify(Tool::Spotlight, Tool::Watermark, {"opacity"}, 1, 5);
+    verify(Tool::Spotlight, Tool::Watermark, {"opacity"}, 1, 6);
     verify(Tool::Shape, Tool::Text, {"corner-radius"}, 4, 5);
-    verify(Tool::Text, Tool::Watermark, {"foreground-color"}, 5, 5);
+    verify(Tool::Text, Tool::Watermark, {"foreground-color"}, 5, 6);
 }
 
 void retainedOutlineEditorsRebindStateLabelsAndCommands() {
@@ -5621,6 +5622,8 @@ void watermarkToolExposesSharedStyleControls() {
         palette.findChild<QWidget*>(QStringLiteral("screenshotWatermarkFontSizeSummaryButton")));
     auto* family = qobject_cast<adqt::widgets::AdSelect*>(
         controlWithAccessibleName(palette, "Watermark font family"));
+    auto* templateSelect = palette.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotWatermarkTemplateSelect"));
     auto* angle = dynamic_cast<IconNumericValuePreviewButton*>(
         palette.findChild<QWidget*>(QStringLiteral("screenshotWatermarkAngleEditor")));
     auto* gap = dynamic_cast<IconNumericValuePreviewButton*>(
@@ -5630,8 +5633,9 @@ void watermarkToolExposesSharedStyleControls() {
     auto* opacitySlider = palette.findChild<adqt::widgets::AdSlider*>(
         QStringLiteral("screenshotWatermarkOpacitySlider"));
     require(controls != nullptr && colorPicker != nullptr && text != nullptr &&
-                fontSize != nullptr && family != nullptr && angle != nullptr && gap != nullptr &&
-                opacityIcon != nullptr && opacitySlider != nullptr,
+                fontSize != nullptr && family != nullptr && templateSelect != nullptr &&
+                angle != nullptr && gap != nullptr && opacityIcon != nullptr &&
+                opacitySlider != nullptr,
             "Watermark should expose the shared style controls");
     require(colorPicker->accessibleName() == QStringLiteral("Watermark color") &&
                 colorPicker->mode() == adqt::widgets::AdColorPicker::Mode::Solid &&
@@ -5660,7 +5664,7 @@ void watermarkToolExposesSharedStyleControls() {
                 text->variant() == adqt::widgets::AdLineEdit::Variant::Borderless,
             "Watermark text should use the borderless small AdLineEdit");
     require(fontSize->toolTip() == QStringLiteral("Current watermark font size") &&
-                fontSize->accessibleDescription() == QStringLiteral("12px"),
+                fontSize->accessibleDescription() == QStringLiteral("16px"),
             "Watermark font size should use the numeric summary preview");
     const QStringList fontSizeTooltips{
         QStringLiteral("Watermark font size S (12px)"),
@@ -5684,6 +5688,16 @@ void watermarkToolExposesSharedStyleControls() {
                 family->model()->index(0, 0).data(adqt::widgets::AdSelect::DefaultLabelRole) ==
                     QStringLiteral("Default"),
             "Watermark font family should reuse the searchable text selector");
+    require(templateSelect->editable(), "Watermark templates should be editable");
+    require(templateSelect->searchEnabled(),
+            "Watermark templates should use the editable AdSelect input mode");
+    require(templateSelect->placeholder() == QStringLiteral("Template") &&
+                templateSelect->toolTip() == QStringLiteral("Template") &&
+                templateSelect->accessibleName() == QStringLiteral("Template"),
+            "Watermark templates should expose the Template label");
+    require(templateSelect->variant() == adqt::widgets::AdSelect::Variant::Borderless &&
+                templateSelect->controlSize() == adqt::widgets::AdSelect::ControlSize::Small,
+            "Watermark templates should use a borderless small select");
     require(angle->toolTip() == QStringLiteral("Watermark angle") &&
                 angle->accessibleName() == angle->toolTip() &&
                 angle->cursor().shape() == Qt::SplitVCursor &&
@@ -5720,6 +5734,7 @@ void watermarkToolExposesSharedStyleControls() {
     QWidget* colorRoot = styleEditorRoot(controls, "foreground-color");
     QWidget* textRoot = styleEditorRoot(controls, "watermark-text");
     QWidget* fontRoot = styleEditorRoot(controls, "watermark-font");
+    QWidget* templateRoot = styleEditorRoot(controls, "watermark-template");
     QWidget* angleRoot = styleEditorRoot(controls, "angle");
     QWidget* gapRoot = styleEditorRoot(controls, "gap");
     QWidget* opacityRoot = styleEditorRoot(controls, "opacity");
@@ -5727,6 +5742,7 @@ void watermarkToolExposesSharedStyleControls() {
     const int colorIndex = layout->indexOf(colorRoot);
     const int textIndex = layout->indexOf(textRoot);
     const int fontIndex = layout->indexOf(fontRoot);
+    const int templateIndex = layout->indexOf(templateRoot);
     const int angleIndex = layout->indexOf(angleRoot);
     const int gapIndex = layout->indexOf(gapRoot);
     const int opacityIndex = layout->indexOf(opacityRoot);
@@ -5741,19 +5757,20 @@ void watermarkToolExposesSharedStyleControls() {
                                             opacityLayout->itemAt(index)->spacerItem() != nullptr;
     }
     require(colorIndex >= 0 && colorIndex < textIndex && textIndex < fontIndex &&
-                fontIndex < angleIndex && angleIndex < gapIndex && gapIndex < opacityIndex &&
-                colorRoot->isAncestorOf(colorPicker) && fontRoot->isAncestorOf(fontSize) &&
+                fontIndex < templateIndex && templateIndex < angleIndex && angleIndex < gapIndex &&
+                gapIndex < opacityIndex && colorRoot->isAncestorOf(colorPicker) &&
+                fontRoot->isAncestorOf(fontSize) && templateRoot == templateSelect &&
                 fontRoot->isAncestorOf(family) && opacityRoot->isAncestorOf(opacityIcon) &&
                 opacityRoot->isAncestorOf(opacitySlider) && onlySpacingBetweenOpacityControls &&
                 layout->indexOf(separators.at(0)) > colorIndex &&
                 layout->indexOf(separators.at(0)) < textIndex &&
-                layout->indexOf(separators.at(1)) > fontIndex &&
+                layout->indexOf(separators.at(1)) > templateIndex &&
                 layout->indexOf(separators.at(1)) < angleIndex &&
                 layout->indexOf(separators.at(2)) > gapIndex &&
                 layout->indexOf(separators.at(2)) < opacityIndex,
             "Watermark controls should finish with the opacity editor");
-    require(text->height() == 28 && fontSize->height() == 28 && angle->height() == 28 &&
-                gap->height() == 28,
+    require(text->height() == 28 && fontSize->height() == 28 && templateSelect->height() == 28 &&
+                angle->height() == 28 && gap->height() == 28,
             "Watermark controls should share the style toolbar height");
 
     const QColor tint(QStringLiteral("#1677ff"));
@@ -5842,6 +5859,9 @@ void watermarkControlsFollowCommittedStateAndUndo() {
 
     SnowCanvasWatermarkConfig first;
     first.text = QStringLiteral("FIRST");
+    first.templateValue = QStringLiteral("{text}-{YYYY}");
+    first.templateApplicationTime =
+        SnowCanvasWatermarkTemplateApplicationTime{2026, 9, 15, 12, 34, 56};
     first.angle = 31.0;
     require(canvas.setCanvasWatermarkConfig(first), "first watermark configuration should commit");
     SnowCanvasWatermarkConfig second = first;
@@ -5857,12 +5877,18 @@ void watermarkControlsFollowCommittedStateAndUndo() {
         QStringLiteral("screenshotWatermarkTextEdit"));
     auto* angle = dynamic_cast<IconNumericValuePreviewButton*>(
         palette.findChild<QWidget*>(QStringLiteral("screenshotWatermarkAngleEditor")));
-    require(text != nullptr && angle != nullptr, "watermark synchronization controls should exist");
-    require(text->text() == QStringLiteral("THIRD") && angle->value() == 31,
+    auto* templateSelect = palette.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotWatermarkTemplateSelect"));
+    require(text != nullptr && angle != nullptr && templateSelect != nullptr &&
+                templateSelect->lineEdit() != nullptr,
+            "watermark synchronization controls should exist");
+    require(text->text() == QStringLiteral("THIRD") && angle->value() == 31 &&
+                templateSelect->lineEdit()->text() == first.templateValue,
             "toolbar should reflect the latest committed watermark configuration");
 
     require(canvas.undo(), "aggregated watermark text changes should be undoable");
-    require(text->text() == QStringLiteral("FIRST") && angle->value() == 31,
+    require(text->text() == QStringLiteral("FIRST") && angle->value() == 31 &&
+                templateSelect->lineEdit()->text() == first.templateValue,
             "one undo should restore the state before consecutive text-only changes");
     require(canvas.redo(), "aggregated watermark text changes should be redoable");
     require(text->text() == QStringLiteral("THIRD") && angle->value() == 31,
@@ -5910,6 +5936,8 @@ void watermarkEditsCommitCompleteConfigsAndClampWheel() {
         QStringLiteral("screenshotWatermarkColorPicker"));
     auto* family = qobject_cast<adqt::widgets::AdSelect*>(
         controlWithAccessibleName(palette, "Watermark font family"));
+    auto* templateSelect = palette.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotWatermarkTemplateSelect"));
     auto* angle = dynamic_cast<IconNumericValuePreviewButton*>(
         palette.findChild<QWidget*>(QStringLiteral("screenshotWatermarkAngleEditor")));
     auto* gap = dynamic_cast<IconNumericValuePreviewButton*>(
@@ -5918,8 +5946,9 @@ void watermarkEditsCommitCompleteConfigsAndClampWheel() {
         QStringLiteral("screenshotWatermarkOpacitySlider"));
     QWidget* fontSize =
         palette.findChild<QWidget*>(QStringLiteral("screenshotWatermarkFontSizeSummaryButton"));
-    require(text != nullptr && colorPicker != nullptr && family != nullptr && angle != nullptr &&
-                gap != nullptr && fontSize != nullptr && opacitySlider != nullptr,
+    require(text != nullptr && colorPicker != nullptr && family != nullptr &&
+                templateSelect != nullptr && angle != nullptr && gap != nullptr &&
+                fontSize != nullptr && opacitySlider != nullptr,
             "watermark interaction controls should exist");
     require(family->currentData(adqt::widgets::AdSelect::DefaultValueRole).toString() ==
                 initial.fontFamily,
@@ -6055,6 +6084,269 @@ void watermarkEditsCommitCompleteConfigsAndClampWheel() {
     palette.hide();
 }
 
+void watermarkTemplateLibraryAndEditorApplySnapshotsDeterministically() {
+    const snow_shot::storage::WatermarkTemplateSettings templateSettings;
+    require(templateSettings.setTemplates({
+                {QStringLiteral("Duplicate"), QStringLiteral("{text}-{YYYY}")},
+                {QStringLiteral("Duplicate"), QStringLiteral("{text}-{YYYY}")},
+            }),
+            "watermark-template fixture should persist duplicate rows");
+
+    int clockCalls = 0;
+    ScreenshotToolPalette::Options options;
+    options.showWatermarkTool = true;
+    options.watermarkTemplateClock = [&clockCalls]() {
+        return QDateTime(QDate(2026, 9, 15), QTime(12, 34, 10 + clockCalls++),
+                         QTimeZone::LocalTime);
+    };
+    ScreenshotToolPalette palette(options);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Watermark);
+    palette.show();
+    QCoreApplication::processEvents();
+
+    auto* select = palette.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotWatermarkTemplateSelect"));
+    require(select != nullptr && select->lineEdit() != nullptr && select->options().size() == 2 &&
+                select->options().at(0).value.toString() ==
+                    QStringLiteral("watermark-template:0") &&
+                select->options().at(1).value.toString() == QStringLiteral("watermark-template:1"),
+            "watermark-template select should preserve duplicate rows with transient index keys");
+
+    int commits = 0;
+    SnowCanvasWatermarkConfig applied;
+    QObject::connect(&palette, &ScreenshotToolPalette::watermarkConfigChanged, &palette,
+                     [&commits, &applied](const SnowCanvasWatermarkConfig& config) {
+                         ++commits;
+                         applied = config;
+                     });
+    const auto expectedTime = [](int second) {
+        return std::optional<SnowCanvasWatermarkTemplateApplicationTime>{
+            SnowCanvasWatermarkTemplateApplicationTime{2026, 9, 15, 12, 34, second}};
+    };
+
+    select->lineEdit()->setText(QStringLiteral("  {text} typed  "));
+    emit select->lineEdit()->textEdited(QStringLiteral("  {text} typed  "));
+    require(commits == 1 && clockCalls == 1 &&
+                applied.templateValue == QStringLiteral("  {text} typed  ") &&
+                applied.templateApplicationTime == expectedTime(10),
+            "manual template edits should preserve whitespace and capture the injected clock");
+
+    SnowCanvasWatermarkConfig external = applied;
+    external.templateValue = QStringLiteral("external {DD}");
+    external.templateApplicationTime =
+        SnowCanvasWatermarkTemplateApplicationTime{2024, 2, 29, 1, 2, 3};
+    palette.setWatermarkConfig(external);
+    require(commits == 1 && clockCalls == 1 && select->lineEdit()->text() == external.templateValue,
+            "engine synchronization should update the template editor without recapturing time");
+
+    emit select->selected(QVariant(QStringLiteral("watermark-template:1")),
+                          QStringLiteral("Duplicate"));
+    require(commits == 2 && clockCalls == 2 &&
+                applied.templateValue == QStringLiteral("{text}-{YYYY}") &&
+                applied.templateApplicationTime == expectedTime(11),
+            "selecting a duplicate row should apply its value once with a fresh time");
+
+    select->lineEdit()->clear();
+    emit select->lineEdit()->textEdited(QString());
+    require(commits == 3 && clockCalls == 3 && applied.templateValue.isEmpty() &&
+                applied.templateApplicationTime == expectedTime(12),
+            "clearing the editable template should capture a new application time");
+
+    select->showPopup();
+    QCoreApplication::processEvents();
+    auto* addButton = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotWatermarkTemplateAddButton"));
+    require(addButton != nullptr && addButton->isVisible() &&
+                addButton->text() == QStringLiteral("Add") &&
+                addButton->accentRole() == adqt::widgets::AdButton::AccentRole::Primary &&
+                adqt::icons::describeIcon(addButton->iconRef()).key.name == QStringLiteral("plus"),
+            "watermark-template popup should keep a full-width primary Add footer");
+
+    auto& languageManager = snow_shot::presentation::LanguageManager::instance();
+    require(languageManager.setLanguage(QStringLiteral("zh_CN")),
+            "Simplified Chinese watermark-template language setup should succeed");
+    QCoreApplication::processEvents();
+    addButton = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotWatermarkTemplateAddButton"));
+    auto* emptyLabel = qobject_cast<QLabel*>(select->notFoundContentWidget());
+    require(select->placeholder() == QStringLiteral("模板") &&
+                select->toolTip() == QStringLiteral("模板") &&
+                select->accessibleName() == QStringLiteral("模板"),
+            "the template select should retranslate in place");
+    require(select->options().at(0).group == QStringLiteral("模板"),
+            "the open template popup option group should retranslate in place");
+    require(emptyLabel != nullptr && emptyLabel->text() == QStringLiteral("暂无模板"),
+            "the template empty-state text should retranslate in place");
+    require(addButton != nullptr && addButton->text() == QStringLiteral("添加") &&
+                addButton->toolTip() == QStringLiteral("添加模板") &&
+                addButton->accessibleName() == QStringLiteral("添加模板"),
+            "the open template popup Add footer should retranslate in place");
+    require(languageManager.setLanguage(QStringLiteral("en_US")),
+            "English watermark-template language restoration should succeed");
+    QCoreApplication::processEvents();
+    addButton = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotWatermarkTemplateAddButton"));
+    require(addButton != nullptr, "the translated Add footer should remain available");
+    addButton->click();
+    QCoreApplication::processEvents();
+
+    auto* createModal = palette.findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotWatermarkTemplateCreateModal"));
+    auto* form = createModal == nullptr
+                     ? nullptr
+                     : qobject_cast<adqt::widgets::AdForm*>(createModal->contentWidget());
+    auto* nameInput = form == nullptr ? nullptr
+                                      : form->findChild<adqt::widgets::AdLineEdit*>(
+                                            QStringLiteral("screenshotWatermarkTemplateNameInput"));
+    auto* valueInput = form == nullptr ? nullptr
+                                       : form->findChild<adqt::widgets::AdLineEdit*>(QStringLiteral(
+                                             "screenshotWatermarkTemplateValueInput"));
+    auto* alert = form == nullptr ? nullptr
+                                  : form->findChild<adqt::widgets::AdAlert*>(
+                                        QStringLiteral("screenshotWatermarkTemplateInfoAlert"));
+    auto* nameItem = form == nullptr ? nullptr : form->itemForName(QStringLiteral("templateName"));
+    auto* valueItem =
+        form == nullptr ? nullptr : form->itemForName(QStringLiteral("templateValue"));
+    require(createModal != nullptr && createModal->isOpen(),
+            "Add template should expose its open modal");
+    require(form != nullptr, "Add template should expose its Ant Design form");
+    require(nameInput != nullptr && valueInput != nullptr,
+            "Add template should expose its named inputs");
+    require(alert != nullptr, "Add template should expose its information alert");
+    require(nameItem != nullptr && valueItem != nullptr,
+            "Add template should expose its named form items");
+    require(createModal->mode() == adqt::widgets::AdModal::Mode::Window &&
+                createModal->windowModality() == Qt::ApplicationModal &&
+                createModal->windowTitle() == QStringLiteral("Add template") &&
+                createModal->acceptButton()->text() == QStringLiteral("Add") &&
+                createModal->rejectButton()->text() == QStringLiteral("Cancel"),
+            "Add template should use the specified application-modal window presentation");
+    require(nameInput->text() == QStringLiteral("Template 3") && nameInput->maxLength() == 80 &&
+                valueInput->text() == QStringLiteral("{text}") && nameItem->required() &&
+                valueItem->required(),
+            "Add template should use the specified field defaults and required marks");
+    require(alert->iconMode() == adqt::widgets::AdAlert::IconMode::Visible &&
+                alert->text() ==
+                    QStringLiteral("{text} represents the current watermark text; timestamp "
+                                   "formats such as {YYYY-MM-DD_HH-mm-ss} are supported"),
+            "Add template should show the exact icon-bearing information alert");
+
+    nameInput->setText(QStringLiteral("   "));
+    valueInput->setText(QStringLiteral(" \t "));
+    createModal->acceptButton()->click();
+    QCoreApplication::processEvents();
+    require(createModal->isOpen() &&
+                nameItem->validateStatus() == adqt::widgets::AdFormItem::ValidateStatus::Error &&
+                valueItem->validateStatus() == adqt::widgets::AdFormItem::ValidateStatus::Error &&
+                nameItem->requiredMessage() == QStringLiteral("Please enter a template name") &&
+                valueItem->requiredMessage() == QStringLiteral("Please enter a template value"),
+            "Add template should reject whitespace-only required values with translated messages");
+
+    require(languageManager.setLanguage(QStringLiteral("zh_CN")),
+            "Simplified Chinese Add template language setup should succeed");
+    QCoreApplication::processEvents();
+    require(createModal->windowTitle() == QStringLiteral("添加模板") &&
+                createModal->acceptButton()->text() == QStringLiteral("添加") &&
+                createModal->rejectButton()->text() == QStringLiteral("取消") &&
+                nameItem->label() == QStringLiteral("模板名称") &&
+                valueItem->label() == QStringLiteral("模板值") &&
+                nameItem->requiredMessage() == QStringLiteral("请输入模板名称") &&
+                valueItem->requiredMessage() == QStringLiteral("请输入模板值") &&
+                nameItem->errorMessages() == QStringList{QStringLiteral("请输入模板名称")} &&
+                valueItem->errorMessages() == QStringList{QStringLiteral("请输入模板值")} &&
+                alert->text() == QStringLiteral("{text} 表示当前水印文本；支持 "
+                                                "{YYYY-MM-DD_HH-mm-ss} 等时间戳格式"),
+            "the open Add template dialog and validation state should retranslate in place");
+    require(languageManager.setLanguage(QStringLiteral("en_US")),
+            "English Add template language restoration should succeed");
+    QCoreApplication::processEvents();
+
+    nameInput->setText(QStringLiteral("  Added  "));
+    valueInput->setText(QStringLiteral("  {text} {DD}  "));
+    createModal->acceptButton()->click();
+    QCoreApplication::processEvents();
+    const QVector<snow_shot::storage::WatermarkTemplate> afterAdd = templateSettings.templates();
+    require(commits == 4 && clockCalls == 4 &&
+                applied.templateValue == QStringLiteral("  {text} {DD}  ") &&
+                applied.templateApplicationTime == expectedTime(13) && afterAdd.size() == 3 &&
+                afterAdd.at(2) ==
+                    snow_shot::storage::WatermarkTemplate{QStringLiteral("Added"),
+                                                          QStringLiteral("  {text} {DD}  ")},
+            "successful creation should append, trim the name, preserve the value, and apply it");
+
+    select->showPopup();
+    QCoreApplication::processEvents();
+    QListView* view = select->view();
+    QModelIndex firstDuplicate;
+    for (int row = 0; view != nullptr && row < view->model()->rowCount(); ++row) {
+        const QModelIndex candidate = view->model()->index(row, 0);
+        if (candidate.data(Qt::UserRole).toString() == QStringLiteral("watermark-template:0")) {
+            firstDuplicate = candidate;
+            break;
+        }
+    }
+    require(firstDuplicate.isValid(), "the first duplicate template should have a popup row");
+    const QRect rowRect = view->visualRect(firstDuplicate);
+    const QPoint deletePoint(rowRect.right() - 15, rowRect.center().y());
+    const auto sendMouse = [view](QEvent::Type type, const QPoint& point, Qt::MouseButton button,
+                                  Qt::MouseButtons buttons) {
+        QMouseEvent event(type, QPointF(point), QPointF(view->viewport()->mapToGlobal(point)),
+                          button, buttons, Qt::NoModifier);
+        QCoreApplication::sendEvent(view->viewport(), &event);
+    };
+    sendMouse(QEvent::MouseMove, deletePoint, Qt::NoButton, Qt::NoButton);
+    sendMouse(QEvent::MouseButtonPress, deletePoint, Qt::LeftButton, Qt::LeftButton);
+    sendMouse(QEvent::MouseButtonRelease, deletePoint, Qt::LeftButton, Qt::NoButton);
+    QCoreApplication::processEvents();
+
+    auto* deleteModal = palette.findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotWatermarkTemplateDeleteModal"));
+    const SnowCanvasWatermarkConfig beforeDelete = applied;
+    require(deleteModal != nullptr && deleteModal->isOpen() &&
+                deleteModal->mode() == adqt::widgets::AdModal::Mode::Window &&
+                deleteModal->windowModality() == Qt::ApplicationModal &&
+                deleteModal->windowTitle() == QStringLiteral("Delete template") &&
+                deleteModal->text() ==
+                    QStringLiteral("Delete template \"Duplicate\"? This action cannot be undone") &&
+                deleteModal->acceptButton()->text() == QStringLiteral("Delete") &&
+                deleteModal->rejectButton()->text() == QStringLiteral("Cancel") &&
+                deleteModal->acceptAccentRole() == adqt::widgets::AdButton::AccentRole::Danger,
+            "template deletion should use the specified danger confirmation");
+
+    require(languageManager.setLanguage(QStringLiteral("zh_TW")),
+            "Traditional Chinese Delete template language setup should succeed");
+    QCoreApplication::processEvents();
+    require(deleteModal->windowTitle() == QStringLiteral("刪除範本") &&
+                deleteModal->text() == QStringLiteral("刪除範本「Duplicate」？此操作無法復原") &&
+                deleteModal->acceptButton()->text() == QStringLiteral("刪除") &&
+                deleteModal->rejectButton()->text() == QStringLiteral("取消"),
+            "the open Delete template confirmation should retranslate in place");
+    require(languageManager.setLanguage(QStringLiteral("en_US")),
+            "English Delete template language restoration should succeed");
+    QCoreApplication::processEvents();
+    deleteModal->acceptButton()->click();
+    QCoreApplication::processEvents();
+    const QVector<snow_shot::storage::WatermarkTemplate> afterDelete = templateSettings.templates();
+    require(afterDelete.size() == 2 && afterDelete.at(0).name == QStringLiteral("Duplicate") &&
+                afterDelete.at(1).name == QStringLiteral("Added") && commits == 4 &&
+                applied == beforeDelete,
+            "deleting a duplicate row should remove only that index and leave the snapshot intact");
+
+    require(templateSettings.setTemplates({}), "empty watermark-template library should persist");
+    select->hidePopup();
+    select->showPopup();
+    QCoreApplication::processEvents();
+    emptyLabel = qobject_cast<QLabel*>(select->notFoundContentWidget());
+    addButton = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotWatermarkTemplateAddButton"));
+    require(select->options().isEmpty() && emptyLabel != nullptr &&
+                emptyLabel->text() == QStringLiteral("No templates yet") &&
+                emptyLabel->isVisible() && addButton != nullptr && addButton->isVisible(),
+            "an empty template library should show its hint while retaining the Add footer");
+    select->hidePopup();
+    palette.hide();
+}
+
 void watermarkControlsFollowPhysicalScale() {
     ScreenshotToolPalette::Options options;
     options.showWatermarkTool = true;
@@ -6072,6 +6364,8 @@ void watermarkControlsFollowPhysicalScale() {
         palette.findChild<QWidget*>(QStringLiteral("screenshotWatermarkFontSizeSummaryButton")));
     auto* family = qobject_cast<adqt::widgets::AdSelect*>(
         controlWithAccessibleName(palette, "Watermark font family"));
+    auto* templateSelect = palette.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotWatermarkTemplateSelect"));
     auto* angle = dynamic_cast<IconNumericValuePreviewButton*>(
         palette.findChild<QWidget*>(QStringLiteral("screenshotWatermarkAngleEditor")));
     auto* gap = dynamic_cast<IconNumericValuePreviewButton*>(
@@ -6088,13 +6382,14 @@ void watermarkControlsFollowPhysicalScale() {
     }
 
     require(colorPicker != nullptr && colorTrigger != nullptr && text != nullptr &&
-                fontSize != nullptr && family != nullptr && angle != nullptr && gap != nullptr &&
+                fontSize != nullptr && family != nullptr && templateSelect != nullptr &&
+                angle != nullptr && gap != nullptr &&
                 std::all_of(fontSizeButtons.cbegin(), fontSizeButtons.cend(),
                             [](QWidget* button) { return button != nullptr; }),
             "watermark controls should be present for physical-scale coverage");
 
     const QList<QWidget*> controls{
-        colorPicker, colorTrigger, text, fontSize, family, angle, gap,
+        colorPicker, colorTrigger, text, fontSize, family, templateSelect, angle, gap,
     };
     const QList<QSize> referenceSizes = [&controls, &fontSizeButtons]() {
         QList<QSize> sizes;
@@ -7926,7 +8221,7 @@ void styleToolbarControlsDoNotEnterTabFocusChain() {
 
     const QList<adqt::widgets::AdRadio*> modeButtons =
         palette.findChildren<adqt::widgets::AdRadio*>();
-    require(modeButtons.size() == 14,
+    require(modeButtons.size() == 16,
             "style toolbars should expose the expected number of mode radios");
     for (adqt::widgets::AdRadio* button : modeButtons) {
         require(button != nullptr && button->focusPolicy() == Qt::NoFocus,
@@ -8985,6 +9280,8 @@ void screenshotProductStyleProfileIsComplete() {
                 exact(defaults.serialNumber.opacity, 1.0),
             "sequence-number defaults should match the Snow Shot product profile");
     require(defaults.watermark.color == QColor(0, 0, 0, 255) && defaults.watermark.text.isEmpty() &&
+                defaults.watermark.templateValue.isEmpty() &&
+                !defaults.watermark.templateApplicationTime.has_value() &&
                 exact(defaults.watermark.fontSize, 16.0) &&
                 defaults.watermark.fontFamily.isEmpty() && exact(defaults.watermark.angle, 30.0) &&
                 exact(defaults.watermark.gap, 56.0) && exact(defaults.watermark.opacity, 0.16),
@@ -9818,6 +10115,11 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--watermark-template-only"))) {
+        watermarkTemplateLibraryAndEditorApplySnapshotsDeterministically();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--toolbar-layout-only"))) {
         drawingModeSelectionsSurviveToolbarReentry();
         drawingGroupClicksActivateOnceAfterPointerReentry();
@@ -9918,6 +10220,7 @@ int main(int argc, char** argv) {
     watermarkAndTextToolsUseStandardSpacing();
     watermarkControlsFollowCommittedStateAndUndo();
     watermarkEditsCommitCompleteConfigsAndClampWheel();
+    watermarkTemplateLibraryAndEditorApplySnapshotsDeterministically();
     watermarkControlsFollowPhysicalScale();
     selectedStyleEditsAreReflectedInTheCreationStyleContext();
     mixedColorsKeepUniformStyleButtonsActive();

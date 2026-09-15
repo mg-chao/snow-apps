@@ -9,6 +9,7 @@
 #include "snow_shot/storage/settingsadapters.h"
 
 #include <QColor>
+#include <QDateTime>
 #include <QMargins>
 #include <QHash>
 #include <QPoint>
@@ -20,6 +21,7 @@
 #include <QWidget>
 
 #include <memory>
+#include <functional>
 #include <initializer_list>
 #include <optional>
 
@@ -237,6 +239,7 @@ class ScreenshotToolPalette final : public QWidget {
         std::optional<snow_shot::storage::ScreenshotToolbarLayout> actionToolsLayout;
         SnowCanvasStyleDefaults styleDefaults =
             snow_shot::presentation::screenshotCanvasStyleDefaults();
+        std::function<QDateTime()> watermarkTemplateClock;
     };
 
     explicit ScreenshotToolPalette(const Options& options, QWidget* parent = nullptr);
@@ -863,6 +866,7 @@ class ScreenshotToolPalette final : public QWidget {
     const Options m_options;
     std::optional<snow_shot::storage::ScreenshotToolbarLayout> m_toolbarLayout;
     snow_shot::storage::ScreenshotToolbarLayout m_actionToolsLayout;
+    bool m_actionToolsLayoutExplicit = false;
     QVector<DrawingToolGroup> m_drawingToolGroups;
     QVector<ActionToolGroup> m_actionToolGroups;
     FilterEditor m_filterEditor;

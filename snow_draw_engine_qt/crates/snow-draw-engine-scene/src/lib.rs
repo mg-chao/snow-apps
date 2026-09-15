@@ -704,11 +704,12 @@ fn display_decoration(
         opacity: config.opacity,
         ..snow_draw_engine_display::DisplayWatermarkConfig::default()
     };
-    let mut text_len = config.text.len().min(out.text.len());
-    while text_len > 0 && !config.text.is_char_boundary(text_len) {
+    let resolved_text = config.resolved_text();
+    let mut text_len = resolved_text.len().min(out.text.len());
+    while text_len > 0 && !resolved_text.is_char_boundary(text_len) {
         text_len -= 1;
     }
-    out.text[..text_len].copy_from_slice(&config.text.as_bytes()[..text_len]);
+    out.text[..text_len].copy_from_slice(&resolved_text.as_bytes()[..text_len]);
     out.text_len = text_len as u16;
     let mut family_len = config.font_family.len().min(out.font_family.len());
     while family_len > 0 && !config.font_family.is_char_boundary(family_len) {
@@ -1287,7 +1288,9 @@ fn build_layer_patch<T: Clone + PartialEq>(
 mod tests {
     use super::*;
     use snow_draw_engine_core::{Camera, PathCommand, PathGeometry, SurfaceSize};
-    use snow_draw_engine_document::{ElementMeta, Transaction, WatermarkConfig};
+    use snow_draw_engine_document::{
+        ElementMeta, Transaction, WatermarkConfig, WatermarkTemplateApplicationTime,
+    };
 
     fn frame_view() -> FrameView {
         FrameView {
@@ -1759,6 +1762,46 @@ mod tests {
             patch.decoration.dirty_regions,
             full_surface_dirty_region(frame.surface)
         );
+    }
+
+    #[test]
+    fn watermark_decoration_contains_resolved_utf8_safe_template_text() {
+        let mut model = DocumentModel::new();
+        let presentation = EditorPresentationState::default();
+        let mut transaction = Transaction::new("templated watermark");
+        transaction.update_watermark(WatermarkConfig {
+            text: "draft".to_owned(),
+            template_value: "{text} @ {YYYY-MM-DD_HH-mm-ss}".to_owned(),
+            template_application_time: Some(WatermarkTemplateApplicationTime {
+                year: 2026,
+                month: 9,
+                day: 15,
+                hour: 12,
+                minute: 34,
+                second: 56,
+            }),
+            ..WatermarkConfig::default()
+        });
+        model.apply_transaction(transaction).unwrap();
+
+        let decoration = display_decoration(&model, &presentation);
+        let text = &decoration.watermark.text[..decoration.watermark.text_len as usize];
+        assert_eq!(
+            std::str::from_utf8(text).unwrap(),
+            "draft @ 2026-09-15_12-34-56"
+        );
+
+        let expected = "é".repeat(127);
+        let mut transaction = Transaction::new("long templated watermark");
+        transaction.update_watermark(WatermarkConfig {
+            template_value: format!("{expected}😀"),
+            ..WatermarkConfig::default()
+        });
+        model.apply_transaction(transaction).unwrap();
+        let decoration = display_decoration(&model, &presentation);
+        let text = &decoration.watermark.text[..decoration.watermark.text_len as usize];
+        assert_eq!(text.len(), 254);
+        assert_eq!(std::str::from_utf8(text).unwrap(), expected);
     }
 
     #[test]

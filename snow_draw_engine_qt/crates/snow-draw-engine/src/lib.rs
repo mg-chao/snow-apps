@@ -11,7 +11,8 @@ pub use snow_draw_engine_core::*;
 pub use snow_draw_engine_display::*;
 pub use snow_draw_engine_document::{
     CanvasFilterType, ElementId, FillStyle, HighlightShape, SpotlightConfig, TextData,
-    TextHorizontalAlign, TextLayoutSize, TextVerticalAlign, WatermarkConfig, normalize_font_family,
+    TextHorizontalAlign, TextLayoutSize, TextVerticalAlign, WatermarkConfig,
+    WatermarkTemplateApplicationTime, normalize_font_family,
 };
 pub use snow_draw_engine_editor::{
     ActiveTextDraftPresentation, ActiveTextDraftTarget, ActiveTool, ApplyTransactionCommand,
