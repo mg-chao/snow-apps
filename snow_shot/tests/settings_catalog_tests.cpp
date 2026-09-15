@@ -171,8 +171,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 38 && itemCount == 156 && foundUpdates,
-            "catalog must contain thirty-eight sections and one hundred fifty-six items");
+    require(sectionCount == 38 && itemCount == 157 && foundUpdates,
+            "catalog must contain thirty-eight sections and one hundred fifty-seven items");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
                       QStringLiteral("interface.pin-to-screen.pinned-toolbar-editor")});
@@ -1180,6 +1180,9 @@ void globalHotkeyShortcutsHaveStableContracts() {
     const auto* pinClipboard =
         catalog.item({QStringLiteral("global-hotkeys"), QStringLiteral("pin-to-screen"),
                       QStringLiteral("quick.pin-clipboard-content")});
+    const auto* pinSelectedFiles =
+        catalog.item({QStringLiteral("global-hotkeys"), QStringLiteral("pin-to-screen"),
+                      QStringLiteral("quick.pin-selected-files")});
     const auto* otherShortcuts =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("other"));
     require(otherShortcuts != nullptr && otherShortcuts->items.size() == 2 &&
@@ -1205,6 +1208,7 @@ void globalHotkeyShortcutsHaveStableContracts() {
     const auto* openRecordingFolderShortcut = shortcutPayload(openRecordingFolder);
     const auto* openHistoryShortcut = shortcutPayload(openHistory);
     const auto* pinClipboardShortcut = shortcutPayload(pinClipboard);
+    const auto* pinSelectedFilesShortcut = shortcutPayload(pinSelectedFiles);
     require(screenRecord != nullptr && screenRecord->title.source != nullptr &&
                 QString::fromLatin1(screenRecord->title.source) ==
                     QStringLiteral("Screen recording") &&
@@ -1238,8 +1242,15 @@ void globalHotkeyShortcutsHaveStableContracts() {
                     QStringLiteral("Pin clipboard content to screen") &&
                 pinClipboardShortcut != nullptr && pinClipboardShortcut->iconFactory &&
                 pinClipboardShortcut->iconFactory() ==
-                    snow_shot::presentation::icons::custom::outlined::PinToScreen(),
-            "clipboard pinning must use the Pin to screen outlined icon");
+                    snow_shot::presentation::icons::custom::outlined::PinClipboard(),
+            "clipboard pinning must use the pin-clipboard outlined icon");
+    require(pinSelectedFiles != nullptr && pinSelectedFiles->title.source != nullptr &&
+                QString::fromLatin1(pinSelectedFiles->title.source) ==
+                    QStringLiteral("Pin Selected Files to Screen") &&
+                pinSelectedFilesShortcut != nullptr && pinSelectedFilesShortcut->iconFactory &&
+                pinSelectedFilesShortcut->iconFactory() ==
+                    snow_shot::presentation::icons::custom::outlined::Select(),
+            "selected-file pinning must use the select outlined icon");
 }
 
 void compactTrayManifestMatchesRegistryCatalog() {
@@ -1383,7 +1394,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 206 && index.search(QString()).size() == 206,
+    require(index.entries().size() == 207 && index.search(QString()).size() == 207,
             "search must generate all catalog nodes in catalog order");
     const auto pdfPaper = index.search(QStringLiteral("Landscape A4"));
     require(!pdfPaper.isEmpty() && pdfPaper.constFirst().location.itemId ==
@@ -1443,7 +1454,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 38 && items == 156,
+    require(pages == 12 && sections == 38 && items == 157,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));
