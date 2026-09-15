@@ -597,7 +597,7 @@ SettingsItemDefinition pinClipboardContentItem() {
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pin clipboard"))},
         GlobalShortcutAction::PinClipboardContent,
         QStringLiteral("global_shortcuts/pin_clipboard_content"),
-        []() { return custom_outlined_icons::PinToScreen(); });
+        []() { return custom_outlined_icons::PinClipboard(); });
 }
 
 SettingsItemDefinition pinSelectedFilesItem() {
@@ -609,7 +609,7 @@ SettingsItemDefinition pinSelectedFilesItem() {
             "Pin selected image files from File Explorer or the desktop to the screen"),
         {}, GlobalShortcutAction::PinSelectedFiles,
         QStringLiteral("global_shortcuts/pin_selected_files"),
-        []() { return custom_outlined_icons::PinToScreen(); });
+        []() { return custom_outlined_icons::Select(); });
 }
 
 SettingsItemDefinition globalMouseItem(const QString& id, const char* title,
@@ -2640,11 +2640,11 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
          {quick(QStringLiteral("quick.pin-clipboard-content"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Pin clipboard content to screen"),
                 GlobalShortcutAction::PinClipboardContent,
-                []() { return custom_outlined_icons::PinToScreen(); }),
+                []() { return custom_outlined_icons::PinClipboard(); }),
           quick(QStringLiteral("quick.pin-selected-files"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Pin Selected Files to Screen"),
                 GlobalShortcutAction::PinSelectedFiles,
-                []() { return custom_outlined_icons::PinToScreen(); })}},
+                []() { return custom_outlined_icons::Select(); })}},
         {QStringLiteral("screen-recording"),
          {quick(QStringLiteral("quick.screen-record"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording"),

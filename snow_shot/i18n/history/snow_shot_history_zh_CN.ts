@@ -196,6 +196,10 @@
             <translation>鼠标穿透</translation>
         </message>
         <message>
+            <source>Clipboard</source>
+            <translation>剪贴板</translation>
+        </message>
+        <message>
             <source>Close</source>
             <translation>关闭</translation>
         </message>
@@ -272,8 +276,20 @@
             <translation>顶部隐藏</translation>
         </message>
         <message>
+            <source>Image file</source>
+            <translation>图像文件</translation>
+        </message>
+        <message>
+            <source>Image files (%1)</source>
+            <translation>图像文件 (%1)</translation>
+        </message>
+        <message>
             <source>Image size is too large.</source>
             <translation>图像尺寸过大。</translation>
+        </message>
+        <message>
+            <source>Load new content</source>
+            <translation>加载新内容</translation>
         </message>
         <message>
             <source>New Group</source>
@@ -326,6 +342,10 @@
         <message>
             <source>Show main interface</source>
             <translation>显示主界面</translation>
+        </message>
+        <message>
+            <source>The new content could not be loaded</source>
+            <translation>无法加载新内容</translation>
         </message>
         <message>
             <source>The pinned image copy could not be started</source>

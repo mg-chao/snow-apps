@@ -1526,6 +1526,17 @@ bool applyPenTilesDirect(const QImage& source, QImage& destination, const QRect&
                          snow_canvas_filter_render::RenderWorkspace& workspace,
                          const snow_canvas_filter_render::ExecutionOptions& execution,
                          std::size_t* coveredPixels, std::size_t* boundingPixels) {
+    // Pen masks are dispatched one atlas tile at a time. Spatial effects must keep sampling the
+    // image from before the first tile was applied; otherwise later tiles read earlier results and
+    // expose the 64-pixel atlas grid. Pointwise effects can safely avoid this copy.
+    QImage immutableSource;
+    const QImage* sampledSource = &source;
+    if (snow_canvas_filter_render::samplingRadiusPixels(parameters) > 0 &&
+        source.constBits() == destination.constBits()) {
+        immutableSource = source;
+        destination.detach();
+        sampledSource = &immutableSource;
+    }
     const QRect globalMask = maskPixels.translated(surfacePixelBounds.topLeft());
     const int firstTileX = floorTileCoordinate(globalMask.left());
     const int lastTileX = floorTileCoordinate(globalMask.right());
@@ -1605,13 +1616,13 @@ bool applyPenTilesDirect(const QImage& source, QImage& destination, const QRect&
             bool tileApplied = false;
             if (!execution.forceDenseMask) {
                 tileApplied = snow_canvas_filter_render::applyMaskedSparse(
-                    source, destination, tileMask, maskOrigin, destinationPixels, spans,
+                    *sampledSource, destination, tileMask, maskOrigin, destinationPixels, spans,
                     occupiedBlocks, parameters, &workspace, execution);
             }
             if (!tileApplied) {
                 tileApplied = snow_canvas_filter_render::applyMasked(
-                    source, destination, tileMask, maskOrigin, destinationPixels, parameters,
-                    &workspace, execution);
+                    *sampledSource, destination, tileMask, maskOrigin, destinationPixels,
+                    parameters, &workspace, execution);
             }
             if (!tileApplied) {
                 return false;

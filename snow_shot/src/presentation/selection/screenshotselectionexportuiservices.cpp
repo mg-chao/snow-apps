@@ -36,8 +36,7 @@ void applyPinRuntimeSettings(ScreenshotPinnedWindow::Config* config) {
     }
     const snow_shot::storage::PinToScreenSettings settings;
     config->mouseWheelZoomMode = settings.mouseWheelZoomMode();
-    config->automaticTextRecognition =
-        config->formattedTextDocument == nullptr && settings.automaticTextRecognition();
+    config->automaticTextRecognition = settings.automaticTextRecognition();
 }
 
 void applyPersistence(ScreenshotPinnedWindow::Config* config, const QString& id = {},
@@ -64,6 +63,13 @@ void applyPersistence(ScreenshotPinnedWindow::Config* config, const QString& id 
             static_cast<void>(storage.pinnedWindows().remove(recordId));
         }
     };
+    config->replacementPersistenceWriter =
+        [](const snow_shot::storage::PinnedWindowRecord& record) {
+            auto& storage = snow_shot::storage::ApplicationStorage::instance();
+            if (!storage.configurationDirectory().isEmpty()) {
+                static_cast<void>(storage.pinnedWindows().upsert(record));
+            }
+        };
 }
 
 ScreenshotResultStyle decodeResultStyle(const QByteArray& bytes) {

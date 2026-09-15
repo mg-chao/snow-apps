@@ -134,6 +134,8 @@ class ScreenshotPinnedWindow final : public QWidget {
         bool persistedRecognitionVisible = false;
         bool persistedTranslationVisible = false;
         std::function<void(const snow_shot::storage::PinnedWindowRecord&)> persistenceWriter;
+        std::function<void(const snow_shot::storage::PinnedWindowRecord&)>
+            replacementPersistenceWriter;
         std::function<void(const QString&)> persistenceRemover;
         snow_shot::presentation::PinnedWindowGroupManager* groupManager = nullptr;
         QString groupId = QStringLiteral("default");
@@ -179,6 +181,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         Thumbnail,
         Animation,
         HideToTop,
+        ContentReplacement,
     };
 
     bool event(QEvent* event) override;
@@ -259,6 +262,12 @@ class ScreenshotPinnedWindow final : public QWidget {
     void copyEditToolbarContent();
     void copyCurrentViewport();
     void copyOriginalContent();
+    void loadImageFile();
+    void loadClipboardContent();
+    void requestContentReplacement(QStringList paths,
+                                   std::optional<ScreenshotClipboardContentSnapshot> snapshot = {});
+    bool replaceContent(ScreenshotClipboardContent content);
+    void cancelContentReplacement();
     void saveAsFile();
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> fileSaveArtifact();
     void quickSave();
@@ -334,6 +343,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     QMap<QString, quint64> m_pinnedShortcutBindings;
     std::shared_ptr<ScreenshotExportArtifact> m_exportArtifact;
     ScreenshotExportJobHandle m_materializationJob;
+    ScreenshotExportJobHandle m_contentReplacementJob;
+    quint64 m_contentReplacementGeneration = 0;
     ScreenshotExportJobHandle m_fileSaveJob;
     std::shared_ptr<ScreenshotExportArtifact> m_quickSaveArtifact;
     bool m_quickSavePending = false;
@@ -371,6 +382,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QAction* m_clickThroughAction = nullptr;
     QAction* m_showMainInterfaceAction = nullptr;
     QAction* m_closeAction = nullptr;
+    QAction* m_loadContentAction = nullptr;
     QActionGroup* m_opacityActions = nullptr;
     QActionGroup* m_scaleActions = nullptr;
     QAction* m_scaleMenuAction = nullptr;
@@ -410,6 +422,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     QRect m_preThumbnailNativeGeometry;
     std::unique_ptr<ScreenshotPinnedNativeGeometryController> m_nativeGeometryController;
     std::function<void(const snow_shot::storage::PinnedWindowRecord&)> m_persistenceWriter;
+    std::function<void(const snow_shot::storage::PinnedWindowRecord&)>
+        m_replacementPersistenceWriter;
     std::function<void(const QString&)> m_persistenceRemover;
     QPointer<snow_shot::presentation::PinnedWindowGroupManager> m_groupManager;
     std::unique_ptr<ScreenshotRecognitionSessionController> m_recognitionSession;

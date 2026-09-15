@@ -29,6 +29,7 @@
 #include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/storage/pinnedwindowtypes.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/presentation/components/icons/snowshoticons.h"
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -44,6 +45,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QCoreApplication>
+#include <QContextMenuEvent>
 #include <QCursor>
 #include <QDataStream>
 #include <QDir>
@@ -65,6 +67,7 @@
 #include <QMouseEvent>
 #include <QMimeData>
 #include <QPainter>
+#include <QPlainTextEdit>
 #include <QPointer>
 #include <QPushButton>
 #include <QRegion>
@@ -75,6 +78,7 @@
 #include <QThread>
 #include <QTimer>
 #include <QTextBrowser>
+#include <QTranslator>
 #include <QUuid>
 #include <QVariantAnimation>
 #include <QWheelEvent>
@@ -100,6 +104,50 @@ void runPinnedHideToTopControllerTests();
 // installing the Windows HWND hooks required by present().
 class ScreenshotPinnedWindowTestAccess {
   public:
+    static void prepareReplacement(ScreenshotPinnedWindow& window,
+                                   const ScreenshotPinnedWindow::Config& config) {
+        restoreOffscreen(window, config);
+        window.m_imageSource = config.imageSource;
+        window.m_originalPixelSize = window.m_originalImage.size();
+        window.m_firstContentFramePublished = true;
+        window.m_automaticTextRecognition = false;
+        window.m_scalePercent =
+            100.0 * config.nativeGeometry.width() / config.fullResolutionScaleBasis.width();
+        window.m_persistenceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        window.m_recognition = config.recognition;
+        window.m_persistenceWriter = config.persistenceWriter;
+        window.m_replacementPersistenceWriter = config.replacementPersistenceWriter;
+        window.configureRecognitionSession();
+        window.configureRecognitionTarget();
+        window.refreshContextMenu();
+    }
+    static bool replace(ScreenshotPinnedWindow& window, ScreenshotClipboardContent content) {
+        return window.replaceContent(std::move(content));
+    }
+    static void loadFiles(ScreenshotPinnedWindow& window, const QStringList& paths) {
+        window.requestContentReplacement(paths);
+    }
+    static bool replacementPending(const ScreenshotPinnedWindow& window) {
+        return window.m_contentReplacementJob.isValid();
+    }
+    static const QImage& originalImage(const ScreenshotPinnedWindow& window) {
+        return window.m_originalImage;
+    }
+    static QByteArray drawingHistory(const ScreenshotPinnedWindow& window) {
+        return window.m_runtime.serializeDocumentHistory();
+    }
+    static void transformReplacement(ScreenshotPinnedWindow& window) {
+        window.applyImageOperation(QTransform().rotate(90).scale(-1, 1), 1);
+    }
+    static ScreenshotRecognitionSessionController* recognition(ScreenshotPinnedWindow& window) {
+        return window.m_recognitionSession.get();
+    }
+    static void rejectReplacementGeometry(ScreenshotPinnedWindow& window) {
+        window.m_nativeGeometryController.reset();
+    }
+    static void saveReplacement(ScreenshotPinnedWindow& window) {
+        window.persistNow();
+    }
     static ScreenshotPinnedHideToTopController& hideToTop(ScreenshotPinnedWindow& window) {
         return *window.m_hideToTop;
     }
@@ -1156,6 +1204,113 @@ ScreenshotPinnedWindow::Config cachedOcrPinConfig(ScreenshotOcrRecognitionPort* 
     config.recognitionResults.key = QStringLiteral("cached-ocr-audit");
     config.recognitionResults.text = ScreenshotOcrRecognitionResult{presentation, {}, {}, {}};
     return config;
+}
+
+void pinnedRecognitionContextMenuCopiesLocally() {
+    IdleOcrRecognition recognition;
+    ScreenshotPinnedWindow window;
+    ScreenshotPinnedWindow::Config config = cachedOcrPinConfig(&recognition);
+    SnowShotTableResult tableResult;
+    tableResult.html = QStringLiteral("<table><tr><td>Saved table</td></tr></table>");
+    config.recognitionResults.table = tableResult;
+    ScreenshotRecognitionSessionController* session =
+        ScreenshotPinnedWindowTestAccess::hiddenSelectionOffscreen(window, config);
+    require(session != nullptr, "pinned recognition context menu needs a recognition session");
+    session->activate(ScreenshotRecognitionSessionController::Mode::Text);
+    waitForUi(20);
+
+    auto* content = window.findChild<ScreenshotRecognitionWindow*>(
+        QStringLiteral("screenshotPinnedRecognitionContent"));
+    require(content != nullptr && content->isVisible() && session->active(),
+            "cached OCR should be visible before opening its pinned context menu");
+    auto* pinnedMenu = window.findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedContextMenu"));
+    require(pinnedMenu != nullptr, "pinned recognition context menu test needs the image menu");
+    int pinnedMenuShows = 0;
+    QObject::connect(pinnedMenu, &QMenu::aboutToShow, &window,
+                     [&pinnedMenuShows]() { ++pinnedMenuShows; });
+
+    QApplication::clipboard()->setText(QStringLiteral("stale"));
+    bool inspected = false;
+    QTimer::singleShot(0, &window, [&]() {
+        auto* menu = qobject_cast<adqt::widgets::AdContextMenu*>(QApplication::activePopupWidget());
+        if (menu == nullptr) {
+            for (QWidget* widget : QApplication::topLevelWidgets()) {
+                auto* candidate = qobject_cast<adqt::widgets::AdContextMenu*>(widget);
+                if (candidate != nullptr && candidate->isVisible()) {
+                    menu = candidate;
+                    break;
+                }
+            }
+        }
+        require(menu != nullptr && menu->objectName() == QStringLiteral("screenshotOcrContextMenu"),
+                "embedded recognition should open its local Ant Design OCR menu");
+        QAction* copy = nullptr;
+        for (QAction* action : menu->actions()) {
+            if (action != nullptr && action->text() == QStringLiteral("Copy")) {
+                copy = action;
+                break;
+            }
+        }
+        require(copy != nullptr && copy->isEnabled(),
+                "embedded recognition should expose an enabled local Copy action");
+        copy->trigger();
+        inspected = true;
+        menu->close();
+    });
+    const QPoint localPosition = content->rect().center();
+    QContextMenuEvent event(QContextMenuEvent::Mouse, localPosition,
+                            content->mapToGlobal(localPosition));
+    QApplication::sendEvent(content, &event);
+    QApplication::processEvents();
+
+    require(inspected && event.isAccepted() && pinnedMenuShows == 0,
+            "embedded recognition should consume context menus before the pinned image menu");
+    require(QApplication::clipboard()->text() == QStringLiteral("Saved OCR") && session->active() &&
+                window.isVisible() && content->isVisible(),
+            "pinned context Copy should copy locally without deactivating the pin or OCR result");
+
+    session->activate(ScreenshotRecognitionSessionController::Mode::Table);
+    QApplication::processEvents();
+    auto* table = content->findChild<QTableView*>(QStringLiteral("snowShotRecognizedTable"));
+    require(table != nullptr && table->isVisible(),
+            "cached pinned table should be visible before opening its edit menu");
+    table->setCurrentIndex(table->model()->index(0, 0));
+    QKeyEvent editEvent(QEvent::KeyPress, Qt::Key_F2, Qt::NoModifier);
+    QApplication::sendEvent(table, &editEvent);
+    QApplication::processEvents();
+    auto* cellEditor = table->findChild<QPlainTextEdit*>(QStringLiteral("snowShotTableCellEditor"));
+    require(cellEditor != nullptr, "cached pinned table should open its inline editor");
+
+    inspected = false;
+    QTimer::singleShot(0, &window, [&]() {
+        auto* menu = qobject_cast<adqt::widgets::AdContextMenu*>(QApplication::activePopupWidget());
+        require(menu != nullptr &&
+                    menu->objectName() == QStringLiteral("screenshotTableCellEditorContextMenu"),
+                "pinned inline table editing should open its local OCR-style menu");
+        QAction* copy = nullptr;
+        for (QAction* action : menu->actions()) {
+            if (action != nullptr && action->text() == QStringLiteral("Copy")) {
+                copy = action;
+                break;
+            }
+        }
+        require(copy != nullptr && copy->isEnabled(),
+                "selected pinned cell text should expose an enabled local Copy action");
+        copy->trigger();
+        inspected = true;
+        menu->close();
+    });
+    const QPoint cellPosition = cellEditor->viewport()->rect().center();
+    QContextMenuEvent cellEvent(QContextMenuEvent::Mouse, cellPosition,
+                                cellEditor->viewport()->mapToGlobal(cellPosition));
+    QApplication::sendEvent(cellEditor->viewport(), &cellEvent);
+    QApplication::processEvents();
+    require(inspected && cellEvent.isAccepted() && pinnedMenuShows == 0 && session->active() &&
+                session->tableModeActive() && content->isVisible() && window.isVisible(),
+            "pinned inline table editing should consume its menu without closing recognition");
+    require(QApplication::clipboard()->text() == QStringLiteral("Saved table"),
+            "pinned inline table context Copy should copy the selected cell text locally");
 }
 
 void pinnedToolbarLayoutReloadsAndResetsIndependently() {
@@ -7270,6 +7425,341 @@ void pinnedCloseReleaseNative() {
 }
 #endif
 
+void pinnedContentReplacement() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+    QImage original(120, 80, QImage::Format_ARGB32_Premultiplied);
+    original.fill(QColor(20, 40, 60));
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = QRect(40, 60, 120, 80);
+    config.canvasSourceRect = QRectF(10, 20, 120, 80);
+    config.fullResolutionScaleBasis = original.size();
+    config.imageSource = ScreenshotImageSource::fromImage(original, config.canvasSourceRect);
+    ScreenshotPinnedWindow window;
+    Access::prepareReplacement(window, config);
+    const auto samePixels = [](const QImage& first, const QImage& second) {
+        return first.convertToFormat(QImage::Format_ARGB32_Premultiplied) ==
+               second.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    };
+    const auto contentFor = [](const QImage& image) {
+        ScreenshotClipboardContent content;
+        content.image = image;
+        return content;
+    };
+    const auto waitForReplacement = [&window]() {
+        QElapsedTimer timer;
+        timer.start();
+        while (Access::replacementPending(window) && timer.elapsed() < 10000) {
+            waitForUi(5);
+        }
+        require(!Access::replacementPending(window), "replacement job must finish");
+        QCoreApplication::processEvents();
+    };
+    auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedContextMenu"));
+    auto* load = window.findChild<QAction*>(QStringLiteral("screenshotPinnedLoadContentAction"));
+    auto* file = window.findChild<QAction*>(QStringLiteral("screenshotPinnedLoadImageFileAction"));
+    auto* clipboard =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedLoadClipboardAction"));
+    auto* close = window.findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
+    require(menu && load && file && clipboard && close && load->isEnabled(),
+            "replacement submenu must be available after materialization");
+    require(menu->actionIcon(clipboard) ==
+                snow_shot::presentation::icons::custom::outlined::PinClipboard(),
+            "clipboard replacement must use the pin-clipboard outlined icon");
+    for (const bool tray : {false, true, false}) {
+        ScreenshotPinnedWindow::setRuntimeTrayEnabled(tray);
+        require(menu->actions().indexOf(load) + 1 == menu->actions().indexOf(close),
+                "replacement must remain directly above Close when tray fallback changes");
+    }
+    ScreenshotPinnedWindow::setRuntimeTrayEnabled(true);
+    class ReplacementTranslator final : public QTranslator {
+      public:
+        QString translate(const char* context, const char* source, const char*,
+                          int) const override {
+            if (QByteArray(context) == "ScreenshotPinnedWindow" &&
+                (QByteArray(source) == "Load new content" || QByteArray(source) == "Image file" ||
+                 QByteArray(source) == "Clipboard")) {
+                return QStringLiteral("Translated ") + QString::fromUtf8(source);
+            }
+            return {};
+        }
+    } translator;
+    QCoreApplication::installTranslator(&translator);
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(&window, &languageChange);
+    require(load->text() == QStringLiteral("Translated Load new content") &&
+                file->text() == QStringLiteral("Translated Image file") &&
+                clipboard->text() == QStringLiteral("Translated Clipboard"),
+            "replacement submenu must retranslate every action");
+    QCoreApplication::removeTranslator(&translator);
+    QCoreApplication::sendEvent(&window, &languageChange);
+
+    // A warm filter must consume replacement pixels without replacing the document.
+    Access::editForHideTest(window);
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    const SnowCanvasAutoFilterRecord regions{config.canvasSourceRect,
+                                             {{1, QRectF(20, 30, 40, 30), QStringLiteral("text")}}};
+    require(canvas->setAutoFilterRegions(regions), "seed filter region");
+    auto style = canvas->canvasStyleToolbarState().filterStyle;
+    style.type = SnowCanvasFilterType::Inversion;
+    require(canvas->setCanvasFilterStyle(style, SnowCanvasFilterStylePropertyType) &&
+                canvas->fillAutoFilterCategory(QStringLiteral("text")),
+            "seed inversion annotation");
+    const auto paint = [canvas]() {
+        QImage image(canvas->size(), QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        canvas->render(&image);
+        return image;
+    };
+    const QColor oldFiltered(235, 215, 195);
+    require(paint().pixelColor(25, 25) == oldFiltered && paint().pixelColor(25, 25) == oldFiltered,
+            "filter fixture must populate retained tiles");
+    const QByteArray history = Access::drawingHistory(window);
+    QImage replacement(original.size(), original.format());
+    replacement.fill(QColor(80, 100, 120));
+    const auto before = window.persistenceSnapshot();
+    require(Access::replace(window, contentFor(replacement)), "same-size replacement must load");
+    require(Access::drawingHistory(window) == history &&
+                window.currentNativeGeometry() == before.nativeGeometry &&
+                window.persistenceSnapshot().scalePercent == before.scalePercent,
+            "same-size replacement must preserve exact geometry and drawing history");
+    const QColor newFiltered(175, 155, 135);
+    require(paint().pixelColor(25, 25) == newFiltered && paint().pixelColor(25, 25) == newFiltered,
+            "immediate and retained filter paints must use the new image");
+    require(canvas->undo() && paint().pixelColor(25, 25) == QColor(80, 100, 120) && canvas->redo(),
+            "old annotation undo and redo must work on replacement pixels");
+    QImage exported;
+    auto artifact = Access::fileSave(window);
+    require(artifact && artifact->requestImage(&window,
+                                               [&](ScreenshotExportImageResult result) {
+                                                   exported = std::move(result.image);
+                                               }),
+            "replacement export must start");
+    QElapsedTimer exportTimer;
+    exportTimer.start();
+    while (exported.isNull() && exportTimer.elapsed() < 10000) {
+        waitForUi(5);
+    }
+    require(!exported.isNull() && exported.pixelColor(100, 60) == QColor(80, 100, 120) &&
+                exported.pixelColor(25, 25) == newFiltered,
+            "export must combine replacement pixels with preserved filter annotations");
+
+    auto* session = Access::recognition(window);
+    auto cached = cachedOcrPinConfig(nullptr).recognitionResults;
+    session->setTarget({cached.key, replacement, config.canvasSourceRect});
+    session->seedRecognitionResults(cached);
+    require(session->hasTextResult(), "seed cached OCR before same-size reload");
+    require(!Access::replace(window, {}) && session->hasTextResult(),
+            "failed replacement must preserve existing recognition results");
+    require(Access::replace(window, contentFor(original)) && !session->hasTextResult() &&
+                session->cachedRecognitionResults().isEmpty(),
+            "same-size reload must clear recognition caches and retarget the session");
+
+    class DeferredRecognition final : public ScreenshotOcrRecognitionPort {
+      public:
+        Completion pending;
+        bool cancelled = false;
+        RequestToken recognize(ScreenshotOcrRequest, QObject*, Completion completion) override {
+            pending = std::move(completion);
+            return 1;
+        }
+        void cancel(RequestToken) override {
+            cancelled = true;
+        }
+        bool reprioritize(RequestToken, ScreenshotOcrRequestPriority) override {
+            return false;
+        }
+    } recognition;
+    ScreenshotPinnedWindow recognitionWindow;
+    auto recognitionConfig = config;
+    recognitionConfig.recognition = &recognition;
+    Access::prepareReplacement(recognitionWindow, recognitionConfig);
+    auto* pendingSession = Access::recognition(recognitionWindow);
+    pendingSession->prefetchText();
+    require(static_cast<bool>(recognition.pending),
+            "old image must have an outstanding OCR request");
+    require(Access::replace(recognitionWindow, contentFor(replacement)) && recognition.cancelled,
+            "replacement must cancel outstanding OCR");
+    recognition.pending(*cached.text);
+    require(!pendingSession->hasTextResult() &&
+                pendingSession->cachedRecognitionResults().isEmpty(),
+            "late completion must not restore old-image OCR");
+
+    // Fractional scale, rotation, and flips must not cause rounding or recentering.
+    config.nativeGeometry.setSize(QSize(151, 101));
+    ScreenshotPinnedWindow transformedWindow;
+    Access::prepareReplacement(transformedWindow, config);
+    Access::transformReplacement(transformedWindow);
+    Access::opacityForHideTest(transformedWindow);
+    const auto transformedBefore = transformedWindow.persistenceSnapshot();
+    require(Access::replace(transformedWindow, contentFor(replacement)),
+            "replace transformed image");
+    const auto transformedAfter = transformedWindow.persistenceSnapshot();
+    require(transformedBefore.nativeGeometry == transformedAfter.nativeGeometry &&
+                transformedBefore.scalePercent == transformedAfter.scalePercent &&
+                transformedBefore.imageTransform == transformedAfter.imageTransform &&
+                transformedBefore.opacityPercent == transformedAfter.opacityPercent &&
+                transformedBefore.quarterTurns == transformedAfter.quarterTurns,
+            "same-size reload must retain fractional scale, rotation, flip, opacity, and position");
+    QImage larger(240, 160, original.format());
+    larger.fill(Qt::green);
+    require(Access::replace(transformedWindow, contentFor(larger)), "larger image must load");
+    const auto largerState = transformedWindow.persistenceSnapshot();
+    require(largerState.nativeGeometry.topLeft() == transformedBefore.nativeGeometry.topLeft() &&
+                largerState.initialPhysicalSize == QSize(240, 160) &&
+                largerState.scalePercent == transformedBefore.scalePercent &&
+                largerState.nativeGeometry.size() ==
+                    QSize(qRound(160 * largerState.scalePercent / 100),
+                          qRound(240 * largerState.scalePercent / 100)),
+            "different dimensions must retain top-left and scale with oriented dimensions");
+    Access::thumbnailForHideTest(transformedWindow, true);
+    const auto thumbnailBefore = transformedWindow.persistenceSnapshot();
+    require(Access::replace(transformedWindow, contentFor(larger)) &&
+                transformedWindow.persistenceSnapshot().nativeGeometry ==
+                    thumbnailBefore.nativeGeometry &&
+                transformedWindow.persistenceSnapshot().preThumbnailNativeGeometry ==
+                    thumbnailBefore.preThumbnailNativeGeometry,
+            "same-size thumbnail reload must leave both geometries intact");
+    require(Access::replace(transformedWindow, contentFor(original)) &&
+                transformedWindow.persistenceSnapshot().thumbnailMode &&
+                transformedWindow.persistenceSnapshot().nativeGeometry ==
+                    thumbnailBefore.nativeGeometry &&
+                transformedWindow.persistenceSnapshot().preThumbnailNativeGeometry.size() ==
+                    transformedBefore.nativeGeometry.size(),
+            "different-size thumbnail reload must update expansion while retaining thumbnail");
+
+    // Rejected inputs leave source, annotations, and recognition untouched.
+    const auto failedBefore = window.persistenceSnapshot();
+    require(!Access::replace(window, {}) && samePixels(Access::originalImage(window), original) &&
+                window.persistenceSnapshot().canvasSession == failedBefore.canvasSession,
+            "invalid decoded input must not mutate the pin");
+    ScreenshotPinnedWindow rejectedWindow;
+    Access::prepareReplacement(rejectedWindow, config);
+    Access::rejectReplacementGeometry(rejectedWindow);
+    require(!Access::replace(rejectedWindow, contentFor(larger)) &&
+                samePixels(Access::originalImage(rejectedWindow), original),
+            "rejected geometry must not commit new source pixels");
+
+    QTemporaryDir files;
+    require(files.isValid(), "replacement file fixture directory");
+    const QString firstPath = files.filePath(QStringLiteral("first.png"));
+    const QString secondPath = files.filePath(QStringLiteral("second.png"));
+    const QString corruptPath = files.filePath(QStringLiteral("corrupt.png"));
+    require(original.save(firstPath) && replacement.save(secondPath), "write replacement fixtures");
+    QFile corrupt(corruptPath);
+    require(corrupt.open(QIODevice::WriteOnly) && corrupt.write("invalid") == 7,
+            "write corrupt image");
+    corrupt.close();
+    file->trigger();
+    auto* dialog =
+        window.findChild<QFileDialog*>(QStringLiteral("screenshotPinnedLoadImageDialog"));
+    require(dialog && dialog->fileMode() == QFileDialog::ExistingFile,
+            "single-file dialog must open");
+    for (const auto& extension : ScreenshotClipboardContentReader::supportedFileExtensions()) {
+        require(dialog->nameFilters().join(QString()).contains(QStringLiteral("*.") + extension),
+                "file dialog must advertise every supported decoder extension");
+    }
+    dialog->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(!Access::replacementPending(window) &&
+                samePixels(Access::originalImage(window), original),
+            "canceling file selection must keep the source");
+    file->trigger();
+    dialog = window.findChild<QFileDialog*>(QStringLiteral("screenshotPinnedLoadImageDialog"));
+    dialog->selectFile(secondPath);
+    require(QMetaObject::invokeMethod(dialog, "accept", Qt::DirectConnection),
+            "accept selected file");
+    waitForReplacement();
+    require(samePixels(Access::originalImage(window), replacement),
+            "Image file action must replace the source");
+
+    auto* mime = new QMimeData;
+    mime->setUrls({QUrl::fromLocalFile(corruptPath), QUrl::fromLocalFile(firstPath),
+                   QUrl::fromLocalFile(secondPath)});
+    QApplication::clipboard()->setMimeData(mime);
+    clipboard->trigger();
+    waitForReplacement();
+    require(samePixels(Access::originalImage(window), original),
+            "clipboard must use first loadable file");
+    mime = new QMimeData;
+    mime->setUrls({QUrl::fromLocalFile(corruptPath)});
+    mime->setText(corruptPath);
+    QApplication::clipboard()->setMimeData(mime);
+    clipboard->trigger();
+    waitForReplacement();
+    require(samePixels(Access::originalImage(window), original),
+            "failed file URL must not become text content");
+    QApplication::clipboard()->clear();
+    clipboard->trigger();
+    waitForReplacement();
+    require(samePixels(Access::originalImage(window), original),
+            "empty clipboard must preserve content");
+    QApplication::clipboard()->setText(QStringLiteral("Replacement text"));
+    clipboard->trigger();
+    waitForReplacement();
+    require(window.persistenceSnapshot().originalText == QStringLiteral("Replacement text") &&
+                session->hasTextResult(),
+            "clipboard text must supply fresh selectable text");
+    window.findChild<QAction*>(QStringLiteral("screenshotPinnedCopyOriginalAction"))->trigger();
+    require(QApplication::clipboard()->text() == QStringLiteral("Replacement text"),
+            "Copy original content must use replacement text");
+    mime = new QMimeData;
+    mime->setHtml(QStringLiteral("<b>Replacement HTML</b>"));
+    QApplication::clipboard()->setMimeData(mime);
+    clipboard->trigger();
+    waitForReplacement();
+    require(window.persistenceSnapshot().originalHtml.contains(QStringLiteral("Replacement HTML")),
+            "HTML metadata must replace previous text metadata");
+    QApplication::clipboard()->setImage(replacement);
+    clipboard->trigger();
+    waitForReplacement();
+    require(samePixels(Access::originalImage(window), replacement) &&
+                window.persistenceSnapshot().originalText.isEmpty() &&
+                window.persistenceSnapshot().originalHtml.isEmpty() && !session->hasTextResult(),
+            "image after text must clear formatted source and recognition metadata");
+    Access::loadFiles(window, {firstPath});
+    Access::loadFiles(window, {secondPath});
+    waitForReplacement();
+    require(samePixels(Access::originalImage(window), replacement),
+            "newer load must supersede queued old load");
+
+    // A changed file with the same path must replace its private persisted copy.
+    QTemporaryDir storage;
+    snow_shot::storage::PinnedWindowRepository repository(storage.path(), true, 0);
+    require(repository.upsert(window.persistenceSnapshot()).success && repository.flush().success,
+            "persist replacement file pin");
+    require(original.save(secondPath), "overwrite original file at same path");
+    Access::loadFiles(window, {secondPath});
+    waitForReplacement();
+    const auto record = window.persistenceSnapshot();
+    require(repository.upsert(record).success && repository.flush().success, "persist file reload");
+    snow_shot::storage::PinnedWindowRepository reopened(storage.path(), false);
+    const auto restored = reopened.loadRecord(record.id);
+    require(restored.has_value() && samePixels(QImage(restored->originalFilePath), original) &&
+                restored->canvasSession == record.canvasSession,
+            "reopened pin must use new bytes and retained annotations");
+    int stateWrites = 0;
+    int replacementWrites = 0;
+    auto managedConfig = config;
+    managedConfig.persistenceWriter = [&](const auto&) { ++stateWrites; };
+    managedConfig.replacementPersistenceWriter = [&](const auto&) { ++replacementWrites; };
+    ScreenshotPinnedWindow managedWindow;
+    Access::prepareReplacement(managedWindow, managedConfig);
+    Access::saveReplacement(managedWindow);
+    require(stateWrites == 1 && replacementWrites == 0,
+            "restored source starts with state-only writer");
+    require(Access::replace(managedWindow, contentFor(replacement)),
+            "replace restored managed source");
+    Access::saveReplacement(managedWindow);
+    require(stateWrites == 1 && replacementWrites == 1,
+            "restored source replacement must switch to a payload-capable writer");
+    Access::loadFiles(window, {firstPath});
+    window.close();
+    waitForUi(50);
+    require(!Access::replacementPending(window), "closing must cancel replacement work");
+}
+
 void pinnedAutoFilterPreservesBackgroundAndSession() {
     QImage background(120, 80, QImage::Format_ARGB32_Premultiplied);
     background.fill(QColor(20, 40, 60));
@@ -7338,6 +7828,10 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--content-replacement-only"))) {
+            pinnedContentReplacement();
+            return 0;
+        }
 #ifdef Q_OS_WIN
         if (app.arguments().contains(QStringLiteral("--close-release-native"))) {
             pinnedCloseReleaseNative();
@@ -7508,6 +8002,10 @@ int main(int argc, char* argv[]) {
         if (app.arguments().contains(QStringLiteral("--recognition-shortcut-only"))) {
             pinnedEditingRecognitionShortcutsUsePaletteCommands();
             pinnedRecognitionShortcutTogglesResults();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--recognition-context-menu-only"))) {
+            pinnedRecognitionContextMenuCopiesLocally();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--cached-ocr-provider-only"))) {

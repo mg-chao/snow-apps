@@ -55,6 +55,10 @@
     <context>
         <name>ScreenshotImageConversionView</name>
         <message>
+            <source>Copy</source>
+            <translation>Copy</translation>
+        </message>
+        <message>
             <source>HTML preview</source>
             <translation>HTML preview</translation>
         </message>
@@ -69,6 +73,10 @@
         <message>
             <source>Retry</source>
             <translation>Retry</translation>
+        </message>
+        <message>
+            <source>Select All</source>
+            <translation>Select All</translation>
         </message>
     </context>
     <context>
@@ -190,6 +198,29 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotRecognitionWindow</name>
+        <message>
+            <source>Copy</source>
+            <translation>Copy</translation>
+        </message>
+        <message>
+            <source>Cut</source>
+            <translation>Cut</translation>
+        </message>
+        <message>
+            <source>Delete</source>
+            <translation>Delete</translation>
+        </message>
+        <message>
+            <source>Paste</source>
+            <translation>Paste</translation>
+        </message>
+        <message>
+            <source>Select All</source>
+            <translation>Select All</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotTableEditor</name>
         <message>
             <source>Clear cell contents</source>
@@ -202,6 +233,14 @@
         <message>
             <source>Copy</source>
             <translation>Copy</translation>
+        </message>
+        <message>
+            <source>Cut</source>
+            <translation>Cut</translation>
+        </message>
+        <message>
+            <source>Delete</source>
+            <translation>Delete</translation>
         </message>
         <message>
             <source>Edit cell</source>
@@ -226,6 +265,10 @@
         <message>
             <source>Reset table</source>
             <translation>Reset table</translation>
+        </message>
+        <message>
+            <source>Select All</source>
+            <translation>Select All</translation>
         </message>
         <message>
             <source>Select the complete merged cell before pasting into this area</source>

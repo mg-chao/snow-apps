@@ -2995,6 +2995,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-pinned-async-presentation-tests
         COMMAND snow-shot-pinned-window-tests --async-presentation-only
     )
+    add_test(NAME snow-shot-pinned-content-replacement-tests
+        COMMAND snow-shot-pinned-window-tests --content-replacement-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-content-replacement-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "unit" TIMEOUT 90)
     add_test(
         NAME snow-shot-pinned-window-pool-tests
         COMMAND snow-shot-pinned-window-tests --pooling-only
@@ -3027,6 +3033,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --recognition-shortcut-only)
     add_test(NAME snow-shot-pinned-recognition-shortcut-offscreen-tests
         COMMAND snow-shot-pinned-window-tests --recognition-shortcut-only -platform offscreen)
+    add_test(NAME snow-shot-pinned-recognition-context-menu-tests
+        COMMAND snow-shot-pinned-window-tests --recognition-context-menu-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-recognition-context-menu-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-pinned-transformed-ocr-tests
         COMMAND snow-shot-pinned-window-tests --transformed-ocr-only)
     add_test(
@@ -4228,6 +4238,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         )
     endif()
     snow_shot_import_offscreen_platform(snow-shot-recognition-window-tests)
+    add_test(NAME snow-shot-recognition-context-menu-tests
+        COMMAND snow-shot-recognition-window-tests --context-menu-only -platform offscreen)
+    set_tests_properties(snow-shot-recognition-context-menu-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-recognition-selection-only-rendering-tests
         COMMAND snow-shot-recognition-window-tests --selection-only-rendering -platform offscreen)
     add_test(

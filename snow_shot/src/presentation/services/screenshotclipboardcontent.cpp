@@ -688,6 +688,14 @@ ScreenshotClipboardContentReader::readMimeData(const QMimeData* mimeData, qreal 
     return captured.has_value() ? decode(std::move(*captured)) : std::nullopt;
 }
 
+QStringList ScreenshotClipboardContentReader::supportedFileExtensions() {
+    QStringList extensions;
+    for (const auto& format : kFileImageFormats) {
+        extensions.append(QString::fromLatin1(format.suffix));
+    }
+    return extensions;
+}
+
 QStringList ScreenshotClipboardContentReader::localFilePaths(const QMimeData* mimeData) {
     QStringList paths;
     if (mimeData != nullptr) {

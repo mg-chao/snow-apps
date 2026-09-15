@@ -1193,6 +1193,9 @@ void globalHotkeyShortcutsHaveStableContracts() {
     const auto* pinClipboard =
         catalog.item({QStringLiteral("global-hotkeys"), QStringLiteral("pin-to-screen"),
                       QStringLiteral("quick.pin-clipboard-content")});
+    const auto* pinSelectedFiles =
+        catalog.item({QStringLiteral("global-hotkeys"), QStringLiteral("pin-to-screen"),
+                      QStringLiteral("quick.pin-selected-files")});
     const auto* otherShortcuts =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("other"));
     require(otherShortcuts != nullptr && otherShortcuts->items.size() == 2 &&
@@ -1218,6 +1221,7 @@ void globalHotkeyShortcutsHaveStableContracts() {
     const auto* openRecordingFolderShortcut = shortcutPayload(openRecordingFolder);
     const auto* openHistoryShortcut = shortcutPayload(openHistory);
     const auto* pinClipboardShortcut = shortcutPayload(pinClipboard);
+    const auto* pinSelectedFilesShortcut = shortcutPayload(pinSelectedFiles);
     require(screenRecord != nullptr && screenRecord->title.source != nullptr &&
                 QString::fromLatin1(screenRecord->title.source) ==
                     QStringLiteral("Screen recording") &&
@@ -1251,8 +1255,15 @@ void globalHotkeyShortcutsHaveStableContracts() {
                     QStringLiteral("Pin clipboard content to screen") &&
                 pinClipboardShortcut != nullptr && pinClipboardShortcut->iconFactory &&
                 pinClipboardShortcut->iconFactory() ==
-                    snow_shot::presentation::icons::custom::outlined::PinToScreen(),
-            "clipboard pinning must use the Pin to screen outlined icon");
+                    snow_shot::presentation::icons::custom::outlined::PinClipboard(),
+            "clipboard pinning must use the pin-clipboard outlined icon");
+    require(pinSelectedFiles != nullptr && pinSelectedFiles->title.source != nullptr &&
+                QString::fromLatin1(pinSelectedFiles->title.source) ==
+                    QStringLiteral("Pin Selected Files to Screen") &&
+                pinSelectedFilesShortcut != nullptr && pinSelectedFilesShortcut->iconFactory &&
+                pinSelectedFilesShortcut->iconFactory() ==
+                    snow_shot::presentation::icons::custom::outlined::Select(),
+            "selected-file pinning must use the select outlined icon");
 }
 
 void compactTrayManifestMatchesRegistryCatalog() {
