@@ -1274,6 +1274,15 @@ void dynamicToolbarLabelsUseEveryTranslationCatalog() {
     require(palette.ensureStyleFamily(ScreenshotToolPalette::Tool::Arrow),
             "arrow controls should materialize for translation coverage");
 
+    ScreenshotToolPalette::Options filterOptions;
+    filterOptions.showFilterTool = true;
+    ScreenshotToolPalette filterPalette(filterOptions);
+    filterPalette.setActiveTool(ScreenshotToolPalette::Tool::PenFilter);
+    auto* filterTypes = filterPalette.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotPenFilterTypeSelect"));
+    require(filterTypes != nullptr && filterTypes->model() != nullptr,
+            "dynamic translation coverage should expose filter options");
+
     const QStringList objectNames{
         QStringLiteral("screenshotToolbarDragHandle"),
         QStringLiteral("screenRecordingShowKeyboard"),
@@ -1298,6 +1307,7 @@ void dynamicToolbarLabelsUseEveryTranslationCatalog() {
     struct TranslationExpectation {
         QString language;
         QStringList labels;
+        QString emboss;
     };
     const TranslationExpectation expectations[] = {
         {QStringLiteral("zh_CN"),
@@ -1305,13 +1315,15 @@ void dynamicToolbarLabelsUseEveryTranslationCatalog() {
           QStringLiteral("置于底层"), QStringLiteral("下移一层"), QStringLiteral("上移一层"),
           QStringLiteral("置于顶层"), QStringLiteral("复制选中元素"),
           QStringLiteral("删除选中元素"), QStringLiteral("直线箭头"), QStringLiteral("曲线箭头"),
-          QStringLiteral("折线箭头")}},
+          QStringLiteral("折线箭头")},
+         QStringLiteral("浮雕")},
         {QStringLiteral("zh_TW"),
          {QStringLiteral("拖曳工具列"), QStringLiteral("在錄製中顯示按鍵"),
           QStringLiteral("移至最下層"), QStringLiteral("下移一層"), QStringLiteral("上移一層"),
           QStringLiteral("移至最上層"), QStringLiteral("複製選取的元素"),
           QStringLiteral("刪除選取的元素"), QStringLiteral("直線箭頭"), QStringLiteral("曲線箭頭"),
-          QStringLiteral("折線箭頭")}},
+          QStringLiteral("折線箭頭")},
+         QStringLiteral("浮雕")},
     };
     for (const TranslationExpectation& expectation : expectations) {
         require(language.setLanguage(expectation.language),
@@ -1324,6 +1336,10 @@ void dynamicToolbarLabelsUseEveryTranslationCatalog() {
                         controls.at(index)->accessibleName() == expectation.labels.at(index),
                     "dynamic toolbar labels must use the active translation catalog");
         }
+        const QModelIndex embossIndex = filterTypes->model()->index(4, 0);
+        require(embossIndex.data(adqt::widgets::AdSelect::DefaultLabelRole).toString() ==
+                    expectation.emboss,
+                "the Emboss filter option must use the active annotation catalog");
     }
 
     require(language.setLanguage(QStringLiteral("en_US")),
@@ -5134,8 +5150,8 @@ void filterToolExposesTypeAndIntensityControls() {
             "Filter type select should match the font-family select style");
     require(palette.findChild<QSlider*>(QStringLiteral("screenshotFilterOpacitySlider")) == nullptr,
             "Filter should not expose an opacity style editor");
-    require(typeSelect->model() != nullptr && typeSelect->model()->rowCount() == 4,
-            "Filter type select should only expose the four filter types");
+    require(typeSelect->model() != nullptr && typeSelect->model()->rowCount() == 5,
+            "Filter type select should expose all five filter types");
     require(typeSelect->model()
                         ->index(0, 0)
                         .data(adqt::widgets::AdSelect::DefaultLabelRole)
@@ -5158,6 +5174,15 @@ void filterToolExposesTypeAndIntensityControls() {
                 filterTypeSortComparator(mosaicFilter, gaussianBlurFilter) &&
                 !filterTypeSortComparator(gaussianBlurFilter, mosaicFilter),
             "Filter type popup should keep Mosaic ahead of the other filter types");
+    require(typeSelect->model()
+                        ->index(4, 0)
+                        .data(adqt::widgets::AdSelect::DefaultLabelRole)
+                        .toString() == QStringLiteral("Emboss") &&
+                typeSelect->model()
+                        ->index(4, 0)
+                        .data(adqt::widgets::AdSelect::DefaultValueRole)
+                        .toInt() == static_cast<int>(SnowCanvasFilterType::Emboss),
+            "Emboss should use the appended filter type value");
 
     int styleChangeCount = 0;
     quint32 lastProperties = 0;
@@ -5174,13 +5199,20 @@ void filterToolExposesTypeAndIntensityControls() {
     const QImage disabledIntensityIcon = intensityIcon->pixmap().toImage();
     typeSelect->setCurrentData(3, adqt::widgets::AdSelect::DefaultValueRole);
     require(!intensity->isEnabled(), "Inversion should disable filter intensity");
+    typeSelect->setCurrentData(4, adqt::widgets::AdSelect::DefaultValueRole);
+    require(intensity->isEnabled(), "Emboss should enable filter intensity");
     typeSelect->setCurrentData(0, adqt::widgets::AdSelect::DefaultValueRole);
     require(intensity->isEnabled(), "Mosaic should enable filter intensity");
     require(intensityIcon->pixmap().toImage() != disabledIntensityIcon,
             "filter intensity icon should brighten with its enabled slider");
+    typeSelect->setCurrentData(4, adqt::widgets::AdSelect::DefaultValueRole);
+    require(lastProperties == SnowCanvasFilterStylePropertyType,
+            "selecting Emboss should emit only the filter type property");
+    const int embossSelectionChangeCount = styleChangeCount;
     intensity->setValue(75);
-    require(styleChangeCount >= 2 && lastProperties == SnowCanvasFilterStylePropertyStrength,
-            "Filter intensity should emit its dedicated style property");
+    require(styleChangeCount == embossSelectionChangeCount + 1 &&
+                lastProperties == SnowCanvasFilterStylePropertyStrength,
+            "editing Emboss intensity should emit only the strength property");
 
     SnowCanvasStyleToolbarState mixed;
     mixed.source = SnowCanvasStyleToolbarSource::SelectedFilter;
@@ -7626,7 +7658,7 @@ void configurationDrivenStyleEditorsShareStructuralContracts() {
                 fontSelect->toolTip().isEmpty() &&
                 filterSelect->toolTip() == QStringLiteral("Filter type") &&
                 fontSelect->model() != filterSelect->model() &&
-                filterSelect->model()->rowCount() == 4,
+                filterSelect->model()->rowCount() == 5,
             "select configuration should preserve search, tooltip, and model differences");
     const QSize selectReferenceSize = fontSelect->size();
     require(selectReferenceSize == filterSelect->size(),
@@ -9296,7 +9328,7 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     styles.rectangleHighlight.fill = QColor(9, 10, 11, 12);
     styles.penHighlight.strokeWidth = 7.0;
     styles.rectangleFilter = {SnowCanvasFilterType::GaussianBlur, 0.25, 0.8, 8.0};
-    styles.penFilter = {SnowCanvasFilterType::Inversion, 0.75, 0.6, 44.0};
+    styles.penFilter = {SnowCanvasFilterType::Emboss, 0.75, 0.6, 44.0};
     styles.text.color = QColor(13, 14, 15, 16);
     styles.text.fontFamily = QStringLiteral("Persisted text font");
     styles.text.fontSize = 36.0;
@@ -9491,7 +9523,8 @@ void filterEditorsRestoreValuesAfterToolSwitch() {
         int edits = 0;
         QObject::connect(&palette, &ScreenshotToolPalette::filterStyleChanged, [&]() { ++edits; });
         for (const auto type : {SnowCanvasFilterType::Mosaic, SnowCanvasFilterType::GaussianBlur,
-                                SnowCanvasFilterType::Grayscale, SnowCanvasFilterType::Inversion}) {
+                                SnowCanvasFilterType::Grayscale, SnowCanvasFilterType::Inversion,
+                                SnowCanvasFilterType::Emboss}) {
             state.filterStyle.type = type;
             state.filterStyle.strength = 0.37;
             palette.setStyleToolbarState(state);
@@ -9512,6 +9545,10 @@ void filterEditorsRestoreValuesAfterToolSwitch() {
                         "returning to a filter tool restores the unchanged filter type");
                 require(slider && slider->value() == 37,
                         "returning to a filter tool restores the unchanged intensity");
+                if (type == SnowCanvasFilterType::Emboss) {
+                    require(slider->isEnabled(),
+                            "Emboss intensity remains enabled for every filter tool mode");
+                }
             }
         }
         require(edits == 0, "restoring filter controls must not emit style edits");

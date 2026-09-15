@@ -116,7 +116,8 @@ typedef enum SnowFilterType {
     SNOW_FILTER_TYPE_MOSAIC = 0,
     SNOW_FILTER_TYPE_GAUSSIAN_BLUR = 1,
     SNOW_FILTER_TYPE_GRAYSCALE = 2,
-    SNOW_FILTER_TYPE_INVERSION = 3
+    SNOW_FILTER_TYPE_INVERSION = 3,
+    SNOW_FILTER_TYPE_EMBOSS = 4
 } SnowFilterType;
 
 typedef struct SnowFilterStyle {

@@ -2454,6 +2454,39 @@ mod tests {
     }
 
     #[test]
+    fn emboss_above_changed_content_expands_its_dirty_region_by_one_pixel() {
+        let frame = frame_view();
+        let rectangle = SceneDisplayItem::Rectangle(RectangleDisplayItem {
+            center_x: 0.0,
+            center_y: 0.0,
+            width: 20.0,
+            height: 20.0,
+            opacity: 1.0,
+            ..RectangleDisplayItem::default()
+        });
+        let filter = SceneDisplayItem::Filter(snow_draw_engine_display::FilterDisplayItem {
+            center_x: 0.0,
+            center_y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            filter: snow_draw_engine_display::FilterRenderSpec::resolve(
+                snow_draw_engine_display::DisplayFilterType::Emboss,
+                0.5,
+            ),
+            opacity: 1.0,
+            ..snow_draw_engine_display::FilterDisplayItem::default()
+        });
+        let base = scene_display_item_bounds(&rectangle, frame).unwrap();
+        let affected = dirty_region_through_filters(&[rectangle, filter], 0, base, frame);
+        let radius = frame.camera.zoom;
+
+        assert_eq!(affected.min_x, base.min_x - radius);
+        assert_eq!(affected.min_y, base.min_y - radius);
+        assert_eq!(affected.max_x, base.max_x + radius);
+        assert_eq!(affected.max_y, base.max_y + radius);
+    }
+
+    #[test]
     fn filter_below_changed_content_does_not_expand_its_dirty_region() {
         let frame = frame_view();
         let filter = SceneDisplayItem::Filter(snow_draw_engine_display::FilterDisplayItem {

@@ -274,6 +274,7 @@ void finalizeRawEditorRoot(QWidget* root) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Gaussian blur"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Grayscale"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Inversion"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Emboss"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter intensity"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Adjust filter intensity"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen filter"),
@@ -2263,6 +2264,7 @@ ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buil
         appendFilterType("Gaussian blur", 1);
         appendFilterType("Grayscale", 2);
         appendFilterType("Inversion", 3);
+        appendFilterType("Emboss", 4);
         result.typeSelect->setModel(typeModel);
         layout->addWidget(result.typeSelect);
     } else {

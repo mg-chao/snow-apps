@@ -12,6 +12,7 @@ pub extern "C" fn snow_filter_render_spec_resolve(
         1 => snow_draw_engine::DisplayFilterType::GaussianBlur,
         2 => snow_draw_engine::DisplayFilterType::Grayscale,
         3 => snow_draw_engine::DisplayFilterType::Inversion,
+        4 => snow_draw_engine::DisplayFilterType::Emboss,
         _ => snow_draw_engine::DisplayFilterType::Mosaic,
     };
     let spec = snow_draw_engine::FilterRenderSpec::resolve(filter_type, strength);
@@ -21,6 +22,7 @@ pub extern "C" fn snow_filter_render_spec_resolve(
             snow_draw_engine::DisplayFilterType::GaussianBlur => 1,
             snow_draw_engine::DisplayFilterType::Grayscale => 2,
             snow_draw_engine::DisplayFilterType::Inversion => 3,
+            snow_draw_engine::DisplayFilterType::Emboss => 4,
         },
         reserved0: 0,
         strength: spec.strength,
@@ -400,6 +402,21 @@ pub unsafe extern "C" fn snow_patch_get_decoration_dirty_rects(
             Ok(())
         }))
     })
+}
+
+#[cfg(test)]
+mod filter_render_spec_export_tests {
+    use super::*;
+
+    #[test]
+    fn emboss_resolver_preserves_abi_layout_and_normalized_strength() {
+        assert_eq!(std::mem::size_of::<SnowFilterRenderSpec>(), 40);
+        let spec = snow_filter_render_spec_resolve(4, 0.5);
+        assert_eq!(spec.filter_type, 4);
+        assert_eq!(spec.reserved0, 0);
+        assert_eq!(spec.strength, 0.5);
+        assert_eq!(spec.sampling_radius, 1.0);
+    }
 }
 
 #[cfg(test)]
