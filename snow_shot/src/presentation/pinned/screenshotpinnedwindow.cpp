@@ -1284,6 +1284,7 @@ snow_shot::storage::PinnedWindowRecord ScreenshotPinnedWindow::persistenceRecord
     record.imageTransform = m_imageTransform;
     record.quarterTurns = m_quarterTurns;
     record.thumbnailMode = m_thumbnailMode;
+    record.clickThroughMode = m_clickThroughActive;
     record.preThumbnailNativeGeometry = m_preThumbnailNativeGeometry;
     record.resultStyle = serializeResultStyle(m_resultStyle);
     record.canvasSession = m_runtime.serializeDocumentSession();
@@ -1367,12 +1368,15 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
     }
     const bool scaleMayHaveChanged =
         event != nullptr && event->type() == QEvent::DevicePixelRatioChange;
+    const bool assignedScreenMayHaveChanged =
+        event != nullptr && event->type() == QEvent::ScreenChangeInternal;
     const bool nativeGeometryMayHaveSettled =
         event != nullptr &&
         (event->type() == QEvent::UpdateRequest || event->type() == QEvent::LayoutRequest ||
          event->type() == QEvent::Move || event->type() == QEvent::Resize ||
          event->type() == QEvent::WindowActivate || event->type() == QEvent::WindowDeactivate ||
-         event->type() == QEvent::WindowStateChange || scaleMayHaveChanged);
+         event->type() == QEvent::WindowStateChange || scaleMayHaveChanged ||
+         assignedScreenMayHaveChanged);
     const bool handled = QWidget::event(event);
     if (m_hideToTop != nullptr && (pointerPresenceChanged || nativeGeometryMayHaveSettled)) {
         m_hideToTop->refreshPointer();
@@ -2152,9 +2156,11 @@ bool ScreenshotPinnedWindow::present(const Config& config,
         handle->setMinimumSize(QSize(1, 1));
         connect(handle, &QWindow::screenChanged, this, [this]() {
             scheduleNativeScaleAdoption();
-            if (m_clickThroughActive && !updateClickThroughExitButtonGeometry()) {
-                static_cast<void>(setClickThroughMode(false));
-            }
+            QTimer::singleShot(0, this, [this]() {
+                if (m_clickThroughActive && !updateClickThroughExitButtonGeometry()) {
+                    static_cast<void>(setClickThroughMode(false));
+                }
+            });
         });
     }
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -2200,6 +2206,12 @@ bool ScreenshotPinnedWindow::present(const Config& config,
             m_recognitionResults.visibleConversion.reset();
         }
     }
+    const bool restoreClickThrough =
+        config.restorePersistentState && config.persistedClickThroughMode &&
+        !config.persistedHideToTopMode && !config.persistedThumbnailMode;
+    if (restoreClickThrough) {
+        setAttribute(Qt::WA_ShowWithoutActivating, true);
+    }
     SNOW_SHOT_PIN_PERF_MILESTONE("window.before_show");
     show();
     SNOW_SHOT_PIN_PERF_MILESTONE("window.show_returned");
@@ -2223,7 +2235,10 @@ bool ScreenshotPinnedWindow::present(const Config& config,
     }
     m_synchronizedResizeWindowId = nativeWindowId;
     m_presented = true;
-    if (!hideToTopActive()) {
+    if (restoreClickThrough && !setClickThroughMode(true)) {
+        qWarning("Pinned window click-through restoration failed");
+    }
+    if (!hideToTopActive() && !m_clickThroughActive) {
         raise();
         static_cast<void>(native::activateWindow(nativeWindowId));
         activateWindow();
@@ -5273,7 +5288,10 @@ bool ScreenshotPinnedWindow::updateClickThroughExitButtonGeometry() {
         return false;
     }
     const QRect pinnedGeometry = currentNativeGeometry();
-    QScreen* screen = ScreenshotGeometryMapper::screenForPhysicalRect(pinnedGeometry);
+    QScreen* screen = windowHandle() != nullptr ? windowHandle()->screen() : nullptr;
+    if (screen == nullptr) {
+        screen = ScreenshotGeometryMapper::screenForPhysicalRect(pinnedGeometry);
+    }
     if (screen == nullptr) {
         return false;
     }
@@ -5331,6 +5349,7 @@ bool ScreenshotPinnedWindow::setClickThroughMode(bool enabled) {
         static_cast<void>(applyNativePointerPresence());
         updateControlsGeometry();
         updateWindowDragCursor(mapFromGlobal(QCursor::pos()));
+        schedulePersistence();
         return true;
     }
 
@@ -5373,6 +5392,7 @@ bool ScreenshotPinnedWindow::setClickThroughMode(bool enabled) {
     setAttribute(Qt::WA_ShowWithoutActivating, true);
     setAttribute(Qt::WA_TransparentForMouseEvents, true);
     refreshContextMenu();
+    schedulePersistence();
     return true;
 }
 

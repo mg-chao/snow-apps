@@ -127,6 +127,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         QRect persistedHideToTopHandleNativeGeometry;
         int persistedHideToTopAccentIndex = -1;
         bool persistedThumbnailMode = false;
+        bool persistedClickThroughMode = false;
         QRect persistedPreThumbnailNativeGeometry;
         QByteArray persistedCanvasSession;
         QByteArray persistedRecognitionResults;

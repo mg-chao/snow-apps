@@ -237,6 +237,9 @@ class ScreenshotPinnedWindowTestAccess {
         window.m_initialPhysicalSize = config.fullResolutionScaleBasis;
         window.m_originalImage = config.imageSource.materializedImage;
         window.m_transformedImage = window.m_originalImage;
+        window.m_persistenceId = config.persistenceId;
+        window.m_persistenceWriter = config.persistenceWriter;
+        window.m_persistenceRemover = config.persistenceRemover;
         window.m_screenshotRenderer->setImageSource(config.imageSource);
         window.m_screenshotRenderer->setPinnedResultSurface(
             config.canvasSourceRect, config.canvasSourceRect, config.resultStyle);
@@ -5638,9 +5641,16 @@ void pinnedClickThroughOffscreen() {
     pinnedClickThroughGeometry();
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "click-through needs a primary screen");
+    int persistenceWrites = 0;
+    snow_shot::storage::PinnedWindowRecord lastPersisted;
     ScreenshotPinnedWindow window;
     window.setAttribute(Qt::WA_DeleteOnClose, false);
-    const ScreenshotPinnedWindow::Config config = clickThroughTestConfig(*screen);
+    ScreenshotPinnedWindow::Config config = clickThroughTestConfig(*screen);
+    config.persistenceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    config.persistenceWriter = [&](const snow_shot::storage::PinnedWindowRecord& record) {
+        ++persistenceWrites;
+        lastPersisted = record;
+    };
     ScreenshotPinnedWindowTestAccess::restoreOffscreen(window, config);
     window.show();
     waitForUi(20);
@@ -5693,6 +5703,23 @@ void pinnedClickThroughOffscreen() {
             "the exit button must match the primary pinned control style and mouse artwork");
     require(window.testAttribute(Qt::WA_TransparentForMouseEvents),
             "entry must make the pinned Qt surface transparent to mouse input");
+    require(window.persistenceSnapshot().clickThroughMode,
+            "entry must be represented in the pinned persistence snapshot");
+    waitForUi(300);
+    require(persistenceWrites > 0 && lastPersisted.clickThroughMode,
+            "entry must schedule durable click-through state");
+
+    const QRect physicalBounds = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+    const QRect expectedPhysicalGeometry = screenshot_pinned_click_through::exitButtonGeometry(
+        window.currentNativeGeometry(), physicalBounds, screen->devicePixelRatio());
+    const QRect expectedLogicalGeometry =
+        ScreenshotGeometryMapper::logicalRectForPhysicalRect(expectedPhysicalGeometry, screen);
+    exitButton->move(QPoint(-10000, -10000));
+    QEvent screenChanged(QEvent::ScreenChangeInternal);
+    QCoreApplication::sendEvent(&window, &screenChanged);
+    waitForUi(20);
+    require(exitButton->geometry().topLeft() == expectedLogicalGeometry.topLeft(),
+            "screen reassignment must reposition the exit button after Qt updates the screen");
 
     exitButton->setToolTip(QStringLiteral("stale"));
     exitButton->setAccessibleName(QStringLiteral("stale"));
@@ -5711,6 +5738,12 @@ void pinnedClickThroughOffscreen() {
                 !clickThrough->isChecked() && exitButton->isHidden() &&
                 !window.testAttribute(Qt::WA_TransparentForMouseEvents) && controls->isVisible(),
             "the exit button must restore ordinary pinned interaction and hover controls");
+    require(!window.persistenceSnapshot().clickThroughMode,
+            "exit must be represented in the pinned persistence snapshot");
+    const int entryPersistenceWrites = persistenceWrites;
+    waitForUi(300);
+    require(persistenceWrites > entryPersistenceWrites && !lastPersisted.clickThroughMode,
+            "exit must schedule durable interactive state");
 
     sendShortcut(window, Qt::Key_M);
     require(ScreenshotPinnedWindowTestAccess::clickThroughActive(window),
@@ -5791,6 +5824,29 @@ void pinnedClickThroughOffscreen() {
 }
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
+void pinnedClickThroughRecreationNative() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "click-through recreation needs a primary screen");
+    IsolatedPinnedStorage storage;
+    auto record = savedPinnedRecord(*screen, 1.0, QSize(400, 240), 100.0, QPoint(120, 160));
+    record.clickThroughMode = true;
+
+    ScreenshotSelectionExportUiServices services;
+    ScreenshotPinnedWindow* restored = restoreSeededPinnedWindow(services, record);
+    auto* action =
+        restored->findChild<QAction*>(QStringLiteral("screenshotPinnedClickThroughAction"));
+    auto* controls = restored->findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
+    auto* exitButton = ScreenshotPinnedWindowTestAccess::clickThroughExitButton(*restored);
+    require(ScreenshotPinnedWindowTestAccess::clickThroughActive(*restored) && action != nullptr &&
+                action->isChecked() && controls != nullptr && controls->isHidden() &&
+                exitButton != nullptr && exitButton->isVisible() &&
+                restored->testAttribute(Qt::WA_TransparentForMouseEvents) &&
+                !restored->isActiveWindow() && restored->persistenceSnapshot().clickThroughMode,
+            "recreation must restore the complete non-activating click-through contract");
+
+    closeRestoredPinnedWindow(restored, record.id);
+}
+
 void pinnedClickThroughNative() {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "native click-through needs a primary screen");
@@ -7309,6 +7365,7 @@ int main(int argc, char* argv[]) {
         }
 #if defined(Q_OS_WIN) || defined(_WIN32)
         if (app.arguments().contains(QStringLiteral("--click-through-native-only"))) {
+            pinnedClickThroughRecreationNative();
             pinnedClickThroughNative();
             return 0;
         }
