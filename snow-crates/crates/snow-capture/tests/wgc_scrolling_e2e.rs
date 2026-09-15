@@ -368,8 +368,13 @@ fn assert_hot_session_scroll(
         .open_session(
             CaptureTarget::Region(region),
             CaptureOptions {
+                backend_tuning: snow_capture::tuning::BackendTuning::Windows(
+                    snow_capture::tuning::windows::WindowsCaptureOptions {
+                        wgc_update_mode: mode,
+                        ..Default::default()
+                    },
+                ),
                 workload,
-                wgc_update_mode: mode,
                 ..CaptureOptions::default()
             },
         )

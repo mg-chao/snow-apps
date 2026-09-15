@@ -6,6 +6,9 @@ license.workspace = true
 
 [dependencies]
 snow-core = { path = "../snow-core" }
+
+
+[target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

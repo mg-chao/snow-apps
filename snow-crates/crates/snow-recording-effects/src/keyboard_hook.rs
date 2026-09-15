@@ -3,7 +3,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-use crate::keyboard_overlay::{KeyEvent, KeyboardOverlayConfig, modifier};
+#[cfg(windows)]
+use crate::keyboard_overlay::modifier;
+use crate::keyboard_overlay::{KeyEvent, KeyboardOverlayConfig};
 use crossbeam_channel::{Receiver, Sender};
 
 #[derive(Clone)]

@@ -1,0 +1,31 @@
+[package]
+name = "snow-macos"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+snow-core = { path = "../snow-core" }
+snow-media = { path = "../snow-media" }
+crossbeam-channel.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.3"
+block2 = "0.6.2"
+dispatch2 = "0.3.0"
+objc2-foundation = "0.3.2"
+objc2-screen-capture-kit = "0.3.2"
+objc2-core-foundation = "0.3.2"
+objc2-core-media = "0.3.2"
+objc2-core-video = "0.3.2"
+objc2-core-graphics = "0.3.2"
+objc2-core-audio-types = "0.3.2"
+objc2-core-audio = "0.3.2"
+objc2-avf-audio = "0.3.2"
+objc2-audio-toolbox = "0.3.2"
+objc2-av-foundation = "0.3.2"
+objc2-core-image = "0.3.2"
+objc2-metal = "0.3.2"
+objc2-app-kit = "0.3.2"
+objc2-core-text = "0.3.2"

@@ -17,11 +17,12 @@ pub struct AudioPacketMetadata {
     pub discontinuity: bool,
     pub is_silent: bool,
     pub sequence: u64,
-    /// Unified timestamp. `tick_format` is `Hns100`.
+    /// Packet-end timestamp in the source clock domain.
     pub stream_timestamp: Option<StreamTimestamp>,
 }
 
 impl AudioPacketMetadata {
+    #[cfg(any(target_os = "windows", test))]
     pub(crate) fn set_timing(
         &mut self,
         capture_time: Option<Instant>,
@@ -66,6 +67,7 @@ impl AudioPacket {
         self.metadata
             .stream_timestamp
             .as_ref()
+            .filter(|st| st.tick_format == TickFormat::Hns100)
             .and_then(|st| st.raw_os_ticks)
     }
 

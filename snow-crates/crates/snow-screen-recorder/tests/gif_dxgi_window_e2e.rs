@@ -10,7 +10,7 @@ use ffmpeg_next as ffmpeg;
 use snow_screen_recorder::{
     CaptureBackendKind, EditingSession, ExportFormat, RecordingAudioConfig,
     RecordingAudioTrackConfig, RecordingConfig, RecordingRegion, RecordingSession, RecordingTarget,
-    WindowSelector,
+    WindowId,
 };
 use tempfile::tempdir;
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
@@ -499,7 +499,7 @@ fn dxgi_window_recording_exports_visually_changing_gif_frames() {
     let mut audio_track = RecordingAudioTrackConfig::system_default("system");
     audio_track.enabled = false;
     let config = RecordingConfig {
-        target: RecordingTarget::Window(WindowSelector::new(window.raw_handle)),
+        target: RecordingTarget::Window(WindowId::from_windows_handle(window.raw_handle)),
         capture_backend: CaptureBackendKind::DxgiDuplication,
         output_dir: temp.path().to_path_buf(),
         fps: 20,

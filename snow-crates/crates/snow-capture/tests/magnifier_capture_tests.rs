@@ -283,7 +283,7 @@ fn characterize_magnifier_capture() -> anyhow::Result<()> {
             for window in [false, true] {
                 for correct in [false, true] {
                     let target = if window {
-                        CaptureTarget::Window(WindowId::from_raw_handle(hwnd.0 as isize))
+                        CaptureTarget::Window(WindowId::from_windows_handle(hwnd.0 as isize))
                     } else {
                         CaptureTarget::PrimaryMonitor
                     };
@@ -291,13 +291,19 @@ fn characterize_magnifier_capture() -> anyhow::Result<()> {
                         .with_backend_kind(backend)
                         .build()?;
                     let options = CaptureOptions {
+                        backend_tuning: snow_capture::tuning::BackendTuning::Windows(
+                            snow_capture::tuning::windows::WindowsCaptureOptions {
+                                gpu_hdr_conversion: std::env::var_os("SNOW_CAPTURE_TEST_CPU_HDR")
+                                    .is_none(),
+                                color_correction: if correct {
+                                    snow_capture::color_effect::ColorCorrection::CurrentMagnifier
+                                } else {
+                                    snow_capture::color_effect::ColorCorrection::Disabled
+                                },
+                                ..Default::default()
+                            },
+                        ),
                         capture_retry_count: 3,
-                        gpu_hdr_conversion: std::env::var_os("SNOW_CAPTURE_TEST_CPU_HDR").is_none(),
-                        color_correction: if correct {
-                            snow_capture::color_effect::ColorCorrection::CurrentMagnifier
-                        } else {
-                            snow_capture::color_effect::ColorCorrection::Disabled
-                        },
                         ..Default::default()
                     };
                     let mut session = system.open_session(target, options)?;
@@ -423,9 +429,15 @@ fn characterize_magnifier_capture() -> anyhow::Result<()> {
         let mut session = system.open_session(
             CaptureTarget::Region(snow_capture::CaptureRegion::new(110, 110, 128, 128)?),
             CaptureOptions {
+                backend_tuning: snow_capture::tuning::BackendTuning::Windows(
+                    snow_capture::tuning::windows::WindowsCaptureOptions {
+                        gpu_hdr_conversion: std::env::var_os("SNOW_CAPTURE_TEST_CPU_HDR").is_none(),
+                        color_correction:
+                            snow_capture::color_effect::ColorCorrection::CurrentMagnifier,
+                        ..Default::default()
+                    },
+                ),
                 capture_retry_count: 3,
-                gpu_hdr_conversion: std::env::var_os("SNOW_CAPTURE_TEST_CPU_HDR").is_none(),
-                color_correction: snow_capture::color_effect::ColorCorrection::CurrentMagnifier,
                 workload: snow_capture::CaptureWorkload::Continuous,
                 ..Default::default()
             },

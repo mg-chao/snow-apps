@@ -80,9 +80,9 @@ class BinaryWriter final {
   public:
     template <typename T> void integer(T value) {
         using U = std::make_unsigned_t<T>;
-        U encoded = static_cast<U>(value);
+        std::uint64_t encoded = static_cast<std::uint64_t>(static_cast<U>(value));
         for (std::size_t index = 0; index < sizeof(T); ++index) {
-            bytes_.push_back(static_cast<std::byte>(encoded & U{0xFF}));
+            bytes_.push_back(static_cast<std::byte>(encoded & 0xFFU));
             encoded >>= 8U;
         }
     }

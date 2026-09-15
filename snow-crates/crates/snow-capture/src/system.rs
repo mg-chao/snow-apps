@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::CapturePixelFormat;
 use crate::CaptureTarget;
 use crate::backend::{
-    self, AutoBackendPolicy, CaptureBackend, CaptureBackendKind, CaptureWorkload, WgcUpdateMode,
+    self, AutoBackendPolicy, CaptureBackend, CaptureBackendKind, CaptureWorkload,
 };
 use crate::capture_session::{CaptureSession, CaptureTargetInfo, inspect_target_from_backend};
 use crate::error::CaptureResult;
@@ -12,22 +12,11 @@ use crate::region::MonitorLayout;
 
 #[derive(Clone, Copy, Debug)]
 pub struct CaptureOptions {
-    /// Opt-in reversal of supported full-screen Magnifier effects. Native WGC
-    /// and GDI window captures already contain original colors; DXGI HDR is
-    /// passed through because tone mapping prevents reliable matrix inversion.
-    pub color_correction: crate::color_effect::ColorCorrection,
+    pub backend_tuning: crate::tuning::BackendTuning,
     pub capture_retry_count: usize,
     pub workload: CaptureWorkload,
-    pub gpu_hdr_conversion: bool,
-    pub hdr_tonemap_lut: bool,
     /// Packed 8-bit pixel layout returned by capture sessions.
     pub output_pixel_format: CapturePixelFormat,
-    /// Controls how Windows Graphics Capture updates its canonical GPU frame.
-    ///
-    /// This is independent from [`CaptureWorkload`]: workload selects latency
-    /// and backpressure behavior, while this option selects the WGC surface
-    /// correctness contract.
-    pub wgc_update_mode: WgcUpdateMode,
     /// Record a per-stage timing breakdown inside participating backends and
     /// attach it to each frame's metadata (`FrameMetadata::stage_timings`).
     ///
@@ -43,13 +32,10 @@ pub struct CaptureOptions {
 impl Default for CaptureOptions {
     fn default() -> Self {
         Self {
-            color_correction: crate::color_effect::ColorCorrection::Disabled,
+            backend_tuning: crate::tuning::BackendTuning::Default,
             capture_retry_count: 1,
             workload: CaptureWorkload::Snapshot,
-            gpu_hdr_conversion: true,
-            hdr_tonemap_lut: true,
             output_pixel_format: CapturePixelFormat::Rgba8,
-            wgc_update_mode: WgcUpdateMode::Auto,
             #[cfg(feature = "stage-timing")]
             record_stage_timings: false,
         }
@@ -65,6 +51,9 @@ pub struct CaptureSystem {
 }
 
 impl CaptureSystem {
+    pub fn capabilities(&self) -> crate::capabilities::CaptureCapabilities {
+        crate::capabilities::CaptureCapabilities::current()
+    }
     pub fn builder() -> CaptureSystemBuilder {
         CaptureSystemBuilder::new()
     }

@@ -91,7 +91,7 @@ impl EditingSession {
                 quality: 60,
                 speed: VideoEncodingSpeed::UltraFast,
             },
-            codec: VideoCodec::H264,
+            codec: self.manifest.video_codec,
             prefer_hardware_h264: false,
             performance: crate::config::ExportPerformanceConfig::default(),
             maximum_width: None,
@@ -218,6 +218,22 @@ impl EditingSession {
             MouseTracks::default()
         };
         let needs_overlay = !mouse_tracks.samples.is_empty() && wants_mouse_overlay;
+        let source_hdr = self.manifest.media.color == snow_media::ColorDescription::HDR10;
+        if source_hdr && needs_overlay && request.mouse.visible {
+            validate_hdr_cursor_shapes(&mouse_tracks)?;
+        }
+        if !source_hdr
+            && matches!(
+                self.manifest.media.color.transfer,
+                snow_media::TransferFunction::Pq
+                    | snow_media::TransferFunction::Hlg
+                    | snow_media::TransferFunction::Linear
+            )
+        {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "unsupported editable source color; expected SDR or canonical HDR10".into(),
+            ));
+        }
 
         if can_use_direct_video_passthrough_copy_path(&self.manifest, &request, needs_overlay) {
             emit_progress(progress_tx, ExportStage::Decode, 2.0, 0.0, None);
@@ -272,6 +288,9 @@ impl EditingSession {
         emit_progress(progress_tx, ExportStage::Compose, 35.0, 0.0, None);
         check_canceled(cancel_flag)?;
 
+        if needs_overlay {
+            retime_mouse_tracks(&mut mouse_tracks, request.playback_speed)?;
+        }
         let output_len = output_w as usize * output_h as usize * 4;
         let mut overlay_tracks = if needs_overlay && needs_resize {
             Some(scale_mouse_tracks(
@@ -300,7 +319,7 @@ impl EditingSession {
             export_fps,
             needs_overlay,
             needs_resize,
-            request.codec == VideoCodec::H264 && !request.prefer_hardware_h264,
+            request.codec == self.manifest.video_codec && !request.prefer_hardware_h264,
         ) {
             match export_video_packet_copy_with_generated_audio(
                 &self.artifact.local_paths.video_intermediate_path,
@@ -334,12 +353,14 @@ impl EditingSession {
             }
         }
 
-        if !needs_overlay {
+        if !needs_overlay || source_hdr {
             emit_progress(progress_tx, ExportStage::Decode, 20.0, 0.0, None);
             let telemetry = match export_video_generated_from_source(
                 &self.artifact.local_paths.video_intermediate_path,
                 &output_path,
                 &retime,
+                source_hdr,
+                needs_overlay.then_some((overlay_tracks_ref, &request.mouse)),
                 output_w,
                 output_h,
                 export_fps,
@@ -660,6 +681,11 @@ fn hardware_video_encode_allowed(mode: ExportExecutionMode) -> bool {
 }
 
 #[inline]
+fn software_encode_fallback_allowed(mode: ExportExecutionMode) -> bool {
+    mode == ExportExecutionMode::HardwarePreferred
+}
+
+#[inline]
 fn hardware_video_decode_allowed(mode: ExportExecutionMode) -> bool {
     matches!(
         mode,
@@ -944,7 +970,7 @@ fn can_use_direct_video_passthrough_copy_path(
     if !matches!(request.format, ExportFormat::Mp4) {
         return false;
     }
-    if request.codec != VideoCodec::H264
+    if request.codec != manifest.video_codec
         || request.target_fps.is_some()
         || request.maximum_width.is_some()
         || request.maximum_height.is_some()
@@ -1912,6 +1938,61 @@ enum CompiledCursorShape {
     Plan(CompiledCursorShapePlan),
 }
 
+fn retime_mouse_tracks(tracks: &mut MouseTracks, speed: f32) -> Result<()> {
+    if !speed.is_finite() || speed <= 0.0 {
+        return Err(ScreenRecorderError::InvalidConfig(
+            "invalid mouse playback speed".into(),
+        ));
+    }
+    let speed = f64::from(speed.clamp(0.25, 4.0));
+    let retime = |timestamp: u64| -> Result<u64> {
+        let value = (timestamp as f64 / speed).round();
+        if value >= u64::MAX as f64 {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "mouse timeline overflow".into(),
+            ));
+        }
+        Ok(value as u64)
+    };
+    for sample in &mut tracks.samples {
+        sample.ts_ms = retime(sample.ts_ms)?;
+    }
+    for click in &mut tracks.click_downs {
+        click.ts_ms = retime(click.ts_ms)?;
+    }
+    for point in &mut tracks.trail_points {
+        point.ts_ms /= speed as f32;
+    }
+    tracks.trail_segments.clear();
+    Ok(())
+}
+
+fn validate_hdr_cursor_shapes(tracks: &MouseTracks) -> Result<()> {
+    for shape in tracks.cursor_shapes.values() {
+        match shape {
+            CompiledCursorShape::Invalid => {
+                return Err(ScreenRecorderError::InvalidConfig(
+                    "invalid HDR cursor asset".into(),
+                ));
+            }
+            CompiledCursorShape::Plan(plan)
+                if plan.rows.iter().flat_map(|row| row.runs.iter()).any(|run| {
+                    matches!(
+                        run.kind,
+                        CompiledCursorRunKind::MaskCopy | CompiledCursorRunKind::Xor
+                    )
+                }) =>
+            {
+                return Err(ScreenRecorderError::InvalidConfig(
+                    "destination-dependent cursor masks are unsupported in HDR".into(),
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 fn build_mouse_tracks(store: MouseStore) -> MouseTracks {
     let mut tracks = MouseTracks {
         samples: Vec::with_capacity(store.cursor_frames.len()),
@@ -2182,6 +2263,7 @@ fn apply_mouse_overlays_rgba(
     config: &MouseEditConfig,
 ) {
     let mut surface = FrameSurfaceMut {
+        hdr: None,
         timestamp_ms,
         width,
         height,
@@ -2245,6 +2327,7 @@ fn apply_mouse_overlays_rgba_incremental(
     state: &mut OverlaySearchState,
 ) {
     let mut surface = FrameSurfaceMut {
+        hdr: None,
         timestamp_ms,
         width,
         height,
@@ -2258,6 +2341,7 @@ struct FrameSurfaceMut<'a> {
     width: u32,
     height: u32,
     rgba: &'a mut [u8],
+    hdr: Option<(&'a mut [u8], usize)>,
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -2487,6 +2571,12 @@ fn blend_horizontal_span(
         return;
     }
 
+    if surface.hdr.is_some() {
+        for x in x_start..=x_end {
+            set_pixel_blended(surface, x, y, color);
+        }
+        return;
+    }
     let row_offset = y as usize * surface.width as usize;
     let mut idx = (row_offset + x_start as usize) * 4;
     let end = (row_offset + x_end as usize + 1) * 4;
@@ -3890,6 +3980,22 @@ fn draw_compiled_cursor_shape(
         return;
     };
 
+    if surface.hdr.is_some() {
+        // HDR preflight rejects destination-dependent mask/XOR cursor operations.
+        for row in 0..rect.draw_h {
+            for col in 0..rect.draw_w {
+                let offset = ((rect.src_start_y + row) * shape.width + rect.src_start_x + col) * 4;
+                set_pixel_blended(
+                    surface,
+                    (rect.dst_start_x + col) as i32,
+                    (rect.dst_start_y + row) as i32,
+                    shape.rgba[offset..offset + 4].try_into().unwrap(),
+                );
+            }
+        }
+        return;
+    }
+
     let dst_row_bytes = surface.width as usize * 4;
     let dst_visible_start = rect.dst_start_x.saturating_mul(4);
     let draw_bytes = rect.draw_w.saturating_mul(4);
@@ -4093,10 +4199,19 @@ fn blend_u8(src: u8, dst: u8, alpha: u8) -> u8 {
     ((u16::from(src) * alpha_u16 + u16::from(dst) * inv_alpha) / 255) as u8
 }
 
-fn set_pixel_blended(rgba: &mut [u8], width: u32, height: u32, x: i32, y: i32, color: [u8; 4]) {
-    let Some(idx) = pixel_offset(width, height, x, y) else {
+fn set_pixel_blended(surface: &mut FrameSurfaceMut<'_>, x: i32, y: i32, color: [u8; 4]) {
+    let Some(idx) = pixel_offset(surface.width, surface.height, x, y) else {
         return;
     };
+    if let Some((rgb, stride)) = surface.hdr.as_mut() {
+        let start = y as usize * *stride + x as usize * 6;
+        snow_media::color::blend_srgb_into_pq(
+            (&mut rgb[start..start + 6]).try_into().unwrap(),
+            color,
+        );
+        return;
+    }
+    let rgba = &mut surface.rgba;
     let alpha = color[3];
     if alpha == 0 {
         return;
@@ -4134,14 +4249,7 @@ fn draw_line(
     loop {
         for oy in -thickness..=thickness {
             for ox in -thickness..=thickness {
-                set_pixel_blended(
-                    surface.rgba,
-                    surface.width,
-                    surface.height,
-                    x0 + ox,
-                    y0 + oy,
-                    color,
-                );
+                set_pixel_blended(surface, x0 + ox, y0 + oy, color);
             }
         }
         if x0 == x1 && y0 == y1 {
@@ -4184,14 +4292,7 @@ fn draw_circle_outline(
             (y, -x),
             (x, -y),
         ] {
-            set_pixel_blended(
-                surface.rgba,
-                surface.width,
-                surface.height,
-                cx + dx,
-                cy + dy,
-                color,
-            );
+            set_pixel_blended(surface, cx + dx, cy + dy, color);
         }
 
         y += 1;
@@ -5728,7 +5829,7 @@ where
         Err(primary_error) => {
             // If hardware auto-select picked an encoder that fails to open,
             // transparently fall back to software H.264.
-            if hardware_video_encode_allowed(perf_config.mode)
+            if software_encode_fallback_allowed(perf_config.mode)
                 && is_hardware_video_encoder(&video_codec)
             {
                 video_codec = select_video_codec(
@@ -6052,6 +6153,8 @@ fn export_video_generated_from_source(
     input_video_path: &Path,
     output_path: &Path,
     retime: &RetimePlan,
+    source_hdr: bool,
+    overlays: Option<(&MouseTracks, &MouseEditConfig)>,
     width: u32,
     height: u32,
     export_fps: u32,
@@ -6066,6 +6169,8 @@ fn export_video_generated_from_source(
     progress_tx: &Option<Sender<ExportProgress>>,
 ) -> Result<ExportCodecTelemetry> {
     ensure_ffmpeg_initialized()?;
+    let output_hdr =
+        source_hdr && requested_codec == VideoCodec::H265 && !format.is_animated_image();
     validate_export_dimensions(width, height, format.requires_even_dimensions())?;
 
     if retime.frame_count == 0 {
@@ -6126,19 +6231,29 @@ fn export_video_generated_from_source(
             "selected video codec is not usable as video: {err}"
         ))
     })?;
-    let decoder_output_format = decoder_software_output_format(&decoder, hw_decode_state.as_ref());
+    let decoder_output_format = if source_hdr && !output_hdr {
+        ffmpeg::format::Pixel::RGBA
+    } else {
+        decoder_software_output_format(&decoder, hw_decode_state.as_ref())
+    };
     let mut pixel_format = choose_video_pixel_format(
         format,
         codec_video_info,
         Some(decoder_output_format),
         perf_config.mode,
     );
+    if output_hdr {
+        pixel_format = crate::hdr::pixel_format(codec_video_info)?;
+    }
     let mut video_encoder = ffmpeg::codec::context::Context::new_with_codec(video_codec)
         .encoder()
         .video()
         .map_err(|err| {
             ScreenRecorderError::Export(format!("failed to create video encoder context: {err}"))
         })?;
+    if source_hdr {
+        crate::hdr::context(&mut video_encoder, output_hdr);
+    }
     video_encoder.set_width(width);
     video_encoder.set_height(height);
     video_encoder.set_format(pixel_format);
@@ -6168,7 +6283,7 @@ fn export_video_generated_from_source(
     {
         Ok(encoder) => encoder,
         Err(primary_error) => {
-            if hardware_video_encode_allowed(perf_config.mode)
+            if software_encode_fallback_allowed(perf_config.mode)
                 && is_hardware_video_encoder(&video_codec)
             {
                 video_codec = select_video_codec(
@@ -6192,6 +6307,9 @@ fn export_video_generated_from_source(
                     ExportExecutionMode::SoftwareOnly,
                 );
 
+                if output_hdr {
+                    pixel_format = crate::hdr::pixel_format(fallback_video_info)?;
+                }
                 let mut fallback_encoder =
                     ffmpeg::codec::context::Context::new_with_codec(video_codec)
                         .encoder()
@@ -6201,6 +6319,9 @@ fn export_video_generated_from_source(
                                 "failed to create fallback video encoder context: {err}"
                             ))
                         })?;
+                if source_hdr {
+                    crate::hdr::context(&mut fallback_encoder, output_hdr);
+                }
                 fallback_encoder.set_width(width);
                 fallback_encoder.set_height(height);
                 fallback_encoder.set_format(pixel_format);
@@ -6363,6 +6484,11 @@ fn export_video_generated_from_source(
     };
     let mut audio_worker = AudioPacketWorkerGuard::new(audio_worker, Arc::clone(cancel_flag));
 
+    let mut hdr_overlay_scaler = None::<ffmpeg::software::scaling::Context>;
+    let mut hdr_overlay_base = ffmpeg::frame::Video::empty();
+    let mut hdr_overlay_frame = ffmpeg::frame::Video::empty();
+    let mut overlay_state = OverlaySearchState::default();
+    let mut tone_mapper = crate::hdr::ToneMapper::default();
     let mut scaler = None::<ffmpeg::software::scaling::Context>;
     let mut encode_frame = None::<ffmpeg::frame::Video>;
     let mut decoded = ffmpeg::frame::Video::empty();
@@ -6384,25 +6510,170 @@ fn export_video_generated_from_source(
             return Ok(());
         }
 
-        let source_width = decoded.width();
-        let source_height = decoded.height();
-        if source_width == 0 || source_height == 0 {
-            return Err(ScreenRecorderError::Export(
-                "decoded frame has zero dimensions".to_string(),
-            ));
+        // Decode/resize once for this source. Each output overlay starts from
+        // an immutable base, so repeated frames cannot accumulate old effects.
+        if overlays.is_some() {
+            let key = (decoded.format(), decoded.width(), decoded.height());
+            if hdr_overlay_scaler
+                .as_ref()
+                .is_none_or(|s| (s.input().format, s.input().width, s.input().height) != key)
+            {
+                let mut conversion = ffmpeg::software::scaling::Context::get(
+                    key.0,
+                    key.1,
+                    key.2,
+                    ffmpeg::format::Pixel::RGB48LE,
+                    width,
+                    height,
+                    ffmpeg::software::scaling::Flags::BICUBIC,
+                )
+                .map_err(|e| ScreenRecorderError::Export(format!("HDR overlay conversion: {e}")))?;
+                crate::hdr::scaler_colors(&mut conversion, true, true)?;
+                hdr_overlay_scaler = Some(conversion);
+                hdr_overlay_base =
+                    ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGB48LE, width, height);
+            }
+            ensure_video_frame_writable(&mut hdr_overlay_base)?;
+            hdr_overlay_scaler
+                .as_mut()
+                .unwrap()
+                .run(decoded, &mut hdr_overlay_base)
+                .map_err(|e| ScreenRecorderError::Export(format!("HDR overlay conversion: {e}")))?;
+            crate::hdr::frame(&mut hdr_overlay_base, true);
         }
+        // Re-evaluate the overlay on every output observation: retiming may
+        // repeat a static source while the cursor or ripple continues moving.
+        for _ in 0..if overlays.is_some() { repeats } else { 1 } {
+            check_canceled(cancel_flag)?;
+            let decoded = if let Some((tracks, config)) = overlays {
+                unsafe {
+                    ffmpeg::ffi::av_frame_unref(hdr_overlay_frame.as_mut_ptr());
+                }
+                if unsafe {
+                    ffmpeg::ffi::av_frame_ref(
+                        hdr_overlay_frame.as_mut_ptr(),
+                        hdr_overlay_base.as_ptr(),
+                    )
+                } < 0
+                {
+                    return Err(ScreenRecorderError::Export(
+                        "HDR overlay frame reference failed".into(),
+                    ));
+                }
+                ensure_video_frame_writable(&mut hdr_overlay_frame)?;
+                let stride = hdr_overlay_frame.stride(0);
+                let mut surface = FrameSurfaceMut {
+                    timestamp_ms: retime.output_timestamps_ms[scheduled_output_count.get()],
+                    width,
+                    height,
+                    rgba: &mut [],
+                    hdr: Some((hdr_overlay_frame.data_mut(0), stride)),
+                };
+                apply_mouse_overlays_surface_incremental(
+                    &mut surface,
+                    tracks,
+                    config,
+                    &mut overlay_state,
+                );
+                &mut hdr_overlay_frame
+            } else {
+                &mut *decoded
+            };
+            let repeats = if overlays.is_some() { 1 } else { repeats };
+            let decoded = if source_hdr && !output_hdr {
+                tone_mapper.convert(decoded)?
+            } else {
+                decoded
+            };
+            let source_width = decoded.width();
+            let source_height = decoded.height();
+            if source_width == 0 || source_height == 0 {
+                return Err(ScreenRecorderError::Export(
+                    "decoded frame has zero dimensions".to_string(),
+                ));
+            }
 
-        let direct_frame_passthrough =
-            source_width == width && source_height == height && decoded.format() == pixel_format;
-        if direct_frame_passthrough {
+            let direct_frame_passthrough = source_width == width
+                && source_height == height
+                && decoded.format() == pixel_format;
+            if direct_frame_passthrough {
+                queue_video_frame_with_repeat_collapse(
+                    &mut video_encoder,
+                    &mut output,
+                    video_stream_index,
+                    video_stream_time_base,
+                    decoded,
+                    repeats,
+                    overlays.is_none(),
+                    &mut pending_collapsed_video_frame,
+                    &mut pending_video_packet_durations,
+                    &encoded_output_count,
+                    &scheduled_output_count,
+                    retime.frame_count,
+                    &start,
+                    progress_tx,
+                )?;
+                continue;
+            }
+
+            let needs_reset = scaler.as_ref().is_none_or(|s| {
+                (s.input().format, s.input().width, s.input().height)
+                    != (decoded.format(), source_width, source_height)
+            }) || encode_frame
+                .as_ref()
+                .map(|frame| frame.width() != width || frame.height() != height)
+                .unwrap_or(false);
+            if needs_reset {
+                scaler = Some(
+                    ffmpeg::software::scaling::Context::get(
+                        decoded.format(),
+                        source_width,
+                        source_height,
+                        pixel_format,
+                        width,
+                        height,
+                        ffmpeg::software::scaling::flag::Flags::BICUBIC,
+                    )
+                    .map_err(|err| {
+                        ScreenRecorderError::Export(format!(
+                            "failed to create source-to-output video scaler: {err}"
+                        ))
+                    })?,
+                );
+                if source_hdr {
+                    crate::hdr::scaler_colors(
+                        scaler.as_mut().unwrap(),
+                        output_hdr,
+                        crate::hdr::is_rgb(pixel_format),
+                    )?;
+                }
+                encode_frame = Some(ffmpeg::frame::Video::new(pixel_format, width, height));
+            }
+
+            let scaler_ref = scaler.as_mut().ok_or_else(|| {
+                ScreenRecorderError::Export("video scaler is uninitialized".to_string())
+            })?;
+            let encode_frame_ref = encode_frame.as_mut().ok_or_else(|| {
+                ScreenRecorderError::Export("video frame buffer is uninitialized".to_string())
+            })?;
+            ensure_video_frame_writable(encode_frame_ref)?;
+            scaler_ref.run(decoded, encode_frame_ref).map_err(|err| {
+                ScreenRecorderError::Export(format!(
+                    "failed to convert decoded frame for video export: {err}"
+                ))
+            })?;
+
+            if source_hdr {
+                crate::hdr::frame(encode_frame_ref, output_hdr);
+            }
             queue_video_frame_with_repeat_collapse(
                 &mut video_encoder,
                 &mut output,
                 video_stream_index,
                 video_stream_time_base,
-                decoded,
+                encode_frame_ref,
                 repeats,
-                true,
+                overlays.is_none(),
                 &mut pending_collapsed_video_frame,
                 &mut pending_video_packet_durations,
                 &encoded_output_count,
@@ -6411,63 +6682,7 @@ fn export_video_generated_from_source(
                 &start,
                 progress_tx,
             )?;
-            return Ok(());
         }
-
-        let needs_reset = scaler.is_none()
-            || encode_frame
-                .as_ref()
-                .map(|frame| frame.width() != width || frame.height() != height)
-                .unwrap_or(false);
-        if needs_reset {
-            scaler = Some(
-                ffmpeg::software::scaling::Context::get(
-                    decoded.format(),
-                    source_width,
-                    source_height,
-                    pixel_format,
-                    width,
-                    height,
-                    ffmpeg::software::scaling::flag::Flags::BICUBIC,
-                )
-                .map_err(|err| {
-                    ScreenRecorderError::Export(format!(
-                        "failed to create source-to-output video scaler: {err}"
-                    ))
-                })?,
-            );
-            encode_frame = Some(ffmpeg::frame::Video::new(pixel_format, width, height));
-        }
-
-        let scaler_ref = scaler.as_mut().ok_or_else(|| {
-            ScreenRecorderError::Export("video scaler is uninitialized".to_string())
-        })?;
-        let encode_frame_ref = encode_frame.as_mut().ok_or_else(|| {
-            ScreenRecorderError::Export("video frame buffer is uninitialized".to_string())
-        })?;
-        ensure_video_frame_writable(encode_frame_ref)?;
-        scaler_ref.run(decoded, encode_frame_ref).map_err(|err| {
-            ScreenRecorderError::Export(format!(
-                "failed to convert decoded frame for video export: {err}"
-            ))
-        })?;
-
-        queue_video_frame_with_repeat_collapse(
-            &mut video_encoder,
-            &mut output,
-            video_stream_index,
-            video_stream_time_base,
-            encode_frame_ref,
-            repeats,
-            true,
-            &mut pending_collapsed_video_frame,
-            &mut pending_video_packet_durations,
-            &encoded_output_count,
-            &scheduled_output_count,
-            retime.frame_count,
-            &start,
-            progress_tx,
-        )?;
         Ok(())
     };
 
@@ -6729,7 +6944,7 @@ fn export_video_generated_from_source_with_overlay(
     {
         Ok(encoder) => encoder,
         Err(primary_error) => {
-            if hardware_video_encode_allowed(perf_config.mode)
+            if software_encode_fallback_allowed(perf_config.mode)
                 && is_hardware_video_encoder(&video_codec)
             {
                 video_codec = select_video_codec(
@@ -7164,6 +7379,7 @@ fn export_video_generated_from_source_with_overlay(
                         &mut plane[..rgba_len],
                     )?;
                     let mut surface = FrameSurfaceMut {
+                        hdr: None,
                         timestamp_ms: output_ts,
                         width,
                         height,
@@ -7223,6 +7439,7 @@ fn export_video_generated_from_source_with_overlay(
                 let plane = rgba_frame.data_mut(0);
                 plane[..rgba_len].copy_from_slice(&base_rgba);
                 let mut surface = FrameSurfaceMut {
+                    hdr: None,
                     timestamp_ms: output_ts,
                     width,
                     height,
@@ -7238,6 +7455,7 @@ fn export_video_generated_from_source_with_overlay(
             } else {
                 generated_rgba.copy_from_slice(&base_rgba);
                 let mut surface = FrameSurfaceMut {
+                    hdr: None,
                     timestamp_ms: output_ts,
                     width,
                     height,
@@ -7894,9 +8112,8 @@ pub(crate) fn select_video_codec(
 
     if matches!(format, ExportFormat::Mp4) {
         if prefer_hardware_h264
-            && matches!(requested_codec, VideoCodec::H264)
             && hardware_video_encode_allowed(mode)
-            && let Some(hardware_codec) = select_hardware_h264_codec()
+            && let Some(hardware_codec) = select_hardware_codec(requested_codec)
         {
             return Ok(hardware_codec);
         }
@@ -7985,7 +8202,11 @@ fn should_use_x265_options(codec: &ffmpeg::Codec) -> bool {
 
 pub(crate) fn is_hardware_h264_encoder(codec: &ffmpeg::Codec) -> bool {
     let name = codec.name().to_ascii_lowercase();
-    name.contains("nvenc") || name.contains("qsv") || name.contains("amf") || name.contains("mf")
+    name.contains("nvenc")
+        || name.contains("qsv")
+        || name.contains("amf")
+        || name.contains("mf")
+        || name.ends_with("_videotoolbox")
 }
 
 /// Report the successfully opened mode, including MF's explicit hardware option.
@@ -8024,6 +8245,24 @@ fn select_software_h264_codec(priority: SoftwareH264Priority) -> Option<ffmpeg::
         .find_map(ffmpeg::encoder::find_by_name)
 }
 
+fn select_hardware_codec(codec: VideoCodec) -> Option<ffmpeg::Codec> {
+    #[cfg(target_os = "macos")]
+    {
+        ffmpeg::encoder::find_by_name(match codec {
+            VideoCodec::H264 => "h264_videotoolbox",
+            VideoCodec::H265 => "hevc_videotoolbox",
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        match codec {
+            VideoCodec::H264 => select_hardware_h264_codec(),
+            VideoCodec::H265 => None,
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
 fn select_hardware_h264_codec() -> Option<ffmpeg::Codec> {
     // Preserve the CPU-input callers' Media Foundation preference. Direct GPU
     // recording separately selects the encoder matching its D3D11 adapter.
@@ -8036,6 +8275,24 @@ pub(crate) fn open_video_encoder(
     video_encoder: ffmpeg::codec::encoder::video::Video,
     codec: &ffmpeg::Codec,
     video_config: &VideoEncodeConfig,
+) -> Result<ffmpeg::encoder::video::Encoder> {
+    open_video_encoder_impl(video_encoder, codec, video_config, false)
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn open_live_hdr_encoder(
+    video_encoder: ffmpeg::codec::encoder::video::Video,
+    codec: &ffmpeg::Codec,
+    video_config: &VideoEncodeConfig,
+) -> Result<ffmpeg::encoder::video::Encoder> {
+    open_video_encoder_impl(video_encoder, codec, video_config, true)
+}
+
+fn open_video_encoder_impl(
+    video_encoder: ffmpeg::codec::encoder::video::Video,
+    codec: &ffmpeg::Codec,
+    video_config: &VideoEncodeConfig,
+    low_latency_hevc: bool,
 ) -> Result<ffmpeg::encoder::video::Encoder> {
     if should_use_x264_options(codec) {
         let mut options = ffmpeg::Dictionary::new();
@@ -8054,6 +8311,13 @@ pub(crate) fn open_video_encoder(
     }
     if should_use_x265_options(codec) {
         let mut options = ffmpeg::Dictionary::new();
+        if low_latency_hevc {
+            // A live capture stream cannot amortize many retained frame workers
+            // and lookahead pictures as an offline export can. WPP still uses
+            // the configured CPU pool within one frame.
+            options.set("tune", "zerolatency");
+            options.set("x265-params", "frame-threads=1:rc-lookahead=0:bframes=0");
+        }
         options.set("preset", video_config.speed.as_x264_preset());
         options.set(
             "crf",
@@ -8083,6 +8347,13 @@ fn apply_hardware_encoder_speed_options(
     codec: &ffmpeg::Codec,
 ) -> bool {
     let name = codec.name().to_ascii_lowercase();
+    if name.ends_with("_videotoolbox") {
+        options.set("allow_sw", "0");
+        options.set("require_sw", "0");
+        options.set("realtime", "1");
+        options.set("bf", "0");
+        return true;
+    }
     if name.contains("nvenc") {
         options.set("preset", "p1");
         options.set("tune", "ull");
@@ -8671,6 +8942,12 @@ mod tests {
 
     fn test_editing_session(system: bool, microphone: bool) -> EditingSession {
         let manifest = SessionManifest {
+            video_codec: snow_recording_model::VideoCodec::H264,
+            media: snow_recording_model::media::RecordedMedia::new(
+                snow_media::ColorDescription::SRGB,
+                snow_media::CursorMode::Separate,
+                vec![],
+            ),
             session_id: "session".to_string(),
             output_dir: PathBuf::from("recordings"),
             keep_temp_files: false,
@@ -8744,6 +9021,66 @@ mod tests {
                 assets,
             },
         }
+    }
+
+    #[test]
+    fn hdr_overlay_surface_preserves_padding_and_rejects_masks() {
+        let mut bytes = vec![0; 32 * 2];
+        bytes[24..32].fill(0xa5);
+        bytes[56..64].fill(0xa5);
+        let mut surface = FrameSurfaceMut {
+            timestamp_ms: 0,
+            width: 4,
+            height: 2,
+            rgba: &mut [],
+            hdr: Some((&mut bytes, 32)),
+        };
+        blend_horizontal_span(&mut surface, 0, -1, 1, [255; 4]);
+        set_pixel_blended(&mut surface, 3, 1, [255, 0, 0, 128]);
+        set_pixel_blended(&mut surface, 4, 1, [255; 4]);
+        assert_eq!(&bytes[24..32], &[0xa5; 8]);
+        assert_eq!(&bytes[56..64], &[0xa5; 8]);
+        assert_eq!(&bytes[12..24], &[0; 12]);
+        let nits = snow_media::color::pq_to_nits(
+            f32::from(u16::from_le_bytes([bytes[0], bytes[1]])) / 65535.0,
+        );
+        assert!((nits - 203.0).abs() < 0.1);
+        let mut store = MouseStore::new();
+        store.cursor_shapes.push(CursorShapeRecord {
+            shape_id: 1,
+            width: 1,
+            height: 1,
+            hotspot_x: 0,
+            hotspot_y: 0,
+            mode: CursorShapeCompositionMode::MaskedColor,
+            shape_rgba: vec![255; 4],
+        });
+        assert!(validate_hdr_cursor_shapes(&build_mouse_tracks(store)).is_err());
+    }
+
+    #[test]
+    fn mouse_assets_follow_video_playback_speed_and_check_overflow() {
+        let mut tracks = MouseTracks {
+            samples: vec![MouseSample {
+                ts_ms: 33,
+                x: 0,
+                y: 0,
+                visible: true,
+                shape_id: None,
+            }],
+            click_downs: vec![MouseClickDown {
+                ts_ms: 66,
+                x: 0,
+                y: 0,
+            }],
+            ..Default::default()
+        };
+        retime_mouse_tracks(&mut tracks, 0.5).unwrap();
+        assert_eq!(tracks.samples[0].ts_ms, 66);
+        assert_eq!(tracks.click_downs[0].ts_ms, 132);
+        assert!(retime_mouse_tracks(&mut tracks, f32::NAN).is_err());
+        tracks.samples[0].ts_ms = u64::MAX;
+        assert!(retime_mouse_tracks(&mut tracks, 0.25).is_err());
     }
 
     #[test]
@@ -8851,7 +9188,13 @@ mod tests {
         muxer_names.sort_unstable();
         assert_eq!(
             muxer_names,
-            ["apng", "avi", "gif", "matroska", "mov", "mp4", "webp"],
+            if cfg!(target_os = "macos") {
+                vec![
+                    "apng", "avi", "gif", "matroska", "mov", "mp4", "wav", "webp",
+                ]
+            } else {
+                vec!["apng", "avi", "gif", "matroska", "mov", "mp4", "webp"]
+            },
             "FFmpeg muxer registry does not match the production profile"
         );
 
@@ -8973,7 +9316,7 @@ mod tests {
         assert!(
             matches!(
                 result.video_encoder.as_deref(),
-                Some("h264_mf") | Some("libx264") | Some("libopenh264")
+                Some("h264_mf") | Some("h264_videotoolbox") | Some("libx264") | Some("libopenh264")
             ),
             "unexpected encoder for hardware-preferred export: {:?}",
             result.video_encoder
@@ -9004,6 +9347,19 @@ mod tests {
             (1620, 1080)
         );
         assert_eq!(output_dimensions(1001, 777, None, None, true), (1000, 776));
+    }
+
+    #[test]
+    fn hardware_only_never_allows_software_encoder_fallback() {
+        assert!(!software_encode_fallback_allowed(
+            ExportExecutionMode::HardwareOnly
+        ));
+        assert!(!software_encode_fallback_allowed(
+            ExportExecutionMode::SoftwareOnly
+        ));
+        assert!(software_encode_fallback_allowed(
+            ExportExecutionMode::HardwarePreferred
+        ));
     }
 
     #[test]
@@ -9277,6 +9633,7 @@ mod tests {
     ) -> RecordingBundleFooter {
         RecordingBundleFooter {
             manifest: SessionManifest {
+                video_codec: snow_recording_model::VideoCodec::H264,
                 audio_tracks: vec![manifest.clone()],
                 ..test_editing_session(false, false).manifest
             },

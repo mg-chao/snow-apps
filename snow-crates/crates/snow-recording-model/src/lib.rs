@@ -17,6 +17,9 @@ pub use error::{RecordingModelError, Result};
 pub use model::StoredFrame;
 pub use mouse::{
     ClickEventRecord, CursorFrameRecord, CursorShapeCompositionMode, CursorShapeRecord,
-    MouseButton, MouseStore, decode_mouse_records, read_mouse_records, write_mouse_records,
+    MouseButton, MouseStore, MouseStoreWriter, decode_mouse_records, read_mouse_records,
+    write_mouse_records,
 };
 pub use shared::{IntermediateRecordingProfile, VideoCodec, VideoEncodeConfig, VideoEncodingSpeed};
+
+pub mod media;

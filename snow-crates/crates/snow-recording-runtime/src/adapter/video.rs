@@ -31,10 +31,7 @@ pub(crate) fn resolve_capture_target(
             let monitor = resolve_monitor_selector(selector, &layout.monitors)?;
             Ok(snow_capture::CaptureTarget::Monitor(monitor))
         }
-        RecordingTarget::Window(selector) => {
-            let window_id = snow_capture::WindowId::from_raw_handle(selector.raw_handle);
-            Ok(snow_capture::CaptureTarget::Window(window_id))
-        }
+        RecordingTarget::Window(selector) => Ok(snow_capture::CaptureTarget::Window(*selector)),
         RecordingTarget::Region(region) => {
             let capture_region =
                 snow_capture::CaptureRegion::new(region.x, region.y, region.width, region.height)?;

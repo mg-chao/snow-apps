@@ -4,7 +4,9 @@ use crate::format::{AudioFormat, MAX_CHANNELS};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum NativeSampleFormat {
     F32,
+    #[cfg_attr(not(windows), allow(dead_code))]
     I16,
+    #[cfg_attr(not(windows), allow(dead_code))]
     I32,
 }
 
@@ -95,6 +97,12 @@ impl AudioConverter {
         input_bytes: &[u8],
         input_frames: u32,
     ) -> AudioResult<Vec<i16>> {
+        let required = (input_frames as usize)
+            .checked_mul(self.input.bytes_per_frame()?)
+            .ok_or(AudioError::BufferOverflow)?;
+        if input_bytes.len() < required {
+            return Err(AudioError::BufferOverflow);
+        }
         self.output_buffer.clear();
         if input_frames == 0 {
             return Ok(Vec::new());

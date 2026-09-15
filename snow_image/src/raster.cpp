@@ -197,9 +197,9 @@ class BinaryWriter final {
   public:
     template <typename T> void integer(T value) {
         using U = std::make_unsigned_t<T>;
-        U unsigned_value = static_cast<U>(value);
+        std::uint64_t unsigned_value = static_cast<std::uint64_t>(static_cast<U>(value));
         for (std::size_t index = 0; index < sizeof(T); ++index) {
-            bytes_.push_back(static_cast<std::byte>(unsigned_value & U{0xFF}));
+            bytes_.push_back(static_cast<std::byte>(unsigned_value & 0xFFU));
             unsigned_value >>= 8U;
         }
     }
@@ -1351,7 +1351,7 @@ Result<MappedPlane> RasterStore::map_plane(std::uint32_t frame_index,
         if (!checked_add(delta, storage.byte_size, &mapped_bytes) ||
             mapped_bytes > std::numeric_limits<std::size_t>::max())
             return limit("Raster plane mapping length overflows.");
-        owner->file = open(impl_->path.c_str(), O_RDONLY);
+        owner->file = ::open(impl_->path.c_str(), O_RDONLY);
         if (owner->file < 0)
             return io_error(path_message(impl_->path, "Could not open raster mapping"));
         owner->base = mmap(nullptr, static_cast<std::size_t>(mapped_bytes), PROT_READ, MAP_SHARED,
@@ -1448,7 +1448,7 @@ Result<MutableMappedPlane> RasterStore::map_plane_for_write(std::uint32_t frame_
         if (!checked_add(delta, storage.byte_size, &mapped_bytes) ||
             mapped_bytes > std::numeric_limits<std::size_t>::max())
             return limit("Raster write mapping length overflows.");
-        owner->file = open(impl_->path.c_str(), O_RDWR);
+        owner->file = ::open(impl_->path.c_str(), O_RDWR);
         if (owner->file < 0)
             return io_error(path_message(impl_->path, "Could not open raster write mapping"));
         owner->base = mmap(nullptr, static_cast<std::size_t>(mapped_bytes), PROT_READ | PROT_WRITE,

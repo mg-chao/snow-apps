@@ -67,6 +67,8 @@ impl AudioTrackManifest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SessionManifest {
+    pub media: crate::media::RecordedMedia,
+    pub video_codec: crate::shared::VideoCodec,
     pub session_id: String,
     pub output_dir: PathBuf,
     pub keep_temp_files: bool,
@@ -99,6 +101,27 @@ pub struct RecordingArtifact {
 }
 
 impl RecordingArtifact {
+    /// Open a self-contained version-2 bundle. FFmpeg reads its video payload
+    /// directly; auxiliary assets are resolved from the checked footer.
+    pub fn open(bundle_path: PathBuf) -> Result<Self> {
+        let footer = read_recording_bundle_footer(&bundle_path)?;
+        Ok(Self {
+            session_id: footer.manifest.session_id,
+            output_dir: bundle_path
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+                .to_path_buf(),
+            local_paths: LocalRecordingPaths {
+                temp_dir: PathBuf::new(),
+                video_intermediate_path: bundle_path.clone(),
+                video_index_path: PathBuf::new(),
+                mouse_path: PathBuf::new(),
+            },
+            bundle_path,
+            audio_tracks: footer.manifest.audio_tracks,
+        })
+    }
+
     pub fn load_manifest(&self) -> Result<SessionManifest> {
         self.read_embedded_manifest()
     }

@@ -792,6 +792,26 @@
       "dependencies": [
         "zeromq"
       ]
+    },
+    "snow-macos-media": {
+      "description": "Standalone macOS capture recording and export codecs with VideoToolbox and software fallbacks",
+      "supports": "osx",
+      "dependencies": [
+        {
+          "name": "ffmpeg",
+          "default-features": false,
+          "features": [
+            "avcodec",
+            "avformat",
+            "swresample",
+            "swscale",
+            "webp",
+            "x264",
+            "x265",
+            "zlib"
+          ]
+        }
+      ]
     }
   }
 }

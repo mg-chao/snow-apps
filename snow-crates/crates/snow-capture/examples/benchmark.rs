@@ -117,6 +117,7 @@ fn backend_name(kind: CaptureBackendKind) -> &'static str {
         CaptureBackendKind::DxgiDuplication => "dxgi",
         CaptureBackendKind::WindowsGraphicsCapture => "wgc",
         CaptureBackendKind::Gdi => "gdi",
+        CaptureBackendKind::ScreenCaptureKit => "sck",
     }
 }
 
@@ -127,6 +128,7 @@ fn parse_backend(token: &str) -> Option<CaptureBackendKind> {
             Some(CaptureBackendKind::WindowsGraphicsCapture)
         }
         "gdi" => Some(CaptureBackendKind::Gdi),
+        "sck" => Some(CaptureBackendKind::ScreenCaptureKit),
         "auto" => Some(CaptureBackendKind::Auto),
         _ => None,
     }
@@ -212,6 +214,7 @@ fn parse_window_handle(raw: &str) -> Result<isize> {
     Ok(parsed_u64 as isize)
 }
 
+#[cfg(windows)]
 fn window_under_cursor() -> Result<WindowId> {
     use windows::Win32::Foundation::POINT;
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -230,7 +233,7 @@ fn window_under_cursor() -> Result<WindowId> {
 
     let root = unsafe { GetAncestor(hwnd, GA_ROOT) };
     let handle = if root.0.is_null() { hwnd } else { root };
-    Ok(WindowId::from_raw_handle(handle.0 as isize))
+    Ok(WindowId::from_windows_handle(handle.0 as isize))
 }
 
 fn parse_region_csv(raw: &str) -> Result<CaptureRegion> {
@@ -308,7 +311,7 @@ fn target_label(target: &BenchTarget, override_label: Option<&str>) -> String {
                 region.x, region.y, region.width, region.height
             )
         }
-        BenchTarget::Window(window) => format!("window:{}", window.stable_id()),
+        BenchTarget::Window(window) => format!("window:{}", window.session_id()),
     }
 }
 
@@ -381,7 +384,8 @@ fn parse_args() -> Result<Config> {
                 let Some(raw) = args.get(i + 1).map(String::as_str) else {
                     bail!("--window-handle requires a value (decimal or hex, e.g. 0x1234)");
                 };
-                target = BenchTarget::Window(WindowId::from_raw_handle(parse_window_handle(raw)?));
+                target =
+                    BenchTarget::Window(WindowId::from_windows_handle(parse_window_handle(raw)?));
                 i += 2;
             }
             "--region" => {
@@ -978,4 +982,11 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(not(windows))]
+fn window_under_cursor() -> Result<WindowId> {
+    anyhow::bail!(
+        "automatic window picking is Windows-only; use the macOS harness for window enumeration"
+    )
 }

@@ -26,7 +26,7 @@ pub enum AudioError {
     /// Class: `Transient` - the engine may attempt to restart the worker.
     WorkerDead,
     /// The operation was canceled (e.g. stream stopped while initializing).
-    /// Class: `Transient` - a new operation can be started.
+    /// Terminal for this session; a new operation needs a new cancellation token.
     Canceled,
     /// The requested audio backend is not available on this platform.
     /// Class: `Unsupported` - not retryable.
@@ -58,8 +58,10 @@ impl AudioError {
             Self::UnsupportedFormat(_) | Self::BackendUnavailable(_) => {
                 AudioErrorClass::Unsupported
             }
-            Self::DeviceLost | Self::Canceled | Self::WorkerDead => AudioErrorClass::Transient,
-            Self::AccessDenied | Self::BufferOverflow | Self::Platform(_) => AudioErrorClass::Fatal,
+            Self::DeviceLost | Self::WorkerDead => AudioErrorClass::Transient,
+            Self::Canceled | Self::AccessDenied | Self::BufferOverflow | Self::Platform(_) => {
+                AudioErrorClass::Fatal
+            }
         }
     }
 

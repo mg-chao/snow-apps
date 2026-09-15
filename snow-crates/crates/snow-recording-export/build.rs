@@ -5,6 +5,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 fn main() {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
     println!("cargo:rerun-if-env-changed=FFMPEG_DIR");
     println!("cargo:rerun-if-env-changed=VCPKGRS_DYNAMIC");
 

@@ -1,9 +1,9 @@
 use std::time::Duration;
 
+use crate::convert::{AudioConverter, NativeAudioFormat, NativeSampleFormat};
 use crate::error::AudioResult;
 use crate::format::AudioFormat;
 use crate::packet::{AudioPacket, AudioSourceKind};
-use crate::platform::windows::convert::{AudioConverter, NativeAudioFormat, NativeSampleFormat};
 use crate::platform::windows::wasapi_source::{PacketAccumulator, PendingMetadata};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

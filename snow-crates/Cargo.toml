@@ -1,5 +1,7 @@
-﻿[workspace]
+[workspace]
 members = [
+    "crates/snow-media",
+    "crates/snow-macos",
     "crates/visual-region-detector",
     "crates/snow-visual-region-detector-c",
     "crates/snow-core",
@@ -10,6 +12,7 @@ members = [
     "crates/snow-pipeline",
     "crates/snow-capture",
     "crates/snow-capture-c",
+    "crates/snow-recording-c",
     "crates/snow-ui-selector",
     "crates/snow-ui-selector-c",
     "crates/snow-selected-text",
@@ -69,6 +72,12 @@ panic = "abort"
 debug = 0
 incremental = false
 overflow-checks = false
+
+# Keep host proc-macro symbol tables intact. LLVM's debug-only Mach-O stripping
+# can produce an unaligned LINKEDIT pool rejected by the macOS 27 loader.
+# These host tools are not part of the shipped static libraries.
+[profile.release.build-override]
+strip = "none"
 
 [profile.dev.package.snow-stitch-images]
 opt-level = 3

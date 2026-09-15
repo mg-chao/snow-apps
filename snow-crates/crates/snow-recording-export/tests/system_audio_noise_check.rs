@@ -267,6 +267,12 @@ fn export_wav_as_system_track(source: &WavAudio) -> PathBuf {
 
     let track_frames = source.samples.len() / usize::from(source.channels);
     let manifest = SessionManifest {
+        video_codec: snow_recording_model::VideoCodec::H264,
+        media: snow_recording_model::media::RecordedMedia::new(
+            snow_media::ColorDescription::SRGB,
+            snow_media::CursorMode::Separate,
+            vec![],
+        ),
         session_id: "audio-noise-check".to_string(),
         output_dir: temp.path().to_path_buf(),
         keep_temp_files: false,

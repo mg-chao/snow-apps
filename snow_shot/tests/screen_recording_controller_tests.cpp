@@ -21,6 +21,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_capture.h"
+#include "snow_recording.h"
 #include "widgets/button.h"
 
 #include <QApplication>
@@ -40,20 +41,20 @@
 #include <qt_windows.h>
 #include <dwmapi.h>
 int recordingToolbarAcrossNativeDisplays(bool startCapture);
-#pragma push_macro("snow_capture_last_error_message")
-#undef snow_capture_last_error_message
-extern "C" const char* snow_capture_last_error_message();
+#pragma push_macro("snow_recording_last_error_message")
+#undef snow_recording_last_error_message
+extern "C" const char* snow_recording_last_error_message();
 const char* nativeCaptureError() {
-    return snow_capture_last_error_message();
+    return snow_recording_last_error_message();
 }
-#pragma pop_macro("snow_capture_last_error_message")
+#pragma pop_macro("snow_recording_last_error_message")
 #endif
 #include <atomic>
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 
-struct SnowCaptureRecordingSessionImpl {};
+struct SnowRecordingSessionImpl {};
 namespace {
 std::vector<std::weak_ptr<RecordingEffectTestState>> effectSources;
 std::unique_ptr<RecordingEffectsSource> testEffectsSource() {
@@ -62,7 +63,7 @@ std::unique_ptr<RecordingEffectsSource> testEffectsSource() {
     return std::make_unique<RecordingEffectTestSource>(std::move(state));
 }
 
-SnowCaptureRecordingSession session;
+SnowRecordingSession session;
 std::atomic<int> starts = 0;
 SnowCaptureDirectRecordingConfig lastDirectConfig{};
 std::atomic<int> exports = 0;
@@ -1111,9 +1112,9 @@ int nativeEffectsPreviewCapture() {
 } // namespace
 
 extern "C" {
-SnowCaptureResult
-snow_capture_recording_session_create_direct(const SnowCaptureDirectRecordingConfig* config,
-                                             SnowCaptureRecordingSession** result) {
+SnowRecordingResult
+snow_recording_session_create_direct(const SnowCaptureDirectRecordingConfig* config,
+                                             SnowRecordingSession** result) {
     // Session creation runs on the controller's worker thread: only plain data
     // may be touched here. The preview label invariant is asserted on the GUI
     // thread by controllerPreviewTransitions instead.
@@ -1125,25 +1126,25 @@ snow_capture_recording_session_create_direct(const SnowCaptureDirectRecordingCon
     }
     if (failStart) {
         *result = nullptr;
-        return SNOW_CAPTURE_RESULT_INVALID_ARGUMENT;
+        return SNOW_RECORDING_RESULT_INVALID_ARGUMENT;
     }
     *result = &session;
-    return SNOW_CAPTURE_RESULT_OK;
+    return SNOW_RECORDING_RESULT_OK;
 }
-void snow_capture_recording_session_destroy(SnowCaptureRecordingSession*) {
+void snow_recording_session_destroy(SnowRecordingSession*) {
     ++destroyedSessions;
 }
-uint8_t snow_capture_recording_session_start(SnowCaptureRecordingSession*) {
+uint8_t snow_recording_session_start(SnowRecordingSession*) {
     ++starts;
     return 1;
 }
-uint8_t snow_capture_recording_session_pause(SnowCaptureRecordingSession*) {
+uint8_t snow_recording_session_pause(SnowRecordingSession*) {
     return 1;
 }
-uint8_t snow_capture_recording_session_resume(SnowCaptureRecordingSession*) {
+uint8_t snow_recording_session_resume(SnowRecordingSession*) {
     return 1;
 }
-SnowCaptureResult snow_capture_recording_session_stop(SnowCaptureRecordingSession*) {
+SnowRecordingResult snow_recording_session_stop(SnowRecordingSession*) {
     // Snapshot the gate before publishing entry. The UI may release and clear
     // the global shared_future as soon as exportEntered becomes ready.
     const auto gate = exportGate;
@@ -1155,14 +1156,14 @@ SnowCaptureResult snow_capture_recording_session_stop(SnowCaptureRecordingSessio
         gate.wait();
     }
     ++exports;
-    return failure ? SNOW_CAPTURE_RESULT_INVALID_ARGUMENT : SNOW_CAPTURE_RESULT_OK;
+    return failure ? SNOW_RECORDING_RESULT_INVALID_ARGUMENT : SNOW_RECORDING_RESULT_OK;
 }
-uint8_t snow_capture_recording_session_state(const SnowCaptureRecordingSession*,
-                                             SnowCaptureRecordingState* state) {
-    *state = SNOW_CAPTURE_RECORDING_STATE_RUNNING;
+uint8_t snow_recording_session_state(const SnowRecordingSession*,
+                                             SnowRecordingState* state) {
+    *state = SNOW_RECORDING_STATE_RUNNING;
     return 1;
 }
-const char* snow_capture_last_error_message() {
+const char* snow_recording_last_error_message() {
     if (failExport) {
         return "recording recovery: finalization failed; recoverable media is retained in "
                "D:/recordings/recovery";

@@ -1,5 +1,5 @@
 pub(crate) mod com;
-pub(crate) mod convert;
+pub(crate) use crate::convert;
 pub(crate) mod device_enum;
 pub(crate) mod hresult;
 pub(crate) mod notification;

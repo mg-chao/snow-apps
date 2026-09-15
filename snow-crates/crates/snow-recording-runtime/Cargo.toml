@@ -6,6 +6,8 @@ license.workspace = true
 build = "build.rs"
 
 [dependencies]
+tempfile.workspace = true
+snow-media = { path = "../snow-media" }
 snow-recording-effects = { path = "../snow-recording-effects" }
 snow-core = { path = "../snow-core" }
 snow-pipeline = { path = "../snow-pipeline" }
@@ -14,7 +16,6 @@ snow-cursor = { path = "../snow-cursor" }
 snow-audio-recorder = { path = "../snow-audio-recorder" }
 snow-recording-model = { path = "../snow-recording-model" }
 snow-recording-export = { path = "../snow-recording-export" }
-snow-d3d11 = { path = "../snow-d3d11" }
 crossbeam-channel.workspace = true
 ffmpeg-next.workspace = true
 rayon.workspace = true
@@ -24,6 +25,7 @@ thiserror.workspace = true
 uuid.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+snow-d3d11 = { path = "../snow-d3d11" }
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_System_Threading",
@@ -44,7 +46,6 @@ snow-recording-effects = { path = "../snow-recording-effects", features = ["benc
 snow-recording-export = { path = "../snow-recording-export", features = ["bench-experiments"] }
 anyhow.workspace = true
 proptest = "1.11.0"
-tempfile.workspace = true
 
 # Drives the overlays without OS input injection; skipped entirely in builds
 # that do not opt into the bench feature.
@@ -84,3 +85,6 @@ bench-pipeline-timing = ["snow-capture/stage-timing", "snow-recording-export/ben
 # input injection. Sessions opt in explicitly; production builds that enable
 # none of the bench features compile the hooks-only path unchanged.
 bench-synthetic-input = ["snow-recording-effects/bench-synthetic-input", "snow-recording-effects/bench-experiments", "snow-recording-export/bench-experiments"]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+snow-macos = { path = "../snow-macos" }

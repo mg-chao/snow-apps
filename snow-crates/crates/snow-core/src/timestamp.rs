@@ -1,5 +1,6 @@
 //! Timestamp types: `StreamTimestamp`, `TickFormat`, and `TimestampAnchor`.
 
+pub use snow_media::time::{ClockDomain, MediaTime};
 use std::time::{Duration, Instant};
 
 /// Format of the raw OS timing value carried in a [`StreamTimestamp`].
@@ -11,6 +12,11 @@ pub enum TickFormat {
     /// WASAPI 100-nanosecond units. Direct conversion:
     /// `duration = ticks * 100ns`.
     Hns100,
+    Rational {
+        timescale: u32,
+        domain: ClockDomain,
+        epoch: i64,
+    },
 }
 
 /// A timestamp that works across video and audio streams.
@@ -48,7 +54,7 @@ impl TimestampAnchor {
     ///
     /// The `tick_format` is taken from the origin timestamp and stored
     /// so that all subsequent `stream_relative` calls use the same
-    /// conversion path, regardless of what the incoming timestamp carries.
+    /// conversion path. Different domains and epochs use the anchored Instant fallback.
     pub fn new(origin: StreamTimestamp) -> Self {
         let tick_format = origin.tick_format;
         Self {
@@ -73,25 +79,54 @@ impl TimestampAnchor {
 
     /// Convert a timestamp to a stream-relative [`Duration`].
     ///
-    /// The conversion path is selected by the anchor's `tick_format`
-    /// (set at construction from the origin), not by the incoming timestamp:
+    /// Both timestamps must use compatible formats. Rational timestamps may
+    /// use different timescales within the same clock domain and epoch:
     /// - For [`TickFormat::RawQpc`]: `(current_ticks - origin_ticks) / qpc_frequency`
     /// - For [`TickFormat::Hns100`]: `(current_ticks - origin_ticks) * 100ns`
     /// - Fallback: `current.instant - origin.instant` (when `raw_os_ticks` is absent
     ///   on either side, or QPC frequency is 0 for `RawQpc`)
     pub fn stream_relative(&self, ts: &StreamTimestamp) -> Duration {
         if let (Some(current), Some(origin)) = (ts.raw_os_ticks, self.origin.raw_os_ticks) {
+            if let (
+                TickFormat::Rational {
+                    timescale,
+                    domain,
+                    epoch,
+                },
+                TickFormat::Rational {
+                    timescale: origin_scale,
+                    domain: origin_domain,
+                    epoch: origin_epoch,
+                },
+            ) = (ts.tick_format, self.tick_format)
+            {
+                return MediaTime {
+                    value: current,
+                    timescale,
+                    domain,
+                    epoch,
+                }
+                .duration_since(MediaTime {
+                    value: origin,
+                    timescale: origin_scale,
+                    domain: origin_domain,
+                    epoch: origin_epoch,
+                })
+                .unwrap_or_else(|| ts.instant.saturating_duration_since(self.origin.instant));
+            }
+            if ts.tick_format != self.tick_format {
+                return ts.instant.saturating_duration_since(self.origin.instant);
+            }
             match self.tick_format {
                 TickFormat::RawQpc if self.qpc_frequency > 0 => {
-                    let delta = (current - origin).max(0);
-                    let secs = delta / self.qpc_frequency;
-                    let remainder = delta % self.qpc_frequency;
-                    let nanos =
-                        (remainder as i128 * 1_000_000_000 / self.qpc_frequency as i128) as u32;
+                    let delta = (i128::from(current) - i128::from(origin)).max(0);
+                    let secs = delta / i128::from(self.qpc_frequency);
+                    let remainder = delta % i128::from(self.qpc_frequency);
+                    let nanos = (remainder * 1_000_000_000 / i128::from(self.qpc_frequency)) as u32;
                     Duration::new(secs as u64, nanos)
                 }
                 TickFormat::Hns100 => {
-                    let delta = (current - origin).max(0) as u64;
+                    let delta = (i128::from(current) - i128::from(origin)).max(0) as u64;
                     // Split into microseconds + remainder to avoid overflow in delta * 100.
                     // Each 100ns unit = 0.1µs, so 10 units = 1µs.
                     let micros = delta / 10;
@@ -207,6 +242,58 @@ mod tests {
         };
         let anchor = TimestampAnchor::new(origin);
         assert_eq!(anchor.stream_relative(&ts), Duration::ZERO);
+    }
+
+    #[test]
+    fn rational_timescales_share_an_anchor_but_epochs_do_not() {
+        let now = Instant::now();
+        let origin = StreamTimestamp {
+            instant: now,
+            raw_os_ticks: Some(48_000),
+            tick_format: TickFormat::Rational {
+                timescale: 48_000,
+                domain: ClockDomain::MacHostTime,
+                epoch: 0,
+            },
+        };
+        let anchor = TimestampAnchor::new(origin);
+        let mut sample = StreamTimestamp {
+            instant: now + Duration::from_millis(25),
+            raw_os_ticks: Some(180_000),
+            tick_format: TickFormat::Rational {
+                timescale: 90_000,
+                domain: ClockDomain::MacHostTime,
+                epoch: 0,
+            },
+        };
+        assert_eq!(anchor.stream_relative(&sample), Duration::from_secs(1));
+        sample.tick_format = TickFormat::Rational {
+            timescale: 90_000,
+            domain: ClockDomain::MacHostTime,
+            epoch: 1,
+        };
+        assert_eq!(anchor.stream_relative(&sample), Duration::from_millis(25));
+        sample.tick_format = TickFormat::Hns100;
+        assert_eq!(anchor.stream_relative(&sample), Duration::from_millis(25));
+    }
+    #[test]
+    fn full_signed_tick_range_does_not_overflow() {
+        let now = Instant::now();
+        let origin = StreamTimestamp {
+            instant: now,
+            raw_os_ticks: Some(i64::MIN),
+            tick_format: TickFormat::RawQpc,
+        };
+        let anchor = TimestampAnchor::new_with_frequency(origin, 1);
+        let sample = StreamTimestamp {
+            instant: now,
+            raw_os_ticks: Some(i64::MAX),
+            tick_format: TickFormat::RawQpc,
+        };
+        assert_eq!(
+            anchor.stream_relative(&sample),
+            Duration::from_secs(u64::MAX)
+        );
     }
 
     mod prop_tests {

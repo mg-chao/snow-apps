@@ -63,3 +63,10 @@ pub fn capture_once(target: &CaptureTarget) -> CaptureResult<Frame> {
 
 #[cfg(feature = "stage-timing")]
 pub mod pixel_counters;
+
+pub mod capabilities;
+#[cfg(target_os = "macos")]
+pub mod native;
+
+pub mod tuning;
+pub use tuning::BackendTuning;

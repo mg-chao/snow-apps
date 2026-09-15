@@ -42,6 +42,7 @@ pub enum ColorSpace {
 /// Minimum allocation size to attempt large-page backing.
 /// 4K RGBA = 3840x2160x4 ~= 33 MB - well above the 2 MB large page size.
 /// We only bother for allocations >= 4 MB to avoid overhead on small captures.
+#[cfg(windows)]
 const LARGE_PAGE_MIN_BYTES: usize = 4 * 1024 * 1024;
 
 /// A rectangle describing a dirty (changed) region of the screen.
@@ -56,6 +57,9 @@ pub struct DirtyRect {
 /// Metadata attached to each captured frame for recording pipelines.
 #[derive(Clone, Debug, Default)]
 pub struct FrameMetadata {
+    pub(crate) configuration_generation: u64,
+    pub(crate) capture_transform: Option<snow_media::geometry::DesktopTransform>,
+    pub(crate) source_times: Vec<snow_media::time::MediaTime>,
     /// Publication after readback and cursor sampling. Schedulers use this to
     /// avoid rendering a newer cursor observation at an earlier output time.
     pub(crate) queued_at: Option<Instant>,
@@ -102,6 +106,15 @@ pub struct FrameMetadata {
 }
 
 impl FrameMetadata {
+    pub fn configuration_generation(&self) -> u64 {
+        self.configuration_generation
+    }
+    pub fn capture_transform(&self) -> Option<snow_media::geometry::DesktopTransform> {
+        self.capture_transform
+    }
+    pub fn source_times(&self) -> &[snow_media::time::MediaTime] {
+        &self.source_times
+    }
     pub fn queued_at(&self) -> Option<Instant> {
         self.queued_at
     }
@@ -165,6 +178,7 @@ impl FrameMetadata {
     /// Set timing fields from a capture operation.
     ///
     /// Populates `stream_timestamp` from the capture time and QPC value.
+    #[cfg(any(windows, test))]
     pub(crate) fn set_timing(&mut self, capture_time: Option<Instant>, raw_os_ticks: Option<i64>) {
         self.set_timing_with_format(capture_time, raw_os_ticks, TickFormat::RawQpc);
     }
@@ -315,6 +329,7 @@ impl FrameBufferStorage {
         }
     }
 
+    #[cfg(windows)]
     fn as_mut_ptr(&mut self) -> *mut u8 {
         match self {
             FrameBufferStorage::Vec(v) => v.as_mut_ptr(),
@@ -408,6 +423,7 @@ impl FrameBuffer {
         self.make_unique_with_len(len);
     }
 
+    #[cfg(windows)]
     fn as_mut_ptr(&mut self) -> *mut u8 {
         self.make_unique_with_len(self.len());
         Arc::get_mut(&mut self.storage)
@@ -532,6 +548,7 @@ impl Frame {
         crate::cursor_compositor::composite(self, &cursor)
     }
 
+    #[cfg(windows)]
     pub(crate) fn as_mut_rgba_ptr(&mut self) -> *mut u8 {
         self.data.as_mut_ptr()
     }

@@ -53,6 +53,8 @@ pub enum CaptureBackendKind {
     WindowsGraphicsCapture,
 
     Gdi,
+
+    ScreenCaptureKit,
 }
 
 impl CaptureBackendKind {
@@ -62,6 +64,7 @@ impl CaptureBackendKind {
             Self::DxgiDuplication => "dxgi",
             Self::WindowsGraphicsCapture => "wgc",
             Self::Gdi => "gdi",
+            Self::ScreenCaptureKit => "sck",
         }
     }
 }
@@ -97,11 +100,16 @@ impl Default for AutoBackendPolicy {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 pub const DEFAULT_AUTO_BACKEND_PRIORITY: [CaptureBackendKind; 3] = [
     CaptureBackendKind::DxgiDuplication,
     CaptureBackendKind::WindowsGraphicsCapture,
     CaptureBackendKind::Gdi,
 ];
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_AUTO_BACKEND_PRIORITY: [CaptureBackendKind; 1] =
+    [CaptureBackendKind::ScreenCaptureKit];
 
 /// Source/destination rectangle pair used for partial monitor capture writes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -138,6 +146,9 @@ impl Default for CaptureSampleMetadata {
 }
 
 pub(crate) trait MonitorCapturer: Send {
+    fn set_cursor_visible(&mut self, _visible: bool) -> CaptureResult<()> {
+        Ok(())
+    }
     fn set_screen_color_transform(
         &mut self,
         _transform: Option<crate::color_effect::ScreenColorTransform>,
@@ -268,6 +279,21 @@ pub(crate) trait MonitorCapturer: Send {
 }
 
 pub(crate) trait CaptureBackend: Send + Sync {
+    /// Native target composition bypasses the legacy physical-pixel region planner.
+    fn create_target_capturer(
+        &self,
+        _target: &crate::CaptureTarget,
+        _options: crate::CaptureOptions,
+    ) -> CaptureResult<Option<Box<dyn MonitorCapturer>>> {
+        Ok(None)
+    }
+    fn inspect_target(
+        &self,
+        _target: &crate::CaptureTarget,
+    ) -> CaptureResult<Option<CaptureTargetInfo>> {
+        Ok(None)
+    }
+
     fn enumerate_monitors(&self) -> CaptureResult<Vec<MonitorId>>;
     fn primary_monitor(&self) -> CaptureResult<MonitorId>;
     fn monitor_layout(&self) -> CaptureResult<MonitorLayout>;

@@ -18,6 +18,7 @@ fn save_frame_png(frame: &Frame, path: &Path) -> anyhow::Result<()> {
 }
 
 /// Returns the top-level window handle under the current mouse cursor.
+#[cfg(windows)]
 fn window_under_cursor() -> Result<isize> {
     use windows::Win32::Foundation::POINT;
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -82,7 +83,7 @@ fn capture_window_to_png(
 
 fn main() -> Result<()> {
     let raw_handle = window_under_cursor()?;
-    let window = WindowId::from_raw_handle(raw_handle);
+    let window = WindowId::from_windows_handle(raw_handle);
 
     capture_window_to_png(
         CaptureBackendKind::Gdi,
@@ -104,4 +105,11 @@ fn main() -> Result<()> {
     )?;
 
     Ok(())
+}
+
+#[cfg(not(windows))]
+fn window_under_cursor() -> Result<isize> {
+    anyhow::bail!(
+        "automatic window picking is Windows-only; use the macOS harness for window enumeration"
+    )
 }

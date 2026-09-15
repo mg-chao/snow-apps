@@ -71,6 +71,7 @@ impl Default for RestartPolicy {
 
 #[derive(Clone, Debug)]
 pub struct AudioStreamConfig {
+    pub cancellation: snow_core::cancellation::CancellationToken,
     pub system: SourceConfig,
     pub microphone: SourceConfig,
     pub event_buffer_depth: usize,
@@ -81,6 +82,7 @@ pub struct AudioStreamConfig {
 impl Default for AudioStreamConfig {
     fn default() -> Self {
         Self {
+            cancellation: Default::default(),
             system: SourceConfig::default_system(),
             microphone: SourceConfig::default_microphone(),
             event_buffer_depth: 128,
@@ -92,6 +94,9 @@ impl Default for AudioStreamConfig {
 
 impl AudioStreamConfig {
     pub fn validate(&self) -> AudioResult<()> {
+        if self.cancellation.is_canceled() {
+            return Err(crate::error::AudioError::Canceled);
+        }
         self.system.validate()?;
         self.microphone.validate()?;
 

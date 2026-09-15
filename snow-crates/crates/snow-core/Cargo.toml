@@ -5,11 +5,15 @@ edition = "2024"
 license.workspace = true
 
 [dependencies]
+snow-media = { path = "../snow-media" }
 crossbeam-channel.workspace = true
 smallvec.workspace = true
-windows = { workspace = true, features = [
-    "Win32_System_Performance",
-] }
+
 
 [dev-dependencies]
 proptest = "1.11.0"
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_System_Performance",
+] }

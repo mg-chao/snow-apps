@@ -13,8 +13,10 @@ constexpr std::uint32_t kBiRgb = 0;
 constexpr std::uint32_t kBiBitfields = 3;
 
 std::uint16_t read_u16(std::span<const std::byte> bytes, std::size_t offset) {
-    return static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[offset])) |
-           static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[offset + 1])) << 8U;
+    return static_cast<std::uint16_t>(
+        static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[offset])) |
+        static_cast<std::uint16_t>(static_cast<std::uint16_t>(
+            std::to_integer<std::uint8_t>(bytes[offset + 1])) << 8U));
 }
 
 std::uint32_t read_u32(std::span<const std::byte> bytes, std::size_t offset) {

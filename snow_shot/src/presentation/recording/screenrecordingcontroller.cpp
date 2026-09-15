@@ -25,6 +25,7 @@
 #endif
 
 #include "snow_capture.h"
+#include "snow_recording.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 
 #include <QApplication>
@@ -48,7 +49,7 @@ namespace {
 constexpr int kDurationTickMilliseconds = 100;
 
 struct DirectRecordingSettings {
-    SnowCaptureRecordingOutputFormat format = SNOW_CAPTURE_RECORDING_OUTPUT_FORMAT_MP4;
+    SnowRecordingOutputFormat format = SNOW_RECORDING_OUTPUT_FORMAT_MP4;
     SnowCaptureVideoCodec codec = SNOW_CAPTURE_VIDEO_CODEC_H264;
     SnowCaptureVideoEncodingPreset preset = SNOW_CAPTURE_VIDEO_ENCODING_PRESET_VERYFAST;
     bool useHardwareEncoder = false;
@@ -112,13 +113,13 @@ DirectRecordingSettings directRecordingSettings(const QString& outputFormat,
     result.targetFps =
         static_cast<uint32_t>(validAnimatedImageFrameRate(settings.animatedImageFrameRate()));
     if (outputFormat == QStringLiteral("apng")) {
-        result.format = SNOW_CAPTURE_RECORDING_OUTPUT_FORMAT_APNG;
+        result.format = SNOW_RECORDING_OUTPUT_FORMAT_APNG;
         result.extension = QStringLiteral("apng");
     } else if (outputFormat == QStringLiteral("webp")) {
-        result.format = SNOW_CAPTURE_RECORDING_OUTPUT_FORMAT_WEBP;
+        result.format = SNOW_RECORDING_OUTPUT_FORMAT_WEBP;
         result.extension = QStringLiteral("webp");
     } else {
-        result.format = SNOW_CAPTURE_RECORDING_OUTPUT_FORMAT_GIF;
+        result.format = SNOW_RECORDING_OUTPUT_FORMAT_GIF;
         result.extension = QStringLiteral("gif");
     }
     return result;
@@ -191,12 +192,12 @@ QString chooseRecordingOutputPath(const QStringList& directories, const QString&
 // Owns the native recording session (capture pipeline, input hooks while
 // running, and worker threads) through its destroy entry point on every path.
 struct RecordingSessionDeleter {
-    void operator()(SnowCaptureRecordingSession* session) const {
-        snow_capture_recording_session_destroy(session);
+    void operator()(SnowRecordingSession* session) const {
+        snow_recording_session_destroy(session);
     }
 };
 using RecordingSessionHandle =
-    std::unique_ptr<SnowCaptureRecordingSession, RecordingSessionDeleter>;
+    std::unique_ptr<SnowRecordingSession, RecordingSessionDeleter>;
 
 struct StartAttemptResult {
     RecordingSessionHandle session;
@@ -205,7 +206,7 @@ struct StartAttemptResult {
 };
 
 QString captureError() {
-    const char* error = snow_capture_last_error_message();
+    const char* error = snow_recording_last_error_message();
     const QString message = QString::fromUtf8(error != nullptr ? error : "");
     const QString recoveryMarker = QStringLiteral("recoverable media is retained in ");
     if (message.contains(recoveryMarker)) {
@@ -728,12 +729,12 @@ struct ScreenRecordingController::Impl {
                     config.output_file_utf8 = outputUtf8.constData();
                     config.keyboard_labels = labels.entries.constData();
                     config.keyboard_label_count = static_cast<uint32_t>(labels.entries.size());
-                    SnowCaptureRecordingSession* created = nullptr;
-                    const SnowCaptureResult createResult =
-                        snow_capture_recording_session_create_direct(&config, &created);
+                    SnowRecordingSession* created = nullptr;
+                    const SnowRecordingResult createResult =
+                        snow_recording_session_create_direct(&config, &created);
                     result.session.reset(created);
-                    if (createResult != SNOW_CAPTURE_RESULT_OK || result.session == nullptr ||
-                        snow_capture_recording_session_start(result.session.get()) == 0) {
+                    if (createResult != SNOW_RECORDING_RESULT_OK || result.session == nullptr ||
+                        snow_recording_session_start(result.session.get()) == 0) {
                         result.error = captureError();
                         return result;
                     }
@@ -806,7 +807,7 @@ struct ScreenRecordingController::Impl {
             sessionStatus.busy()) {
             return;
         }
-        if (snow_capture_recording_session_pause(recordingSession.get()) == 0) {
+        if (snow_recording_session_pause(recordingSession.get()) == 0) {
             showError(captureError());
             return;
         }
@@ -821,7 +822,7 @@ struct ScreenRecordingController::Impl {
             sessionStatus.busy()) {
             return;
         }
-        if (snow_capture_recording_session_resume(recordingSession.get()) == 0) {
+        if (snow_recording_session_resume(recordingSession.get()) == 0) {
             showError(captureError());
             return;
         }
@@ -847,9 +848,9 @@ struct ScreenRecordingController::Impl {
         syncUi();
         // The member keeps ownership; pollFinalization destroys the session
         // only after the asynchronous stop has joined the worker.
-        SnowCaptureRecordingSession* session = recordingSession.get();
+        SnowRecordingSession* session = recordingSession.get();
         finalizationFuture = std::async(std::launch::async, [session]() {
-            const bool ok = snow_capture_recording_session_stop(session) == SNOW_CAPTURE_RESULT_OK;
+            const bool ok = snow_recording_session_stop(session) == SNOW_RECORDING_RESULT_OK;
             return std::make_pair(ok, ok ? QString() : captureError());
         });
         finalizationPollTimer.start();
@@ -888,9 +889,9 @@ struct ScreenRecordingController::Impl {
             sessionStatus.state() == ScreenshotToolPalette::RecordingState::Idle) {
             return false;
         }
-        SnowCaptureRecordingState nativeState = SNOW_CAPTURE_RECORDING_STATE_CREATED;
-        if (snow_capture_recording_session_state(recordingSession.get(), &nativeState) == 0 ||
-            nativeState != SNOW_CAPTURE_RECORDING_STATE_STOPPED) {
+        SnowRecordingState nativeState = SNOW_RECORDING_STATE_CREATED;
+        if (snow_recording_session_state(recordingSession.get(), &nativeState) == 0 ||
+            nativeState != SNOW_RECORDING_STATE_STOPPED) {
             return false;
         }
         stop(false);
@@ -952,7 +953,7 @@ struct ScreenRecordingController::Impl {
         const auto output = directRecordingSettings(outputFormat, captureRegion.size());
         uint32_t width = 0;
         uint32_t height = 0;
-        if (snow_capture_recording_output_dimensions(
+        if (snow_recording_output_dimensions(
                 static_cast<uint32_t>(captureRegion.width()),
                 static_cast<uint32_t>(captureRegion.height()),
                 static_cast<uint32_t>(output.maximumSize.width()),

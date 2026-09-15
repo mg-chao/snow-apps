@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::artifact::SessionManifest;
 use crate::error::{RecordingModelError, Result};
 
-const BUNDLE_FOOTER_MAGIC: &[u8; 16] = b"SNOWREC_BUNDLE\0\0";
+const BUNDLE_FOOTER_MAGIC: &[u8; 16] = b"SNOWREC_BUNDLE\0\x02";
 const BUNDLE_COPY_BUFFER_BYTES: usize = 256 * 1024;
 
 /// Kind of an auxiliary asset stored after the video payload of a bundle.
@@ -66,6 +66,10 @@ pub fn write_recording_bundle(
     manifest: &SessionManifest,
     assets: &[RecordingBundleAsset<'_>],
 ) -> Result<()> {
+    manifest
+        .media
+        .validate()
+        .map_err(RecordingModelError::Decode)?;
     let mut bundle = OpenOptions::new()
         .create(true)
         .read(true)
@@ -123,6 +127,11 @@ pub fn read_recording_bundle_footer(bundle_path: &Path) -> Result<RecordingBundl
     bundle.seek(SeekFrom::End(-(BUNDLE_FOOTER_MAGIC.len() as i64)))?;
     let mut magic = [0u8; BUNDLE_FOOTER_MAGIC.len()];
     bundle.read_exact(&mut magic)?;
+    if &magic == b"SNOWREC_BUNDLE\0\0" {
+        return Err(RecordingModelError::Decode(
+            "unsupported recording format version 1; expected 2".into(),
+        ));
+    }
     if &magic != BUNDLE_FOOTER_MAGIC {
         return Err(RecordingModelError::Decode(format!(
             "invalid bundle footer magic in {}",
@@ -148,6 +157,11 @@ pub fn read_recording_bundle_footer(bundle_path: &Path) -> Result<RecordingBundl
     let footer: RecordingBundleFooter = bincode::deserialize(&footer_bytes).map_err(|err| {
         RecordingModelError::Decode(format!("failed to decode bundle footer: {err}"))
     })?;
+    footer
+        .manifest
+        .media
+        .validate()
+        .map_err(RecordingModelError::Decode)?;
     validate_bundle_footer(bundle_path, bundle_len, &footer)?;
     Ok(footer)
 }
@@ -241,6 +255,17 @@ mod tests {
     };
 
     #[test]
+    fn legacy_footer_is_rejected_before_decoding() {
+        let path = std::env::temp_dir().join(format!("snow-legacy-{}.snowrec", Uuid::new_v4()));
+        let mut bytes = vec![0; 8];
+        bytes.extend_from_slice(b"SNOWREC_BUNDLE\0\0");
+        fs::write(&path, bytes).unwrap();
+        let error = read_recording_bundle_footer(&path).unwrap_err().to_string();
+        fs::remove_file(path).unwrap();
+        assert!(error.contains("unsupported"), "{error}");
+    }
+
+    #[test]
     fn bundle_footer_roundtrip_and_asset_reads() {
         let root = std::env::temp_dir().join(format!(
             "snow-recording-model-bundle-{}",
@@ -258,6 +283,12 @@ mod tests {
         fs::write(&mouse_path, b"mouse-store").unwrap();
 
         let manifest = SessionManifest {
+            video_codec: crate::VideoCodec::H264,
+            media: crate::media::RecordedMedia::new(
+                snow_media::ColorDescription::SRGB,
+                snow_media::CursorMode::Separate,
+                vec![],
+            ),
             session_id: "session".to_string(),
             output_dir: root.clone(),
             keep_temp_files: false,

@@ -17,11 +17,6 @@ use crate::color_effect::ScreenColorTransform;
 use crate::convert::{HDR_LUMA_LUT_SIZE, HdrFrameContext, build_bt2390_luma_lut};
 use crate::error::{CaptureError, CaptureResult};
 
-/// HLSL source kept as fallback for runtime compilation when fxc.exe
-/// was not available at build time.
-#[cfg(not(has_precompiled_shader))]
-const HLSL_SOURCE: &str = include_str!("tonemap_cs.hlsl");
-
 /// Pre-compiled shader bytecode, embedded at build time when fxc.exe is available.
 #[cfg(has_precompiled_shader)]
 const PRECOMPILED_CSO: &[u8] = include_bytes!(env!("TONEMAP_CSO_PATH"));

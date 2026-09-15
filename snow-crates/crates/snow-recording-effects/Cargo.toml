@@ -22,3 +22,6 @@ bench-timing = []
 # hook so benchmarks can feed KeyObservation values without injecting OS
 # input. Production builds never enable this.
 bench-synthetic-input = []
+
+[target.'cfg(target_os = "macos")'.dependencies]
+snow-macos = { path = "../snow-macos" }

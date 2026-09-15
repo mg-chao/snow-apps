@@ -27,7 +27,7 @@ fn fnv1a_64(bytes: &[u8]) -> u64 {
     hash
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 pub struct MonitorId {
     pub(crate) key: MonitorKey,
 
@@ -104,4 +104,34 @@ pub fn primary_monitor() -> crate::error::CaptureResult<MonitorId> {
     crate::system::CaptureSystem::builder()
         .build()?
         .primary_monitor()
+}
+
+// Native handles, names and primary status are mutable observations of a display.
+// Identity remains stable across reconfiguration and refreshed enumeration.
+impl PartialEq for MonitorId {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+impl Eq for MonitorId {}
+impl std::hash::Hash for MonitorId {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.key.hash(state);
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn display_identity_excludes_mutable_enumeration_metadata() {
+        let first = MonitorId::from_parts(1, 2, 3, "first", true);
+        let refreshed = MonitorId::from_parts(1, 2, 4, "renamed", false);
+        assert_eq!(first, refreshed);
+        assert_eq!(first.stable_id(), refreshed.stable_id());
+        assert_eq!(std::collections::HashSet::from([first, refreshed]).len(), 1);
+        assert_ne!(
+            MonitorId::from_parts(1, 2, 3, "same", false),
+            MonitorId::from_parts(1, 3, 3, "same", false)
+        );
+    }
 }

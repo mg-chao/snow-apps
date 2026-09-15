@@ -1511,11 +1511,11 @@ pub(crate) struct WindowsWindowCapturer {
 impl WindowsWindowCapturer {
     pub(crate) fn new(window: &WindowId, resolver: Arc<MonitorResolver>) -> CaptureResult<Self> {
         validate_support()?;
-        let hwnd = window.raw_handle();
+        let hwnd = window.windows_handle()?;
         if hwnd == 0 {
             return Err(CaptureError::InvalidTarget(format!(
                 "window handle is null: {}",
-                window.stable_id()
+                window.session_id()
             )));
         }
         let native_hwnd = HWND(hwnd as *mut c_void);

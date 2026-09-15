@@ -20,8 +20,14 @@ pub(crate) mod video_quality;
 pub use config::{
     AudioChannels, CaptureBackendKind, MonitorSelector, RecordingAudioConfig,
     RecordingAudioTrackConfig, RecordingAudioTrackSource, RecordingConfig, RecordingRegion,
-    RecordingTarget, WindowSelector,
+    RecordingTarget, WindowId,
 };
 pub use direct::{DirectRecordingConfig, DirectRecordingReport, DirectRecordingSession};
-pub use error::ScreenRecorderError;
+pub use error::{MediaPermission, ScreenRecorderError};
 pub use recording::{RecordingSession, RecordingState};
+
+#[cfg(target_os = "macos")]
+pub mod macos;
+
+#[cfg(target_os = "macos")]
+mod macos_effects;

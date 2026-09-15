@@ -117,6 +117,10 @@ fn segment(
         fallback_threads,
         #[cfg(windows)]
         gpu,
+        #[cfg(target_os = "macos")]
+        None,
+        #[cfg(target_os = "macos")]
+        false,
         true,
     ) {
         Ok(mut encoder) => {
@@ -212,10 +216,17 @@ impl StreamingEncoder {
         Ok(())
     }
 
-    pub(super) fn finish_recoverable(mut self, endpoint: i64) -> Result<StreamingEncoderReport> {
+    pub(super) fn finish_recoverable(
+        mut self,
+        endpoint: i64,
+        cancellation: Option<&snow_core::cancellation::CancellationToken>,
+    ) -> Result<StreamingEncoderReport> {
         #[cfg(feature = "bench-timing")]
         let started = std::time::Instant::now();
-        let result = self.finalize_segments(endpoint);
+        let result = self.finalize_segments(endpoint, cancellation);
+        if matches!(result, Err(RecordingExportError::ExportCanceled)) {
+            return result.map(|()| self.report.clone());
+        }
         if let Err(cause) = result {
             return Err(self
                 .retain_failure(&cause.to_string(), Some(endpoint))
@@ -275,7 +286,11 @@ impl StreamingEncoder {
         )))
     }
 
-    fn finalize_segments(&mut self, endpoint: i64) -> Result<()> {
+    fn finalize_segments(
+        &mut self,
+        endpoint: i64,
+        cancellation: Option<&snow_core::cancellation::CancellationToken>,
+    ) -> Result<()> {
         let duration = self
             .pending
             .as_ref()
@@ -339,7 +354,7 @@ impl StreamingEncoder {
             video_start,
             state.config.fps,
         )?;
-        publish_staging_file(&assembled, &state.config.output_path)?;
+        publish_unless_canceled(&assembled, &state.config.output_path, cancellation)?;
         Ok(())
     }
 }

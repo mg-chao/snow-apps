@@ -2,8 +2,21 @@
 
 use thiserror::Error;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
+pub enum MediaPermission {
+    #[error("screen recording")]
+    Screen,
+    #[error("microphone")]
+    Microphone,
+    #[error("input monitoring")]
+    InputMonitoring,
+}
+
 #[derive(Debug, Error)]
 pub enum ScreenRecorderError {
+    #[error("{0} permission is required")]
+    PermissionDenied(MediaPermission),
+
     #[error("invalid config: {0}")]
     InvalidConfig(String),
 

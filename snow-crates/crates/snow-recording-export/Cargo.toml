@@ -10,6 +10,7 @@ bench-timing = []
 bench-experiments = []
 
 [dependencies]
+snow-core = { path = "../snow-core" }
 snow-audio-recorder = { path = "../snow-audio-recorder" }
 snow-recording-model = { path = "../snow-recording-model" }
 crossbeam-channel.workspace = true
@@ -21,9 +22,10 @@ tempfile.workspace = true
 thiserror.workspace = true
 zstd.workspace = true
 uuid.workspace = true
-snow-d3d11 = { path = "../snow-d3d11" }
+snow-media = { path = "../snow-media" }
 
 [target.'cfg(windows)'.dependencies]
+snow-d3d11 = { path = "../snow-d3d11" }
 windows = { workspace = true, features = ["Win32_Graphics_Direct3D11"] }
 
 [dev-dependencies]
@@ -36,3 +38,6 @@ windows = { workspace = true, features = [
     "Win32_System_ProcessStatus",
     "Win32_System_Threading",
 ] }
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+snow-macos = { path = "../snow-macos" }

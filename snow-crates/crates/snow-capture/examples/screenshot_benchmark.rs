@@ -181,7 +181,7 @@ fn primary_stages(kind: CaptureBackendKind) -> &'static [&'static str] {
             "gdi.dirty_scan",
             "gdi.convert",
         ],
-        CaptureBackendKind::Auto => &[],
+        CaptureBackendKind::Auto | CaptureBackendKind::ScreenCaptureKit => &[],
     }
 }
 
@@ -196,6 +196,7 @@ fn parse_backend(token: &str) -> Option<CaptureBackendKind> {
             Some(CaptureBackendKind::WindowsGraphicsCapture)
         }
         "gdi" => Some(CaptureBackendKind::Gdi),
+        "sck" => Some(CaptureBackendKind::ScreenCaptureKit),
         _ => None,
     }
 }
@@ -442,11 +443,16 @@ fn run_backend(kind: CaptureBackendKind, config: &Config) -> Result<ScreenshotBe
         .open_session(
             CaptureTarget::PrimaryMonitor,
             CaptureOptions {
-                color_correction: if config.restore_colors {
-                    snow_capture::color_effect::ColorCorrection::CurrentMagnifier
-                } else {
-                    snow_capture::color_effect::ColorCorrection::Disabled
-                },
+                backend_tuning: snow_capture::tuning::BackendTuning::Windows(
+                    snow_capture::tuning::windows::WindowsCaptureOptions {
+                        color_correction: if config.restore_colors {
+                            snow_capture::color_effect::ColorCorrection::CurrentMagnifier
+                        } else {
+                            snow_capture::color_effect::ColorCorrection::Disabled
+                        },
+                        ..Default::default()
+                    },
+                ),
                 record_stage_timings: true,
                 // A quiet desktop may present no new frame within the DXGI
                 // snapshot acquisition budget; a session-level retry (which

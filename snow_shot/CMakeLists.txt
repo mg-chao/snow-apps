@@ -174,6 +174,16 @@ if(NOT TARGET snow_capture_c)
     )
 endif()
 
+if(NOT TARGET snow_recording_c)
+    snow_add_rust_static_library(snow_recording_c PACKAGE snow-recording-c
+        MANIFEST_DIR "${SNOW_SHOT_CAPTURE_CRATES_DIR}" OUTPUT_NAME snow_recording_c)
+endif()
+
+if(NOT TARGET snow_recording_c)
+    snow_add_rust_static_library(snow_recording_c PACKAGE snow-recording-c
+        MANIFEST_DIR "${SNOW_SHOT_CAPTURE_CRATES_DIR}" OUTPUT_NAME snow_recording_c)
+endif()
+
 if(NOT TARGET snow_visual_region_detector_c)
     snow_add_rust_static_library(snow_visual_region_detector_c PACKAGE snow-visual-region-detector-c MANIFEST_DIR "${SNOW_SHOT_CAPTURE_CRATES_DIR}" OUTPUT_NAME snow_visual_region_detector_c)
 endif()
@@ -2115,7 +2125,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-direct-capture-frame-tests tests/direct_capture_frame_tests.cpp)
     target_include_directories(snow-shot-direct-capture-frame-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/capture"
-        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include"
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-recording-c/include")
     target_link_libraries(snow-shot-direct-capture-frame-tests PRIVATE Qt6::Gui)
     add_test(NAME snow-shot-direct-capture-frame-tests COMMAND snow-shot-direct-capture-frame-tests)
 
@@ -2127,7 +2138,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_include_directories(snow-shot-direct-capture-native-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/capture"
-        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include"
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-recording-c/include")
     target_link_libraries(snow-shot-direct-capture-native-tests PRIVATE snow_shot_storage
         snow_shot_image_codec Qt6::Gui)
     add_test(NAME snow-shot-direct-capture-native-tests COMMAND snow-shot-direct-capture-native-tests)
@@ -2141,9 +2153,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         target_include_directories(snow-shot-direct-capture-native-smoke PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/include"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/capture"
-            "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
+            "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include"
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-recording-c/include")
         target_link_libraries(snow-shot-direct-capture-native-smoke PRIVATE
-            Qt6::Widgets snow_capture_c PkgConfig::SNOW_SHOT_FFMPEG
+            Qt6::Widgets snow_capture_c snow_recording_c PkgConfig::SNOW_SHOT_FFMPEG
             d3d11 dxgi dxguid dwmapi gdi32 ole32 oleaut32 runtimeobject
             user32 userenv winmm windowsapp ws2_32 advapi32 bcrypt psapi)
     endif()
@@ -2158,7 +2171,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_include_directories(snow-shot-capture-worker-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/capture"
-        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include"
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-recording-c/include")
     target_link_libraries(snow-shot-capture-worker-tests PRIVATE snow_shot_storage Qt6::Gui)
     add_test(NAME snow-shot-capture-worker-tests COMMAND snow-shot-capture-worker-tests)
 
@@ -4011,7 +4025,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     target_include_directories(snow-shot-screen-recording-controller-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
-        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include"
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-recording-c/include")
     target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE
         adqt_icon_core ant_design_icons_qt ant_design_qt snow_draw_engine_qt_canvas
         snow_shot_storage snow_shot_image_codec snow_shot_window_shortcuts Qt6::Widgets snow_recording_effects_c snow_capture_c)
@@ -4020,10 +4035,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     # opening capture devices, recording the desktop, or exporting media.
     foreach(_operation create_direct destroy start pause resume stop state)
         target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
-            "snow_capture_recording_session_${_operation}=test_recording_session_${_operation}")
+            "snow_recording_session_${_operation}=test_recording_session_${_operation}")
     endforeach()
     target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
-        snow_capture_last_error_message=test_recording_last_error_message)
+        snow_recording_last_error_message=test_recording_last_error_message)
     if(WIN32)
         target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE user32 dwmapi gdi32)
         target_sources(snow-shot-screen-recording-controller-tests PRIVATE
@@ -5064,6 +5079,7 @@ endif()
 target_include_directories(snow_shot PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include"
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-recording-c/include"
     "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-visual-region-detector-c/include"
     "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-ui-selector-c/include"
     "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-stitch-images-c/include"
@@ -5093,6 +5109,7 @@ target_link_libraries(
         snow_shot_window_shortcuts
         snow_draw_engine_qt_canvas
         snow_capture_c
+        snow_recording_c
         snow_ui_selector_c
         snow_visual_region_detector_c
         snow_stitch_images_c

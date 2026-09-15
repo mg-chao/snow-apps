@@ -5,6 +5,7 @@ edition = "2024"
 license.workspace = true
 
 [dependencies]
+snow-media = { path = "../snow-media" }
 bincode.workspace = true
 serde.workspace = true
 thiserror.workspace = true

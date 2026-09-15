@@ -7,7 +7,6 @@ use rustc_hash::FxHashMap;
 use crate::CaptureTarget;
 use crate::backend::{
     self, CaptureBackend, CaptureBlitRegion, CaptureMode, CaptureSampleMetadata, MonitorCapturer,
-    WgcUpdateMode,
 };
 use crate::error::{CaptureError, CaptureResult};
 use crate::frame::{CapturePixelFormat, DirtyRect, Frame};
@@ -140,22 +139,15 @@ fn copy_region_rgba(src: &Frame, blit: CaptureBlitRegion, dst: &mut Frame) -> Ca
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct CaptureSessionConfig {
-    color_correction: crate::color_effect::ColorCorrection,
+    backend_tuning: crate::tuning::BackendTuning,
+    windows: crate::tuning::windows::WindowsCaptureOptions,
     screen_color_transform: Option<crate::color_effect::ScreenColorTransform>,
     pub(crate) capture_retry_count: usize,
     /// Capture intent used to tune backend behavior for screenshot
     /// vs. continuous recording workloads.
     pub(crate) mode: CaptureMode,
-    /// When `true`, backends may use GPU-assisted HDR/F16 conversion paths.
-    /// When `false`, backends should prefer CPU conversion paths.
-    pub(crate) gpu_hdr_conversion: bool,
-    /// When `true`, HDR tone mapping may use LUT-approximated BT.2390.
-    /// When `false`, backends should use the precise curve implementation.
-    pub(crate) hdr_tonemap_lut: bool,
     /// Packed output layout requested by the caller.
     pub(crate) output_pixel_format: CapturePixelFormat,
-    /// WGC complete-surface versus ordered-delta policy.
-    pub(crate) wgc_update_mode: WgcUpdateMode,
     /// Record per-stage capture timings onto frame metadata.
     #[cfg(feature = "stage-timing")]
     pub(crate) record_stage_timings: bool,
@@ -164,14 +156,12 @@ pub(crate) struct CaptureSessionConfig {
 impl Default for CaptureSessionConfig {
     fn default() -> Self {
         Self {
-            color_correction: crate::color_effect::ColorCorrection::Disabled,
+            backend_tuning: Default::default(),
+            windows: Default::default(),
             screen_color_transform: None,
             capture_retry_count: 1,
             mode: CaptureMode::Snapshot,
-            gpu_hdr_conversion: true,
-            hdr_tonemap_lut: true,
             output_pixel_format: CapturePixelFormat::Rgba8,
-            wgc_update_mode: WgcUpdateMode::Auto,
             #[cfg(feature = "stage-timing")]
             record_stage_timings: false,
         }
@@ -181,14 +171,12 @@ impl Default for CaptureSessionConfig {
 impl From<CaptureOptions> for CaptureSessionConfig {
     fn from(value: CaptureOptions) -> Self {
         Self {
-            color_correction: value.color_correction,
+            backend_tuning: value.backend_tuning,
+            windows: value.backend_tuning.windows_or_default(),
             screen_color_transform: None,
             capture_retry_count: value.capture_retry_count,
             mode: value.workload,
-            gpu_hdr_conversion: value.gpu_hdr_conversion,
-            hdr_tonemap_lut: value.hdr_tonemap_lut,
             output_pixel_format: value.output_pixel_format,
-            wgc_update_mode: value.wgc_update_mode,
             #[cfg(feature = "stage-timing")]
             record_stage_timings: value.record_stage_timings,
         }
@@ -262,6 +250,17 @@ impl CaptureSessionBuilder {
         if config.mode == CaptureMode::Continuous {
             crate::convert::warmup();
         }
+        let native = backend.create_target_capturer(
+            &target,
+            CaptureOptions {
+                backend_tuning: config.backend_tuning,
+                capture_retry_count: config.capture_retry_count,
+                workload: config.mode,
+                output_pixel_format: config.output_pixel_format,
+                #[cfg(feature = "stage-timing")]
+                record_stage_timings: config.record_stage_timings,
+            },
+        )?;
         let runtime = CaptureSessionRuntime::for_target(&target);
         Ok(CaptureSession {
             target,
@@ -272,6 +271,7 @@ impl CaptureSessionBuilder {
             cursor_fallback_sampler: None,
             cursor_projector: CursorProjector::new(),
             latest_cursor_shape: None,
+            native,
         })
     }
 
@@ -350,6 +350,9 @@ pub(crate) fn inspect_target_from_backend(
     backend: &Arc<dyn CaptureBackend>,
     target: &CaptureTarget,
 ) -> CaptureResult<CaptureTargetInfo> {
+    if let Some(info) = backend.inspect_target(target)? {
+        return Ok(info);
+    }
     match target {
         CaptureTarget::Region(region) => Ok(CaptureTargetInfo {
             origin_x: region.x,
@@ -401,6 +404,7 @@ pub struct CaptureSession {
     config: CaptureSessionConfig,
     sequence: u64,
     runtime: CaptureSessionRuntime,
+    native: Option<Box<dyn MonitorCapturer>>,
     cursor_fallback_sampler: Option<CursorSampler>,
     cursor_projector: CursorProjector,
     latest_cursor_shape: Option<snow_cursor::CursorShape>,
@@ -498,9 +502,9 @@ where
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
                 let mut capturer = create_capturer()?;
-                capturer.set_wgc_update_mode(config.wgc_update_mode)?;
-                capturer.set_gpu_hdr_conversion(config.gpu_hdr_conversion)?;
-                capturer.set_hdr_tonemap_lut(config.hdr_tonemap_lut)?;
+                capturer.set_wgc_update_mode(config.windows.wgc_update_mode)?;
+                capturer.set_gpu_hdr_conversion(config.windows.gpu_hdr_conversion)?;
+                capturer.set_hdr_tonemap_lut(config.windows.hdr_tonemap_lut)?;
                 capturer.set_output_pixel_format(config.output_pixel_format)?;
                 capturer.set_capture_mode(config.mode)?;
                 capturer.set_screen_color_transform(config.screen_color_transform)?;
@@ -828,10 +832,16 @@ impl CaptureSession {
     /// Close active backend access and release snapshot-only capture surfaces.
     /// Lightweight prepared state may be retained for the next request.
     pub fn release_capture_access(&mut self) {
+        if let Some(native) = &mut self.native {
+            native.release_capture_access();
+        }
         self.runtime.release_capture_access();
     }
 
     pub fn active_capture_access_count(&self) -> usize {
+        if let Some(native) = &self.native {
+            return usize::from(native.capture_access_active());
+        }
         self.runtime.active_capture_access_count()
     }
 
@@ -865,6 +875,10 @@ impl CaptureSession {
 
     fn prepare_target_resources(&mut self) -> CaptureResult<CaptureTargetInfo> {
         let target_info = self.inspect_target(&self.target)?;
+        if let Some(native) = &mut self.native {
+            native.prewarm_environment()?;
+            return Ok(target_info);
+        }
         match self.target.clone() {
             CaptureTarget::PrimaryMonitor | CaptureTarget::Monitor(_) => {
                 let monitor = self.resolve_monitor_target()?;
@@ -922,8 +936,11 @@ impl CaptureSession {
     }
 
     /// Change correction policy without rebuilding the capture backend.
-    pub fn set_color_correction(&mut self, correction: crate::color_effect::ColorCorrection) {
-        self.config.color_correction = correction;
+    pub fn set_windows_color_correction(
+        &mut self,
+        correction: crate::color_effect::ColorCorrection,
+    ) {
+        self.config.windows.color_correction = correction;
     }
 
     pub fn capture_reuse(&mut self, frame: Frame) -> CaptureResult<Frame> {
@@ -991,6 +1008,10 @@ impl CaptureSession {
         &mut self,
         reuse: Option<Frame>,
     ) -> CaptureResult<(Frame, Option<CursorAttachOutcome>)> {
+        if let Some(native) = &mut self.native {
+            native.set_cursor_visible(true)?;
+            return self.do_capture(reuse).map(|frame| (frame, None));
+        }
         let mut frame = self.capture_frame(reuse)?;
         let cursor_outcome = self.target_info().ok().and_then(|target_info| {
             #[cfg(feature = "stage-timing")]
@@ -1013,6 +1034,9 @@ impl CaptureSession {
     }
 
     pub(crate) fn capture_frame(&mut self, reuse: Option<Frame>) -> CaptureResult<Frame> {
+        if let Some(native) = &mut self.native {
+            native.set_cursor_visible(false)?;
+        }
         self.warmup_runtime();
         self.do_capture(reuse)
     }
@@ -1022,14 +1046,9 @@ impl CaptureSession {
         self.config.mode
     }
 
-    /// Returns whether GPU-assisted HDR conversion is enabled.
-    pub fn gpu_hdr_conversion_enabled(&self) -> bool {
-        self.config.gpu_hdr_conversion
-    }
-
-    /// Returns whether LUT-approximated HDR tone mapping is enabled.
-    pub fn hdr_tonemap_lut_enabled(&self) -> bool {
-        self.config.hdr_tonemap_lut
+    /// Effective Windows tuning is unavailable for other platform backends.
+    pub fn windows_tuning(&self) -> Option<crate::tuning::windows::WindowsCaptureOptions> {
+        cfg!(windows).then_some(self.config.windows)
     }
 
     pub(crate) fn inspect_target(
@@ -1327,7 +1346,23 @@ impl CaptureSession {
     }
 
     fn do_capture(&mut self, reuse: Option<Frame>) -> CaptureResult<Frame> {
-        let transform = self.config.color_correction.resolve();
+        if let Some(native) = &mut self.native {
+            if !matches!(
+                self.config.windows.color_correction,
+                crate::color_effect::ColorCorrection::Disabled
+                    | crate::color_effect::ColorCorrection::Snapshot(None)
+            ) {
+                return Err(CaptureError::BackendUnavailable(
+                    "Windows Magnifier correction is unsupported by this native backend".into(),
+                ));
+            }
+            let mut frame = native.capture(reuse)?;
+            self.sequence = self.sequence.wrapping_add(1);
+            frame.metadata.sequence = self.sequence;
+            frame.metadata.backend_kind = native.backend_kind();
+            return Ok(frame);
+        }
+        let transform = self.config.windows.color_correction.resolve();
         if transform != self.config.screen_color_transform {
             self.config.screen_color_transform = transform;
             // A new transform invalidates converted history, not the raw capture surfaces.
@@ -2400,7 +2435,7 @@ mod tests {
             observed_backends: Arc::clone(&observed_backends),
         });
         let session = CaptureSession::builder()
-            .target(CaptureTarget::Window(WindowId::from_raw_handle(101)))
+            .target(CaptureTarget::Window(WindowId::from_windows_handle(101)))
             .with_backend(backend)
             .build()?;
 
@@ -2551,12 +2586,12 @@ mod tests {
             matrix[i * 6] = if i < 3 { -1. } else { 1. };
         }
         matrix[20..23].fill(1.);
-        session.set_color_correction(ColorCorrection::Snapshot(
+        session.set_windows_color_correction(ColorCorrection::Snapshot(
             ScreenColorTransform::from_magnifier_matrix(&matrix),
         ));
         session.capture_into(&mut frame)?;
         session.capture_into(&mut frame)?;
-        session.set_color_correction(ColorCorrection::Snapshot(None));
+        session.set_windows_color_correction(ColorCorrection::Snapshot(None));
         session.capture_into(&mut frame)?;
         session.capture_into(&mut frame)?;
         assert_eq!(

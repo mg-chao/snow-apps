@@ -31,3 +31,8 @@ pub use streaming::{
     StreamingAudioConfig, StreamingEncoder, StreamingEncoderBuilder, StreamingEncoderConfig,
     StreamingEncoderReport, cleanup_stale_staging_files, scaled_output_dimensions,
 };
+
+#[cfg(target_os = "macos")]
+mod videotoolbox;
+
+mod hdr;

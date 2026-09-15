@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>app.snow.media-harness</string>
+<key>CFBundleName</key><string>Snow Media Harness</string>
+<key>CFBundleExecutable</key><string>SnowMediaHarness</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>LSMinimumSystemVersion</key><string>15.0</string>
+<key>NSMicrophoneUsageDescription</key><string>Record microphone audio during explicitly requested media tests.</string>
+<key>NSScreenCaptureUsageDescription</key><string>Capture screens and windows during explicitly requested media tests.</string>
+<key>NSHighResolutionCapable</key><true/>
+</dict></plist>

@@ -6,9 +6,9 @@ mod scalar;
 mod simd_x86;
 
 use crate::frame::CapturePixelFormat;
-pub(crate) use f16::{
-    HDR_LUMA_LUT_SIZE, HdrPreparedContext, build_bt2390_luma_lut, prepare_hdr_context_cached,
-};
+#[cfg(windows)]
+pub(crate) use f16::{HDR_LUMA_LUT_SIZE, build_bt2390_luma_lut};
+pub(crate) use f16::{HdrPreparedContext, prepare_hdr_context_cached};
 use parallel::{install_conversion_pool, parallel_chunk_pixels, should_parallelize};
 use std::sync::OnceLock;
 
@@ -42,6 +42,7 @@ pub fn warmup() {
 }
 
 #[inline]
+#[cfg(windows)]
 pub(crate) fn with_conversion_pool<F>(max_workers: usize, job: F)
 where
     F: FnOnce() + Send,
@@ -50,6 +51,7 @@ where
 }
 
 #[inline(always)]
+#[cfg(windows)]
 pub(crate) fn should_parallelize_work(
     pixel_count: usize,
     min_pixels: usize,
@@ -163,6 +165,7 @@ fn requires_channel_swap(format: SurfacePixelFormat, output: CapturePixelFormat)
 }
 
 #[inline(always)]
+#[cfg(windows)]
 pub(crate) fn conversion_fuses_opaque_alpha(
     format: SurfacePixelFormat,
     options: SurfaceConversionOptions,
@@ -292,6 +295,7 @@ pub(crate) struct SurfaceRowConverter {
 }
 
 impl SurfaceRowConverter {
+    #[cfg(windows)]
     pub(crate) fn has_screen_color_transform(self) -> bool {
         self.screen_color_transform.is_some()
     }
@@ -313,6 +317,7 @@ impl SurfaceRowConverter {
     }
 
     #[inline(always)]
+    #[cfg(any(windows, test))]
     pub(crate) unsafe fn convert_rows_unchecked(
         self,
         src: *const u8,
@@ -1245,11 +1250,13 @@ fn bgra_nt_kernel_for_rows_nofence(
 }
 
 #[derive(Clone, Copy)]
+#[cfg(windows)]
 pub(crate) struct BgraDirtyRectKernel {
     kernel: PixelKernel,
     needs_post_fence: bool,
 }
 
+#[cfg(windows)]
 impl BgraDirtyRectKernel {
     #[inline(always)]
     fn run(self, src: *const u8, dst: *mut u8, pixel_count: usize) {
@@ -1265,6 +1272,7 @@ impl BgraDirtyRectKernel {
 }
 
 #[inline]
+#[cfg(windows)]
 pub(crate) fn select_bgra_dirty_rect_kernel(
     dst: *const u8,
     dst_pitch: usize,
@@ -1302,6 +1310,7 @@ pub(crate) fn select_bgra_dirty_rect_kernel(
 }
 
 #[inline(always)]
+#[cfg(windows)]
 pub(crate) unsafe fn convert_bgra_rows_with_kernel_unchecked(
     kernel: BgraDirtyRectKernel,
     src: *const u8,
@@ -1323,6 +1332,7 @@ pub(crate) unsafe fn convert_bgra_rows_with_kernel_unchecked(
 }
 
 #[inline(always)]
+#[cfg(windows)]
 pub(crate) fn finalize_bgra_dirty_rect_kernel(kernel: BgraDirtyRectKernel) {
     if kernel.needs_post_fence() {
         nt_store_sfence();
@@ -1694,7 +1704,7 @@ unsafe fn memcpy_rgba_nt_nofence_unchecked(src: *const u8, dst: *mut u8, pixel_c
     }
 }
 
-unsafe fn memcpy_rgba_nt_impl(src: *const u8, dst: *mut u8, pixel_count: usize, fence: bool) {
+unsafe fn memcpy_rgba_nt_impl(src: *const u8, dst: *mut u8, pixel_count: usize, _fence: bool) {
     if !nt_destination_is_aligned(dst as *const u8) {
         unsafe {
             std::ptr::copy_nonoverlapping(src, dst, pixel_count * 4);
@@ -1705,13 +1715,13 @@ unsafe fn memcpy_rgba_nt_impl(src: *const u8, dst: *mut u8, pixel_count: usize, 
     {
         if std::arch::is_x86_feature_detected!("avx2") {
             unsafe {
-                memcpy_rgba_nt_avx2(src, dst, pixel_count, fence);
+                memcpy_rgba_nt_avx2(src, dst, pixel_count, _fence);
             }
             return;
         }
         if std::arch::is_x86_feature_detected!("sse2") {
             unsafe {
-                memcpy_rgba_nt_sse2(src, dst, pixel_count, fence);
+                memcpy_rgba_nt_sse2(src, dst, pixel_count, _fence);
             }
             return;
         }
@@ -1723,7 +1733,7 @@ unsafe fn memcpy_rgba_nt_impl(src: *const u8, dst: *mut u8, pixel_count: usize, 
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-unsafe fn memcpy_rgba_nt_avx2(src: *const u8, dst: *mut u8, pixel_count: usize, fence: bool) {
+unsafe fn memcpy_rgba_nt_avx2(src: *const u8, dst: *mut u8, pixel_count: usize, _fence: bool) {
     use std::arch::x86_64::{__m256i, _mm_sfence, _mm256_loadu_si256, _mm256_stream_si256};
     let total_bytes = pixel_count * 4;
     let mut offset = 0usize;
@@ -1734,7 +1744,7 @@ unsafe fn memcpy_rgba_nt_avx2(src: *const u8, dst: *mut u8, pixel_count: usize, 
         }
         offset += 32;
     }
-    if fence {
+    if _fence {
         _mm_sfence();
     }
     if offset < total_bytes {
@@ -1746,7 +1756,7 @@ unsafe fn memcpy_rgba_nt_avx2(src: *const u8, dst: *mut u8, pixel_count: usize, 
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse2")]
-unsafe fn memcpy_rgba_nt_sse2(src: *const u8, dst: *mut u8, pixel_count: usize, fence: bool) {
+unsafe fn memcpy_rgba_nt_sse2(src: *const u8, dst: *mut u8, pixel_count: usize, _fence: bool) {
     use std::arch::x86_64::{__m128i, _mm_loadu_si128, _mm_sfence, _mm_stream_si128};
     let total_bytes = pixel_count * 4;
     let mut offset = 0usize;
@@ -1757,7 +1767,7 @@ unsafe fn memcpy_rgba_nt_sse2(src: *const u8, dst: *mut u8, pixel_count: usize, 
         }
         offset += 16;
     }
-    if fence {
+    if _fence {
         _mm_sfence();
     }
     if offset < total_bytes {
@@ -2246,6 +2256,7 @@ pub(crate) unsafe fn convert_bgra_to_rgba_opaque_unchecked(
     }
 }
 
+#[cfg(windows)]
 pub(crate) unsafe fn convert_bgra_to_rgba_opaque_serial_unchecked(
     src: *const u8,
     dst: *mut u8,
@@ -2315,6 +2326,7 @@ pub(crate) unsafe fn convert_bgra_to_rgba_opaque_nt_unchecked(
     }
 }
 
+#[cfg(windows)]
 pub(crate) unsafe fn convert_bgra_to_rgba_opaque_nt_serial_unchecked(
     src: *const u8,
     dst: *mut u8,

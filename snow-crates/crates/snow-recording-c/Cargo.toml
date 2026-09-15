@@ -1,0 +1,17 @@
+[package]
+name = "snow-recording-c"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+[lib]
+crate-type = ["staticlib", "rlib"]
+[dependencies]
+snow-capture = { path = "../snow-capture" }
+snow-screen-recorder = { path = "../snow-screen-recorder" }
+anyhow.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+snow-macos = { path = "../snow-macos" }
+snow-media = { path = "../snow-media" }
+snow-audio-recorder = { path = "../snow-audio-recorder" }
+snow-recording-export = { path = "../snow-recording-export" }

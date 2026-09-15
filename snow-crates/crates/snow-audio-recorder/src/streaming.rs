@@ -258,6 +258,10 @@ fn stream_loop(
     let mut pause_started: Option<Instant> = None;
 
     loop {
+        if config.cancellation.is_canceled() {
+            push_event_with_drop_notice(queue, stats, AudioEvent::Error(AudioError::Canceled));
+            break;
+        }
         if stop.load(Ordering::Acquire) {
             break;
         }
@@ -283,7 +287,11 @@ fn stream_loop(
             pause_started = None;
         }
 
-        match engine.poll(Duration::from_millis(100)) {
+        let polled = engine.poll(Duration::from_millis(100));
+        if config.cancellation.is_canceled() {
+            continue;
+        }
+        match polled {
             Ok(EngineEvent::Idle) => {}
             Ok(EngineEvent::Events(events)) => {
                 consecutive_errors = 0;
@@ -300,7 +308,13 @@ fn stream_loop(
                         }
                         _ => {}
                     }
-                    push_event_with_drop_notice(queue, stats, event);
+                    if config
+                        .cancellation
+                        .commit(|| push_event_with_drop_notice(queue, stats, event))
+                        .is_err()
+                    {
+                        break;
+                    }
                 }
             }
             Err(err) if err.is_retryable() => {
@@ -453,6 +467,62 @@ mod tests {
                 ..Default::default()
             },
         }
+    }
+
+    #[test]
+    fn canceled_stream_never_polls_or_publishes_audio_even_while_paused() {
+        struct NeverPoll;
+        impl AudioRecorderEngine for NeverPoll {
+            fn poll(&mut self, _: Duration) -> AudioResult<EngineEvent> {
+                panic!("canceled engine was polled")
+            }
+        }
+        let mut engine: Box<dyn AudioRecorderEngine> = Box::new(NeverPoll);
+        let config = AudioStreamConfig::default();
+        config.cancellation.cancel();
+        let queue = StreamQueue::new(1);
+        stream_loop(
+            &mut engine,
+            &config,
+            &queue,
+            &AtomicBool::new(false),
+            &AtomicBool::new(true),
+            &AudioStreamStats::default(),
+        );
+        assert!(matches!(
+            queue.try_recv(),
+            Ok((AudioEvent::Error(AudioError::Canceled), _))
+        ));
+        assert!(!AudioError::Canceled.is_retryable());
+    }
+
+    #[test]
+    fn cancellation_during_poll_discards_late_packets() {
+        struct CancelDuringPoll(snow_core::cancellation::CancellationToken);
+        impl AudioRecorderEngine for CancelDuringPoll {
+            fn poll(&mut self, _: Duration) -> AudioResult<EngineEvent> {
+                self.0.cancel();
+                Ok(EngineEvent::Events(vec![AudioEvent::Packet(packet(1))]))
+            }
+        }
+        let config = AudioStreamConfig::default();
+        let mut engine: Box<dyn AudioRecorderEngine> =
+            Box::new(CancelDuringPoll(config.cancellation.clone()));
+        let queue = StreamQueue::new(1);
+        stream_loop(
+            &mut engine,
+            &config,
+            &queue,
+            &AtomicBool::new(false),
+            &AtomicBool::new(false),
+            &AudioStreamStats::default(),
+        );
+        assert!(matches!(
+            queue.try_recv(),
+            Ok((AudioEvent::Error(AudioError::Canceled), _))
+        ));
+        assert!(matches!(queue.try_recv(), Ok((AudioEvent::StreamEnded, _))));
+        assert!(queue.try_recv().is_err());
     }
 
     #[test]

@@ -9,8 +9,21 @@ bench-internals = []
 
 [dependencies]
 snow-core = { path = "../snow-core" }
+snow-media = { path = "../snow-media" }
 snow-recording-model = { path = "../snow-recording-model" }
 anyhow.workspace = true
+
+
+[dev-dependencies]
+criterion = "0.5"
+proptest = "1.11.0"
+
+[[bench]]
+name = "audio_hot_path"
+harness = false
+required-features = ["bench-internals"]
+
+[target.'cfg(windows)'.dependencies]
 windows-core.workspace = true
 windows = { workspace = true, features = [
     "Win32_Devices_FunctionDiscovery",
@@ -25,11 +38,5 @@ windows = { workspace = true, features = [
     "Win32_UI_Shell_PropertiesSystem",
 ] }
 
-[dev-dependencies]
-criterion = "0.5"
-proptest = "1.11.0"
-
-[[bench]]
-name = "audio_hot_path"
-harness = false
-required-features = ["bench-internals"]
+[target.'cfg(target_os = "macos")'.dependencies]
+snow-macos = { path = "../snow-macos" }

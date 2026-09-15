@@ -4214,18 +4214,18 @@ pub(crate) struct WindowsDxgiWindowCapturer {
 impl WindowsDxgiWindowCapturer {
     pub(crate) fn new(window: &WindowId, resolver: Arc<MonitorResolver>) -> CaptureResult<Self> {
         let com = super::com::CoInitGuard::init_multithreaded().map_err(CaptureError::platform)?;
-        let hwnd = HWND(window.raw_handle() as *mut std::ffi::c_void);
+        let hwnd = HWND(window.windows_handle()? as *mut std::ffi::c_void);
 
         if hwnd.0.is_null() {
             return Err(CaptureError::InvalidTarget(format!(
                 "window handle is null: {}",
-                window.stable_id()
+                window.session_id()
             )));
         }
         if !unsafe { IsWindow(Some(hwnd)) }.as_bool() {
             return Err(CaptureError::InvalidTarget(format!(
                 "window handle is not valid: {}",
-                window.stable_id()
+                window.session_id()
             )));
         }
 

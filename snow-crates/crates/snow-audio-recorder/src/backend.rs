@@ -10,6 +10,7 @@ use crate::session::AudioStreamConfig;
 pub enum AudioBackendKind {
     Auto,
     Wasapi,
+    CoreAudio,
 }
 
 impl AudioBackendKind {
@@ -17,6 +18,7 @@ impl AudioBackendKind {
         match self {
             Self::Auto => "auto",
             Self::Wasapi => "wasapi",
+            Self::CoreAudio => "coreaudio-sck",
         }
     }
 }

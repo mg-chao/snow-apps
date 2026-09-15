@@ -34,3 +34,7 @@ pub mod recording_effects {
 pub mod visual_region_detector {
     pub use snow_visual_region_detector_c::*;
 }
+
+pub mod recording {
+    pub use snow_recording_c::*;
+}

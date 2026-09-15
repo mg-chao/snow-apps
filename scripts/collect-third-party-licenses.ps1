@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory = $true)][string]$Destination,
     [Parameter(Mandatory = $true)][string]$AllowedRoot,
     [Parameter(Mandatory = $true)][string]$VcpkgPrefix,
-    [Parameter(Mandatory = $true)][string]$QtPrefix,
+    [string]$QtPrefix,
+    [switch]$StandaloneMedia,
     [Parameter(Mandatory = $true)][string[]]$CargoManifest,
     [hashtable]$CargoOptions = @{},
     [Parameter(Mandatory = $true)][string]$AntDesignNotice,
@@ -55,7 +56,7 @@ if (-not $destinationPath.StartsWith(
 }
 
 $vcpkgPrefixPath = Resolve-ExistingPath -Path $VcpkgPrefix -Description "vcpkg package prefix"
-$qtPrefixPath = Resolve-ExistingPath -Path $QtPrefix -Description "static Qt prefix"
+$qtPrefixPath = if (-not $StandaloneMedia) { Resolve-ExistingPath -Path $QtPrefix -Description "static Qt prefix" } else { $null }
 $cargoManifestPaths = @($CargoManifest | ForEach-Object {
     Resolve-ExistingPath -Path $_ -Description "Cargo manifest" -PathType Leaf
 })
@@ -129,6 +130,8 @@ foreach ($copyright in $vcpkgCopyrights) {
         -RelativeName "copyright.txt"
 }
 
+$qtLicenseFiles = @()
+if (-not $StandaloneMedia) {
 $qtLicenseRoot = Join-Path $qtPrefixPath "share\snow-apps\qt-licenses"
 if (-not (Test-Path -LiteralPath $qtLicenseRoot -PathType Container)) {
     throw "The audited static Qt kit has no installed license bundle: $qtLicenseRoot. Rebuild it with scripts/build-static-qt.ps1."
@@ -145,6 +148,8 @@ foreach ($licenseFile in $qtLicenseFiles) {
     Copy-LicenseNotice -Category "qt" -Package $package `
         -DeclaredLicense "See Qt REUSE metadata and collected license texts" `
         -Source $licenseFile.FullName -RelativeName $relativeName
+}
+
 }
 
 $cargoCommand = Get-Command cargo -ErrorAction SilentlyContinue
@@ -206,6 +211,14 @@ foreach ($package in $externalCargoPackages) {
             $_.Name -match '^(?i:LICENSE|LICENCE|COPYING|NOTICE|UNLICENSE)(?:[._-].*)?$'
         } | Sort-Object Name)
     if ($licenseFiles.Count -eq 0) {
+        # Some published crates omit their workspace-root license. The repository
+        # stores the original upstream text and revision, never a generic MIT template.
+        $packageFallback = Join-Path $fallbackLicenseDirectoryPath "cargo/$($package.name)-$($package.version)"
+        if (Test-Path -LiteralPath $packageFallback -PathType Container) {
+            $licenseFiles = @(Get-ChildItem -LiteralPath $packageFallback -File | Sort-Object Name)
+        }
+    }
+    if ($licenseFiles.Count -eq 0) {
         $fallbackName = if ([string]$package.license -match '(?:^|\s|\()Apache-2\.0(?:$|\s|\))') {
             "Apache-2.0.txt"
         }
@@ -257,7 +270,7 @@ Copy-LicenseNotice -Category "project-notices" -Package "snow-shot-attributions"
 
 $sortedRecords = @($records | Sort-Object Category, Package, Notice)
 $indexLines = [System.Collections.Generic.List[string]]::new()
-$indexLines.Add("# Snow Shot Third-Party License Index")
+$indexLines.Add($(if ($StandaloneMedia) { "# Snow Media Third-Party License Index" } else { "# Snow Shot Third-Party License Index" }))
 $indexLines.Add("")
 $indexLines.Add("This bundle was generated from the release build's resolved, non-development Rust dependency graph, installed vcpkg prefix, audited static Qt kit, and repository attribution notices.")
 $indexLines.Add("")
@@ -286,4 +299,4 @@ $indexLines | Set-Content -LiteralPath (Join-Path $destinationPath "INDEX.md") -
     -LiteralPath (Join-Path $destinationPath "manifest.json") -Encoding utf8
 
 Write-Output "Third-party license bundle: $destinationPath"
-Write-Output "Collected $($sortedRecords.Count) notices for $($externalCargoPackages.Count) Rust packages, $($vcpkgCopyrights.Count) vcpkg packages, and Qt."
+Write-Output "Collected $($sortedRecords.Count) notices for $($externalCargoPackages.Count) Rust packages and $($vcpkgCopyrights.Count) vcpkg packages$(if (-not $StandaloneMedia) { ", plus Qt" })."

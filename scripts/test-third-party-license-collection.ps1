@@ -49,7 +49,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not stage dependency fixture' }
 git -C $dependencyRepository -c user.name=Fixture -c user.email=fixture@example.invalid `
     commit --quiet -m 'Create dependency fixture'
 if ($LASTEXITCODE -ne 0) { throw 'Could not commit dependency fixture' }
-$dependencyUrl = ([Uri]$dependencyRepository).AbsoluteUri
+$dependencyUrl = [UriBuilder]::new("file", "", -1, $dependencyRepository).Uri.AbsoluteUri
 
 $manifests = @()
 $cargoOptions = @{}

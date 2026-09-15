@@ -18,16 +18,7 @@ impl MonitorSelector {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct WindowSelector {
-    pub raw_handle: isize,
-}
-
-impl WindowSelector {
-    pub const fn new(raw_handle: isize) -> Self {
-        Self { raw_handle }
-    }
-}
+pub use snow_capture::WindowId;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RecordingRegion {
@@ -52,7 +43,7 @@ impl RecordingRegion {
 pub enum RecordingTarget {
     PrimaryMonitor,
     Monitor(MonitorSelector),
-    Window(WindowSelector),
+    Window(WindowId),
     Region(RecordingRegion),
 }
 

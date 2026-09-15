@@ -10,6 +10,18 @@
     { "name": "ffmpeg-bin2c", "version": "9.0" }
   ],
   "features": {
+    "macos-media": {
+      "description": "Standalone macOS recording libraries without Qt or OCR",
+      "dependencies": [
+        {
+          "name": "ffmpeg",
+          "default-features": false,
+          "features": [
+            "snow-macos-media"
+          ]
+        }
+      ]
+    },
     "snow-shot": {
       "description": "Build the minimal native dependency set required by Snow Shot.",
       "dependencies": [

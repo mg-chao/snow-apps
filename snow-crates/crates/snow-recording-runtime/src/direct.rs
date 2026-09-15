@@ -1221,7 +1221,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         align_capture,
         config,
         mut encoder,
-        mut capture_stream,
+        capture_stream,
         mouse_hook,
         click_rx,
         mut keyboard_input,
@@ -1238,6 +1238,8 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         #[cfg(feature = "bench-synthetic-input")]
         bench_cursor_rx,
     } = inputs;
+    #[cfg(windows)]
+    let mut capture_stream = capture_stream;
     #[cfg(windows)]
     let adapter = negotiation.adapter.take();
     #[cfg(windows)]
@@ -1898,7 +1900,7 @@ struct AudioMixSlot {
     microphone: Option<Vec<i16>>,
 }
 
-struct LiveAudioMixer {
+pub(crate) struct LiveAudioMixer {
     enabled_system: bool,
     enabled_microphone: bool,
     slot_frames: u64,
@@ -1911,7 +1913,7 @@ struct LiveAudioMixer {
 }
 
 impl LiveAudioMixer {
-    fn new(enabled_system: bool, enabled_microphone: bool) -> Self {
+    pub(crate) fn new(enabled_system: bool, enabled_microphone: bool) -> Self {
         Self {
             enabled_system,
             enabled_microphone,
@@ -2015,7 +2017,7 @@ impl LiveAudioMixer {
         }
     }
 
-    fn emit_ready(
+    pub(crate) fn emit_ready(
         &mut self,
         active_elapsed: Duration,
         flush: bool,
@@ -2089,7 +2091,7 @@ fn drain_audio_events(
     }
 }
 
-fn process_audio_event(
+pub(crate) fn process_audio_event(
     event: AudioEvent,
     clock: &RecordingClock,
     paused: bool,

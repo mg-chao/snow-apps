@@ -35,6 +35,7 @@
 #include <QStandardPaths>
 #include <QSysInfo>
 #include "snow_capture.h"
+#include "snow_recording.h"
 
 #ifdef Q_OS_WIN
 #include <Windows.h>
@@ -101,11 +102,11 @@ int main(int argc, char* argv[]) {
         config.show_cursor = 1;
         config.mouse_trail_duration_ms = 500;
         config.keyboard_size = 64;
-        const auto result = snow_capture_recording_gpu_probe(&config, recover ? 1 : 0);
-        if (result != SNOW_CAPTURE_RESULT_OK) {
-            qWarning().noquote() << snow_capture_last_error_message();
+        const auto result = snow_recording_gpu_probe(&config, recover ? 1 : 0);
+        if (result != SNOW_RECORDING_RESULT_OK) {
+            qWarning().noquote() << snow_recording_last_error_message();
         }
-        return result == SNOW_CAPTURE_RESULT_OK ? 0 : 1;
+        return result == SNOW_RECORDING_RESULT_OK ? 0 : 1;
     }
     // A probe runs before diagnostics, singleton acquisition, or any live user-state access.
     if (argc == 3 && QString::fromLocal8Bit(argv[1]) == u"--update-probe") {

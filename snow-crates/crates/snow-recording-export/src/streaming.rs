@@ -85,6 +85,10 @@ pub struct StreamingEncoderBuilder {
     recoverable: bool,
     #[cfg(windows)]
     gpu_input: Option<crate::gpu::GpuInputConfig>,
+    #[cfg(target_os = "macos")]
+    native_input: Option<snow_media::PixelFormat>,
+    #[cfg(target_os = "macos")]
+    cpu_hdr_input: bool,
 }
 
 impl From<StreamingEncoderConfig> for StreamingEncoderBuilder {
@@ -96,11 +100,28 @@ impl From<StreamingEncoderConfig> for StreamingEncoderBuilder {
             recoverable: false,
             #[cfg(windows)]
             gpu_input: None,
+            #[cfg(target_os = "macos")]
+            native_input: None,
+            #[cfg(target_os = "macos")]
+            cpu_hdr_input: false,
         }
     }
 }
 
 impl StreamingEncoderBuilder {
+    #[cfg(target_os = "macos")]
+    pub fn native_input(mut self, format: snow_media::PixelFormat) -> Self {
+        self.native_input = Some(format);
+        self.cpu_hdr_input = false;
+        self
+    }
+    /// CPU P010 input already rendered as BT.2020/PQ. No SDR relabeling.
+    #[cfg(target_os = "macos")]
+    pub fn hdr10_cpu_input(mut self) -> Self {
+        self.native_input = None;
+        self.cpu_hdr_input = true;
+        self
+    }
     /// Stage independent video segments and continuous audio for live recovery.
     pub fn recoverable(mut self) -> Self {
         self.recoverable = true;
@@ -117,6 +138,11 @@ impl StreamingEncoderBuilder {
         #[cfg(windows)]
         {
             self.gpu_input = None;
+        }
+        #[cfg(target_os = "macos")]
+        {
+            self.cpu_hdr_input |= self.native_input == Some(snow_media::PixelFormat::P010);
+            self.native_input = None;
         }
         self
     }
@@ -141,6 +167,12 @@ impl StreamingEncoderBuilder {
     }
 
     pub fn create(self) -> Result<StreamingEncoder> {
+        #[cfg(target_os = "macos")]
+        if self.recoverable && (self.native_input.is_some() || self.cpu_hdr_input) {
+            return Err(RecordingExportError::InvalidConfig(
+                "native input recovery is not available".into(),
+            ));
+        }
         if self.recoverable {
             return recovery::create(self);
         }
@@ -150,6 +182,10 @@ impl StreamingEncoderBuilder {
             self.software_fallback_threads,
             #[cfg(windows)]
             self.gpu_input,
+            #[cfg(target_os = "macos")]
+            self.native_input,
+            #[cfg(target_os = "macos")]
+            self.cpu_hdr_input,
         )
     }
 }
@@ -263,7 +299,7 @@ pub(crate) unsafe fn swscale_thread_count(
 struct PendingFrame {
     pts: i64,
     rgba: Vec<u8>,
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     gpu: Option<ffmpeg::frame::Video>,
 }
 
@@ -294,8 +330,14 @@ pub struct StreamingEncoder {
     #[cfg(any(test, feature = "bench-experiments"))]
     frame_converter: Option<crate::frame_converter::FrameConverter>,
     scaler: Option<ffmpeg::software::scaling::Context>,
+    #[cfg(target_os = "macos")]
+    native_input: Option<snow_media::PixelFormat>,
+    #[cfg(target_os = "macos")]
+    cpu_hdr_input: bool,
     #[cfg(windows)]
     hardware_frames: Option<crate::gpu::HardwareFrames>,
+    #[cfg(target_os = "macos")]
+    hdr_source: Option<ffmpeg::frame::Video>,
     encode_frame: ffmpeg::frame::Video,
     width: u32,
     height: u32,
@@ -313,6 +355,13 @@ pub struct StreamingEncoder {
 }
 
 impl StreamingEncoder {
+    #[cfg(target_os = "macos")]
+    pub fn poll_native_packets(&mut self) -> Result<()> {
+        if self.native_input.is_some() {
+            self.drain_available_packets()?;
+        }
+        Ok(())
+    }
     /// Integer frame rate defining the PTS and finalization timeline.
     pub fn fps(&self) -> u32 {
         self.fps
@@ -365,6 +414,8 @@ impl StreamingEncoder {
         force_hardware_failure: bool,
         software_fallback_threads: Option<u8>,
         #[cfg(windows)] gpu_input: Option<crate::gpu::GpuInputConfig>,
+        #[cfg(target_os = "macos")] native_input: Option<snow_media::PixelFormat>,
+        #[cfg(target_os = "macos")] cpu_hdr_input: bool,
     ) -> Result<Self> {
         config
             .validate()
@@ -386,6 +437,10 @@ impl StreamingEncoder {
             software_fallback_threads,
             #[cfg(windows)]
             gpu_input,
+            #[cfg(target_os = "macos")]
+            native_input,
+            #[cfg(target_os = "macos")]
+            cpu_hdr_input,
             false,
         ) {
             Ok(mut encoder) => {
@@ -405,6 +460,8 @@ impl StreamingEncoder {
         force_hardware_failure: bool,
         software_fallback_threads: Option<u8>,
         #[cfg(windows)] gpu_input: Option<crate::gpu::GpuInputConfig>,
+        #[cfg(target_os = "macos")] native_input: Option<snow_media::PixelFormat>,
+        #[cfg(target_os = "macos")] cpu_hdr_input: bool,
         fragmented: bool,
     ) -> Result<Self> {
         let mut output = ffmpeg::format::output(&staging_path).map_err(|error| {
@@ -432,7 +489,9 @@ impl StreamingEncoder {
             .transpose()?;
         #[cfg(windows)]
         let gpu_enabled = hardware_frames.is_some();
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
+        let gpu_enabled = native_input.is_some();
+        #[cfg(not(any(windows, target_os = "macos")))]
         let gpu_enabled = false;
         let mut video_codec = select_video_codec(
             &output,
@@ -460,6 +519,35 @@ impl StreamingEncoder {
                 ))
             })?;
         }
+        #[cfg(target_os = "macos")]
+        if let Some(format) = native_input {
+            if config.format != ExportFormat::Mp4
+                || config.execution_mode == ExportExecutionMode::SoftwareOnly
+                || !matches!(
+                    format,
+                    snow_media::PixelFormat::Bgra8 | snow_media::PixelFormat::P010
+                )
+                || (format == snow_media::PixelFormat::P010 && config.codec != VideoCodec::H265)
+            {
+                return Err(RecordingExportError::InvalidConfig(
+                    "native input requires hardware MP4 with BGRA SDR or HEVC P010 HDR10".into(),
+                ));
+            }
+            video_codec = ffmpeg::encoder::find_by_name(match config.codec {
+                VideoCodec::H264 => "h264_videotoolbox",
+                VideoCodec::H265 => "hevc_videotoolbox",
+            })
+            .ok_or_else(|| {
+                RecordingExportError::Encode("VideoToolbox encoder absent from FFmpeg".into())
+            })?;
+        }
+        #[cfg(target_os = "macos")]
+        if cpu_hdr_input && (config.codec != VideoCodec::H265 || config.format != ExportFormat::Mp4)
+        {
+            return Err(RecordingExportError::InvalidConfig(
+                "CPU HDR input requires HEVC MP4".into(),
+            ));
+        }
         let requested_video_encoder = video_codec.name().to_owned();
         let mut pixel_format = choose_video_pixel_format(
             config.format,
@@ -471,9 +559,21 @@ impl StreamingEncoder {
             None,
             config.execution_mode,
         );
+        #[cfg(target_os = "macos")]
+        if cpu_hdr_input {
+            pixel_format = crate::hdr::pixel_format(
+                video_codec
+                    .video()
+                    .map_err(|e| RecordingExportError::Encode(e.to_string()))?,
+            )?;
+        }
         #[cfg(windows)]
         if let Some(frames) = &hardware_frames {
             pixel_format = frames.pixel_format();
+        }
+        #[cfg(target_os = "macos")]
+        if native_input.is_some() {
+            pixel_format = ffmpeg::format::Pixel::VIDEOTOOLBOX;
         }
         let effective_video = effective_video_config(&config.video);
         let make_encoder = |codec: ffmpeg::Codec,
@@ -490,6 +590,17 @@ impl StreamingEncoder {
             encoder.set_width(config.width);
             encoder.set_height(config.height);
             encoder.set_format(pixel);
+            #[cfg(target_os = "macos")]
+            if let Some(format) = native_input {
+                unsafe {
+                    (*encoder.as_mut_ptr()).sw_pix_fmt = match format {
+                        snow_media::PixelFormat::P010 => {
+                            ffmpeg::ffi::AVPixelFormat::AV_PIX_FMT_P010LE
+                        }
+                        _ => ffmpeg::ffi::AVPixelFormat::AV_PIX_FMT_BGRA,
+                    };
+                }
+            }
             encoder.set_time_base(video_time_base);
             encoder.set_frame_rate(Some(video_frame_rate));
             if !config.format.is_animated_image() {
@@ -500,6 +611,19 @@ impl StreamingEncoder {
                     (*context).color_primaries = ffmpeg::ffi::AVColorPrimaries::AVCOL_PRI_BT709;
                     (*context).color_trc =
                         ffmpeg::ffi::AVColorTransferCharacteristic::AVCOL_TRC_BT709;
+                }
+            }
+            #[cfg(target_os = "macos")]
+            if native_input == Some(snow_media::PixelFormat::Bgra8) {
+                unsafe {
+                    (*encoder.as_mut_ptr()).color_trc =
+                        ffmpeg::ffi::AVColorTransferCharacteristic::AVCOL_TRC_IEC61966_2_1;
+                }
+            }
+            #[cfg(target_os = "macos")]
+            if cpu_hdr_input || native_input == Some(snow_media::PixelFormat::P010) {
+                unsafe {
+                    crate::videotoolbox::set_hdr_context(encoder.as_mut_ptr());
                 }
             }
             // Resolve against the codec being opened, never an already-opened
@@ -533,6 +657,10 @@ impl StreamingEncoder {
                 frames.configure(&mut encoder)?;
                 return frames.open(encoder, codec, effective_video.quality);
             }
+            #[cfg(target_os = "macos")]
+            if cpu_hdr_input {
+                return crate::editing::open_live_hdr_encoder(encoder, &codec, &effective_video);
+            }
             open_video_encoder(encoder, &codec, &effective_video)
         };
 
@@ -547,6 +675,7 @@ impl StreamingEncoder {
             Ok(encoder) => encoder,
             Err(primary_error)
                 if !gpu_enabled
+                    && config.execution_mode != ExportExecutionMode::HardwareOnly
                     && config.prefer_hardware_h264
                     && is_hardware_h264_encoder(&video_codec) =>
             {
@@ -569,6 +698,14 @@ impl StreamingEncoder {
                     None,
                     ExportExecutionMode::SoftwareOnly,
                 );
+                #[cfg(target_os = "macos")]
+                if cpu_hdr_input {
+                    pixel_format = crate::hdr::pixel_format(
+                        video_codec
+                            .video()
+                            .map_err(|e| RecordingExportError::Encode(e.to_string()))?,
+                    )?;
+                }
                 make_encoder(video_codec, pixel_format).map_err(|_| primary_error)?
             }
             Err(error) => return Err(error),
@@ -648,12 +785,20 @@ impl StreamingEncoder {
                     )
                 })?;
         }
+        #[cfg(target_os = "macos")]
+        let cpu_format = if cpu_hdr_input {
+            ffmpeg::format::Pixel::P010LE
+        } else {
+            ffmpeg::format::Pixel::RGBA
+        };
+        #[cfg(not(target_os = "macos"))]
+        let cpu_format = ffmpeg::format::Pixel::RGBA;
         let mut scaler = if gpu_enabled {
             None
         } else {
             Some(
                 ffmpeg::software::scaling::Context::get(
-                    ffmpeg::format::Pixel::RGBA,
+                    cpu_format,
                     config.width,
                     config.height,
                     pixel_format,
@@ -673,8 +818,12 @@ impl StreamingEncoder {
         {
             // RGB capture is full-range; hardware and software use the same
             // limited-range BT.709 matrix and encoder color interpretation.
-            unsafe {
-                configure_bt709_scaler(scaler.as_mut_ptr())?;
+            if cpu_format == ffmpeg::format::Pixel::P010LE {
+                crate::hdr::scaler_colors(scaler, true, false)?;
+            } else {
+                unsafe {
+                    configure_bt709_scaler(scaler.as_mut_ptr())?;
+                }
             }
         }
 
@@ -701,6 +850,12 @@ impl StreamingEncoder {
             stream_index,
             stream_time_base,
             scaler,
+            #[cfg(target_os = "macos")]
+            native_input,
+            #[cfg(target_os = "macos")]
+            cpu_hdr_input,
+            #[cfg(target_os = "macos")]
+            hdr_source: None,
             #[cfg(windows)]
             hardware_frames,
             #[cfg(any(test, feature = "bench-experiments"))]
@@ -727,7 +882,11 @@ impl StreamingEncoder {
                 pixel_format: format!("{pixel_format:?}"),
                 conversion_threads: 0,
                 conversion_backend: if gpu_enabled {
-                    "d3d11_video_processor"
+                    if cfg!(target_os = "macos") {
+                        "native_surface"
+                    } else {
+                        "d3d11_video_processor"
+                    }
                 } else {
                     "legacy_sws_scale"
                 }
@@ -749,6 +908,16 @@ impl StreamingEncoder {
 
     #[cfg(any(test, feature = "bench-experiments"))]
     pub fn set_conversion_threads(&mut self, threads: u8) -> Result<()> {
+        #[cfg(target_os = "macos")]
+        if self.cpu_hdr_input {
+            return if threads == 0 {
+                Ok(())
+            } else {
+                Err(RecordingExportError::InvalidConfig(
+                    "RGBA conversion workers do not support P010 HDR input".into(),
+                ))
+            };
+        }
         if self.scaler.is_none() {
             return if threads == 0 {
                 Ok(())
@@ -841,6 +1010,12 @@ impl StreamingEncoder {
     /// return an empty vector; subsequent calls return the previous image's storage.
     /// Storage may grow on first use to provide FFmpeg's SIMD tail padding.
     pub fn push_owned_rgba_frame_at_pts(&mut self, pts: u64, rgba: Vec<u8>) -> Result<Vec<u8>> {
+        #[cfg(target_os = "macos")]
+        if self.cpu_hdr_input {
+            return Err(RecordingExportError::InvalidConfig(
+                "HDR encoder requires P010 BT.2020/PQ input".into(),
+            ));
+        }
         if self.scaler.is_none() {
             return Err(RecordingExportError::InvalidConfig(
                 "GPU encoder requires a GPU surface".into(),
@@ -881,7 +1056,7 @@ impl StreamingEncoder {
         self.pending = Some(PendingFrame {
             pts,
             rgba,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             gpu: None,
         });
         Ok(std::mem::take(&mut self.spare_rgba))
@@ -932,6 +1107,125 @@ impl StreamingEncoder {
             .allocate()
     }
 
+    /// Submit an immutable CoreVideo lease without CPU readback.
+    /// Explicit software HDR transport. Conversion preserves limited-range PQ
+    /// code values; this never infers HDR from an SDR image or just changes tags.
+    #[cfg(target_os = "macos")]
+    pub fn push_cpu_hdr_frame_at_pts(
+        &mut self,
+        pts: u64,
+        image: &snow_media::CpuFrame,
+    ) -> Result<()> {
+        if !self.cpu_hdr_input
+            || self.finished
+            || self.output.is_none()
+            || image.format != snow_media::PixelFormat::P010
+            || image.color != snow_media::ColorDescription::HDR10
+            || image.size.width != self.width
+            || image.size.height != self.height
+            || image.planes.len() != 2
+        {
+            return Err(RecordingExportError::InvalidConfig(
+                "CPU HDR frame does not match the encoder layout/color".into(),
+            ));
+        }
+        let source = self.hdr_source.get_or_insert_with(|| {
+            ffmpeg::frame::Video::new(ffmpeg::format::Pixel::P010LE, self.width, self.height)
+        });
+        for index in 0..2 {
+            let rows = self.height as usize / if index == 0 { 1 } else { 2 };
+            let row_bytes = self.width as usize * 2;
+            let layout = image.planes[index];
+            let bytes = image
+                .plane_bytes(index)
+                .ok_or_else(|| RecordingExportError::InvalidConfig("truncated HDR plane".into()))?;
+            if layout.height != rows
+                || layout.row_bytes != row_bytes
+                || layout.width != self.width as usize / if index == 0 { 1 } else { 2 }
+            {
+                return Err(RecordingExportError::InvalidConfig(
+                    "invalid HDR plane dimensions".into(),
+                ));
+            }
+            let stride = source.stride(index);
+            for row in 0..rows {
+                source.data_mut(index)[row * stride..row * stride + row_bytes]
+                    .copy_from_slice(&bytes[row * layout.stride..row * layout.stride + row_bytes]);
+            }
+        }
+        crate::hdr::frame(source, true);
+        ensure_video_frame_writable(&mut self.encode_frame)?;
+        self.scaler
+            .as_mut()
+            .ok_or_else(|| {
+                RecordingExportError::InvalidConfig("HDR CPU scaler unavailable".into())
+            })?
+            .run(source, &mut self.encode_frame)
+            .map_err(|error| RecordingExportError::Encode(error.to_string()))?;
+        crate::hdr::frame(&mut self.encode_frame, true);
+        // av_frame_ref shares immutable pixels until the encoder releases them.
+        // make_writable above allocates only when the previous lease is retained.
+        let mut frame = ffmpeg::frame::Video::empty();
+        let result =
+            unsafe { ffmpeg::ffi::av_frame_ref(frame.as_mut_ptr(), self.encode_frame.as_ptr()) };
+        if result < 0 {
+            return Err(RecordingExportError::Encode(
+                ffmpeg::Error::from(result).to_string(),
+            ));
+        }
+        self.admit_prepared_frame(pts, frame)
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn push_native_frame_at_pts(
+        &mut self,
+        pts: u64,
+        image: snow_media::macos::PixelBuffer,
+    ) -> Result<()> {
+        if self.finished || self.output.is_none() {
+            return Err(RecordingExportError::InvalidConfig(
+                "encoder is closed".into(),
+            ));
+        }
+        if self.native_input != Some(image.format())
+            || image.size().width != self.width
+            || image.size().height != self.height
+        {
+            return Err(RecordingExportError::InvalidConfig(
+                "native frame does not match encoder layout".into(),
+            ));
+        }
+        let native = crate::videotoolbox::frame(image)?;
+        self.admit_prepared_frame(pts, native)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn admit_prepared_frame(&mut self, pts: u64, native: ffmpeg::frame::Video) -> Result<()> {
+        let pts = i64::try_from(pts)
+            .map_err(|_| RecordingExportError::InvalidConfig("video PTS overflow".into()))?;
+        if let Some(pending) = &mut self.pending {
+            if pts < pending.pts {
+                return Err(RecordingExportError::InvalidConfig(
+                    "video PTS moved backward".into(),
+                ));
+            }
+            if pts == pending.pts {
+                pending.gpu = Some(native);
+                self.report.coalesced_frames += 1;
+                return Ok(());
+            }
+            let duration = pts - pending.pts;
+            self.encode_pending(duration)?;
+        }
+        self.admitted_frames += 1;
+        self.pending = Some(PendingFrame {
+            pts,
+            rgba: Vec::new(),
+            gpu: Some(native),
+        });
+        Ok(())
+    }
+
     #[cfg(windows)]
     pub fn push_gpu_frame_at_pts(
         &mut self,
@@ -969,7 +1263,7 @@ impl StreamingEncoder {
         Ok(())
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     fn encode_gpu_pending(
         &mut self,
         mut frame: ffmpeg::frame::Video,
@@ -981,18 +1275,24 @@ impl StreamingEncoder {
         frame.set_pts(Some(pts));
         unsafe {
             (*frame.as_mut_ptr()).duration = duration;
-            (*frame.as_mut_ptr()).color_range = ffmpeg::ffi::AVColorRange::AVCOL_RANGE_MPEG;
-            (*frame.as_mut_ptr()).colorspace = ffmpeg::ffi::AVColorSpace::AVCOL_SPC_BT709;
-            (*frame.as_mut_ptr()).color_primaries = ffmpeg::ffi::AVColorPrimaries::AVCOL_PRI_BT709;
-            (*frame.as_mut_ptr()).color_trc =
-                ffmpeg::ffi::AVColorTransferCharacteristic::AVCOL_TRC_BT709;
+            #[cfg(windows)]
+            {
+                (*frame.as_mut_ptr()).color_range = ffmpeg::ffi::AVColorRange::AVCOL_RANGE_MPEG;
+                (*frame.as_mut_ptr()).colorspace = ffmpeg::ffi::AVColorSpace::AVCOL_SPC_BT709;
+                (*frame.as_mut_ptr()).color_primaries =
+                    ffmpeg::ffi::AVColorPrimaries::AVCOL_PRI_BT709;
+                (*frame.as_mut_ptr()).color_trc =
+                    ffmpeg::ffi::AVColorTransferCharacteristic::AVCOL_TRC_BT709;
+            }
         }
+        #[cfg(windows)]
         let device = self
             .hardware_frames
             .as_ref()
             .expect("GPU frames")
             .device
             .clone();
+        #[cfg(windows)]
         {
             let _lock = device.lock();
             unsafe { device.context().Flush() };
@@ -1007,11 +1307,27 @@ impl StreamingEncoder {
             |state| state.drain_available_packets(),
         )?;
         #[cfg(feature = "bench-timing")]
-        self.report.timings.record("encode.gpu_send", send_started);
+        {
+            #[cfg(target_os = "macos")]
+            let stage = if self.cpu_hdr_input {
+                "encode.cpu_hdr_send"
+            } else {
+                "encode.gpu_send"
+            };
+            #[cfg(windows)]
+            let stage = "encode.gpu_send";
+            self.report.timings.record(stage, send_started);
+        }
         self.pending_packet_durations.push_back(duration.max(1));
         #[cfg(feature = "bench-timing")]
         {
-            self.report.timings.gpu_surface_submissions += 1;
+            #[cfg(target_os = "macos")]
+            let native_submission = self.native_input.is_some();
+            #[cfg(windows)]
+            let native_submission = true;
+            if native_submission {
+                self.report.timings.gpu_surface_submissions += 1;
+            }
         }
         self.pending_timed_durations
             .push_back((pts, duration.max(1)));
@@ -1061,11 +1377,29 @@ impl StreamingEncoder {
     }
 
     pub fn finish(self) -> Result<StreamingEncoderReport> {
-        self.finish_inner(None)
+        self.finish_inner(None, None)
     }
 
     /// End the last pending image at an exclusive output-frame boundary.
     pub fn finish_at_pts(self, end_pts: u64) -> Result<StreamingEncoderReport> {
+        self.finish_at_pts_inner(end_pts, None)
+    }
+
+    /// Cancellation may interrupt finalization before publication. The final
+    /// rename is serialized with cancel; codec calls themselves may still block.
+    pub fn finish_at_pts_cancelable(
+        self,
+        end_pts: u64,
+        cancellation: &snow_core::cancellation::CancellationToken,
+    ) -> Result<StreamingEncoderReport> {
+        self.finish_at_pts_inner(end_pts, Some(cancellation))
+    }
+
+    fn finish_at_pts_inner(
+        self,
+        end_pts: u64,
+        cancellation: Option<&snow_core::cancellation::CancellationToken>,
+    ) -> Result<StreamingEncoderReport> {
         let endpoint = i64::try_from(end_pts)
             .map_err(|_| RecordingExportError::InvalidConfig("video endpoint overflow".into()))?;
         if self
@@ -1077,14 +1411,21 @@ impl StreamingEncoder {
                 "video endpoint must follow the last submitted PTS".into(),
             ));
         }
-        self.finish_inner(Some(endpoint))
+        self.finish_inner(Some(endpoint), cancellation)
     }
 
-    fn finish_inner(mut self, end_pts: Option<i64>) -> Result<StreamingEncoderReport> {
+    fn finish_inner(
+        mut self,
+        end_pts: Option<i64>,
+        cancellation: Option<&snow_core::cancellation::CancellationToken>,
+    ) -> Result<StreamingEncoderReport> {
+        if cancellation.is_some_and(|token| token.is_canceled()) {
+            return Err(RecordingExportError::ExportCanceled);
+        }
         if self.recovery.is_some() {
             let endpoint =
                 end_pts.unwrap_or_else(|| self.pending.as_ref().map_or(1, |frame| frame.pts + 1));
-            return self.finish_recoverable(endpoint);
+            return self.finish_recoverable(endpoint, cancellation);
         }
         #[cfg(feature = "bench-timing")]
         let finish_started = std::time::Instant::now();
@@ -1120,9 +1461,9 @@ impl StreamingEncoder {
         let staging_path = self.staging_path.take().ok_or_else(|| {
             RecordingExportError::Encode("streaming staging path is unavailable".to_string())
         })?;
-        if let Err(error) = publish_staging_file(&staging_path, &self.final_path) {
+        if let Err(error) = publish_unless_canceled(&staging_path, &self.final_path, cancellation) {
             let _ = fs::remove_file(&staging_path);
-            return Err(error.into());
+            return Err(error);
         }
         self.finished = true;
         #[cfg(feature = "bench-timing")]
@@ -1136,7 +1477,7 @@ impl StreamingEncoder {
         let Some(mut pending) = self.pending.take() else {
             return Ok(());
         };
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         if let Some(frame) = pending.gpu.take() {
             return self.encode_gpu_pending(frame, pending.pts, duration);
         }
@@ -1812,6 +2153,21 @@ fn publish_staging_file(staging_path: &Path, final_path: &Path) -> std::io::Resu
     fs::rename(staging_path, final_path)
 }
 
+fn publish_unless_canceled(
+    staging: &Path,
+    destination: &Path,
+    cancellation: Option<&snow_core::cancellation::CancellationToken>,
+) -> Result<()> {
+    let publish = || publish_staging_file(staging, destination);
+    match cancellation {
+        Some(token) => token
+            .commit(publish)
+            .map_err(|_| RecordingExportError::ExportCanceled)??,
+        None => publish()?,
+    }
+    Ok(())
+}
+
 fn is_direct_staging_name(name: &str) -> bool {
     let Some(rest) = name.strip_prefix(DIRECT_STAGING_PREFIX) else {
         return false;
@@ -1834,6 +2190,46 @@ mod tests {
 
     use snow_recording_model::VideoEncodingSpeed;
 
+    #[test]
+    fn cancellation_during_finalization_prevents_publication() {
+        let directory = tempfile::tempdir().unwrap();
+        let staging = directory.path().join("staging.mp4");
+        let destination = directory.path().join("output.mp4");
+        fs::write(&staging, b"finalized-video").unwrap();
+        let cancellation = snow_core::cancellation::CancellationToken::default();
+        cancellation.cancel();
+        assert!(matches!(
+            publish_unless_canceled(&staging, &destination, Some(&cancellation)),
+            Err(RecordingExportError::ExportCanceled)
+        ));
+        assert!(!destination.exists());
+        assert!(staging.exists());
+        publish_unless_canceled(&staging, &destination, None).unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"finalized-video");
+    }
+
+    #[test]
+    fn canceled_encoder_drops_its_staging_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("output.mp4");
+        let mut encoder =
+            StreamingEncoder::builder(encoder_config(destination.clone(), ExportFormat::Mp4))
+                .software_only()
+                .create()
+                .unwrap();
+        encoder
+            .push_rgba_frame_at_pts(0, &[255; 16 * 16 * 4])
+            .unwrap();
+        let cancellation = snow_core::cancellation::CancellationToken::default();
+        cancellation.cancel();
+        assert!(matches!(
+            encoder.finish_at_pts_cancelable(1, &cancellation),
+            Err(RecordingExportError::ExportCanceled)
+        ));
+        assert!(!destination.exists());
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
+
     fn encoder_config(output_path: PathBuf, format: ExportFormat) -> StreamingEncoderConfig {
         StreamingEncoderConfig {
             loop_animated_images: true,
@@ -1855,6 +2251,25 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn software_policy_after_native_negotiation_accepts_cpu_frames() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut encoder = StreamingEncoder::builder(encoder_config(
+            directory.path().join("software.mp4"),
+            ExportFormat::Mp4,
+        ))
+        .native_input(snow_media::PixelFormat::Bgra8)
+        .software_only()
+        .create()
+        .unwrap();
+        encoder
+            .push_rgba_frame_at_pts(0, &[128; 16 * 16 * 4])
+            .unwrap();
+        let report = encoder.finish_at_pts(1).unwrap();
+        assert!(!report.used_hardware_video_encoder);
+        assert_eq!(report.encoded_frames, 1);
+    }
     #[test]
     fn conversion_report_tracks_opened_worker_setting_and_restores_legacy_metadata() {
         let directory = tempfile::tempdir().unwrap();
@@ -2465,6 +2880,10 @@ mod tests {
             None,
             #[cfg(windows)]
             None,
+            #[cfg(target_os = "macos")]
+            None,
+            #[cfg(target_os = "macos")]
+            false,
         )
         .unwrap();
         assert_eq!(encoder.opened_video_encoder(), ("libx264", false));

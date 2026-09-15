@@ -60,6 +60,15 @@ dispatcher notices are collected from the resolved vcpkg packages, including
 the full copyright notices. Vendor display drivers supply the hardware codec
 implementations; those drivers are not distributed with Snow Shot.
 
+The standalone macOS media libraries use objc2 framework bindings, block2,
+and dispatch2 (MIT), and CoreText/CoreGraphics system font rendering. Apple's
+ScreenCaptureKit, CoreVideo, Metal, CoreAudio, and VideoToolbox frameworks are
+provided by macOS and are not redistributed. The macOS FFmpeg profile includes
+x264 (GPL-2.0-or-later), x265 (GPL-2.0-or-later), WebP (BSD-3-Clause), and zlib-ng
+(Zlib). The resulting FFmpeg binaries are GPL builds. Capture-only C libraries
+do not link FFmpeg. Each architecture's resolved license bundle is generated
+with `scripts/collect-third-party-licenses.ps1 -StandaloneMedia`.
+
 The generated bundle is authoritative for a particular binary because its
 contents are produced from that build environment. Dependency licenses and
 copyright notices remain the property of their respective owners.

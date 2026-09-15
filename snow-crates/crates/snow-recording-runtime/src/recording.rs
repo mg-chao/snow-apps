@@ -111,12 +111,14 @@ enum VideoWorkerCommand {
 
 #[derive(Debug)]
 struct VideoWorkerOutcome {
+    geometry: Vec<snow_recording_model::media::GeometryChange>,
     width: u32,
     height: u32,
 }
 
 #[derive(Debug)]
 pub(crate) struct WorkerOutcome {
+    geometry: Vec<snow_recording_model::media::GeometryChange>,
     pub(crate) width: u32,
     pub(crate) height: u32,
     pub(crate) pause_intervals: Vec<PauseInterval>,
@@ -305,11 +307,50 @@ impl RecordingSession {
         self.state
             .store(RecordingState::Stopped.as_u8(), Ordering::Release);
 
-        let outcome = worker_result?;
+        let mut outcome = worker_result?;
 
         let (capture_origin_x, capture_origin_y) = *self.lock_capture_origin()?;
 
+        if outcome.geometry.is_empty() {
+            let source = snow_media::geometry::DesktopRect {
+                space: snow_media::geometry::DesktopSpace::PhysicalPixels,
+                x: f64::from(capture_origin_x),
+                y: f64::from(capture_origin_y),
+                width: f64::from(outcome.width),
+                height: f64::from(outcome.height),
+            };
+            let output = snow_media::geometry::PixelSize {
+                width: outcome.width,
+                height: outcome.height,
+            };
+            let transform = snow_media::geometry::DesktopTransform::new(source, output)
+                .map_err(|e| ScreenRecorderError::InvalidConfig(e.to_string()))?;
+            outcome
+                .geometry
+                .push(snow_recording_model::media::GeometryChange {
+                    timestamp_ms: 0,
+                    generation: 1,
+                    transform,
+                    destination: snow_media::geometry::PixelRect {
+                        x: 0,
+                        y: 0,
+                        width: outcome.width,
+                        height: outcome.height,
+                    },
+                });
+        }
+
         let manifest = SessionManifest {
+            video_codec: snow_recording_model::VideoCodec::H264,
+            media: snow_recording_model::media::RecordedMedia::new(
+                snow_media::ColorDescription::SRGB,
+                if cfg!(target_os = "macos") {
+                    snow_media::CursorMode::Embedded
+                } else {
+                    snow_media::CursorMode::Separate
+                },
+                outcome.geometry,
+            ),
             session_id: self.session_id.clone(),
             output_dir: self.layout.output_dir.clone(),
             keep_temp_files: self.config.keep_temp_files,
@@ -441,6 +482,7 @@ fn start_audio_recording_if_enabled(
                     }
                 },
                 enabled: track.enabled,
+                required: false,
             })
             .collect(),
         ..AudioRecordingConfig::default()
@@ -1122,6 +1164,7 @@ fn new_recording_worker(
     write_mouse_records(&layout.mouse_path, &mouse_store)?;
 
     Ok(WorkerOutcome {
+        geometry: video_outcome.geometry,
         width: video_outcome.width,
         height: video_outcome.height,
         pause_intervals: clock
@@ -1206,17 +1249,36 @@ fn run_video_worker(
         video_temp_path,
         video_index_path,
     );
+    let mut geometry = Vec::<snow_recording_model::media::GeometryChange>::new();
     while let Ok(command) = rx.recv() {
         match command {
             VideoWorkerCommand::Frame { frame, ts_ms } => {
                 let width = frame.width();
                 let height = frame.height();
+                if let Some(transform) = frame.metadata().capture_transform()
+                    && geometry
+                        .last()
+                        .is_none_or(|last| last.transform != transform)
+                {
+                    geometry.push(snow_recording_model::media::GeometryChange {
+                        timestamp_ms: ts_ms,
+                        generation: geometry.len() as u64 + 1,
+                        transform,
+                        destination: snow_media::geometry::PixelRect {
+                            x: 0,
+                            y: 0,
+                            width,
+                            height,
+                        },
+                    });
+                }
                 video.handle_resolution_change(width, height)?;
                 video.encode_frame(frame, ts_ms)?;
             }
             VideoWorkerCommand::Finalize { final_ts_ms } => {
                 video.finalize(final_ts_ms)?;
                 return Ok(VideoWorkerOutcome {
+                    geometry,
                     width: video.width(),
                     height: video.height(),
                 });
@@ -1353,6 +1415,7 @@ mod tests {
             while let Ok(command) = video_rx.recv() {
                 if matches!(command, VideoWorkerCommand::Finalize { .. }) {
                     return Ok(VideoWorkerOutcome {
+                        geometry: vec![],
                         width: 1920,
                         height: 1080,
                     });
@@ -1401,6 +1464,7 @@ mod tests {
             while let Ok(command) = video_rx.recv() {
                 if matches!(command, VideoWorkerCommand::Finalize { .. }) {
                     return Ok(VideoWorkerOutcome {
+                        geometry: vec![],
                         width: 640,
                         height: 480,
                     });
@@ -1438,6 +1502,7 @@ mod tests {
         // error selection.
         let handle = std::thread::spawn(move || -> Result<VideoWorkerOutcome> {
             Ok(VideoWorkerOutcome {
+                geometry: vec![],
                 width: 16,
                 height: 16,
             })

@@ -5,6 +5,8 @@ use std::sync::Arc;
 pub enum CaptureError {
     InvalidTarget(String),
 
+    PermissionDenied,
+
     MonitorLost,
 
     NoPrimaryMonitor,
@@ -61,9 +63,10 @@ impl CaptureError {
             | Self::Timeout
             | Self::WorkerDead
             | Self::MonitorLost
-            | Self::Canceled
             | Self::ResolutionChanged(_, _) => CaptureErrorClass::Transient,
-            Self::BufferOverflow | Self::Platform(_) => CaptureErrorClass::Fatal,
+            Self::Canceled | Self::PermissionDenied | Self::BufferOverflow | Self::Platform(_) => {
+                CaptureErrorClass::Fatal
+            }
         }
     }
 
@@ -82,6 +85,7 @@ impl CaptureError {
 impl fmt::Display for CaptureError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::PermissionDenied => write!(f, "screen recording permission is required"),
             Self::InvalidTarget(id) => write!(
                 f,
                 "requested monitor target is not available in this session/backend: {id}"
@@ -135,6 +139,14 @@ impl snow_core::error::Classify for CaptureError {
 mod tests {
     use super::CaptureError;
 
+    #[test]
+    fn canceled_and_denied_sessions_do_not_retry() {
+        assert!(!CaptureError::Canceled.is_retryable());
+        assert!(!CaptureError::PermissionDenied.is_retryable());
+        assert!(CaptureError::Timeout.is_retryable());
+    }
+
+    #[cfg(windows)]
     #[test]
     fn platform_error_display_preserves_windows_cause_and_context() {
         let cause =

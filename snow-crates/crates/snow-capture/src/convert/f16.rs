@@ -64,16 +64,19 @@ impl HdrLumaLut {
     }
 
     #[inline(always)]
+    #[cfg(any(windows, target_arch = "x86_64"))]
     pub(crate) fn values_ptr(&self) -> *const f32 {
         self.values.as_ptr()
     }
 
     #[inline(always)]
+    #[cfg(any(windows, target_arch = "x86_64"))]
     pub(crate) fn input_max(&self) -> f32 {
         self.input_max
     }
 
     #[inline(always)]
+    #[cfg(any(windows, target_arch = "x86_64"))]
     pub(crate) fn inv_step(&self) -> f32 {
         self.inv_step
     }
@@ -100,6 +103,7 @@ pub(crate) struct HdrPreparedContext {
 
 impl HdrPreparedContext {
     #[inline(always)]
+    #[cfg(any(windows, target_arch = "x86_64"))]
     pub(crate) fn use_lut(&self) -> bool {
         self.luma_lut.is_some()
     }
@@ -434,11 +438,13 @@ unsafe fn convert_f16_rgba_to_srgb_scalar_impl<const FORCE_OPAQUE_ALPHA: bool>(
     pixel_count: usize,
 ) {
     let lut = f16_to_srgb_lut();
+    #[cfg(target_arch = "x86_64")]
     let lut_ptr = lut.as_ptr();
     let mut src_words = src as *const u16;
     let mut dst_px = dst as *mut u32;
     let mut remaining = pixel_count;
 
+    #[cfg(target_arch = "x86_64")]
     macro_rules! prefetch_lut_entries {
         ($base:expr) => {
             #[cfg(target_arch = "x86_64")]
@@ -459,6 +465,7 @@ unsafe fn convert_f16_rgba_to_srgb_scalar_impl<const FORCE_OPAQUE_ALPHA: bool>(
         // Prefetch LUT entries for the *next* batch of 16 pixels
         // (4 channels * 2 bytes = 8 bytes per pixel, so 16 pixels ahead
         // is 64 u16 words = 128 bytes of source data).
+        #[cfg(target_arch = "x86_64")]
         if remaining >= 32 {
             unsafe {
                 prefetch_lut_entries!(src_words.add(64));

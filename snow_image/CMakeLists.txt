@@ -339,6 +339,14 @@ if(SNOW_IMAGE_BUILD_STATIC)
         <vector>
     )
     snow_enable_unity_build(snow_image_static)
+    # These translation units intentionally use the same private helper names
+    # in separate anonymous namespaces. Keep them out of the unity source so
+    # those private definitions do not collide when included into one TU.
+    set_source_files_properties(
+        src/raster.cpp
+        src/raster_buffer.cpp
+        PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON
+    )
     add_library(snow_image::snow_image_static ALIAS snow_image_static)
 endif()
 if(SNOW_IMAGE_BUILD_SHARED)

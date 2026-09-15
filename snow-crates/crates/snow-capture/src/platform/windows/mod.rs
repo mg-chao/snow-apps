@@ -583,6 +583,9 @@ fn create_monitor_by_kind(
     monitor: &MonitorId,
 ) -> CaptureResult<Box<dyn MonitorCapturer>> {
     match kind {
+        CaptureBackendKind::ScreenCaptureKit => Err(CaptureError::BackendUnavailable(
+            "ScreenCaptureKit requires macOS".into(),
+        )),
         CaptureBackendKind::Auto => Err(auto_kind_error()),
         CaptureBackendKind::DxgiDuplication => Ok(Box::new(
             duplication::WindowsMonitorCapturer::new(monitor, resolver.clone())?,
@@ -603,6 +606,9 @@ fn create_window_by_kind(
     window: &WindowId,
 ) -> CaptureResult<Box<dyn MonitorCapturer>> {
     match kind {
+        CaptureBackendKind::ScreenCaptureKit => Err(CaptureError::BackendUnavailable(
+            "ScreenCaptureKit requires macOS".into(),
+        )),
         CaptureBackendKind::Auto => Err(auto_kind_error()),
         CaptureBackendKind::DxgiDuplication => Ok(Box::new(
             duplication::WindowsDxgiWindowCapturer::new(window, resolver.clone())?,
@@ -632,7 +638,7 @@ fn all_backends_failed(
 ) -> CaptureError {
     let target_name = match target {
         AutoTarget::Monitor(monitor) => monitor.name().to_owned(),
-        AutoTarget::Window(window) => window.stable_id(),
+        AutoTarget::Window(window) => window.session_id(),
     };
     CaptureError::BackendUnavailable(format!(
         "all screenshot backends failed for {target_name}: {}",
@@ -735,13 +741,13 @@ impl CaptureBackend for WindowsBackend {
         window: &WindowId,
         backend_kind: CaptureBackendKind,
     ) -> CaptureResult<CaptureTargetInfo> {
-        let hwnd = HWND(window.raw_handle() as *mut std::ffi::c_void);
+        let hwnd = HWND(window.windows_handle()? as *mut std::ffi::c_void);
         let rect = window_rect(hwnd, backend_kind)?;
 
         let width = (rect.right - rect.left).max(0) as u32;
         let height = (rect.bottom - rect.top).max(0) as u32;
         if width == 0 || height == 0 {
-            return Err(CaptureError::InvalidTarget(window.stable_id()));
+            return Err(CaptureError::InvalidTarget(window.session_id()));
         }
 
         Ok(CaptureTargetInfo {

@@ -8,6 +8,8 @@ use std::time::Duration;
 
 use snow_core::recording_clock::RecordingClock;
 use snow_core::timestamp::TimestampAnchor;
+use snow_media::time::{ClockDomain, MediaTime};
+use snow_recording_model::media::{DiscontinuityReason, TimelineDiscontinuity};
 use snow_recording_model::{
     AudioSampleFormat, AudioTrackManifest, AudioTrackRole, AudioTrackRole::*,
 };
@@ -35,6 +37,7 @@ pub struct AudioTrackConfig {
     pub role: AudioTrackRole,
     pub device: AudioTrackDevice,
     pub enabled: bool,
+    pub required: bool,
 }
 
 impl AudioTrackConfig {
@@ -44,6 +47,7 @@ impl AudioTrackConfig {
             role: AudioTrackRole::SystemOutput,
             device: AudioTrackDevice::SystemDefault,
             enabled: true,
+            required: false,
         }
     }
 
@@ -53,12 +57,14 @@ impl AudioTrackConfig {
             role: AudioTrackRole::MicrophoneInput,
             device: AudioTrackDevice::MicrophoneDefault,
             enabled: true,
+            required: false,
         }
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct AudioRecordingConfig {
+    pub cancellation: snow_core::cancellation::CancellationToken,
     pub output_dir: PathBuf,
     pub sample_rate_hz: u32,
     pub channels: u16,
@@ -70,6 +76,7 @@ pub struct AudioRecordingConfig {
 impl Default for AudioRecordingConfig {
     fn default() -> Self {
         Self {
+            cancellation: Default::default(),
             output_dir: PathBuf::from("."),
             sample_rate_hz: 48_000,
             channels: 2,
@@ -85,6 +92,9 @@ impl Default for AudioRecordingConfig {
 
 impl AudioRecordingConfig {
     pub fn validate(&self) -> AudioResult<()> {
+        if self.cancellation.is_canceled() {
+            return Err(AudioError::Canceled);
+        }
         AudioFormat::new(self.sample_rate_hz, self.channels).validate()?;
         if self.packet_duration.is_zero() {
             return Err(AudioError::InvalidConfig(
@@ -147,6 +157,7 @@ impl AudioRecordingConfig {
 pub struct RecordedAudioTrack {
     pub manifest: AudioTrackManifest,
     pub path: PathBuf,
+    pub discontinuities: Vec<TimelineDiscontinuity>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -232,17 +243,18 @@ fn build_stream_config(config: &AudioRecordingConfig) -> AudioStreamConfig {
         .find(|track| track.enabled && matches!(track.role, MicrophoneInput));
 
     AudioStreamConfig {
+        cancellation: config.cancellation.clone(),
         event_buffer_depth: config.event_buffer_depth,
         system: SourceConfig {
             enabled: system_track.is_some(),
-            required: false,
+            required: system_track.is_some_and(|track| track.required),
             device: DeviceSelector::DefaultRender,
             output_format: format,
             packet_duration: config.packet_duration,
         },
         microphone: SourceConfig {
             enabled: microphone_track.is_some(),
-            required: false,
+            required: microphone_track.is_some_and(|track| track.required),
             device: microphone_track
                 .map(resolve_input_device)
                 .unwrap_or(DeviceSelector::DefaultCapture),
@@ -396,6 +408,7 @@ impl RecordingTrackWriters {
             AudioSourceKind::Microphone => self.microphone_writer.as_mut(),
         };
         if let Some(writer) = writer {
+            writer.record_discontinuity(Some(frames), DiscontinuityReason::AudioOverflow)?;
             writer.append_silence_frames(frames)?;
         }
         Ok(())
@@ -442,6 +455,7 @@ struct RecordedTrackWriter {
     timeline: StableAudioTimeline,
     timeline_alignment_pending: bool,
     silence_chunk: Vec<u8>,
+    discontinuities: Vec<TimelineDiscontinuity>,
 }
 
 struct StableAudioTimeline {
@@ -511,6 +525,7 @@ impl RecordedTrackWriter {
             timeline: StableAudioTimeline::new(started_at),
             timeline_alignment_pending: true,
             silence_chunk,
+            discontinuities: Vec::new(),
         })
     }
 
@@ -539,7 +554,13 @@ impl RecordedTrackWriter {
         };
 
         if aligned.silence_prefix_frames > 0 {
+            self.record_discontinuity(
+                Some(aligned.silence_prefix_frames),
+                DiscontinuityReason::SourceInterrupted,
+            )?;
             self.append_silence_frames(aligned.silence_prefix_frames)?;
+        } else if packet.metadata.discontinuity {
+            self.record_discontinuity(None, DiscontinuityReason::SourceInterrupted)?;
         }
 
         if aligned.write_packet_frames == 0 {
@@ -590,6 +611,27 @@ impl RecordedTrackWriter {
         Ok(())
     }
 
+    fn record_discontinuity(
+        &mut self,
+        frames: Option<u64>,
+        reason: DiscontinuityReason,
+    ) -> AudioResult<()> {
+        let time = |value| -> AudioResult<MediaTime> {
+            Ok(MediaTime {
+                value: i64::try_from(value).map_err(|_| AudioError::BufferOverflow)?,
+                timescale: self.format.sample_rate,
+                domain: ClockDomain::Session,
+                epoch: 0,
+            })
+        };
+        self.discontinuities.push(TimelineDiscontinuity {
+            timestamp: time(self.written_frames)?,
+            duration: frames.map(time).transpose()?,
+            reason,
+        });
+        Ok(())
+    }
+
     fn append_i16_samples(&mut self, samples: &[i16]) -> AudioResult<()> {
         if samples.is_empty() {
             return Ok(());
@@ -607,6 +649,7 @@ impl RecordedTrackWriter {
         Ok(RecordedAudioTrack {
             manifest: self.manifest,
             path: self.path,
+            discontinuities: self.discontinuities,
         })
     }
 }
@@ -704,6 +747,66 @@ mod tests {
         assert!(!stream_config.system.required);
         assert!(stream_config.microphone.enabled);
         assert!(!stream_config.microphone.required);
+    }
+
+    #[test]
+    fn required_track_policy_survives_stream_configuration() {
+        let mut config = AudioRecordingConfig::default();
+        config.tracks[0].required = true;
+        config.tracks[1].required = true;
+        let stream = build_stream_config(&config);
+        assert!(stream.system.required);
+        assert!(stream.microphone.required);
+    }
+
+    #[test]
+    fn pcm_overflow_metadata_matches_inserted_silence_in_sample_time() {
+        let started = std::time::Instant::now();
+        let output_dir =
+            std::env::temp_dir().join(format!("snow-audio-overflow-{}", std::process::id()));
+        std::fs::create_dir_all(&output_dir).unwrap();
+        let config = AudioRecordingConfig {
+            output_dir: output_dir.clone(),
+            ..Default::default()
+        };
+        let mut writers =
+            RecordingTrackWriters::new(&config, started, AudioFormat::new(48_000, 2)).unwrap();
+        let clock = RecordingClock::new(started);
+        process_audio_event(
+            &mut writers,
+            &clock,
+            AudioEvent::Packet(timed_packet(
+                started + Duration::from_millis(20),
+                1_000_000,
+                1,
+            )),
+        )
+        .unwrap();
+        process_audio_event(
+            &mut writers,
+            &clock,
+            AudioEvent::PacketDropped {
+                source: AudioSourceKind::Microphone,
+                dropped_frames: 480,
+            },
+        )
+        .unwrap();
+        let recorded = writers.finish().unwrap();
+        let track = recorded
+            .tracks
+            .iter()
+            .find(|track| track.manifest.role == MicrophoneInput)
+            .unwrap();
+        assert_eq!(track.manifest.duration_frames, 1440);
+        let gap = track.discontinuities.last().unwrap();
+        assert_eq!(gap.timestamp.value, 960);
+        assert_eq!(gap.timestamp.timescale, 48_000);
+        assert_eq!(gap.duration.unwrap().value, 480);
+        assert!(matches!(gap.reason, DiscontinuityReason::AudioOverflow));
+        let bytes = std::fs::read(&track.path).unwrap();
+        assert_eq!(bytes.len(), 1440 * 2 * 2);
+        assert!(bytes[960 * 2 * 2..].iter().all(|value| *value == 0));
+        std::fs::remove_dir_all(output_dir).unwrap();
     }
 
     #[test]

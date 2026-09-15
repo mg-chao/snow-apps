@@ -149,8 +149,13 @@ fn capture_primary_to_png(
         .open_session(
             target,
             CaptureOptions {
-                gpu_hdr_conversion: options.hdr_mode.gpu_hdr_conversion_enabled(),
-                hdr_tonemap_lut: options.hdr_lut,
+                backend_tuning: snow_capture::tuning::BackendTuning::Windows(
+                    snow_capture::tuning::windows::WindowsCaptureOptions {
+                        gpu_hdr_conversion: options.hdr_mode.gpu_hdr_conversion_enabled(),
+                        hdr_tonemap_lut: options.hdr_lut,
+                        ..Default::default()
+                    },
+                ),
                 ..Default::default()
             },
         )
