@@ -1339,7 +1339,10 @@ StorageResult PinnedWindowRepository::updateState(PinnedWindowRecord record) {
     record.resultStyle = existing->record.resultStyle;
 
     QJsonObject payloads = existing->payloads;
-    if (statePayloadChanged) {
+    // An empty descriptor denotes a resident source awaiting its first commit.
+    // Keep it empty until snapshot serialization can describe every payload;
+    // a partial state-only descriptor would also discard the resident source below.
+    if (statePayloadChanged && !payloads.isEmpty()) {
         if (record.canvasSession.isEmpty()) {
             payloads.remove(QStringLiteral("canvas_session"));
         } else {

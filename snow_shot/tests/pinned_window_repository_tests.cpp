@@ -76,6 +76,69 @@ QByteArray readBytes(const QString& path) {
     return file.readAll();
 }
 
+void stateUpdatesBeforeFirstFlushPreserveRestorableSources() {
+    for (int source = 0; source < 3; ++source) {
+        QTemporaryDir directory;
+        require(directory.isValid(), "temporary storage directory is unavailable");
+        const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        const QString group = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        auto record = recordWithId(id, patternedImage(QSize(29, 13), 3));
+        const QImage originalImage = record.image;
+        const QByteArray encoded = pngBytes(originalImage, 8);
+        if (source == 1) {
+            record.sourceKind = storage::PinnedWindowSourceKind::ClipboardText;
+            record.image = {};
+            record.originalText = QStringLiteral("Pinned text");
+            record.originalHtml = QStringLiteral("<b>Pinned text</b>");
+        } else if (source == 2) {
+            record.sourceKind = storage::PinnedWindowSourceKind::ClipboardImageFile;
+            record.originalFileName = QStringLiteral("original.png");
+            record.originalFilePath = QDir(directory.path()).filePath(record.originalFileName);
+            require(originalImage.save(record.originalFilePath), "save original file source");
+        }
+        {
+            storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+            require(repository
+                        .setGroups({{QStringLiteral("default"), QStringLiteral("Default"), true},
+                                    {group, QStringLiteral("Other"), false}},
+                                   QStringLiteral("default"))
+                        .success,
+                    "create inactive group");
+            if (source == 0) {
+                const auto prepared = storage::PreparedPngImage::fromBytes(
+                    originalImage.size(), std::make_shared<const QByteArray>(encoded));
+                require(prepared && repository.create(record, *prepared).success,
+                        "create resident prepared source");
+            } else {
+                require(repository.create(record).success, "create resident clipboard source");
+            }
+            record.canvasSession = QByteArrayLiteral("annotations");
+            record.recognitionResults = QByteArrayLiteral("recognition");
+            require(repository.updateState(record).success, "update state before first flush");
+            require(repository.setRecordGroup(id, group).success &&
+                        repository.setActiveGroup(group).success,
+                    "move pin into inactive group and activate it");
+            const auto beforeFlush = repository.loadRecord(id);
+            require(beforeFlush && beforeFlush->groupId == group &&
+                        beforeFlush->canvasSession == record.canvasSession &&
+                        beforeFlush->recognitionResults == record.recognitionResults &&
+                        (source == 1 ? beforeFlush->originalHtml == record.originalHtml
+                                     : samePixels(beforeFlush->image, originalImage)),
+                    "group activation must load source and state before first flush");
+            // Destruction flushes the same pending record as application shutdown.
+        }
+        storage::PinnedWindowRepository reopened(directory.path(), false);
+        const auto restored = reopened.loadRecord(id);
+        require(reopened.summaries().size() == 1 && reopened.activeGroupId() == group && restored &&
+                    restored->groupId == group && restored->canvasSession == record.canvasSession &&
+                    restored->recognitionResults == record.recognitionResults &&
+                    (source == 1 ? restored->originalText == record.originalText &&
+                                       restored->originalHtml == record.originalHtml
+                                 : samePixels(restored->image, originalImage)),
+                "restart must retain group count, source, annotations, and recognition");
+    }
+}
+
 void preparedSourceIsWrittenOnceAndStateUpdatesPreserveIt() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary storage directory is unavailable");
@@ -522,6 +585,7 @@ void hideToTopRoundTripsAndRecoversLegacyMetadata() {
 
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
+    stateUpdatesBeforeFirstFlushPreserveRestorableSources();
     committedPayloadsAreServedFromDisk();
     preparedSourceIsWrittenOnceAndStateUpdatesPreserveIt();
     metadataOnlyUpdatesDoNotRewriteCommittedPayloads();
