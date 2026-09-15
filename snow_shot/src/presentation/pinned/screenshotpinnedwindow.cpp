@@ -2260,6 +2260,9 @@ bool ScreenshotPinnedWindow::eventFilter(QObject* watched, QEvent* event) {
         return QWidget::eventFilter(watched, event);
     }
     if (event->type() == QEvent::ContextMenu) {
+        if (watched == m_recognitionContent) {
+            return QWidget::eventFilter(watched, event);
+        }
         auto* contextEvent = static_cast<QContextMenuEvent*>(event);
         showContextMenu(contextEvent->globalPos());
         contextEvent->accept();

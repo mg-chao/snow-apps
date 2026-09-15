@@ -319,6 +319,17 @@ class ScreenshotTableDelegate final : public QStyledItemDelegate {
 
     bool eventFilter(QObject* watched, QEvent* event) override {
         auto* editor = qobject_cast<QPlainTextEdit*>(watched);
+        if (editor != nullptr && event != nullptr && event->type() == QEvent::ContextMenu) {
+            auto* contextEvent = static_cast<QContextMenuEvent*>(event);
+            if (m_editor != nullptr) {
+                const int row = editor->property("snowShotTableRow").toInt();
+                const int column = editor->property("snowShotTableColumn").toInt();
+                m_editor->showContextMenu(contextEvent->globalPos(),
+                                          m_editor->model()->index(row, column));
+            }
+            contextEvent->accept();
+            return true;
+        }
         if (editor != nullptr && event != nullptr && event->type() == QEvent::KeyPress) {
             auto* keyEvent = static_cast<QKeyEvent*>(event);
             if (keyEvent->key() == Qt::Key_Tab || keyEvent->key() == Qt::Key_Backtab) {
@@ -714,19 +725,25 @@ void ScreenshotTableEditor::contextMenuEvent(QContextMenuEvent* event) {
     if (event == nullptr) {
         return;
     }
-    const QModelIndex clicked = anchorIndex(indexAt(event->pos()));
+    showContextMenu(event->globalPos(), anchorIndex(indexAt(event->pos())));
+    event->accept();
+}
+
+void ScreenshotTableEditor::showContextMenu(const QPoint& globalPosition,
+                                            const QModelIndex& clicked) {
+    if (m_session == nullptr || selectionModel() == nullptr) {
+        return;
+    }
     if (clicked.isValid() && !selectionModel()->isSelected(clicked)) {
         setCurrentIndex(clicked);
         selectRange(m_session->document.spanRangeAt(clicked.row(), clicked.column()));
     }
 
+    const std::optional<QString> selectedEditorText = selectedCellEditorText();
     adqt::widgets::AdContextMenu menu(this);
-    QAction* editAction = menu.addItem(tr("Edit cell"), adqt::icons::antd::outlined::Edit(),
-                                       QKeySequence(Qt::Key_F2));
-    QAction* copyAction =
-        menu.addItem(tr("Copy"), adqt::icons::antd::outlined::Copy(), QKeySequence::Copy);
-    QAction* pasteAction =
-        menu.addItem(tr("Paste"), adqt::icons::antd::outlined::Snippets(), QKeySequence::Paste);
+    menu.setObjectName(QStringLiteral("screenshotTableContextMenu"));
+    QAction* copyAction = menu.addItem(tr("Copy"), adqt::icons::antd::outlined::Copy());
+    QAction* pasteAction = menu.addItem(tr("Paste"), adqt::icons::antd::outlined::Snippets());
     QAction* clearAction =
         menu.addItem(tr("Clear contents"), adqt::icons::antd::outlined::IconDelete());
     menu.addSeparator();
@@ -735,25 +752,37 @@ void ScreenshotTableEditor::contextMenuEvent(QContextMenuEvent* event) {
     QAction* splitAction =
         menu.addItem(tr("Split cells"), adqt::icons::antd::outlined::SplitCells());
     const ScreenshotTableCommandState state = commandState();
-    editAction->setEnabled(clicked.isValid());
-    copyAction->setEnabled(m_session != nullptr && !m_session->document.empty());
+    copyAction->setEnabled(selectedEditorText.has_value() || state.hasSelection);
     pasteAction->setEnabled(QApplication::clipboard() != nullptr &&
                             QApplication::clipboard()->mimeData() != nullptr);
     clearAction->setEnabled(state.hasSelection);
     mergeAction->setEnabled(state.canMerge);
     splitAction->setEnabled(state.canSplit);
 
-    connect(editAction, &QAction::triggered, this, [this, clicked]() {
-        if (clicked.isValid()) {
-            edit(clicked);
+    connect(copyAction, &QAction::triggered, this, [this, selectedEditorText]() {
+        if (selectedEditorText.has_value()) {
+            if (QClipboard* clipboard = QApplication::clipboard()) {
+                clipboard->setText(*selectedEditorText);
+            }
+        } else if (selectionModel() != nullptr && !selectionModel()->selectedIndexes().isEmpty()) {
+            static_cast<void>(copySelectionToClipboard());
         }
     });
-    connect(copyAction, &QAction::triggered, this, &ScreenshotTableEditor::copySelection);
     connect(pasteAction, &QAction::triggered, this, &ScreenshotTableEditor::pasteSelection);
     connect(clearAction, &QAction::triggered, this, &ScreenshotTableEditor::clearSelectionContents);
     connect(mergeAction, &QAction::triggered, this, &ScreenshotTableEditor::mergeSelection);
     connect(splitAction, &QAction::triggered, this, &ScreenshotTableEditor::splitSelection);
-    menu.exec(event->globalPos());
+    menu.execAt(globalPosition);
+}
+
+std::optional<QString> ScreenshotTableEditor::selectedCellEditorText() const {
+    const auto* editor = findChild<QPlainTextEdit*>(QStringLiteral("snowShotTableCellEditor"));
+    if (editor == nullptr || !editor->textCursor().hasSelection()) {
+        return std::nullopt;
+    }
+    QString selected = editor->textCursor().selectedText();
+    selected.replace(QChar::ParagraphSeparator, QLatin1Char('\n'));
+    return selected;
 }
 
 void ScreenshotTableEditor::wheelEvent(QWheelEvent* event) {

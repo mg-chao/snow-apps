@@ -55,6 +55,10 @@
     <context>
         <name>ScreenshotImageConversionView</name>
         <message>
+            <source>Copy</source>
+            <translation>Copy</translation>
+        </message>
+        <message>
             <source>HTML preview</source>
             <translation>HTML preview</translation>
         </message>
@@ -69,6 +73,10 @@
         <message>
             <source>Retry</source>
             <translation>Retry</translation>
+        </message>
+        <message>
+            <source>Select All</source>
+            <translation>Select All</translation>
         </message>
     </context>
     <context>
@@ -187,6 +195,29 @@
         <message>
             <source>Unable to read the selected screenshot</source>
             <translation>Unable to read the selected screenshot</translation>
+        </message>
+    </context>
+    <context>
+        <name>ScreenshotRecognitionWindow</name>
+        <message>
+            <source>Copy</source>
+            <translation>Copy</translation>
+        </message>
+        <message>
+            <source>Cut</source>
+            <translation>Cut</translation>
+        </message>
+        <message>
+            <source>Delete</source>
+            <translation>Delete</translation>
+        </message>
+        <message>
+            <source>Paste</source>
+            <translation>Paste</translation>
+        </message>
+        <message>
+            <source>Select All</source>
+            <translation>Select All</translation>
         </message>
     </context>
     <context>

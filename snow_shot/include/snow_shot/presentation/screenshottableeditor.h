@@ -119,6 +119,8 @@ class ScreenshotTableEditor final : public QTableView {
     void synchronizeSpans();
     void updateTableMetrics();
     void applyTheme();
+    void showContextMenu(const QPoint& globalPosition, const QModelIndex& clicked);
+    [[nodiscard]] std::optional<QString> selectedCellEditorText() const;
     [[nodiscard]] QModelIndex anchorIndex(const QModelIndex& index) const;
     [[nodiscard]] bool pasteDocument(const ScreenshotTableDocument& source);
     void selectRange(const ScreenshotTableRange& range);

@@ -33,6 +33,7 @@ class ScreenshotImageConversionView final : public QWidget {
   private:
     void render();
     void retranslate();
+    void showContextMenu(const QPoint& globalPosition);
     QTextBrowser* m_browser = nullptr;
     QWidget* m_status = nullptr;
     QLabel* m_statusText = nullptr;
