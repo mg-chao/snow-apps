@@ -205,6 +205,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void createContextMenu();
     void rebuildGroupMenu();
     void refreshContextMenuForGroup(const QString& groupId);
+    void deleteIfInGroup(const QString& groupId);
     void applyRuntimeBorderColor();
     void updateShowMainInterfaceAction();
     void retranslateUi();
@@ -375,6 +376,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::unique_ptr<adqt::widgets::AdButton> m_clickThroughExitButton;
     adqt::widgets::AdContextMenu* m_contextMenu = nullptr;
     adqt::widgets::AdContextMenu* m_groupMenu = nullptr;
+    adqt::widgets::AdContextMenu* m_deleteSpecifiedGroupMenu = nullptr;
     QAction* m_ocrAction = nullptr;
     QAction* m_drawingAction = nullptr;
     QAction* m_thumbnailAction = nullptr;

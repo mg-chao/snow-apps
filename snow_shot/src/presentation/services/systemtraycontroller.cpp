@@ -354,6 +354,9 @@ class SystemTrayController::Impl {
         if (groupMenu == nullptr || groupManager == nullptr) {
             return;
         }
+        if (deleteSpecifiedGroupMenu != nullptr) {
+            deleteSpecifiedGroupMenu->clear();
+        }
         groupMenu->clear();
         groupMenuAction->setText(
             QCoreApplication::translate("SystemTrayController", "Window Group: %1")
@@ -387,6 +390,33 @@ class SystemTrayController::Impl {
         deleteEmpty->setEnabled(hasDeletableEmptyGroups);
         QObject::connect(deleteEmpty, &QAction::triggered, &q,
                          [this]() { groupManager->deleteEmptyGroups(); });
+
+        const QString deleteSpecifiedText =
+            QCoreApplication::translate("SystemTrayController", "Delete Specified Group");
+        if (deleteSpecifiedGroupMenu == nullptr) {
+            deleteSpecifiedGroupMenu =
+                groupMenu->addSubMenu(deleteSpecifiedText, custom_outlined_icons::Delete());
+            deleteSpecifiedGroupMenu->setObjectName(
+                QStringLiteral("systemTrayDeleteSpecifiedGroupMenu"));
+            deleteSpecifiedGroupMenu->menuAction()->setObjectName(
+                QStringLiteral("systemTrayDeleteSpecifiedGroupAction"));
+            deleteSpecifiedGroupMenu->setMinimumWidth(300);
+        } else {
+            deleteSpecifiedGroupMenu->setTitle(deleteSpecifiedText);
+            groupMenu->addMenu(deleteSpecifiedGroupMenu);
+            groupMenu->setActionIcon(deleteSpecifiedGroupMenu->menuAction(),
+                                     custom_outlined_icons::Delete());
+        }
+        for (const auto& group : currentGroups) {
+            QAction* action = deleteSpecifiedGroupMenu->addItem(
+                QStringLiteral("%1\t%2").arg(groupManager->displayName(group.id),
+                                             QString::number(groupManager->windowCount(group.id))));
+            action->setObjectName(
+                QStringLiteral("systemTrayDeleteSpecifiedGroupAction-%1").arg(group.id));
+            action->setData(group.id);
+            QObject::connect(action, &QAction::triggered, &q,
+                             [this, id = group.id]() { groupManager->deleteSpecifiedGroup(id); });
+        }
     }
 
     void connectGroupManagerSignals() {
@@ -494,6 +524,7 @@ class SystemTrayController::Impl {
     std::unique_ptr<PinnedWindowGroupManager> ownedGroupManager;
     PinnedWindowGroupManager* groupManager = nullptr;
     adqt::widgets::AdContextMenu* groupMenu = nullptr;
+    adqt::widgets::AdContextMenu* deleteSpecifiedGroupMenu = nullptr;
     QAction* groupMenuAction = nullptr;
     QHash<QString, QAction*> actions;
     QHash<GlobalShortcutAction, QString> shortcutText;

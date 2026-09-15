@@ -260,6 +260,42 @@ bool PinnedWindowGroupManager::deleteEmptyGroups() {
     return true;
 }
 
+bool PinnedWindowGroupManager::deleteSpecifiedGroup(const QString& groupId) {
+    if (!contains(groupId)) {
+        return false;
+    }
+    if (m_repository != nullptr && !m_repository->removeGroupAndRecords(groupId).success) {
+        return false;
+    }
+
+    const bool removesGroup = groupId != QString::fromLatin1(kDefaultGroupId);
+    const bool activeRemoved = removesGroup && m_activeGroupId == groupId;
+    if (removesGroup) {
+        m_groups.erase(
+            std::remove_if(m_groups.begin(), m_groups.end(),
+                           [&groupId](const auto& group) { return group.id == groupId; }),
+            m_groups.end());
+    }
+    for (auto it = m_pendingGroups.begin(); it != m_pendingGroups.end();) {
+        if (it.value() == groupId) {
+            it = m_pendingGroups.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    if (activeRemoved) {
+        m_activeGroupId = QString::fromLatin1(kDefaultGroupId);
+    }
+
+    emit groupDeletionRequested(groupId);
+    scheduleGroupsChanged();
+    if (activeRemoved) {
+        emit activeGroupChanged(m_activeGroupId);
+        restoreActiveGroupWindows();
+    }
+    return true;
+}
+
 void PinnedWindowGroupManager::restoreActiveGroupWindows() {
     emit restoreActiveGroupWindowsRequested();
 }

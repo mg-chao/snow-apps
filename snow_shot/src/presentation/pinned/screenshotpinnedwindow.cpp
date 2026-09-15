@@ -2085,6 +2085,9 @@ bool ScreenshotPinnedWindow::present(const Config& config,
         connect(m_groupManager,
                 &snow_shot::presentation::PinnedWindowGroupManager::activeGroupChanged, this,
                 &ScreenshotPinnedWindow::refreshContextMenuForGroup, Qt::UniqueConnection);
+        connect(m_groupManager,
+                &snow_shot::presentation::PinnedWindowGroupManager::groupDeletionRequested, this,
+                &ScreenshotPinnedWindow::deleteIfInGroup, Qt::UniqueConnection);
         rebuildGroupMenu();
     }
     if (m_recognitionResults.text.has_value()) {
@@ -3034,9 +3037,18 @@ void ScreenshotPinnedWindow::refreshContextMenuForGroup(const QString& groupId) 
     refreshContextMenu();
 }
 
+void ScreenshotPinnedWindow::deleteIfInGroup(const QString& groupId) {
+    if (m_groupId == groupId) {
+        requestUserClose();
+    }
+}
+
 void ScreenshotPinnedWindow::rebuildGroupMenu() {
     if (m_groupMenu == nullptr) {
         return;
+    }
+    if (m_deleteSpecifiedGroupMenu != nullptr) {
+        m_deleteSpecifiedGroupMenu->clear();
     }
     m_groupMenu->clear();
     snow_shot::presentation::PinnedWindowGroupManager* manager = m_groupManager;
@@ -3071,6 +3083,31 @@ void ScreenshotPinnedWindow::rebuildGroupMenu() {
     deleteEmpty->setObjectName(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
     deleteEmpty->setEnabled(hasDeletableEmptyGroups);
     connect(deleteEmpty, &QAction::triggered, this, [manager]() { manager->deleteEmptyGroups(); });
+
+    const QString deleteSpecifiedText = tr("Delete Specified Group");
+    if (m_deleteSpecifiedGroupMenu == nullptr) {
+        m_deleteSpecifiedGroupMenu =
+            m_groupMenu->addSubMenu(deleteSpecifiedText, custom_outlined_icons::Delete());
+        m_deleteSpecifiedGroupMenu->setObjectName(
+            QStringLiteral("screenshotPinnedDeleteSpecifiedGroupMenu"));
+        m_deleteSpecifiedGroupMenu->menuAction()->setObjectName(
+            QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction"));
+        m_deleteSpecifiedGroupMenu->setMinimumWidth(300);
+    } else {
+        m_deleteSpecifiedGroupMenu->setTitle(deleteSpecifiedText);
+        m_groupMenu->addMenu(m_deleteSpecifiedGroupMenu);
+        m_groupMenu->setActionIcon(m_deleteSpecifiedGroupMenu->menuAction(),
+                                   custom_outlined_icons::Delete());
+    }
+    for (const auto& group : groups) {
+        QAction* action = m_deleteSpecifiedGroupMenu->addItem(QStringLiteral("%1\t%2").arg(
+            manager->displayName(group.id), QString::number(manager->windowCount(group.id))));
+        action->setObjectName(
+            QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(group.id));
+        action->setData(group.id);
+        connect(action, &QAction::triggered, this,
+                [manager, groupId = group.id]() { manager->deleteSpecifiedGroup(groupId); });
+    }
 }
 
 void ScreenshotPinnedWindow::setRuntimeBorderColor(const QColor& color) {

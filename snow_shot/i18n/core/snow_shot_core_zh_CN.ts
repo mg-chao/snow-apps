@@ -533,6 +533,10 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>删除空分组</translation>
         </message>
         <message>
+            <source>Delete Specified Group</source>
+            <translation>删除指定分组</translation>
+        </message>
+        <message>
             <source>New Group</source>
             <translation>新建分组</translation>
         </message>

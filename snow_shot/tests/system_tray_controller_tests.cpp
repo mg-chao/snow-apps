@@ -401,6 +401,43 @@ int main(int argc, char* argv[]) {
             "tray Delete Empty Groups should start disabled while only the built-in group "
             "exists");
 
+    auto* trayDeleteSpecifiedMenu = windowGroupMenu->findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("systemTrayDeleteSpecifiedGroupMenu"));
+    require(trayDeleteSpecifiedMenu != nullptr &&
+                !trayDeleteSpecifiedMenu->menuAction()->icon().isNull(),
+            "tray Delete Specified Group should expose the supplied icon");
+    const auto deleteSpecifiedActionNamed = [trayDeleteSpecifiedMenu](const QString& name) {
+        for (QAction* action : trayDeleteSpecifiedMenu->actions()) {
+            if (action != nullptr && action->objectName() == name) {
+                return action;
+            }
+        }
+        return static_cast<QAction*>(nullptr);
+    };
+    const QList<QAction*> initialGroupActions = windowGroupMenu->actions();
+    require(initialGroupActions.indexOf(trayDeleteEmpty) + 1 ==
+                initialGroupActions.indexOf(trayDeleteSpecifiedMenu->menuAction()),
+            "tray Delete Specified Group should sit directly below Delete Empty Groups");
+    requireActionText(
+        deleteSpecifiedActionNamed(QStringLiteral("systemTrayDeleteSpecifiedGroupAction-default")),
+        QStringLiteral("Default\t0"),
+        "tray Delete Specified Group should initially list only the empty Default group");
+
+    const auto traySpecifiedId = groupManager.createGroup(QStringLiteral("Tray specified"));
+    require(traySpecifiedId.has_value(),
+            "a custom group should be created for tray specified deletion");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    QAction* trayDeleteSpecified = deleteSpecifiedActionNamed(
+        QStringLiteral("systemTrayDeleteSpecifiedGroupAction-%1").arg(*traySpecifiedId));
+    require(trayDeleteSpecified != nullptr &&
+                trayDeleteSpecified->data().toString() == *traySpecifiedId &&
+                trayDeleteSpecified->text() == QStringLiteral("Tray specified\t0"),
+            "tray specified deletion should list every custom group with its count and id");
+    trayDeleteSpecified->trigger();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    require(!groupManager.contains(*traySpecifiedId),
+            "triggering the tray specified-group item should delete its custom group");
+
     require(groupManager.createGroup(QStringLiteral("Tray cleanup")).has_value(),
             "an empty custom group should be created for the tray cleanup state");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
@@ -615,6 +652,13 @@ int main(int argc, char* argv[]) {
     requireActionText(groupActionNamed(QStringLiteral("systemTrayDeleteEmptyGroupsAction")),
                       QStringLiteral("\u5220\u9664\u7a7a\u5206\u7ec4"),
                       "tray Delete Empty Groups should translate to Simplified Chinese");
+    requireActionText(trayDeleteSpecifiedMenu->menuAction(),
+                      QStringLiteral("\u5220\u9664\u6307\u5b9a\u5206\u7ec4"),
+                      "tray Delete Specified Group should translate to Simplified Chinese");
+    requireActionText(
+        deleteSpecifiedActionNamed(QStringLiteral("systemTrayDeleteSpecifiedGroupAction-default")),
+        QStringLiteral("\u9ed8\u8ba4\t0"),
+        "tray specified deletion should translate its Default entry to Simplified Chinese");
     require(QString::fromLatin1(groupManager.metaObject()->className()) ==
                     QStringLiteral("snow_shot::presentation::PinnedWindowGroupManager") &&
                 QCoreApplication::translate("snow_shot::presentation::PinnedWindowGroupManager",
@@ -661,6 +705,13 @@ int main(int argc, char* argv[]) {
     requireActionText(groupActionNamed(QStringLiteral("systemTrayDeleteEmptyGroupsAction")),
                       QStringLiteral("\u522a\u9664\u7a7a\u7fa4\u7d44"),
                       "tray Delete Empty Groups should translate to Traditional Chinese");
+    requireActionText(trayDeleteSpecifiedMenu->menuAction(),
+                      QStringLiteral("\u522a\u9664\u6307\u5b9a\u7fa4\u7d44"),
+                      "tray Delete Specified Group should translate to Traditional Chinese");
+    requireActionText(
+        deleteSpecifiedActionNamed(QStringLiteral("systemTrayDeleteSpecifiedGroupAction-default")),
+        QStringLiteral("\u9810\u8a2d\t0"),
+        "tray specified deletion should translate its Default entry to Traditional Chinese");
     controller.setGlobalShortcuts(snow_shot::presentation::GlobalShortcutAction::Screenshot, {});
     requireActionText(screenshotMenuAction, QStringLiteral("\u622a\u5716"),
                       "clearing a global shortcut should remove its tray menu hint");

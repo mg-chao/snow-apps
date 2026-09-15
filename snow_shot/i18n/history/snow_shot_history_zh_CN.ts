@@ -232,6 +232,10 @@
             <translation>删除空分组</translation>
         </message>
         <message>
+            <source>Delete Specified Group</source>
+            <translation>删除指定分组</translation>
+        </message>
+        <message>
             <source>Display text recognition results</source>
             <translation>显示文本识别结果</translation>
         </message>

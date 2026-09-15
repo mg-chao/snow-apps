@@ -288,6 +288,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "Delete",
+      "name": "delete",
+      "source": "../src/presentation/components/icons/resources/delete.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Disabled",
       "name": "disabled",
       "source": "../src/presentation/components/icons/resources/disabled.svg",

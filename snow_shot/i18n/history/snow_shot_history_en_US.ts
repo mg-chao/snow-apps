@@ -233,6 +233,10 @@
             <translation>Delete Empty Groups</translation>
         </message>
         <message>
+            <source>Delete Specified Group</source>
+            <translation>Delete Specified Group</translation>
+        </message>
+        <message>
             <source>Display text recognition results</source>
             <translation>Display text recognition results</translation>
         </message>

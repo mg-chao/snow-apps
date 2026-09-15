@@ -232,6 +232,10 @@
             <translation>刪除空群組</translation>
         </message>
         <message>
+            <source>Delete Specified Group</source>
+            <translation>刪除指定群組</translation>
+        </message>
+        <message>
             <source>Display text recognition results</source>
             <translation>顯示文字辨識結果</translation>
         </message>

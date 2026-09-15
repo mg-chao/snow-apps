@@ -533,6 +533,10 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Delete Empty Groups</translation>
         </message>
         <message>
+            <source>Delete Specified Group</source>
+            <translation>Delete Specified Group</translation>
+        </message>
+        <message>
             <source>New Group</source>
             <translation>New Group</translation>
         </message>

@@ -240,6 +240,69 @@ void removedRecordsPruneTheirPayloads() {
     require(!QFileInfo::exists(payloadFilePath(directory.path(), id)),
             "the removed record's payload survived on disk");
 }
+
+void specifiedGroupRemovalIsAtomicAndPersistent() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary group-removal storage is unavailable");
+    const QString defaultId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString alphaRecordId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString betaRecordId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString alphaGroupId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString betaGroupId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString missingGroupId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    require(repository
+                .setGroups({{QStringLiteral("default"), QStringLiteral("Default"), true},
+                            {alphaGroupId, QStringLiteral("Alpha"), false},
+                            {betaGroupId, QStringLiteral("Beta"), false}},
+                           betaGroupId)
+                .success,
+            "failed to seed removable groups");
+    auto defaultRecord = recordWithId(defaultId, patternedImage(QSize(8, 8), 1));
+    auto alphaRecord = recordWithId(alphaRecordId, patternedImage(QSize(8, 8), 2));
+    auto betaRecord = recordWithId(betaRecordId, patternedImage(QSize(8, 8), 3));
+    alphaRecord.groupId = alphaGroupId;
+    betaRecord.groupId = betaGroupId;
+    require(repository.upsert(defaultRecord).success && repository.upsert(alphaRecord).success &&
+                repository.upsert(betaRecord).success && repository.flush().success,
+            "failed to persist group-removal records");
+
+    require(repository.removeGroupAndRecords(QStringLiteral("default")).success,
+            "clearing Default should succeed");
+    require(repository.groups().size() == 3 && repository.activeGroupId() == betaGroupId &&
+                !repository.loadRecord(defaultId).has_value() &&
+                repository.loadRecord(alphaRecordId).has_value() &&
+                repository.loadRecord(betaRecordId).has_value(),
+            "clearing Default must preserve all groups, active selection, and unrelated records");
+
+    require(repository.removeGroupAndRecords(betaGroupId).success,
+            "deleting the active custom group should succeed");
+    require(
+        repository.groups().size() == 2 && repository.activeGroupId() == "default" &&
+            !repository.loadRecord(betaRecordId).has_value() &&
+            repository.loadRecord(alphaRecordId).has_value(),
+        "deleting an active custom group must remove only its records and fall back to Default");
+    require(!repository.removeGroupAndRecords(missingGroupId).success &&
+                repository.groups().size() == 2 && repository.loadRecord(alphaRecordId).has_value(),
+            "an unknown group must fail without partial mutation");
+    require(repository.flush().success, "failed to flush specified group removal");
+    require(!QFileInfo::exists(payloadFilePath(directory.path(), defaultId)) &&
+                !QFileInfo::exists(payloadFilePath(directory.path(), betaRecordId)) &&
+                QFileInfo::exists(payloadFilePath(directory.path(), alphaRecordId)),
+            "group removal must prune only the deleted records' payloads");
+
+    storage::PinnedWindowRepository restored(directory.path(), true, 30000);
+    require(restored.groups().size() == 2 && restored.activeGroupId() == "default" &&
+                restored.loadRecord(alphaRecordId).has_value() &&
+                !restored.loadRecord(defaultId).has_value() &&
+                !restored.loadRecord(betaRecordId).has_value(),
+            "specified group removal must survive a repository restart");
+    storage::PinnedWindowRepository readOnly(directory.path(), false, 30000);
+    require(!readOnly.removeGroupAndRecords(alphaGroupId).success &&
+                readOnly.groups().size() == 2 && readOnly.loadRecord(alphaRecordId).has_value(),
+            "read-only group removal must fail without changing repository state");
+}
 void recognitionVisibilityRoundTripsAndDefaultsToHidden() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary storage directory is unavailable");
@@ -464,6 +527,7 @@ int main(int argc, char* argv[]) {
     metadataOnlyUpdatesDoNotRewriteCommittedPayloads();
     changedPayloadsRecommitAndStayLazy();
     removedRecordsPruneTheirPayloads();
+    specifiedGroupRemovalIsAtomicAndPersistent();
     recognitionVisibilityRoundTripsAndDefaultsToHidden();
     clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata();
     thumbnailStateSurvivesRestartAndExit();

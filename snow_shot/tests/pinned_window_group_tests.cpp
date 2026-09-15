@@ -151,6 +151,67 @@ void activeGroupFallbackAndEmptyDeletion() {
             "Default must never be deleted");
 }
 
+void specifiedGroupDeletionPreservesUnrelatedState() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary specified-group storage is unavailable");
+
+    storage::PinnedWindowRepository repository(directory.path());
+    presentation::PinnedWindowGroupManager manager(&repository);
+    const auto alphaId = manager.createGroup(QStringLiteral("Alpha"));
+    const auto betaId = manager.createGroup(QStringLiteral("Beta"));
+    require(alphaId.has_value() && betaId.has_value(),
+            "failed to create specified-deletion groups");
+    const QString defaultRecordId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString alphaRecordId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString betaRecordId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    storage::PinnedWindowRecord alphaRecord = record(alphaRecordId);
+    storage::PinnedWindowRecord betaRecord = record(betaRecordId);
+    alphaRecord.groupId = *alphaId;
+    betaRecord.groupId = *betaId;
+    require(repository.upsert(record(defaultRecordId)).success &&
+                repository.upsert(alphaRecord).success && repository.upsert(betaRecord).success,
+            "failed to seed specified-deletion records");
+    manager.registerPendingPin(QStringLiteral("pending-alpha"), *alphaId);
+    require(manager.setActiveGroup(*alphaId), "Alpha should be active before deletion");
+
+    int groupsChanged = 0;
+    int activeChanged = 0;
+    int restoreRequests = 0;
+    QStringList deletionRequests;
+    QObject::connect(&manager, &presentation::PinnedWindowGroupManager::groupsChanged,
+                     [&groupsChanged]() { ++groupsChanged; });
+    QObject::connect(&manager, &presentation::PinnedWindowGroupManager::activeGroupChanged,
+                     [&activeChanged](const QString&) { ++activeChanged; });
+    QObject::connect(&manager,
+                     &presentation::PinnedWindowGroupManager::restoreActiveGroupWindowsRequested,
+                     [&restoreRequests]() { ++restoreRequests; });
+    QObject::connect(&manager, &presentation::PinnedWindowGroupManager::groupDeletionRequested,
+                     [&deletionRequests](const QString& id) { deletionRequests.push_back(id); });
+
+    require(manager.deleteSpecifiedGroup(QStringLiteral("default")),
+            "clearing Default should succeed");
+    QCoreApplication::processEvents();
+    require(manager.contains(QStringLiteral("default")) && manager.activeGroupId() == *alphaId &&
+                !repository.loadRecord(defaultRecordId).has_value() &&
+                repository.loadRecord(alphaRecordId).has_value() && activeChanged == 0 &&
+                restoreRequests == 0 && deletionRequests == QStringList{QStringLiteral("default")},
+            "clearing Default must preserve the group, active group, and unrelated records");
+
+    require(manager.deleteSpecifiedGroup(*alphaId),
+            "deleting the active custom group should succeed");
+    QCoreApplication::processEvents();
+    require(!manager.contains(*alphaId) && manager.contains(*betaId) &&
+                manager.activeGroupId() == "default" && manager.windowCount(*alphaId) == 0 &&
+                !repository.loadRecord(alphaRecordId).has_value() &&
+                repository.loadRecord(betaRecordId).has_value() && activeChanged == 1 &&
+                restoreRequests == 1 && deletionRequests.size() == 2 &&
+                deletionRequests.back() == *alphaId && groupsChanged >= 2,
+            "active custom deletion must remove pending and persisted state then restore Default");
+    require(!manager.deleteSpecifiedGroup(QStringLiteral("missing-group")) &&
+                deletionRequests.size() == 2,
+            "unknown specified deletion must fail without emitting a window deletion request");
+}
+
 void displayOrderKeepsDefaultGroupFirst() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary storage directory is unavailable");
@@ -216,6 +277,7 @@ int main(int argc, char* argv[]) {
     defaultGroupAndFreshSchema();
     managerValidationPersistenceAndCounts();
     activeGroupFallbackAndEmptyDeletion();
+    specifiedGroupDeletionPreservesUnrelatedState();
     displayOrderKeepsDefaultGroupFirst();
     groupCountLimitIsEnforced();
     return 0;

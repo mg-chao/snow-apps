@@ -40,6 +40,8 @@ class PinnedWindowRepository final {
     [[nodiscard]] StorageResult setGroups(QVector<PinnedWindowGroup> groups,
                                           const QString& activeGroupId);
     [[nodiscard]] StorageResult setRecordGroup(const QString& recordId, const QString& groupId);
+    // The built-in Default group is cleared but never removed.
+    [[nodiscard]] StorageResult removeGroupAndRecords(const QString& groupId);
     [[nodiscard]] StorageResult create(PinnedWindowRecord record, PreparedPngImage sourceImage);
     [[nodiscard]] StorageResult create(PinnedWindowRecord record);
     [[nodiscard]] StorageResult updateState(PinnedWindowRecord record);

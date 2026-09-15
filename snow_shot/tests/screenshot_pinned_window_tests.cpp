@@ -747,6 +747,42 @@ void groupMenuActionsExposeIconsAndCleanupState() {
     require(!deleteEmpty->isEnabled(),
             "Delete Empty Groups should start disabled while only the built-in group exists");
 
+    auto* deleteSpecifiedMenu = groupMenu->findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedDeleteSpecifiedGroupMenu"));
+    require(deleteSpecifiedMenu != nullptr && !deleteSpecifiedMenu->menuAction()->icon().isNull(),
+            "Delete Specified Group should expose the supplied icon");
+    const auto deleteSpecifiedActionNamed = [deleteSpecifiedMenu](const QString& name) {
+        for (QAction* action : deleteSpecifiedMenu->actions()) {
+            if (action != nullptr && action->objectName() == name) {
+                return action;
+            }
+        }
+        return static_cast<QAction*>(nullptr);
+    };
+    const QList<QAction*> initialGroupActions = groupMenu->actions();
+    require(initialGroupActions.indexOf(deleteEmpty) + 1 ==
+                initialGroupActions.indexOf(deleteSpecifiedMenu->menuAction()),
+            "Delete Specified Group should sit directly below Delete Empty Groups");
+    QAction* deleteDefault = deleteSpecifiedActionNamed(
+        QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-default"));
+    require(deleteSpecifiedMenu->actions().size() == 1 && deleteDefault != nullptr &&
+                deleteDefault->data().toString() == QStringLiteral("default") &&
+                deleteDefault->text() == QStringLiteral("Default\t1"),
+            "Delete Specified Group should list Default with its live window count");
+
+    const auto specifiedId = groupManager.createGroup(QStringLiteral("Specified"));
+    require(specifiedId.has_value(), "a custom group should be created for specified deletion");
+    refreshGroupMenu(QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction"));
+    QAction* deleteSpecified = deleteSpecifiedActionNamed(
+        QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(*specifiedId));
+    require(deleteSpecified != nullptr && deleteSpecified->data().toString() == *specifiedId &&
+                deleteSpecified->text() == QStringLiteral("Specified\t0"),
+            "the specified-deletion submenu should list every custom group with its count");
+    deleteSpecified->trigger();
+    QCoreApplication::processEvents();
+    require(!groupManager.contains(*specifiedId),
+            "triggering a custom specified-group action should delete that group");
+
     require(groupManager.createGroup(QStringLiteral("Cleanup")).has_value(),
             "an empty custom group should be created for the cleanup state");
     deleteEmpty = refreshGroupMenu(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
@@ -758,9 +794,12 @@ void groupMenuActionsExposeIconsAndCleanupState() {
     require(deleteEmpty != nullptr && !deleteEmpty->isEnabled(),
             "Delete Empty Groups should disable again after the cleanup");
 
-    pinnedWindow->close();
+    deleteDefault = deleteSpecifiedActionNamed(
+        QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-default"));
+    require(deleteDefault != nullptr, "Default should remain available for specified clearing");
+    deleteDefault->trigger();
     require(processUntilDeleted(guardedWindow, 2000),
-            "the group menu pinned window was not deleted after the checks");
+            "clearing Default should destructively close its matching live pinned window");
 }
 
 adqt::widgets::AdButton* toolbarButtonNamed(ScreenshotToolPalette& toolbar,

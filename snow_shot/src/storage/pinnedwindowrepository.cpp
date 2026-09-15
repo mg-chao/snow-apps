@@ -1146,6 +1146,44 @@ StorageResult PinnedWindowRepository::setRecordGroup(const QString& recordId,
     return StorageResult::ok();
 }
 
+StorageResult PinnedWindowRepository::removeGroupAndRecords(const QString& groupId) {
+    if (m_impl == nullptr || !m_impl->writeAvailable) {
+        return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
+    }
+    if (!safeGroupId(groupId)) {
+        return StorageResult::failure(QStringLiteral("Pinned-window group id is invalid"));
+    }
+
+    std::lock_guard locker(m_impl->mutex);
+    const auto group =
+        std::find_if(m_impl->groups.cbegin(), m_impl->groups.cend(),
+                     [&groupId](const auto& candidate) { return candidate.id == groupId; });
+    if (group == m_impl->groups.cend()) {
+        return StorageResult::failure(QStringLiteral("Pinned-window group does not exist"));
+    }
+
+    bool changed = false;
+    for (auto it = m_impl->records.begin(); it != m_impl->records.end();) {
+        if (it->record.groupId == groupId) {
+            it = m_impl->records.erase(it);
+            changed = true;
+        } else {
+            ++it;
+        }
+    }
+    if (groupId != QString::fromLatin1(kDefaultGroupId)) {
+        m_impl->groups.erase(group);
+        if (m_impl->activeGroupId == groupId) {
+            m_impl->activeGroupId = QString::fromLatin1(kDefaultGroupId);
+        }
+        changed = true;
+    }
+    if (changed) {
+        m_impl->markDirtyLocked();
+    }
+    return StorageResult::ok();
+}
+
 StorageResult PinnedWindowRepository::create(PinnedWindowRecord record,
                                              PreparedPngImage sourceImage) {
     if (m_impl == nullptr || !m_impl->writeAvailable) {
