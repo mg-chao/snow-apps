@@ -4360,7 +4360,7 @@ void ScreenshotToolPaletteStyleControls::openCreateWatermarkTemplateModal() {
     alert->setIconMode(adqt::widgets::AdAlert::IconMode::Visible);
     alert->setClosable(false);
     if (auto* formLayout = qobject_cast<QBoxLayout*>(form->layout())) {
-        formLayout->insertWidget(formLayout->indexOf(valueItem), alert);
+        formLayout->insertWidget(formLayout->indexOf(valueItem) + 1, alert);
     }
 
     auto* modal = new adqt::widgets::AdModal(m_watermarkTemplateSelect);

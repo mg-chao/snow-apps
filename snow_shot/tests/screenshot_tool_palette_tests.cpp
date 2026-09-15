@@ -6313,6 +6313,11 @@ void watermarkTemplateLibraryAndEditorApplySnapshotsDeterministically() {
                     QStringLiteral("{text} represents the current watermark text; timestamp "
                                    "formats such as {YYYY-MM-DD_HH-mm-ss} are supported"),
             "Add template should show the exact icon-bearing information alert");
+    auto* formLayout = qobject_cast<QBoxLayout*>(form->layout());
+    require(formLayout != nullptr && formLayout->indexOf(nameItem) >= 0 &&
+                formLayout->indexOf(valueItem) == formLayout->indexOf(nameItem) + 1 &&
+                formLayout->indexOf(alert) == formLayout->indexOf(valueItem) + 1,
+            "Add template should place the information alert directly below the template value");
 
     nameInput->setText(QStringLiteral("   "));
     valueInput->setText(QStringLiteral(" \t "));
