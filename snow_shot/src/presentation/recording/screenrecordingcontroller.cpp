@@ -558,21 +558,25 @@ struct ScreenRecordingController::Impl {
                                  snow_shot::presentation::persistScreenshotCanvasToolStyles(
                                      palette.creationStyleDefaults()));
                          });
-        QObject::connect(&palette, &ScreenshotToolPalette::watermarkConfigChanged,
-                         uiSession->connections.get(),
-                         [canvas](const SnowCanvasWatermarkConfig& config) {
-                             static_cast<void>(canvas->setCanvasWatermarkConfig(config));
-                         });
+        QObject::connect(
+            &palette, &ScreenshotToolPalette::watermarkConfigChanged, uiSession->connections.get(),
+            [canvas, &palette](const SnowCanvasWatermarkConfig& config) {
+                static_cast<void>(canvas->setCanvasWatermarkConfig(config));
+                static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
+                    palette.creationStyleDefaults()));
+            });
         QObject::connect(&palette, &ScreenshotToolPalette::watermarkPreviewChanged,
                          uiSession->connections.get(),
                          [canvas](const SnowCanvasWatermarkConfig& config) {
                              canvas->previewCanvasWatermarkConfig(config);
                          });
-        QObject::connect(&palette, &ScreenshotToolPalette::spotlightConfigChanged,
-                         uiSession->connections.get(),
-                         [canvas](const SnowCanvasSpotlightConfig& config) {
-                             static_cast<void>(canvas->setCanvasSpotlightConfig(config));
-                         });
+        QObject::connect(
+            &palette, &ScreenshotToolPalette::spotlightConfigChanged, uiSession->connections.get(),
+            [canvas, &palette](const SnowCanvasSpotlightConfig& config) {
+                static_cast<void>(canvas->setCanvasSpotlightConfig(config));
+                static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
+                    palette.creationStyleDefaults()));
+            });
         QObject::connect(&palette, &ScreenshotToolPalette::spotlightPreviewChanged,
                          uiSession->connections.get(),
                          [canvas](const SnowCanvasSpotlightConfig& config) {

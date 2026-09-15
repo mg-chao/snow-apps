@@ -5788,6 +5788,29 @@ void watermarkToolExposesSharedStyleControls() {
             "Watermark icons should render through the monochrome tint path");
 }
 
+void watermarkTemplateSelectMatchesFontSelectWidth() {
+    ScreenshotToolPalette::Options options;
+    options.showWatermarkTool = true;
+    ScreenshotToolPalette palette(options);
+    require(palette.ensureStyleFamily(ScreenshotToolPalette::Tool::Watermark),
+            "Watermark controls should materialize on demand");
+
+    auto* templateSelect = palette.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotWatermarkTemplateSelect"));
+    auto* fontSelect = qobject_cast<adqt::widgets::AdSelect*>(
+        controlWithAccessibleName(palette, "Watermark font family"));
+    require(templateSelect != nullptr && fontSelect != nullptr &&
+                templateSelect->width() == fontSelect->width() &&
+                templateSelect->popupMatchSelectWidth() && templateSelect->popupWidth() == 0,
+            "watermark-template control and popup should match the font select width");
+
+    require(palette.setPhysicalScale(1.5), "Watermark toolbar scale should change");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Watermark);
+    QCoreApplication::processEvents();
+    require(templateSelect->width() == fontSelect->width(),
+            "watermark-template and font selects should remain aligned after scaling");
+}
+
 void watermarkStyleEditorMatchesShapeHeight() {
     ScreenshotToolPalette::Options options;
     options.showShapeTool = true;
@@ -6157,7 +6180,17 @@ void watermarkTemplateLibraryAndEditorApplySnapshotsDeterministically() {
 
     select->hidePopup();
     select->showPopup();
+    QWidget* templatePopup = select->view()->window();
+    const QRect openingPopupGeometry = templatePopup->geometry();
+    const QPoint openingSelectPosition = select->mapToGlobal(QPoint());
+    const auto openingAddButtons = templatePopup->findChildren<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotWatermarkTemplateAddButton"));
+    require(openingAddButtons.size() == 1 && openingAddButtons.first()->isVisible(),
+            "the first watermark-template popup frame should expose only its current footer");
     QCoreApplication::processEvents();
+    require(templatePopup->geometry() == openingPopupGeometry &&
+                select->mapToGlobal(QPoint()) == openingSelectPosition,
+            "the first watermark-template popup frame should use settled anchor geometry");
     QStringList visibleTemplateKeys;
     for (int row = 0; row < select->view()->model()->rowCount(); ++row) {
         const QString key = select->view()->model()->index(row, 0).data(Qt::UserRole).toString();
@@ -9682,6 +9715,14 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     styles.serialNumber.color = QColor(17, 18, 19, 20);
     styles.serialNumber.fontFamily = QStringLiteral("Persisted serial font");
     styles.watermark.text = QStringLiteral("must not persist");
+    styles.watermark.templateValue = QStringLiteral("{text}-{YYYY}");
+    styles.watermark.templateApplicationTime =
+        SnowCanvasWatermarkTemplateApplicationTime{2026, 9, 15, 12, 34, 56};
+    styles.watermark.color = QColor(25, 26, 27, 28);
+    styles.watermark.fontSize = 42.0;
+    styles.watermark.fontFamily = QStringLiteral("Persisted watermark font");
+    styles.watermark.angle = -35.0;
+    styles.watermark.gap = 88.0;
     styles.watermark.opacity = 0.91;
     styles.spotlight.color = QColor(21, 22, 23, 24);
     styles.spotlight.opacity = 0.17;
@@ -9693,17 +9734,24 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     expected.penFilter.strength = styles.rectangleFilter.strength;
     const SnowCanvasStyleDefaults globalDefaults =
         snow_shot::presentation::screenshotCanvasStyleDefaults();
-    expected.watermark = globalDefaults.watermark;
-    expected.spotlight = globalDefaults.spotlight;
+    expected.watermark.text = globalDefaults.watermark.text;
+    expected.watermark.templateValue = globalDefaults.watermark.templateValue;
+    expected.watermark.templateApplicationTime = globalDefaults.watermark.templateApplicationTime;
     expected.serialNumber.number = globalDefaults.serialNumber.number;
     require(snow_shot::presentation::screenshotCanvasToolStyleDefaults() == expected,
             "persisted tool styles should round-trip independently without global styles");
 
     const auto configuration =
         snow_shot::storage::ApplicationStorage::instance().configuration().snapshot();
-    require(!configuration.contains(QStringLiteral("drawing/watermark_style")) &&
-                !configuration.contains(QStringLiteral("drawing/spotlight_style")),
-            "watermark and spotlight styles must not be added to persistent tool configuration");
+    const QJsonObject savedWatermarkStyle =
+        configuration.value(QStringLiteral("drawing/watermark_style")).toObject();
+    require(!savedWatermarkStyle.isEmpty() &&
+                !savedWatermarkStyle.contains(QStringLiteral("text")) &&
+                !savedWatermarkStyle.contains(QStringLiteral("template_value")) &&
+                !savedWatermarkStyle.contains(QStringLiteral("template_application_time")),
+            "watermark appearance should persist without text or template session state");
+    require(!configuration.value(QStringLiteral("drawing/spotlight_style")).toObject().isEmpty(),
+            "spotlight mask color and opacity should persist");
     const QString serialKey = QStringLiteral("drawing/serial_number_style");
     QJsonObject savedSerialStyle = configuration.value(serialKey).toObject();
     require(!savedSerialStyle.contains(QStringLiteral("number")),
@@ -10166,6 +10214,11 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--watermark-template-only"))) {
         watermarkTemplateLibraryAndEditorApplySnapshotsDeterministically();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--watermark-template-width-only"))) {
+        watermarkTemplateSelectMatchesFontSelectWidth();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

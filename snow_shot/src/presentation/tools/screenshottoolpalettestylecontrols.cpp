@@ -67,8 +67,6 @@ constexpr int kTextStrokeColorTrailingSpacing = 4;
 constexpr int kSerialNumberTrailingSpacing = 4;
 constexpr int kSerialNumberInputWidth = 64;
 constexpr int kWatermarkTextWidth = 135;
-constexpr int kWatermarkTemplateWidth = 160;
-constexpr int kWatermarkTemplatePopupWidth = 280;
 constexpr int kWatermarkTemplateActionWidth = 32;
 constexpr int kWatermarkTemplateActionIconSize = 16;
 constexpr int kOpacitySliderWidth = 96;
@@ -2327,8 +2325,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildWatermarkFamily(
         m_watermarkTemplateSelect->setAutoClearSearchValue(false);
         m_watermarkTemplateSelect->setPopupLayerMode(
             adqt::widgets::AdSelect::PopupLayerMode::QtTool);
-        m_watermarkTemplateSelect->setPopupMatchSelectWidth(false);
-        m_watermarkTemplateSelect->setPopupWidth(kWatermarkTemplatePopupWidth);
+        m_watermarkTemplateSelect->setPopupMatchSelectWidth(true);
 
         m_watermarkTemplateEmptyLabel = new QLabel(m_watermarkTemplateSelect);
         m_watermarkTemplateEmptyLabel->setObjectName(
@@ -2386,9 +2383,11 @@ QWidget* ScreenshotToolPaletteStyleControls::buildWatermarkFamily(
     m_watermarkTemplateSelect->setControlSize(adqt::widgets::AdSelect::ControlSize::Small);
     m_watermarkTemplateSelect->setVariant(adqt::widgets::AdSelect::Variant::Borderless);
     m_watermarkTemplateSelect->setFixedSize(
-        qMax(1, qRound(static_cast<qreal>(kWatermarkTemplateWidth) * metrics.physicalScale)),
+        qMax(1,
+             qRound(static_cast<qreal>(kScreenshotToolPaletteSelectWidth) * metrics.physicalScale)),
         qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
-    stampScreenshotToolbarReferenceWidth(m_watermarkTemplateSelect, kWatermarkTemplateWidth);
+    stampScreenshotToolbarReferenceWidth(m_watermarkTemplateSelect,
+                                         kScreenshotToolPaletteSelectWidth);
     setScreenshotToolPalettePlaceholderSource(m_watermarkTemplateSelect, "Template");
     setScreenshotToolPaletteTooltipSource(m_watermarkTemplateSelect, "Template");
     setScreenshotToolPaletteAccessibleNameSource(m_watermarkTemplateSelect, "Template");
@@ -3701,9 +3700,11 @@ void ScreenshotToolPaletteStyleControls::refreshToolbarMetrics(
     }
     if (applies(m_watermarkTemplateSelect)) {
         m_watermarkTemplateSelect->setFixedSize(
-            qMax(1, qRound(static_cast<qreal>(kWatermarkTemplateWidth) * metrics.physicalScale)),
+            qMax(1, qRound(static_cast<qreal>(kScreenshotToolPaletteSelectWidth) *
+                           metrics.physicalScale)),
             qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
-        stampScreenshotToolbarReferenceWidth(m_watermarkTemplateSelect, kWatermarkTemplateWidth);
+        stampScreenshotToolbarReferenceWidth(m_watermarkTemplateSelect,
+                                             kScreenshotToolPaletteSelectWidth);
     }
     configureScreenshotToolPaletteCornerRadiusEditor(m_cornerRadiusEditor, metrics);
     configureScreenshotToolPaletteCornerRadiusEditor(m_textCornerRadiusEditor, metrics);

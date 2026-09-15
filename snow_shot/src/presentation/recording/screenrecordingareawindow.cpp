@@ -58,7 +58,8 @@ QRect nativeClientGeometry(const QWidget& window) {
 ScreenRecordingAreaWindow::ScreenRecordingAreaWindow(QWidget* parent)
     : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
                           Qt::NoDropShadowWindowHint),
-      m_canvasRuntime(std::make_unique<SnowCanvasRuntime>()),
+      m_canvasRuntime(std::make_unique<SnowCanvasRuntime>(
+          SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasToolStyleDefaults()})),
       m_canvas(new SnowCanvasWidget(*m_canvasRuntime, this)) {
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);

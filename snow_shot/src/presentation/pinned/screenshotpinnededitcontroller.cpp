@@ -397,6 +397,11 @@ void ScreenshotPinnedEditController::ensureToolbar() {
         connect(toolbar, &ScreenshotToolPalette::watermarkConfigChanged, this,
                 [this](const SnowCanvasWatermarkConfig& config) {
                     m_canvas.setCanvasWatermarkConfig(config);
+                    if (m_toolbarWindow != nullptr && m_toolbarWindow->palette() != nullptr) {
+                        static_cast<void>(
+                            snow_shot::presentation::persistScreenshotCanvasToolStyles(
+                                m_toolbarWindow->palette()->creationStyleDefaults()));
+                    }
                 });
         connect(toolbar, &ScreenshotToolPalette::watermarkPreviewChanged, this,
                 [this](const SnowCanvasWatermarkConfig& config) {
@@ -405,6 +410,11 @@ void ScreenshotPinnedEditController::ensureToolbar() {
         connect(toolbar, &ScreenshotToolPalette::spotlightConfigChanged, this,
                 [this](const SnowCanvasSpotlightConfig& config) {
                     m_canvas.setCanvasSpotlightConfig(config);
+                    if (m_toolbarWindow != nullptr && m_toolbarWindow->palette() != nullptr) {
+                        static_cast<void>(
+                            snow_shot::presentation::persistScreenshotCanvasToolStyles(
+                                m_toolbarWindow->palette()->creationStyleDefaults()));
+                    }
                 });
         connect(toolbar, &ScreenshotToolPalette::spotlightPreviewChanged, this,
                 [this](const SnowCanvasSpotlightConfig& config) {

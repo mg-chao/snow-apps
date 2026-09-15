@@ -70,9 +70,11 @@ struct ScreenshotToolPaletteSliderEditorConfig {
     int baseSliderWidth = 96;
 };
 
+inline constexpr int kScreenshotToolPaletteSelectWidth = 128;
+
 struct ScreenshotToolPaletteSelectEditor {
     adqt::widgets::AdSelect* select = nullptr;
-    int baseWidth = 128;
+    int baseWidth = kScreenshotToolPaletteSelectWidth;
 };
 
 struct ScreenshotToolPaletteSelectEditorConfig {
@@ -80,7 +82,7 @@ struct ScreenshotToolPaletteSelectEditorConfig {
     QString accessibleName;
     QString tooltip;
     QString placeholder;
-    int baseWidth = 128;
+    int baseWidth = kScreenshotToolPaletteSelectWidth;
     bool searchEnabled = false;
     bool compact = true;
     bool popupMatchSelectWidth = false;

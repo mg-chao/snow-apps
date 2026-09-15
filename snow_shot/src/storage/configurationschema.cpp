@@ -377,6 +377,8 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
     {QStringLiteral("drawing/text_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/serial_number_style"), QJsonObject(),
      ConfigurationValueKind::Structured},
+    {QStringLiteral("drawing/watermark_style"), QJsonObject(), ConfigurationValueKind::Structured},
+    {QStringLiteral("drawing/spotlight_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/watermark_templates"), QJsonArray(),
      ConfigurationValueKind::Structured},
     {QStringLiteral("drawing_shortcuts/select"),

@@ -46,6 +46,8 @@ const QString kRectangleFilterKey = QStringLiteral("drawing/rectangle_filter_sty
 const QString kPenFilterKey = QStringLiteral("drawing/pen_filter_style");
 const QString kTextKey = QStringLiteral("drawing/text_style");
 const QString kSerialNumberKey = QStringLiteral("drawing/serial_number_style");
+const QString kWatermarkKey = QStringLiteral("drawing/watermark_style");
+const QString kSpotlightKey = QStringLiteral("drawing/spotlight_style");
 
 QJsonValue colorValue(const QColor& color) {
     if (!color.isValid()) {
@@ -276,6 +278,49 @@ void readSerialNumberValue(const QJsonObject& object, SnowCanvasSerialNumberStyl
     readDouble(object, QStringLiteral("opacity"), &style->opacity);
 }
 
+QJsonObject watermarkValue(const SnowCanvasWatermarkConfig& config) {
+    QJsonObject value;
+    // Watermark content and template expansion state belong to the editing session. Only its
+    // appearance is a reusable creation default.
+    value.insert(QStringLiteral("color"), colorValue(config.color));
+    putDouble(&value, QStringLiteral("font_size"), config.fontSize);
+    value.insert(QStringLiteral("font_family"), config.fontFamily);
+    putDouble(&value, QStringLiteral("angle"), config.angle);
+    putDouble(&value, QStringLiteral("gap"), config.gap);
+    putDouble(&value, QStringLiteral("opacity"), config.opacity);
+    return value;
+}
+
+void readWatermarkValue(const QJsonObject& object, SnowCanvasWatermarkConfig* config) {
+    if (config == nullptr)
+        return;
+    QColor color;
+    if (colorValue(object.value(QStringLiteral("color")), &color))
+        config->color = color;
+    readDouble(object, QStringLiteral("font_size"), &config->fontSize);
+    if (object.value(QStringLiteral("font_family")).isString())
+        config->fontFamily = object.value(QStringLiteral("font_family")).toString();
+    readDouble(object, QStringLiteral("angle"), &config->angle);
+    readDouble(object, QStringLiteral("gap"), &config->gap);
+    readDouble(object, QStringLiteral("opacity"), &config->opacity);
+}
+
+QJsonObject spotlightValue(const SnowCanvasSpotlightConfig& config) {
+    QJsonObject value;
+    value.insert(QStringLiteral("color"), colorValue(config.color));
+    putDouble(&value, QStringLiteral("opacity"), config.opacity);
+    return value;
+}
+
+void readSpotlightValue(const QJsonObject& object, SnowCanvasSpotlightConfig* config) {
+    if (config == nullptr)
+        return;
+    QColor color;
+    if (colorValue(object.value(QStringLiteral("color")), &color))
+        config->color = color;
+    readDouble(object, QStringLiteral("opacity"), &config->opacity);
+}
+
 } // namespace
 
 SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
@@ -295,6 +340,8 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
     readFilterValue(configuration.value(kPenFilterKey).toObject(), &defaults.penFilter);
     readTextValue(configuration.value(kTextKey).toObject(), &defaults.text);
     readSerialNumberValue(configuration.value(kSerialNumberKey).toObject(), &defaults.serialNumber);
+    readWatermarkValue(configuration.value(kWatermarkKey).toObject(), &defaults.watermark);
+    readSpotlightValue(configuration.value(kSpotlightKey).toObject(), &defaults.spotlight);
     double sharedStrength = screenshotCanvasStyleDefaults().rectangleFilter.strength;
     const auto readStrength = [&](const QString& key) {
         double value = 0.0;
@@ -345,6 +392,11 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
     defaults.serialNumber.fontSize = bounded(defaults.serialNumber.fontSize, 6.0, 512.0);
     defaults.serialNumber.strokeWidth = bounded(defaults.serialNumber.strokeWidth, 0.0, 72.0);
     defaults.serialNumber.opacity = bounded(defaults.serialNumber.opacity, 0.0, 1.0);
+    defaults.watermark.fontSize = bounded(defaults.watermark.fontSize, 6.0, 512.0);
+    defaults.watermark.angle = bounded(defaults.watermark.angle, -90.0, 90.0);
+    defaults.watermark.gap = bounded(defaults.watermark.gap, 10.0, 200.0);
+    defaults.watermark.opacity = bounded(defaults.watermark.opacity, 0.0, 1.0);
+    defaults.spotlight.opacity = bounded(defaults.spotlight.opacity, 0.0, 1.0);
     return defaults;
 }
 
@@ -365,6 +417,8 @@ bool persistScreenshotCanvasToolStyles(const SnowCanvasStyleDefaults& defaults) 
         {kPenFilterKey, filterValue(penFilter)},
         {kTextKey, textValue(defaults.text)},
         {kSerialNumberKey, serialNumberValue(defaults.serialNumber)},
+        {kWatermarkKey, watermarkValue(defaults.watermark)},
+        {kSpotlightKey, spotlightValue(defaults.spotlight)},
     };
     storage::ConfigurationStore& configuration = storage.configuration();
     if (QThread::currentThread() != configuration.thread()) {
