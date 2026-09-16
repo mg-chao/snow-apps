@@ -15,12 +15,38 @@
 #include <cstdlib>
 #include <iostream>
 
-struct SnowUiSelectorServiceImpl {};
+struct SnowUiSelectorServiceImpl {
+    SnowUiSelectorEventCallback event;
+    SnowUiSelectorRefreshCallback refresh;
+    void* userdata;
+};
 
 namespace {
 namespace settings = snow_shot::presentation::settings;
 namespace storage = snow_shot::storage;
 
+bool automaticReply = true;
+struct Submission {
+    SnowUiSelectorService* service;
+    SnowUiSelectorQuery query;
+};
+QVector<Submission> submissions;
+QVector<Submission> refinements;
+int invalidations = 0;
+void deliver(const Submission& submission, SnowUiSelectorPhase phase = SNOW_UI_SELECTOR_INITIAL,
+             SnowUiSelectorStopReason reason = SNOW_UI_SELECTOR_BUDGET_EXHAUSTED) {
+    SnowUiSelectorRect rects[]{{0, 0, 10, 10}, {0, 0, 100, 100}};
+    SnowUiSelectorEvent event{};
+    event.query = submission.query;
+    event.phase = phase;
+    event.reason = reason;
+    event.ok = 1;
+    event.rects = rects;
+    event.count = 2;
+    submission.service->event(&event, submission.service->userdata);
+    // Prove callbacks copy borrowed rectangles before queued delivery.
+    rects[0].right = 1;
+}
 int created = 0;
 int destroyed = 0;
 int refreshed = 0;
@@ -40,32 +66,32 @@ void setApi(const QString& api) {
             "failed to change the window element API");
 }
 
-void settingsPersistAndResetToMsaa(const QString& configurationPath) {
+void settingsPersistAndResetToUia(const QString& configurationPath) {
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
     constexpr auto binding = settings::SettingsSelectBinding::WindowElementApi;
     constexpr auto cursorBinding = settings::SettingsSwitchBinding::ScreenshotCaptureCursor;
-    require(backend.selectValue(binding) == QStringLiteral("msaa"),
-            "Window Element API must initially select MSAA");
+    require(backend.selectValue(binding) == QStringLiteral("uia"),
+            "Window Element API must initially select UIA");
     require(!backend.switchValue(cursorBinding) && backend.applySwitchValue(cursorBinding, true) &&
                 backend.switchValue(cursorBinding),
             "the settings backend must apply and read cursor capture");
-    require(backend.applySelectValue(binding, QStringLiteral("uia")) &&
-                backend.selectValue(binding) == QStringLiteral("uia"),
-            "the settings backend must apply and read UIA");
+    require(backend.applySelectValue(binding, QStringLiteral("msaa")) &&
+                backend.selectValue(binding) == QStringLiteral("msaa"),
+            "the settings backend must apply and read MSAA");
     require(!backend.applySelectValue(binding, QStringLiteral("unknown")) &&
-                backend.selectValue(binding) == QStringLiteral("uia"),
+                backend.selectValue(binding) == QStringLiteral("msaa"),
             "invalid API choices must preserve the accepted value");
     require(storage::ApplicationStorage::instance().configuration().flushNow().success,
             "window element API must be flushable");
     storage::ConfigurationStore reloaded(configurationPath, true, true, 60000);
     require(reloaded.value(QStringLiteral("screenshot/window_element_api")) ==
-                QStringLiteral("uia"),
+                QStringLiteral("msaa"),
             "window element API must survive a configuration reload");
     require(backend.resetSection(settings::SettingsSectionReset::ScreenshotCapture) &&
-                backend.selectValue(binding) == QStringLiteral("msaa") &&
+                backend.selectValue(binding) == QStringLiteral("uia") &&
                 !backend.switchValue(cursorBinding),
-            "resetting system Screenshot settings must restore MSAA and disable cursor capture");
+            "resetting system Screenshot settings must restore UIA and disable cursor capture");
     const auto invalid = storage::ConfigurationSchema::normalize(
         QStringLiteral("screenshot/window_element_api"), QStringLiteral("unknown"));
     require(!invalid.valid, "the schema must reject unsupported window element APIs");
@@ -82,8 +108,8 @@ void settingsPersistAndResetToMsaa(const QString& configurationPath) {
     invalidFile.close();
     storage::ConfigurationStore repaired(invalidPath, true, true, 60000);
     require(repaired.value(QStringLiteral("screenshot/window_element_api")) ==
-                QStringLiteral("msaa"),
-            "invalid stored API values must fall back to MSAA");
+                QStringLiteral("uia"),
+            "invalid stored API values must fall back to UIA");
 }
 
 void shutterSoundSettingsPersistAndReset(const QString& configurationPath) {
@@ -197,14 +223,14 @@ void changedApiRefreshesServiceAndRejectsOldResults() {
     ScreenshotSelectorCoordinator coordinator;
     const QVector<std::uintptr_t> exclusions{123, 456};
     int hitResults = 0;
-    QObject::connect(&coordinator, &ScreenshotSelectorCoordinator::hitTestFinished, &coordinator,
+    QObject::connect(&coordinator, &ScreenshotSelectorCoordinator::initialResultReady, &coordinator,
                      [&hitResults](bool, const QVector<QRectF>&) { ++hitResults; });
     require(coordinator.startRefresh(exclusions), "initial selector refresh failed");
     QCoreApplication::sendPostedEvents();
-    require(coordinator.ready() && currentBackend == SNOW_UI_SELECTOR_BACKEND_MSAA,
-            "default smart selection must create an MSAA service");
+    require(coordinator.ready() && currentBackend == SNOW_UI_SELECTOR_BACKEND_UIA,
+            "default smart selection must create a UIA service");
 
-    for (const auto& api : {QStringLiteral("uia"), QStringLiteral("msaa")}) {
+    for (const auto& api : {QStringLiteral("msaa"), QStringLiteral("uia")}) {
         require(coordinator.requestHitTest(QPoint(10, 20),
                                            ScreenshotSelectorHitTestMode::WindowSubElement),
                 "element hit test was not dispatched");
@@ -213,13 +239,13 @@ void changedApiRefreshesServiceAndRejectsOldResults() {
         const int previousCreated = created;
         const int previousDestroyed = destroyed;
         setApi(api);
-        require(created == previousCreated + 1 && destroyed == previousDestroyed + 1 &&
-                    currentBackend == (api == QStringLiteral("uia")
-                                           ? SNOW_UI_SELECTOR_BACKEND_UIA
-                                           : SNOW_UI_SELECTOR_BACKEND_MSAA) &&
-                    currentExclusions == exclusions && coordinator.refreshInFlight() &&
-                    !coordinator.ready() && !coordinator.hitTestInFlight(),
-                "API changes must replace and refresh the service with the same excluded windows");
+        require(
+            created == previousCreated && destroyed == previousDestroyed &&
+                currentBackend == (api == QStringLiteral("uia") ? SNOW_UI_SELECTOR_BACKEND_UIA
+                                                                : SNOW_UI_SELECTOR_BACKEND_MSAA) &&
+                currentExclusions == exclusions && coordinator.refreshInFlight() &&
+                !coordinator.ready() && !coordinator.hitTestInFlight(),
+            "API changes must reuse and refresh the worker service with the same excluded windows");
         QCoreApplication::sendPostedEvents();
         require(coordinator.ready() && hitResults == 0,
                 "results queued by the previous API must be discarded");
@@ -248,21 +274,136 @@ void apiChangesDuringRefreshAndWhileIdle() {
     QObject::connect(&coordinator, &ScreenshotSelectorCoordinator::refreshFinished, &coordinator,
                      [&refreshResults](bool) { ++refreshResults; });
     require(coordinator.startRefresh({789}), "selector refresh failed");
-    setApi(QStringLiteral("uia"));
+    setApi(QStringLiteral("msaa"));
     QCoreApplication::sendPostedEvents();
     require(refreshResults == 1 && coordinator.ready() &&
-                currentBackend == SNOW_UI_SELECTOR_BACKEND_UIA,
+                currentBackend == SNOW_UI_SELECTOR_BACKEND_MSAA,
             "an API change during refresh must discard the previous refresh result");
 
     coordinator.releaseCache();
     const int previousCreated = created;
     const int previousRefreshed = refreshed;
-    setApi(QStringLiteral("msaa"));
+    setApi(QStringLiteral("uia"));
     require(created == previousCreated && refreshed == previousRefreshed && !coordinator.ready(),
             "changing the API while idle must defer service creation until the next capture");
-    require(coordinator.startRefresh({789}) && currentBackend == SNOW_UI_SELECTOR_BACKEND_MSAA,
+    require(coordinator.startRefresh({789}) && currentBackend == SNOW_UI_SELECTOR_BACKEND_UIA,
             "the next capture must use the API selected while idle");
     QCoreApplication::sendPostedEvents();
+}
+
+void phasedSchedulingPreservesLatestPendingAndInitialCadence() {
+    setApi(QStringLiteral("uia"));
+    automaticReply = false;
+    submissions.clear();
+    refinements.clear();
+    qint64 now = 0;
+    ScreenshotSelectorCoordinator coordinator(nullptr, [&now]() { return now; });
+    int initialCount = 0, refinementCount = 0;
+    QObject::connect(&coordinator, &ScreenshotSelectorCoordinator::initialResultReady, &coordinator,
+                     [&](bool ok, const QVector<QRectF>& rects) {
+                         require(ok && rects.first().width() == 10,
+                                 "initial delivery must copy borrowed data");
+                         ++initialCount;
+                     });
+    QObject::connect(&coordinator, &ScreenshotSelectorCoordinator::refinementReady, &coordinator,
+                     [&](const QVector<QRectF>& rects) {
+                         require(rects.first().width() == 10, "refinement data must be copied");
+                         ++refinementCount;
+                     });
+    require(coordinator.startRefresh({}), "refresh failed");
+    QCoreApplication::sendPostedEvents();
+    const auto request = [&](int x) {
+        require(coordinator.requestHitTest(QPoint(x, 5),
+                                           ScreenshotSelectorHitTestMode::WindowSubElement),
+                "query failed");
+    };
+    request(1);
+    const Submission a = submissions.last();
+    now = 10;
+    request(2);
+    now = 20;
+    request(3);
+    require(submissions.size() == 1, "movement must coalesce while initial query runs");
+    now = 170;
+    deliver(a);
+    QCoreApplication::sendPostedEvents();
+    require(initialCount == 1 && submissions.size() == 2 && submissions.last().query.x == 3 &&
+                refinements.isEmpty(),
+            "A must display before C starts; B and A refinement must be skipped");
+    const Submission c = submissions.last();
+    deliver(c);
+    QCoreApplication::sendPostedEvents();
+    require(initialCount == 2 && refinements.size() == 1,
+            "slow initial response must not add another stability delay");
+    deliver(c, SNOW_UI_SELECTOR_REFINEMENT);
+    QCoreApplication::sendPostedEvents();
+    require(refinementCount == 1 && initialCount == 2 && !coordinator.hitTestInFlight(),
+            "refinement must not act as initial completion");
+    request(3);
+    require(submissions.size() == 2 && refinements.size() == 1,
+            "duplicate target must not restart either phase");
+    now = 180;
+    request(4);
+    const Submission d = submissions.last();
+    request(3);
+    deliver(c, SNOW_UI_SELECTOR_FINISHED);
+    QCoreApplication::sendPostedEvents();
+    require(coordinator.hitTestInFlight() && refinementCount == 1,
+            "old C terminal must not clear D or match a new C generation");
+    deliver(d);
+    QCoreApplication::sendPostedEvents();
+    const Submission newC = submissions.last();
+    require(newC.query.generation != c.query.generation && initialCount == 3,
+            "returning to a position needs a fresh generation");
+    now = 190;
+    deliver(newC);
+    QCoreApplication::sendPostedEvents();
+    require(refinements.size() == 1, "fast initial must wait for target stability");
+    now = 259;
+    require(QMetaObject::invokeMethod(&coordinator, "scheduleRefinement", Qt::DirectConnection),
+            "admission slot missing");
+    require(refinements.size() == 1, "refinement must not start before 80 ms");
+    now = 260;
+    QMetaObject::invokeMethod(&coordinator, "scheduleRefinement", Qt::DirectConnection);
+    require(refinements.size() == 2, "refinement must start at target stability deadline");
+    deliver(c, SNOW_UI_SELECTOR_REFINEMENT);
+    QCoreApplication::sendPostedEvents();
+    require(refinementCount == 1, "A-B-A freshness must reject an old matching coordinate");
+    require(coordinator.requestHitTest(QPoint(3, 5), ScreenshotSelectorHitTestMode::Window),
+            "mode change failed");
+    const Submission window = submissions.last();
+    deliver(newC, SNOW_UI_SELECTOR_FINISHED);
+    deliver(window, SNOW_UI_SELECTOR_INITIAL, SNOW_UI_SELECTOR_COMPLETE);
+    QCoreApplication::sendPostedEvents();
+    require(refinementCount == 1 && refinements.size() == 2,
+            "window mode must invalidate refinement and stay single phase");
+    coordinator.resetHitTestState();
+    deliver(window);
+    QCoreApplication::sendPostedEvents();
+    require(initialCount == 5, "reset must reject old initial results");
+    now = 300;
+    request(7);
+    const Submission oldEpoch = submissions.last();
+    require(coordinator.startRefresh({}), "second refresh failed");
+    deliver(oldEpoch);
+    QCoreApplication::sendPostedEvents();
+    require(initialCount == 5 && coordinator.ready(), "refresh must reject prior capture events");
+    // Continuous switching must keep displaying the active initial results.
+    const int invalidationsBeforeMovement = invalidations;
+    request(10);
+    for (int i = 11; i < 31; ++i) {
+        const Submission active = submissions.last();
+        request(i);
+        deliver(active);
+        QCoreApplication::sendPostedEvents();
+    }
+    require(initialCount == 25 && coordinator.hitTestInFlight(),
+            "continuous movement must not starve foreground display");
+    require(
+        invalidations == invalidationsBeforeMovement,
+        "foreground movement with no submitted refinement must not access the refinement queue");
+    coordinator.releaseCache();
+    automaticReply = true;
 }
 
 void diagnosticEnvironmentOverridesRemainAvailable() {
@@ -285,53 +426,50 @@ void diagnosticEnvironmentOverridesRemainAvailable() {
 } // namespace
 
 extern "C" {
-SnowUiSelectorService* snow_ui_selector_service_create(SnowUiSelectorBackend backend) {
+SnowUiSelectorService* snow_ui_selector_service_create(SnowUiSelectorEventCallback event,
+                                                       SnowUiSelectorRefreshCallback refresh,
+                                                       void* userdata) {
     ++created;
-    currentBackend = backend;
-    return new SnowUiSelectorService;
+    return new SnowUiSelectorService{event, refresh, userdata};
 }
-
 void snow_ui_selector_service_destroy(SnowUiSelectorService* service) {
     ++destroyed;
     delete service;
 }
-
 uint8_t snow_ui_selector_service_release_cache(SnowUiSelectorService*) {
     return 1;
 }
-
-uint8_t snow_ui_selector_service_refresh_async(SnowUiSelectorService*, uint64_t requestId,
-                                               const uintptr_t* excludedHwnds, size_t excludedCount,
-                                               SnowUiSelectorRefreshCallback callback,
-                                               void* userdata) {
+void snow_ui_selector_service_invalidate_refinement(SnowUiSelectorService*) {
+    ++invalidations;
+}
+uint8_t snow_ui_selector_service_refine(SnowUiSelectorService* service,
+                                        const SnowUiSelectorQuery* query) {
+    refinements.push_back({service, *query});
+    return 1;
+}
+uint8_t snow_ui_selector_service_refresh(SnowUiSelectorService* service, uint64_t epoch,
+                                         SnowUiSelectorBackend backend, const uintptr_t* excluded,
+                                         size_t count) {
     ++refreshed;
+    currentBackend = backend;
     currentExclusions.clear();
-    for (size_t index = 0; index < excludedCount; ++index) {
-        currentExclusions.push_back(excludedHwnds[index]);
-    }
-    callback(requestId, 1, userdata);
+    for (size_t i = 0; i < count; ++i)
+        currentExclusions.push_back(excluded[i]);
+    service->refresh(epoch, 1, service->userdata);
     return 1;
 }
-
-uint8_t snow_ui_selector_service_hit_test_point_async(SnowUiSelectorService*, uint64_t requestId,
-                                                      int32_t, int32_t,
-                                                      SnowUiSelectorHitTestMode mode,
-                                                      SnowUiSelectorHitTestPointCallback callback,
-                                                      void* userdata) {
-    currentMode = mode;
-    callback(requestId, nullptr, 1, userdata);
+uint8_t snow_ui_selector_service_query(SnowUiSelectorService* service,
+                                       const SnowUiSelectorQuery* query) {
+    currentMode = query->mode;
+    submissions.push_back({service, *query});
+    if (!automaticReply)
+        return 1;
+    SnowUiSelectorEvent event{};
+    event.query = *query;
+    event.ok = 1;
+    service->event(&event, service->userdata);
     return 1;
 }
-
-size_t snow_ui_selector_hit_path_count(const SnowUiSelectorHitPath*) {
-    return 0;
-}
-
-uint8_t snow_ui_selector_hit_path_rect(const SnowUiSelectorHitPath*, size_t, SnowUiSelectorRect*) {
-    return 0;
-}
-
-void snow_ui_selector_hit_path_destroy(SnowUiSelectorHitPath*) {}
 } // extern "C"
 
 int main(int argc, char** argv) {
@@ -344,13 +482,17 @@ int main(int argc, char** argv) {
     static_cast<void>(
         applicationStorage.initialize({temporary.filePath(QStringLiteral("bin")),
                                        temporary.filePath(QStringLiteral("data")), 60000}));
-    settingsPersistAndResetToMsaa(temporary.filePath(QStringLiteral("data/config.json")));
-    shutterSoundSettingsPersistAndReset(temporary.filePath(QStringLiteral("data/config.json")));
-    ownUiCapturePreferencesPersistAndReset();
-    toolbarLayoutSectionResetsRemainIndependent();
+    const bool selectorOnly = application.arguments().contains(QStringLiteral("--selector-only"));
+    if (!selectorOnly) {
+        settingsPersistAndResetToUia(temporary.filePath(QStringLiteral("data/config.json")));
+        shutterSoundSettingsPersistAndReset(temporary.filePath(QStringLiteral("data/config.json")));
+        ownUiCapturePreferencesPersistAndReset();
+        toolbarLayoutSectionResetsRemainIndependent();
+    }
     changedApiRefreshesServiceAndRejectsOldResults();
     apiChangesDuringRefreshAndWhileIdle();
     diagnosticEnvironmentOverridesRemainAvailable();
+    phasedSchedulingPreservesLatestPendingAndInitialCadence();
     require(created == destroyed, "selector leaked a native service");
     applicationStorage.shutdown();
     return 0;

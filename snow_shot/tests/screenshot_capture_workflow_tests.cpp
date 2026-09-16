@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/screenshotintelligentselectionmodel.h"
 #include "snow_shot/presentation/screenshotinteractionstate.h"
 #include "snow_shot/presentation/screenshotselectionmodel.h"
+#include "snow_shot/presentation/screenshotselectorworkflow.h"
 
 #include <QVector>
 
@@ -726,6 +727,107 @@ void capturedImagePlacementFollowsNormalizedCanvasGeometry() {
             "captured image placement must follow normalized canvas geometry");
 }
 
+void phasedWorkflowOnlySignalsInitialReadinessOnce() {
+    class Service final : public ScreenshotSelectorServicePort {
+      public:
+        bool ready() const override {
+            return true;
+        }
+        bool refreshInFlight() const override {
+            return false;
+        }
+        bool startRefresh(const QVector<std::uintptr_t>&) override {
+            return true;
+        }
+        bool requestHitTest(const QPoint&, ScreenshotSelectorHitTestMode) override {
+            return true;
+        }
+    } service;
+    class Exclusions final : public ScreenshotOverlayExclusionPort {
+      public:
+        QVector<std::uintptr_t> excludedHwnds(const ScreenshotDisplaySession&) const override {
+            return {};
+        }
+    } exclusions;
+    ScreenshotCaptureState state;
+    state.sessionId = 10;
+    ScreenshotDisplaySession displays;
+    CapturedDisplayModel display;
+    display.stableId = QStringLiteral("phased-test-display");
+    display.physicalRect = QRect(0, 0, 100, 100);
+    display.image = QImage(100, 100, QImage::Format_RGBA8888);
+    ScreenshotCaptureDisplayModelReconciler::applySnapshots(displays, {display});
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(displays);
+    ScreenshotInteractionState interaction;
+    interaction.beginCapture();
+    interaction.enterOverlayVisible(true);
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    intelligent.beginCaptureSession(true);
+    int readyCount = 0, updates = 0;
+    ScreenshotSelectorPresentationCallbacks callbacks;
+    callbacks.updateOverlayState = [&]() { ++updates; };
+    callbacks.smartSelectionResultReady = [&](quint64 session) {
+        require(session == state.sessionId, "wrong readiness session");
+        ++readyCount;
+    };
+    ScreenshotSelectorWorkflow workflow({state, service, exclusions, displays, geometry,
+                                         interaction, selection, intelligent, callbacks});
+    const QRectF bounds(0, 0, 100, 100), parent(0, 0, 80, 80), child(0, 0, 40, 40),
+        leaf(0, 0, 20, 20);
+    workflow.handleInitialResult(true, {parent, bounds});
+    workflow.handleInitialResult(true, {parent, bounds});
+    workflow.handleRefinement({child, parent, bounds});
+    require(readyCount == 1 && updates == 3 && intelligent.currentSelection() == child,
+            "refinement must update presentation without repeating initial readiness");
+    intelligent.beginPress(QPointF(5, 5), child);
+    workflow.handleRefinement({leaf, child, parent, bounds});
+    require(updates == 3 && intelligent.takePressSelection() == child,
+            "press must suppress late refinement");
+    interaction.confirmSelection();
+    workflow.handleRefinement({leaf, child, parent, bounds});
+    require(updates == 3, "editing must suppress late refinement");
+    ++state.sessionId;
+    interaction.returnToSelectionMode(true);
+    workflow.handleInitialResult(true, {parent, bounds});
+    require(readyCount == 2, "a new capture must notify readiness again");
+}
+
+void phasedSelectionPreservesUserIntent() {
+    ScreenshotIntelligentSelectionModel model;
+    const QRectF bounds(0, 0, 100, 100), parent(0, 0, 80, 80), child(0, 0, 40, 40),
+        leaf(0, 0, 20, 20);
+    model.beginCaptureSession(true);
+    require(model.applyCanvasHitPath({parent, bounds}, bounds, 1), "initial path failed");
+    require(model.applyCanvasRefinementPath({child, parent, bounds}, bounds, 1) &&
+                model.currentSelection() == child,
+            "stationary refinement must automatically deepen the marquee");
+    require(!model.applyCanvasRefinementPath({child, parent, bounds}, bounds, 1),
+            "duplicate refinement must not repaint");
+    require(
+        !model.applyCanvasRefinementPath({leaf, child, QRectF(0, 0, 90, 90), bounds}, bounds, 1),
+        "a different ancestry must not replace the displayed path");
+    require(model.selectIndex(1), "ancestor selection failed");
+    require(model.applyCanvasRefinementPath({leaf, child, parent, bounds}, bounds, 1) &&
+                model.currentSelection() == parent && model.index() == 2,
+            "refinement must preserve an explicitly chosen rectangle by geometry");
+    model.beginPress(QPointF(5, 5), parent);
+    require(!model.applyCanvasRefinementPath({QRectF(0, 0, 10, 10), leaf, child, parent, bounds},
+                                             bounds, 1) &&
+                model.takePressSelection() == parent,
+            "press must freeze refinement and confirmation geometry");
+    model.resetTargetPreference();
+    require(model.applyCanvasRefinementPath({QRectF(0, 0, 10, 10), leaf, child, parent, bounds},
+                                            bounds, 1) &&
+                model.index() == 0,
+            "a target change must restore automatic selection");
+    require(
+        !model.applyCanvasRefinementPath(
+            {QRectF(0, 0, 0.5, 0.5), QRectF(0, 0, 10, 10), leaf, child, parent, bounds}, bounds, 1),
+        "minimum-size filtering must happen before extension comparison");
+}
+
 void intelligentSelectionTargetsPreserveElementPathBehavior() {
     ScreenshotIntelligentSelectionModel selection;
     const QRectF nestedElement(30, 30, 20, 10);
@@ -1119,6 +1221,8 @@ int main() {
     displayChangesRefreshWithoutCancelingIdleOrActiveCapture();
     capturedImagePlacementFollowsNormalizedCanvasGeometry();
     intelligentSelectionTargetsPreserveElementPathBehavior();
+    phasedSelectionPreservesUserIntent();
+    phasedWorkflowOnlySignalsInitialReadinessOnce();
     captureSessionsApplyTheCurrentSmartSelectionSetting();
     return 0;
 }

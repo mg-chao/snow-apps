@@ -96,6 +96,7 @@ struct FakeProvider {
     call_cost: Duration,
     decode_cost: Duration,
     failure: Option<usize>,
+    timeouts: usize,
     live: Rc<Cell<usize>>,
     reads: Rc<RefCell<Vec<usize>>>,
 }
@@ -105,6 +106,12 @@ impl FakeProvider {
         self.calls.push(id);
         self.remaining.push(remaining);
         self.clock.advance(self.call_cost);
+        if self.timeouts > 0 {
+            self.timeouts -= 1;
+            return Err(Error::from_hresult(windows::core::HRESULT(
+                windows::Win32::UI::Accessibility::UIA_E_TIMEOUT as i32,
+            )));
+        }
         if self.failure == Some(id) {
             return Err(Error::from_hresult(E_FAIL));
         }
@@ -437,4 +444,205 @@ fn outside_query_never_contacts_provider() {
     let mut provider = FakeProvider::default();
     assert!(hit(&mut tree(rect(0, 0, 10, 10)), &mut provider, 20, 20).is_empty());
     assert!(provider.calls.is_empty());
+}
+
+#[test]
+fn refinement_exceeds_foreground_budget_without_changing_initial_policy() {
+    let bounds = rect(0, 0, 100, 100);
+    let leaf = rect(0, 0, 10, 10);
+    let mut provider = FakeProvider {
+        call_cost: Duration::from_millis(200),
+        ..Default::default()
+    };
+    provider.children.insert(0, vec![Spec::new(1, leaf)]);
+    let mut tree = tree(bounds);
+    let clock = provider.clock.clone();
+    let first = tree.query(
+        &mut provider,
+        POINT { x: 5, y: 5 },
+        &clock,
+        &QueryControl::foreground(),
+        &mut |_| {},
+    );
+    assert_eq!(first, (vec![bounds], StopReason::DecodingPending));
+    assert_eq!(provider.remaining, [QUERY_BUDGET]);
+    let refined = tree.query(
+        &mut provider,
+        POINT { x: 5, y: 5 },
+        &clock,
+        &QueryControl::refinement(&|| false),
+        &mut |_| {},
+    );
+    assert_eq!(refined, (vec![leaf, bounds], StopReason::Complete));
+    assert_eq!(provider.calls, [0, 1]);
+    assert_eq!(provider.remaining[1], Duration::from_millis(500));
+}
+
+#[test]
+fn refinement_retries_timeout_once_and_never_retries_permanent_failure() {
+    let bounds = rect(0, 0, 100, 100);
+    for failures in [1, 2] {
+        let mut provider = FakeProvider {
+            timeouts: failures,
+            ..Default::default()
+        };
+        let clock = provider.clock.clone();
+        let mut tree = tree(bounds);
+        let (_, reason) = tree.query(
+            &mut provider,
+            POINT { x: 5, y: 5 },
+            &clock,
+            &QueryControl::refinement(&|| false),
+            &mut |_| {},
+        );
+        assert_eq!(
+            reason,
+            if failures == 1 {
+                StopReason::Complete
+            } else {
+                StopReason::ProviderTimeout
+            }
+        );
+        tree.query(
+            &mut provider,
+            POINT { x: 5, y: 5 },
+            &clock,
+            &QueryControl::refinement(&|| false),
+            &mut |_| {},
+        );
+        assert_eq!(provider.calls, [0, 0]);
+    }
+    let mut provider = FakeProvider {
+        failure: Some(0),
+        ..Default::default()
+    };
+    let clock = provider.clock.clone();
+    let mut tree = tree(bounds);
+    for _ in 0..2 {
+        assert_eq!(
+            tree.query(
+                &mut provider,
+                POINT { x: 5, y: 5 },
+                &clock,
+                &QueryControl::refinement(&|| false),
+                &mut |_| {}
+            )
+            .1,
+            StopReason::ProviderFailure
+        );
+    }
+    assert_eq!(provider.calls, [0]);
+}
+
+#[test]
+fn cancellation_after_acquisition_retains_batch_without_decoding_or_publishing() {
+    let bounds = rect(0, 0, 100, 100);
+    let mut provider = FakeProvider {
+        call_cost: Duration::from_millis(20),
+        ..Default::default()
+    };
+    provider
+        .children
+        .insert(0, vec![Spec::new(1, rect(0, 0, 10, 10))]);
+    let clock = provider.clock.clone();
+    let cancelled = || clock.now() >= Duration::from_millis(20);
+    let mut tree = tree(bounds);
+    let result = tree.query(
+        &mut provider,
+        POINT { x: 5, y: 5 },
+        &clock,
+        &QueryControl::refinement(&cancelled),
+        &mut |_| panic!("stale publication"),
+    );
+    assert_eq!(result.1, StopReason::Cancelled);
+    assert!(provider.reads.borrow().is_empty());
+    tree.query(
+        &mut provider,
+        POINT { x: 5, y: 5 },
+        &clock,
+        &QueryControl::refinement(&|| false),
+        &mut |_| {},
+    );
+    assert_eq!(provider.calls, [0, 1]);
+}
+
+#[test]
+fn refinement_publications_are_throttled_and_cycles_remain_bounded() {
+    let bounds = rect(0, 0, 100, 100);
+    let mut provider = FakeProvider {
+        call_cost: Duration::from_millis(10),
+        ..Default::default()
+    };
+    for i in 0..12 {
+        provider.children.insert(
+            i,
+            vec![Spec::new(i + 1, rect(0, 0, 99 - i as i32, 99 - i as i32))],
+        );
+    }
+    let clock = provider.clock.clone();
+    let mut publications = Vec::new();
+    let result = tree(bounds).query(
+        &mut provider,
+        POINT { x: 5, y: 5 },
+        &clock,
+        &QueryControl::refinement(&|| false),
+        &mut |path| publications.push((clock.now(), path)),
+    );
+    assert_eq!(result.1, StopReason::Complete);
+    assert!(!publications.is_empty());
+    for pair in publications.windows(2) {
+        assert!(pair[1].0 - pair[0].0 >= Duration::from_millis(32));
+        assert!(pair[1].1.ends_with(&pair[0].1));
+    }
+    provider.call_cost = Duration::ZERO;
+    provider.children.insert(0, vec![Spec::new(1, bounds)]);
+    provider.children.insert(1, vec![Spec::new(1, bounds)]);
+    let mut tree = tree(bounds);
+    for _ in 0..3 {
+        assert_eq!(
+            tree.query(
+                &mut provider,
+                POINT { x: 5, y: 5 },
+                &clock,
+                &QueryControl::refinement(&|| false),
+                &mut |_| {}
+            )
+            .1,
+            StopReason::TraversalLimit
+        );
+    }
+    // Re-querying an already traversed cycle must not grow the tree indefinitely.
+    assert_eq!(tree.nodes.len(), MAX_STEPS + 1);
+}
+
+#[test]
+fn total_refinement_budget_caps_calls_and_preserves_partial_siblings() {
+    let bounds = rect(0, 0, 100, 100);
+    let mut provider = FakeProvider {
+        call_cost: Duration::from_millis(500),
+        ..Default::default()
+    };
+    for i in 0..5 {
+        provider.children.insert(
+            i,
+            vec![Spec::new(i + 1, rect(0, 0, 99 - i as i32, 99 - i as i32))],
+        );
+    }
+    let clock = provider.clock.clone();
+    let result = tree(bounds).query(
+        &mut provider,
+        POINT { x: 5, y: 5 },
+        &clock,
+        &QueryControl::refinement(&|| false),
+        &mut |_| {},
+    );
+    assert_eq!(result.1, StopReason::DecodingPending);
+    assert_eq!(provider.calls, [0, 1, 2]);
+    assert!(
+        provider
+            .remaining
+            .iter()
+            .all(|&r| r == Duration::from_millis(500))
+    );
+    assert_eq!(clock.now(), Duration::from_millis(1500));
 }

@@ -72,13 +72,7 @@ bool ScreenshotSelectorWorkflow::requestHitTest(const QPoint& physicalPoint) {
     return m_context.selectorService.requestHitTest(physicalPoint, hitTestMode);
 }
 
-void ScreenshotSelectorWorkflow::startNextHitTest() {
-    if (m_context.interaction.intelligentSelecting()) {
-        m_context.selectorService.startNextHitTest();
-    }
-}
-
-void ScreenshotSelectorWorkflow::handleHitTestFinished(bool ok, const QVector<QRectF>& hitRects) {
+void ScreenshotSelectorWorkflow::handleInitialResult(bool ok, const QVector<QRectF>& hitRects) {
     if (m_context.interaction.inactive()) {
         return;
     }
@@ -92,11 +86,12 @@ void ScreenshotSelectorWorkflow::handleHitTestFinished(bool ok, const QVector<QR
             SNOW_SHOT_CAPTURE_PERF_SCOPE("selector.chain_update_overlay_state");
             m_context.presentation.updateOverlayState();
         }
-        if (m_context.presentation.smartSelectionResultReady) {
+        if (m_context.presentation.smartSelectionResultReady &&
+            m_initialNotifiedSession != m_context.captureState.sessionId) {
+            m_initialNotifiedSession = m_context.captureState.sessionId;
             SNOW_SHOT_CAPTURE_PERF_SCOPE("selector.chain_initial_resolved");
             m_context.presentation.smartSelectionResultReady(m_context.captureState.sessionId);
         }
-        startNextHitTest();
     }
 }
 
@@ -146,4 +141,26 @@ bool ScreenshotSelectorWorkflow::returnToSelection(const QPoint& physicalPoint) 
     }
     static_cast<void>(updateSelectionAt(physicalPoint));
     return true;
+}
+
+void ScreenshotSelectorWorkflow::handleTargetChanged() {
+    m_context.intelligentSelection.resetTargetPreference();
+}
+
+void ScreenshotSelectorWorkflow::handleRefinement(const QVector<QRectF>& hitRects) {
+    if (!m_context.interaction.intelligentSelecting() ||
+        m_context.intelligentSelection.pressActive())
+        return;
+    QVector<QRectF> canvasRects;
+    canvasRects.reserve(hitRects.size());
+    for (const QRectF& rect : hitRects)
+        canvasRects.push_back(
+            m_context.geometry.canvasRectForPhysicalRect(m_context.displaySession, rect));
+    if (!m_context.intelligentSelection.applyCanvasRefinementPath(
+            canvasRects, m_context.geometry.canvasBounds(),
+            snow_shot::presentation::kScreenshotSelectionMinimumSize))
+        return;
+    m_context.selection.setSelectionRect(m_context.intelligentSelection.currentSelection());
+    if (m_context.presentation.updateOverlayState)
+        m_context.presentation.updateOverlayState();
 }

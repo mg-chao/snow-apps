@@ -1907,8 +1907,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-window-element-api-tests
              COMMAND snow-shot-window-element-api-tests)
+    add_test(NAME snow-shot-selector-phased-tests
+             COMMAND snow-shot-window-element-api-tests --selector-only)
     snow_shot_import_offscreen_platform(snow-shot-window-element-api-tests)
-    set_tests_properties(snow-shot-window-element-api-tests PROPERTIES
+    set_tests_properties(snow-shot-window-element-api-tests snow-shot-selector-phased-tests PROPERTIES
         ENVIRONMENT
             "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION
@@ -2261,6 +2263,7 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-capture-workflow-tests
         tests/screenshot_capture_workflow_tests.cpp
+        src/presentation/selector/screenshotselectorworkflow.cpp
         include/snow_shot/presentation/screenshotcapturedisplaymodelreconciler.h
         include/snow_shot/presentation/screenshotcapturestate.h
         include/snow_shot/presentation/screenshotcaptureworkflow.h
@@ -5251,6 +5254,68 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         USES_TERMINAL
         VERBATIM
     )
+
+    # A standalone selector archive avoids pulling the recording/FFmpeg umbrella
+    # into this focused benchmark and matches the preserved baseline archive.
+    set(_uia_phased_lib "${CMAKE_BINARY_DIR}/selector-cargo/x86_64-pc-windows-msvc/release/snow_ui_selector_c.lib")
+    file(GLOB_RECURSE _uia_selector_sources CONFIGURE_DEPENDS
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-ui-selector/src/*.rs"
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-ui-selector-c/src/*.rs")
+    add_custom_command(OUTPUT "${_uia_phased_lib}"
+        COMMAND "${CMAKE_COMMAND}" -E env "CARGO_TARGET_DIR=${CMAKE_BINARY_DIR}/selector-cargo"
+            "RUSTFLAGS=-C target-feature=+crt-static"
+            "${CARGO_EXECUTABLE}" build --locked --release --target x86_64-pc-windows-msvc
+            --manifest-path "${SNOW_SHOT_CAPTURE_CRATES_DIR}/Cargo.toml" -p snow-ui-selector-c
+        DEPENDS ${_uia_selector_sources}
+            "${SNOW_SHOT_CAPTURE_CRATES_DIR}/Cargo.lock"
+            "${SNOW_SHOT_CAPTURE_CRATES_DIR}/Cargo.toml"
+            "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-ui-selector/Cargo.toml"
+            "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-ui-selector-c/Cargo.toml"
+        VERBATIM)
+    add_custom_target(snow-shot-selector-phased-rust DEPENDS "${_uia_phased_lib}")
+    add_executable(snow-shot-selector-phased-performance-benchmark
+        tests/screenshot_selector_phased_performance_benchmark.cpp
+        include/snow_shot/presentation/screenshotselectorcoordinator.h
+        src/presentation/selector/screenshotselectorcoordinator.cpp
+        src/presentation/selector/screenshotselectorserviceclient.cpp
+        src/presentation/core/screenshotintelligentselectionmodel.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+    )
+    target_include_directories(snow-shot-selector-phased-performance-benchmark PRIVATE
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-ui-selector-c/include")
+    target_link_libraries(snow-shot-selector-phased-performance-benchmark PRIVATE
+        snow_shot_settings "${_uia_phased_lib}" Qt6::Widgets
+        user32 userenv ole32 oleaut32 oleacc gdi32 dwmapi ntdll ws2_32 bcrypt advapi32)
+    add_dependencies(snow-shot-selector-phased-performance-benchmark snow-shot-selector-phased-rust)
+    qt_import_plugins(snow-shot-selector-phased-performance-benchmark INCLUDE Qt6::QWindowsIntegrationPlugin)
+
+    set(SNOW_SHOT_UIA_BASELINE_DIR "" CACHE PATH "Preserved pre-refactor selector sources and standalone Rust workspace for comparison.")
+    if(SNOW_SHOT_UIA_BASELINE_DIR)
+        set(_uia_baseline_lib "${SNOW_SHOT_UIA_BASELINE_DIR}/target/x86_64-pc-windows-msvc/release/snow_ui_selector_c.lib")
+        add_custom_command(OUTPUT "${_uia_baseline_lib}"
+            COMMAND "${CMAKE_COMMAND}" -E env "CARGO_TARGET_DIR=${SNOW_SHOT_UIA_BASELINE_DIR}/target"
+                "RUSTFLAGS=-C target-feature=+crt-static"
+                "${CARGO_EXECUTABLE}" build --offline --release --target x86_64-pc-windows-msvc
+                --manifest-path "${SNOW_SHOT_UIA_BASELINE_DIR}/Cargo.toml" -p snow-ui-selector-c
+            VERBATIM)
+        add_custom_target(snow-shot-selector-baseline-rust DEPENDS "${_uia_baseline_lib}")
+        add_executable(snow-shot-selector-baseline-performance-benchmark
+            tests/screenshot_selector_phased_performance_benchmark.cpp
+            "${SNOW_SHOT_UIA_BASELINE_DIR}/snow_shot/include/snow_shot/presentation/screenshotselectorcoordinator.h"
+            "${SNOW_SHOT_UIA_BASELINE_DIR}/snow_shot/src/presentation/selector/screenshotselectorcoordinator.cpp"
+            "${SNOW_SHOT_UIA_BASELINE_DIR}/snow_shot/src/presentation/selector/screenshotselectorserviceclient.cpp"
+            src/presentation/core/screenshotintelligentselectionmodel.cpp
+            src/presentation/services/screenshotclipboardservice.cpp)
+        target_compile_definitions(snow-shot-selector-baseline-performance-benchmark PRIVATE SNOW_UIA_LEGACY_BENCHMARK)
+        target_include_directories(snow-shot-selector-baseline-performance-benchmark BEFORE PRIVATE
+            "${SNOW_SHOT_UIA_BASELINE_DIR}/snow_shot/include"
+            "${SNOW_SHOT_UIA_BASELINE_DIR}/crates/snow-ui-selector-c/include")
+        target_link_libraries(snow-shot-selector-baseline-performance-benchmark PRIVATE
+            snow_shot_settings "${_uia_baseline_lib}" Qt6::Widgets
+            user32 userenv ole32 oleaut32 oleacc gdi32 dwmapi ntdll ws2_32 bcrypt advapi32)
+        add_dependencies(snow-shot-selector-baseline-performance-benchmark snow-shot-selector-baseline-rust)
+        qt_import_plugins(snow-shot-selector-baseline-performance-benchmark INCLUDE Qt6::QWindowsIntegrationPlugin)
+    endif()
 
     # Not registered with CTest: this generates final-container fixtures through
     # the streaming encoder used by direct recording and reports Release metrics.

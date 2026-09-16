@@ -652,7 +652,7 @@ void ScreenshotOverlayInputHandler::requestIntelligentSelectionHitTest(
 }
 
 void ScreenshotOverlayInputHandler::setIntelligentSelectionIndex(int index) {
-    if (!m_context.intelligentSelection.setIndex(index)) {
+    if (!m_context.intelligentSelection.selectIndex(index)) {
         m_context.selection.clearSelection();
         return;
     }
@@ -669,6 +669,9 @@ void ScreenshotOverlayInputHandler::confirmSelection() {
         return;
     }
 
+    if (m_context.interaction.intelligentSelecting()) {
+        m_context.actions.pauseIntelligentSelection();
+    }
     m_context.interaction.confirmSelection();
     m_context.captureState.sessionState = ScreenshotSessionState::Editing;
     m_context.intelligentSelection.clearPress();

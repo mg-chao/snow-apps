@@ -11,13 +11,14 @@ use windows::Win32::UI::Accessibility::{
 };
 use windows::core::Result;
 
-use crate::ElementRect;
 use crate::geometry::*;
 use crate::spatial::*;
 use crate::window;
+use crate::{ElementRect, QueryControl, QueryResult, StopReason, WindowSnapshot};
 use cache::{Batch, Candidate, Provider, QueryClock, WindowTree};
 
 struct UiaWindow {
+    hwnd: isize,
     bounds: RECT,
     tree: WindowTree<NativeProvider>,
 }
@@ -52,28 +53,68 @@ impl UiaBackend {
         self.window_index.release_cache();
     }
 
-    pub(crate) fn hit_test_point(
+    pub(crate) fn snapshot(&self) -> WindowSnapshot {
+        WindowSnapshot(self.windows.iter().map(|w| (w.hwnd, w.bounds)).collect())
+    }
+
+    pub(crate) fn from_snapshot(snapshot: &WindowSnapshot) -> Result<Self> {
+        let mut entries = Vec::new();
+        let windows = snapshot
+            .0
+            .iter()
+            .enumerate()
+            .map(|(i, &(hwnd, bounds))| {
+                entries.push(IndexedWindow {
+                    envelope: rect_to_aabb(bounds),
+                    cache_index: i,
+                    z_order: i,
+                });
+                UiaWindow {
+                    hwnd,
+                    bounds,
+                    tree: WindowTree::new(HWND(hwnd as *mut _), bounds),
+                }
+            })
+            .collect();
+        Ok(Self {
+            windows,
+            window_index: WindowSpatialIndex::build(entries),
+            provider: NativeProvider::new()?,
+        })
+    }
+
+    pub(crate) fn query(
         &mut self,
         point: POINT,
         mode: crate::HitTestMode,
-    ) -> Result<Option<Vec<ElementRect>>> {
+        control: &QueryControl<'_>,
+        progress: &mut dyn FnMut(&[ElementRect]),
+    ) -> Result<QueryResult> {
         let Some(index) = self
             .window_index
             .window_at_point([point.x, point.y])
-            .map(|entry| entry.cache_index)
+            .map(|e| e.cache_index)
         else {
-            return Ok(None);
+            return Ok(QueryResult {
+                path: None,
+                reason: StopReason::Complete,
+            });
         };
         let window = &mut self.windows[index];
-        let path = match mode {
-            crate::HitTestMode::Window => vec![window.bounds],
-            crate::HitTestMode::UiElement => {
-                window
-                    .tree
-                    .hit(&mut self.provider, point, &QueryClock::new())
-            }
+        let (path, reason) = match mode {
+            crate::HitTestMode::Window => (vec![window.bounds], StopReason::Complete),
+            crate::HitTestMode::UiElement => window.tree.query(
+                &mut self.provider,
+                point,
+                &QueryClock::new(),
+                control,
+                &mut |path| progress(&path.into_iter().map(ElementRect::new).collect::<Vec<_>>()),
+            ),
         };
-        Ok(Some(path.into_iter().map(ElementRect::new).collect()))
+        Ok(QueryResult {
+            path: Some(path.into_iter().map(ElementRect::new).collect()),
+            reason,
+        })
     }
 }
 
@@ -216,6 +257,7 @@ fn collect_window_snapshot(
         };
         let cache_index = windows.len();
         windows.push(UiaWindow {
+            hwnd: hwnd.0 as isize,
             bounds,
             tree: WindowTree::new(hwnd, bounds),
         });
@@ -270,6 +312,35 @@ mod tests {
     }
 
     #[test]
+    fn refinement_reconstructs_exact_geometry_without_reenumerating_desktop() {
+        let _serial = UIA_TEST_LOCK.lock().unwrap();
+        let _com = ComApartment::new().unwrap();
+        let (windows, window_index) =
+            collect_window_snapshot(vec![hwnd(11), hwnd(22), hwnd(33)], &[hwnd(22)], |_| {
+                Some(bounds())
+            });
+        let source = UiaBackend {
+            windows,
+            window_index,
+            provider: NativeProvider::new().unwrap(),
+        };
+        let snapshot = source.snapshot();
+        let mut refinement = UiaBackend::from_snapshot(&snapshot).unwrap();
+        assert_eq!(refinement.snapshot().0, snapshot.0);
+        assert_eq!(refinement.windows[0].hwnd, 11);
+        assert_eq!(refinement.windows[1].hwnd, 33);
+        let result = refinement
+            .query(
+                POINT { x: 5, y: 5 },
+                crate::HitTestMode::Window,
+                &QueryControl::foreground(),
+                &mut |_| panic!("window lookup must not publish progress"),
+            )
+            .unwrap();
+        assert_eq!(result.path.unwrap()[0].rect, bounds());
+    }
+
+    #[test]
     fn native_request_keeps_one_level_and_full_expansion_references() {
         let _serial = UIA_TEST_LOCK.lock().unwrap();
         let _com = ComApartment::new().unwrap();
@@ -301,22 +372,40 @@ mod tests {
         };
         let point = POINT { x: 5, y: 5 };
         let result = backend
-            .hit_test_point(point, crate::HitTestMode::Window)
+            .query(
+                point,
+                crate::HitTestMode::Window,
+                &QueryControl::foreground(),
+                &mut |_| {},
+            )
             .unwrap()
+            .path
             .unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].left(), -10);
         backend.release_cache();
         assert!(
             backend
-                .hit_test_point(point, crate::HitTestMode::Window)
+                .query(
+                    point,
+                    crate::HitTestMode::Window,
+                    &QueryControl::foreground(),
+                    &mut |_| {}
+                )
                 .unwrap()
+                .path
                 .is_none()
         );
         assert!(
             backend
-                .hit_test_point(point, crate::HitTestMode::UiElement)
+                .query(
+                    point,
+                    crate::HitTestMode::UiElement,
+                    &QueryControl::foreground(),
+                    &mut |_| {}
+                )
                 .unwrap()
+                .path
                 .is_none()
         );
         let snapshot = collect_window_snapshot(vec![hwnd(1)], &[], |_| Some(bounds()));
@@ -324,8 +413,14 @@ mod tests {
         backend.window_index = snapshot.1;
         assert!(
             backend
-                .hit_test_point(point, crate::HitTestMode::Window)
+                .query(
+                    point,
+                    crate::HitTestMode::Window,
+                    &QueryControl::foreground(),
+                    &mut |_| {}
+                )
                 .unwrap()
+                .path
                 .is_some()
         );
     }

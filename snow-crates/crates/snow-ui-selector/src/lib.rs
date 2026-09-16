@@ -4,9 +4,11 @@ use std::sync::Once;
 mod com;
 mod geometry;
 mod msaa;
+mod query;
 mod spatial;
 mod uia;
 mod window;
+pub use query::{QueryControl, QueryResult, StopReason, WindowSnapshot};
 
 use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::UI::HiDpi::{
@@ -36,7 +38,7 @@ pub fn enable_high_dpi_support() {
 }
 
 /// Bounding region of a UI element found by hit-testing.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ElementRect {
     rect: RECT,
 }
@@ -71,7 +73,7 @@ impl ElementRect {
     }
 }
 
-/// Controls what `hit_test_point` returns.
+/// Controls what `query` returns.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum HitTestMode {
     /// Traverse the UI element tree and return the full region path from the
@@ -109,17 +111,6 @@ impl BackendImpl {
         match self {
             Self::Uia(b) => b.release_cache(),
             Self::Msaa(b) => b.release_cache(),
-        }
-    }
-
-    fn hit_test_point(
-        &mut self,
-        point: POINT,
-        mode: HitTestMode,
-    ) -> Result<Option<Vec<ElementRect>>> {
-        match self {
-            Self::Uia(b) => b.hit_test_point(point, mode),
-            Self::Msaa(b) => b.hit_test_point(point, mode),
         }
     }
 
@@ -193,11 +184,35 @@ impl ElementRegionService {
         self.backend.release_cache();
     }
 
-    pub fn hit_test_point(
+    pub fn window_snapshot(&self) -> Option<WindowSnapshot> {
+        match &self.backend {
+            BackendImpl::Uia(b) => Some(b.snapshot()),
+            _ => None,
+        }
+    }
+
+    pub fn from_snapshot(snapshot: &WindowSnapshot) -> Result<Self> {
+        let com = com::ComApartment::new()?;
+        Ok(Self {
+            backend: BackendImpl::Uia(uia::UiaBackend::from_snapshot(snapshot)?),
+            _com: com,
+            _not_send: PhantomData,
+        })
+    }
+
+    pub fn query(
         &mut self,
         point: POINT,
         mode: HitTestMode,
-    ) -> Result<Option<Vec<ElementRect>>> {
-        self.backend.hit_test_point(point, mode)
+        control: &QueryControl<'_>,
+        progress: &mut dyn FnMut(&[ElementRect]),
+    ) -> Result<QueryResult> {
+        match &mut self.backend {
+            BackendImpl::Uia(b) => b.query(point, mode, control, progress),
+            BackendImpl::Msaa(b) => b.hit_test_point(point, mode).map(|path| QueryResult {
+                path,
+                reason: StopReason::Complete,
+            }),
+        }
     }
 }

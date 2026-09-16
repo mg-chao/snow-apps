@@ -8,16 +8,16 @@
 #include <QByteArray>
 
 struct ScreenshotSelectorLookupPolicy {
-    SnowUiSelectorBackend backend = SNOW_UI_SELECTOR_BACKEND_MSAA;
+    SnowUiSelectorBackend backend = SNOW_UI_SELECTOR_BACKEND_UIA;
     SnowUiSelectorHitTestMode mode = SNOW_UI_SELECTOR_HIT_TEST_MODE_UI_ELEMENT;
 };
 
 inline ScreenshotSelectorLookupPolicy
 screenshotSelectorLookupPolicy(bool smartSelectionEnabled, const QByteArray& configuredBackend) {
     const QByteArray backend = configuredBackend.trimmed().toLower();
-    SnowUiSelectorBackend selectedBackend = SNOW_UI_SELECTOR_BACKEND_MSAA;
-    if (backend == "uia" || backend == "ui_automation" || backend == "ui-automation") {
-        selectedBackend = SNOW_UI_SELECTOR_BACKEND_UIA;
+    SnowUiSelectorBackend selectedBackend = SNOW_UI_SELECTOR_BACKEND_UIA;
+    if (backend == "msaa") {
+        selectedBackend = SNOW_UI_SELECTOR_BACKEND_MSAA;
     }
     return {selectedBackend, smartSelectionEnabled ? SNOW_UI_SELECTOR_HIT_TEST_MODE_UI_ELEMENT
                                                    : SNOW_UI_SELECTOR_HIT_TEST_MODE_WINDOW};

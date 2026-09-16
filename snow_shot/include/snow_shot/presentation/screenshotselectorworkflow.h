@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 
 struct ScreenshotCaptureState;
 class ScreenshotDisplaySession;
@@ -48,8 +49,9 @@ class ScreenshotSelectorWorkflow final {
 
     [[nodiscard]] bool updateSelectionAt(const QPoint& physicalPoint);
     [[nodiscard]] bool requestHitTest(const QPoint& physicalPoint);
-    void startNextHitTest();
-    void handleHitTestFinished(bool ok, const QVector<QRectF>& hitRects);
+    void handleInitialResult(bool ok, const QVector<QRectF>& hitRects);
+    void handleRefinement(const QVector<QRectF>& hitRects);
+    void handleTargetChanged();
 
     void applyHitPath(const QVector<QRectF>& hitRects);
     void clearSelection();
@@ -57,6 +59,7 @@ class ScreenshotSelectorWorkflow final {
 
   private:
     ScreenshotSelectorWorkflowContext m_context;
+    std::optional<quint64> m_initialNotifiedSession;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTORWORKFLOW_H

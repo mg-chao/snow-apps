@@ -27,6 +27,11 @@ class ScreenshotIntelligentSelectionModel final {
     [[nodiscard]] bool applyCanvasHitPath(const QVector<QRectF>& canvasHitRects,
                                           const QRectF& selectableBounds,
                                           qreal minimumSelectionSize);
+    [[nodiscard]] bool applyCanvasRefinementPath(const QVector<QRectF>& canvasHitRects,
+                                                 const QRectF& selectableBounds,
+                                                 qreal minimumSelectionSize);
+    void resetTargetPreference();
+    [[nodiscard]] bool selectIndex(int index);
     [[nodiscard]] bool setIndex(int index);
     [[nodiscard]] bool toggleSelectionTarget();
     [[nodiscard]] bool smartSelectionEnabled() const;
@@ -48,6 +53,7 @@ class ScreenshotIntelligentSelectionModel final {
     ScreenshotIntelligentSelectionTarget m_selectionTarget =
         ScreenshotIntelligentSelectionTarget::Window;
     bool m_smartSelectionEnabled = false;
+    bool m_explicitSelection = false;
     bool m_pressActive = false;
     QPointF m_pressPosition;
     QRectF m_pressSelection;

@@ -5,7 +5,9 @@ use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::core::Result;
 
 use crate::geometry::{contains_point, intersect_rect, rect_to_aabb, same_rect};
+use crate::{QueryControl, StopReason};
 
+#[cfg(test)]
 pub(super) const QUERY_BUDGET: Duration = Duration::from_millis(168);
 const MAX_STEPS: usize = 80;
 const MAX_RECTS: usize = 100;
@@ -52,6 +54,7 @@ struct Node<E, B> {
     bounds: RECT,
     parent: Option<usize>,
     children: Children<E, B>,
+    timeout_retried: bool,
 }
 
 enum Children<E, B> {
@@ -63,7 +66,7 @@ enum Children<E, B> {
         entries: Vec<ChildEntry>,
     },
     Loaded(ChildIndex),
-    Failed,
+    Failed(StopReason),
 }
 
 #[derive(Clone, Copy)]
@@ -120,30 +123,74 @@ impl<P: Provider> WindowTree<P> {
                 bounds,
                 parent: None,
                 children: Children::Root(hwnd),
+                timeout_retried: false,
             }],
         }
     }
 
+    #[cfg(test)]
     pub(super) fn hit(&mut self, provider: &mut P, point: POINT, clock: &impl Clock) -> Vec<RECT> {
-        let bounds = self.nodes[0].bounds;
-        if !contains_point(bounds, point) {
-            return Vec::new();
+        self.query(
+            provider,
+            point,
+            clock,
+            &QueryControl::foreground(),
+            &mut |_| {},
+        )
+        .0
+    }
+
+    pub(super) fn query(
+        &mut self,
+        provider: &mut P,
+        point: POINT,
+        clock: &impl Clock,
+        control: &QueryControl<'_>,
+        progress: &mut dyn FnMut(Vec<RECT>),
+    ) -> (Vec<RECT>, StopReason) {
+        if !contains_point(self.nodes[0].bounds, point) {
+            return (Vec::new(), StopReason::Complete);
         }
-        let deadline = clock.now() + QUERY_BUDGET;
+        let started = clock.now();
+        let deadline = started + control.budget;
         let mut current = 0;
+        let mut reason = StopReason::TraversalLimit;
+        let mut last_publication = started;
+        let mut last_path = Vec::new();
         for _ in 0..MAX_STEPS {
-            if !self.expand(current, provider, deadline, clock) {
+            if (control.cancelled)() {
+                reason = StopReason::Cancelled;
+                break;
+            }
+            if let Err(stop) = self.expand(current, provider, deadline, clock, control) {
+                reason = stop;
                 break;
             }
             let Children::Loaded(children) = &self.nodes[current].children else {
-                break;
+                unreachable!()
             };
             let Some(child) = children.hit(point) else {
+                reason = StopReason::Complete;
                 break;
             };
             current = child;
+            if control
+                .publication_interval
+                .is_some_and(|interval| clock.now().saturating_sub(last_publication) >= interval)
+            {
+                let path = self.path(current);
+                if path != last_path && !(control.cancelled)() {
+                    progress(path.clone());
+                    last_path = path;
+                    last_publication = clock.now();
+                }
+            }
         }
+        (self.path(current), reason)
+    }
 
+    fn path(&self, mut current: usize) -> Vec<RECT> {
+        let bounds = self.nodes[0].bounds;
         let mut path = Vec::with_capacity(8);
         while current != 0 && path.len() < MAX_RECTS - 1 {
             let node = &self.nodes[current];
@@ -162,45 +209,81 @@ impl<P: Provider> WindowTree<P> {
         provider: &mut P,
         deadline: Duration,
         clock: &impl Clock,
-    ) -> bool {
+        control: &QueryControl<'_>,
+    ) -> std::result::Result<(), StopReason> {
         if matches!(self.nodes[node].children, Children::Loaded(_)) {
-            return true;
+            return Ok(());
         }
-        if matches!(self.nodes[node].children, Children::Failed) {
-            return false;
+        if let Children::Failed(reason) = self.nodes[node].children {
+            return Err(reason);
         }
-        let remaining = deadline.saturating_sub(clock.now());
-        if remaining.is_zero() {
-            return false;
-        }
-        let state = std::mem::replace(&mut self.nodes[node].children, Children::Failed);
-        let (batch, mut next, mut entries) = match state {
-            Children::Root(hwnd) => match provider.root(hwnd, remaining) {
-                Ok(batch) => (batch, 0, Vec::new()),
-                Err(_) => return false,
-            },
-            Children::Unloaded(element) => match provider.children(&element, remaining) {
-                Ok(batch) => (batch, 0, Vec::new()),
-                Err(_) => return false,
-            },
-            Children::Pending {
-                batch,
-                next,
-                entries,
-            } => (batch, next, entries),
-            _ => unreachable!("loaded and failed nodes returned above"),
+        let (batch, mut next, mut entries) = loop {
+            if (control.cancelled)() {
+                return Err(StopReason::Cancelled);
+            }
+            let remaining = deadline.saturating_sub(clock.now()).min(control.call_limit);
+            if remaining.is_zero() {
+                return Err(StopReason::BudgetExhausted);
+            }
+            let state = std::mem::replace(
+                &mut self.nodes[node].children,
+                Children::Failed(StopReason::ProviderFailure),
+            );
+            let result = match &state {
+                Children::Root(hwnd) => provider.root(*hwnd, remaining),
+                Children::Unloaded(element) => provider.children(element, remaining),
+                _ => {
+                    let Children::Pending {
+                        batch,
+                        next,
+                        entries,
+                    } = state
+                    else {
+                        unreachable!()
+                    };
+                    break (batch, next, entries);
+                }
+            };
+            match result {
+                Ok(batch) => break (batch, 0, Vec::new()),
+                Err(error) => {
+                    let timeout = error.code().0 as u32
+                        == windows::Win32::UI::Accessibility::UIA_E_TIMEOUT
+                        || error.code() == windows::core::HRESULT::from_win32(1460);
+                    let reason = if timeout {
+                        StopReason::ProviderTimeout
+                    } else {
+                        StopReason::ProviderFailure
+                    };
+                    if timeout && control.retry_timeout && !self.nodes[node].timeout_retried {
+                        self.nodes[node].timeout_retried = true;
+                        self.nodes[node].children = state;
+                        continue;
+                    }
+                    self.nodes[node].children = Children::Failed(reason);
+                    return Err(if (control.cancelled)() {
+                        StopReason::Cancelled
+                    } else {
+                        reason
+                    });
+                }
+            }
         };
 
         // Publish only complete sibling batches: a later overlapping child takes precedence.
         // Retaining the cached batch also lets decoding resume without another provider call.
         while next < batch.len() {
-            if clock.now() >= deadline {
+            if (control.cancelled)() || clock.now() >= deadline {
                 self.nodes[node].children = Children::Pending {
                     batch,
                     next,
                     entries,
                 };
-                return false;
+                return Err(if (control.cancelled)() {
+                    StopReason::Cancelled
+                } else {
+                    StopReason::DecodingPending
+                });
             }
             let candidate = batch.get(next);
             next += 1;
@@ -216,6 +299,7 @@ impl<P: Provider> WindowTree<P> {
                 bounds,
                 parent: Some(node),
                 children: Children::Unloaded(candidate.element),
+                timeout_retried: false,
             });
             entries.push(ChildEntry {
                 bounds,
@@ -224,7 +308,11 @@ impl<P: Provider> WindowTree<P> {
         }
         self.nodes[node].children = Children::Loaded(ChildIndex::new(entries));
         // Even after expiry, use the completed batch before considering more acquisition.
-        true
+        if (control.cancelled)() {
+            Err(StopReason::Cancelled)
+        } else {
+            Ok(())
+        }
     }
 }
 

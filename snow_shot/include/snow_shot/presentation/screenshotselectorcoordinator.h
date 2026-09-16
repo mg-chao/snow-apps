@@ -2,12 +2,15 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTORCOORDINATOR_H
 
 #include <QObject>
+#include <QElapsedTimer>
+#include <QTimer>
 #include <QPoint>
 #include <QRectF>
 #include <QVector>
 
 #include <cstdint>
 #include <memory>
+#include <functional>
 
 #include "snow_shot/presentation/screenshotselectorworkflowports.h"
 
@@ -17,7 +20,8 @@ class ScreenshotSelectorCoordinator final : public QObject, public ScreenshotSel
     Q_OBJECT
 
   public:
-    explicit ScreenshotSelectorCoordinator(QObject* parent = nullptr);
+    explicit ScreenshotSelectorCoordinator(QObject* parent = nullptr,
+                                           std::function<qint64()> now = {});
     ~ScreenshotSelectorCoordinator() override;
 
     [[nodiscard]] bool ready() const override;
@@ -32,15 +36,27 @@ class ScreenshotSelectorCoordinator final : public QObject, public ScreenshotSel
     [[nodiscard]] bool startRefresh(const QVector<std::uintptr_t>& excludedHwnds) override;
     [[nodiscard]] bool requestHitTest(const QPoint& physicalPoint,
                                       ScreenshotSelectorHitTestMode mode) override;
-    void startNextHitTest() override;
 
   signals:
     void refreshFinished(bool ok);
-    void hitTestFinished(bool ok, QVector<QRectF> hitRects);
+    void initialResultReady(bool ok, QVector<QRectF> hitRects);
+    void refinementReady(QVector<QRectF> hitRects);
+    void targetChanged();
 
   private:
+    void startNextHitTest();
     void handleRefreshFinished(quint64 requestId, bool ok);
-    void handleHitTestFinished(quint64 requestId, bool ok, const QVector<QRectF>& hitRects);
+    void handleResult(const ScreenshotSelectorResult& result);
+    Q_SLOT void scheduleRefinement();
+    void cancelRefinement();
+    QTimer m_refinementTimer;
+    QElapsedTimer m_clock;
+    std::function<qint64()> m_now;
+    qint64 m_targetChangedAt = 0;
+    ScreenshotSelectorResult m_initial;
+    quint64 m_targetGeneration = 0;
+    bool m_hasTarget = false;
+    bool m_refinementSubmitted = false;
 
     std::unique_ptr<ScreenshotSelectorServiceClient> m_serviceClient;
     quint64 m_refreshRequestId = 0;

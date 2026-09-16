@@ -120,6 +120,9 @@ class ScreenshotOverlayInputHandler final {
         if (m_externalDragActive && !active) {
             resetTransientShortcuts();
         }
+        if (active && !m_externalDragActive && m_context.actions.pauseIntelligentSelection) {
+            m_context.actions.pauseIntelligentSelection();
+        }
         m_externalDragActive = active;
     }
 

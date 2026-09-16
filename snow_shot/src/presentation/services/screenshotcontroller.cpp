@@ -1572,11 +1572,18 @@ void ScreenshotController::Impl::connectSelectorSignals() {
                          if (!m_globalMouseDrag.active())
                              m_selectorWorkflow->handleRefreshFinished(ok);
                      });
-    QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::hitTestFinished, &owner,
-                     [this](bool ok, const QVector<QRectF>& hitRects) {
+    QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::initialResultReady,
+                     &owner, [this](bool ok, const QVector<QRectF>& hitRects) {
                          if (!m_globalMouseDrag.active())
-                             m_selectorWorkflow->handleHitTestFinished(ok, hitRects);
+                             m_selectorWorkflow->handleInitialResult(ok, hitRects);
                      });
+    QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::refinementReady, &owner,
+                     [this](const QVector<QRectF>& rects) {
+                         if (!m_globalMouseDrag.active())
+                             m_selectorWorkflow->handleRefinement(rects);
+                     });
+    QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::targetChanged, &owner,
+                     [this]() { m_selectorWorkflow->handleTargetChanged(); });
 }
 
 void ScreenshotController::Impl::setMoveTool() {

@@ -897,7 +897,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      {QStringLiteral("auto"), QStringLiteral("dxgi"), QStringLiteral("wgc"),
       QStringLiteral("gdi")}},
     {QStringLiteral("screenshot/window_element_api"),
-     QStringLiteral("msaa"),
+     QStringLiteral("uia"),
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("msaa"), QStringLiteral("uia")}},

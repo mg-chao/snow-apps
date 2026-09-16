@@ -9,16 +9,11 @@
 
 #include <QByteArray>
 #include <QMetaObject>
-#include <QPointer>
 
 #include <utility>
 
-struct ScreenshotSelectorServiceClient::RefreshCallbackContext {
-    QPointer<ScreenshotSelectorServiceClient> client;
-};
-
-struct ScreenshotSelectorServiceClient::HitTestCallbackContext {
-    QPointer<ScreenshotSelectorServiceClient> client;
+struct ScreenshotSelectorServiceClient::CallbackBridge {
+    ScreenshotSelectorServiceClient* client;
 };
 
 namespace {
@@ -56,32 +51,12 @@ hitTestModeForRequestedTarget(ScreenshotSelectorHitTestMode requestedMode) {
     return screenshotSelectorHitTestMode(smartSelectionEnabled(), requestedMode);
 }
 
-QVector<QRectF> rectsFromHitPath(SnowUiSelectorHitPath* path) {
-    QVector<QRectF> rects;
-    if (path == nullptr) {
-        return rects;
-    }
-
-    const size_t count = snow_ui_selector_hit_path_count(path);
-    rects.reserve(static_cast<int>(count));
-    for (size_t index = 0; index < count; ++index) {
-        SnowUiSelectorRect rect{};
-        if (snow_ui_selector_hit_path_rect(path, index, &rect) == 0) {
-            continue;
-        }
-        if (rect.right <= rect.left || rect.bottom <= rect.top) {
-            continue;
-        }
-        rects.push_back(QRectF(QPointF(rect.left, rect.top),
-                               QSizeF(rect.right - rect.left, rect.bottom - rect.top)));
-    }
-    return rects;
-}
 } // namespace
 
 ScreenshotSelectorServiceClient::ScreenshotSelectorServiceClient(
     ScreenshotSelectorServiceClientCallbacks callbacks, QObject* parent)
-    : QObject(parent), m_callbacks(std::move(callbacks)) {}
+    : QObject(parent), m_bridge(std::make_unique<CallbackBridge>(CallbackBridge{this})),
+      m_callbacks(std::move(callbacks)) {}
 
 ScreenshotSelectorServiceClient::~ScreenshotSelectorServiceClient() {
     destroyService();
@@ -92,20 +67,15 @@ bool ScreenshotSelectorServiceClient::hasService() const {
 }
 
 bool ScreenshotSelectorServiceClient::ensureService() {
-    const SnowUiSelectorBackend desiredBackend = selectorBackendForCurrentMode();
-    if (m_service != nullptr && m_serviceBackend != static_cast<int>(desiredBackend)) {
-        destroyService();
-    }
     if (m_service != nullptr) {
         return true;
     }
 
     {
         SNOW_SHOT_CAPTURE_PERF_SCOPE("selector.service_create");
-        m_service = snow_ui_selector_service_create(desiredBackend);
-        if (m_service != nullptr) {
-            m_serviceBackend = static_cast<int>(desiredBackend);
-        }
+        m_service = snow_ui_selector_service_create(
+            &ScreenshotSelectorServiceClient::resultCallback,
+            &ScreenshotSelectorServiceClient::refreshCallback, m_bridge.get());
     }
     if (m_service != nullptr) {
         SNOW_SHOT_CAPTURE_PERF_COUNTER("selector.service_created", 1);
@@ -138,85 +108,90 @@ bool ScreenshotSelectorServiceClient::startRefresh(quint64 requestId,
         return false;
     }
 
+    m_serviceBackend = static_cast<int>(selectorBackendForCurrentMode());
     const std::uintptr_t* data = excludedHwnds.isEmpty() ? nullptr : excludedHwnds.constData();
-    auto* context = new RefreshCallbackContext{QPointer<ScreenshotSelectorServiceClient>(this)};
-    const uint8_t started = snow_ui_selector_service_refresh_async(
-        m_service, static_cast<std::uint64_t>(requestId), data,
-        static_cast<size_t>(excludedHwnds.size()),
-        &ScreenshotSelectorServiceClient::refreshCallback, context);
-    if (started == 0) {
-        delete context;
-        return false;
-    }
-    SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.refresh_dispatched");
-    return true;
+    const bool started =
+        snow_ui_selector_service_refresh(m_service, requestId,
+                                         static_cast<SnowUiSelectorBackend>(m_serviceBackend), data,
+                                         static_cast<size_t>(excludedHwnds.size())) != 0;
+    if (started)
+        SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.refresh_dispatched");
+    return started;
 }
 
-bool ScreenshotSelectorServiceClient::startHitTest(quint64 requestId, const QPoint& physicalPoint,
+bool ScreenshotSelectorServiceClient::startHitTest(quint64 epoch, quint64 requestId,
+                                                   quint64 generation, const QPoint& point,
                                                    ScreenshotSelectorHitTestMode mode) {
-    if (!ensureService()) {
+    if (!hasService())
         return false;
-    }
-
-    auto* context = new HitTestCallbackContext{QPointer<ScreenshotSelectorServiceClient>(this)};
-    const uint8_t started = snow_ui_selector_service_hit_test_point_async(
-        m_service, static_cast<std::uint64_t>(requestId), physicalPoint.x(), physicalPoint.y(),
-        hitTestModeForRequestedTarget(mode), &ScreenshotSelectorServiceClient::hitTestCallback,
-        context);
-    if (started == 0) {
-        delete context;
-        return false;
-    }
-    SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.hit_test_dispatched");
-    return true;
+    const SnowUiSelectorQuery query{epoch,     requestId, generation,
+                                    point.x(), point.y(), hitTestModeForRequestedTarget(mode)};
+    const bool started = snow_ui_selector_service_query(m_service, &query) != 0;
+    if (started)
+        SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.hit_test_dispatched");
+    return started;
 }
 
-void ScreenshotSelectorServiceClient::refreshCallback(std::uint64_t requestId, std::uint8_t ok,
-                                                      void* userdata) {
-    auto* context = static_cast<RefreshCallbackContext*>(userdata);
-    const QPointer<ScreenshotSelectorServiceClient> client =
-        context != nullptr ? context->client : QPointer<ScreenshotSelectorServiceClient>();
-    delete context;
-    if (client.isNull()) {
-        return;
-    }
+bool ScreenshotSelectorServiceClient::startRefinement(const ScreenshotSelectorResult& initial) {
+    if (!hasService() || !initial.canRefine)
+        return false;
+    const SnowUiSelectorQuery query{initial.epoch,      initial.requestId,
+                                    initial.generation, initial.point.x(),
+                                    initial.point.y(),  SNOW_UI_SELECTOR_HIT_TEST_MODE_UI_ELEMENT};
+    return snow_ui_selector_service_refine(m_service, &query) != 0;
+}
 
+void ScreenshotSelectorServiceClient::invalidateRefinement() {
+    if (hasService())
+        snow_ui_selector_service_invalidate_refinement(m_service);
+}
+
+void ScreenshotSelectorServiceClient::refreshCallback(std::uint64_t epoch, std::uint8_t ok,
+                                                      void* userdata) {
+    auto* client = static_cast<CallbackBridge*>(userdata)->client;
+    // The native close barrier keeps the bridge and QObject alive throughout this call.
     QMetaObject::invokeMethod(
         client,
-        [client, requestId, ok]() {
-            if (!client.isNull() && client->m_callbacks.refreshFinished) {
-                client->m_callbacks.refreshFinished(static_cast<quint64>(requestId), ok != 0);
-            }
+        [client, epoch, ok]() {
+            if (client->m_callbacks.refreshFinished)
+                client->m_callbacks.refreshFinished(epoch, ok != 0);
         },
         Qt::QueuedConnection);
 }
 
-void ScreenshotSelectorServiceClient::hitTestCallback(std::uint64_t requestId,
-                                                      SnowUiSelectorHitPath* path, std::uint8_t ok,
-                                                      void* userdata) {
-    QVector<QRectF> rects;
-    if (ok != 0) {
-        rects = rectsFromHitPath(path);
+void ScreenshotSelectorServiceClient::resultCallback(const SnowUiSelectorEvent* event,
+                                                     void* userdata) {
+    auto* client = static_cast<CallbackBridge*>(userdata)->client;
+    ScreenshotSelectorResult result;
+    result.epoch = event->query.epoch;
+    result.requestId = event->query.request_id;
+    result.generation = event->query.generation;
+    result.point = QPoint(event->query.x, event->query.y);
+    result.mode = event->query.mode == SNOW_UI_SELECTOR_HIT_TEST_MODE_WINDOW
+                      ? ScreenshotSelectorHitTestMode::Window
+                      : ScreenshotSelectorHitTestMode::WindowSubElement;
+    result.phase = static_cast<ScreenshotSelectorResultPhase>(event->phase);
+    result.stopReason = static_cast<ScreenshotSelectorStopReason>(event->reason);
+    result.ok = event->ok != 0;
+    result.elapsedUs = event->elapsed_us;
+    result.rects.reserve(static_cast<qsizetype>(event->count));
+    for (size_t i = 0; i < event->count; ++i) {
+        const auto& rect = event->rects[i];
+        if (rect.right > rect.left && rect.bottom > rect.top)
+            result.rects.push_back(
+                QRectF(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top));
     }
-    if (path != nullptr) {
-        snow_ui_selector_hit_path_destroy(path);
-    }
-
-    auto* context = static_cast<HitTestCallbackContext*>(userdata);
-    const QPointer<ScreenshotSelectorServiceClient> client =
-        context != nullptr ? context->client : QPointer<ScreenshotSelectorServiceClient>();
-    delete context;
-    if (client.isNull()) {
-        return;
-    }
-
     QMetaObject::invokeMethod(
         client,
-        [client, requestId, ok, rects = std::move(rects)]() {
-            if (!client.isNull() && client->m_callbacks.hitTestFinished) {
-                client->m_callbacks.hitTestFinished(static_cast<quint64>(requestId), ok != 0,
-                                                    rects);
-            }
+        [client, result = std::move(result)]() mutable {
+            result.canRefine =
+                client->m_serviceBackend == SNOW_UI_SELECTOR_BACKEND_UIA && result.ok &&
+                result.mode == ScreenshotSelectorHitTestMode::WindowSubElement &&
+                (result.stopReason == ScreenshotSelectorStopReason::BudgetExhausted ||
+                 result.stopReason == ScreenshotSelectorStopReason::DecodingPending ||
+                 result.stopReason == ScreenshotSelectorStopReason::ProviderTimeout);
+            if (client->m_callbacks.resultReady)
+                client->m_callbacks.resultReady(result);
         },
         Qt::QueuedConnection);
 }

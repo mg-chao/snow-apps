@@ -246,8 +246,8 @@ void builtInCatalogIsCompleteAndValid() {
                 windowElementSelect->options.at(1).value == QStringLiteral("uia") &&
                 windowElementSelect->options.at(1).label.translated() == QStringLiteral("UIA") &&
                 storage::ConfigurationSchema::defaultValue(windowElementApi->configurationKey) ==
-                    QStringLiteral("msaa"),
-            "system Screenshot settings must expose MSAA and UIA with MSAA as the default");
+                    QStringLiteral("uia"),
+            "system Screenshot settings must expose MSAA and UIA with UIA as the default");
     const auto* colorRestoration =
         catalog.item({QStringLiteral("system-settings"), QStringLiteral("screenshot-capture"),
                       QStringLiteral("screenshot.restore-original-screen-colors")});

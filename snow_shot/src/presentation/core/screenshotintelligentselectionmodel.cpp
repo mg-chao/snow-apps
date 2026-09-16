@@ -2,6 +2,26 @@
 
 #include <algorithm>
 
+namespace {
+QVector<QRectF> boundedPath(const QVector<QRectF>& canvasHitRects, const QRectF& selectableBounds,
+                            qreal minimumSelectionSize) {
+    QVector<QRectF> boundedHitRects;
+    boundedHitRects.reserve(canvasHitRects.size());
+    for (const QRectF& hitRect : canvasHitRects) {
+        const QRectF bounded = hitRect.intersected(selectableBounds);
+        if (bounded.width() < minimumSelectionSize || bounded.height() < minimumSelectionSize) {
+            continue;
+        }
+        if (!boundedHitRects.isEmpty() && bounded == boundedHitRects.constLast()) {
+            continue;
+        }
+        boundedHitRects.push_back(bounded);
+    }
+
+    return boundedHitRects;
+}
+} // namespace
+
 void ScreenshotIntelligentSelectionModel::beginCaptureSession(
     bool smartSelectionEnabled, ScreenshotIntelligentSelectionTarget preferredTarget) {
     clearTransientState();
@@ -22,6 +42,7 @@ void ScreenshotIntelligentSelectionModel::clearTransientState() {
 }
 
 void ScreenshotIntelligentSelectionModel::clearHitPath() {
+    m_explicitSelection = false;
     m_hitRects.clear();
     m_index = -1;
 }
@@ -55,18 +76,8 @@ bool ScreenshotIntelligentSelectionModel::applyCanvasHitPath(const QVector<QRect
         return false;
     }
 
-    QVector<QRectF> boundedHitRects;
-    boundedHitRects.reserve(canvasHitRects.size());
-    for (const QRectF& hitRect : canvasHitRects) {
-        const QRectF bounded = hitRect.intersected(selectableBounds);
-        if (bounded.width() < minimumSelectionSize || bounded.height() < minimumSelectionSize) {
-            continue;
-        }
-        if (!boundedHitRects.isEmpty() && bounded == boundedHitRects.constLast()) {
-            continue;
-        }
-        boundedHitRects.push_back(bounded);
-    }
+    const QVector<QRectF> boundedHitRects =
+        boundedPath(canvasHitRects, selectableBounds, minimumSelectionSize);
 
     if (boundedHitRects.isEmpty()) {
         clearHitPath();
@@ -165,4 +176,34 @@ QRectF ScreenshotIntelligentSelectionModel::takePressSelection() {
     const QRectF selection = m_pressSelection;
     clearPress();
     return selection;
+}
+
+void ScreenshotIntelligentSelectionModel::resetTargetPreference() {
+    m_explicitSelection = false;
+}
+
+bool ScreenshotIntelligentSelectionModel::selectIndex(int index) {
+    m_explicitSelection = true;
+    return setIndex(index);
+}
+
+bool ScreenshotIntelligentSelectionModel::applyCanvasRefinementPath(
+    const QVector<QRectF>& canvasHitRects, const QRectF& selectableBounds,
+    qreal minimumSelectionSize) {
+    if (m_pressActive ||
+        m_selectionTarget != ScreenshotIntelligentSelectionTarget::WindowSubElement ||
+        m_hitRects.isEmpty())
+        return false;
+    const QVector<QRectF> refined =
+        boundedPath(canvasHitRects, selectableBounds, minimumSelectionSize);
+    if (refined.size() <= m_hitRects.size())
+        return false;
+    const qsizetype added = refined.size() - m_hitRects.size();
+    for (qsizetype i = 0; i < m_hitRects.size(); ++i) {
+        if (refined.at(added + i) != m_hitRects.at(i))
+            return false;
+    }
+    const QRectF selected = currentSelection();
+    m_hitRects = refined;
+    return setIndex(m_explicitSelection ? static_cast<int>(m_hitRects.indexOf(selected)) : 0);
 }

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use snow_ui_selector::{AccessibilityBackend, ElementRegionService, HitTestMode};
+use snow_ui_selector::{AccessibilityBackend, ElementRegionService, HitTestMode, QueryControl};
 use windows::Win32::Foundation::POINT;
 use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 use windows::core::Result;
@@ -71,9 +71,23 @@ fn main() -> Result<()> {
         let started = Instant::now();
         let hit = if options.include_refresh {
             selector.refresh()?;
-            selector.hit_test_point(point, options.mode)?
+            selector
+                .query(
+                    point,
+                    options.mode,
+                    &QueryControl::foreground(),
+                    &mut |_| {},
+                )?
+                .path
         } else {
-            selector.hit_test_point(point, options.mode)?
+            selector
+                .query(
+                    point,
+                    options.mode,
+                    &QueryControl::foreground(),
+                    &mut |_| {},
+                )?
+                .path
         };
         let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
 
@@ -171,7 +185,13 @@ fn run_sequence(options: &Options, selector: &mut ElementRegionService) -> Resul
                     selector.refresh()?;
                 }
                 let path = selector
-                    .hit_test_point(point, options.mode)?
+                    .query(
+                        point,
+                        options.mode,
+                        &QueryControl::foreground(),
+                        &mut |_| {},
+                    )?
+                    .path
                     .unwrap_or_default();
                 let elapsed = started.elapsed().as_secs_f64() * 1000.0;
                 timings.entry(stage).or_default().push(elapsed);

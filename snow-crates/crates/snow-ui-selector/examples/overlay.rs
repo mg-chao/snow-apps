@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 
-use snow_ui_selector::{AccessibilityBackend, ElementRegionService, HitTestMode};
+use snow_ui_selector::{AccessibilityBackend, ElementRegionService, HitTestMode, QueryControl};
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, CreatePen, CreateSolidBrush, DeleteObject, EndPaint, FillRect, GetStockObject,
@@ -225,9 +225,14 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                     if GetCursorPos(&mut cursor).is_ok() {
                         state
                             .selector
-                            .hit_test_point(cursor, state.hit_test_mode)
+                            .query(
+                                cursor,
+                                state.hit_test_mode,
+                                &QueryControl::foreground(),
+                                &mut |_| {},
+                            )
                             .ok()
-                            .flatten()
+                            .and_then(|result| result.path)
                             .and_then(|regions| {
                                 regions.first().map(|el| RECT {
                                     left: el.left(),
