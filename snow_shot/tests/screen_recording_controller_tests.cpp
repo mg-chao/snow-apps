@@ -878,8 +878,8 @@ void delayCountdownBlocksTheStartUntilItElapses() {
         require(palette()->recordingBusyOperation() ==
                     ScreenshotToolPalette::RecordingBusyOperation::CountingDown,
                 "the countdown must be published as a busy operation");
-        require(!startButton->isEnabled() && !startButton->busy(),
-                "the countdown must disable Start without a loading spinner");
+        require(!startButton->isEnabled() && startButton->busy(),
+                "the countdown must disable Start and show its loading spinner");
         require(closeButton->isEnabled(), "the countdown must stay cancellable through Close");
         ScreenRecordingAreaWindow* area = nullptr;
         for (QWidget* widget : QApplication::topLevelWidgets()) {

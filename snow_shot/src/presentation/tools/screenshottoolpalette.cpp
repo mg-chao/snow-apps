@@ -6868,8 +6868,11 @@ void ScreenshotToolPalette::updateRecordingControls() {
     if (m_recordStartButton != nullptr) {
         m_recordStartButton->setVisible(idle);
         m_recordStartButton->setEnabled(idle && !busy);
-        m_recordStartButton->setBusy(m_recordingSession.busyOperation() ==
-                                     RecordingBusyOperation::Starting);
+        // Both the delayed-start countdown and the backend start itself keep
+        // Start disabled; both report progress through its loading spinner.
+        const auto operation = m_recordingSession.busyOperation();
+        m_recordStartButton->setBusy(operation == RecordingBusyOperation::Starting ||
+                                     operation == RecordingBusyOperation::CountingDown);
     }
     if (m_recordStopButton != nullptr) {
         m_recordStopButton->setVisible(active);

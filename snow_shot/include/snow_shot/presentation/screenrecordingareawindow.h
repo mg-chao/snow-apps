@@ -40,6 +40,7 @@ class ScreenRecordingAreaWindow final : public QWidget {
     void setDrawingBlocked(bool blocked);
     [[nodiscard]] bool drawingBlocked() const;
     void startCountdown(int seconds);
+    void updateCountdown(qint64 remainingMilliseconds);
     void clearCountdown();
     [[nodiscard]] bool countdownActive() const;
     [[nodiscard]] QColor inputSurfaceColor() const;

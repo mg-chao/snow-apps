@@ -208,6 +208,13 @@ void ScreenRecordingAreaWindow::startCountdown(int seconds) {
     update();
 }
 
+void ScreenRecordingAreaWindow::updateCountdown(qint64 remainingMilliseconds) {
+    if (m_countdownOverlay == nullptr) {
+        return;
+    }
+    m_countdownOverlay->setRemainingMilliseconds(remainingMilliseconds);
+}
+
 void ScreenRecordingAreaWindow::clearCountdown() {
     if (m_countdownOverlay == nullptr) {
         return;
