@@ -227,7 +227,7 @@ QRegion selectionStateDecorationRegion(const ScreenshotSelectionVisualState& sta
         const double minSide = std::min(selectionBounds.width(), selectionBounds.height());
         std::array<QPointF, 8> handles{};
         std::size_t handleCount = 0;
-        if (minSide > kShowEndHandlesMinSize) {
+        if (state.cornerRadius <= 0 && minSide > kShowEndHandlesMinSize) {
             handles[handleCount++] = selectionBounds.topLeft();
             handles[handleCount++] = selectionBounds.topRight();
             handles[handleCount++] = selectionBounds.bottomRight();
@@ -1493,7 +1493,7 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
         std::array<QPointF, 8> handles{};
         std::size_t handleCount = 0;
         if (!m_selectionState.toolbarHovered && m_selectionState.handlesVisible &&
-            minSide > kShowEndHandlesMinSize) {
+            visibleCornerRadius <= 0 && minSide > kShowEndHandlesMinSize) {
             handles[handleCount++] = selectionView.topLeft();
             handles[handleCount++] = selectionView.topRight();
             handles[handleCount++] = selectionView.bottomRight();

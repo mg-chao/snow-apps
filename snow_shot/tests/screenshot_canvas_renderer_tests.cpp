@@ -1750,6 +1750,55 @@ void ocrPresentationSelectionBorderIgnoresRoundedCorners() {
     canvas.setCustomRenderer(nullptr);
 }
 
+void roundedSelectionHidesCornerHandlesButKeepsEdgeHandles() {
+    auto& themeManager = adqt::theme::ThemeManager::instance();
+    const auto originalConfig = themeManager.config();
+    auto themedConfig = originalConfig;
+    themedConfig.primary = QColor(184, 28, 136);
+    themeManager.setConfig(themedConfig);
+    const QColor primary = themeManager.resolveTheme().colorPrimary;
+    require(primary.isValid() && primary != QColor(0, 80, 240),
+            "the rounded handle test requires a distinctive primary color");
+
+    SnowCanvasWidget canvas;
+    canvas.resize(100, 100);
+    canvas.setClearBackgroundEnabled(false);
+    require(canvas.setViewportCamera(0.0, 0.0, 1.0), "camera should update");
+
+    ScreenshotCanvasRenderer renderer(canvas);
+    canvas.setCustomRenderer(&renderer);
+    QImage screenshot(100, 100, QImage::Format_RGBA8888);
+    screenshot.fill(QColor(0, 80, 240));
+    renderer.setImage(std::move(screenshot), QRectF(-50.0, -50.0, 100.0, 100.0));
+    renderer.setMaskVisible(true);
+    const QRectF selection(-40.0, -40.0, 80.0, 80.0);
+
+    renderer.setSelection(selection, true, 0);
+    const QImage squareOutput = renderCanvas(canvas);
+    require(squareOutput.pixelColor(10, 10) == primary &&
+                squareOutput.pixelColor(90, 10) == primary &&
+                squareOutput.pixelColor(90, 90) == primary &&
+                squareOutput.pixelColor(10, 90) == primary,
+            "a square selection should paint all four corner handles");
+
+    renderer.setSelection(selection, true, 18);
+    const QImage roundedOutput = renderCanvas(canvas);
+    renderer.setSelection(selection, false, 18);
+    const QImage hiddenHandlesOutput = renderCanvas(canvas);
+    for (const QPoint& corner :
+         {QPoint(10, 10), QPoint(90, 10), QPoint(90, 90), QPoint(10, 90)}) {
+        require(roundedOutput.pixelColor(corner) == hiddenHandlesOutput.pixelColor(corner) &&
+                    roundedOutput.pixelColor(corner) != primary,
+                "rounded corners should hide the corner handles");
+    }
+    require(roundedOutput.pixelColor(50, 8) == primary &&
+                hiddenHandlesOutput.pixelColor(50, 8) != primary,
+            "rounded corners should keep the edge midpoint handles");
+
+    themeManager.setConfig(originalConfig);
+    canvas.setCustomRenderer(nullptr);
+}
+
 void movingSelectionInvalidatesOnlyChangedMaskAndDecorations() {
     SnowCanvasWidget canvas;
     canvas.resize(500, 400);
@@ -3910,6 +3959,7 @@ int main(int argc, char** argv) {
     hiddenSelectionBorderRetainsSelectionAndMask();
     changingSelectionCornerRadiusRepaintsRoundedMaskAndBorder();
     ocrPresentationSelectionBorderIgnoresRoundedCorners();
+    roundedSelectionHidesCornerHandlesButKeepsEdgeHandles();
     movingSelectionInvalidatesOnlyChangedMaskAndDecorations();
     overlaySelectionMoveDoesNotExpandForInactiveDecorations();
     selectionDamagePlannerAvoidsFullCanvasFallback();
