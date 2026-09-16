@@ -192,6 +192,9 @@ class ScreenshotPinnedWindowTestAccess {
     static bool clickThroughActive(const ScreenshotPinnedWindow& window) {
         return window.m_clickThroughActive;
     }
+    static adqt::widgets::AdButton* clickThroughMoveButton(ScreenshotPinnedWindow& window) {
+        return window.m_clickThroughMoveButton.get();
+    }
     static adqt::widgets::AdButton* clickThroughExitButton(ScreenshotPinnedWindow& window) {
         return window.m_clickThroughExitButton.get();
     }
@@ -6047,13 +6050,13 @@ void pinnedClickThroughGeometry() {
                 QRect(328, 28, 48, 48),
             "fractional-DPR placement must round size and inset independently");
     require(exitButtonGeometry(QRect(-1920, 0, 200, 120), QRect(-1920, 0, 1920, 1080), 1.0) ==
-                QRect(-1760, 0, 32, 32),
+                QRect(-1720, 0, 32, 32),
             "top-edge clamping must work on a display with a negative origin");
     require(exitButtonGeometry(QRect(-100, 100, 2500, 120), QRect(-1920, 0, 1920, 1080), 1.0) ==
                 QRect(-32, 52, 32, 32),
             "right-edge clamping must keep the complete button on its display");
     require(exitButtonGeometry(QRect(-2100, 100, 200, 120), QRect(-1920, 0, 1920, 1080), 2.0) ==
-                QRect(-1600, 4, 64, 64),
+                QRect(-1520, 4, 64, 64),
             "left-edge clamping must preserve the full high-DPI button");
 
     const QRect bounds(-1600, -900, 1600, 900);
@@ -6065,8 +6068,11 @@ void pinnedClickThroughGeometry() {
                         result.opacityEditor.size() == QSize(qRound(152 * dpr), qRound(32 * dpr)) &&
                         result.exitButton.size() == QSize(qRound(32 * dpr), qRound(32 * dpr)) &&
                         result.opacityEditor.top() == result.exitButton.top() &&
-                        result.exitButton.left() - result.opacityEditor.right() - 1 ==
-                            qRound(8 * dpr),
+                        bounds.contains(result.moveButton) &&
+                        result.moveButton.size() == result.exitButton.size() &&
+                        result.moveButton.left() - result.opacityEditor.right() - 1 ==
+                            qRound(8 * dpr) &&
+                        result.exitButton.left() - result.moveButton.right() - 1 == qRound(8 * dpr),
                     "the aligned controls must clamp together at each monitor edge and DPI");
         }
     }
@@ -6088,6 +6094,105 @@ ScreenshotPinnedWindow::Config clickThroughTestConfig(QScreen& screen) {
     config.enableEditing = true;
     config.automaticTextRecognition = false;
     return config;
+}
+
+void pinnedClickThroughStationaryControls() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "stationary controls need a screen");
+    class PlacementProbe final : public QObject {
+      public:
+        int changes = 0;
+
+      protected:
+        bool eventFilter(QObject* watched, QEvent* event) override {
+            if (event->type() == QEvent::ZOrderChange || event->type() == QEvent::Move ||
+                event->type() == QEvent::Resize) {
+                ++changes;
+            }
+            return QObject::eventFilter(watched, event);
+        }
+    };
+    for (const int top : {0, 120}) {
+        auto config = clickThroughTestConfig(*screen);
+        config.nativeGeometry = physicalPinGeometry(*screen, QPoint(100, top), QSize(400, 400));
+        ScreenshotPinnedWindow window;
+        window.setAttribute(Qt::WA_DeleteOnClose, false);
+        if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+            require(window.present(config), "present stationary controls fixture");
+        } else {
+            Access::restoreOffscreen(window, config);
+            window.move(
+                ScreenshotGeometryMapper::logicalRectForPhysicalRect(config.nativeGeometry, screen)
+                    .topLeft());
+            window.show();
+        }
+        require(Access::setClickThrough(window, true), "enter stationary controls fixture");
+        waitForUi(20);
+        auto* editor = Access::clickThroughOpacityEditor(window);
+        auto* exit = Access::clickThroughExitButton(window);
+        auto* slider = editor->findChild<adqt::widgets::AdSlider*>();
+        require(slider != nullptr, "stationary controls need a slider");
+        require(editor->geometry().intersects(window.geometry()) == (top == 0),
+                "only the screen-clamped fixture must overlap the pinned image");
+        PlacementProbe probe;
+        editor->installEventFilter(&probe);
+        exit->installEventFilter(&probe);
+        for (const int percent : {10, 30, 60, 90}) {
+            slider->setValue(percent);
+            QEvent repaint(QEvent::UpdateRequest);
+            QCoreApplication::sendEvent(&window, &repaint);
+            require(qAbs(window.windowOpacity() - percent / 100.0) <= 1.0 / 255.0,
+                    "stationary controls must apply opacity immediately");
+        }
+        require(
+            probe.changes == 0,
+            "opacity repaints must not reposition or restack stationary click-through controls");
+    }
+}
+
+void pinnedClickThroughMoveOffscreen() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "move control needs a screen");
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    const auto config = clickThroughTestConfig(*screen);
+    Access::restoreOffscreen(window, config);
+    window.move(ScreenshotGeometryMapper::logicalRectForPhysicalRect(config.nativeGeometry, screen)
+                    .topLeft());
+    window.show();
+    require(Access::setClickThrough(window, true), "enable passthrough for dragging");
+    auto* button = Access::clickThroughMoveButton(window);
+    auto* exit = Access::clickThroughExitButton(window);
+    require(button != nullptr && button->isVisible() && button->isWindow() &&
+                button->windowHandle()->transientParent() == window.windowHandle() &&
+                button->geometry().right() < exit->geometry().left() && button->y() == exit->y() &&
+                button->accessibleName() == QStringLiteral("Move window"),
+            "move control must be accessible and appear to the left of exit");
+    const QPoint start = button->mapToGlobal(button->rect().center());
+    const QPoint delta(35, 25);
+    const QPoint original = window.pos();
+    const auto send = [&](QEvent::Type type, QPoint global, Qt::MouseButton changed,
+                          Qt::MouseButtons held) {
+        QMouseEvent event(type, QPointF(button->mapFromGlobal(global)), QPointF(global), changed,
+                          held, Qt::NoModifier);
+        QCoreApplication::sendEvent(button, &event);
+    };
+    send(QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
+    send(QEvent::MouseMove, start + delta, Qt::NoButton, Qt::LeftButton);
+    require(window.pos() == original + delta &&
+                window.testAttribute(Qt::WA_TransparentForMouseEvents) &&
+                window.persistenceSnapshot().clickThroughMode,
+            "dragging must move the pin without exiting passthrough");
+    send(QEvent::MouseButtonRelease, start + delta, Qt::LeftButton, Qt::NoButton);
+    send(QEvent::MouseMove, start + 2 * delta, Qt::NoButton, Qt::NoButton);
+    require(window.pos() == original + delta, "release must stop dragging");
+    send(QEvent::MouseButtonPress, start, Qt::RightButton, Qt::RightButton);
+    send(QEvent::MouseMove, start + delta, Qt::NoButton, Qt::RightButton);
+    require(window.pos() == original + delta, "right button must not drag");
+    require(Access::setClickThrough(window, false) && button->isHidden(),
+            "exiting passthrough must hide the move control");
 }
 
 void pinnedClickThroughOpacityOffscreen() {
@@ -6541,6 +6646,22 @@ void pinnedClickThroughNative() {
     require(slider->value() > 50 && GetForegroundWindow() == lowerHwnd &&
                 window.persistenceSnapshot().clickThroughOpacityPercent == qRound(slider->value()),
             "native opacity slider must adjust the pin without stealing activation");
+    auto* moveButton = ScreenshotPinnedWindowTestAccess::clickThroughMoveButton(window);
+    const QPoint moveStart =
+        screenshot_pinned_window_native::currentClientGeometry(moveButton->winId()).center();
+    const QPoint moveDelta(45, 30);
+    setSystemCursorPosition(moveStart);
+    require(SendInput(1, &clicks[0], sizeof(INPUT)) == 1, "press native move control");
+    waitForUi(40);
+    setSystemCursorPosition(moveStart + moveDelta);
+    waitForUi(80);
+    require(SendInput(1, &clicks[1], sizeof(INPUT)) == 1, "release native move control");
+    waitForUi(40);
+    require(window.currentNativeGeometry() == pinnedGeometry.translated(moveDelta) &&
+                GetForegroundWindow() == lowerHwnd &&
+                (GetWindowLongPtrW(pinnedHwnd, GWL_EXSTYLE) & transparentStyles) ==
+                    transparentStyles,
+            "native drag must move the pin while retaining passthrough and foreground focus");
     slider->setValue(0);
     require(editor->isVisible() &&
                 ScreenshotPinnedWindowTestAccess::clickThroughExitButton(window)->isVisible(),
@@ -8372,12 +8493,15 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--click-through-only"))) {
+            pinnedClickThroughStationaryControls();
+            pinnedClickThroughMoveOffscreen();
             pinnedClickThroughOpacityOffscreen();
             pinnedClickThroughOffscreen();
             return 0;
         }
 #if defined(Q_OS_WIN) || defined(_WIN32)
         if (app.arguments().contains(QStringLiteral("--click-through-native-only"))) {
+            pinnedClickThroughStationaryControls();
             pinnedClickThroughRecreationNative();
             pinnedClickThroughNative();
             return 0;

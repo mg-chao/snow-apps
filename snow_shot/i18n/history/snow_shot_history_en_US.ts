@@ -297,6 +297,10 @@
             <translation>Load new content</translation>
         </message>
         <message>
+            <source>Move window</source>
+            <translation>Move window</translation>
+        </message>
+        <message>
             <source>New Group</source>
             <translation>New Group</translation>
         </message>

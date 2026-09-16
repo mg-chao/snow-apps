@@ -377,6 +377,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     ScreenshotPinnedEditController* m_editController = nullptr;
     adqt::widgets::AdButton* m_editButton = nullptr;
     adqt::widgets::AdButton* m_closeButton = nullptr;
+    std::unique_ptr<adqt::widgets::AdButton> m_clickThroughMoveButton;
+    std::optional<QPoint> m_clickThroughDragOrigin;
+    QRect m_clickThroughDragGeometry;
     std::unique_ptr<adqt::widgets::AdButton> m_clickThroughExitButton;
     std::unique_ptr<QWidget> m_clickThroughOpacityEditor;
     adqt::widgets::AdSlider* m_clickThroughOpacitySlider = nullptr;

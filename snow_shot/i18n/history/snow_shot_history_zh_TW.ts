@@ -296,6 +296,10 @@
             <translation>載入新內容</translation>
         </message>
         <message>
+            <source>Move window</source>
+            <translation>移動視窗</translation>
+        </message>
+        <message>
             <source>New Group</source>
             <translation>新增群組</translation>
         </message>

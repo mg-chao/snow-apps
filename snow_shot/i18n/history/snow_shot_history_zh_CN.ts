@@ -296,6 +296,10 @@
             <translation>加载新内容</translation>
         </message>
         <message>
+            <source>Move window</source>
+            <translation>移动窗口</translation>
+        </message>
+        <message>
             <source>New Group</source>
             <translation>新建分组</translation>
         </message>

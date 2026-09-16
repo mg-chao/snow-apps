@@ -17,7 +17,7 @@ screenshot_pinned_click_through::ControlsGeometry screenshot_pinned_click_throug
     const int inset = std::max(1, qRound(16.0 * devicePixelRatio));
     const int editorWidth = std::max(1, qRound(kOpacityEditorWidth * devicePixelRatio));
     const int spacing = std::max(1, qRound(kControlSpacing * devicePixelRatio));
-    const int totalWidth = editorWidth + spacing + size;
+    const int totalWidth = editorWidth + 2 * spacing + 2 * size;
     if (screenPhysicalBounds.width() < totalWidth || screenPhysicalBounds.height() < size) {
         return {};
     }
@@ -30,7 +30,8 @@ screenshot_pinned_click_through::ControlsGeometry screenshot_pinned_click_throug
     const QPoint origin(qBound(screenPhysicalBounds.x(), preferredLeft, maximumLeft),
                         qBound(screenPhysicalBounds.y(), preferredTop, maximumTop));
     return {QRect(origin, QSize(editorWidth, size)),
-            QRect(origin + QPoint(editorWidth + spacing, 0), QSize(size, size))};
+            QRect(origin + QPoint(editorWidth + spacing, 0), QSize(size, size)),
+            QRect(origin + QPoint(editorWidth + 2 * spacing + size, 0), QSize(size, size))};
 }
 
 QRect screenshot_pinned_click_through::exitButtonGeometry(const QRect& pinnedNativeGeometry,

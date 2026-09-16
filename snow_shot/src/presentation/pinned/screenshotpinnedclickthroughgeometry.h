@@ -9,6 +9,7 @@ inline constexpr int kOpacityEditorWidth = 152;
 inline constexpr int kControlSpacing = 8;
 struct ControlsGeometry {
     QRect opacityEditor;
+    QRect moveButton;
     QRect exitButton;
 };
 [[nodiscard]] ControlsGeometry controlsGeometry(const QRect& pinnedNativeGeometry,
