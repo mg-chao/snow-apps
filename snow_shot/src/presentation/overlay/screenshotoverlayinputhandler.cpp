@@ -228,6 +228,17 @@ void ScreenshotOverlayInputHandler::beginSelectionDrag(ScreenshotOverlayWindow* 
         m_marqueeAnchor = QPointF();
     }
     m_lastMoveDragPosition = virtualPosition;
+    const bool borderResizeDrag = dragMode != ScreenshotSelectionDragMode::All &&
+                                  dragMode != ScreenshotSelectionDragMode::Marquee;
+    if (borderResizeDrag && snow_shot::storage::ScreenshotSettings().selectionResizeMode() ==
+                                QStringLiteral("follow_mouse_position")) {
+        // The grabbed border must sit on the pointer before the drag origin is
+        // captured so the delta-based drag math tracks the pointer position.
+        m_context.selection.setSelectionRect(grabAdjustedScreenshotSelectionRect(
+            dragMode, m_context.selection.normalizedSelection(), virtualPosition,
+            m_context.geometry.canvasBounds(),
+            snow_shot::presentation::kScreenshotSelectionMinimumSize));
+    }
     m_context.selection.beginMoveDrag(virtualPosition);
     m_context.actions.hideMainToolbar();
     m_context.actions.updateOverlayState();

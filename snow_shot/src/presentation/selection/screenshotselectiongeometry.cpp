@@ -336,6 +336,46 @@ QRectF draggedScreenshotSelectionRect(ScreenshotSelectionDragMode dragMode, cons
         dragMode == ScreenshotSelectionDragMode::Marquee ? 0.0 : minimumSelectionSize);
 }
 
+QRectF grabAdjustedScreenshotSelectionRect(ScreenshotSelectionDragMode dragMode,
+                                           const QRectF& selection, const QPointF& position,
+                                           const QRectF& bounds, qreal minimumSelectionSize) {
+    QRectF result = selection;
+
+    switch (dragMode) {
+    case ScreenshotSelectionDragMode::TopLeft:
+        result.setTopLeft(position);
+        break;
+    case ScreenshotSelectionDragMode::Top:
+        result.setTop(position.y());
+        break;
+    case ScreenshotSelectionDragMode::TopRight:
+        result.setTopRight(position);
+        break;
+    case ScreenshotSelectionDragMode::Right:
+        result.setRight(position.x());
+        break;
+    case ScreenshotSelectionDragMode::BottomRight:
+        result.setBottomRight(position);
+        break;
+    case ScreenshotSelectionDragMode::Bottom:
+        result.setBottom(position.y());
+        break;
+    case ScreenshotSelectionDragMode::BottomLeft:
+        result.setBottomLeft(position);
+        break;
+    case ScreenshotSelectionDragMode::Left:
+        result.setLeft(position.x());
+        break;
+    case ScreenshotSelectionDragMode::Marquee:
+    case ScreenshotSelectionDragMode::All:
+    case ScreenshotSelectionDragMode::None:
+    default:
+        return selection;
+    }
+
+    return boundedScreenshotSelectionRect(result.normalized(), bounds, false, minimumSelectionSize);
+}
+
 std::optional<QPointF> screenshotSelectionDragAnchor(const QRectF& selection,
                                                      ScreenshotSelectionDragMode dragMode,
                                                      const QPointF& position,

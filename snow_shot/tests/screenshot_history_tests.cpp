@@ -1390,6 +1390,51 @@ void recognitionAndScrollingToolsResizeSelectionBorder() {
             "scrolling capture must pause during resize and restart with the new selection");
 }
 
+void selectionResizeModeAdjustsGrabOffsetAtPress() {
+    struct DragResult {
+        QRectF pressed;
+        QRectF released;
+    };
+    auto dragRightBorder = []() -> DragResult {
+        ScreenshotCaptureState captureState;
+        captureState.sessionState = ScreenshotSessionState::Editing;
+        ScreenshotDisplaySession displays;
+        ScreenshotGeometryMapper geometry;
+        ScreenshotSelectionModel selection;
+        selection.setSelectionRect(QRectF(10, 10, 20, 20));
+        ScreenshotIntelligentSelectionModel intelligent;
+        ScreenshotInteractionState interaction;
+        interaction.confirmSelection();
+        ScreenshotOverlayInputHandler handler({captureState, interaction, selection, intelligent,
+                                               geometry, displays,
+                                               ScreenshotOverlayInputActions()});
+
+        handler.handleMousePress(nullptr, QPointF(34, 20));
+        const QRectF pressed = selection.normalizedSelection();
+        handler.handleMouseMove(nullptr, QPointF(40, 20));
+        handler.handleMouseRelease(nullptr, QPointF(40, 20));
+        return {pressed, selection.normalizedSelection()};
+    };
+
+    require(storage::ScreenshotSettings().setSelectionResizeMode(
+                QStringLiteral("follow_mouse_position")),
+            "failed to enable the follow-position selection resize mode");
+    const auto positionFollow = dragRightBorder();
+    require(positionFollow.pressed == QRectF(10, 10, 24, 20),
+            "follow-position resize must adjust the selection by the grab offset at press");
+    require(positionFollow.released == QRectF(10, 10, 30, 20),
+            "follow-position resize must keep the dragged border on the pointer");
+
+    require(storage::ScreenshotSettings().setSelectionResizeMode(
+                QStringLiteral("follow_mouse_movement")),
+            "failed to restore the follow-movement selection resize mode");
+    const auto movementFollow = dragRightBorder();
+    require(movementFollow.pressed == QRectF(10, 10, 20, 20),
+            "follow-movement resize must not adjust the selection at press");
+    require(movementFollow.released == QRectF(10, 10, 26, 20),
+            "follow-movement resize must keep the press-time grab offset on the dragged border");
+}
+
 void completionGesturesRequireAConfirmedSelectionAndSupportedTool() {
     const storage::ScreenshotSettings settings;
     const QString originalDoubleClick = settings.doubleClickAction();
@@ -2635,6 +2680,7 @@ int main(int argc, char** argv) {
     moveToolModificationLeavesConfirmedStageUntilRelease();
     nonMoveToolPermanentlySwitchesForSelectionResize();
     recognitionAndScrollingToolsResizeSelectionBorder();
+    selectionResizeModeAdjustsGrabOffsetAtPress();
     completionGesturesRequireAConfirmedSelectionAndSupportedTool();
     externalSelectionSupportsHeldShortcuts();
     colorCopyEndsCaptureOnlyAfterSuccessfulCopy();

@@ -832,6 +832,23 @@ SettingsItemDefinition screenshotMiddleClickActionItem() {
         SettingsSelectBinding::ScreenshotMiddleClickAction, screenshotPointerActionOptions());
 }
 
+SettingsItemDefinition selectionResizeModeItem() {
+    return fixedSelectItem(
+        QStringLiteral("screenshot.selection-resize-mode"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Selection resize mode"),
+        QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Choose how the dragged selection border follows the mouse while resizing"),
+        QStringLiteral("screenshot/selection_resize_mode"),
+        SettingsSelectBinding::ScreenshotSelectionResizeMode,
+        {
+            {QStringLiteral("follow_mouse_movement"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Follow mouse movement"))},
+            {QStringLiteral("follow_mouse_position"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Follow mouse position"))},
+        });
+}
+
 SettingsItemDefinition screenshotRestoreOriginalScreenColorsItem() {
     return switchItem(
         QStringLiteral("screenshot.restore-original-screen-colors"),
@@ -1805,7 +1822,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(
                         QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot selection behavior")),
                     SettingsSectionReset::ScreenshotSettings,
-                    {smartSelectionItem(), screenshotOcrActionItem(),
+                    {smartSelectionItem(), selectionResizeModeItem(), screenshotOcrActionItem(),
                      screenshotDoubleClickActionItem(), screenshotMiddleClickActionItem(),
                      screenshotAutoSaveAfterCopyItem(), screenshotCopyFileItem(),
                      screenshotSaveAsFileDialogItem(), screenshotShutterSoundNotificationItem()},
@@ -2915,6 +2932,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSelectBinding::TranslationLayoutProcessing:
                         expectedKey = QStringLiteral("screenshot_translation/layout_processing");
+                        break;
+                    case SettingsSelectBinding::ScreenshotSelectionResizeMode:
+                        expectedKey = QStringLiteral("screenshot/selection_resize_mode");
                         break;
                     }
                     if (schemaEntry == nullptr ||

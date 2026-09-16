@@ -99,6 +99,7 @@ enum class SettingsSelectBinding {
     TrayLeftClickAction,
     TrayMiddleClickAction,
     TranslationLayoutProcessing,
+    ScreenshotSelectionResizeMode,
 };
 
 struct SettingsSelectDefinition {

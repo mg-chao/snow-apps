@@ -228,6 +228,8 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
         return storage::ScreenshotSettings().doubleClickAction();
     case SettingsSelectBinding::ScreenshotMiddleClickAction:
         return storage::ScreenshotSettings().middleMouseButtonAction();
+    case SettingsSelectBinding::ScreenshotSelectionResizeMode:
+        return storage::ScreenshotSettings().selectionResizeMode();
     case SettingsSelectBinding::PinDoubleClickAction:
         return storage::PinToScreenSettings().doubleClickAction();
     case SettingsSelectBinding::PinMiddleClickAction:
@@ -338,6 +340,8 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
         return storage::ScreenshotSettings().setDoubleClickAction(value.toString());
     case SettingsSelectBinding::ScreenshotMiddleClickAction:
         return storage::ScreenshotSettings().setMiddleMouseButtonAction(value.toString());
+    case SettingsSelectBinding::ScreenshotSelectionResizeMode:
+        return storage::ScreenshotSettings().setSelectionResizeMode(value.toString());
     case SettingsSelectBinding::PinDoubleClickAction:
         return storage::PinToScreenSettings().setDoubleClickAction(value.toString());
     case SettingsSelectBinding::PinMiddleClickAction:
@@ -1176,6 +1180,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                    {QStringLiteral("screenshot/middle_mouse_button_action"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/middle_mouse_button_action"))},
+                   {QStringLiteral("screenshot/selection_resize_mode"),
+                    storage::ConfigurationSchema::defaultValue(
+                        QStringLiteral("screenshot/selection_resize_mode"))},
                    {QStringLiteral("screenshot/auto_save_after_copy"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/auto_save_after_copy"))},

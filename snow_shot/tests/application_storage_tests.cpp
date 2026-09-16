@@ -253,6 +253,8 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             defaultValue("screenshot/double_click_action").toString() == QStringLiteral("copy") &&
             defaultValue("screenshot/middle_mouse_button_action").toString() ==
                 QStringLiteral("pin") &&
+            defaultValue("screenshot/selection_resize_mode").toString() ==
+                QStringLiteral("follow_mouse_movement") &&
             defaultValue("screenshot_shortcuts/quick_save").toArray() ==
                 structuredShortcuts(QJsonArray{QStringLiteral("Ctrl+Shift+S")}) &&
             defaultValue("screenshot_shortcuts/save_as_file").toArray() ==

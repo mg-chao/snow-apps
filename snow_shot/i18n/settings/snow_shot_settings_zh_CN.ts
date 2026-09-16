@@ -805,6 +805,10 @@
             <translation>选择识别文字后方区域的填充方式</translation>
         </message>
         <message>
+            <source>Choose how the dragged selection border follows the mouse while resizing</source>
+            <translation>控制调整选区大小时拖动的边框如何跟随鼠标</translation>
+        </message>
+        <message>
             <source>Choose the OCR model version and size to balance recognition speed and accuracy</source>
             <translation>选择 OCR 模型版本和大小，以平衡识别速度和准确率</translation>
         </message>
@@ -1291,6 +1295,14 @@
         <message>
             <source>Focused window</source>
             <translation>焦点窗口</translation>
+        </message>
+        <message>
+            <source>Follow mouse movement</source>
+            <translation>跟随鼠标移动</translation>
+        </message>
+        <message>
+            <source>Follow mouse position</source>
+            <translation>跟随鼠标位置</translation>
         </message>
         <message>
             <source>Follow system</source>
@@ -2107,6 +2119,10 @@
         <message>
             <source>Selection mask color</source>
             <translation>选区遮罩颜色</translation>
+        </message>
+        <message>
+            <source>Selection resize mode</source>
+            <translation>选区大小调整模式</translation>
         </message>
         <message>
             <source>Serial number</source>

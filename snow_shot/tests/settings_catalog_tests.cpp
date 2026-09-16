@@ -128,6 +128,24 @@ void builtInCatalogIsCompleteAndValid() {
                      standaloneToggle->configurationKey)
                      .toBool(true),
             "standalone translation exposes a persisted default-off switch");
+    const auto* selectionResizeMode =
+        catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
+                      QStringLiteral("screenshot.selection-resize-mode")});
+    require(
+        selectionResizeMode != nullptr &&
+            selectionResizeMode->configurationKey ==
+                QStringLiteral("screenshot/selection_resize_mode") &&
+            std::get<settings::SettingsSelectDefinition>(selectionResizeMode->payload).binding ==
+                settings::SettingsSelectBinding::ScreenshotSelectionResizeMode,
+        "function settings must expose the persisted selection resize mode in Screenshot");
+    const auto& resizeModeOptions =
+        std::get<settings::SettingsSelectDefinition>(selectionResizeMode->payload).options;
+    require(resizeModeOptions.size() == 2 &&
+                resizeModeOptions.at(0).value == QStringLiteral("follow_mouse_movement") &&
+                resizeModeOptions.at(1).value == QStringLiteral("follow_mouse_position") &&
+                storage::ConfigurationSchema::defaultValue(selectionResizeMode->configurationKey)
+                        .toString() == QStringLiteral("follow_mouse_movement"),
+            "selection resize mode must offer both follow styles and default to mouse movement");
     qsizetype sectionCount = 0;
     qsizetype itemCount = 0;
     bool foundUpdates = false;
@@ -172,7 +190,7 @@ void builtInCatalogIsCompleteAndValid() {
         }
     }
     require(sectionCount == 38, "catalog must contain thirty-eight sections");
-    require(itemCount == 159, "catalog must contain one hundred fifty-nine items");
+    require(itemCount == 160, "catalog must contain one hundred sixty items");
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
@@ -1422,7 +1440,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 209 && index.search(QString()).size() == 209,
+    require(index.entries().size() == 210 && index.search(QString()).size() == 210,
             "search must generate all catalog nodes in catalog order");
     const auto pdfPaper = index.search(QStringLiteral("Landscape A4"));
     require(!pdfPaper.isEmpty() && pdfPaper.constFirst().location.itemId ==
@@ -1482,7 +1500,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 38 && items == 159,
+    require(pages == 12 && sections == 38 && items == 160,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

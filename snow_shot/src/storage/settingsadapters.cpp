@@ -507,6 +507,14 @@ bool ScreenshotSettings::setMiddleMouseButtonAction(const QString& action) const
     return cache().setValue(QStringLiteral("screenshot/middle_mouse_button_action"), action);
 }
 
+QString ScreenshotSettings::selectionResizeMode() const {
+    return cache().value(QStringLiteral("screenshot/selection_resize_mode")).toString();
+}
+
+bool ScreenshotSettings::setSelectionResizeMode(const QString& mode) const {
+    return cache().setValue(QStringLiteral("screenshot/selection_resize_mode"), mode);
+}
+
 bool ScreenshotSettings::autoSaveAfterCopy() const {
     return cache().value(QStringLiteral("screenshot/auto_save_after_copy")).toBool();
 }

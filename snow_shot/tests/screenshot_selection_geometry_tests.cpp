@@ -121,6 +121,112 @@ void unlockedResizeCanChangeAspectRatio() {
             "unlocked resize should continue to change dimensions independently");
 }
 
+void grabAdjustmentSnapsOnlyTheDraggedEdgesToThePressPosition() {
+    const QRectF selection(100.0, 100.0, 200.0, 100.0);
+    const QRectF bounds(0.0, 0.0, 800.0, 600.0);
+    struct GrabCase {
+        ScreenshotSelectionDragMode dragMode;
+        QPointF position;
+        QRectF expected;
+    };
+    const GrabCase cases[] = {
+        {ScreenshotSelectionDragMode::TopLeft, QPointF(97.0, 104.0),
+         QRectF(97.0, 104.0, 203.0, 96.0)},
+        {ScreenshotSelectionDragMode::Top, QPointF(200.0, 96.0), QRectF(100.0, 96.0, 200.0, 104.0)},
+        {ScreenshotSelectionDragMode::TopRight, QPointF(303.0, 104.0),
+         QRectF(100.0, 104.0, 203.0, 96.0)},
+        {ScreenshotSelectionDragMode::Right, QPointF(304.0, 150.0),
+         QRectF(100.0, 100.0, 204.0, 100.0)},
+        {ScreenshotSelectionDragMode::BottomRight, QPointF(303.0, 196.0),
+         QRectF(100.0, 100.0, 203.0, 96.0)},
+        {ScreenshotSelectionDragMode::Bottom, QPointF(200.0, 204.0),
+         QRectF(100.0, 100.0, 200.0, 104.0)},
+        {ScreenshotSelectionDragMode::BottomLeft, QPointF(97.0, 196.0),
+         QRectF(97.0, 100.0, 203.0, 96.0)},
+        {ScreenshotSelectionDragMode::Left, QPointF(96.0, 150.0),
+         QRectF(96.0, 100.0, 204.0, 100.0)},
+    };
+
+    for (const GrabCase& grab : cases) {
+        require(grabAdjustedScreenshotSelectionRect(grab.dragMode, selection, grab.position, bounds,
+                                                    kMinimumSelectionSize) == grab.expected,
+                "the grab adjustment must move only the pressed edges onto the pointer");
+    }
+    for (const ScreenshotSelectionDragMode unchanged :
+         {ScreenshotSelectionDragMode::All, ScreenshotSelectionDragMode::Marquee,
+          ScreenshotSelectionDragMode::None}) {
+        require(grabAdjustedScreenshotSelectionRect(unchanged, selection, QPointF(304.0, 150.0),
+                                                    bounds, kMinimumSelectionSize) == selection,
+                "whole-selection and marquee drags must not adjust the selection at press");
+    }
+}
+
+void grabAdjustmentRespectsBoundsAndMinimumSize() {
+    const QRectF selection(10.0, 10.0, 20.0, 20.0);
+    require(grabAdjustedScreenshotSelectionRect(ScreenshotSelectionDragMode::Right, selection,
+                                                QPointF(35.0, 20.0), QRectF(0.0, 0.0, 32.0, 32.0),
+                                                kMinimumSelectionSize) ==
+                QRectF(10.0, 10.0, 22.0, 20.0),
+            "the grab adjustment must clamp the snapped border to the canvas bounds");
+    require(grabAdjustedScreenshotSelectionRect(ScreenshotSelectionDragMode::Bottom, selection,
+                                                QPointF(20.0, 12.0), QRectF(0.0, 0.0, 800.0, 600.0),
+                                                kMinimumSelectionSize)
+                    .height() == kMinimumSelectionSize,
+            "the grab adjustment must keep the selection at its minimum size");
+}
+
+void positionFollowDragTracksThePointerAfterGrabAdjustment() {
+    const QRectF bounds(0.0, 0.0, 800.0, 600.0);
+    const QPointF press(304.0, 150.0); // 4 px right of the border, inside the 8 px hit tolerance
+
+    ScreenshotSelectionModel selection;
+    selection.setSelectionRect(QRectF(100.0, 100.0, 200.0, 100.0));
+    const QRectF adjusted = grabAdjustedScreenshotSelectionRect(
+        ScreenshotSelectionDragMode::Right, selection.normalizedSelection(), press, bounds,
+        kMinimumSelectionSize);
+    require(adjusted == QRectF(100.0, 100.0, 204.0, 100.0),
+            "the grab adjustment must move the pressed border onto the pointer at press");
+    selection.setSelectionRect(adjusted);
+    selection.beginMoveDrag(press);
+    require(selection.selectionRectForDrag(ScreenshotSelectionDragMode::Right, press, bounds,
+                                           kMinimumSelectionSize) == adjusted,
+            "pressing must not move the selection beyond the grab adjustment");
+    const QRectF dragged = selection.selectionRectForDrag(
+        ScreenshotSelectionDragMode::Right, QPointF(340.0, 150.0), bounds, kMinimumSelectionSize);
+    require(dragged == QRectF(100.0, 100.0, 240.0, 100.0),
+            "the dragged border must sit on the pointer while the opposite border stays anchored");
+
+    ScreenshotSelectionModel locked;
+    locked.setSelectionRect(QRectF(100.0, 100.0, 200.0, 100.0));
+    locked.toggleAspectRatioLock(kMinimumSelectionSize);
+    locked.setSelectionRect(adjusted);
+    locked.beginMoveDrag(press);
+    const QRectF lockedDragged = locked.selectionRectForDrag(
+        ScreenshotSelectionDragMode::Right, QPointF(340.0, 150.0), bounds, kMinimumSelectionSize);
+    require(lockedDragged.left() == 100.0 &&
+                std::abs(lockedDragged.right() - 340.0) < kComparisonTolerance,
+            "locked position-follow resize must anchor the opposite border on the pointer");
+    requireAspectRatio(lockedDragged,
+                       "locked position-follow resize should retain the original aspect ratio");
+}
+
+void movementFollowDragKeepsThePressTimeGrabOffset() {
+    const QRectF bounds(0.0, 0.0, 800.0, 600.0);
+    const QPointF press(304.0, 150.0);
+
+    ScreenshotSelectionModel selection;
+    selection.setSelectionRect(QRectF(100.0, 100.0, 200.0, 100.0));
+    selection.beginMoveDrag(press);
+    require(selection.selectionRectForDrag(ScreenshotSelectionDragMode::Right, press, bounds,
+                                           kMinimumSelectionSize) ==
+                QRectF(100.0, 100.0, 200.0, 100.0),
+            "movement-follow drags must not adjust the selection at press");
+    require(selection.selectionRectForDrag(ScreenshotSelectionDragMode::Right,
+                                           QPointF(340.0, 150.0), bounds, kMinimumSelectionSize) ==
+                QRectF(100.0, 100.0, 236.0, 100.0),
+            "movement-follow drags must keep the press-time grab offset on the dragged border");
+}
+
 void selectionShadowDefaultsToRequestedColor() {
     const QColor expected(0x33, 0x33, 0x33);
 
@@ -287,6 +393,10 @@ int main() {
     lockedResizeAllowsFlippingAcrossOppositeEdges();
     lockedCornerResizeCanFlipBothAxes();
     unlockedResizeCanChangeAspectRatio();
+    grabAdjustmentSnapsOnlyTheDraggedEdgesToThePressPosition();
+    grabAdjustmentRespectsBoundsAndMinimumSize();
+    positionFollowDragTracksThePointerAfterGrabAdjustment();
+    movementFollowDragKeepsThePressTimeGrabOffset();
     marqueeDragUsesTheSharedGeometryTransactionWithoutMinimumInflation();
     marqueeDragCanMaintainAnAspectRatio();
     selectionShadowDefaultsToRequestedColor();
