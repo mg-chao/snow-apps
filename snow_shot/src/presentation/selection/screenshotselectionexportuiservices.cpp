@@ -943,6 +943,7 @@ void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
         config.persistenceId = record.id;
         config.restorePersistentState = true;
         config.persistedOpacityPercent = record.opacityPercent;
+        config.persistedClickThroughOpacityPercent = record.clickThroughOpacityPercent;
         config.persistedImageTransform = record.imageTransform;
         config.persistedQuarterTurns = record.quarterTurns;
         config.persistedHideToTopMode = record.hideToTopMode;

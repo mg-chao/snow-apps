@@ -4,6 +4,16 @@
 #include <QRect>
 
 namespace screenshot_pinned_click_through {
+inline constexpr int kControlHeight = 32;
+inline constexpr int kOpacityEditorWidth = 152;
+inline constexpr int kControlSpacing = 8;
+struct ControlsGeometry {
+    QRect opacityEditor;
+    QRect exitButton;
+};
+[[nodiscard]] ControlsGeometry controlsGeometry(const QRect& pinnedNativeGeometry,
+                                                const QRect& screenPhysicalBounds,
+                                                qreal devicePixelRatio);
 [[nodiscard]] QRect exitButtonGeometry(const QRect& pinnedNativeGeometry,
                                        const QRect& screenPhysicalBounds, qreal devicePixelRatio);
 } // namespace screenshot_pinned_click_through

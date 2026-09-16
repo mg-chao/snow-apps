@@ -33,6 +33,7 @@
 namespace adqt::widgets {
 class AdButton;
 class AdContextMenu;
+class AdSlider;
 } // namespace adqt::widgets
 namespace snow_shot::presentation {
 class WindowShortcutManager;
@@ -121,6 +122,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         bool restorePersistentState = false;
         double persistedFirstCreationTextDpi = 1.0;
         int persistedOpacityPercent = 100;
+        int persistedClickThroughOpacityPercent = 50;
         QTransform persistedImageTransform;
         int persistedQuarterTurns = 0;
         bool persistedHideToTopMode = false;
@@ -303,6 +305,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     [[nodiscard]] bool updateClickThroughExitButtonGeometry();
     void setClickThroughScreen(QScreen* screen);
     void shutdownClickThrough();
+    void applyEffectiveOpacity();
+    void setClickThroughOpacityPercent(int percent);
     void updateThumbnailPresentation();
     void setThumbnailMode(bool enabled, bool animate = true);
     void restoreFromThumbnailImmediately();
@@ -374,6 +378,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     adqt::widgets::AdButton* m_editButton = nullptr;
     adqt::widgets::AdButton* m_closeButton = nullptr;
     std::unique_ptr<adqt::widgets::AdButton> m_clickThroughExitButton;
+    std::unique_ptr<QWidget> m_clickThroughOpacityEditor;
+    adqt::widgets::AdSlider* m_clickThroughOpacitySlider = nullptr;
     adqt::widgets::AdContextMenu* m_contextMenu = nullptr;
     adqt::widgets::AdContextMenu* m_groupMenu = nullptr;
     adqt::widgets::AdContextMenu* m_deleteSpecifiedGroupMenu = nullptr;
@@ -439,6 +445,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     int m_wheelAngleRemainder = 0;
     int m_opacityWheelAngleRemainder = 0;
     int m_opacityPercent = 100;
+    int m_clickThroughOpacityPercent = 50;
     int m_quarterTurns = 0;
     bool m_ocrReady = false;
     bool m_ocrSupported = false;

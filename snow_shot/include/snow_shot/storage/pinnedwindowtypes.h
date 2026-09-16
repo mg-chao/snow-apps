@@ -51,6 +51,7 @@ struct PinnedWindowRecord final {
     // re-derives it from initialPhysicalSize and nativeGeometry instead.
     double scalePercent = 100.0;
     int opacityPercent = 100;
+    int clickThroughOpacityPercent = 50;
     QTransform imageTransform;
     int quarterTurns = 0;
     bool hideToTopMode = false;

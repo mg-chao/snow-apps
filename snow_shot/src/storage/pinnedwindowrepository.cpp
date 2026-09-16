@@ -376,6 +376,7 @@ QJsonObject recordToJson(const PinnedWindowRecord& record, const QJsonObject& pa
         {QStringLiteral("first_creation_text_dpi"), record.firstCreationTextDpi},
         {QStringLiteral("scale_percent"), record.scalePercent},
         {QStringLiteral("opacity_percent"), record.opacityPercent},
+        {QStringLiteral("click_through_opacity_percent"), record.clickThroughOpacityPercent},
         {QStringLiteral("quarter_turns"), record.quarterTurns},
         {QStringLiteral("image_transform"), transformToJson(record.imageTransform)},
         {QStringLiteral("hide_to_top_mode"), record.hideToTopMode},
@@ -675,6 +676,13 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
         return false;
     }
     record.opacityPercent = qRound(number);
+    const auto clickThroughOpacity = object.value(QStringLiteral("click_through_opacity_percent"));
+    const int clickThroughPercent = clickThroughOpacity.toInt(-1);
+    record.clickThroughOpacityPercent =
+        clickThroughPercent >= 0 && clickThroughPercent <= 100 &&
+                clickThroughOpacity.toDouble(-1) == clickThroughPercent
+            ? clickThroughPercent
+            : 50;
     record.quarterTurns = object.value(QStringLiteral("quarter_turns")).toInt(-1);
     if (record.quarterTurns < 0 || record.quarterTurns > 3 ||
         !transformFromJson(object.value(QStringLiteral("image_transform")),

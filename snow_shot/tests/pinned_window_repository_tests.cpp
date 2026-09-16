@@ -424,6 +424,7 @@ void clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata() {
     const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     auto record = recordWithId(id, patternedImage(QSize(200, 100), 7));
     record.clickThroughMode = true;
+    record.clickThroughOpacityPercent = 37;
     record.preThumbnailNativeGeometry = record.nativeGeometry;
     record.hideToTopHandleNativeGeometry = QRect(record.nativeGeometry.topLeft(), QSize(30, 6));
     record.hideToTopAccentIndex = 0;
@@ -434,7 +435,8 @@ void clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata() {
         require(repository.upsert(record).success && repository.flush().success,
                 "click-through state must be committed to disk");
         const auto demoted = repository.loadRecord(id);
-        require(demoted.has_value() && demoted->clickThroughMode,
+        require(demoted.has_value() && demoted->clickThroughMode &&
+                    demoted->clickThroughOpacityPercent == 37,
                 "click-through state must survive payload demotion");
 
         record.clickThroughMode = false;
@@ -450,7 +452,8 @@ void clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata() {
     {
         storage::PinnedWindowRepository repository(directory.path());
         const auto loaded = repository.loadRecord(id);
-        require(loaded.has_value() && loaded->clickThroughMode,
+        require(loaded.has_value() && loaded->clickThroughMode &&
+                    loaded->clickThroughOpacityPercent == 37,
                 "click-through state must survive repository recreation");
     }
 
@@ -486,6 +489,42 @@ void clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata() {
             require(loaded->hideToTopMode,
                     "Hide to Top must win a conflicting click-through record");
         }
+    }
+    const QList<QJsonValue> opacityValues{QJsonValue(QJsonValue::Undefined),
+                                          QJsonValue(),
+                                          QJsonValue(-1),
+                                          QJsonValue(101),
+                                          QJsonValue(37.5),
+                                          QJsonValue(QStringLiteral("42")),
+                                          QJsonValue(true),
+                                          QJsonValue(0),
+                                          QJsonValue(100),
+                                          QJsonValue(61)};
+    for (const auto& value : opacityValues) {
+        auto root = original;
+        auto records = root.value(QStringLiteral("records")).toArray();
+        auto item = records.at(0).toObject();
+        item.insert(QStringLiteral("click_through_opacity_percent"), value);
+        records.replace(0, item);
+        root.insert(QStringLiteral("records"), records);
+        QFile file(manifest);
+        require(file.open(QIODevice::WriteOnly | QIODevice::Truncate),
+                "open opacity metadata fixture");
+        const auto bytes = QJsonDocument(root).toJson();
+        require(file.write(bytes) == bytes.size(), "write opacity metadata fixture");
+        file.close();
+        storage::PinnedWindowRepository repository(directory.path());
+        auto loaded = repository.loadRecord(id);
+        const int expected =
+            value.isDouble() && value.toInt(-1) >= 0 && value.toInt(-1) <= 100 ? value.toInt() : 50;
+        require(loaded && loaded->clickThroughOpacityPercent == expected &&
+                    loaded->opacityPercent == 100 && loaded->clickThroughMode,
+                "missing or malformed opacity must recover independently without losing the pin");
+        require(repository.updateState(*loaded).success && repository.flush().success,
+                "recovered opacity must be writable");
+        storage::PinnedWindowRepository reopened(directory.path());
+        require(reopened.loadRecord(id)->clickThroughOpacityPercent == expected,
+                "opacity endpoints and recovered defaults must survive another round trip");
     }
 }
 void thumbnailStateSurvivesRestartAndExit() {
