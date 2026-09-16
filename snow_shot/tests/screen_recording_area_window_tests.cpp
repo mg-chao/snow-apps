@@ -344,19 +344,24 @@ void drawingAcrossFrameEdgesRetainsDrawingOwnership() {
 
 void countdownHelpersFollowTheSecondBoundaries() {
     namespace recording = snow_shot::presentation::recording;
-    require(recording::screenRecordingCountdownRemainingSeconds(3000, 0) == 3 &&
-                recording::screenRecordingCountdownRemainingSeconds(3000, 1) == 3 &&
-                recording::screenRecordingCountdownRemainingSeconds(3000, 999) == 3 &&
-                recording::screenRecordingCountdownRemainingSeconds(3000, 1000) == 2 &&
-                recording::screenRecordingCountdownRemainingSeconds(3000, 2500) == 1 &&
-                recording::screenRecordingCountdownRemainingSeconds(3000, 2999) == 1 &&
-                recording::screenRecordingCountdownRemainingSeconds(3000, 3000) == 1,
+    require(recording::screenRecordingCountdownRemainingSeconds(3000) == 3 &&
+                recording::screenRecordingCountdownRemainingSeconds(2999) == 3 &&
+                recording::screenRecordingCountdownRemainingSeconds(2001) == 3 &&
+                recording::screenRecordingCountdownRemainingSeconds(2000) == 2 &&
+                recording::screenRecordingCountdownRemainingSeconds(1000) == 1 &&
+                recording::screenRecordingCountdownRemainingSeconds(1) == 1 &&
+                recording::screenRecordingCountdownRemainingSeconds(0) == 1,
             "remaining seconds must count whole seconds and hold the final one");
-    const auto opacityAt = recording::screenRecordingCountdownOpacity;
-    require(qFuzzyCompare(opacityAt(0), 1.0) && qFuzzyCompare(opacityAt(250), 0.5) &&
-                opacityAt(500) <= 0.001 && qFuzzyCompare(opacityAt(750), 0.5) &&
-                qFuzzyCompare(opacityAt(999), 0.998),
-            "indicator opacity must fade to zero by the second midpoint and recover");
+    const auto progress = recording::screenRecordingCountdownProgress;
+    require(progress(3000, 3000) == 1.0 && progress(3000, 1500) == 0.5 &&
+                progress(3000, 0) == 0.0 && progress(3000, 4000) == 1.0 && progress(0, 0) == 0.0,
+            "the progress ring must drain linearly and stay clamped to the full circle");
+    const auto entrance = recording::screenRecordingCountdownDigitEntrance;
+    require(entrance(3000, 3000) == 0.0 && entrance(3000, 2000) == 0.0 &&
+                entrance(3000, 3000 - recording::screenRecordingCountdownDigitPopDurationMs) ==
+                    1.0 &&
+                entrance(3000, 1001) == 1.0,
+            "each digit must pop in at its second boundary and settle within the second");
 }
 
 void countdownUsesThePausedBorderAndCentersItsIndicator() {
@@ -408,6 +413,30 @@ void countdownUsesThePausedBorderAndCentersItsIndicator() {
     const QRect moved = overlay->geometry();
     require(qAbs(QRectF(moved).center().x() - area.selectionRect().center().x()) <= 1.0,
             "the indicator must follow selection layout changes");
+
+    overlay->setRemainingMilliseconds(2500);
+    const QImage midSecond = renderWidget(*overlay);
+    const QPoint backdropSample(12, midSecond.height() / 2);
+    require(midSecond.pixelColor(backdropSample).alpha() > 150,
+            "the backdrop must stay opaque; the indicator must never fade as a whole");
+    require(midSecond.pixelColor(3, 3).alpha() == 0 &&
+                midSecond.pixelColor(midSecond.width() - 4, 3).alpha() == 0 &&
+                midSecond.pixelColor(3, midSecond.height() - 4).alpha() == 0 &&
+                midSecond.pixelColor(midSecond.width() - 4, midSecond.height() - 4).alpha() == 0,
+            "the indicator backdrop must be circular, leaving the corners transparent");
+    const QColor ring = midSecond.pixelColor(midSecond.width() / 2, 5);
+    require(ring.red() > 200 && ring.green() > 120 && ring.blue() < 100,
+            "a draining accent ring must paint the countdown progress");
+    bool digitVisible = false;
+    for (int y = 24; y < 64 && !digitVisible; ++y) {
+        for (int x = 24; x < 64 && !digitVisible; ++x) {
+            digitVisible = midSecond.pixelColor(x, y) == QColor(Qt::white);
+        }
+    }
+    require(digitVisible, "the countdown digit must paint solid white between second boundaries");
+    overlay->setRemainingMilliseconds(2000);
+    require(renderWidget(*overlay).pixelColor(backdropSample).alpha() > 150,
+            "second boundaries must pop only the digit, never the backdrop");
 
     area.clearCountdown();
     require(!area.countdownActive() && !overlay->isVisible(),

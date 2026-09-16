@@ -47,6 +47,7 @@
 
 namespace {
 constexpr int kDurationTickMilliseconds = 100;
+constexpr int kCountdownTickMilliseconds = 16;
 
 struct DirectRecordingSettings {
     SnowRecordingOutputFormat format = SNOW_RECORDING_OUTPUT_FORMAT_MP4;
@@ -287,12 +288,18 @@ struct ScreenRecordingController::Impl {
                          [this]() { pollFinalization(); });
         startPollTimer.setInterval(50);
         QObject::connect(&startPollTimer, &QTimer::timeout, &owner, [this]() { pollStart(); });
+        // The countdown shares one clock with the overlay digits: every tick
+        // pushes the same elapsed reading that decides when recording starts.
+        countdownTimer.setInterval(kCountdownTickMilliseconds);
+        countdownTimer.setTimerType(Qt::PreciseTimer);
+        QObject::connect(&countdownTimer, &QTimer::timeout, &owner, [this]() { tickCountdown(); });
     }
 
     ~Impl() {
         durationTimer.stop();
         finalizationPollTimer.stop();
         startPollTimer.stop();
+        countdownTimer.stop();
         if (startFuture.valid()) {
             startFuture.wait();
             // A session that finished starting while the controller was being
@@ -645,6 +652,7 @@ struct ScreenRecordingController::Impl {
     void cancelPendingStart() {
         ++startGeneration;
         startScheduled = false;
+        countdownTimer.stop();
         if (sessionStatus.busyOperation() ==
             ScreenshotToolPalette::RecordingBusyOperation::CountingDown) {
             if (areaWindow != nullptr) {
@@ -672,22 +680,35 @@ struct ScreenRecordingController::Impl {
         // The busy status stops the motion preview and blocks recording-area
         // interactions before the countdown overlay appears.
         syncUi();
+        // One clock drives both the overlay and the actual start, so the
+        // displayed seconds can never drift away from the recording start.
+        countdownTotalMilliseconds = static_cast<qint64>(seconds) * 1000;
+        countdownElapsed.start();
         if (areaWindow != nullptr) {
             areaWindow->startCountdown(seconds);
         }
-        const quint64 generation = startGeneration;
-        QTimer::singleShot(seconds * 1000, &owner, [this, generation]() {
-            if (generation != startGeneration || !isOpen() ||
-                sessionStatus.busyOperation() !=
-                    ScreenshotToolPalette::RecordingBusyOperation::CountingDown) {
-                return;
-            }
+        countdownTimer.start();
+    }
+
+    void tickCountdown() {
+        if (sessionStatus.busyOperation() !=
+            ScreenshotToolPalette::RecordingBusyOperation::CountingDown) {
+            countdownTimer.stop();
+            return;
+        }
+        const qint64 remaining = countdownTotalMilliseconds - countdownElapsed.elapsed();
+        if (remaining > 0) {
             if (areaWindow != nullptr) {
-                areaWindow->clearCountdown();
+                areaWindow->updateCountdown(remaining);
             }
-            sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::idle();
-            scheduleStart();
-        });
+            return;
+        }
+        countdownTimer.stop();
+        if (areaWindow != nullptr) {
+            areaWindow->clearCountdown();
+        }
+        sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::idle();
+        scheduleStart();
     }
 
     void scheduleStart() {
@@ -1081,6 +1102,9 @@ struct ScreenRecordingController::Impl {
     QTimer durationTimer;
     QTimer finalizationPollTimer;
     QTimer startPollTimer;
+    QTimer countdownTimer;
+    QElapsedTimer countdownElapsed;
+    qint64 countdownTotalMilliseconds = 0;
     std::future<std::pair<bool, QString>> finalizationFuture;
     std::future<StartAttemptResult> startFuture;
     ScreenshotToolPalette::RecordingSessionStatus sessionStatus =
