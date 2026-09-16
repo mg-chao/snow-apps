@@ -30,6 +30,7 @@
 #include <QElapsedTimer>
 #include <QThread>
 #include <QMouseEvent>
+#include <QWheelEvent>
 #include <QWindow>
 #include <QScreen>
 #include <QPointer>
@@ -821,6 +822,108 @@ void controllerPreviewTransitions() {
     RecordingSettings().setKeyboardBackgroundColor(QColor(0, 0, 0, 204));
     RecordingSettings().setKeyboardForegroundColor(Qt::white);
 }
+
+void delayCountdownBlocksTheStartUntilItElapses() {
+    using snow_shot::storage::RecordingSettings;
+    require(RecordingSettings().startDelaySeconds() == 0,
+            "the recording delay must default to zero seconds");
+    require(!RecordingSettings().setStartDelaySeconds(-1) &&
+                !RecordingSettings().setStartDelaySeconds(11),
+            "out-of-range delays must be rejected");
+    {
+        ScreenRecordingController controller(testEffectsSource);
+        controller.open({40, 40, 320, 240});
+        auto* exportButton = palette()->findChild<adqt::widgets::AdButton*>(
+            QStringLiteral("screenRecordingExportSettings"));
+        require(exportButton != nullptr, "export settings control must exist");
+        if (!palette()->recordingExportSettingsVisible()) {
+            exportButton->click();
+        }
+        auto* delayButton = palette()->findChild<adqt::widgets::AdButton*>(
+            QStringLiteral("screenRecordingStartDelaySeconds"));
+        require(delayButton != nullptr, "export settings must expose the delay editor");
+
+        const auto spinWheel = [&delayButton](int delta) {
+            const QPoint global = delayButton->mapToGlobal(delayButton->rect().center());
+            QWheelEvent wheel(QPointF(global), QPointF(global), QPoint(), QPoint(0, delta),
+                              Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QCoreApplication::sendEvent(delayButton, &wheel);
+        };
+        spinWheel(120);
+        require(palette()->recordingStartDelaySeconds() == 1 &&
+                    RecordingSettings().startDelaySeconds() == 1,
+                "a wheel step over the delay editor must raise and persist the delay");
+        palette()->setRecordingStartDelaySeconds(10);
+        spinWheel(120);
+        require(palette()->recordingStartDelaySeconds() == 10,
+                "the delay must clamp at ten seconds");
+        spinWheel(-120);
+        require(palette()->recordingStartDelaySeconds() == 9, "the delay must step back down");
+        delayButton->click();
+        require(palette()->recordingStartDelaySeconds() == 0 &&
+                    RecordingSettings().startDelaySeconds() == 0,
+                "clicking the delay editor must restore the zero default");
+
+        const int startsBefore = starts.load();
+        palette()->setRecordingStartDelaySeconds(1);
+        palette()->recordingStartDelaySecondsChanged(1);
+        auto* startButton = recordingToolbarButton("Start recording");
+        auto* closeButton = recordingToolbarButton("Close recording");
+        require(startButton != nullptr && closeButton != nullptr,
+                "recording start and close controls must exist");
+        controller.startRecording();
+        QCoreApplication::processEvents();
+        require(!controller.isRecording() && starts.load() == startsBefore,
+                "a delayed start must wait for the countdown");
+        require(palette()->recordingBusyOperation() ==
+                    ScreenshotToolPalette::RecordingBusyOperation::CountingDown,
+                "the countdown must be published as a busy operation");
+        require(!startButton->isEnabled() && !startButton->busy(),
+                "the countdown must disable Start without a loading spinner");
+        require(closeButton->isEnabled(), "the countdown must stay cancellable through Close");
+        ScreenRecordingAreaWindow* area = nullptr;
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget);
+                candidate && candidate->isVisible()) {
+                area = candidate;
+            }
+        }
+        require(area != nullptr && area->countdownActive(),
+                "the recording area must show the countdown indicator");
+        palette()->recordingCloseRequested();
+        require(!controller.isOpen(), "Close must detach the UI during the countdown");
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        require(starts.load() == startsBefore,
+                "cancelling the countdown must not reach the capture backend");
+        controller.open({40, 40, 320, 240});
+        require(controller.isOpen() && palette()->recordingBusyOperation() ==
+                                           ScreenshotToolPalette::RecordingBusyOperation::None,
+                "closing a countdown must leave the controller immediately reopenable");
+        palette()->recordingCloseRequested();
+    }
+    {
+        const int startsBefore = starts.load();
+        ScreenRecordingController controller(testEffectsSource);
+        controller.open({40, 40, 320, 240});
+        palette()->recordingStartDelaySecondsChanged(1);
+        controller.startRecording();
+        waitForRecording(controller);
+        require(starts.load() == startsBefore + 1,
+                "recording must start automatically once the countdown elapses");
+        ScreenRecordingAreaWindow* area = nullptr;
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget);
+                candidate && candidate->isVisible()) {
+                area = candidate;
+            }
+        }
+        require(area != nullptr && !area->countdownActive(),
+                "the countdown indicator must disappear once recording starts");
+        palette()->recordingStopRequested();
+        waitForIdle(controller);
+    }
+    require(RecordingSettings().setStartDelaySeconds(0), "the delay must reset to the default");
+}
 #ifdef Q_OS_WIN
 int nativeEffectsPreviewCapture() {
     const auto checkNative = [](bool success, const char* message) {
@@ -1411,6 +1514,7 @@ int main(int argc, char** argv) {
     require(snow_shot::storage::RecordingSettings().setLoopAnimatedImages(true),
             "restore recording loop preference");
     stopAndCopyBusyIndicatorsStayOnTheInitiatingControl();
+    delayCountdownBlocksTheStartUntilItElapses();
     ApplicationStorage::instance().shutdown();
     return 0;
 }

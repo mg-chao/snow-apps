@@ -4,6 +4,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
+#include "../src/presentation/recording/recordingcountdownoverlay.h"
 #include "../src/presentation/recording/screenrecordinggeometry.h"
 
 #include <QApplication>
@@ -341,6 +342,80 @@ void drawingAcrossFrameEdgesRetainsDrawingOwnership() {
         "drawing through frame hit regions must complete the annotation without editing geometry");
 }
 
+void countdownHelpersFollowTheSecondBoundaries() {
+    namespace recording = snow_shot::presentation::recording;
+    require(recording::screenRecordingCountdownRemainingSeconds(3000, 0) == 3 &&
+                recording::screenRecordingCountdownRemainingSeconds(3000, 1) == 3 &&
+                recording::screenRecordingCountdownRemainingSeconds(3000, 999) == 3 &&
+                recording::screenRecordingCountdownRemainingSeconds(3000, 1000) == 2 &&
+                recording::screenRecordingCountdownRemainingSeconds(3000, 2500) == 1 &&
+                recording::screenRecordingCountdownRemainingSeconds(3000, 2999) == 1 &&
+                recording::screenRecordingCountdownRemainingSeconds(3000, 3000) == 1,
+            "remaining seconds must count whole seconds and hold the final one");
+    const auto opacityAt = recording::screenRecordingCountdownOpacity;
+    require(qFuzzyCompare(opacityAt(0), 1.0) && qFuzzyCompare(opacityAt(250), 0.5) &&
+                opacityAt(500) <= 0.001 && qFuzzyCompare(opacityAt(750), 0.5) &&
+                qFuzzyCompare(opacityAt(999), 0.998),
+            "indicator opacity must fade to zero by the second midpoint and recover");
+}
+
+void countdownUsesThePausedBorderAndCentersItsIndicator() {
+    namespace recording = snow_shot::presentation::recording;
+    ScreenRecordingAreaWindow area;
+    const QRect physical = testPhysicalRegion();
+    area.setPhysicalRegion(physical);
+    area.show();
+    QCoreApplication::processEvents();
+
+    QScreen* screen = ScreenshotGeometryMapper::screenForPhysicalRect(physical);
+    const QRectF logical = ScreenshotGeometryMapper::logicalRectFForPhysicalRect(physical, screen);
+    const qreal scale = screen != nullptr ? screen->devicePixelRatio() : 1.0;
+    const auto frame = recording::screenRecordingAreaFrameGeometry(logical, scale);
+    const auto border = recording::screenRecordingAreaBorderGeometry(
+        frame.frameRect, frame.selectionRect, frame.paddingWidth);
+    const auto borderColor = [&area](const QPointF& position) {
+        const QImage image = renderWidget(area);
+        return image.pixelColor(qRound(position.x()), qRound(position.y()));
+    };
+    const QColor kIdle(0x40, 0x96, 0xff);
+    const QColor kPaused(0xfa, 0xad, 0x14);
+    const QPointF sample = border.top.center();
+
+    require(!area.countdownActive(), "the countdown must start inactive");
+    require(borderColor(sample) == kIdle, "an idle area must paint the blue border");
+    area.startCountdown(3);
+    require(area.countdownActive(), "a started countdown must report active");
+    QCoreApplication::processEvents();
+    require(borderColor(sample) == kPaused,
+            "the countdown must repaint the border in the paused colour");
+
+    auto* overlay = area.findChild<recording::RecordingCountdownOverlay*>();
+    require(overlay != nullptr && overlay->isVisible(),
+            "the countdown indicator must be a visible child of the recording area");
+    require(overlay->remainingSeconds() == 3,
+            "the indicator must start by showing the whole delay");
+    const QRectF selection = area.selectionRect();
+    const QRect geometry = overlay->geometry();
+    require(geometry.width() == geometry.height() &&
+                geometry.width() == recording::screenRecordingCountdownIndicatorSize,
+            "the countdown indicator must be a square of the documented size");
+    require(qAbs(QRectF(geometry).center().x() - selection.center().x()) <= 1.0 &&
+                qAbs(QRectF(geometry).center().y() - selection.center().y()) <= 1.0,
+            "the countdown indicator must center on the recording selection");
+
+    area.setPhysicalRegion(physical.translated(24, 16));
+    QCoreApplication::processEvents();
+    const QRect moved = overlay->geometry();
+    require(qAbs(QRectF(moved).center().x() - area.selectionRect().center().x()) <= 1.0,
+            "the indicator must follow selection layout changes");
+
+    area.clearCountdown();
+    require(!area.countdownActive() && !overlay->isVisible(),
+            "clearing must hide the countdown indicator");
+    QCoreApplication::processEvents();
+    require(borderColor(sample) == kIdle, "clearing must restore the idle border");
+}
+
 void quickSelectionFollowsTheDrawingSetting() {
     const snow_shot::storage::DrawingSettings drawingSettings;
     const QStringList originalDisabledTools = drawingSettings.quickSelectionDisabledTools();
@@ -614,6 +689,8 @@ int main(int argc, char** argv) {
     interactionBoundariesAreIdempotentAndCancelOnStateChanges();
     ordinaryWindowGeometryPreservesAnnotations();
     drawingAcrossFrameEdgesRetainsDrawingOwnership();
+    countdownHelpersFollowTheSecondBoundaries();
+    countdownUsesThePausedBorderAndCentersItsIndicator();
     snow_shot::storage::ApplicationStorage::instance().shutdown();
     return 0;
 }

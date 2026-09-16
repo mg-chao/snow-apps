@@ -1167,6 +1167,14 @@ bool RecordingSettings::setMouseTrailDurationMs(int duration) const {
     return cache().setValue(QStringLiteral("screen_recording/mouse_trail_duration_ms"), duration);
 }
 
+int RecordingSettings::startDelaySeconds() const {
+    return cache().value(QStringLiteral("screen_recording/start_delay_seconds")).toInt();
+}
+
+bool RecordingSettings::setStartDelaySeconds(int seconds) const {
+    return cache().setValue(QStringLiteral("screen_recording/start_delay_seconds"), seconds);
+}
+
 int RecordingSettings::keyboardSize() const {
     return cache().value(QStringLiteral("screen_recording/keyboard_size")).toInt();
 }

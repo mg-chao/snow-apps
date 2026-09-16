@@ -112,6 +112,7 @@ constexpr int STYLE_ICON_SIZE = 18;
 constexpr int STYLE_PREVIEW_ICON_SIZE = 22;
 constexpr int CORNER_RADIUS_EDITOR_WIDTH = 56;
 constexpr int WATERMARK_NUMERIC_EDITOR_WIDTH = 64;
+constexpr int RECORDING_DELAY_EDITOR_WIDTH = 64;
 constexpr int CORNER_RADIUS_ICON_TEXT_GAP = 6;
 constexpr int STROKE_WIDTH_PREVIEW_HORIZONTAL_INSET = 6;
 constexpr qreal STROKE_WIDTH_PREVIEW_VERTICAL_RESERVED = 16.0;
@@ -1149,6 +1150,14 @@ void IconNumericValuePreviewButton::setValueWidthReference(const QString& value)
     update();
 }
 
+void IconNumericValuePreviewButton::setValueSuffix(const QString& suffix) {
+    if (m_valueSuffix == suffix) {
+        return;
+    }
+    m_valueSuffix = suffix;
+    update();
+}
+
 void IconNumericValuePreviewButton::setPhysicalScale(qreal scale) {
     if (!std::isfinite(scale) || scale <= 0.0) {
         scale = 1.0;
@@ -1188,7 +1197,8 @@ void IconNumericValuePreviewButton::paintEvent(QPaintEvent* event) {
     painter.setFont(font());
     painter.setPen(contentColor);
 
-    const QString valueText = m_mixed ? QStringLiteral("-") : QString::number(m_value);
+    const QString valueText =
+        (m_mixed ? QStringLiteral("-") : QString::number(m_value)) + m_valueSuffix;
     const int valueWidth = QFontMetrics(font()).horizontalAdvance(m_mixed ? QStringLiteral("-")
                                                                           : m_valueWidthReference);
     const int gap = scaledMetric(CORNER_RADIUS_ICON_TEXT_GAP, m_physicalScale);
@@ -1945,6 +1955,34 @@ void configureScreenshotToolPaletteIconNumericValueButton(
     configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
     button->setFixedWidth(scaledMetric(WATERMARK_NUMERIC_EDITOR_WIDTH, metrics.physicalScale));
     stampScreenshotToolbarReferenceWidth(button, WATERMARK_NUMERIC_EDITOR_WIDTH);
+    button->setPhysicalScale(metrics.physicalScale);
+}
+
+IconNumericValuePreviewButton*
+createScreenshotToolPaletteRecordingDelayEditor(QWidget* parent, const char* tooltip,
+                                                const adqt::icons::IconRef& iconRef, int seconds,
+                                                const ScreenshotToolPaletteButtonMetrics& metrics) {
+    auto* button = new IconNumericValuePreviewButton(parent);
+    button->setIconRef(iconRef);
+    button->setValue(seconds);
+    button->setValueSuffix(QStringLiteral("s"));
+    button->setValueWidthReference(QStringLiteral("10s"));
+    configureScreenshotToolPaletteRecordingDelayEditor(button, metrics);
+    applySharedButtonAccessibility(button, tooltip);
+    button->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
+    button->setAccentRole(adqt::widgets::AdButton::AccentRole::Neutral);
+    button->setCursor(Qt::SplitVCursor);
+    return button;
+}
+
+void configureScreenshotToolPaletteRecordingDelayEditor(
+    IconNumericValuePreviewButton* button, const ScreenshotToolPaletteButtonMetrics& metrics) {
+    if (!screenshotToolPaletteMetricsApplyTo(metrics, button)) {
+        return;
+    }
+    configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
+    button->setFixedWidth(scaledMetric(RECORDING_DELAY_EDITOR_WIDTH, metrics.physicalScale));
+    stampScreenshotToolbarReferenceWidth(button, RECORDING_DELAY_EDITOR_WIDTH);
     button->setPhysicalScale(metrics.physicalScale);
 }
 

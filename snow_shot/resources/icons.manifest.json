@@ -480,6 +480,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "RecorderDelay",
+      "name": "recorder-delay",
+      "source": "../src/presentation/components/icons/resources/recorder-delay.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "RecordingClick",
       "name": "recording-click",
       "source": "../src/presentation/components/icons/resources/recording-click.svg",

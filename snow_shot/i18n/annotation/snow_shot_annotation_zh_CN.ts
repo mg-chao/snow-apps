@@ -180,6 +180,10 @@
             <translation>默认</translation>
         </message>
         <message>
+            <source>Delay recording (scroll to adjust)</source>
+            <translation>延迟录制（滚动调整）</translation>
+        </message>
+        <message>
             <source>Delete</source>
             <translation>删除</translation>
         </message>

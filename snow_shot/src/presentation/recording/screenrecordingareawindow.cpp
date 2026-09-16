@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "recordingcountdownoverlay.h"
 #include "screenrecordinggeometry.h"
 #include "screenrecordingperfinstrumentation.h"
 
@@ -195,6 +196,40 @@ bool ScreenRecordingAreaWindow::drawingBlocked() const {
     return m_drawingBlocked;
 }
 
+void ScreenRecordingAreaWindow::startCountdown(int seconds) {
+    if (m_countdownOverlay == nullptr) {
+        m_countdownOverlay =
+            new snow_shot::presentation::recording::RecordingCountdownOverlay(this);
+    }
+    m_countdownOverlay->start(seconds);
+    layoutCountdownOverlay();
+    // The indicator must stay above the annotation canvas.
+    m_countdownOverlay->raise();
+    update();
+}
+
+void ScreenRecordingAreaWindow::clearCountdown() {
+    if (m_countdownOverlay == nullptr) {
+        return;
+    }
+    m_countdownOverlay->clear();
+    update();
+}
+
+bool ScreenRecordingAreaWindow::countdownActive() const {
+    return m_countdownOverlay != nullptr && m_countdownOverlay->active();
+}
+
+void ScreenRecordingAreaWindow::layoutCountdownOverlay() {
+    if (m_countdownOverlay == nullptr) {
+        return;
+    }
+    const QPointF center = m_selectionRect.center();
+    const int side = snow_shot::presentation::recording::screenRecordingCountdownIndicatorSize;
+    m_countdownOverlay->setGeometry(qRound(center.x()) - side / 2, qRound(center.y()) - side / 2,
+                                    side, side);
+}
+
 QColor ScreenRecordingAreaWindow::inputSurfaceColor() const {
     const bool interactive =
         (m_inputMode == InputMode::Drawing && !m_drawingBlocked) || regionEditingEnabled();
@@ -375,6 +410,7 @@ void ScreenRecordingAreaWindow::layoutSelection() {
     m_frameRect = frame;
     m_paddingWidth = padding;
     m_canvas->setGeometry(m_selectionRect.toAlignedRect());
+    layoutCountdownOverlay();
     update();
 }
 
@@ -577,7 +613,11 @@ void ScreenRecordingAreaWindow::paintEvent(QPaintEvent* event) {
     SNOW_SHOT_RECORDING_PERF_MILESTONE("area.first_paint_begin");
     SNOW_SHOT_RECORDING_PERF_COUNTER("area.paints", 1);
     QColor color = kIdleColor;
-    if (m_state == ScreenshotToolPalette::RecordingState::Recording) {
+    if (countdownActive()) {
+        // The waiting state reuses the paused border colour until the delayed
+        // start swaps it for the recording colour.
+        color = kPausedColor;
+    } else if (m_state == ScreenshotToolPalette::RecordingState::Recording) {
         color = kRecordingColor;
     } else if (m_state == ScreenshotToolPalette::RecordingState::Paused) {
         color = kPausedColor;

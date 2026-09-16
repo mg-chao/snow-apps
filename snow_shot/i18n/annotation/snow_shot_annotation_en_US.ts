@@ -180,6 +180,10 @@
             <translation>Default</translation>
         </message>
         <message>
+            <source>Delay recording (scroll to adjust)</source>
+            <translation>Delay recording (scroll to adjust)</translation>
+        </message>
+        <message>
             <source>Delete</source>
             <translation>Delete</translation>
         </message>

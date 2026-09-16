@@ -102,6 +102,7 @@ class ScreenshotToolPalette final : public QWidget {
         Starting,
         Stopping,
         Copying,
+        CountingDown,
     };
 
     class RecordingSessionStatus {
@@ -111,6 +112,10 @@ class ScreenshotToolPalette final : public QWidget {
         }
         [[nodiscard]] static RecordingSessionStatus starting() {
             return RecordingSessionStatus(RecordingState::Idle, RecordingBusyOperation::Starting);
+        }
+        [[nodiscard]] static RecordingSessionStatus countingDown() {
+            return RecordingSessionStatus(RecordingState::Idle,
+                                          RecordingBusyOperation::CountingDown);
         }
         [[nodiscard]] static RecordingSessionStatus recording() {
             return RecordingSessionStatus(RecordingState::Recording, RecordingBusyOperation::None);
@@ -283,6 +288,7 @@ class ScreenshotToolPalette final : public QWidget {
     void setAutoFilterAvailable(bool available);
     bool stepPenFilterStrokeWidth(int direction);
     bool stepWatermarkFontSize(int direction);
+    bool stepRecordingStartDelay(int direction);
     void setStyleToolbarAboveMain(bool above);
     void setStyleToolbarVisible(bool visible);
     bool styleToolbarVisible() const;
@@ -324,6 +330,8 @@ class ScreenshotToolPalette final : public QWidget {
     [[nodiscard]] QString recordingOutputFormat() const;
     void setRecordingMouseTrailDurationMs(int value);
     [[nodiscard]] int recordingMouseTrailDurationMs() const;
+    void setRecordingStartDelaySeconds(int seconds);
+    [[nodiscard]] int recordingStartDelaySeconds() const;
     void setRecordingSettingsOwnerWindow(QWidget* owner);
     void setRecordingKeyboardSize(int value);
     [[nodiscard]] int recordingKeyboardSize() const;
@@ -461,6 +469,7 @@ class ScreenshotToolPalette final : public QWidget {
     void recordingCloseRequested();
     void recordingCopyRequested();
     void recordingOutputFormatChanged(const QString& format);
+    void recordingStartDelaySecondsChanged(int seconds);
     void recordingMouseTrailDurationMsChanged(int value);
     void recordingKeyboardSizeChanged(int value);
     void recordingKeyboardBackgroundColorChanged(const QColor& value);
@@ -775,6 +784,7 @@ class ScreenshotToolPalette final : public QWidget {
         m_recordMouseClickColorPresets;
     adqt::widgets::AdButton* m_recordKeyboardButton = nullptr;
     adqt::widgets::AdButton* m_recordSettingsButton = nullptr;
+    IconNumericValuePreviewButton* m_recordDelayButton = nullptr;
     adqt::widgets::AdModal* m_recordSettingsModal = nullptr;
     adqt::widgets::AdForm* m_recordSettingsForm = nullptr;
     adqt::widgets::AdInputNumber* m_recordTrailDurationInput = nullptr;
@@ -833,6 +843,7 @@ class ScreenshotToolPalette final : public QWidget {
     bool m_recordingSystemAudioEnabled = true;
     bool m_recordExportSettingsVisible = false;
     QString m_recordingOutputFormat = QStringLiteral("mp4");
+    int m_recordingStartDelaySeconds = 0;
     int m_recordingMouseTrailDurationMs = 500;
     QColor m_recordingKeyboardBackgroundColor = QColor(0, 0, 0, 204);
     QColor m_recordingKeyboardForegroundColor = QColor(Qt::white);

@@ -1125,6 +1125,8 @@ set(PROJECT_CXX_SOURCES
     src/presentation/toolbar/screenshottoolbarwindow.cpp
     src/presentation/recording/screenrecordingareawindow.cpp
     src/presentation/recording/screenrecordingcontroller.cpp
+    src/presentation/recording/recordingcountdownoverlay.cpp
+    src/presentation/recording/recordingcountdownoverlay.h
         src/presentation/recording/recordingeffectpreview.cpp
         src/presentation/recording/recordingeffectpreview.h
         src/presentation/recording/recordingeffectstyle.h
@@ -3651,6 +3653,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/recording/screenrecordingtoolbarwindow.cpp
         src/presentation/recording/screenrecordingshortcutcontroller.cpp
         src/presentation/recording/screenrecordinggeometry.cpp
+        src/presentation/recording/recordingcountdownoverlay.cpp
+        src/presentation/recording/recordingcountdownoverlay.h
         include/snow_shot/presentation/screenshottoolpalette.h
         include/snow_shot/presentation/screenshottoolpalettehost.h
         include/snow_shot/presentation/styles/thememanager.h
@@ -4134,6 +4138,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/recording/screenrecordingareawindow.cpp
         src/presentation/recording/screenrecordingtoolbarwindow.cpp
         src/presentation/recording/screenrecordinggeometry.cpp
+        src/presentation/recording/recordingcountdownoverlay.cpp
+        src/presentation/recording/recordingcountdownoverlay.h
         src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
         src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
         src/presentation/tools/screenshottoolpalettehost.cpp
@@ -4239,6 +4245,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/recording/screenrecordingareawindow.cpp
         src/presentation/recording/screenrecordinggeometry.cpp
+        src/presentation/recording/recordingcountdownoverlay.cpp
+        src/presentation/recording/recordingcountdownoverlay.h
     )
     target_include_directories(snow-shot-screen-recording-area-window-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"

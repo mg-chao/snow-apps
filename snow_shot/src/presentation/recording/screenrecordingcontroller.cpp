@@ -269,6 +269,7 @@ struct ScreenRecordingController::Impl {
         mouseClickColor = settings.mouseClickColor();
         showCursor = settings.showCursor();
         showKeyboard = settings.showKeyboard();
+        startDelaySeconds = settings.startDelaySeconds();
         durationTimer.setInterval(kDurationTickMilliseconds);
         durationTimer.setTimerType(Qt::PreciseTimer);
         QObject::connect(&durationTimer, &QTimer::timeout, &owner, [this]() {
@@ -459,6 +460,11 @@ struct ScreenRecordingController::Impl {
                              snow_shot::storage::RecordingSettings().setOutputFormat(format);
                              syncPreview();
                          });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingStartDelaySecondsChanged,
+                         uiSession->connections.get(), [this](int seconds) {
+                             startDelaySeconds = seconds;
+                             snow_shot::storage::RecordingSettings().setStartDelaySeconds(seconds);
+                         });
         QObject::connect(palette, &ScreenshotToolPalette::recordingMouseTrailDurationMsChanged,
                          uiSession->connections.get(), [this](int value) {
                              mouseTrailDurationMs = value;
@@ -639,6 +645,13 @@ struct ScreenRecordingController::Impl {
     void cancelPendingStart() {
         ++startGeneration;
         startScheduled = false;
+        if (sessionStatus.busyOperation() ==
+            ScreenshotToolPalette::RecordingBusyOperation::CountingDown) {
+            if (areaWindow != nullptr) {
+                areaWindow->clearCountdown();
+            }
+            sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::idle();
+        }
     }
 
     void start() {
@@ -646,6 +659,38 @@ struct ScreenRecordingController::Impl {
             sessionStatus.busy() || startScheduled || recordingSession != nullptr) {
             return;
         }
+        if (startDelaySeconds > 0) {
+            beginCountdown();
+            return;
+        }
+        scheduleStart();
+    }
+
+    void beginCountdown() {
+        const int seconds = std::clamp(startDelaySeconds, 1, 10);
+        sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::countingDown();
+        // The busy status stops the motion preview and blocks recording-area
+        // interactions before the countdown overlay appears.
+        syncUi();
+        if (areaWindow != nullptr) {
+            areaWindow->startCountdown(seconds);
+        }
+        const quint64 generation = startGeneration;
+        QTimer::singleShot(seconds * 1000, &owner, [this, generation]() {
+            if (generation != startGeneration || !isOpen() ||
+                sessionStatus.busyOperation() !=
+                    ScreenshotToolPalette::RecordingBusyOperation::CountingDown) {
+                return;
+            }
+            if (areaWindow != nullptr) {
+                areaWindow->clearCountdown();
+            }
+            sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::idle();
+            scheduleStart();
+        });
+    }
+
+    void scheduleStart() {
         startScheduled = true;
         syncPreview();
         uiSession->preview->stopAndClear(true);
@@ -1005,6 +1050,7 @@ struct ScreenRecordingController::Impl {
             palette->setRecordingKeyboardBackgroundColor(keyboardBackgroundColor);
             palette->setRecordingKeyboardForegroundColor(keyboardForegroundColor);
             palette->setRecordingMouseClickColor(mouseClickColor);
+            palette->setRecordingStartDelaySeconds(startDelaySeconds);
             palette->setRecordingCursorVisible(showCursor);
             palette->setRecordingKeyboardVisible(showKeyboard);
         }
@@ -1044,6 +1090,7 @@ struct ScreenRecordingController::Impl {
     bool microphoneEnabled = false;
     bool systemAudioEnabled = true;
     QString outputFormat = QStringLiteral("mp4");
+    int startDelaySeconds = 0;
     int mouseTrailDurationMs = 500;
     int keyboardSize = 64;
     QColor keyboardBackgroundColor{0, 0, 0, 204};
