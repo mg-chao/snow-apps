@@ -163,7 +163,11 @@ enum class SnowCanvasFilterType {
     Grayscale,
     Inversion,
     Emboss = 4,
+    SmartErase = 5,
 };
+
+// Capability flag returned alongside filterStyleMixed property bits.
+constexpr quint32 SnowCanvasFilterStyleMixedContainsSmartErase = 1u << 31;
 
 enum SnowCanvasFilterStyleProperty : quint32 {
     SnowCanvasFilterStylePropertyType = 1u << 0,

@@ -24,6 +24,7 @@ class ClientRegistry final {
     void detachAndReleaseClients(SnowCanvasRuntime& owner);
     void abandonClientsWithoutDetach();
     void clearRenderState();
+    void smartEraseChanged();
     bool resetEditingState();
     void syncChangedViewports(const std::vector<std::uint64_t>& changedViewportIds);
 

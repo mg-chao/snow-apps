@@ -117,7 +117,8 @@ typedef enum SnowFilterType {
     SNOW_FILTER_TYPE_GAUSSIAN_BLUR = 1,
     SNOW_FILTER_TYPE_GRAYSCALE = 2,
     SNOW_FILTER_TYPE_INVERSION = 3,
-    SNOW_FILTER_TYPE_EMBOSS = 4
+    SNOW_FILTER_TYPE_EMBOSS = 4,
+    SNOW_FILTER_TYPE_SMART_ERASE = 5
 } SnowFilterType;
 
 typedef struct SnowFilterStyle {
@@ -934,7 +935,7 @@ typedef struct SnowArrowPathCommand {
  */
 typedef struct SnowFilterRenderSpec {
     uint32_t filter_type;
-    uint32_t reserved0;
+    uint32_t render_phase;
     double strength;
     double mosaic_block_size;
     double blur_sigma;
@@ -992,6 +993,12 @@ typedef struct SnowSceneDisplayItem {
 } SnowSceneDisplayItem;
 
 /* Pointer fields follow the same SnowPatchHandle lifetime as scene items. */
+/* The visitor borrows each item for the duration of the call and must not reenter runtime. */
+SnowError snow_runtime_visit_smart_erase(SnowRuntime runtime,
+                                         void (*visitor)(void* context,
+                                                         const SnowSceneDisplayItem* item),
+                                         void* context);
+
 typedef struct SnowOverlayDisplayItem {
     SnowOverlayDisplayItemKind kind;
     SnowOverlayRectKind rect_kind;

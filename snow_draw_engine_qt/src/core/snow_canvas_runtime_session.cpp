@@ -131,7 +131,8 @@ std::future<void> startAsyncDestroy(SnowRuntime runtime) noexcept {
 RuntimeSession::RuntimeSession() : RuntimeSession(SnowCanvasRuntimeConfig{}) {}
 
 RuntimeSession::RuntimeSession(const SnowCanvasRuntimeConfig& config)
-    : m_config(config), m_runtime(createRuntime(m_config)) {}
+    : m_config(config), m_runtime(createRuntime(m_config)),
+      m_smartErase([this] { m_clients.smartEraseChanged(); }) {}
 
 RuntimeSession::~RuntimeSession() {
     m_runtime.reset();
@@ -212,6 +213,7 @@ bool RuntimeSession::restoreDocumentHistoryPreservingEditorStyles(const QByteArr
             static_cast<std::size_t>(payload.size()), changedViewports.outParam()) != SNOW_OK) {
         return false;
     }
+    m_smartErase.reset();
     syncChangedViewports(changedViewports.get());
     return true;
 }
@@ -227,6 +229,7 @@ bool RuntimeSession::clearDocumentPreservingViewports() {
         return false;
     }
 
+    m_smartErase.reset();
     m_clients.clearRenderState();
     syncChangedViewports(changedViewports.get());
     return true;
@@ -277,6 +280,8 @@ void RuntimeSession::registerClient(Client* client) {
 
 void RuntimeSession::unregisterClient(Client* client) {
     m_clients.unregisterClient(client);
+    m_smartErase.removeSources(client);
+    m_smartErase.sync(m_runtime.get());
 }
 
 void RuntimeSession::syncChangedViewports(SnowChangedViewportList changedViewports) {
@@ -288,6 +293,7 @@ void RuntimeSession::syncChangedViewports(SnowChangedViewportList changedViewpor
 }
 
 void RuntimeSession::syncChangedViewportIds(const std::vector<std::uint64_t>& changedViewportIds) {
+    m_smartErase.sync(m_runtime.get());
     m_clients.syncChangedViewports(changedViewportIds);
 }
 
@@ -297,10 +303,12 @@ bool RuntimeSession::replaceRuntime(ScopedRuntimeHandle replacement) {
         return false;
     }
 
+    m_smartErase.reset();
     const SnowRuntime runtime = replacement.get();
     const ClientRegistry::DetachedClients detachedClients = m_clients.detachForRuntimeReplacement();
     m_runtime.reset(replacement.release());
     m_clients.attachAfterRuntimeReplacement(detachedClients, runtime);
+    m_smartErase.sync(runtime);
     return true;
 }
 

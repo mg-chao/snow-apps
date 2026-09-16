@@ -128,10 +128,13 @@ impl Editor {
             return None;
         };
         let points = streaming_points(state);
-        if points.len() < 2 {
+        let style = &self.state.default_pen_filter;
+        if points.is_empty()
+            || (points.len() < 2
+                && style.filter_type != snow_draw_engine_document::CanvasFilterType::SmartErase)
+        {
             return None;
         }
-        let style = &self.state.default_pen_filter;
         Some(ElementCreationPreview::PenFilter(PenFilterPreview {
             global_points: points,
             filter_type: style.filter_type,
@@ -378,6 +381,29 @@ mod tests {
         assert_eq!(points.first(), Some(&Point::new(1.0, 2.0)));
         assert_eq!(points.last(), Some(&Point::new(15.0, 18.0)));
         assert!(points.len() <= 4);
+    }
+
+    #[test]
+    fn smart_erase_pen_dot_previews_until_release() {
+        let mut editor = Editor::new(snow_draw_engine_core::EngineConfig::default()).unwrap();
+        editor.set_surface_size(200, 200).unwrap();
+        editor.set_active_tool(ActiveTool::PenFilter).unwrap();
+        editor.state.default_pen_filter.filter_type =
+            snow_draw_engine_document::CanvasFilterType::SmartErase;
+        editor.begin_pen_filter_creation(7, Point::new(3.0, 4.0));
+        assert!(editor.pen_filter_creation_preview().is_some());
+        let document = DocumentModel::new();
+        let update = editor
+            .process_input(
+                &document,
+                InputEvent::Pointer(pointer(PointerEventType::Up, Point::new(103.0, 104.0))),
+            )
+            .unwrap();
+        assert!(
+            update.command.is_none(),
+            "a click without a stroke follows ordinary pen creation semantics"
+        );
+        assert!(matches!(editor.state.interaction, InteractionState::Idle));
     }
 
     #[test]

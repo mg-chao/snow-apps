@@ -670,9 +670,9 @@ bool toEngineStyleDefaults(const SnowCanvasStyleDefaults& defaults,
             std::begin(shapes), std::end(shapes),
             [](const SnowCanvasShapeStyle* style) { return !validShapeStyleEnums(*style); }) ||
         !enumInRange(defaults.rectangleFilter.type, SnowCanvasFilterType::Mosaic,
-                     SnowCanvasFilterType::Emboss) ||
+                     SnowCanvasFilterType::SmartErase) ||
         !enumInRange(defaults.penFilter.type, SnowCanvasFilterType::Mosaic,
-                     SnowCanvasFilterType::Emboss) ||
+                     SnowCanvasFilterType::SmartErase) ||
         !enumInRange(defaults.text.fillStyle, SnowCanvasFillStyle::Line,
                      SnowCanvasFillStyle::Solid) ||
         !enumInRange(defaults.text.horizontalAlign, SnowCanvasTextHorizontalAlign::Left,

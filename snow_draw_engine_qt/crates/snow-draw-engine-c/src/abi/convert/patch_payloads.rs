@@ -222,12 +222,14 @@ pub(crate) fn snow_scene_display_item_from_rust(
             out.stroke_width = item.stroke_width;
             out.is_free_draw = u8::from(item.is_pen_filter);
             out.opacity = item.opacity;
+            out.filter.render_phase = item.filter.render_phase;
             out.filter.filter_type = match item.filter.filter_type {
                 snow_draw_engine::DisplayFilterType::Mosaic => 0,
                 snow_draw_engine::DisplayFilterType::GaussianBlur => 1,
                 snow_draw_engine::DisplayFilterType::Grayscale => 2,
                 snow_draw_engine::DisplayFilterType::Inversion => 3,
                 snow_draw_engine::DisplayFilterType::Emboss => 4,
+                snow_draw_engine::DisplayFilterType::SmartErase => 5,
             };
             out.filter.strength = item.filter.strength;
             out.filter.mosaic_block_size = item.filter.mosaic_block_size;

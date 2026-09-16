@@ -34,6 +34,7 @@ QImage renderPinnedViewport(const ScreenshotPinnedViewportExportSource& source) 
     if (source.documentSession.isEmpty() && !runtime->clearDocumentPreservingViewports()) {
         return {};
     }
+    runtime->restoreSmartEraseSnapshot(source.smartErase);
     const QList<CanvasExportSource> sources{
         CanvasExportSource{source.backgroundImage, source.backgroundCanvasRect}};
     QImage content =

@@ -205,6 +205,28 @@ pub(crate) fn compose_scene_items(
         ));
     }
 
+    for item in &mut items {
+        if let SceneDisplayItem::Filter(filter) = item {
+            let id = ElementId {
+                index: filter.id.index,
+                generation: filter.id.generation,
+            };
+            if presentation.creation_preview.is_some() && id == model.peek_next_element_id() {
+                filter.filter.render_phase = 1;
+            } else if preview_rects.contains_key(&id) {
+                filter.filter.render_phase = 2;
+            }
+        }
+    }
+    // Creation previews are appended above; Smart Erase keeps its fixed bottom layer even then.
+    items.sort_by_key(|item| match item {
+        SceneDisplayItem::Filter(f)
+            if f.filter.filter_type == snow_draw_engine_display::DisplayFilterType::SmartErase =>
+        {
+            (0, f.id.index)
+        }
+        _ => (1, 0),
+    });
     compose_arrow_text(&mut items, model, presentation, &preview_arrows, viewport);
     items
 }

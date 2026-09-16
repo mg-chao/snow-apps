@@ -1,3 +1,4 @@
+#include "snow_canvas_smart_erase.h"
 #include "snow_canvas_renderer.h"
 
 #include "snow_canvas_display_item.h"
@@ -75,6 +76,7 @@ std::uint64_t filterDependencyFingerprint(const SnowCanvasSceneItem* items, std:
         hash = filterTileHashAppend(hash, item.penFilterGeometryRevision());
         hash = filterTileHashAppend(hash, item.pathGeometryRevision());
         hash = filterTileHashAppend(hash, item.filter.filter_type);
+        hash = filterTileHashAppend(hash, item.filter.render_phase);
         hash = filterTileHashDouble(hash, item.filter.strength);
         hash = filterTileHashDouble(hash, item.filter.mosaic_block_size);
         hash = filterTileHashDouble(hash, item.filter.blur_sigma);
@@ -132,6 +134,7 @@ std::uint64_t filterDependencyFingerprintForRegion(const SnowCanvasSceneItem* it
         hash = filterTileHashAppend(hash, item.penFilterGeometryRevision());
         hash = filterTileHashAppend(hash, item.pathGeometryRevision());
         hash = filterTileHashAppend(hash, item.filter.filter_type);
+        hash = filterTileHashAppend(hash, item.filter.render_phase);
         hash = filterTileHashDouble(hash, item.filter.strength);
         hash = filterTileHashDouble(hash, item.filter.mosaic_block_size);
         hash = filterTileHashDouble(hash, item.filter.blur_sigma);
@@ -935,7 +938,8 @@ void drawSerialNumberConnectorItem(QPainter& painter, const SceneDisplayInfo& di
 }
 
 void drawSceneItem(QPainter& painter, const SceneDisplayInfo& displayInfo,
-                   const SnowCanvasSceneItem& item) {
+                   const SnowCanvasSceneItem& item,
+                   const SnowCanvasSmartEraseSnapshot& smartErase) {
     switch (item.kind) {
     case SNOW_SCENE_DISPLAY_ITEM_DRAW_RECT:
         drawRectItem(painter, displayInfo, item);
@@ -953,6 +957,9 @@ void drawSceneItem(QPainter& painter, const SceneDisplayInfo& displayInfo,
         drawSerialNumberConnectorItem(painter, displayInfo, item);
         break;
     case SNOW_SCENE_DISPLAY_ITEM_FILTER:
+        if (item.filter.filter_type == 5)
+            snow_canvas_smart_erase::paint(painter, displayInfo, item, smartErase);
+        break;
     default:
         break;
     }
@@ -1947,6 +1954,12 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
             }
         }
     }
+    filterIndices.erase(std::remove_if(filterIndices.begin(), filterIndices.end(),
+                                       [&](std::uint32_t i) {
+                                           return i < sceneItemCount &&
+                                                  sceneItems[i].filter.filter_type == 5;
+                                       }),
+                        filterIndices.end());
     const bool hasPenFilterItems =
         std::any_of(filterIndices.begin(), filterIndices.end(),
                     [sceneItems, sceneItemCount](std::uint32_t index) {
@@ -2208,16 +2221,19 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
             std::vector<std::uint32_t> expandedStream = stream;
             for (std::uint32_t index : stream) {
                 if (index >= sceneItemCount ||
-                    sceneItems[index].kind != SNOW_SCENE_DISPLAY_ITEM_FILTER) {
+                    (sceneItems[index].kind != SNOW_SCENE_DISPLAY_ITEM_FILTER ||
+                     sceneItems[index].filter.filter_type == 5)) {
                     continue;
                 }
                 std::uint32_t begin = index;
                 std::uint32_t end = index + 1;
-                while (begin > 0 && sceneItems[begin - 1].kind == SNOW_SCENE_DISPLAY_ITEM_FILTER) {
+                while (begin > 0 && sceneItems[begin - 1].kind == SNOW_SCENE_DISPLAY_ITEM_FILTER &&
+                       sceneItems[begin - 1].filter.filter_type != 5) {
                     --begin;
                 }
                 while (end < sceneItemCount &&
-                       sceneItems[end].kind == SNOW_SCENE_DISPLAY_ITEM_FILTER) {
+                       sceneItems[end].kind == SNOW_SCENE_DISPLAY_ITEM_FILTER &&
+                       sceneItems[end].filter.filter_type != 5) {
                     ++end;
                 }
                 for (std::uint32_t adjacent = begin; adjacent < end; ++adjacent) {
@@ -2238,12 +2254,15 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                      ++candidatePosition) {
                     const std::uint32_t candidateIndex = expandedStream[candidatePosition];
                     if (candidateIndex >= sceneItemCount ||
-                        sceneItems[candidateIndex].kind != SNOW_SCENE_DISPLAY_ITEM_FILTER) {
+                        (sceneItems[candidateIndex].kind != SNOW_SCENE_DISPLAY_ITEM_FILTER ||
+                         sceneItems[candidateIndex].filter.filter_type == 5)) {
                         continue;
                     }
                     std::uint32_t candidateLayerStart = candidateIndex;
-                    while (candidateLayerStart > 0 && sceneItems[candidateLayerStart - 1].kind ==
-                                                          SNOW_SCENE_DISPLAY_ITEM_FILTER) {
+                    while (candidateLayerStart > 0 &&
+                           sceneItems[candidateLayerStart - 1].kind ==
+                               SNOW_SCENE_DISPLAY_ITEM_FILTER &&
+                           sceneItems[candidateLayerStart - 1].filter.filter_type != 5) {
                         --candidateLayerStart;
                     }
                     const QRect sourcePhysicalBounds = surfaceGeometry.pixelBounds;
@@ -2308,9 +2327,9 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                     continue;
                 }
                 const SnowCanvasSceneItem& item = sceneItems[index];
-                if (item.kind != SNOW_SCENE_DISPLAY_ITEM_FILTER) {
+                if (item.kind != SNOW_SCENE_DISPLAY_ITEM_FILTER || item.filter.filter_type == 5) {
                     const StageTimer replayTimer{g_filterDiagnostics.sceneReplayNanoseconds};
-                    drawSceneItem(scenePainter, displayInfo, item);
+                    drawSceneItem(scenePainter, displayInfo, item, request.smartErase);
                     ++g_filterDiagnostics.replayedItemCount;
                     renderedContent = true;
                     ++position;
@@ -2320,11 +2339,13 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                 std::uint32_t layerStart = index;
                 std::uint32_t layerEnd = index + 1;
                 while (layerStart > 0 &&
-                       sceneItems[layerStart - 1].kind == SNOW_SCENE_DISPLAY_ITEM_FILTER) {
+                       sceneItems[layerStart - 1].kind == SNOW_SCENE_DISPLAY_ITEM_FILTER &&
+                       sceneItems[layerStart - 1].filter.filter_type != 5) {
                     --layerStart;
                 }
                 while (layerEnd < sceneItemCount &&
-                       sceneItems[layerEnd].kind == SNOW_SCENE_DISPLAY_ITEM_FILTER) {
+                       sceneItems[layerEnd].kind == SNOW_SCENE_DISPLAY_ITEM_FILTER &&
+                       sceneItems[layerEnd].filter.filter_type != 5) {
                     ++layerEnd;
                 }
                 while (position < expandedStream.size() && expandedStream[position] < layerEnd) {
@@ -2770,7 +2791,7 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
         for (std::uint32_t candidate = 0; candidate < candidateCount; ++candidate) {
             const std::uint32_t index = candidateIndices[candidate];
             if (index < sceneItemCount) {
-                drawSceneItem(painter, displayInfo, sceneItems[index]);
+                drawSceneItem(painter, displayInfo, sceneItems[index], request.smartErase);
             }
         }
         return;
@@ -2780,7 +2801,7 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
         if (!exposedRegion.intersects(alignedRectForBounds(sceneItemBounds(displayInfo, item)))) {
             continue;
         }
-        drawSceneItem(painter, displayInfo, item);
+        drawSceneItem(painter, displayInfo, item, request.smartErase);
     }
 }
 } // namespace

@@ -77,6 +77,7 @@ pub enum SnowFilterType {
     Grayscale = 2,
     Inversion = 3,
     Emboss = 4,
+    SmartErase = 5,
 }
 
 #[repr(C)]

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "snow_canvas_runtime_clients.h"
+#include "snow_canvas_smart_erase.h"
 #include "snow_canvas_ffi_handles.h"
 #include "snow_draw_engine.h"
 #include "snow_draw_engine_qt/snow_canvas_types.h"
@@ -38,6 +39,9 @@ class RuntimeSession final {
     void destroyForOwnerDestruction(SnowCanvasRuntime& owner, OwnerDestructionPolicy policy);
 
     SnowRuntime handle() const;
+    snow_canvas_smart_erase::Coordinator& smartErase() {
+        return m_smartErase;
+    }
     void registerClient(Client* client);
     void unregisterClient(Client* client);
     void syncChangedViewports(SnowChangedViewportList changedViewports);
@@ -51,6 +55,7 @@ class RuntimeSession final {
     SnowCanvasRuntimeConfig m_config;
     ScopedRuntimeHandle m_runtime;
     ClientRegistry m_clients;
+    snow_canvas_smart_erase::Coordinator m_smartErase;
     std::future<void> m_pendingDestroy;
 };
 

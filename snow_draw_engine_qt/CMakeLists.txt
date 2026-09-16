@@ -24,6 +24,10 @@ snow_enable_clang_tidy()
 
 set(CMAKE_DISABLE_FIND_PACKAGE_WrapVulkanHeaders TRUE)
 find_package(Qt6 REQUIRED COMPONENTS Widgets Svg)
+if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+    set(OpenCV_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/opencv4" CACHE PATH "OpenCV package directory" FORCE)
+endif()
+find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc)
 include(SnowTestCliGuard)
 include(SnowQtOffscreenTest)
 qt_standard_project_setup()
@@ -83,6 +87,8 @@ target_link_libraries(snow_draw_engine_qt_canvas
         Qt6::Widgets
     PRIVATE
         Qt6::Svg
+        opencv_core
+        opencv_imgproc
         adqt::icons
         snow_draw_engine_c
         advapi32
@@ -112,6 +118,19 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_DEMO)
 endif()
 
 if(SNOW_DRAW_ENGINE_QT_BUILD_BENCHMARKS)
+    add_executable(snow-canvas-smart-erase-benchmark
+        tests/snow_canvas_smart_erase_benchmark.cpp
+        src/rendering/snow_canvas_smart_erase_algorithm.cpp
+        src/rendering/snow_canvas_display_item.cpp
+        src/rendering/snow_canvas_render_geometry.cpp)
+    target_include_directories(snow-canvas-smart-erase-benchmark PRIVATE
+        include
+        ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
+        "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include"
+    )
+    target_link_libraries(snow-canvas-smart-erase-benchmark PRIVATE
+        Qt6::Widgets opencv_core opencv_imgproc
+    )
     add_executable(snow-canvas-rectangle-benchmark
         tests/snow_canvas_rectangle_benchmark.cpp
     )
@@ -285,6 +304,18 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
         PROPERTIES TIMEOUT 30 LABELS unit
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+
+    add_executable(snow-canvas-smart-erase-tests tests/snow_canvas_smart_erase_tests.cpp)
+    target_include_directories(snow-canvas-smart-erase-tests PRIVATE
+        ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
+        "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include"
+    )
+    target_link_libraries(snow-canvas-smart-erase-tests PRIVATE snow_draw_engine_qt_canvas)
+    snow_shot_import_offscreen_platform(snow-canvas-smart-erase-tests)
+    add_test(NAME snow-canvas-smart-erase-tests COMMAND snow-canvas-smart-erase-tests)
+    set_tests_properties(snow-canvas-smart-erase-tests PROPERTIES TIMEOUT 90 LABELS unit
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:opencv_core>")
 
     add_executable(snow-canvas-filter-render-tests
         tests/snow_canvas_filter_render_tests.cpp

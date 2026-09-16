@@ -34,6 +34,7 @@ impl Editor {
                     style.filter_type,
                     snow_draw_engine_document::CanvasFilterType::Grayscale
                         | snow_draw_engine_document::CanvasFilterType::Inversion
+                        | snow_draw_engine_document::CanvasFilterType::SmartErase
                 ) {
                     return Ok(InteractionOutput::default());
                 }

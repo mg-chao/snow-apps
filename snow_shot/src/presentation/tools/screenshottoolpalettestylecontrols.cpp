@@ -127,6 +127,7 @@ constexpr char kSignatureSerialValue[] = "serial-value";
 constexpr char kSignatureSerialType[] = "radio:serial-type";
 constexpr char kSignatureFilterMode[] = "radio:filter-mode";
 constexpr char kSignatureFilterType[] = "select:filter-types";
+constexpr char kSignatureAutoFilterType[] = "select:auto-filter-types";
 constexpr char kSignatureFilterIntensity[] = "slider:filter-intensity";
 constexpr char kSignatureWatermarkText[] = "line-edit:watermark";
 constexpr char kSignatureWatermarkFont[] = "font:watermark-presets";
@@ -468,6 +469,7 @@ void finalizeRawEditorRoot(QWidget* root) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Grayscale"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Inversion"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Emboss"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Smart Erase"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter intensity"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Adjust filter intensity"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen filter"),
@@ -1135,6 +1137,10 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         stageComponent(kRoleTextFill, kSignatureTextFill, m_serialNumberFillEditor);
         break;
     case Tool::AutoFilter:
+        stageWidget(kRoleFilterMode, kSignatureFilterMode);
+        stageWidget(kRoleFilterType, kSignatureAutoFilterType);
+        stageWidget(kRoleFilterIntensity, kSignatureFilterIntensity);
+        break;
     case Tool::RectangleFilter:
         stageWidget(kRoleFilterMode, kSignatureFilterMode);
         stageWidget(kRoleFilterType, kSignatureFilterType);
@@ -2563,6 +2569,8 @@ ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buil
     const ScreenshotToolPaletteFilterCallbacks& callbacks, QWidget* panel,
     const ScreenshotToolPaletteStyleFamilyHost& host,
     const ScreenshotToolPaletteButtonMetrics& metrics) {
+    const char* typeSignature =
+        config.allowSmartErase ? kSignatureFilterType : kSignatureAutoFilterType;
     ScreenshotToolPaletteFilterFamilyResult result;
     if (panel == nullptr) {
         return result;
@@ -2602,7 +2610,7 @@ ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buil
     typeSelectConfig.tooltip = QStringLiteral("Filter type");
     typeSelectConfig.placeholder = QStringLiteral("Filter type");
     result.typeSelect = dynamic_cast<adqt::widgets::AdSelect*>(
-        takeReusableWidget("filter-type", kSignatureFilterType, layout, result.controls));
+        takeReusableWidget("filter-type", typeSignature, layout, result.controls));
     if (result.typeSelect == nullptr) {
         const ScreenshotToolPaletteSelectEditor typeSelectEditor =
             createScreenshotToolPaletteSelectEditor(result.controls, typeSelectConfig, metrics);
@@ -2624,6 +2632,8 @@ ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buil
         appendFilterType("Grayscale", 2);
         appendFilterType("Inversion", 3);
         appendFilterType("Emboss", 4);
+        if (config.allowSmartErase)
+            appendFilterType("Smart Erase", 5);
         result.typeSelect->setModel(typeModel);
         layout->addWidget(result.typeSelect);
     } else {
@@ -2637,7 +2647,7 @@ ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buil
     result.typeSelect->setPlaceholder(QStringLiteral("Filter type"));
     result.typeSelect->setProperty("screenshotStyleEditorRoot", true);
     result.typeSelect->setProperty("screenshotStyleEditorRole", "filter-type");
-    result.typeSelect->setProperty("screenshotStyleEditorSignature", kSignatureFilterType);
+    result.typeSelect->setProperty("screenshotStyleEditorSignature", typeSignature);
 
     if (host.addGroupSeparator) {
         host.addGroupSeparator(layout);

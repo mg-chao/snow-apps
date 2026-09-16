@@ -802,7 +802,14 @@ impl Editor {
             } else {
                 let filter = &self.state.default_filter;
                 FilterStyle {
-                    filter_type: filter.filter_type,
+                    filter_type: if self.state.active_tool == ActiveTool::AutoFilter
+                        && filter.filter_type
+                            == snow_draw_engine_document::CanvasFilterType::SmartErase
+                    {
+                        snow_draw_engine_document::CanvasFilterType::Mosaic
+                    } else {
+                        filter.filter_type
+                    },
                     strength: filter.strength,
                     opacity: filter.opacity,
                     stroke_width: self.state.default_filter_stroke_width,
@@ -840,29 +847,41 @@ impl Editor {
         let Some(first) = selected.first() else {
             return 0;
         };
-        selected.iter().skip(1).fold(0, |mixed, filter| {
-            mixed
-                | if filter.filter_type != first.filter_type {
-                    FILTER_STYLE_PROPERTY_TYPE
-                } else {
-                    0
-                }
-                | if (filter.strength - first.strength).abs() > f64::EPSILON {
-                    FILTER_STYLE_PROPERTY_STRENGTH
-                } else {
-                    0
-                }
-                | if (filter.opacity - first.opacity).abs() > f64::EPSILON {
-                    FILTER_STYLE_PROPERTY_OPACITY
-                } else {
-                    0
-                }
-                | if (filter.stroke_width - first.stroke_width).abs() > f64::EPSILON {
-                    FILTER_STYLE_PROPERTY_STROKE_WIDTH
-                } else {
-                    0
-                }
-        })
+        // Capability bit accompanies the mixed-property bits for heterogeneous selections.
+        let contains_smart_erase = if selected
+            .iter()
+            .any(|f| f.filter_type == snow_draw_engine_document::CanvasFilterType::SmartErase)
+        {
+            1 << 31
+        } else {
+            0
+        };
+        selected
+            .iter()
+            .skip(1)
+            .fold(contains_smart_erase, |mixed, filter| {
+                mixed
+                    | if filter.filter_type != first.filter_type {
+                        FILTER_STYLE_PROPERTY_TYPE
+                    } else {
+                        0
+                    }
+                    | if (filter.strength - first.strength).abs() > f64::EPSILON {
+                        FILTER_STYLE_PROPERTY_STRENGTH
+                    } else {
+                        0
+                    }
+                    | if (filter.opacity - first.opacity).abs() > f64::EPSILON {
+                        FILTER_STYLE_PROPERTY_OPACITY
+                    } else {
+                        0
+                    }
+                    | if (filter.stroke_width - first.stroke_width).abs() > f64::EPSILON {
+                        FILTER_STYLE_PROPERTY_STROKE_WIDTH
+                    } else {
+                        0
+                    }
+            })
     }
 
     pub fn set_filter_style(
@@ -886,8 +905,20 @@ impl Editor {
         }
         let strength = FilterData::normalized_strength(style.strength);
         if properties & FILTER_STYLE_PROPERTY_STRENGTH != 0 {
-            self.state.default_filter.strength = strength;
-            self.state.default_pen_filter.strength = strength;
+            self.state.default_filter.strength = if self.state.default_filter.filter_type
+                == snow_draw_engine_document::CanvasFilterType::SmartErase
+            {
+                0.5
+            } else {
+                strength
+            };
+            self.state.default_pen_filter.strength = if self.state.default_pen_filter.filter_type
+                == snow_draw_engine_document::CanvasFilterType::SmartErase
+            {
+                0.5
+            } else {
+                strength
+            };
         }
         let selected_ids = self
             .state
@@ -926,6 +957,16 @@ impl Editor {
                     self.state.default_filter_stroke_width = style.stroke_width;
                 }
             }
+            if self.state.default_filter.filter_type
+                == snow_draw_engine_document::CanvasFilterType::SmartErase
+            {
+                self.state.default_filter.strength = 0.5;
+            }
+            if self.state.default_pen_filter.filter_type
+                == snow_draw_engine_document::CanvasFilterType::SmartErase
+            {
+                self.state.default_pen_filter.strength = 0.5;
+            }
             if self.active_stroke_cursor_style() != previous_stroke_cursor_style {
                 self.bump_overlay_state_revision();
             }
@@ -947,6 +988,9 @@ impl Editor {
                 if properties & FILTER_STYLE_PROPERTY_STROKE_WIDTH != 0 {
                     updated.stroke_width = style.stroke_width;
                 }
+                if updated.filter_type == snow_draw_engine_document::CanvasFilterType::SmartErase {
+                    updated.strength = 0.5;
+                }
                 if updated != *current {
                     transaction.update_pen_filter(id, updated);
                 }
@@ -960,6 +1004,9 @@ impl Editor {
                 }
                 if properties & FILTER_STYLE_PROPERTY_OPACITY != 0 {
                     updated.opacity = style.opacity;
+                }
+                if updated.filter_type == snow_draw_engine_document::CanvasFilterType::SmartErase {
+                    updated.strength = 0.5;
                 }
                 if updated != *current {
                     transaction.update_filter(id, updated);

@@ -44,6 +44,136 @@ fn apply(engine: &mut Engine, viewport: ViewportId, transaction: Transaction) {
 }
 
 #[test]
+fn smart_erase_order_strength_history_and_session() {
+    use snow_draw_engine_document::PenFilterData;
+    let (mut e, v) = engine();
+    e.set_auto_filter_regions(v, Some(record(0.0))).unwrap();
+    e.fill_auto_filter_category(v, "text").unwrap();
+    let auto = e.model.auto_filter_fill(2).unwrap().0;
+    let ordinary = e.model.peek_next_element_id();
+    let mut t = Transaction::new("ordinary");
+    t.insert_filter(ordinary, ElementMeta::default(), FilterData::default());
+    apply(&mut e, v, t);
+    let first = e.model.peek_next_element_id();
+    let mut t = Transaction::new("smart rectangle");
+    t.insert_filter(
+        first,
+        ElementMeta::default(),
+        FilterData {
+            filter_type: CanvasFilterType::SmartErase,
+            strength: 0.99,
+            rotation: 0.5,
+            opacity: 0.6,
+            ..FilterData::default()
+        },
+    );
+    apply(&mut e, v, t);
+    let second = e.model.peek_next_element_id();
+    let mut t = Transaction::new("smart pen");
+    t.insert_pen_filter(
+        second,
+        ElementMeta::default(),
+        PenFilterData {
+            filter_type: CanvasFilterType::SmartErase,
+            strength: 0.1,
+            ..PenFilterData::default()
+        },
+    );
+    apply(&mut e, v, t);
+    assert_eq!(e.model.paint_order(), &[first, second, auto, ordinary]);
+    assert_eq!(e.model.filter(first).unwrap().strength, 0.5);
+    assert_eq!(e.model.pen_filter(second).unwrap().strength, 0.5);
+    let mut t = Transaction::new("attempt reverse fixed layer");
+    t.reorder_elements(vec![second], 0);
+    apply(&mut e, v, t);
+    assert_eq!(e.model.paint_order(), &[first, second, auto, ordinary]);
+    e.select_element_with_viewport_changes(v, first).unwrap();
+    let before = e.serialize_document_history().unwrap();
+    let mut style = e.editor.filter_style(&e.model);
+    style.strength = 0.1;
+    let command = e
+        .editor
+        .set_filter_style(&e.model, style, FILTER_STYLE_PROPERTY_STRENGTH)
+        .unwrap();
+    assert!(command.is_none());
+    assert_eq!(before, e.serialize_document_history().unwrap());
+    e.delete_selected_with_viewport_changes(v).unwrap();
+    e.undo().unwrap();
+    assert_eq!(e.model.paint_order(), &[first, second, auto, ordinary]);
+    e.redo().unwrap();
+    assert_eq!(e.model.paint_order(), &[second, auto, ordinary]);
+    e.undo().unwrap();
+    e.model
+        .document()
+        .validate_session()
+        .expect("current document valid");
+    e.history.validate_session(&e.model).expect("history valid");
+    snow_draw_engine_editor::EditorSession::from_persisted(e.editor.persisted())
+        .expect("editor valid");
+    let serialized = e.serialize_document_session().unwrap();
+    let mut restored =
+        Engine::from_serialized_document_session_with_config(&serialized, EngineConfig::default())
+            .unwrap();
+    assert_eq!(
+        restored.model.paint_order(),
+        &[first, second, auto, ordinary]
+    );
+    let items = restored.smart_erase_items();
+    assert_eq!(
+        items.len(),
+        2,
+        "uncropped descriptors must not depend on viewport visibility"
+    );
+    assert_eq!(CanvasFilterType::SmartErase as u32, 5);
+    assert_eq!(
+        serde_json::to_value(CanvasFilterType::SmartErase).unwrap(),
+        "SmartErase"
+    );
+    assert_eq!(restored.model.filter(first).unwrap().rotation, 0.5);
+    assert_eq!(restored.model.filter(first).unwrap().opacity, 0.6);
+}
+
+#[test]
+fn smart_erase_auto_fill_is_rejected_atomically() {
+    let (mut e, v) = engine();
+    e.set_auto_filter_regions(v, Some(record(0.0))).unwrap();
+    let before = e.serialize_document_history().unwrap();
+    let t = e
+        .model
+        .auto_filter_fill_transaction(&[1, 2], CanvasFilterType::SmartErase, 0.5, false);
+    assert!(e.model.apply_transaction(t).is_err());
+    assert_eq!(before, e.serialize_document_history().unwrap());
+}
+
+#[test]
+fn smart_erase_conversion_undo_restores_previous_layer_order() {
+    let (mut e, v) = engine();
+    let first = e.model.peek_next_element_id();
+    let mut t = Transaction::new("first ordinary");
+    t.insert_filter(first, ElementMeta::default(), FilterData::default());
+    apply(&mut e, v, t);
+    let second = e.model.peek_next_element_id();
+    let mut t = Transaction::new("second ordinary");
+    t.insert_filter(second, ElementMeta::default(), FilterData::default());
+    apply(&mut e, v, t);
+    let mut t = Transaction::new("convert to smart");
+    t.update_filter(
+        second,
+        FilterData {
+            filter_type: CanvasFilterType::SmartErase,
+            ..FilterData::default()
+        },
+    );
+    apply(&mut e, v, t);
+    assert_eq!(e.model.paint_order(), &[second, first]);
+    e.undo().unwrap();
+    assert_eq!(e.model.paint_order(), &[first, second]);
+    e.redo().unwrap();
+    assert_eq!(e.model.paint_order(), &[second, first]);
+    e.history.validate_session(&e.model).unwrap();
+}
+
+#[test]
 fn auto_filter_empty_identification_and_generation_are_history_aware() {
     let (mut e, v) = engine();
     let generation = e.auto_filter_generation();

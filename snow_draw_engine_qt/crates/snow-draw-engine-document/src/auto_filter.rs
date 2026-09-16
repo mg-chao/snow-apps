@@ -151,14 +151,25 @@ impl Document {
                     .and_then(|f| f.auto_region_id.map(|region| (region, *id)))
             })
             .collect();
-        if fills.is_empty() {
+        let mut smart: Vec<_> = self
+            .paint_order
+            .iter()
+            .copied()
+            .filter(|id| self.element(*id).is_ok_and(|e| e.data.is_smart_erase()))
+            .collect();
+        smart.sort_by_key(|id| (id.index, id.generation));
+        if fills.is_empty() && smart.is_empty() {
             return;
         }
         fills.sort_by_key(|(region, _)| *region);
-        let ids: HashSet<_> = fills.iter().map(|(_, id)| *id).collect();
-        let order: Vec<_> = fills
+        let ids: HashSet<_> = fills
+            .iter()
+            .map(|(_, id)| *id)
+            .chain(smart.iter().copied())
+            .collect();
+        let order: Vec<_> = smart
             .into_iter()
-            .map(|(_, id)| id)
+            .chain(fills.into_iter().map(|(_, id)| id))
             .chain(
                 self.paint_order
                     .iter()
@@ -180,7 +191,8 @@ impl Document {
         for element in self.slots.iter().flatten() {
             if let ElementData::Filter(fill) = &element.data
                 && let Some(region) = fill.auto_region_id
-                && (fill.opacity != 1.0
+                && (fill.filter_type == CanvasFilterType::SmartErase
+                    || fill.opacity != 1.0
                     || fill.rotation != 0.0
                     || !filled.insert(region)
                     || !self

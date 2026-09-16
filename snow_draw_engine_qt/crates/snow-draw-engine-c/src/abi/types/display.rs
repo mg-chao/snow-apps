@@ -67,7 +67,7 @@ pub enum SnowBlendMode {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct SnowFilterRenderSpec {
     pub filter_type: u32,
-    pub reserved0: u32,
+    pub render_phase: u32,
     pub strength: f64,
     pub mosaic_block_size: f64,
     pub blur_sigma: f64,

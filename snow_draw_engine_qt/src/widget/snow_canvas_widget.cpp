@@ -16,6 +16,7 @@
 #include "snow_canvas_text_editor_input.h"
 #include "snow_canvas_text_measurement.h"
 #include "snow_canvas_filter_tile_cache.h"
+#include "snow_canvas_smart_erase.h"
 #include "snow_canvas_type_conversions.h"
 #include "snow_canvas_widget_display_state.h"
 #include "snow_canvas_widget_input_handler.h"
@@ -335,6 +336,11 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     void attachRuntime(SnowRuntime runtime) override;
     void detachRuntimeOwner(SnowCanvasRuntime* owner) override;
     void clearRenderState() override;
+    void setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources);
+    void smartEraseChanged() override {
+        clearRenderState();
+        widget.update();
+    }
     void clearRetainedDisplayState();
     bool hasViewport() const;
     void syncAfterEngineMutation() override;
@@ -1910,6 +1916,8 @@ void SnowCanvasWidget::Impl::syncAfterEngineMutation() {
 }
 
 void SnowCanvasWidget::Impl::syncAfterEngineMutation(bool emitSignals) {
+    if (auto* owner = runtimeBinding.runtimeOwner())
+        snow_canvas_runtime::Access::smartErase(*owner).sync(runtimeBinding.engine());
     const std::uint64_t previousSceneRevision =
         displayState.displayCache().patchCursor().scene_revision;
     const snow_canvas_widget_sync::Result result =
@@ -2090,6 +2098,8 @@ bool SnowCanvasWidget::Impl::paint(QPainter& painter, const QRegion& exposedRegi
             QPoint(),
             canvasClearBackgroundEnabled,
         };
+        if (auto* owner = runtimeBinding.runtimeOwner())
+            sceneRequest.smartErase = owner->smartEraseSnapshot();
         snow_canvas_renderer::renderSceneItemsTiled(sceneRequest);
         painter.save();
         snow_canvas_compositor::renderDocumentDecorations(painter, frame);
@@ -2821,4 +2831,17 @@ bool SnowCanvasWidget::setAutoFilterRegions(
 }
 bool SnowCanvasWidget::fillAutoFilterCategory(const QString& category) {
     return m_impl->fillAutoFilterCategory(category);
+}
+
+void SnowCanvasWidget::Impl::setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources) {
+    if (auto* owner = runtimeBinding.runtimeOwner()) {
+        auto& coordinator = snow_canvas_runtime::Access::smartErase(*owner);
+        coordinator.setSources(this, sources);
+        coordinator.sync(runtimeBinding.engine());
+        smartEraseChanged();
+    }
+}
+
+void SnowCanvasWidget::setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources) {
+    m_impl->setBaseImageSources(sources);
 }

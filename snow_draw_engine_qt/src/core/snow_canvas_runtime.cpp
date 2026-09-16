@@ -26,6 +26,9 @@ struct SnowCanvasRuntime::Impl {
     QImage renderToImage(const QRectF& virtualSelectionRect, const QSize& outputSize,
                          const QList<CanvasExportSource>& sources);
 
+    snow_canvas_smart_erase::Coordinator& smartErase() {
+        return session.smartErase();
+    }
     SnowRuntime handle() const;
     void registerClient(snow_canvas_runtime::Client* client);
     void unregisterClient(snow_canvas_runtime::Client* client);
@@ -172,7 +175,7 @@ QImage SnowCanvasRuntime::Impl::renderToImage(const QRectF& virtualSelectionRect
         return {};
     }
     return snow_canvas_export::renderToImage(session.handle(), virtualSelectionRect, outputSize,
-                                             sources);
+                                             sources, session.smartErase().snapshot());
 }
 
 SnowCanvasRuntime::SnowCanvasRuntime() : SnowCanvasRuntime(SnowCanvasRuntimeConfig{}) {}
@@ -255,4 +258,22 @@ void snow_canvas_runtime::Access::syncChangedViewports(SnowCanvasRuntime& runtim
 void snow_canvas_runtime::Access::syncChangedViewportIds(
     SnowCanvasRuntime& runtime, const std::vector<std::uint64_t>& changedViewportIds) {
     runtime.m_impl->syncChangedViewportIds(changedViewportIds);
+}
+
+snow_canvas_smart_erase::Coordinator&
+snow_canvas_runtime::Access::smartErase(SnowCanvasRuntime& runtime) {
+    return runtime.m_impl->smartErase();
+}
+void SnowCanvasRuntime::setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources) {
+    if (!isOwnerThread())
+        return;
+    m_impl->smartErase().setSources(this, sources);
+    m_impl->smartErase().sync(m_impl->handle());
+}
+SnowCanvasSmartEraseSnapshot SnowCanvasRuntime::smartEraseSnapshot() const {
+    return isOwnerThread() ? m_impl->smartErase().snapshot() : SnowCanvasSmartEraseSnapshot{};
+}
+void SnowCanvasRuntime::restoreSmartEraseSnapshot(const SnowCanvasSmartEraseSnapshot& snapshot) {
+    if (isOwnerThread())
+        m_impl->smartErase().restoreSnapshot(snapshot);
 }

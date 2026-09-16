@@ -48,7 +48,8 @@ impl DocumentModel {
         Self::default()
     }
 
-    pub fn from_document(document: Document) -> Result<Self, ErrorCode> {
+    pub fn from_document(mut document: Document) -> Result<Self, ErrorCode> {
+        document.normalize_filter_invariants();
         document.validate_session()?;
         let queries = QueryStore::new(&document);
         Ok(Self {

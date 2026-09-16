@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_smart_erase.h"
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTEXPORTARTIFACT_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTEXPORTARTIFACT_H
 
@@ -24,6 +25,7 @@ struct ScreenshotPinnedViewportExportSource final {
     QRectF backgroundCanvasRect;
     QSize contentPixelSize;
     ScreenshotResultStyle resultStyle;
+    SnowCanvasSmartEraseSnapshot smartErase;
 };
 
 struct ScreenshotExportImageResult final {

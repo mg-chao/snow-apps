@@ -135,6 +135,16 @@ impl EditorSession {
         state.default_filter_stroke_width = persisted.rectangle_filter_stroke_width;
         state.default_pen_filter = persisted.pen_filter;
         state.default_pen_filter.strength = state.default_filter.strength;
+        if state.default_filter.filter_type
+            == snow_draw_engine_document::CanvasFilterType::SmartErase
+        {
+            state.default_filter.strength = 0.5;
+        }
+        if state.default_pen_filter.filter_type
+            == snow_draw_engine_document::CanvasFilterType::SmartErase
+        {
+            state.default_pen_filter.strength = 0.5;
+        }
         state.default_text = persisted.text;
         state.default_serial_number = persisted.serial_number;
         session.reset_editing_state();

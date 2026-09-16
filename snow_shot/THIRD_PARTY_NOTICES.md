@@ -40,11 +40,14 @@ and their bundled notices are included in the vcpkg license collection. The
 Qt-independent OCR bridge and shared Rust panic hook are Apache-2.0 code under
 `snow-crates/`.
 
-In-process barcode recognition uses OpenCV (Apache-2.0), pinned by the vcpkg
+In-process barcode recognition and Smart Erase reconstruction use OpenCV
+(Apache-2.0), pinned by the vcpkg
 baseline and built as static libraries with only the `wechat_qrcode` (contrib)
 and `barcode` (objdetect) module closure; the dnn module embeds OpenCV's
 bundled protobuf (BSD-3-Clause). Both licenses are included in the vcpkg
-license collection. The WeChat QR detection and super-resolution models are
+license collection. Smart Erase uses the existing `core` and `imgproc` modules
+for deterministic multiscale patch reconstruction; it adds no model downloads or
+additional OpenCV modules. The WeChat QR detection and super-resolution models are
 redistributed from https://github.com/WeChatCV/opencv_3rdparty at revision
 `a8b69ccc738421293254aec5ddb38bd523503252`, pinned by SHA-512 in
 `cmake/FetchSnowShotQrModels.cmake`.

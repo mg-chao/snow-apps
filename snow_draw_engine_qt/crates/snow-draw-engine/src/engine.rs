@@ -743,3 +743,12 @@ mod tests {
 #[cfg(test)]
 #[path = "engine/arrow_text_tests.rs"]
 mod arrow_text_tests;
+
+impl Engine {
+    pub fn smart_erase_items(&mut self) -> Vec<snow_draw_engine_display::SceneDisplayItem> {
+        let presentation = self
+            .editor
+            .presentation_state_for_refresh(&self.model, &EditorViewportState::default());
+        snow_draw_engine_scene::smart_erase_items(&self.model, &presentation)
+    }
+}

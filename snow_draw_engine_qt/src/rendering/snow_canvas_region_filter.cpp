@@ -49,7 +49,8 @@ bool applySnowCanvasRegionFilter(const QImage& source, QImage& destination,
                                  const QRegion& destinationPixels,
                                  const SnowCanvasRegionFilterParameters& parameters,
                                  SnowCanvasRegionFilterScratch* scratch) {
-    if (!std::isfinite(parameters.strength) || !std::isfinite(parameters.logicalSigma) ||
+    if (parameters.type == SnowCanvasFilterType::SmartErase ||
+        !std::isfinite(parameters.strength) || !std::isfinite(parameters.logicalSigma) ||
         !std::isfinite(parameters.logicalSamplingRadius) ||
         !std::isfinite(parameters.devicePixelRatio) || parameters.devicePixelRatio <= 0.0) {
         return false;

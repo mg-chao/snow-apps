@@ -244,3 +244,27 @@ pub unsafe extern "C" fn snow_viewport_adjust_selected_serial_numbers_ex(
         }))
     })
 }
+
+/// Visits borrowed, uncropped Smart Erase geometry. The visitor must copy data and must not reenter the runtime.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_runtime_visit_smart_erase(
+    runtime: SnowRuntime,
+    visitor: Option<unsafe extern "C" fn(*mut std::ffi::c_void, *const SnowSceneDisplayItem)>,
+    context: *mut std::ffi::c_void,
+) -> SnowError {
+    ffi_error(|| {
+        let Some(visitor) = visitor else {
+            return SnowError::InvalidArgument;
+        };
+        ffi_status(with_runtime_impl_mut(runtime, |state| {
+            for item in state.runtime.smart_erase_items() {
+                let converted =
+                    crate::abi::convert::snow_scene_display_item_from_rust(&item, false, false);
+                unsafe {
+                    visitor(context, &converted.view);
+                }
+            }
+            Ok(())
+        }))
+    })
+}

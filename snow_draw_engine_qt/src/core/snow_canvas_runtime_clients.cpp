@@ -98,3 +98,10 @@ void ClientRegistry::syncChangedViewports(const std::vector<std::uint64_t>& chan
 }
 
 } // namespace snow_canvas_runtime
+
+void snow_canvas_runtime::ClientRegistry::smartEraseChanged() {
+    const auto clients = m_clients;
+    for (auto* client : clients)
+        if (client && m_clients.contains(client))
+            client->smartEraseChanged();
+}

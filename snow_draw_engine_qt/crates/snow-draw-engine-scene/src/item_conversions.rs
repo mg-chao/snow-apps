@@ -991,6 +991,7 @@ pub(crate) fn scene_item_from_filter(id: ElementId, filter: FilterData) -> Scene
                 CanvasFilterType::Grayscale => DisplayFilterType::Grayscale,
                 CanvasFilterType::Inversion => DisplayFilterType::Inversion,
                 CanvasFilterType::Emboss => DisplayFilterType::Emboss,
+                CanvasFilterType::SmartErase => DisplayFilterType::SmartErase,
             },
             FilterData::normalized_strength(filter.strength),
         ),
@@ -1021,6 +1022,7 @@ pub(crate) fn scene_item_from_pen_filter(id: ElementId, filter: PenFilterData) -
                 CanvasFilterType::Grayscale => DisplayFilterType::Grayscale,
                 CanvasFilterType::Inversion => DisplayFilterType::Inversion,
                 CanvasFilterType::Emboss => DisplayFilterType::Emboss,
+                CanvasFilterType::SmartErase => DisplayFilterType::SmartErase,
             },
             FilterData::normalized_strength(filter.strength),
         ),
@@ -1032,7 +1034,8 @@ pub(crate) fn scene_item_from_pen_filter_preview(
     id: ElementId,
     preview: &PenFilterPreview,
 ) -> Option<(SceneDisplayItem, DrawRect)> {
-    if preview.global_points.len() < 2
+    if preview.global_points.is_empty()
+        || (preview.global_points.len() < 2 && preview.filter_type != CanvasFilterType::SmartErase)
         || !preview.stroke_width.is_finite()
         || preview.stroke_width <= 0.0
         || !preview.opacity.is_finite()
@@ -1053,6 +1056,9 @@ pub(crate) fn scene_item_from_pen_filter_preview(
         max_x = max_x.max(point.x);
         max_y = max_y.max(point.y);
         points.push([point.x, point.y]);
+    }
+    if points.len() == 1 {
+        points.push(points[0]);
     }
     let width = max_x - min_x;
     let height = max_y - min_y;
@@ -1083,6 +1089,7 @@ pub(crate) fn scene_item_from_pen_filter_preview(
                     CanvasFilterType::Grayscale => DisplayFilterType::Grayscale,
                     CanvasFilterType::Inversion => DisplayFilterType::Inversion,
                     CanvasFilterType::Emboss => DisplayFilterType::Emboss,
+                    CanvasFilterType::SmartErase => DisplayFilterType::SmartErase,
                 },
                 FilterData::normalized_strength(preview.strength),
             ),

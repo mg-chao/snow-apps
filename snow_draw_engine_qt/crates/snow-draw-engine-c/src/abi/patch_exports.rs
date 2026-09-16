@@ -13,6 +13,7 @@ pub extern "C" fn snow_filter_render_spec_resolve(
         2 => snow_draw_engine::DisplayFilterType::Grayscale,
         3 => snow_draw_engine::DisplayFilterType::Inversion,
         4 => snow_draw_engine::DisplayFilterType::Emboss,
+        5 => snow_draw_engine::DisplayFilterType::SmartErase,
         _ => snow_draw_engine::DisplayFilterType::Mosaic,
     };
     let spec = snow_draw_engine::FilterRenderSpec::resolve(filter_type, strength);
@@ -23,8 +24,9 @@ pub extern "C" fn snow_filter_render_spec_resolve(
             snow_draw_engine::DisplayFilterType::Grayscale => 2,
             snow_draw_engine::DisplayFilterType::Inversion => 3,
             snow_draw_engine::DisplayFilterType::Emboss => 4,
+            snow_draw_engine::DisplayFilterType::SmartErase => 5,
         },
-        reserved0: 0,
+        render_phase: 0,
         strength: spec.strength,
         mosaic_block_size: spec.mosaic_block_size,
         blur_sigma: spec.blur_sigma,
@@ -413,7 +415,7 @@ mod filter_render_spec_export_tests {
         assert_eq!(std::mem::size_of::<SnowFilterRenderSpec>(), 40);
         let spec = snow_filter_render_spec_resolve(4, 0.5);
         assert_eq!(spec.filter_type, 4);
-        assert_eq!(spec.reserved0, 0);
+        assert_eq!(spec.render_phase, 0);
         assert_eq!(spec.strength, 0.5);
         assert_eq!(spec.sampling_radius, 1.0);
     }

@@ -50,6 +50,8 @@ set(SNOW_CANVAS_QT_SOURCES
     src/rendering/snow_canvas_display_item.h
     src/rendering/snow_canvas_export.cpp
     src/rendering/snow_canvas_export.h
+    src/rendering/snow_canvas_smart_erase.cpp
+    src/rendering/snow_canvas_smart_erase_algorithm.cpp
     src/rendering/snow_canvas_filter_render.cpp
     src/rendering/snow_canvas_filter_tile_cache.cpp
     src/rendering/snow_canvas_filter_render.h

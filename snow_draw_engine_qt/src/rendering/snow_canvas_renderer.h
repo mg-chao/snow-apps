@@ -1,6 +1,7 @@
 #pragma once
 
 #include "snow_canvas_display_cache.h"
+#include "snow_draw_engine_qt/snow_canvas_smart_erase.h"
 #include "snow_canvas_filter_render.h"
 #include "snow_canvas_watermark_renderer.h"
 #include "snow_draw_engine.h"
@@ -111,6 +112,7 @@ struct SceneRenderRequest {
     std::uint64_t filterTileContentKey = 0;
     QPoint filterTileCoordinate;
     bool clearBackgroundEnabled = true;
+    SnowCanvasSmartEraseSnapshot smartErase;
 };
 
 QColor toQColor(const SnowColorRgba8& color);

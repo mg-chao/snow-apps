@@ -96,6 +96,7 @@ bool sameFilterStyle(const SnowSceneDisplayItem& left, const SnowSceneDisplayIte
            left.element_id.generation == right.element_id.generation &&
            left.stroke_width == right.stroke_width && left.rotation == right.rotation &&
            left.opacity == right.opacity && left.filter.filter_type == right.filter.filter_type &&
+           left.filter.render_phase == right.filter.render_phase &&
            left.filter.strength == right.filter.strength &&
            left.filter.mosaic_block_size == right.filter.mosaic_block_size &&
            left.filter.blur_sigma == right.filter.blur_sigma &&

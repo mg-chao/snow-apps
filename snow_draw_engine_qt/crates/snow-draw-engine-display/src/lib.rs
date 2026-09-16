@@ -182,10 +182,13 @@ pub enum DisplayFilterType {
     Grayscale,
     Inversion,
     Emboss = 4,
+    SmartErase = 5,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FilterRenderSpec {
+    /// 0: stable, 1: creation, 2: active transform.
+    pub render_phase: u32,
     pub filter_type: DisplayFilterType,
     pub strength: f64,
     pub mosaic_block_size: f64,
@@ -205,6 +208,7 @@ impl FilterRenderSpec {
             1.0
         };
         let strength = match filter_type {
+            DisplayFilterType::SmartErase => 0.5,
             DisplayFilterType::Grayscale | DisplayFilterType::Inversion => 1.0,
             DisplayFilterType::Mosaic
             | DisplayFilterType::GaussianBlur
@@ -217,8 +221,10 @@ impl FilterRenderSpec {
             DisplayFilterType::GaussianBlur => 3.0 * blur_sigma + 1.0,
             DisplayFilterType::Grayscale | DisplayFilterType::Inversion => 0.0,
             DisplayFilterType::Emboss => 1.0,
+            DisplayFilterType::SmartErase => 0.0,
         };
         Self {
+            render_phase: 0,
             filter_type,
             strength,
             mosaic_block_size,

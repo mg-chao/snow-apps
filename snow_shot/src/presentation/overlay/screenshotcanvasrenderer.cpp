@@ -895,6 +895,16 @@ void ScreenshotCanvasRenderer::setImageSource(ScreenshotImageSource source) {
         source.materializedImage.setDevicePixelRatio(1.0);
     }
     m_imageSource = std::move(source);
+    QList<SnowCanvasBaseImageSource> baseSources;
+    if (m_imageSource.isMaterialized()) {
+        baseSources.push_back(
+            {m_imageSource.materializedImage, m_imageSource.materializedCanvasRect, {}});
+    } else {
+        for (const auto& layer : m_imageSource.layers)
+            baseSources.push_back(
+                {layer.image, layer.imageCanvasRect, layer.destinationCanvasRect});
+    }
+    m_canvas.setBaseImageSources(baseSources);
     clearOcrFilteredImage();
     invalidateCachedContent();
     m_canvas.update();
@@ -1204,6 +1214,7 @@ void ScreenshotCanvasRenderer::reset() {
                           m_selectionState.toolbarHovered || !m_selectionState.borderVisible ||
                           m_ocrPresentation != nullptr || m_guideLinesVisible;
     m_imageSource = {};
+    m_canvas.setBaseImageSources({});
     m_imageViewportPhysicalSize = QSize();
     m_pinnedContentCanvasRect = {};
     m_pinnedSurfaceCanvasRect = {};

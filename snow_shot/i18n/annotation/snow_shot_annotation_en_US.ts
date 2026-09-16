@@ -684,6 +684,10 @@
             <translation>Show keystrokes in recording</translation>
         </message>
         <message>
+            <source>Smart Erase</source>
+            <translation>Smart Erase</translation>
+        </message>
+        <message>
             <source>Solid arrow stroke</source>
             <translation>Solid arrow stroke</translation>
         </message>

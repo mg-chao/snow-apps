@@ -1,4 +1,5 @@
 #pragma once
+#include "snow_draw_engine_qt/snow_canvas_smart_erase.h"
 
 #include <QRect>
 #include <QRectF>
@@ -133,6 +134,7 @@ class SnowCanvasWidget : public QWidget {
     // The renderer is borrowed and must be detached before it is destroyed.
     SnowCanvasCustomRenderer* customRenderer() const;
     void setCustomRenderer(SnowCanvasCustomRenderer* renderer);
+    void setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources);
     [[nodiscard]] QTransform canvasToViewTransform() const;
     QRect viewRectForCanvasRect(const QRectF& canvasRect, int paddingPx = 0) const;
 

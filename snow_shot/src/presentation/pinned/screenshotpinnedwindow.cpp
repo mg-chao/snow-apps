@@ -4718,7 +4718,7 @@ void ScreenshotPinnedWindow::copyCurrentViewport() {
     scaledStyle.shadowWidth = qRound(scaledStyle.shadowWidth * surfaceScale);
     ScreenshotPinnedViewportExportSource request{
         std::move(documentSession), m_transformedImage, m_backgroundCanvasRect,
-        contentPixelSize,           scaledStyle,
+        contentPixelSize,           scaledStyle,        m_runtime.smartEraseSnapshot(),
     };
     invalidatePendingCopy();
     auto artifact = std::make_shared<ScreenshotExportArtifact>(
@@ -4829,8 +4829,11 @@ std::shared_ptr<ScreenshotExportArtifact> ScreenshotPinnedWindow::fileSaveArtifa
                 ScreenshotExportSource::fromRecognitionImage(std::move(*snapshot)));
     }
     ScreenshotPinnedViewportExportSource request{m_runtime.serializeDocumentSession(),
-                                                 m_transformedImage, m_backgroundCanvasRect,
-                                                 m_transformedImage.size(), style};
+                                                 m_transformedImage,
+                                                 m_backgroundCanvasRect,
+                                                 m_transformedImage.size(),
+                                                 style,
+                                                 m_runtime.smartEraseSnapshot()};
     return std::make_shared<ScreenshotExportArtifact>(
         ScreenshotExportSource::fromPinnedViewport(std::move(request)));
 }

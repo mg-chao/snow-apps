@@ -152,6 +152,7 @@ struct ScreenshotToolPaletteFilterCallbacks {
 };
 
 struct ScreenshotToolPaletteFilterFamilyConfig {
+    bool allowSmartErase = true;
     QString controlsObjectName;
     QString typeSelectObjectName;
     QString intensityIconObjectName;

@@ -9,6 +9,7 @@
 #include <memory>
 
 #include "snow_draw_engine_qt/snow_canvas_export_types.h"
+#include "snow_draw_engine_qt/snow_canvas_smart_erase.h"
 #include "snow_draw_engine_qt/snow_canvas_types.h"
 
 namespace snow_canvas_runtime {
@@ -38,6 +39,9 @@ class SnowCanvasRuntime {
     bool clearDocumentPreservingViewports();
     bool setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools);
     void destroyAsync();
+    void setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources);
+    SnowCanvasSmartEraseSnapshot smartEraseSnapshot() const;
+    void restoreSmartEraseSnapshot(const SnowCanvasSmartEraseSnapshot& snapshot);
     QImage renderToImage(const QRectF& virtualSelectionRect, const QSize& outputSize,
                          const QList<CanvasExportSource>& sources);
 

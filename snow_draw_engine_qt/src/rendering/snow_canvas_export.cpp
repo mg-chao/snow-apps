@@ -1,3 +1,4 @@
+#include "snow_canvas_smart_erase.h"
 #include "snow_canvas_export.h"
 
 #include "snow_canvas_display_cache.h"
@@ -113,7 +114,8 @@ bool requiresFullCompositor(const SnowCanvasDisplayCache& displayCache) {
 }
 
 void renderRuntimeScene(QPainter& painter, const ExportProjection& projection,
-                        const QImage& background, SnowCanvasDisplayCache& displayCache) {
+                        const QImage& background, SnowCanvasDisplayCache& displayCache,
+                        const SnowCanvasSmartEraseSnapshot& smartErase) {
     const SceneDisplayInfo sceneInfo =
         sceneInfoForExport(displayCache.sceneInfo(), projection.canvasRect);
     const WatermarkDisplayInfo watermarkInfo =
@@ -122,11 +124,15 @@ void renderRuntimeScene(QPainter& painter, const ExportProjection& projection,
     snow_canvas_pen_mask::PenMaskAtlas penMaskAtlas(0);
     painter.save();
     painter.scale(projection.scaleX(), projection.scaleY());
-    snow_canvas_renderer::renderSceneItems(snow_canvas_renderer::SceneRenderRequest{
+    std::vector<SnowCanvasSceneItem> items;
+    for (std::uint32_t i = 0; i < displayCache.sceneItemCount(); ++i)
+        items.push_back(displayCache.sceneItems()[i]);
+    snow_canvas_smart_erase::applySnapshot(items, smartErase);
+    snow_canvas_renderer::SceneRenderRequest request{
         &painter,
         &sceneInfo,
-        displayCache.sceneItems(),
-        displayCache.sceneItemCount(),
+        items.data(),
+        static_cast<std::uint32_t>(items.size()),
         QRegion(QRect(0, 0, static_cast<int>(positiveCeil(sceneInfo.surface_width)),
                       static_cast<int>(positiveCeil(sceneInfo.surface_height)))),
         nullptr,
@@ -134,13 +140,15 @@ void renderRuntimeScene(QPainter& painter, const ExportProjection& projection,
         &background,
         nullptr,
         nullptr,
-        &displayCache,
+        nullptr,
         &workspace,
         {},
         nullptr,
         &displayCache,
         &penMaskAtlas,
-    });
+    };
+    request.smartErase = smartErase;
+    snow_canvas_renderer::renderSceneItems(request);
     snow_canvas_spotlight_renderer::render(
         painter, sceneInfo, displayCache.spotlightInfo(), displayCache.spotlightCutouts(),
         displayCache.spotlightCutoutCount(),
@@ -177,7 +185,8 @@ void resetDiagnosticsForCurrentThread() {
 }
 
 QImage renderToImage(SnowRuntime runtime, const QRectF& virtualSelectionRect,
-                     const QSize& outputSize, const QList<CanvasExportSource>& sources) {
+                     const QSize& outputSize, const QList<CanvasExportSource>& sources,
+                     const SnowCanvasSmartEraseSnapshot& smartErase) {
     const ExportProjection projection{virtualSelectionRect, outputSize};
     if (outputSize.width() <= 0 || outputSize.height() <= 0) {
         return {};
@@ -197,7 +206,8 @@ QImage renderToImage(SnowRuntime runtime, const QRectF& virtualSelectionRect,
     snow_canvas_state::Store state;
     const bool synchronized =
         synchronizeRuntimeScene(runtime, projection, viewport, displayCache, state);
-    if (synchronized && !requiresFullCompositor(displayCache)) {
+    if (synchronized && !requiresFullCompositor(displayCache) &&
+        !snow_canvas_smart_erase::hasItems(smartErase)) {
         ++g_renderDiagnostics.directSourceFastPathCount;
         renderSources(painter, projection, sources);
         return output;
@@ -216,7 +226,7 @@ QImage renderToImage(SnowRuntime runtime, const QRectF& virtualSelectionRect,
     }
     if (synchronized) {
         ++g_renderDiagnostics.fullCompositorPathCount;
-        renderRuntimeScene(painter, projection, background, displayCache);
+        renderRuntimeScene(painter, projection, background, displayCache, smartErase);
     } else {
         ++g_renderDiagnostics.unsynchronizedFallbackCount;
         painter.drawImage(QRect(QPoint(0, 0), outputSize), background);

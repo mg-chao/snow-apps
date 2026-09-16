@@ -684,6 +684,10 @@
             <translation>在錄製中顯示按鍵</translation>
         </message>
         <message>
+            <source>Smart Erase</source>
+            <translation>智慧消除</translation>
+        </message>
+        <message>
             <source>Solid arrow stroke</source>
             <translation>實線箭頭描邊</translation>
         </message>
