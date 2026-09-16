@@ -1755,7 +1755,7 @@ void styleToolReuseMapPreservesEveryCompatibleRole() {
            1);
     verify(Tool::RectangleFilter, Tool::PenFilter,
            {"filter-mode", "filter-type", "filter-intensity"}, 0, 1);
-    verify(Tool::Text, Tool::SerialNumber, {"foreground-color", "text-font", "text-fill"}, 3, 1);
+    verify(Tool::Text, Tool::SerialNumber, {"foreground-color", "text-font", "text-fill"}, 3, 2);
     verify(Tool::PenHighlight, Tool::PenFilter, {"brush-width"}, 2, 3);
     verify(Tool::Spotlight, Tool::Watermark, {"opacity"}, 1, 6);
     verify(Tool::Shape, Tool::Text, {"corner-radius"}, 4, 5);
@@ -7543,6 +7543,7 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
     QWidget* lineFill = controlWithTooltip(palette, "Line sequence number fill");
     QLayout* serialNumberLayout = controls->layout();
     QWidget* colorRoot = styleEditorRoot(controls, "foreground-color");
+    QWidget* typeRoot = styleEditorRoot(controls, "serial-type");
     QWidget* fontRoot = styleEditorRoot(controls, "text-font");
     QWidget* fillRoot = styleEditorRoot(controls, "text-fill");
     QLayout* colorLayout = colorRoot != nullptr ? colorRoot->layout() : nullptr;
@@ -7586,13 +7587,22 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
             "sequence-number font family should reuse the text selector");
     const QList<QFrame*> separators =
         controls->findChildren<QFrame*>(QString(), Qt::FindDirectChildrenOnly);
+    auto* typeGroup =
+        typeRoot != nullptr ? typeRoot->findChild<adqt::widgets::AdRadioButtonGroup*>() : nullptr;
     require(
-        separators.size() == 2 &&
+        separators.size() == 3 && typeRoot != nullptr && typeGroup != nullptr &&
+            controlWithTooltip(palette, "Sequence number type") == typeRoot &&
+            controlWithTooltip(palette, "Outlined circle") != nullptr &&
+            controlWithTooltip(palette, "Solid circle") != nullptr &&
+            controlWithTooltip(palette, "Outlined square") != nullptr &&
+            controlWithTooltip(palette, "Solid square") != nullptr &&
             serialNumberLayout->indexOf(colorRoot) <
                 serialNumberLayout->indexOf(separators.at(0)) &&
-            serialNumberLayout->indexOf(separators.at(0)) < numberEditorIndex &&
-            serialNumberLayout->indexOf(fontRoot) < serialNumberLayout->indexOf(separators.at(1)) &&
-            serialNumberLayout->indexOf(separators.at(1)) < serialNumberLayout->indexOf(fillRoot) &&
+            serialNumberLayout->indexOf(separators.at(0)) < serialNumberLayout->indexOf(typeRoot) &&
+            serialNumberLayout->indexOf(typeRoot) < serialNumberLayout->indexOf(separators.at(1)) &&
+            serialNumberLayout->indexOf(separators.at(1)) < numberEditorIndex &&
+            serialNumberLayout->indexOf(fontRoot) < serialNumberLayout->indexOf(separators.at(2)) &&
+            serialNumberLayout->indexOf(separators.at(2)) < serialNumberLayout->indexOf(fillRoot) &&
             fillRoot != nullptr && fillLayout != nullptr &&
             fillRoot->isAncestorOf(fillColorPicker) && solidFill != nullptr &&
             crossLineFill != nullptr && lineFill != nullptr &&
@@ -7602,7 +7612,7 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
                 layoutWidgetIndex(fillLayout, fillColorPicker) + 2 &&
             layoutWidgetIndex(fillLayout, lineFill) ==
                 layoutWidgetIndex(fillLayout, fillColorPicker) + 3,
-        "sequence-number color and fill groups should use separators");
+        "sequence-number color, type, content, and fill groups should use separators");
 
     SnowCanvasSerialNumberStyle emittedStyle;
     int changeCount = 0;
@@ -7627,6 +7637,25 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
     require(changeCount == 4 && emittedStyle.fill == QColor(QStringLiteral("#bae0ff")) &&
                 emittedStyle.fillStyle == SnowCanvasFillStyle::Line,
             "changing sequence-number fill color should preserve its fill pattern");
+    const QColor preservedFill = emittedStyle.fill;
+    auto* solidSquareType =
+        qobject_cast<QAbstractButton*>(controlWithTooltip(palette, "Solid square"));
+    require(solidSquareType != nullptr, "solid-square sequence-number type should be clickable");
+    solidSquareType->click();
+    require(changeCount == 5 && emittedStyle.type == SnowCanvasSerialNumberType::SolidSquare &&
+                emittedStyle.fill == preservedFill &&
+                emittedStyle.fillStyle == SnowCanvasFillStyle::Line,
+            "type changes should emit the full style without changing stored fill settings");
+    require(!fillRoot->isEnabled(),
+            "uniform solid sequence-number selections should disable the visible fill editor");
+
+    state.serialNumberStyle = emittedStyle;
+    state.serialNumberStyleMixed = SnowCanvasSerialNumberStyleMixedType;
+    palette.setStyleToolbarState(state);
+    require(typeGroup->checkedId() == -1,
+            "mixed sequence-number types should leave every type button unchecked");
+    require(fillRoot->isEnabled(),
+            "mixed sequence-number types should keep the fill editor enabled");
 }
 
 void serialNumberInputCommitsEditsAndSupportsWheel() {
@@ -8419,7 +8448,7 @@ void styleToolbarControlsDoNotEnterTabFocusChain() {
 
     const QList<adqt::widgets::AdRadio*> modeButtons =
         palette.findChildren<adqt::widgets::AdRadio*>();
-    require(modeButtons.size() == 16,
+    require(modeButtons.size() == 20,
             "style toolbars should expose the expected number of mode radios");
     for (adqt::widgets::AdRadio* button : modeButtons) {
         require(button != nullptr && button->focusPolicy() == Qt::NoFocus,
@@ -9468,8 +9497,9 @@ void screenshotProductStyleProfileIsComplete() {
                 defaults.text.verticalAlign == SnowCanvasTextVerticalAlign::Center &&
                 exact(defaults.text.opacity, 1.0),
             "text defaults should match the Snow Shot product profile");
-    require(defaults.serialNumber.number == 1 && defaults.serialNumber.color == red &&
-                defaults.serialNumber.fill == transparent &&
+    require(defaults.serialNumber.number == 1 &&
+                defaults.serialNumber.type == SnowCanvasSerialNumberType::OutlinedCircle &&
+                defaults.serialNumber.color == red && defaults.serialNumber.fill == transparent &&
                 defaults.serialNumber.fillStyle == SnowCanvasFillStyle::Solid &&
                 exact(defaults.serialNumber.fontSize, 24.0) &&
                 defaults.serialNumber.fontFamily.isEmpty() &&
@@ -9828,6 +9858,7 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     styles.text.fontFamily = QStringLiteral("Persisted text font");
     styles.text.fontSize = 36.0;
     styles.serialNumber.number = 9'007'199'254'740'993LL;
+    styles.serialNumber.type = SnowCanvasSerialNumberType::SolidSquare;
     styles.serialNumber.color = QColor(17, 18, 19, 20);
     styles.serialNumber.fontFamily = QStringLiteral("Persisted serial font");
     styles.watermark.text = QStringLiteral("must not persist");
@@ -9872,13 +9903,38 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     QJsonObject savedSerialStyle = configuration.value(serialKey).toObject();
     require(!savedSerialStyle.contains(QStringLiteral("number")),
             "the current serial number must not be saved with its appearance");
+    require(savedSerialStyle.value(QStringLiteral("type")).toInt(-1) ==
+                static_cast<int>(SnowCanvasSerialNumberType::SolidSquare),
+            "the last sequence-number type should persist with its appearance");
+
+    QJsonObject legacySerialStyle = savedSerialStyle;
+    legacySerialStyle.remove(QStringLiteral("type"));
+    legacySerialStyle.insert(QStringLiteral("number"), styles.serialNumber.number);
+    require(snow_shot::storage::ApplicationStorage::instance().configuration().setValue(
+                serialKey, legacySerialStyle),
+            "legacy serial-number settings should be accepted for the compatibility test");
+    SnowCanvasStyleDefaults legacyExpected = expected;
+    legacyExpected.serialNumber.type = SnowCanvasSerialNumberType::OutlinedCircle;
+    require(snow_shot::presentation::screenshotCanvasToolStyleDefaults() == legacyExpected,
+            "legacy settings without a type should use outlined circle and ignore saved numbers");
+
+    for (const QJsonValue& invalidType :
+         {QJsonValue(1.5), QJsonValue(-1), QJsonValue(4), QJsonValue(QStringLiteral("3"))}) {
+        QJsonObject invalidSerialStyle = savedSerialStyle;
+        invalidSerialStyle.insert(QStringLiteral("type"), invalidType);
+        require(snow_shot::storage::ApplicationStorage::instance().configuration().setValue(
+                    serialKey, invalidSerialStyle),
+                "invalid serial-number type settings should be accepted for compatibility tests");
+        require(snow_shot::presentation::screenshotCanvasToolStyleDefaults() == legacyExpected,
+                "non-integral, out-of-range, and non-numeric types should use outlined circle");
+    }
 
     savedSerialStyle.insert(QStringLiteral("number"), styles.serialNumber.number);
     require(snow_shot::storage::ApplicationStorage::instance().configuration().setValue(
                 serialKey, savedSerialStyle),
-            "legacy serial-number settings should be accepted for the compatibility test");
+            "typed serial-number settings should be restored for the remaining test");
     require(snow_shot::presentation::screenshotCanvasToolStyleDefaults() == expected,
-            "legacy saved numbers should be ignored while restoring appearance settings");
+            "typed serial-number settings should restore the saved appearance");
 
     ScreenshotToolPalette::Options options;
     options.showSerialNumberTool = true;

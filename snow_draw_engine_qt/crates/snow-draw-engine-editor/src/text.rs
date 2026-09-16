@@ -5,8 +5,8 @@ mod serial;
 use serde::{Deserialize, Serialize};
 use snow_draw_engine_core::{ColorRgba8, CornerRadii, ErrorCode};
 use snow_draw_engine_document::{
-    ElementId, FillStyle, StrokeStyle, TextData, TextHorizontalAlign, TextLayoutSize,
-    TextVerticalAlign, validate_text_layout_size,
+    ElementId, FillStyle, SerialNumberType, StrokeStyle, TextData, TextHorizontalAlign,
+    TextLayoutSize, TextVerticalAlign, validate_text_layout_size,
 };
 
 pub use commit::{TextCommitTarget, TextDraftCommit};
@@ -70,6 +70,8 @@ pub struct TextPreviewFontSize {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SerialNumberStyle {
     pub number: i64,
+    #[serde(default, rename = "type")]
+    pub serial_number_type: SerialNumberType,
     pub color: ColorRgba8,
     pub fill: ColorRgba8,
     pub fill_style: FillStyle,

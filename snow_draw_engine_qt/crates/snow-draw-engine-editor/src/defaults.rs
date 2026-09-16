@@ -2,7 +2,9 @@ use snow_draw_engine_core::{
     ColorRgba8, CornerRadii,
     arrow::{ArrowType, Arrowhead, StrokeStyle},
 };
-use snow_draw_engine_document::{FillStyle, TextHorizontalAlign, TextVerticalAlign};
+use snow_draw_engine_document::{
+    FillStyle, SerialNumberType, TextHorizontalAlign, TextVerticalAlign,
+};
 
 use crate::{
     ArrowStyle, FilterStyle, RectangleShapeStyle, SerialNumberStyle, ShapeStyle, TextStyle,
@@ -145,6 +147,7 @@ pub fn editor_style_defaults() -> EditorStyleDefaults {
         },
         serial_number: SerialNumberStyle {
             number: 1,
+            serial_number_type: SerialNumberType::OutlinedCircle,
             color: stroke,
             fill: ColorRgba8::default(),
             fill_style: FillStyle::Solid,

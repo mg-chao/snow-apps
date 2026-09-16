@@ -2,6 +2,14 @@ use crate::abi::convert::*;
 use crate::abi::handles::*;
 use crate::abi::types::*;
 
+unsafe fn serial_number_style_type_is_valid(style: *const SnowSerialNumberStyle) -> bool {
+    let raw = unsafe {
+        std::ptr::read_unaligned(std::ptr::addr_of!((*style).serial_number_type).cast::<i32>())
+    };
+    (SnowSerialNumberType::OutlinedCircle as i32..=SnowSerialNumberType::SolidSquare as i32)
+        .contains(&raw)
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_viewport_get_watermark_config(
     runtime: SnowRuntime,
@@ -197,6 +205,27 @@ pub unsafe extern "C" fn snow_viewport_set_filter_style_ex(
     })
 }
 
+#[cfg(test)]
+mod serial_number_style_type_tests {
+    use super::*;
+
+    #[test]
+    fn invalid_raw_type_is_rejected_before_style_conversion() {
+        unsafe {
+            let valid = SnowSerialNumberStyle::default();
+            assert!(serial_number_style_type_is_valid(&valid));
+
+            let mut invalid = Box::<SnowSerialNumberStyle>::new_uninit();
+            let invalid_ptr = invalid.as_mut_ptr();
+            invalid_ptr.write(SnowSerialNumberStyle::default());
+            std::ptr::addr_of_mut!((*invalid_ptr).serial_number_type)
+                .cast::<i32>()
+                .write_unaligned(99);
+            assert!(!serial_number_style_type_is_valid(invalid_ptr));
+        }
+    }
+}
+
 /// # Safety
 /// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
 /// `out_state` must be valid for writes of one `SnowSerialNumberToolbarState` value.
@@ -358,7 +387,10 @@ pub unsafe extern "C" fn snow_viewport_set_serial_number_style_ex(
     out_changed_viewports: *mut SnowChangedViewportList,
 ) -> SnowError {
     ffi_error(|| {
-        if style.is_null() || out_changed_viewports.is_null() {
+        if style.is_null()
+            || out_changed_viewports.is_null()
+            || !unsafe { serial_number_style_type_is_valid(style) }
+        {
             return SnowError::InvalidArgument;
         }
 

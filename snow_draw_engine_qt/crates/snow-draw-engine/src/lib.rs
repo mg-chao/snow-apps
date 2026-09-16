@@ -10,8 +10,8 @@ pub use snow_draw_engine_core::arrow::{ArrowPathCommand, ArrowType, Arrowhead, S
 pub use snow_draw_engine_core::*;
 pub use snow_draw_engine_display::*;
 pub use snow_draw_engine_document::{
-    CanvasFilterType, ElementId, FillStyle, HighlightShape, SpotlightConfig, TextData,
-    TextHorizontalAlign, TextLayoutSize, TextVerticalAlign, WatermarkConfig,
+    CanvasFilterType, ElementId, FillStyle, HighlightShape, SerialNumberType, SpotlightConfig,
+    TextData, TextHorizontalAlign, TextLayoutSize, TextVerticalAlign, WatermarkConfig,
     WatermarkTemplateApplicationTime, normalize_font_family,
 };
 pub use snow_draw_engine_editor::{

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <mask id="number-cutout-square">
+    <rect width="24" height="24" fill="white"/>
+    <path d="M10.5 9.25 12.75 7.5V16.5" fill="none" stroke="black" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+  </mask>
+  <rect x="2.75" y="2.75" width="18.5" height="18.5" rx="2.8" fill="currentColor" mask="url(#number-cutout-square)"/>
+</svg>

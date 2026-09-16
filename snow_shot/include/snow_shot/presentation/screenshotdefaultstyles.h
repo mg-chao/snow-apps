@@ -76,6 +76,7 @@ inline SnowCanvasStyleDefaults screenshotCanvasStyleDefaults() {
     defaults.text.opacity = 1.0;
 
     defaults.serialNumber.number = 1;
+    defaults.serialNumber.type = SnowCanvasSerialNumberType::OutlinedCircle;
     defaults.serialNumber.color = red;
     defaults.serialNumber.fill = transparent;
     defaults.serialNumber.fillStyle = SnowCanvasFillStyle::Solid;

@@ -413,6 +413,15 @@ pub struct TextDisplayItem {
     pub opacity: f64,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DisplaySerialNumberType {
+    #[default]
+    OutlinedCircle = 0,
+    SolidCircle = 1,
+    OutlinedSquare = 2,
+    SolidSquare = 3,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct SerialNumberDisplayItem {
     pub id: DisplayItemId,
@@ -421,6 +430,7 @@ pub struct SerialNumberDisplayItem {
     pub diameter: f64,
     pub rotation: f64,
     pub number: i64,
+    pub serial_number_type: DisplaySerialNumberType,
     pub color: ColorRgba8,
     pub fill: ColorRgba8,
     pub fill_style: DisplayFillStyle,
@@ -428,6 +438,7 @@ pub struct SerialNumberDisplayItem {
     pub font_family: Option<String>,
     pub stroke_width: f64,
     pub stroke_style: StrokeStyle,
+    pub corner_radii: CornerRadii,
     pub opacity: f64,
     pub bound_text_id: Option<DisplayItemId>,
 }
@@ -530,6 +541,7 @@ impl Default for SerialNumberDisplayItem {
             diameter: 0.0,
             rotation: 0.0,
             number: 0,
+            serial_number_type: DisplaySerialNumberType::OutlinedCircle,
             color: ColorRgba8::default(),
             fill: ColorRgba8::default(),
             fill_style: DisplayFillStyle::Solid,
@@ -537,6 +549,7 @@ impl Default for SerialNumberDisplayItem {
             font_family: None,
             stroke_width: 0.0,
             stroke_style: StrokeStyle::Solid,
+            corner_radii: CornerRadii::default(),
             opacity: 1.0,
             bound_text_id: None,
         }

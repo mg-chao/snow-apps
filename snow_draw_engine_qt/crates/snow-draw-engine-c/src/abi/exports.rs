@@ -788,6 +788,21 @@ mod session_tests {
                 SnowError::InvalidArgument
             );
             assert!(runtime.is_null());
+
+            let mut serial_defaults = Box::<SnowStyleDefaults>::new_uninit();
+            let serial_defaults_ptr = serial_defaults.as_mut_ptr();
+            serial_defaults_ptr.write(snow_draw_engine::StyleDefaults::default().into());
+            std::ptr::addr_of_mut!((*serial_defaults_ptr).serial_number.serial_number_type)
+                .cast::<i32>()
+                .write_unaligned(99);
+            let serial_config = SnowRuntimeConfig {
+                style_defaults: serial_defaults_ptr,
+            };
+            assert_eq!(
+                snow_runtime_create_with_config(&serial_config, &mut runtime),
+                SnowError::InvalidArgument
+            );
+            assert!(runtime.is_null());
         }
     }
 

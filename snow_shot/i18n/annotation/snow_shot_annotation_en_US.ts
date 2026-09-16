@@ -488,6 +488,14 @@
             <translation>Open recording folder</translation>
         </message>
         <message>
+            <source>Outlined circle</source>
+            <translation>Outlined circle</translation>
+        </message>
+        <message>
+            <source>Outlined square</source>
+            <translation>Outlined square</translation>
+        </message>
+        <message>
             <source>Pause recording</source>
             <translation>Pause recording</translation>
         </message>
@@ -652,6 +660,10 @@
             <translation>Sequence number font size %1px</translation>
         </message>
         <message>
+            <source>Sequence number type</source>
+            <translation>Sequence number type</translation>
+        </message>
+        <message>
             <source>Serial number</source>
             <translation>Serial number</translation>
         </message>
@@ -676,12 +688,20 @@
             <translation>Solid arrow stroke</translation>
         </message>
         <message>
+            <source>Solid circle</source>
+            <translation>Solid circle</translation>
+        </message>
+        <message>
             <source>Solid fill</source>
             <translation>Solid fill</translation>
         </message>
         <message>
             <source>Solid sequence number fill</source>
             <translation>Solid sequence number fill</translation>
+        </message>
+        <message>
+            <source>Solid square</source>
+            <translation>Solid square</translation>
         </message>
         <message>
             <source>Solid stroke</source>

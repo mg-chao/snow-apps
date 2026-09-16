@@ -656,6 +656,38 @@
     },
     {
       "variant": "outlined",
+      "symbol": "SequenceNumberOutlinedCircle",
+      "name": "sequence-number-outlined-circle",
+      "source": "../src/presentation/components/icons/resources/sequence-number-outlined-circle.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "SequenceNumberOutlinedSquare",
+      "name": "sequence-number-outlined-square",
+      "source": "../src/presentation/components/icons/resources/sequence-number-outlined-square.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "SequenceNumberSolidCircle",
+      "name": "sequence-number-solid-circle",
+      "source": "../src/presentation/components/icons/resources/sequence-number-solid-circle.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "SequenceNumberSolidSquare",
+      "name": "sequence-number-solid-square",
+      "source": "../src/presentation/components/icons/resources/sequence-number-solid-square.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "ShapeDiamond",
       "name": "shape-diamond",
       "source": "../src/presentation/components/icons/resources/shape-diamond.svg",

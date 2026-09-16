@@ -324,11 +324,13 @@ pub(crate) fn snow_scene_display_item_from_rust(
             out.stroke = item.color.into();
             out.text_color = item.color.into();
             out.stroke_width = item.stroke_width;
+            out.corner_radii = item.corner_radii.into();
             out.font_size = item.font_size;
             out.opacity = item.opacity;
             out.serial_number = item.number;
             out.fill_style = snow_fill_style_from_rust(item.fill_style);
             out.stroke_style = snow_stroke_style_from_rust(item.stroke_style);
+            out.serial_number_type = item.serial_number_type as u8;
             converted.font_family_utf8 = utf8_bytes(item.font_family.as_deref());
             out.font_family_utf8_len = converted.font_family_utf8.len() as u32;
             encode_bound_text_id(out, item.bound_text_id);
@@ -600,7 +602,7 @@ mod tests {
 
     #[test]
     fn compact_display_views_stay_below_the_abi_size_budget() {
-        assert!(std::mem::size_of::<SnowSceneDisplayItem>() <= 320);
+        assert_eq!(std::mem::size_of::<SnowSceneDisplayItem>(), 328);
         assert!(std::mem::size_of::<SnowOverlayDisplayItem>() <= 384);
     }
 

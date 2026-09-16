@@ -20,11 +20,11 @@ use crate::{
     SERIAL_NUMBER_STYLE_MIXED_FILL_STYLE, SERIAL_NUMBER_STYLE_MIXED_FONT_FAMILY,
     SERIAL_NUMBER_STYLE_MIXED_FONT_SIZE, SERIAL_NUMBER_STYLE_MIXED_NUMBER,
     SERIAL_NUMBER_STYLE_MIXED_OPACITY, SERIAL_NUMBER_STYLE_MIXED_STROKE_STYLE,
-    SERIAL_NUMBER_STYLE_MIXED_STROKE_WIDTH, SHAPE_STYLE_MIXED_ARROW_TYPE,
-    SHAPE_STYLE_MIXED_CORNER_RADII, SHAPE_STYLE_MIXED_END_ARROWHEAD, SHAPE_STYLE_MIXED_FILL,
-    SHAPE_STYLE_MIXED_FILL_STYLE, SHAPE_STYLE_MIXED_HIGHLIGHT_SHAPE, SHAPE_STYLE_MIXED_OPACITY,
-    SHAPE_STYLE_MIXED_SHAPE, SHAPE_STYLE_MIXED_START_ARROWHEAD, SHAPE_STYLE_MIXED_STROKE,
-    SHAPE_STYLE_MIXED_STROKE_STYLE, SHAPE_STYLE_MIXED_STROKE_WIDTH,
+    SERIAL_NUMBER_STYLE_MIXED_STROKE_WIDTH, SERIAL_NUMBER_STYLE_MIXED_TYPE,
+    SHAPE_STYLE_MIXED_ARROW_TYPE, SHAPE_STYLE_MIXED_CORNER_RADII, SHAPE_STYLE_MIXED_END_ARROWHEAD,
+    SHAPE_STYLE_MIXED_FILL, SHAPE_STYLE_MIXED_FILL_STYLE, SHAPE_STYLE_MIXED_HIGHLIGHT_SHAPE,
+    SHAPE_STYLE_MIXED_OPACITY, SHAPE_STYLE_MIXED_SHAPE, SHAPE_STYLE_MIXED_START_ARROWHEAD,
+    SHAPE_STYLE_MIXED_STROKE, SHAPE_STYLE_MIXED_STROKE_STYLE, SHAPE_STYLE_MIXED_STROKE_WIDTH,
     SHAPE_STYLE_PROPERTY_ARROW_TYPE, SHAPE_STYLE_PROPERTY_CORNER_RADII,
     SHAPE_STYLE_PROPERTY_END_ARROWHEAD, SHAPE_STYLE_PROPERTY_FILL, SHAPE_STYLE_PROPERTY_FILL_STYLE,
     SHAPE_STYLE_PROPERTY_HIGHLIGHT_SHAPE, SHAPE_STYLE_PROPERTY_OPACITY, SHAPE_STYLE_PROPERTY_SHAPE,
@@ -40,6 +40,16 @@ use crate::{
 };
 
 const FONT_SIZE_STEPS: [f64; 5] = [MIN_TEXT_FONT_SIZE, 16.0, 21.0, 27.0, 42.0];
+const SERIAL_NUMBER_STYLE_ALL_PROPERTIES: u32 = SERIAL_NUMBER_STYLE_MIXED_NUMBER
+    | SERIAL_NUMBER_STYLE_MIXED_TYPE
+    | SERIAL_NUMBER_STYLE_MIXED_COLOR
+    | SERIAL_NUMBER_STYLE_MIXED_FILL
+    | SERIAL_NUMBER_STYLE_MIXED_FILL_STYLE
+    | SERIAL_NUMBER_STYLE_MIXED_FONT_SIZE
+    | SERIAL_NUMBER_STYLE_MIXED_FONT_FAMILY
+    | SERIAL_NUMBER_STYLE_MIXED_STROKE_WIDTH
+    | SERIAL_NUMBER_STYLE_MIXED_STROKE_STYLE
+    | SERIAL_NUMBER_STYLE_MIXED_OPACITY;
 
 pub(crate) fn stepped_font_size(current: f64, increase: bool) -> f64 {
     if increase {
@@ -378,6 +388,7 @@ impl SerialNumberStyle {
     pub(crate) fn from_serial_number(serial: &SerialNumberData) -> Self {
         Self {
             number: serial.number.max(0),
+            serial_number_type: serial.serial_number_type,
             color: serial.color,
             fill: serial.fill,
             fill_style: serial.fill_style,
@@ -510,24 +521,98 @@ fn text_with_style(
     Ok(updated)
 }
 
+#[cfg(test)]
 fn serial_number_with_style(
     serial: &SerialNumberData,
     style: &SerialNumberStyle,
 ) -> SerialNumberData {
+    serial_number_with_style_properties(serial, style, SERIAL_NUMBER_STYLE_ALL_PROPERTIES)
+}
+
+fn serial_number_style_changed_properties(
+    current: &SerialNumberStyle,
+    next: &SerialNumberStyle,
+) -> u32 {
+    let mut properties = 0;
+    if current.number != next.number {
+        properties |= SERIAL_NUMBER_STYLE_MIXED_NUMBER;
+    }
+    if current.serial_number_type != next.serial_number_type {
+        properties |= SERIAL_NUMBER_STYLE_MIXED_TYPE;
+    }
+    if current.color != next.color {
+        properties |= SERIAL_NUMBER_STYLE_MIXED_COLOR;
+    }
+    if current.fill != next.fill {
+        properties |= SERIAL_NUMBER_STYLE_MIXED_FILL;
+    }
+    if current.fill_style != next.fill_style {
+        properties |= SERIAL_NUMBER_STYLE_MIXED_FILL_STYLE;
+    }
+    if current.font_size != next.font_size {
+        properties |= SERIAL_NUMBER_STYLE_MIXED_FONT_SIZE;
+    }
+    if current.font_family != next.font_family {
+        properties |= SERIAL_NUMBER_STYLE_MIXED_FONT_FAMILY;
+    }
+    if current.stroke_width != next.stroke_width {
+        properties |= SERIAL_NUMBER_STYLE_MIXED_STROKE_WIDTH;
+    }
+    if current.stroke_style != next.stroke_style {
+        properties |= SERIAL_NUMBER_STYLE_MIXED_STROKE_STYLE;
+    }
+    if current.opacity != next.opacity {
+        properties |= SERIAL_NUMBER_STYLE_MIXED_OPACITY;
+    }
+    properties
+}
+
+fn serial_number_with_style_properties(
+    serial: &SerialNumberData,
+    style: &SerialNumberStyle,
+    properties: u32,
+) -> SerialNumberData {
+    let number = if properties & SERIAL_NUMBER_STYLE_MIXED_NUMBER != 0 {
+        style.number
+    } else {
+        serial.number
+    };
+    let font_size = if properties & SERIAL_NUMBER_STYLE_MIXED_FONT_SIZE != 0 {
+        style.font_size
+    } else {
+        serial.font_size
+    };
     let size_affecting_style_changed =
-        serial.number != style.number.max(0) || serial.font_size != style.font_size;
+        serial.number != number.max(0) || serial.font_size != font_size;
     let mut updated = if size_affecting_style_changed {
-        serial_number_with_label_style(serial, style.number, style.font_size)
+        serial_number_with_label_style(serial, number, font_size)
     } else {
         serial.clone()
     };
-    updated.color = style.color;
-    updated.fill = style.fill;
-    updated.fill_style = style.fill_style;
-    updated.font_family = normalize_font_family(style.font_family.clone());
-    updated.stroke_width = style.stroke_width;
-    updated.stroke_style = style.stroke_style;
-    updated.opacity = style.opacity;
+    if properties & SERIAL_NUMBER_STYLE_MIXED_TYPE != 0 {
+        updated.serial_number_type = style.serial_number_type;
+    }
+    if properties & SERIAL_NUMBER_STYLE_MIXED_COLOR != 0 {
+        updated.color = style.color;
+    }
+    if properties & SERIAL_NUMBER_STYLE_MIXED_FILL != 0 {
+        updated.fill = style.fill;
+    }
+    if properties & SERIAL_NUMBER_STYLE_MIXED_FILL_STYLE != 0 {
+        updated.fill_style = style.fill_style;
+    }
+    if properties & SERIAL_NUMBER_STYLE_MIXED_FONT_FAMILY != 0 {
+        updated.font_family = normalize_font_family(style.font_family.clone());
+    }
+    if properties & SERIAL_NUMBER_STYLE_MIXED_STROKE_WIDTH != 0 {
+        updated.stroke_width = style.stroke_width;
+    }
+    if properties & SERIAL_NUMBER_STYLE_MIXED_STROKE_STYLE != 0 {
+        updated.stroke_style = style.stroke_style;
+    }
+    if properties & SERIAL_NUMBER_STYLE_MIXED_OPACITY != 0 {
+        updated.opacity = style.opacity;
+    }
     updated
 }
 
@@ -1242,6 +1327,9 @@ impl Editor {
             if style.number != first.number {
                 mixed |= SERIAL_NUMBER_STYLE_MIXED_NUMBER;
             }
+            if style.serial_number_type != first.serial_number_type {
+                mixed |= SERIAL_NUMBER_STYLE_MIXED_TYPE;
+            }
             if style.color != first.color {
                 mixed |= SERIAL_NUMBER_STYLE_MIXED_COLOR;
             }
@@ -1318,8 +1406,12 @@ impl Editor {
         }
     }
 
-    fn update_default_serial_number_style(&mut self, style: &SerialNumberStyle) {
-        let next_default = serial_number_with_style(&self.state.default_serial_number, style);
+    fn update_default_serial_number_style(&mut self, style: &SerialNumberStyle, properties: u32) {
+        let next_default = serial_number_with_style_properties(
+            &self.state.default_serial_number,
+            style,
+            properties,
+        );
         if self.state.default_serial_number == next_default {
             return;
         }
@@ -1328,7 +1420,7 @@ impl Editor {
         if let Some(ElementCreationPreview::SerialNumber(preview)) =
             self.state.creation_preview.as_mut()
         {
-            *preview = serial_number_with_style(preview, style);
+            *preview = serial_number_with_style_properties(preview, style, properties);
             self.bump_scene_state_revision();
         }
     }
@@ -1679,6 +1771,17 @@ impl Editor {
     ) -> Result<Option<EditorCommand>, ErrorCode> {
         validate_serial_number_style(&style)?;
 
+        let current_style = self.serial_number_style(document);
+        let mixed = self.serial_number_style_mixed(document);
+        let changed_properties = serial_number_style_changed_properties(&current_style, &style);
+        let type_only_change = changed_properties == SERIAL_NUMBER_STYLE_MIXED_TYPE
+            || (changed_properties == 0 && mixed & SERIAL_NUMBER_STYLE_MIXED_TYPE != 0);
+        let properties = if type_only_change {
+            SERIAL_NUMBER_STYLE_MIXED_TYPE
+        } else {
+            SERIAL_NUMBER_STYLE_ALL_PROPERTIES
+        };
+
         let selected_serial_ids = self
             .state
             .selection
@@ -1695,7 +1798,8 @@ impl Editor {
 
             for id in self.state.selection.ids.iter().copied() {
                 if let Ok(current_serial) = document.serial_number(id) {
-                    let updated_serial = serial_number_with_style(current_serial, &style);
+                    let updated_serial =
+                        serial_number_with_style_properties(current_serial, &style, properties);
                     validate_serial_number(&updated_serial)?;
                     next_selection_elements.push(SelectionRectState {
                         id,
@@ -1720,7 +1824,7 @@ impl Editor {
                 }
             }
 
-            self.update_default_serial_number_style(&style);
+            self.update_default_serial_number_style(&style, properties);
             if transaction.is_empty() {
                 return Ok(None);
             }
@@ -1738,7 +1842,7 @@ impl Editor {
             )));
         }
 
-        self.update_default_serial_number_style(&style);
+        self.update_default_serial_number_style(&style, properties);
         Ok(None)
     }
 }
@@ -2250,6 +2354,110 @@ mod tests {
         let updated = serial_number_with_style(&serial, &style);
 
         assert_eq!(updated.diameter, serial.diameter);
+    }
+
+    #[test]
+    fn serial_number_type_change_preserves_size_and_fill_settings() {
+        let serial = SerialNumberData {
+            diameter: 123.0,
+            fill: ColorRgba8 {
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 4,
+            },
+            fill_style: FillStyle::CrossLine,
+            ..SerialNumberData::default()
+        };
+        let mut style = SerialNumberStyle::from_serial_number(&serial);
+        style.serial_number_type = snow_draw_engine_document::SerialNumberType::SolidSquare;
+
+        let updated = serial_number_with_style(&serial, &style);
+
+        assert_eq!(updated.serial_number_type, style.serial_number_type);
+        assert_eq!(updated.diameter, serial.diameter);
+        assert_eq!(updated.fill, serial.fill);
+        assert_eq!(updated.fill_style, serial.fill_style);
+    }
+
+    #[test]
+    fn serial_number_type_participates_in_mixed_selection_and_updates_every_item() {
+        let mut document = DocumentModel::new();
+        let first_id = document.allocate_element_id();
+        let second_id = document.allocate_element_id();
+        let mut insert = Transaction::new("insert serial numbers");
+        insert.insert_serial_number(
+            first_id,
+            ElementMeta::default(),
+            SerialNumberData::default(),
+        );
+        insert.insert_serial_number(
+            second_id,
+            ElementMeta::default(),
+            SerialNumberData {
+                diameter: 77.0,
+                number: 42,
+                serial_number_type: snow_draw_engine_document::SerialNumberType::SolidCircle,
+                color: ColorRgba8 {
+                    r: 10,
+                    g: 20,
+                    b: 30,
+                    a: 40,
+                },
+                fill: ColorRgba8 {
+                    r: 50,
+                    g: 60,
+                    b: 70,
+                    a: 80,
+                },
+                fill_style: FillStyle::Line,
+                font_size: 31.0,
+                font_family: Some("Second font".to_owned()),
+                stroke_width: 9.0,
+                stroke_style: StrokeStyle::Dotted,
+                opacity: 0.4,
+                ..SerialNumberData::default()
+            },
+        );
+        document.apply_transaction(insert).unwrap();
+        let second_before = document.serial_number(second_id).unwrap().clone();
+
+        let mut editor = Editor::new(Default::default()).unwrap();
+        editor.set_selection_state(vec![first_id, second_id], Some(first_id));
+        assert_ne!(
+            editor.serial_number_style_mixed(&document) & SERIAL_NUMBER_STYLE_MIXED_TYPE,
+            0
+        );
+
+        let mut style = editor.serial_number_style(&document);
+        style.serial_number_type = snow_draw_engine_document::SerialNumberType::SolidSquare;
+        let command = editor
+            .set_serial_number_style(&document, style)
+            .unwrap()
+            .unwrap();
+        let EditorCommand::ApplyTransaction(command) = command else {
+            panic!("expected serial-number style transaction");
+        };
+        document.apply_transaction(command.transaction).unwrap();
+        assert_eq!(
+            document.serial_number(first_id).unwrap().serial_number_type,
+            snow_draw_engine_document::SerialNumberType::SolidSquare
+        );
+        assert_eq!(
+            document
+                .serial_number(second_id)
+                .unwrap()
+                .serial_number_type,
+            snow_draw_engine_document::SerialNumberType::SolidSquare
+        );
+        let mut expected_second = second_before;
+        expected_second.serial_number_type =
+            snow_draw_engine_document::SerialNumberType::SolidSquare;
+        assert_eq!(
+            document.serial_number(second_id).unwrap(),
+            &expected_second,
+            "changing type must preserve every unrelated per-item property"
+        );
     }
 
     #[test]

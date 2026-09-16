@@ -1942,6 +1942,121 @@ int renderedSerialNumberBackgroundPixelCount(SnowFillStyle fillStyle, double fon
     return filledPixels;
 }
 
+QImage renderedSerialNumberType(SnowSerialNumberType type, SnowColorRgba8 color,
+                                SnowColorRgba8 fill, SnowFillStyle fillStyle, double strokeWidth,
+                                double fontSize = 0.0) {
+    QImage image(QSize(140, 140), QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+    SnowCanvasSceneItem item;
+    item.kind = SNOW_SCENE_DISPLAY_ITEM_SERIAL_NUMBER;
+    item.width = 80.0;
+    item.height = 80.0;
+    item.stroke = color;
+    item.text_color = color;
+    item.fill = fill;
+    item.fill_style = fillStyle;
+    item.stroke_width = strokeWidth;
+    item.serial_number_type = static_cast<std::uint8_t>(type);
+    item.corner_radii = SnowCornerRadii{6.0, 6.0, 6.0, 6.0};
+    item.font_size = fontSize;
+    item.serial_number = 1;
+    item.opacity = 1.0;
+
+    SceneDisplayInfo displayInfo{};
+    displayInfo.item_count = 1;
+    displayInfo.surface_width = image.width();
+    displayInfo.surface_height = image.height();
+    QPainter painter(&image);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    snow_canvas_renderer::renderSceneItems(snow_canvas_renderer::SceneRenderRequest{
+        &painter, &displayInfo, &item, 1, QRegion(image.rect())});
+    painter.end();
+    return image;
+}
+
+QRect visiblePixelBounds(const QImage& image) {
+    QRect bounds;
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            if (image.pixelColor(x, y).alpha() == 0) {
+                continue;
+            }
+            bounds = bounds.isNull() ? QRect(x, y, 1, 1) : bounds.united(QRect(x, y, 1, 1));
+        }
+    }
+    return bounds;
+}
+
+void serialNumberTypesRenderExpectedSilhouettesAndSolidSemantics() {
+    const SnowColorRgba8 red{255, 0, 0, 255};
+    const SnowColorRgba8 transparent{0, 0, 0, 0};
+    const QImage outlineCircle = renderedSerialNumberType(
+        SNOW_SERIAL_NUMBER_TYPE_OUTLINED_CIRCLE, red, transparent, SNOW_FILL_STYLE_SOLID, 8.0);
+    const QImage solidCircle = renderedSerialNumberType(SNOW_SERIAL_NUMBER_TYPE_SOLID_CIRCLE, red,
+                                                        transparent, SNOW_FILL_STYLE_LINE, 8.0);
+    const QImage outlineSquare = renderedSerialNumberType(
+        SNOW_SERIAL_NUMBER_TYPE_OUTLINED_SQUARE, red, transparent, SNOW_FILL_STYLE_SOLID, 8.0);
+    const QImage solidSquare =
+        renderedSerialNumberType(SNOW_SERIAL_NUMBER_TYPE_SOLID_SQUARE, red,
+                                 SnowColorRgba8{0, 255, 0, 255}, SNOW_FILL_STYLE_CROSS_LINE, 8.0);
+
+    require(visiblePixelBounds(outlineCircle).size() == visiblePixelBounds(solidCircle).size(),
+            "solid and outlined circles should have the same outer size");
+    require(visiblePixelBounds(outlineSquare).size() == visiblePixelBounds(solidSquare).size(),
+            "solid and outlined squares should have the same outer size");
+    require(outlineCircle.pixelColor(30, 30).alpha() == 0,
+            "outlined circles should retain circular corners");
+    require(outlineSquare.pixelColor(34, 34).alpha() > 0,
+            "outlined squares should extend into rounded-square corners");
+    require(solidCircle.pixelColor(70, 70).red() > 240 &&
+                solidCircle.pixelColor(70, 70).green() < 10,
+            "solid circles should use the sequence-number color as their fill");
+    require(solidSquare.pixelColor(70, 70).red() > 240 &&
+                solidSquare.pixelColor(70, 70).green() < 10,
+            "solid squares should ignore stored fill color and fill style");
+}
+
+void solidSerialNumberChoosesFixedContrastLabelColors() {
+    const QImage dark =
+        renderedSerialNumberType(SNOW_SERIAL_NUMBER_TYPE_SOLID_CIRCLE, SnowColorRgba8{0, 0, 0, 255},
+                                 SnowColorRgba8{}, SNOW_FILL_STYLE_SOLID, 4.0, 36.0);
+    const QImage bright = renderedSerialNumberType(
+        SNOW_SERIAL_NUMBER_TYPE_SOLID_CIRCLE, SnowColorRgba8{255, 255, 255, 255}, SnowColorRgba8{},
+        SNOW_FILL_STYLE_SOLID, 4.0, 36.0);
+    const QImage saturated = renderedSerialNumberType(
+        SNOW_SERIAL_NUMBER_TYPE_SOLID_CIRCLE, SnowColorRgba8{255, 0, 0, 255}, SnowColorRgba8{},
+        SNOW_FILL_STYLE_SOLID, 4.0, 36.0);
+    const QImage transparentDark =
+        renderedSerialNumberType(SNOW_SERIAL_NUMBER_TYPE_SOLID_CIRCLE, SnowColorRgba8{0, 0, 0, 0},
+                                 SnowColorRgba8{}, SNOW_FILL_STYLE_SOLID, 4.0, 36.0);
+    bool foundWhiteAlpha217 = false;
+    bool foundBlackAlpha224 = false;
+    bool foundSaturatedWhite = false;
+    bool foundTransparentDarkWhite = false;
+    for (int y = 40; y < 100; ++y) {
+        for (int x = 40; x < 100; ++x) {
+            const QColor darkPixel = dark.pixelColor(x, y);
+            const QColor brightPixel = bright.pixelColor(x, y);
+            const QColor saturatedPixel = saturated.pixelColor(x, y);
+            const QColor transparentDarkPixel = transparentDark.pixelColor(x, y);
+            foundWhiteAlpha217 = foundWhiteAlpha217 || darkPixel == QColor(217, 217, 217, 255);
+            foundBlackAlpha224 = foundBlackAlpha224 || brightPixel == QColor(31, 31, 31, 255);
+            foundSaturatedWhite =
+                foundSaturatedWhite || saturatedPixel == QColor(255, 217, 217, 255);
+            foundTransparentDarkWhite =
+                foundTransparentDarkWhite || transparentDarkPixel == QColor(255, 255, 255, 217);
+        }
+    }
+    require(foundWhiteAlpha217,
+            "dark solid fills should render the fixed white label alpha of 217");
+    require(foundBlackAlpha224,
+            "bright solid fills should render the fixed black label alpha of 224");
+    require(foundSaturatedWhite,
+            "saturated red fills should choose white through WCAG contrast comparison");
+    require(foundTransparentDarkWhite,
+            "solid label contrast should ignore the sequence color's source alpha");
+}
+
 void overlayRectangleRendererHonorsFillStyle() {
     const std::size_t cacheEntriesBefore =
         snow_canvas_renderer::hatchTextureCacheEntryCountForCurrentThread();
@@ -2059,6 +2174,34 @@ void textEditorConnectorBuildsSerialBoundConnector() {
             "centered connector should not add a baseline segment");
     requireNear(connector.stroke_width, 2.0, "connector should inherit serial stroke width");
     requireNear(connector.opacity, 0.75, "connector should inherit serial opacity");
+
+    preview.center_x = 60.0;
+    preview.center_y = -60.0;
+    preview.width = 20.0;
+    preview.height = 20.0;
+    SnowCanvasSceneItem circleConnector;
+    require(snow_canvas_text_editor_connector::connectorItemForPreview(serial, preview,
+                                                                       &circleConnector),
+            "diagonal circle preview should create a connector item");
+
+    serial.serial_number_type = SNOW_SERIAL_NUMBER_TYPE_OUTLINED_SQUARE;
+    serial.corner_radii = SnowCornerRadii{2.0, 2.0, 2.0, 2.0};
+    SnowCanvasSceneItem squareConnector;
+    require(snow_canvas_text_editor_connector::connectorItemForPreview(serial, preview,
+                                                                       &squareConnector),
+            "diagonal square preview should create a connector item");
+    require(std::hypot(squareConnector.center_x, squareConnector.center_y) >
+                std::hypot(circleConnector.center_x, circleConnector.center_y),
+            "live-preview square connector should anchor at the rounded-square edge");
+
+    serial.serial_number_type = SNOW_SERIAL_NUMBER_TYPE_SOLID_SQUARE;
+    SnowCanvasSceneItem solidSquareConnector;
+    require(snow_canvas_text_editor_connector::connectorItemForPreview(serial, preview,
+                                                                       &solidSquareConnector),
+            "diagonal solid-square preview should create a connector item");
+    require(std::hypot(solidSquareConnector.center_x, solidSquareConnector.center_y) >
+                std::hypot(squareConnector.center_x, squareConnector.center_y),
+            "solid square connector should include the reserved stroke footprint");
 }
 
 void widgetPointerFlowPlansSuppressedTextCreate() {
@@ -3263,6 +3406,8 @@ int main(int argc, char** argv) {
     longOpenPathsRenderAllCommands();
     textBackgroundUsesRectangleHatchTexture();
     serialNumberBackgroundUsesTextHatchTexture();
+    serialNumberTypesRenderExpectedSilhouettesAndSolidSemantics();
+    solidSerialNumberChoosesFixedContrastLabelColors();
     textHoverUnderlineRendererDrawsOnlyTheUnderline();
     multilineTextHoverRendererDrawsEveryLineUnderline();
     hatchTextureCacheReusesSaturatedStrokeWidths();

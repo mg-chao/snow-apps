@@ -148,6 +148,19 @@ typedef struct SnowFilterStyle {
 #define SNOW_SERIAL_NUMBER_STYLE_MIXED_STROKE_WIDTH (1u << 6)
 #define SNOW_SERIAL_NUMBER_STYLE_MIXED_STROKE_STYLE (1u << 7)
 #define SNOW_SERIAL_NUMBER_STYLE_MIXED_OPACITY (1u << 8)
+#define SNOW_SERIAL_NUMBER_STYLE_MIXED_TYPE (1u << 9)
+
+typedef enum SnowSerialNumberType {
+    SNOW_SERIAL_NUMBER_TYPE_OUTLINED_CIRCLE = 0,
+    SNOW_SERIAL_NUMBER_TYPE_SOLID_CIRCLE = 1,
+    SNOW_SERIAL_NUMBER_TYPE_OUTLINED_SQUARE = 2,
+    SNOW_SERIAL_NUMBER_TYPE_SOLID_SQUARE = 3
+} SnowSerialNumberType;
+
+#ifdef __cplusplus
+static_assert(sizeof(SnowSerialNumberType) == sizeof(uint32_t),
+              "SnowSerialNumberType must remain a four-byte C ABI enum");
+#endif
 
 typedef enum SnowPointerEventType {
     SNOW_POINTER_EVENT_DOWN = 0,
@@ -504,7 +517,7 @@ typedef struct SnowSerialNumberStyle {
     double stroke_width;
     SnowStrokeStyle stroke_style;
     double opacity;
-    uint8_t reserved0[4];
+    SnowSerialNumberType serial_number_type;
     uint32_t font_family_utf8_len;
     uint8_t font_family_truncated;
     uint8_t reserved1[3];
@@ -967,7 +980,8 @@ typedef struct SnowSceneDisplayItem {
     SnowStrokeStyle stroke_style;
     uint8_t has_bound_text_element;
     uint8_t rect_shape;
-    uint8_t reserved2[2];
+    uint8_t serial_number_type;
+    uint8_t reserved2[1];
     uint32_t bound_text_element_generation;
     /* Canvas-space label exclusion rectangle, used only by arrows. */
     double arrow_text_bounds[4];

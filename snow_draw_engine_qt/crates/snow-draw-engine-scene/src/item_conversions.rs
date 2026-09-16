@@ -1,9 +1,12 @@
 #![allow(clippy::items_after_test_module)]
 
 use super::*;
-use snow_draw_engine_display::{DisplayFilterType, FilterDisplayItem, FilterRenderSpec};
+use snow_draw_engine_display::{
+    DisplayFilterType, DisplaySerialNumberType, FilterDisplayItem, FilterRenderSpec,
+};
 use snow_draw_engine_document::{
-    CanvasFilterType, FilterData, FreeDrawData, PenFilterData, filter_bounds, pen_filter_bounds,
+    CanvasFilterType, FilterData, FreeDrawData, PenFilterData, SerialNumberType, filter_bounds,
+    pen_filter_bounds, resolve_serial_number_square_corner_radius,
 };
 use snow_draw_engine_editor::{FreeDrawPreview, PenFilterPreview};
 
@@ -246,6 +249,7 @@ pub(crate) fn scene_item_from_serial_number(
     bound_text_id: Option<ElementId>,
 ) -> SceneDisplayItem {
     let stroke_width = resolve_serial_number_stroke_width(&serial);
+    let corner_radius = resolve_serial_number_square_corner_radius(&serial);
     SceneDisplayItem::SerialNumber(SerialNumberDisplayItem {
         id: display_item_id(id),
         center_x: serial.center.x,
@@ -253,6 +257,12 @@ pub(crate) fn scene_item_from_serial_number(
         diameter: serial.diameter,
         rotation: serial.rotation,
         number: serial.number.max(0),
+        serial_number_type: match serial.serial_number_type {
+            SerialNumberType::OutlinedCircle => DisplaySerialNumberType::OutlinedCircle,
+            SerialNumberType::SolidCircle => DisplaySerialNumberType::SolidCircle,
+            SerialNumberType::OutlinedSquare => DisplaySerialNumberType::OutlinedSquare,
+            SerialNumberType::SolidSquare => DisplaySerialNumberType::SolidSquare,
+        },
         color: serial.color,
         fill: serial.fill,
         fill_style: display_fill_style(serial.fill_style),
@@ -260,6 +270,7 @@ pub(crate) fn scene_item_from_serial_number(
         font_family: serial.font_family,
         stroke_width,
         stroke_style: serial.stroke_style,
+        corner_radii: snow_draw_engine_core::CornerRadii::splat(corner_radius),
         opacity: serial.opacity,
         bound_text_id: bound_text_id.map(display_item_id),
     })

@@ -493,6 +493,7 @@ SnowTextStyle toEngineTextStyle(const SnowCanvasTextStyle& style) {
 SnowCanvasSerialNumberStyle toCanvasSerialNumberStyle(const SnowSerialNumberStyle& style) {
     return SnowCanvasSerialNumberStyle{
         static_cast<qint64>(style.number),
+        static_cast<SnowCanvasSerialNumberType>(style.serial_number_type),
         toQColor(style.color),
         toQColor(style.fill),
         toCanvasFillStyle(style.fill_style),
@@ -508,6 +509,7 @@ SnowCanvasSerialNumberStyle toCanvasSerialNumberStyle(const SnowSerialNumberStyl
 SnowSerialNumberStyle toEngineSerialNumberStyle(const SnowCanvasSerialNumberStyle& style) {
     SnowSerialNumberStyle engineStyle{};
     engineStyle.number = static_cast<std::int64_t>(style.number);
+    engineStyle.serial_number_type = static_cast<SnowSerialNumberType>(style.type);
     engineStyle.color = toEngineColor(style.color);
     engineStyle.fill = toEngineColor(style.fill);
     engineStyle.fill_style = toEngineFillStyle(style.fillStyle);
@@ -680,7 +682,9 @@ bool toEngineStyleDefaults(const SnowCanvasStyleDefaults& defaults,
         !enumInRange(defaults.serialNumber.fillStyle, SnowCanvasFillStyle::Line,
                      SnowCanvasFillStyle::Solid) ||
         !enumInRange(defaults.serialNumber.strokeStyle, SnowCanvasStrokeStyle::Solid,
-                     SnowCanvasStrokeStyle::Dotted)) {
+                     SnowCanvasStrokeStyle::Dotted) ||
+        !enumInRange(defaults.serialNumber.type, SnowCanvasSerialNumberType::OutlinedCircle,
+                     SnowCanvasSerialNumberType::SolidSquare)) {
         return false;
     }
 

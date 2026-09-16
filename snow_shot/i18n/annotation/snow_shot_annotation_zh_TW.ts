@@ -488,6 +488,14 @@
             <translation>開啟錄製資料夾</translation>
         </message>
         <message>
+            <source>Outlined circle</source>
+            <translation>輪廓圓形</translation>
+        </message>
+        <message>
+            <source>Outlined square</source>
+            <translation>輪廓方形</translation>
+        </message>
+        <message>
             <source>Pause recording</source>
             <translation>暫停錄製</translation>
         </message>
@@ -652,6 +660,10 @@
             <translation>序號文字大小 %1 像素</translation>
         </message>
         <message>
+            <source>Sequence number type</source>
+            <translation>序號類型</translation>
+        </message>
+        <message>
             <source>Serial number</source>
             <translation>序號</translation>
         </message>
@@ -676,12 +688,20 @@
             <translation>實線箭頭描邊</translation>
         </message>
         <message>
+            <source>Solid circle</source>
+            <translation>實心圓形</translation>
+        </message>
+        <message>
             <source>Solid fill</source>
             <translation>純色填充</translation>
         </message>
         <message>
             <source>Solid sequence number fill</source>
             <translation>純色序號填充</translation>
+        </message>
+        <message>
+            <source>Solid square</source>
+            <translation>實心方形</translation>
         </message>
         <message>
             <source>Solid stroke</source>

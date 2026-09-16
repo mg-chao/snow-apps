@@ -460,6 +460,7 @@ impl EditorState {
         };
         let default_serial_number = SerialNumberData {
             number: default_styles.serial_number.number,
+            serial_number_type: default_styles.serial_number.serial_number_type,
             color: default_styles.serial_number.color,
             fill: default_styles.serial_number.fill,
             fill_style: default_styles.serial_number.fill_style,

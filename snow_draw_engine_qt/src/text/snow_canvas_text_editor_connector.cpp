@@ -44,6 +44,50 @@ struct SerialTextConnection {
     bool hasBaseline = false;
 };
 
+bool serialNumberIsSquare(const SnowSceneDisplayItem& item) {
+    return item.serial_number_type == SNOW_SERIAL_NUMBER_TYPE_OUTLINED_SQUARE ||
+           item.serial_number_type == SNOW_SERIAL_NUMBER_TYPE_SOLID_SQUARE;
+}
+
+bool serialNumberIsSolid(const SnowSceneDisplayItem& item) {
+    return item.serial_number_type == SNOW_SERIAL_NUMBER_TYPE_SOLID_CIRCLE ||
+           item.serial_number_type == SNOW_SERIAL_NUMBER_TYPE_SOLID_SQUARE;
+}
+
+double serialNumberRayEdgeDistance(const SnowSceneDisplayItem& item, double ux, double uy) {
+    const double solidOutset = serialNumberIsSolid(item) ? qMax(0.0, item.stroke_width) / 2.0 : 0.0;
+    const double halfExtent = qMax(0.0, qMin(item.width, item.height)) / 2.0 + solidOutset;
+    if (!serialNumberIsSquare(item)) {
+        return halfExtent;
+    }
+
+    const double cosine = std::cos(item.rotation);
+    const double sine = std::sin(item.rotation);
+    const double localX = cosine * ux + sine * uy;
+    const double localY = -sine * ux + cosine * uy;
+    const double radius = qBound(0.0, item.corner_radii.top_left + solidOutset, halfExtent);
+    const double innerExtent = halfExtent - radius;
+    const auto inside = [=](double distance) {
+        const double x = std::abs(localX * distance);
+        const double y = std::abs(localY * distance);
+        const double cornerX = qMax(0.0, x - innerExtent);
+        const double cornerY = qMax(0.0, y - innerExtent);
+        return x <= halfExtent && y <= halfExtent &&
+               cornerX * cornerX + cornerY * cornerY <= radius * radius + 1e-9;
+    };
+    double low = 0.0;
+    double high = halfExtent * std::sqrt(2.0);
+    for (int iteration = 0; iteration < 48; ++iteration) {
+        const double middle = (low + high) / 2.0;
+        if (inside(middle)) {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
 QRectF canvasBoundsForTextItem(const SnowSceneDisplayItem& item) {
     return snow_canvas_render_geometry::rotatedRectBounds(QPointF(item.center_x, item.center_y),
                                                           item.width, item.height, item.rotation,
@@ -100,14 +144,17 @@ bool resolveSerialTextConnection(const SnowSceneDisplayItem& serial,
     const double dx = anchor.x() - center.x();
     const double dy = anchor.y() - center.y();
     const double distance = std::sqrt(dx * dx + dy * dy);
-    const double startOffset = diameter / 2.0 + 8.0;
     const double halfLineWidth = lineWidth / 2.0;
+    if (distance <= halfLineWidth) {
+        return false;
+    }
+    const double ux = dx / distance;
+    const double uy = dy / distance;
+    const double startOffset = serialNumberRayEdgeDistance(serial, ux, uy) + 8.0;
     if (distance <= startOffset + halfLineWidth) {
         return false;
     }
 
-    const double ux = dx / distance;
-    const double uy = dy / distance;
     connection.start = QPointF(center.x() + ux * startOffset, center.y() + uy * startOffset);
     connection.end = QPointF(anchor.x() - ux * halfLineWidth, anchor.y() - uy * halfLineWidth);
     *outConnection = connection;

@@ -624,6 +624,26 @@ pub enum FillStyle {
     Solid,
 }
 
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SerialNumberType {
+    #[default]
+    OutlinedCircle = 0,
+    SolidCircle = 1,
+    OutlinedSquare = 2,
+    SolidSquare = 3,
+}
+
+impl SerialNumberType {
+    pub fn is_square(self) -> bool {
+        matches!(self, Self::OutlinedSquare | Self::SolidSquare)
+    }
+
+    pub fn is_solid(self) -> bool {
+        matches!(self, Self::SolidCircle | Self::SolidSquare)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TextData {
     pub center: Point<f64>,
@@ -651,6 +671,8 @@ pub struct SerialNumberData {
     pub diameter: f64,
     pub rotation: f64,
     pub number: i64,
+    #[serde(default, rename = "type")]
+    pub serial_number_type: SerialNumberType,
     pub color: ColorRgba8,
     pub fill: ColorRgba8,
     pub fill_style: FillStyle,

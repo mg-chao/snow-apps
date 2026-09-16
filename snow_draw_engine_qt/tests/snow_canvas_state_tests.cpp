@@ -157,6 +157,7 @@ void publicCanvasDtosUseExactCompleteEquality() {
         requireUnequalPair(serial, changed, "serial field should participate");                    \
     } while (false)
     REQUIRE_SERIAL_CHANGE(number, 2);
+    REQUIRE_SERIAL_CHANGE(type, SnowCanvasSerialNumberType::SolidSquare);
     REQUIRE_SERIAL_CHANGE(color, QColor(Qt::cyan));
     REQUIRE_SERIAL_CHANGE(fill, QColor(Qt::magenta));
     REQUIRE_SERIAL_CHANGE(fillStyle, SnowCanvasFillStyle::CrossLine);
@@ -267,6 +268,7 @@ SnowCanvasStyleDefaults customStyleDefaults() {
     defaults.text.fontFamily = QStringLiteral("Qt Text Font");
     defaults.serialNumber.color = ink;
     defaults.serialNumber.fill = transparent;
+    defaults.serialNumber.type = SnowCanvasSerialNumberType::OutlinedSquare;
     defaults.serialNumber.fontSize = 25.0;
     defaults.serialNumber.fontFamily = QStringLiteral("Qt Serial Font");
     defaults.watermark.color = ink;
@@ -345,9 +347,12 @@ void configuredRuntimeProfileFollowsRestoreAndResetLifecycle() {
     require(toolbarState(runtime, viewport, SNOW_ACTIVE_TOOL_TEXT).text_style.font_size ==
                 defaults.text.fontSize,
             "text should expose its configured creation style");
-    require(toolbarState(runtime, viewport, SNOW_ACTIVE_TOOL_SERIAL_NUMBER)
-                    .serial_number_style.font_size == defaults.serialNumber.fontSize,
+    const SnowSerialNumberStyle serialNumberStyle =
+        toolbarState(runtime, viewport, SNOW_ACTIVE_TOOL_SERIAL_NUMBER).serial_number_style;
+    require(serialNumberStyle.font_size == defaults.serialNumber.fontSize,
             "sequence numbers should expose their configured creation style");
+    require(serialNumberStyle.serial_number_type == SNOW_SERIAL_NUMBER_TYPE_OUTLINED_SQUARE,
+            "sequence numbers should expose their configured creation type");
 
     SnowShapeStyle edited = toolbarState(runtime, viewport, SNOW_ACTIVE_TOOL_SHAPE).shape_style;
     edited.stroke_width = 41.0;
@@ -414,6 +419,14 @@ void configuredRuntimeProfileFollowsRestoreAndResetLifecycle() {
     SnowCanvasRuntime rejectedEnum(invalidConfig);
     require(!rejectedEnum.isValid(),
             "an invalid configured enum should be rejected before C ABI conversion");
+
+    invalid = defaults;
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+    invalid.serialNumber.type = static_cast<SnowCanvasSerialNumberType>(99);
+    invalidConfig.styleDefaults = invalid;
+    SnowCanvasRuntime rejectedSerialType(invalidConfig);
+    require(!rejectedSerialType.isValid(),
+            "an invalid sequence-number type should be rejected before C ABI conversion");
 }
 
 void watermarkConfigurationConversionsPreserveSnapshotsAndUtf8Boundaries() {

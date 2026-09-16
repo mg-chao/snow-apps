@@ -111,7 +111,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use snow_draw_engine_document::{ElementMeta, SerialNumberData, Transaction};
+    use snow_draw_engine_document::{ElementMeta, SerialNumberData, SerialNumberType, Transaction};
 
     fn engine_with_serial_numbers(numbers: &[i64], next: i64) -> Engine {
         let mut config = EngineConfig::default();
@@ -215,5 +215,38 @@ mod tests {
                 next
             );
         }
+    }
+
+    #[test]
+    fn serial_number_type_change_participates_in_undo_and_redo() {
+        let mut engine = engine_with_serial_numbers(&[1], 2);
+        let viewport = engine.create_viewport(Default::default()).unwrap();
+        let id = ElementId {
+            index: 0,
+            generation: 1,
+        };
+        engine.editor.select_element(&engine.model, id).unwrap();
+        let mut style = engine.editor.serial_number_style(&engine.model);
+        style.serial_number_type = SerialNumberType::SolidSquare;
+
+        engine
+            .set_viewport_serial_number_style(viewport, style)
+            .unwrap();
+        assert_eq!(
+            engine.model.serial_number(id).unwrap().serial_number_type,
+            SerialNumberType::SolidSquare
+        );
+
+        engine.undo().unwrap();
+        assert_eq!(
+            engine.model.serial_number(id).unwrap().serial_number_type,
+            SerialNumberType::OutlinedCircle
+        );
+
+        engine.redo().unwrap();
+        assert_eq!(
+            engine.model.serial_number(id).unwrap().serial_number_type,
+            SerialNumberType::SolidSquare
+        );
     }
 }

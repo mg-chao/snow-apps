@@ -16,6 +16,7 @@ const SERIAL_NUMBER_CANONICAL_FONT_SIZE: f64 = 16.0;
 const SERIAL_NUMBER_LABEL_WIDTH_PER_EM: f64 = 0.6;
 const SERIAL_NUMBER_DIAMETER_PADDING_PER_LINE_HEIGHT: f64 = 0.20;
 const SERIAL_NUMBER_STROKE_REFERENCE_FONT_SIZE: f64 = 20.0;
+const SERIAL_NUMBER_SQUARE_CORNER_RADIUS_PER_FONT_SIZE: f64 = 0.20;
 const TEXT_BACKGROUND_HORIZONTAL_PADDING_PER_LINE_HEIGHT: f64 = 0.32;
 const TEXT_BACKGROUND_VERTICAL_PADDING_PER_LINE_HEIGHT: f64 = 0.1;
 
@@ -158,6 +159,7 @@ impl Default for SerialNumberData {
             diameter: 21.0,
             rotation: 0.0,
             number: 1,
+            serial_number_type: crate::SerialNumberType::OutlinedCircle,
             color: ColorRgba8 {
                 r: 0xf4,
                 g: 0x21,
@@ -278,7 +280,6 @@ pub fn resolve_serial_number_text_connection(
         return None;
     }
 
-    let serial_radius = serial.diameter.max(0.0) / 2.0;
     let serial_bounds = serial_number_bounds(serial);
     let text_bounds = text_bounds(text);
     if draw_rect_width(text_bounds) <= 0.0 || draw_rect_height(text_bounds) <= 0.0 {
@@ -290,14 +291,18 @@ pub fn resolve_serial_number_text_connection(
     let dx = attachment.anchor.x - center.x;
     let dy = attachment.anchor.y - center.y;
     let distance = (dx * dx + dy * dy).sqrt();
-    let start_offset = serial_radius + 8.0;
     let half_line_width = line_width / 2.0;
+    if distance <= half_line_width {
+        return None;
+    }
+    let ux = dx / distance;
+    let uy = dy / distance;
+    let shape_edge_offset = serial_number_ray_edge_distance(serial, ux, uy);
+    let start_offset = shape_edge_offset + 8.0;
     if distance <= start_offset + half_line_width {
         return None;
     }
 
-    let ux = dx / distance;
-    let uy = dy / distance;
     Some(SerialNumberTextConnection {
         start: Point {
             x: center.x + ux * start_offset,
@@ -310,6 +315,46 @@ pub fn resolve_serial_number_text_connection(
         text_baseline_start: attachment.text_baseline_start,
         text_baseline_end: attachment.text_baseline_end,
     })
+}
+
+fn serial_number_ray_edge_distance(serial: &SerialNumberData, ux: f64, uy: f64) -> f64 {
+    let solid_outset = if serial.serial_number_type.is_solid() {
+        resolve_serial_number_stroke_width(serial) / 2.0
+    } else {
+        0.0
+    };
+    let half_extent = serial.diameter.max(0.0) / 2.0 + solid_outset;
+    if !serial.serial_number_type.is_square() {
+        return half_extent;
+    }
+
+    let cos_rotation = serial.rotation.cos();
+    let sin_rotation = serial.rotation.sin();
+    let local_x = cos_rotation * ux + sin_rotation * uy;
+    let local_y = -sin_rotation * ux + cos_rotation * uy;
+    let radius =
+        (resolve_serial_number_square_corner_radius(serial) + solid_outset).min(half_extent);
+    let inner_extent = half_extent - radius;
+    let inside = |distance: f64| {
+        let x = (local_x * distance).abs();
+        let y = (local_y * distance).abs();
+        let corner_x = (x - inner_extent).max(0.0);
+        let corner_y = (y - inner_extent).max(0.0);
+        x <= half_extent
+            && y <= half_extent
+            && corner_x * corner_x + corner_y * corner_y <= radius * radius + 1e-9
+    };
+    let mut low = 0.0;
+    let mut high = half_extent * std::f64::consts::SQRT_2;
+    for _ in 0..48 {
+        let middle = (low + high) / 2.0;
+        if inside(middle) {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    low
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -425,7 +470,11 @@ pub fn serial_number_rect_proxy(serial: &SerialNumberData) -> RectangleData {
         stroke: serial.color,
         stroke_width: resolve_serial_number_stroke_width(serial),
         stroke_style: serial.stroke_style,
-        corner_radii: CornerRadii::splat(serial.diameter.max(0.0) / 2.0),
+        corner_radii: CornerRadii::splat(if serial.serial_number_type.is_square() {
+            resolve_serial_number_square_corner_radius(serial)
+        } else {
+            serial.diameter.max(0.0) / 2.0
+        }),
         opacity: serial.opacity,
     }
 }
@@ -466,6 +515,10 @@ pub fn serial_number_with_selection_rect(
 pub fn resolve_serial_number_stroke_width(serial: &SerialNumberData) -> f64 {
     let scale = sanitize_non_negative(serial.font_size) / SERIAL_NUMBER_STROKE_REFERENCE_FONT_SIZE;
     sanitize_non_negative(serial.stroke_width * scale)
+}
+
+pub fn resolve_serial_number_square_corner_radius(serial: &SerialNumberData) -> f64 {
+    sanitize_non_negative(serial.font_size) * SERIAL_NUMBER_SQUARE_CORNER_RADIUS_PER_FONT_SIZE
 }
 
 pub fn resolve_serial_number_style_diameter(number: i64, font_size: f64) -> f64 {
@@ -527,12 +580,22 @@ pub fn serial_number_hit_test(
     if radius <= 0.0 {
         return false;
     }
-    let effective_radius =
-        radius + resolve_serial_number_stroke_width(serial) / 2.0 + hit_tolerance.max(0.0);
+    let outset = resolve_serial_number_stroke_width(serial) / 2.0 + hit_tolerance.max(0.0);
+    let effective_radius = radius + outset;
     if effective_radius <= 0.0 {
         return false;
     }
     let local = canvas_to_rect_local(serial.center, serial.rotation, point);
+    if serial.serial_number_type.is_square() {
+        let corner_radius =
+            (resolve_serial_number_square_corner_radius(serial) + outset).min(effective_radius);
+        let inner_extent = effective_radius - corner_radius;
+        let corner_x = (local.x.abs() - inner_extent).max(0.0);
+        let corner_y = (local.y.abs() - inner_extent).max(0.0);
+        return local.x.abs() <= effective_radius
+            && local.y.abs() <= effective_radius
+            && corner_x * corner_x + corner_y * corner_y <= corner_radius * corner_radius + 1e-9;
+    }
     local.x * local.x + local.y * local.y <= effective_radius * effective_radius + 1e-9
 }
 
@@ -1011,6 +1074,10 @@ mod tests {
     fn serial_number_defaults_use_product_color_and_font_size() {
         assert_eq!(SerialNumberData::default().font_size, 24.0);
         assert_eq!(
+            SerialNumberData::default().serial_number_type,
+            crate::SerialNumberType::OutlinedCircle
+        );
+        assert_eq!(
             SerialNumberData::default().color,
             ColorRgba8 {
                 r: 0xf4,
@@ -1043,6 +1110,75 @@ mod tests {
         };
 
         assert!((resolve_serial_number_stroke_width(&serial) - 2.4).abs() < 1e-9);
+    }
+
+    #[test]
+    fn serial_number_square_corner_radius_scales_with_font_size() {
+        let serial = SerialNumberData {
+            font_size: 35.0,
+            serial_number_type: crate::SerialNumberType::OutlinedSquare,
+            ..SerialNumberData::default()
+        };
+
+        assert!((resolve_serial_number_square_corner_radius(&serial) - 7.0).abs() < 1e-9);
+        assert_eq!(serial_number_rect_proxy(&serial).width, serial.diameter);
+        assert_eq!(serial_number_rect_proxy(&serial).height, serial.diameter);
+    }
+
+    #[test]
+    fn serial_number_square_hit_test_uses_rounded_outer_contour() {
+        let square = SerialNumberData {
+            diameter: 40.0,
+            font_size: 20.0,
+            stroke_width: 0.0,
+            serial_number_type: crate::SerialNumberType::OutlinedSquare,
+            ..SerialNumberData::default()
+        };
+
+        assert!(serial_number_hit_test(&square, Point::new(19.0, 0.0), 0.0));
+        assert!(!serial_number_hit_test(
+            &square,
+            Point::new(19.0, 19.0),
+            0.0
+        ));
+        assert!(serial_number_hit_test(&square, Point::new(17.0, 17.0), 0.0));
+
+        let mut circle = square.clone();
+        circle.serial_number_type = crate::SerialNumberType::OutlinedCircle;
+        assert!(!serial_number_hit_test(
+            &circle,
+            Point::new(17.0, 17.0),
+            0.0
+        ));
+    }
+
+    #[test]
+    fn square_connector_starts_at_square_edge_plus_existing_gap() {
+        let text = TextData {
+            center: Point::new(100.0, 100.0),
+            width: 40.0,
+            height: 20.0,
+            ..TextData::default()
+        };
+        let circle = SerialNumberData {
+            center: Point::new(0.0, 0.0),
+            diameter: 40.0,
+            font_size: 20.0,
+            ..SerialNumberData::default()
+        };
+        let mut square = circle.clone();
+        square.serial_number_type = crate::SerialNumberType::OutlinedSquare;
+        let mut solid_square = square.clone();
+        solid_square.serial_number_type = crate::SerialNumberType::SolidSquare;
+
+        let circle_connection = resolve_serial_number_text_connection(&circle, &text).unwrap();
+        let square_connection = resolve_serial_number_text_connection(&square, &text).unwrap();
+        let solid_square_connection =
+            resolve_serial_number_text_connection(&solid_square, &text).unwrap();
+        assert!(square_connection.start.x > circle_connection.start.x);
+        assert!(square_connection.start.y > circle_connection.start.y);
+        assert!(solid_square_connection.start.x > square_connection.start.x);
+        assert!(solid_square_connection.start.y > square_connection.start.y);
     }
 
     #[test]

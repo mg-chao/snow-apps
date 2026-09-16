@@ -7,8 +7,8 @@ use snow_draw_engine_model::DocumentModel;
 use crate::engine::EngineConfig as RuntimeEngineConfig;
 use crate::{Engine, history::HistoryStore};
 
-pub const DOCUMENT_SESSION_SCHEMA_VERSION: u32 = 4;
-pub const DOCUMENT_HISTORY_SCHEMA_VERSION: u32 = 4;
+pub const DOCUMENT_SESSION_SCHEMA_VERSION: u32 = 5;
+pub const DOCUMENT_HISTORY_SCHEMA_VERSION: u32 = 5;
 pub const MAX_DOCUMENT_SESSION_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
@@ -138,8 +138,8 @@ mod tests {
     use snow_draw_engine_core::{ColorRgba8, CornerRadii, Point};
     use snow_draw_engine_document::{
         CanvasFilterType, ElementMeta, FillStyle, FilterData, HighlightShape, RectangleData,
-        RectangleElementKind, StrokeStyle, Transaction, WatermarkConfig,
-        WatermarkTemplateApplicationTime,
+        RectangleElementKind, SerialNumberData, SerialNumberType, StrokeStyle, Transaction,
+        WatermarkConfig, WatermarkTemplateApplicationTime,
     };
     use snow_draw_engine_editor::ActiveTool;
 
@@ -362,8 +362,121 @@ mod tests {
         }
     }
 
+    fn remove_serial_number_type_fields(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(object) => {
+                object.remove("type");
+                for child in object.values_mut() {
+                    remove_serial_number_type_fields(child);
+                }
+            }
+            serde_json::Value::Array(array) => {
+                for child in array {
+                    remove_serial_number_type_fields(child);
+                }
+            }
+            _ => {}
+        }
+    }
+
     #[test]
-    fn watermark_templates_round_trip_in_v4_and_legacy_payloads_use_plain_text() {
+    fn serial_number_type_round_trips_and_legacy_payloads_default_to_outline_circle() {
+        for serial_number_type in [
+            SerialNumberType::OutlinedCircle,
+            SerialNumberType::SolidCircle,
+            SerialNumberType::OutlinedSquare,
+            SerialNumberType::SolidSquare,
+        ] {
+            let mut typed_engine = Engine::new(RuntimeEngineConfig::default());
+            let typed_id = typed_engine.model.peek_next_element_id();
+            let mut typed_transaction = Transaction::new("typed serial number");
+            typed_transaction.insert_serial_number(
+                typed_id,
+                ElementMeta::default(),
+                SerialNumberData {
+                    serial_number_type,
+                    ..SerialNumberData::default()
+                },
+            );
+            typed_engine
+                .model
+                .apply_transaction(typed_transaction)
+                .unwrap();
+            for (bytes, session_payload) in [
+                (typed_engine.serialize_document_session().unwrap(), true),
+                (typed_engine.serialize_document_history().unwrap(), false),
+            ] {
+                let restored = if session_payload {
+                    Engine::from_serialized_document_session(&bytes).unwrap()
+                } else {
+                    Engine::from_serialized_document_history(&bytes).unwrap()
+                };
+                assert_eq!(
+                    restored
+                        .model
+                        .serial_number(typed_id)
+                        .unwrap()
+                        .serial_number_type,
+                    serial_number_type
+                );
+            }
+        }
+
+        let mut engine = Engine::new(RuntimeEngineConfig::default());
+        let id = engine.model.peek_next_element_id();
+        let mut transaction = Transaction::new("serial number");
+        transaction.insert_serial_number(
+            id,
+            ElementMeta::default(),
+            SerialNumberData {
+                serial_number_type: SerialNumberType::SolidSquare,
+                ..SerialNumberData::default()
+            },
+        );
+        engine.model.apply_transaction(transaction).unwrap();
+
+        let session = engine.serialize_document_session().unwrap();
+        let history = engine.serialize_document_history().unwrap();
+        assert_eq!(
+            Engine::from_serialized_document_session(&session)
+                .unwrap()
+                .model
+                .serial_number(id)
+                .unwrap()
+                .serial_number_type,
+            SerialNumberType::SolidSquare
+        );
+        assert_eq!(
+            Engine::from_serialized_document_history(&history)
+                .unwrap()
+                .model
+                .serial_number(id)
+                .unwrap()
+                .serial_number_type,
+            SerialNumberType::SolidSquare
+        );
+
+        for schema_version in 1..=4 {
+            for (bytes, session_payload) in [(&session, true), (&history, false)] {
+                let mut legacy: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+                legacy["schemaVersion"] = serde_json::json!(schema_version);
+                remove_serial_number_type_fields(&mut legacy);
+                let encoded = serde_json::to_vec(&legacy).unwrap();
+                let restored = if session_payload {
+                    Engine::from_serialized_document_session(&encoded).unwrap()
+                } else {
+                    Engine::from_serialized_document_history(&encoded).unwrap()
+                };
+                assert_eq!(
+                    restored.model.serial_number(id).unwrap().serial_number_type,
+                    SerialNumberType::OutlinedCircle
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn watermark_templates_round_trip_and_legacy_payloads_use_plain_text() {
         let mut engine = Engine::new(RuntimeEngineConfig::default());
         let viewport = engine.create_viewport(Default::default()).unwrap();
         let expected = WatermarkConfig {
@@ -387,8 +500,8 @@ mod tests {
         let history = engine.serialize_document_history().unwrap();
         let session_json: serde_json::Value = serde_json::from_slice(&session).unwrap();
         let history_json: serde_json::Value = serde_json::from_slice(&history).unwrap();
-        assert_eq!(session_json["schemaVersion"], 4);
-        assert_eq!(history_json["schemaVersion"], 4);
+        assert_eq!(session_json["schemaVersion"], 5);
+        assert_eq!(history_json["schemaVersion"], 5);
         assert_eq!(
             Engine::from_serialized_document_session(&session)
                 .unwrap()
