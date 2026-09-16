@@ -428,7 +428,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
              .valid,
         "drawing-tool lists must reject non-array values");
 
-    for (const int frameRate : {10, 15, 24, 30, 60, 120, 83}) {
+    for (const int frameRate : {5, 10, 15, 24, 30, 60, 120, 83}) {
         require(storage::ConfigurationSchema::normalize(
                     QStringLiteral("screen_recording/frame_rate"), frameRate)
                     .valid,
@@ -440,7 +440,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
                      .valid,
                 "unadvertised video frame rates must be rejected");
     }
-    for (const int frameRate : {10, 15, 24}) {
+    for (const int frameRate : {5, 10, 15, 24}) {
         require(storage::ConfigurationSchema::normalize(
                     QStringLiteral("screen_recording/animated_image_frame_rate"), frameRate)
                     .valid,

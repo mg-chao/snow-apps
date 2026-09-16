@@ -1538,10 +1538,10 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
         return normalizeAllowedStringList(*schemaEntry, value);
     }
     if (key == QStringLiteral("screen_recording/frame_rate")) {
-        return normalizeAllowedInteger(value, {10, 15, 24, 30, 60, 120, 83});
+        return normalizeAllowedInteger(value, {5, 10, 15, 24, 30, 60, 120, 83});
     }
     if (key == QStringLiteral("screen_recording/animated_image_frame_rate")) {
-        return normalizeAllowedInteger(value, {10, 15, 24});
+        return normalizeAllowedInteger(value, {5, 10, 15, 24});
     }
     switch (schemaEntry->valueKind) {
     case ConfigurationValueKind::Boolean:

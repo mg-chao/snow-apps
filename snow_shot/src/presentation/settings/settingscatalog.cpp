@@ -1140,7 +1140,8 @@ QVector<SettingsOptionDefinition> frameRateOptions(std::initializer_list<int> fr
             : frameRate == 30  ? settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "30"))
             : frameRate == 24  ? settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "24"))
             : frameRate == 15  ? settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "15"))
-                               : settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "10"));
+            : frameRate == 10  ? settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "10"))
+                               : settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "5"));
     }
     return options;
 }
@@ -1159,7 +1160,7 @@ QVector<SettingsItemDefinition> screenRecordingItems() {
                         QT_TRANSLATE_NOOP("SettingsCatalog", "Set the screen recording frame rate"),
                         QStringLiteral("screen_recording/frame_rate"),
                         SettingsSelectBinding::ScreenRecordingFrameRate,
-                        frameRateOptions({10, 15, 24, 30, 60, 120, 83})),
+                        frameRateOptions({5, 10, 15, 24, 30, 60, 120, 83})),
         fixedSelectItem(QStringLiteral("screen-recording.animated-image-clarity"),
                         QT_TRANSLATE_NOOP("SettingsCatalog", "Animated image clarity"),
                         QT_TRANSLATE_NOOP("SettingsCatalog",
@@ -1171,7 +1172,7 @@ QVector<SettingsItemDefinition> screenRecordingItems() {
             QT_TRANSLATE_NOOP("SettingsCatalog", "Animated image frame rate"),
             QT_TRANSLATE_NOOP("SettingsCatalog", "Set the frame rate of exported animated images"),
             QStringLiteral("screen_recording/animated_image_frame_rate"),
-            SettingsSelectBinding::AnimatedImageFrameRate, frameRateOptions({10, 15, 24})),
+            SettingsSelectBinding::AnimatedImageFrameRate, frameRateOptions({5, 10, 15, 24})),
         switchItem(QStringLiteral("screen-recording.loop-animated-images"),
                    QT_TRANSLATE_NOOP("SettingsCatalog", "Loop Animated Images"),
                    QT_TRANSLATE_NOOP("SettingsCatalog",

@@ -565,6 +565,10 @@
             <translation>4K</translation>
         </message>
         <message>
+            <source>5</source>
+            <translation>5</translation>
+        </message>
+        <message>
             <source>60</source>
             <translation>60</translation>
         </message>
