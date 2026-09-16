@@ -9,6 +9,7 @@
 #include <QRect>
 
 #include <memory>
+#include <optional>
 
 #include "snow_shot/presentation/screenshotcanvascolorsampler.h"
 #include "snow_draw_engine_qt/snow_canvas_types.h"
@@ -39,10 +40,17 @@ class ScreenshotPinnedEditController final : public QObject {
     ~ScreenshotPinnedEditController() override;
 
     bool editMode() const;
+    [[nodiscard]] bool resizeWindowToolActive() const;
     [[nodiscard]] bool canvasColorSamplingActive() const;
     ScreenshotFloatingToolPaletteWindow* toolbarWindow() const;
     ScreenshotToolPaletteHost* toolbarHost() const;
     void setEditMode(bool enabled);
+    void activateResizeWindowTool();
+    [[nodiscard]] bool beginTemporaryResizeWindowTool();
+    void endTemporaryResizeWindowTool();
+    void prepareRecognitionToolActivation();
+    void beginNativeWindowInteraction();
+    void endNativeWindowInteraction();
     void restoreDrawingToolState();
     void updatePlacement();
     void updateAfterPinnedWindowMove(const QPoint& logicalDelta);
@@ -70,6 +78,7 @@ class ScreenshotPinnedEditController final : public QObject {
     QRect placementPhysicalBounds() const;
     void syncPaletteFromCanvasTool();
     void syncPaletteFromCanvasStyle();
+    void activateCanvasTool(SnowCanvasTool tool);
     void applyShapeStyleFromPalette(const SnowCanvasShapeStyle& style, quint32 properties,
                                     SnowCanvasShapeKind kind);
     void applyTextStyleFromPalette(const SnowCanvasTextStyle& style);
@@ -100,6 +109,11 @@ class ScreenshotPinnedEditController final : public QObject {
     bool m_editMode = false;
     bool m_manuallyPlaced = false;
     bool m_updatingPlacement = false;
+    bool m_resizeWindowToolActive = false;
+    bool m_nativeWindowInteractionActive = false;
+    bool m_drawingToolRequestedDuringRecognition = false;
+    std::optional<int> m_toolBeforeWindowResize;
+    bool m_canvasInteractionBeforeWindowResize = false;
     bool m_canvasColorSamplingCursorOverridden = false;
 };
 

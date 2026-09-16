@@ -1909,6 +1909,10 @@
             <translation>自動調整捲動截圖視窗大小，使其保持在螢幕範圍內</translation>
         </message>
         <message>
+            <source>Resize window</source>
+            <translation>調整視窗大小</translation>
+        </message>
+        <message>
             <source>Restart</source>
             <translation>重新啟動</translation>
         </message>

@@ -1909,6 +1909,10 @@
             <translation>自动调整滚动截图窗口大小，使其保持在显示器范围内</translation>
         </message>
         <message>
+            <source>Resize window</source>
+            <translation>调整窗口大小</translation>
+        </message>
+        <message>
             <source>Restart</source>
             <translation>重启</translation>
         </message>

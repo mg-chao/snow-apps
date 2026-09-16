@@ -2889,6 +2889,16 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-pinned-shortcut-display-tests
         COMMAND snow-shot-pinned-window-tests --shortcut-display-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-shortcut-display-tests PROPERTIES LABELS "unit")
+    add_test(NAME snow-shot-pinned-resize-window-tool-tests
+        COMMAND snow-shot-pinned-window-tests --resize-window-tool-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-resize-window-tool-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 90)
+    if(WIN32)
+        add_test(NAME snow-shot-pinned-resize-window-native-tests
+            COMMAND snow-shot-pinned-window-tests --resize-window-native-only -platform windows)
+        set_tests_properties(snow-shot-pinned-resize-window-native-tests PROPERTIES
+            LABELS "unit;windows" RUN_SERIAL TRUE TIMEOUT 120)
+    endif()
     foreach(_thumbnail_scenario IN ITEMS appearance dpi snapshot copy)
         add_test(NAME snow-shot-pinned-thumbnail-${_thumbnail_scenario}-tests
             COMMAND snow-shot-pinned-window-tests --thumbnail-${_thumbnail_scenario}-only -platform offscreen)

@@ -1461,13 +1461,17 @@ QVector<SettingsItemDefinition> pinToScreenShortcutItems() {
         localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("drawing_mode"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Drawing mode"),
                           []() { return outlined_icons::Edit(); }),
+        localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("resize_window"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Resize window"),
+                          []() { return custom_outlined_icons::ToolMove(); }),
         localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("thumbnail_mode"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Thumbnail mode"),
                           []() { return outlined_icons::Compress(); }),
         localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("hide_to_top"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Hide to Top"),
                           []() { return outlined_icons::ArrowUp(); }),
-        localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("click_through"),
+        localShortcutItem(SettingsLocalShortcutScope::PinToScreen,
+                          QStringLiteral("toggle_click_through"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Click-through"),
                           []() { return custom_outlined_icons::Mouse(); }),
         localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("close_window"),
@@ -3100,7 +3104,7 @@ QStringList SettingsCatalog::validationErrors() const {
                         std::get_if<SettingsShortcutActionDefinition>(&itemDefinition.payload)) {
                     const QString expectedKey = shortcutConfigurationKey(shortcut->shortcutAction);
                     if (schemaEntry == nullptr ||
-                        schemaEntry->valueKind != storage::ConfigurationValueKind::StringList ||
+                        schemaEntry->valueKind != storage::ConfigurationValueKind::ShortcutList ||
                         schemaEntry->maximumListItems != 2 || !shortcut->iconFactory ||
                         itemDefinition.configurationKey != expectedKey) {
                         errors.push_back(QStringLiteral("shortcut item is incomplete: %1")
@@ -3174,7 +3178,7 @@ QStringList SettingsCatalog::validationErrors() const {
                         local->shortcutId;
                     if (local->shortcutId.isEmpty() || !local->iconFactory ||
                         itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||
-                        schemaEntry->valueKind != storage::ConfigurationValueKind::StringList ||
+                        schemaEntry->valueKind != storage::ConfigurationValueKind::ShortcutList ||
                         schemaEntry->maximumListItems != 2) {
                         errors.push_back(QStringLiteral("local shortcut item is incomplete: %1")
                                              .arg(itemDefinition.id));

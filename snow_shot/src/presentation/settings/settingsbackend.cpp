@@ -1318,11 +1318,11 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         for (const QString& actionId :
              {QStringLiteral("copy_to_clipboard"), QStringLiteral("copy_original_content"),
               QStringLiteral("save_as_file"), QStringLiteral("show_text_recognition_results"),
-              QStringLiteral("drawing_mode"), QStringLiteral("thumbnail_mode"),
-              QStringLiteral("hide_to_top"), QStringLiteral("click_through"),
-              QStringLiteral("close_window"), QStringLiteral("move_cursor_up"),
-              QStringLiteral("move_cursor_down"), QStringLiteral("move_cursor_left"),
-              QStringLiteral("move_cursor_right")}) {
+              QStringLiteral("drawing_mode"), QStringLiteral("resize_window"),
+              QStringLiteral("thumbnail_mode"), QStringLiteral("hide_to_top"),
+              QStringLiteral("toggle_click_through"), QStringLiteral("close_window"),
+              QStringLiteral("move_cursor_up"), QStringLiteral("move_cursor_down"),
+              QStringLiteral("move_cursor_left"), QStringLiteral("move_cursor_right")}) {
             defaults.insert(actionId, shortcutListDefault(
                                           QStringLiteral("pin_to_screen_shortcuts/") + actionId));
         }

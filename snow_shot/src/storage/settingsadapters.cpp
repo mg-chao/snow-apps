@@ -91,13 +91,13 @@ const QStringList& screenshotShortcutActionIds() {
 
 const QStringList& pinToScreenShortcutActionIds() {
     static const QStringList ids = {
-        QStringLiteral("copy_to_clipboard"), QStringLiteral("copy_original_content"),
-        QStringLiteral("save_as_file"),      QStringLiteral("show_text_recognition_results"),
-        QStringLiteral("drawing_mode"),      QStringLiteral("thumbnail_mode"),
-        QStringLiteral("hide_to_top"),       QStringLiteral("click_through"),
-        QStringLiteral("close_window"),      QStringLiteral("move_cursor_up"),
-        QStringLiteral("move_cursor_down"),  QStringLiteral("move_cursor_left"),
-        QStringLiteral("move_cursor_right"),
+        QStringLiteral("copy_to_clipboard"),    QStringLiteral("copy_original_content"),
+        QStringLiteral("save_as_file"),         QStringLiteral("show_text_recognition_results"),
+        QStringLiteral("drawing_mode"),         QStringLiteral("resize_window"),
+        QStringLiteral("thumbnail_mode"),       QStringLiteral("hide_to_top"),
+        QStringLiteral("toggle_click_through"), QStringLiteral("close_window"),
+        QStringLiteral("move_cursor_up"),       QStringLiteral("move_cursor_down"),
+        QStringLiteral("move_cursor_left"),     QStringLiteral("move_cursor_right"),
     };
     return ids;
 }

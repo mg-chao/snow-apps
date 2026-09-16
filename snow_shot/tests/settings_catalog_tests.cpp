@@ -172,7 +172,7 @@ void builtInCatalogIsCompleteAndValid() {
         }
     }
     require(sectionCount == 38, "catalog must contain thirty-eight sections");
-    require(itemCount == 158, "catalog must contain one hundred fifty-eight items");
+    require(itemCount == 159, "catalog must contain one hundred fifty-nine items");
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
@@ -769,7 +769,7 @@ void builtInCatalogIsCompleteAndValid() {
                     .scope == settings::SettingsLocalShortcutScope::Screenshot &&
             drawingShortcuts != nullptr && drawingShortcuts->items.size() == 10 &&
             drawingShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
-            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 13 &&
+            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 14 &&
             pinToScreenShortcuts->itemLayout ==
                 settings::SettingsSectionItemLayout::TwoColumnGrid &&
             pinToScreenShortcuts->title.translated() == QStringLiteral("Pin to screen") &&
@@ -780,17 +780,32 @@ void builtInCatalogIsCompleteAndValid() {
                 QStringLiteral("pin_to_screen_shortcuts/save_as_file") &&
             pinToScreenShortcuts->items.at(3).configurationKey ==
                 QStringLiteral("pin_to_screen_shortcuts/show_text_recognition_results") &&
-            pinToScreenShortcuts->items.at(7).id ==
-                QStringLiteral("pin-to-screen-shortcut.click_through") &&
-            pinToScreenShortcuts->items.at(7).title.translated() ==
-                QStringLiteral("Click-through") &&
-            pinToScreenShortcuts->items.at(7).configurationKey ==
-                QStringLiteral("pin_to_screen_shortcuts/click_through") &&
+            pinToScreenShortcuts->items.at(4).id ==
+                QStringLiteral("pin-to-screen-shortcut.drawing_mode") &&
+            pinToScreenShortcuts->items.at(5).id ==
+                QStringLiteral("pin-to-screen-shortcut.resize_window") &&
+            pinToScreenShortcuts->items.at(5).title.translated() ==
+                QStringLiteral("Resize window") &&
+            pinToScreenShortcuts->items.at(5).configurationKey ==
+                QStringLiteral("pin_to_screen_shortcuts/resize_window") &&
             std::get<settings::SettingsLocalShortcutDefinition>(
-                pinToScreenShortcuts->items.at(7).payload)
+                pinToScreenShortcuts->items.at(5).payload)
                 .iconFactory &&
             std::get<settings::SettingsLocalShortcutDefinition>(
-                pinToScreenShortcuts->items.at(7).payload)
+                pinToScreenShortcuts->items.at(5).payload)
+                    .iconFactory() ==
+                snow_shot::presentation::icons::custom::outlined::ToolMove() &&
+            pinToScreenShortcuts->items.at(8).id ==
+                QStringLiteral("pin-to-screen-shortcut.toggle_click_through") &&
+            pinToScreenShortcuts->items.at(8).title.translated() ==
+                QStringLiteral("Click-through") &&
+            pinToScreenShortcuts->items.at(8).configurationKey ==
+                QStringLiteral("pin_to_screen_shortcuts/toggle_click_through") &&
+            std::get<settings::SettingsLocalShortcutDefinition>(
+                pinToScreenShortcuts->items.at(8).payload)
+                .iconFactory &&
+            std::get<settings::SettingsLocalShortcutDefinition>(
+                pinToScreenShortcuts->items.at(8).payload)
                     .iconFactory() == snow_shot::presentation::icons::custom::outlined::Mouse() &&
             std::get<settings::SettingsLocalShortcutDefinition>(
                 pinToScreenShortcuts->items.constFirst().payload)
@@ -896,7 +911,7 @@ void builtInCatalogIsCompleteAndValid() {
                 retention->integerRange->maximum == 365,
             "integer schema metadata must expose renderer constraints");
     require(shortcuts != nullptr &&
-                shortcuts->valueKind == storage::ConfigurationValueKind::StringList &&
+                shortcuts->valueKind == storage::ConfigurationValueKind::ShortcutList &&
                 shortcuts->maximumListItems == 2,
             "shortcut schema metadata must expose list limits");
 }
@@ -1407,7 +1422,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 208 && index.search(QString()).size() == 208,
+    require(index.entries().size() == 209 && index.search(QString()).size() == 209,
             "search must generate all catalog nodes in catalog order");
     const auto pdfPaper = index.search(QStringLiteral("Landscape A4"));
     require(!pdfPaper.isEmpty() && pdfPaper.constFirst().location.itemId ==
@@ -1467,7 +1482,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 38 && items == 158,
+    require(pages == 12 && sections == 38 && items == 159,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

@@ -198,6 +198,16 @@ class ScreenshotPinnedWindowTestAccess {
         static_cast<void>(window.handleMiddleClick(window.rect().center()));
     }
 #ifdef Q_OS_WIN
+    static bool beginNoMotionNativeMove(ScreenshotPinnedWindow& window) {
+        POINT cursor{};
+        return GetCursorPos(&cursor) != FALSE && window.m_nativeGeometryController != nullptr &&
+               window.m_nativeGeometryController->beginMove(QPoint(cursor.x, cursor.y));
+    }
+    static bool beginNoMotionNativeResize(ScreenshotPinnedWindow& window) {
+        return window.m_nativeGeometryController != nullptr &&
+               window.m_nativeGeometryController->beginResize(
+                   screenshot_pinned_resize_geometry::DragHandle::Right);
+    }
     static bool nativeMoveForHideTest(ScreenshotPinnedWindow& window, bool move) {
         POINT cursor{};
         if (!GetCursorPos(&cursor) ||
@@ -1420,6 +1430,33 @@ void pinnedEditingRecognitionShortcutsUsePaletteCommands() {
     controller.setEditMode(true);
     auto* palette = controller.toolbarWindow()->palette();
     require(palette != nullptr, "pinned editing must expose a palette");
+    require(controller.resizeWindowToolActive() &&
+                palette->activeToolForTests() == ScreenshotToolPalette::Tool::Move &&
+                !canvas.interactionEnabled(),
+            "pinned editing must start with an interaction-blocking Resize window tool");
+    require(palette->activateDrawingShortcut(QStringLiteral("shape")) &&
+                palette->activeToolForTests() == ScreenshotToolPalette::Tool::Shape &&
+                canvas.interactionEnabled() && controller.beginTemporaryResizeWindowTool() &&
+                palette->activeToolForTests() == ScreenshotToolPalette::Tool::Move &&
+                !canvas.interactionEnabled() && !controller.beginTemporaryResizeWindowTool(),
+            "an edge adjustment must temporarily replace a drawing tool exactly once");
+    controller.endTemporaryResizeWindowTool();
+    require(palette->activeToolForTests() == ScreenshotToolPalette::Tool::Shape &&
+                canvas.interactionEnabled(),
+            "ending an edge adjustment must restore the exact drawing tool and interaction");
+    require(palette->activateToolShortcut(ScreenshotToolPalette::Tool::Ocr) &&
+                palette->activeToolForTests() == ScreenshotToolPalette::Tool::Ocr &&
+                !canvas.interactionEnabled() && controller.beginTemporaryResizeWindowTool(),
+            "recognition tools must also allow temporary Resize window replacement");
+    controller.endTemporaryResizeWindowTool();
+    require(palette->activeToolForTests() == ScreenshotToolPalette::Tool::Ocr &&
+                !canvas.interactionEnabled(),
+            "ending recognition edge adjustment must restore its tool without enabling canvas");
+    controller.restoreDrawingToolState();
+    require(controller.resizeWindowToolActive() &&
+                palette->activeToolForTests() == ScreenshotToolPalette::Tool::Move &&
+                !canvas.interactionEnabled(),
+            "leaving recognition must restore Resize window instead of Select");
     int requests = 0;
     QObject::connect(&controller, &ScreenshotPinnedEditController::textRecognitionRequested,
                      &controller, [&]() { ++requests; });
@@ -5182,16 +5219,54 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
     drawingAction->setChecked(true);
     waitForUi(30);
     const QRect editModeGeometry = pinnedWindow->currentNativeGeometry();
+    auto* editController = pinnedWindow->findChild<ScreenshotPinnedEditController*>();
+    auto* editPalette = editController != nullptr && editController->toolbarWindow() != nullptr
+                            ? editController->toolbarWindow()->palette()
+                            : nullptr;
+    require(editController != nullptr && editPalette != nullptr &&
+                editController->resizeWindowToolActive() &&
+                nativeHitTest(editModeGeometry.center()) == HTCAPTION,
+            "drawing mode must default to Resize window with a draggable interior");
+    ScreenshotFloatingToolPaletteWindow* editToolbar = editController->toolbarWindow();
+    require(editToolbar != nullptr && editToolbar->isVisible(),
+            "native interaction fixture requires a visible edit toolbar");
+    editController->beginNativeWindowInteraction();
+    require(editToolbar->isHidden(), "native move/resize entry must hide the pinned edit toolbar");
+    editController->endNativeWindowInteraction();
+    waitForUi(20);
+    require(editToolbar->isVisible() && pinnedWindow->currentNativeGeometry() == editModeGeometry &&
+                editController->resizeWindowToolActive(),
+            "a no-motion native interaction must restore the toolbar, geometry, and tool");
     require(nativeHitTest(QPoint(editModeGeometry.right(), editModeGeometry.center().y())) ==
-                HTCLIENT,
-            "native resize borders should be disabled in drawing mode");
-    QRect disabledDrawingProposal = editModeGeometry;
-    disabledDrawingProposal.setRight(disabledDrawingProposal.right() + 40);
-    RECT disabledDrawingNative = nativeRectForQRect(disabledDrawingProposal);
-    SendMessage(pinnedHwnd, WM_SIZING, WMSZ_RIGHT,
-                reinterpret_cast<LPARAM>(&disabledDrawingNative));
-    require(qRectForNativeRect(disabledDrawingNative) == disabledDrawingProposal,
-            "drawing mode should leave WM_SIZING proposals unchanged");
+                HTRIGHT,
+            "Resize window must preserve the native right-edge hit band");
+
+    require(editPalette->activateToolShortcut(ScreenshotToolPalette::Tool::Move) &&
+                editPalette->activeToolForTests() == ScreenshotToolPalette::Tool::Select &&
+                !editController->resizeWindowToolActive() &&
+                nativeHitTest(editModeGeometry.center()) == HTCLIENT &&
+                nativeHitTest(QPoint(editModeGeometry.right(), editModeGeometry.center().y())) ==
+                    HTRIGHT,
+            "Select must keep the interior client-interactive while preserving edge resizing");
+    require(editPalette->activateDrawingShortcut(QStringLiteral("shape")) &&
+                editPalette->activeToolForTests() == ScreenshotToolPalette::Tool::Shape &&
+                nativeHitTest(editModeGeometry.center()) == HTCLIENT &&
+                nativeHitTest(QPoint(editModeGeometry.right(), editModeGeometry.center().y())) ==
+                    HTRIGHT,
+            "drawing tools must preserve both canvas input and native edge resizing");
+
+    QRect drawingProposal = editModeGeometry;
+    drawingProposal.setRight(drawingProposal.right() + 40);
+    RECT drawingNative = nativeRectForQRect(drawingProposal);
+    require(SendMessage(pinnedHwnd, WM_SIZING, WMSZ_RIGHT,
+                        reinterpret_cast<LPARAM>(&drawingNative)) == TRUE &&
+                qRectForNativeRect(drawingNative) != drawingProposal,
+            "drawing mode must constrain accepted WM_SIZING proposals to the image ratio");
+    ScreenshotPinnedWindowTestAccess::setRecognitionInteraction(*pinnedWindow, true);
+    require(nativeHitTest(QPoint(editModeGeometry.right(), editModeGeometry.center().y())) ==
+                HTRIGHT,
+            "recognition modes must preserve native edge resizing");
+    ScreenshotPinnedWindowTestAccess::setRecognitionInteraction(*pinnedWindow, false);
     drawingAction->setChecked(false);
 
     auto* thumbnailAction =
@@ -5233,6 +5308,153 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
     require(processUntilDeleted(guardedWindow, 2000),
             "pinned window was not deleted after scaling and resizing tests");
 }
+
+#if defined(Q_OS_WIN) || defined(_WIN32)
+void pinnedResizeWindowNativeInteractions() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "Resize window native test requires a primary screen");
+
+    QImage background(480, 240, QImage::Format_ARGB32_Premultiplied);
+    background.fill(QColor(37, 91, 143));
+    auto* window = new ScreenshotPinnedWindow();
+    QPointer<ScreenshotPinnedWindow> guardedWindow(window);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(120, 100), background.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
+    config.fullResolutionScaleBasis = config.nativeGeometry.size();
+    config.imageSource = ScreenshotImageSource::fromImage(background, config.canvasSourceRect);
+    config.screen = screen;
+    config.enableEditing = true;
+    require(window->present(config), "Resize window native fixture could not be presented");
+    waitForUi(80);
+
+    const HWND hwnd = toNativeHwnd(window->winId());
+    auto* canvas = window->findChild<SnowCanvasWidget*>();
+    auto* drawingAction =
+        pinnedMenuActionNamed(*window, QStringLiteral("screenshotPinnedDrawingAction"));
+    require(hwnd != nullptr && canvas != nullptr && drawingAction != nullptr,
+            "Resize window native fixture is incomplete");
+    drawingAction->setChecked(true);
+    waitForUi(50);
+
+    auto* controller = window->findChild<ScreenshotPinnedEditController*>();
+    auto* palette = controller != nullptr && controller->toolbarWindow() != nullptr
+                        ? controller->toolbarWindow()->palette()
+                        : nullptr;
+    require(controller != nullptr && palette != nullptr,
+            "Resize window native fixture requires its edit toolbar");
+
+    const auto nativeHitTest = [hwnd](const QPoint& position) {
+        return SendMessage(
+            hwnd, WM_NCHITTEST, 0,
+            MAKELPARAM(static_cast<WORD>(position.x()), static_cast<WORD>(position.y())));
+    };
+    const auto requireAllResizeHits = [&nativeHitTest](const QRect& geometry, const char* message) {
+        const int right = geometry.left() + geometry.width() - 1;
+        const int bottom = geometry.top() + geometry.height() - 1;
+        const QPoint center = geometry.center();
+        const std::pair<QPoint, LRESULT> hitTests[] = {
+            {{geometry.left(), geometry.top()}, HTTOPLEFT},
+            {{right, geometry.top()}, HTTOPRIGHT},
+            {{right, bottom}, HTBOTTOMRIGHT},
+            {{geometry.left(), bottom}, HTBOTTOMLEFT},
+            {{center.x(), geometry.top()}, HTTOP},
+            {{right, center.y()}, HTRIGHT},
+            {{center.x(), bottom}, HTBOTTOM},
+            {{geometry.left(), center.y()}, HTLEFT},
+        };
+        for (const auto& [position, expected] : hitTests) {
+            require(nativeHitTest(position) == expected, message);
+        }
+    };
+
+    const QRect geometry = window->currentNativeGeometry();
+    require(controller->resizeWindowToolActive() && !canvas->interactionEnabled(),
+            "drawing mode must start with Resize window and an inactive canvas");
+    requireAllResizeHits(geometry, "Resize window must expose all four edges and all four corners");
+    require(nativeHitTest(geometry.center()) == HTCAPTION,
+            "Resize window must expose eligible interior content as HTCAPTION");
+    require(SendMessage(hwnd, WM_SETCURSOR, reinterpret_cast<WPARAM>(hwnd),
+                        MAKELPARAM(HTCAPTION, WM_MOUSEMOVE)) == TRUE &&
+                window->windowHandle()->cursor().shape() == Qt::OpenHandCursor,
+            "Resize window must apply native open-hand caption feedback");
+
+    ScreenshotFloatingToolPaletteWindow* toolbarWindow = controller->toolbarWindow();
+    const QPoint manualPosition = toolbarWindow->contentPosition() + QPoint(24, 16);
+    toolbarWindow->moveContentTo(manualPosition);
+    toolbarWindow->dragFinished();
+    require(ScreenshotPinnedWindowTestAccess::beginNoMotionNativeMove(*window),
+            "no-motion native transaction could not start");
+    SendMessage(hwnd, WM_ENTERSIZEMOVE, 0, 0);
+    require(toolbarWindow->isHidden(), "WM_ENTERSIZEMOVE must hide the edit toolbar");
+    SendMessage(hwnd, WM_EXITSIZEMOVE, 0, 0);
+    waitForUi(30);
+    require(toolbarWindow->isVisible() && window->currentNativeGeometry() == geometry &&
+                toolbarWindow->contentPosition() != manualPosition &&
+                controller->resizeWindowToolActive(),
+            "a no-motion native loop must re-anchor the toolbar and preserve geometry and tool");
+
+    require(palette->activateToolShortcut(ScreenshotToolPalette::Tool::Move) &&
+                palette->activeToolForTests() == ScreenshotToolPalette::Tool::Select &&
+                canvas->interactionEnabled(),
+            "repeating Resize window must return to Select and enable canvas input");
+    requireAllResizeHits(geometry, "Select must retain every native resize hit zone");
+    require(nativeHitTest(geometry.center()) == HTCLIENT,
+            "Select must retain client interaction inside the edge band");
+
+    require(palette->activateDrawingShortcut(QStringLiteral("shape")) &&
+                palette->activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
+            "native Resize window fixture could not activate Shape");
+    requireAllResizeHits(geometry, "drawing tools must retain every native resize hit zone");
+    require(nativeHitTest(geometry.center()) == HTCLIENT,
+            "drawing tools must retain client interaction inside the edge band");
+
+    require(controller->beginTemporaryResizeWindowTool() &&
+                ScreenshotPinnedWindowTestAccess::beginNoMotionNativeResize(*window),
+            "the canceled edge-adjustment fixture could not start");
+    SendMessage(hwnd, WM_ENTERSIZEMOVE, 0, 0);
+    require(toolbarWindow->isHidden() &&
+                palette->activeToolForTests() == ScreenshotToolPalette::Tool::Move &&
+                !canvas->interactionEnabled(),
+            "a native edge adjustment must hide the toolbar and temporarily disable drawing");
+    SendMessage(hwnd, WM_CANCELMODE, 0, 0);
+    waitForUi(30);
+    require(toolbarWindow->isVisible() &&
+                palette->activeToolForTests() == ScreenshotToolPalette::Tool::Shape &&
+                canvas->interactionEnabled(),
+            "canceling native edge adjustment must restore the toolbar and exact drawing tool");
+
+    ScreenshotPinnedWindowTestAccess::setRecognitionInteraction(*window, true);
+    requireAllResizeHits(geometry, "recognition tools must retain every native resize hit zone");
+    require(nativeHitTest(geometry.center()) == HTCLIENT,
+            "recognition content without an eligible background must remain client-interactive");
+    ScreenshotPinnedWindowTestAccess::setRecognitionInteraction(*window, false);
+
+    QRect requested = geometry;
+    requested.setRight(requested.right() + 80);
+    RECT proposed = nativeRectForQRect(requested);
+    require(SendMessage(hwnd, WM_SIZING, WMSZ_RIGHT, reinterpret_cast<LPARAM>(&proposed)) == TRUE &&
+                qRectForNativeRect(proposed) != requested,
+            "drawing-mode edge resizing must accept and aspect-correct native proposals");
+    const QRect corrected = qRectForNativeRect(proposed);
+    require(qAbs(corrected.height() -
+                 qRound(corrected.width() * static_cast<double>(geometry.height()) /
+                        geometry.width())) <= 1,
+            "drawing-mode native resizing must preserve the pinned image aspect ratio");
+
+    MINMAXINFO limits{};
+    SendMessage(hwnd, WM_GETMINMAXINFO, 0, reinterpret_cast<LPARAM>(&limits));
+    require(QSize(limits.ptMinTrackSize.x, limits.ptMinTrackSize.y) ==
+                    QSize(qRound(config.nativeGeometry.width() * 0.1),
+                          qRound(config.nativeGeometry.height() * 0.1)) &&
+                QSize(limits.ptMaxTrackSize.x, limits.ptMaxTrackSize.y) ==
+                    QSize(config.nativeGeometry.width() * 5, config.nativeGeometry.height() * 5),
+            "Resize window must retain the native 10-to-500-percent tracking limits");
+
+    window->close();
+    require(processUntilDeleted(guardedWindow, 2000), "Resize window native fixture did not close");
+}
+#endif
 
 void pinnedSettledWheelScalingAdvancesPastRoundedLevel(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
@@ -5940,7 +6162,7 @@ void pinnedClickThroughOffscreen() {
     require(exitButton->toolTip() == QStringLiteral("Exit click-through mode") &&
                 exitButton->accessibleName() == QStringLiteral("Exit click-through mode") &&
                 clickThrough->text().startsWith(QStringLiteral("Click-through")) &&
-                clickThrough->text().contains(QStringLiteral("M")),
+                clickThrough->text().contains(QStringLiteral("Ctrl+M")),
             "language changes must retranslate Click-through and its exit metadata");
 
     exitButton->click();
@@ -5957,15 +6179,19 @@ void pinnedClickThroughOffscreen() {
             "exit must schedule durable interactive state");
 
     sendShortcut(window, Qt::Key_M);
-    require(ScreenshotPinnedWindowTestAccess::clickThroughActive(window),
-            "the default M shortcut must enter click-through");
-    sendShortcut(window, Qt::Key_M);
     require(!ScreenshotPinnedWindowTestAccess::clickThroughActive(window),
-            "the default M shortcut must toggle click-through off while focus remains local");
+            "plain M must no longer toggle click-through");
+    sendShortcut(window, Qt::Key_M, Qt::ControlModifier);
+    require(ScreenshotPinnedWindowTestAccess::clickThroughActive(window),
+            "the default Ctrl+M shortcut must enter click-through");
+    sendShortcut(window, Qt::Key_M, Qt::ControlModifier);
+    require(!ScreenshotPinnedWindowTestAccess::clickThroughActive(window),
+            "the default Ctrl+M shortcut must toggle click-through off while focus remains local");
     const snow_shot::storage::PinToScreenShortcutSettings shortcuts;
-    require(shortcuts.setShortcuts(QStringLiteral("click_through"), {QStringLiteral("Ctrl+Alt+M")}),
+    require(shortcuts.setShortcuts(QStringLiteral("toggle_click_through"),
+                                   {QStringLiteral("Ctrl+Alt+M")}),
             "the click-through shortcut must be remappable");
-    sendShortcut(window, Qt::Key_M);
+    sendShortcut(window, Qt::Key_M, Qt::ControlModifier);
     require(!ScreenshotPinnedWindowTestAccess::clickThroughActive(window),
             "the previous binding must stop toggling after remapping");
     sendShortcut(window, Qt::Key_M, Qt::ControlModifier | Qt::AltModifier);
@@ -5974,8 +6200,9 @@ void pinnedClickThroughOffscreen() {
     sendShortcut(window, Qt::Key_M, Qt::ControlModifier | Qt::AltModifier);
     require(!ScreenshotPinnedWindowTestAccess::clickThroughActive(window),
             "the remapped shortcut must also toggle off");
-    require(shortcuts.setShortcuts(QStringLiteral("click_through"), {QStringLiteral("M")}),
-            "restore the default click-through shortcut");
+    require(
+        shortcuts.setShortcuts(QStringLiteral("toggle_click_through"), {QStringLiteral("Ctrl+M")}),
+        "restore the default click-through shortcut");
 
     require(ScreenshotPinnedWindowTestAccess::setClickThrough(window, true),
             "thumbnail exclusion fixture must enter click-through");
@@ -6609,6 +6836,20 @@ void pinnedDrawingShortcutsToggleActiveTool() {
         QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
         QCoreApplication::sendEvent(canvas, &release);
     };
+    require(controller->resizeWindowToolActive() &&
+                palette->activeToolForTests() == ScreenshotToolPalette::Tool::Move &&
+                canvas->canvasTool() == SnowCanvasTool::Select && !canvas->interactionEnabled(),
+            "every drawing-mode entry must expose Resize window over an inactive Select canvas");
+    pressKey(Qt::Key_M);
+    require(!controller->resizeWindowToolActive() &&
+                palette->activeToolForTests() == ScreenshotToolPalette::Tool::Select &&
+                canvas->interactionEnabled(),
+            "repeating the active M shortcut must toggle Resize window back to Select");
+    pressKey(Qt::Key_M);
+    require(controller->resizeWindowToolActive() &&
+                palette->activeToolForTests() == ScreenshotToolPalette::Tool::Move &&
+                !canvas->interactionEnabled(),
+            "M must reactivate Resize window and disable canvas interaction");
     for (const auto& [key, tool] : {std::pair{Qt::Key_P, SnowCanvasTool::FreeDraw},
                                     std::pair{Qt::Key_1, SnowCanvasTool::Shape}}) {
         pressKey(key);
@@ -6704,6 +6945,20 @@ void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
     require(toolbarWindow->contentPosition() ==
                 toolbarPositionBeforeRotation + pinnedWindow->pos() - pinnedPositionBeforeRotation,
             "a manually placed toolbar should follow the pin's rotation-time move");
+
+    const QPoint manuallyPlacedPosition = toolbarWindow->contentPosition();
+    controller->beginNativeWindowInteraction();
+    require(toolbarWindow->isHidden(),
+            "entering a native window interaction must hide the pinned edit toolbar");
+    controller->updateAfterPinnedWindowMove(QPoint(50, 50));
+    controller->updatePlacement();
+    require(toolbarWindow->contentPosition() == manuallyPlacedPosition,
+            "a hidden toolbar must not follow native move or resize frames in real time");
+    controller->endNativeWindowInteraction();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    require(toolbarWindow->isVisible() &&
+                toolbarWindow->contentPosition() != manuallyPlacedPosition,
+            "native interaction exit must discard manual placement and re-anchor once");
 
     auto* undoButton =
         toolbar->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotUndoButton"));
@@ -7902,6 +8157,16 @@ int main(int argc, char* argv[]) {
         }
         SnowCanvasRuntime sourceRuntime;
         require(sourceRuntime.isValid(), "source runtime creation failed");
+        if (app.arguments().contains(QStringLiteral("--resize-window-tool-only"))) {
+            pinnedEditingRecognitionShortcutsUsePaletteCommands();
+            return 0;
+        }
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        if (app.arguments().contains(QStringLiteral("--resize-window-native-only"))) {
+            pinnedResizeWindowNativeInteractions();
+            return 0;
+        }
+#endif
         if (app.arguments().contains(QStringLiteral("--hide-to-top-only"))) {
             runPinnedHideToTopControllerTests();
             pinnedHideToTopIntegration(false);

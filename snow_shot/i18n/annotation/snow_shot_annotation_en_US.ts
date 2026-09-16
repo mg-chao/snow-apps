@@ -592,6 +592,10 @@
             <translation>Reset</translation>
         </message>
         <message>
+            <source>Resize window</source>
+            <translation>Resize window</translation>
+        </message>
+        <message>
             <source>Resume recording</source>
             <translation>Resume recording</translation>
         </message>

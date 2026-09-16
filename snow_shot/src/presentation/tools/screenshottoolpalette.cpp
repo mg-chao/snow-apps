@@ -96,6 +96,7 @@ namespace toolbar_layout = snow_shot::presentation::toolbar_layout;
 constexpr int TOOLBAR_ITEM_SPACING = 8;
 [[maybe_unused]] constexpr const char* TOOLTIP_TRANSLATIONS[] = {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Edit selection"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Resize window"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Select elements"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Shape"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Arrow"),
@@ -572,6 +573,8 @@ void applyPinToScreenShortcutTooltip(QWidget* widget, const QString& source,
         return;
     }
 
+    widget->setProperty("snowShotPinToScreenShortcutTooltipSource", source);
+    widget->setProperty("snowShotPinToScreenShortcutTooltipActionId", actionId);
     const auto shortcuts = snow_shot::storage::PinToScreenShortcutSettings().shortcuts(actionId);
     const QString displayShortcuts =
         snow_shot::presentation::formatShortcutListDisplayText(shortcuts);
@@ -3204,6 +3207,13 @@ void ScreenshotToolPalette::refreshShortcutTooltips() {
             if (!screenshotSource.isEmpty() && !screenshotActionId.isEmpty()) {
                 applyScreenshotShortcutTooltip(button, screenshotSource, screenshotActionId);
             }
+            const QString pinToScreenSource =
+                button->property("snowShotPinToScreenShortcutTooltipSource").toString();
+            const QString pinToScreenActionId =
+                button->property("snowShotPinToScreenShortcutTooltipActionId").toString();
+            if (!pinToScreenSource.isEmpty() && !pinToScreenActionId.isEmpty()) {
+                applyPinToScreenShortcutTooltip(button, pinToScreenSource, pinToScreenActionId);
+            }
         }
     }
     for (int groupIndex = 0; groupIndex < m_drawingToolGroups.size(); ++groupIndex) {
@@ -4232,9 +4242,16 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
     };
 
     if (options.showMoveTool) {
-        m_moveButton = addToolButton("Edit selection", custom_outlined_icons::ToolMove());
-        applyScreenshotShortcutTooltip(m_moveButton, QStringLiteral("Edit selection"),
-                                       QStringLiteral("move_tool"));
+        if (options.moveToolPresentation ==
+            ScreenshotToolPalette::MoveToolPresentation::ResizeWindow) {
+            m_moveButton = addToolButton("Resize window", custom_outlined_icons::ToolMove());
+            applyPinToScreenShortcutTooltip(m_moveButton, QStringLiteral("Resize window"),
+                                            QStringLiteral("resize_window"));
+        } else {
+            m_moveButton = addToolButton("Edit selection", custom_outlined_icons::ToolMove());
+            applyScreenshotShortcutTooltip(m_moveButton, QStringLiteral("Edit selection"),
+                                           QStringLiteral("move_tool"));
+        }
         addButton(m_moveButton);
         connect(m_moveButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateToolFromToolbar(Tool::Move); });

@@ -646,14 +646,20 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {},
      2},
+    {QStringLiteral("pin_to_screen_shortcuts/resize_window"),
+     QJsonArray{QStringLiteral("M")},
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
     {QStringLiteral("pin_to_screen_shortcuts/hide_to_top"),
      QJsonArray{QStringLiteral("H")},
      ConfigurationValueKind::StringList,
      std::nullopt,
      {},
      2},
-    {QStringLiteral("pin_to_screen_shortcuts/click_through"),
-     QJsonArray{QStringLiteral("M")},
+    {QStringLiteral("pin_to_screen_shortcuts/toggle_click_through"),
+     QJsonArray{QStringLiteral("Ctrl+M")},
      ConfigurationValueKind::StringList,
      std::nullopt,
      {},
@@ -942,7 +948,8 @@ QJsonArray macGlobalShortcutDefault(const QString& portableText, quint32 virtual
 QVector<ConfigurationSchemaEntry> buildEntries() {
     QVector<ConfigurationSchemaEntry> result = kRawEntries;
     for (ConfigurationSchemaEntry& entry : result) {
-        if (!shortcutConfigurationKey(entry.key)) {
+        if (!shortcutConfigurationKey(entry.key) ||
+            entry.valueKind != ConfigurationValueKind::StringList) {
             continue;
         }
         entry.valueKind = ConfigurationValueKind::ShortcutList;

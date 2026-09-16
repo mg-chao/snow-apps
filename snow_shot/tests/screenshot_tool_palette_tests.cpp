@@ -2552,6 +2552,81 @@ void screenshotActionTooltipsFollowStorageChangesWithoutRetranslation() {
             "shortcut fixtures must restore the original mappings");
 }
 
+void moveToolPresentationUsesTheOwningShortcutScope() {
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    require(language.setLanguage(QStringLiteral("en_US")),
+            "move presentation test requires the English catalog");
+
+    const snow_shot::storage::PinToScreenShortcutSettings shortcutSettings;
+    const snow_shot::shortcuts::ShortcutBindingMap originalShortcuts =
+        shortcutSettings.allShortcuts();
+    require(shortcutSettings.setShortcuts(QStringLiteral("resize_window"), {QStringLiteral("M")}),
+            "resize-window shortcut fixture must start from M");
+
+    ScreenshotToolPalette::Options screenshotOptions;
+    screenshotOptions.showMoveTool = true;
+    screenshotOptions.showSelectTool = true;
+    screenshotOptions.showShapeTool = false;
+    screenshotOptions.showArrowTool = false;
+    screenshotOptions.enableStyleToolbar = false;
+    ScreenshotToolPalette screenshotPalette(screenshotOptions);
+    const QList<adqt::widgets::AdButton*> screenshotButtons = mainToolbarButtons(screenshotPalette);
+    require(screenshotButtons.size() == 2 &&
+                screenshotButtons.constFirst()->accessibleName() ==
+                    QStringLiteral("Edit selection") &&
+                screenshotButtons.constFirst()->toolTip() ==
+                    shortcutTooltip(QStringLiteral("Edit selection"),
+                                    {QStringLiteral("M"), QStringLiteral("Ctrl+E")}),
+            "the screenshot move tool must retain Edit selection and its screenshot shortcut");
+
+    ScreenshotToolPalette::Options pinnedOptions;
+    pinnedOptions.showDragHandle = true;
+    pinnedOptions.showMoveTool = true;
+    pinnedOptions.moveToolPresentation = ScreenshotToolPalette::MoveToolPresentation::ResizeWindow;
+    pinnedOptions.showSelectTool = true;
+    pinnedOptions.showShapeTool = false;
+    pinnedOptions.showArrowTool = false;
+    pinnedOptions.enableStyleToolbar = false;
+    ScreenshotToolPalette pinnedPalette(pinnedOptions);
+    const QList<adqt::widgets::AdButton*> pinnedButtons = mainToolbarButtons(pinnedPalette);
+    QWidget* dragHandle =
+        pinnedPalette.findChild<QWidget*>(QStringLiteral("screenshotToolbarDragHandle"));
+    require(dragHandle != nullptr && pinnedButtons.size() == 2 &&
+                pinnedButtons.constFirst()->accessibleName() == QStringLiteral("Resize window") &&
+                pinnedButtons.constFirst()->toolTip() ==
+                    shortcutTooltip(QStringLiteral("Resize window"), {QStringLiteral("M")}) &&
+                pinnedButtons.at(1)->accessibleName() == QStringLiteral("Select elements") &&
+                adqt::icons::describeIcon(pinnedButtons.constFirst()->iconRef()).key.name ==
+                    QStringLiteral("tool-move"),
+            "the pinned move tool must follow the drag handle and precede Select as Resize window");
+
+    require(
+        shortcutSettings.setShortcuts(QStringLiteral("resize_window"), {QStringLiteral("Alt+M")}) &&
+            pinnedButtons.constFirst()->toolTip() ==
+                shortcutTooltip(QStringLiteral("Resize window"), {QStringLiteral("Alt+M")}),
+        "the Resize window tooltip must follow pin-to-screen shortcut changes");
+    require(shortcutSettings.setShortcuts(QStringLiteral("resize_window"), {QStringLiteral("M")}),
+            "resize-window language fixture must restore M");
+
+    const std::pair<QString, QString> translations[] = {
+        {QStringLiteral("zh_CN"), QStringLiteral("调整窗口大小")},
+        {QStringLiteral("zh_TW"), QStringLiteral("調整視窗大小")},
+    };
+    for (const auto& [locale, translation] : translations) {
+        require(language.setLanguage(locale), "Resize window language setup failed");
+        QCoreApplication::processEvents();
+        require(pinnedButtons.constFirst()->accessibleName() == translation &&
+                    pinnedButtons.constFirst()->toolTip() ==
+                        shortcutTooltip(translation, {QStringLiteral("M")}),
+                "Resize window must retranslate its name without losing the shortcut hint");
+    }
+
+    require(shortcutSettings.setAllShortcutsAtomic(originalShortcuts) &&
+                language.setLanguage(QStringLiteral("en_US")),
+            "move presentation fixtures must restore shortcuts and language");
+    QCoreApplication::processEvents();
+}
+
 void configurableToolbarLayoutSupportsArbitraryPopoverGroups() {
     ScreenshotToolPalette::Options options;
     options.showSelectTool = true;
@@ -10167,6 +10242,7 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--dynamic-i18n-only"))) {
         dynamicToolbarLabelsUseEveryTranslationCatalog();
+        moveToolPresentationUsesTheOwningShortcutScope();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -10227,6 +10303,7 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--screenshot-actions-tooltips-only"))) {
         screenshotActionTooltipsUseConfiguredShortcuts();
         screenshotActionTooltipsFollowStorageChangesWithoutRetranslation();
+        moveToolPresentationUsesTheOwningShortcutScope();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -10236,6 +10313,7 @@ int main(int argc, char** argv) {
         stylePopoverTriggersProvideMouseFeedback();
         screenshotActionTooltipsUseConfiguredShortcuts();
         screenshotActionTooltipsFollowStorageChangesWithoutRetranslation();
+        moveToolPresentationUsesTheOwningShortcutScope();
         ocrToolReplacesSelectionActionToolbarContents();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
@@ -10322,6 +10400,7 @@ int main(int argc, char** argv) {
     recognitionToolsKeepDrawingToolsAvailable();
     scrollingScreenshotExposesAxisRecognitionModes();
     screenshotToolbarUsesCanonicalOrderAndSectionSeparators();
+    moveToolPresentationUsesTheOwningShortcutScope();
     groupedDrawingOptionsShowShortcutTooltips();
     groupedActionOptionsShowShortcutTooltips();
     screenshotActionTooltipsFollowStorageChangesWithoutRetranslation();

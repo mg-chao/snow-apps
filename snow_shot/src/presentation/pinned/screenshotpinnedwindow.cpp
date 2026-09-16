@@ -955,6 +955,23 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     m_pinnedShortcutBindings.insert(QStringLiteral("drawing_mode"),
                                     m_shortcutManager->addBinding(this, std::move(drawing)));
 
+    ShortcutManager::Binding resizeWindow;
+    resizeWindow.id = QStringLiteral("pinned.resize_window");
+    resizeWindow.priority = ShortcutManager::StandardPriority::ScreenshotShortcut;
+    resizeWindow.canActivate = [this, localCommandsAllowed](const auto& context) {
+        return localCommandsAllowed(context) && m_editController != nullptr &&
+               m_editController->editMode() && m_editController->toolbarWindow() != nullptr &&
+               m_editController->toolbarWindow()->palette() != nullptr;
+    };
+    resizeWindow.activate = [this](const auto&) {
+        return m_editController != nullptr && m_editController->toolbarWindow() != nullptr &&
+               m_editController->toolbarWindow()->palette() != nullptr &&
+               m_editController->toolbarWindow()->palette()->activateToolShortcut(
+                   ScreenshotToolPalette::Tool::Move);
+    };
+    m_pinnedShortcutBindings.insert(QStringLiteral("resize_window"),
+                                    m_shortcutManager->addBinding(this, std::move(resizeWindow)));
+
     ShortcutManager::Binding thumbnail;
     thumbnail.id = QStringLiteral("pinned.thumbnail_mode");
     thumbnail.priority = ShortcutManager::StandardPriority::WindowCommand;
@@ -978,14 +995,14 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
                                     m_shortcutManager->addBinding(this, std::move(hideToTop)));
 
     ShortcutManager::Binding clickThrough;
-    clickThrough.id = QStringLiteral("pinned.click_through");
+    clickThrough.id = QStringLiteral("pinned.toggle_click_through");
     clickThrough.priority = ShortcutManager::StandardPriority::WindowCommand;
     clickThrough.canActivate = localCommandsAllowed;
     clickThrough.activate = [this](const auto&) {
         toggleClickThrough();
         return true;
     };
-    m_pinnedShortcutBindings.insert(QStringLiteral("click_through"),
+    m_pinnedShortcutBindings.insert(QStringLiteral("toggle_click_through"),
                                     m_shortcutManager->addBinding(this, std::move(clickThrough)));
 
     ShortcutManager::Binding closeWindow;
@@ -1092,9 +1109,10 @@ void ScreenshotPinnedWindow::reloadPinnedWindowShortcuts() {
         {"save_as_file", "screenshotPinnedSaveAsFileAction"},
         {"show_text_recognition_results", "screenshotPinnedOcrAction"},
         {"drawing_mode", "screenshotPinnedDrawingAction"},
+        {"resize_window", nullptr},
         {"thumbnail_mode", "screenshotPinnedThumbnailAction"},
         {"hide_to_top", "screenshotPinnedHideToTopAction"},
-        {"click_through", "screenshotPinnedClickThroughAction"},
+        {"toggle_click_through", "screenshotPinnedClickThroughAction"},
         {"close_window", "screenshotPinnedCloseAction"},
         {"move_cursor_up", nullptr},
         {"move_cursor_down", nullptr},
@@ -1105,7 +1123,7 @@ void ScreenshotPinnedWindow::reloadPinnedWindowShortcuts() {
         const QString actionId = QString::fromLatin1(action.id);
         const snow_shot::shortcuts::ShortcutBindingList shortcuts = settings.shortcuts(actionId);
         const auto combinations = ShortcutManager::keyCombinationsFromBindings(shortcuts);
-        if (action.actionObjectName == nullptr) {
+        if (actionId.startsWith(QStringLiteral("move_cursor_"))) {
             movementCombinations.append(combinations);
         }
         const auto binding = m_pinnedShortcutBindings.constFind(actionId);
@@ -1505,14 +1523,23 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
             m_nativeGeometryController != nullptr &&
             m_nativeGeometryController->phase() ==
                 ScreenshotPinnedNativeGeometryController::Phase::MovePending;
-        if (m_windowDragActive && !pendingSystemMoveHandoff &&
-            (nativeMessage->message == WM_CANCELMODE ||
-             (nativeMessage->message == WM_CAPTURECHANGED &&
-              reinterpret_cast<HWND>(nativeMessage->lParam) != pinnedHwnd))) {
+        const bool moveCancelled = m_windowDragActive && !pendingSystemMoveHandoff &&
+                                   (nativeMessage->message == WM_CANCELMODE ||
+                                    (nativeMessage->message == WM_CAPTURECHANGED &&
+                                     reinterpret_cast<HWND>(nativeMessage->lParam) != pinnedHwnd));
+        const bool resizeCancelled =
+            m_systemSizingActive && nativeMessage->message == WM_CANCELMODE;
+        if (moveCancelled || resizeCancelled) {
             static_cast<void>(finishNativeGeometryInteraction());
-            finishWindowMove();
+            m_systemSizingActive = false;
+            if (m_windowDragActive) {
+                finishWindowMove();
+            }
+            if (m_editController != nullptr) {
+                m_editController->endTemporaryResizeWindowTool();
+                m_editController->endNativeWindowInteraction();
+            }
         }
-
         if (nativeMessage->message == WM_WINDOWPOSCHANGING &&
             m_nativeGeometryController != nullptr) {
             auto* position = pointerFromLParam<WINDOWPOS>(nativeMessage->lParam);
@@ -1758,6 +1785,10 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
             if (nativeMessage->wParam == HTCAPTION || m_windowDragActive) {
                 finishWindowMove();
             }
+            if (m_editController != nullptr) {
+                m_editController->endTemporaryResizeWindowTool();
+                m_editController->endNativeWindowInteraction();
+            }
         }
 
         if (nativeMessage->message == WM_NCLBUTTONDOWN) {
@@ -1765,7 +1796,13 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
             const Qt::Edges edges =
                 resizeEdgesForNativeHitTest(static_cast<LRESULT>(nativeMessage->wParam));
             bool started = false;
+            bool temporarilySelectedResizeWindow = false;
             if (handle != nullptr && edges != Qt::Edges() && interactiveResizingEnabled()) {
+                if (m_editController != nullptr && m_editController->editMode() &&
+                    !m_editController->resizeWindowToolActive()) {
+                    temporarilySelectedResizeWindow =
+                        m_editController->beginTemporaryResizeWindowTool();
+                }
                 resize_geometry::DragHandle dragHandle = resize_geometry::DragHandle::BottomRight;
                 if (dragHandleForHitTest(static_cast<LRESULT>(nativeMessage->wParam),
                                          &dragHandle) &&
@@ -1782,6 +1819,9 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
                 if (m_nativeGeometryController != nullptr) {
                     m_nativeGeometryController->cancelPendingInteraction();
                 }
+                if (temporarilySelectedResizeWindow && m_editController != nullptr) {
+                    m_editController->endTemporaryResizeWindowTool();
+                }
             }
             if (started) {
                 if (result != nullptr) {
@@ -1792,6 +1832,9 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
         }
 
         if (nativeMessage->message == WM_ENTERSIZEMOVE) {
+            if (m_editController != nullptr && m_editController->editMode()) {
+                m_editController->beginNativeWindowInteraction();
+            }
             if (m_nativeGeometryController != nullptr) {
                 const auto phase = m_nativeGeometryController->phase();
                 if (phase == ScreenshotPinnedNativeGeometryController::Phase::ResizePending ||
@@ -1851,6 +1894,10 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
             m_systemSizingActive = false;
             if (m_windowDragActive) {
                 finishWindowMove();
+            }
+            if (m_editController != nullptr) {
+                m_editController->endTemporaryResizeWindowTool();
+                m_editController->endNativeWindowInteraction();
             }
         }
 
@@ -3725,6 +3772,7 @@ void ScreenshotPinnedWindow::configureEditToolbar(
     connect(toolbar, &ScreenshotToolPalette::tableResetRequested, this,
             &ScreenshotPinnedWindow::handleTableResetRequested);
     const auto leaveRecognition = [this]() { deactivateRecognition(); };
+    connect(toolbar, &ScreenshotToolPalette::moveRequested, this, leaveRecognition);
     connect(toolbar, &ScreenshotToolPalette::selectRequested, this, leaveRecognition);
     connect(toolbar, &ScreenshotToolPalette::shapeRequested, this, leaveRecognition);
     connect(toolbar, &ScreenshotToolPalette::arrowRequested, this, leaveRecognition);
@@ -3846,6 +3894,9 @@ void ScreenshotPinnedWindow::activateRecognitionMode(int mode, bool showToolbar)
         if (!m_editController->editMode()) {
             setEditMode(true);
         }
+    }
+    if (m_editController != nullptr && m_editController->editMode()) {
+        m_editController->prepareRecognitionToolActivation();
     }
     m_recognitionSession->activate(selectedMode);
     refreshContextMenu();
@@ -6164,7 +6215,8 @@ bool ScreenshotPinnedWindow::windowDragEnabled() const {
                m_displayOcrPresentation != nullptr &&
                !m_displayOcrPresentation->textSelectionActive();
     }
-    return m_editController == nullptr || !m_editController->editMode();
+    return m_editController == nullptr || !m_editController->editMode() ||
+           m_editController->resizeWindowToolActive();
 }
 
 bool ScreenshotPinnedWindow::windowDragEnabledAt(const QPoint& position) const {
@@ -6270,8 +6322,7 @@ bool ScreenshotPinnedWindow::nativeTrackSizeConstraintsEnabled() const {
 }
 
 bool ScreenshotPinnedWindow::interactiveResizingEnabled() const {
-    return !m_closing && !m_thumbnailMode && !m_geometryAnimating && !m_ocrMode &&
-           (m_editController == nullptr || !m_editController->editMode());
+    return !m_closing && !m_thumbnailMode && !m_geometryAnimating;
 }
 
 QPointF ScreenshotPinnedWindow::windowPositionForEvent(QObject* watched,

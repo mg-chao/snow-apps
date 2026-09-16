@@ -592,6 +592,10 @@
             <translation>重設</translation>
         </message>
         <message>
+            <source>Resize window</source>
+            <translation>調整視窗大小</translation>
+        </message>
+        <message>
             <source>Resume recording</source>
             <translation>繼續錄製</translation>
         </message>

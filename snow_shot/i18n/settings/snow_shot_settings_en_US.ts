@@ -1909,6 +1909,10 @@
             <translation>Resize scrolling screenshots automatically to remain inside the monitor</translation>
         </message>
         <message>
+            <source>Resize window</source>
+            <translation>Resize window</translation>
+        </message>
+        <message>
             <source>Restart</source>
             <translation>Restart</translation>
         </message>

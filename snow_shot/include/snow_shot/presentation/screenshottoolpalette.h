@@ -86,6 +86,11 @@ class ScreenshotToolPalette final : public QWidget {
         AutoFilter,
     };
 
+    enum class MoveToolPresentation {
+        EditSelection,
+        ResizeWindow,
+    };
+
     enum class RecordingState {
         Idle,
         Recording,
@@ -200,6 +205,7 @@ class ScreenshotToolPalette final : public QWidget {
         bool showDragHandle = false;
         bool showHistoryActions = false;
         bool showMoveTool = false;
+        MoveToolPresentation moveToolPresentation = MoveToolPresentation::EditSelection;
         bool showSelectTool = true;
         bool showShapeTool = true;
         bool showArrowTool = true;
