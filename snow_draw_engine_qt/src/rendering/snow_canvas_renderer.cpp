@@ -255,13 +255,11 @@ QColor solidSerialNumberTextColor(const SnowColorRgba8& fill) {
     const double luminance = 0.2126 * linearSrgbChannel(fill.r) +
                              0.7152 * linearSrgbChannel(fill.g) +
                              0.0722 * linearSrgbChannel(fill.b);
-    constexpr double kWhiteAlpha = 217.0 / 255.0;
     constexpr double kBlackAlpha = 224.0 / 255.0;
-    const double compositedWhite = kWhiteAlpha + (1.0 - kWhiteAlpha) * luminance;
     const double compositedBlack = (1.0 - kBlackAlpha) * luminance;
-    const double whiteContrast = (compositedWhite + 0.05) / (luminance + 0.05);
+    const double whiteContrast = 1.05 / (luminance + 0.05);
     const double blackContrast = (luminance + 0.05) / (compositedBlack + 0.05);
-    return whiteContrast >= blackContrast ? QColor(255, 255, 255, 217) : QColor(0, 0, 0, 224);
+    return whiteContrast >= blackContrast ? QColor(255, 255, 255, 255) : QColor(0, 0, 0, 224);
 }
 
 void drawSerialNumberText(QPainter& painter, const SnowSceneDisplayItem& item,

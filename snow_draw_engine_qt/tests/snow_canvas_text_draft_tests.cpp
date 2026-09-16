@@ -2029,7 +2029,7 @@ void solidSerialNumberChoosesFixedContrastLabelColors() {
     const QImage transparentDark =
         renderedSerialNumberType(SNOW_SERIAL_NUMBER_TYPE_SOLID_CIRCLE, SnowColorRgba8{0, 0, 0, 0},
                                  SnowColorRgba8{}, SNOW_FILL_STYLE_SOLID, 4.0, 36.0);
-    bool foundWhiteAlpha217 = false;
+    bool foundOpaqueWhite = false;
     bool foundBlackAlpha224 = false;
     bool foundSaturatedWhite = false;
     bool foundTransparentDarkWhite = false;
@@ -2039,16 +2039,15 @@ void solidSerialNumberChoosesFixedContrastLabelColors() {
             const QColor brightPixel = bright.pixelColor(x, y);
             const QColor saturatedPixel = saturated.pixelColor(x, y);
             const QColor transparentDarkPixel = transparentDark.pixelColor(x, y);
-            foundWhiteAlpha217 = foundWhiteAlpha217 || darkPixel == QColor(217, 217, 217, 255);
+            foundOpaqueWhite = foundOpaqueWhite || darkPixel == QColor(255, 255, 255, 255);
             foundBlackAlpha224 = foundBlackAlpha224 || brightPixel == QColor(31, 31, 31, 255);
             foundSaturatedWhite =
-                foundSaturatedWhite || saturatedPixel == QColor(255, 217, 217, 255);
+                foundSaturatedWhite || saturatedPixel == QColor(255, 255, 255, 255);
             foundTransparentDarkWhite =
-                foundTransparentDarkWhite || transparentDarkPixel == QColor(255, 255, 255, 217);
+                foundTransparentDarkWhite || transparentDarkPixel == QColor(255, 255, 255, 255);
         }
     }
-    require(foundWhiteAlpha217,
-            "dark solid fills should render the fixed white label alpha of 217");
+    require(foundOpaqueWhite, "dark solid fills should render an opaque white label");
     require(foundBlackAlpha224,
             "bright solid fills should render the fixed black label alpha of 224");
     require(foundSaturatedWhite,
