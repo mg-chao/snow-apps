@@ -40,6 +40,15 @@ and their bundled notices are included in the vcpkg license collection. The
 Qt-independent OCR bridge and shared Rust panic hook are Apache-2.0 code under
 `snow-crates/`.
 
+In-process barcode recognition uses OpenCV (Apache-2.0), pinned by the vcpkg
+baseline and built as static libraries with only the `wechat_qrcode` (contrib)
+and `barcode` (objdetect) module closure; the dnn module embeds OpenCV's
+bundled protobuf (BSD-3-Clause). Both licenses are included in the vcpkg
+license collection. The WeChat QR detection and super-resolution models are
+redistributed from https://github.com/WeChatCV/opencv_3rdparty at revision
+`a8b69ccc738421293254aec5ddb38bd523503252`, pinned by SHA-512 in
+`cmake/FetchSnowShotQrModels.cmake`.
+
 Selected-text acquisition and its C bridge (`snow-selected-text` and
 `snow-selected-text-c`) are Apache-2.0 code under `snow-crates/`. They use the
 existing Microsoft windows-rs dependency (MIT OR Apache-2.0) for Windows UI

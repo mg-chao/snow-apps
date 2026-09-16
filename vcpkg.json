@@ -47,7 +47,11 @@
           "default-features": false,
           "features": ["directml"]
         },
-        "zxing-cpp",
+        {
+          "name": "opencv4",
+          "default-features": false,
+          "features": ["contrib", "dnn", "fs", "intrinsics"]
+        },
         {
           "name": "minizip-ng",
           "default-features": false,

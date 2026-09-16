@@ -213,10 +213,16 @@ if(NOT TARGET snow_selected_text_c)
     endif()
 endif()
 
-# zxing-cpp backs the in-process barcode recognition service (QR, DataMatrix,
-# Aztec, PDF417 and 1D symbologies); text recognition lives in the standalone
-# OCR process.
-find_package(ZXing CONFIG REQUIRED)
+# OpenCV's contrib wechat_qrcode module backs in-process QR recognition and
+# objdetect's cv::barcode detector covers EAN/UPC 1-D symbologies; text
+# recognition lives in the standalone OCR process. Pin the config package to
+# the manifest-installed copy: the Rust OpenCV crates export a user-level
+# OpenCV_DIR that would otherwise shadow it.
+set(OpenCV_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/opencv4" CACHE PATH
+    "OpenCV package configuration directory" FORCE)
+find_package(OpenCV CONFIG REQUIRED)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/FetchSnowShotQrModels.cmake")
+snow_shot_fetch_qr_models(SNOW_SHOT_QR_MODELS_DIR)
 # ONNX Runtime backs the standalone OCR process: static release builds link
 # its closure into snow-ocr-process.exe, dynamic builds stage its DLL.
 find_package(onnxruntime CONFIG REQUIRED)
@@ -4563,7 +4569,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
     target_link_libraries(snow-shot-qr-recognition-service-tests PRIVATE
-        ZXing::ZXing
+        opencv_wechat_qrcode
+        opencv_objdetect
         Qt6::Core
         Qt6::Gui
     )
@@ -5236,7 +5243,8 @@ target_link_libraries(
         snow_ui_selector_c
         snow_visual_region_detector_c
         snow_stitch_images_c
-        ZXing::ZXing
+        opencv_wechat_qrcode
+        opencv_objdetect
         Qt6::Widgets
         Qt6::Svg
         Qt6::Network
@@ -5541,6 +5549,26 @@ foreach(_ocr_process_host_target IN ITEMS snow_shot snow-shot-ocr-recognition-se
 endforeach()
 unset(_ocr_process_host_target)
 
+# The in-process barcode recognition service loads the pinned WeChat QR
+# models at runtime; stage them next to every host that links the service.
+foreach(_qr_host_target IN ITEMS snow_shot snow-shot-qr-recognition-service-tests)
+    if(TARGET ${_qr_host_target})
+        add_custom_command(TARGET ${_qr_host_target} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E make_directory
+                "$<TARGET_FILE_DIR:${_qr_host_target}>/assets/qrcode"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${SNOW_SHOT_QR_MODELS_DIR}/detect.prototxt"
+                "${SNOW_SHOT_QR_MODELS_DIR}/detect.caffemodel"
+                "${SNOW_SHOT_QR_MODELS_DIR}/sr.prototxt"
+                "${SNOW_SHOT_QR_MODELS_DIR}/sr.caffemodel"
+                "$<TARGET_FILE_DIR:${_qr_host_target}>/assets/qrcode"
+            COMMENT "Staging WeChat QR models for ${_qr_host_target}"
+            VERBATIM
+        )
+    endif()
+endforeach()
+unset(_qr_host_target)
+
 if(SNOW_SHOT_ENABLE_AGGRESSIVE_RELEASE_OPTIMIZATION OR SNOW_SHOT_RELEASE_STATIC)
     snow_apply_release_options(snow_shot)
 endif()
@@ -5844,6 +5872,16 @@ if(WIN32)
         DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
 endif()
+
+# WeChat QR models for the in-process barcode recognition service; the runtime
+# resolves them relative to the executable as assets/qrcode.
+install(FILES
+    "${SNOW_SHOT_QR_MODELS_DIR}/detect.prototxt"
+    "${SNOW_SHOT_QR_MODELS_DIR}/detect.caffemodel"
+    "${SNOW_SHOT_QR_MODELS_DIR}/sr.prototxt"
+    "${SNOW_SHOT_QR_MODELS_DIR}/sr.caffemodel"
+    DESTINATION "${CMAKE_INSTALL_BINDIR}/assets/qrcode"
+)
 
 if(WIN32 AND NOT SNOW_SHOT_RELEASE_STATIC)
     if(SNOW_SHOT_FFMPEG_RUNTIME_FILES)

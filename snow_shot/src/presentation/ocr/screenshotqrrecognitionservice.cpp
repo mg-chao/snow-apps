@@ -1,9 +1,12 @@
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 
-#include <ZXing/ReadBarcode.h>
+#include <opencv2/core.hpp>
+#include <opencv2/objdetect.hpp>
+#include <opencv2/wechat_qrcode.hpp>
 
 #include <QCoreApplication>
 #include <QDebug>
+#include <QDir>
 #include <QHash>
 #include <QMetaObject>
 #include <QPointer>
@@ -15,7 +18,10 @@
 #include <cmath>
 #include <deque>
 #include <exception>
+#include <optional>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 constexpr qint64 kMaximumDetectorPixels = 1920LL * 1080LL;
@@ -23,6 +29,11 @@ constexpr int kMaximumDetectorEdge = 2560;
 
 QString recognitionFailedMessage() {
     return QCoreApplication::translate("ScreenshotOcrController", "Barcode recognition failed");
+}
+
+QString recognitionModelsMissingMessage() {
+    return QCoreApplication::translate("ScreenshotOcrController",
+                                       "Barcode recognition components are missing or damaged");
 }
 
 QSize boundedDetectorSize(const QSize& sourceSize) {
@@ -38,6 +49,39 @@ QSize boundedDetectorSize(const QSize& sourceSize) {
     const double scale = std::min({1.0, pixelScale, edgeScale});
     return QSize(std::max(1, static_cast<int>(std::floor(width * scale))),
                  std::max(1, static_cast<int>(std::floor(height * scale))));
+}
+
+struct BarcodeDecoders {
+    cv::Ptr<cv::wechat_qrcode::WeChatQRCode> qr;
+    cv::Ptr<cv::barcode::BarcodeDetector> barcode;
+    QString loadError;
+};
+
+// The WeChat detector owns two DNN sessions; constructing it once per worker
+// thread avoids reloading the models for every queued request.
+const BarcodeDecoders& threadDecoders() {
+    thread_local std::optional<BarcodeDecoders> decoders;
+    if (decoders.has_value()) {
+        return *decoders;
+    }
+
+    BarcodeDecoders created;
+    created.barcode = cv::makePtr<cv::barcode::BarcodeDetector>();
+    const QDir modelsDirectory(
+        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("assets/qrcode")));
+    const auto modelPath = [&modelsDirectory](const char* name) {
+        return modelsDirectory.filePath(QString::fromLatin1(name)).toStdString();
+    };
+    try {
+        created.qr = cv::makePtr<cv::wechat_qrcode::WeChatQRCode>(
+            modelPath("detect.prototxt"), modelPath("detect.caffemodel"), modelPath("sr.prototxt"),
+            modelPath("sr.caffemodel"));
+    } catch (const std::exception& exception) {
+        qWarning() << "Failed to load the WeChat QR models:" << exception.what();
+        created.loadError = recognitionModelsMissingMessage();
+    }
+    decoders = std::move(created);
+    return *decoders;
 }
 
 ScreenshotQrRecognitionResult recognizeImage(QImage source, const std::atomic_bool& cancellation) {
@@ -59,25 +103,44 @@ ScreenshotQrRecognitionResult recognizeImage(QImage source, const std::atomic_bo
             return {};
         }
 
-        const ZXing::ImageView view(reinterpret_cast<const std::uint8_t*>(source.constBits()),
-                                    source.width(), source.height(), ZXing::ImageFormat::Lum,
-                                    static_cast<int>(source.bytesPerLine()));
-        // Reader defaults (tryHarder, tryInvert, tryDownscale) target accuracy
-        // across every supported symbology; rotation is only attempted on a
-        // second pass because screenshots are usually upright and the extra
-        // scan directions would slow the common case.
-        ZXing::ReaderOptions options;
-        options.setTryRotate(false);
-        ZXing::Barcodes codes = ZXing::ReadBarcodes(view, options);
-        if (codes.empty() && !cancellation.load(std::memory_order_relaxed)) {
-            options.setTryRotate(true);
-            codes = ZXing::ReadBarcodes(view, options);
+        const BarcodeDecoders& decoders = threadDecoders();
+        if (decoders.qr.empty()) {
+            return {{}, decoders.loadError};
         }
 
+        const cv::Mat view(source.height(), source.width(), CV_8UC1,
+                           const_cast<uchar*>(source.constBits()),
+                           static_cast<std::size_t>(source.bytesPerLine()));
+
+        // Screenshots are usually upright: the DNN-based WeChat detector
+        // handles QR codes first, and the traditional barcode detector only
+        // runs when no QR code was found (EAN/UPC and other 1D symbologies).
+        std::vector<cv::Mat> qrPoints;
+        const std::vector<std::string> qrTexts = decoders.qr->detectAndDecode(view, qrPoints);
+
         ScreenshotQrRecognitionResult result;
-        result.contents.reserve(static_cast<qsizetype>(codes.size()));
-        for (const ZXing::Barcode& code : codes) {
-            const std::string value = code.text();
+        for (const std::string& value : qrTexts) {
+            if (!value.empty()) {
+                result.contents.push_back(
+                    QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size())));
+            }
+        }
+        if (!result.contents.isEmpty() || cancellation.load(std::memory_order_relaxed)) {
+            return result;
+        }
+
+        // The barcode detector's region search misses perfectly synthetic or
+        // edge-to-edge renderings, but the EAN/UPC decoder is reliable on its
+        // own. Selections are already tight around the code, so decode the
+        // whole image as one candidate region.
+        const cv::Point2f bottomLeft(0.0F, static_cast<float>(view.rows));
+        const cv::Point2f topRight(static_cast<float>(view.cols), 0.0F);
+        const std::vector<cv::Point2f> wholeImage = {
+            bottomLeft, {0.0F, 0.0F}, topRight, {topRight.x, bottomLeft.y}};
+        std::vector<std::string> barcodeTexts;
+        std::vector<std::string> barcodeTypes;
+        decoders.barcode->decodeWithType(view, wholeImage, barcodeTexts, barcodeTypes);
+        for (const std::string& value : barcodeTexts) {
             if (!value.empty()) {
                 result.contents.push_back(
                     QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size())));

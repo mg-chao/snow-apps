@@ -82,6 +82,10 @@
     <context>
         <name>ScreenshotOcrController</name>
         <message>
+            <source>Barcode recognition components are missing or damaged</source>
+            <translation>Barcode recognition components are missing or damaged</translation>
+        </message>
+        <message>
             <source>Barcode recognition failed</source>
             <translation>Barcode recognition failed</translation>
         </message>
