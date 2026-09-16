@@ -317,6 +317,20 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:opencv_core>")
 
+    add_executable(snow-canvas-smart-erase-quality-tests
+        tests/snow_canvas_smart_erase_quality_tests.cpp
+        src/rendering/snow_canvas_smart_erase_algorithm.cpp
+        src/rendering/snow_canvas_display_item.cpp
+        src/rendering/snow_canvas_render_geometry.cpp)
+    target_include_directories(snow-canvas-smart-erase-quality-tests PRIVATE
+        include ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
+        "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include")
+    target_link_libraries(snow-canvas-smart-erase-quality-tests PRIVATE
+        Qt6::Widgets opencv_core opencv_imgproc)
+    add_test(NAME snow-canvas-smart-erase-quality-tests COMMAND snow-canvas-smart-erase-quality-tests)
+    set_tests_properties(snow-canvas-smart-erase-quality-tests PROPERTIES TIMEOUT 180 LABELS unit
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:opencv_core>")
+
     add_executable(snow-canvas-filter-render-tests
         tests/snow_canvas_filter_render_tests.cpp
     )

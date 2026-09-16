@@ -27,13 +27,32 @@ including preview geometry. Export does not wait or start reconstruction.
 
 ## Reconstruction
 
-The worker uses the existing OpenCV core and imgproc dependencies. It first seeks
-a translated, completely unmasked exemplar whose known boundary closely matches
-the target. Otherwise it uses deterministic multiscale PatchMatch in Lab space,
-with propagation, random search, and weighted overlapping patch votes. Donors
-always come from original known pixels. Pyramid masks expand before reduction so
-removed object colors cannot become coarse donor pixels. Rendering clips the
-result to the rotated rectangle or the pen's round brush path.
+The worker uses the existing OpenCV core and imgproc dependencies. A robust affine
+RGB surface fit handles flat colors and gradients only when at least 97% of the
+sampled outer ring supports it with a small residual. A separate periodic fast
+path verifies a short translation throughout the known donor domain. A matching
+border alone never authorizes copying an entire unrelated rectangle.
+
+Texture reconstruction uses deterministic multiscale PatchMatch in Lab space.
+Donor eligibility is separate from source coverage: a local band starts at
+16–96 pixels and expands, up to 512 pixels, only when insufficient full patches
+remain. Original unmasked observations provide a fixed low-frequency color and
+texture-variation guide. Compatible observations across horizontal, vertical, and
+diagonal runs guide the missing background. This is a local heuristic, not semantic
+segmentation of photographs or screenshot panels.
+
+Matching gives real boundary pixels more weight than synthesized pixels. Color
+and texture compatibility discourage unrelated donors; a reuse penalty discourages
+repeated donor locations. Both reconstructed pixels and donor correspondences pass
+between pyramid levels. Texture-compatible initialization avoids bias toward flat
+patches. Overlapping votes favor compatible background colors and the selected
+donor's detail, preserving texture instead of averaging unrelated pixels together.
+
+Donors always come from original known pixels. Pyramid hole masks expand and
+coverage/donor masks contract before reduction, so erased colors and unavailable
+source pixels cannot become coarse donors. Pyramid construction stops while usable
+patches still remain. Rendering clips the result to the rotated rectangle or the
+pen's round brush path; known pixels and alpha are preserved.
 
 Donor context is bounded to 512 source pixels around the target. A working region
 over 16 Mi pixels fails safely to the placeholder. This bounds individual job
@@ -42,9 +61,11 @@ current results and export snapshots can retain additional image memory.
 
 This is patch-based content reconstruction, without a learned generative model.
 Results depend on available surrounding content. Flat and repeating screenshot
-backgrounds are favorable; gradients, unique objects, and large missing regions
-can retain visible boundaries or synthesized texture artifacts. A fully masked
-source with no donor content keeps the placeholder.
+backgrounds and affine gradients are favorable. Large photographic holes, unique
+objects, nonlinear gradients, and ambiguous boundaries can still retain visible
+transitions, repeated detail, or synthesized texture artifacts. The algorithm cannot
+recover the actual hidden scene. A fully masked source with no donor content keeps
+the placeholder.
 
 ## Targeted validation
 
@@ -56,10 +77,16 @@ and clipping. Its widget test exercises the Rust/FFI path and ordinary filters
 above Smart Erase. Related Rust tests cover fixed ordering, strength, undo/redo,
 session restoration, conversion undo, auto-filter rejection, and pen-down previews.
 
+`snow-canvas-smart-erase-quality-tests` links the algorithm directly and runs without
+a window. Deterministic fixtures cover flat/affine surfaces, horizontal/vertical
+background bands next to unrelated panels, diagonal edges, donor diversity,
+texture variance, exact periodic backgrounds, holes touching source edges,
+masked-object color independence, and unchanged outside pixels.
+
 Run only the related CTest selection:
 
 ```powershell
-ctest --preset test-windows-msvc-debug -R '^(snow-canvas-(smart-erase|custom-renderer|state|filter-render)-tests|snow-shot-auto-filter(-toolbar)?-tests)$' --output-on-failure
+ctest --preset test-windows-msvc-debug -R '^snow-canvas-smart-erase(-quality)?-tests$' --output-on-failure
 ```
 
 Build `snow-canvas-smart-erase-benchmark` using `windows-msvc-performance` (Release).
@@ -71,12 +98,12 @@ and Rust startup. Timings are single-run development observations, not budgets.
 | Fixture | Source | Target | Elapsed ms |
 | --- | --- | --- | ---: |
 | Repeating texture | 512 × 320 | 96 × 64 rect | 6 |
-| Repeating texture | 3840 × 2160 | 192 × 64 rect | 7 |
-| Repeating texture | 7680 × 4320 | 192 × 64 rect | 5 |
-| Repeating texture | 3840 × 2160 | 384 × 256 rect | 21 |
-| Repeating texture | 7680 × 4320 | 2400 px pen span | 87 |
-| Nonrepeating waves and gradient | 1024 × 768 | 192 × 96 rect | 449 |
+| Repeating texture | 3840 × 2160 | 192 × 64 rect | 10 |
+| Repeating texture | 7680 × 4320 | 192 × 64 rect | 7 |
+| Repeating texture | 3840 × 2160 | 384 × 256 rect | 36 |
+| Repeating texture | 7680 × 4320 | 2400 px pen span | 161 |
+| Nonrepeating waves and gradient | 1024 × 768 | 192 × 96 rect | 561 |
 
-The first five fixtures favor coherent exemplars. The final fixture exercises
+The first five fixtures exercise the verified periodic fast path. The final fixture exercises
 general patch synthesis and shows its boundary-quality limitations. These fixtures
 do not establish performance or visual parity with Photoshop on arbitrary photos.
