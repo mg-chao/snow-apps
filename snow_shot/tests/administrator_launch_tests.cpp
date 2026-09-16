@@ -296,6 +296,147 @@ void translations() {
             "dynamic labels must use the active translator");
     QCoreApplication::removeTranslator(&translator);
 }
+#ifdef Q_OS_WIN
+QString registryValue(const QString& path) {
+    wchar_t command[2048];
+    DWORD bytes = sizeof(command);
+    const LSTATUS status = RegGetValueW(HKEY_CURRENT_USER, path.toStdWString().c_str(), L"SnowShot",
+                                        RRF_RT_REG_SZ, nullptr, command, &bytes);
+    require(status == ERROR_SUCCESS, "test registration must be readable");
+    return QString::fromWCharArray(command);
+}
+void setRegistryValue(const QString& path, const QString& command) {
+    const std::wstring value = command.toStdWString();
+    require(RegSetKeyValueW(
+                HKEY_CURRENT_USER, path.toStdWString().c_str(), L"SnowShot", REG_SZ, value.c_str(),
+                static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t))) == ERROR_SUCCESS,
+            "test registration must be writable");
+}
+QByteArray processSidBytes() {
+    HANDLE token = nullptr;
+    require(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token) != FALSE,
+            "test token must open");
+    DWORD size = 0;
+    GetTokenInformation(token, TokenUser, nullptr, 0, &size);
+    QByteArray data(static_cast<qsizetype>(size), '\0');
+    require(GetTokenInformation(token, TokenUser, data.data(), size, &size) != FALSE,
+            "test token user must be readable");
+    CloseHandle(token);
+    const PSID sid = reinterpret_cast<TOKEN_USER*>(data.data())->User.Sid;
+    return QByteArray(reinterpret_cast<const char*>(sid),
+                      static_cast<qsizetype>(GetLengthSid(sid)));
+}
+// Temporarily denies the current user specific access to a registry key.
+class DenyAccess {
+  public:
+    DenyAccess(const QString& path, REGSAM permissions)
+        : object(QStringLiteral("CURRENT_USER\\") + path) {
+        const std::wstring name = object.toStdWString();
+        require(GetNamedSecurityInfoW(name.c_str(), SE_REGISTRY_KEY, DACL_SECURITY_INFORMATION,
+                                      nullptr, nullptr, &previous, nullptr,
+                                      &descriptor) == ERROR_SUCCESS,
+                "test key DACL must be readable");
+        const QByteArray sid = processSidBytes();
+        EXPLICIT_ACCESSW deny{};
+        deny.grfAccessPermissions = permissions;
+        deny.grfAccessMode = DENY_ACCESS;
+        deny.grfInheritance = NO_INHERITANCE;
+        deny.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+        deny.Trustee.ptstrName = reinterpret_cast<LPWSTR>(const_cast<char*>(sid.constData()));
+        PACL merged = nullptr;
+        require(SetEntriesInAclW(1, &deny, previous, &merged) == ERROR_SUCCESS,
+                "test deny ACE must merge with the key DACL");
+        const LSTATUS applied =
+            SetNamedSecurityInfoW(const_cast<LPWSTR>(name.c_str()), SE_REGISTRY_KEY,
+                                  DACL_SECURITY_INFORMATION, nullptr, nullptr, merged, nullptr);
+        LocalFree(merged);
+        require(applied == ERROR_SUCCESS, "test deny ACE must apply");
+    }
+    ~DenyAccess() {
+        SetNamedSecurityInfoW(const_cast<LPWSTR>(object.toStdWString().c_str()), SE_REGISTRY_KEY,
+                              DACL_SECURITY_INFORMATION, nullptr, nullptr, previous, nullptr);
+        if (descriptor != nullptr) {
+            LocalFree(descriptor);
+        }
+    }
+    DenyAccess(const DenyAccess&) = delete;
+    DenyAccess& operator=(const DenyAccess&) = delete;
+
+  private:
+    QString object;
+    PACL previous = nullptr;
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+};
+void startupRunValueReconciliation() {
+    const QString sid = [] {
+        const QByteArray bytes = processSidBytes();
+        LPWSTR text = nullptr;
+        require(ConvertSidToStringSidW(reinterpret_cast<PSID>(const_cast<char*>(bytes.constData())),
+                                       &text) != FALSE,
+                "test SID must stringify");
+        const QString result = QString::fromWCharArray(text);
+        LocalFree(text);
+        return result;
+    }();
+    const QString run = QStringLiteral("Software\\SnowShotTests\\") +
+                        QUuid::createUuid().toString(QUuid::Id128) + QStringLiteral("\\Run");
+    const QString usersRunKey = sid + u'\\' + run;
+    const QString expected = QStringLiteral("\"C:\\SnowShotTest\\bin\\snow_shot.exe\" --autostart");
+    const QString migrated =
+        QStringLiteral("\"C:\\SnowShotMoved\\bin\\snow_shot.exe\" --autostart");
+    const QString foreign = QStringLiteral("\"C:\\Other\\app.exe\" --autostart");
+    HKEY key = nullptr;
+    require(RegCreateKeyExW(HKEY_CURRENT_USER, run.toStdWString().c_str(), 0, nullptr,
+                            REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, nullptr, &key,
+                            nullptr) == ERROR_SUCCESS,
+            "test Run key must be created");
+    RegCloseKey(key);
+
+    setRegistryValue(run, expected);
+    reconcileStartupRunValue(usersRunKey, expected, QString());
+    require(RegGetValueW(HKEY_CURRENT_USER, run.toStdWString().c_str(), L"SnowShot", RRF_RT_REG_SZ,
+                         nullptr, nullptr, nullptr) == ERROR_FILE_NOT_FOUND,
+            "uninstall must remove a matching registration");
+
+    setRegistryValue(run, expected);
+    reconcileStartupRunValue(usersRunKey, expected, migrated);
+    require(registryValue(run) == migrated, "migration must rewrite a matching registration");
+
+    setRegistryValue(run, foreign);
+    reconcileStartupRunValue(usersRunKey, expected, QString());
+    require(registryValue(run) == foreign, "foreign registrations must be preserved");
+
+    setRegistryValue(run, expected);
+    {
+        DenyAccess deny(run, KEY_QUERY_VALUE | KEY_ENUMERATE_SUB_KEYS | KEY_NOTIFY);
+        reconcileStartupRunValue(usersRunKey, expected, QString());
+    }
+    require(registryValue(run) == expected,
+            "registrations in unreadable keys must be skipped instead of failing cleanup");
+
+    {
+        DenyAccess deny(run, KEY_SET_VALUE);
+        bool thrown = false;
+        try {
+            reconcileStartupRunValue(usersRunKey, expected, QString());
+        } catch (const std::exception&) {
+            thrown = true;
+        }
+        require(thrown, "a verified registration that cannot be modified must fail loudly");
+    }
+    require(registryValue(run) == expected, "a failed modification must leave the value intact");
+
+    RegDeleteKeyValueW(HKEY_CURRENT_USER, run.toStdWString().c_str(), L"SnowShot");
+    reconcileStartupRunValue(usersRunKey, expected, QString());
+    reconcileStartupRunValue(sid + QStringLiteral("\\Software\\SnowShotTests\\missing\\Run"),
+                             expected, QString());
+
+    RegDeleteKeyW(HKEY_CURRENT_USER, run.toStdWString().c_str());
+    RegDeleteKeyW(HKEY_CURRENT_USER, run.section(u'\\', 0, -2).toStdWString().c_str());
+}
+#else
+void startupRunValueReconciliation() {}
+#endif
 } // namespace
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
@@ -307,6 +448,7 @@ int main(int argc, char** argv) {
         privilegedPipe();
         accountIdentity();
         translations();
+        startupRunValueReconciliation();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

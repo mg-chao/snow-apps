@@ -362,6 +362,54 @@ void send(QLocalSocket& socket, const QByteArray& line) {
         throw std::runtime_error(
             QT_TRANSLATE_NOOP("AdministratorLaunch", "Privilege handoff disconnected"));
 }
+struct RegistryHandle {
+    HKEY value;
+    ~RegistryHandle() {
+        if (value)
+            RegCloseKey(value);
+    }
+};
+// Reconciles the Snow Shot auto-start value under base\subKey for uninstall and migration.
+// Returns whether an accessible matching registration was removed or rewritten.
+// A key that cannot be opened for reading cannot contain a verifiable Snow Shot
+// registration: machine hives (.DEFAULT, service accounts S-1-5-19/S-1-5-20) deny access
+// to filtered tokens, and the service hives are readable only by SYSTEM, so probing must
+// skip them instead of failing the whole uninstall. Only a registration that was verified
+// to match but cannot be modified is an error.
+bool reconcileStartupRunValue(HKEY base, const QString& subKey, const QString& expectedCommand,
+                              const QString& replacementCommand) {
+    HKEY run = nullptr;
+    if (RegOpenKeyExW(base, subKey.toStdWString().c_str(), 0, KEY_QUERY_VALUE, &run) !=
+        ERROR_SUCCESS) {
+        return false;
+    }
+    RegistryHandle readGuard{run};
+    wchar_t command[32768];
+    DWORD bytes = sizeof(command);
+    const LSTATUS read =
+        RegGetValueW(run, nullptr, L"SnowShot", RRF_RT_REG_SZ, nullptr, command, &bytes);
+    if (read != ERROR_SUCCESS ||
+        QString::fromWCharArray(command).compare(expectedCommand, Qt::CaseInsensitive) != 0) {
+        return false;
+    }
+    HKEY write = nullptr;
+    const LSTATUS opened =
+        RegOpenKeyExW(base, subKey.toStdWString().c_str(), 0, KEY_SET_VALUE, &write);
+    if (opened == ERROR_FILE_NOT_FOUND) {
+        return false;
+    }
+    check(HRESULT_FROM_WIN32(opened));
+    RegistryHandle writeGuard{write};
+    if (replacementCommand.isEmpty()) {
+        check(HRESULT_FROM_WIN32(RegDeleteValueW(write, L"SnowShot")));
+    } else {
+        const std::wstring value = replacementCommand.toStdWString();
+        check(HRESULT_FROM_WIN32(RegSetValueExW(
+            write, L"SnowShot", 0, REG_SZ, reinterpret_cast<const BYTE*>(value.c_str()),
+            static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)))));
+    }
+    return true;
+}
 struct LaunchResult {
     HANDLE process = nullptr;
     DWORD error = 0;
@@ -477,6 +525,16 @@ bool sameAccountSid(const QString& left, const QString& right) {
     Q_UNUSED(left);
     Q_UNUSED(right);
     return false;
+#endif
+}
+void reconcileStartupRunValue(const QString& usersRunKey, const QString& expectedCommand,
+                              const QString& replacementCommand) {
+#ifdef Q_OS_WIN
+    reconcileStartupRunValue(HKEY_USERS, usersRunKey, expectedCommand, replacementCommand);
+#else
+    Q_UNUSED(usersRunKey);
+    Q_UNUSED(expectedCommand);
+    Q_UNUSED(replacementCommand);
 #endif
 }
 
@@ -830,21 +888,31 @@ static AdministratorResult updateInstallationStartup(const QString& root,
         check(collection->get_Count(&count));
         for (LONG i = count; i > 0; --i) {
             ComPtr<IRegisteredTask> task;
-            check(collection->get_Item(_variant_t(i), &task));
-            BSTR name = nullptr;
-            check(task->get_Name(&name));
-            const QString candidate = QString::fromWCharArray(name);
-            SysFreeString(name);
+            QString candidate;
+            QString owner;
+            try {
+                check(collection->get_Item(_variant_t(i), &task));
+                BSTR name = nullptr;
+                check(task->get_Name(&name));
+                candidate = QString::fromWCharArray(name);
+                SysFreeString(name);
+                ComPtr<ITaskDefinition> definition;
+                check(task->get_Definition(&definition));
+                ComPtr<IPrincipal> principal;
+                check(definition->get_Principal(&principal));
+                BSTR user = nullptr;
+                check(principal->get_UserId(&user));
+                owner = QString::fromWCharArray(user);
+                SysFreeString(user);
+            } catch (...) {
+                // A task that cannot be inspected (for example a third-party task with a
+                // restrictive security descriptor) is not a verifiable Snow Shot
+                // registration; skipping it must not abort the uninstall.
+                continue;
+            }
             if (!candidate.startsWith(u"SnowShot-"))
                 continue;
-            ComPtr<ITaskDefinition> definition;
-            check(task->get_Definition(&definition));
-            ComPtr<IPrincipal> principal;
-            check(definition->get_Principal(&principal));
-            BSTR user = nullptr;
-            check(principal->get_UserId(&user));
-            tasks.sid = canonicalAccountSid(QString::fromWCharArray(user));
-            SysFreeString(user);
+            tasks.sid = canonicalAccountSid(owner);
             if (tasks.sid.isEmpty() || candidate != taskName(tasks.executable, tasks.sid))
                 continue;
             tasks.name = candidate;
@@ -879,6 +947,17 @@ static AdministratorResult updateInstallationStartup(const QString& root,
                 tasks.name = candidate;
             }
         }
+        // Reconcile every user's auto-start value through one privilege-aware helper:
+        // missing or inaccessible Run keys are skipped, and only registrations that match
+        // this installation are removed or rewritten.
+        const QString startupCommand =
+            QStringLiteral("\"%1\" --autostart").arg(QDir::toNativeSeparators(tasks.executable));
+        const QString migratedCommand =
+            replacementRoot.isEmpty()
+                ? QString()
+                : QStringLiteral("\"%1\" --autostart")
+                      .arg(QDir::toNativeSeparators(
+                          QDir(replacementRoot).filePath(QStringLiteral("bin/snow_shot.exe"))));
         // Enumerate loaded user hives, never confuse the installer account with the app owner.
         for (DWORD index = 0;; ++index) {
             wchar_t sid[256];
@@ -889,39 +968,10 @@ static AdministratorResult updateInstallationStartup(const QString& root,
                 break;
             if (status != ERROR_SUCCESS)
                 check(HRESULT_FROM_WIN32(status));
-            const QString key =
+            reconcileStartupRunValue(
                 QString::fromWCharArray(sid, size) +
-                QStringLiteral("\\Software\\Microsoft\\Windows\\CurrentVersion\\Run");
-            HKEY run = nullptr;
-            const LSTATUS opened = RegOpenKeyExW(HKEY_USERS, key.toStdWString().c_str(), 0,
-                                                 KEY_QUERY_VALUE | KEY_SET_VALUE, &run);
-            if (opened == ERROR_FILE_NOT_FOUND)
-                continue;
-            check(HRESULT_FROM_WIN32(opened));
-            wchar_t command[32768];
-            DWORD bytes = sizeof(command);
-            const LSTATUS read =
-                RegGetValueW(run, nullptr, L"SnowShot", RRF_RT_REG_SZ, nullptr, command, &bytes);
-            LSTATUS removed = ERROR_SUCCESS;
-            const QString expected = QStringLiteral("\"%1\" --autostart")
-                                         .arg(QDir::toNativeSeparators(tasks.executable));
-            if (read == ERROR_SUCCESS &&
-                QString::fromWCharArray(command).compare(expected, Qt::CaseInsensitive) == 0)
-                if (replacementRoot.isEmpty())
-                    removed = RegDeleteValueW(run, L"SnowShot");
-                else {
-                    const std::wstring value =
-                        QStringLiteral("\"%1\" --autostart")
-                            .arg(QDir::toNativeSeparators(
-                                QDir(replacementRoot)
-                                    .filePath(QStringLiteral("bin/snow_shot.exe"))))
-                            .toStdWString();
-                    removed = RegSetValueExW(
-                        run, L"SnowShot", 0, REG_SZ, reinterpret_cast<const BYTE*>(value.c_str()),
-                        static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)));
-                }
-            RegCloseKey(run);
-            check(HRESULT_FROM_WIN32(removed));
+                    QStringLiteral("\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
+                startupCommand, migratedCommand);
         }
         // Users who are signed out have no HKEY_USERS hive. Open their application hive
         // privately rather than mounting it globally or writing the installer's HKCU.
@@ -929,13 +979,7 @@ static AdministratorResult updateInstallationStartup(const QString& root,
         check(HRESULT_FROM_WIN32(RegOpenKeyExW(
             HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList", 0,
             KEY_READ, &profiles)));
-        struct RegistryHandle {
-            HKEY value;
-            ~RegistryHandle() {
-                if (value)
-                    RegCloseKey(value);
-            }
-        } profilesGuard{profiles};
+        RegistryHandle profilesGuard{profiles};
         for (DWORD index = 0;; ++index) {
             wchar_t sid[256];
             DWORD length = 256;
@@ -962,35 +1006,16 @@ static AdministratorResult updateInstallationStartup(const QString& root,
             if (!QFileInfo::exists(hivePath))
                 continue;
             HKEY hive = nullptr;
-            check(HRESULT_FROM_WIN32(RegLoadAppKeyW(hivePath.toStdWString().c_str(), &hive,
-                                                    KEY_READ | KEY_WRITE, REG_PROCESS_APPKEY, 0)));
-            RegistryHandle hiveGuard{hive};
-            wchar_t command[32768];
-            bytes = sizeof(command);
-            const LSTATUS read =
-                RegGetValueW(hive, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-                             L"SnowShot", RRF_RT_REG_SZ, nullptr, command, &bytes);
-            if (read == ERROR_FILE_NOT_FOUND)
+            // A profile hive that is in use or denies loading cannot be verified; skipping it
+            // must not abort the uninstall or migration.
+            if (RegLoadAppKeyW(hivePath.toStdWString().c_str(), &hive, KEY_READ | KEY_WRITE,
+                               REG_PROCESS_APPKEY, 0) != ERROR_SUCCESS) {
                 continue;
-            check(HRESULT_FROM_WIN32(read));
-            const QString expected = QStringLiteral("\"%1\" --autostart")
-                                         .arg(QDir::toNativeSeparators(tasks.executable));
-            if (QString::fromWCharArray(command).compare(expected, Qt::CaseInsensitive) == 0) {
-                if (replacementRoot.isEmpty()) {
-                    check(HRESULT_FROM_WIN32(RegDeleteKeyValueW(
-                        hive, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", L"SnowShot")));
-                } else {
-                    const std::wstring value =
-                        QStringLiteral("\"%1\" --autostart")
-                            .arg(QDir::toNativeSeparators(
-                                QDir(replacementRoot)
-                                    .filePath(QStringLiteral("bin/snow_shot.exe"))))
-                            .toStdWString();
-                    check(HRESULT_FROM_WIN32(
-                        RegSetKeyValueW(hive, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-                                        L"SnowShot", REG_SZ, value.c_str(),
-                                        static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)))));
-                }
+            }
+            RegistryHandle hiveGuard{hive};
+            if (reconcileStartupRunValue(
+                    hive, QStringLiteral("Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
+                    startupCommand, migratedCommand)) {
                 check(HRESULT_FROM_WIN32(RegFlushKey(hive)));
             }
         }
