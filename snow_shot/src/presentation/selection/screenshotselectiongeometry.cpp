@@ -6,6 +6,14 @@
 #include <cmath>
 
 namespace {
+// Resolves the half-open boundary for a selection edge dragged onto a pointer
+// cell anchored against the opposite border: extending toward the pointer keeps
+// the pointer's own pixel inside the selection, while a flip across the
+// anchored border uses the cell origin as the new leading edge.
+qreal draggedEdgeBoundary(qreal cell, qreal anchoredBoundary) {
+    return cell >= anchoredBoundary ? cell + 1.0 : cell;
+}
+
 int horizontalDragDirection(ScreenshotSelectionDragMode dragMode) {
     switch (dragMode) {
     case ScreenshotSelectionDragMode::TopLeft:
@@ -137,47 +145,78 @@ QRectF aspectRatioLockedSelectionRect(ScreenshotSelectionDragMode dragMode, cons
 QRectF aspectRatioLockedMarqueeRect(const QPointF& originPosition, const QPointF& position,
                                     const QRectF& bounds, qreal lockedAspectRatio) {
     if (lockedAspectRatio <= 0.0) {
-        return QRectF(originPosition, position);
+        return marqueeScreenshotSelectionRect(originPosition, position);
     }
 
-    const QRectF normalizedBounds = bounds.normalized();
-    const QPointF anchor(bounds.isNull() ? originPosition.x()
-                                         : std::clamp(originPosition.x(), normalizedBounds.left(),
-                                                      normalizedBounds.right()),
-                         bounds.isNull() ? originPosition.y()
-                                         : std::clamp(originPosition.y(), normalizedBounds.top(),
-                                                      normalizedBounds.bottom()));
-    const QPointF delta = position - anchor;
-    const int horizontalDirection = delta.x() < 0.0 ? -1 : 1;
-    const int verticalDirection = delta.y() < 0.0 ? -1 : 1;
-    const qreal horizontalSpan = std::abs(delta.x());
-    const qreal verticalSpan = std::abs(delta.y());
+    // Shared inclusive pointer-cell span of the drag: every axis the pointer
+    // moved along already includes the cell under the pressed and current
+    // pointer positions.
+    const QRectF inclusive = marqueeScreenshotSelectionRect(originPosition, position);
+    const QPointF originCell = screenshotPointerPixelCell(originPosition);
+    const QPointF endCell = screenshotPointerPixelCell(position);
+    const int horizontalDirection = endCell.x() < originCell.x() ? -1 : 1;
+    const int verticalDirection = endCell.y() < originCell.y() ? -1 : 1;
 
     // Expand the smaller pointer span so the anchored marquee keeps its ratio.
-    qreal width = std::max(horizontalSpan, verticalSpan / lockedAspectRatio);
+    qreal width = std::max(inclusive.width(), inclusive.height() / lockedAspectRatio);
     qreal height = width * lockedAspectRatio;
 
+    // Grow from the pressed cell's inclusive edges: a span extending away from
+    // it starts at the cell origin, while a reverse span ends at the cell's
+    // far boundary so the pressed pixel always stays inside the selection.
+    qreal horizontalAnchorEdge = horizontalDirection < 0 ? inclusive.right() : inclusive.left();
+    qreal verticalAnchorEdge = verticalDirection < 0 ? inclusive.bottom() : inclusive.top();
+
     if (!bounds.isNull()) {
+        // A pointer position can round onto the exclusive canvas boundary,
+        // where no real pixel cell exists; clamping the anchor edges measures
+        // the ratio-preserving shrink from real canvas pixels so the selection
+        // cannot grow past the canvas.
+        const QRectF normalizedBounds = bounds.normalized();
+        horizontalAnchorEdge =
+            std::clamp(horizontalAnchorEdge, normalizedBounds.left(), normalizedBounds.right());
+        verticalAnchorEdge =
+            std::clamp(verticalAnchorEdge, normalizedBounds.top(), normalizedBounds.bottom());
         const qreal availableWidth = horizontalDirection < 0
-                                         ? anchor.x() - normalizedBounds.left()
-                                         : normalizedBounds.right() - anchor.x();
+                                         ? horizontalAnchorEdge - normalizedBounds.left()
+                                         : normalizedBounds.right() - horizontalAnchorEdge;
         const qreal availableHeight = verticalDirection < 0
-                                          ? anchor.y() - normalizedBounds.top()
-                                          : normalizedBounds.bottom() - anchor.y();
+                                          ? verticalAnchorEdge - normalizedBounds.top()
+                                          : normalizedBounds.bottom() - verticalAnchorEdge;
         const qreal maximumWidth =
             std::max<qreal>(0.0, std::min(availableWidth, availableHeight / lockedAspectRatio));
         width = std::min(width, maximumWidth);
         height = width * lockedAspectRatio;
     }
 
-    const qreal left = horizontalDirection < 0 ? anchor.x() - width : anchor.x();
-    const qreal top = verticalDirection < 0 ? anchor.y() - height : anchor.y();
+    const qreal left =
+        horizontalDirection < 0 ? horizontalAnchorEdge - width : horizontalAnchorEdge;
+    const qreal top = verticalDirection < 0 ? verticalAnchorEdge - height : verticalAnchorEdge;
     return QRectF(left, top, width, height).normalized();
 }
 } // namespace
 
 QRectF normalizedScreenshotSelection(const QPointF& start, const QPointF& end) {
     return QRectF(start, end).normalized();
+}
+
+QPointF screenshotPointerPixelCell(const QPointF& position) {
+    return QPointF(std::round(position.x()), std::round(position.y()));
+}
+
+QRectF marqueeScreenshotSelectionRect(const QPointF& start, const QPointF& end) {
+    const QPointF originCell = screenshotPointerPixelCell(start);
+    const QPointF endCell = screenshotPointerPixelCell(end);
+    const QPointF topLeft(std::min(originCell.x(), endCell.x()),
+                          std::min(originCell.y(), endCell.y()));
+    const QSizeF span(std::abs(endCell.x() - originCell.x()) + 1.0,
+                      std::abs(endCell.y() - originCell.y()) + 1.0);
+    if (span.width() == 1.0 && span.height() == 1.0) {
+        // A click is not a selection; keep the empty rect anchored on the cell
+        // so marquee presses still reset the selection origin.
+        return QRectF(topLeft, QSizeF(0.0, 0.0));
+    }
+    return QRectF(topLeft, span);
 }
 
 QRect screenshotPixelRectForSelection(const QRectF& selection) {
@@ -283,9 +322,17 @@ QRectF draggedScreenshotSelectionRect(ScreenshotSelectionDragMode dragMode, cons
                                       const QPointF& originPosition, const QPointF& position,
                                       const QRectF& bounds, qreal minimumSelectionSize,
                                       qreal lockedAspectRatio) {
-    const QPointF delta = position - originPosition;
+    // Snap the drag delta to whole pointer cells so dragged edges land on exact
+    // half-open pixel boundaries instead of drifting with coordinate noise.
+    const QPointF delta =
+        screenshotPointerPixelCell(position) - screenshotPointerPixelCell(originPosition);
     if (lockedAspectRatio > 0.0 && dragMode == ScreenshotSelectionDragMode::Marquee) {
-        return aspectRatioLockedMarqueeRect(originPosition, position, bounds, lockedAspectRatio);
+        // The locked marquee resolves its own inclusive cell span; route it
+        // through the shared bounds clamp so every pointer-driven rect leaves
+        // this function under the same canvas contract as the unlocked path.
+        return boundedScreenshotSelectionRect(
+            aspectRatioLockedMarqueeRect(originPosition, position, bounds, lockedAspectRatio),
+            bounds, false, 0.0);
     }
     if (lockedAspectRatio > 0.0 && dragMode != ScreenshotSelectionDragMode::All &&
         dragMode != ScreenshotSelectionDragMode::None) {
@@ -297,7 +344,7 @@ QRectF draggedScreenshotSelectionRect(ScreenshotSelectionDragMode dragMode, cons
 
     switch (dragMode) {
     case ScreenshotSelectionDragMode::Marquee:
-        result = QRectF(originPosition, position);
+        result = marqueeScreenshotSelectionRect(originPosition, position);
         break;
     case ScreenshotSelectionDragMode::All:
         result.translate(delta);
@@ -340,31 +387,36 @@ QRectF grabAdjustedScreenshotSelectionRect(ScreenshotSelectionDragMode dragMode,
                                            const QRectF& selection, const QPointF& position,
                                            const QRectF& bounds, qreal minimumSelectionSize) {
     QRectF result = selection;
+    const QPointF cell = screenshotPointerPixelCell(position);
 
     switch (dragMode) {
     case ScreenshotSelectionDragMode::TopLeft:
-        result.setTopLeft(position);
+        result.setTopLeft(QPointF(draggedEdgeBoundary(cell.x(), selection.right()),
+                                  draggedEdgeBoundary(cell.y(), selection.bottom())));
         break;
     case ScreenshotSelectionDragMode::Top:
-        result.setTop(position.y());
+        result.setTop(draggedEdgeBoundary(cell.y(), selection.bottom()));
         break;
     case ScreenshotSelectionDragMode::TopRight:
-        result.setTopRight(position);
+        result.setTopRight(QPointF(draggedEdgeBoundary(cell.x(), selection.left()),
+                                   draggedEdgeBoundary(cell.y(), selection.bottom())));
         break;
     case ScreenshotSelectionDragMode::Right:
-        result.setRight(position.x());
+        result.setRight(draggedEdgeBoundary(cell.x(), selection.left()));
         break;
     case ScreenshotSelectionDragMode::BottomRight:
-        result.setBottomRight(position);
+        result.setBottomRight(QPointF(draggedEdgeBoundary(cell.x(), selection.left()),
+                                      draggedEdgeBoundary(cell.y(), selection.top())));
         break;
     case ScreenshotSelectionDragMode::Bottom:
-        result.setBottom(position.y());
+        result.setBottom(draggedEdgeBoundary(cell.y(), selection.top()));
         break;
     case ScreenshotSelectionDragMode::BottomLeft:
-        result.setBottomLeft(position);
+        result.setBottomLeft(QPointF(draggedEdgeBoundary(cell.x(), selection.right()),
+                                     draggedEdgeBoundary(cell.y(), selection.top())));
         break;
     case ScreenshotSelectionDragMode::Left:
-        result.setLeft(position.x());
+        result.setLeft(draggedEdgeBoundary(cell.x(), selection.right()));
         break;
     case ScreenshotSelectionDragMode::Marquee:
     case ScreenshotSelectionDragMode::All:

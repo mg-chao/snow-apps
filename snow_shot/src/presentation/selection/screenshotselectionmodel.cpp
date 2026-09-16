@@ -45,8 +45,7 @@ void ScreenshotSelectionModel::setSelectionRect(const QRectF& selection) {
 }
 
 void ScreenshotSelectionModel::setSelectionStartEnd(const QPointF& start, const QPointF& end) {
-    m_start = start;
-    m_end = end;
+    setSelectionRect(marqueeScreenshotSelectionRect(start, end));
 }
 
 void ScreenshotSelectionModel::beginMoveDrag(const QPointF& startPosition) {
@@ -186,9 +185,7 @@ bool ScreenshotSelectionModel::applyParams(const ScreenshotSelectionParams& para
         return false;
     }
 
-    m_start = QPointF(clamped.selection.left(), clamped.selection.top());
-    m_end = QPointF(clamped.selection.left() + clamped.selection.width(),
-                    clamped.selection.top() + clamped.selection.height());
+    setSelectionRect(QRectF(clamped.selection));
     m_cornerRadius = clamped.radius;
     m_shadowWidth = clamped.shadowWidth;
     setShadowColor(clamped.shadowColor);

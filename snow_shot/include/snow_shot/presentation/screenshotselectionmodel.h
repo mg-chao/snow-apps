@@ -19,7 +19,15 @@ class ScreenshotSelectionModel final {
     [[nodiscard]] bool hasPixelSelection() const;
 
     void clearSelection();
+    // Stores a selection rectangle as provided. Pointer-driven callers must pass
+    // a rect produced by the shared drag geometry (draggedScreenshotSelectionRect
+    // / grabAdjustedScreenshotSelectionRect), which resolves pointer cells;
+    // detection sources (intelligent selection, persisted params) may provide
+    // sub-pixel rects that pixel conversion rounds outward.
     void setSelectionRect(const QRectF& selection);
+    // Stores a selection spanning the pointer cells under the press and
+    // release positions: both cells are inclusive, exactly like a marquee
+    // drag, so pointer-seeded state always addresses whole canvas pixels.
     void setSelectionStartEnd(const QPointF& start, const QPointF& end);
 
     void beginMoveDrag(const QPointF& startPosition);

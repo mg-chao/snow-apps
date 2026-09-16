@@ -1102,7 +1102,7 @@ void externalDragBypassesSelectorAndPreparesBeforeReveal() {
         };
         context.presentation.capturePresented = [&]() {
             ++presented;
-            require(prepared == 1 && selection.pixelSelection() == QRect(10, 10, 20, 10),
+            require(prepared == 1 && selection.pixelSelection() == QRect(10, 10, 21, 11),
                     "first presentation must retain the supplied drag rectangle");
         };
         ScreenshotCaptureWorkflow workflow(context);

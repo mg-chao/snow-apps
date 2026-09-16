@@ -134,15 +134,15 @@ void grabAdjustmentSnapsOnlyTheDraggedEdgesToThePressPosition() {
          QRectF(97.0, 104.0, 203.0, 96.0)},
         {ScreenshotSelectionDragMode::Top, QPointF(200.0, 96.0), QRectF(100.0, 96.0, 200.0, 104.0)},
         {ScreenshotSelectionDragMode::TopRight, QPointF(303.0, 104.0),
-         QRectF(100.0, 104.0, 203.0, 96.0)},
+         QRectF(100.0, 104.0, 204.0, 96.0)},
         {ScreenshotSelectionDragMode::Right, QPointF(304.0, 150.0),
-         QRectF(100.0, 100.0, 204.0, 100.0)},
+         QRectF(100.0, 100.0, 205.0, 100.0)},
         {ScreenshotSelectionDragMode::BottomRight, QPointF(303.0, 196.0),
-         QRectF(100.0, 100.0, 203.0, 96.0)},
+         QRectF(100.0, 100.0, 204.0, 97.0)},
         {ScreenshotSelectionDragMode::Bottom, QPointF(200.0, 204.0),
-         QRectF(100.0, 100.0, 200.0, 104.0)},
+         QRectF(100.0, 100.0, 200.0, 105.0)},
         {ScreenshotSelectionDragMode::BottomLeft, QPointF(97.0, 196.0),
-         QRectF(97.0, 100.0, 203.0, 96.0)},
+         QRectF(97.0, 100.0, 203.0, 97.0)},
         {ScreenshotSelectionDragMode::Left, QPointF(96.0, 150.0),
          QRectF(96.0, 100.0, 204.0, 100.0)},
     };
@@ -150,7 +150,7 @@ void grabAdjustmentSnapsOnlyTheDraggedEdgesToThePressPosition() {
     for (const GrabCase& grab : cases) {
         require(grabAdjustedScreenshotSelectionRect(grab.dragMode, selection, grab.position, bounds,
                                                     kMinimumSelectionSize) == grab.expected,
-                "the grab adjustment must move only the pressed edges onto the pointer");
+                "the grab adjustment must move only the pressed edges onto the pointer cell");
     }
     for (const ScreenshotSelectionDragMode unchanged :
          {ScreenshotSelectionDragMode::All, ScreenshotSelectionDragMode::Marquee,
@@ -184,8 +184,8 @@ void positionFollowDragTracksThePointerAfterGrabAdjustment() {
     const QRectF adjusted = grabAdjustedScreenshotSelectionRect(
         ScreenshotSelectionDragMode::Right, selection.normalizedSelection(), press, bounds,
         kMinimumSelectionSize);
-    require(adjusted == QRectF(100.0, 100.0, 204.0, 100.0),
-            "the grab adjustment must move the pressed border onto the pointer at press");
+    require(adjusted == QRectF(100.0, 100.0, 205.0, 100.0),
+            "the grab adjustment must move the pressed border onto the pointer cell at press");
     selection.setSelectionRect(adjusted);
     selection.beginMoveDrag(press);
     require(selection.selectionRectForDrag(ScreenshotSelectionDragMode::Right, press, bounds,
@@ -193,8 +193,9 @@ void positionFollowDragTracksThePointerAfterGrabAdjustment() {
             "pressing must not move the selection beyond the grab adjustment");
     const QRectF dragged = selection.selectionRectForDrag(
         ScreenshotSelectionDragMode::Right, QPointF(340.0, 150.0), bounds, kMinimumSelectionSize);
-    require(dragged == QRectF(100.0, 100.0, 240.0, 100.0),
-            "the dragged border must sit on the pointer while the opposite border stays anchored");
+    require(dragged == QRectF(100.0, 100.0, 241.0, 100.0),
+            "the dragged border must sit on the pointer cell while the opposite border stays "
+            "anchored");
 
     ScreenshotSelectionModel locked;
     locked.setSelectionRect(QRectF(100.0, 100.0, 200.0, 100.0));
@@ -204,8 +205,8 @@ void positionFollowDragTracksThePointerAfterGrabAdjustment() {
     const QRectF lockedDragged = locked.selectionRectForDrag(
         ScreenshotSelectionDragMode::Right, QPointF(340.0, 150.0), bounds, kMinimumSelectionSize);
     require(lockedDragged.left() == 100.0 &&
-                std::abs(lockedDragged.right() - 340.0) < kComparisonTolerance,
-            "locked position-follow resize must anchor the opposite border on the pointer");
+                std::abs(lockedDragged.right() - 341.0) < kComparisonTolerance,
+            "locked position-follow resize must anchor the opposite border on the pointer cell");
     requireAspectRatio(lockedDragged,
                        "locked position-follow resize should retain the original aspect ratio");
 }
@@ -254,8 +255,15 @@ void marqueeDragUsesTheSharedGeometryTransactionWithoutMinimumInflation() {
     const QRectF marquee =
         selection.selectionRectForDrag(ScreenshotSelectionDragMode::Marquee, QPointF(43.0, 54.0),
                                        QRectF(0.0, 0.0, 100.0, 100.0), kMinimumSelectionSize);
-    require(marquee == QRectF(40.0, 50.0, 3.0, 4.0),
-            "marquee drags must use their actual pointer span without resize minimums");
+    require(marquee == QRectF(40.0, 50.0, 4.0, 5.0),
+            "marquee drags must span the pointer cells inclusively without resize minimums");
+    require(screenshotPixelRectForSelection(marquee) == QRect(40, 50, 4, 5),
+            "the inclusive marquee span must convert to its exact pixel rectangle");
+    require(selection
+                .selectionRectForDrag(ScreenshotSelectionDragMode::Marquee, QPointF(40.0, 50.0),
+                                      QRectF(0.0, 0.0, 100.0, 100.0), kMinimumSelectionSize)
+                .isEmpty(),
+            "pressing and releasing on the same pointer cell must not create a selection");
     require(!screenshotSelectionDragAnchor(marquee, ScreenshotSelectionDragMode::Marquee,
                                            QPointF(43.0, 54.0), kMinimumSelectionSize)
                  .has_value(),
@@ -266,27 +274,189 @@ void marqueeDragUsesTheSharedGeometryTransactionWithoutMinimumInflation() {
             "Move must classify a point outside the selection as a directional resize");
 }
 
+void marqueeDragSelectsSinglePixelStrips() {
+    const QRectF bounds(0.0, 0.0, 200.0, 200.0);
+
+    ScreenshotSelectionModel selection;
+    selection.setSelectionStartEnd(QPointF(40.0, 50.0), QPointF(40.0, 50.0));
+    selection.beginMoveDrag(QPointF(40.0, 50.0));
+    selection.setSelectionRect(selection.selectionRectForDrag(
+        ScreenshotSelectionDragMode::Marquee, QPointF(43.0, 50.0), bounds, kMinimumSelectionSize));
+    require(selection.pixelSelection() == QRect(40, 50, 4, 1) && selection.hasPixelSelection(),
+            "a marquee kept on one pointer row must select that single pixel row");
+
+    selection.setSelectionRect(selection.selectionRectForDrag(
+        ScreenshotSelectionDragMode::Marquee, QPointF(36.0, 50.0), bounds, kMinimumSelectionSize));
+    require(selection.pixelSelection() == QRect(36, 50, 5, 1),
+            "a reverse marquee kept on one pointer row must still select that single pixel row");
+
+    selection.setSelectionRect(selection.selectionRectForDrag(
+        ScreenshotSelectionDragMode::Marquee, QPointF(40.0, 54.0), bounds, kMinimumSelectionSize));
+    require(selection.pixelSelection() == QRect(40, 50, 1, 5),
+            "a marquee kept on one pointer column must select that single pixel column");
+
+    ScreenshotSelectionModel seeded;
+    seeded.setSelectionStartEnd(QPointF(10.4, 70.6), QPointF(60.6, 70.6));
+    require(seeded.pixelSelection() == QRect(10, 71, 52, 1),
+            "pointer-seeded horizontal strips must select the shared pointer row");
+
+    const QRectF lockedStrip = draggedScreenshotSelectionRect(
+        ScreenshotSelectionDragMode::Marquee, QRectF(), QPointF(40.0, 50.0), QPointF(70.0, 50.0),
+        bounds, kMinimumSelectionSize, 0.01);
+    require(lockedStrip == QRectF(40.0, 50.0, 100.0, 1.0),
+            "a locked marquee kept on one pointer row must grow until the pressed cell's row "
+            "satisfies the ratio");
+}
+
 void marqueeDragCanMaintainAnAspectRatio() {
     const QRectF bounds(0.0, 0.0, 200.0, 200.0);
     const QRectF square = draggedScreenshotSelectionRect(
         ScreenshotSelectionDragMode::Marquee, QRectF(), QPointF(40.0, 50.0), QPointF(70.0, 100.0),
         bounds, kMinimumSelectionSize, 1.0);
-    require(square == QRectF(40.0, 50.0, 50.0, 50.0),
+    require(square == QRectF(40.0, 50.0, 51.0, 51.0),
             "locked marquee drags should expand the shorter pointer span proportionally");
 
     const QRectF flipped = draggedScreenshotSelectionRect(
         ScreenshotSelectionDragMode::Marquee, QRectF(), QPointF(100.0, 100.0), QPointF(40.0, 50.0),
         bounds, kMinimumSelectionSize, 0.5);
-    require(std::abs(flipped.width() - 100.0) < kComparisonTolerance &&
-                std::abs(flipped.height() - 50.0) < kComparisonTolerance && flipped.left() == 0.0 &&
-                flipped.top() == 50.0,
-            "locked marquee drags should retain their ratio when crossing both axes");
+    require(std::abs(flipped.width() - 101.0) < kComparisonTolerance &&
+                std::abs(flipped.height() - 50.5) < kComparisonTolerance && flipped.left() == 0.0 &&
+                std::abs(flipped.top() - 50.5) < kComparisonTolerance,
+            "locked marquee drags must keep the pressed cell inside when crossing both axes");
 
     const QRectF clipped = draggedScreenshotSelectionRect(
         ScreenshotSelectionDragMode::Marquee, QRectF(), QPointF(180.0, 180.0),
         QPointF(240.0, 230.0), bounds, kMinimumSelectionSize, 1.0);
     require(clipped == QRectF(180.0, 180.0, 20.0, 20.0),
             "locked marquee drags should remain inside the canvas bounds");
+}
+
+void marqueeDragReachesTheFullCanvasAtTheExtremePointerPosition() {
+    const QRectF bounds(0.0, 0.0, 3840.0, 2160.0);
+
+    ScreenshotSelectionModel selection;
+    selection.setSelectionStartEnd(QPointF(0.0, 0.0), QPointF(0.0, 0.0));
+    selection.beginMoveDrag(QPointF(0.0, 0.0));
+    selection.setSelectionRect(selection.selectionRectForDrag(ScreenshotSelectionDragMode::Marquee,
+                                                              QPointF(3839.0, 2159.0), bounds,
+                                                              kMinimumSelectionSize));
+    require(selection.pixelSelection() == QRect(0, 0, 3840, 2160),
+            "a marquee dragged onto the last pointer cell must cover the whole canvas");
+
+    ScreenshotSelectionModel reversed;
+    reversed.setSelectionStartEnd(QPointF(3839.0, 2159.0), QPointF(3839.0, 2159.0));
+    reversed.beginMoveDrag(QPointF(3839.0, 2159.0));
+    reversed.setSelectionRect(reversed.selectionRectForDrag(
+        ScreenshotSelectionDragMode::Marquee, QPointF(0.0, 0.0), bounds, kMinimumSelectionSize));
+    require(reversed.pixelSelection() == QRect(0, 0, 3840, 2160),
+            "a marquee dragged from the last pointer cell must cover the whole canvas");
+}
+
+void lockedMarqueeDragReachesTheFullCanvasAtTheExtremePointerPosition() {
+    const QRectF bounds(0.0, 0.0, 3840.0, 2160.0);
+    constexpr qreal kCanvasAspectRatio = 2160.0 / 3840.0;
+
+    ScreenshotSelectionModel selection;
+    selection.setSelectionStartEnd(QPointF(0.0, 0.0), QPointF(0.0, 0.0));
+    selection.beginMoveDrag(QPointF(0.0, 0.0));
+    selection.setSelectionRect(selection.selectionRectForDrag(
+        ScreenshotSelectionDragMode::Marquee, QPointF(3839.0, 2159.0), bounds,
+        kMinimumSelectionSize, kCanvasAspectRatio));
+    require(selection.pixelSelection() == QRect(0, 0, 3840, 2160),
+            "a locked marquee dragged onto the last pointer cell must cover the whole canvas");
+
+    ScreenshotSelectionModel reversed;
+    reversed.setSelectionStartEnd(QPointF(3839.0, 2159.0), QPointF(3839.0, 2159.0));
+    reversed.beginMoveDrag(QPointF(3839.0, 2159.0));
+    reversed.setSelectionRect(
+        reversed.selectionRectForDrag(ScreenshotSelectionDragMode::Marquee, QPointF(0.0, 0.0),
+                                      bounds, kMinimumSelectionSize, kCanvasAspectRatio));
+    require(reversed.pixelSelection() == QRect(0, 0, 3840, 2160),
+            "a locked marquee dragged from the last pointer cell must cover the whole canvas");
+}
+
+void lockedMarqueeDragStaysInsideTheCanvasFromExclusiveEdgePointerCells() {
+    const QRectF bounds(0.0, 0.0, 3840.0, 2160.0);
+    constexpr qreal kCanvasAspectRatio = 2160.0 / 3840.0;
+
+    // Pointer positions at the canvas edge round onto the exclusive boundary
+    // cell (3840/2160), where no real pixel exists; the locked marquee must
+    // anchor on the last real pixel instead of growing past the canvas.
+    const QRectF reversed = draggedScreenshotSelectionRect(
+        ScreenshotSelectionDragMode::Marquee, QRectF(), QPointF(3839.5, 2159.5), QPointF(0.0, 0.0),
+        bounds, kMinimumSelectionSize, kCanvasAspectRatio);
+    require(reversed == QRectF(0.0, 0.0, 3840.0, 2160.0),
+            "a locked reverse marquee anchored on the exclusive edge cell must stay the whole "
+            "canvas");
+
+    const QRectF singleAxis = draggedScreenshotSelectionRect(
+        ScreenshotSelectionDragMode::Marquee, QRectF(), QPointF(3840.0, 1079.4),
+        QPointF(0.0, 500.0), bounds, kMinimumSelectionSize, kCanvasAspectRatio);
+    require(singleAxis == QRectF(1920.0, 0.0, 1920.0, 1080.0),
+            "a locked marquee with one anchor on the exclusive edge must keep the pressed real "
+            "pixel inside the canvas");
+}
+
+void marqueeDragIgnoresCoordinateRoundTripNoise() {
+    const QRectF bounds(0.0, 0.0, 2880.0, 1620.0);
+
+    ScreenshotSelectionModel selection;
+    selection.setSelectionStartEnd(QPointF(0.0, 0.0), QPointF(0.0, 0.0));
+    selection.beginMoveDrag(QPointF(0.0, 0.0));
+    selection.setSelectionRect(selection.selectionRectForDrag(ScreenshotSelectionDragMode::Marquee,
+                                                              QPointF(2879.0 - 1e-9, 1619.0 + 1e-9),
+                                                              bounds, kMinimumSelectionSize));
+    require(selection.pixelSelection() == QRect(0, 0, 2880, 1620),
+            "logical-to-physical round-trip noise must not shrink the pointer cell span");
+}
+
+void followModeGrabReachesTheFullCanvasAtTheExtremePointerPosition() {
+    const QRectF selection(0.0, 0.0, 3838.0, 2158.0);
+    const QRectF bounds(0.0, 0.0, 3840.0, 2160.0);
+    const QRectF grabbed =
+        grabAdjustedScreenshotSelectionRect(ScreenshotSelectionDragMode::BottomRight, selection,
+                                            QPointF(3839.0, 2159.0), bounds, kMinimumSelectionSize);
+    require(grabbed == QRectF(0.0, 0.0, 3840.0, 2160.0),
+            "a follow-mode grab onto the last pointer cell must keep that cell inside the "
+            "selection");
+}
+
+void pointerSeededSelectionsAddressWholePointerCells() {
+    ScreenshotSelectionModel selection;
+    selection.setSelectionStartEnd(QPointF(10.4, 20.4), QPointF(30.6, 40.6));
+    require(selection.normalizedSelection() == QRectF(10.0, 20.0, 22.0, 22.0),
+            "pointer-seeded selections must span both pointer cells inclusively");
+    require(selection.pixelSelection() == QRect(10, 20, 22, 22),
+            "pointer-seeded selections must convert to their exact pixel rectangle");
+
+    selection.setSelectionStartEnd(QPointF(15.7, 25.7), QPointF(15.7, 25.7));
+    require(!selection.hasPixelSelection(),
+            "a click on a single pointer cell must not create a selection");
+}
+
+void lockedMovementFollowResizeKeepsTheExactRatioOnWholePixels() {
+    const QRectF bounds(0.0, 0.0, 800.0, 600.0);
+
+    ScreenshotSelectionModel selection;
+    selection.setSelectionRect(QRectF(100.0, 100.0, 220.0, 100.0));
+    selection.toggleAspectRatioLock(kMinimumSelectionSize);
+    // Press exactly on the bottom-right border: the grab offset is zero, so the
+    // dominant dragged border must keep tracking the pointer delta while the
+    // ratio-exact width of this drag stays fractional.
+    selection.beginMoveDrag(QPointF(320.0, 200.0));
+    const QRectF dragged =
+        selection.selectionRectForDrag(ScreenshotSelectionDragMode::BottomRight,
+                                       QPointF(350.0, 237.0), bounds, kMinimumSelectionSize);
+    require(dragged.topLeft() == QPointF(100.0, 100.0) &&
+                std::abs(dragged.bottom() - 237.0) < kComparisonTolerance,
+            "movement-follow locked resize must preserve the press-time grab offset");
+    require(std::abs(dragged.right() - 401.4) < kComparisonTolerance,
+            "locked resize must keep the exact ratio on the non-dominant axis");
+    require(std::abs(dragged.height() / dragged.width() - 100.0 / 220.0) < kComparisonTolerance,
+            "locked resize should retain the original aspect ratio");
+    const QRect pixels = screenshotPixelRectForSelection(dragged);
+    require(pixels == QRect(100, 100, 302, 137),
+            "fractional locked edges must capture through the last covered pixel");
 }
 
 CapturedDisplayModel syntheticDisplay(const QRect& physicalRect, const QRect& canvasRect) {
@@ -398,7 +568,15 @@ int main() {
     positionFollowDragTracksThePointerAfterGrabAdjustment();
     movementFollowDragKeepsThePressTimeGrabOffset();
     marqueeDragUsesTheSharedGeometryTransactionWithoutMinimumInflation();
+    marqueeDragSelectsSinglePixelStrips();
     marqueeDragCanMaintainAnAspectRatio();
+    marqueeDragReachesTheFullCanvasAtTheExtremePointerPosition();
+    lockedMarqueeDragReachesTheFullCanvasAtTheExtremePointerPosition();
+    lockedMarqueeDragStaysInsideTheCanvasFromExclusiveEdgePointerCells();
+    marqueeDragIgnoresCoordinateRoundTripNoise();
+    followModeGrabReachesTheFullCanvasAtTheExtremePointerPosition();
+    pointerSeededSelectionsAddressWholePointerCells();
+    lockedMovementFollowResizeKeepsTheExactRatioOnWholePixels();
     selectionShadowDefaultsToRequestedColor();
     physicalPointMappingUsesHalfOpenMonitorBounds();
     physicalWindowRectIsClippedAndMappedAcrossMonitors();
