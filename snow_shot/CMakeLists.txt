@@ -3798,12 +3798,30 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-interrupted-toolbar-drag-tests
         COMMAND snow-shot-floating-toolbar-drag-tests --interrupted-drag-only -platform offscreen)
     set_tests_properties(snow-shot-interrupted-toolbar-drag-tests PROPERTIES LABELS "unit")
-    add_test(NAME snow-shot-floating-toolbar-dpi-frame-reconcile-tests
-        COMMAND snow-shot-floating-toolbar-drag-tests --dpi-frame-reconcile-only)
-    set_tests_properties(snow-shot-floating-toolbar-dpi-frame-reconcile-tests PROPERTIES
-        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
-        ENVIRONMENT_MODIFICATION
-            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    if(NOT APPLE)
+        add_test(NAME snow-shot-floating-toolbar-dpi-frame-reconcile-tests
+            COMMAND snow-shot-floating-toolbar-drag-tests --dpi-frame-reconcile-only)
+        set_tests_properties(snow-shot-floating-toolbar-dpi-frame-reconcile-tests PROPERTIES
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
+    if(APPLE)
+        foreach(_toolbar_dpr IN ITEMS 1 2)
+            add_test(NAME snow-shot-macos-toolbar-logical-${_toolbar_dpr}x-tests
+                COMMAND snow-shot-floating-toolbar-drag-tests --macos-logical-only)
+            set_tests_properties(snow-shot-macos-toolbar-logical-${_toolbar_dpr}x-tests PROPERTIES
+                LABELS "unit;macos" SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 60
+                ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT};QT_SCALE_FACTOR=${_toolbar_dpr}")
+        endforeach()
+        add_test(NAME snow-shot-macos-toolbar-native-tests
+            COMMAND snow-shot-floating-toolbar-drag-tests --macos-logical-only -platform cocoa)
+        add_test(NAME snow-shot-macos-toolbar-focus-tests
+            COMMAND snow-shot-floating-toolbar-drag-tests --keyboard-focus-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-toolbar-native-tests snow-shot-macos-toolbar-focus-tests
+            PROPERTIES LABELS "interactive;macos" SNOW_TEST_CROSS_PLATFORM TRUE
+            RUN_SERIAL TRUE TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=cocoa")
+    endif()
     if(WIN32)
         add_test(NAME snow-shot-floating-toolbar-capture-screen-switch-tests
             COMMAND snow-shot-floating-toolbar-drag-tests --capture-screen-switch-only)
@@ -6148,6 +6166,28 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --auto-filter-only -platform offscreen)
     set_tests_properties(snow-shot-auto-filter-pinned-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit;windows" TIMEOUT 60)
+endif()
+
+if(SNOW_SHOT_BUILD_TESTS)
+    # These toolbar cases exercise Qt behavior on both Cocoa and Windows. Opt
+    # them out of the repository's legacy name-based Windows label heuristic.
+    set_tests_properties(
+        snow-shot-pinned-toolbar-parity-tests
+        snow-shot-pinned-toolbar-layout-tests
+        snow-shot-interrupted-toolbar-drag-tests
+        snow-shot-floating-toolbar-keyboard-focus-tests
+        snow-shot-floating-toolbar-action-layout-tests
+        snow-shot-floating-toolbar-recording-hit-test-tests
+        snow-shot-toolbar-popup-recovery-tests
+        snow-shot-toolbar-color-input-tests
+        snow-shot-toolbar-shared-controls-tests
+        snow-shot-screen-recording-toolbar-tests
+        PROPERTIES SNOW_TEST_CROSS_PLATFORM TRUE)
+    if(APPLE)
+        set_tests_properties(snow-shot-pinned-toolbar-parity-tests
+            snow-shot-pinned-toolbar-layout-tests PROPERTIES
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    endif()
 endif()
 
 if(APPLE)

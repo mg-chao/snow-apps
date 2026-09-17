@@ -753,7 +753,7 @@ void groupMenuActionsExposeIconsAndCleanupState() {
         QStringLiteral("screenshotPinnedContextMenu"));
     require(contextMenu != nullptr, "the pinned window should own its context menu");
     const QList<QAction*> contextActions = contextMenu->actions();
-    const int groupIndex = contextActions.indexOf(groupHeader);
+    const qsizetype groupIndex = contextActions.indexOf(groupHeader);
     require(groupIndex >= 0 && groupIndex + 1 < contextActions.size() &&
                 contextActions.at(groupIndex + 1)->objectName() ==
                     QStringLiteral("screenshotPinnedThumbnailAction"),
@@ -4538,6 +4538,7 @@ void pinnedPointerPresenceIsDebounced() {
 }
 
 void pinnedControlsPresenceFollowsLiveCursor() {
+#if defined(Q_OS_WIN) || defined(_WIN32)
     // Regression for the unstable hover reveal: USER32's leave tracking and
     // Qt's synthesized Enter/Leave both follow the client area and are queued,
     // while the pinned image surface is non-client. Presence must therefore be
@@ -4642,6 +4643,7 @@ void pinnedControlsPresenceFollowsLiveCursor() {
         "controls must reappear once geometry settles back under the stationary cursor");
 
     window.close();
+#endif
 }
 
 void pinnedEscapeBurst(bool nativeKeys = false) {
@@ -5359,11 +5361,11 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
                 reinterpret_cast<LPARAM>(&disabledThumbnailNative));
     require(qRectForNativeRect(disabledThumbnailNative) == disabledThumbnailProposal,
             "thumbnail mode should leave WM_SIZING proposals unchanged");
-#endif
     sendWheel(canvas->rect().center(), QPoint(), QPoint(0, 120));
     require(!thumbnailAction->isChecked() &&
                 pinnedWindow->currentNativeGeometry().size() == expectedSize(110, true),
             "thumbnail wheel input should restore the pin and apply cursor scaling");
+#endif
 
     menu->actions().constLast()->trigger();
     require(processUntilDeleted(guardedWindow, 2000),
@@ -7093,6 +7095,15 @@ void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&, bool rot
                                          ? controller->toolbarWindow()->palette()
                                          : nullptr;
     require(toolbar != nullptr, "pinned drawing toolbar was not found");
+#if defined(Q_OS_MACOS)
+    auto* floatingToolbar = controller->toolbarWindow();
+    require(qFuzzyCompare(toolbar->physicalScale(), 1.0) &&
+                floatingToolbar->testAttribute(Qt::WA_MacAlwaysShowToolWindow),
+            "macOS pinned toolbar must use normal logical sizing and remain visible");
+    require(floatingToolbar->windowHandle()->transientParent() == pinnedWindow->windowHandle() &&
+                !floatingToolbar->mask().isEmpty(),
+            "macOS pinned toolbar must retain ownership and mask unused backing-window space");
+#endif
 
     if (rotateTools) {
         for (int iteration = 0; iteration < 8; ++iteration) {
@@ -7140,20 +7151,25 @@ void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&, bool rot
         return wheel.isAccepted();
     };
 
-    require(canvas->setCanvasTool(SnowCanvasTool::Shape), "Shape tool could not be activated");
+    // Enter through the toolbar so its initial Resize window mode relinquishes
+    // input to the canvas, as it does for a user selecting a drawing tool.
+    require(toolbar->activateDrawingShortcut(QStringLiteral("shape")) &&
+                canvas->interactionEnabled(),
+            "Shape tool must enable pinned canvas interaction");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     const double shapeStrokeWidth = canvas->canvasStyleToolbarState().shapeStyle.strokeWidth;
     require(sendWheel(120) &&
                 canvas->canvasStyleToolbarState().shapeStyle.strokeWidth == shapeStrokeWidth + 1.0,
             "Shape wheel input should increase pinned stroke width by one pixel");
 
-    require(canvas->setCanvasTool(SnowCanvasTool::Text), "Text tool could not be activated");
+    require(toolbar->activateDrawingShortcut(QStringLiteral("text")),
+            "Text tool could not be activated");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     const double textFontSize = canvas->canvasStyleToolbarState().textStyle.fontSize;
     require(sendWheel(120) && canvas->canvasStyleToolbarState().textStyle.fontSize > textFontSize,
             "Text wheel input should increase pinned font size");
 
-    require(canvas->setCanvasTool(SnowCanvasTool::Spotlight),
+    require(toolbar->activateToolShortcut(ScreenshotToolPalette::Tool::Spotlight),
             "Spotlight tool could not be activated");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 

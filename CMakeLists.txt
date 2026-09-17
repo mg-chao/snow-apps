@@ -280,7 +280,11 @@ function(_snow_apply_test_labels directory)
         elseif(_snow_test MATCHES "benchmark|performance")
             list(APPEND _snow_test_labels benchmark)
         elseif(_snow_test MATCHES "pinned-window|context-menu|toolbar|tooltip|recognition-window")
-            list(APPEND _snow_test_labels windows)
+            get_property(_snow_test_portable TEST "${_snow_test}" DIRECTORY "${directory}"
+                PROPERTY SNOW_TEST_CROSS_PLATFORM)
+            if(NOT _snow_test_portable)
+                list(APPEND _snow_test_labels windows)
+            endif()
         endif()
         list(REMOVE_DUPLICATES _snow_test_labels)
         set_tests_properties("${_snow_test}" DIRECTORY "${directory}"

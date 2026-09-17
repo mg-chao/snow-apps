@@ -166,7 +166,7 @@ class TranslationServer final : public QObject {
     bool holdStreamHeaders = false;
 
   private:
-    void startStream(int index) {
+    void startStream(qsizetype index) {
         auto& stream = streams[index];
         if (stream.headersSent)
             return;

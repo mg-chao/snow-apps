@@ -123,6 +123,7 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     void finishPaletteDrag(bool emitFinished);
     bool handleToolbarWheel(QWheelEvent* event);
     void applyWindowAttributes();
+    void updateWindowMask();
     void registerMaterializedScope(QWidget* scope);
     void prewarmScopeIcons(QWidget* scope);
     void setKeyboardFocusPolicy(bool enabled);
@@ -170,6 +171,7 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     bool m_pendingForceRepaint = false;
 
 #if defined(SNOW_SHOT_TEST_HOOKS)
+    qreal m_testWindowDevicePixelRatio = 0.0;
     quint64 m_paletteGeometryRefreshCount = 0;
     quint64 m_windowResizeOrReanchorCount = 0;
     quint64 m_coalescedGeometryRequestCount = 0;

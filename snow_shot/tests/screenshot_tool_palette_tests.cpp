@@ -2394,7 +2394,8 @@ void groupedActionOptionsShowShortcutTooltips() {
                   QStringLiteral("save-as-file")},
                  {QStringLiteral("barcode-recognition"), QStringLiteral("text-recognition"),
                   QStringLiteral("text-translation")},
-                 {QStringLiteral("scrolling-screenshot"), QStringLiteral("pin-to-screen")}}};
+                 {QStringLiteral("scrolling-screenshot"), QStringLiteral("pin-to-screen")}},
+                {}};
         }
         ScreenshotToolPalette palette(options);
         palette.move(QApplication::primaryScreen()->availableGeometry().center() -
@@ -2643,7 +2644,8 @@ void configurableToolbarLayoutSupportsArbitraryPopoverGroups() {
     options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
         {{QStringLiteral("free-draw"), QStringLiteral("line"), QStringLiteral("shape")},
          {QStringLiteral("spotlight"), QStringLiteral("arrow")},
-         {QStringLiteral("highlighter")}}};
+         {QStringLiteral("highlighter")}},
+        {}};
 
     ScreenshotToolPalette palette(options);
     palette.show();
@@ -2780,7 +2782,7 @@ void arrowAndLineUseConfiguredPopoverGroup() {
     options.showLineTool = true;
     options.enableStyleToolbar = false;
     options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
-        {{QStringLiteral("line"), QStringLiteral("arrow")}}};
+        {{QStringLiteral("line"), QStringLiteral("arrow")}}, {}};
 
     ScreenshotToolPalette palette(options);
     palette.show();
@@ -2846,7 +2848,14 @@ void tableBusyStatePreservesSiblingGroupPopovers(bool recoverFromMove = false) {
         {}};
     ScreenshotToolPalette palette(options);
     palette.resize(palette.contentSizeHint());
+    palette.move(QApplication::primaryScreen()->availableGeometry().center() -
+                 palette.rect().center());
     palette.show();
+    palette.raise();
+    palette.activateWindow();
+    // Cocoa settles the initial window placement on exposure. Resolve it before
+    // warping the native pointer to a trigger's global position.
+    QCoreApplication::processEvents();
     auto* table =
         palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotTableQrButton"));
     auto* drawing =
@@ -2866,6 +2875,7 @@ void tableBusyStatePreservesSiblingGroupPopovers(bool recoverFromMove = false) {
         QWidget* trigger = popup->sourceWidget();
         require(trigger != nullptr, "group popup must have a hover trigger");
         const QPoint previousCursor = QCursor::pos();
+        const auto restoreCursor = qScopeGuard([&] { QCursor::setPos(previousCursor); });
         QCursor::setPos(trigger->mapToGlobal(trigger->rect().center()));
         QEventLoop loop;
         QObject::connect(popup, &adqt::widgets::AdPopover::visibleChanged, &loop,
@@ -2894,7 +2904,6 @@ void tableBusyStatePreservesSiblingGroupPopovers(bool recoverFromMove = false) {
                     popup->contentWidget()->window()->isVisible(),
                 "hover must open the group popup and its actual surface");
         popup->hide();
-        QCursor::setPos(previousCursor);
     };
     QObject::connect(&palette, &ScreenshotToolPalette::tableRequested, &palette,
                      [&]() { palette.setTableBusy(true); });
@@ -3030,7 +3039,7 @@ void drawingGroupClicksActivateOnceAfterPointerReentry() {
         options.showHighlightTool = groups.at(index).contains(QStringLiteral("highlighter"));
         options.showSpotlightTool = groups.at(index).contains(QStringLiteral("spotlight"));
         options.enableStyleToolbar = false;
-        options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{{groups.at(index)}};
+        options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{{groups.at(index)}, {}};
         ScreenshotToolPalette palette(options);
         palette.show();
         QCoreApplication::processEvents();
@@ -3282,7 +3291,7 @@ void sharedToolbarLayoutModelOperationsAreDeterministic() {
                 "hiding must remove the toolbar position and preserve hidden ordering");
 
         const ScreenshotToolbarLayout restored =
-            moveItemToPosition(hidden, kind, first, hidden.positions.size());
+            moveItemToPosition(hidden, kind, first, static_cast<int>(hidden.positions.size()));
         require(restored == ScreenshotToolbarLayout{{{third, second}, {first}}, remaining},
                 "restoring a hidden item must remove it from hidden state and append its position");
         require(moveItemToHidden(initial, kind, QStringLiteral("unknown"), 0) ==
@@ -4549,7 +4558,8 @@ void groupedToolShortcutsToggleOnlyTheRequestedTool() {
         {{QStringLiteral("select")},
          {QStringLiteral("shape"), QStringLiteral("arrow"), QStringLiteral("line")},
          {QStringLiteral("highlighter")},
-         {QStringLiteral("filter")}}};
+         {QStringLiteral("filter")}},
+        {}};
     ScreenshotToolPalette palette(options);
     palette.setActiveTool(Tool::Line);
     require(palette.activateDrawingShortcut(QStringLiteral("arrow")) &&
@@ -6687,7 +6697,7 @@ void watermarkControlsFollowPhysicalScale() {
     palette.setActiveTool(ScreenshotToolPalette::Tool::Watermark);
     QCoreApplication::processEvents();
 
-    const auto expectedScaledSize = [toolbarCounterScale](const QSize& size) {
+    const auto expectedScaledSize = [](const QSize& size) {
         return QSize(qRound(size.width() * toolbarCounterScale),
                      qRound(size.height() * toolbarCounterScale));
     };
@@ -8237,8 +8247,8 @@ void selectedStrokeColorDragKeepsPickerIndicatorInSync() {
                           Qt::LeftButton, Qt::NoModifier);
     QCoreApplication::sendEvent(saturationPanel, &moveEvent);
     const QColor movingColor = strokePicker->value().solidColor.toHsv();
-    require(qAbs(qRound(movingColor.saturationF() * 100.0) - 35) <= 1 &&
-                qAbs(qRound(movingColor.valueF() * 100.0) - 35) <= 1,
+    require(qAbs(qRound(movingColor.saturationF() * 100.0F) - 35) <= 1 &&
+                qAbs(qRound(movingColor.valueF() * 100.0F) - 35) <= 1,
             "stroke color indicator should follow the pointer before release");
     QMouseEvent releaseEvent(QEvent::MouseButtonRelease, localPosition, globalPosition,
                              Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
@@ -8246,8 +8256,8 @@ void selectedStrokeColorDragKeepsPickerIndicatorInSync() {
     QCoreApplication::processEvents();
 
     const QColor selectedColor = strokePicker->value().solidColor.toHsv();
-    const int expectedSaturation = qRound(selectedColor.saturationF() * 100.0);
-    const int expectedBrightness = qRound(selectedColor.valueF() * 100.0);
+    const int expectedSaturation = qRound(selectedColor.saturationF() * 100.0F);
+    const int expectedBrightness = qRound(selectedColor.valueF() * 100.0F);
     const QString indicatorDescription = saturationPanel->accessibleDescription();
     require(indicatorDescription.contains(
                 QStringLiteral("saturation %1 percent").arg(expectedSaturation)),
