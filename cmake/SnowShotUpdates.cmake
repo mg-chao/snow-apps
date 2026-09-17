@@ -1,33 +1,21 @@
-# The updater deliberately does not depend on presentation, capture, storage, or Rust.
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/resources/update-trusted-keys.json" SNOW_SHOT_UPDATE_KEYS_JSON)
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/update/updatekeys.h.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/generated/updatekeys.h" @ONLY)
+# The update helper and the release contract live in the pure-Rust snow-updater
+# crate. The application consumes the contract through the Rust FFI archive, so
+# there is exactly one verifier implementation on both sides of the handoff.
+snow_add_rust_executable(snow-shot-updater
+    PACKAGE snow-updater
+    MANIFEST_DIR "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
+    OUTPUT_NAME snow-shot-updater
+    PROFILE release-size
+    REPRODUCIBLE
+    ENVIRONMENT SNOW_SHOT_UPDATER_VERSION=${SNOW_SHOT_VERSION})
 add_library(snow_shot_update_core STATIC
-    src/update/updatecontract.cpp src/update/updatetransaction.cpp src/update/updateerrors.cpp)
-target_include_directories(snow_shot_update_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
-target_link_libraries(snow_shot_update_core PUBLIC Qt6::Core PRIVATE MINIZIP::minizip-ng)
+    src/update/updateffi.cpp src/update/updateerrors.cpp)
+target_include_directories(snow_shot_update_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(snow_shot_update_core PUBLIC Qt6::Core snow_shot_rust_ffi_bundle)
 if(WIN32)
     target_compile_definitions(snow_shot_update_core PRIVATE NOMINMAX)
-    target_link_libraries(snow_shot_update_core PRIVATE bcrypt advapi32)
 endif()
-add_executable(snow-shot-updater src/update/updatermain.cpp)
-target_link_libraries(snow-shot-updater PRIVATE snow_shot_administrator)
-target_link_libraries(snow-shot-updater PRIVATE snow_shot_update_core Qt6::Network)
-if(WIN32)
-    target_link_libraries(snow-shot-updater PRIVATE shell32 advapi32)
-    target_compile_definitions(snow-shot-updater PRIVATE NOMINMAX)
-    set_target_properties(snow-shot-updater PROPERTIES WIN32_EXECUTABLE TRUE)
-    if(MSVC)
-        set_property(TARGET snow-shot-updater PROPERTY qt_no_entrypoint TRUE)
-        target_link_options(snow-shot-updater PRIVATE /ENTRY:mainCRTStartup)
-        # Keep matching symbols for the independently launched recovery helper, just
-        # as for snow_shot. CMake's default Release flags do not generate a PDB.
-        target_compile_options(snow-shot-updater PRIVATE $<$<CONFIG:Release>:/Z7>)
-        target_link_options(snow-shot-updater PRIVATE $<$<CONFIG:Release>:/DEBUG:FULL>)
-    endif()
-endif()
-install(TARGETS snow-shot-updater RUNTIME DESTINATION bin)
+install(FILES "$<TARGET_FILE:snow-shot-updater>" DESTINATION bin)
 add_library(snow_shot_updates STATIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include/snow_shot/update/updateservice.h"
     src/update/updateservice.cpp)

@@ -34,6 +34,13 @@ Snow Shot downloads the matching mobile/server bundles from
 https://www.modelscope.cn/models/mgchao/SnowShotOCR and pins their sizes and
 SHA-256 hashes in `packaging/snow-shot-ocr-asset-manifest.json`.
 
+The self-update helper and release-contract verifier (`snow-shot-updater.exe`) is a
+pure-Rust binary built from the `snow-updater` crate. It uses serde/serde_json (MIT OR
+Apache-2.0), the `zip` crate with its Deflate backend (flate2, miniz_oxide; MIT) for update
+archive extraction, `base64` (MIT OR Apache-2.0) for envelope decoding, and Windows CNG for
+RSA-3072/PSS verification and SHA-256 hashing instead of embedding cryptographic code. Their
+licenses are included in the generated Rust dependency notice bundle.
+
 Local crash diagnostics use Crashpad (Apache-2.0), pinned by the vcpkg baseline
 and the repository's Crashpad overlay. The client, helper, Chromium base code,
 and their bundled notices are included in the vcpkg license collection. The

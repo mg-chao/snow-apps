@@ -84,9 +84,15 @@ is stopped. Close other instances and repair with a verified installer; do not d
 journal or backups before recovery. A process-termination test is not a simulation of
 physical storage failure.
 
-`snow_shot_update_core` depends on Qt Core and minizip, not capture, presentation, storage,
-or Rust. `snow_shot_updates` adds network/state coordination; About and ApplicationController
-consume it. These boundaries are enforced by CMake target dependencies.
+The release contract, the apply/recover transaction, and the standalone helper are one pure-Rust
+implementation, the `snow-updater` crate in `snow-crates`. The helper executable
+(`snow-shot-updater.exe`) is built from it with a dedicated size-optimized cargo profile
+(`release-size`: size-optimized codegen, fat LTO, one codegen unit, abort-on-panic, static CRT
+under release presets, and a matching PDB). The in-app service consumes the same contract through
+the Rust FFI archive, so there is exactly one verifier on both sides of the handoff;
+`snow_shot_update_core` is the thin C++ binding layer plus the diagnostics catalog, and a focused
+test asserts every Rust diagnostic exists verbatim in the translation catalog. Cryptography stays
+in Windows CNG (RSA-3072/PSS and SHA-256), so the helper embeds no cryptographic code.
 
 ## Operator setup and commands
 
@@ -219,6 +225,30 @@ the deterministic unit tests. A later update prunes generated coordinator/worker
 than 24 hours, skips running/locked executables, and never recursively sweeps the system temp
 directory. Transaction staging and backup payloads are replaced on the next transaction;
 download cache cleanup retains only the currently accepted release's ZIP/partial download.
+
+### Updater rewrite delivery evidence (2026-09-17)
+
+- The helper is now the pure-Rust `snow-updater` crate: `snow-shot-updater.exe`
+  shrinks from 9,459,712 bytes (Qt Core+Network static, minizip-ng, COM stack) to
+  433,664 bytes with the `release-size` cargo profile (size-optimized codegen, fat
+  LTO, single codegen unit, abort-on-panic, full PDB) - a 21.8x reduction while
+  keeping Windows CNG for RSA-3072/PSS and SHA-256.
+- The release contract is implemented once in Rust. `snow_shot_update_core` is a
+  UTF-16 C-binding layer over the Rust FFI archive; `updateerrors.cpp` keeps the
+  translation catalog, and a focused test asserts every Rust diagnostic exists
+  verbatim in that catalog.
+- Focused targets pass in the Debug tree: Rust unit and integration tests
+  (including real process termination at journal checkpoints with recovery), the
+  C++ update contract/diagnostics/service tests through the FFI, the About page
+  update states, and the settings catalog.
+- All six real-helper canaries pass (cancel and recovery for portable, online and
+  offline installations) with user data preserved and relaunch under the original
+  user.
+- clang-format and rustfmt are clean for all changed sources; `check-rust.ps1`
+  passes per-crate (the workspace-wide `--all-features` leg also rebuilds
+  `snow-ocr-process`, whose build script requires the CMake-provided
+  `SNOW_CRASHPAD_LINK_FILE` outside an interactive CMake build - a pre-existing
+  environment requirement, unrelated to the updater).
 
 ### Current delivery evidence (2026-09-10)
 

@@ -1,4 +1,5 @@
 #include "snow_shot/update/updatecontract.h"
+#include "snow_shot/update/updateerrors.h"
 #include "snow_shot/update/updatetransaction.h"
 #include "snow_shot/update/updateservice.h"
 
@@ -13,8 +14,6 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QThread>
-#include <QProcess>
-#include <QLockFile>
 
 #include <mz.h>
 #include <mz_strm.h>
@@ -24,7 +23,9 @@
 #include <bcrypt.h>
 
 #include <cstdlib>
+#include <functional>
 #include <iostream>
+#include <set>
 #include <stdexcept>
 
 using namespace snow_shot::update;
@@ -35,7 +36,7 @@ void require(bool condition, const char* message) {
         std::exit(EXIT_FAILURE);
     }
 }
-template <typename F> void rejects(F action, const char* message) {
+template <typename F> void rejects(F&& action, const char* message) {
     bool rejected = false;
     try {
         action();
@@ -114,8 +115,7 @@ struct Fixture {
     QJsonObject payload;
     QByteArray envelope;
     UpdateRelease release;
-    Fixture(Signer& signer, QString variant = QStringLiteral("portable"), bool unsafe = false,
-            bool inconsistentRecord = false) {
+    Fixture(Signer& signer, QString variant = QStringLiteral("portable")) {
         require(temporary.isValid(), "temporary update fixture");
         root = temporary.filePath(QStringLiteral("installed app 安"));
         require(QDir().mkpath(root), "create install fixture");
@@ -140,9 +140,7 @@ struct Fixture {
         }
         QJsonArray owned;
         for (auto it = files.begin(); it != files.end(); ++it) {
-            if (!inconsistentRecord || it.key() != u"bin/new.txt") {
-                owned.append(descriptor(it.key(), it.value()));
-            }
+            owned.append(descriptor(it.key(), it.value()));
         }
         files.insert("snow-shot-installation.json",
                      QJsonDocument(QJsonObject{{"schema", 1},
@@ -160,10 +158,8 @@ struct Fixture {
                     MZ_OK,
                 "open fixture ZIP");
         for (auto it = files.begin(); it != files.end(); ++it) {
-            const QByteArray name =
-                unsafe && it.key() == u"bin/new.txt" ? QByteArray("../escape") : it.key().toUtf8();
             mz_zip_file info{};
-            info.filename = name.constData();
+            info.filename = it.key().toUtf8().constData();
             info.compression_method = MZ_COMPRESS_METHOD_DEFLATE;
             require(mz_zip_writer_add_buffer(writer, const_cast<char*>(it.value().constData()),
                                              it.value().size(), &info) == MZ_OK,
@@ -204,31 +200,24 @@ struct Fixture {
                 "preserve portable data");
         require(readLimited(QDir(root).filePath("user-file.txt")) == "preserve me",
                 "preserve unknown user files");
-        require(readLimited(QDir(root).filePath("bin/__data_directory")) == "portable",
-                "preserve data marker");
     }
 };
 
-void versionsAndPaths() {
-    const QStringList ordered{"1.0.0-alpha",  "1.0.0-alpha.1", "1.0.0-alpha.beta",
-                              "1.0.0-beta.2", "1.0.0-beta.10", "1.0.0-rc.1",
-                              "1.0.0",        "1.0.1"};
-    for (qsizetype i = 1; i < ordered.size(); ++i) {
-        require(compareVersions(ordered[i - 1], ordered[i]) < 0, "SemVer precedence");
-    }
-    require(compareVersions("1.0.0+build.1", "1.0.0+build.2") == 0, "ignore build metadata");
-    for (const auto& value : {"1.0", "01.0.0", "1.0.0-beta.01", "1.0.0-", "1.0.0_foo"}) {
-        rejects([&] { compareVersions(value, "1.0.0"); }, "reject malformed version");
-    }
-    for (const auto& path :
-         {"../a", "bin/../../a", "C:/a", "bin/a:b", "bin/a.", "bin/CON.txt", "bin//a", "bin\\a"}) {
-        require(!safeRelativePath(path), "reject unsafe relative path");
-    }
-    require(safeRelativePath("share/snow-shot/licenses/license.txt"), "allow owned license path");
-}
-
-void signatures(Signer& signer) {
+// The Rust contract is the single verifier; cross-check it against the
+// in-process C++ signer and the strict SemVer and inventory rules.
+void contractThroughFfi(Signer& signer) {
     Fixture fixture(signer);
+    require(fixture.release.version == u"1.0.0-beta.1", "verify fixture through FFI");
+    require(compareVersions("1.0.0-beta.1", "1.0.0-beta") > 0, "FFI SemVer ordering");
+    require(compareVersions("1.0.0+build.1", "1.0.0+build.2") == 0, "FFI ignores build metadata");
+    rejects([&] { compareVersions("1.0", "1.0.0"); }, "FFI rejects malformed versions");
+    require(fixture.release.updatePackage(QStringLiteral("portable")).sha256 ==
+                sha256File(fixture.archive),
+            "FFI package selection");
+    const auto identity = installationRecord(fixture.root);
+    require(identity.variant == u"portable" && identity.version == u"1.0.0-beta",
+            "FFI installation record");
+    require(transactionPending(fixture.root) == false, "FFI pending marker");
     auto outer = QJsonDocument::fromJson(fixture.envelope).object();
     outer.insert("keyId", "attacker");
     rejects([&] { verifyRelease(QJsonDocument(outer).toJson(), signer.publicKeys); },
@@ -262,129 +251,20 @@ void signatures(Signer& signer) {
             "reject a signed release without its future recovery helper");
 }
 
-void transactions(Signer& signer) {
-    for (const QString& variant :
-         {QStringLiteral("online"), QStringLiteral("offline"), QStringLiteral("portable")}) {
-        Fixture fixture(signer, variant);
-        applyTransaction(fixture.root, fixture.archive, fixture.release, {[] { return true; }, {}});
-        require(readLimited(QDir(fixture.root).filePath("bin/snow_shot.exe")) == "new executable",
-                "apply new executable");
-        require(!QFileInfo::exists(QDir(fixture.root).filePath("bin/obsolete.txt")),
-                "remove obsolete owned file");
-        fixture.preserved();
-        rejects([&] { applyTransaction(fixture.root, fixture.archive, fixture.release); },
-                "reject equal version application");
+// Every diagnostic the Rust helper can emit must exist verbatim in the
+// translation catalog; otherwise users would see untranslated failures.
+void diagnosticsMatchCatalog() {
+    const unsigned int count = updaterErrorDiagnosticCount();
+    require(count > 0, "the Rust contract exposes its diagnostics");
+    std::set<QString> catalog;
+    for (const auto* source : updateErrorSources) {
+        catalog.insert(QString::fromUtf8(source));
     }
-    for (const auto& point : {"prepared", "bin/snow_shot.exe", "bin/new.txt", "bin/obsolete.txt",
-                              "snow-shot-installation.json", "registry", "probe"}) {
-        Fixture fixture(signer);
-        rejects(
-            [&] {
-                applyTransaction(fixture.root, fixture.archive, fixture.release,
-                                 {[&] { return QByteArray(point) != "probe"; },
-                                  [&](const QString& current) {
-                                      if (current == QString::fromLatin1(point)) {
-                                          throw std::runtime_error("injected failure");
-                                      }
-                                  }});
-            },
-            "transaction must report injected failure");
-        require(readLimited(QDir(fixture.root).filePath("bin/snow_shot.exe")) == "old executable",
-                "restore previous executable");
-        require(readLimited(QDir(fixture.root).filePath("bin/obsolete.txt")) == "old data",
-                "restore removed owned file");
-        require(!QFileInfo::exists(QDir(fixture.root).filePath("bin/new.txt")),
-                "remove new file after rollback");
-        require(!transactionPending(fixture.root), "finish recovery journal");
-        fixture.preserved();
-    }
-    Fixture unsafe(signer, "portable", true);
-    rejects([&] { applyTransaction(unsafe.root, unsafe.archive, unsafe.release); },
-            "reject archive traversal before mutation");
-    unsafe.preserved();
-    Fixture inconsistent(signer, "portable", false, true);
-    rejects(
-        [&] { applyTransaction(inconsistent.root, inconsistent.archive, inconsistent.release); },
-        "reject ownership metadata that differs from signed inventory");
-    require(readLimited(QDir(inconsistent.root).filePath("bin/snow_shot.exe")) == "old executable",
-            "inventory mismatch is rejected before live mutation");
-    Fixture corrupt(signer);
-    put(corrupt.temporary.path(), "update.zip", "broken ZIP");
-    rejects([&] { applyTransaction(corrupt.root, corrupt.archive, corrupt.release); },
-            "reject corrupt download");
-    Fixture conflict(signer);
-    put(conflict.root, "bin/new.txt", "user-owned file");
-    rejects(
-        [&] {
-            applyTransaction(conflict.root, conflict.archive, conflict.release,
-                             {[] { return true; }, {}});
-        },
-        "new payload cannot overwrite an unknown user file");
-    require(readLimited(QDir(conflict.root).filePath("bin/new.txt")) == "user-owned file",
-            "preserve conflicting user file");
-    Fixture customData(signer);
-    put(customData.root, "bin/__data_directory", "\xef\xbb\xbfnew.txt");
-    rejects([&] { applyTransaction(customData.root, customData.archive, customData.release); },
-            "reject payload overlapping a BOM-prefixed custom data location");
-    Fixture reservedData(signer);
-    put(reservedData.root, "bin/__data_directory", "../.snow-shot-update/stage");
-    put(reservedData.root, ".snow-shot-update/stage/user.json", "precious reserved-path data");
-    rejects(
-        [&] { applyTransaction(reservedData.root, reservedData.archive, reservedData.release); },
-        "reject a custom data location inside the reserved work area before clearing staging");
-    rejects([&] { uninstallOwnedFiles(reservedData.root); },
-            "uninstall also preserves data inside a reserved work location");
-    require(readLimited(QDir(reservedData.root).filePath(".snow-shot-update/stage/user.json")) ==
-                "precious reserved-path data",
-            "reserved work cleanup cannot erase selected user data");
-    Fixture longPath(signer);
-    QString extendedRoot = longPath.temporary.path();
-    for (int index = 0; index < 8; ++index) {
-        extendedRoot += QStringLiteral("/long-installation-directory-segment");
-    }
-    require(QDir().mkpath(QFileInfo(extendedRoot).absolutePath()) &&
-                QDir().rename(longPath.root, extendedRoot),
-            "create an installation beyond legacy MAX_PATH");
-    longPath.root = extendedRoot;
-    applyTransaction(longPath.root, longPath.archive, longPath.release, {[] { return true; }, {}});
-    longPath.preserved();
-    uninstallOwnedFiles(longPath.root);
-    longPath.preserved();
-    require(!QFileInfo::exists(QDir(longPath.root).filePath("bin/snow_shot.exe")),
-            "inventory-based uninstall removes newly updated payload");
-    Fixture cleanup(signer);
-    const QString stale = QStringLiteral(".snow-shot-update/worker-") + QString(32, u'a') + u".exe";
-    put(cleanup.root, stale, "old worker");
-    put(cleanup.root, ".snow-shot-update/operator-notes.txt", "preserve notes");
-    QFile oldWorker(QDir(cleanup.root).filePath(stale));
-    require(oldWorker.open(QIODevice::ReadWrite) &&
-                oldWorker.setFileTime(QDateTime::currentDateTimeUtc().addDays(-2),
-                                      QFileDevice::FileModificationTime),
-            "age an abandoned worker fixture");
-    oldWorker.close();
-    pruneUpdateWork(cleanup.root);
-    require(!QFileInfo::exists(oldWorker.fileName()) &&
-                readLimited(QDir(cleanup.root).filePath(".snow-shot-update/operator-notes.txt")) ==
-                    "preserve notes",
-            "cleanup removes only old generated worker files");
-    for (const auto& point :
-         {"prepared", "bin/snow_shot.exe", "snow-shot-installation.json", "registry"}) {
-        Fixture fixture(signer);
-        const QString manifest = fixture.temporary.filePath("release.json");
-        const QString keys = fixture.temporary.filePath("keys.json");
-        writeAtomic(manifest, fixture.envelope);
-        writeAtomic(keys, signer.publicKeys);
-        QProcess child;
-        child.start(QCoreApplication::applicationFilePath(),
-                    {"--crash-apply", fixture.root, fixture.archive, manifest, keys, point});
-        require(child.waitForFinished(30000) && child.exitCode() == 77,
-                "terminate updater at journal checkpoint");
-        require(transactionPending(fixture.root), "power loss leaves recoverable journal");
-        recoverTransaction(fixture.root);
-        require(readLimited(QDir(fixture.root).filePath("bin/snow_shot.exe")) == "old executable",
-                "recover after actual process termination");
-        require(!transactionPending(fixture.root), "interrupted transaction is resolved");
-        fixture.preserved();
+    for (unsigned int code = 1; code <= count; ++code) {
+        const char* message = updaterErrorDiagnostic(code);
+        require(message != nullptr, "every diagnostic code resolves");
+        require(catalog.contains(QString::fromUtf8(message)),
+                "every Rust diagnostic exists in the translation catalog");
     }
 }
 
@@ -438,6 +318,8 @@ void service(Signer& signer) {
                 } else {
                     const QByteArray sent =
                         package && interrupt ? body.left(body.size() / 2) : body;
+                    // The interrupted response claims the full length so the
+                    // client sees a premature disconnect, not a clean body.
                     socket->write("HTTP/1.1 200 OK\r\nConnection: close\r\nETag: "
                                   "\"fixture\"\r\nContent-Length: " +
                                   QByteArray::number(body.size()) + "\r\n\r\n" + sent);
@@ -541,28 +423,14 @@ void service(Signer& signer) {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     try {
-        if (argc == 7 && application.arguments()[1] == u"--crash-apply") {
-            const auto args = application.arguments();
-            auto release = verifyRelease(readLimited(args[4]), readLimited(args[5]));
-            applyTransaction(args[2], args[3], release,
-                             {[] { return true; },
-                              [&](const QString& checkpoint) {
-                                  if (checkpoint == args[6]) {
-                                      TerminateProcess(GetCurrentProcess(), 77);
-                                  }
-                              }});
-            return 2;
-        }
-        std::cout << "versions\n" << std::flush;
-        versionsAndPaths();
+        std::cout << "contract\n" << std::flush;
         Signer signer;
-        std::cout << "signatures\n" << std::flush;
-        signatures(signer);
-        std::cout << "transactions\n" << std::flush;
-        transactions(signer);
+        contractThroughFfi(signer);
+        std::cout << "diagnostics\n" << std::flush;
+        diagnosticsMatchCatalog();
         std::cout << "service\n" << std::flush;
         service(signer);
-        std::cout << "PASS: update trust, versions, transactions, recovery and service\n";
+        std::cout << "PASS: update contract, diagnostics and service\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "Unexpected exception: " << error.what() << '\n';

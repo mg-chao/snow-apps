@@ -101,7 +101,15 @@ foreach ($binary in Get-ChildItem -LiteralPath (Join-Path $installRoot "bin") -F
             $record.age = $Matches.age
             $pdb = $Matches.path.Trim()
             if (-not [System.IO.Path]::IsPathRooted($pdb)) {
-                $pdb = Join-Path $buildRoot "cargo\x86_64-pc-windows-msvc\release\$pdb"
+                # Cargo-written PDBs may reference either the shared release
+                # profile directory or the updater helper release-size profile.
+                $candidates = @(
+                    (Join-Path $buildRoot "cargo\x86_64-pc-windows-msvc\release\$pdb"),
+                    (Join-Path $buildRoot "cargo\x86_64-pc-windows-msvc\release-size\$pdb")
+                )
+                $pdb = ($candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+                    Select-Object -First 1)
+                if (-not $pdb) { $pdb = $candidates[0] }
             }
             if (Test-Path -LiteralPath $pdb -PathType Leaf) {
                 Assert-PdbIdentity -Path $pdb -Signature $record.signature -Age $record.age

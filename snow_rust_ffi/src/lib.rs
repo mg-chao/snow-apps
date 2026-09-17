@@ -5,6 +5,8 @@ pub extern "C" fn snow_diagnostics_install_panic_hook(callback: snow_diagnostics
     snow_diagnostics::install_panic_hook(callback);
 }
 
+pub mod updater_ffi;
+
 // Public module re-exports keep every C-ABI entry point reachable while Cargo
 // packages the FFI crates and the Rust runtime into one static archive.
 pub mod capture {

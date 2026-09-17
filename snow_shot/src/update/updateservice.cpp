@@ -31,8 +31,8 @@ UpdateService::UpdateService(Options options, QObject* parent)
                           (m_options.baseUrl.scheme() == u"https" || localHttp),
                       "The update server must use HTTPS");
         const auto record = installationRecord(m_options.root);
-        m_variant = record.value(QStringLiteral("variant")).toString();
-        m_installedVersion = record.value(QStringLiteral("version")).toString();
+        m_variant = record.variant;
+        m_installedVersion = record.version;
         requireUpdate(QDir().mkpath(m_options.cacheDirectory), "Could not create update cache");
         if (QFileInfo::exists(cachePath(QStringLiteral("state.json")))) {
             try {
