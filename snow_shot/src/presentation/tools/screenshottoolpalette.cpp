@@ -1292,7 +1292,6 @@ bool ScreenshotToolPalette::prepareStyleControlsForActivation(Tool destinationTo
         (destinationTool == Tool::RectangleHighlight || destinationTool == Tool::PenHighlight);
     if (highlightPair && sourceControls != nullptr) {
         m_styleControls->stageExternalStyleEditorWidget(
-            "highlight-mode", "radio:highlight-mode",
             sourceControls->findChild<QWidget*>(QStringLiteral("screenshotHighlightModeSelector")));
     }
 
@@ -1303,15 +1302,12 @@ bool ScreenshotToolPalette::prepareStyleControlsForActivation(Tool destinationTo
          destinationTool == Tool::PenFilter);
     if (filterPair && sourceControls != nullptr) {
         m_styleControls->stageExternalStyleEditorWidget(
-            "filter-mode", "radio:filter-mode",
             sourceControls->findChild<QWidget*>(QStringLiteral("screenshotFilterModeSelector")));
         FilterEditor& sourceEditor = sourceTool == Tool::PenFilter    ? m_penFilterEditor
                                      : sourceTool == Tool::AutoFilter ? m_autoFilterEditor
                                                                       : m_filterEditor;
-        m_styleControls->stageExternalStyleEditorWidget("filter-type", "select:filter-types",
-                                                        sourceEditor.typeSelect);
+        m_styleControls->stageExternalStyleEditorWidget(sourceEditor.typeSelect);
         m_styleControls->stageExternalStyleEditorWidget(
-            "filter-intensity", "slider:filter-intensity",
             sourceEditor.intensitySlider != nullptr ? sourceEditor.intensitySlider->parentWidget()
                                                     : nullptr);
     }

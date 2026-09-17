@@ -683,10 +683,18 @@ void ScreenshotToolPaletteStyleControls::stageReusableWidget(const char* role,
     m_reusableEditors.push_back({QByteArray(role), QByteArray(signature), nullptr, widget});
 }
 
-void ScreenshotToolPaletteStyleControls::stageExternalStyleEditorWidget(const char* role,
-                                                                        const char* signature,
-                                                                        QWidget* widget) {
-    stageReusableWidget(role, signature, widget);
+void ScreenshotToolPaletteStyleControls::stageExternalStyleEditorWidget(QWidget* widget) {
+    if (widget == nullptr) {
+        return;
+    }
+    const QByteArray role = widget->property("screenshotStyleEditorRole").toByteArray();
+    const QByteArray signature = widget->property("screenshotStyleEditorSignature").toByteArray();
+    Q_ASSERT(!role.isEmpty());
+    Q_ASSERT(!signature.isEmpty());
+    if (role.isEmpty() || signature.isEmpty()) {
+        return;
+    }
+    stageReusableWidget(role.constData(), signature.constData(), widget);
 }
 
 bool ScreenshotToolPaletteStyleControls::reusableRoleStaged(const char* role) const {
@@ -1079,12 +1087,20 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         std::unique_ptr<ScreenshotToolPaletteStyleEditorComponent> base(editor.release());
         stageReusableEditor(role, signature, std::move(base));
     };
-    const auto stageWidget = [this, destinationControls, &destinationOnly](const char* role,
-                                                                           const char* signature) {
+    const auto stageWidget = [this, destinationControls, &destinationOnly](const char* role) {
         if (!destinationOnly(role) || reusableRoleStaged(role)) {
             return;
         }
-        stageReusableWidget(role, signature, editorRootForRole(destinationControls, role));
+        QWidget* root = editorRootForRole(destinationControls, role);
+        if (root == nullptr) {
+            return;
+        }
+        const QByteArray signature = root->property("screenshotStyleEditorSignature").toByteArray();
+        Q_ASSERT(!signature.isEmpty());
+        if (signature.isEmpty()) {
+            return;
+        }
+        stageReusableWidget(role, signature.constData(), root);
     };
 
     using Tool = ScreenshotToolPalette::Tool;
@@ -1096,30 +1112,30 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         stageComponent(kRoleOutlineWidth, kSignatureStrokeWidth, m_shapeStrokeWidthEditor);
         stageComponent(kRoleShapeFill, kSignatureShapeFill, m_shapeFillEditor);
         if (destination == Tool::Shape) {
-            stageWidget(kRoleShapeKind, kSignatureShapeKind);
-            stageWidget(kRoleCornerRadius, kSignatureCornerRadius);
+            stageWidget(kRoleShapeKind);
+            stageWidget(kRoleCornerRadius);
         }
         break;
     case Tool::Arrow:
         stageComponent(kRoleOutlineStroke, kSignatureStroke, m_arrowStrokeEditor);
         stageComponent(kRoleOutlineWidth, kSignatureStrokeWidth, m_arrowStrokeWidthEditor);
-        stageWidget(kRoleArrowType, kSignatureArrowType);
+        stageWidget(kRoleArrowType);
         stageComponent(kRoleStartArrowhead, kSignatureArrowhead, m_startArrowheadEditor);
         stageComponent(kRoleEndArrowhead, kSignatureArrowhead, m_endArrowheadEditor);
         break;
     case Tool::RectangleHighlight:
-        stageWidget(kRoleHighlightMode, kSignatureHighlightMode);
+        stageWidget(kRoleHighlightMode);
         stageComponent(kRoleHighlightColor, kSignatureHighlightColor, m_highlightColorEditor);
         stageComponent(kRoleHighlightBorder, kSignatureHighlightBorder, m_highlightStrokeEditor);
         break;
     case Tool::PenHighlight:
-        stageWidget(kRoleHighlightMode, kSignatureHighlightMode);
+        stageWidget(kRoleHighlightMode);
         stageComponent(kRoleHighlightColor, kSignatureHighlightColor, m_penHighlightColorEditor);
         stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_penHighlightStrokeWidthEditor);
         break;
     case Tool::Spotlight:
         stageComponent(kRoleMaskColor, kSignatureMaskColor, m_spotlightColorEditor);
-        stageWidget(kRoleOpacity, kSignatureOpacity);
+        stageWidget(kRoleOpacity);
         break;
     case Tool::Text:
         stageComponent(kRoleForegroundColor, kSignatureForegroundColor, m_textColorEditor);
@@ -1127,39 +1143,39 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         stageComponent(kRoleTextAlignment, kSignatureTextAlignment, m_textAlignmentEditor);
         stageComponent(kRoleTextStroke, kSignatureTextStroke, m_textStrokeEditor);
         stageComponent(kRoleTextFill, kSignatureTextFill, m_textFillEditor);
-        stageWidget(kRoleCornerRadius, kSignatureCornerRadius);
+        stageWidget(kRoleCornerRadius);
         break;
     case Tool::SerialNumber:
         stageComponent(kRoleForegroundColor, kSignatureForegroundColor, m_serialNumberColorEditor);
-        stageWidget(kRoleSerialType, kSignatureSerialType);
-        stageWidget(kRoleSerialValue, kSignatureSerialValue);
+        stageWidget(kRoleSerialType);
+        stageWidget(kRoleSerialValue);
         stageComponent(kRoleTextFont, kSignatureTextFont, m_serialNumberFontEditor);
         stageComponent(kRoleTextFill, kSignatureTextFill, m_serialNumberFillEditor);
         break;
     case Tool::AutoFilter:
-        stageWidget(kRoleFilterMode, kSignatureFilterMode);
-        stageWidget(kRoleFilterType, kSignatureAutoFilterType);
-        stageWidget(kRoleFilterIntensity, kSignatureFilterIntensity);
+        stageWidget(kRoleFilterMode);
+        stageWidget(kRoleFilterType);
+        stageWidget(kRoleFilterIntensity);
         break;
     case Tool::RectangleFilter:
-        stageWidget(kRoleFilterMode, kSignatureFilterMode);
-        stageWidget(kRoleFilterType, kSignatureFilterType);
-        stageWidget(kRoleFilterIntensity, kSignatureFilterIntensity);
+        stageWidget(kRoleFilterMode);
+        stageWidget(kRoleFilterType);
+        stageWidget(kRoleFilterIntensity);
         break;
     case Tool::PenFilter:
-        stageWidget(kRoleFilterMode, kSignatureFilterMode);
-        stageWidget(kRoleFilterType, kSignatureFilterType);
+        stageWidget(kRoleFilterMode);
+        stageWidget(kRoleFilterType);
         stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_penFilterStrokeWidthEditor);
-        stageWidget(kRoleFilterIntensity, kSignatureFilterIntensity);
+        stageWidget(kRoleFilterIntensity);
         break;
     case Tool::Watermark:
         stageComponent(kRoleForegroundColor, kSignatureForegroundColor, m_watermarkColorEditor);
-        stageWidget(kRoleWatermarkText, kSignatureWatermarkText);
+        stageWidget(kRoleWatermarkText);
         stageComponent(kRoleWatermarkFont, kSignatureWatermarkFont, m_watermarkFontEditor);
-        stageWidget(kRoleWatermarkTemplate, kSignatureWatermarkTemplate);
-        stageWidget(kRoleAngle, kSignatureAngle);
-        stageWidget(kRoleGap, kSignatureGap);
-        stageWidget(kRoleOpacity, kSignatureOpacity);
+        stageWidget(kRoleWatermarkTemplate);
+        stageWidget(kRoleAngle);
+        stageWidget(kRoleGap);
+        stageWidget(kRoleOpacity);
         break;
     default:
         break;

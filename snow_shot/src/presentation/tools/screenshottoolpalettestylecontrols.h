@@ -187,7 +187,11 @@ class ScreenshotToolPaletteStyleControls final {
     void restoreStyleEditors(int tool, QWidget* controls);
     void prepareStyleReconcile(int sourceTool, int destinationTool, QWidget* sourceControls);
     void stageDestinationStyleEditors(int destinationTool, QWidget* destinationControls);
-    void stageExternalStyleEditorWidget(const char* role, const char* signature, QWidget* widget);
+    // Stages a style editor widget built outside this module. The widget must
+    // carry the role and signature tags assigned by its builder; staging keeps
+    // that identity instead of re-specifying it, so a pooled editor can never
+    // be published under a signature that does not match its variant.
+    void stageExternalStyleEditorWidget(QWidget* widget);
     void finishStyleReconcile(int destinationTool);
     void discardBindingsExcept(int destinationTool, QWidget* destinationControls);
     [[nodiscard]] ScreenshotToolPaletteStyleReconcileStats lastReconcileStats() const;

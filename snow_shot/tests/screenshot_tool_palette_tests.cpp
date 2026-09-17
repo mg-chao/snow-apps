@@ -10141,6 +10141,53 @@ void selectedFilterTypeDoesNotReplaceCreationDefault() {
             "selected filter type edit preserves creation type");
 }
 
+void filterTypeSelectKeepsSmartEraseAcrossFilterModeSwitches() {
+    using Tool = ScreenshotToolPalette::Tool;
+    ScreenshotToolPalette::Options options;
+    options.showFilterTool = true;
+    ScreenshotToolPalette palette(options);
+    palette.setActiveTool(Tool::AutoFilter);
+    auto* autoType = palette.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotAutoFilterTypeSelect"));
+    require(autoType != nullptr && autoType->model() != nullptr &&
+                autoType->model()->rowCount() == 5,
+            "Auto Filter exposes its five filter types without Smart Erase");
+
+    const auto requireSmartErase = [&palette](const QString& objectName) {
+        auto* select = palette.findChild<adqt::widgets::AdSelect*>(objectName);
+        require(select != nullptr && select->model() != nullptr && select->model()->rowCount() == 6,
+                "leaving Auto Filter keeps all six filter types");
+        const QModelIndex smartEraseRow = select->model()->index(2, 0);
+        require(smartEraseRow.data(adqt::widgets::AdSelect::DefaultValueRole).toInt() ==
+                    static_cast<int>(SnowCanvasFilterType::SmartErase),
+                "leaving Auto Filter keeps the Smart Erase option");
+        return select;
+    };
+
+    palette.setActiveTool(Tool::RectangleFilter);
+    requireSmartErase(QStringLiteral("screenshotFilterTypeSelect"));
+
+    palette.setActiveTool(Tool::AutoFilter);
+    palette.setActiveTool(Tool::PenFilter);
+    adqt::widgets::AdSelect* penType =
+        requireSmartErase(QStringLiteral("screenshotPenFilterTypeSelect"));
+
+    penType->setCurrentData(static_cast<int>(SnowCanvasFilterType::SmartErase),
+                            adqt::widgets::AdSelect::DefaultValueRole);
+    require(penType->currentValue().toInt() == static_cast<int>(SnowCanvasFilterType::SmartErase) &&
+                palette.creationStyleDefaults().penFilter.type == SnowCanvasFilterType::SmartErase,
+            "Smart Erase stays selectable and updates the pen filter creation type");
+
+    palette.setActiveTool(Tool::AutoFilter);
+    autoType = palette.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotAutoFilterTypeSelect"));
+    require(autoType != nullptr && autoType->model() != nullptr &&
+                autoType->model()->rowCount() == 5,
+            "returning to Auto Filter restores its Smart-Erase-free type model");
+    palette.setActiveTool(Tool::RectangleFilter);
+    requireSmartErase(QStringLiteral("screenshotFilterTypeSelect"));
+}
+
 void autoFilterControlsShareStylesAndKeepCategoryUnselected() {
     using Tool = ScreenshotToolPalette::Tool;
     ScreenshotToolPalette::Options options;
@@ -10245,6 +10292,7 @@ int main(int argc, char** argv) {
         filterEditorsRestoreValuesAfterToolSwitch();
         autoFilterLegacyStrengthMigration();
         selectedFilterTypeDoesNotReplaceCreationDefault();
+        filterTypeSelectKeepsSmartEraseAcrossFilterModeSwitches();
         autoFilterControlsShareStylesAndKeepCategoryUnselected();
         filterToolExposesTypeAndIntensityControls();
         filterStyleEditorsMatchShapeAndSpotlightMetrics();
@@ -10489,6 +10537,7 @@ int main(int argc, char** argv) {
     highlightStyleToolbarWidthTracksActiveMode();
     eraserToolIsDiscoverableAndHidesStyleControls();
     filterEditorsRestoreValuesAfterToolSwitch();
+    filterTypeSelectKeepsSmartEraseAcrossFilterModeSwitches();
     filterToolExposesTypeAndIntensityControls();
     drawingModeSelectionsSurviveToolbarReentry();
     filterStyleEditorsMatchShapeAndSpotlightMetrics();
