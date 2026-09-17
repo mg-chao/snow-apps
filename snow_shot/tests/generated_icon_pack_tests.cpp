@@ -126,6 +126,26 @@ void everySnowShotEntryRenders() {
             "every Snow Shot icon must render without missing images or undefined references");
 }
 
+void recaptureIconUsesThemeColor() {
+    namespace icons = snow_shot::presentation::icons::custom;
+    for (const QColor color : {QColor(0, 166, 90), QColor(240, 240, 240)}) {
+        const auto ref = icons::outlined::RefreshCapture(adqt::icons::IconColors::primary(color));
+        require(adqt::icons::describeIcon(ref).colorModel ==
+                    adqt::icons::IconColorModel::Monochrome,
+                "Recapture must use the shared monochrome theme-color pipeline");
+        const QImage image = render(ref, QSize(32, 32), 1.5).toImage();
+        require(!alphaBounds(image).isEmpty() && containsOpaqueColor(image, color),
+                "Recapture must render using the supplied theme color");
+        for (int y = 0; y < image.height(); ++y) {
+            for (int x = 0; x < image.width(); ++x) {
+                const QColor pixel = image.pixelColor(x, y);
+                require(pixel.alpha() != 255 || pixel.rgb() == color.rgb(),
+                        "Recapture must not retain any fixed SVG colors");
+            }
+        }
+    }
+}
+
 void projectIconColorsAndModelsArePreserved() {
     namespace icons = snow_shot::presentation::icons::custom;
     const QColor primary(0, 166, 90);
@@ -293,6 +313,11 @@ void arrowheadIconsFaceTheirRespectiveEndpoints() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     try {
+        if (application.arguments().contains(QStringLiteral("--recapture-only"))) {
+            recaptureIconUsesThemeColor();
+            return 0;
+        }
+        recaptureIconUsesThemeColor();
         if (application.arguments().contains(QStringLiteral("--ocr-translate-only"))) {
             ocrTranslateIconUsesTheSuppliedProjectAsset();
             return 0;

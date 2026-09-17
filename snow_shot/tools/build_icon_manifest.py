@@ -26,8 +26,6 @@ def main() -> int:
         if name == "screenshot-feature":
             variant, model = "twotone", "twoTone"
             defaults = {"secondary": "#9254DE"}
-        elif name == "refresh-capture":
-            model = "fullColor"
         elif name == "snow-shot-logo":
             variant = "brand"
         entry = {

@@ -184,6 +184,7 @@ class ScreenshotToolPalette final : public QWidget {
     };
 
     enum class ActionFamily {
+        Move,
         Selection,
         TextRecognition,
         TableRecognition,
@@ -501,6 +502,7 @@ class ScreenshotToolPalette final : public QWidget {
                                              bool danger = false, bool primary = false);
     void createMainToolbar(const Options& options);
     void createSecondaryToolbarShell();
+    void createMoveActionFamily();
     void createSelectionActionFamily();
     void createTextRecognitionActionFamily();
     void createTableRecognitionActionFamily();
@@ -712,7 +714,7 @@ class ScreenshotToolPalette final : public QWidget {
     QBoxLayout* m_recordExportSettingsLayout = nullptr;
     QVector<QBoxLayout*> m_styleControlLayouts;
     QWidget* m_rectangleStyleControlsWidget = nullptr;
-    QWidget* m_moveStyleControlsWidget = nullptr;
+    QWidget* m_moveActionControls = nullptr;
     QWidget* m_lineStyleControlsWidget = nullptr;
     QWidget* m_freeDrawStyleControlsWidget = nullptr;
     QWidget* m_arrowStyleControlsWidget = nullptr;

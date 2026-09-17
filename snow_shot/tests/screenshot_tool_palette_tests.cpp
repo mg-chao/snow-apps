@@ -10360,21 +10360,21 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
     palette.setCaptureCursorEnabled(false);
     palette.setActiveTool(ScreenshotToolPalette::Tool::Move);
 
-    auto* controls = palette.findChild<QWidget*>(QStringLiteral("screenshotMoveStyleControls"));
+    auto* controls = palette.findChild<QWidget*>(QStringLiteral("screenshotMoveActionControls"));
     auto* cursor = palette.findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotCaptureCursorButton"));
     auto* recapture =
         palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotRecaptureButton"));
     auto* layout = controls != nullptr ? qobject_cast<QBoxLayout*>(controls->layout()) : nullptr;
     require(controls != nullptr && cursor != nullptr && recapture != nullptr && layout != nullptr &&
-                palette.styleToolbarVisible(),
+                palette.actionToolbarVisible() && !palette.styleToolbarVisible(),
             "Move must materialize and display its dedicated options row");
     require(layout->indexOf(cursor) == 0 && layout->indexOf(recapture) == layout->count() - 1 &&
                 layout->itemAt(2) != nullptr &&
                 qobject_cast<QFrame*>(layout->itemAt(2)->widget()) != nullptr,
             "Move options must order Capture cursor, separator, then Recapture");
-    require(cursor->isCheckable() && !cursor->isChecked() && !palette.captureCursorEnabled(),
-            "Capture cursor must be a real checkable control reflecting palette state");
+    require(!cursor->isCheckable() && !cursor->isChecked() && !palette.captureCursorEnabled(),
+            "Capture cursor must use the same state-driven action button as scrolling screenshot");
 
     int cursorChanges = 0;
     int recaptures = 0;
@@ -10383,7 +10383,7 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
     QObject::connect(&palette, &ScreenshotToolPalette::recaptureRequested,
                      [&recaptures]() { ++recaptures; });
     cursor->click();
-    require(cursorChanges == 1 && cursor->isChecked() && palette.captureCursorEnabled(),
+    require(cursorChanges == 1 && palette.captureCursorEnabled(),
             "Capture cursor clicks must update state and emit the persisted-setting command");
     recapture->click();
     require(recaptures == 1 && recapture->toolTip() == shortcutTooltip(QStringLiteral("Recapture"),
@@ -10397,22 +10397,114 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
     require(palette.activateScreenshotShortcut(QStringLiteral("recapture")) && recaptures == 2,
             "the shortcut must invoke the same Recapture button signal path");
 
-    ScreenshotToolPalette::Options recordingOptions;
-    recordingOptions.showRecordingControls = true;
-    ScreenshotToolPalette recordingPalette(recordingOptions);
-    auto* recordingCursor = recordingPalette.findChild<adqt::widgets::AdButton*>(
-        QStringLiteral("screenRecordingShowCursor"));
-    require(recordingCursor != nullptr && recordingCursor->sizeHint() == cursor->sizeHint() &&
-                recordingCursor->iconSize() == cursor->iconSize(),
-            "Capture cursor must share recording cursor metrics and icon sizing");
+    // Move mode leaves the canvas engine on a non-drawing tool, so the engine
+    // reports DefaultRectangle, and selector refresh can report selection-based
+    // sources, after Move activates. Those pushes must sync editor values
+    // without choosing an editor: the Move options row is not a canvas style
+    // editor, so the active tool alone keeps owning which row is displayed.
+    SnowCanvasStyleToolbarState defaultRectangleState;
+    defaultRectangleState.source = SnowCanvasStyleToolbarSource::DefaultRectangle;
+    palette.setStyleToolbarState(defaultRectangleState);
+    SnowCanvasStyleToolbarState selectedRectangleState;
+    selectedRectangleState.source = SnowCanvasStyleToolbarSource::SelectedRectangle;
+    palette.setStyleToolbarState(selectedRectangleState);
+    require(palette.actionToolbarVisible() && !palette.styleToolbarVisible() &&
+                palette.findChild<QWidget*>(QStringLiteral("screenshotMoveActionControls")) !=
+                    nullptr &&
+                palette.findChild<QWidget*>(QStringLiteral("screenshotRectangleStyleControls")) ==
+                    nullptr,
+            "canvas style pushes must keep the Move options row, not the Shape editors");
+    auto* retainedCursor = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotCaptureCursorButton"));
+    auto* retainedRecapture =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotRecaptureButton"));
+    require(retainedCursor == cursor && retainedRecapture == recapture &&
+                palette.captureCursorEnabled(),
+            "canvas style pushes must not rebuild the Move options row or reset its state");
+    require(palette.activateScreenshotShortcut(QStringLiteral("recapture")) && recaptures == 3,
+            "Move options keep their commands after canvas style pushes");
+
+    ScreenshotToolPalette scrollingPalette(options);
+    scrollingPalette.setActiveTool(ScreenshotToolPalette::Tool::ScrollingScreenshot);
+    auto* scrollingButton = scrollingPalette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotScrollingAutoScrollButton"));
+    auto* scrollingControls =
+        scrollingPalette.findChild<QWidget*>(QStringLiteral("screenshotScrollingRecognitionMode"));
+    require(scrollingButton != nullptr && scrollingControls != nullptr,
+            "scrolling screenshot must expose the existing action components");
+    const auto requireMatchingButtonState = [&]() {
+        require(cursor->isCheckable() == scrollingButton->isCheckable() &&
+                    cursor->isChecked() == scrollingButton->isChecked() &&
+                    cursor->buttonStyle() == scrollingButton->buttonStyle() &&
+                    cursor->accentRole() == scrollingButton->accentRole() &&
+                    cursor->sizeClass() == scrollingButton->sizeClass(),
+                "Move and scrolling screenshot must use identical button rendering states");
+    };
+    scrollingButton->click();
+    requireMatchingButtonState();
+    cursor->click();
+    scrollingButton->click();
+    require(!palette.captureCursorEnabled() && cursorChanges == 101,
+            "clicking Capture cursor again must disable capture and emit once");
+    requireMatchingButtonState();
+    require(recapture->buttonStyle() == scrollingButton->buttonStyle() &&
+                recapture->accentRole() == scrollingButton->accentRole() &&
+                recapture->isCheckable() == scrollingButton->isCheckable(),
+            "Recapture must use the same unselected action button style as scrolling screenshot");
+    palette.setCaptureCursorEnabled(true);
+    scrollingButton->click();
+    require(cursorChanges == 101, "inbound capture state must not emit a user command");
+    requireMatchingButtonState();
+    for (const qreal scale : {1.0, 0.75, 1.25, 1.5, 2.0, 1.0}) {
+        requireMatchingButtonState();
+        palette.setPhysicalScale(scale);
+        scrollingPalette.setPhysicalScale(scale);
+        palette.prepareForDisplay();
+        scrollingPalette.prepareForDisplay();
+        QCoreApplication::processEvents();
+        require(cursor->size() == scrollingButton->size() &&
+                    recapture->size() == scrollingButton->size() &&
+                    cursor->iconSize() == scrollingButton->iconSize(),
+                "Move buttons and icons must match scrolling screenshot metrics at every scale");
+        require(palette.actionPanel()->height() == scrollingPalette.actionPanel()->height() &&
+                    palette.actionPanel()->layout()->contentsMargins() ==
+                        scrollingPalette.actionPanel()->layout()->contentsMargins(),
+                "Move must share scrolling screenshot panel height and padding at every scale");
+        auto* scrollingLayout = scrollingControls->layout();
+        require(layout->itemAt(2)->widget()->size() ==
+                        scrollingLayout->itemAt(2)->widget()->size() &&
+                    layout->itemAt(1)->sizeHint() == scrollingLayout->itemAt(1)->sizeHint() &&
+                    layout->itemAt(3)->sizeHint() == scrollingLayout->itemAt(3)->sizeHint(),
+                "Move separators and group spacing must match scrolling screenshot controls");
+    }
+    palette.setRecaptureBusy(true);
+    for (const auto tool :
+         {ScreenshotToolPalette::Tool::ScrollingScreenshot, ScreenshotToolPalette::Tool::Shape,
+          ScreenshotToolPalette::Tool::Select}) {
+        palette.setActiveTool(tool);
+        palette.setActiveTool(ScreenshotToolPalette::Tool::Move);
+        palette.prepareForDisplay();
+        cursor = palette.findChild<adqt::widgets::AdButton*>(
+            QStringLiteral("screenshotCaptureCursorButton"));
+        recapture = palette.findChild<adqt::widgets::AdButton*>(
+            QStringLiteral("screenshotRecaptureButton"));
+        require(palette.actionToolbarVisible() && !palette.styleToolbarVisible() &&
+                    cursor != nullptr && palette.captureCursorEnabled() && recapture != nullptr &&
+                    !recapture->isEnabled(),
+                "returning to Move must restore capture state through the shared action row");
+        requireMatchingButtonState();
+    }
+    palette.setRecaptureBusy(false);
+    require(palette.activateScreenshotShortcut(QStringLiteral("recapture")) && recaptures == 4,
+            "rebuilt Move controls must keep the existing shortcut command path");
 
     ScreenshotToolPalette::Options pinnedOptions;
     pinnedOptions.showMoveTool = true;
     pinnedOptions.moveToolPresentation = ScreenshotToolPalette::MoveToolPresentation::ResizeWindow;
     ScreenshotToolPalette pinnedPalette(pinnedOptions);
     pinnedPalette.setActiveTool(ScreenshotToolPalette::Tool::Move);
-    require(!pinnedPalette.styleToolbarVisible() &&
-                pinnedPalette.findChild<QWidget*>(QStringLiteral("screenshotMoveStyleControls")) ==
+    require(!pinnedPalette.styleToolbarVisible() && !pinnedPalette.actionToolbarVisible() &&
+                pinnedPalette.findChild<QWidget*>(QStringLiteral("screenshotMoveActionControls")) ==
                     nullptr,
             "Resize window Move must remain unchanged without screenshot capture options");
 }
@@ -10472,6 +10564,11 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--popup-recovery-only"))) {
         tableBusyStatePreservesSiblingGroupPopovers();
         tableBusyStatePreservesSiblingGroupPopovers(true);
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--move-options-only"))) {
+        moveToolExposesCaptureCursorAndRecaptureOptions();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
