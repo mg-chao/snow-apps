@@ -145,4 +145,6 @@ pub enum CursorStyle {
     Text,
     NotAllowed,
     Hidden,
+    Stroke,
+    Eraser,
 }

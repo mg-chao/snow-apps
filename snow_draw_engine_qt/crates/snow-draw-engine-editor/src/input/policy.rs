@@ -112,7 +112,7 @@ impl Editor {
                 clear_selection_on_activate: false,
                 empty_canvas_action: ToolEmptyCanvasAction::MarqueeSelect,
                 allow_shift_toggle: false,
-                default_cursor: CursorStyle::Hidden,
+                default_cursor: CursorStyle::Eraser,
             },
             ActiveTool::Text => ToolPolicy {
                 selection_scope: ToolSelectionScope::TextOnly,

@@ -69,23 +69,24 @@
 
 namespace {
 
-std::optional<QCursor> baselineCursorForCanvasTool(SnowCanvasTool tool) {
+std::optional<SnowCursorStyle> baselineCursorForCanvasTool(SnowCanvasTool tool) {
     switch (tool) {
     case SnowCanvasTool::Shape:
     case SnowCanvasTool::Arrow:
     case SnowCanvasTool::Line:
-    case SnowCanvasTool::FreeDraw:
     case SnowCanvasTool::RectangleHighlight:
     case SnowCanvasTool::RectangleFilter:
-    case SnowCanvasTool::PenHighlight:
-    case SnowCanvasTool::PenFilter:
     case SnowCanvasTool::Spotlight:
     case SnowCanvasTool::SerialNumber:
-        return QCursor(Qt::CrossCursor);
+        return SNOW_CURSOR_STYLE_CROSSHAIR;
+    case SnowCanvasTool::FreeDraw:
+    case SnowCanvasTool::PenHighlight:
+    case SnowCanvasTool::PenFilter:
+        return SNOW_CURSOR_STYLE_STROKE;
     case SnowCanvasTool::Eraser:
-        return QCursor(Qt::BlankCursor);
+        return SNOW_CURSOR_STYLE_ERASER;
     case SnowCanvasTool::Text:
-        return QCursor(Qt::IBeamCursor);
+        return SNOW_CURSOR_STYLE_TEXT;
     case SnowCanvasTool::Select:
     case SnowCanvasTool::Watermark:
     default:
@@ -358,6 +359,9 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool setCanvasTool(SnowCanvasTool tool);
     void setCursorForLayer(SnowCanvasCursorLayer layer, const QCursor& cursor);
     void clearCursorForLayer(SnowCanvasCursorLayer layer);
+    void refreshCursorDevicePixelRatio() {
+        cursorController.refreshDevicePixelRatio();
+    }
     SnowCanvasStyleToolbarState canvasStyleToolbarState() const;
     SnowCanvasSerialNumberToolbarState serialNumberToolbarState() const;
     SnowCanvasWatermarkConfig canvasWatermarkConfig() const;
@@ -486,6 +490,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool applyPairedMutationResult(const snow_canvas_commands::PairedMutationResult& result);
     void emitChangedStateSignals(const snow_canvas_state::Changes& changes);
     void applyCanvasToolCursor(SnowCanvasTool tool);
+    void refreshToolCursorStyle();
     void refocusWidget();
 
     SnowCanvasWidget& widget;
@@ -1905,6 +1910,7 @@ void SnowCanvasWidget::Impl::refreshStateFromEngine(bool emitSignals) {
         return;
     }
 
+    refreshToolCursorStyle();
     if (emitSignals) {
         emitChangedStateSignals(changes);
     }
@@ -1935,6 +1941,7 @@ void SnowCanvasWidget::Impl::syncAfterEngineMutation(bool emitSignals) {
         });
 
     const SnowCanvasDisplayCache& cache = displayState.displayCache();
+    refreshToolCursorStyle();
     if (cache.patchCursor().scene_revision != previousSceneRevision) {
         // Paint events can coalesce patches, so consume each patch's dirty region
         // before the next display-cache sync replaces it.
@@ -1999,10 +2006,22 @@ void SnowCanvasWidget::Impl::emitChangedStateSignals(const snow_canvas_state::Ch
     }
 }
 
+void SnowCanvasWidget::Impl::refreshToolCursorStyle() {
+    const auto& cursorStyle = displayState.snapshot().styleToolbarState;
+    const bool filterCursor = displayState.snapshot().activeTool == SNOW_ACTIVE_TOOL_PEN_FILTER;
+    const auto& stroke = cursorStyle.shape_style.stroke;
+    cursorController.configureStrokeCursor(
+        (filterCursor ? cursorStyle.filter_style.stroke_width
+                      : cursorStyle.shape_style.stroke_width) *
+            displayState.displayCache().sceneInfo().camera_zoom,
+        filterCursor ? std::nullopt
+                     : std::optional<QColor>(QColor(stroke.r, stroke.g, stroke.b, stroke.a)));
+}
+
 void SnowCanvasWidget::Impl::applyCanvasToolCursor(SnowCanvasTool tool) {
-    const std::optional<QCursor> cursor = baselineCursorForCanvasTool(tool);
+    const auto cursor = baselineCursorForCanvasTool(tool);
     if (cursor.has_value()) {
-        cursorController.setCursor(SnowCanvasCursorLayer::CanvasTool, *cursor);
+        cursorController.setEngineCursor(*cursor);
         return;
     }
     cursorController.clearCursor(SnowCanvasCursorLayer::CanvasTool);
@@ -2183,6 +2202,14 @@ void SnowCanvasWidget::Impl::renderAfterCanvas(QPainter& painter,
 
 void SnowCanvasWidget::paintEvent(QPaintEvent* event) {
     m_impl->paintEvent(event);
+}
+
+bool SnowCanvasWidget::event(QEvent* event) {
+    const bool handled = QWidget::event(event);
+    if (m_impl && event->type() == QEvent::DevicePixelRatioChange) {
+        m_impl->refreshCursorDevicePixelRatio();
+    }
+    return handled;
 }
 
 bool SnowCanvasWidget::eventFilter(QObject* watched, QEvent* event) {

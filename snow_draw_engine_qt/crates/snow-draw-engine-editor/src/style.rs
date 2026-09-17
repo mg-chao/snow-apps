@@ -631,21 +631,6 @@ fn serial_number_with_style_properties(
 }
 
 impl Editor {
-    fn active_stroke_cursor_style(&self) -> Option<(f64, Option<ColorRgba8>)> {
-        match self.state.active_tool {
-            ActiveTool::FreeDraw => Some((
-                self.state.default_free_draw_style.stroke_width,
-                Some(self.state.default_free_draw_style.stroke),
-            )),
-            ActiveTool::PenHighlight => Some((
-                self.state.default_pen_highlight_style.stroke_width,
-                Some(self.state.default_pen_highlight_style.stroke),
-            )),
-            ActiveTool::PenFilter => Some((self.state.default_pen_filter.stroke_width, None)),
-            _ => None,
-        }
-    }
-
     pub fn watermark_config(&self, document: &DocumentModel) -> WatermarkConfig {
         document.watermark_config().clone()
     }
@@ -943,7 +928,6 @@ impl Editor {
             .filter(|id| document.filter(*id).is_ok() || document.pen_filter(*id).is_ok())
             .collect::<Vec<_>>();
         if selected_ids.is_empty() {
-            let previous_stroke_cursor_style = self.active_stroke_cursor_style();
             if self.state.active_tool == ActiveTool::PenFilter {
                 if properties & FILTER_STYLE_PROPERTY_TYPE != 0 {
                     self.state.default_pen_filter.filter_type = style.filter_type;
@@ -980,9 +964,6 @@ impl Editor {
                 == snow_draw_engine_document::CanvasFilterType::SmartErase
             {
                 self.state.default_pen_filter.strength = 0.5;
-            }
-            if self.active_stroke_cursor_style() != previous_stroke_cursor_style {
-                self.bump_overlay_state_revision();
             }
             return Ok(None);
         }
@@ -1496,7 +1477,6 @@ impl Editor {
             return Ok(None);
         }
 
-        let previous_stroke_cursor_style = self.active_stroke_cursor_style();
         match patch.kind {
             ShapeKind::Rectangle => self.update_default_shape_styles(
                 document,
@@ -1524,9 +1504,6 @@ impl Editor {
                     patch.apply_to_line(self.state.default_pen_highlight_style);
             }
             ShapeKind::Spotlight => {}
-        }
-        if self.active_stroke_cursor_style() != previous_stroke_cursor_style {
-            self.bump_overlay_state_revision();
         }
 
         let bindables = self.bindable_elements(document, &[]);

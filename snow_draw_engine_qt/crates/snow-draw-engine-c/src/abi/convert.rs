@@ -1347,6 +1347,8 @@ pub(crate) fn snow_cursor_style_from_rust(value: CursorStyle) -> SnowCursorStyle
         CursorStyle::NotAllowed => SnowCursorStyle::NotAllowed,
         CursorStyle::CornerRadius => SnowCursorStyle::CornerRadius,
         CursorStyle::Hidden => SnowCursorStyle::Hidden,
+        CursorStyle::Stroke => SnowCursorStyle::Stroke,
+        CursorStyle::Eraser => SnowCursorStyle::Eraser,
     }
 }
 
@@ -1392,6 +1394,21 @@ mod tests {
             snow_cursor_style_from_rust(CursorStyle::CornerRadius),
             SnowCursorStyle::CornerRadius
         );
+    }
+
+    #[test]
+    fn native_tool_cursors_are_exposed_through_the_c_abi() {
+        for (style, expected) in [
+            (CursorStyle::Stroke, SnowCursorStyle::Stroke),
+            (CursorStyle::Eraser, SnowCursorStyle::Eraser),
+        ] {
+            let output = snow_interaction_output_from_rust(InteractionOutput {
+                cursor: CursorCommand::Set(style),
+                ..InteractionOutput::default()
+            });
+            assert_eq!(output.cursor_kind, SnowCursorCommandKind::Set);
+            assert_eq!(output.cursor_style, expected);
+        }
     }
 
     #[test]

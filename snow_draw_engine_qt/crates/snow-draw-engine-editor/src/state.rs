@@ -99,7 +99,6 @@ pub(crate) struct CreateArrowState {
 pub(crate) struct EraserState {
     pub(crate) active_pointers: HashMap<u32, Point<f64>>,
     pub(crate) pending_ids: Vec<ElementId>,
-    pub(crate) cursor_canvas_position: Option<Point<f64>>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -421,7 +420,7 @@ pub(crate) struct EditorState {
     pub(crate) default_text: TextData,
     pub(crate) default_serial_number: SerialNumberData,
     pub(crate) eraser: EraserState,
-    pub(crate) stroke_cursor_canvas_position: Option<Point<f64>>,
+    pub(crate) stroke_cursor_active: bool,
 }
 
 impl Default for EditorState {
@@ -509,7 +508,7 @@ impl EditorState {
             default_text,
             default_serial_number,
             eraser: EraserState::default(),
-            stroke_cursor_canvas_position: None,
+            stroke_cursor_active: false,
         }
     }
 }

@@ -3,6 +3,10 @@
 #include "icon_renderer.h"
 
 #include <QKeyEvent>
+#include <QPainter>
+#include <QPixmap>
+#include <cmath>
+#include <algorithm>
 #include <QMouseEvent>
 #include <QWheelEvent>
 
@@ -20,8 +24,49 @@ QCursor cornerRadiusCursor(qreal devicePixelRatio) {
 
 } // namespace
 
+QCursor strokeCursor(double diameter, const std::optional<QColor>& color, bool crosshair,
+                     qreal devicePixelRatio) {
+    diameter = std::isfinite(diameter) ? std::clamp(diameter, 1.0, 1024.0) : 1.0;
+    const qreal dpr =
+        std::isfinite(devicePixelRatio) && devicePixelRatio > 0.0 ? devicePixelRatio : 1.0;
+    const int radius = static_cast<int>(std::ceil(diameter / 2.0 + (crosshair ? 12.0 : 2.0)));
+    const int size = radius * 2 + 1;
+    QPixmap pixmap(static_cast<int>(std::ceil(size * dpr)),
+                   static_cast<int>(std::ceil(size * dpr)));
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.translate(radius, radius);
+    const QColor outline(0, 0, 0, 140);
+    painter.setPen(QPen(outline, 1.5));
+    painter.setBrush(color.value_or(QColor(255, 255, 255, 20)));
+    painter.drawEllipse(QRectF(-diameter / 2.0, -diameter / 2.0, diameter, diameter));
+    if (crosshair) {
+        const QColor arm = color.value_or(outline);
+        const int haloChannel =
+            0.299 * arm.red() + 0.587 * arm.green() + 0.114 * arm.blue() > 128.0 ? 0 : 255;
+        const QColor halo(haloChannel, haloChannel, haloChannel, 140);
+        const qreal inner = diameter / 2.0 + 4.0;
+        const qreal outer = inner + 6.0;
+        for (const QPointF& direction :
+             {QPointF(1, 0), QPointF(-1, 0), QPointF(0, 1), QPointF(0, -1)}) {
+            painter.setPen(QPen(halo, 2.0));
+            painter.drawLine(direction * inner, direction * outer);
+            painter.setPen(QPen(arm, 1.0));
+            painter.drawLine(direction * inner, direction * outer);
+        }
+    }
+    painter.end();
+    return QCursor(pixmap, radius, radius);
+}
+
 QCursor cursorForSnowCursor(SnowCursorStyle style, qreal devicePixelRatio) {
     switch (style) {
+    case SNOW_CURSOR_STYLE_STROKE:
+        return strokeCursor(2.0, std::nullopt, true, devicePixelRatio);
+    case SNOW_CURSOR_STYLE_ERASER:
+        return strokeCursor(16.0, std::nullopt, false, devicePixelRatio);
     case SNOW_CURSOR_STYLE_CROSSHAIR:
         return QCursor(Qt::CrossCursor);
     case SNOW_CURSOR_STYLE_CORNER_RADIUS:

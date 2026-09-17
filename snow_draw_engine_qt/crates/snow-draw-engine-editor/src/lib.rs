@@ -24,7 +24,7 @@ mod text;
 
 pub use api::{
     ActiveTextDraftPresentation, ActiveTextDraftTarget, ActiveTool, ArrowHandleKind,
-    ArrowHandleState, ArrowStyle, EditorPresentationState, EditorStrokeCursor, EditorViewState,
+    ArrowHandleState, ArrowStyle, EditorPresentationState, EditorViewState,
     EditorViewportState, ElementCreationPreview, FILTER_STYLE_PROPERTY_ALL,
     FILTER_STYLE_PROPERTY_OPACITY, FILTER_STYLE_PROPERTY_STRENGTH,
     FILTER_STYLE_PROPERTY_STROKE_WIDTH, FILTER_STYLE_PROPERTY_TYPE, FilterStyle, FreeDrawPreview,
