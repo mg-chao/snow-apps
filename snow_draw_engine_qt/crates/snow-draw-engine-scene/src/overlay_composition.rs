@@ -87,7 +87,7 @@ pub(crate) fn compose_overlay_items(
                     UiFocusConnectionDisplayItem {
                         points: points.clone(),
                         stroke: arm_outline_color,
-                        stroke_width: 4.0 / zoom,
+                        stroke_width: 2.0 / zoom,
                         ..UiFocusConnectionDisplayItem::default()
                     },
                 ));
@@ -95,7 +95,7 @@ pub(crate) fn compose_overlay_items(
                     UiFocusConnectionDisplayItem {
                         points,
                         stroke: color,
-                        stroke_width: 2.0 / zoom,
+                        stroke_width: 1.0 / zoom,
                         ..UiFocusConnectionDisplayItem::default()
                     },
                 ));
@@ -781,10 +781,10 @@ mod tests {
                     a: 140,
                 }
             );
-            assert_eq!(halo.stroke_width, 2.0);
+            assert_eq!(halo.stroke_width, 1.0);
             assert_eq!(halo.points, arm.points);
             assert_eq!(arm.stroke, cursor.stroke);
-            assert_eq!(arm.stroke_width, 1.0);
+            assert_eq!(arm.stroke_width, 0.5);
             assert_eq!(
                 arm.points,
                 vec![
@@ -849,10 +849,10 @@ mod tests {
                         panic!("expected crosshair arm")
                     };
                     assert_eq!(halo.stroke, halo_color);
-                    assert_eq!(halo.stroke_width * zoom, 4.0);
+                    assert_eq!(halo.stroke_width * zoom, 2.0);
                     assert_eq!(halo.points, arm.points);
                     assert_eq!(arm.stroke, color);
-                    assert_eq!(arm.stroke_width * zoom, 2.0);
+                    assert_eq!(arm.stroke_width * zoom, 1.0);
                     assert_eq!(
                         arm.points,
                         vec![
