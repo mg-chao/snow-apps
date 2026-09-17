@@ -69,21 +69,31 @@ pub(crate) fn compose_overlay_items(
         }));
         {
             let color = cursor.stroke_color.unwrap_or(outline_color);
+            let arm_outline_color = stroke_cursor_arm_outline_color(color);
             let inner = cursor.stroke_width / 2.0 + 4.0 / zoom;
             let outer = inner + 6.0 / zoom;
             for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+                let points = vec![
+                    [
+                        cursor.position.x + dx * inner,
+                        cursor.position.y + dy * inner,
+                    ],
+                    [
+                        cursor.position.x + dx * outer,
+                        cursor.position.y + dy * outer,
+                    ],
+                ];
                 items.push(OverlayDisplayItem::FocusConnection(
                     UiFocusConnectionDisplayItem {
-                        points: vec![
-                            [
-                                cursor.position.x + dx * inner,
-                                cursor.position.y + dy * inner,
-                            ],
-                            [
-                                cursor.position.x + dx * outer,
-                                cursor.position.y + dy * outer,
-                            ],
-                        ],
+                        points: points.clone(),
+                        stroke: arm_outline_color,
+                        stroke_width: 4.0 / zoom,
+                        ..UiFocusConnectionDisplayItem::default()
+                    },
+                ));
+                items.push(OverlayDisplayItem::FocusConnection(
+                    UiFocusConnectionDisplayItem {
+                        points,
                         stroke: color,
                         stroke_width: 2.0 / zoom,
                         ..UiFocusConnectionDisplayItem::default()
@@ -217,6 +227,21 @@ pub(crate) fn compose_overlay_items(
 
     items.retain(|item| overlay_item_visible(item, frame_view));
     items
+}
+
+// The crosshair arms take the brush color, which can sit close to the canvas
+// background. Ring them with a halo that contrasts with the arm color so the
+// cursor stays distinguishable.
+fn stroke_cursor_arm_outline_color(color: ColorRgba8) -> ColorRgba8 {
+    let luminance =
+        0.299 * f64::from(color.r) + 0.587 * f64::from(color.g) + 0.114 * f64::from(color.b);
+    let channel = if luminance > 128.0 { 0x00 } else { 0xff };
+    ColorRgba8 {
+        r: channel,
+        g: channel,
+        b: channel,
+        a: 140,
+    }
 }
 
 struct SelectionOverlayRequest<'a> {
@@ -735,15 +760,29 @@ mod tests {
         assert_eq!(cursor.stroke_width, 0.75);
         assert_eq!(cursor.fill.a, 20);
         assert_eq!(cursor.stroke.a, 140);
-        assert_eq!(items.len(), 5);
-        for (item, (dx, dy)) in
+        assert_eq!(items.len(), 9);
+        for (pair, (dx, dy)) in
             items[1..]
-                .iter()
+                .chunks_exact(2)
                 .zip([(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)])
         {
-            let OverlayDisplayItem::FocusConnection(arm) = item else {
+            let OverlayDisplayItem::FocusConnection(halo) = &pair[0] else {
+                panic!("expected crosshair arm outline")
+            };
+            let OverlayDisplayItem::FocusConnection(arm) = &pair[1] else {
                 panic!("expected crosshair arm")
             };
+            assert_eq!(
+                halo.stroke,
+                ColorRgba8 {
+                    r: 0xff,
+                    g: 0xff,
+                    b: 0xff,
+                    a: 140,
+                }
+            );
+            assert_eq!(halo.stroke_width, 2.0);
+            assert_eq!(halo.points, arm.points);
             assert_eq!(arm.stroke, cursor.stroke);
             assert_eq!(arm.stroke_width, 1.0);
             assert_eq!(
@@ -758,49 +797,76 @@ mod tests {
 
     #[test]
     fn brush_cursor_has_colored_fill_and_four_zoom_stable_crosshair_arms() {
-        let color = ColorRgba8 {
+        let dark_color = ColorRgba8 {
             r: 230,
             g: 20,
             b: 40,
             a: 255,
         };
-        for zoom in [0.5, 1.0, 2.0] {
-            let presentation = EditorPresentationState {
-                stroke_cursor: Some(snow_draw_engine_editor::EditorStrokeCursor {
-                    position: Point::new(12.0, 34.0),
-                    stroke_width: 10.0,
-                    stroke_color: Some(color),
-                }),
-                ..EditorPresentationState::default()
-            };
-            let mut view = frame_view();
-            view.camera.zoom = zoom;
-            let items = compose_overlay_items(SnapConfig::default(), &presentation, view);
-            assert_eq!(items.len(), 5);
-            assert_eq!(overlay_rect(&items, 0).fill, color);
-            for (item, (dx, dy)) in
-                items[1..]
-                    .iter()
-                    .zip([(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)])
-            {
-                let OverlayDisplayItem::FocusConnection(arm) = item else {
-                    panic!("expected crosshair arm")
+        let light_color = ColorRgba8 {
+            r: 240,
+            g: 230,
+            b: 40,
+            a: 255,
+        };
+        let white_halo = ColorRgba8 {
+            r: 0xff,
+            g: 0xff,
+            b: 0xff,
+            a: 140,
+        };
+        let black_halo = ColorRgba8 {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 140,
+        };
+        for (color, halo_color) in [(dark_color, white_halo), (light_color, black_halo)] {
+            for zoom in [0.5, 1.0, 2.0] {
+                let presentation = EditorPresentationState {
+                    stroke_cursor: Some(snow_draw_engine_editor::EditorStrokeCursor {
+                        position: Point::new(12.0, 34.0),
+                        stroke_width: 10.0,
+                        stroke_color: Some(color),
+                    }),
+                    ..EditorPresentationState::default()
                 };
-                assert_eq!(arm.stroke, color);
-                assert_eq!(arm.stroke_width * zoom, 2.0);
-                assert_eq!(
-                    arm.points,
-                    vec![
-                        [
-                            12.0 + dx * (5.0 + 4.0 / zoom),
-                            34.0 + dy * (5.0 + 4.0 / zoom)
-                        ],
-                        [
-                            12.0 + dx * (5.0 + 10.0 / zoom),
-                            34.0 + dy * (5.0 + 10.0 / zoom)
-                        ],
-                    ]
-                );
+                let mut view = frame_view();
+                view.camera.zoom = zoom;
+                let items = compose_overlay_items(SnapConfig::default(), &presentation, view);
+                assert_eq!(items.len(), 9);
+                assert_eq!(overlay_rect(&items, 0).fill, color);
+                for (pair, (dx, dy)) in items[1..].chunks_exact(2).zip([
+                    (1.0, 0.0),
+                    (-1.0, 0.0),
+                    (0.0, 1.0),
+                    (0.0, -1.0),
+                ]) {
+                    let OverlayDisplayItem::FocusConnection(halo) = &pair[0] else {
+                        panic!("expected crosshair arm outline")
+                    };
+                    let OverlayDisplayItem::FocusConnection(arm) = &pair[1] else {
+                        panic!("expected crosshair arm")
+                    };
+                    assert_eq!(halo.stroke, halo_color);
+                    assert_eq!(halo.stroke_width * zoom, 4.0);
+                    assert_eq!(halo.points, arm.points);
+                    assert_eq!(arm.stroke, color);
+                    assert_eq!(arm.stroke_width * zoom, 2.0);
+                    assert_eq!(
+                        arm.points,
+                        vec![
+                            [
+                                12.0 + dx * (5.0 + 4.0 / zoom),
+                                34.0 + dy * (5.0 + 4.0 / zoom)
+                            ],
+                            [
+                                12.0 + dx * (5.0 + 10.0 / zoom),
+                                34.0 + dy * (5.0 + 10.0 / zoom)
+                            ],
+                        ]
+                    );
+                }
             }
         }
     }

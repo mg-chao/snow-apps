@@ -12,6 +12,10 @@ const PENDING_OVERLAP: usize = 4;
 const MIN_FILTER_RESPONSE: f64 = 0.18;
 const MAX_FILTER_RESPONSE: f64 = 0.82;
 
+// Round caps only stroke a real segment, so a click without movement finishes as this
+// sub-pixel stub to render a dot.
+const DOT_SEGMENT_LENGTH: f64 = 1e-3;
+
 // Resampling makes stabilization depend on stroke geometry instead of device event frequency.
 #[derive(Clone, Debug, PartialEq)]
 struct StrokePointFilter {
@@ -88,7 +92,6 @@ pub(crate) struct StreamingFreeDrawBuilder {
     shift_active: bool,
     rdp_tolerance: f64,
     closure_radius: f64,
-    minimum_length: f64,
     geometry_revision: u64,
     style: ShapeStyle,
     preview: Option<Arc<FreeDrawPreview>>,
@@ -120,7 +123,6 @@ impl StreamingFreeDrawBuilder {
             shift_active: false,
             rdp_tolerance: (screen_width * 0.06).clamp(0.35, 1.25) / zoom,
             closure_radius: 10.0_f64.max(screen_width * 0.5) / zoom,
-            minimum_length: 8.0 / zoom,
             geometry_revision: 1,
             style,
             preview: None,
@@ -335,10 +337,13 @@ impl StreamingFreeDrawBuilder {
             .as_ref()
             .map(|preview| preview.geometry.clone());
         self.flush_pending();
-        if self.committed_vertices.len() < 2
-            || polyline_length(&self.committed_vertices) < self.minimum_length
-        {
+        let Some(&start) = self.committed_vertices.first() else {
             return None;
+        };
+        if self.committed_vertices.len() == 1 {
+            self.committed_vertices
+                .push(Point::new(start.x + DOT_SEGMENT_LENGTH, start.y));
+            self.committed_modes.push(PathSegmentMode::Curve);
         }
         let mut closed = false;
         if self.committed_vertices.len() >= 3
@@ -628,13 +633,6 @@ fn smoothstep(value: f64) -> f64 {
     value * value * (3.0 - 2.0 * value)
 }
 
-fn polyline_length(points: &[Point<f64>]) -> f64 {
-    points
-        .windows(2)
-        .map(|segment| distance(segment[0], segment[1]))
-        .sum()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -763,12 +761,29 @@ mod tests {
     }
 
     #[test]
-    fn minimum_length_is_zoom_locked() {
+    fn finish_without_drag_registers_a_dot() {
+        let mut style = crate::defaults::editor_style_defaults().free_draw;
+        style.stroke_width = 1.0;
+        let builder = StreamingFreeDrawBuilder::new(Point::new(12.0, 34.0), 1.0, style);
+        let (data, _) = builder.finish().expect("a click without movement draws a dot");
+        let vertices = data.global_vertices();
+        assert_eq!(vertices.len(), 2);
+        assert_eq!(vertices[0], Point::new(12.0, 34.0));
+        assert!(distance(vertices[0], vertices[1]) <= DOT_SEGMENT_LENGTH);
+        assert!(!data.closed);
+    }
+
+    #[test]
+    fn finish_accepts_strokes_of_any_length() {
         let mut style = crate::defaults::editor_style_defaults().free_draw;
         style.stroke_width = 1.0;
         let mut builder = StreamingFreeDrawBuilder::new(Point::new(0.0, 0.0), 1.0, style);
-        builder.append(Point::new(7.9, 0.0), false);
-        assert!(builder.finish().is_none());
+        builder.append(Point::new(0.5, 0.0), false);
+        let (data, _) = builder.finish().expect("a short drag still registers a stroke");
+        assert_eq!(
+            data.global_vertices().last(),
+            Some(&Point::new(0.5, 0.0))
+        );
     }
 
     #[test]
