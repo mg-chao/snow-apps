@@ -29,32 +29,34 @@ pub struct SnowArrowheadPrimitive {
     pub diameter: f64,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SnowArrowhead {
-    None = 0,
-    Arrow = 1,
-    Bar = 2,
-    Dot = 3,
-    Circle = 4,
-    CircleOutline = 5,
-    Triangle = 6,
-    TriangleOutline = 7,
-    Diamond = 8,
-    DiamondOutline = 9,
-    CrowfootOne = 10,
-    CrowfootMany = 11,
-    CrowfootOneOrMany = 12,
-    Square = 13,
-    InvertedTriangle = 14,
+snow_c_enum! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum SnowArrowhead {
+        None = 0,
+        Arrow = 1,
+        Bar = 2,
+        Dot = 3,
+        Circle = 4,
+        CircleOutline = 5,
+        Triangle = 6,
+        TriangleOutline = 7,
+        Diamond = 8,
+        DiamondOutline = 9,
+        CrowfootOne = 10,
+        CrowfootMany = 11,
+        CrowfootOneOrMany = 12,
+        Square = 13,
+        InvertedTriangle = 14,
+    }
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SnowArrowType {
-    Straight = 0,
-    Curve = 1,
-    Elbow = 2,
+snow_c_enum! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum SnowArrowType {
+        Straight = 0,
+        Curve = 1,
+        Elbow = 2,
+    }
 }
 
 #[repr(C)]

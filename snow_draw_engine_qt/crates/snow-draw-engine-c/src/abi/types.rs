@@ -19,3 +19,5 @@ pub use document::*;
 pub use input::*;
 pub use patch::*;
 pub use status::*;
+
+pub(crate) use crate::abi::raw_enum::snow_c_enum;

@@ -770,6 +770,25 @@ mod session_tests {
     }
 
     #[test]
+    fn configured_runtime_creation_accepts_smart_erase_filter_defaults() {
+        unsafe {
+            let mut defaults: SnowStyleDefaults = snow_draw_engine::StyleDefaults::default().into();
+            defaults.rectangle_filter.filter_type = SnowFilterType::SmartErase;
+            defaults.pen_filter.filter_type = SnowFilterType::SmartErase;
+            let config = SnowRuntimeConfig {
+                style_defaults: &defaults,
+            };
+            let mut runtime = std::ptr::null_mut();
+            assert_eq!(
+                snow_runtime_create_with_config(&config, &mut runtime),
+                SnowError::Ok
+            );
+            assert!(!runtime.is_null());
+            snow_runtime_destroy(runtime);
+        }
+    }
+
+    #[test]
     fn configured_runtime_creation_rejects_invalid_raw_enum() {
         unsafe {
             let mut defaults = Box::<SnowStyleDefaults>::new_uninit();

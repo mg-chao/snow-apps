@@ -10,6 +10,7 @@ mod abi {
     pub(crate) mod input_exports;
     pub(crate) mod patch;
     pub(crate) mod patch_exports;
+    pub(crate) mod raw_enum;
     pub(crate) mod style_exports;
     pub(crate) mod text;
     pub(crate) mod text_exports;

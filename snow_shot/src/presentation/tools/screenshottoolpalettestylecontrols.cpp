@@ -2615,10 +2615,6 @@ ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buil
         const ScreenshotToolPaletteSelectEditor typeSelectEditor =
             createScreenshotToolPaletteSelectEditor(result.controls, typeSelectConfig, metrics);
         result.typeSelect = typeSelectEditor.select;
-        result.typeSelect->setSortComparator([](const adqt::widgets::AdSelect::Option& lhs,
-                                                const adqt::widgets::AdSelect::Option& rhs) {
-            return lhs.value.toInt() < rhs.value.toInt();
-        });
         auto* typeModel = new QStandardItemModel(result.typeSelect);
         const auto appendFilterType = [typeModel](const char* source, int value) {
             const ScreenshotToolPaletteTranslationText text(source);
@@ -2627,13 +2623,16 @@ ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buil
             item->setData(value, adqt::widgets::AdSelect::DefaultValueRole);
             typeModel->appendRow(item);
         };
+        // Rows are appended in display order: with no sort comparator the popup
+        // keeps model order, so Smart Erase (ABI value 5) follows Gaussian blur
+        // instead of trailing the enum-ordinal sequence.
         appendFilterType("Mosaic", 0);
         appendFilterType("Gaussian blur", 1);
+        if (config.allowSmartErase)
+            appendFilterType("Smart Erase", 5);
         appendFilterType("Grayscale", 2);
         appendFilterType("Inversion", 3);
         appendFilterType("Emboss", 4);
-        if (config.allowSmartErase)
-            appendFilterType("Smart Erase", 5);
         result.typeSelect->setModel(typeModel);
         layout->addWidget(result.typeSelect);
     } else {

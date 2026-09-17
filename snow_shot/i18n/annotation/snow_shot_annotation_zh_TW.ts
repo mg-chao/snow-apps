@@ -685,7 +685,7 @@
         </message>
         <message>
             <source>Smart Erase</source>
-            <translation>智慧消除</translation>
+            <translation>智慧擦除</translation>
         </message>
         <message>
             <source>Solid arrow stroke</source>

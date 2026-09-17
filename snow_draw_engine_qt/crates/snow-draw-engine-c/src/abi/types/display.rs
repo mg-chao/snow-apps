@@ -14,36 +14,40 @@ pub enum SnowSceneDisplayItemKind {
     Filter = 8,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SnowTextHorizontalAlign {
-    Left = 0,
-    Center = 1,
-    Right = 2,
+snow_c_enum! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum SnowTextHorizontalAlign {
+        Left = 0,
+        Center = 1,
+        Right = 2,
+    }
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SnowTextVerticalAlign {
-    Top = 0,
-    Center = 1,
-    Bottom = 2,
+snow_c_enum! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum SnowTextVerticalAlign {
+        Top = 0,
+        Center = 1,
+        Bottom = 2,
+    }
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SnowFillStyle {
-    Line = 0,
-    CrossLine = 1,
-    Solid = 2,
+snow_c_enum! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum SnowFillStyle {
+        Line = 0,
+        CrossLine = 1,
+        Solid = 2,
+    }
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SnowStrokeStyle {
-    Solid = 0,
-    Dashed = 1,
-    Dotted = 2,
+snow_c_enum! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum SnowStrokeStyle {
+        Solid = 0,
+        Dashed = 1,
+        Dotted = 2,
+    }
 }
 
 #[repr(C)]

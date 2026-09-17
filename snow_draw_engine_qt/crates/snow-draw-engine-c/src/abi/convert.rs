@@ -850,9 +850,9 @@ fn strict_string_from_c_char_field<const N: usize>(
     string_from_c_char_field(bytes, len).ok_or(SnowError::InvalidArgument)
 }
 
-unsafe fn raw_c_enum_in_range<T>(value: *const T, first: i32, last: i32) -> bool {
+unsafe fn raw_c_enum_is_valid<E: crate::abi::raw_enum::SnowRawEnum>(value: *const E) -> bool {
     let raw = unsafe { std::ptr::read_unaligned(value.cast::<i32>()) };
-    (first..=last).contains(&raw)
+    E::from_raw(raw).is_some()
 }
 
 unsafe fn runtime_style_default_enums_are_valid(defaults: *const SnowStyleDefaults) -> bool {
@@ -866,42 +866,29 @@ unsafe fn runtime_style_default_enums_are_valid(defaults: *const SnowStyleDefaul
     ];
     for shape in shapes {
         if !unsafe {
-            raw_c_enum_in_range(std::ptr::addr_of!((*shape).fill_style), 0, 2)
-                && raw_c_enum_in_range(std::ptr::addr_of!((*shape).start_arrowhead), 0, 14)
-                && raw_c_enum_in_range(std::ptr::addr_of!((*shape).end_arrowhead), 0, 14)
-                && raw_c_enum_in_range(std::ptr::addr_of!((*shape).stroke_style), 0, 2)
-                && raw_c_enum_in_range(std::ptr::addr_of!((*shape).arrow_type), 0, 2)
-                && raw_c_enum_in_range(std::ptr::addr_of!((*shape).highlight_shape), 0, 1)
-                && raw_c_enum_in_range(std::ptr::addr_of!((*shape).shape), 0, 2)
+            raw_c_enum_is_valid(std::ptr::addr_of!((*shape).fill_style))
+                && raw_c_enum_is_valid(std::ptr::addr_of!((*shape).start_arrowhead))
+                && raw_c_enum_is_valid(std::ptr::addr_of!((*shape).end_arrowhead))
+                && raw_c_enum_is_valid(std::ptr::addr_of!((*shape).stroke_style))
+                && raw_c_enum_is_valid(std::ptr::addr_of!((*shape).arrow_type))
+                && raw_c_enum_is_valid(std::ptr::addr_of!((*shape).highlight_shape))
+                && raw_c_enum_is_valid(std::ptr::addr_of!((*shape).shape))
         } {
             return false;
         }
     }
 
     unsafe {
-        raw_c_enum_in_range(
-            std::ptr::addr_of!((*defaults).rectangle_filter.filter_type),
-            0,
-            4,
-        ) && raw_c_enum_in_range(std::ptr::addr_of!((*defaults).pen_filter.filter_type), 0, 4)
-            && raw_c_enum_in_range(std::ptr::addr_of!((*defaults).text.fill_style), 0, 2)
-            && raw_c_enum_in_range(std::ptr::addr_of!((*defaults).text.horizontal_align), 0, 2)
-            && raw_c_enum_in_range(std::ptr::addr_of!((*defaults).text.vertical_align), 0, 2)
-            && raw_c_enum_in_range(
-                std::ptr::addr_of!((*defaults).serial_number.fill_style),
-                0,
-                2,
-            )
-            && raw_c_enum_in_range(
-                std::ptr::addr_of!((*defaults).serial_number.stroke_style),
-                0,
-                2,
-            )
-            && raw_c_enum_in_range(
-                std::ptr::addr_of!((*defaults).serial_number.serial_number_type),
-                0,
-                3,
-            )
+        raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).rectangle_filter.filter_type))
+            && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).pen_filter.filter_type))
+            && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).text.fill_style))
+            && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).text.horizontal_align))
+            && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).text.vertical_align))
+            && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).serial_number.fill_style))
+            && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).serial_number.stroke_style))
+            && raw_c_enum_is_valid(std::ptr::addr_of!(
+                (*defaults).serial_number.serial_number_type
+            ))
     }
 }
 
@@ -1586,6 +1573,27 @@ mod tests {
         let converted = runtime_config_from_c(Some(&c_config)).unwrap();
 
         assert_eq!(converted.style_defaults, expected);
+    }
+
+    #[test]
+    fn runtime_style_defaults_accept_smart_erase_filter_types() {
+        let mut c_defaults: SnowStyleDefaults = StyleDefaults::default().into();
+        c_defaults.rectangle_filter.filter_type = SnowFilterType::SmartErase;
+        c_defaults.pen_filter.filter_type = SnowFilterType::SmartErase;
+        let c_config = SnowRuntimeConfig {
+            style_defaults: &c_defaults,
+        };
+
+        let converted = runtime_config_from_c(Some(&c_config)).unwrap();
+
+        assert_eq!(
+            converted.style_defaults.editor.rectangle_filter.filter_type,
+            CanvasFilterType::SmartErase
+        );
+        assert_eq!(
+            converted.style_defaults.editor.pen_filter.filter_type,
+            CanvasFilterType::SmartErase
+        );
     }
 
     #[test]

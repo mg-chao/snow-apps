@@ -427,6 +427,17 @@ void configuredRuntimeProfileFollowsRestoreAndResetLifecycle() {
     SnowCanvasRuntime rejectedSerialType(invalidConfig);
     require(!rejectedSerialType.isValid(),
             "an invalid sequence-number type should be rejected before C ABI conversion");
+
+    SnowCanvasStyleDefaults smartEraseDefaults = defaults;
+    smartEraseDefaults.rectangleFilter.type = SnowCanvasFilterType::SmartErase;
+    smartEraseDefaults.penFilter.type = SnowCanvasFilterType::SmartErase;
+    SnowCanvasRuntimeConfig smartEraseConfig;
+    smartEraseConfig.styleDefaults = smartEraseDefaults;
+    SnowCanvasRuntime smartEraseRuntime(smartEraseConfig);
+    require(smartEraseRuntime.isValid(),
+            "a configured runtime with Smart Erase filter defaults should be valid");
+    require(smartEraseRuntime.clearDocumentPreservingViewports(),
+            "a Smart Erase configured runtime should clear its document");
 }
 
 void watermarkConfigurationConversionsPreserveSnapshotsAndUtf8Boundaries() {

@@ -68,26 +68,28 @@ impl SnowStyleToolbarSource {
     pub const SelectedFilter: Self = Self::SelectedRectangleFilter;
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum SnowFilterType {
-    #[default]
-    Mosaic = 0,
-    GaussianBlur = 1,
-    Grayscale = 2,
-    Inversion = 3,
-    Emboss = 4,
-    SmartErase = 5,
+snow_c_enum! {
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub enum SnowFilterType {
+        #[default]
+        Mosaic = 0,
+        GaussianBlur = 1,
+        Grayscale = 2,
+        Inversion = 3,
+        Emboss = 4,
+        SmartErase = 5,
+    }
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum SnowSerialNumberType {
-    #[default]
-    OutlinedCircle = 0,
-    SolidCircle = 1,
-    OutlinedSquare = 2,
-    SolidSquare = 3,
+snow_c_enum! {
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub enum SnowSerialNumberType {
+        #[default]
+        OutlinedCircle = 0,
+        SolidCircle = 1,
+        OutlinedSquare = 2,
+        SolidSquare = 3,
+    }
 }
 
 #[repr(C)]
@@ -193,21 +195,23 @@ impl Default for SnowWatermarkConfig {
     }
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum SnowHighlightShape {
-    #[default]
-    Rectangle = 0,
-    Ellipse = 1,
+snow_c_enum! {
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub enum SnowHighlightShape {
+        #[default]
+        Rectangle = 0,
+        Ellipse = 1,
+    }
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum SnowRectangleShape {
-    #[default]
-    Rectangle = 0,
-    Ellipse = 1,
-    Diamond = 2,
+snow_c_enum! {
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub enum SnowRectangleShape {
+        #[default]
+        Rectangle = 0,
+        Ellipse = 1,
+        Diamond = 2,
+    }
 }
 
 #[repr(C)]

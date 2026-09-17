@@ -1344,7 +1344,7 @@ void dynamicToolbarLabelsUseEveryTranslationCatalog() {
                         controls.at(index)->accessibleName() == expectation.labels.at(index),
                     "dynamic toolbar labels must use the active translation catalog");
         }
-        const QModelIndex embossIndex = filterTypes->model()->index(4, 0);
+        const QModelIndex embossIndex = filterTypes->model()->index(5, 0);
         require(embossIndex.data(adqt::widgets::AdSelect::DefaultLabelRole).toString() ==
                     expectation.emboss,
                 "the Emboss filter option must use the active annotation catalog");
@@ -5264,37 +5264,29 @@ void filterToolExposesTypeAndIntensityControls() {
             "Filter should not expose an opacity style editor");
     require(typeSelect->model() != nullptr && typeSelect->model()->rowCount() == 6,
             "Filter type select should expose all six filter types");
-    require(typeSelect->model()
-                        ->index(0, 0)
-                        .data(adqt::widgets::AdSelect::DefaultLabelRole)
-                        .toString() == QStringLiteral("Mosaic") &&
-                typeSelect->model()
-                        ->index(0, 0)
-                        .data(adqt::widgets::AdSelect::DefaultValueRole)
-                        .toInt() == static_cast<int>(SnowCanvasFilterType::Mosaic),
-            "Mosaic should be the first filter type");
-    const auto filterTypeSortComparator = typeSelect->sortComparator();
-    const adqt::widgets::AdSelect::Option mosaicFilter{
-        static_cast<int>(SnowCanvasFilterType::Mosaic),
-        QStringLiteral("Mosaic"),
+    struct FilterTypeRow {
+        int row;
+        SnowCanvasFilterType type;
+        QString label;
     };
-    const adqt::widgets::AdSelect::Option gaussianBlurFilter{
-        static_cast<int>(SnowCanvasFilterType::GaussianBlur),
-        QStringLiteral("Gaussian blur"),
+    const FilterTypeRow filterTypeRows[] = {
+        {0, SnowCanvasFilterType::Mosaic, QStringLiteral("Mosaic")},
+        {1, SnowCanvasFilterType::GaussianBlur, QStringLiteral("Gaussian blur")},
+        {2, SnowCanvasFilterType::SmartErase, QStringLiteral("Smart Erase")},
+        {3, SnowCanvasFilterType::Grayscale, QStringLiteral("Grayscale")},
+        {4, SnowCanvasFilterType::Inversion, QStringLiteral("Inversion")},
+        {5, SnowCanvasFilterType::Emboss, QStringLiteral("Emboss")},
     };
-    require(filterTypeSortComparator &&
-                filterTypeSortComparator(mosaicFilter, gaussianBlurFilter) &&
-                !filterTypeSortComparator(gaussianBlurFilter, mosaicFilter),
-            "Filter type popup should keep Mosaic ahead of the other filter types");
-    require(typeSelect->model()
-                        ->index(4, 0)
-                        .data(adqt::widgets::AdSelect::DefaultLabelRole)
-                        .toString() == QStringLiteral("Emboss") &&
-                typeSelect->model()
-                        ->index(4, 0)
-                        .data(adqt::widgets::AdSelect::DefaultValueRole)
-                        .toInt() == static_cast<int>(SnowCanvasFilterType::Emboss),
-            "Emboss should use the appended filter type value");
+    for (const FilterTypeRow& expected : filterTypeRows) {
+        const QModelIndex row = typeSelect->model()->index(expected.row, 0);
+        require(row.data(adqt::widgets::AdSelect::DefaultLabelRole).toString() == expected.label &&
+                    row.data(adqt::widgets::AdSelect::DefaultValueRole).toInt() ==
+                        static_cast<int>(expected.type),
+                "Filter type rows should follow display order with Smart Erase after Gaussian "
+                "blur");
+    }
+    require(!typeSelect->sortComparator(),
+            "Filter type popup should preserve model order instead of sorting by enum value");
 
     int styleChangeCount = 0;
     quint32 lastProperties = 0;
