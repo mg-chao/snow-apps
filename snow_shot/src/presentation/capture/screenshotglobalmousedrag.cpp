@@ -2,7 +2,8 @@
 
 #include <algorithm>
 
-void ScreenshotGlobalMouseDrag::begin(quint64 id, const QPoint& position) {
+void ScreenshotGlobalMouseDrag::begin(quint64 id, const QPointF& position, CoordinateSpace space) {
+    m_coordinateSpace = space;
     m_id = id;
     m_start = position;
     m_end = position;
@@ -10,7 +11,7 @@ void ScreenshotGlobalMouseDrag::begin(quint64 id, const QPoint& position) {
     m_released = false;
 }
 
-bool ScreenshotGlobalMouseDrag::update(quint64 id, const QPoint& position, bool released) {
+bool ScreenshotGlobalMouseDrag::update(quint64 id, const QPointF& position, bool released) {
     if (!active() || m_id != id || m_released) {
         return false;
     }
@@ -19,7 +20,7 @@ bool ScreenshotGlobalMouseDrag::update(quint64 id, const QPoint& position, bool 
     return true;
 }
 
-void ScreenshotGlobalMouseDrag::refreshEndFromLivePosition(const std::optional<QPoint>& position) {
+void ScreenshotGlobalMouseDrag::refreshEndFromLivePosition(const std::optional<QPointF>& position) {
     if (!position.has_value() || !active() || m_released) {
         return;
     }

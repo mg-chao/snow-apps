@@ -144,7 +144,21 @@ class SettingsRuntimeSession final : public QObject {
     void refreshStorageStatus();
     void refreshStorageStatusIfStale();
 
+    GlobalMousePermissionState globalMousePermissionState() const {
+        return m_backend.globalMousePermissionState();
+    }
+    void requestGlobalMousePermission() {
+        m_backend.requestGlobalMousePermission();
+    }
+    void openGlobalMousePermissionSettings() {
+        m_backend.openGlobalMousePermissionSettings();
+    }
+    void refreshGlobalMousePermission() {
+        m_backend.refreshGlobalMousePermission();
+    }
+
   signals:
+    void globalMousePermissionChanged();
     void operationMessage(const QString& message, bool warning);
     void fieldChanged(const QString& fieldId,
                       const snow_shot::presentation::settings::SettingsFieldState& state);

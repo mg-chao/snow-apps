@@ -1,5 +1,5 @@
 #![allow(clippy::missing_safety_doc)]
-use snow_capture::backend::CaptureBackendKind;
+use snow_capture::{backend::CaptureBackendKind, exclusions::SnowCaptureExclusions};
 use snow_screen_recorder::{
     DirectRecordingConfig, DirectRecordingSession, EditingSession, ExportFormat, ExportRequest,
     RecordingAudioConfig, RecordingAudioTrackConfig, RecordingConfig, RecordingRegion,
@@ -158,6 +158,7 @@ pub struct SnowCaptureDirectRecordingConfig {
     mouse_trail_duration_ms: u32,
     keyboard_size: u32,
     loop_animated_images: u32,
+    exclusions: SnowCaptureExclusions,
 }
 
 #[repr(C)]
@@ -167,13 +168,15 @@ struct SnowCaptureDirectRecordingConfigHeader {
     struct_size: u32,
 }
 
-pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 5;
+pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 6;
 const DIRECT_RECORDING_CONFIG_V4_FIELDS_SIZE: usize =
     std::mem::offset_of!(SnowCaptureDirectRecordingConfig, loop_animated_images);
 const DIRECT_RECORDING_CONFIG_V4_SIZE: u32 = (DIRECT_RECORDING_CONFIG_V4_FIELDS_SIZE
     .div_ceil(std::mem::align_of::<SnowCaptureDirectRecordingConfig>())
     * std::mem::align_of::<SnowCaptureDirectRecordingConfig>())
     as u32;
+const DIRECT_RECORDING_CONFIG_V5_SIZE: u32 =
+    std::mem::offset_of!(SnowCaptureDirectRecordingConfig, exclusions) as u32;
 const DIRECT_RECORDING_CONFIG_V1_FIELDS_SIZE: usize =
     std::mem::offset_of!(SnowCaptureDirectRecordingConfig, show_keyboard);
 // The original structure has pointer alignment and may contain tail padding. Validate its
@@ -188,6 +191,7 @@ fn direct_config_size(version: u32) -> Result<u32, String> {
         1 => Ok(DIRECT_RECORDING_CONFIG_V1_SIZE),
         2 | 3 => Ok(std::mem::offset_of!(SnowCaptureDirectRecordingConfig, keyboard_size) as u32),
         4 => Ok(DIRECT_RECORDING_CONFIG_V4_SIZE),
+        5 => Ok(DIRECT_RECORDING_CONFIG_V5_SIZE),
         DIRECT_RECORDING_CONFIG_VERSION => Ok(DIRECT_RECORDING_CONFIG_SIZE),
         _ => Err(format!(
             "unsupported direct recording config version: {version}"
@@ -624,6 +628,14 @@ fn parse_direct_recording_config(
             value => return Err(format!("invalid animated image loop flag: {value}")),
         }
     };
+    let (excluded_windows, excluded_processes) = if config.version >= 6 {
+        unsafe { config.exclusions.to_owned() }?
+    } else {
+        (
+            std::sync::Arc::from(Vec::<u32>::new()),
+            std::sync::Arc::from(Vec::<i32>::new()),
+        )
+    };
     let direct = DirectRecordingConfig {
         loop_animated_images,
         region: RecordingRegion::new(config.x, config.y, config.width, config.height),
@@ -648,6 +660,8 @@ fn parse_direct_recording_config(
             u64::from(config.mouse_trail_duration_ms)
         },
         mouse_click_rgba: packed_rgba(config.mouse_click_rgba),
+        excluded_windows,
+        excluded_processes,
     };
     direct.validate()?;
     Ok(direct)
@@ -1085,6 +1099,60 @@ pub extern "C" fn snow_recording_last_error_message() -> *const c_char {
 mod tests {
     use super::*;
     #[test]
+    fn direct_recording_exclusion_abi_layout() {
+        assert_eq!(DIRECT_RECORDING_CONFIG_VERSION, 6);
+        assert_eq!(
+            std::mem::offset_of!(SnowCaptureDirectRecordingConfig, exclusions),
+            192
+        );
+        assert_eq!(DIRECT_RECORDING_CONFIG_SIZE, 224);
+        assert_eq!(DIRECT_RECORDING_CONFIG_V5_SIZE, 192);
+        for version in [5, 6, 7] {
+            let header = SnowCaptureDirectRecordingConfigHeader {
+                version,
+                struct_size: 8,
+            };
+            assert!(unsafe { read_direct_recording_config((&raw const header).cast()) }.is_err());
+        }
+        let mut config = direct_config(c"recording.mp4");
+        config.version = 5;
+        config.struct_size = DIRECT_RECORDING_CONFIG_V5_SIZE;
+        let prefix = unsafe {
+            std::slice::from_raw_parts(
+                (&raw const config).cast::<u8>(),
+                DIRECT_RECORDING_CONFIG_V5_SIZE as usize,
+            )
+        }
+        .to_vec();
+        let parsed = unsafe { read_direct_recording_config(prefix.as_ptr().cast()) }.unwrap();
+        let owned = parse_direct_recording_config(&parsed).unwrap();
+        assert!(owned.excluded_windows.is_empty());
+        assert!(owned.excluded_processes.is_empty());
+    }
+
+    #[test]
+    fn direct_recording_exclusions_are_copied_and_normalized() {
+        let mut windows = [9, 7, 9];
+        let processes = [5, 3, 5];
+        let mut config = direct_config(c"recording.mp4");
+        config.exclusions = SnowCaptureExclusions {
+            windows: windows.as_ptr(),
+            window_count: 3,
+            processes: processes.as_ptr(),
+            process_count: 3,
+        };
+        let parsed = parse_direct_recording_config(&config).unwrap();
+        windows[0] = 20;
+        assert_eq!(&*parsed.excluded_windows, &[7, 9]);
+        assert_eq!(&*parsed.excluded_processes, &[3, 5]);
+        assert_eq!(windows[0], 20);
+        config.exclusions.windows = std::ptr::null();
+        assert!(parse_direct_recording_config(&config).is_err());
+        config.exclusions.window_count = 4097;
+        assert!(parse_direct_recording_config(&config).is_err());
+    }
+
+    #[test]
     fn recording_preview_output_dimensions_match_export_formats() {
         for format in 0..=3 {
             let mut width = 0;
@@ -1313,6 +1381,7 @@ mod tests {
     }
     fn direct_config(output: &CStr) -> SnowCaptureDirectRecordingConfig {
         SnowCaptureDirectRecordingConfig {
+            exclusions: Default::default(),
             version: DIRECT_RECORDING_CONFIG_VERSION,
             struct_size: std::mem::size_of::<SnowCaptureDirectRecordingConfig>() as u32,
             x: -100,

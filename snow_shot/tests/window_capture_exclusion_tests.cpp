@@ -100,6 +100,35 @@ void unavailableExclusionPreservesVisibility() {
     exclusion.restore();
     require(toolbar.isVisible(), "unavailable exclusion must not hide the toolbar");
 }
+void successfulIdsAndScopeCleanup() {
+    QWidget first, second, failed;
+    int attempts = 0;
+    std::vector<QWidget*> restored;
+    {
+        WindowCaptureExclusion exclusion([&](QWidget* window, bool exclude) {
+            if (exclude)
+                ++attempts;
+            else
+                restored.push_back(window);
+            return window != &failed;
+        });
+        require(exclusion.exclude(&first), "first exclusion succeeds");
+        require(exclusion.exclude(&first), "repeated exclusion succeeds without another lease");
+        require(exclusion.exclude(&second), "second exclusion succeeds");
+        require(!exclusion.exclude(&failed), "failed exclusion reports failure");
+        require(attempts == 3, "duplicate exclusion is idempotent");
+        const auto resolve = [&](QWidget* window) -> std::optional<std::uint32_t> {
+            return window == &first ? 17 : 23;
+        };
+        auto ids = exclusion.windowIds(resolve);
+        require(ids == QVector<std::uint32_t>{17, 23},
+                "only successful exclusions reach capture configs");
+        require(exclusion.windowIds(resolve) == ids,
+                "mode changes and pause snapshots retain exclusions");
+    }
+    require(restored == std::vector<QWidget*>{&second, &first},
+            "scope exit restores in reverse order");
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -112,5 +141,6 @@ int main(int argc, char* argv[]) {
     }
     cleanupToleratesDestroyedWindowsAndRestoreFailures();
     unavailableExclusionPreservesVisibility();
+    successfulIdsAndScopeCleanup();
     return 0;
 }

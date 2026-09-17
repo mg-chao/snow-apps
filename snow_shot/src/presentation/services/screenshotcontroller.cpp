@@ -267,6 +267,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
         ScreenshotCaptureWorkflow::StartMode mode = ScreenshotCaptureWorkflow::StartMode::Normal);
     void applyGlobalMouseDrag(bool finishReleased);
     void refreshGlobalMouseDragFromLiveCursor();
+    QPointF globalMouseCanvasPosition(const QPointF& point) const;
     void endGlobalMouseDrag();
     void handleSelectionConfirmed();
     [[nodiscard]] bool selectPreviousSelection();
@@ -1245,8 +1246,7 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                         m_globalMouseDrag.setReady();
                         refreshGlobalMouseDragFromLiveCursor();
                         m_overlayInputHandler->beginExternalSelectionDrag(
-                            m_geometry.canvasPositionForPhysicalPoint(m_displaySession,
-                                                                      m_globalMouseDrag.start()));
+                            globalMouseCanvasPosition(m_globalMouseDrag.start()));
                         applyGlobalMouseDrag(false);
                     }
                 },
@@ -3821,7 +3821,21 @@ void ScreenshotController::Impl::endGlobalMouseDrag() {
     }
 }
 
+QPointF ScreenshotController::Impl::globalMouseCanvasPosition(const QPointF& point) const {
+    const QPointF physical =
+        m_globalMouseDrag.coordinateSpace() ==
+                snow_shot::presentation::GlobalMouseCoordinateSpace::DesktopPoints
+            ? m_geometry.physicalPositionForLogicalPoint(m_displaySession, point)
+            : point;
+    return m_geometry.canvasPositionForPhysicalPoint(m_displaySession, physical);
+}
+
 void ScreenshotController::Impl::refreshGlobalMouseDragFromLiveCursor() {
+    if (m_globalMouseDrag.coordinateSpace() ==
+        snow_shot::presentation::GlobalMouseCoordinateSpace::DesktopPoints) {
+        m_globalMouseDrag.refreshEndFromLivePosition(QCursor::pos());
+        return;
+    }
     // Reveal work delays paced drag deliveries, leaving the buffered end point
     // behind the cursor. Refresh it once from the live cursor so the first
     // presented selection frame is current instead of catching up later.
@@ -3838,8 +3852,7 @@ void ScreenshotController::Impl::refreshGlobalMouseDragFromLiveCursor() {
 void ScreenshotController::Impl::applyGlobalMouseDrag(bool finishReleased) {
     if (!m_globalMouseDrag.active() || !m_globalMouseDrag.ready())
         return;
-    const QPointF end =
-        m_geometry.canvasPositionForPhysicalPoint(m_displaySession, m_globalMouseDrag.end());
+    const QPointF end = globalMouseCanvasPosition(m_globalMouseDrag.end());
     m_overlayInputHandler->updateExternalSelectionDrag(end);
     if (!m_globalMouseDrag.released())
         return;
@@ -4110,7 +4123,7 @@ bool ScreenshotController::blocksApplicationUpdate() const {
 
 bool ScreenshotController::beginGlobalMouseCapture(
     snow_shot::presentation::settings::SettingsGlobalMouseAction action, quint64 gestureId,
-    const QPoint& physicalStart) {
+    const QPointF& position, snow_shot::presentation::GlobalMouseCoordinateSpace space) {
     if (gestureId == 0 || !m_impl->canBeginCapture())
         return false;
     using Action = snow_shot::presentation::settings::SettingsGlobalMouseAction;
@@ -4140,7 +4153,7 @@ bool ScreenshotController::beginGlobalMouseCapture(
     default:
         return false;
     }
-    m_impl->m_globalMouseDrag.begin(gestureId, physicalStart);
+    m_impl->m_globalMouseDrag.begin(gestureId, position, space);
     m_impl->m_overlayInputHandler->setExternalDragActive(true);
     if (!m_impl->beginCapture(pending, ScreenshotCaptureWorkflow::StartMode::ExternalDrag)) {
         m_impl->endGlobalMouseDrag();
@@ -4149,16 +4162,14 @@ bool ScreenshotController::beginGlobalMouseCapture(
     return true;
 }
 
-void ScreenshotController::updateGlobalMouseCapture(quint64 gestureId,
-                                                    const QPoint& physicalPoint) {
-    if (m_impl->m_globalMouseDrag.update(gestureId, physicalPoint)) {
+void ScreenshotController::updateGlobalMouseCapture(quint64 gestureId, const QPointF& position) {
+    if (m_impl->m_globalMouseDrag.update(gestureId, position)) {
         m_impl->applyGlobalMouseDrag(true);
     }
 }
 
-void ScreenshotController::finishGlobalMouseCapture(quint64 gestureId,
-                                                    const QPoint& physicalPoint) {
-    if (m_impl->m_globalMouseDrag.update(gestureId, physicalPoint, true)) {
+void ScreenshotController::finishGlobalMouseCapture(quint64 gestureId, const QPointF& position) {
+    if (m_impl->m_globalMouseDrag.update(gestureId, position, true)) {
         m_impl->applyGlobalMouseDrag(true);
     }
 }

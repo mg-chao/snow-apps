@@ -102,6 +102,7 @@ struct GlobalMouseManager::Impl {
             if (item.kind == GlobalMouseDragEvent::Kind::Begin) {
                 activeId = item.id;
                 pendingCaptureId = item.id;
+                pendingCaptureEvent = item;
                 // QCursor uses logical desktop coordinates, unlike native gesture positions.
                 const QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
                 const qreal rate = screen ? screen->refreshRate() : 60.0;
@@ -137,6 +138,7 @@ struct GlobalMouseManager::Impl {
     GlobalMouseManager& q;
     std::unique_ptr<GlobalMouseBackend> backend;
     GlobalMouseConfiguration configuration;
+    GlobalMousePermissionState permission;
     QMetaObject::Connection configurationConnection;
     QMutex mutex;
     QVector<GlobalMouseDragEvent> pending;
@@ -146,6 +148,7 @@ struct GlobalMouseManager::Impl {
     quint64 activeId = 0;
     // Release stops frame pacing, but capture preparation may still need cancellation.
     quint64 pendingCaptureId = 0;
+    GlobalMouseDragEvent pendingCaptureEvent;
     bool pacing = false;
     bool deliveryQueued = false;
     bool started = false;
@@ -155,6 +158,7 @@ GlobalMouseManager::GlobalMouseManager(QObject* parent) : GlobalMouseManager(nul
 GlobalMouseManager::GlobalMouseManager(std::unique_ptr<GlobalMouseBackend> backend, QObject* parent)
     : QObject(parent), m_impl(std::make_unique<Impl>(*this, std::move(backend))) {}
 GlobalMouseManager::~GlobalMouseManager() {
+    disconnect(this, nullptr, nullptr, nullptr);
     shutdown();
 }
 
@@ -174,6 +178,24 @@ void GlobalMouseManager::initialize() {
                         m_impl->reload();
                     }
                 });
+    impl.backend->setStateHandler([this, epoch](GlobalMousePermissionState state) {
+        QMetaObject::invokeMethod(
+            this,
+            [this, epoch, state] {
+                if (!m_impl->started || epoch != m_impl->generation || m_impl->permission == state)
+                    return;
+                m_impl->permission = state;
+                emit permissionStateChanged(state);
+                using Status = GlobalMousePermissionState::Status;
+                if (state.status == Status::ListenRequired ||
+                    state.status == Status::AccessibilityRequired ||
+                    state.status == Status::Unavailable)
+                    emit operationFailed(globalMousePermissionMessage(state));
+            },
+            Qt::QueuedConnection);
+    });
+    impl.permission = impl.backend->permissionState();
+    emit permissionStateChanged(impl.permission);
     impl.backend->start(
         [this, epoch](GlobalMouseDragEvent event) { m_impl->post(event, epoch); },
         [this, epoch](quint32 code) {
@@ -196,21 +218,48 @@ void GlobalMouseManager::beginButtonDrag(settings::SettingsGlobalMouseAction act
     }
 }
 
+GlobalMousePermissionState GlobalMouseManager::permissionState() const {
+    return m_impl->permission;
+}
+
+void GlobalMouseManager::refreshPermission() {
+    m_impl->backend->refreshPermission();
+}
+
+void GlobalMouseManager::requestPermission() {
+    m_impl->backend->requestPermission();
+    refreshPermission();
+}
+
+void GlobalMouseManager::openPermissionSettings() {
+    m_impl->backend->openPermissionSettings();
+}
+
 void GlobalMouseManager::shutdown() {
     if (!m_impl->started) {
         return;
     }
+    const auto pendingId = m_impl->pendingCaptureId;
+    auto cancellation = m_impl->pendingCaptureEvent;
+    cancellation.kind = GlobalMouseDragEvent::Kind::Cancel;
     m_impl->started = false;
     disconnect(m_impl->configurationConnection);
     m_impl->backend->stop();
     m_impl->frameTimer.stop();
-    QMutexLocker lock(&m_impl->mutex);
-    ++m_impl->generation;
-    m_impl->activeId = 0;
-    m_impl->pendingCaptureId = 0;
-    m_impl->pacing = false;
-    m_impl->deliveryQueued = false;
-    m_impl->pending.clear();
+    {
+        QMutexLocker lock(&m_impl->mutex);
+        ++m_impl->generation;
+        m_impl->activeId = 0;
+        m_impl->pendingCaptureId = 0;
+        m_impl->pacing = false;
+        m_impl->deliveryQueued = false;
+        m_impl->pending.clear();
+    }
+    m_impl->permission = {};
+    emit permissionStateChanged(m_impl->permission);
+    // Complete teardown before invoking subscribers, which may restart the manager.
+    if (pendingId != 0)
+        emit dragEvent(cancellation);
 }
 
 void GlobalMouseManager::setCaptureAvailable(bool available) {
@@ -227,5 +276,27 @@ void GlobalMouseManager::cancelGesture(quint64 id) {
         m_impl->pending.removeIf([id](const auto& event) { return event.id == id; });
     }
     m_impl->backend->cancel(id);
+}
+QString globalMousePermissionMessage(const GlobalMousePermissionState& state) {
+    using Status = GlobalMousePermissionState::Status;
+    switch (state.status) {
+    case Status::Ready:
+        return GlobalMouseManager::tr("Global mouse gestures are ready.");
+    case Status::ListenRequired:
+        return GlobalMouseManager::tr("Allow Snow Shot in System Settings > Privacy & Security > "
+                                      "Input Monitoring to use global mouse gestures.");
+    case Status::AccessibilityRequired:
+        return GlobalMouseManager::tr("Allow Snow Shot in System Settings > Privacy & Security > "
+                                      "Accessibility to use global mouse gestures.");
+    case Status::Unavailable:
+        return GlobalMouseManager::tr(
+            "Global mouse input is unavailable. Check permissions and retry.");
+    case Status::Suspended:
+        return GlobalMouseManager::tr(
+            "Global mouse gestures are paused while this session is inactive.");
+    case Status::Unknown:
+        return GlobalMouseManager::tr("Checking global mouse permissions...");
+    }
+    return {};
 }
 } // namespace snow_shot::presentation

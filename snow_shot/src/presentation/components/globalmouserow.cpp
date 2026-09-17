@@ -79,6 +79,8 @@ GlobalMouseRow::GlobalMouseRow(const QString& title, settings::SettingsGlobalMou
     setConfigurationButton(m_button);
     connect(m_button, &QAbstractButton::clicked, this, [this]() { openConfigurationDialog(); });
 
+    connect(&m_runtimeSession, &settings::SettingsRuntimeSession::globalMousePermissionChanged,
+            this, [this] { syncButton(); });
     setCombination(m_runtimeSession.globalMouseCombination(m_action));
     retranslateUi();
     applyTheme(m_colorScheme);
@@ -203,7 +205,11 @@ void GlobalMouseRow::openConfigurationDialog() {
 
     const settings::SettingsGlobalMouseCombination initial =
         m_combination.isUnset()
+#ifdef Q_OS_MACOS
+            ? settings::SettingsGlobalMouseCombination{{QStringLiteral("command")}, {}}
+#else
             ? settings::SettingsGlobalMouseCombination{{QStringLiteral("windows")}, {}}
+#endif
             : m_combination;
     modal->setContentWidget(content);
     syncModalText();
@@ -211,6 +217,12 @@ void GlobalMouseRow::openConfigurationDialog() {
     for (const QString& key : initial.activationKeys) {
         initialKeys.push_back(key);
     }
+    // Measure native modifier tags at their eventual modal width before showing
+    // the panel. The longer Command label otherwise wraps at the hidden widget's
+    // default width and shrinks the visible editor on its first layout pass.
+    m_activationSelect->resize(CONFIGURATION_MODAL_WIDTH - 2 * m_colorScheme.metricAlias.paddingLG,
+                               m_activationSelect->sizeHint().height());
+    m_activationSelect->layout()->setGeometry(m_activationSelect->rect());
     m_activationSelect->setCurrentValues(initialKeys);
     m_mouseButtonSelect->setCurrentValue(initial.mouseButton.isEmpty() ? QVariant()
                                                                        : initial.mouseButton);
@@ -265,7 +277,10 @@ void GlobalMouseRow::syncButton() {
                                                 mouseButtonLabel(m_combination.mouseButton)));
     m_button->setRegistrationStatus(
         unset ? snow_shot::presentation::GlobalShortcutStatus::Unset
-              : snow_shot::presentation::GlobalShortcutStatus::Registered);
+        : m_runtimeSession.globalMousePermissionState().status ==
+                snow_shot::presentation::GlobalMousePermissionState::Status::Ready
+            ? snow_shot::presentation::GlobalShortcutStatus::Registered
+            : snow_shot::presentation::GlobalShortcutStatus::Failed);
 }
 
 void GlobalMouseRow::syncModalText() {
@@ -285,10 +300,17 @@ void GlobalMouseRow::syncModalText() {
     }
     const QVariantList activation = m_activationSelect->currentValues();
     const QVariant mouseButton = m_mouseButtonSelect->currentValue();
+#ifdef Q_OS_MACOS
+    m_activationSelect->setOptions({option(QStringLiteral("command"), tr("Command")),
+                                    option(QStringLiteral("control"), tr("Control")),
+                                    option(QStringLiteral("option"), tr("Option")),
+                                    option(QStringLiteral("shift"), tr("Shift"))});
+#else
     m_activationSelect->setOptions({option(QStringLiteral("windows"), tr("Windows")),
                                     option(QStringLiteral("ctrl"), tr("Ctrl")),
                                     option(QStringLiteral("alt"), tr("Alt")),
                                     option(QStringLiteral("shift"), tr("Shift"))});
+#endif
     m_mouseButtonSelect->setOptions(
         {option(QStringLiteral("left_drag"), tr("Left-button drag")),
          option(QStringLiteral("right_drag"), tr("Right-button drag")),
@@ -359,6 +381,17 @@ settings::SettingsGlobalMouseCombination GlobalMouseRow::modalCombination() cons
 }
 
 QString GlobalMouseRow::activationKeyLabel(const QString& value) const {
+#ifdef Q_OS_MACOS
+    if (value == QStringLiteral("command")) {
+        return tr("Command");
+    }
+    if (value == QStringLiteral("control")) {
+        return tr("Control");
+    }
+    if (value == QStringLiteral("option")) {
+        return tr("Option");
+    }
+#else
     if (value == QStringLiteral("windows")) {
         return tr("Windows");
     }
@@ -368,6 +401,7 @@ QString GlobalMouseRow::activationKeyLabel(const QString& value) const {
     if (value == QStringLiteral("alt")) {
         return tr("Alt");
     }
+#endif
     return value == QStringLiteral("shift") ? tr("Shift") : value;
 }
 

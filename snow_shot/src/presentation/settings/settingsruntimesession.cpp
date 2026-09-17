@@ -99,6 +99,8 @@ SettingsRuntimeSession::SettingsRuntimeSession(const SettingsRegistry& registry,
             emit shortcutStateChanged(action, shortcutState(action));
         },
         Qt::QueuedConnection);
+    connect(&m_backend, &SettingsBackend::globalMousePermissionChanged, this,
+            &SettingsRuntimeSession::globalMousePermissionChanged);
     refreshAll();
 }
 

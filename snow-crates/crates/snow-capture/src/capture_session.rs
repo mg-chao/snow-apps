@@ -184,6 +184,8 @@ impl From<CaptureOptions> for CaptureSessionConfig {
 }
 
 pub(crate) struct CaptureSessionBuilder {
+    excluded_windows: Arc<[u32]>,
+    excluded_processes: Arc<[i32]>,
     target: Option<CaptureTarget>,
     backend_override: Option<Arc<dyn CaptureBackend>>,
     config: CaptureSessionConfig,
@@ -193,6 +195,8 @@ impl CaptureSessionBuilder {
     pub(crate) fn new() -> Self {
         Self {
             target: None,
+            excluded_windows: Default::default(),
+            excluded_processes: Default::default(),
             backend_override: None,
             config: CaptureSessionConfig::default(),
         }
@@ -216,6 +220,8 @@ impl CaptureSessionBuilder {
     }
 
     pub(crate) fn with_options(mut self, options: CaptureOptions) -> Self {
+        self.excluded_windows = options.excluded_windows.clone();
+        self.excluded_processes = options.excluded_processes.clone();
         self.config = options.into();
         self
     }
@@ -227,6 +233,7 @@ impl CaptureSessionBuilder {
             target,
             backend_override,
             config,
+            ..
         } = self;
         let target = target.ok_or_else(|| {
             CaptureError::InvalidConfig(
@@ -246,6 +253,22 @@ impl CaptureSessionBuilder {
     }
 
     fn build_uncached(self) -> CaptureResult<CaptureSession> {
+        if self.excluded_windows.len() > crate::exclusions::MAX_EXCLUSIONS
+            || self.excluded_processes.len() > crate::exclusions::MAX_EXCLUSIONS
+        {
+            return Err(CaptureError::InvalidConfig(
+                "capture exclusions exceed 4096 entries".into(),
+            ));
+        }
+        if matches!(self.target, Some(CaptureTarget::Window(_)))
+            && (!self.excluded_windows.is_empty() || !self.excluded_processes.is_empty())
+        {
+            return Err(CaptureError::InvalidConfig(
+                "window capture does not support exclusion filters".into(),
+            ));
+        }
+        let excluded_windows = self.excluded_windows.clone();
+        let excluded_processes = self.excluded_processes.clone();
         let (target, backend, config) = self.resolve_backend_and_config()?;
         if config.mode == CaptureMode::Continuous {
             crate::convert::warmup();
@@ -257,6 +280,8 @@ impl CaptureSessionBuilder {
                 capture_retry_count: config.capture_retry_count,
                 workload: config.mode,
                 output_pixel_format: config.output_pixel_format,
+                excluded_windows,
+                excluded_processes,
                 #[cfg(feature = "stage-timing")]
                 record_stage_timings: config.record_stage_timings,
             },
@@ -1714,6 +1739,42 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
     use std::time::Instant;
+
+    #[test]
+    fn invalid_exclusions_fail_before_backend_creation() {
+        for options in [
+            CaptureOptions {
+                excluded_windows: vec![7].into(),
+                ..Default::default()
+            },
+            CaptureOptions {
+                excluded_processes: vec![42].into(),
+                ..Default::default()
+            },
+        ] {
+            let result = CaptureSessionBuilder::new()
+                .target(CaptureTarget::Window(WindowId::from_windows_handle(1)))
+                .with_options(options)
+                .build();
+            assert!(matches!(result, Err(CaptureError::InvalidConfig(_))));
+        }
+        for options in [
+            CaptureOptions {
+                excluded_windows: vec![7; 4097].into(),
+                ..Default::default()
+            },
+            CaptureOptions {
+                excluded_processes: vec![42; 4097].into(),
+                ..Default::default()
+            },
+        ] {
+            let result = CaptureSessionBuilder::new()
+                .target(CaptureTarget::PrimaryMonitor)
+                .with_options(options)
+                .build();
+            assert!(matches!(result, Err(CaptureError::InvalidConfig(_))));
+        }
+    }
 
     #[test]
     fn aggregate_damage_is_cleared_when_any_changed_source_is_inexact() {

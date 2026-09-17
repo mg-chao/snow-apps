@@ -36,6 +36,21 @@ typedef enum SnowCapturePixelFormat {
     SNOW_CAPTURE_PIXEL_FORMAT_BGRA8 = 1,
 } SnowCapturePixelFormat;
 
+/* Shared by capture and recording. Lists are copied and deduplicated during creation,
+ * limited to 4096 entries each, and use macOS WindowServer IDs / process IDs.
+ * Nonempty lists require non-null pointers. Filters are fixed for the session's
+ * lifetime and apply to display/region captures; independent window captures
+ * reject filters. Windows continues to use native display affinity. */
+#ifndef SNOW_CAPTURE_EXCLUSIONS_DEFINED
+#define SNOW_CAPTURE_EXCLUSIONS_DEFINED
+typedef struct SnowCaptureExclusions {
+    const uint32_t* windows;
+    size_t window_count;
+    const int32_t* processes;
+    size_t process_count;
+} SnowCaptureExclusions;
+#endif
+
 typedef struct SnowCaptureDesktopSessionConfig {
     size_t capture_retry_count;
     uint8_t wgc_update_mode;
@@ -44,6 +59,7 @@ typedef struct SnowCaptureDesktopSessionConfig {
     uint8_t capture_backend;
     uint8_t pixel_format;
     uint8_t reserved[29];
+    SnowCaptureExclusions exclusions;
 } SnowCaptureDesktopSessionConfig;
 
 typedef struct SnowCaptureDesktopSessionState {
@@ -78,6 +94,7 @@ typedef struct SnowCaptureMonitorSessionConfig {
     size_t capture_retry_count;
     uint8_t pixel_format;
     uint8_t reserved[31];
+    SnowCaptureExclusions exclusions;
 } SnowCaptureMonitorSessionConfig;
 
 SnowCaptureMonitorSession*
@@ -99,6 +116,7 @@ typedef struct SnowCaptureRegionSessionConfig {
     uint8_t capture_backend;
     uint8_t pixel_format;
     uint8_t reserved[29];
+    SnowCaptureExclusions exclusions;
 } SnowCaptureRegionSessionConfig;
 
 typedef struct SnowCaptureRegionFrameInfo {
@@ -112,7 +130,7 @@ typedef struct SnowCaptureRegionFrameInfo {
     size_t rgba_len;
 } SnowCaptureRegionFrameInfo;
 
-#define SNOW_CAPTURE_STREAM_CONFIG_VERSION 1u
+#define SNOW_CAPTURE_STREAM_CONFIG_VERSION 2u
 #define SNOW_CAPTURE_STREAM_FRAME_INFO_VERSION 1u
 
 typedef enum SnowCaptureStreamEventKind {
@@ -148,6 +166,7 @@ typedef struct SnowCaptureStreamConfig {
        The effect is sampled once when the stream is created. */
     uint8_t restore_original_colors;
     uint8_t reserved[26];
+    SnowCaptureExclusions exclusions;
 } SnowCaptureStreamConfig;
 
 typedef struct SnowCaptureStreamEvent {

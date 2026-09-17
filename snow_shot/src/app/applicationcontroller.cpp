@@ -124,7 +124,8 @@ class ApplicationController::Impl {
                              switch (event.kind) {
                              case Kind::Begin:
                                  if (!controller->beginGlobalMouseCapture(event.action, event.id,
-                                                                          event.position)) {
+                                                                          event.position,
+                                                                          event.coordinateSpace)) {
                                      globalMouseManager.cancelGesture(event.id);
                                  }
                                  break;
@@ -291,6 +292,11 @@ class ApplicationController::Impl {
         globalShortcutManager.initialize();
         globalMouseManager.setCaptureAvailable(ensureScreenshotController()->captureAvailable());
         globalMouseManager.initialize();
+        QObject::connect(&app, &QGuiApplication::applicationStateChanged, &globalMouseManager,
+                         [this](Qt::ApplicationState state) {
+                             if (state == Qt::ApplicationActive)
+                                 globalMouseManager.refreshPermission();
+                         });
         QTimer::singleShot(0, &q, [this]() {
             if (ScreenshotController* controller = ensureScreenshotController()) {
                 controller->prewarmResources();
@@ -398,7 +404,7 @@ class ApplicationController::Impl {
         }
         if (settingsBackend == nullptr) {
             settingsBackend = std::make_unique<presentation::settings::BuiltInSettingsBackend>(
-                globalShortcutManager);
+                globalShortcutManager, nullptr, &globalMouseManager);
         }
         if (runtimeSession == nullptr) {
             runtimeSession = std::make_unique<presentation::settings::SettingsRuntimeSession>(

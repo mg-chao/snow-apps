@@ -225,16 +225,16 @@ class NativeGlobalMouseBackend final : public GlobalMouseBackend {
         gesture.reset();
     }
 
-    Qt::KeyboardModifiers modifiers() const {
-        Qt::KeyboardModifiers result;
+    GlobalMouseModifiers modifiers() const {
+        GlobalMouseModifiers result;
         if (modifierDown[VK_LCONTROL] || modifierDown[VK_RCONTROL])
-            result |= Qt::ControlModifier;
+            result |= GlobalMouseModifier::Control;
         if (modifierDown[VK_LSHIFT] || modifierDown[VK_RSHIFT])
-            result |= Qt::ShiftModifier;
+            result |= GlobalMouseModifier::Shift;
         if (modifierDown[VK_LMENU] || modifierDown[VK_RMENU])
-            result |= Qt::AltModifier;
+            result |= GlobalMouseModifier::Alt;
         if (modifierDown[VK_LWIN] || modifierDown[VK_RWIN])
-            result |= Qt::MetaModifier;
+            result |= GlobalMouseModifier::Super;
         return result;
     }
 
@@ -261,7 +261,8 @@ class NativeGlobalMouseBackend final : public GlobalMouseBackend {
 
     bool handle(const GlobalMouseInput& input) {
         const auto result = gesture.handle(input, configuration);
-        if (result.maskActivationKey) {
+        if (result.activationModifiers.testFlag(GlobalMouseModifier::Super) ||
+            result.activationModifiers.testFlag(GlobalMouseModifier::Alt)) {
             for (const int key : {VK_LWIN, VK_RWIN, VK_LMENU, VK_RMENU}) {
                 if (modifierDown[key]) {
                     consumedActivationKeys[key] = true;
@@ -423,7 +424,10 @@ detail::createGlobalMouseBackend(detail::GlobalMouseNativeApi api) {
 }
 #endif
 
-std::unique_ptr<GlobalMouseBackend> createGlobalMouseBackend() {
+} // namespace snow_shot::presentation
+
+namespace snow_shot::presentation {
+std::unique_ptr<GlobalMouseBackend> createWindowsGlobalMouseBackend() {
     return std::make_unique<NativeGlobalMouseBackend>();
 }
 } // namespace snow_shot::presentation

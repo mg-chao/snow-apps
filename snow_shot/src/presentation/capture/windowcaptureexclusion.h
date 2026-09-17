@@ -3,6 +3,9 @@
 
 #include <QPointer>
 #include <QWidget>
+#include <QVector>
+#include <cstdint>
+#include <optional>
 
 #include <functional>
 #include <utility>
@@ -15,12 +18,35 @@ class WindowCaptureExclusion final {
     using Setter = std::function<bool(QWidget*, bool)>;
 
     explicit WindowCaptureExclusion(Setter setter = {}) : m_setter(std::move(setter)) {}
+    WindowCaptureExclusion(const WindowCaptureExclusion&) = delete;
+    WindowCaptureExclusion& operator=(const WindowCaptureExclusion&) = delete;
+    ~WindowCaptureExclusion() {
+        restore();
+    }
 
     // Exclusion is best effort and must never change a window's visibility.
-    void exclude(QWidget* window) {
+    bool exclude(QWidget* window) {
+        for (const auto& existing : m_windows) {
+            if (window != nullptr && existing == window)
+                return true;
+        }
         if (window != nullptr && m_setter && m_setter(window, true)) {
             m_windows.emplace_back(window);
+            return true;
         }
+        return false;
+    }
+
+    using IdResolver = std::function<std::optional<std::uint32_t>(QWidget*)>;
+    QVector<std::uint32_t> windowIds(const IdResolver& resolve) const {
+        QVector<std::uint32_t> ids;
+        for (const auto& window : m_windows) {
+            if (!window)
+                continue;
+            if (auto id = resolve(window.data()); id && !ids.contains(*id))
+                ids.push_back(*id);
+        }
+        return ids;
     }
 
     void restore() {

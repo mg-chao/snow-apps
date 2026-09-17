@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/globalmousemanager.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/settings/applicationpriority.h"
@@ -148,8 +149,12 @@ platform::windows::AdministratorResult applyStartupSettings(bool enabled, bool e
 } // namespace
 
 BuiltInSettingsBackend::BuiltInSettingsBackend(
-    ::snow_shot::presentation::GlobalShortcutManager& shortcutManager, QObject* parent)
-    : SettingsBackend(parent), m_shortcutManager(shortcutManager) {
+    ::snow_shot::presentation::GlobalShortcutManager& shortcutManager, QObject* parent,
+    GlobalMouseManager* mouseManager)
+    : SettingsBackend(parent), m_shortcutManager(shortcutManager), m_mouseManager(mouseManager) {
+    if (m_mouseManager)
+        connect(m_mouseManager, &GlobalMouseManager::permissionStateChanged, this,
+                &SettingsBackend::globalMousePermissionChanged);
     auto& themeManager = styles::ThemeManager::instance();
     connect(&themeManager, &styles::ThemeManager::themeModeChanged, this,
             [this](styles::ThemeMode) { emit synchronized(); });
@@ -934,6 +939,23 @@ quint64 BuiltInSettingsBackend::suspendGlobalShortcuts() {
 
 void BuiltInSettingsBackend::resumeGlobalShortcuts(quint64 handle) {
     m_shortcutManager.resumeRegistrations(handle);
+}
+
+GlobalMousePermissionState BuiltInSettingsBackend::globalMousePermissionState() const {
+    return m_mouseManager ? m_mouseManager->permissionState()
+                          : SettingsBackend::globalMousePermissionState();
+}
+void BuiltInSettingsBackend::requestGlobalMousePermission() {
+    if (m_mouseManager)
+        m_mouseManager->requestPermission();
+}
+void BuiltInSettingsBackend::openGlobalMousePermissionSettings() {
+    if (m_mouseManager)
+        m_mouseManager->openPermissionSettings();
+}
+void BuiltInSettingsBackend::refreshGlobalMousePermission() {
+    if (m_mouseManager)
+        m_mouseManager->refreshPermission();
 }
 
 SettingsGlobalMouseCombination

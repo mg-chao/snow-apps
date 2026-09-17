@@ -2,7 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTCONTROLLER_H
 
 #include <QObject>
-#include <QPoint>
+#include <QPointF>
 #include <QString>
 #include "snow_shot/presentation/globalmousetypes.h"
 
@@ -30,11 +30,13 @@ class ScreenshotController : public QObject {
     void pinSelectedFilesToScreen(snow_shot::platform::windows::SelectedFileTarget target);
     [[nodiscard]] bool captureAvailable() const;
     [[nodiscard]] bool blocksApplicationUpdate() const;
-    [[nodiscard]] bool
-    beginGlobalMouseCapture(snow_shot::presentation::settings::SettingsGlobalMouseAction action,
-                            quint64 gestureId, const QPoint& physicalStart);
-    void updateGlobalMouseCapture(quint64 gestureId, const QPoint& physicalPoint);
-    void finishGlobalMouseCapture(quint64 gestureId, const QPoint& physicalPoint);
+    [[nodiscard]] bool beginGlobalMouseCapture(
+        snow_shot::presentation::settings::SettingsGlobalMouseAction action, quint64 gestureId,
+        const QPointF& position,
+        snow_shot::presentation::GlobalMouseCoordinateSpace space =
+            snow_shot::presentation::GlobalMouseCoordinateSpace::PhysicalPixels);
+    void updateGlobalMouseCapture(quint64 gestureId, const QPointF& position);
+    void finishGlobalMouseCapture(quint64 gestureId, const QPointF& position);
     void cancelGlobalMouseCapture(quint64 gestureId);
 
   public slots:

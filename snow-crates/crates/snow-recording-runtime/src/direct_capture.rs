@@ -104,6 +104,17 @@ pub(super) fn stream_config(
     }
 }
 
+pub(super) fn capture_options(config: &DirectRecordingConfig) -> CaptureOptions {
+    CaptureOptions {
+        workload: CaptureWorkload::Continuous,
+        excluded_windows: config.excluded_windows.clone(),
+        excluded_processes: config.excluded_processes.clone(),
+        #[cfg(feature = "bench-stage-timing")]
+        record_stage_timings: true,
+        ..CaptureOptions::default()
+    }
+}
+
 impl DirectCapture {
     #[cfg(windows)]
     pub fn gpu_dropped_frames(&self) -> u64 {
@@ -121,12 +132,7 @@ impl DirectCapture {
             .build()?;
         let session = system.open_session(
             resolve_capture_target(&RecordingTarget::Region(config.region))?,
-            CaptureOptions {
-                workload: CaptureWorkload::Continuous,
-                #[cfg(feature = "bench-stage-timing")]
-                record_stage_timings: true,
-                ..CaptureOptions::default()
-            },
+            capture_options(config),
         )?;
         Ok(Self::Cpu(CaptureStream::spawn(
             session,

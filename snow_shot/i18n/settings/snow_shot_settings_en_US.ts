@@ -341,8 +341,16 @@
             <translation>Cancel</translation>
         </message>
         <message>
+            <source>Command</source>
+            <translation>Command</translation>
+        </message>
+        <message>
             <source>Configure mouse combination for %1</source>
             <translation>Configure mouse combination for %1</translation>
+        </message>
+        <message>
+            <source>Control</source>
+            <translation>Control</translation>
         </message>
         <message>
             <source>Ctrl</source>
@@ -367,6 +375,10 @@
         <message>
             <source>OK</source>
             <translation>OK</translation>
+        </message>
+        <message>
+            <source>Option</source>
+            <translation>Option</translation>
         </message>
         <message>
             <source>Right-button drag</source>
@@ -2558,6 +2570,17 @@
         </message>
     </context>
     <context>
+        <name>SettingsPageWidget</name>
+        <message>
+            <source>Open System Settings</source>
+            <translation>Open System Settings</translation>
+        </message>
+        <message>
+            <source>Retry</source>
+            <translation>Retry</translation>
+        </message>
+    </context>
+    <context>
         <name>ShortcutKeyRow</name>
         <message>
             <source>%1 (%2 s)</source>
@@ -2822,8 +2845,32 @@ Unavailable: %2</translation>
     <context>
         <name>snow_shot::presentation::GlobalMouseManager</name>
         <message>
+            <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Accessibility to use global mouse gestures.</source>
+            <translation>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Accessibility to use global mouse gestures.</translation>
+        </message>
+        <message>
+            <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Input Monitoring to use global mouse gestures.</source>
+            <translation>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Input Monitoring to use global mouse gestures.</translation>
+        </message>
+        <message>
+            <source>Checking global mouse permissions...</source>
+            <translation>Checking global mouse permissions...</translation>
+        </message>
+        <message>
+            <source>Global mouse gestures are paused while this session is inactive.</source>
+            <translation>Global mouse gestures are paused while this session is inactive.</translation>
+        </message>
+        <message>
+            <source>Global mouse gestures are ready.</source>
+            <translation>Global mouse gestures are ready.</translation>
+        </message>
+        <message>
             <source>Global mouse input is unavailable (error %1).</source>
             <translation>Global mouse input is unavailable (error %1).</translation>
+        </message>
+        <message>
+            <source>Global mouse input is unavailable. Check permissions and retry.</source>
+            <translation>Global mouse input is unavailable. Check permissions and retry.</translation>
         </message>
     </context>
     <context>

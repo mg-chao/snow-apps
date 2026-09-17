@@ -23,6 +23,7 @@
     "ScreenshotToolbarEditorSettingsWidget",
     "SettingsBackend",
     "SettingsCatalog",
+    "SettingsPageWidget",
     "ShortcutKeyRow",
     "StorageStatusSettingsWidget",
     "snow_shot::presentation::GlobalMouseManager",

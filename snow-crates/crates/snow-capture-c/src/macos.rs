@@ -172,6 +172,10 @@ impl SnowMacCaptureConfig {
             }
             .to_vec();
         }
+        config.excluded_windows.sort_unstable();
+        config.excluded_windows.dedup();
+        config.excluded_processes.sort_unstable();
+        config.excluded_processes.dedup();
         Ok(config)
     }
 }

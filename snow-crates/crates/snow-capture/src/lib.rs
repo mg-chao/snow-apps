@@ -6,6 +6,7 @@ pub mod color_effect;
 pub mod convert;
 mod cursor_compositor;
 pub mod error;
+pub mod exclusions;
 pub mod frame;
 #[cfg(windows)]
 pub mod gpu;

@@ -20,8 +20,11 @@
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 
+#if defined(Q_OS_WIN) || defined(_WIN32) || defined(Q_OS_MACOS)
+#include "snow_shot/platform/windowcaptureexclusion.h"
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include "snow_shot/platform/windows/windowchrome.h"
+#endif
 #endif
 
 #include "snow_capture.h"
@@ -197,8 +200,7 @@ struct RecordingSessionDeleter {
         snow_recording_session_destroy(session);
     }
 };
-using RecordingSessionHandle =
-    std::unique_ptr<SnowRecordingSession, RecordingSessionDeleter>;
+using RecordingSessionHandle = std::unique_ptr<SnowRecordingSession, RecordingSessionDeleter>;
 
 struct StartAttemptResult {
     RecordingSessionHandle session;
@@ -742,6 +744,12 @@ struct ScreenRecordingController::Impl {
             const bool audioSupported = outputFormat == QStringLiteral("mp4");
             const RecordingKeyboardTheme keyboardTheme(keyboardBackgroundColor,
                                                        keyboardForegroundColor);
+            QVector<std::uint32_t> excludedWindowIds;
+            if (!settings.captureToolbarInRecording()) {
+                excludeToolbarFromCapture();
+                excludedWindowIds =
+                    captureExclusion.windowIds(snow_shot::platform::captureWindowId);
+            }
             SnowCaptureDirectRecordingConfig config{
                 SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION,
                 sizeof(SnowCaptureDirectRecordingConfig),
@@ -779,12 +787,8 @@ struct ScreenRecordingController::Impl {
                 static_cast<uint32_t>(mouseTrailDurationMs),
                 static_cast<uint32_t>(keyboardSize),
                 static_cast<uint32_t>(settings.loopAnimatedImages()),
+                {},
             };
-            // Exclude before the worker starts capturing so no frame can ever
-            // contain the toolbar; a failed start restores visibility.
-            if (!settings.captureToolbarInRecording()) {
-                excludeToolbarFromCapture();
-            }
             const QString baseName =
                 ScreenshotImageFileService::suggestedBaseName(settings.videoFilenameFormat());
             const QStringList directories = recordingDirectories();
@@ -795,7 +799,7 @@ struct ScreenRecordingController::Impl {
             // paint. The FFI error string is thread-local, so it is read here.
             startFuture = std::async(
                 std::launch::async,
-                [config, directories, baseName, extension,
+                [config, excludedWindowIds, directories, baseName, extension,
                  keyboard]() mutable -> StartAttemptResult {
                     StartAttemptResult result;
                     result.outputPath = chooseRecordingOutputPath(directories, baseName, extension);
@@ -811,6 +815,8 @@ struct ScreenRecordingController::Impl {
                     config.output_file_utf8 = outputUtf8.constData();
                     config.keyboard_labels = labels.entries.constData();
                     config.keyboard_label_count = static_cast<uint32_t>(labels.entries.size());
+                    config.exclusions.windows = excludedWindowIds.constData();
+                    config.exclusions.window_count = static_cast<size_t>(excludedWindowIds.size());
                     SnowRecordingSession* created = nullptr;
                     const SnowRecordingResult createResult =
                         snow_recording_session_create_direct(&config, &created);
@@ -844,6 +850,7 @@ struct ScreenRecordingController::Impl {
                 stop(false);
                 return;
             }
+            result.session.reset();
             restoreToolbarCaptureVisibility();
             sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::idle();
             if (!result.error.isEmpty()) {
@@ -852,6 +859,7 @@ struct ScreenRecordingController::Impl {
             return;
         }
         if (result.session == nullptr || !result.error.isEmpty()) {
+            result.session.reset();
             restoreToolbarCaptureVisibility();
             sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::idle();
             syncUi();
@@ -1012,9 +1020,9 @@ struct ScreenRecordingController::Impl {
         retiring->deleteLater();
     }
 
-    void excludeToolbarFromCapture() {
+    bool excludeToolbarFromCapture() {
         restoreToolbarCaptureVisibility();
-        captureExclusion.exclude(toolbarWindow);
+        return captureExclusion.exclude(toolbarWindow);
     }
 
     void restoreToolbarCaptureVisibility() {
@@ -1035,12 +1043,12 @@ struct ScreenRecordingController::Impl {
         const auto output = directRecordingSettings(outputFormat, captureRegion.size());
         uint32_t width = 0;
         uint32_t height = 0;
-        if (snow_recording_output_dimensions(
-                static_cast<uint32_t>(captureRegion.width()),
-                static_cast<uint32_t>(captureRegion.height()),
-                static_cast<uint32_t>(output.maximumSize.width()),
-                static_cast<uint32_t>(output.maximumSize.height()),
-                static_cast<uint32_t>(output.format), &width, &height) == 0) {
+        if (snow_recording_output_dimensions(static_cast<uint32_t>(captureRegion.width()),
+                                             static_cast<uint32_t>(captureRegion.height()),
+                                             static_cast<uint32_t>(output.maximumSize.width()),
+                                             static_cast<uint32_t>(output.maximumSize.height()),
+                                             static_cast<uint32_t>(output.format), &width,
+                                             &height) == 0) {
             uiSession->preview->setEligible(false);
             return;
         }
@@ -1140,8 +1148,8 @@ struct ScreenRecordingController::Impl {
     bool startScheduled = false;
     quint64 startGeneration = 0;
     snow_shot::presentation::WindowCaptureExclusion captureExclusion{
-#if defined(Q_OS_WIN) || defined(_WIN32)
-        snow_shot::platform::windows::setWindowExcludedFromCapture
+#if defined(Q_OS_WIN) || defined(_WIN32) || defined(Q_OS_MACOS)
+        snow_shot::platform::setWindowExcludedFromCapture
 #endif
     };
 };

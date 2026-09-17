@@ -133,12 +133,26 @@ impl CaptureBackend for MacBackend {
         )?))
     }
 }
-fn native_config(target: &CaptureTarget) -> CaptureResult<DesktopConfig> {
+fn native_config(target: &CaptureTarget, options: &CaptureOptions) -> CaptureResult<DesktopConfig> {
+    if options.excluded_windows.len() > crate::exclusions::MAX_EXCLUSIONS
+        || options.excluded_processes.len() > crate::exclusions::MAX_EXCLUSIONS
+    {
+        return Err(CaptureError::InvalidConfig(
+            "capture exclusions exceed 4096 entries".into(),
+        ));
+    }
+    if matches!(target, CaptureTarget::Window(_))
+        && (!options.excluded_windows.is_empty() || !options.excluded_processes.is_empty())
+    {
+        return Err(CaptureError::InvalidConfig(
+            "window capture does not support exclusion filters".into(),
+        ));
+    }
     let native_id = |id| {
         u32::try_from(id)
             .map_err(|_| CaptureError::InvalidConfig("invalid macOS target identifier".into()))
     };
-    Ok(DesktopConfig::new(match target {
+    let mut config = DesktopConfig::new(match target {
         CaptureTarget::PrimaryMonitor => DesktopTarget::PrimaryDisplay,
         CaptureTarget::Monitor(id) => {
             DesktopTarget::Display(MacDisplayId(native_id(id.raw_handle())?))
@@ -151,10 +165,19 @@ fn native_config(target: &CaptureTarget) -> CaptureResult<DesktopConfig> {
             width: f64::from(region.width),
             height: f64::from(region.height),
         }),
-    }))
+    });
+    config.excluded_windows = options.excluded_windows.iter().copied().collect();
+    config.excluded_processes = options.excluded_processes.iter().copied().collect();
+    config.excluded_windows.sort_unstable();
+    config.excluded_windows.dedup();
+    config.excluded_processes.sort_unstable();
+    config.excluded_processes.dedup();
+    Ok(config)
 }
 fn target_info(target: &CaptureTarget) -> CaptureResult<CaptureTargetInfo> {
-    let transform = snow_macos::desktop::inspect(&native_config(target)?).map_err(map_error)?;
+    let transform =
+        snow_macos::desktop::inspect(&native_config(target, &CaptureOptions::default())?)
+            .map_err(map_error)?;
     Ok(CaptureTargetInfo {
         origin_x: transform.source.x.round() as i32,
         origin_y: transform.source.y.round() as i32,
@@ -178,7 +201,7 @@ impl MacCapturer {
                 "Windows capture tuning is unavailable on macOS".into(),
             ));
         }
-        let session = DesktopSession::new(native_config(&target)?).map_err(map_error)?;
+        let session = DesktopSession::new(native_config(&target, &options)?).map_err(map_error)?;
         let transform = session.transform();
         Ok(Self {
             session,
@@ -277,6 +300,37 @@ impl MonitorCapturer for MacCapturer {
 #[cfg(test)]
 mod tuning_tests {
     use super::*;
+    #[test]
+    fn snapshot_and_continuous_filters_reach_native_configs() {
+        for workload in [CaptureWorkload::Snapshot, CaptureWorkload::Continuous] {
+            let options = CaptureOptions {
+                workload,
+                excluded_windows: vec![9, 7, 9].into(),
+                excluded_processes: vec![5, 3, 5].into(),
+                ..Default::default()
+            };
+            for target in [
+                CaptureTarget::PrimaryMonitor,
+                CaptureTarget::Region(crate::CaptureRegion::new(0, 0, 64, 64).unwrap()),
+            ] {
+                let config = native_config(&target, &options).unwrap();
+                assert_eq!(config.excluded_windows, [7, 9]);
+                assert_eq!(config.excluded_processes, [3, 5]);
+            }
+            assert!(
+                native_config(
+                    &CaptureTarget::Window(WindowId::from_macos_id(42)),
+                    &options
+                )
+                .is_err()
+            );
+        }
+        let options = CaptureOptions {
+            excluded_windows: vec![1; 4097].into(),
+            ..Default::default()
+        };
+        assert!(native_config(&CaptureTarget::PrimaryMonitor, &options).is_err());
+    }
     #[test]
     fn explicit_windows_tuning_fails_before_native_acquisition() {
         let result = MacCapturer::new(

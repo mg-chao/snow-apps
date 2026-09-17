@@ -88,7 +88,19 @@ typedef struct SnowRecordingExportConfig {
     uint8_t reserved[32];
 } SnowRecordingExportConfig;
 
-#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 5u
+#ifndef SNOW_CAPTURE_EXCLUSIONS_DEFINED
+#define SNOW_CAPTURE_EXCLUSIONS_DEFINED
+/* macOS WindowServer IDs / process IDs. Nonempty lists require non-null pointers.
+ * Each list is limited to 4096 entries, copied and deduplicated during creation. */
+typedef struct SnowCaptureExclusions {
+    const uint32_t* windows;
+    size_t window_count;
+    const int32_t* processes;
+    size_t process_count;
+} SnowCaptureExclusions;
+#endif
+
+#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 6u
 
 /* Strings are bounded UTF-8 key names, copied during session creation. */
 typedef struct SnowCaptureKeyboardLabel {
@@ -135,6 +147,8 @@ typedef struct SnowCaptureDirectRecordingConfig {
     uint32_t keyboard_size;
     /* Version 5: 0 plays once, 1 loops infinitely. Older versions loop infinitely. */
     uint32_t loop_animated_images;
+    /* Version 6: fixed exclusion filters for this recording, including pauses. */
+    SnowCaptureExclusions exclusions;
 } SnowCaptureDirectRecordingConfig;
 
 SnowRecordingSession*

@@ -87,6 +87,7 @@ fn main() -> Result<()> {
         _ => bail!("--x and --y must be provided together"),
     };
     let config = SnowCaptureRegionSessionConfig {
+        exclusions: Default::default(),
         x,
         y,
         width,
@@ -311,6 +312,7 @@ fn run_continuous_stream(
     samples: usize,
 ) -> Result<ContinuousMetrics> {
     let config = SnowCaptureStreamConfig {
+        exclusions: Default::default(),
         version: STREAM_CONFIG_VERSION,
         struct_size: std::mem::size_of::<SnowCaptureStreamConfig>() as u32,
         x: region.0,

@@ -952,6 +952,8 @@ fn run_sample(
         options.duration_seconds
     };
     let config = DirectRecordingConfig {
+        excluded_windows: Default::default(),
+        excluded_processes: Default::default(),
         loop_animated_images: true,
         region,
         capture_backend: options.backend,

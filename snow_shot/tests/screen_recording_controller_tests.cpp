@@ -21,6 +21,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_capture.h"
+#include "snow_shot/platform/windowcaptureexclusion.h"
 #include "snow_recording.h"
 #include "widgets/button.h"
 #include "widgets/dpi_stable_window_controller.h"
@@ -39,6 +40,9 @@
 #include <QMessageBox>
 #include "widgets/color_picker.h"
 #include <future>
+#ifdef Q_OS_MACOS
+#include "macos_capture_exclusion_probe.h"
+#endif
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
 #include <dwmapi.h>
@@ -68,11 +72,13 @@ std::unique_ptr<RecordingEffectsSource> testEffectsSource() {
 SnowRecordingSession session;
 std::atomic<int> starts = 0;
 SnowCaptureDirectRecordingConfig lastDirectConfig{};
+std::vector<uint32_t> lastExcludedWindows;
 std::atomic<int> exports = 0;
 std::shared_future<void> exportGate;
 std::promise<void>* exportEntered = nullptr;
 std::atomic<bool> failExport = false;
 std::atomic<bool> failStart = false;
+std::atomic<bool> failStartOperation = false;
 std::atomic<int> destroyedSessions = 0;
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -847,6 +853,76 @@ void controllerPreviewTransitions() {
     RecordingSettings().setKeyboardForegroundColor(Qt::white);
 }
 
+void recordingCaptureExclusionWiring() {
+    using snow_shot::storage::RecordingSettings;
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+    require(RecordingSettings().setStartDelaySeconds(0), "disable countdown");
+    for (bool captureToolbar : {false, true}) {
+        require(RecordingSettings().setCaptureToolbarInRecording(captureToolbar),
+                "set toolbar capture preference");
+        for (int failure : {0, 1, 2}) {
+            const bool fail = failure != 0;
+            ErrorObserver observer;
+            qApp->installEventFilter(&observer);
+            ScreenRecordingController controller(testEffectsSource);
+            controller.open({40, 40, 320, 240});
+            QWidget* toolbar = palette()->window();
+            const auto id = snow_shot::platform::captureWindowId(toolbar);
+#ifdef Q_OS_MACOS
+            const auto sharingMatches = macosCaptureSharingProbe(toolbar);
+#endif
+            failStart = failure == 1;
+            failStartOperation = failure == 2;
+            controller.startRecording();
+            if (fail) {
+                QElapsedTimer deadline;
+                deadline.start();
+                while (observer.shown == 0 && deadline.elapsed() < 3000) {
+                    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+                    QThread::msleep(5);
+                }
+                require(observer.shown > 0, "failed start is reported after cleanup");
+            } else {
+                waitForRecording(controller);
+            }
+            const std::vector<uint32_t> expected =
+                !captureToolbar && id ? std::vector<uint32_t>{*id} : std::vector<uint32_t>{};
+            require(lastExcludedWindows == expected,
+                    "recording creation owns exactly the configured toolbar exclusion");
+            require(toolbar->isVisible(), "toolbar remains visible on success and failure");
+#ifdef Q_OS_MACOS
+            require(sharingMatches(!captureToolbar && !fail),
+                    "recording start applies sharing policy and failure restores it");
+#endif
+            if (!fail) {
+                palette()->recordingStopRequested();
+                waitForIdle(controller);
+            }
+#ifdef Q_OS_MACOS
+            require(sharingMatches(false), "recording stop restores the original sharing policy");
+#endif
+            palette()->recordingCloseRequested();
+            failStart = false;
+            failStartOperation = false;
+            qApp->removeEventFilter(&observer);
+        }
+    }
+#ifdef Q_OS_MACOS
+    require(RecordingSettings().setCaptureToolbarInRecording(false), "exclude toolbar");
+    std::function<bool(bool)> sharingMatches;
+    {
+        ScreenRecordingController controller(testEffectsSource);
+        controller.open({40, 40, 320, 240});
+        sharingMatches = macosCaptureSharingProbe(palette()->window());
+        controller.startRecording();
+        waitForRecording(controller);
+        require(sharingMatches(true), "active toolbar is excluded before destruction");
+    }
+    require(sharingMatches(false), "controller destruction restores native sharing");
+#endif
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
 void delayCountdownBlocksTheStartUntilItElapses() {
     using snow_shot::storage::RecordingSettings;
     require(RecordingSettings().startDelaySeconds() == 0,
@@ -1246,6 +1322,11 @@ snow_recording_session_create_direct(const SnowCaptureDirectRecordingConfig* con
     // may be touched here. The preview label invariant is asserted on the GUI
     // thread by controllerPreviewTransitions instead.
     lastDirectConfig = *config;
+    lastExcludedWindows.clear();
+    if (config->exclusions.window_count != 0) {
+        lastExcludedWindows.assign(config->exclusions.windows,
+                                   config->exclusions.windows + config->exclusions.window_count);
+    }
     for (const auto& weak : effectSources) {
         if (const auto source = weak.lock()) {
             require(!source->active, "native creation must follow preview observer shutdown");
@@ -1263,7 +1344,7 @@ void snow_recording_session_destroy(SnowRecordingSession*) {
 }
 uint8_t snow_recording_session_start(SnowRecordingSession*) {
     ++starts;
-    return 1;
+    return failStartOperation ? 0 : 1;
 }
 uint8_t snow_recording_session_pause(SnowRecordingSession*) {
     return 1;
@@ -1377,6 +1458,11 @@ int main(int argc, char** argv) {
         previewIgnoresEventsOtherThanDialogVisibility();
         recordingKeyboardColorsFollowBackground();
         controllerPreviewTransitions();
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--capture-exclusion-only"))) {
+        recordingCaptureExclusionWiring();
         ApplicationStorage::instance().shutdown();
         return 0;
     }

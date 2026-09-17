@@ -107,7 +107,6 @@ if(WIN32)
         NO_DEFAULT_PATH
     )
 endif()
-
 set(SNOW_SHOT_DRAW_ENGINE_QT_DIR
     "${SNOW_DRAW_ENGINE_SOURCE_DIR}"
     CACHE PATH
@@ -853,16 +852,32 @@ add_library(snow_shot_global_mouse STATIC
     include/snow_shot/presentation/globalmousetypes.h
     src/presentation/services/globalmousemanager.cpp
     src/presentation/services/globalmousegesture.cpp
-    src/platform/windows/globalmousebackend.cpp
+    src/platform/globalmousebackend.cpp
 )
 target_include_directories(snow_shot_global_mouse PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(snow_shot_global_mouse PUBLIC snow_shot_storage Qt6::Gui)
 if(WIN32)
+    target_sources(snow_shot_global_mouse PRIVATE
+        src/platform/windows/globalmousebackend.cpp
+        src/platform/windows/globalmousebackend_p.h)
     target_link_libraries(snow_shot_global_mouse PRIVATE dwmapi user32)
 endif()
 if(APPLE)
+    enable_language(OBJCXX)
+    target_sources(snow_shot_global_mouse PRIVATE
+        src/platform/macos/globalmousebackend.mm
+        src/platform/macos/globalmouseinput.cpp
+        src/platform/macos/globalmousebackend_p.h)
     find_library(SNOW_SHOT_APPKIT_FRAMEWORK NAMES AppKit REQUIRED)
+    find_library(SNOW_SHOT_APPLICATION_SERVICES_FRAMEWORK NAMES ApplicationServices REQUIRED)
+    find_library(SNOW_SHOT_CORE_FOUNDATION_FRAMEWORK NAMES CoreFoundation REQUIRED)
     find_library(SNOW_SHOT_CORE_GRAPHICS_FRAMEWORK NAMES CoreGraphics REQUIRED)
+    target_link_libraries(snow_shot_global_mouse PRIVATE
+        "${SNOW_SHOT_CARBON_FRAMEWORK}"
+        "${SNOW_SHOT_APPKIT_FRAMEWORK}"
+        "${SNOW_SHOT_APPLICATION_SERVICES_FRAMEWORK}"
+        "${SNOW_SHOT_CORE_FOUNDATION_FRAMEWORK}"
+        "${SNOW_SHOT_CORE_GRAPHICS_FRAMEWORK}")
     target_link_libraries(snow_shot_settings PRIVATE
         "${SNOW_SHOT_CARBON_FRAMEWORK}"
         "${SNOW_SHOT_APPKIT_FRAMEWORK}"
@@ -899,6 +914,7 @@ set(PROJECT_HEADERS
     include/snow_shot/platform/windows/autostartregistration.h
     include/snow_shot/platform/windows/focusedfullscreenwindow.h
     include/snow_shot/platform/windows/windowchrome.h
+    include/snow_shot/platform/windowcaptureexclusion.h
     include/snow_shot/platform/physicalcursor.h
     include/snow_shot/presentation/components/aspectratiolockbutton.h
     include/snow_shot/presentation/components/contentcardwidget.h
@@ -1156,6 +1172,9 @@ set(PROJECT_CXX_SOURCES
     src/presentation/recording/screenrecordinggeometry.cpp
     src/presentation/recording/screenrecordingtoolbarwindow.cpp
 )
+if(APPLE)
+    list(APPEND PROJECT_CXX_SOURCES src/platform/macos/windowcaptureexclusion.mm)
+endif()
 
 if(MSVC)
     set_source_files_properties(src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
@@ -1363,6 +1382,12 @@ if(SNOW_SHOT_BUILD_TESTS)
             "${SNOW_SHOT_CORE_GRAPHICS_FRAMEWORK}")
     endif()
     add_test(NAME snow-shot-global-mouse-tests COMMAND snow-shot-global-mouse-tests)
+    add_test(NAME snow-shot-global-mouse-storage-tests
+        COMMAND snow-shot-application-storage-tests --global-mouse-only)
+    add_test(NAME snow-shot-global-mouse-settings-runtime-tests
+        COMMAND snow-shot-settings-runtime-session-tests --global-mouse-only)
+    set_tests_properties(snow-shot-global-mouse-storage-tests
+        snow-shot-global-mouse-settings-runtime-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     set_tests_properties(snow-shot-global-mouse-tests PROPERTIES
         LABELS "unit" TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     snow_shot_import_offscreen_platform(snow-shot-global-mouse-tests)
@@ -1372,6 +1397,16 @@ if(SNOW_SHOT_BUILD_TESTS)
             COMMAND snow-shot-global-mouse-tests --native-hook-smoke)
         set_tests_properties(snow-shot-global-mouse-native-smoke-tests PROPERTIES
             LABELS "interactive;windows" TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=windows")
+    elseif(APPLE)
+        add_executable(snow-shot-macos-global-mouse-tests tests/macos_global_mouse_tests.mm)
+        target_link_libraries(snow-shot-macos-global-mouse-tests PRIVATE snow_shot_global_mouse Qt6::Widgets)
+        add_test(NAME snow-shot-macos-global-mouse-tests COMMAND snow-shot-macos-global-mouse-tests)
+        set_tests_properties(snow-shot-macos-global-mouse-tests PROPERTIES
+            LABELS "unit;macos" TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+        add_test(NAME snow-shot-global-mouse-native-smoke-tests
+            COMMAND snow-shot-macos-global-mouse-tests --native-hook-smoke)
+        set_tests_properties(snow-shot-global-mouse-native-smoke-tests PROPERTIES
+            LABELS "interactive;macos" TIMEOUT 30 SKIP_RETURN_CODE 77 ENVIRONMENT "QT_QPA_PLATFORM=cocoa")
     endif()
 
     add_executable(snow-shot-diagnostics-tests tests/diagnostics_tests.cpp)
@@ -4157,6 +4192,23 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "unit;windows"
     )
 
+    if(APPLE)
+        add_executable(snow-shot-macos-window-capture-exclusion-tests
+            tests/macos_window_capture_exclusion_tests.mm
+            src/platform/macos/windowcaptureexclusion.mm)
+        target_include_directories(snow-shot-macos-window-capture-exclusion-tests PRIVATE
+            include src "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
+        target_link_libraries(snow-shot-macos-window-capture-exclusion-tests PRIVATE
+            Qt6::Widgets snow_capture_c "${SNOW_SHOT_APPKIT_FRAMEWORK}")
+        add_test(NAME snow-shot-macos-window-capture-exclusion-tests
+            COMMAND snow-shot-macos-window-capture-exclusion-tests -platform cocoa)
+        add_test(NAME snow-shot-macos-window-capture-exclusion-pixels-tests
+            COMMAND snow-shot-macos-window-capture-exclusion-tests -platform cocoa --pixels)
+        set_tests_properties(snow-shot-macos-window-capture-exclusion-tests
+            snow-shot-macos-window-capture-exclusion-pixels-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60 SKIP_RETURN_CODE 77)
+    endif()
+
     add_executable(snow-shot-window-capture-exclusion-tests
         tests/window_capture_exclusion_tests.cpp
         src/presentation/capture/windowcaptureexclusion.h
@@ -4174,6 +4226,28 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+
+    add_executable(snow-shot-scrolling-capture-exclusion-tests
+        tests/scrolling_capture_exclusion_tests.cpp
+        src/presentation/capture/screenshotscrollingpipeline.cpp
+        src/presentation/capture/screenshotscrollingnativesource.cpp)
+    target_include_directories(snow-shot-scrolling-capture-exclusion-tests PRIVATE
+        include src "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include"
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-stitch-images-c/include")
+    target_link_libraries(snow-shot-scrolling-capture-exclusion-tests PRIVATE
+        Qt6::Widgets snow_stitch_images_c snow_shot_diagnostics)
+    foreach(_capture_test_function IN ITEMS stream_create_region stream_receive stream_stop
+            stream_destroy stream_stats stream_set_target_fps stream_frame_info
+            stream_frame_release last_error_message)
+        target_compile_definitions(snow-shot-scrolling-capture-exclusion-tests PRIVATE
+            "snow_capture_${_capture_test_function}=snow_test_capture_${_capture_test_function}")
+    endforeach()
+    snow_shot_import_offscreen_platform(snow-shot-scrolling-capture-exclusion-tests)
+    add_test(NAME snow-shot-scrolling-capture-exclusion-tests
+        COMMAND snow-shot-scrolling-capture-exclusion-tests -platform offscreen)
+    set_tests_properties(snow-shot-scrolling-capture-exclusion-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
     get_target_property(_recording_test_sources snow-shot-screenshot-tool-palette-tests SOURCES)
     list(FILTER _recording_test_sources EXCLUDE REGEX "tests/screenshot_tool_palette_tests.cpp$")
@@ -4211,6 +4285,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE
         adqt_icon_core ant_design_icons_qt ant_design_qt snow_draw_engine_qt_canvas
         snow_shot_storage snow_shot_image_codec snow_shot_window_shortcuts Qt6::Widgets snow_recording_effects_c snow_capture_c)
+    if(APPLE)
+        target_sources(snow-shot-screen-recording-controller-tests PRIVATE
+            src/platform/macos/windowcaptureexclusion.mm
+            tests/macos_capture_exclusion_probe.mm)
+        target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE "${SNOW_SHOT_APPKIT_FRAMEWORK}")
+    endif()
     target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE SNOW_SHOT_TEST_HOOKS=1)
     # Override only the test executable: exercise the real controller without
     # opening capture devices, recording the desktop, or exporting media.
@@ -4252,6 +4332,16 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-recording-capture-exclusion-tests
+        COMMAND snow-shot-screen-recording-controller-tests --capture-exclusion-only)
+    set_tests_properties(snow-shot-recording-capture-exclusion-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60 ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    if(APPLE)
+        add_test(NAME snow-shot-macos-recording-capture-exclusion-tests
+            COMMAND snow-shot-screen-recording-controller-tests --capture-exclusion-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-recording-capture-exclusion-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
+    endif()
     snow_shot_import_offscreen_platform(snow-shot-screen-recording-controller-tests)
     set_tests_properties(snow-shot-screen-recording-controller-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
