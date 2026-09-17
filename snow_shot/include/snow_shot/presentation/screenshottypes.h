@@ -43,11 +43,17 @@ enum class ScreenshotCaptureBackend {
     Gdi = 3,
 };
 
+enum class ScreenshotCapturePurpose {
+    Initial,
+    Recapture,
+};
+
 struct ScreenshotCaptureRequest {
     quint64 requestId = 0;
     bool refreshLayout = false;
     bool restoreOriginalScreenColors = false;
     bool captureCursor = false;
+    ScreenshotCapturePurpose purpose = ScreenshotCapturePurpose::Initial;
 };
 
 struct ScreenshotDisplayPresentationState {
@@ -72,6 +78,7 @@ struct ScreenshotCaptureResult {
     QVector<CapturedDisplayModel> displays;
     QString errorMessage;
     bool succeeded = false;
+    ScreenshotCapturePurpose purpose = ScreenshotCapturePurpose::Initial;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTTYPES_H

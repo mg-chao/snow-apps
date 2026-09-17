@@ -100,6 +100,26 @@ void unavailableExclusionPreservesVisibility() {
     exclusion.restore();
     require(toolbar.isVisible(), "unavailable exclusion must not hide the toolbar");
 }
+
+void recaptureCanRollbackPartialExclusionsBeforeFallback() {
+    QWidget overlay;
+    QWidget toolbar;
+    std::vector<std::pair<QWidget*, bool>> calls;
+    WindowCaptureExclusion exclusion([&](QWidget* window, bool excluded) {
+        calls.emplace_back(window, excluded);
+        return window == &overlay;
+    });
+
+    const bool overlayExcluded = exclusion.exclude(&overlay);
+    const bool toolbarExcluded = exclusion.exclude(&toolbar);
+    require(overlayExcluded && !toolbarExcluded,
+            "recapture must be able to detect a partial exclusion failure");
+    exclusion.restore();
+    require(calls == std::vector<std::pair<QWidget*, bool>>{{&overlay, true},
+                                                            {&toolbar, true},
+                                                            {&overlay, false}},
+            "partial recapture exclusion must restore successes before hidden fallback");
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -112,5 +132,6 @@ int main(int argc, char* argv[]) {
     }
     cleanupToleratesDestroyedWindowsAndRestoreFailures();
     unavailableExclusionPreservesVisibility();
+    recaptureCanRollbackPartialExclusionsBeforeFallback();
     return 0;
 }

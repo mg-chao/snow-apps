@@ -1264,17 +1264,25 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
     case SettingsSectionReset::ScreenshotEditorShortcuts: {
         shortcuts::ShortcutBindingMap defaults;
         for (const QString& actionId :
-             {QStringLiteral("move_tool"), QStringLiteral("move_cursor_up"),
-              QStringLiteral("move_cursor_down"), QStringLiteral("move_cursor_left"),
-              QStringLiteral("move_cursor_right"), QStringLiteral("move_entire_selection"),
+             {QStringLiteral("move_tool"),
+              QStringLiteral("move_cursor_up"),
+              QStringLiteral("move_cursor_down"),
+              QStringLiteral("move_cursor_left"),
+              QStringLiteral("move_cursor_right"),
+              QStringLiteral("move_entire_selection"),
               QStringLiteral("keep_selection_width_and_height_consistent"),
               QStringLiteral("switch_selection_between_window_and_window_sub_element"),
               QStringLiteral("previous_screenshot_history"),
               QStringLiteral("next_screenshot_history"),
-              QStringLiteral("select_previously_selected_area"), QStringLiteral("copy_color"),
-              QStringLiteral("pin_to_screen"), QStringLiteral("video_recording"),
-              QStringLiteral("scrolling_screenshot"), QStringLiteral("quick_save"),
-              QStringLiteral("save_as_file"), QStringLiteral("cancel_screenshot"),
+              QStringLiteral("select_previously_selected_area"),
+              QStringLiteral("recapture"),
+              QStringLiteral("copy_color"),
+              QStringLiteral("pin_to_screen"),
+              QStringLiteral("video_recording"),
+              QStringLiteral("scrolling_screenshot"),
+              QStringLiteral("quick_save"),
+              QStringLiteral("save_as_file"),
+              QStringLiteral("cancel_screenshot"),
               QStringLiteral("copy_to_clipboard")}) {
             defaults.insert(
                 actionId, shortcutListDefault(QStringLiteral("screenshot_shortcuts/") + actionId));

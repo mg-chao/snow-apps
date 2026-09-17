@@ -26,6 +26,10 @@
             <translation>自動儲存截圖失敗：%1</translation>
         </message>
         <message>
+            <source>Could not recapture the screen</source>
+            <translation>無法重新擷取螢幕</translation>
+        </message>
+        <message>
             <source>No recognized result is available to copy</source>
             <translation>沒有可複製的辨識結果</translation>
         </message>

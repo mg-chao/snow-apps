@@ -19,6 +19,7 @@ ScreenshotToolPalette::Options screenshotToolbarOptions() {
     options.showDragHandle = true;
     options.showHistoryActions = true;
     options.showMoveTool = true;
+    options.showMoveOptionsToolbar = true;
     options.showSelectTool = true;
     options.showShapeTool = true;
     options.showArrowTool = true;
@@ -69,6 +70,8 @@ ScreenshotToolbarWindow::ScreenshotToolbarWindow(ScreenshotToolbarCommandSink& c
                 } else if (key == QStringLiteral("screenshot_toolbar/action_tools_layout")) {
                     setActionToolsLayout(snow_shot::storage::ScreenshotToolbarSettings().layout(
                         snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools));
+                } else if (key == QStringLiteral("screenshot/capture_cursor")) {
+                    synchronizeCaptureCursorSetting();
                 }
             });
 }
@@ -105,6 +108,7 @@ void ScreenshotToolbarWindow::initializePalette() {
     }
 
     resetForNewCapture();
+    synchronizeCaptureCursorSetting();
 
     connect(toolPalette, &ScreenshotToolPalette::undoRequested, this,
             [this]() { m_commands.undoCanvasEdit(); });
@@ -115,6 +119,15 @@ void ScreenshotToolbarWindow::initializePalette() {
     connectStyleCommands(*toolPalette);
     connectSerialNumberCommands(*toolPalette);
     connectScrollingScreenshotCommands(*toolPalette);
+    connect(toolPalette, &ScreenshotToolPalette::captureCursorToggled, this,
+            [this, toolPalette](bool enabled) {
+                if (!snow_shot::storage::ScreenshotSettings().setCaptureCursor(enabled)) {
+                    toolPalette->setCaptureCursorEnabled(
+                        snow_shot::storage::ScreenshotSettings().captureCursor());
+                }
+            });
+    connect(toolPalette, &ScreenshotToolPalette::recaptureRequested, this,
+            [this]() { m_commands.requestRecapture(); });
     connect(host, &ScreenshotToolPaletteHost::dragStarted, this,
             [this](const QPoint&) { m_manuallyDragged = true; });
 }
@@ -414,6 +427,19 @@ void ScreenshotToolbarWindow::setScrollingScreenshotMode(bool enabled) {
 
 void ScreenshotToolbarWindow::setActiveTool(ScreenshotToolPalette::Tool tool) {
     setActiveToolAndReposition(tool);
+}
+
+void ScreenshotToolbarWindow::setRecaptureBusy(bool busy) {
+    if (ScreenshotToolPalette* toolPalette = palette()) {
+        toolPalette->setRecaptureBusy(busy);
+    }
+}
+
+void ScreenshotToolbarWindow::synchronizeCaptureCursorSetting() {
+    if (ScreenshotToolPalette* toolPalette = palette()) {
+        toolPalette->setCaptureCursorEnabled(
+            snow_shot::storage::ScreenshotSettings().captureCursor());
+    }
 }
 
 bool ScreenshotToolbarWindow::activateDrawingShortcut(const QString& toolId) {

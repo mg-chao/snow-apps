@@ -26,6 +26,10 @@
             <translation>Automatic screenshot saving failed: %1</translation>
         </message>
         <message>
+            <source>Could not recapture the screen</source>
+            <translation>Could not recapture the screen</translation>
+        </message>
+        <message>
             <source>No recognized result is available to copy</source>
             <translation>No recognized result is available to copy</translation>
         </message>

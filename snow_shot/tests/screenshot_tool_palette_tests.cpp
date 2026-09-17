@@ -10351,6 +10351,71 @@ void autoFilterControlsShareStylesAndKeepCategoryUnselected() {
         require(palette.grab().save(path), "save Auto Filter toolbar inspection image");
     }
 }
+
+void moveToolExposesCaptureCursorAndRecaptureOptions() {
+    ScreenshotToolPalette::Options options;
+    options.showMoveTool = true;
+    options.showMoveOptionsToolbar = true;
+    ScreenshotToolPalette palette(options);
+    palette.setCaptureCursorEnabled(false);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Move);
+
+    auto* controls = palette.findChild<QWidget*>(QStringLiteral("screenshotMoveStyleControls"));
+    auto* cursor = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotCaptureCursorButton"));
+    auto* recapture =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotRecaptureButton"));
+    auto* layout = controls != nullptr ? qobject_cast<QBoxLayout*>(controls->layout()) : nullptr;
+    require(controls != nullptr && cursor != nullptr && recapture != nullptr && layout != nullptr &&
+                palette.styleToolbarVisible(),
+            "Move must materialize and display its dedicated options row");
+    require(layout->indexOf(cursor) == 0 && layout->indexOf(recapture) == layout->count() - 1 &&
+                layout->itemAt(2) != nullptr &&
+                qobject_cast<QFrame*>(layout->itemAt(2)->widget()) != nullptr,
+            "Move options must order Capture cursor, separator, then Recapture");
+    require(cursor->isCheckable() && !cursor->isChecked() && !palette.captureCursorEnabled(),
+            "Capture cursor must be a real checkable control reflecting palette state");
+
+    int cursorChanges = 0;
+    int recaptures = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::captureCursorToggled,
+                     [&cursorChanges](bool enabled) { cursorChanges += enabled ? 1 : 100; });
+    QObject::connect(&palette, &ScreenshotToolPalette::recaptureRequested,
+                     [&recaptures]() { ++recaptures; });
+    cursor->click();
+    require(cursorChanges == 1 && cursor->isChecked() && palette.captureCursorEnabled(),
+            "Capture cursor clicks must update state and emit the persisted-setting command");
+    recapture->click();
+    require(recaptures == 1 && recapture->toolTip() == shortcutTooltip(QStringLiteral("Recapture"),
+                                                                       {QStringLiteral("Alt+R")}),
+            "Recapture must emit once and show its configurable default shortcut");
+    palette.setRecaptureBusy(true);
+    require(!recapture->isEnabled() &&
+                !palette.activateScreenshotShortcut(QStringLiteral("recapture")),
+            "busy recapture must disable both pointer and shortcut activation");
+    palette.setRecaptureBusy(false);
+    require(palette.activateScreenshotShortcut(QStringLiteral("recapture")) && recaptures == 2,
+            "the shortcut must invoke the same Recapture button signal path");
+
+    ScreenshotToolPalette::Options recordingOptions;
+    recordingOptions.showRecordingControls = true;
+    ScreenshotToolPalette recordingPalette(recordingOptions);
+    auto* recordingCursor = recordingPalette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenRecordingShowCursor"));
+    require(recordingCursor != nullptr && recordingCursor->sizeHint() == cursor->sizeHint() &&
+                recordingCursor->iconSize() == cursor->iconSize(),
+            "Capture cursor must share recording cursor metrics and icon sizing");
+
+    ScreenshotToolPalette::Options pinnedOptions;
+    pinnedOptions.showMoveTool = true;
+    pinnedOptions.moveToolPresentation = ScreenshotToolPalette::MoveToolPresentation::ResizeWindow;
+    ScreenshotToolPalette pinnedPalette(pinnedOptions);
+    pinnedPalette.setActiveTool(ScreenshotToolPalette::Tool::Move);
+    require(!pinnedPalette.styleToolbarVisible() &&
+                pinnedPalette.findChild<QWidget*>(QStringLiteral("screenshotMoveStyleControls")) ==
+                    nullptr,
+            "Resize window Move must remain unchanged without screenshot capture options");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -10574,6 +10639,7 @@ int main(int argc, char** argv) {
     dynamicToolbarLabelsUseEveryTranslationCatalog();
     numericStrokeWidthPreviewUsesLineWithinPreviewBounds();
     secondaryControlsMaterializeOnlyForTheRequestedFamily();
+    moveToolExposesCaptureCursorAndRecaptureOptions();
     textAndHighlightStrokeWidthTriggersUseSharedPreviewButton();
     shapeAndArrowStrokeEditorsShareThePresetCatalog();
     sizePresetEditorsShareTheSizeCatalog();

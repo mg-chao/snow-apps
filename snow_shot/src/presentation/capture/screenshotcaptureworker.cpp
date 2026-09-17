@@ -73,6 +73,7 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.worker_entry");
     ScreenshotCaptureResult captureResult;
     captureResult.requestId = request.requestId;
+    captureResult.purpose = request.purpose;
     if (!ensureSession()) {
         captureResult.errorMessage = nativeCaptureError("Failed to create desktop capture session");
         postCaptureResult(coordinator, std::move(captureResult));

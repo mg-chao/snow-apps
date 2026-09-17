@@ -92,6 +92,10 @@
             <translation>Cancel screenshot</translation>
         </message>
         <message>
+            <source>Capture cursor</source>
+            <translation>Capture cursor</translation>
+        </message>
+        <message>
             <source>Close recording</source>
             <translation>Close recording</translation>
         </message>
@@ -554,6 +558,10 @@
         <message>
             <source>Quick save</source>
             <translation>Quick save</translation>
+        </message>
+        <message>
+            <source>Recapture</source>
+            <translation>Recapture</translation>
         </message>
         <message>
             <source>Record microphone</source>

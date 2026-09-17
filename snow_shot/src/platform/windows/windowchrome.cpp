@@ -205,6 +205,10 @@ void bringWindowToForeground(QWidget* window) {
     SetForegroundWindow(hwnd);
 }
 
+bool supportsWindowCaptureExclusion() {
+    return supportsExcludeFromCapture();
+}
+
 bool setWindowExcludedFromCapture(QWidget* window, bool excluded) {
     if (window == nullptr) {
         return false;
@@ -221,6 +225,17 @@ bool setWindowExcludedFromCapture(QWidget* window, bool excluded) {
 
     const DWORD affinity = excluded ? WDA_EXCLUDEFROMCAPTURE : WDA_NONE;
     return SetWindowDisplayAffinity(hwnd, affinity) != 0;
+}
+
+bool isNativeWindowVisible(QWidget* window) {
+    if (window == nullptr || window->internalWinId() == 0) {
+        return false;
+    }
+    return IsWindowVisible(toNativeHwnd(window->internalWinId())) != FALSE;
+}
+
+bool flushWindowComposition() {
+    return SUCCEEDED(DwmFlush());
 }
 
 bool handleNativeWindowEvent(QWidget* titleBar, void* message, qintptr* result) {

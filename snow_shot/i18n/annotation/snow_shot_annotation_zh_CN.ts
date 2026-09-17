@@ -92,6 +92,10 @@
             <translation>取消截图</translation>
         </message>
         <message>
+            <source>Capture cursor</source>
+            <translation>捕获光标</translation>
+        </message>
+        <message>
             <source>Close recording</source>
             <translation>关闭录制</translation>
         </message>
@@ -554,6 +558,10 @@
         <message>
             <source>Quick save</source>
             <translation>快速保存</translation>
+        </message>
+        <message>
+            <source>Recapture</source>
+            <translation>重新截图</translation>
         </message>
         <message>
             <source>Record microphone</source>

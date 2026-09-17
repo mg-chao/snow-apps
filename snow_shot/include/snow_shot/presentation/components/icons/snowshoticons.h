@@ -86,6 +86,7 @@ namespace outlined {
 [[nodiscard]] adqt::icons::IconRef RecordingResume(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef RecordingStart(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef RecordingStop(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef RefreshCapture(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Save(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ScanQrcode(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ScreenshotCopy(const adqt::icons::IconColors& colors = {});

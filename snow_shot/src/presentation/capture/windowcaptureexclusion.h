@@ -17,10 +17,12 @@ class WindowCaptureExclusion final {
     explicit WindowCaptureExclusion(Setter setter = {}) : m_setter(std::move(setter)) {}
 
     // Exclusion is best effort and must never change a window's visibility.
-    void exclude(QWidget* window) {
+    bool exclude(QWidget* window) {
         if (window != nullptr && m_setter && m_setter(window, true)) {
             m_windows.emplace_back(window);
+            return true;
         }
+        return false;
     }
 
     void restore() {

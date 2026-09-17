@@ -45,6 +45,7 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
         if (failCaptureSynchronously && eventSink != nullptr) {
             ScreenshotCaptureResult result;
             result.requestId = request.requestId;
+            result.purpose = request.purpose;
             result.errorMessage = QStringLiteral("Synchronous capture setup failure");
             eventSink->handleCaptureFinished(result);
         }
@@ -184,6 +185,13 @@ ScreenshotCaptureResult successfulResult(quint64 requestId, const CapturedDispla
     result.requestId = requestId;
     result.displays = {snapshot};
     result.succeeded = true;
+    return result;
+}
+
+ScreenshotCaptureResult successfulRecaptureResult(quint64 requestId,
+                                                  const CapturedDisplayModel& snapshot) {
+    ScreenshotCaptureResult result = successfulResult(requestId, snapshot);
+    result.purpose = ScreenshotCapturePurpose::Recapture;
     return result;
 }
 
@@ -1198,7 +1206,102 @@ void globalDragCoordinatesStayPhysicalAcrossDifferentDisplayScales() {
             "mixed-DPI drags must retain physical pixel dimensions and negative monitor origins");
 }
 
+void recapturePreservesEditingStateAndRollsBackFailures() {
+    ScreenshotCaptureState state;
+    state.sessionState = ScreenshotSessionState::Editing;
+    ScreenshotDisplaySession displays;
+    CapturedDisplayModel original;
+    original.stableId = QStringLiteral("primary");
+    original.name = QStringLiteral("Primary");
+    original.physicalRect = QRect(0, 0, 64, 48);
+    original.logicalRect = original.physicalRect;
+    original.image = QImage(64, 48, QImage::Format_RGBA8888);
+    original.image.fill(Qt::red);
+    original.active = true;
+    displays.appendDisplay(original);
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(displays);
+    ScreenshotInteractionState interaction;
+    interaction.setMoveTool(true, false);
+    ScreenshotSelectionModel selection;
+    selection.setSelectionStartEnd({10, 8}, {30, 20});
+    ScreenshotIntelligentSelectionModel intelligent;
+    CaptureRuntime runtime;
+    bool captureCursor = true;
+    int completions = 0;
+    bool lastSucceeded = false;
+    ScreenshotCaptureWorkflowContext context{state,       runtime,   geometry,    displays,
+                                             interaction, selection, intelligent, {}};
+    context.captureCursor = [&captureCursor]() { return captureCursor; };
+    context.recaptureCompleted = [&](bool succeeded, const QString&) {
+        ++completions;
+        lastSucceeded = succeeded;
+    };
+    ScreenshotCaptureWorkflow workflow(context);
+
+    require(workflow.startRecapture() && workflow.recaptureInProgress() &&
+                runtime.lastCaptureRequest.purpose == ScreenshotCapturePurpose::Recapture &&
+                runtime.lastCaptureRequest.captureCursor &&
+                runtime.lastCaptureRequest.refreshLayout,
+            "recapture must dispatch a distinct request with the current cursor setting");
+    const QRect selectionBefore = selection.pixelSelection();
+    const ScreenshotCaptureMode modeBefore = interaction.mode();
+    CapturedDisplayModel replacement = original;
+    replacement.image.fill(Qt::blue);
+    runtime.eventSink->handleCaptureFinished(
+        successfulRecaptureResult(runtime.lastCaptureRequest.requestId, replacement));
+    require(completions == 1 && lastSucceeded && !workflow.recaptureInProgress() &&
+                displays.displayAt(0).image.pixelColor(0, 0) == QColor(Qt::blue),
+            "successful recapture must replace the desktop image exactly once");
+    require(selection.pixelSelection() == selectionBefore && interaction.mode() == modeBefore &&
+                interaction.moveToolActive() && runtime.clearDocumentCalls == 0 &&
+                runtime.applyDisplayModelsCalls == 1,
+            "successful recapture must preserve selection, interaction, and canvas state");
+
+    captureCursor = false;
+    require(workflow.startRecapture() && !runtime.lastCaptureRequest.captureCursor,
+            "each recapture must read the latest cursor setting");
+    ScreenshotCaptureResult failed;
+    failed.requestId = runtime.lastCaptureRequest.requestId;
+    failed.purpose = ScreenshotCapturePurpose::Recapture;
+    failed.errorMessage = QStringLiteral("capture failed");
+    runtime.eventSink->handleCaptureFinished(failed);
+    require(completions == 2 && !lastSucceeded &&
+                displays.displayAt(0).image.pixelColor(0, 0) == QColor(Qt::blue) &&
+                state.sessionState == ScreenshotSessionState::Editing &&
+                selection.pixelSelection() == selectionBefore &&
+                runtime.applyDisplayModelsCalls == 1,
+            "failed recapture must retain the previous image and complete editing state");
+
+    require(workflow.startRecapture(), "recapture must recover after a failure");
+    ScreenshotCaptureResult empty;
+    empty.requestId = runtime.lastCaptureRequest.requestId;
+    empty.purpose = ScreenshotCapturePurpose::Recapture;
+    empty.succeeded = true;
+    runtime.eventSink->handleCaptureFinished(empty);
+    require(completions == 3 && !lastSucceeded &&
+                displays.displayAt(0).image.pixelColor(0, 0) == QColor(Qt::blue),
+            "empty successful results must be rejected without clearing the old image");
+
+    require(workflow.startRecapture(), "recapture must start before stale-result validation");
+    const quint64 pendingRequestId = runtime.lastCaptureRequest.requestId;
+    ScreenshotCaptureResult wrongPurpose = successfulRecaptureResult(pendingRequestId, replacement);
+    wrongPurpose.purpose = ScreenshotCapturePurpose::Initial;
+    runtime.eventSink->handleCaptureFinished(wrongPurpose);
+    require(workflow.recaptureInProgress() && completions == 3,
+            "an initial-capture result must not complete a pending recapture");
+    workflow.shutdownCaptureWorker();
+    require(!workflow.recaptureInProgress() && completions == 4 && !lastSucceeded &&
+                displays.displayAt(0).image.pixelColor(0, 0) == QColor(Qt::blue),
+            "worker teardown must cancel recapture without changing the current image");
+    runtime.eventSink->handleCaptureFinished(
+        successfulRecaptureResult(pendingRequestId, replacement));
+    require(completions == 4 && displays.displayAt(0).image.pixelColor(0, 0) == QColor(Qt::blue),
+            "a stale recapture callback after teardown must be ignored");
+}
+
 int main() {
+    recapturePreservesEditingStateAndRollsBackFailures();
     toolbarVisibilityIsIndependentOfInputAndPreparation();
     noToolbarCaptureWaitsForUserSelection();
     normalCaptureRestoresToolbarAfterSuppressedCapture();

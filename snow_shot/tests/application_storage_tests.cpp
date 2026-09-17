@@ -353,6 +353,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         {QStringLiteral("previous_screenshot_history"), QJsonArray{QStringLiteral(",")}},
         {QStringLiteral("next_screenshot_history"), QJsonArray{QStringLiteral(".")}},
         {QStringLiteral("select_previously_selected_area"), QJsonArray{QStringLiteral("R")}},
+        {QStringLiteral("recapture"), QJsonArray{QStringLiteral("Alt+R")}},
         {QStringLiteral("copy_color"), QJsonArray{QStringLiteral("C")}},
         {QStringLiteral("table_recognition"), QJsonArray{QStringLiteral("Ctrl+X")}},
         {QStringLiteral("qr_code_recognition"), QJsonArray{QStringLiteral("Ctrl+Q")}},
@@ -1279,7 +1280,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     const storage::ScreenshotShortcutSettings screenshotShortcuts;
     const shortcuts::ShortcutBindingMap screenshotDefaults = screenshotShortcuts.allShortcuts();
     require(
-        screenshotDefaults.size() == 25 &&
+        screenshotDefaults.size() == 26 &&
             portable(screenshotShortcuts.moveTool()) ==
                 QStringList{QStringLiteral("M"), QStringLiteral("Ctrl+E")} &&
             portable(screenshotShortcuts.moveCursorUp()) ==
@@ -1302,6 +1303,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 QStringList{QStringLiteral(".")} &&
             portable(screenshotShortcuts.selectPreviouslySelectedArea()) ==
                 QStringList{QStringLiteral("R")} &&
+            portable(screenshotShortcuts.recapture()) == QStringList{QStringLiteral("Alt+R")} &&
             portable(screenshotShortcuts.copyColor()) == QStringList{QStringLiteral("C")} &&
             portable(screenshotDefaults.value(QStringLiteral("pin_to_screen"))) ==
                 QStringList{QStringLiteral("Ctrl+F")} &&
@@ -1331,7 +1333,11 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 portable(screenshotShortcuts.moveTool()) == QStringList{QStringLiteral("Alt+M")} &&
                 screenshotShortcuts.setMoveCursorUp({QStringLiteral("Ctrl+Alt+Up")}) &&
                 portable(screenshotShortcuts.moveCursorUp()) ==
-                    QStringList{QStringLiteral("Ctrl+Alt+Up")},
+                    QStringList{QStringLiteral("Ctrl+Alt+Up")} &&
+                screenshotShortcuts.setShortcuts(QStringLiteral("recapture"),
+                                                 {QStringLiteral("Ctrl+Alt+R")}) &&
+                portable(screenshotShortcuts.recapture()) ==
+                    QStringList{QStringLiteral("Ctrl+Alt+R")},
             "screenshot shortcuts must round-trip through the typed adapter");
     require(screenshotShortcuts.setMoveCursorRight({QStringLiteral("1")}) &&
                 portable(screenshotShortcuts.moveCursorRight()) == QStringList{QStringLiteral("1")},

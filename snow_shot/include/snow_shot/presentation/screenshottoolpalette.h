@@ -210,6 +210,7 @@ class ScreenshotToolPalette final : public QWidget {
         bool showDragHandle = false;
         bool showHistoryActions = false;
         bool showMoveTool = false;
+        bool showMoveOptionsToolbar = false;
         MoveToolPresentation moveToolPresentation = MoveToolPresentation::EditSelection;
         bool showSelectTool = true;
         bool showShapeTool = true;
@@ -300,6 +301,10 @@ class ScreenshotToolPalette final : public QWidget {
     [[nodiscard]] bool activateDrawingShortcut(const QString& toolId);
     [[nodiscard]] bool activateToolShortcut(Tool tool);
     [[nodiscard]] bool activateScreenshotShortcut(const QString& actionId);
+    void setCaptureCursorEnabled(bool enabled);
+    [[nodiscard]] bool captureCursorEnabled() const;
+    void setRecaptureBusy(bool busy);
+    [[nodiscard]] bool recaptureBusy() const;
     void clearActiveTool();
     [[nodiscard]] std::optional<Tool> activeTool() const;
     void setHistoryState(const SnowCanvasHistoryState& state);
@@ -391,6 +396,8 @@ class ScreenshotToolPalette final : public QWidget {
     void undoRequested();
     void redoRequested();
     void moveRequested();
+    void captureCursorToggled(bool enabled);
+    void recaptureRequested();
     void selectRequested();
     void recordingExportSettingsVisibleChanged(bool visible);
     void shapeRequested();
@@ -552,6 +559,8 @@ class ScreenshotToolPalette final : public QWidget {
     void setActiveToolButton(adqt::widgets::AdButton* activeButton);
     bool setStyleControlsActive(Tool tool);
     QWidget* styleControlsForTool(Tool tool) const;
+    [[nodiscard]] bool toolUsesStyleToolbar(Tool tool) const;
+    [[nodiscard]] std::optional<Tool> styleFamilyForTool(Tool tool) const;
     bool applyActiveToolSecondaryToolbarVisibility();
     [[nodiscard]] bool activeToolUsesStyleToolbar() const;
     bool setSecondaryToolbarVisibility(bool actionToolbarVisible, bool styleToolbarVisible);
@@ -703,6 +712,7 @@ class ScreenshotToolPalette final : public QWidget {
     QBoxLayout* m_recordExportSettingsLayout = nullptr;
     QVector<QBoxLayout*> m_styleControlLayouts;
     QWidget* m_rectangleStyleControlsWidget = nullptr;
+    QWidget* m_moveStyleControlsWidget = nullptr;
     QWidget* m_lineStyleControlsWidget = nullptr;
     QWidget* m_freeDrawStyleControlsWidget = nullptr;
     QWidget* m_arrowStyleControlsWidget = nullptr;
@@ -722,6 +732,8 @@ class ScreenshotToolPalette final : public QWidget {
     QSpacerItem* m_shapeStyleGroupSeparatorLeadingSpacing = nullptr;
     QSpacerItem* m_shapeStyleGroupSeparatorTrailingSpacing = nullptr;
     adqt::widgets::AdButton* m_moveButton = nullptr;
+    adqt::widgets::AdButton* m_captureCursorButton = nullptr;
+    adqt::widgets::AdButton* m_recaptureButton = nullptr;
     adqt::widgets::AdButton* m_undoButton = nullptr;
     adqt::widgets::AdButton* m_redoButton = nullptr;
     adqt::widgets::AdButton* m_selectButton = nullptr;
@@ -852,6 +864,8 @@ class ScreenshotToolPalette final : public QWidget {
     QColor m_recordingMouseClickColor = QColor(0, 0, 0, 0);
     bool m_recordingKeyboardVisible = false;
     bool m_recordingCursorVisible = true;
+    bool m_captureCursorEnabled = false;
+    bool m_recaptureBusy = false;
     bool m_ocrEnabled = true;
     bool m_ocrBusy = false;
     bool m_tableEnabled = true;

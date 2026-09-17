@@ -58,6 +58,7 @@ void ScreenshotCaptureCoordinator::captureAsync(const ScreenshotCaptureRequest& 
     if (cancellation->token == nullptr) {
         ScreenshotCaptureResult result;
         result.requestId = request.requestId;
+        result.purpose = request.purpose;
         result.errorMessage = QStringLiteral("Failed to create capture cancellation token");
         emit captureFinished(std::move(result));
         return;
@@ -70,6 +71,7 @@ void ScreenshotCaptureCoordinator::captureAsync(const ScreenshotCaptureRequest& 
         cancellation->cancel();
         ScreenshotCaptureResult result;
         result.requestId = request.requestId;
+        result.purpose = request.purpose;
         result.errorMessage = QStringLiteral("Capture worker is unavailable");
         emit captureFinished(std::move(result));
     }

@@ -1845,6 +1845,10 @@
             <translation>Real-time</translation>
         </message>
         <message>
+            <source>Recapture</source>
+            <translation>Recapture</translation>
+        </message>
+        <message>
             <source>Recognize text</source>
             <translation>Recognize text</translation>
         </message>

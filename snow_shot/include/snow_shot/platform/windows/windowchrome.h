@@ -9,7 +9,10 @@ class QWidget;
 namespace snow_shot::platform::windows {
 void setupDwmShadow(QWidget* window);
 void bringWindowToForeground(QWidget* window);
+[[nodiscard]] bool supportsWindowCaptureExclusion();
 [[nodiscard]] bool setWindowExcludedFromCapture(QWidget* window, bool excluded);
+[[nodiscard]] bool isNativeWindowVisible(QWidget* window);
+[[nodiscard]] bool flushWindowComposition();
 bool handleNativeWindowEvent(QWidget* titleBar, void* message, qintptr* result);
 } // namespace snow_shot::platform::windows
 #endif

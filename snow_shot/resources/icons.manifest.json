@@ -560,6 +560,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "RefreshCapture",
+      "name": "refresh-capture",
+      "source": "../src/presentation/components/icons/resources/refresh-capture.svg",
+      "colorModel": "fullColor",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Save",
       "name": "save",
       "source": "../src/presentation/components/icons/resources/save.svg",

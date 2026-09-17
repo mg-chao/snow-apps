@@ -101,6 +101,7 @@ struct ScreenshotOverlayInputActions {
     std::function<bool()> physicalCursorMovementAvailable = []() { return false; };
     std::function<void(ScreenshotIntelligentSelectionTarget)> persistSelectionTarget =
         [](ScreenshotIntelligentSelectionTarget) {};
+    std::function<bool()> recaptureAvailable = []() { return false; };
 };
 
 struct ScreenshotOverlayInputHandlerContext {

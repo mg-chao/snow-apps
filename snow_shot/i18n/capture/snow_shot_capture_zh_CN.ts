@@ -26,6 +26,10 @@
             <translation>自动保存截图失败：%1</translation>
         </message>
         <message>
+            <source>Could not recapture the screen</source>
+            <translation>无法重新截取屏幕</translation>
+        </message>
+        <message>
             <source>No recognized result is available to copy</source>
             <translation>没有可复制的识别结果</translation>
         </message>

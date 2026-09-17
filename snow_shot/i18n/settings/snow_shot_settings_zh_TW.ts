@@ -1845,6 +1845,10 @@
             <translation>即時</translation>
         </message>
         <message>
+            <source>Recapture</source>
+            <translation>重新擷取</translation>
+        </message>
+        <message>
             <source>Recognize text</source>
             <translation>文字辨識</translation>
         </message>

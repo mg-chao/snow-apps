@@ -2008,6 +2008,7 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
                     {QStringLiteral("A"), QStringLiteral("Left")});
     defaults.insert(QStringLiteral("move_cursor_right"),
                     {QStringLiteral("D"), QStringLiteral("Right")});
+    defaults.insert(QStringLiteral("recapture"), {QStringLiteral("Alt+R")});
     defaults.insert(QStringLiteral("pin_to_screen"), {QStringLiteral("Ctrl+F")});
     defaults.insert(QStringLiteral("cancel_screenshot"), {QStringLiteral("Esc")});
     defaults.insert(QStringLiteral("copy_to_clipboard"), {QStringLiteral("Ctrl+C")});
@@ -2035,14 +2036,17 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
     int copyActivations = 0;
     int undoActivations = 0;
     int redoActivations = 0;
+    int recaptureActivations = 0;
     bool cursorMoveHandles = true;
     bool localShortcutInputAllowed = true;
+    bool recaptureAvailable = true;
     QVector<PhysicalCursorDirection> cursorMoves;
     ScreenshotOverlayInputActions actions;
     actions.physicalCursorMovementAvailable = []() { return true; };
     actions.localShortcutInputAllowed = [&localShortcutInputAllowed]() {
         return localShortcutInputAllowed;
     };
+    actions.recaptureAvailable = [&recaptureAvailable]() { return recaptureAvailable; };
     actions.moveCursorOnePixel = [&cursorMoves,
                                   &cursorMoveHandles](PhysicalCursorDirection direction) {
         if (!cursorMoveHandles) {
@@ -2072,6 +2076,8 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
             ++undoActivations;
         } else if (actionId == QStringLiteral("redo")) {
             ++redoActivations;
+        } else if (actionId == QStringLiteral("recapture")) {
+            ++recaptureActivations;
         } else {
             return false;
         }
@@ -2115,6 +2121,36 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
     require(dispatchShortcut(shortcutWindow, Qt::Key_M), "default Move shortcut was not handled");
     require(moveToolActivations == 1 && interaction.moveToolActive(),
             "default Move shortcut must activate the Move tool");
+
+    require(dispatchShortcut(shortcutWindow, Qt::Key_R, Qt::AltModifier) &&
+                recaptureActivations == 1,
+            "default recapture shortcut must dispatch through the screenshot action path");
+    interaction.setCanvasTool(ScreenshotActiveTool::Shape);
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_R, Qt::AltModifier) &&
+                recaptureActivations == 1,
+            "recapture shortcut must remain inactive for drawing tools");
+    interaction.setMoveTool(true, false);
+    recaptureAvailable = false;
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_R, Qt::AltModifier) &&
+                recaptureActivations == 1,
+            "recapture shortcut must respect the shared availability guard");
+    recaptureAvailable = true;
+    localShortcutInputAllowed = false;
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_R, Qt::AltModifier) &&
+                recaptureActivations == 1,
+            "recapture shortcut must not consume input while local shortcuts are blocked");
+    localShortcutInputAllowed = true;
+    require(interaction.enterSelectionDrag(ScreenshotSelectionDragMode::All),
+            "recapture drag guard fixture did not start a selection drag");
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_R, Qt::AltModifier) &&
+                recaptureActivations == 1,
+            "recapture shortcut must remain inactive during selection drags");
+    interaction.finishDrag();
+    interaction.enterScrollingCapture();
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_R, Qt::AltModifier) &&
+                recaptureActivations == 1,
+            "recapture shortcut must remain inactive during scrolling capture");
+    interaction.setMoveTool(true, false);
 
     require(dispatchShortcut(shortcutWindow, Qt::Key_F, Qt::ControlModifier) &&
                 dispatchShortcut(shortcutWindow, Qt::Key_Escape) &&

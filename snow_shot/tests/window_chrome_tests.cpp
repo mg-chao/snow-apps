@@ -13,8 +13,28 @@
 #include <qt_windows.h>
 
 namespace {
+constexpr DWORD WINDOWS_10_2004_BUILD = 19041;
+
+void require(bool condition, const char* message);
+
 HWND toNativeHwnd(WId windowId) {
     return reinterpret_cast<HWND>(windowId); // NOLINT(performance-no-int-to-ptr)
+}
+
+bool currentWindowsSupportsCaptureExclusion() {
+    using RtlGetVersionFn = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
+    const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    require(ntdll != nullptr, "ntdll must be loaded for the Windows version query");
+    const auto rtlGetVersion =
+        reinterpret_cast<RtlGetVersionFn>(GetProcAddress(ntdll, "RtlGetVersion"));
+    require(rtlGetVersion != nullptr, "RtlGetVersion must be available");
+
+    RTL_OSVERSIONINFOW version{};
+    version.dwOSVersionInfoSize = sizeof(version);
+    require(rtlGetVersion(&version) == 0, "RtlGetVersion must report the native OS version");
+    return version.dwMajorVersion > 10 ||
+           (version.dwMajorVersion == 10 && version.dwMinorVersion == 0 &&
+            version.dwBuildNumber >= WINDOWS_10_2004_BUILD);
 }
 
 void require(bool condition, const char* message) {
@@ -94,10 +114,31 @@ void raisedOverlayPreventsTitleBarDragging() {
     window.hide();
     QCursor::setPos(originalCursorPosition);
 }
+
+void captureExclusionCapabilityAndNativeVisibilityAreReported() {
+    require(snow_shot::platform::windows::supportsWindowCaptureExclusion() ==
+                currentWindowsSupportsCaptureExclusion(),
+            "capture exclusion support must follow the native Windows build capability");
+
+    QWidget window(nullptr, Qt::Tool);
+    window.resize(80, 60);
+    window.show();
+    flushEvents();
+    require(window.isVisible() && snow_shot::platform::windows::isNativeWindowVisible(&window),
+            "shown capture windows must be visible to both Qt and Windows");
+
+    window.hide();
+    flushEvents();
+    require(!window.isVisible() && !snow_shot::platform::windows::isNativeWindowVisible(&window),
+            "hidden capture windows must be hidden from both Qt and Windows");
+    require(snow_shot::platform::windows::flushWindowComposition(),
+            "DWM composition must flush before fallback capture begins");
+}
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    captureExclusionCapabilityAndNativeVisibilityAreReported();
     raisedOverlayPreventsTitleBarDragging();
     return 0;
 }

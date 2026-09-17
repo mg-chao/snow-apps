@@ -71,6 +71,7 @@ const QStringList& screenshotShortcutActionIds() {
         QStringLiteral("previous_screenshot_history"),
         QStringLiteral("next_screenshot_history"),
         QStringLiteral("select_previously_selected_area"),
+        QStringLiteral("recapture"),
         QStringLiteral("copy_color"),
         QStringLiteral("table_recognition"),
         QStringLiteral("qr_code_recognition"),
@@ -693,6 +694,10 @@ shortcuts::ShortcutBindingList ScreenshotShortcutSettings::nextScreenshotHistory
 
 shortcuts::ShortcutBindingList ScreenshotShortcutSettings::selectPreviouslySelectedArea() const {
     return shortcuts(QStringLiteral("select_previously_selected_area"));
+}
+
+shortcuts::ShortcutBindingList ScreenshotShortcutSettings::recapture() const {
+    return shortcuts(QStringLiteral("recapture"));
 }
 
 shortcuts::ShortcutBindingList ScreenshotShortcutSettings::copyColor() const {

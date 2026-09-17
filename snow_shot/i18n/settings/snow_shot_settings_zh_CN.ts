@@ -1845,6 +1845,10 @@
             <translation>实时</translation>
         </message>
         <message>
+            <source>Recapture</source>
+            <translation>重新截图</translation>
+        </message>
+        <message>
             <source>Recognize text</source>
             <translation>文本识别</translation>
         </message>

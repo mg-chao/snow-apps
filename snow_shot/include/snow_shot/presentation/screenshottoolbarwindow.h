@@ -23,6 +23,7 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
     void setActionToolsLayout(const snow_shot::storage::ScreenshotToolbarLayout& layout);
     void setScrollingScreenshotMode(bool enabled);
     void setActiveTool(ScreenshotToolPalette::Tool tool);
+    void setRecaptureBusy(bool busy);
     [[nodiscard]] bool activateDrawingShortcut(const QString& toolId);
     void setHistoryState(const SnowCanvasHistoryState& state);
     void setStyleToolbarState(const SnowCanvasStyleToolbarState& state);
@@ -58,6 +59,7 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
     void connectStyleCommands(ScreenshotToolPalette& toolPalette);
     void connectSerialNumberCommands(ScreenshotToolPalette& toolPalette);
     void connectScrollingScreenshotCommands(ScreenshotToolPalette& toolPalette);
+    void synchronizeCaptureCursorSetting();
     void setActiveToolAndReposition(ScreenshotToolPalette::Tool tool);
 
     ScreenshotToolbarCommandSink& m_commands;
