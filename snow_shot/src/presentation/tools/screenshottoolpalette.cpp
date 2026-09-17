@@ -324,6 +324,38 @@ QString tableQrToolSetting(ScreenshotToolPalette::Tool tool) {
     return tool == ScreenshotToolPalette::Tool::Qr ? QStringLiteral("qr") : QStringLiteral("table");
 }
 
+ScreenshotToolPalette::Tool filterToolFromSetting(const QString& value) {
+    if (value == QStringLiteral("rectangle-filter")) {
+        return ScreenshotToolPalette::Tool::RectangleFilter;
+    }
+    if (value == QStringLiteral("auto-filter")) {
+        return ScreenshotToolPalette::Tool::AutoFilter;
+    }
+    return ScreenshotToolPalette::Tool::PenFilter;
+}
+
+QString filterToolSetting(ScreenshotToolPalette::Tool tool) {
+    if (tool == ScreenshotToolPalette::Tool::RectangleFilter) {
+        return QStringLiteral("rectangle-filter");
+    }
+    if (tool == ScreenshotToolPalette::Tool::AutoFilter) {
+        return QStringLiteral("auto-filter");
+    }
+    return QStringLiteral("pen-filter");
+}
+
+ScreenshotToolPalette::Tool highlightToolFromSetting(const QString& value) {
+    return value == QStringLiteral("rectangle-highlight")
+               ? ScreenshotToolPalette::Tool::RectangleHighlight
+               : ScreenshotToolPalette::Tool::PenHighlight;
+}
+
+QString highlightToolSetting(ScreenshotToolPalette::Tool tool) {
+    return tool == ScreenshotToolPalette::Tool::RectangleHighlight
+               ? QStringLiteral("rectangle-highlight")
+               : QStringLiteral("pen-highlight");
+}
+
 QString actionToolShortcutId(const QString& itemId) {
     if (itemId == QStringLiteral("barcode-recognition")) {
         return QStringLiteral("qr_code_recognition");
@@ -675,6 +707,8 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
       m_actionToolsLayoutExplicit(options.actionToolsLayout.has_value()) {
     const toolbar_settings::ScreenshotToolbarSettings settings;
     m_tableQrEntryTool = tableQrToolFromSetting(settings.tableQrTool());
+    m_lastFilterTool = filterToolFromSetting(settings.lastFilterTool());
+    m_lastHighlightTool = highlightToolFromSetting(settings.lastHighlightTool());
 
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
@@ -774,12 +808,16 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (storage.isInitialized()) {
         connect(&storage.configuration(), &snow_shot::storage::ConfigurationStore::valueChanged,
-                this, [this](const QString& key, const QJsonValue&) {
+                this, [this](const QString& key, const QJsonValue& value) {
                     if (key.startsWith(QStringLiteral("screenshot_shortcuts/")) ||
                         key.startsWith(QStringLiteral("drawing_shortcuts/")) ||
                         key.startsWith(QStringLiteral("pin_to_screen_shortcuts/")) ||
                         key.startsWith(QStringLiteral("screen_recording_shortcuts/"))) {
                         refreshShortcutTooltips();
+                    } else if (key == QStringLiteral("screenshot_toolbar/last_filter_tool")) {
+                        m_lastFilterTool = filterToolFromSetting(value.toString());
+                    } else if (key == QStringLiteral("screenshot_toolbar/last_highlight_tool")) {
+                        m_lastHighlightTool = highlightToolFromSetting(value.toString());
                     }
                 });
     }
@@ -1339,12 +1377,6 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     if (m_options.recordingDrawingMode && m_recordExportSettingsVisible &&
         !isRecordingUnavailableTool(tool)) {
         setRecordingExportSettingsVisible(false);
-    }
-    if (tool == Tool::RectangleHighlight || tool == Tool::PenHighlight) {
-        m_lastHighlightTool = tool;
-    } else if (tool == Tool::AutoFilter || tool == Tool::RectangleFilter ||
-               tool == Tool::PenFilter) {
-        m_lastFilterTool = tool;
     }
     const bool activeToolNoop = m_activeTool.has_value() && *m_activeTool == tool &&
                                 (!toolUsesStyleToolbar(tool) ||
@@ -3424,6 +3456,9 @@ void ScreenshotToolPalette::clearDrawingToolGroups() {
 }
 
 void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
+    // Toolbar activations express user intent; reflective canvas synchronization
+    // must not rewrite the remembered drawing modes.
+    rememberDrawingMode(tool);
     setActiveTool(tool);
     switch (tool) {
     case Tool::Move:
@@ -3525,13 +3560,53 @@ void ScreenshotToolPalette::refreshRecordingToolAvailability(adqt::widgets::AdBu
 }
 
 ScreenshotToolPalette::Tool ScreenshotToolPalette::rememberedDrawingMode(Tool tool) const {
-    if (tool == Tool::RectangleHighlight || tool == Tool::PenHighlight) {
+    const auto isHighlightVariant = [](Tool candidate) {
+        return candidate == Tool::RectangleHighlight || candidate == Tool::PenHighlight;
+    };
+    const auto isFilterVariant = [](Tool candidate) {
+        return candidate == Tool::AutoFilter || candidate == Tool::RectangleFilter ||
+               candidate == Tool::PenFilter;
+    };
+    // Reflective canvas synchronization can activate a family variant without user
+    // intent (for example while creation defaults are applied). The active variant
+    // stays stable across such syncs; the remembered mode only picks the entry that
+    // a toolbar or shortcut activation returns to.
+    if (isHighlightVariant(tool)) {
+        if (m_activeTool.has_value() && isHighlightVariant(*m_activeTool)) {
+            return *m_activeTool;
+        }
         return m_lastHighlightTool;
     }
-    if (tool == Tool::AutoFilter || tool == Tool::RectangleFilter || tool == Tool::PenFilter) {
+    if (isFilterVariant(tool)) {
+        if (m_activeTool.has_value() && isFilterVariant(*m_activeTool)) {
+            return *m_activeTool;
+        }
         return m_lastFilterTool;
     }
     return tool;
+}
+
+void ScreenshotToolPalette::rememberDrawingMode(Tool tool) {
+    const bool highlightVariant = tool == Tool::RectangleHighlight || tool == Tool::PenHighlight;
+    const bool filterVariant =
+        !highlightVariant &&
+        (tool == Tool::AutoFilter || tool == Tool::RectangleFilter || tool == Tool::PenFilter);
+    if (!highlightVariant && !filterVariant) {
+        return;
+    }
+    if (highlightVariant ? m_lastHighlightTool == tool : m_lastFilterTool == tool) {
+        return;
+    }
+    // The remembered mode must outlive this palette: pin-to-screen edit sessions
+    // rebuild the toolbar, so the memory lives in the persisted toolbar settings.
+    const toolbar_settings::ScreenshotToolbarSettings settings;
+    if (highlightVariant) {
+        m_lastHighlightTool = tool;
+        static_cast<void>(settings.setLastHighlightTool(highlightToolSetting(tool)));
+    } else {
+        m_lastFilterTool = tool;
+        static_cast<void>(settings.setLastFilterTool(filterToolSetting(tool)));
+    }
 }
 
 bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibleButton) {
@@ -4852,6 +4927,7 @@ QWidget* ScreenshotToolPalette::createStyleModeSelector(
         createScreenshotToolPaletteRadioEditor(parent, config, styleButtonMetrics(m_physicalScale));
     connect(editor.group, &QButtonGroup::idClicked, this, [this](int id) {
         const Tool tool = static_cast<Tool>(id);
+        rememberDrawingMode(tool);
         setActiveTool(tool);
         switch (tool) {
         case Tool::RectangleHighlight:

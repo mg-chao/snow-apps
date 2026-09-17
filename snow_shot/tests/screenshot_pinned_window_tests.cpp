@@ -40,6 +40,7 @@
 #include "widgets/context_menu.h"
 #include "widgets/modal.h"
 #include "widgets/input_line_edit.h"
+#include "widgets/radio_button_group.h"
 #include "widgets/slider.h"
 
 #include <QAbstractButton>
@@ -1500,6 +1501,54 @@ void pinnedEditingRecognitionShortcutsUsePaletteCommands() {
                 "repeating pinned recognition must use the button's toggle-to-selection command");
     }
     require(settings.setAllShortcutsAtomic(original), "pinned shortcut restoration failed");
+    controller.setEditMode(false);
+}
+
+void pinnedEditingRemembersLastFilterToolAcrossSessions() {
+    namespace storage = snow_shot::storage;
+    using Tool = ScreenshotToolPalette::Tool;
+    const storage::ScreenshotToolbarSettings toolbarSettings;
+    const QString originalFilter = toolbarSettings.lastFilterTool();
+    const QString originalHighlight = toolbarSettings.lastHighlightTool();
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(toolbarSettings.setLastFilterTool(originalFilter));
+        static_cast<void>(toolbarSettings.setLastHighlightTool(originalHighlight));
+    });
+    require(toolbarSettings.setLastFilterTool(QStringLiteral("pen-filter")),
+            "pinned filter memory test must start from the default preference");
+
+    ScreenshotPinnedWindow window;
+    SnowCanvasWidget canvas;
+    snow_shot::presentation::WindowShortcutManager manager;
+    ScreenshotPinnedEditController controller(window, canvas, manager);
+    canvas.show();
+    controller.setEditMode(true);
+    {
+        ScreenshotToolPalette* palette = controller.toolbarWindow()->palette();
+        require(palette != nullptr && palette->activateDrawingShortcut(QStringLiteral("filter")) &&
+                    palette->activeToolForTests() == Tool::PenFilter,
+                "a fresh pinned edit session must start from the persisted filter mode");
+        // Picking rectangular blur in the filter style panel switches the canvas tool.
+        adqt::widgets::AdRadioButtonGroup* filterModes = nullptr;
+        for (auto* group : palette->findChildren<adqt::widgets::AdRadioButtonGroup*>()) {
+            if (group->button(static_cast<int>(Tool::RectangleFilter)) != nullptr) {
+                filterModes = group;
+                break;
+            }
+        }
+        require(filterModes != nullptr, "pinned filter style panel should expose its modes");
+        filterModes->button(static_cast<int>(Tool::RectangleFilter))->click();
+        require(palette->activeToolForTests() == Tool::RectangleFilter &&
+                    toolbarSettings.lastFilterTool() == QStringLiteral("rectangle-filter"),
+                "selecting rectangular blur must activate it and persist the remembered mode");
+    }
+    // Leaving edit mode destroys the toolbar; re-entering rebuilds it from scratch.
+    controller.setEditMode(false);
+    controller.setEditMode(true);
+    ScreenshotToolPalette* palette = controller.toolbarWindow()->palette();
+    require(palette != nullptr && palette->activateDrawingShortcut(QStringLiteral("filter")) &&
+                palette->activeToolForTests() == Tool::RectangleFilter,
+            "re-entering pinned edit mode must restore the remembered rectangular blur");
     controller.setEditMode(false);
 }
 
@@ -8475,6 +8524,7 @@ int main(int argc, char* argv[]) {
         require(sourceRuntime.isValid(), "source runtime creation failed");
         if (app.arguments().contains(QStringLiteral("--resize-window-tool-only"))) {
             pinnedEditingRecognitionShortcutsUsePaletteCommands();
+            pinnedEditingRemembersLastFilterToolAcrossSessions();
             return 0;
         }
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -8754,6 +8804,7 @@ int main(int argc, char* argv[]) {
         restoredInvalidOcrDoesNotSuppressRecognition();
         pinnedRecognitionShortcutTogglesResults();
         pinnedEditingRecognitionShortcutsUsePaletteCommands();
+        pinnedEditingRemembersLastFilterToolAcrossSessions();
         cachedPinnedOcrAvailableWithoutRecognitionProvider();
         transformedPinnedOcrTracksCanvasViewport();
         pinnedTransformResetPersistsWithoutResize();
