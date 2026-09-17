@@ -490,7 +490,7 @@ class SharedInteractionOverlay final : public QWidget {
                           expandedCornerRadius(track.request.bottomLeft, outwardOffset));
 
       QColor waveColor = track.request.color;
-      const qreal baseAlpha = clampUnit(waveColor.alphaF());
+      const qreal baseAlpha = clampUnit(static_cast<double>(waveColor.alphaF()));
       waveColor.setAlphaF(static_cast<float>(baseAlpha * clampUnit(opacity)));
       if (waveColor.alpha() <= 0) {
         continue;
@@ -647,7 +647,9 @@ class SharedInteractionOverlay final : public QWidget {
   }
 
   void advanceInteractionWaveFrame() {
-    const bool changed = pruneStaleTracks() | pruneFinishedWaveTracks();
+    const bool staleChanged = pruneStaleTracks();
+    const bool finishedChanged = pruneFinishedWaveTracks();
+    const bool changed = staleChanged || finishedChanged;
     if (!hasAnyTrack()) {
       refreshOverlayState();
       return;

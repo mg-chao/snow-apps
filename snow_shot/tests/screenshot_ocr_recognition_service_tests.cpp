@@ -32,6 +32,9 @@
 #ifdef Q_OS_WIN
 #include <Windows.h>
 #endif
+#ifdef Q_OS_MACOS
+#include <libproc.h>
+#endif
 
 namespace {
 void require(bool condition, const char* message) {
@@ -43,15 +46,26 @@ void require(bool condition, const char* message) {
 
 constexpr int kRecognitionTimeoutMs = 30'000;
 
+#ifdef Q_OS_MACOS
+const QString kWorkerName = QStringLiteral("snow-ocr-process");
+#else
+const QString kWorkerName = QStringLiteral("snow-ocr-process.exe");
+#endif
 QString sourceRuntimeDirectory;
+#ifdef Q_OS_MACOS
+QString sourceWorkerPath;
+#endif
 
 ScreenshotOcrRecognitionService::Options sourceRuntimeOptions() {
     require(!sourceRuntimeDirectory.isEmpty(), "the source OCR runtime must be staged first");
     const QDir models(QDir(QCoreApplication::applicationDirPath())
                           .filePath(QStringLiteral("assets/ocr/models/ppocrv6-small-463ea9f")));
     ScreenshotOcrRecognitionService::Options options;
-    options.processPath =
-        QDir(sourceRuntimeDirectory).filePath(QStringLiteral("snow-ocr-process.exe"));
+#ifdef Q_OS_MACOS
+    options.processPath = sourceWorkerPath;
+#else
+    options.processPath = QDir(sourceRuntimeDirectory).filePath(kWorkerName);
+#endif
     options.detectorModelPath = models.filePath(QStringLiteral("PP-OCRv6_det_small.onnx"));
     options.recognizerModelPath = models.filePath(QStringLiteral("PP-OCRv6_rec_small.onnx"));
     options.dictionaryPath = models.filePath(QStringLiteral("ppocrv6_dict.txt"));
@@ -61,16 +75,31 @@ ScreenshotOcrRecognitionService::Options sourceRuntimeOptions() {
 
 void stageSourceRuntime(const QString& directory) {
     sourceRuntimeDirectory = directory;
+#ifndef Q_OS_MACOS
     const QDir destination(directory);
+#endif
     QString executable = QStringLiteral(SNOW_TEST_OCR_EXECUTABLE);
     for (const QString& argument : QCoreApplication::arguments()) {
         if (argument.startsWith(QStringLiteral("--worker="))) {
             executable = QFileInfo(argument.mid(9)).absoluteFilePath();
         }
     }
-    require(QFile::copy(executable, destination.filePath(QStringLiteral("snow-ocr-process.exe"))),
-            "the source OCR worker must be copied from the build target into the test fixture");
     const QDir application(QCoreApplication::applicationDirPath());
+#ifdef Q_OS_MACOS
+    // Execute deployed code in place: copying a signed worker away from its
+    // Frameworks directory would no longer test the packaged dependency closure.
+    sourceWorkerPath = executable == QStringLiteral(SNOW_TEST_OCR_EXECUTABLE)
+                           ? application.filePath(kWorkerName)
+                           : executable;
+    require(
+        QFileInfo(sourceWorkerPath).isExecutable() &&
+            QFileInfo(
+                QFileInfo(sourceWorkerPath).dir().filePath(QStringLiteral("libonnxruntime.dylib")))
+                .isFile(),
+        "the native worker and adjacent ONNX library must be staged");
+#else
+    require(QFile::copy(executable, destination.filePath(kWorkerName)),
+            "the source OCR worker must be copied from the build target into the test fixture");
     // The isolated worker still needs the transitive DLLs staged beside the
     // test executable (for example, the dynamic ONNX Runtime dependencies).
     require(qputenv("PATH", QFile::encodeName(application.absolutePath()) + ';' + qgetenv("PATH")),
@@ -83,6 +112,7 @@ void stageSourceRuntime(const QString& directory) {
                     "the source OCR runtime dependencies must be copied into the fixture");
         }
     }
+#endif
 }
 
 QImage whiteImage(int edge = 64) {
@@ -123,7 +153,7 @@ void explicitAssetsControlReadiness() {
     require(directory.isValid(), "temporary OCR asset directory should be available");
 
     ScreenshotOcrRecognitionService::Options options;
-    options.processPath = QDir(directory.path()).filePath(QStringLiteral("snow-ocr-process.exe"));
+    options.processPath = QDir(directory.path()).filePath(kWorkerName);
     options.detectorModelPath = QDir(directory.path()).filePath(QStringLiteral("det.onnx"));
     options.recognizerModelPath = QDir(directory.path()).filePath(QStringLiteral("rec.onnx"));
     options.dictionaryPath = QDir(directory.path()).filePath(QStringLiteral("dict.txt"));
@@ -192,7 +222,7 @@ void oneEngineIsInitializedAfterReadyAndReused() {
     using namespace snow_shot::diagnostics;
     QTemporaryDir directory;
     DiagnosticsOptions logging;
-    logging.directories = {directory.path()};
+    logging.directories = {QFileInfo(directory.path()).canonicalFilePath()};
     logging.enableCrashCapture = false;
     logging.mirrorToConsole = false;
     auto& diagnostics = DiagnosticsService::instance();
@@ -247,11 +277,13 @@ void oneEngineIsInitializedAfterReadyAndReused() {
     diagnostics.shutdown();
 }
 
-void residentRuntimeRebuildsWarmSessions(bool directMl, const QImage& fixture = {}) {
+void residentRuntimeRebuildsWarmSessions(
+    bool directMl, const QImage& fixture = {},
+    const ScreenshotOcrRecognitionService::Options* explicitOptions = nullptr) {
     using namespace snow_shot::diagnostics;
     QTemporaryDir directory;
     DiagnosticsOptions logging;
-    logging.directories = {directory.path()};
+    logging.directories = {QFileInfo(directory.path()).canonicalFilePath()};
     logging.enableCrashCapture = false;
     logging.mirrorToConsole = false;
     auto& diagnostics = DiagnosticsService::instance();
@@ -269,7 +301,8 @@ void residentRuntimeRebuildsWarmSessions(bool directMl, const QImage& fixture = 
         return found;
     };
     {
-        ScreenshotOcrRecognitionService service(sourceRuntimeOptions());
+        ScreenshotOcrRecognitionService service(
+            explicitOptions != nullptr ? *explicitOptions : sourceRuntimeOptions());
         ScreenshotOcrRuntimeConfiguration configuration;
         configuration.residentProcess = configuration.modelHotStart = true;
         configuration.backend = directMl ? ScreenshotOcrBackendPreference::DirectMl
@@ -333,10 +366,15 @@ void diskBackedEngineCompletesThroughTheQtWorker(bool directMlEnabled,
     auto options =
         managedRuntime ? ScreenshotOcrRecognitionService::Options{} : sourceRuntimeOptions();
     const QString expectedProcess =
+#ifdef Q_OS_MACOS
+        managedRuntime ? QDir(QCoreApplication::applicationDirPath()).filePath(kWorkerName)
+                       : options.processPath;
+#else
         managedRuntime ? QDir(QCoreApplication::applicationDirPath())
                              .filePath(QStringLiteral("assets/ocr/runtimes/1.0.7/windows-x64/"
                                                       "snow-ocr-process-1.0.7-windows-x64.exe"))
                        : options.processPath;
+#endif
     if (managedRuntime) {
         // Exercise the same trusted offline selection as the app, without a
         // pre-existing user cache or a successful network fallback.
@@ -811,580 +849,6 @@ void serviceDestructionJoinsWorkersAndSuppressesLateDelivery() {
             "destroyed OCR services must not deliver queued completions");
 }
 
-QJsonObject assetFile(const QString& name, const QByteArray& contents, const QString& url = {}) {
-    QJsonObject result{
-        {QStringLiteral("name"), name},
-        {QStringLiteral("size"), contents.size()},
-        {QStringLiteral("sha256"),
-         QString::fromLatin1(
-             QCryptographicHash::hash(contents, QCryptographicHash::Sha256).toHex())}};
-    if (!url.isEmpty())
-        result.insert(QStringLiteral("url"), url);
-    return result;
-}
-
-void writeFixture(const QString& path, const QByteArray& contents) {
-    require(QDir().mkpath(QFileInfo(path).dir().absolutePath()),
-            "OCR asset fixture directory should be writable");
-    QFile file(path);
-    require(file.open(QIODevice::WriteOnly | QIODevice::Truncate),
-            "OCR asset fixture should be writable");
-    require(file.write(contents) == contents.size(), "OCR asset fixture write should complete");
-}
-
-void writeAssetManifest(const QString& root, bool completePayload) {
-    const QByteArray process("process");
-    const QByteArray directMl("directml");
-    const QByteArray runtimeManifest("runtime");
-    const QByteArray detector("detector");
-    const QByteArray recognizer("recognizer");
-    const QByteArray dictionary("dictionary");
-    const QString runtimeDirectory =
-        QDir(root).filePath(QStringLiteral("runtimes/1.0.7/windows-x64"));
-    const QString modelDirectory =
-        QDir(root).filePath(QStringLiteral("models/ppocrv6-small-463ea9f"));
-    if (completePayload) {
-        writeFixture(QDir(runtimeDirectory)
-                         .filePath(QStringLiteral("snow-ocr-process-1.0.7-windows-x64.exe")),
-                     process);
-        writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral("DirectML.dll")), directMl);
-        writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral("runtime-manifest.json")),
-                     runtimeManifest);
-        writeFixture(QDir(modelDirectory).filePath(QStringLiteral("PP-OCRv6_det_small.onnx")),
-                     detector);
-        writeFixture(QDir(modelDirectory).filePath(QStringLiteral("PP-OCRv6_rec_small.onnx")),
-                     recognizer);
-        writeFixture(QDir(modelDirectory).filePath(QStringLiteral("ppocrv6_dict.txt")), dictionary);
-        writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral(".complete.json")),
-                     R"({"schema":1,"component":"1.0.7"})");
-        writeFixture(QDir(modelDirectory).filePath(QStringLiteral(".complete.json")),
-                     R"({"schema":1,"component":"ppocrv6-small-463ea9f"})");
-    }
-    const QJsonArray runtimeFiles{
-        assetFile(QStringLiteral("snow-ocr-process-1.0.7-windows-x64.exe"), process),
-        assetFile(QStringLiteral("DirectML.dll"), directMl),
-        assetFile(QStringLiteral("runtime-manifest.json"), runtimeManifest)};
-    const auto model = [](const QString& type, const QString& id, const QString& detectorName,
-                          const QByteArray& detectorContents, const QString& recognizerName,
-                          const QByteArray& recognizerContents, const QString& dictionaryName,
-                          const QByteArray& dictionaryContents) {
-        return QJsonObject{
-            {QStringLiteral("type"), type},
-            {QStringLiteral("id"), id},
-            {QStringLiteral("detector"), detectorName},
-            {QStringLiteral("recognizer"), recognizerName},
-            {QStringLiteral("dictionary"), dictionaryName},
-            {QStringLiteral("files"),
-             QJsonArray{
-                 assetFile(detectorName, detectorContents,
-                           QStringLiteral("https://example.invalid/") + detectorName),
-                 assetFile(recognizerName, recognizerContents,
-                           QStringLiteral("https://example.invalid/") + recognizerName),
-                 assetFile(dictionaryName, dictionaryContents,
-                           QStringLiteral("https://example.invalid/") + dictionaryName),
-             }},
-        };
-    };
-    const QByteArray archive("archive");
-    const QJsonObject manifest{
-        {QStringLiteral("schema"), 2},
-        {QStringLiteral("default_model"), QStringLiteral("small")},
-        {QStringLiteral("runtime"),
-         QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.7")},
-                     {QStringLiteral("platform"), QStringLiteral("windows-x64")},
-                     {QStringLiteral("archive"),
-                      assetFile(QStringLiteral("snow-ocr-runtime-1.0.7-windows-x64.zip"), archive,
-                                QStringLiteral("https://example.invalid/runtime"))},
-                     {QStringLiteral("files"), runtimeFiles}}},
-        {QStringLiteral("models"),
-         QJsonArray{
-             model(QStringLiteral("extra_small"), QStringLiteral("ppocrv6-tiny-cd609a1"),
-                   QStringLiteral("PP-OCRv6_det_tiny.onnx"), QByteArray("tiny-detector"),
-                   QStringLiteral("PP-OCRv6_rec_tiny.onnx"), QByteArray("tiny-recognizer"),
-                   QStringLiteral("ppocrv6_tiny_dict.txt"), QByteArray("tiny-dictionary")),
-             model(QStringLiteral("small"), QStringLiteral("ppocrv6-small-463ea9f"),
-                   QStringLiteral("PP-OCRv6_det_small.onnx"), detector,
-                   QStringLiteral("PP-OCRv6_rec_small.onnx"), recognizer,
-                   QStringLiteral("ppocrv6_dict.txt"), dictionary),
-             model(QStringLiteral("medium"), QStringLiteral("ppocrv6-medium-f5063c6"),
-                   QStringLiteral("PP-OCRv6_det_medium.onnx"), QByteArray("medium-detector"),
-                   QStringLiteral("PP-OCRv6_rec_medium.onnx"), QByteArray("medium-recognizer"),
-                   QStringLiteral("ppocrv6_dict.txt"), dictionary),
-             model(QStringLiteral("small_v5"), QStringLiteral("ppocrv5-small-7b2a75a"),
-                   QStringLiteral("ch_PP-OCRv5_det_mobile.onnx"), QByteArray("detector"),
-                   QStringLiteral("ch_PP-OCRv5_rec_mobile.onnx"), QByteArray("recognizer"),
-                   QStringLiteral("ppocrv5_dict.txt"), dictionary),
-             model(QStringLiteral("medium_v5"), QStringLiteral("ppocrv5-medium-7b2a75a"),
-                   QStringLiteral("ch_PP-OCRv5_det_server.onnx"), QByteArray("detector"),
-                   QStringLiteral("ch_PP-OCRv5_rec_server.onnx"), QByteArray("recognizer"),
-                   QStringLiteral("ppocrv5_dict.txt"), dictionary),
-             model(QStringLiteral("small_v4"), QStringLiteral("ppocrv4-small-7b2a75a"),
-                   QStringLiteral("ch_PP-OCRv4_det_mobile.onnx"), QByteArray("detector"),
-                   QStringLiteral("ch_PP-OCRv4_rec_mobile.onnx"), QByteArray("recognizer"),
-                   QStringLiteral("ppocr_keys_v1.txt"), dictionary),
-             model(QStringLiteral("medium_v4"), QStringLiteral("ppocrv4-medium-7b2a75a"),
-                   QStringLiteral("ch_PP-OCRv4_det_server.onnx"), QByteArray("detector"),
-                   QStringLiteral("ch_PP-OCRv4_rec_server.onnx"), QByteArray("recognizer"),
-                   QStringLiteral("ppocr_keys_v1.txt"), dictionary),
-         }}};
-    writeFixture(QDir(root).filePath(QStringLiteral("asset-manifest.json")),
-                 QJsonDocument(manifest).toJson(QJsonDocument::Compact));
-}
-
-QByteArray modelFixtureContents(const QString& name) {
-    if (name.startsWith(QStringLiteral("ch_PP-OCRv")))
-        return name.contains(QStringLiteral("_det_")) ? QByteArray("detector")
-                                                      : QByteArray("recognizer");
-    if (name == QStringLiteral("ppocrv5_dict.txt") || name == QStringLiteral("ppocr_keys_v1.txt"))
-        return QByteArray("dictionary");
-    if (name == QStringLiteral("PP-OCRv6_det_tiny.onnx"))
-        return QByteArray("tiny-detector");
-    if (name == QStringLiteral("PP-OCRv6_rec_tiny.onnx"))
-        return QByteArray("tiny-recognizer");
-    if (name == QStringLiteral("ppocrv6_tiny_dict.txt"))
-        return QByteArray("tiny-dictionary");
-    if (name == QStringLiteral("PP-OCRv6_det_small.onnx"))
-        return QByteArray("detector");
-    if (name == QStringLiteral("PP-OCRv6_rec_small.onnx"))
-        return QByteArray("recognizer");
-    if (name == QStringLiteral("PP-OCRv6_det_medium.onnx"))
-        return QByteArray("medium-detector");
-    if (name == QStringLiteral("PP-OCRv6_rec_medium.onnx"))
-        return QByteArray("medium-recognizer");
-    if (name == QStringLiteral("ppocrv6_dict.txt"))
-        return QByteArray("dictionary");
-    return {};
-}
-
-bool writeDownloadedModelFixture(const QString& destination, QString* error) {
-    const QByteArray contents = modelFixtureContents(QFileInfo(destination).fileName());
-    if (contents.isEmpty()) {
-        *error = QStringLiteral("unexpected fixture download");
-        return false;
-    }
-    writeFixture(destination, contents);
-    return true;
-}
-
-void validOfflineAssetsAreSelectedWithoutNetwork() {
-    QTemporaryDir offline;
-    QTemporaryDir cache;
-    require(offline.isValid() && cache.isValid(), "temporary OCR asset roots should be available");
-    writeAssetManifest(offline.path(), true);
-    int downloads = 0;
-    bool ready = false;
-    bool failed = false;
-    ScreenshotOcrAssets::Options options;
-    options.offlineRoot = offline.path();
-    options.cacheRoot = cache.path();
-    options.downloadOverride = [&](const QString&, const QString&, QString*) {
-        ++downloads;
-        return false;
-    };
-    ScreenshotOcrAssets assets(options);
-    QObject::connect(&assets, &ScreenshotOcrAssets::ready, &assets,
-                     [&](const ScreenshotOcrResolvedAssets& result) {
-                         ready = result.offline && result.valid();
-                     });
-    QObject::connect(&assets, &ScreenshotOcrAssets::failed, &assets,
-                     [&](const QString&) { failed = true; });
-    assets.prepare();
-    require(waitUntil([&]() { return ready || failed; }, 5'000),
-            "offline OCR asset validation should complete");
-    require(ready && !failed, "a complete hash-valid offline payload should be selected");
-    require(downloads == 0, "valid offline OCR assets must not use the network");
-}
-
-void incompleteOfflineAssetsFallBackToOnlineAcquisition() {
-    QTemporaryDir offline;
-    QTemporaryDir cache;
-    require(offline.isValid() && cache.isValid(),
-            "temporary OCR fallback roots should be available");
-    writeAssetManifest(offline.path(), false);
-    int downloads = 0;
-    bool finished = false;
-    ScreenshotOcrAssets::Options options;
-    options.offlineRoot = offline.path();
-    options.cacheRoot = cache.path();
-    options.downloadOverride = [&](const QString&, const QString&, QString* error) {
-        ++downloads;
-        *error = QStringLiteral("fixture download stopped");
-        return false;
-    };
-    ScreenshotOcrAssets assets(options);
-    QObject::connect(&assets, &ScreenshotOcrAssets::failed, &assets,
-                     [&](const QString&) { finished = true; });
-    assets.prepare();
-    require(waitUntil([&]() { return finished; }, 5'000),
-            "invalid offline OCR assets should attempt online acquisition");
-    require(downloads == 1, "incomplete offline assets must enter online acquisition once");
-}
-
-void everyModelMapsToItsOwnFilesAndCachesAreRetained() {
-    QTemporaryDir offline;
-    QTemporaryDir cache;
-    require(offline.isValid() && cache.isValid(), "temporary OCR model roots should be available");
-    writeAssetManifest(offline.path(), true);
-    QSet<QString> downloads;
-    ScreenshotOcrAssets::Options options;
-    options.offlineRoot = offline.path();
-    options.cacheRoot = cache.path();
-    options.modelType = ScreenshotOcrModelType::Medium;
-    options.downloadOverride = [&](const QString&, const QString& destination, QString* error) {
-        downloads.insert(QFileInfo(destination).fileName());
-        return writeDownloadedModelFixture(destination, error);
-    };
-    ScreenshotOcrAssets assets(options);
-    ScreenshotOcrResolvedAssets resolved;
-    int readyCount = 0;
-    QObject::connect(&assets, &ScreenshotOcrAssets::ready, &assets,
-                     [&](const ScreenshotOcrResolvedAssets& result) {
-                         resolved = result;
-                         ++readyCount;
-                     });
-    assets.prepare();
-    require(waitUntil([&]() { return readyCount == 1; }, 5'000),
-            "the Medium model fixture should be acquired");
-    require(resolved.modelType == ScreenshotOcrModelType::Medium &&
-                resolved.modelId == QStringLiteral("ppocrv6-medium-f5063c6") &&
-                resolved.detectorModelPath.endsWith(QStringLiteral("PP-OCRv6_det_medium.onnx")) &&
-                resolved.recognizerModelPath.endsWith(QStringLiteral("PP-OCRv6_rec_medium.onnx")) &&
-                resolved.dictionaryPath.endsWith(QStringLiteral("ppocrv6_dict.txt")) &&
-                !resolved.offline,
-            "Medium must combine the bundled runtime with only its cached model files");
-    require(downloads == QSet<QString>{QStringLiteral("PP-OCRv6_det_medium.onnx"),
-                                       QStringLiteral("PP-OCRv6_rec_medium.onnx"),
-                                       QStringLiteral("ppocrv6_dict.txt")},
-            "Medium acquisition must download exactly its three role files");
-
-    downloads.clear();
-    assets.setModelType(ScreenshotOcrModelType::ExtraSmall);
-    processEventsFor(100);
-    require(downloads.isEmpty(),
-            "changing the OCR model selection must not start acquisition without demand");
-    assets.prepare();
-    require(waitUntil([&]() { return readyCount == 2; }, 5'000),
-            "the Extra Small model fixture should be acquired");
-    require(resolved.modelType == ScreenshotOcrModelType::ExtraSmall &&
-                resolved.modelId == QStringLiteral("ppocrv6-tiny-cd609a1") &&
-                resolved.detectorModelPath.endsWith(QStringLiteral("PP-OCRv6_det_tiny.onnx")) &&
-                resolved.recognizerModelPath.endsWith(QStringLiteral("PP-OCRv6_rec_tiny.onnx")) &&
-                resolved.dictionaryPath.endsWith(QStringLiteral("ppocrv6_tiny_dict.txt")),
-            "Extra Small must resolve its own detector, recognizer, and dictionary");
-    require(
-        QDir(cache.path()).exists(QStringLiteral("models/ppocrv6-medium-f5063c6/.complete.json")) &&
-            QDir(cache.path()).exists(QStringLiteral("models/ppocrv6-tiny-cd609a1/.complete.json")),
-        "switching models must retain every manifest-approved cached model");
-
-    downloads.clear();
-    assets.setModelType(ScreenshotOcrModelType::Small);
-    assets.prepare();
-    require(waitUntil([&]() { return readyCount == 3; }, 5'000),
-            "the bundled Small model should be selected");
-    require(resolved.modelType == ScreenshotOcrModelType::Small && resolved.offline &&
-                downloads.isEmpty(),
-            "Small must continue to resolve entirely offline without downloading");
-    struct ExpectedModel {
-        ScreenshotOcrModelType type;
-        const char* value;
-        const char* id;
-        const char* detector;
-        const char* recognizer;
-        const char* dictionary;
-    };
-    const ExpectedModel versionedModels[] = {
-        {ScreenshotOcrModelType::SmallV5, "small_v5", "ppocrv5-small-7b2a75a",
-         "ch_PP-OCRv5_det_mobile.onnx", "ch_PP-OCRv5_rec_mobile.onnx", "ppocrv5_dict.txt"},
-        {ScreenshotOcrModelType::MediumV5, "medium_v5", "ppocrv5-medium-7b2a75a",
-         "ch_PP-OCRv5_det_server.onnx", "ch_PP-OCRv5_rec_server.onnx", "ppocrv5_dict.txt"},
-        {ScreenshotOcrModelType::SmallV4, "small_v4", "ppocrv4-small-7b2a75a",
-         "ch_PP-OCRv4_det_mobile.onnx", "ch_PP-OCRv4_rec_mobile.onnx", "ppocr_keys_v1.txt"},
-        {ScreenshotOcrModelType::MediumV4, "medium_v4", "ppocrv4-medium-7b2a75a",
-         "ch_PP-OCRv4_det_server.onnx", "ch_PP-OCRv4_rec_server.onnx", "ppocr_keys_v1.txt"},
-    };
-    for (const auto& expected : versionedModels) {
-        downloads.clear();
-        assets.setModelType(expected.type);
-        const int previous = readyCount;
-        assets.prepare();
-        require(waitUntil([&]() { return readyCount == previous + 1; }, 5'000),
-                "versioned model acquisition completes");
-        const QString detector = QString::fromLatin1(expected.detector);
-        const QString recognizer = QString::fromLatin1(expected.recognizer);
-        const QString dictionary = QString::fromLatin1(expected.dictionary);
-        require(resolved.modelType == expected.type &&
-                    resolved.modelId == QString::fromLatin1(expected.id) &&
-                    resolved.detectorModelPath.endsWith(detector) &&
-                    resolved.recognizerModelPath.endsWith(recognizer) &&
-                    resolved.dictionaryPath.endsWith(dictionary) &&
-                    downloads == QSet<QString>{detector, recognizer, dictionary},
-                "versioned model downloads and resolves exactly its matching role files");
-        require(screenshotOcrModelTypeValue(expected.type) == QString::fromLatin1(expected.value) &&
-                    screenshotOcrModelTypeFromValue(QString::fromLatin1(expected.value)) ==
-                        expected.type,
-                "versioned model identifiers round trip");
-        downloads.clear();
-        assets.setModelType(ScreenshotOcrModelType::Small);
-        assets.prepare();
-        require(waitUntil([&]() { return readyCount == previous + 2; }, 5'000),
-                "switching to bundled V6 succeeds");
-        assets.setModelType(expected.type);
-        assets.prepare();
-        require(waitUntil([&]() { return readyCount == previous + 3; }, 5'000) &&
-                    downloads.isEmpty(),
-                "switching back reuses the versioned model cache without downloading");
-    }
-}
-
-void selectedModelFailureNeverFallsBackToSmallAndCanRetry() {
-    QTemporaryDir offline;
-    QTemporaryDir cache;
-    require(offline.isValid() && cache.isValid(),
-            "temporary OCR failure roots should be available");
-    writeAssetManifest(offline.path(), true);
-    ScreenshotOcrAssets::Options options;
-    options.offlineRoot = offline.path();
-    options.cacheRoot = cache.path();
-    options.modelType = ScreenshotOcrModelType::MediumV4;
-    bool allowDownload = false;
-    int downloadAttempts = 0;
-    options.downloadOverride = [&](const QString&, const QString& destination, QString* error) {
-        ++downloadAttempts;
-        if (!allowDownload) {
-            *error = QStringLiteral("selected model unavailable");
-            return false;
-        }
-        return writeDownloadedModelFixture(destination, error);
-    };
-    ScreenshotOcrAssets assets(options);
-    bool ready = false;
-    int failureCount = 0;
-    ScreenshotOcrResolvedAssets resolved;
-    QObject::connect(&assets, &ScreenshotOcrAssets::ready, &assets,
-                     [&](const ScreenshotOcrResolvedAssets& result) {
-                         resolved = result;
-                         ready = true;
-                     });
-    QObject::connect(&assets, &ScreenshotOcrAssets::failed, &assets, [&](const QString&) {
-        ++failureCount;
-        if (failureCount == 1) {
-            allowDownload = true;
-            assets.prepare();
-        }
-    });
-    assets.prepare();
-    require(waitUntil([&]() { return ready; }, 5'000),
-            "a request arriving from the failure callback should retry model acquisition");
-    require(failureCount == 1 && resolved.modelType == ScreenshotOcrModelType::MediumV4 &&
-                !resolved.offline && downloadAttempts == 4,
-            "a failed Medium acquisition must retry safely without falling back to bundled Small");
-}
-
-void invalidSchemaTwoManifestsAreRejectedBeforeDownloading() {
-    const auto rejectMutation = [](const std::function<void(QJsonObject*)>& mutate) {
-        QTemporaryDir offline;
-        QTemporaryDir cache;
-        require(offline.isValid() && cache.isValid(),
-                "temporary invalid-manifest roots should be available");
-        writeAssetManifest(offline.path(), false);
-        const QString manifestPath =
-            QDir(offline.path()).filePath(QStringLiteral("asset-manifest.json"));
-        QFile input(manifestPath);
-        require(input.open(QIODevice::ReadOnly), "valid fixture manifest should be readable");
-        QJsonObject manifest = QJsonDocument::fromJson(input.readAll()).object();
-        input.close();
-        mutate(&manifest);
-        writeFixture(manifestPath, QJsonDocument(manifest).toJson(QJsonDocument::Compact));
-        int downloads = 0;
-        bool failed = false;
-        ScreenshotOcrAssets::Options options;
-        options.offlineRoot = offline.path();
-        options.cacheRoot = cache.path();
-        options.downloadOverride = [&](const QString&, const QString&, QString*) {
-            ++downloads;
-            return false;
-        };
-        ScreenshotOcrAssets assets(options);
-        QObject::connect(&assets, &ScreenshotOcrAssets::failed, &assets,
-                         [&](const QString&) { failed = true; });
-        assets.prepare();
-        require(waitUntil([&]() { return failed; }, 5'000),
-                "invalid schema-2 manifest should be rejected");
-        require(downloads == 0, "an invalid trusted manifest must never initiate downloads");
-    };
-
-    rejectMutation([](QJsonObject* manifest) { manifest->insert(QStringLiteral("schema"), 1); });
-    rejectMutation([](QJsonObject* manifest) {
-        manifest->insert(QStringLiteral("default_model"), QStringLiteral("medium"));
-    });
-    rejectMutation([](QJsonObject* manifest) {
-        QJsonArray models = manifest->value(QStringLiteral("models")).toArray();
-        models.removeAt(2);
-        manifest->insert(QStringLiteral("models"), models);
-    });
-    rejectMutation([](QJsonObject* manifest) {
-        QJsonArray models = manifest->value(QStringLiteral("models")).toArray();
-        QJsonObject medium = models.at(2).toObject();
-        medium.insert(QStringLiteral("type"), QStringLiteral("small"));
-        models.replace(2, medium);
-        manifest->insert(QStringLiteral("models"), models);
-    });
-    rejectMutation([](QJsonObject* manifest) {
-        QJsonArray models = manifest->value(QStringLiteral("models")).toArray();
-        QJsonObject medium = models.at(2).toObject();
-        medium.insert(QStringLiteral("id"), QStringLiteral("ppocrv6-tiny-cd609a1"));
-        models.replace(2, medium);
-        manifest->insert(QStringLiteral("models"), models);
-    });
-    rejectMutation([](QJsonObject* manifest) {
-        QJsonArray models = manifest->value(QStringLiteral("models")).toArray();
-        QJsonObject medium = models.at(2).toObject();
-        medium.insert(QStringLiteral("type"), QStringLiteral("large"));
-        models.replace(2, medium);
-        manifest->insert(QStringLiteral("models"), models);
-    });
-    rejectMutation([](QJsonObject* manifest) {
-        QJsonArray models = manifest->value(QStringLiteral("models")).toArray();
-        QJsonObject smallModel = models.at(1).toObject();
-        smallModel.insert(QStringLiteral("detector"), QStringLiteral("missing.onnx"));
-        models.replace(1, smallModel);
-        manifest->insert(QStringLiteral("models"), models);
-    });
-    rejectMutation([](QJsonObject* manifest) {
-        QJsonArray models = manifest->value(QStringLiteral("models")).toArray();
-        QJsonObject smallModel = models.at(1).toObject();
-        QJsonArray files = smallModel.value(QStringLiteral("files")).toArray();
-        QJsonObject recognizer = files.at(1).toObject();
-        recognizer.insert(QStringLiteral("name"),
-                          files.at(0).toObject().value(QStringLiteral("name")));
-        files.replace(1, recognizer);
-        smallModel.insert(QStringLiteral("files"), files);
-        models.replace(1, smallModel);
-        manifest->insert(QStringLiteral("models"), models);
-    });
-    rejectMutation([](QJsonObject* manifest) {
-        QJsonArray models = manifest->value(QStringLiteral("models")).toArray();
-        QJsonObject smallModel = models.at(1).toObject();
-        QJsonArray files = smallModel.value(QStringLiteral("files")).toArray();
-        QJsonObject detector = files.at(0).toObject();
-        detector.insert(QStringLiteral("size"), 0);
-        files.replace(0, detector);
-        smallModel.insert(QStringLiteral("files"), files);
-        models.replace(1, smallModel);
-        manifest->insert(QStringLiteral("models"), models);
-    });
-    rejectMutation([](QJsonObject* manifest) {
-        QJsonArray models = manifest->value(QStringLiteral("models")).toArray();
-        QJsonObject smallModel = models.at(1).toObject();
-        QJsonArray files = smallModel.value(QStringLiteral("files")).toArray();
-        QJsonObject detector = files.at(0).toObject();
-        detector.insert(QStringLiteral("sha256"), QStringLiteral("not-a-sha256"));
-        files.replace(0, detector);
-        smallModel.insert(QStringLiteral("files"), files);
-        models.replace(1, smallModel);
-        manifest->insert(QStringLiteral("models"), models);
-    });
-    rejectMutation([](QJsonObject* manifest) {
-        QJsonArray models = manifest->value(QStringLiteral("models")).toArray();
-        QJsonObject smallModel = models.at(1).toObject();
-        QJsonArray files = smallModel.value(QStringLiteral("files")).toArray();
-        QJsonObject detector = files.at(0).toObject();
-        detector.insert(QStringLiteral("url"), QStringLiteral("http://example.invalid/model"));
-        files.replace(0, detector);
-        smallModel.insert(QStringLiteral("files"), files);
-        models.replace(1, smallModel);
-        manifest->insert(QStringLiteral("models"), models);
-    });
-}
-
-void modelSelectionDuringAcquisitionIsLastSelectionWins() {
-    QTemporaryDir offline;
-    QTemporaryDir cache;
-    require(offline.isValid() && cache.isValid(), "temporary OCR race roots should be available");
-    writeAssetManifest(offline.path(), true);
-    QSemaphore mediumStarted;
-    QSemaphore releaseMedium;
-    ScreenshotOcrAssets::Options options;
-    options.offlineRoot = offline.path();
-    options.cacheRoot = cache.path();
-    options.modelType = ScreenshotOcrModelType::MediumV5;
-    options.downloadOverride = [&](const QString&, const QString& destination, QString* error) {
-        if (QFileInfo(destination).fileName() == QStringLiteral("ch_PP-OCRv5_det_server.onnx")) {
-            mediumStarted.release();
-            if (!releaseMedium.tryAcquire(1, 5'000)) {
-                *error = QStringLiteral("timed out waiting for model switch");
-                return false;
-            }
-        }
-        return writeDownloadedModelFixture(destination, error);
-    };
-    ScreenshotOcrAssets assets(options);
-    ScreenshotOcrResolvedAssets resolved;
-    int readyCount = 0;
-    QObject::connect(&assets, &ScreenshotOcrAssets::ready, &assets,
-                     [&](const ScreenshotOcrResolvedAssets& result) {
-                         resolved = result;
-                         ++readyCount;
-                     });
-    assets.prepare();
-    require(waitUntil([&]() { return mediumStarted.available() > 0; }, 5'000),
-            "Medium acquisition should reach the controlled download");
-    require(mediumStarted.tryAcquire(), "the controlled Medium download should be observed");
-    assets.setModelType(ScreenshotOcrModelType::SmallV4);
-    assets.prepare();
-    releaseMedium.release();
-    require(waitUntil([&]() { return readyCount == 1; }, 10'000),
-            "the replacement Small V4 acquisition should complete");
-    require(resolved.modelType == ScreenshotOcrModelType::SmallV4 &&
-                QDir(cache.path())
-                    .exists(QStringLiteral("models/ppocrv5-medium-7b2a75a/.complete.json")),
-            "a stale Medium V5 download may remain cached but must never become active");
-}
-
-// Destruction must interrupt the worker even while it sits in the
-// cross-process cache-lock wait, which no event loop is pumping: without the
-// interruption plumbing the destructor blocks the full 120 s lock timeout.
-void assetDestructionInterruptsTheCacheLockWait() {
-#ifdef Q_OS_WIN
-    QTemporaryDir offline;
-    QTemporaryDir cache;
-    require(offline.isValid() && cache.isValid(),
-            "temporary OCR asset lock roots should be available");
-    writeAssetManifest(offline.path(), false);
-    const QByteArray digest =
-        QCryptographicHash::hash(QFileInfo(cache.path()).absoluteFilePath().toLower().toUtf8(),
-                                 QCryptographicHash::Sha256)
-            .toHex();
-    const QString lockName =
-        QStringLiteral("Local\\SnowShotOcrAssets-%1").arg(QString::fromLatin1(digest.left(32)));
-    HANDLE lock = CreateMutexW(nullptr, FALSE, reinterpret_cast<LPCWSTR>(lockName.utf16()));
-    require(lock != nullptr, "the test must be able to create the OCR cache lock");
-    require(WaitForSingleObject(lock, 2'000) == WAIT_OBJECT_0,
-            "the test must own the OCR cache lock before acquisition starts");
-    ScreenshotOcrAssets::Options options;
-    options.offlineRoot = offline.path();
-    options.cacheRoot = cache.path();
-    int downloads = 0;
-    options.downloadOverride = [&](const QString&, const QString&, QString*) {
-        ++downloads;
-        return false;
-    };
-    ScreenshotOcrAssets* assets = new ScreenshotOcrAssets(options);
-    assets->prepare();
-    processEventsFor(500);
-    QElapsedTimer shutdown;
-    shutdown.start();
-    delete assets;
-    const qint64 elapsedMs = shutdown.elapsed();
-    ReleaseMutex(lock);
-    CloseHandle(lock);
-    require(elapsedMs < 15'000,
-            "destroying ScreenshotOcrAssets during the cache-lock wait must not block on the "
-            "lock timeout");
-    require(downloads == 0, "the held cache lock must gate every OCR asset download");
-#endif
-}
-
 // Opt-in real-model coverage. Model payloads are supplied explicitly so the
 // deterministic asset tests never need network access or large model fixtures.
 void versionedModelsRecognizeText(const QString& modelRoot, const QString& fixturePath,
@@ -1402,8 +866,6 @@ void versionedModelsRecognizeText(const QString& modelRoot, const QString& fixtu
     for (const QJsonValue& value : models) {
         const QJsonObject model = value.toObject();
         const QString type = model.value(QStringLiteral("type")).toString();
-        if (!type.endsWith(QStringLiteral("_v4")) && !type.endsWith(QStringLiteral("_v5")))
-            continue;
         const QDir directory(
             QDir(modelRoot).filePath(model.value(QStringLiteral("id")).toString()));
         auto options = sourceRuntimeOptions();
@@ -1413,34 +875,152 @@ void versionedModelsRecognizeText(const QString& modelRoot, const QString& fixtu
             directory.filePath(model.value(QStringLiteral("recognizer")).toString());
         options.dictionaryPath =
             directory.filePath(model.value(QStringLiteral("dictionary")).toString());
+        if (QCoreApplication::arguments().contains(QStringLiteral("--resident-models"))) {
+            residentRuntimeRebuildsWarmSessions(directMl, image, &options);
+            std::cerr << type.toStdString() << ": resident hot start passed\n";
+            ++checked;
+            continue;
+        }
         ScreenshotOcrRecognitionService service(options,
                                                 directMl ? ScreenshotOcrBackendPreference::DirectMl
                                                          : ScreenshotOcrBackendPreference::Cpu);
+        ScreenshotOcrRuntimeConfiguration configuration;
+        configuration.residentProcess = true;
+        configuration.modelHotStart = true;
+        configuration.backend = directMl ? ScreenshotOcrBackendPreference::DirectMl
+                                         : ScreenshotOcrBackendPreference::Cpu;
+        service.setRuntimeConfiguration(configuration);
         QObject receiver;
-        bool completed = false;
-        ScreenshotOcrRecognitionResult output;
-        service.recognize(ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))},
-                          &receiver, [&](ScreenshotOcrRecognitionResult result) {
-                              output = std::move(result);
-                              completed = true;
-                          });
-        require(waitUntil([&]() { return completed; }, 90'000),
-                "versioned model inference must complete");
-        std::cerr << type.toStdString() << ": " << output.error.toStdString() << '\n';
-        require(output.error.isEmpty() && output.presentation != nullptr,
-                "versioned model inference must succeed");
-        QString text;
-        for (const auto& line : output.presentation->lines)
-            text += line.text;
-        std::cerr << text.toStdString() << '\n';
-        // CTC models differ in whether they retain spaces between Latin words.
-        text.remove(u' ');
-        require(text.contains(QStringLiteral("SnowShot12345")) &&
-                    text.contains(QStringLiteral("文字识别")),
-                "each model must recognize English and Chinese fixture text");
+        int completed = 0;
+        QElapsedTimer timer;
+        timer.start();
+        qint64 previousMs = 0;
+        for (int cycle = 0; cycle < 2; ++cycle) {
+            service.recognize(
+                ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))}, &receiver,
+                [&, cycle](ScreenshotOcrRecognitionResult output) {
+                    require(completed == cycle, "real inference callbacks must remain FIFO");
+                    require(output.error.isEmpty() && output.presentation != nullptr,
+                            "versioned model inference must succeed");
+                    QString text;
+                    for (const auto& line : output.presentation->lines) {
+                        text += line.text;
+                        require(line.quad.size() == 4 && line.quad.boundingRect().isValid() &&
+                                    std::isfinite(line.confidence),
+                                "OCR geometry must be valid");
+                        for (const auto& point : line.quad)
+                            require(std::isfinite(point.x()) && std::isfinite(point.y()),
+                                    "OCR geometry must be finite");
+                    }
+                    text.remove(u' ');
+                    std::cerr << type.toStdString() << ": " << text.toStdString() << '\n';
+                    require(text.contains(QStringLiteral("SnowShot12345")) &&
+                                text.contains(QStringLiteral("文字识别")),
+                            "each model must recognize English and Chinese fixture text");
+                    const qint64 elapsedMs = timer.elapsed();
+                    if (QCoreApplication::arguments().contains(QStringLiteral("--measure"))) {
+                        QJsonObject measurement{
+                            {QStringLiteral("model"), type},
+                            {QStringLiteral("cycle"),
+                             cycle == 0 ? QStringLiteral("cold") : QStringLiteral("warm")},
+                            {QStringLiteral("elapsed_ms"), elapsedMs - previousMs}};
+#ifdef Q_OS_MACOS
+                        proc_taskinfo info{};
+                        const int size =
+                            proc_pidinfo(static_cast<int>(service.processId()), PROC_PIDTASKINFO, 0,
+                                         &info, static_cast<int>(sizeof(info)));
+                        require(size == static_cast<int>(sizeof(info)),
+                                "worker memory measurements must be available");
+                        measurement.insert(QStringLiteral("resident_bytes"),
+                                           static_cast<qint64>(info.pti_resident_size));
+#endif
+                        std::cout
+                            << QJsonDocument(measurement).toJson(QJsonDocument::Compact).constData()
+                            << '\n';
+                    }
+                    previousMs = elapsedMs;
+                    ++completed;
+                });
+        }
+        require(waitUntil([&]() { return completed == 2; }, 90'000),
+                "both real model inference cycles must complete");
         ++checked;
     }
-    require(checked == 4, "real inference must cover all four added model bundles");
+    require(checked == 7, "real inference must cover all seven model bundles");
+}
+
+void packagedBundleRecognizesText(const QString& bundle) {
+    QTemporaryDir temporaryCache;
+    ScreenshotOcrRecognitionService::Options options;
+    options.offlineRoot = QDir(bundle).filePath(QStringLiteral("Contents/MacOS/assets/ocr"));
+    options.cacheRoot = temporaryCache.path();
+    for (const auto& argument : QCoreApplication::arguments()) {
+        if (argument.startsWith(QStringLiteral("--cache=")))
+            options.cacheRoot = argument.mid(8);
+        if (argument.startsWith(QStringLiteral("--model=")))
+            options.modelType = screenshotOcrModelTypeFromValue(argument.mid(8));
+    }
+    if (QCoreApplication::arguments().contains(QStringLiteral("--offline")))
+        options.proxyUrl = QStringLiteral("http://127.0.0.1:1");
+    const QImage image(qEnvironmentVariable("SNOW_TEST_OCR_TEXT_FIXTURE"));
+    require(!image.isNull(), "the packaged OCR text fixture must be readable");
+    ScreenshotOcrRecognitionService service(options);
+    ScreenshotOcrRuntimeConfiguration configuration;
+    configuration.modelType = options.modelType;
+    configuration.backend = ScreenshotOcrBackendPreference::Cpu;
+    configuration.residentProcess = true;
+    configuration.modelHotStart = false;
+    service.setRuntimeConfiguration(configuration);
+    QVector<ScreenshotOcrModelType> selected{options.modelType};
+    if (QCoreApplication::arguments().contains(QStringLiteral("--all-models"))) {
+        selected = {ScreenshotOcrModelType::ExtraSmall, ScreenshotOcrModelType::Small,
+                    ScreenshotOcrModelType::Medium,     ScreenshotOcrModelType::SmallV5,
+                    ScreenshotOcrModelType::MediumV5,   ScreenshotOcrModelType::SmallV4,
+                    ScreenshotOcrModelType::MediumV4};
+    }
+    QObject receiver;
+    qint64 originalPid = 0;
+    for (const auto model : selected) {
+        service.setModelType(model);
+        int completions = 0;
+        for (int cycle = 0; cycle < 2; ++cycle) {
+            service.recognize(
+                {image, QRectF(QPointF(), QSizeF(image.size()))}, &receiver,
+                [&, cycle](ScreenshotOcrRecognitionResult result) {
+                    if (!result.error.isEmpty())
+                        std::cerr << result.error.toStdString() << '\n';
+                    require(result.error.isEmpty() && result.presentation != nullptr,
+                            "packaged OCR must succeed through managed asset resolution");
+                    require(completions == cycle, "packaged callbacks must remain FIFO");
+                    QString text;
+                    for (const auto& line : result.presentation->lines) {
+                        text += line.text;
+                        require(line.quad.size() == 4 && line.quad.boundingRect().isValid(),
+                                "packaged OCR geometry must be valid");
+                        for (const auto& point : line.quad)
+                            require(std::isfinite(point.x()) && std::isfinite(point.y()),
+                                    "packaged OCR geometry must be finite");
+                    }
+                    text.remove(u' ');
+                    require(text.contains(QStringLiteral("SnowShot12345")) &&
+                                text.contains(QStringLiteral("文字识别")),
+                            "packaged OCR must recognize bilingual text");
+                    const auto pid = service.processId();
+                    require(pid != 0 && (originalPid == 0 || pid == originalPid),
+                            "model switching must retain the packaged process");
+                    originalPid = pid;
+                    ++completions;
+                });
+        }
+        require(waitUntil([&] { return completions == 2; }, 180'000),
+                "packaged recognition and optional model download must complete");
+        std::cerr << screenshotOcrModelTypeValue(model).toStdString()
+                  << ": packaged inference passed\n";
+    }
+    configuration.residentProcess = false;
+    service.setRuntimeConfiguration(configuration);
+    require(waitUntil([&] { return service.processId() == 0; }, 5000),
+            "packaged worker must shut down when residency is disabled");
 }
 
 void actualOcrCrashAfterInference() {
@@ -1525,6 +1105,17 @@ int main(int argc, char** argv) {
             application.arguments().contains(QStringLiteral("--directml")), true);
         return 0;
     }
+    for (const auto& argument : application.arguments()) {
+        if (argument.startsWith(QStringLiteral("--bundle="))) {
+            packagedBundleRecognizesText(argument.mid(9));
+            return 0;
+        }
+    }
+    if (application.arguments().contains(QStringLiteral("--measure"))) {
+#ifndef SNOW_TEST_OCR_PERFORMANCE
+        require(false, "OCR measurements require the performance preset");
+#endif
+    }
     QTemporaryDir sourceRuntime;
     require(sourceRuntime.isValid(), "an isolated source OCR runtime directory is required");
     stageSourceRuntime(sourceRuntime.path());
@@ -1549,13 +1140,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     const bool directMlRequested = application.arguments().contains(QStringLiteral("--directml"));
-    validOfflineAssetsAreSelectedWithoutNetwork();
-    incompleteOfflineAssetsFallBackToOnlineAcquisition();
-    everyModelMapsToItsOwnFilesAndCachesAreRetained();
-    selectedModelFailureNeverFallsBackToSmallAndCanRetry();
-    invalidSchemaTwoManifestsAreRejectedBeforeDownloading();
-    modelSelectionDuringAcquisitionIsLastSelectionWins();
-    assetDestructionInterruptsTheCacheLockWait();
+
     explicitAssetsControlReadiness();
     modelInitializationFailureIsReportedOnRequestsAndRetries();
     renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine();

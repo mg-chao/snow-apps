@@ -408,6 +408,22 @@
     },
     {
       "variant": "outlined",
+      "symbol": "LineTypeCurved",
+      "name": "line-type-curved",
+      "source": "../src/presentation/components/icons/resources/line-type-curved.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "LineTypeStraight",
+      "name": "line-type-straight",
+      "source": "../src/presentation/components/icons/resources/line-type-straight.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "MagicWand",
       "name": "magic-wand",
       "source": "../src/presentation/components/icons/resources/magic-wand.svg",

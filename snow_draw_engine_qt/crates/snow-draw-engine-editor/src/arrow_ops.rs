@@ -489,7 +489,7 @@ mod tests {
             ColorRgba8::default(),
             2.0,
             StrokeStyle::Dotted,
-            ArrowType::Curve,
+            ArrowType::Straight,
             None,
             None,
         )
@@ -524,7 +524,7 @@ mod tests {
             rotated.fill_style,
             snow_draw_engine_document::FillStyle::Line
         );
-        assert_eq!(rotated.arrow_type, ArrowType::Curve);
+        assert_eq!(rotated.arrow_type, ArrowType::Straight);
         assert_eq!(rotated.start_arrowhead, None);
         assert_eq!(rotated.end_arrowhead, None);
     }

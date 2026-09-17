@@ -7,6 +7,7 @@
 #include <immintrin.h>
 #endif
 
+#if defined(__AVX2__) || defined(_M_AVX2)
 namespace {
 bool cpuSupportsAvx2() {
 #if defined(__GNUC__) || defined(__clang__)
@@ -34,6 +35,7 @@ bool cpuSupportsAvx2() {
 #endif
 }
 } // namespace
+#endif
 
 bool screenshotClipboardDibAvx2Available() {
 #if defined(__AVX2__) || defined(_M_AVX2)

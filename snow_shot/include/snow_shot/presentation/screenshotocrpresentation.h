@@ -19,9 +19,9 @@ struct ScreenshotOcrLine {
     qreal confidence = 0.0;
     QPolygonF quad;
     ScreenshotOcrTextDirection direction = ScreenshotOcrTextDirection::Horizontal;
-    QVector<QPolygonF> sourceLineQuads;
+    QVector<QPolygonF> sourceLineQuads{};
     bool paragraph = false;
-    QColor backgroundFillColor;
+    QColor backgroundFillColor{};
 };
 
 struct ScreenshotOcrTextPosition {

@@ -98,40 +98,29 @@ impl Editor {
         match output.cursor {
             CursorCommand::Set(cursor) if cursor == self.tool_policy().default_cursor => {
                 self.update_stroke_cursor(event);
-                if self.state.stroke_cursor_canvas_position.is_some() {
-                    output.cursor = CursorCommand::Set(CursorStyle::Hidden);
+                if self.state.stroke_cursor_active {
+                    output.cursor = CursorCommand::Set(CursorStyle::Stroke);
                 }
             }
             CursorCommand::Set(_) => self.clear_stroke_cursor_state(),
-            CursorCommand::NoChange if self.state.stroke_cursor_canvas_position.is_some() => {
+            CursorCommand::NoChange if self.state.stroke_cursor_active => {
                 self.update_stroke_cursor(event);
-                output.cursor = CursorCommand::Set(CursorStyle::Hidden);
+                output.cursor = CursorCommand::Set(CursorStyle::Stroke);
             }
             CursorCommand::NoChange => {}
         }
     }
 
     pub(crate) fn clear_stroke_cursor_state(&mut self) {
-        if self.state.stroke_cursor_canvas_position.take().is_some() {
-            self.bump_overlay_state_revision();
-        }
+        self.state.stroke_cursor_active = false;
     }
 
     fn update_stroke_cursor(&mut self, event: PointerEvent) {
-        match event.event_type {
-            PointerEventType::Enter
-            | PointerEventType::Move
-            | PointerEventType::Down
-            | PointerEventType::Up
-            | PointerEventType::DoubleClick => {
-                let position = view_to_canvas(event.position, &self.camera(), self.surface_size());
-                if self.state.stroke_cursor_canvas_position != Some(position) {
-                    self.state.stroke_cursor_canvas_position = Some(position);
-                    self.bump_overlay_state_revision();
-                }
-            }
-            PointerEventType::Leave => self.clear_stroke_cursor_state(),
-            PointerEventType::Cancel => {}
+        if !matches!(
+            event.event_type,
+            PointerEventType::Leave | PointerEventType::Cancel
+        ) {
+            self.state.stroke_cursor_active = true;
         }
     }
 
@@ -312,7 +301,36 @@ mod stroke_cursor_tests {
     }
 
     #[test]
-    fn stroke_tools_use_a_hidden_cursor_with_the_active_stroke_width() {
+    fn eraser_hover_uses_the_cursor_interface_without_overlay_changes() {
+        let document = DocumentModel::new();
+        let mut editor = Editor::new(EngineConfig::default()).unwrap();
+        editor.set_surface_size(200, 200).unwrap();
+        editor.set_active_tool(ActiveTool::Eraser).unwrap();
+        let revision = editor.overlay_input_revision();
+        for event_type in [PointerEventType::Enter, PointerEventType::Move] {
+            let output = editor
+                .process_input(&document, pointer(event_type, Point::new(140.0, 90.0)))
+                .unwrap();
+            assert_eq!(
+                output.interaction.cursor,
+                CursorCommand::Set(CursorStyle::Eraser)
+            );
+            assert_eq!(editor.overlay_input_revision(), revision);
+        }
+        let output = editor
+            .process_input(
+                &document,
+                pointer(PointerEventType::Leave, Point::new(140.0, 90.0)),
+            )
+            .unwrap();
+        assert_eq!(
+            output.interaction.cursor,
+            CursorCommand::Set(CursorStyle::Default)
+        );
+    }
+
+    #[test]
+    fn stroke_tools_use_native_cursors_without_invalidating_overlays() {
         let document = DocumentModel::new();
         let mut editor = Editor::new(EngineConfig::default()).unwrap();
         editor.set_surface_size(200, 200).unwrap();
@@ -358,20 +376,10 @@ mod stroke_cursor_tests {
                 .unwrap();
             assert_eq!(
                 enter.interaction.cursor,
-                CursorCommand::Set(CursorStyle::Hidden)
+                CursorCommand::Set(CursorStyle::Stroke)
             );
-            assert_eq!(
-                editor.presentation_state(&document).stroke_cursor,
-                Some(EditorStrokeCursor {
-                    position: Point::new(20.0, -20.0),
-                    stroke_width: width,
-                    stroke_color: match tool {
-                        ActiveTool::FreeDraw | ActiveTool::PenHighlight =>
-                            Some(editor.shape_style(&document).stroke),
-                        _ => None,
-                    },
-                })
-            );
+            assert!(editor.state.stroke_cursor_active);
+            let overlay_revision = editor.overlay_input_revision();
 
             let move_update = editor
                 .process_input(
@@ -381,8 +389,10 @@ mod stroke_cursor_tests {
                 .unwrap();
             assert_eq!(
                 move_update.interaction.cursor,
-                CursorCommand::Set(CursorStyle::Hidden)
+                CursorCommand::Set(CursorStyle::Stroke)
             );
+
+            assert_eq!(editor.overlay_input_revision(), overlay_revision);
 
             let leave = editor
                 .process_input(&document, pointer(PointerEventType::Leave, position))
@@ -391,92 +401,8 @@ mod stroke_cursor_tests {
                 leave.interaction.cursor,
                 CursorCommand::Set(CursorStyle::Default)
             );
-            assert_eq!(editor.presentation_state(&document).stroke_cursor, None);
+            assert!(!editor.state.stroke_cursor_active);
         }
-    }
-
-    #[test]
-    fn active_brush_color_changes_refresh_the_visible_cursor() {
-        let document = DocumentModel::new();
-        let mut editor = Editor::new(EngineConfig::default()).unwrap();
-        editor.set_surface_size(200, 200).unwrap();
-        for (tool, kind) in [
-            (ActiveTool::FreeDraw, ShapeKind::FreeDraw),
-            (ActiveTool::PenHighlight, ShapeKind::PenHighlight),
-        ] {
-            editor.set_active_tool(tool).unwrap();
-            editor
-                .process_input(
-                    &document,
-                    pointer(PointerEventType::Enter, Point::new(100.0, 100.0)),
-                )
-                .unwrap();
-            let previous_revision = editor.overlay_input_revision();
-            let mut style = editor.shape_style(&document);
-            style.stroke = snow_draw_engine_core::ColorRgba8 {
-                r: 12,
-                g: 180,
-                b: 90,
-                a: 255,
-            };
-            editor
-                .set_shape_style_patch(
-                    &document,
-                    ShapeStylePatch {
-                        kind,
-                        style,
-                        properties: crate::SHAPE_STYLE_PROPERTY_STROKE,
-                    },
-                )
-                .unwrap();
-            assert!(editor.overlay_input_revision() > previous_revision);
-            assert_eq!(
-                editor
-                    .presentation_state(&document)
-                    .stroke_cursor
-                    .unwrap()
-                    .stroke_color,
-                Some(style.stroke)
-            );
-        }
-    }
-
-    #[test]
-    fn active_stroke_width_changes_refresh_the_visible_cursor() {
-        let document = DocumentModel::new();
-        let mut editor = Editor::new(EngineConfig::default()).unwrap();
-        editor.set_surface_size(200, 200).unwrap();
-        editor.set_active_tool(ActiveTool::FreeDraw).unwrap();
-        editor
-            .process_input(
-                &document,
-                pointer(PointerEventType::Enter, Point::new(100.0, 100.0)),
-            )
-            .unwrap();
-        let previous_revision = editor.overlay_input_revision();
-
-        let mut style = editor.shape_style(&document);
-        style.stroke_width = 26.0;
-        editor
-            .set_shape_style_patch(
-                &document,
-                ShapeStylePatch {
-                    kind: ShapeKind::FreeDraw,
-                    style,
-                    properties: SHAPE_STYLE_PROPERTY_STROKE_WIDTH,
-                },
-            )
-            .unwrap();
-
-        assert!(editor.overlay_input_revision() > previous_revision);
-        assert_eq!(
-            editor
-                .presentation_state(&document)
-                .stroke_cursor
-                .expect("cursor should remain visible")
-                .stroke_width,
-            26.0
-        );
     }
 
     #[test]
@@ -539,7 +465,7 @@ mod stroke_cursor_tests {
             handle_hover.interaction.cursor,
             CursorCommand::Set(CursorStyle::ResizeNwSe)
         );
-        assert_eq!(editor.presentation_state(&document).stroke_cursor, None);
+        assert!(!editor.state.stroke_cursor_active);
 
         let empty_canvas_hover = editor
             .process_input(
@@ -549,9 +475,9 @@ mod stroke_cursor_tests {
             .unwrap();
         assert_eq!(
             empty_canvas_hover.interaction.cursor,
-            CursorCommand::Set(CursorStyle::Hidden)
+            CursorCommand::Set(CursorStyle::Stroke)
         );
-        assert!(editor.presentation_state(&document).stroke_cursor.is_some());
+        assert!(editor.state.stroke_cursor_active);
     }
 
     #[test]
@@ -589,7 +515,7 @@ mod stroke_cursor_tests {
             hover.interaction.cursor,
             CursorCommand::Set(CursorStyle::Grab)
         );
-        assert_eq!(editor.presentation_state(&document).stroke_cursor, None);
+        assert!(!editor.state.stroke_cursor_active);
 
         let down = editor
             .process_input(&document, primary_pointer_down(endpoint_view_position))
@@ -598,7 +524,7 @@ mod stroke_cursor_tests {
             down.interaction.cursor,
             CursorCommand::Set(CursorStyle::Crosshair)
         );
-        assert_eq!(editor.presentation_state(&document).stroke_cursor, None);
+        assert!(!editor.state.stroke_cursor_active);
         assert!(matches!(
             editor.state.interaction,
             InteractionState::EditingArrow(_)

@@ -14,8 +14,8 @@ enum class ScreenshotPdfPageSize { ImageSize, PortraitA4, LandscapeA4 };
 struct ScreenshotPdfOptions {
     ScreenshotPdfPageSize pageSize = ScreenshotPdfPageSize::PortraitA4;
     int quality = 100;
-    QString title;
-    QDateTime creationTime;
+    QString title{};
+    QDateTime creationTime{};
 };
 
 namespace screenshot_pdf {

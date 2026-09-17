@@ -16,7 +16,7 @@ namespace settings {
 
 struct SettingsRuntimeOption {
     QVariant value;
-    QString label;
+    QString label{};
 
     friend bool operator==(const SettingsRuntimeOption& first,
                            const SettingsRuntimeOption& second) {
@@ -31,8 +31,8 @@ struct SettingsRuntimeOption {
 struct SettingsActionState {
     bool enabled = false;
     bool busy = false;
-    QString label;
-    QString hint;
+    QString label{};
+    QString hint{};
     bool successAccent = false;
 };
 

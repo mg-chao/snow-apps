@@ -201,7 +201,7 @@ mod tests {
         let enter_update = editor.process_input(&document, enter).unwrap();
         assert_eq!(
             enter_update.interaction.cursor,
-            CursorCommand::Set(CursorStyle::Hidden)
+            CursorCommand::Set(CursorStyle::Stroke)
         );
 
         let character = InputEvent::Key(KeyEvent {

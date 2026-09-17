@@ -17,7 +17,12 @@ ScreenshotToolPaletteStyleState::ScreenshotToolPaletteStyleState(
 void ScreenshotToolPaletteStyleState::reset(const SnowCanvasStyleDefaults& defaults) {
     m_creationRectangleStyle.setRectangleStyle(defaults.rectangle);
     m_rectangleStyle = m_creationRectangleStyle;
-    m_creationLineStyle.setRectangleStyle(defaults.line);
+    SnowCanvasShapeStyle lineStyle = defaults.line;
+    if (lineStyle.arrowType != SnowCanvasArrowType::Straight &&
+        lineStyle.arrowType != SnowCanvasArrowType::Curve) {
+        lineStyle.arrowType = SnowCanvasArrowType::Curve;
+    }
+    m_creationLineStyle.setRectangleStyle(lineStyle);
     m_lineStyle = m_creationLineStyle;
     m_creationFreeDrawStyle.setRectangleStyle(defaults.freeDraw);
     m_freeDrawStyle = m_creationFreeDrawStyle;
@@ -51,7 +56,6 @@ void ScreenshotToolPaletteStyleState::reset(const SnowCanvasStyleDefaults& defau
 }
 
 namespace {
-constexpr double kMinRectangleStrokeWidth = 1.0;
 constexpr double kMaxRectangleStrokeWidth = 72.0;
 constexpr int kMinRectangleCornerRadius = 0;
 constexpr int kMaxRectangleCornerRadius = 83;
@@ -127,6 +131,7 @@ SnowCanvasShapeStyle ScreenshotToolPaletteRectangleStyleModel::rectangleStyle() 
     style.strokeStyle = m_strokeStyle;
     style.fill = m_fillColor;
     style.fillStyle = m_fillStyle;
+    style.arrowType = m_arrowType;
     style.cornerRadii = m_cornerRadii;
     style.opacity = m_opacity;
     style.highlightShape = m_highlightShape;
@@ -141,6 +146,7 @@ void ScreenshotToolPaletteRectangleStyleModel::setRectangleStyle(
     m_strokeStyle = style.strokeStyle;
     m_fillColor = style.fill;
     m_fillStyle = style.fillStyle;
+    m_arrowType = style.arrowType;
     m_cornerRadii = SnowCanvasCornerRadii{
         clampedCornerRadius(style.cornerRadii.topLeft),
         clampedCornerRadius(style.cornerRadii.topRight),
@@ -182,6 +188,10 @@ const QColor& ScreenshotToolPaletteRectangleStyleModel::fillColor() const {
 
 SnowCanvasFillStyle ScreenshotToolPaletteRectangleStyleModel::fillStyle() const {
     return m_fillStyle;
+}
+
+SnowCanvasArrowType ScreenshotToolPaletteRectangleStyleModel::arrowType() const {
+    return m_arrowType;
 }
 
 int ScreenshotToolPaletteRectangleStyleModel::cornerRadius() const {
@@ -272,6 +282,15 @@ bool ScreenshotToolPaletteRectangleStyleModel::setFillStyle(SnowCanvasFillStyle 
     }
 
     m_fillStyle = fillStyle;
+    return true;
+}
+
+bool ScreenshotToolPaletteRectangleStyleModel::setArrowType(SnowCanvasArrowType arrowType) {
+    if (m_arrowType == arrowType) {
+        return false;
+    }
+
+    m_arrowType = arrowType;
     return true;
 }
 

@@ -27,7 +27,12 @@ if(WIN32)
         target_link_options(snow-shot-updater PRIVATE $<$<CONFIG:Release>:/DEBUG:FULL>)
     endif()
 endif()
-install(TARGETS snow-shot-updater RUNTIME DESTINATION bin)
+if(APPLE)
+    install(TARGETS snow-shot-updater
+        RUNTIME DESTINATION "snow_shot.app/Contents/MacOS" COMPONENT SnowShot)
+else()
+    install(TARGETS snow-shot-updater RUNTIME DESTINATION bin)
+endif()
 add_library(snow_shot_updates STATIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include/snow_shot/update/updateservice.h"
     src/update/updateservice.cpp)
@@ -39,7 +44,7 @@ snow_shot_import_offscreen_platform(snow_shot)
 target_link_libraries(snow_shot PRIVATE snow_shot_updates)
 add_custom_command(TARGET snow_shot POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:snow-shot-updater>"
-        "$<TARGET_FILE_DIR:snow_shot>/snow-shot-updater.exe")
+        "$<TARGET_FILE_DIR:snow_shot>/$<TARGET_FILE_NAME:snow-shot-updater>")
 
 option(SNOW_SHOT_BUILD_UPDATE_TESTS "Build focused update tests without unrelated test targets" ${SNOW_SHOT_BUILD_TESTS})
 if(SNOW_SHOT_BUILD_UPDATE_TESTS AND WIN32)

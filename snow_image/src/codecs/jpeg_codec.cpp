@@ -211,7 +211,8 @@ Result<JpegInfo> scaled_info(void* handle, JpegInfo info, const DecodeOptions& o
         if (width <= 0 || height <= 0 || width > static_cast<int>(*options.maximum_extent) ||
             height > static_cast<int>(*options.maximum_extent))
             continue;
-        const std::uint64_t pixels = static_cast<std::uint64_t>(width) * height;
+        const std::uint64_t pixels =
+            static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height);
         if (!selected || pixels > selected_pixels) {
             selected = &factors[index];
             selected_pixels = pixels;
@@ -985,8 +986,10 @@ Result<EncodedArtifactReceipt> JpegCodec::encode_raster_to_sink(const RasterSour
         const JDIMENSION luma_row = context->compressor.next_scanline;
         for (std::size_t index = 0; index < plane_count; ++index) {
             const PlaneDescriptor& plane = frame.layout.planes[index];
-            const std::uint32_t first_row = static_cast<std::uint32_t>(
-                (static_cast<std::uint64_t>(luma_row) * vertical_factors[index]) / y_vertical);
+            const std::uint32_t first_row =
+                static_cast<std::uint32_t>((static_cast<std::uint64_t>(luma_row) *
+                                            static_cast<std::uint64_t>(vertical_factors[index])) /
+                                           static_cast<std::uint64_t>(y_vertical));
             const std::uint32_t line_count =
                 static_cast<std::uint32_t>(vertical_factors[index] * DCTSIZE);
             const std::uint32_t available =

@@ -172,6 +172,10 @@
             <translation>Curved arrow</translation>
         </message>
         <message>
+            <source>Curved line</source>
+            <translation>Curved line</translation>
+        </message>
+        <message>
             <source>Dashed arrow stroke</source>
             <translation>Dashed arrow stroke</translation>
         </message>
@@ -802,6 +806,10 @@
         <message>
             <source>Straight arrow</source>
             <translation>Straight arrow</translation>
+        </message>
+        <message>
+            <source>Straight line</source>
+            <translation>Straight line</translation>
         </message>
         <message>
             <source>Stroke color</source>

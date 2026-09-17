@@ -25,13 +25,13 @@ inline constexpr qint64 kScreenshotOcrMaximumPixels = 3840LL * 2160LL;
 
 class ScreenshotOcrPresentation;
 struct ScreenshotOcrRecognitionResult {
-    std::shared_ptr<ScreenshotOcrPresentation> presentation;
-    QString error;
+    std::shared_ptr<ScreenshotOcrPresentation> presentation = {};
+    QString error = {};
     // Transient worker-produced image. It is never part of the OCR cache.
-    QImage filteredImage;
+    QImage filteredImage = {};
     // Canvas-space rect covered by filteredImage; the image is a crop of the
     // request image covering the text regions plus the blur support margin.
-    QRectF filteredImageCanvasRect;
+    QRectF filteredImageCanvasRect = {};
 };
 
 enum class ScreenshotOcrRequestPriority { Interactive, Prefetch };
@@ -55,8 +55,8 @@ struct ScreenshotOcrRequest {
     ScreenshotOcrRequestPriority priority = ScreenshotOcrRequestPriority::Interactive;
     bool renderFilteredImage = false;
     bool renderOnly = false;
-    std::shared_ptr<ScreenshotOcrPresentation> presentation;
-    QColor backgroundColor;
+    std::shared_ptr<ScreenshotOcrPresentation> presentation = {};
+    QColor backgroundColor = {};
 };
 
 class ScreenshotOcrRecognitionPort : public QObject {

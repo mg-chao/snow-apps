@@ -1,4 +1,6 @@
-use std::{mem::MaybeUninit, sync::OnceLock};
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use std::mem::MaybeUninit;
+use std::sync::OnceLock;
 
 use rayon::prelude::*;
 

@@ -1516,6 +1516,7 @@ QVector<SettingsItemDefinition> pinToScreenShortcutItems() {
     };
 }
 
+#ifndef Q_OS_MACOS
 SettingsItemDefinition directMlAccelerationItem() {
     return {
         QStringLiteral("text-recognition.direct-ml-acceleration"),
@@ -1528,6 +1529,7 @@ SettingsItemDefinition directMlAccelerationItem() {
         SettingsSwitchDefinition{SettingsSwitchBinding::DirectMlAcceleration},
     };
 }
+#endif
 
 SettingsItemDefinition ocrResidentProcessItem() {
     return {
@@ -2172,8 +2174,11 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(QT_TRANSLATE_NOOP(
                         "SettingsCatalog", "Configure text recognition models and acceleration")),
                     SettingsSectionReset::TextRecognition,
-                    {ocrModelTypeItem(), directMlAccelerationItem(), ocrResidentProcessItem(),
-                     ocrModelHotStartItem()},
+                    {ocrModelTypeItem(),
+#ifndef Q_OS_MACOS
+                     directMlAccelerationItem(),
+#endif
+                     ocrResidentProcessItem(), ocrModelHotStartItem()},
                 },
                 {
                     QStringLiteral("core"),

@@ -31,10 +31,10 @@ enum class ScreenshotOcrAssetPhase {
 
 struct ScreenshotOcrAssetStatus {
     ScreenshotOcrAssetPhase phase = ScreenshotOcrAssetPhase::Unchecked;
-    QString component;
+    QString component = {};
     qint64 receivedBytes = 0;
     qint64 totalBytes = 0;
-    QString error;
+    QString error = {};
 };
 
 struct ScreenshotOcrResolvedAssets {
@@ -66,9 +66,12 @@ class ScreenshotOcrAssets final : public QObject {
         // Optional test hooks. Production uses the built-in HTTPS downloader
         // and minizip-ng extractor.
         std::function<bool(const QString& url, const QString& destination, QString* error)>
-            downloadOverride;
+            downloadOverride = {};
         std::function<bool(const QString& archive, const QString& destination, QString* error)>
-            extractOverride;
+            extractOverride = {};
+        // macOS ships executable code with the app. Empty selects offlineRoot/../..
+        // (the executable directory containing assets/ocr).
+        QString bundledRuntimeRoot = {};
     };
 
     explicit ScreenshotOcrAssets(Options options, QObject* parent = nullptr);

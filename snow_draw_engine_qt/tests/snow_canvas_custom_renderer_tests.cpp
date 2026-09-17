@@ -567,6 +567,75 @@ void rectangleStrokeStylesRenderDistinctPatterns() {
             "rounded dashed rectangle stroke should contain both ink and gaps");
 }
 
+void strokeCursorsUseNativeBitmapsAndRefreshWithStyle() {
+    const QColor color(230, 20, 40);
+    for (qreal dpr : {1.0, 1.5, 2.0}) {
+        const QCursor cursor = snow_canvas_input::strokeCursor(20.0, color, true, dpr);
+        require(cursor.shape() == Qt::BitmapCursor, "brush cursor must be a native bitmap");
+        require(cursor.hotSpot() == QPoint(22, 22), "brush hotspot must be centered");
+        requireNear(cursor.pixmap().devicePixelRatio(), dpr, "cursor must preserve display scale");
+        const QImage pixels = cursor.pixmap().toImage();
+        require(pixels.pixelColor(qRound(22 * dpr), qRound(22 * dpr)) == color,
+                "brush cursor fill must use the active color");
+        require(pixels.pixelColor(qRound(2 * dpr), qRound(2 * dpr)).alpha() == 0,
+                "cursor corners must remain transparent");
+        require(pixels.pixelColor(qRound(38 * dpr), qRound(22 * dpr)).alpha() > 0,
+                "brush cursor must retain its crosshair arms");
+    }
+
+    SnowCanvasWidget canvas;
+    canvas.resize(200, 200);
+    for (const auto tool :
+         {SnowCanvasTool::FreeDraw, SnowCanvasTool::PenHighlight, SnowCanvasTool::PenFilter}) {
+        require(canvas.setCanvasTool(tool), "brush tool must activate");
+        if (tool == SnowCanvasTool::PenFilter) {
+            auto style = canvas.canvasStyleToolbarState().filterStyle;
+            style.strokeWidth = 20.0;
+            require(canvas.setCanvasFilterStyle(style, SnowCanvasFilterStylePropertyStrokeWidth),
+                    "filter cursor width must update");
+        } else {
+            auto style = canvas.canvasStyleToolbarState().shapeStyle;
+            style.strokeWidth = 20.0;
+            style.stroke = color;
+            require(canvas.setCanvasShapeStylePatch(style,
+                                                    SnowCanvasShapeStylePropertyStrokeWidth |
+                                                        SnowCanvasShapeStylePropertyStrokeColor,
+                                                    tool == SnowCanvasTool::FreeDraw
+                                                        ? SnowCanvasShapeKind::FreeDraw
+                                                        : SnowCanvasShapeKind::PenHighlight),
+                    "brush cursor style must update");
+        }
+        require(canvas.setViewportCamera(0, 0, 1.0), "cursor camera must reset");
+        require(canvas.cursor().shape() == Qt::BitmapCursor &&
+                    canvas.cursor().hotSpot() == QPoint(22, 22),
+                "tool must expose the updated native brush cursor without pointer movement");
+        if (tool != SnowCanvasTool::PenFilter) {
+            const QPixmap pixmap = canvas.cursor().pixmap();
+            const int center = qRound(22 * pixmap.devicePixelRatio());
+            require(pixmap.toImage().pixelColor(center, center) == color,
+                    "style changes must immediately refresh the native cursor color");
+        }
+        const QCursor previous = canvas.cursor();
+        QMouseEvent move(QEvent::MouseMove, QPointF(170, 170), QPointF(170, 170), Qt::NoButton,
+                         Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(&canvas, &move);
+        require(canvas.cursor() == previous, "pointer motion must reuse the cached cursor");
+        canvas.setCursorForLayer(SnowCanvasCursorLayer::Host, QCursor(Qt::WaitCursor));
+        require(canvas.setViewportCamera(0, 0, 2.0), "cursor zoom must update");
+        require(canvas.cursor().shape() == Qt::WaitCursor, "host cursor must retain priority");
+        canvas.clearCursorForLayer(SnowCanvasCursorLayer::Host);
+        require(canvas.cursor().hotSpot() == QPoint(32, 32),
+                "clearing host override must reveal the latest zoomed cursor");
+    }
+    require(canvas.setCanvasTool(SnowCanvasTool::Eraser), "eraser must activate");
+    require(canvas.cursor().shape() == Qt::BitmapCursor &&
+                canvas.cursor().hotSpot() == QPoint(10, 10),
+            "eraser must use a fixed sixteen-pixel native cursor at any zoom");
+    require(canvas.setCanvasTool(SnowCanvasTool::Text), "text must activate");
+    require(canvas.cursor().shape() == Qt::IBeamCursor,
+            "switching tools must release the native brush cursor");
+}
+
 void cornerRadiusCursorMatchesTheApprovedSvg() {
     constexpr int kCursorLogicalSize = 32;
     constexpr QPoint kCursorHotSpot(3, 3);
@@ -693,6 +762,7 @@ int main(int argc, char** argv) {
         documentResetClearsElementsAndPreservesViews();
         return 0;
     }
+    strokeCursorsUseNativeBitmapsAndRefreshWithStyle();
     rotationHandleCursorMatchesTheReferencePlatformBehavior();
     customRendererContractIsOrderedAndIsolated();
     runtimeExportUsesTheRequestedCanvasOrigin();

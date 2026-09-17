@@ -31,7 +31,7 @@ class Scope final {
     ~Scope();
 
   private:
-    const char* m_name;
+    [[maybe_unused]] const char* m_name;
     std::chrono::steady_clock::time_point m_started;
 };
 

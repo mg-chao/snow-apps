@@ -124,7 +124,7 @@ cv::Mat3f periodicFill(const cv::Mat3f& source, const cv::Mat1b& hole, const cv:
                 if (!cv::Rect({}, source.size()).contains(q) || !domain(q))
                     continue;
                 const auto delta = source(p) - source(q);
-                error += delta.dot(delta);
+                error += static_cast<double>(delta.dot(delta));
                 ++count;
                 // Early rejection against the maximum possible final sample count.
                 if (error > static_cast<double>(points.size()) * 0.5 / (255 * 255))
@@ -408,7 +408,7 @@ LevelResult fillLevel(const cv::Mat3f& source, const cv::Mat1b& hole, const cv::
                     usage(p[1], p[0]) += 1;
                 }
         }
-        costs.setTo(std::numeric_limits<float>::max());
+        costs.setTo(static_cast<double>(std::numeric_limits<float>::max()));
         const int step = iteration % 2 == 0 ? 1 : -1;
         for (int yi = 0; yi < source.rows; ++yi) {
             checkCancelled(cancelled);

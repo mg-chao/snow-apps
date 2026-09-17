@@ -23,6 +23,7 @@
 #include "snow_capture.h"
 #include "snow_recording.h"
 #include "widgets/button.h"
+#include "widgets/dpi_stable_window_controller.h"
 
 #include <QApplication>
 #include <QDir>
@@ -306,6 +307,25 @@ void recordingToolbarReconcilesFrameBeforeShowing() {
     toolbar.placeForPhysicalRegion(region);
     toolbar.showAndActivate();
     QCoreApplication::processEvents();
+#if defined(Q_OS_MACOS)
+    require(toolbar.findChild<adqt::widgets::AdDpiStableWindowController*>() == nullptr &&
+                qFuzzyCompare(toolbar.paletteHost()->physicalScale(), 1.0),
+            "macOS recording toolbar must use native logical sizing");
+    require(toolbar.testAttribute(Qt::WA_MacAlwaysShowToolWindow) &&
+                !toolbar.windowHandle()->flags().testFlag(Qt::WindowDoesNotAcceptFocus),
+            "macOS recording toolbar must remain visible and allow activation");
+    for (const QString& size : {QStringLiteral("small"), QStringLiteral("normal")}) {
+        require(snow_shot::storage::ScreenshotUiSettings().setToolbarSize(size),
+                "recording toolbar size setting must be writable");
+        toolbar.prepareForDisplay();
+        const qreal scale = size == QStringLiteral("small") ? 0.8 : 1.0;
+        require(qFuzzyCompare(toolbar.paletteHost()->physicalScale(), scale),
+                "recording toolbar must apply only the configured size multiplier");
+        const QRegion panels = toolbar.paletteHost()->interactiveHostRegion();
+        require(!toolbar.mask().isEmpty() && (panels - toolbar.mask()).isEmpty(),
+                "recording export settings and drawing rows must be included in the mask");
+    }
+#endif
     toolbar.hide();
     const QSize expected = toolbar.windowSizeHint();
     const QPoint anchor = toolbar.contentPosition();
@@ -411,6 +431,10 @@ void recordingSecondaryPanelsStayOnScreen() {
         if (occupied.width() <= bounds.width()) {
             require(bounds.contains(occupied), message);
         }
+#if defined(Q_OS_MACOS)
+        require((toolbar.paletteHost()->interactiveHostRegion() - toolbar.mask()).isEmpty(),
+                "changing recording panels must update the macOS window mask");
+#endif
     };
     const auto requireAnchored = [&]() {
         const QPoint position = toolbar.contentPosition();
@@ -1217,7 +1241,7 @@ int nativeEffectsPreviewCapture() {
 extern "C" {
 SnowRecordingResult
 snow_recording_session_create_direct(const SnowCaptureDirectRecordingConfig* config,
-                                             SnowRecordingSession** result) {
+                                     SnowRecordingSession** result) {
     // Session creation runs on the controller's worker thread: only plain data
     // may be touched here. The preview label invariant is asserted on the GUI
     // thread by controllerPreviewTransitions instead.
@@ -1261,8 +1285,7 @@ SnowRecordingResult snow_recording_session_stop(SnowRecordingSession*) {
     ++exports;
     return failure ? SNOW_RECORDING_RESULT_INVALID_ARGUMENT : SNOW_RECORDING_RESULT_OK;
 }
-uint8_t snow_recording_session_state(const SnowRecordingSession*,
-                                             SnowRecordingState* state) {
+uint8_t snow_recording_session_state(const SnowRecordingSession*, SnowRecordingState* state) {
     *state = SNOW_RECORDING_STATE_RUNNING;
     return 1;
 }

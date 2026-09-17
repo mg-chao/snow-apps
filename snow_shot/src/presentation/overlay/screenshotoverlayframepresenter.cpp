@@ -14,7 +14,7 @@
 #endif
 
 namespace {
-constexpr auto kRevealStrategyEnvironment = "SNOW_SHOT_CAPTURE_REVEAL_STRATEGY";
+[[maybe_unused]] constexpr auto kRevealStrategyEnvironment = "SNOW_SHOT_CAPTURE_REVEAL_STRATEGY";
 
 class ShowPaintSuppression final : public QObject {
   public:

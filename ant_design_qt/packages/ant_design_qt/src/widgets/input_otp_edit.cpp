@@ -99,7 +99,7 @@ class OtpCellLineEdit final : public QLineEdit {
     const QPalette::ColorGroup group = isEnabled() ? QPalette::Active : QPalette::Disabled;
     textPainter.setPen(palette().color(group, QPalette::Text));
     textPainter.setFont(font());
-    textPainter.drawText(rect(), alignment() | Qt::AlignVCenter,
+    textPainter.drawText(rect(), static_cast<int>(alignment() | Qt::AlignVCenter),
                          maskCharacter_.isEmpty() ? QString(QChar(0x2022)) : maskCharacter_);
   }
 

@@ -65,8 +65,8 @@ struct Frame final {
     std::chrono::nanoseconds duration{0};
     FrameBlend blend = FrameBlend::source;
     FrameDisposal disposal = FrameDisposal::keep;
-    Metadata metadata;
-    ColorEncoding color;
+    Metadata metadata{};
+    ColorEncoding color{};
     std::optional<std::array<std::uint32_t, 2>> cursor_hotspot;
 };
 
@@ -120,8 +120,8 @@ struct Document final {
     std::uint32_t canvas_width = 0;
     std::uint32_t canvas_height = 0;
     std::uint32_t loop_count = 1;
-    Metadata metadata;
-    ColorEncoding color;
+    Metadata metadata{};
+    ColorEncoding color{};
     std::vector<Frame> frames;
     std::vector<ExrPart> exr_parts;
     std::optional<VectorDocument> vector;
@@ -136,8 +136,8 @@ struct FrameInfo final {
     PixelFormat native_format;
     bool has_alpha = false;
     std::optional<std::array<std::uint32_t, 2>> cursor_hotspot;
-    ColorEncoding color;
-    Metadata metadata;
+    ColorEncoding color{};
+    Metadata metadata{};
     FrameBlend blend = FrameBlend::source;
     FrameDisposal disposal = FrameDisposal::keep;
 };
@@ -147,8 +147,8 @@ struct DocumentInfo final {
     std::uint32_t canvas_width = 0;
     std::uint32_t canvas_height = 0;
     std::uint32_t loop_count = 1;
-    Metadata metadata;
-    ColorEncoding color;
+    Metadata metadata{};
+    ColorEncoding color{};
     std::vector<FrameInfo> frames;
     std::vector<ExrPart> exr_parts;
     bool is_vector = false;

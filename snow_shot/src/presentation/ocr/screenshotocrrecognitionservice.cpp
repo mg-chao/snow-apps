@@ -39,8 +39,9 @@ QPolygonF quadFromValues(const float* points, const QRectF& canvasRect, const QS
     QPolygonF polygon;
     polygon.reserve(4);
     for (int index = 0; index < 4; ++index) {
-        polygon.push_back(QPointF(canvasRect.left() + points[index * 2] * scaleX,
-                                  canvasRect.top() + points[index * 2 + 1] * scaleY));
+        polygon.push_back(
+            QPointF(canvasRect.left() + static_cast<qreal>(points[index * 2]) * scaleX,
+                    canvasRect.top() + static_cast<qreal>(points[index * 2 + 1]) * scaleY));
     }
     return polygon;
 }
@@ -816,12 +817,12 @@ class ScreenshotOcrRecognitionService::Impl final {
                 (static_cast<quint32>(static_cast<quint8>(m_readBuffer.at(1))) << 8) |
                 (static_cast<quint32>(static_cast<quint8>(m_readBuffer.at(2))) << 16) |
                 (static_cast<quint32>(static_cast<quint8>(m_readBuffer.at(3))) << 24);
-            const quint16 version =
-                static_cast<quint16>(static_cast<quint8>(m_readBuffer.at(4))) |
-                (static_cast<quint16>(static_cast<quint8>(m_readBuffer.at(5))) << 8);
-            const quint16 kind =
-                static_cast<quint16>(static_cast<quint8>(m_readBuffer.at(6))) |
-                (static_cast<quint16>(static_cast<quint8>(m_readBuffer.at(7))) << 8);
+            const quint16 version = static_cast<quint16>(
+                static_cast<quint8>(m_readBuffer.at(4)) |
+                (static_cast<unsigned int>(static_cast<quint8>(m_readBuffer.at(5))) << 8));
+            const quint16 kind = static_cast<quint16>(
+                static_cast<quint8>(m_readBuffer.at(6)) |
+                (static_cast<unsigned int>(static_cast<quint8>(m_readBuffer.at(7))) << 8));
             qsizetype offset = 8;
             quint64 id = 0;
             quint32 length = 0;
@@ -985,7 +986,7 @@ class ScreenshotOcrRecognitionService::Impl final {
                         }
                     ScreenshotOcrLine line;
                     line.text = std::move(text);
-                    line.confidence = confidence;
+                    line.confidence = static_cast<qreal>(confidence);
                     line.quad =
                         quadFromValues(points, job->request.canvasRect, job->request.image.size());
                     line.direction = textDirectionForQuad(line.quad);
@@ -1171,11 +1172,17 @@ class ScreenshotOcrRecognitionService::Impl final {
     }
 
     void failPendingForAssetError() {
+        const QString message =
+            m_assetStatus.error == QStringLiteral("bundled_runtime_invalid")
+                ? QCoreApplication::translate(
+                      "ScreenshotOcrController",
+                      "The bundled text recognition runtime is damaged or incompatible. Reinstall "
+                      "Snow Shot for Apple Silicon.")
+                : QCoreApplication::translate("ScreenshotOcrController",
+                                              "Text recognition components could not be prepared");
         const auto failed = m_pending;
         for (const auto& job : failed)
-            failJobLocked(job, QCoreApplication::translate(
-                                   "ScreenshotOcrController",
-                                   "Text recognition components could not be prepared"));
+            failJobLocked(job, message);
     }
 
     bool assetsReady() const {

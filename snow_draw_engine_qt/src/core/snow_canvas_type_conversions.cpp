@@ -213,6 +213,8 @@ SnowShapeKind toEngineShapeKind(SnowCanvasShapeKind kind) {
 
 SnowCanvasArrowhead toCanvasArrowhead(SnowArrowhead arrowhead) {
     switch (arrowhead) {
+    case SNOW_ARROWHEAD_SQUARE:
+    case SNOW_ARROWHEAD_INVERTED_TRIANGLE:
     case SNOW_ARROWHEAD_NONE:
         return SnowCanvasArrowhead::None;
     case SNOW_ARROWHEAD_ARROW:

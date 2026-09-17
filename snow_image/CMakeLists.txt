@@ -345,6 +345,8 @@ if(SNOW_IMAGE_BUILD_STATIC)
     set_source_files_properties(
         src/raster.cpp
         src/raster_buffer.cpp
+        src/codecs/heif_codec.cpp
+        src/codecs/jxl_codec.cpp
         PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON
     )
     add_library(snow_image::snow_image_static ALIAS snow_image_static)

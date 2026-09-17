@@ -139,7 +139,10 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<Work>, tx: mpsc::Sender<WorkResult>
             Work::Prepare(id, next) => {
                 // Drop before loading: warm-up never retains an inference-used engine.
                 let ready = session.prepare(|| {
-                    initialize_onnx_runtime().ok()?;
+                    if let Err(error) = initialize_onnx_runtime() {
+                        eprintln!("OCR runtime initialization failed: {error}");
+                        return None;
+                    }
                     next.directml_enabled
                         .store(directml_capability(&next), Ordering::Release);
                     let (engine, selected) =

@@ -24,12 +24,6 @@ void hashDouble(std::uint64_t& hash, double value) {
     hashValue(hash, bits);
 }
 
-int floorDiv(int value, int divisor) {
-    const int quotient = value / divisor;
-    const int remainder = value % divisor;
-    return remainder < 0 ? quotient - 1 : quotient;
-}
-
 double pointSegmentDistanceSquared(double px, double py, double ax, double ay, double bx,
                                    double by) {
     const double dx = bx - ax;

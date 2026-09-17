@@ -50,6 +50,17 @@
 
 class ScreenshotFloatingToolPaletteWindowTestAccess {
   public:
+    static void simulateDpr(ScreenshotFloatingToolPaletteWindow& window, qreal dpr) {
+        window.m_testWindowDevicePixelRatio = dpr;
+        QEvent change(QEvent::DevicePixelRatioChange);
+        QApplication::sendEvent(&window, &change);
+    }
+
+    static bool hasPhysicalBaseline(const ScreenshotFloatingToolPaletteWindow& window) {
+        return window.m_referenceDevicePixelRatio > 0.0 ||
+               window.m_stablePhysicalWindowSize.isValid();
+    }
+
     static void beginKeyboardFocus(ScreenshotFloatingToolPaletteWindow& window, QWidget* editor) {
         window.beginKeyboardFocusInteraction(editor);
     }
@@ -624,7 +635,8 @@ void physicalDragMovesWithoutRefreshingGeometry() {
 #endif
 }
 
-void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable(bool reverseDirection) {
+void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable(
+    [[maybe_unused]] bool reverseDirection) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
     const NativeGeometryWarningScope geometryWarningScope;
     std::vector<HardwareMonitor> monitors;
@@ -985,7 +997,7 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable(bool reverseD
 #endif
 }
 
-void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable() {
+[[maybe_unused]] void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable() {
     physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable(false);
 }
 
@@ -1237,6 +1249,7 @@ class ToolbarPaintExtentMonitor final : public QObject {
 };
 
 void dpiCommitReconcilesTheActualFrameBeforePainting() {
+#if !defined(Q_OS_MACOS)
     ScreenshotFloatingToolPaletteWindow window(testToolbarOptions());
     window.prepareForDisplay();
     window.show();
@@ -1256,9 +1269,11 @@ void dpiCommitReconcilesTheActualFrameBeforePainting() {
             "a DPI commit must reconcile the actual frame with the prepared content");
     require(monitor.painted && !monitor.clipped,
             "the first repaint after a DPI commit must contain the complete toolbar");
+#endif
 }
 
 void dpiCommitPresentsContentWhenUpdatesResume() {
+#if !defined(Q_OS_MACOS)
     ScreenshotFloatingToolPaletteWindow window(testToolbarOptions());
     window.prepareForDisplay();
     window.show();
@@ -1285,6 +1300,7 @@ void dpiCommitPresentsContentWhenUpdatesResume() {
                 "resuming updates after a DPI commit must present the complete toolbar "
                 "even when its logical frame is unchanged");
     }
+#endif
 }
 
 void reusedToolbarFitsOnFirstShowAcrossScreens() {
@@ -2114,6 +2130,13 @@ void floatingToolbarInputsAcquireKeyboardFocus() {
             require(input->hasFocus() && QApplication::focusWidget() == input,
                     "clicking the floating input must give it actual keyboard focus");
         }
+#elif defined(Q_OS_MACOS)
+        if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+            settleQueuedRefreshes();
+            require(!window.windowHandle()->flags().testFlag(Qt::WindowDoesNotAcceptFocus) &&
+                        input->hasFocus() && QApplication::focusWidget() == input,
+                    "editing a Cocoa toolbar must give the input actual keyboard focus");
+        }
 #else
         Q_UNUSED(window);
         Q_UNUSED(input);
@@ -2264,9 +2287,133 @@ void interruptedToolbarDragStopsMoving() {
     snow_shot::storage::ApplicationStorage::instance().shutdown();
 }
 
+#if defined(Q_OS_MACOS)
+void macosToolbarUsesLogicalGeometry() {
+    QTemporaryDir temporary;
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(temporary.isValid() &&
+                storage.initialize({temporary.path(), temporary.path(), 60000}).success,
+            "macOS toolbar tests require isolated settings");
+    {
+        QWidget owner;
+        owner.resize(640, 360);
+        owner.show();
+        NoOpToolbarCommands commands;
+        ScreenshotToolbarWindow window(commands);
+        window.setTransientOwnerWindow(&owner);
+        window.setPlacementContext(nullptr, QRect(-2000, -1000, 6000, 4000),
+                                   QRect(8000, 9000, 12000, 8000));
+        window.moveContentTo(QPoint(200, 200));
+        window.show();
+        settleQueuedRefreshes();
+        require(window.findChild<adqt::widgets::AdDpiStableWindowController*>() == nullptr,
+                "macOS toolbar must not install a physical-size controller");
+        require(window.testAttribute(Qt::WA_MacAlwaysShowToolWindow),
+                "application deactivation must not hide an active macOS tool window");
+        require(window.windowHandle()->transientParent() == owner.windowHandle(),
+                "macOS toolbar must retain its Qt transient owner");
+
+        const auto checkMask = [&]() {
+            const QRegion panels = window.paletteHost()->interactiveHostRegion().translated(
+                window.paletteHost()->pos());
+            require(!window.mask().isEmpty() &&
+                        (panels.intersected(window.rect()) - window.mask()).isEmpty(),
+                    "window mask must include every displayed panel");
+            require(!QRegion(window.rect()).subtracted(window.mask()).isEmpty(),
+                    "unused backing-window space must be excluded from the mask");
+            const QRect main =
+                window.palette()->mainPanel()->geometry().translated(window.palette()->pos());
+            require(window.mask().contains(main.topLeft() - QPoint(1, 1)),
+                    "window mask must retain the painted panel shadow");
+        };
+        for (const qreal multiplier : {1.0, 0.8}) {
+            window.setToolbarSize(multiplier == 1.0 ? QStringLiteral("normal")
+                                                    : QStringLiteral("small"));
+            window.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+            window.prepareForDisplay();
+            settleQueuedRefreshes();
+            const QSize logicalSize = window.size();
+            const QSize contentSize = window.contentSizeHint();
+            const QPoint anchor = window.contentPosition();
+            for (const qreal dpr : {1.0, 2.0, 1.0, 2.0}) {
+                ScreenshotFloatingToolPaletteWindowTestAccess::simulateDpr(window, dpr);
+                settleQueuedRefreshes();
+                const auto context = adqt::widgets::controlScaleContextFor(window.palette());
+                require(qFuzzyCompare(context.currentDpr, dpr) &&
+                            qFuzzyCompare(context.referenceDpr, dpr) &&
+                            qFuzzyCompare(context.logicalScale, multiplier),
+                        "DPR changes must update rendering resolution without layout compensation");
+                require(window.size() == logicalSize && window.contentSizeHint() == contentSize &&
+                            window.contentPosition() == anchor,
+                        "display transitions must preserve logical dimensions and the anchor");
+                require(!ScreenshotFloatingToolPaletteWindowTestAccess::hasPhysicalBaseline(window),
+                        "macOS must not capture physical dimensions or a reference display DPR");
+                checkMask();
+            }
+
+            // Materialize another editor only after its size and DPR are set.
+            window.setActiveTool(ScreenshotToolPalette::Tool::Text);
+            settleQueuedRefreshes();
+            const auto lazyContext =
+                adqt::widgets::controlScaleContextFor(window.palette()->stylePanel());
+            require(qFuzzyCompare(lazyContext.logicalScale, multiplier),
+                    "lazy style controls must inherit the user's logical size setting");
+            checkMask();
+            const QPoint mainAnchor =
+                window.contentPosition() + window.paletteHost()->mainToolbarContentRect().topLeft();
+            window.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+            settleQueuedRefreshes();
+            require(window.contentPosition() +
+                            window.paletteHost()->mainToolbarContentRect().topLeft() ==
+                        mainAnchor,
+                    "materializing a style row must preserve the main-row anchor");
+            window.setStyleToolbarAboveMain(true);
+            settleQueuedRefreshes();
+            checkMask();
+            window.setStyleToolbarAboveMain(false);
+
+            const QPoint beforeDrag = window.contentPosition();
+            window.paletteHost()->dragStarted(QPoint(400, 300));
+            window.paletteHost()->dragMoved(QPoint(420, 310));
+            require(window.contentPosition() == beforeDrag + QPoint(20, 10) &&
+                        !window.physicalDragActive(),
+                    "macOS drag deltas must use logical coordinates despite physical bounds");
+            ScreenshotFloatingToolPaletteWindowTestAccess::simulateDpr(window, 1.0);
+            window.paletteHost()->dragMoved(QPoint(430, 315));
+            require(window.contentPosition() == beforeDrag + QPoint(30, 15),
+                    "changing DPR during a drag must not move the cursor anchor");
+            window.paletteHost()->dragFinished(QPoint(430, 315));
+
+            window.resetForNewCapture();
+            window.prepareForDisplay();
+            require(qFuzzyCompare(window.paletteHost()->physicalScale(), multiplier),
+                    "capture reset must preserve the configured logical toolbar size");
+            window.releaseNativeSurface();
+            window.restoreNativeSurface();
+            require(!window.isVisible() &&
+                        window.windowHandle()->transientParent() == owner.windowHandle(),
+                    "surface recreation must restore ownership without showing the toolbar");
+            window.show();
+            settleQueuedRefreshes();
+            require(window.size() == logicalSize &&
+                        window.testAttribute(Qt::WA_MacAlwaysShowToolWindow),
+                    "surface recreation must retain logical sizing and macOS attributes");
+            checkMask();
+        }
+    }
+    storage.shutdown();
+}
+#endif
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     try {
+#if defined(Q_OS_MACOS)
+        if (app.arguments().contains(QStringLiteral("--macos-logical-only"))) {
+            macosToolbarUsesLogicalGeometry();
+            return 0;
+        }
+#endif
         if (app.arguments().contains(QStringLiteral("--interrupted-drag-only"))) {
             interruptedToolbarDragStopsMoving();
             return 0;
@@ -2366,7 +2513,7 @@ int main(int argc, char* argv[]) {
         }
         if (!hardwareDragFailures.empty()) {
             std::ostringstream message;
-            for (int index = 0; index < static_cast<int>(hardwareDragFailures.size()); ++index) {
+            for (std::size_t index = 0; index < hardwareDragFailures.size(); ++index) {
                 if (index != 0) {
                     message << "\n";
                 }

@@ -57,9 +57,7 @@ void Controller::applyOutput(QWidget& widget, SnowCanvasCursorController& cursor
     }
 
     if (output.cursor_kind == SNOW_CURSOR_SET) {
-        cursorController.setCursor(SnowCanvasCursorLayer::CanvasTool,
-                                   snow_canvas_input::cursorForSnowCursor(
-                                       output.cursor_style, widget.devicePixelRatioF()));
+        cursorController.setEngineCursor(output.cursor_style);
     }
 }
 

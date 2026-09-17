@@ -2,6 +2,8 @@
 
 #include <QObject>
 #include <QString>
+#include <limits>
+#include <algorithm>
 
 class QWidget;
 
@@ -14,7 +16,9 @@ class AdInputTextPolicy : public QObject {
   explicit AdInputTextPolicy(QObject* parent = nullptr) : QObject(parent) {}
   ~AdInputTextPolicy() override = default;
 
-  virtual int characterCount(const QString& text) const { return text.size(); }
+  virtual int characterCount(const QString& text) const {
+    return static_cast<int>(std::min<qsizetype>(text.size(), std::numeric_limits<int>::max()));
+  }
 
   virtual QString normalizeText(const QString& text, int maximumCharacterCount) const {
     Q_UNUSED(maximumCharacterCount)

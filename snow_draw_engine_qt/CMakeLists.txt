@@ -91,13 +91,17 @@ target_link_libraries(snow_draw_engine_qt_canvas
         opencv_imgproc
         adqt::icons
         snow_draw_engine_c
+)
+if(WIN32)
+    target_link_libraries(snow_draw_engine_qt_canvas PRIVATE
         advapi32
         bcrypt
         ntdll
         shell32
         userenv
         ws2_32
-)
+    )
+endif()
 target_precompile_headers(snow_draw_engine_qt_canvas PRIVATE
     <algorithm>
     <memory>

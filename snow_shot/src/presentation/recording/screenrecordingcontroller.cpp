@@ -311,7 +311,7 @@ struct ScreenRecordingController::Impl {
         }
         if (finalizationFuture.valid()) {
             finalizationFuture.wait();
-            finalizationFuture.get();
+            static_cast<void>(finalizationFuture.get());
         }
         recordingSession.reset();
         destroyUi();

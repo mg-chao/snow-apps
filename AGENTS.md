@@ -15,6 +15,8 @@
 - `scripts/run-snow-shot.ps1` / `scripts/run-snow-image-viewer.ps1` – launch from the build tree.
 - `scripts/check-cpp-format.ps1 [-Fix]`, `scripts/check-rust.ps1 [-Fix]` – format and lint (also CMake targets `snow-format`, `snow-lint`).
 - `scripts/package-snow-shot.ps1` – NSIS installer (`snow-shot-msvc-release`).
+- macOS: see `docs-macos-build.md`. Use `scripts/bootstrap-macos.sh`, `scripts/build.sh`, `scripts/run-snow-shot.sh`, and `scripts/package-snow-shot.sh`; presets are `snow-shot-macos-{arm64|x64}-{debug|performance|release|fast}`. macOS requires 15+, Xcode tools and shared Qt 6.11.1. Use only the `performance` preset for benchmarks.
+- macOS script regression checks: `python3 scripts/test-macos-build-support.py`. Native deployment fixture: `SNOW_TEST_MACOS_BUNDLE=1 python3 scripts/test-macos-build-support.py MacOSBundle` after provisioning Qt/FFmpeg and putting the build tools on PATH.
 
 ## Coding Style & Naming Conventions
 - C++: `.clang-format` (LLVM base, 4 spaces, 100 columns, attached braces, `T* ptr`, includes unsorted). Strict warnings are on; `.clang-tidy` is enforced when `SNOW_APPS_ENABLE_CLANG_TIDY=ON`.

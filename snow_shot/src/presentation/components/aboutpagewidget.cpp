@@ -84,9 +84,13 @@ QPixmap aboutIcon(const adqt::icons::IconRef& icon, const QSize& size, const QWi
 }
 
 QColor blendAboutColor(const QColor& foreground, const QColor& background, qreal amount) {
-    return QColor::fromRgbF(foreground.redF() * amount + background.redF() * (1 - amount),
-                            foreground.greenF() * amount + background.greenF() * (1 - amount),
-                            foreground.blueF() * amount + background.blueF() * (1 - amount));
+    return QColor::fromRgbF(
+        static_cast<float>(static_cast<qreal>(foreground.redF()) * amount +
+                           static_cast<qreal>(background.redF()) * (1 - amount)),
+        static_cast<float>(static_cast<qreal>(foreground.greenF()) * amount +
+                           static_cast<qreal>(background.greenF()) * (1 - amount)),
+        static_cast<float>(static_cast<qreal>(foreground.blueF()) * amount +
+                           static_cast<qreal>(background.blueF()) * (1 - amount)));
 }
 
 class AboutHeroSurface final : public QFrame {
@@ -992,11 +996,12 @@ void AboutPageWidget::refreshUpdateStatus() {
     m_ui->updateCancel->setVisible(status.state == UpdateState::Downloading);
     m_ui->updateProgress->setVisible(status.state == UpdateState::Downloading);
     m_ui->updateProgress->setRange(0, status.total > 0 ? 1000 : 0);
-    m_ui->updateProgress->setValue(
-        status.total > 0
-            ? qRound(std::clamp(static_cast<double>(status.received) / status.total, 0.0, 1.0) *
-                     1000)
-            : 0);
+    m_ui->updateProgress->setValue(status.total > 0
+                                       ? qRound(std::clamp(static_cast<double>(status.received) /
+                                                               static_cast<double>(status.total),
+                                                           0.0, 1.0) *
+                                                1000)
+                                       : 0);
     m_ui->updateProgress->setAccessibleName(tr("Update download progress"));
     updateLayout();
 }

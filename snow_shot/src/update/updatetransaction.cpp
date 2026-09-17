@@ -192,8 +192,8 @@ void clearWorkTree(const QString& root, const QString& name) {
     }
 }
 
-QString registeredKey(const QString& root) {
 #ifdef Q_OS_WIN
+QString registeredKey(const QString& root) {
     for (const QString& hive :
          {QStringLiteral("HKEY_LOCAL_MACHINE"), QStringLiteral("HKEY_CURRENT_USER")}) {
         QSettings install(hive + QStringLiteral("\\Software\\Snow Apps\\SnowShot"),
@@ -206,11 +206,9 @@ QString registeredKey(const QString& root) {
                        "\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SnowShot");
         }
     }
-#else
-    Q_UNUSED(root);
-#endif
     return {};
 }
+#endif
 
 void writeRegisteredVersion(const QString& root, const QString& version) {
 #ifdef Q_OS_WIN

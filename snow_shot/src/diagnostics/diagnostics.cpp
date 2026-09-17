@@ -126,8 +126,8 @@ struct Artifact {
     QString reportId;
     std::shared_ptr<CrashCollector> collector;
     bool liveSession = false;
-    QJsonObject reportContext;
-    QDateTime reportCreated;
+    QJsonObject reportContext = {};
+    QDateTime reportCreated = {};
 };
 
 qint64 treeBytes(const QString& path) {

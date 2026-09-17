@@ -80,7 +80,7 @@ int runOcrLifecycleChild() {
         stream.setByteOrder(QDataStream::LittleEndian);
         stream << quint32(0x52434f53) << quint16(3) << kind << token << quint32(payload.size());
         frame.append(payload);
-        std::fwrite(frame.constData(), 1, frame.size(), stdout);
+        std::fwrite(frame.constData(), 1, static_cast<std::size_t>(frame.size()), stdout);
         std::fflush(stdout);
     };
     const auto event = [](const QByteArray& value) {
@@ -241,7 +241,8 @@ void ocrProcessLifecycleTests() {
     qputenv("SNOW_TEST_OCR_LIFECYCLE_CHILD", "1");
     qputenv("SNOW_TEST_OCR_LIFECYCLE_MARKER", markerPath.toUtf8());
     DiagnosticsOptions logging;
-    logging.directories = {directory.filePath(QStringLiteral("logs"))};
+    logging.directories = {
+        QDir(QFileInfo(directory.path()).canonicalFilePath()).filePath(QStringLiteral("logs"))};
     logging.enableCrashCapture = false;
     logging.mirrorToConsole = false;
     auto& diagnostics = DiagnosticsService::instance();

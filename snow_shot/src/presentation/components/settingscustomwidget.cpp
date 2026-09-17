@@ -590,7 +590,7 @@ class ToolbarHiddenDropZone final : public QFrame {
                 return index;
             }
         }
-        return m_buttons.size();
+        return static_cast<int>(m_buttons.size());
     }
 
     DropHandler m_dropHandler;

@@ -49,13 +49,9 @@ pub(crate) fn eraser_segment_samples(
 impl Editor {
     pub(crate) fn clear_eraser_state(&mut self) {
         let had_preview = !self.state.eraser.pending_ids.is_empty();
-        let had_cursor = self.state.eraser.cursor_canvas_position.is_some();
         self.state.eraser = Default::default();
         if had_preview {
             self.bump_scene_state_revision();
-        }
-        if had_cursor {
-            self.bump_overlay_state_revision();
         }
     }
 
@@ -93,45 +89,32 @@ impl Editor {
         debug_assert_eq!(self.active_tool(), ActiveTool::Eraser);
         let canvas_point = view_to_canvas(event.position, &self.camera(), self.surface_size());
         match event.event_type {
-            PointerEventType::Enter => {
-                self.state.eraser.cursor_canvas_position = Some(canvas_point);
-                self.bump_overlay_state_revision();
-                Ok(InteractionOutput {
-                    consumed: false,
-                    capture: PointerCaptureCommand::NoChange,
-                    cursor: CursorCommand::Set(CursorStyle::Hidden),
-                })
-            }
-            PointerEventType::Leave => {
-                if self.state.eraser.cursor_canvas_position.take().is_some() {
-                    self.bump_overlay_state_revision();
-                }
-                Ok(InteractionOutput {
-                    consumed: false,
-                    capture: PointerCaptureCommand::NoChange,
-                    cursor: CursorCommand::Set(CursorStyle::Default),
-                })
-            }
+            PointerEventType::Enter => Ok(InteractionOutput {
+                consumed: false,
+                capture: PointerCaptureCommand::NoChange,
+                cursor: CursorCommand::Set(CursorStyle::Eraser),
+            }),
+            PointerEventType::Leave => Ok(InteractionOutput {
+                consumed: false,
+                capture: PointerCaptureCommand::NoChange,
+                cursor: CursorCommand::Set(CursorStyle::Default),
+            }),
             PointerEventType::Down | PointerEventType::DoubleClick => {
                 if event.button != Some(PointerButton::Primary) {
                     return Ok(InteractionOutput::default());
                 }
-                self.state.eraser.cursor_canvas_position = Some(canvas_point);
                 self.state
                     .eraser
                     .active_pointers
                     .insert(event.pointer_id, canvas_point);
                 self.queue_eraser_hits(document, &[canvas_point]);
-                self.bump_overlay_state_revision();
                 Ok(InteractionOutput {
                     consumed: true,
                     capture: self.capture_command_for_start(event.pointer_id),
-                    cursor: CursorCommand::Set(CursorStyle::Hidden),
+                    cursor: CursorCommand::Set(CursorStyle::Eraser),
                 })
             }
             PointerEventType::Move => {
-                self.state.eraser.cursor_canvas_position = Some(canvas_point);
-                self.bump_overlay_state_revision();
                 if let Some(previous) = self
                     .state
                     .eraser
@@ -158,7 +141,7 @@ impl Editor {
                         .active_pointers
                         .contains_key(&event.pointer_id),
                     capture: PointerCaptureCommand::NoChange,
-                    cursor: CursorCommand::Set(CursorStyle::Hidden),
+                    cursor: CursorCommand::Set(CursorStyle::Eraser),
                 })
             }
             PointerEventType::Up | PointerEventType::Cancel => {
@@ -179,7 +162,7 @@ impl Editor {
                 Ok(InteractionOutput {
                     consumed: true,
                     capture: self.release_capture_command(),
-                    cursor: CursorCommand::Set(CursorStyle::Hidden),
+                    cursor: CursorCommand::Set(CursorStyle::Eraser),
                 })
             }
         }

@@ -38,6 +38,7 @@ inline SnowCanvasStyleDefaults screenshotCanvasStyleDefaults() {
 
     defaults.freeDraw = defaults.line;
     defaults.freeDraw.stroke = red;
+    defaults.line.arrowType = SnowCanvasArrowType::Curve;
 
     defaults.rectangleHighlight.fill = red;
     defaults.rectangleHighlight.fillStyle = SnowCanvasFillStyle::Solid;

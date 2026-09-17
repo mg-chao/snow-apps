@@ -146,7 +146,7 @@ class CarouselArrowButton final : public QAbstractButton {
     painter.setRenderHint(QPainter::Antialiasing, true);
     const qreal opacity = !isEnabled() ? 0.2 : (underMouse() || hasFocus() || isDown() ? 1.0 : 0.4);
     QColor color = appearance_.arrow;
-    color.setAlphaF(static_cast<float>(color.alphaF() * opacity));
+    color.setAlphaF(static_cast<float>(static_cast<qreal>(color.alphaF()) * opacity));
 
     const int side = std::min({appearance_.metrics.arrowSize, width(), height()});
     const qreal length = std::max(3.0, side / std::sqrt(2.0));

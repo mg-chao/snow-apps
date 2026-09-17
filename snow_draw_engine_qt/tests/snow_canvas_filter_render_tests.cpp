@@ -535,7 +535,8 @@ QImage referenceGaussian(const QImage& source, double sigma) {
     for (double& weight : kernel) {
         weight /= weightSum;
     }
-    std::vector<double> horizontal(static_cast<std::size_t>(source.width()) * source.height() * 4u);
+    std::vector<double> horizontal(static_cast<std::size_t>(source.width()) *
+                                   static_cast<std::size_t>(source.height()) * 4u);
     for (int y = 0; y < source.height(); ++y) {
         const auto* line = reinterpret_cast<const QRgb*>(source.constScanLine(y));
         for (int x = 0; x < source.width(); ++x) {
@@ -550,7 +551,10 @@ QImage referenceGaussian(const QImage& source, double sigma) {
                 values[3] += qAlpha(pixel) * weight;
                 ++kernelIndex;
             }
-            const std::size_t index = (static_cast<std::size_t>(y) * source.width() + x) * 4u;
+            const std::size_t index =
+                (static_cast<std::size_t>(y) * static_cast<std::size_t>(source.width()) +
+                 static_cast<std::size_t>(x)) *
+                4u;
             std::copy(values, values + 4, horizontal.begin() + static_cast<std::ptrdiff_t>(index));
         }
     }
@@ -563,10 +567,13 @@ QImage referenceGaussian(const QImage& source, double sigma) {
             for (int offset = -radius; offset <= radius; ++offset) {
                 const int sampleY = qBound(0, y + offset, source.height() - 1);
                 const std::size_t index =
-                    (static_cast<std::size_t>(sampleY) * source.width() + x) * 4u;
+                    (static_cast<std::size_t>(sampleY) * static_cast<std::size_t>(source.width()) +
+                     static_cast<std::size_t>(x)) *
+                    4u;
                 const double weight = kernel[kernelIndex];
                 for (int channel = 0; channel < 4; ++channel) {
-                    values[channel] += horizontal[index + channel] * weight;
+                    values[channel] +=
+                        horizontal[index + static_cast<std::size_t>(channel)] * weight;
                 }
                 ++kernelIndex;
             }
@@ -580,7 +587,8 @@ QImage referenceGaussian(const QImage& source, double sigma) {
 }
 
 double premultipliedSsim(const QImage& first, const QImage& second) {
-    const std::size_t count = static_cast<std::size_t>(first.width()) * first.height() * 4u;
+    const std::size_t count =
+        static_cast<std::size_t>(first.width()) * static_cast<std::size_t>(first.height()) * 4u;
     double firstMean = 0.0;
     double secondMean = 0.0;
     const auto channel = [](QRgb pixel, int index) {
@@ -904,13 +912,16 @@ void maskedMosaicMatchesReferenceAcrossCoverageAndOrigins() {
         for (int x = 0; x < size.width(); ++x) {
             const int sourceAlpha = static_cast<int>(generator() & 0xffu);
             const int destinationAlpha = static_cast<int>(generator() & 0xffu);
-            sourceLine[x] = qRgba(static_cast<int>(generator() % (sourceAlpha + 1)),
-                                  static_cast<int>(generator() % (sourceAlpha + 1)),
-                                  static_cast<int>(generator() % (sourceAlpha + 1)), sourceAlpha);
-            destinationLine[x] =
-                qRgba(static_cast<int>(generator() % (destinationAlpha + 1)),
-                      static_cast<int>(generator() % (destinationAlpha + 1)),
-                      static_cast<int>(generator() % (destinationAlpha + 1)), destinationAlpha);
+            sourceLine[x] =
+                qRgba(static_cast<int>(generator() % static_cast<unsigned int>(sourceAlpha + 1)),
+                      static_cast<int>(generator() % static_cast<unsigned int>(sourceAlpha + 1)),
+                      static_cast<int>(generator() % static_cast<unsigned int>(sourceAlpha + 1)),
+                      sourceAlpha);
+            destinationLine[x] = qRgba(
+                static_cast<int>(generator() % static_cast<unsigned int>(destinationAlpha + 1)),
+                static_cast<int>(generator() % static_cast<unsigned int>(destinationAlpha + 1)),
+                static_cast<int>(generator() % static_cast<unsigned int>(destinationAlpha + 1)),
+                destinationAlpha);
             const int pattern = (x + y * 3) % 7;
             maskLine[x] =
                 static_cast<uchar>(pattern == 0 ? 0 : (pattern <= 3 ? 255 : pattern * 31));
@@ -1675,9 +1686,10 @@ void scalarAvx2AndThreadingProduceIdenticalPixels() {
             auto* line = reinterpret_cast<QRgb*>(source.scanLine(y));
             for (int x = 0; x < source.width(); ++x) {
                 const int alpha = static_cast<int>(generator() & 255u);
-                line[x] = qRgba(static_cast<int>(generator() % (alpha + 1)),
-                                static_cast<int>(generator() % (alpha + 1)),
-                                static_cast<int>(generator() % (alpha + 1)), alpha);
+                line[x] = qRgba(
+                    static_cast<int>(generator() % static_cast<unsigned int>(alpha + 1)),
+                    static_cast<int>(generator() % static_cast<unsigned int>(alpha + 1)),
+                    static_cast<int>(generator() % static_cast<unsigned int>(alpha + 1)), alpha);
             }
         }
         for (std::uint32_t type : {0u, 1u, 2u, 3u, 4u}) {
@@ -1737,13 +1749,16 @@ void maskedKernelsMatchAcrossBackendsAndRespectBlurMemoryBound() {
         for (int x = 0; x < size.width(); ++x) {
             const int sourceAlpha = static_cast<int>(generator() & 0xffu);
             const int destinationAlpha = static_cast<int>(generator() & 0xffu);
-            sourceLine[x] = qRgba(static_cast<int>(generator() % (sourceAlpha + 1)),
-                                  static_cast<int>(generator() % (sourceAlpha + 1)),
-                                  static_cast<int>(generator() % (sourceAlpha + 1)), sourceAlpha);
-            destinationLine[x] =
-                qRgba(static_cast<int>(generator() % (destinationAlpha + 1)),
-                      static_cast<int>(generator() % (destinationAlpha + 1)),
-                      static_cast<int>(generator() % (destinationAlpha + 1)), destinationAlpha);
+            sourceLine[x] =
+                qRgba(static_cast<int>(generator() % static_cast<unsigned int>(sourceAlpha + 1)),
+                      static_cast<int>(generator() % static_cast<unsigned int>(sourceAlpha + 1)),
+                      static_cast<int>(generator() % static_cast<unsigned int>(sourceAlpha + 1)),
+                      sourceAlpha);
+            destinationLine[x] = qRgba(
+                static_cast<int>(generator() % static_cast<unsigned int>(destinationAlpha + 1)),
+                static_cast<int>(generator() % static_cast<unsigned int>(destinationAlpha + 1)),
+                static_cast<int>(generator() % static_cast<unsigned int>(destinationAlpha + 1)),
+                destinationAlpha);
             maskLine[x] = static_cast<uchar>(generator() & 0xffu);
         }
     }
@@ -2399,7 +2414,7 @@ void retainedFilterTilesRenderWithoutReopeningAnActivePainter() {
             raw.width = 460.0;
             raw.height = 240.0;
             raw.opacity = 1.0;
-            raw.filter = snow_filter_render_spec_resolve(effect, 0.3);
+            raw.filter = snow_filter_render_spec_resolve(static_cast<std::uint32_t>(effect), 0.3);
             const SnowCanvasSceneItem filter(raw);
             const auto render = [&]() {
                 QImage image(
@@ -2531,7 +2546,8 @@ void tiledFiltersCoverFractionalDevicePixels() {
         raw.opacity = 1.0;
         SnowCanvasRenderContext context;
         for (int filterType : {0, 1, 2, 3}) {
-            raw.filter = snow_filter_render_spec_resolve(filterType, 0.7);
+            raw.filter =
+                snow_filter_render_spec_resolve(static_cast<std::uint32_t>(filterType), 0.7);
             const SnowCanvasSceneItem item(raw);
             int namespaceToken = 0;
             snow_canvas_filter_tile_cache::clear();
@@ -2597,7 +2613,8 @@ void tiledRenderMatchesFullRender() {
         filter.center_y = 512.0;
         filter.width = 900.0;
         filter.height = 900.0;
-        filter.filter = snow_filter_render_spec_resolve(filterType, strength);
+        filter.filter =
+            snow_filter_render_spec_resolve(static_cast<std::uint32_t>(filterType), strength);
         filter.opacity = 1.0;
         const SnowCanvasSceneItem items[] = {SnowCanvasSceneItem(filter)};
         SceneDisplayInfo displayInfo{};
@@ -2643,7 +2660,7 @@ void tiledRenderMatchesFullRender() {
                                             std::abs(qBlue(fullLine[x]) - qBlue(tiledLine[x]))});
                 if (delta > 2) {
                     ++mismatched;
-                    ++columnsWithDiff[x];
+                    ++columnsWithDiff[static_cast<std::size_t>(x)];
                 }
                 maxDelta = std::max(maxDelta, delta);
             }
@@ -2652,7 +2669,7 @@ void tiledRenderMatchesFullRender() {
             std::cerr << label << ": tiled output differs from full output at " << mismatched
                       << " pixels (maximum channel delta " << maxDelta << "); boundary columns:";
             for (int x : {255, 256, 257, 511, 512, 513, 767, 768, 769}) {
-                std::cerr << " x" << x << "=" << columnsWithDiff[x];
+                std::cerr << " x" << x << "=" << columnsWithDiff[static_cast<std::size_t>(x)];
             }
             std::cerr << '\n';
         }

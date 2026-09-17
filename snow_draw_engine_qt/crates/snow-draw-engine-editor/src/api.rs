@@ -187,6 +187,13 @@ pub const SHAPE_STYLE_PROPERTY_LINE: u32 = SHAPE_STYLE_PROPERTY_FILL
     | SHAPE_STYLE_PROPERTY_STROKE
     | SHAPE_STYLE_PROPERTY_STROKE_WIDTH
     | SHAPE_STYLE_PROPERTY_STROKE_STYLE
+    | SHAPE_STYLE_PROPERTY_ARROW_TYPE
+    | SHAPE_STYLE_PROPERTY_OPACITY;
+pub const SHAPE_STYLE_PROPERTY_FREE_DRAW: u32 = SHAPE_STYLE_PROPERTY_FILL
+    | SHAPE_STYLE_PROPERTY_FILL_STYLE
+    | SHAPE_STYLE_PROPERTY_STROKE
+    | SHAPE_STYLE_PROPERTY_STROKE_WIDTH
+    | SHAPE_STYLE_PROPERTY_STROKE_STYLE
     | SHAPE_STYLE_PROPERTY_OPACITY;
 pub const SHAPE_STYLE_PROPERTY_ALL: u32 = SHAPE_STYLE_PROPERTY_RECTANGLE
     | SHAPE_STYLE_PROPERTY_ARROW
@@ -200,7 +207,7 @@ impl ShapeKind {
             Self::Rectangle => SHAPE_STYLE_PROPERTY_RECTANGLE,
             Self::Arrow => SHAPE_STYLE_PROPERTY_ARROW,
             Self::Line => SHAPE_STYLE_PROPERTY_LINE,
-            Self::FreeDraw => SHAPE_STYLE_PROPERTY_LINE,
+            Self::FreeDraw => SHAPE_STYLE_PROPERTY_FREE_DRAW,
             Self::RectangleHighlight => {
                 SHAPE_STYLE_PROPERTY_FILL
                     | SHAPE_STYLE_PROPERTY_STROKE
@@ -293,13 +300,6 @@ pub struct EditorViewState {
     pub clear_color: ColorRgba8,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct EditorStrokeCursor {
-    pub position: Point<f64>,
-    pub stroke_width: f64,
-    pub stroke_color: Option<ColorRgba8>,
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct PenFilterPreview {
     pub global_points: Vec<Point<f64>>,
@@ -356,8 +356,6 @@ pub struct EditorPresentationState {
     pub selected_single_arrow: Option<ArrowData>,
     pub arrow_handles: Vec<ArrowHandleState>,
     pub snap_guides: Vec<SnapGuide>,
-    pub eraser_cursor: Option<Point<f64>>,
-    pub stroke_cursor: Option<EditorStrokeCursor>,
 }
 
 /// Whether the generic selection frame and its controls apply to these members.

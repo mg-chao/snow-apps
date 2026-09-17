@@ -172,6 +172,10 @@
             <translation>曲线箭头</translation>
         </message>
         <message>
+            <source>Curved line</source>
+            <translation>曲线</translation>
+        </message>
+        <message>
             <source>Dashed arrow stroke</source>
             <translation>虚线箭头描边</translation>
         </message>
@@ -802,6 +806,10 @@
         <message>
             <source>Straight arrow</source>
             <translation>直线箭头</translation>
+        </message>
+        <message>
+            <source>Straight line</source>
+            <translation>直线</translation>
         </message>
         <message>
             <source>Stroke color</source>

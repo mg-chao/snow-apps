@@ -234,8 +234,10 @@ QVector<Segment> splitNumberedList(const Segment& item) {
         for (int j = start; j < end; ++j)
             part.line.text = join(part.line.text, lines[j].trimmed(), true);
         part.bounds = QRectF(
-            item.bounds.left(), item.bounds.top() + item.bounds.height() * start / lines.size(),
-            item.bounds.width(), item.bounds.height() * (end - start) / lines.size());
+            item.bounds.left(),
+            item.bounds.top() + item.bounds.height() * start / static_cast<qreal>(lines.size()),
+            item.bounds.width(),
+            item.bounds.height() * (end - start) / static_cast<qreal>(lines.size()));
         part.line.quad = quad(part.bounds);
         result.push_back(part);
     }

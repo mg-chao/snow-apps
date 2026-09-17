@@ -51,10 +51,10 @@ QColor colorOnBackground(const QColor& foreground, const QColor& background) {
     if (!background.isValid() || foreground.alpha() >= 255) {
         return foreground;
     }
-    const qreal alpha = foreground.alphaF();
-    return QColor::fromRgbF(foreground.redF() * alpha + background.redF() * (1.0 - alpha),
-                            foreground.greenF() * alpha + background.greenF() * (1.0 - alpha),
-                            foreground.blueF() * alpha + background.blueF() * (1.0 - alpha));
+    const float alpha = foreground.alphaF();
+    return QColor::fromRgbF(foreground.redF() * alpha + background.redF() * (1.0F - alpha),
+                            foreground.greenF() * alpha + background.greenF() * (1.0F - alpha),
+                            foreground.blueF() * alpha + background.blueF() * (1.0F - alpha));
 }
 
 class SearchResultItemDelegate final : public QStyledItemDelegate {

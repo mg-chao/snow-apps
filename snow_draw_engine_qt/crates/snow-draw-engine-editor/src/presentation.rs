@@ -9,9 +9,9 @@ use snow_draw_engine_document::{
 use snow_draw_engine_model::DocumentModel;
 
 use crate::{
-    ActiveTool, ArrowHandleKind, ArrowHandleState, Editor, EditorPresentationState,
-    EditorStrokeCursor, EditorViewState, SelectionArrowState, SelectionBounds, SelectionRectState,
-    SerialNumberToolbarState, TextPreviewFontSize,
+    ArrowHandleKind, ArrowHandleState, Editor, EditorPresentationState, EditorViewState,
+    SelectionArrowState, SelectionBounds, SelectionRectState, SerialNumberToolbarState,
+    TextPreviewFontSize,
     geometry::{
         element_hit_tolerance, selection_bounds_from_selection, selection_handle_hit_size,
         selection_handle_size, text_resize_changes_width_only,
@@ -124,28 +124,6 @@ impl Editor {
             .map_or_else(Vec::new, |(arrow_id, arrow)| {
                 self.arrow_handle_states(document, arrow_id, &arrow)
             });
-        let stroke_cursor = self
-            .state
-            .stroke_cursor_canvas_position
-            .zip(match self.state.active_tool {
-                ActiveTool::FreeDraw | ActiveTool::PenHighlight => {
-                    Some(self.shape_style(document).stroke_width)
-                }
-                ActiveTool::PenFilter => Some(self.filter_style(document).stroke_width),
-                _ => None,
-            })
-            .and_then(|(position, stroke_width)| {
-                (stroke_width.is_finite() && stroke_width > 0.0).then_some(EditorStrokeCursor {
-                    position,
-                    stroke_width,
-                    stroke_color: match self.state.active_tool {
-                        ActiveTool::FreeDraw | ActiveTool::PenHighlight => {
-                            Some(self.shape_style(document).stroke)
-                        }
-                        _ => None,
-                    },
-                })
-            });
         EditorPresentationState {
             auto_filter_highlights: self.auto_filter_highlights(document),
             arrow_text_previews: self.arrow_text_previews(document),
@@ -174,8 +152,6 @@ impl Editor {
             selected_single_arrow,
             arrow_handles,
             snap_guides: self.state.ui.snap_guides.clone(),
-            eraser_cursor: self.state.eraser.cursor_canvas_position,
-            stroke_cursor,
         }
     }
 

@@ -78,16 +78,11 @@ class NativeGlobalMouseBackend final : public GlobalMouseBackend {
             onFailure = {};
             return;
         }
-        if (worker != nullptr) {
-            QMetaObject::invokeMethod(
-                worker,
-                [this]() {
 #ifdef Q_OS_WIN
-                    unhook();
-#endif
-                },
-                Qt::BlockingQueuedConnection);
+        if (worker != nullptr) {
+            QMetaObject::invokeMethod(worker, [this]() { unhook(); }, Qt::BlockingQueuedConnection);
         }
+#endif
         thread.quit();
         if (!thread.wait(kStopTimeoutMilliseconds)) {
             qWarning("Global mouse worker thread did not stop within %lu milliseconds",

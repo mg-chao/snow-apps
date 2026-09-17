@@ -20,7 +20,17 @@ function(snow_workspace_configure_paths)
         "Directory containing libclang.dll for Rust bindgen.")
 
     if(NOT DEFINED VCPKG_TARGET_TRIPLET OR VCPKG_TARGET_TRIPLET STREQUAL "")
-        set(VCPKG_TARGET_TRIPLET "x64-windows" CACHE STRING
+        if(APPLE)
+            if(CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64" OR
+               (NOT CMAKE_OSX_ARCHITECTURES AND CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64"))
+                set(_snow_default_triplet "x64-osx-snow-shot")
+            else()
+                set(_snow_default_triplet "arm64-osx-snow-shot")
+            endif()
+        else()
+            set(_snow_default_triplet "x64-windows")
+        endif()
+        set(VCPKG_TARGET_TRIPLET "${_snow_default_triplet}" CACHE STRING
             "vcpkg target triplet used by this build." FORCE)
     endif()
     set(_vcpkg_installed_default "${SNOW_VCPKG_ROOT}/installed")

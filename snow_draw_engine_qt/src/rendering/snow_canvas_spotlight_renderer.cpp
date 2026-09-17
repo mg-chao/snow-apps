@@ -125,7 +125,7 @@ void render(QPainter& painter, const SceneDisplayInfo& sceneInfo,
     const QColor baseColor = snow_canvas_renderer::toQColor(spotlightInfo.color);
     const float opacity = static_cast<float>(std::clamp(spotlightInfo.opacity, 0.0, 1.0));
     const QRectF normalizedArea = renderArea.normalized();
-    if (!spotlightInfo.active || baseColor.alphaF() <= 0.0 || opacity <= 0.0 ||
+    if (!spotlightInfo.active || baseColor.alphaF() <= 0.0F || opacity <= 0.0F ||
         !normalizedArea.isValid() || normalizedArea.isEmpty() || exposedRegion.isEmpty()) {
         ++g_diagnostics.earlyExitCount;
         return;

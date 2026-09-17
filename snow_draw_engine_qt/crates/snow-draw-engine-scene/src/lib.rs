@@ -2003,7 +2003,7 @@ mod tests {
         let cursor = composer.current_cursor();
 
         let presentation = EditorPresentationState {
-            eraser_cursor: Some(Point::new(120.0, 180.0)),
+            hovered_rect: Some(spotlight_rect(Point::new(120.0, 180.0), 16.0, 16.0)),
             ..EditorPresentationState::default()
         };
         composer.refresh_with_presentation(

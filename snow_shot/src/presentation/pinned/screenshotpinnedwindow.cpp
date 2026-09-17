@@ -291,7 +291,7 @@ constexpr int kControlButtonSpacing = 8;
 constexpr int kControlsMinimumNativeDimension = 383;
 constexpr int kThumbnailSize = 83;
 constexpr int kThumbnailAnimationDurationMs = 150;
-constexpr int kResizeHitWidth = 6;
+[[maybe_unused]] constexpr int kResizeHitWidth = 6;
 constexpr int kScaleReadoutDurationMs = 1000;
 constexpr int kMinimumScalePercent = 10;
 constexpr int kMaximumScalePercent = 500;
@@ -490,7 +490,7 @@ void writeNativeRect(const QRect& source, RECT* target) {
 }
 #endif
 
-QSize physicalSizeAtScale(const QSize& baseline, int percent) {
+[[maybe_unused]] QSize physicalSizeAtScale(const QSize& baseline, int percent) {
     return resize_geometry::scaledSize(baseline, percent / 100.0);
 }
 
@@ -832,6 +832,7 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
     m_pointerPresence = std::make_unique<ScreenshotPinnedPointerPresence>(
         this,
         [this]() -> std::optional<bool> {
+            Q_UNUSED(this);
 #if defined(Q_OS_WIN) || defined(_WIN32)
             if (isVisible()) {
                 return native::pointerInsideWindow(internalWinId());
@@ -4206,9 +4207,7 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                 m_originalOcrPresentation = std::move(presentation);
                 updateOcrPresentation();
             },
-            [this](std::shared_ptr<ScreenshotOcrPresentation> presentation) {
-                Q_UNUSED(presentation);
-            },
+            [](std::shared_ptr<ScreenshotOcrPresentation> presentation) { Q_UNUSED(presentation); },
             [this](std::shared_ptr<QTextDocument> document) {
                 if (m_recognitionContent != nullptr) {
                     m_recognitionContent->showFormattedText(std::move(document));

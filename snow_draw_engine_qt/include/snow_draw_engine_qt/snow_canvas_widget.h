@@ -158,6 +158,7 @@ class SnowCanvasWidget : public QWidget {
     void showDirtyRectsChanged();
 
   protected:
+    bool event(QEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
