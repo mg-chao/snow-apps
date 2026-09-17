@@ -644,6 +644,12 @@ endif()
 
 add_library(snow_shot_storage STATIC ${SNOW_SHOT_STORAGE_SOURCES})
 snow_enable_unity_build(snow_shot_storage)
+# Repository implementations have independent anonymous-namespace helpers.
+set_source_files_properties(
+    src/storage/capturehistoryrepository.cpp
+    src/storage/pinnedwindowrepository.cpp
+    src/storage/configurationschema.cpp
+    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
 target_include_directories(snow_shot_storage PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(snow_shot_storage PUBLIC
     snow_shot_diagnostics
@@ -864,6 +870,11 @@ if(APPLE)
 endif()
 target_link_libraries(snow_shot_settings PRIVATE snow_shot_global_mouse)
 snow_enable_unity_build(snow_shot_settings)
+set_source_files_properties(
+    src/presentation/styles/thememanager.cpp
+    src/presentation/components/shortcutkeyrow.cpp
+    src/platform/macos/globalshortcutbackend.cpp
+    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
 target_include_directories(snow_shot_settings PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(snow_shot_settings PUBLIC
     snow_shot_translation
@@ -1149,7 +1160,7 @@ set(PROJECT_CXX_SOURCES
 if(MSVC)
     set_source_files_properties(src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
         PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
     set_source_files_properties(src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
         PROPERTIES COMPILE_OPTIONS "-mavx2")
 endif()
@@ -1888,6 +1899,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/screenshot_selector_policy_tests.cpp
         src/presentation/selector/screenshotselectorpolicy.h
     )
+    if(NOT WIN32)
+        target_sources(snow-shot-selector-policy-tests PRIVATE
+            src/presentation/selector/screenshotselectorserviceclient.cpp)
+    endif()
     target_include_directories(snow-shot-selector-policy-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/selector"
@@ -4421,6 +4436,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     target_compile_definitions(snow-shot-ocr-recognition-service-tests PRIVATE
         SNOW_TEST_OCR_EXECUTABLE="$<TARGET_FILE:snow_ocr_process>")
+    if(SNOW_SHOT_BUILD_BENCHMARKS AND CMAKE_BUILD_TYPE STREQUAL "Release")
+        target_compile_definitions(snow-shot-ocr-recognition-service-tests PRIVATE SNOW_TEST_OCR_PERFORMANCE=1)
+    endif()
     target_link_libraries(snow-shot-ocr-recognition-service-tests PRIVATE
         snow_shot_diagnostics
         snow_draw_engine_qt_canvas
@@ -4459,6 +4477,15 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-ocr-process-lifecycle-tests
         COMMAND snow-shot-ocr-recognition-service-tests --process-lifecycle)
+    add_executable(snow-shot-ocr-assets-tests
+        tests/screenshot_ocr_assets_tests.cpp
+        include/snow_shot/presentation/screenshotocrassets.h
+        src/presentation/ocr/screenshotocrassets.cpp)
+    target_include_directories(snow-shot-ocr-assets-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow-shot-ocr-assets-tests PRIVATE Qt6::Core Qt6::Network MINIZIP::minizip-ng)
+    add_test(NAME snow-shot-ocr-assets-tests COMMAND snow-shot-ocr-assets-tests)
+    set_tests_properties(snow-shot-ocr-assets-tests PROPERTIES TIMEOUT 60 LABELS "unit"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-ocr-managed-runtime-tests
         COMMAND snow-shot-ocr-recognition-service-tests --managed-runtime-only)
     add_test(NAME snow-shot-ocr-managed-directml-runtime-tests
@@ -4467,6 +4494,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-ocr-managed-directml-runtime-tests PROPERTIES
         TIMEOUT 60 LABELS "unit;windows"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    if(APPLE)
+        set_tests_properties(snow-shot-ocr-managed-runtime-tests PROPERTIES LABELS "unit")
+        set_tests_properties(snow-shot-ocr-directml-recognition-service-tests PROPERTIES LABELS "unit;windows")
+    endif()
     set_tests_properties(snow-shot-ocr-process-lifecycle-tests PROPERTIES TIMEOUT 30
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_dependencies(snow-shot-ocr-recognition-service-tests snow_ocr_process)
@@ -5766,7 +5797,9 @@ if(SNOW_SHOT_ENABLE_STRICT_COMPILE)
             -Wconversion
             -Wdouble-promotion
             -Wextra-semi
-            -Wfloat-equal
+            # Exact comparisons are required by geometry/cache ordering. Qt event
+            # switches intentionally handle subsets, while -Wall still diagnoses
+            # missing enum cases in switches without a default handler.
             -Wformat=2
             -Wimplicit-fallthrough
             -Wmissing-declarations
@@ -5777,8 +5810,6 @@ if(SNOW_SHOT_ENABLE_STRICT_COMPILE)
             -Wredundant-decls
             -Wshadow
             -Wsign-conversion
-            -Wswitch-default
-            -Wswitch-enum
             -Wundef
             -Wunreachable-code
             -Wzero-as-null-pointer-constant

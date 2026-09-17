@@ -241,7 +241,8 @@ bool operator==(const PayloadSignature& first, const PayloadSignature& second) {
 }
 
 size_t payloadHash(const QByteArray& bytes) {
-    return bytes.isEmpty() ? 0 : qHashBits(bytes.constData(), bytes.size());
+    return bytes.isEmpty() ? 0
+                           : qHashBits(bytes.constData(), static_cast<std::size_t>(bytes.size()));
 }
 
 PayloadSignature payloadSignature(const PinnedWindowRecord& record) {
@@ -309,7 +310,7 @@ struct StoredRecord final {
     // only resident in `record`.
     QJsonObject payloads;
     PayloadSignature signature;
-    std::optional<PreparedPngImage> preparedSource;
+    std::optional<PreparedPngImage> preparedSource = std::nullopt;
 };
 
 bool samePayload(const StoredRecord& stored, const PinnedWindowRecord& incoming,

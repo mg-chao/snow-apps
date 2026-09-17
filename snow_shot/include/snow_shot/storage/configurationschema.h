@@ -29,8 +29,8 @@ struct ConfigurationSchemaEntry {
     QString key;
     QJsonValue defaultValue;
     ConfigurationValueKind valueKind = ConfigurationValueKind::Structured;
-    std::optional<ConfigurationIntegerRange> integerRange;
-    QStringList allowedStringValues;
+    std::optional<ConfigurationIntegerRange> integerRange = std::nullopt;
+    QStringList allowedStringValues{};
     int maximumListItems = -1;
 };
 

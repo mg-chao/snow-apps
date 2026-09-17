@@ -34,12 +34,12 @@ QString convertOcrPunctuation(const QString& text, bool fullWidth) {
     QString result;
     result.reserve(text.size());
     for (const QChar character : text) {
-        const int asciiIndex = ascii.indexOf(character);
+        const qsizetype asciiIndex = ascii.indexOf(character);
         if (fullWidth && asciiIndex >= 0) {
             result.append(wide.at(asciiIndex));
             continue;
         }
-        const int wideIndex = wide.indexOf(character);
+        const qsizetype wideIndex = wide.indexOf(character);
         if (!fullWidth && wideIndex >= 0) {
             result.append(ascii.at(wideIndex));
             continue;

@@ -164,8 +164,6 @@ impl DetPreProcess {
         ];
         #[cfg(target_arch = "x86_64")]
         let use_avx2 = std::arch::is_x86_feature_detected!("avx2");
-        #[cfg(not(target_arch = "x86_64"))]
-        let use_avx2 = false;
 
         if row_parallel {
             let out_addr = out_slice.as_mut_ptr() as usize;

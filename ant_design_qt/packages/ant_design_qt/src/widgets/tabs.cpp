@@ -299,7 +299,8 @@ class TabButton final : public QAbstractButton {
     painter.setPen(foreground);
     painter.drawText(
         QRect(textLeft, 0, textWidth, height()),
-        Qt::AlignVCenter | (rightToLeft ? Qt::AlignRight : Qt::AlignLeft) | Qt::TextSingleLine,
+        static_cast<int>(Qt::AlignVCenter | (rightToLeft ? Qt::AlignRight : Qt::AlignLeft) |
+                         Qt::TextSingleLine),
         displayText);
 
     if (closable_) {

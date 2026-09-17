@@ -1068,7 +1068,8 @@ void AdSpin::paintSurface(detail::SpinSurface* surface, QPainter* painter) {
             motionEnabled ? triangleWave((static_cast<qreal>(d_->paintTimeMs) - i * 400.0) / 1000.0)
                           : static_cast<qreal>(i) / 3.0;
         QColor dotColor = indicatorColor;
-        dotColor.setAlphaF(static_cast<float>(dotColor.alphaF() * (0.3 + pulse * 0.7)));
+        dotColor.setAlphaF(
+            static_cast<float>(static_cast<double>(dotColor.alphaF()) * (0.3 + pulse * 0.7)));
         painter->setPen(Qt::NoPen);
         painter->setBrush(dotColor);
         painter->drawEllipse(QRectF(origins[i], QSizeF(itemSide, itemSide)));

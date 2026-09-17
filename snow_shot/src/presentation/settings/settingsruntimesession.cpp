@@ -470,7 +470,7 @@ void SettingsRuntimeSession::forgetRetiredTarget(const SettingsFieldDescriptor& 
         return;
     }
     QVector<RetiredWrite>& writes = found.value();
-    for (int index = writes.size() - 1; index >= 0; --index) {
+    for (qsizetype index = writes.size() - 1; index >= 0; --index) {
         if (matchesValue(descriptor, writes.at(index).target, target)) {
             writes.removeAt(index);
         }
@@ -494,7 +494,7 @@ bool SettingsRuntimeSession::suppressRetiredCompletion(const SettingsFieldDescri
     // current value. A transition away from it is observable evidence that a
     // later matching update is a new external change, not another notification
     // for the old completion.
-    for (int index = writes.size() - 1; index >= 0; --index) {
+    for (qsizetype index = writes.size() - 1; index >= 0; --index) {
         if (writes.at(index).completionObserved &&
             !matchesValue(descriptor, writes.at(index).target, external)) {
             writes.removeAt(index);
@@ -506,7 +506,7 @@ bool SettingsRuntimeSession::suppressRetiredCompletion(const SettingsFieldDescri
     if (!backendPending && (activeWrite == nullptr || activeSettled)) {
         // No retired request remains in flight. Unobserved targets that do not
         // match the backend can no longer produce a stale completion.
-        for (int index = writes.size() - 1; index >= 0; --index) {
+        for (qsizetype index = writes.size() - 1; index >= 0; --index) {
             if (!writes.at(index).completionObserved &&
                 !matchesValue(descriptor, writes.at(index).target, external)) {
                 writes.removeAt(index);

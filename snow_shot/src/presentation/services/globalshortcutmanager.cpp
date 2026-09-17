@@ -43,11 +43,11 @@ constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::PinSelectedFiles,
 };
 
-int actionIndex(GlobalShortcutAction action) {
+std::size_t actionIndex(GlobalShortcutAction action) {
     const auto found = std::find(ALL_ACTIONS.cbegin(), ALL_ACTIONS.cend(), action);
     return found == ALL_ACTIONS.cend()
                ? 0
-               : static_cast<int>(std::distance(ALL_ACTIONS.cbegin(), found));
+               : static_cast<std::size_t>(std::distance(ALL_ACTIONS.cbegin(), found));
 }
 
 shortcuts::ShortcutBindingList canonicalBindings(const shortcuts::ShortcutBindingList& bindings) {
@@ -440,7 +440,7 @@ class GlobalShortcutManager::Impl {
         }
 
         for (GlobalShortcutAction action : ALL_ACTIONS) {
-            const int index = actionIndex(action);
+            const std::size_t index = actionIndex(action);
             const bool changed = !statesEqual(m_states[index], nextStates[index]);
             m_states[index] = nextStates[index];
             if (changed) {

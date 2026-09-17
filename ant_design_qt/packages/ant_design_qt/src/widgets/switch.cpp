@@ -928,7 +928,8 @@ void AdSwitch::paintEvent(QPaintEvent* event) {
           direction == Qt::RightToLeft ? boxLeft : boxLeft + (hasIcon ? iconSide + gap : 0);
       QRectF textRect =
           snapRectToDevicePixels(QRectF(textLeft, boxTop, textWidth, contentHeight), dpr);
-      painter.drawText(textRect, Qt::AlignVCenter | horizontalAlignment, content.text);
+      painter.drawText(textRect, static_cast<int>(Qt::AlignVCenter | horizontalAlignment),
+                       content.text);
     }
     painter.setOpacity(oldOpacity);
   };
@@ -968,8 +969,9 @@ void AdSwitch::paintEvent(QPaintEvent* event) {
     const Qt::Alignment labelAlignment =
         Qt::AlignVCenter | (direction == Qt::RightToLeft ? Qt::AlignRight : Qt::AlignLeft);
     painter.setFont(font());
-    style()->drawItemText(&painter, layout.labelRect, labelAlignment | Qt::TextShowMnemonic,
-                          labelPalette, isEnabled(), QAbstractButton::text(), QPalette::WindowText);
+    style()->drawItemText(&painter, layout.labelRect,
+                          static_cast<int>(labelAlignment | Qt::TextShowMnemonic), labelPalette,
+                          isEnabled(), QAbstractButton::text(), QPalette::WindowText);
   }
 }
 

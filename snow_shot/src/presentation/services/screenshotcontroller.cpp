@@ -2232,7 +2232,7 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
         SNOW_SHOT_PIN_PERF_MILESTONE("controller.presentation_hidden");
         return;
     }
-    const QRect perfSelection = m_selection.pixelSelection();
+    [[maybe_unused]] const QRect perfSelection = m_selection.pixelSelection();
     SNOW_SHOT_PIN_PERF_BEGIN("normal-selection", perfSelection.width(), perfSelection.height());
     SNOW_SHOT_PIN_PERF_MILESTONE("controller.enter");
     SNOW_SHOT_PIN_PERF_SCOPE("controller.pin_selection");
@@ -2812,7 +2812,7 @@ void ScreenshotController::Impl::saveSelectionToFile() {
 
     const QPointer<ScreenshotController> receiver(&owner);
     const auto imageReady = [receiver, generation = *exportGeneration, outputPath, format, pdf,
-                             historyCandidate, historySource](QImage image) mutable {
+                             historyCandidate](QImage image) mutable {
         if (receiver.isNull() || receiver->m_impl == nullptr ||
             !receiver->m_impl->imageExportCurrent(generation)) {
             return;
@@ -2831,8 +2831,8 @@ void ScreenshotController::Impl::saveSelectionToFile() {
             });
     } else if (m_scrollingCaptureController != nullptr && m_scrollingCaptureController->active()) {
         scheduled = m_scrollingCaptureController->requestTrimmedSnapshot(
-            [receiver, generation = *exportGeneration, outputPath, format, pdf, historyCandidate,
-             historySource](ScreenshotScrollingSnapshot snapshot) mutable {
+            [receiver, generation = *exportGeneration, outputPath, format, pdf,
+             historyCandidate](ScreenshotScrollingSnapshot snapshot) mutable {
                 if (receiver.isNull() || receiver->m_impl == nullptr ||
                     !receiver->m_impl->imageExportCurrent(generation)) {
                     return;

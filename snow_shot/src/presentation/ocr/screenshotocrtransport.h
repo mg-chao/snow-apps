@@ -105,7 +105,8 @@ class ScreenshotOcrTransport final : public QObject {
         uchar* header = m_buffer.data();
         writeU32(header + kSlotStateOffset, kSlotFree);
         for (int row = 0; row < image.height(); ++row)
-            std::memcpy(header + kSlotHeaderBytes + row * stride, image.constScanLine(row), stride);
+            std::memcpy(header + kSlotHeaderBytes + row * stride, image.constScanLine(row),
+                        static_cast<std::size_t>(stride));
         writeU64(header + kSlotSequenceOffset, sequence);
         writeU32(header + kSlotWidthOffset, static_cast<quint32>(image.width()));
         writeU32(header + kSlotHeightOffset, static_cast<quint32>(image.height()));

@@ -1,4 +1,7 @@
 #include "screenshotselectorpolicy.h"
+#ifndef Q_OS_WIN
+#include "screenshotselectorserviceclient.h"
+#endif
 
 #include <cstdlib>
 #include <iostream>
@@ -69,5 +72,23 @@ int main() {
     windowTargetUsesWindowOnlyLookup();
     windowSubElementTargetUsesElementLookup();
     disabledSmartSelectionOverridesSubElementRequests();
+#ifndef Q_OS_WIN
+    bool callbackReceived = false;
+    ScreenshotSelectorServiceClient client({
+        [&](quint64, bool) { callbackReceived = true; },
+        [&](const ScreenshotSelectorResult&) { callbackReceived = true; },
+    });
+    require(!client.ensureService() && !client.hasService(),
+            "Windows selector must report unavailable on other platforms");
+    require(
+        !client.startRefresh(1, {}) &&
+            !client.startHitTest(1, 2, 3, QPoint(10, 20), ScreenshotSelectorHitTestMode::Window) &&
+            !client.startRefinement({}),
+        "unavailable selector must decline requests for manual fallback");
+    client.invalidateRefinement();
+    client.destroyService();
+    require(client.releaseCache() && !callbackReceived,
+            "unavailable selector cleanup must be safe without callbacks");
+#endif
     return 0;
 }

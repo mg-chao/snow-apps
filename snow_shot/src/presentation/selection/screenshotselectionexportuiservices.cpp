@@ -179,7 +179,7 @@ class ScreenshotPinnedWindowPool final : public QObject {
         }
 
         ScreenshotPinnedWindow* window = m_spare;
-        bool usedSpare = false;
+        [[maybe_unused]] bool usedSpare = false;
         if (window != nullptr) {
             m_spare = nullptr;
             if (window->prewarm(resolvedTargetScreen())) {

@@ -31,3 +31,26 @@ fn validation_command_reports_process_success_and_failures() {
     assert!(!invalid.status.success());
     assert!(!invalid.stderr.is_empty());
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn missing_bundled_library_reports_a_load_error_without_aborting() {
+    let directory =
+        std::env::temp_dir().join(format!("snow OCR missing dylib {}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let worker = directory.join("snow-ocr-process");
+    std::fs::copy(env!("CARGO_BIN_EXE_snow-ocr-process"), &worker).unwrap();
+    let output = Command::new(&worker)
+        .current_dir("/")
+        .args([
+            "--validate-model-set",
+            "missing-detector",
+            "missing-recognizer",
+            "missing-dictionary",
+        ])
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&directory).unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("cannot load bundled ONNX Runtime"));
+}

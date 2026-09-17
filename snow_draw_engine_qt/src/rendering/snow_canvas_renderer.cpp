@@ -1356,20 +1356,6 @@ double filterLogicalSamplingRadius(const SceneDisplayInfo& displayInfo,
            snow_canvas_render_geometry::sceneProjection(displayInfo).cameraZoom;
 }
 
-bool effectiveFilterIntersectsViewport(const SceneDisplayInfo& displayInfo,
-                                       const SnowCanvasSceneItem& item) {
-    const bool validGeometry =
-        item.is_free_draw != 0
-            ? item.arrow_points != nullptr && item.arrow_point_count >= 2 && item.stroke_width > 0.0
-            : item.width > 0.0 && item.height > 0.0;
-    if (item.kind != SNOW_SCENE_DISPLAY_ITEM_FILTER || !validGeometry || item.opacity <= 0.0) {
-        return false;
-    }
-    return filterClipPath(displayInfo, item)
-        .boundingRect()
-        .intersects(QRectF(0.0, 0.0, displayInfo.surface_width, displayInfo.surface_height));
-}
-
 struct PhysicalSurfaceGeometry {
     QRect pixelBounds;
     QPointF logicalOrigin;
@@ -1436,8 +1422,8 @@ SparseMaskScan scanSparseMask(const QImage& mask, const QPoint& origin) {
     const int firstBlockRow = blockIndex(origin.y());
     const int blockColumnCount = blockIndex(origin.x() + mask.width() - 1) - firstBlockColumn + 1;
     const int blockRowCount = blockIndex(origin.y() + mask.height() - 1) - firstBlockRow + 1;
-    std::vector<std::uint8_t> occupied(static_cast<std::size_t>(blockColumnCount) * blockRowCount,
-                                       0);
+    std::vector<std::uint8_t> occupied(
+        static_cast<std::size_t>(blockColumnCount) * static_cast<std::size_t>(blockRowCount), 0);
     for (int localY = 0; localY < mask.height(); ++localY) {
         const auto* alpha = mask.constScanLine(localY);
         int localX = 0;
@@ -1463,14 +1449,17 @@ SparseMaskScan scanSparseMask(const QImage& mask, const QPoint& origin) {
             const int firstBlock = blockIndex(origin.x() + begin);
             const int lastBlock = blockIndex(origin.x() + localX - 1);
             for (int block = firstBlock; block <= lastBlock; ++block) {
-                occupied[static_cast<std::size_t>(row) * blockColumnCount + block -
-                         firstBlockColumn] = 1;
+                occupied[static_cast<std::size_t>(row) *
+                             static_cast<std::size_t>(blockColumnCount) +
+                         static_cast<std::size_t>(block - firstBlockColumn)] = 1;
             }
         }
     }
     for (int row = 0; row < blockRowCount; ++row) {
         for (int column = 0; column < blockColumnCount; ++column) {
-            if (occupied[static_cast<std::size_t>(row) * blockColumnCount + column] != 0) {
+            if (occupied[static_cast<std::size_t>(row) *
+                             static_cast<std::size_t>(blockColumnCount) +
+                         static_cast<std::size_t>(column)] != 0) {
                 result.occupiedBlocks.emplace_back((firstBlockColumn + column) * 64,
                                                    (firstBlockRow + row) * 64, 64, 64);
             }
@@ -1696,7 +1685,8 @@ bool applyPenTilesDirect(const QImage& source, QImage& destination, const QRect&
                 *coveredPixels += tileCoveredPixels;
             }
             if (boundingPixels != nullptr) {
-                *boundingPixels += static_cast<std::size_t>(overlap.width()) * overlap.height();
+                *boundingPixels += static_cast<std::size_t>(overlap.width()) *
+                                   static_cast<std::size_t>(overlap.height());
             }
         }
     }
@@ -2069,10 +2059,12 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                                 components[left].bounds.united(components[right].bounds);
                             for (const auto& [layer, destination] :
                                  components[right].layerDestinations) {
-                                auto found = std::find_if(
-                                    components[left].layerDestinations.begin(),
-                                    components[left].layerDestinations.end(),
-                                    [layer](const auto& entry) { return entry.first == layer; });
+                                auto found =
+                                    std::find_if(components[left].layerDestinations.begin(),
+                                                 components[left].layerDestinations.end(),
+                                                 [layerId = layer](const auto& entry) {
+                                                     return entry.first == layerId;
+                                                 });
                                 if (found == components[left].layerDestinations.end()) {
                                     components[left].layerDestinations.emplace_back(layer,
                                                                                     destination);
@@ -2181,10 +2173,12 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                     for (int y = 0; y < scene.height(); ++y) {
                         std::memcpy(scene.scanLine(y),
                                     backgroundImage->constScanLine(sourceTop + y) +
-                                        static_cast<qsizetype>(sourceLeft) * sizeof(QRgb),
+                                        static_cast<qsizetype>(sourceLeft) *
+                                            static_cast<qsizetype>(sizeof(QRgb)),
                                     rowBytes);
                     }
-                    g_filterDiagnostics.copiedBytes += rowBytes * scene.height();
+                    g_filterDiagnostics.copiedBytes +=
+                        rowBytes * static_cast<std::size_t>(scene.height());
                     copiedBackgroundRows = true;
                 }
             }
@@ -2524,7 +2518,8 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                     for (int y = 0; y < scene.height(); ++y) {
                         std::memcpy(pooledPreLayer.scanLine(y), scene.constScanLine(y), rowBytes);
                     }
-                    g_filterDiagnostics.copiedBytes += rowBytes * scene.height();
+                    g_filterDiagnostics.copiedBytes +=
+                        rowBytes * static_cast<std::size_t>(scene.height());
                     preLayerSource = &pooledPreLayer;
                 }
                 QRect layerDestination = surfaceBounds;

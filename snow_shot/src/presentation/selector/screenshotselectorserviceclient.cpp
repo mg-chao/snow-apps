@@ -1,17 +1,20 @@
 #include "screenshotselectorserviceclient.h"
 #include "screenshotselectorpolicy.h"
 
+#ifdef Q_OS_WIN
 #include "../capture/screenshotcaptureperfinstrumentation.h"
 #include "snow_ui_selector.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/settingsadapters.h"
+#endif
 
 #include <QByteArray>
 #include <QMetaObject>
 
 #include <utility>
 
+#ifdef Q_OS_WIN
 struct ScreenshotSelectorServiceClient::CallbackBridge {
     ScreenshotSelectorServiceClient* client;
 };
@@ -195,3 +198,34 @@ void ScreenshotSelectorServiceClient::resultCallback(const SnowUiSelectorEvent* 
         },
         Qt::QueuedConnection);
 }
+
+#else
+// The native UIA/MSAA service is Windows-only. Report unavailable so the
+// selector workflow can retain its manual-selection fallback on macOS.
+struct ScreenshotSelectorServiceClient::CallbackBridge {};
+ScreenshotSelectorServiceClient::ScreenshotSelectorServiceClient(
+    ScreenshotSelectorServiceClientCallbacks callbacks, QObject* parent)
+    : QObject(parent), m_callbacks(std::move(callbacks)) {}
+ScreenshotSelectorServiceClient::~ScreenshotSelectorServiceClient() = default;
+bool ScreenshotSelectorServiceClient::hasService() const {
+    return false;
+}
+bool ScreenshotSelectorServiceClient::ensureService() {
+    return false;
+}
+bool ScreenshotSelectorServiceClient::releaseCache() {
+    return true;
+}
+void ScreenshotSelectorServiceClient::destroyService() {}
+bool ScreenshotSelectorServiceClient::startRefresh(quint64, const QVector<std::uintptr_t>&) {
+    return false;
+}
+bool ScreenshotSelectorServiceClient::startHitTest(quint64, quint64, quint64, const QPoint&,
+                                                   ScreenshotSelectorHitTestMode) {
+    return false;
+}
+bool ScreenshotSelectorServiceClient::startRefinement(const ScreenshotSelectorResult&) {
+    return false;
+}
+void ScreenshotSelectorServiceClient::invalidateRefinement() {}
+#endif

@@ -415,10 +415,10 @@ class SegmentButton final : public QRadioButton {
 
     if (!displayText.isEmpty()) {
       painter->setPen(foreground);
-      painter->drawText(
-          QRect(textLeft, 0, textWidth, height()),
-          Qt::AlignVCenter | (rtl ? Qt::AlignRight : Qt::AlignLeft) | Qt::TextSingleLine,
-          displayText);
+      painter->drawText(QRect(textLeft, 0, textWidth, height()),
+                        static_cast<int>(Qt::AlignVCenter | (rtl ? Qt::AlignRight : Qt::AlignLeft) |
+                                         Qt::TextSingleLine),
+                        displayText);
     }
   }
 

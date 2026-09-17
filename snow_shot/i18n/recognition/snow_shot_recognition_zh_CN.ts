@@ -102,6 +102,10 @@
             <translation>文本识别失败</translation>
         </message>
         <message>
+            <source>The bundled text recognition runtime is damaged or incompatible. Reinstall Snow Shot for Apple Silicon.</source>
+            <translation>内置文字识别运行时已损坏或不兼容。请重新安装适用于 Apple 芯片的 Snow Shot。</translation>
+        </message>
+        <message>
             <source>Unable to open the recognized link</source>
             <translation>无法打开识别出的链接</translation>
         </message>

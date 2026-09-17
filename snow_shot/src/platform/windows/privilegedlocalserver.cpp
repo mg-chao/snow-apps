@@ -121,7 +121,6 @@ PrivilegedLocalServer::PrivilegedLocalServer(QObject* parent)
 #ifndef Q_OS_WIN
     connect(&m_impl->server, &QLocalServer::newConnection, this,
             &PrivilegedLocalServer::newConnection);
-    connect(&m_impl->server, &QLocalServer::acceptError, this, &PrivilegedLocalServer::acceptError);
 #endif
 }
 PrivilegedLocalServer::~PrivilegedLocalServer() = default;

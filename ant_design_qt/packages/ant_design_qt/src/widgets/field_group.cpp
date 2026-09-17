@@ -174,8 +174,9 @@ void AdFieldGroup::refreshJoinedEdges() {
     const bool joinedLeft = visible && visibleIndex > 0;
     const bool joinedRight = visible && visibleIndex + 1 < visibleCount;
 
-    const bool appliedJoinedProperties = writeJoinedProperty(control, "joinedLeft", joinedLeft) |
-                                         writeJoinedProperty(control, "joinedRight", joinedRight);
+    const bool appliedJoinedLeft = writeJoinedProperty(control, "joinedLeft", joinedLeft);
+    const bool appliedJoinedRight = writeJoinedProperty(control, "joinedRight", joinedRight);
+    const bool appliedJoinedProperties = appliedJoinedLeft || appliedJoinedRight;
     if (!appliedJoinedProperties) {
       if (auto* button = qobject_cast<AdButton*>(control)) {
         detail::setButtonSegmentPosition(button,

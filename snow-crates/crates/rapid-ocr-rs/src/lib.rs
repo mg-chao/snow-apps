@@ -39,11 +39,23 @@ pub use types::{LineResult, RecognizeOutput, WordBox, WordInfo, WordType};
 pub type Quad = [[f32; 2]; 4];
 
 pub fn initialize_onnx_runtime() -> Result<()> {
+    #[cfg(all(target_os = "macos", feature = "dynamic-onnx-runtime"))]
+    let builder = {
+        let executable = std::env::current_exe()?;
+        let directory = executable.parent().ok_or_else(|| {
+            RapidOcrError::Config("cannot resolve the OCR executable directory".into())
+        })?;
+        ort::init_from(directory.join("libonnxruntime.dylib")).map_err(|error| {
+            RapidOcrError::Config(format!("cannot load bundled ONNX Runtime: {error}"))
+        })?
+    };
+    #[cfg(not(all(target_os = "macos", feature = "dynamic-onnx-runtime")))]
+    let builder = ort::init();
     // Keep managed ONNX diagnostics on stderr, filtered to warnings and above
     // so info-level runtime chatter stays out of production logs; the host
     // protocol reader also resynchronizes on the frame magic for native
     // runtime builds that emit unavoidable cpuinfo diagnostics on stdout.
-    let _ = ort::init()
+    let _ = builder
         .with_telemetry(false)
         .with_logger(std::sync::Arc::new(
             |level: ort::logging::LogLevel,

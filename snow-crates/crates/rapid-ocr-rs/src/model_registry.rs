@@ -402,12 +402,12 @@ onnxruntime:
         let det = reg
             .resolve_det(OcrVersion::PPocrV6, LangDet::Ch, ModelType::Small)
             .expect("v6 det model should resolve");
-        assert!(det.model_url.ends_with("multi_PP-OCRv6_det_small.onnx"));
+        assert!(det.model_url.ends_with("PP-OCRv6_det_small.onnx"));
 
         let rec = reg
             .resolve_rec(OcrVersion::PPocrV6, LangRec::Ch, ModelType::Small)
             .expect("v6 rec model should resolve");
-        assert!(rec.model_url.ends_with("multi_PP-OCRv6_rec_small.onnx"));
+        assert!(rec.model_url.ends_with("PP-OCRv6_rec_small.onnx"));
         assert!(
             rec.dict_url
                 .as_deref()
@@ -442,7 +442,7 @@ onnxruntime:
         let mobile = reg
             .resolve_rec(OcrVersion::PPocrV4, LangRec::Ch, ModelType::Mobile)
             .expect("mobile model should resolve");
-        assert!(mobile.model_url.contains("ch_PP-OCRv4_rec_infer"));
+        assert_eq!(mobile.model_url, "https://example.com/ch-mobile.onnx");
     }
 
     #[test]

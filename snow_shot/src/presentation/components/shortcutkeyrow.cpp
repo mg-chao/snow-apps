@@ -1048,9 +1048,9 @@ void ShortcutKeyRow::syncDelayUnderline() {
 
     const QString secondsText = QString::number(m_delaySeconds);
     const QString displayTitle = m_titleLabel->text();
-    const int delayTextStart = m_baseTitle.contains(QStringLiteral("%1"))
-                                   ? m_baseTitle.indexOf(QStringLiteral("%1"))
-                                   : displayTitle.lastIndexOf(secondsText);
+    const qsizetype delayTextStart = m_baseTitle.contains(QStringLiteral("%1"))
+                                         ? m_baseTitle.indexOf(QStringLiteral("%1"))
+                                         : displayTitle.lastIndexOf(secondsText);
     if (delayTextStart < 0 || secondsText.isEmpty()) {
         m_delayUnderline->hide();
         return;

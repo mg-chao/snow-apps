@@ -75,7 +75,7 @@ inline void paintPopupShadowLayer(QPainter& painter, const QPainterPath& basePat
   const qreal effectiveBlur = std::max<qreal>(1.0, blur + std::min<qreal>(0.0, spread));
   const qreal effectiveSpread = std::max<qreal>(0.0, spread);
   const int steps = std::max(1, static_cast<int>(std::ceil(effectiveBlur / 2.0)));
-  const qreal stepAlpha = color.alphaF() / static_cast<qreal>(steps);
+  const qreal stepAlpha = static_cast<double>(color.alphaF()) / static_cast<qreal>(steps);
 
   painter.save();
   painter.translate(offset);
@@ -85,7 +85,7 @@ inline void paintPopupShadowLayer(QPainter& painter, const QPainterPath& basePat
     const qreal radius =
         effectiveSpread + effectiveBlur * static_cast<qreal>(step) / static_cast<qreal>(steps);
     QColor stepColor = color;
-    stepColor.setAlphaF(std::clamp(stepAlpha, 0.0, 1.0));
+    stepColor.setAlphaF(static_cast<float>(std::clamp(stepAlpha, 0.0, 1.0)));
     painter.fillPath(expandedPopupShadowPath(basePath, radius), stepColor);
   }
 

@@ -2813,7 +2813,6 @@ void AdModal::applyVisualStyle() {
     if (!button) {
       return;
     }
-    const auto iconColors = adqt::icons::IconColors::primary(style.closeIconColor);
     const int iconSize = std::max(10, style.closeIconSize);
     const int buttonSize = std::max(iconSize, style.closeButtonSize);
     button->setFixedSize(buttonSize, buttonSize);

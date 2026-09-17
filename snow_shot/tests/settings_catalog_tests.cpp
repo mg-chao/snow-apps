@@ -190,7 +190,11 @@ void builtInCatalogIsCompleteAndValid() {
         }
     }
     require(sectionCount == 38, "catalog must contain thirty-eight sections");
+#ifdef Q_OS_MACOS
+    require(itemCount == 159, "the macOS catalog omits DirectML acceleration");
+#else
     require(itemCount == 160, "catalog must contain one hundred sixty items");
+#endif
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
@@ -621,10 +625,16 @@ void builtInCatalogIsCompleteAndValid() {
             proxySelect->options.at(1).value == QStringLiteral("system") &&
             textRecognition != nullptr &&
             textRecognition->reset == settings::SettingsSectionReset::TextRecognition &&
+#ifdef Q_OS_MACOS
+            textRecognition->items.size() == 3 &&
+            catalog.item({QStringLiteral("system-settings"), QStringLiteral("text-recognition"),
+                          QStringLiteral("text-recognition.direct-ml-acceleration")}) == nullptr &&
+#else
             textRecognition->items.size() == 4 &&
-            textRecognition->items.at(0).id == QStringLiteral("text-recognition.model-type") &&
             textRecognition->items.at(1).id ==
                 QStringLiteral("text-recognition.direct-ml-acceleration") &&
+#endif
+            textRecognition->items.at(0).id == QStringLiteral("text-recognition.model-type") &&
             modelType != nullptr &&
             modelType->configurationKey == QStringLiteral("text_recognition/model_type") &&
             modelTypeSelect != nullptr &&
@@ -998,7 +1008,7 @@ void globalMouseSettingsHaveStableContracts() {
             history->pageId == QStringLiteral("screenshot-history"),
         "navigation order must be Global hotkeys, Global mouse, Screenshot history, Translation");
 
-    for (qsizetype index = 0; index < std::size(expectations); ++index) {
+    for (qsizetype index = 0; index < static_cast<qsizetype>(std::size(expectations)); ++index) {
         const auto& expected = expectations[index];
         const auto& item = index < section->items.size() ? section->items.at(index)
                                                          : recording->items.constFirst();
@@ -1440,8 +1450,14 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 210 && index.search(QString()).size() == 210,
-            "search must generate all catalog nodes in catalog order");
+#ifdef Q_OS_MACOS
+    constexpr qsizetype expectedNodes = 209;
+#else
+    constexpr qsizetype expectedNodes = 210;
+#endif
+    require(index.entries().size() == expectedNodes &&
+                index.search(QString()).size() == expectedNodes,
+            "search must generate all visible catalog nodes in catalog order");
     const auto pdfPaper = index.search(QStringLiteral("Landscape A4"));
     require(!pdfPaper.isEmpty() && pdfPaper.constFirst().location.itemId ==
                                        QStringLiteral("screenshot-output.pdf-page-size"),
@@ -1500,7 +1516,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 38 && items == 160,
+    require(pages == 12 && sections == 38 && items == expectedNodes - pages - sections,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

@@ -681,15 +681,15 @@ QString ColorPickerValueModel::colorToString(const QColor& color, Format format)
         .arg(color.red())
         .arg(color.green())
         .arg(color.blue())
-        .arg(formatPercent(color.alphaF()));
+        .arg(formatPercent(static_cast<double>(color.alphaF())));
   }
 
   int hue = color.hsvHue();
   if (hue < 0) {
     hue = 0;
   }
-  const int sat = qRound(color.saturationF() * 100.0);
-  const int bri = qRound(color.valueF() * 100.0);
+  const int sat = qRound(static_cast<double>(color.saturationF()) * 100.0);
+  const int bri = qRound(static_cast<double>(color.valueF()) * 100.0);
   if (color.alpha() >= 255) {
     return QStringLiteral("hsb(%1, %2%, %3%)").arg(hue).arg(sat).arg(bri);
   }
@@ -697,7 +697,7 @@ QString ColorPickerValueModel::colorToString(const QColor& color, Format format)
       .arg(hue)
       .arg(sat)
       .arg(bri)
-      .arg(formatPercent(color.alphaF()));
+      .arg(formatPercent(static_cast<double>(color.alphaF())));
 }
 
 QString ColorPickerValueModel::colorToCss(const QColor& color) {
@@ -711,7 +711,7 @@ QString ColorPickerValueModel::colorToCss(const QColor& color) {
       .arg(color.red())
       .arg(color.green())
       .arg(color.blue())
-      .arg(formatPercent(color.alphaF()));
+      .arg(formatPercent(static_cast<double>(color.alphaF())));
 }
 
 QString ColorPickerValueModel::formattedColorString(const QColor& color, Format format) {

@@ -302,7 +302,7 @@ class AdInputNumber final : public QAbstractSpinBox {
   void setTextPolicy(AdInputNumberTextPolicy* value);
 
   QString displayText() const;
-  void clear();
+  void clear() override;
 
   AppearanceOverrides appearanceOverrides() const;
   void setAppearanceOverrides(const AppearanceOverrides& overrides);

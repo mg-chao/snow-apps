@@ -86,10 +86,11 @@ scripts/package-snow-shot.sh snow-shot-macos-arm64-release
 The release script builds and produces a DMG plus SHA-256 checksum under the
 preset's build directory. CPack installs only the Snow Shot component, runs the
 matching Qt kit's `macdeployqt`, and verifies the ad-hoc bundle signature. The
-bundle includes Qt plugins/frameworks, native dylibs, the OCR helper and updater,
+bundle includes Qt plugins/frameworks (including offscreen startup-probe support), native dylibs, the OCR helper and updater,
 QR models, shutter audio, and project license notices. Executable-relative
-assets remain under `Contents/MacOS`; libraries are deployed in
-`Contents/Frameworks`. A plain `cmake --install build/<preset> --component
+asset lookup paths remain under `Contents/MacOS`; deployment moves data into
+`Contents/Resources` and creates relative `assets`/`audios` directory links so
+code signing seals them as resources. Libraries are deployed in `Contents/Frameworks`. A plain `cmake --install build/<preset> --component
 SnowShot --prefix /path/to/staging` performs the same deployment without a DMG.
 
 Ad-hoc signing supports local testing. Public distribution still requires
@@ -99,9 +100,81 @@ before launching; this also resolves the OCR helper's dynamically loaded librari
 Launch through the run script/Finder and grant Screen Recording, Accessibility,
 and microphone permissions when using the corresponding capabilities.
 
-These build changes do not implement feature parity with Windows. In particular,
-the managed OCR download manifest currently describes a Windows x64 payload;
-shipping the CPU OCR helper does not port that asset-management contract. The
-Windows updater/installer, DirectML, and Crashpad packaging remain Windows-only.
+Apple Silicon OCR uses native CPU inference with all seven existing V4/V5/V6
+models. The ARM64 app bundles its worker, ONNX Runtime, and Small V6 model;
+other models download on demand into application storage. No OCR runtime code
+is downloaded on macOS. Intel OCR qualification is outside this delivery.
+The Windows updater/installer, DirectML, and Crashpad packaging remain Windows-only.
 The standalone `bootstrap-macos-media.sh` and `build-macos-media.sh` workflows
 remain available for media harness development.
+
+## Apple Silicon OCR validation
+
+The runtime uses protocol 3. Its generated schema-3 manifest records
+`macos-arm64`, `delivery: bundled`, the executable name, and the size/SHA-256 of
+the worker and ONNX library. The existing Windows schema-2 manifest remains the
+source of the seven pinned model contracts; its Windows runtime is never staged
+on macOS. Runtime binaries live in `Contents/MacOS`; models and the manifest are
+accessed through `Contents/MacOS/assets/ocr` (a resource link in signed bundles). The worker loads its adjacent ONNX library by absolute
+path, independent of the shell environment. A damaged runtime requires reinstalling
+the ARM64 app; verified downloaded models remain reusable.
+
+Build staging checks content on every relevant target build, including a worker-only
+change followed by a host build. Model downloads are verified before promotion and
+cached under `artifacts/`. Packaging requires a complete Small V6 payload. Deployment
+resolves the pinned native dependency closure, rewrites relocatable Mach-O loads,
+and signs nested code, generates hashes of the finalized
+runtime, then seals the enclosing app. CPack signs and verifies the DMG before
+calculating its SHA-256 checksum. No runtime binary may be modified afterward.
+The installer writes `macos-ocr-verification.json` in the build directory, listing
+verified Mach-O binaries and runtime hashes. This is local integrity validation;
+ad-hoc signing is not Developer ID signing or notarization.
+
+Focused deterministic checks (the asset executable needs no worker or real models):
+
+```sh
+scripts/build.sh snow-shot-macos-arm64-performance --target snow-shot-ocr-assets-tests
+ctest --preset test-snow-shot-macos-arm64-performance -R '^snow-shot-ocr-assets-tests$'
+python3 scripts/test-snow-shot-macos-ocr.py
+scripts/check-rust.sh snow-ocr-process -- --no-default-features --features dynamic-onnx-runtime
+scripts/check-rust.sh rapid-ocr-rs -- --no-default-features --features dynamic-onnx-runtime
+```
+
+Build the recognition test target and fetch all verified models for the opt-in
+native checks. Use only the performance preset when passing `--measure`:
+
+```sh
+scripts/build.sh snow-shot-macos-arm64-performance --target snow-shot-ocr-recognition-service-tests
+ctest --preset test-snow-shot-macos-arm64-performance \
+  -R '^snow-shot-ocr-(cpu-recognition-service|process-lifecycle|managed-runtime)-tests$'
+python3 scripts/snow-shot-macos-ocr.py fetch-models --model-root build/ocr-versioned-models
+export SNOW_TEST_OCR_TEXT_FIXTURE="$PWD/snow_shot/tests/baselines/ocr-model-versions.png"
+# Use the recognition test executable emitted by this build:
+OCR_TEST="$PWD/build/snow-shot-macos-arm64-performance/snow_shot/test-bin/snow-shot-ocr-recognition-service-tests"
+"$OCR_TEST" --model-root="$PWD/build/ocr-versioned-models" --measure
+"$OCR_TEST" --resident-text-fixture
+"$OCR_TEST" --model-root="$PWD/build/ocr-versioned-models" --resident-models
+```
+
+The seven-model run checks bilingual text, geometry, FIFO callbacks and repeated
+inference. Measurements report the first cold request, the following request using
+the same session, and the worker's resident bytes sampled after each result (not
+peak RSS). Cold means a new worker/model session, without flushing the operating
+system's file cache. They are hardware-dependent observations, not a latency guarantee.
+
+After packaging, relocate the app to a path containing spaces or Unicode and test
+the exact bundle without modifying its signature:
+
+```sh
+"$OCR_TEST" --bundle="/path/to/Relocated Snow Shot.app" --offline
+"$OCR_TEST" --bundle="/path/to/Relocated Snow Shot.app" --model=extra_small --cache="/tmp/snow-ocr-cache"
+"$OCR_TEST" --bundle="/path/to/Relocated Snow Shot.app" --model=extra_small --cache="/tmp/snow-ocr-cache" --offline
+python3 scripts/snow-shot-macos-ocr.py verify \
+  --runtime-dir="/path/to/Relocated Snow Shot.app/Contents/MacOS" \
+  --app="/path/to/Relocated Snow Shot.app"
+```
+
+The first run uses a fresh temporary cache and an unreachable download proxy. The
+second acquires another model; the third proves cache reuse without network access.
+Run with `DYLD_LIBRARY_PATH`, `DYLD_FALLBACK_LIBRARY_PATH`, and `ORT_DYLIB_PATH` unset.
+Also launch the packaged app through Finder and check its screenshot-to-OCR flow.

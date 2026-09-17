@@ -140,7 +140,7 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
     applyToolbarSize(snow_shot::storage::ScreenshotUiSettings().toolbarSize());
     auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
     connect(&configuration, &snow_shot::storage::ConfigurationStore::valueChanged, this,
-            [this, applyToolbarSize](const QString& key, const QJsonValue&) {
+            [applyToolbarSize](const QString& key, const QJsonValue&) {
                 if (key == QStringLiteral("screenshot_ui/toolbar_size")) {
                     applyToolbarSize(snow_shot::storage::ScreenshotUiSettings().toolbarSize());
                 }
@@ -582,8 +582,8 @@ void ScreenshotFloatingToolPaletteWindow::updatePaletteGeometryForVisibleContent
         return;
     }
 
-    const QSize previousHostSize = m_paletteHost->size();
-    const QPoint previousHostPosition = m_paletteHost->pos();
+    [[maybe_unused]] const QSize previousHostSize = m_paletteHost->size();
+    [[maybe_unused]] const QPoint previousHostPosition = m_paletteHost->pos();
     m_paletteHost->prepareForDisplay();
     const QSize windowSize = fixedWindowSizeHint();
     m_paletteHost->setFrameSize(windowSize, m_styleToolbarAboveMain);

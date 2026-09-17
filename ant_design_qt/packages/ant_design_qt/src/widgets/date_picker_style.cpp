@@ -28,7 +28,8 @@ QColor lighten(const QColor& value, qreal amountPercent, const QColor& fallback)
     return fallback;
   }
   const QColor rgb = value.toRgb();
-  return QColor(adqt::theme::FastColorLite(rgb.red(), rgb.green(), rgb.blue(), rgb.alphaF())
+  return QColor(adqt::theme::FastColorLite(rgb.red(), rgb.green(), rgb.blue(),
+                                           static_cast<double>(rgb.alphaF()))
                     .lighten(amountPercent)
                     .toHexString());
 }

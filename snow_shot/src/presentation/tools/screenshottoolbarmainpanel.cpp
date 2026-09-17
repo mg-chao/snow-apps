@@ -381,7 +381,7 @@ void ScreenshotToolbarMainPanel::applyMetrics() {
         return qMax(0, scaledEdges.at(index + 1) - scaledEdges.at(index));
     };
     m_layout->setContentsMargins(scaledWidthAt(0), scaledMetric(kPanelMarginTop, m_physicalScale),
-                                 scaledWidthAt(referenceWidths.size() - 1),
+                                 scaledWidthAt(static_cast<int>(referenceWidths.size()) - 1),
                                  scaledMetric(kPanelMarginBottom, m_physicalScale));
     for (int index = 0; index < m_layout->count(); ++index) {
         QLayoutItem* layoutItem = m_layout->itemAt(index);

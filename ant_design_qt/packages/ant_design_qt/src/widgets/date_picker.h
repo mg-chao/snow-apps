@@ -1031,7 +1031,7 @@ class AdDatePicker final : public QWidget, private detail::OverlayPopupControlle
   Placement placement() const;
   void setPlacement(Placement value);
 
-  PopupLayerMode popupLayerMode() const;
+  PopupLayerMode popupLayerMode() const override;
   void setPopupLayerMode(PopupLayerMode value);
 
   ComponentTokens componentTokens() const;
@@ -1693,7 +1693,7 @@ class AdDateRangePicker final : public QWidget, private detail::OverlayPopupCont
   Placement placement() const;
   void setPlacement(Placement value);
 
-  PopupLayerMode popupLayerMode() const;
+  PopupLayerMode popupLayerMode() const override;
   void setPopupLayerMode(PopupLayerMode value);
 
   ComponentTokens componentTokens() const;

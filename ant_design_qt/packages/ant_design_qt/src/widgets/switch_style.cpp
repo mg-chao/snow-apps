@@ -21,7 +21,8 @@ QColor multiplyAlpha(const QColor& color, qreal opacity) {
     return color;
   }
   QColor out = color;
-  out.setAlphaF(static_cast<float>(std::clamp(color.alphaF() * opacity, 0.0, 1.0)));
+  out.setAlphaF(
+      static_cast<float>(std::clamp(static_cast<double>(color.alphaF()) * opacity, 0.0, 1.0)));
   return out;
 }
 

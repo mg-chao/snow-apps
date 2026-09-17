@@ -139,37 +139,6 @@ std::uint64_t sceneCacheContentKey(const SceneDisplayInfo& sceneInfo,
     return static_cast<std::uint64_t>(key);
 }
 
-QRect filterAffectedViewRect(QRect affected, const SnowCanvasDisplayCache& cache,
-                             const QRect& viewport) {
-    const SceneDisplayInfo& displayInfo = cache.sceneInfo();
-    const double zoom = qMax(0.0, displayInfo.camera_zoom);
-    const SnowCanvasSceneItem* items = cache.sceneItems();
-    for (std::uint32_t index = 0; items != nullptr && index < cache.sceneItemCount();) {
-        if (items[index].kind != SNOW_SCENE_DISPLAY_ITEM_FILTER) {
-            ++index;
-            continue;
-        }
-        const QRect entering = affected;
-        while (index < cache.sceneItemCount() &&
-               items[index].kind == SNOW_SCENE_DISPLAY_ITEM_FILTER) {
-            const SnowCanvasSceneItem& filter = items[index++];
-            if (filter.opacity <= 0.0) {
-                continue;
-            }
-            const double radius = qMax(0.0, filter.filter.sampling_radius) * zoom;
-            const QRect filterBounds = snow_canvas_render_geometry::alignedRectForBounds(
-                snow_canvas_render_geometry::sceneItemBounds(displayInfo, filter));
-            const QRect propagated =
-                entering.adjusted(-qCeil(radius), -qCeil(radius), qCeil(radius), qCeil(radius))
-                    .intersected(filterBounds);
-            if (!propagated.isEmpty()) {
-                affected = affected.united(propagated);
-            }
-        }
-    }
-    return affected.intersected(viewport);
-}
-
 bool isPointerInput(const SnowInputEvent& input, SnowPointerEventType eventType) {
     return input.kind == SNOW_INPUT_EVENT_POINTER && input.pointer.event_type == eventType;
 }

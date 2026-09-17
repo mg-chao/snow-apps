@@ -10,6 +10,7 @@ set(CPACK_PACKAGE_CHECKSUM SHA256)
 set(CPACK_GENERATOR DragNDrop)
 set(CPACK_DMG_VOLUME_NAME "Snow Shot")
 set(CPACK_DMG_FORMAT UDZO)
+set(CPACK_POST_BUILD_SCRIPTS "${CMAKE_CURRENT_LIST_DIR}/SignSnowShotMacOSDmg.cmake")
 # Do not ship SDK headers, static archives or other projects' install rules.
 set(CPACK_INSTALL_CMAKE_PROJECTS "${CMAKE_BINARY_DIR};${CMAKE_PROJECT_NAME};SnowShot;/")
 include(CPack)

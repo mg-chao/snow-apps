@@ -957,7 +957,7 @@ QString colorToRgbCssCompact(const QColor& color) {
       .arg(color.red())
       .arg(color.green())
       .arg(color.blue())
-      .arg(formatPercent(color.alphaF()));
+      .arg(formatPercent(static_cast<double>(color.alphaF())));
 }
 
 QString colorToTriggerHexText(const QColor& color) {
@@ -970,7 +970,7 @@ QString colorToTriggerHexText(const QColor& color) {
     return hex;
   }
 
-  const int alphaPercent = std::clamp(qRound(color.alphaF() * 100.0), 0, 100);
+  const int alphaPercent = std::clamp(qRound(static_cast<double>(color.alphaF()) * 100.0), 0, 100);
   return QStringLiteral("%1,%2%").arg(hex).arg(alphaPercent);
 }
 
@@ -4904,7 +4904,7 @@ void AdColorPicker::refreshStyle(bool preserveCurrentTriggerWidth) {
 
   auto compositeOn = [](const QColor& foreground, const QColor& background) {
     const float alpha = std::clamp(foreground.alphaF(), 0.0F, 1.0F);
-    if (alpha >= 0.999) {
+    if (alpha >= 0.999F) {
       return foreground;
     }
     QColor composite;
@@ -4961,11 +4961,12 @@ void AdColorPicker::refreshStyle(bool preserveCurrentTriggerWidth) {
   auto isPresetBright = [&samplePresetColor](const ColorValue& value) {
     const QColor sample = samplePresetColor(value);
     const QColor hsv = sample.toHsv();
-    if (sample.alphaF() <= 0.5) {
-      return hsv.valueF() > 0.5;
+    if (static_cast<double>(sample.alphaF()) <= 0.5) {
+      return static_cast<double>(hsv.valueF()) > 0.5;
     }
-    return sample.redF() * 255.0 * 0.299 + sample.greenF() * 255.0 * 0.587 +
-               sample.blueF() * 255.0 * 0.114 >
+    return static_cast<double>(sample.redF()) * 255.0 * 0.299 +
+               static_cast<double>(sample.greenF()) * 255.0 * 0.587 +
+               static_cast<double>(sample.blueF()) * 255.0 * 0.114 >
            192.0;
   };
 
@@ -5253,9 +5254,9 @@ void AdColorPicker::refreshPanelControlsFromState(bool minimal) {
     if (hue < 0) {
       hue = 0;
     }
-    const int sat = qRound(color.saturationF() * 100.0);
-    const int bri = qRound(color.valueF() * 100.0);
-    const int alpha = qRound(color.alphaF() * 100.0);
+    const int sat = qRound(static_cast<double>(color.saturationF()) * 100.0);
+    const int bri = qRound(static_cast<double>(color.valueF()) * 100.0);
+    const int alpha = qRound(static_cast<double>(color.alphaF()) * 100.0);
 
     const bool fromSaturation = livePanelSyncSource_ == LivePanelSyncSource::SaturationPanel;
     const bool fromHue = livePanelSyncSource_ == LivePanelSyncSource::HueSlider;
@@ -5330,9 +5331,9 @@ void AdColorPicker::refreshPanelControlsFromState(bool minimal) {
   if (hue < 0) {
     hue = 0;
   }
-  const int sat = qRound(color.saturationF() * 100.0);
-  const int bri = qRound(color.valueF() * 100.0);
-  const int alpha = qRound(color.alphaF() * 100.0);
+  const int sat = qRound(static_cast<double>(color.saturationF()) * 100.0);
+  const int bri = qRound(static_cast<double>(color.valueF()) * 100.0);
+  const int alpha = qRound(static_cast<double>(color.alphaF()) * 100.0);
 
   if (hueSlider_) {
     hueSlider_->setValue(hue);
@@ -5427,7 +5428,7 @@ void AdColorPicker::refreshPanelControlsForOpenInteraction(bool commit) {
   }
 
   const QColor color = currentEditableColor().toHsv();
-  const int alpha = std::clamp(qRound(color.alphaF() * 100.0), 0, 100);
+  const int alpha = std::clamp(qRound(static_cast<double>(color.alphaF()) * 100.0), 0, 100);
   if (alphaInput_) {
     setInputNumberValueIfChanged(alphaInput_, alpha);
     alphaInput_->setEnabled(!(disabled() || disabledAlpha_));
@@ -5439,7 +5440,7 @@ void AdColorPicker::refreshPanelControlsForOpenInteraction(bool commit) {
 
 void AdColorPicker::refreshInteractiveEditorsFromState() {
   const QColor color = currentEditableColor().toHsv();
-  const int alpha = std::clamp(qRound(color.alphaF() * 100.0), 0, 100);
+  const int alpha = std::clamp(qRound(static_cast<double>(color.alphaF()) * 100.0), 0, 100);
 
   if (alphaInput_ && livePanelSyncSource_ != LivePanelSyncSource::AlphaInput) {
     setInputNumberValueIfChanged(alphaInput_, alpha);
@@ -5479,8 +5480,8 @@ void AdColorPicker::refreshInteractiveEditorsFromState() {
   if (hue < 0) {
     hue = 0;
   }
-  const int sat = std::clamp(qRound(color.saturationF() * 100.0), 0, 100);
-  const int bri = std::clamp(qRound(color.valueF() * 100.0), 0, 100);
+  const int sat = std::clamp(qRound(static_cast<double>(color.saturationF()) * 100.0), 0, 100);
+  const int bri = std::clamp(qRound(static_cast<double>(color.valueF()) * 100.0), 0, 100);
   if (hsbInputH_) {
     setInputNumberValueIfChanged(hsbInputH_, hue);
   }
@@ -5731,8 +5732,8 @@ void AdColorPicker::updateFormatInputText() {
   if (hue < 0) {
     hue = 0;
   }
-  const int sat = std::clamp(qRound(color.saturationF() * 100.0), 0, 100);
-  const int bri = std::clamp(qRound(color.valueF() * 100.0), 0, 100);
+  const int sat = std::clamp(qRound(static_cast<double>(color.saturationF()) * 100.0), 0, 100);
+  const int bri = std::clamp(qRound(static_cast<double>(color.valueF()) * 100.0), 0, 100);
   if (hsbInputH_) {
     setInputNumberValueIfChanged(hsbInputH_, hue);
   }

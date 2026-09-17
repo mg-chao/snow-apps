@@ -1,4 +1,8 @@
 set(_app "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/snow_shot.app")
+if(@SNOW_MACOS_OCR_ASSETS_ENABLED@)
+    execute_process(COMMAND "@Python3_EXECUTABLE@" "@SNOW_MACOS_OCR_TOOL@" prepare-bundle
+        --app "${_app}" --library-dir "@SNOW_FFMPEG_ROOT@/lib" COMMAND_ERROR_IS_FATAL ANY)
+endif()
 # This dlopen-only library is deliberately renamed to ORT's stable lookup name.
 # Update its own Mach-O ID before macdeployqt scans it as an extra executable.
 execute_process(COMMAND /usr/bin/install_name_tool -id "@loader_path/libonnxruntime.dylib"
@@ -10,12 +14,27 @@ execute_process(COMMAND "@SNOW_MACDEPLOYQT@" "${_app}"
     "-executable=${_app}/Contents/MacOS/snow-ocr-process"
     "-executable=${_app}/Contents/MacOS/snow-shot-updater"
     "-executable=${_app}/Contents/MacOS/libonnxruntime.dylib"
+    "-executable=${_app}/Contents/PlugIns/platforms/libqoffscreen.dylib"
     "-libpath=@SNOW_FFMPEG_ROOT@/lib"
     "-libpath=@SNOW_FFMPEG_ROOT@/debug/lib"
     -always-overwrite -codesign=-
     RESULT_VARIABLE _result OUTPUT_VARIABLE _output ERROR_VARIABLE _error)
 if(NOT _result EQUAL 0 OR "${_output}${_error}" MATCHES "ERROR:")
     message(FATAL_ERROR "macdeployqt failed (${_result}):\n${_output}\n${_error}")
+endif()
+if(@SNOW_MACOS_OCR_ASSETS_ENABLED@)
+    # macdeployqt has now rewritten and signed all nested Mach-O files. Pin those
+    # final bytes, then seal the changed resources without re-signing nested code.
+    execute_process(COMMAND "@Python3_EXECUTABLE@" "@SNOW_MACOS_OCR_TOOL@" finalize --deployed
+        --manifest "@SNOW_MACOS_OCR_MANIFEST@"
+        --runtime-dir "${_app}/Contents/MacOS" COMMAND_ERROR_IS_FATAL ANY)
+    execute_process(COMMAND /usr/bin/codesign --force --sign - "${_app}"
+        COMMAND_ERROR_IS_FATAL ANY)
+    execute_process(COMMAND "@Python3_EXECUTABLE@" "@SNOW_MACOS_OCR_TOOL@" verify
+        --manifest "@SNOW_MACOS_OCR_MANIFEST@"
+        --runtime-dir "${_app}/Contents/MacOS" --app "${_app}"
+        --report "@CMAKE_BINARY_DIR@/macos-ocr-verification.json"
+        COMMAND_ERROR_IS_FATAL ANY)
 endif()
 execute_process(COMMAND /usr/bin/codesign --verify --deep --strict "${_app}"
     RESULT_VARIABLE _result)

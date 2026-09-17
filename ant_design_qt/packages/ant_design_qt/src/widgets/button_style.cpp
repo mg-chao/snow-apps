@@ -80,7 +80,7 @@ QColor withAlpha(const QColor& color, double alpha) {
 bool isStableChannel(int value) { return value >= 0 && value <= 255; }
 
 QColor resolveAlphaColor(const QColor& frontColor, const QColor& backgroundColor) {
-  if (frontColor.alphaF() < 1.0) {
+  if (frontColor.alphaF() < 1.0F) {
     return frontColor;
   }
 

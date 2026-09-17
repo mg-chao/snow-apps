@@ -126,6 +126,7 @@ class MacOSBundle(unittest.TestCase):
             run("cmake", "--build", str(out))
             run("cmake", "--install", str(out), "--component", "SnowShot", "--prefix", str(stage))
             app = stage / "snow_shot.app"
+            self.assertTrue((app / "Contents/PlugIns/platforms/libqoffscreen.dylib").is_file())
             for name in ("snow_shot", "snow-ocr-process", "snow-shot-updater"):
                 binary = app / "Contents/MacOS" / name
                 run(str(binary), cwd="/")
@@ -136,6 +137,11 @@ class MacOSBundle(unittest.TestCase):
             run("cpack", "--config", str(out / "CPackConfig.cmake"), cwd=str(out))
             self.assertEqual(len(list(out.glob("*.dmg"))), 1)
             self.assertEqual(len(list(out.glob("*.dmg.sha256"))), 1)
+            dmg = next(out.glob("*.dmg"))
+            run("codesign", "--verify", "--strict", str(dmg))
+            import hashlib
+            checksum = dmg.with_suffix(".dmg.sha256").read_text().split()[0]
+            self.assertEqual(checksum, hashlib.sha256(dmg.read_bytes()).hexdigest())
 
 
 if __name__ == '__main__':
