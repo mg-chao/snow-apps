@@ -2433,11 +2433,16 @@ QWidget* ScreenshotToolPaletteStyleControls::buildWatermarkFamily(
                 }
                 openCreateWatermarkTemplateModal();
             });
-            QObject::connect(addButton, &QObject::destroyed, addButton, [this, addButton]() {
-                if (m_watermarkTemplateAddButton == addButton) {
-                    m_watermarkTemplateAddButton = nullptr;
-                }
-            });
+            // Scope the connection to the select rather than the button: the
+            // popup frame outlives the palette when its deferred delete lands
+            // later, and a receiver that dies with the palette keeps the
+            // handler from dereferencing freed style controls.
+            QObject::connect(addButton, &QObject::destroyed, m_watermarkTemplateSelect,
+                             [this, addButton]() {
+                                 if (m_watermarkTemplateAddButton == addButton) {
+                                     m_watermarkTemplateAddButton = nullptr;
+                                 }
+                             });
             return addButton;
         });
 
