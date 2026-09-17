@@ -4447,6 +4447,18 @@ void clickingActiveToolbarToolReturnsToSelect() {
 
 void repeatingDrawingShortcutsReturnsToSelect() {
     using Tool = ScreenshotToolPalette::Tool;
+    const snow_shot::storage::ScreenshotToolbarSettings toolbarSettings;
+    const QString originalFilter = toolbarSettings.lastFilterTool();
+    const QString originalHighlight = toolbarSettings.lastHighlightTool();
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(toolbarSettings.setLastFilterTool(originalFilter));
+        static_cast<void>(toolbarSettings.setLastHighlightTool(originalHighlight));
+    });
+    // The generic entries activate the remembered drawing mode, which is persisted
+    // toolbar state; pin the defaults so this test stays order-independent.
+    require(toolbarSettings.setLastFilterTool(QStringLiteral("pen-filter")) &&
+                toolbarSettings.setLastHighlightTool(QStringLiteral("pen-highlight")),
+            "drawing shortcut tests must start from the default remembered modes");
     ScreenshotToolPalette::Options options;
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
@@ -5161,6 +5173,13 @@ void eraserToolIsDiscoverableAndHidesStyleControls() {
 
 void drawingModeSelectionsSurviveToolbarReentry() {
     using Tool = ScreenshotToolPalette::Tool;
+    const snow_shot::storage::ScreenshotToolbarSettings toolbarSettings;
+    const QString originalFilter = toolbarSettings.lastFilterTool();
+    const QString originalHighlight = toolbarSettings.lastHighlightTool();
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(toolbarSettings.setLastFilterTool(originalFilter));
+        static_cast<void>(toolbarSettings.setLastHighlightTool(originalHighlight));
+    });
     ScreenshotToolPalette::Options options;
     options.showHighlightTool = true;
     options.showFilterTool = true;
@@ -5209,7 +5228,72 @@ void drawingModeSelectionsSurviveToolbarReentry() {
     }
 }
 
+void rememberedDrawingModesPersistAcrossPaletteInstances() {
+    using Tool = ScreenshotToolPalette::Tool;
+    const snow_shot::storage::ScreenshotToolbarSettings toolbarSettings;
+    const QString originalFilter = toolbarSettings.lastFilterTool();
+    const QString originalHighlight = toolbarSettings.lastHighlightTool();
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(toolbarSettings.setLastFilterTool(originalFilter));
+        static_cast<void>(toolbarSettings.setLastHighlightTool(originalHighlight));
+    });
+    require(toolbarSettings.setLastFilterTool(QStringLiteral("pen-filter")) &&
+                toolbarSettings.setLastHighlightTool(QStringLiteral("pen-highlight")),
+            "remembered drawing mode tests must start from the default preferences");
+
+    ScreenshotToolPalette::Options options;
+    options.showHighlightTool = true;
+    options.showFilterTool = true;
+
+    ScreenshotToolPalette observer(options);
+    {
+        ScreenshotToolPalette palette(options);
+        const auto selectMode = [&palette](Tool current, Tool next) {
+            palette.setActiveTool(current);
+            for (auto* group : palette.findChildren<adqt::widgets::AdRadioButtonGroup*>()) {
+                if (group->button(static_cast<int>(next)) != nullptr) {
+                    group->button(static_cast<int>(next))->click();
+                    require(palette.activeToolForTests() == next,
+                            "mode selector should activate the requested mode");
+                    return;
+                }
+            }
+            require(false, "drawing mode selector should exist");
+        };
+        selectMode(Tool::PenFilter, Tool::RectangleFilter);
+        selectMode(Tool::PenHighlight, Tool::RectangleHighlight);
+        require(toolbarSettings.lastFilterTool() == QStringLiteral("rectangle-filter") &&
+                    toolbarSettings.lastHighlightTool() == QStringLiteral("rectangle-highlight"),
+                "activating a drawing mode should persist it as a toolbar preference");
+    }
+
+    // Pin-to-screen editing rebuilds the toolbar for every edit session, so a new
+    // palette instance must restore the remembered modes instead of the defaults.
+    ScreenshotToolPalette restored(options);
+    require(restored.activateDrawingShortcut(QStringLiteral("filter")) &&
+                restored.activeToolForTests() == Tool::RectangleFilter,
+            "a rebuilt palette should restore the remembered filter mode");
+    restored.setActiveTool(Tool::Select);
+    require(restored.activateDrawingShortcut(QStringLiteral("highlight")) &&
+                restored.activeToolForTests() == Tool::RectangleHighlight,
+            "a rebuilt palette should restore the remembered highlight mode");
+
+    // Palettes that stay alive (the screenshot window caches its toolbar) must
+    // observe preference updates written by other windows.
+    require(observer.activateDrawingShortcut(QStringLiteral("filter")) &&
+                observer.activeToolForTests() == Tool::RectangleFilter,
+            "a live palette should follow remembered-mode updates from other instances");
+}
+
 void filterToolExposesTypeAndIntensityControls() {
+    const snow_shot::storage::ScreenshotToolbarSettings toolbarSettings;
+    const QString originalFilter = toolbarSettings.lastFilterTool();
+    const auto cleanup = qScopeGuard(
+        [&]() { static_cast<void>(toolbarSettings.setLastFilterTool(originalFilter)); });
+    // The Filter entry activates the remembered mode, which is persisted toolbar
+    // state; pin the default so this test stays order-independent.
+    require(toolbarSettings.setLastFilterTool(QStringLiteral("pen-filter")),
+            "filter control tests must start from the default remembered filter mode");
     ScreenshotToolPalette::Options options;
     options.showShapeTool = false;
     options.showArrowTool = false;
@@ -10296,6 +10380,7 @@ int main(int argc, char** argv) {
         autoFilterControlsShareStylesAndKeepCategoryUnselected();
         filterToolExposesTypeAndIntensityControls();
         filterStyleEditorsMatchShapeAndSpotlightMetrics();
+        rememberedDrawingModesPersistAcrossPaletteInstances();
         canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
@@ -10540,6 +10625,7 @@ int main(int argc, char** argv) {
     filterTypeSelectKeepsSmartEraseAcrossFilterModeSwitches();
     filterToolExposesTypeAndIntensityControls();
     drawingModeSelectionsSurviveToolbarReentry();
+    rememberedDrawingModesPersistAcrossPaletteInstances();
     filterStyleEditorsMatchShapeAndSpotlightMetrics();
     watermarkToolExposesSharedStyleControls();
     watermarkStyleEditorMatchesShapeHeight();

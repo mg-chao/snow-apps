@@ -1288,6 +1288,22 @@ bool ScreenshotToolbarSettings::setTableQrTool(const QString& tool) const {
     return cache().setValue(QStringLiteral("screenshot_toolbar/table_qr_tool"), tool);
 }
 
+QString ScreenshotToolbarSettings::lastFilterTool() const {
+    return cache().value(QStringLiteral("screenshot_toolbar/last_filter_tool")).toString();
+}
+
+bool ScreenshotToolbarSettings::setLastFilterTool(const QString& tool) const {
+    return cache().setValue(QStringLiteral("screenshot_toolbar/last_filter_tool"), tool);
+}
+
+QString ScreenshotToolbarSettings::lastHighlightTool() const {
+    return cache().value(QStringLiteral("screenshot_toolbar/last_highlight_tool")).toString();
+}
+
+bool ScreenshotToolbarSettings::setLastHighlightTool(const QString& tool) const {
+    return cache().setValue(QStringLiteral("screenshot_toolbar/last_highlight_tool"), tool);
+}
+
 namespace {
 QString screenshotToolbarLayoutKey(ScreenshotToolbarLayoutKind kind) {
     switch (kind) {

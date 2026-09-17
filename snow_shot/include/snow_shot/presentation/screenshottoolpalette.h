@@ -516,6 +516,7 @@ class ScreenshotToolPalette final : public QWidget {
     adqt::widgets::AdButton* drawingToolButton(const QString& itemId) const;
     adqt::widgets::AdButton* drawingToolEntryButton(Tool tool) const;
     Tool rememberedDrawingMode(Tool tool) const;
+    void rememberDrawingMode(Tool tool);
     void clearDrawingToolGroups();
     bool activateToolFromToolbar(Tool tool, bool toggleVisibleButton = true);
     void activateDrawingTool(Tool tool);

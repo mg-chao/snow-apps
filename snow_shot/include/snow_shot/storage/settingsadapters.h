@@ -339,6 +339,10 @@ class ScreenshotToolbarSettings final {
   public:
     [[nodiscard]] QString tableQrTool() const;
     bool setTableQrTool(const QString& tool) const;
+    [[nodiscard]] QString lastFilterTool() const;
+    bool setLastFilterTool(const QString& tool) const;
+    [[nodiscard]] QString lastHighlightTool() const;
+    bool setLastHighlightTool(const QString& tool) const;
     [[nodiscard]] ScreenshotToolbarLayout layout(ScreenshotToolbarLayoutKind kind) const;
     bool setLayout(ScreenshotToolbarLayoutKind kind, const ScreenshotToolbarLayout& layout) const;
 };
