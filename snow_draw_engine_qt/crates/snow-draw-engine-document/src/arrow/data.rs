@@ -134,7 +134,7 @@ impl ArrowData {
         self.linear_kind = LinearElementKind::Line;
         self.start_arrowhead = None;
         self.end_arrowhead = None;
-        self.arrow_type = ArrowType::Curve;
+        self.arrow_type = normalized_line_arrow_type(self.arrow_type);
         self.fill = fill;
         self.fill_style = fill_style;
         self
@@ -167,7 +167,7 @@ impl ArrowData {
             self.arrow_type = if self.is_pen_highlight() {
                 ArrowType::Straight
             } else {
-                ArrowType::Curve
+                normalized_line_arrow_type(self.arrow_type)
             };
         }
     }
@@ -318,6 +318,13 @@ impl ArrowData {
             fill_style: self.fill_style,
             opacity: self.opacity,
         }
+    }
+}
+
+fn normalized_line_arrow_type(arrow_type: ArrowType) -> ArrowType {
+    match arrow_type {
+        ArrowType::Straight | ArrowType::Curve => arrow_type,
+        ArrowType::Elbow => ArrowType::Curve,
     }
 }
 
@@ -1128,6 +1135,61 @@ mod line_tests {
         )
         .unwrap()
         .into_line(fill, FillStyle::CrossLine)
+    }
+
+    #[test]
+    fn line_conversion_preserves_supported_types_and_normalizes_elbow() {
+        for (source_type, expected_type) in [
+            (ArrowType::Straight, ArrowType::Straight),
+            (ArrowType::Curve, ArrowType::Curve),
+            (ArrowType::Elbow, ArrowType::Curve),
+        ] {
+            let line = ArrowData::from_global_points(
+                &[Point::new(0.0, 0.0), Point::new(100.0, 50.0)],
+                ColorRgba8::default(),
+                2.0,
+                StrokeStyle::Solid,
+                source_type,
+                Some(Arrowhead::Arrow),
+                Some(Arrowhead::Dot),
+            )
+            .unwrap()
+            .into_line(ColorRgba8::default(), FillStyle::Solid);
+
+            assert!(line.is_line());
+            assert_eq!(line.arrow_type, expected_type);
+            assert_eq!(line.start_arrowhead, None);
+            assert_eq!(line.end_arrowhead, None);
+        }
+    }
+
+    #[test]
+    fn inherited_line_metadata_preserves_the_recomputed_supported_type() {
+        let source = line(
+            &[
+                Point::new(0.0, 0.0),
+                Point::new(50.0, 100.0),
+                Point::new(100.0, 0.0),
+            ],
+            ColorRgba8::default(),
+        );
+        let mut recomputed = ArrowData::from_global_points(
+            &[Point::new(0.0, 0.0), Point::new(100.0, 100.0)],
+            ColorRgba8::default(),
+            2.0,
+            StrokeStyle::Solid,
+            ArrowType::Straight,
+            Some(Arrowhead::Arrow),
+            Some(Arrowhead::Dot),
+        )
+        .unwrap();
+
+        recomputed.inherit_linear_metadata_from(&source);
+
+        assert!(recomputed.is_line());
+        assert_eq!(recomputed.arrow_type, ArrowType::Straight);
+        assert_eq!(recomputed.start_arrowhead, None);
+        assert_eq!(recomputed.end_arrowhead, None);
     }
 
     #[test]

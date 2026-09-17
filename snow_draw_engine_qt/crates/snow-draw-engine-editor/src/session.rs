@@ -127,7 +127,10 @@ impl EditorSession {
         let state = &mut session.editor.state;
         state.default_rectangle_shape_style = persisted.rectangle;
         state.default_arrow_style = persisted.arrow;
-        state.default_line_style = persisted.line;
+        state.default_line_style = ShapeStyle {
+            arrow_type: crate::style::normalized_line_arrow_type(persisted.line.arrow_type),
+            ..persisted.line
+        };
         state.default_free_draw_style = persisted.free_draw;
         state.default_rectangle_highlight_style = persisted.rectangle_highlight;
         state.default_pen_highlight_style = persisted.pen_highlight;

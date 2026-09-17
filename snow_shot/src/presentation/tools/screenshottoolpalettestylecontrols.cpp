@@ -90,6 +90,7 @@ constexpr char kRoleTextFill[] = "text-fill";
 constexpr char kRoleCornerRadius[] = "corner-radius";
 constexpr char kRoleShapeKind[] = "shape-kind";
 constexpr char kRoleArrowType[] = "arrow-type";
+constexpr char kRoleLineType[] = "line-type";
 constexpr char kRoleStartArrowhead[] = "start-arrowhead";
 constexpr char kRoleEndArrowhead[] = "end-arrowhead";
 constexpr char kRoleTextAlignment[] = "text-alignment";
@@ -120,6 +121,7 @@ constexpr char kSignatureTextFill[] = "fill:text-colors";
 constexpr char kSignatureCornerRadius[] = "numeric:corner-radius";
 constexpr char kSignatureShapeKind[] = "radio:shape-kind";
 constexpr char kSignatureArrowType[] = "radio:arrow-type";
+constexpr char kSignatureLineType[] = "radio:line-type";
 constexpr char kSignatureArrowhead[] = "icon-options:arrowhead";
 constexpr char kSignatureTextAlignment[] = "icon-options:text-align";
 constexpr char kSignatureTextStroke[] = "width-color:text-stroke";
@@ -142,6 +144,7 @@ QVector<QByteArray> styleEditorRoles(ScreenshotToolPalette::Tool tool) {
         return {"shape-kind", kRoleOutlineStroke, kRoleOutlineWidth, kRoleShapeFill,
                 kRoleCornerRadius};
     case Tool::Line:
+        return {kRoleOutlineStroke, kRoleOutlineWidth, kRoleLineType, kRoleShapeFill};
     case Tool::FreeDraw:
         return {kRoleOutlineStroke, kRoleOutlineWidth, kRoleShapeFill};
     case Tool::Arrow:
@@ -370,6 +373,8 @@ void finalizeRawEditorRoot(QWidget* root) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Fill color"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Fill color %1"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Fill color transparent"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Straight line"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Curved line"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Highlight color"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Highlight color %1"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Highlight stroke width"),
@@ -1114,6 +1119,8 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         if (destination == Tool::Shape) {
             stageWidget(kRoleShapeKind);
             stageWidget(kRoleCornerRadius);
+        } else if (destination == Tool::Line) {
+            stageWidget(kRoleLineType);
         }
         break;
     case Tool::Arrow:
@@ -1243,6 +1250,7 @@ ScreenshotToolPaletteShapeFamilyResult ScreenshotToolPaletteStyleControls::build
     }
     const auto styleTool = static_cast<ScreenshotToolPalette::Tool>(tool);
     const bool includeShapeOnlyEditors = styleTool == ScreenshotToolPalette::Tool::Shape;
+    const bool includeLineTypeEditor = styleTool == ScreenshotToolPalette::Tool::Line;
     const QString controlsObjectName = styleTool == ScreenshotToolPalette::Tool::Line
                                            ? QStringLiteral("screenshotLineStyleControls")
                                        : styleTool == ScreenshotToolPalette::Tool::FreeDraw
@@ -1357,6 +1365,42 @@ ScreenshotToolPaletteShapeFamilyResult ScreenshotToolPaletteStyleControls::build
     }
     tagEditor(m_shapeStrokeWidthEditor.get(), kRoleOutlineWidth, kSignatureStrokeWidth);
     registerEditor(m_shapeStrokeWidthEditor.get());
+
+    if (includeLineTypeEditor) {
+        if (host.addGroupSeparator) {
+            host.addGroupSeparator(layout);
+        }
+
+        ScreenshotToolPaletteRadioEditorConfig lineTypeConfig;
+        lineTypeConfig.objectName = QStringLiteral("screenshotLineTypeButtonGroup");
+        lineTypeConfig.options = {
+            {0, QStringLiteral("Straight line"), arrowTypeIcon(SnowCanvasArrowType::Straight)},
+            {1, QStringLiteral("Curved line"), arrowTypeIcon(SnowCanvasArrowType::Curve)},
+        };
+        lineTypeConfig.initialId = 1;
+        QWidget* lineTypeControlsContainer =
+            takeReusableWidget(kRoleLineType, kSignatureLineType, layout, controls);
+        if (lineTypeControlsContainer == nullptr) {
+            const ScreenshotToolPaletteRadioEditor lineTypeEditor =
+                createScreenshotToolPaletteRadioEditor(controls, lineTypeConfig, metrics);
+            lineTypeControlsContainer = lineTypeEditor.container;
+            m_lineTypeButtonGroup = lineTypeEditor.group;
+            layout->addWidget(lineTypeControlsContainer);
+        } else {
+            m_lineTypeButtonGroup =
+                lineTypeControlsContainer->findChild<adqt::widgets::AdRadioButtonGroup*>();
+        }
+        lineTypeControlsContainer->setObjectName(lineTypeConfig.objectName);
+        lineTypeControlsContainer->setProperty("screenshotStyleEditorRoot", true);
+        lineTypeControlsContainer->setProperty("screenshotStyleEditorRole", kRoleLineType);
+        lineTypeControlsContainer->setProperty("screenshotStyleEditorSignature",
+                                               kSignatureLineType);
+        QObject::connect(
+            m_lineTypeButtonGroup, &adqt::widgets::AdRadioButtonGroup::checkedIdChanged, controls,
+            [this](int id) {
+                setLineType(id == 0 ? SnowCanvasArrowType::Straight : SnowCanvasArrowType::Curve);
+            });
+    }
 
     if (host.addGroupSeparator) {
         host.addGroupSeparator(layout);
@@ -2833,6 +2877,18 @@ void ScreenshotToolPaletteStyleControls::registerShapeEntries() {
                                            mixed(SnowCanvasShapeStylePropertyFillStyle));
              }
          }},
+        {ShapeArrowTypeRefresh,
+         [this, mixed]() {
+             SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.line.type_refresh");
+             if (m_lineTypeButtonGroup == nullptr) {
+                 return;
+             }
+             const QSignalBlocker blocker(m_lineTypeButtonGroup);
+             m_lineTypeButtonGroup->setCheckedId(
+                 mixed(SnowCanvasShapeStylePropertyArrowType)                      ? -1
+                 : activeShapeStyle().arrowType() == SnowCanvasArrowType::Straight ? 0
+                                                                                   : 1);
+         }},
         {ShapeCornerRefresh,
          [this, mixed]() {
              SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.shape.corner_refresh");
@@ -3226,6 +3282,7 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_highlightColorEditor.reset();
     m_spotlightColorEditor.reset();
     m_shapeButtonGroup = nullptr;
+    m_lineTypeButtonGroup = nullptr;
     m_highlightStrokeEditor.reset();
     m_penHighlightColorEditor.reset();
     m_penHighlightStrokeWidthEditor.reset();
@@ -3326,6 +3383,9 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
         m_cornerRadiusEditor = nullptr;
         m_shapeControlsContainer = nullptr;
         m_shapeButtonGroup = nullptr;
+    }
+    if (destination != Tool::Line) {
+        m_lineTypeButtonGroup = nullptr;
     }
     if (!keepArrow) {
         m_arrowTypeButtonGroup = nullptr;
@@ -3796,6 +3856,7 @@ void ScreenshotToolPaletteStyleControls::refreshToolbarMetrics(
     }
 
     configureScreenshotToolPaletteStyleRadioButtonGroup(m_shapeButtonGroup, metrics);
+    configureScreenshotToolPaletteStyleRadioButtonGroup(m_lineTypeButtonGroup, metrics);
     configureScreenshotToolPaletteStyleRadioButtonGroup(m_arrowTypeButtonGroup, metrics);
 
     for (ScreenshotToolPaletteStyleEditorComponent* component : m_registeredComponents) {
@@ -4165,6 +4226,20 @@ void ScreenshotToolPaletteStyleControls::setArrowType(SnowCanvasArrowType arrowT
                             style.arrowType = arrowType;
                             return true;
                         });
+}
+
+void ScreenshotToolPaletteStyleControls::setLineType(SnowCanvasArrowType arrowType) {
+    arrowType = arrowType == SnowCanvasArrowType::Straight ? SnowCanvasArrowType::Straight
+                                                           : SnowCanvasArrowType::Curve;
+    commitShapeProperty(
+        SnowCanvasShapeStylePropertyArrowType,
+        [arrowType](ScreenshotToolPaletteRectangleStyleModel& style) {
+            return style.setArrowType(arrowType);
+        },
+        [](const ScreenshotToolPaletteRectangleStyleModel& style,
+           ScreenshotToolPaletteRectangleStyleModel& creation) {
+            static_cast<void>(creation.setArrowType(style.arrowType()));
+        });
 }
 
 void ScreenshotToolPaletteStyleControls::setArrowhead(bool start, SnowCanvasArrowhead arrowhead) {
@@ -5074,6 +5149,10 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
                           : lineStyleSource     ? m_state.m_creationLineStyle
                                                 : m_state.m_creationRectangleStyle;
     SnowCanvasShapeStyle displayedStyle = state.shapeStyle;
+    if (lineStyleSource && displayedStyle.arrowType != SnowCanvasArrowType::Straight &&
+        displayedStyle.arrowType != SnowCanvasArrowType::Curve) {
+        displayedStyle.arrowType = SnowCanvasArrowType::Curve;
+    }
     if (editorInteracting(m_shapeStrokeEditor)) {
         displayedStyle.stroke = displayedModel.strokeColor();
     }
@@ -5125,6 +5204,9 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
         if (previous.cornerRadii != displayedStyle.cornerRadii ||
             (mixedChanged & SnowCanvasShapeStyleMixedCornerRadii) != 0)
             groups |= ShapeCornerRefresh;
+        if (lineStyleSource && (previous.arrowType != displayedStyle.arrowType ||
+                                (mixedChanged & SnowCanvasShapeStyleMixedArrowType) != 0))
+            groups |= ShapeArrowTypeRefresh;
     }
     m_state.m_styleSource = state.source;
     if (m_state.m_showingSelectedStyle) {

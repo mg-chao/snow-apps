@@ -13,6 +13,7 @@ use super::{
     RectangleShapeStyle, SelectionArrowState, SelectionBounds, SelectionRectState, ShapeStyle,
 };
 use crate::defaults::EditorStyleDefaults;
+use crate::style::normalized_line_arrow_type;
 use crate::text::TextResizeLayoutOverride;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -495,7 +496,10 @@ impl EditorState {
             arrow_text_measurements: Vec::new(),
             default_rectangle_shape_style: default_styles.rectangle,
             default_arrow_style: default_styles.arrow,
-            default_line_style: default_styles.line,
+            default_line_style: ShapeStyle {
+                arrow_type: normalized_line_arrow_type(default_styles.line.arrow_type),
+                ..default_styles.line
+            },
             default_free_draw_style: default_styles.free_draw,
             default_rectangle_highlight_style: default_styles.rectangle_highlight,
             default_pen_highlight_style: default_styles.pen_highlight,

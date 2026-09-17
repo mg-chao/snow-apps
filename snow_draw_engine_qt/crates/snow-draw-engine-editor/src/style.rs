@@ -230,9 +230,16 @@ impl ShapeStylePatch {
         if properties & SHAPE_STYLE_PROPERTY_OPACITY != 0 {
             current.opacity = self.style.opacity;
         }
+        if properties & SHAPE_STYLE_PROPERTY_ARROW_TYPE != 0 {
+            current.arrow_type = normalized_line_arrow_type(self.style.arrow_type);
+        }
         current.start_arrowhead = None;
         current.end_arrowhead = None;
-        current.arrow_type = ArrowType::Curve;
+        current.arrow_type = match self.kind {
+            ShapeKind::Line => normalized_line_arrow_type(current.arrow_type),
+            ShapeKind::PenHighlight => ArrowType::Straight,
+            _ => current.arrow_type,
+        };
         current
     }
 
@@ -296,7 +303,7 @@ impl ShapeStyleSample {
             stroke_style: Some(arrow.stroke_style),
             start_arrowhead: (!arrow.is_line()).then_some(arrow.start_arrowhead),
             end_arrowhead: (!arrow.is_line()).then_some(arrow.end_arrowhead),
-            arrow_type: (!arrow.is_line()).then_some(arrow.arrow_type),
+            arrow_type: (!arrow.is_pen_highlight()).then_some(arrow.arrow_type),
             opacity: arrow.opacity,
             highlight_shape: None,
             shape: None,
@@ -359,7 +366,7 @@ impl ShapeStyle {
             start_arrowhead: None,
             end_arrowhead: None,
             stroke_style: line.stroke_style,
-            arrow_type: ArrowType::Curve,
+            arrow_type: normalized_line_arrow_type(line.arrow_type),
             opacity: line.opacity,
             highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
             shape: snow_draw_engine_document::HighlightShape::Rectangle,
@@ -398,6 +405,13 @@ impl SerialNumberStyle {
             stroke_style: serial.stroke_style,
             opacity: serial.opacity,
         }
+    }
+}
+
+pub(crate) fn normalized_line_arrow_type(arrow_type: ArrowType) -> ArrowType {
+    match arrow_type {
+        ArrowType::Straight | ArrowType::Curve => arrow_type,
+        ArrowType::Elbow => ArrowType::Curve,
     }
 }
 fn validate_shape_style_patch(patch: ShapeStylePatch) -> Result<(), ErrorCode> {
@@ -1614,7 +1628,7 @@ impl Editor {
                     updated.opacity = style.opacity;
                     updated.start_arrowhead = None;
                     updated.end_arrowhead = None;
-                    updated.arrow_type = ArrowType::Curve;
+                    updated.arrow_type = style.arrow_type;
                     updated
                 } else if patch.kind == ShapeKind::PenHighlight && current_arrow.is_pen_highlight()
                 {
@@ -2041,6 +2055,29 @@ mod tests {
     }
 
     #[test]
+    fn line_and_free_draw_expose_distinct_arrow_type_contracts() {
+        assert_ne!(
+            ShapeKind::Line.supported_properties() & SHAPE_STYLE_PROPERTY_ARROW_TYPE,
+            0
+        );
+        assert_eq!(
+            ShapeKind::FreeDraw.supported_properties() & SHAPE_STYLE_PROPERTY_ARROW_TYPE,
+            0
+        );
+
+        let mut style = editor_style_defaults().free_draw;
+        style.arrow_type = ArrowType::Straight;
+        assert_eq!(
+            validate_shape_style_patch(ShapeStylePatch {
+                kind: ShapeKind::FreeDraw,
+                style,
+                properties: SHAPE_STYLE_PROPERTY_ARROW_TYPE,
+            }),
+            Err(ErrorCode::InvalidArgument)
+        );
+    }
+
+    #[test]
     fn rectangle_highlight_patch_updates_its_public_properties() {
         let mut document = DocumentModel::new();
         let first_id = document.allocate_element_id();
@@ -2323,7 +2360,7 @@ mod tests {
             a: 128,
         };
         style.opacity = 0.4;
-        style.arrow_type = ArrowType::Elbow;
+        style.arrow_type = ArrowType::Straight;
         style.start_arrowhead = Some(Arrowhead::Diamond);
         style.end_arrowhead = Some(Arrowhead::Arrow);
         let command = editor
@@ -2334,7 +2371,8 @@ mod tests {
                     style,
                     properties: SHAPE_STYLE_PROPERTY_STROKE_WIDTH
                         | SHAPE_STYLE_PROPERTY_FILL
-                        | SHAPE_STYLE_PROPERTY_OPACITY,
+                        | SHAPE_STYLE_PROPERTY_OPACITY
+                        | SHAPE_STYLE_PROPERTY_ARROW_TYPE,
                 },
             )
             .unwrap();
@@ -2358,10 +2396,104 @@ mod tests {
         assert_eq!(selected_line.arrow.stroke_width, 9.0);
         assert_eq!(selected_line.arrow.fill, style.fill);
         assert_eq!(selected_line.arrow.opacity, 0.4);
-        assert_eq!(selected_line.arrow.arrow_type, ArrowType::Curve);
+        assert_eq!(selected_line.arrow.arrow_type, ArrowType::Straight);
         assert_eq!(selected_line.arrow.start_arrowhead, None);
         assert_eq!(selected_line.arrow.end_arrowhead, None);
         assert_eq!(editor.state.default_arrow_style, original_arrow_default);
+
+        editor.clear_selection();
+        style.arrow_type = ArrowType::Elbow;
+        editor
+            .set_shape_style_patch(
+                &document,
+                ShapeStylePatch {
+                    kind: ShapeKind::Line,
+                    style,
+                    properties: SHAPE_STYLE_PROPERTY_ARROW_TYPE,
+                },
+            )
+            .unwrap();
+        assert_eq!(editor.state.default_line_style.arrow_type, ArrowType::Curve);
+    }
+
+    #[test]
+    fn selected_lines_report_and_resolve_mixed_arrow_types() {
+        let mut document = DocumentModel::new();
+        let mut insert = Transaction::new("insert mixed line types");
+        let mut ids = Vec::new();
+        for (index, arrow_type) in [ArrowType::Straight, ArrowType::Curve]
+            .into_iter()
+            .enumerate()
+        {
+            let id = document.allocate_element_id();
+            let line = ArrowData::from_global_points(
+                &[
+                    Point::new(0.0, index as f64 * 20.0),
+                    Point::new(40.0, index as f64 * 20.0),
+                ],
+                ColorRgba8::default(),
+                2.0,
+                StrokeStyle::Solid,
+                arrow_type,
+                None,
+                None,
+            )
+            .unwrap()
+            .into_line(ColorRgba8::default(), FillStyle::Solid);
+            insert.insert_arrow(id, ElementMeta::default(), line);
+            ids.push(id);
+        }
+        document.apply_transaction(insert).unwrap();
+
+        let mut editor = Editor::new(Default::default()).unwrap();
+        editor.set_selection_state_with_document(Some(&document), ids.clone(), Some(ids[0]));
+
+        assert_eq!(
+            editor.style_toolbar_source(&document),
+            StyleToolbarSource::SelectedLine
+        );
+        assert_ne!(
+            editor.shape_style_mixed(&document) & SHAPE_STYLE_MIXED_ARROW_TYPE,
+            0
+        );
+        assert_eq!(
+            editor.shape_style(&document).arrow_type,
+            ArrowType::Straight
+        );
+
+        let mut style = editor.shape_style(&document);
+        style.arrow_type = ArrowType::Curve;
+        let command = editor
+            .set_shape_style_patch(
+                &document,
+                ShapeStylePatch {
+                    kind: ShapeKind::Line,
+                    style,
+                    properties: SHAPE_STYLE_PROPERTY_ARROW_TYPE,
+                },
+            )
+            .unwrap();
+        let Some(EditorCommand::ApplyTransaction(command)) = command else {
+            panic!("resolving mixed Line types should queue one transaction");
+        };
+        document.apply_transaction(command.transaction).unwrap();
+        assert_eq!(
+            editor.shape_style_mixed(&document) & SHAPE_STYLE_MIXED_ARROW_TYPE,
+            0
+        );
+        for id in ids {
+            let selected = editor
+                .state
+                .selection
+                .arrows
+                .iter()
+                .find(|item| item.id == id)
+                .unwrap();
+            assert!(selected.arrow.is_line());
+            assert_eq!(selected.arrow.arrow_type, ArrowType::Curve);
+            assert_eq!(selected.arrow.start_arrowhead, None);
+            assert_eq!(selected.arrow.end_arrowhead, None);
+        }
     }
 
     #[test]

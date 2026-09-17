@@ -363,7 +363,7 @@ impl Editor {
                     start_arrowhead: None,
                     end_arrowhead: None,
                     stroke_style: style.stroke_style,
-                    arrow_type: ArrowType::Curve,
+                    arrow_type: style.arrow_type,
                 },
             )?
             .into_line(style.fill, style.fill_style)
@@ -1116,6 +1116,46 @@ mod line_creation_tests {
         };
         assert!(line.is_line());
         assert_eq!(line.arrow_type, ArrowType::Curve);
+        assert_eq!(line.start_arrowhead, None);
+        assert_eq!(line.end_arrowhead, None);
+    }
+
+    #[test]
+    fn configured_straight_line_drag_preserves_the_type() {
+        let mut document = DocumentModel::new();
+        let id = document.peek_next_element_id();
+        let mut editor = Editor::new(EngineConfig::default()).unwrap();
+        editor.set_active_tool(ActiveTool::Line).unwrap();
+        let mut style = editor.shape_style(&document);
+        style.arrow_type = ArrowType::Straight;
+        editor
+            .set_shape_style_patch(
+                &document,
+                ShapeStylePatch {
+                    kind: ShapeKind::Line,
+                    style,
+                    properties: SHAPE_STYLE_PROPERTY_ARROW_TYPE,
+                },
+            )
+            .unwrap();
+
+        assert!(
+            editor
+                .finalize_arrow_creation_from_points(
+                    &document,
+                    &[Point::new(20.0, 30.0), Point::new(60.0, 70.0)],
+                    Modifiers::default(),
+                )
+                .unwrap()
+        );
+        let Some(EditorCommand::ApplyTransaction(command)) = editor.pending_command.take() else {
+            panic!("a meaningful straight Line drag should queue one transaction");
+        };
+        document.apply_transaction(command.transaction).unwrap();
+        let ElementData::Arrow(line) = &document.element(id).unwrap().data else {
+            panic!("Line should use the shared linear geometry record");
+        };
+        assert_eq!(line.arrow_type, ArrowType::Straight);
         assert_eq!(line.start_arrowhead, None);
         assert_eq!(line.end_arrowhead, None);
     }
