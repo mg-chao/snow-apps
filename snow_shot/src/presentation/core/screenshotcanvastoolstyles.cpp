@@ -26,6 +26,11 @@ constexpr quint32 kArrowShapeProperties =
 constexpr quint32 kLineShapeProperties =
     SnowCanvasShapeStylePropertyFillColor | SnowCanvasShapeStylePropertyFillStyle |
     SnowCanvasShapeStylePropertyStrokeColor | SnowCanvasShapeStylePropertyStrokeWidth |
+    SnowCanvasShapeStylePropertyStrokeStyle | SnowCanvasShapeStylePropertyArrowType |
+    SnowCanvasShapeStylePropertyOpacity;
+constexpr quint32 kFreeDrawShapeProperties =
+    SnowCanvasShapeStylePropertyFillColor | SnowCanvasShapeStylePropertyFillStyle |
+    SnowCanvasShapeStylePropertyStrokeColor | SnowCanvasShapeStylePropertyStrokeWidth |
     SnowCanvasShapeStylePropertyStrokeStyle | SnowCanvasShapeStylePropertyOpacity;
 constexpr quint32 kRectangleHighlightProperties = SnowCanvasShapeStylePropertyFillColor |
                                                   SnowCanvasShapeStylePropertyStrokeColor |
@@ -159,6 +164,13 @@ QJsonObject shapeValue(const SnowCanvasShapeStyle& style) {
     return value;
 }
 
+QJsonObject lineValue(const SnowCanvasShapeStyle& style) {
+    QJsonObject value = shapeValue(style);
+    value.remove(QStringLiteral("arrow_type"));
+    putEnum(&value, QStringLiteral("line_type"), style.arrowType);
+    return value;
+}
+
 void readShapeValue(const QJsonObject& object, SnowCanvasShapeStyle* style) {
     if (style == nullptr)
         return;
@@ -184,6 +196,20 @@ void readShapeValue(const QJsonObject& object, SnowCanvasShapeStyle* style) {
              static_cast<int>(SnowCanvasHighlightShape::Ellipse), &style->highlightShape);
     readEnum(object, QStringLiteral("shape"), static_cast<int>(SnowCanvasRectangleShape::Diamond),
              &style->shape);
+}
+
+void readLineValue(QJsonObject object, SnowCanvasShapeStyle* style) {
+    if (style == nullptr)
+        return;
+    object.remove(QStringLiteral("arrow_type"));
+    readShapeValue(object, style);
+    SnowCanvasArrowType lineType = SnowCanvasArrowType::Curve;
+    if (readEnum(object, QStringLiteral("line_type"), static_cast<int>(SnowCanvasArrowType::Curve),
+                 &lineType)) {
+        style->arrowType = lineType;
+    } else {
+        style->arrowType = SnowCanvasArrowType::Curve;
+    }
 }
 
 QJsonObject filterValue(const SnowCanvasFilterStyle& style) {
@@ -334,7 +360,7 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
     const auto& configuration = storage.configuration();
     readShapeValue(configuration.value(kShapeKey).toObject(), &defaults.rectangle);
     readShapeValue(configuration.value(kArrowKey).toObject(), &defaults.arrow);
-    readShapeValue(configuration.value(kLineKey).toObject(), &defaults.line);
+    readLineValue(configuration.value(kLineKey).toObject(), &defaults.line);
     readShapeValue(configuration.value(kFreeDrawKey).toObject(), &defaults.freeDraw);
     readShapeValue(configuration.value(kRectangleHighlightKey).toObject(),
                    &defaults.rectangleHighlight);
@@ -412,7 +438,7 @@ bool persistScreenshotCanvasToolStyles(const SnowCanvasStyleDefaults& defaults) 
     const QMap<QString, QJsonValue> values{
         {kShapeKey, shapeValue(defaults.rectangle)},
         {kArrowKey, shapeValue(defaults.arrow)},
-        {kLineKey, shapeValue(defaults.line)},
+        {kLineKey, lineValue(defaults.line)},
         {kFreeDrawKey, shapeValue(defaults.freeDraw)},
         {kRectangleHighlightKey, shapeValue(defaults.rectangleHighlight)},
         {kPenHighlightKey, shapeValue(defaults.penHighlight)},
@@ -445,7 +471,7 @@ void applyScreenshotCanvasToolStyles(SnowCanvasWidget& canvas,
     applyShape(defaults.rectangle, kRectangleShapeProperties, SnowCanvasShapeKind::Rectangle);
     applyShape(defaults.arrow, kArrowShapeProperties, SnowCanvasShapeKind::Arrow);
     applyShape(defaults.line, kLineShapeProperties, SnowCanvasShapeKind::Line);
-    applyShape(defaults.freeDraw, kLineShapeProperties, SnowCanvasShapeKind::FreeDraw);
+    applyShape(defaults.freeDraw, kFreeDrawShapeProperties, SnowCanvasShapeKind::FreeDraw);
     applyShape(defaults.rectangleHighlight, kRectangleHighlightProperties,
                SnowCanvasShapeKind::RectangleHighlight);
     applyShape(defaults.penHighlight, kPenHighlightProperties, SnowCanvasShapeKind::PenHighlight);

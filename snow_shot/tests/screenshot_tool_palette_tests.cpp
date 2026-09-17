@@ -1676,8 +1676,8 @@ void styleToolSwitchesReconcileCompatibleEditorRoots() {
                 styleEditorRoot(lineRow, "outline-width") == widthRoot &&
                 styleEditorRoot(lineRow, "shape-fill") != nullptr,
             "Shape to Line should preserve all three compatible editor subtrees");
-    require(shapeToLine.retained == 3 && shapeToLine.destroyed == 2 && shapeToLine.created == 0,
-            "Shape to Line should destroy only the two Shape-only editors");
+    require(shapeToLine.retained == 3 && shapeToLine.destroyed == 2 && shapeToLine.created == 1,
+            "Shape to Line should replace the two Shape-only editors with the Line type editor");
 
     QWidget* lineFillRoot = styleEditorRoot(lineRow, "shape-fill");
     palette.setActiveTool(ScreenshotToolPalette::Tool::FreeDraw);
@@ -1688,9 +1688,9 @@ void styleToolSwitchesReconcileCompatibleEditorRoots() {
                 styleEditorRoot(freeDrawRow, "outline-width") == widthRoot &&
                 styleEditorRoot(freeDrawRow, "shape-fill") == lineFillRoot,
             "Line to Free Draw should preserve all style editor subtrees");
-    require(lineToFreeDraw.retained == 3 && lineToFreeDraw.destroyed == 0 &&
+    require(lineToFreeDraw.retained == 3 && lineToFreeDraw.destroyed == 1 &&
                 lineToFreeDraw.created == 0,
-            "Line to Free Draw should perform a retain-only reconciliation");
+            "Line to Free Draw should remove only the Line type editor");
 }
 
 void styleToolReuseMapPreservesEveryCompatibleRole() {
@@ -6885,6 +6885,119 @@ void arrowStyleControlsExposeAndEmitAllStyleProperties() {
             "end arrowhead should update");
 }
 
+void lineStyleControlsExposeStraightAndCurveTypes() {
+    ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Line);
+    palette.show();
+    QCoreApplication::processEvents();
+
+    QWidget* lineControls =
+        palette.findChild<QWidget*>(QStringLiteral("screenshotLineStyleControls"));
+    QWidget* lineTypeControls =
+        palette.findChild<QWidget*>(QStringLiteral("screenshotLineTypeButtonGroup"));
+    auto* lineTypeGroup = lineTypeControls == nullptr
+                              ? nullptr
+                              : lineTypeControls->findChild<adqt::widgets::AdRadioButtonGroup*>();
+    auto* straightLine =
+        qobject_cast<adqt::widgets::AdRadio*>(controlWithTooltip(palette, "Straight line"));
+    auto* curvedLine =
+        qobject_cast<adqt::widgets::AdRadio*>(controlWithTooltip(palette, "Curved line"));
+    require(lineControls != nullptr && lineTypeControls != nullptr && lineTypeGroup != nullptr &&
+                straightLine != nullptr && curvedLine != nullptr,
+            "Line should expose a two-option type button group");
+    require(lineTypeGroup->buttons().size() == 2 && lineTypeGroup->id(straightLine) == 0 &&
+                lineTypeGroup->id(curvedLine) == 1 && lineTypeGroup->checkedId() == 1,
+            "Line should expose Straight as ID 0 and default to Curved as ID 1");
+
+    QLayout* lineLayout = lineControls->layout();
+    QWidget* strokeRoot = styleEditorRoot(lineControls, "outline-stroke");
+    QWidget* widthRoot = styleEditorRoot(lineControls, "outline-width");
+    QWidget* fillRoot = styleEditorRoot(lineControls, "shape-fill");
+    const QList<QFrame*> separators =
+        lineControls->findChildren<QFrame*>(QString(), Qt::FindDirectChildrenOnly);
+    require(lineLayout != nullptr && strokeRoot != nullptr && widthRoot != nullptr &&
+                fillRoot != nullptr && separators.size() == 3,
+            "Line should expose the expected style groups and separators");
+    require(lineLayout->indexOf(strokeRoot) < lineLayout->indexOf(separators.at(0)) &&
+                lineLayout->indexOf(separators.at(0)) < lineLayout->indexOf(widthRoot) &&
+                lineLayout->indexOf(widthRoot) < lineLayout->indexOf(separators.at(1)) &&
+                lineLayout->indexOf(separators.at(1)) < lineLayout->indexOf(lineTypeControls) &&
+                lineLayout->indexOf(lineTypeControls) < lineLayout->indexOf(separators.at(2)) &&
+                lineLayout->indexOf(separators.at(2)) < lineLayout->indexOf(fillRoot),
+            "Line controls should be ordered stroke color, width, type, then fill color");
+
+    ScreenshotToolPalette arrowPalette(ScreenshotToolPalette::Options{});
+    arrowPalette.setActiveTool(ScreenshotToolPalette::Tool::Arrow);
+    arrowPalette.show();
+    QCoreApplication::processEvents();
+    auto* straightArrow =
+        qobject_cast<adqt::widgets::AdRadio*>(controlWithTooltip(arrowPalette, "Straight arrow"));
+    auto* curvedArrow =
+        qobject_cast<adqt::widgets::AdRadio*>(controlWithTooltip(arrowPalette, "Curved arrow"));
+    require(straightArrow != nullptr && curvedArrow != nullptr && !straightLine->icon().isNull() &&
+                !curvedLine->icon().isNull(),
+            "Line type options should render dedicated line icons");
+    require(straightLine->icon().pixmap(16, 16).toImage() !=
+                    straightArrow->icon().pixmap(16, 16).toImage() &&
+                curvedLine->icon().pixmap(16, 16).toImage() !=
+                    curvedArrow->icon().pixmap(16, 16).toImage(),
+            "Line type options should be distinct from the Arrow SVG assets");
+
+    SnowCanvasShapeStyle emittedStyle;
+    quint32 emittedProperties = 0;
+    SnowCanvasShapeKind emittedKind = SnowCanvasShapeKind::Rectangle;
+    int styleChangeCount = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::shapeStyleChanged,
+                     [&emittedStyle, &emittedProperties, &emittedKind,
+                      &styleChangeCount](const SnowCanvasShapeStyle& style, quint32 properties,
+                                         SnowCanvasShapeKind kind) {
+                         emittedStyle = style;
+                         emittedProperties = properties;
+                         emittedKind = kind;
+                         ++styleChangeCount;
+                     });
+
+    straightLine->click();
+    require(styleChangeCount == 1 && emittedKind == SnowCanvasShapeKind::Line &&
+                emittedProperties == SnowCanvasShapeStylePropertyArrowType &&
+                emittedStyle.arrowType == SnowCanvasArrowType::Straight &&
+                palette.creationStyleDefaults().line.arrowType == SnowCanvasArrowType::Straight,
+            "selecting Straight should emit only the Line arrow-type property and mirror defaults");
+    curvedLine->click();
+    require(styleChangeCount == 2 && emittedKind == SnowCanvasShapeKind::Line &&
+                emittedProperties == SnowCanvasShapeStylePropertyArrowType &&
+                emittedStyle.arrowType == SnowCanvasArrowType::Curve &&
+                palette.creationStyleDefaults().line.arrowType == SnowCanvasArrowType::Curve,
+            "selecting Curved should emit only the Line arrow-type property and mirror defaults");
+
+    SnowCanvasStyleToolbarState selectedState;
+    selectedState.source = SnowCanvasStyleToolbarSource::SelectedLine;
+    selectedState.shapeStyle = palette.creationStyleDefaults().line;
+    selectedState.shapeStyleMixed = 0;
+    palette.setStyleToolbarState(selectedState);
+    require(lineTypeGroup->checkedId() == 1,
+            "a selected curved Line should select the Curved option");
+    selectedState.shapeStyle.arrowType = SnowCanvasArrowType::Straight;
+    palette.setStyleToolbarState(selectedState);
+    require(lineTypeGroup->checkedId() == 0,
+            "an external selected Line type change should refresh the option");
+    selectedState.shapeStyle.arrowType = SnowCanvasArrowType::Curve;
+    selectedState.shapeStyleMixed = SnowCanvasShapeStyleMixedArrowType;
+    palette.setStyleToolbarState(selectedState);
+    require(lineTypeGroup->checkedId() == -1,
+            "mixed selected Line types should clear the checked option");
+    styleChangeCount = 0;
+    straightLine->click();
+    require(styleChangeCount == 1 && lineTypeGroup->checkedId() == 0 &&
+                emittedKind == SnowCanvasShapeKind::Line &&
+                emittedProperties == SnowCanvasShapeStylePropertyArrowType,
+            "choosing a Line type should resolve only the mixed type property");
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::FreeDraw);
+    require(palette.findChild<QWidget*>(QStringLiteral("screenshotLineTypeButtonGroup")) == nullptr,
+            "Free Draw should not expose the Line type editor");
+}
+
 void arrowheadOptionsRetranslateInPlace() {
     auto& languageManager = snow_shot::presentation::LanguageManager::instance();
     require(languageManager.setLanguage(QStringLiteral("en_US")),
@@ -9450,7 +9563,7 @@ void screenshotProductStyleProfileIsComplete() {
         const char* message;
     };
     const ShapeExpectation shapes[] = {
-        {&defaults.line, transparent, red, 2.0, 1.0, SnowCanvasArrowType::Straight,
+        {&defaults.line, transparent, red, 2.0, 1.0, SnowCanvasArrowType::Curve,
          SnowCanvasHighlightShape::Rectangle,
          "line defaults should match the Snow Shot product profile"},
         {&defaults.freeDraw, transparent, red, 2.0, 1.0, SnowCanvasArrowType::Straight,
@@ -9847,6 +9960,7 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     styles.arrow.stroke = QColor(5, 6, 7, 8);
     styles.arrow.strokeWidth = 4.0;
     styles.line.strokeWidth = 5.0;
+    styles.line.arrowType = SnowCanvasArrowType::Straight;
     styles.freeDraw.strokeWidth = 6.0;
     styles.rectangleHighlight.fill = QColor(9, 10, 11, 12);
     styles.penHighlight.strokeWidth = 7.0;
@@ -9897,6 +10011,42 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
             "watermark appearance should persist without text or template session state");
     require(!configuration.value(QStringLiteral("drawing/spotlight_style")).toObject().isEmpty(),
             "spotlight mask color and opacity should persist");
+    const QString lineKey = QStringLiteral("drawing/line_style");
+    const QJsonObject savedLineStyle = configuration.value(lineKey).toObject();
+    require(!savedLineStyle.contains(QStringLiteral("arrow_type")) &&
+                savedLineStyle.value(QStringLiteral("line_type")).toInt(-1) ==
+                    static_cast<int>(SnowCanvasArrowType::Straight),
+            "Line should persist its type under the new line-specific field");
+
+    QJsonObject legacyLineStyle = savedLineStyle;
+    legacyLineStyle.remove(QStringLiteral("line_type"));
+    legacyLineStyle.insert(QStringLiteral("arrow_type"),
+                           static_cast<int>(SnowCanvasArrowType::Straight));
+    require(snow_shot::storage::ApplicationStorage::instance().configuration().setValue(
+                lineKey, legacyLineStyle),
+            "legacy Line settings should be accepted for the compatibility test");
+    SnowCanvasStyleDefaults migratedLineExpected = expected;
+    migratedLineExpected.line.arrowType = SnowCanvasArrowType::Curve;
+    require(snow_shot::presentation::screenshotCanvasToolStyleDefaults() == migratedLineExpected,
+            "legacy Line arrow_type should be ignored and migrate to Curve");
+
+    for (const QJsonValue& invalidType : {QJsonValue(1.5), QJsonValue(-1), QJsonValue(2),
+                                          QJsonValue(3), QJsonValue(QStringLiteral("1"))}) {
+        QJsonObject invalidLineStyle = savedLineStyle;
+        invalidLineStyle.insert(QStringLiteral("line_type"), invalidType);
+        require(snow_shot::storage::ApplicationStorage::instance().configuration().setValue(
+                    lineKey, invalidLineStyle),
+                "invalid Line type settings should be accepted for compatibility tests");
+        require(snow_shot::presentation::screenshotCanvasToolStyleDefaults() ==
+                    migratedLineExpected,
+                "malformed and Elbow Line types should normalize to Curve");
+    }
+    require(snow_shot::storage::ApplicationStorage::instance().configuration().setValue(
+                lineKey, savedLineStyle),
+            "the valid Line type should be restored for the remaining persistence test");
+    require(snow_shot::presentation::screenshotCanvasToolStyleDefaults() == expected,
+            "the restored Line type should round-trip independently");
+
     const QString serialKey = QStringLiteral("drawing/serial_number_style");
     QJsonObject savedSerialStyle = configuration.value(serialKey).toObject();
     require(!savedSerialStyle.contains(QStringLiteral("number")),
@@ -10557,6 +10707,7 @@ int main(int argc, char** argv) {
     shapeSelectorIsExclusiveToTheShapeTool();
     arrowStyleUsesScreenshotCreationColorOverride();
     arrowStyleControlsExposeAndEmitAllStyleProperties();
+    lineStyleControlsExposeStraightAndCurveTypes();
     selectedArrowMixedPropertiesResolveIndependently();
     textStyleControlsExposeAndEmitAllRequestedProperties();
     serialNumberStyleControlsExposeAndEmitRequestedProperties();
