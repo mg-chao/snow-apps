@@ -89,7 +89,7 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
     if (request.restoreOriginalScreenColors) {
         nativeRequest.flags |= SNOW_CAPTURE_SCREENSHOT_REQUEST_RESTORE_ORIGINAL_COLORS;
     }
-    if (request.captureCursor) {
+    if (request.captureCursor && !request.cursorSnapshot) {
         nativeRequest.flags |= SNOW_CAPTURE_SCREENSHOT_REQUEST_INCLUDE_CURSOR;
     }
     nativeRequest.cancellation_token = cancellationToken;
@@ -104,6 +104,15 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
         const QString captureError = nativeCaptureError("Screenshot capture failed");
         static_cast<void>(snow_capture_desktop_session_reset_to_prepared(m_session));
         captureResult.errorMessage = captureError;
+        postCaptureResult(coordinator, std::move(captureResult));
+        return;
+    }
+
+    if (request.captureCursor && request.cursorSnapshot &&
+        snow_capture_screenshot_result_composite_cursor(nativeResult,
+                                                        request.cursorSnapshot.get()) == 0) {
+        captureResult.errorMessage = nativeCaptureError("Failed to composite the captured cursor");
+        snow_capture_screenshot_result_destroy(nativeResult);
         postCaptureResult(coordinator, std::move(captureResult));
         return;
     }

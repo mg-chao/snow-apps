@@ -12,6 +12,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use snow_capture::color_effect::ColorCorrection;
+use snow_capture::cursor_snapshot::ScreenshotCursorSnapshot;
 use snow_capture::frame::{CaptureEvent, CapturePixelFormat, CapturedFrame, Frame};
 use snow_capture::{
     CaptureOptions, CaptureRegion, CaptureSession, CaptureStream, CaptureStreamConfig,
@@ -66,6 +67,55 @@ pub struct SnowCaptureCancellationTokenImpl {
 pub struct SnowCaptureScreenshotResultImpl {
     frames: Vec<SnapshotFrame>,
     focused_window: Option<SnapshotWindowFrame>,
+}
+
+pub struct SnowCaptureCursorSnapshotImpl {
+    snapshot: ScreenshotCursorSnapshot,
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn snow_capture_cursor_snapshot_create() -> *mut SnowCaptureCursorSnapshotImpl {
+    match ScreenshotCursorSnapshot::capture() {
+        Ok(snapshot) => Box::into_raw(Box::new(SnowCaptureCursorSnapshotImpl { snapshot })),
+        Err(error) => {
+            set_last_error(error.to_string());
+            ptr::null_mut()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_cursor_snapshot_destroy(
+    snapshot: *mut SnowCaptureCursorSnapshotImpl,
+) {
+    if !snapshot.is_null() {
+        drop(unsafe { Box::from_raw(snapshot) });
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_screenshot_result_composite_cursor(
+    result: *mut SnowCaptureScreenshotResultImpl,
+    snapshot: *const SnowCaptureCursorSnapshotImpl,
+) -> u8 {
+    let (Some(result), Some(snapshot)) = (unsafe { result.as_mut() }, unsafe { snapshot.as_ref() })
+    else {
+        set_last_error("screenshot result and cursor snapshot must not be null");
+        return 0;
+    };
+    for display in &mut result.frames {
+        snapshot.snapshot.composite(
+            Arc::make_mut(&mut display.frame),
+            display.entry.x,
+            display.entry.y,
+        );
+    }
+    if let Some(window) = &mut result.focused_window {
+        snapshot
+            .snapshot
+            .composite(Arc::make_mut(&mut window.frame), window.x, window.y);
+    }
+    1
 }
 
 pub struct SnowCaptureFrameLeaseImpl {
@@ -2315,6 +2365,21 @@ pub extern "C" fn snow_capture_last_error_message() -> *const c_char {
     LAST_ERROR.with(|slot| slot.borrow().as_ptr())
 }
 
+pub struct SnowCaptureStreamImpl {
+    stream: CaptureStream,
+    origin_x: i32,
+    origin_y: i32,
+}
+
+pub struct SnowCaptureStreamFrameImpl {
+    frame: CapturedFrame,
+    origin_x: i32,
+    origin_y: i32,
+}
+
+#[cfg(target_os = "macos")]
+pub mod macos;
+
 #[cfg(test)]
 mod tests {
 
@@ -2365,6 +2430,25 @@ mod tests {
         let ok = unsafe { snow_capture_screenshot_result_display_info(ptr::null(), 0, &mut info) };
         assert_eq!(ok, 0);
         assert!(!snow_capture_last_error_message().is_null());
+    }
+
+    #[test]
+    fn cursor_snapshot_null_arguments_fail_without_modifying_results() {
+        unsafe {
+            snow_capture_cursor_snapshot_destroy(ptr::null_mut());
+            assert_eq!(
+                snow_capture_screenshot_result_composite_cursor(ptr::null_mut(), ptr::null()),
+                0
+            );
+            let result = test_result();
+            let before = (&*result).frames[0].frame.as_bytes().to_vec();
+            assert_eq!(
+                snow_capture_screenshot_result_composite_cursor(result, ptr::null()),
+                0
+            );
+            assert_eq!((&*result).frames[0].frame.as_bytes(), before);
+            snow_capture_screenshot_result_destroy(result);
+        }
     }
 
     #[test]
@@ -2984,21 +3068,6 @@ mod tests {
         ));
     }
 }
-
-pub struct SnowCaptureStreamImpl {
-    stream: CaptureStream,
-    origin_x: i32,
-    origin_y: i32,
-}
-
-pub struct SnowCaptureStreamFrameImpl {
-    frame: CapturedFrame,
-    origin_x: i32,
-    origin_y: i32,
-}
-
-#[cfg(target_os = "macos")]
-pub mod macos;
 
 #[cfg(all(test, target_os = "macos"))]
 #[test]

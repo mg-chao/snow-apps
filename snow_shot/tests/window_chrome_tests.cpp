@@ -134,10 +134,45 @@ void captureExclusionCapabilityAndNativeVisibilityAreReported() {
     require(snow_shot::platform::windows::flushWindowComposition(),
             "DWM composition must flush before fallback capture begins");
 }
+void layeredWindowInputTransparencyPreservesNativeState() {
+    using snow_shot::platform::windows::setWindowInputTransparent;
+    require(!setWindowInputTransparent(nullptr, true).has_value(),
+            "null windows must reject native input transparency");
+    QWidget window(nullptr, Qt::Tool | Qt::FramelessWindowHint);
+    window.setAttribute(Qt::WA_TranslucentBackground);
+    window.resize(80, 60);
+    window.show();
+    flushEvents();
+    const HWND hwnd = toNativeHwnd(window.winId());
+    const LONG_PTR original = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+    require((original & WS_EX_LAYERED) != 0 && (original & WS_EX_TRANSPARENT) == 0,
+            "capture window fixture must be layered and accept input");
+    SetCapture(hwnd);
+    require(GetCapture() == hwnd, "fixture must hold native mouse capture");
+    require(setWindowInputTransparent(&window, true) == std::optional<bool>(false),
+            "enabling pass-through must report the original input state");
+    require(GetWindowLongPtrW(hwnd, GWL_EXSTYLE) == (original | WS_EX_TRANSPARENT) &&
+                GetCapture() != hwnd && window.isVisible() && toNativeHwnd(window.winId()) == hwnd,
+            "pass-through must release capture without changing visibility, HWND, or other styles");
+    require(setWindowInputTransparent(&window, true) == std::optional<bool>(true),
+            "already-transparent windows must report their existing state");
+    require(setWindowInputTransparent(&window, false) == std::optional<bool>(true) &&
+                GetWindowLongPtrW(hwnd, GWL_EXSTYLE) == original,
+            "restoration must restore the original native input state");
+    window.hide();
+
+    QWidget opaque;
+    const HWND opaqueHwnd = toNativeHwnd(opaque.winId());
+    const LONG_PTR opaqueStyle = GetWindowLongPtrW(opaqueHwnd, GWL_EXSTYLE);
+    require(!setWindowInputTransparent(&opaque, true).has_value() &&
+                GetWindowLongPtrW(opaqueHwnd, GWL_EXSTYLE) == opaqueStyle,
+            "unsupported non-layered windows must remain unchanged for hidden capture fallback");
+}
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    layeredWindowInputTransparencyPreservesNativeState();
     captureExclusionCapabilityAndNativeVisibilityAreReported();
     raisedOverlayPreventsTitleBarDragging();
     return 0;

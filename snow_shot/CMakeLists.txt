@@ -1008,6 +1008,7 @@ set(PROJECT_CXX_SOURCES
     src/app/singleinstancecoordinator.cpp
     src/platform/physicalcursor.cpp
     src/platform/windows/windowchrome.cpp
+    src/platform/windows/windowcursorrefresh.h
     src/platform/windows/scrollinput.cpp
     src/presentation/components/contentcardwidget.cpp
     src/presentation/components/maincontentheaderwidget.cpp
@@ -1024,6 +1025,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/capture/screenshotglobalmousedrag.cpp
     src/presentation/capture/adaptivescrollingcapturecadence.h
     src/presentation/capture/windowcaptureexclusion.h
+    src/presentation/capture/windowinputtransparency.h
     src/presentation/capture/latestbridgemailbox.h
     src/presentation/capture/screenshotscrollingcapturecontroller.cpp
     src/presentation/capture/screenshotscrollingpipeline.cpp
@@ -1649,6 +1651,29 @@ if(SNOW_SHOT_BUILD_TESTS)
             ENVIRONMENT_MODIFICATION
                 "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         )
+
+        add_executable(snow-shot-window-cursor-refresh-tests
+            tests/window_cursor_refresh_tests.cpp
+            src/platform/windows/windowchrome.cpp
+            src/platform/windows/windowcursorrefresh.h
+        )
+        target_compile_definitions(snow-shot-window-cursor-refresh-tests PRIVATE NOMINMAX)
+        target_include_directories(snow-shot-window-cursor-refresh-tests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        )
+        target_link_libraries(snow-shot-window-cursor-refresh-tests PRIVATE
+            Qt6::Widgets dwmapi user32
+        )
+        snow_shot_import_offscreen_platform(snow-shot-window-cursor-refresh-tests)
+        add_test(NAME snow-shot-window-cursor-refresh-tests
+                 COMMAND snow-shot-window-cursor-refresh-tests)
+        set_tests_properties(snow-shot-window-cursor-refresh-tests PROPERTIES
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+            TIMEOUT 20
+            LABELS "unit;windows"
+        )
     endif()
 
     add_executable(snow-shot-canvas-color-sampler-tests
@@ -2268,6 +2293,44 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-recording-c/include")
     target_link_libraries(snow-shot-capture-worker-tests PRIVATE snow_shot_storage Qt6::Gui)
     add_test(NAME snow-shot-capture-worker-tests COMMAND snow-shot-capture-worker-tests)
+
+    if(WIN32)
+        add_executable(snow-shot-recapture-cursor-native-e2e-test
+            tests/recapture_cursor_native_e2e_test.cpp
+            include/snow_shot/presentation/screenshotcapturecoordinator.h
+            src/presentation/capture/screenshotcapturecoordinator.cpp
+            src/presentation/capture/screenshotcaptureworker.cpp
+            src/presentation/capture/screenshotcapturepolicy.cpp
+            src/platform/windows/windowchrome.cpp)
+        target_compile_definitions(snow-shot-recapture-cursor-native-e2e-test PRIVATE NOMINMAX)
+        target_include_directories(snow-shot-recapture-cursor-native-e2e-test PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/capture"
+            "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
+        target_link_libraries(snow-shot-recapture-cursor-native-e2e-test PRIVATE
+            snow_shot_storage Qt6::Widgets snow_capture_c PkgConfig::SNOW_SHOT_FFMPEG
+            d3d11 dxgi dxguid dwmapi gdi32 ole32 oleaut32 runtimeobject
+            user32 userenv winmm windowsapp ws2_32 advapi32 bcrypt psapi)
+        add_test(NAME snow-shot-recapture-cursor-native-e2e-test
+                 COMMAND snow-shot-recapture-cursor-native-e2e-test --run-native)
+        add_test(NAME snow-shot-recapture-cursor-movement-native-e2e-test
+                 COMMAND snow-shot-recapture-cursor-native-e2e-test --run-native --move-during-refresh)
+        add_test(NAME snow-shot-recapture-cursor-snapshot-native-e2e-test
+                 COMMAND snow-shot-recapture-cursor-native-e2e-test --run-native --change-after-ready)
+        add_test(NAME snow-shot-recapture-class-cursor-native-e2e-test
+                 COMMAND snow-shot-recapture-cursor-native-e2e-test --run-native --native-target)
+        add_test(NAME snow-shot-recapture-cursor-hidden-native-e2e-test
+                 COMMAND snow-shot-recapture-cursor-native-e2e-test --run-native --hide-overlay)
+        set_tests_properties(snow-shot-recapture-cursor-native-e2e-test
+            snow-shot-recapture-cursor-movement-native-e2e-test
+            snow-shot-recapture-cursor-snapshot-native-e2e-test
+            snow-shot-recapture-class-cursor-native-e2e-test
+            snow-shot-recapture-cursor-hidden-native-e2e-test PROPERTIES
+            LABELS "interactive;e2e;windows"
+            RUN_SERIAL TRUE
+            TIMEOUT 60
+            ENVIRONMENT "QT_QPA_PLATFORM=windows")
+    endif()
 
     add_executable(snow-shot-capture-workflow-tests
         tests/screenshot_capture_workflow_tests.cpp
@@ -4122,6 +4185,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-window-capture-exclusion-tests
         tests/window_capture_exclusion_tests.cpp
         src/presentation/capture/windowcaptureexclusion.h
+        src/presentation/capture/windowinputtransparency.h
     )
     target_include_directories(snow-shot-window-capture-exclusion-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"

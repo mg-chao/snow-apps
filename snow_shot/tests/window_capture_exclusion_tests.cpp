@@ -1,4 +1,5 @@
 #include "presentation/capture/windowcaptureexclusion.h"
+#include "presentation/capture/windowinputtransparency.h"
 
 #include <QApplication>
 
@@ -9,6 +10,7 @@
 #include <vector>
 
 using snow_shot::presentation::WindowCaptureExclusion;
+using snow_shot::presentation::WindowInputTransparency;
 
 namespace {
 void require(bool condition, const char* message) {
@@ -120,6 +122,87 @@ void recaptureCanRollbackPartialExclusionsBeforeFallback() {
                                                             {&overlay, false}},
             "partial recapture exclusion must restore successes before hidden fallback");
 }
+void inputTransparencyRestoresOriginalStateAndRollsBackPartialFailure() {
+    QWidget overlay;
+    QWidget toolbar;
+    QWidget unsupported;
+    overlay.show();
+    toolbar.show();
+    bool overlayTransparent = false;
+    bool toolbarTransparent = true;
+    std::vector<QWidget*> restored;
+    {
+        WindowInputTransparency guard(
+            [&](QWidget* window, bool transparent) -> std::optional<bool> {
+                if (window == &unsupported) {
+                    return std::nullopt;
+                }
+                bool& state = window == &overlay ? overlayTransparent : toolbarTransparent;
+                const bool previous = state;
+                state = transparent;
+                restored.push_back(window);
+                return previous;
+            });
+        require(!guard.enable(nullptr), "null windows must reject input transparency");
+        require(guard.enable(&overlay) && guard.enable(&toolbar),
+                "recapture must enable input transparency for overlays and toolbar");
+        require(guard.enable(&overlay) && restored.size() == 2,
+                "duplicate enable must not overwrite the original input state");
+        require(overlayTransparent && toolbarTransparent && overlay.isVisible() &&
+                    toolbar.isVisible(),
+                "input transparency must preserve visibility while allowing input through");
+        require(!guard.enable(&unsupported), "unsupported windows must trigger capture fallback");
+        restored.clear();
+        guard.restore();
+        require(!overlayTransparent && toolbarTransparent &&
+                    restored == std::vector<QWidget*>{&toolbar, &overlay},
+                "fallback must restore original states in reverse order");
+        guard.restore();
+        require(restored.size() == 2, "restoration must be idempotent");
+        require(guard.enable(&overlay), "guard must support another capture after cleanup");
+    }
+    require(!overlayTransparent, "scope exit must restore input after capture or cancellation");
+}
+
+void inputTransparencySkipsDestroyedWindowsAndContinuesAfterRestoreFailure() {
+    auto destroyed = std::make_unique<QWidget>();
+    QWidget overlay;
+    QWidget toolbar;
+    std::vector<QWidget*> restored;
+    WindowInputTransparency guard([&](QWidget* window, bool transparent) -> std::optional<bool> {
+        if (!transparent) {
+            restored.push_back(window);
+            return std::nullopt;
+        }
+        return false;
+    });
+    require(guard.enable(&overlay) && guard.enable(destroyed.get()) && guard.enable(&toolbar),
+            "input guard fixtures must enable transparency");
+    destroyed.reset();
+    guard.restore();
+    require(restored == std::vector<QWidget*>{&toolbar, &overlay},
+            "input cleanup must skip deleted windows and continue after native restore failures");
+}
+
+void inputTransparencyDoesNotRestoreAnObsoleteNativeWindow() {
+    class NativeWindow final : public QWidget {
+      public:
+        void destroyNativeWindow() {
+            destroy();
+        }
+    };
+    NativeWindow window;
+    static_cast<void>(window.winId());
+    int calls = 0;
+    WindowInputTransparency guard([&](QWidget*, bool) -> std::optional<bool> {
+        ++calls;
+        return false;
+    });
+    require(guard.enable(&window), "native input guard fixture must enable transparency");
+    window.destroyNativeWindow();
+    guard.restore();
+    require(calls == 1, "cleanup must not recreate or modify an obsolete native window");
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -133,5 +216,8 @@ int main(int argc, char* argv[]) {
     cleanupToleratesDestroyedWindowsAndRestoreFailures();
     unavailableExclusionPreservesVisibility();
     recaptureCanRollbackPartialExclusionsBeforeFallback();
+    inputTransparencyRestoresOriginalStateAndRollsBackPartialFailure();
+    inputTransparencySkipsDestroyedWindowsAndContinuesAfterRestoreFailure();
+    inputTransparencyDoesNotRestoreAnObsoleteNativeWindow();
     return 0;
 }
