@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 4.2)
 
+# Set the deployment target before CMake initializes Apple's compiler flags.
+if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum supported macOS version.")
+endif()
+
 project(snow_apps VERSION 0.2.0 LANGUAGES CXX)
 
 set(SNOW_SHOT_VERSION "1.0.5-beta")
@@ -11,7 +16,7 @@ set(SNOW_SHOT_PRODUCT_NAME "Snow Shot")
 set(SNOW_SHOT_EXECUTABLE_NAME "snow_shot")
 set(SNOW_SHOT_VENDOR "Snow Apps")
 set(SNOW_SHOT_DESCRIPTION
-    "A Windows screenshot utility for capturing, annotating, pinning, and recognizing screen content.")
+    "A screenshot utility for capturing, annotating, pinning, and recognizing screen content.")
 set(SNOW_SHOT_HOMEPAGE_URL "https://snowshot.top")
 set(SNOW_SHOT_SUPPORT_EMAIL "chao@mgchao.top")
 set(SNOW_SHOT_COPYRIGHT "Copyright (C) 2025-2026 mg-chao")
@@ -40,12 +45,21 @@ option(SNOW_APPS_STRICT_COMPILE "Enable strict warnings for all projects." ON)
 option(SNOW_APPS_ENABLE_CLANG_TIDY "Run clang-tidy while compiling C++ targets." OFF)
 option(SNOW_APPS_RELEASE_STATIC "Prefer static libraries and the static MSVC runtime." OFF)
 option(SNOW_APPS_QT_STATIC "Link the release executable against a static Qt build." OFF)
-option(SNOW_APPS_PACKAGE_SNOW_SHOT "Configure the Snow Shot NSIS package." OFF)
+option(SNOW_APPS_PACKAGE_SNOW_SHOT "Configure the Snow Shot platform package." OFF)
 option(
     SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION
     "Enable IPO/LTO and size/dead-code linker optimizations for Release targets."
     ON
 )
+
+if(APPLE AND SNOW_APPS_BUILD_SNOW_SHOT)
+    if(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS "15.0")
+        message(FATAL_ERROR "Snow Shot requires CMAKE_OSX_DEPLOYMENT_TARGET >= 15.0")
+    endif()
+    if(CMAKE_OSX_ARCHITECTURES AND NOT CMAKE_OSX_ARCHITECTURES MATCHES "^(arm64|x86_64)$")
+        message(FATAL_ERROR "Build one Snow Shot architecture at a time: arm64 or x86_64")
+    endif()
+endif()
 
 set(SNOW_QT_STATIC_DIR "" CACHE PATH
     "Qt 6 CMake package directory for the static release kit.")
@@ -348,27 +362,28 @@ if(NOT TARGET snow-benchmarks)
     endforeach()
 endif()
 
+if(WIN32)
+    set(_snow_format_command powershell -NoProfile -ExecutionPolicy Bypass
+        -File "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-cpp-format.ps1")
+    set(_snow_lint_command powershell -NoProfile -ExecutionPolicy Bypass
+        -File "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-rust.ps1")
+else()
+    set(_snow_format_command bash "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-cpp-format.sh")
+    set(_snow_lint_command bash "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-rust.sh"
+        snow-ocr-process -- --no-default-features --features dynamic-onnx-runtime)
+endif()
 if(NOT TARGET snow-format)
-    add_custom_target(snow-format
-        COMMAND "${CMAKE_COMMAND}" -E env
-            "SNOW_WORKSPACE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}"
-            powershell -NoProfile -ExecutionPolicy Bypass
-            -File "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-cpp-format.ps1" -Check
-        USES_TERMINAL
-    )
+    add_custom_target(snow-format COMMAND ${_snow_format_command} USES_TERMINAL)
 endif()
-
 if(NOT TARGET snow-lint)
-    add_custom_target(snow-lint
-        COMMAND "${CMAKE_COMMAND}" -E env
-            "SNOW_WORKSPACE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}"
-            powershell -NoProfile -ExecutionPolicy Bypass
-            -File "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-rust.ps1"
-        USES_TERMINAL
-    )
+    add_custom_target(snow-lint COMMAND ${_snow_lint_command} USES_TERMINAL)
 endif()
 
-if(SNOW_APPS_PACKAGE_SNOW_SHOT)
+if(SNOW_APPS_PACKAGE_SNOW_SHOT AND APPLE)
+    include(cmake/SnowShotMacOSPackage.cmake)
+endif()
+
+if(SNOW_APPS_PACKAGE_SNOW_SHOT AND NOT APPLE)
     if(NOT TARGET snow_shot)
         message(FATAL_ERROR "SNOW_APPS_PACKAGE_SNOW_SHOT requires SNOW_APPS_BUILD_SNOW_SHOT=ON")
     endif()

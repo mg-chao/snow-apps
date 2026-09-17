@@ -1,0 +1,24 @@
+set(_app "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/snow_shot.app")
+# This dlopen-only library is deliberately renamed to ORT's stable lookup name.
+# Update its own Mach-O ID before macdeployqt scans it as an extra executable.
+execute_process(COMMAND /usr/bin/install_name_tool -id "@loader_path/libonnxruntime.dylib"
+    "${_app}/Contents/MacOS/libonnxruntime.dylib" RESULT_VARIABLE _result)
+if(NOT _result EQUAL 0)
+    message(FATAL_ERROR "Could not update the ONNX Runtime install name (${_result})")
+endif()
+execute_process(COMMAND "@SNOW_MACDEPLOYQT@" "${_app}"
+    "-executable=${_app}/Contents/MacOS/snow-ocr-process"
+    "-executable=${_app}/Contents/MacOS/snow-shot-updater"
+    "-executable=${_app}/Contents/MacOS/libonnxruntime.dylib"
+    "-libpath=@SNOW_FFMPEG_ROOT@/lib"
+    "-libpath=@SNOW_FFMPEG_ROOT@/debug/lib"
+    -always-overwrite -codesign=-
+    RESULT_VARIABLE _result OUTPUT_VARIABLE _output ERROR_VARIABLE _error)
+if(NOT _result EQUAL 0 OR "${_output}${_error}" MATCHES "ERROR:")
+    message(FATAL_ERROR "macdeployqt failed (${_result}):\n${_output}\n${_error}")
+endif()
+execute_process(COMMAND /usr/bin/codesign --verify --deep --strict "${_app}"
+    RESULT_VARIABLE _result)
+if(NOT _result EQUAL 0)
+    message(FATAL_ERROR "Snow Shot bundle signature verification failed (${_result})")
+endif()

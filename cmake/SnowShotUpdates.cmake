@@ -27,7 +27,12 @@ if(WIN32)
         target_link_options(snow-shot-updater PRIVATE $<$<CONFIG:Release>:/DEBUG:FULL>)
     endif()
 endif()
-install(TARGETS snow-shot-updater RUNTIME DESTINATION bin)
+if(APPLE)
+    install(TARGETS snow-shot-updater
+        RUNTIME DESTINATION "snow_shot.app/Contents/MacOS" COMPONENT SnowShot)
+else()
+    install(TARGETS snow-shot-updater RUNTIME DESTINATION bin)
+endif()
 add_library(snow_shot_updates STATIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include/snow_shot/update/updateservice.h"
     src/update/updateservice.cpp)

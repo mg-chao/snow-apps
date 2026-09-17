@@ -327,6 +327,11 @@ if(SNOW_SHOT_OCR_STATIC_ONNXRUNTIME)
         "SNOW_ONNXRUNTIME_LINK_FILE=${CMAKE_CURRENT_BINARY_DIR}/generated/snow-ocr-process-onnxruntime-$<CONFIG>.rsp")
 endif()
 
+if(APPLE)
+    set(SNOW_SHOT_OCR_PROCESS_NO_DEFAULT_FEATURES NO_DEFAULT_FEATURES)
+    set(SNOW_SHOT_OCR_PROCESS_FEATURES dynamic-onnx-runtime)
+endif()
+
 if(WIN32)
     list(APPEND SNOW_SHOT_OCR_PROCESS_FEATURES crash-diagnostics)
     list(APPEND SNOW_SHOT_OCR_PROCESS_ENVIRONMENT
@@ -5839,12 +5844,18 @@ if(WIN32 AND NOT SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC)
 endif()
 
 include(GNUInstallDirs)
+if(APPLE)
+    set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME SnowShot)
+    set(CMAKE_INSTALL_BINDIR "snow_shot.app/Contents/MacOS")
+    set(CMAKE_INSTALL_LIBDIR "snow_shot.app/Contents/Frameworks")
+    set(CMAKE_INSTALL_DATADIR "snow_shot.app/Contents/Resources")
+endif()
 install(TARGETS snow_shot
     BUNDLE DESTINATION .
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
-install(FILES "$<TARGET_FILE:snow_ocr_process>"
+install(PROGRAMS "$<TARGET_FILE:snow_ocr_process>"
     DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 if(EXISTS "${SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE}")
@@ -6106,4 +6117,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --auto-filter-only -platform offscreen)
     set_tests_properties(snow-shot-auto-filter-pinned-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit;windows" TIMEOUT 60)
+endif()
+
+if(APPLE)
+    include(SnowShotMacOS)
 endif()

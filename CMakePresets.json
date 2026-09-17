@@ -110,6 +110,171 @@
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
         "SNOW_RUST_RELEASE_PROFILE": "release-fast"
       }
+    },
+    {
+      "name": "macos-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "${sourceDir}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "environment": {
+        "VCPKG_ROOT": "${sourceDir}/.tools/vcpkg"
+      },
+      "cacheVariables": {
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/.tools/macos/installed",
+        "VCPKG_OVERLAY_PORTS": "${sourceDir}/cmake/vcpkg-overlay-ports",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/vcpkg-overlay-triplets",
+        "VCPKG_MANIFEST_FEATURES": "snow-shot",
+        "SNOW_APPS_BUILD_ANT_DESIGN_QT": "ON",
+        "SNOW_APPS_BUILD_SNOW_IMAGE": "ON",
+        "SNOW_APPS_BUILD_DRAW_ENGINE": "ON",
+        "SNOW_APPS_BUILD_IMAGE_VIEWER": "OFF",
+        "SNOW_APPS_BUILD_SNOW_SHOT": "ON",
+        "SNOW_APPS_STRICT_COMPILE": "ON",
+        "SNOW_APPS_RELEASE_STATIC": "OFF",
+        "SNOW_APPS_QT_STATIC": "OFF",
+        "SNOW_IMAGE_PROFILE": "redistributable",
+        "SNOW_IMAGE_DEFAULT_LINKAGE": "static"
+      }
+    },
+    {
+      "name": "snow-shot-macos-arm64-debug",
+      "displayName": "Snow Shot macOS arm64 Debug",
+      "inherits": "macos-base",
+      "cacheVariables": {
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "VCPKG_TARGET_TRIPLET": "arm64-osx-snow-shot",
+        "SNOW_RUST_TARGET": "aarch64-apple-darwin",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "SNOW_APPS_BUILD_TESTS": "ON",
+        "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
+        "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
+        "SNOW_APPS_API_BASE_URL": "http://localhost:8080",
+        "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON"
+      }
+    },
+    {
+      "name": "snow-shot-macos-arm64-performance",
+      "displayName": "Snow Shot macOS arm64 Performance",
+      "inherits": "macos-base",
+      "cacheVariables": {
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "VCPKG_TARGET_TRIPLET": "arm64-osx-snow-shot",
+        "SNOW_RUST_TARGET": "aarch64-apple-darwin",
+        "CMAKE_BUILD_TYPE": "Release",
+        "SNOW_APPS_BUILD_TESTS": "ON",
+        "SNOW_APPS_BUILD_BENCHMARKS": "ON",
+        "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
+        "SNOW_APPS_API_BASE_URL": "https://snowshot.top",
+        "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON"
+      }
+    },
+    {
+      "name": "snow-shot-macos-arm64-release",
+      "displayName": "Snow Shot macOS arm64 Release",
+      "inherits": "macos-base",
+      "cacheVariables": {
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "VCPKG_TARGET_TRIPLET": "arm64-osx-snow-shot",
+        "SNOW_RUST_TARGET": "aarch64-apple-darwin",
+        "CMAKE_BUILD_TYPE": "Release",
+        "SNOW_APPS_BUILD_TESTS": "OFF",
+        "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
+        "SNOW_APPS_PACKAGE_SNOW_SHOT": "ON",
+        "SNOW_APPS_API_BASE_URL": "https://snowshot.top",
+        "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON"
+      }
+    },
+    {
+      "name": "snow-shot-macos-arm64-fast",
+      "displayName": "Snow Shot macOS arm64 Fast",
+      "inherits": "macos-base",
+      "cacheVariables": {
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "VCPKG_TARGET_TRIPLET": "arm64-osx-snow-shot",
+        "SNOW_RUST_TARGET": "aarch64-apple-darwin",
+        "CMAKE_BUILD_TYPE": "Release",
+        "SNOW_APPS_BUILD_TESTS": "OFF",
+        "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
+        "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
+        "SNOW_APPS_API_BASE_URL": "https://snowshot.top",
+        "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "OFF",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE": "OFF",
+        "SNOW_RUST_RELEASE_PROFILE": "release-fast"
+      }
+    },
+    {
+      "name": "snow-shot-macos-x64-debug",
+      "displayName": "Snow Shot macOS x64 Debug",
+      "inherits": "macos-base",
+      "cacheVariables": {
+        "CMAKE_OSX_ARCHITECTURES": "x86_64",
+        "VCPKG_TARGET_TRIPLET": "x64-osx-snow-shot",
+        "SNOW_RUST_TARGET": "x86_64-apple-darwin",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "SNOW_APPS_BUILD_TESTS": "ON",
+        "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
+        "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
+        "SNOW_APPS_API_BASE_URL": "http://localhost:8080",
+        "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON"
+      }
+    },
+    {
+      "name": "snow-shot-macos-x64-performance",
+      "displayName": "Snow Shot macOS x64 Performance",
+      "inherits": "macos-base",
+      "cacheVariables": {
+        "CMAKE_OSX_ARCHITECTURES": "x86_64",
+        "VCPKG_TARGET_TRIPLET": "x64-osx-snow-shot",
+        "SNOW_RUST_TARGET": "x86_64-apple-darwin",
+        "CMAKE_BUILD_TYPE": "Release",
+        "SNOW_APPS_BUILD_TESTS": "ON",
+        "SNOW_APPS_BUILD_BENCHMARKS": "ON",
+        "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
+        "SNOW_APPS_API_BASE_URL": "https://snowshot.top",
+        "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON"
+      }
+    },
+    {
+      "name": "snow-shot-macos-x64-release",
+      "displayName": "Snow Shot macOS x64 Release",
+      "inherits": "macos-base",
+      "cacheVariables": {
+        "CMAKE_OSX_ARCHITECTURES": "x86_64",
+        "VCPKG_TARGET_TRIPLET": "x64-osx-snow-shot",
+        "SNOW_RUST_TARGET": "x86_64-apple-darwin",
+        "CMAKE_BUILD_TYPE": "Release",
+        "SNOW_APPS_BUILD_TESTS": "OFF",
+        "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
+        "SNOW_APPS_PACKAGE_SNOW_SHOT": "ON",
+        "SNOW_APPS_API_BASE_URL": "https://snowshot.top",
+        "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON"
+      }
+    },
+    {
+      "name": "snow-shot-macos-x64-fast",
+      "displayName": "Snow Shot macOS x64 Fast",
+      "inherits": "macos-base",
+      "cacheVariables": {
+        "CMAKE_OSX_ARCHITECTURES": "x86_64",
+        "VCPKG_TARGET_TRIPLET": "x64-osx-snow-shot",
+        "SNOW_RUST_TARGET": "x86_64-apple-darwin",
+        "CMAKE_BUILD_TYPE": "Release",
+        "SNOW_APPS_BUILD_TESTS": "OFF",
+        "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
+        "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
+        "SNOW_APPS_API_BASE_URL": "https://snowshot.top",
+        "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "OFF",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE": "OFF",
+        "SNOW_RUST_RELEASE_PROFILE": "release-fast"
+      }
     }
   ],
   "buildPresets": [
@@ -117,25 +282,89 @@
       "name": "build-windows-msvc-debug",
       "configurePreset": "windows-msvc-debug",
       "configuration": "Debug",
-      "targets": ["snow-all"]
+      "targets": [
+        "snow-all"
+      ]
     },
     {
       "name": "build-windows-msvc-performance",
       "configurePreset": "windows-msvc-performance",
       "configuration": "Release",
-      "targets": ["snow-all"]
+      "targets": [
+        "snow-all"
+      ]
     },
     {
       "name": "build-snow-shot-msvc-release",
       "configurePreset": "snow-shot-msvc-release",
       "configuration": "Release",
-      "targets": ["snow_shot"]
+      "targets": [
+        "snow_shot"
+      ]
     },
     {
       "name": "build-snow-shot-msvc-fast",
       "configurePreset": "snow-shot-msvc-fast",
       "configuration": "Release",
-      "targets": ["snow_shot"]
+      "targets": [
+        "snow_shot"
+      ]
+    },
+    {
+      "name": "build-snow-shot-macos-arm64-debug",
+      "configurePreset": "snow-shot-macos-arm64-debug",
+      "targets": [
+        "snow_shot"
+      ]
+    },
+    {
+      "name": "build-snow-shot-macos-arm64-performance",
+      "configurePreset": "snow-shot-macos-arm64-performance",
+      "targets": [
+        "snow_shot"
+      ]
+    },
+    {
+      "name": "build-snow-shot-macos-arm64-release",
+      "configurePreset": "snow-shot-macos-arm64-release",
+      "targets": [
+        "snow_shot"
+      ]
+    },
+    {
+      "name": "build-snow-shot-macos-arm64-fast",
+      "configurePreset": "snow-shot-macos-arm64-fast",
+      "targets": [
+        "snow_shot"
+      ]
+    },
+    {
+      "name": "build-snow-shot-macos-x64-debug",
+      "configurePreset": "snow-shot-macos-x64-debug",
+      "targets": [
+        "snow_shot"
+      ]
+    },
+    {
+      "name": "build-snow-shot-macos-x64-performance",
+      "configurePreset": "snow-shot-macos-x64-performance",
+      "targets": [
+        "snow_shot"
+      ]
+    },
+    {
+      "name": "build-snow-shot-macos-x64-release",
+      "configurePreset": "snow-shot-macos-x64-release",
+      "targets": [
+        "snow_shot"
+      ]
+    },
+    {
+      "name": "build-snow-shot-macos-x64-fast",
+      "configurePreset": "snow-shot-macos-x64-fast",
+      "targets": [
+        "snow_shot"
+      ]
     }
   ],
   "testPresets": [
@@ -143,29 +372,111 @@
       "name": "test-windows-msvc-debug",
       "configurePreset": "windows-msvc-debug",
       "configuration": "Debug",
-      "output": {"outputOnFailure": true},
-      "filter": {"exclude": {"label": "interactive|e2e|benchmark"}}
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "interactive|e2e|benchmark"
+        }
+      }
     },
     {
       "name": "test-windows-msvc-performance",
       "configurePreset": "windows-msvc-performance",
       "configuration": "Release",
-      "output": {"outputOnFailure": true},
-      "filter": {"exclude": {"label": "interactive|e2e|benchmark"}}
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "interactive|e2e|benchmark"
+        }
+      }
     },
     {
       "name": "test-windows-msvc-interactive",
       "configurePreset": "windows-msvc-debug",
       "configuration": "Debug",
-      "output": {"outputOnFailure": true},
-      "filter": {"include": {"label": "interactive"}}
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "interactive"
+        }
+      }
+    },
+    {
+      "name": "test-snow-shot-macos-arm64-debug",
+      "configurePreset": "snow-shot-macos-arm64-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "interactive|e2e|benchmark|windows"
+        }
+      }
+    },
+    {
+      "name": "test-snow-shot-macos-arm64-performance",
+      "configurePreset": "snow-shot-macos-arm64-performance",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "interactive|e2e|benchmark|windows"
+        }
+      }
+    },
+    {
+      "name": "test-snow-shot-macos-x64-debug",
+      "configurePreset": "snow-shot-macos-x64-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "interactive|e2e|benchmark|windows"
+        }
+      }
+    },
+    {
+      "name": "test-snow-shot-macos-x64-performance",
+      "configurePreset": "snow-shot-macos-x64-performance",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "interactive|e2e|benchmark|windows"
+        }
+      }
     }
   ],
   "packagePresets": [
     {
       "name": "package-snow-shot",
       "configurePreset": "snow-shot-msvc-release",
-      "generators": ["NSIS"]
+      "generators": [
+        "NSIS"
+      ]
+    },
+    {
+      "name": "package-snow-shot-macos-arm64-release",
+      "configurePreset": "snow-shot-macos-arm64-release",
+      "generators": [
+        "DragNDrop"
+      ]
+    },
+    {
+      "name": "package-snow-shot-macos-x64-release",
+      "configurePreset": "snow-shot-macos-x64-release",
+      "generators": [
+        "DragNDrop"
+      ]
     }
   ]
 }

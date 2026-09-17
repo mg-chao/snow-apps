@@ -31,7 +31,14 @@
           "default-features": false,
           "features": [
             "snow-shot-minimal"
-          ]
+          ],
+          "platform": "windows"
+        },
+        {
+          "name": "ffmpeg",
+          "default-features": false,
+          "features": ["snow-macos-media"],
+          "platform": "osx"
         },
         { "name": "libpng", "features": ["apng"] },
         {
@@ -45,7 +52,7 @@
         {
           "name": "onnxruntime",
           "default-features": false,
-          "features": ["directml"]
+          "features": [{ "name": "directml", "platform": "windows" }]
         },
         {
           "name": "opencv4",
