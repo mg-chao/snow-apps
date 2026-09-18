@@ -1453,6 +1453,10 @@
             <translation>JPEG XL</translation>
         </message>
         <message>
+            <source>Jump to Translation Page</source>
+            <translation>跳转到翻译页面</translation>
+        </message>
+        <message>
             <source>Keep records permanently</source>
             <translation>永久保留记录</translation>
         </message>
@@ -2223,6 +2227,10 @@
         <message>
             <source>Shortcut keys for screenshot tools and cursor movement</source>
             <translation>截图工具和光标移动的快捷键</translation>
+        </message>
+        <message>
+            <source>Show a button in the text recognition toolbar that sends recognized text to the Translation page.</source>
+            <translation>在文本识别工具栏中显示一个按钮，将识别出的文本发送到翻译页面。</translation>
         </message>
         <message>
             <source>Show main interface</source>

@@ -60,6 +60,7 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
     void connectSerialNumberCommands(ScreenshotToolPalette& toolPalette);
     void connectScrollingScreenshotCommands(ScreenshotToolPalette& toolPalette);
     void synchronizeCaptureCursorSetting();
+    void synchronizeJumpToTranslationPageSetting();
     void setActiveToolAndReposition(ScreenshotToolPalette::Tool tool);
 
     ScreenshotToolbarCommandSink& m_commands;

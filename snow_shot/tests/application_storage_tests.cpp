@@ -231,6 +231,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             !defaultValue("text_recognition/resident_process").toBool() &&
             !defaultValue("text_recognition/model_hot_start").toBool() &&
             !defaultValue("global_shortcuts/disable_on_focused_fullscreen_window").toBool() &&
+            !defaultValue("extended_features/jump_to_translation_page").toBool() &&
 #ifdef Q_OS_MACOS
             defaultValue("global_shortcuts/screenshot").toArray() ==
                 QJsonArray{shortcutObject(QStringLiteral("Meta+Shift+1"), 18)} &&
@@ -1060,6 +1061,20 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     static_cast<void>(initialize(executable, temporary.path()));
     require(system.launchAsAdministrator(),
             "elevated startup preference must survive storage restart");
+    const storage::ExtendedFeaturesSettings extendedFeatures;
+    require(!extendedFeatures.translationPageEnabled() &&
+                !extendedFeatures.jumpToTranslationPage() &&
+                extendedFeatures.setTranslationPageEnabled(true) &&
+                extendedFeatures.setJumpToTranslationPage(true) &&
+                applicationStorage.flushNow().success,
+            "extended translation settings must default off and persist through typed adapters");
+    applicationStorage.shutdown();
+    static_cast<void>(initialize(executable, temporary.path()));
+    require(extendedFeatures.translationPageEnabled() && extendedFeatures.jumpToTranslationPage(),
+            "extended translation settings must survive storage restart");
+    require(extendedFeatures.setJumpToTranslationPage(false) &&
+                extendedFeatures.setTranslationPageEnabled(false),
+            "extended translation settings must restore both default values");
     require(system.setAutoStartAtBoot(false) && !system.launchAsAdministrator() &&
                 !system.setLaunchAsAdministrator(true),
             "disabling auto-start must reset and gate administrator launch");

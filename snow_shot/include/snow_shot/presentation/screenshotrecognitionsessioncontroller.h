@@ -141,6 +141,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     [[nodiscard]] bool originalImageVisible() const;
     [[nodiscard]] bool hasTextResult() const;
     [[nodiscard]] QString textDraft() const;
+    [[nodiscard]] QString sourceTextDraft() const;
     [[nodiscard]] QString originalText() const;
     [[nodiscard]] std::unique_ptr<QMimeData> recognitionClipboardMimeData(
         const ScreenshotOcrPresentation* displayedPresentation = nullptr) const;

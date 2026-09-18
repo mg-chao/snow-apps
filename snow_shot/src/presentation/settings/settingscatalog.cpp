@@ -2120,6 +2120,15 @@ QVector<SettingsPageDefinition> builtInPages() {
                    QStringLiteral("extended_features/translation_page_enabled"),
                    SettingsSwitchBinding::TranslationPageEnabled),
                switchItem(
+                   QStringLiteral("extended-features.jump-to-translation-page"),
+                   QT_TRANSLATE_NOOP("SettingsCatalog", "Jump to Translation Page"),
+                   QT_TRANSLATE_NOOP(
+                       "SettingsCatalog",
+                       "Show a button in the text recognition toolbar that sends recognized text "
+                       "to the Translation page."),
+                   QStringLiteral("extended_features/jump_to_translation_page"),
+                   SettingsSwitchBinding::JumpToTranslationPage),
+               switchItem(
                    QStringLiteral("extended-features.standalone-translation-window"),
                    QT_TRANSLATE_NOOP("SettingsCatalog", "Standalone Translation Window"),
                    QT_TRANSLATE_NOOP("SettingsCatalog",
@@ -3048,6 +3057,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::TranslationPageEnabled:
                         expectedKey = QStringLiteral("extended_features/translation_page_enabled");
+                        break;
+                    case SettingsSwitchBinding::JumpToTranslationPage:
+                        expectedKey = QStringLiteral("extended_features/jump_to_translation_page");
                         break;
                     case SettingsSwitchBinding::OriginalImageTranslation:
                         expectedKey =

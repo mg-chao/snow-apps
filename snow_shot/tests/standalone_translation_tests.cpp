@@ -71,6 +71,57 @@ int visibleTranslationWindows() {
     return count;
 }
 
+void directTextRouting() {
+    Server server;
+    SnowShotApiClient client(server.url());
+    auto state = std::make_shared<CaptureState>();
+    int screenReads = 0;
+    SelectedTextTranslationCoordinator coordinator(
+        storage::ApplicationStorage::instance().configuration(), &client, nullptr,
+        std::make_unique<FakeCaptureBackend>(state), [&] {
+            ++screenReads;
+            return qApp->primaryScreen();
+        });
+    auto* modal = coordinator.findChild<AdModal*>();
+    int mainRequests = 0;
+    QString mainText;
+    QObject::connect(&coordinator, &SelectedTextTranslationCoordinator::mainTranslationRequested,
+                     &coordinator, [&](const QString& text) {
+                         ++mainRequests;
+                         mainText = text;
+                     });
+    const storage::ExtendedFeaturesSettings settings;
+    require(settings.setTranslationPageEnabled(false) &&
+                settings.setStandaloneTranslationWindow(false),
+            "disable direct-text routing");
+    coordinator.presentText(QStringLiteral("ignored"));
+    require(mainRequests == 0 && screenReads == 0 && !modal->isOpen() && state->starts == 0,
+            "master-off direct text must not capture or present");
+
+    require(settings.setTranslationPageEnabled(true), "enable direct main-page routing");
+    const QString payload = QString::fromUtf8(
+        "  Recognized \xe4\xb8\xad\xe6\x96\x87 \xf0\x9f\x8c\x8d\r\nsecond line  ");
+    coordinator.presentText(payload);
+    require(mainRequests == 1 && mainText == payload && state->starts == 0 && !modal->isOpen(),
+            "direct text must preserve its payload and use main-page routing without capture");
+
+    require(settings.setStandaloneTranslationWindow(true), "enable direct standalone routing");
+    const QString whitespaceOnly = QStringLiteral(" \n\t ");
+    coordinator.presentText(whitespaceOnly);
+    auto* page = qobject_cast<TranslationPageWidget*>(modal->contentWidget());
+    auto* controller = page != nullptr ? page->findChild<TranslationPageController*>() : nullptr;
+    require(modal->isOpen() && controller != nullptr &&
+                controller->sourceText() == whitespaceOnly &&
+                modal->windowScreen() == qApp->primaryScreen() && mainRequests == 1 &&
+                state->starts == 0,
+            "direct text must preserve whitespace-only payloads in standalone routing");
+    modal->close();
+    flushEvents();
+    require(settings.setStandaloneTranslationWindow(false) &&
+                settings.setTranslationPageEnabled(false),
+            "restore direct-text routing settings");
+}
+
 void routingAndCancellation() {
     Server server;
     SnowShotApiClient client(server.url());
@@ -389,6 +440,7 @@ int main(int argc, char** argv) {
         storage.shutdown();
         return 0;
     }
+    directTextRouting();
     routingAndCancellation();
     pageActionsAndLifecycle();
     storage.shutdown();

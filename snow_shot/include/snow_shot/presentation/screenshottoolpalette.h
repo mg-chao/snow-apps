@@ -368,6 +368,7 @@ class ScreenshotToolPalette final : public QWidget {
     void setTextTranslationState(bool available, bool translating, bool streaming,
                                  bool canUndo = false, bool canRedo = false, bool canReset = false,
                                  bool originalImage = false);
+    void setJumpToTranslationPageVisible(bool visible);
     void setTextTransformSelections(const QString& formatting, const QString& punctuation);
     [[nodiscard]] bool ensureActionFamily(ActionFamily family);
     [[nodiscard]] bool ensureStyleFamily(Tool tool);
@@ -429,6 +430,7 @@ class ScreenshotToolPalette final : public QWidget {
     void tableResetRequested();
     void textEditRequested();
     void textTranslateRequested();
+    void jumpToTranslationPageRequested();
     void textResetRequested();
     void textSettingsRequested();
     void textFormattingRequested(const QString& value);
@@ -766,6 +768,8 @@ class ScreenshotToolPalette final : public QWidget {
     Tool m_tableQrEntryTool = Tool::Table;
     adqt::widgets::AdButton* m_textEditButton = nullptr;
     adqt::widgets::AdButton* m_textTranslateButton = nullptr;
+    adqt::widgets::AdButton* m_jumpToTranslationPageButton = nullptr;
+    QSpacerItem* m_jumpToTranslationPageLeadingSpacer = nullptr;
     adqt::widgets::AdButton* m_textResetButton = nullptr;
     adqt::widgets::AdButton* m_textSettingsButton = nullptr;
     adqt::widgets::AdButton* m_tableMergeButton = nullptr;
@@ -879,9 +883,11 @@ class ScreenshotToolPalette final : public QWidget {
     bool m_tableCanRedo = false;
     bool m_textEditingAvailable = false;
     bool m_textEditing = false;
+    bool m_textResultAvailable = false;
     bool m_textTranslating = false;
     bool m_textTranslationStreaming = false;
     bool m_textTranslationInImage = false;
+    bool m_jumpToTranslationPageVisible = false;
     bool m_textCanUndo = false;
     bool m_textCanRedo = false;
     bool m_textCanReset = false;

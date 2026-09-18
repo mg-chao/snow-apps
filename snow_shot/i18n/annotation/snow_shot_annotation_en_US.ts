@@ -404,6 +404,10 @@
             <translation>Inversion</translation>
         </message>
         <message>
+            <source>Jump to Translation Page</source>
+            <translation>Jump to Translation Page</translation>
+        </message>
+        <message>
             <source>Keep line breaks</source>
             <translation>Keep line breaks</translation>
         </message>

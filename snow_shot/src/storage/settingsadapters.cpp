@@ -388,6 +388,14 @@ bool ExtendedFeaturesSettings::translationPageEnabled() const {
         .toBool(false);
 }
 
+bool ExtendedFeaturesSettings::jumpToTranslationPage() const {
+    return cache().value(QStringLiteral("extended_features/jump_to_translation_page")).toBool();
+}
+
+bool ExtendedFeaturesSettings::setJumpToTranslationPage(bool enabled) const {
+    return cache().setValue(QStringLiteral("extended_features/jump_to_translation_page"), enabled);
+}
+
 bool ExtendedFeaturesSettings::standaloneTranslationWindow() const {
     return cache()
         .value(QStringLiteral("extended_features/standalone_translation_window"))

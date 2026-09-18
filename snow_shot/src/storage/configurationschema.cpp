@@ -165,6 +165,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::String},
     {QStringLiteral("extended_features/standalone_translation_window"), false,
      ConfigurationValueKind::Boolean},
+    {QStringLiteral("extended_features/jump_to_translation_page"), false,
+     ConfigurationValueKind::Boolean},
     {QStringLiteral("extended_features/translation_page_enabled"), false,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot_translation/original_image_translation"), true,

@@ -3948,6 +3948,16 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    add_test(
+        NAME snow-shot-jump-to-translation-page-toolbar-tests
+        COMMAND snow-shot-floating-toolbar-drag-tests --jump-to-translation-page-only
+            -platform offscreen
+    )
+    set_tests_properties(snow-shot-jump-to-translation-page-toolbar-tests PROPERTIES
+        LABELS "unit"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
     set_tests_properties(snow-shot-floating-toolbar-drag-tests PROPERTIES
         RUN_SERIAL TRUE
         ENVIRONMENT_MODIFICATION

@@ -116,6 +116,22 @@ void builtInCatalogIsCompleteAndValid() {
                      translationToggle->configurationKey)
                      .toBool(true),
             "extended translation page exposes a persisted default-off toggle");
+    const auto* jumpToggle =
+        catalog.item({QStringLiteral("extended-features"), QStringLiteral("translation"),
+                      QStringLiteral("extended-features.jump-to-translation-page")});
+    const auto* extendedTranslation =
+        catalog.section(QStringLiteral("extended-features"), QStringLiteral("translation"));
+    require(jumpToggle != nullptr && extendedTranslation != nullptr &&
+                extendedTranslation->items.size() == 3 &&
+                extendedTranslation->items.at(1).id == jumpToggle->id &&
+                jumpToggle->title.translated() == QStringLiteral("Jump to Translation Page") &&
+                jumpToggle->configurationKey ==
+                    QStringLiteral("extended_features/jump_to_translation_page") &&
+                std::get<settings::SettingsSwitchDefinition>(jumpToggle->payload).binding ==
+                    settings::SettingsSwitchBinding::JumpToTranslationPage &&
+                !snow_shot::storage::ConfigurationSchema::defaultValue(jumpToggle->configurationKey)
+                     .toBool(true),
+            "OCR translation jump exposes an ordered persisted default-off switch");
     const auto* standaloneToggle =
         catalog.item({QStringLiteral("extended-features"), QStringLiteral("translation"),
                       QStringLiteral("extended-features.standalone-translation-window")});
@@ -191,9 +207,9 @@ void builtInCatalogIsCompleteAndValid() {
     }
     require(sectionCount == 38, "catalog must contain thirty-eight sections");
 #ifdef Q_OS_MACOS
-    require(itemCount == 160, "the macOS catalog omits DirectML acceleration");
+    require(itemCount == 161, "the macOS catalog omits DirectML acceleration");
 #else
-    require(itemCount == 161, "catalog must contain one hundred sixty-one items");
+    require(itemCount == 162, "catalog must contain one hundred sixty-two items");
 #endif
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =

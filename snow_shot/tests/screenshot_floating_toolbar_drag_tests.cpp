@@ -216,6 +216,9 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void toggleTextTranslation() override {
         ++textTranslationToggleCount;
     }
+    void jumpToTranslationPage() override {
+        ++jumpToTranslationPageCount;
+    }
     void startScrollingScreenshot() override {}
     void pinSelectionToScreen() override {}
     void cancelCapture() override {}
@@ -241,6 +244,7 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     int presentationRepositionCount = 0;
     int textTranslationToolCount = 0;
     int textTranslationToggleCount = 0;
+    int jumpToTranslationPageCount = 0;
 };
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -2068,6 +2072,55 @@ void translateButtonRoutesEveryClickThroughTheToggleCommand() {
             "clicking active Translate should exit through the same toggle command");
 }
 
+void jumpToTranslationPageFollowsLiveSettingsAndOcrAvailability() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "jump toolbar test requires isolated storage");
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(storage.initialize({directory.path(), directory.path(), 60000}).success,
+            "initialize jump toolbar test storage");
+
+    const snow_shot::storage::ExtendedFeaturesSettings settings;
+    NoOpToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    window.setActiveTool(ScreenshotToolPalette::Tool::Ocr);
+    auto* jump = window.findChild<QAbstractButton*>(
+        QStringLiteral("screenshotOcrJumpToTranslationPageButton"));
+    auto* translate =
+        window.findChild<QAbstractButton*>(QStringLiteral("screenshotOcrTextTranslateButton"));
+    auto* formatting =
+        window.findChild<QWidget*>(QStringLiteral("screenshotOcrTextFormattingSelect"));
+    require(jump != nullptr && translate != nullptr && formatting != nullptr && jump->isHidden(),
+            "default-off setting must hide the OCR jump action");
+    const QSize hiddenSize = window.contentSizeHint();
+
+    require(settings.setJumpToTranslationPage(true), "enable preserved child preference");
+    QCoreApplication::processEvents();
+    require(jump->isHidden(), "master-off setting must keep the OCR jump action hidden");
+    require(settings.setTranslationPageEnabled(true), "enable Translation page master");
+    QCoreApplication::processEvents();
+    require(!jump->isHidden() && !jump->isEnabled() &&
+                window.contentSizeHint().width() > hiddenSize.width(),
+            "both settings must reveal a result-gated OCR jump action and expand the row");
+
+    QLayout* layout = jump->parentWidget()->layout();
+    require(layout != nullptr && layout->indexOf(translate) < layout->indexOf(jump) &&
+                layout->indexOf(jump) < layout->indexOf(formatting),
+            "OCR jump action must follow Text translation and precede formatting");
+    window.setTextEditingState(true, false);
+    window.setTextTranslationState(true, false, false);
+    require(jump->isEnabled(), "completed OCR must enable the jump action");
+    jump->click();
+    require(commands.jumpToTranslationPageCount == 1,
+            "OCR jump action must dispatch exactly one toolbar command");
+
+    require(settings.setTranslationPageEnabled(false), "disable Translation page master");
+    QCoreApplication::processEvents();
+    require(jump->isHidden() && settings.jumpToTranslationPage() &&
+                window.contentSizeHint() == hiddenSize,
+            "master-off must hide the action, restore row width, and preserve child preference");
+    storage.shutdown();
+}
+
 void mainTextTranslationButtonUsesTranslationPresentation() {
     NoOpToolbarCommands commands;
     ScreenshotToolbarWindow window(commands);
@@ -2463,6 +2516,10 @@ int main(int argc, char* argv[]) {
         if (app.arguments().contains(QStringLiteral("--ocr-translation-toggle-only"))) {
             translateButtonRoutesEveryClickThroughTheToggleCommand();
             mainTextTranslationButtonUsesTranslationPresentation();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--jump-to-translation-page-only"))) {
+            jumpToTranslationPageFollowsLiveSettingsAndOcrAvailability();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--toolbar-size-only"))) {

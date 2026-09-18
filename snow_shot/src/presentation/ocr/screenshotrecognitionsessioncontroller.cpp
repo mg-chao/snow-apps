@@ -1157,6 +1157,12 @@ QString ScreenshotRecognitionSessionController::textDraft() const {
     return session != nullptr ? session->text() : QString{};
 }
 
+QString ScreenshotRecognitionSessionController::sourceTextDraft() const {
+    const QString key = m_editingKey.isEmpty() ? m_textCacheKey : m_editingKey;
+    const auto session = m_textCache.value(key).editingSession;
+    return session != nullptr ? session->text() : QString{};
+}
+
 QString ScreenshotRecognitionSessionController::originalText() const {
     const QString key = m_editingKey.isEmpty() ? m_textCacheKey : m_editingKey;
     const auto session = m_textCache.value(key).editingSession;

@@ -363,6 +363,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void resetTable() override;
     void toggleTextEditing() override;
     void toggleTextTranslation() override;
+    void jumpToTranslationPage() override;
     void resetTextEditing() override;
     void openTextTranslationSettings() override;
     void applyTextFormatting(const QString& value) override;
@@ -2129,6 +2130,18 @@ void ScreenshotController::Impl::toggleTextTranslation() {
     } else {
         m_ocrController->beginTextTranslation();
     }
+}
+
+void ScreenshotController::Impl::jumpToTranslationPage() {
+    const snow_shot::storage::ExtendedFeaturesSettings settings;
+    if (m_ocrController == nullptr || !m_ocrController->hasTextResult() ||
+        !settings.translationPageEnabled() || !settings.jumpToTranslationPage()) {
+        return;
+    }
+
+    const QString text = m_ocrController->sourceTextDraft();
+    cancelCapture();
+    emit owner.translationPageRequested(text);
 }
 
 void ScreenshotController::Impl::resetTextEditing() {

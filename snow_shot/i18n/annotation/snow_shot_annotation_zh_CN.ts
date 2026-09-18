@@ -404,6 +404,10 @@
             <translation>反相</translation>
         </message>
         <message>
+            <source>Jump to Translation Page</source>
+            <translation>跳转到翻译页面</translation>
+        </message>
+        <message>
             <source>Keep line breaks</source>
             <translation>保留换行</translation>
         </message>
