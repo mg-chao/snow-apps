@@ -1489,6 +1489,10 @@
             <translation>語言</translation>
         </message>
         <message>
+            <source>Last used tool</source>
+            <translation>上次使用的工具</translation>
+        </message>
+        <message>
             <source>Launch as administrator</source>
             <translation>以系統管理員身分啟動</translation>
         </message>
@@ -1911,6 +1915,10 @@
         <message>
             <source>Redo</source>
             <translation>重做</translation>
+        </message>
+        <message>
+            <source>Remember last used tool</source>
+            <translation>記住上次使用的工具</translation>
         </message>
         <message>
             <source>Remove cached screenshot-history thumbnails</source>
@@ -2339,6 +2347,10 @@
         <message>
             <source>Start a screen recording, or stop and copy the current recording</source>
             <translation>開始螢幕錄製，或停止並複製目前的錄製內容</translation>
+        </message>
+        <message>
+            <source>Start new screenshot sessions and pin drawing mode with the last used drawing tool instead of the move tool</source>
+            <translation>開始新的截圖作業或進入貼圖繪製模式時，自動啟用上次使用的繪圖工具，而不是移動工具</translation>
         </message>
         <message>
             <source>Start/pause/resume recording</source>

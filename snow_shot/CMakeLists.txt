@@ -2998,6 +2998,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --always-on-top-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-always-on-top-tests PROPERTIES LABELS "unit"
         RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-pinned-remembered-drawing-tool-tests
+        COMMAND snow-shot-pinned-window-tests --remembered-drawing-tool-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-remembered-drawing-tool-tests PROPERTIES LABELS "unit"
+        RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-pinned-click-through-native-tests
         COMMAND snow-shot-pinned-window-tests --click-through-native-only -platform windows)
     set_tests_properties(snow-shot-pinned-click-through-native-tests PROPERTIES
@@ -3136,6 +3140,18 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-selection-resize-mode-settings-tests
              COMMAND snow-shot-selection-resize-mode-settings-tests)
     set_tests_properties(snow-shot-selection-resize-mode-settings-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+    add_executable(snow-shot-remember-last-used-tool-settings-tests
+        tests/remember_last_used_tool_settings_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-remember-last-used-tool-settings-tests PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-remember-last-used-tool-settings-tests)
+    add_test(NAME snow-shot-remember-last-used-tool-settings-tests
+             COMMAND snow-shot-remember-last-used-tool-settings-tests)
+    set_tests_properties(snow-shot-remember-last-used-tool-settings-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
@@ -3651,6 +3667,53 @@ if(SNOW_SHOT_BUILD_TESTS)
                 "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         )
     endif()
+
+    add_executable(snow-shot-screenshot-toolbar-remembered-tool-tests
+        tests/screenshot_toolbar_remembered_tool_tests.cpp
+        include/snow_shot/presentation/screenshotfloatingtoolpalettewindow.h
+        include/snow_shot/presentation/screenshottoolbarwindow.h
+        include/snow_shot/presentation/screenshottoolpalette.h
+        include/snow_shot/presentation/screenshottoolpalettehost.h
+        include/snow_shot/presentation/styles/thememanager.h
+        src/presentation/components/icons/snowshoticons.cpp
+        src/presentation/core/screenshotgeometry.cpp
+        src/presentation/core/screenshotcanvastoolstyles.cpp
+        src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
+        src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
+        src/presentation/tools/screenshottoolbarmainpanel.cpp
+        src/presentation/tools/screenshottoolpalettebuttons.cpp
+        src/presentation/tools/screenshottoolpalettehost.cpp
+        src/presentation/tools/screenshottoolpalettestylecontrols.cpp
+        src/presentation/tools/screenshottoolpalettestylecomponents.cpp
+        src/presentation/tools/screenshottoolpalettestylemodel.cpp
+        src/presentation/tools/screenshottoolpalettestylepresets.cpp
+        src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/toolbar/screenshottoolbarwindow.cpp
+        src/presentation/styles/thememanager.cpp
+        src/presentation/styles/themecolorscheme.cpp
+    )
+    target_include_directories(snow-shot-screenshot-toolbar-remembered-tool-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-shot-screenshot-toolbar-remembered-tool-tests PRIVATE
+        adqt_icon_core
+        ant_design_icons_qt
+        ant_design_qt
+        Qt6::Widgets
+        snow_draw_engine_qt_canvas
+        snow_shot_storage
+    )
+    if(WIN32)
+        target_link_libraries(snow-shot-screenshot-toolbar-remembered-tool-tests PRIVATE comctl32)
+    endif()
+    snow_shot_import_offscreen_platform(snow-shot-screenshot-toolbar-remembered-tool-tests)
+    add_test(NAME snow-shot-screenshot-toolbar-remembered-tool-tests
+        COMMAND snow-shot-screenshot-toolbar-remembered-tool-tests)
+    set_tests_properties(snow-shot-screenshot-toolbar-remembered-tool-tests PROPERTIES
+        RUN_SERIAL TRUE
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
 
     if(WIN32)
         add_executable(snow-shot-screenshot-toolbar-fill-color-hover-tests

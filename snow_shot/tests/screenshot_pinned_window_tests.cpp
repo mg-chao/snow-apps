@@ -1552,6 +1552,74 @@ void pinnedEditingRemembersLastFilterToolAcrossSessions() {
     controller.setEditMode(false);
 }
 
+void pinnedEditStartsWithRememberedDrawingTool() {
+    namespace storage = snow_shot::storage;
+    using Tool = ScreenshotToolPalette::Tool;
+    const storage::ScreenshotToolbarSettings toolbarSettings;
+    const storage::DrawingSettings drawingSettings;
+    const QString originalDrawingTool = toolbarSettings.lastDrawingTool();
+    const QString originalHighlight = toolbarSettings.lastHighlightTool();
+    const bool originalRememberSwitch = drawingSettings.rememberLastUsedTool();
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(toolbarSettings.setLastDrawingTool(originalDrawingTool));
+        static_cast<void>(toolbarSettings.setLastHighlightTool(originalHighlight));
+        static_cast<void>(drawingSettings.setRememberLastUsedTool(originalRememberSwitch));
+    });
+
+    ScreenshotPinnedWindow window;
+    SnowCanvasWidget canvas;
+    snow_shot::presentation::WindowShortcutManager manager;
+    ScreenshotPinnedEditController controller(window, canvas, manager);
+    canvas.show();
+
+    // Without the preference, pinned editing starts with the Resize window tool.
+    require(drawingSettings.setRememberLastUsedTool(false) &&
+                toolbarSettings.setLastDrawingTool(QStringLiteral("shape")),
+            "pinned remembered tool tests must start with the switch disabled");
+    controller.setEditMode(true);
+    require(controller.resizeWindowToolActive() &&
+                controller.toolbarWindow()->palette()->activeToolForTests() == Tool::Move &&
+                !canvas.interactionEnabled(),
+            "a disabled switch must keep the Resize window tool when entering pinned editing");
+    controller.setEditMode(false);
+
+    // With the preference, entering pinned editing activates the remembered tool.
+    require(drawingSettings.setRememberLastUsedTool(true),
+            "the remembered tool switch must be writable");
+    controller.setEditMode(true);
+    {
+        ScreenshotToolPalette* palette = controller.toolbarWindow()->palette();
+        require(palette != nullptr && !controller.resizeWindowToolActive() &&
+                    palette->activeToolForTests() == Tool::Shape &&
+                    canvas.canvasTool() == SnowCanvasTool::Shape && canvas.interactionEnabled(),
+                "entering pinned editing must activate the remembered shape tool");
+    }
+    controller.setEditMode(false);
+
+    // Highlighter variants resolve through the persisted remembered mode.
+    require(toolbarSettings.setLastDrawingTool(QStringLiteral("highlighter")) &&
+                toolbarSettings.setLastHighlightTool(QStringLiteral("rectangle-highlight")),
+            "the remembered highlighter variant must be configurable");
+    controller.setEditMode(true);
+    {
+        ScreenshotToolPalette* palette = controller.toolbarWindow()->palette();
+        require(palette != nullptr && !controller.resizeWindowToolActive() &&
+                    palette->activeToolForTests() == Tool::RectangleHighlight &&
+                    canvas.canvasTool() == SnowCanvasTool::RectangleHighlight,
+                "entering pinned editing must restore the remembered highlighter variant");
+    }
+    controller.setEditMode(false);
+
+    // An unavailable remembered tool falls back to the Resize window tool.
+    require(toolbarSettings.setLastDrawingTool(QStringLiteral("unknown-tool")),
+            "the remembered drawing tool store accepts arbitrary strings");
+    controller.setEditMode(true);
+    require(controller.resizeWindowToolActive() &&
+                controller.toolbarWindow()->palette()->activeToolForTests() == Tool::Move,
+            "an unknown remembered tool must fall back to the Resize window tool");
+    controller.setEditMode(false);
+}
+
 void pinnedRecognitionShortcutTogglesResults() {
     const bool offscreen = QGuiApplication::platformName() == QStringLiteral("offscreen");
     auto config = cachedOcrPinConfig(nullptr);
@@ -8625,6 +8693,10 @@ int main(int argc, char* argv[]) {
             pinnedEditingRemembersLastFilterToolAcrossSessions();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--remembered-drawing-tool-only"))) {
+            pinnedEditStartsWithRememberedDrawingTool();
+            return 0;
+        }
 #if defined(Q_OS_WIN) || defined(_WIN32)
         if (app.arguments().contains(QStringLiteral("--resize-window-native-only"))) {
             pinnedResizeWindowNativeInteractions();
@@ -8907,6 +8979,7 @@ int main(int argc, char* argv[]) {
         pinnedRecognitionShortcutTogglesResults();
         pinnedEditingRecognitionShortcutsUsePaletteCommands();
         pinnedEditingRemembersLastFilterToolAcrossSessions();
+        pinnedEditStartsWithRememberedDrawingTool();
         cachedPinnedOcrAvailableWithoutRecognitionProvider();
         transformedPinnedOcrTracksCanvasViewport();
         pinnedTransformResetPersistsWithoutResize();

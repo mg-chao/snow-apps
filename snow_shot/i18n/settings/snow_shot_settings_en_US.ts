@@ -1489,6 +1489,10 @@
             <translation>Language</translation>
         </message>
         <message>
+            <source>Last used tool</source>
+            <translation>Last used tool</translation>
+        </message>
+        <message>
             <source>Launch as administrator</source>
             <translation>Launch as administrator</translation>
         </message>
@@ -1911,6 +1915,10 @@
         <message>
             <source>Redo</source>
             <translation>Redo</translation>
+        </message>
+        <message>
+            <source>Remember last used tool</source>
+            <translation>Remember last used tool</translation>
         </message>
         <message>
             <source>Remove cached screenshot-history thumbnails</source>
@@ -2339,6 +2347,10 @@
         <message>
             <source>Start a screen recording, or stop and copy the current recording</source>
             <translation>Start a screen recording, or stop and copy the current recording</translation>
+        </message>
+        <message>
+            <source>Start new screenshot sessions and pin drawing mode with the last used drawing tool instead of the move tool</source>
+            <translation>Start new screenshot sessions and pin drawing mode with the last used drawing tool instead of the move tool</translation>
         </message>
         <message>
             <source>Start/pause/resume recording</source>

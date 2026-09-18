@@ -302,6 +302,7 @@ class ScreenshotToolPalette final : public QWidget {
     [[nodiscard]] bool activateDrawingShortcut(const QString& toolId);
     [[nodiscard]] bool activateToolShortcut(Tool tool);
     [[nodiscard]] bool activateScreenshotShortcut(const QString& actionId);
+    [[nodiscard]] bool activateRememberedDrawingTool();
     void setCaptureCursorEnabled(bool enabled);
     [[nodiscard]] bool captureCursorEnabled() const;
     void setRecaptureBusy(bool busy);
@@ -528,6 +529,7 @@ class ScreenshotToolPalette final : public QWidget {
     adqt::widgets::AdButton* drawingToolEntryButton(Tool tool) const;
     Tool rememberedDrawingMode(Tool tool) const;
     void rememberDrawingMode(Tool tool);
+    void rememberLastUsedDrawingTool(Tool tool);
     void clearDrawingToolGroups();
     bool activateToolFromToolbar(Tool tool, bool toggleVisibleButton = true);
     void activateDrawingTool(Tool tool);

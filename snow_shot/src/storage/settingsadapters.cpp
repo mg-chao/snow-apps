@@ -648,6 +648,14 @@ bool DrawingSettings::setQuickSelectionDisabledTools(const QStringList& tools) c
                             stringArray(tools));
 }
 
+bool DrawingSettings::rememberLastUsedTool() const {
+    return cache().value(QStringLiteral("drawing/remember_last_used_tool")).toBool();
+}
+
+bool DrawingSettings::setRememberLastUsedTool(bool enabled) const {
+    return cache().setValue(QStringLiteral("drawing/remember_last_used_tool"), enabled);
+}
+
 shortcuts::ShortcutBindingList ScreenshotShortcutSettings::moveTool() const {
     return shortcuts(QStringLiteral("move_tool"));
 }
@@ -1324,6 +1332,14 @@ QString ScreenshotToolbarSettings::lastHighlightTool() const {
 
 bool ScreenshotToolbarSettings::setLastHighlightTool(const QString& tool) const {
     return cache().setValue(QStringLiteral("screenshot_toolbar/last_highlight_tool"), tool);
+}
+
+QString ScreenshotToolbarSettings::lastDrawingTool() const {
+    return cache().value(QStringLiteral("screenshot_toolbar/last_drawing_tool")).toString();
+}
+
+bool ScreenshotToolbarSettings::setLastDrawingTool(const QString& tool) const {
+    return cache().setValue(QStringLiteral("screenshot_toolbar/last_drawing_tool"), tool);
 }
 
 namespace {

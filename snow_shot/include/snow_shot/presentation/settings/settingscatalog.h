@@ -136,6 +136,7 @@ enum class SettingsSwitchBinding {
     DisableHotkeysOnFocusedFullscreen,
     AutoStartAtBoot,
     LaunchAsAdministrator,
+    DrawingRememberLastUsedTool,
 };
 
 struct SettingsSwitchDefinition {
