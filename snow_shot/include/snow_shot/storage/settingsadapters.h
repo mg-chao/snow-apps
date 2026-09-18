@@ -3,6 +3,7 @@
 
 #include "snow_shot/customaimodelconfiguration.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
+#include "snow_shot/storage/persistedwindowgeometry.h"
 
 #include <QColor>
 #include <QMap>
@@ -10,6 +11,8 @@
 #include <QStringList>
 #include <QVector>
 #include <QMetaType>
+
+#include <optional>
 
 namespace snow_shot::storage {
 class ExtendedFeaturesSettings final {
@@ -74,6 +77,14 @@ class InterfaceSettings final {
     bool setLanguage(const QString& language) const;
     [[nodiscard]] bool sidebarCollapsed() const;
     bool setSidebarCollapsed(bool collapsed) const;
+};
+
+class WindowMemorySettings final {
+  public:
+    [[nodiscard]] std::optional<PersistedWindowGeometry> mainWindowGeometry() const;
+    bool setMainWindowGeometry(const QRect& normalGeometry, bool maximized) const;
+    [[nodiscard]] std::optional<QSize> translationWindowSize() const;
+    bool setTranslationWindowSize(const QSize& size) const;
 };
 
 class ShortcutSettings final {

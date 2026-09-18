@@ -606,6 +606,7 @@ set(SNOW_SHOT_STORAGE_SOURCES
     include/snow_shot/storage/configurationstore.h
     include/snow_shot/storage/configurationschema.h
     include/snow_shot/storage/persistedselectioncodec.h
+    include/snow_shot/storage/persistedwindowgeometry.h
     include/snow_shot/storage/pinnedwindowrepository.h
     include/snow_shot/storage/pinnedwindowtypes.h
     include/snow_shot/storage/settingsadapters.h
@@ -618,6 +619,7 @@ set(SNOW_SHOT_STORAGE_SOURCES
     src/storage/configurationstore.cpp
     src/storage/configurationschema.cpp
     src/storage/persistedselectioncodec.cpp
+    src/storage/persistedwindowgeometry.cpp
     src/storage/pinnedwindowrepository.cpp
     src/storage/preparedpngimage.cpp
     src/storage/settingsadapters.cpp
@@ -734,6 +736,8 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/services/selectedtexttranslationcoordinator.cpp
     include/snow_shot/presentation/components/standalonetranslationwindow.h
     src/presentation/components/standalonetranslationwindow.cpp
+    include/snow_shot/presentation/windowgeometrymemory.h
+    src/presentation/windowgeometrymemory.cpp
     include/snow_shot/presentation/components/translationpagewidget.h
     src/presentation/components/translationpagewidget.cpp
     include/snow_shot/presentation/components/aboutpagewidget.h
@@ -1778,6 +1782,22 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-main-window-font-tests PROPERTIES
         LABELS "unit"
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT};QT_SCALE_FACTOR=1.5"
+    )
+
+    get_target_property(_window_geometry_memory_sources snow-shot-about-page-tests SOURCES)
+    list(REMOVE_ITEM _window_geometry_memory_sources tests/about_page_tests.cpp)
+    add_executable(snow-shot-window-geometry-memory-tests
+        tests/window_geometry_memory_tests.cpp
+        ${_window_geometry_memory_sources}
+    )
+    target_link_libraries(snow-shot-window-geometry-memory-tests PRIVATE
+        snow_shot_settings snow_shot_image_codec snow_shot_updates)
+    snow_shot_import_offscreen_platform(snow-shot-window-geometry-memory-tests)
+    add_test(NAME snow-shot-window-geometry-memory-tests
+             COMMAND snow-shot-window-geometry-memory-tests)
+    set_tests_properties(snow-shot-window-geometry-memory-tests PROPERTIES
+        LABELS "unit"
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
     )
 
     add_executable(snow-shot-settings-catalog-tests
