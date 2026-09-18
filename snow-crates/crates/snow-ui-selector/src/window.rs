@@ -4,15 +4,16 @@ use std::mem;
 use windows::Win32::Foundation::{HWND, LPARAM, RECT};
 use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumChildWindows, EnumWindows, GetWindowInfo, GetWindowRect, IsIconic, IsWindowVisible,
-    WINDOWINFO,
+    EnumChildWindows, EnumWindows, GWL_EXSTYLE, GetWindowInfo, GetWindowLongPtrW, GetWindowRect,
+    IsIconic, IsWindowVisible, WINDOW_EX_STYLE, WINDOWINFO, WS_EX_LAYERED, WS_EX_TRANSPARENT,
 };
 use windows::core::{BOOL, Result};
 
 use crate::geometry::{intersect_rect, is_empty, same_rect};
 
 /// Enumerate top-level windows that pass cheap visibility checks
-/// (`IsWindowVisible` + `!IsIconic`).  The more expensive DWM cloaking check
+/// (`IsWindowVisible` + `!IsIconic`, excluding click-through layered windows).
+/// The more expensive DWM cloaking check
 /// is deferred to [`is_window_cloaked`] so callers can batch or skip it.
 pub(crate) fn enumerate_top_windows() -> Result<Vec<HWND>> {
     // Typical desktops have 50-200 top-level windows; pre-allocate to avoid
@@ -40,7 +41,7 @@ unsafe extern "system" fn enum_window_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
     true.into()
 }
 
-/// Fast visibility pre-filter: only `IsWindowVisible` + `!IsIconic`.
+/// Fast visibility and input-transparency pre-filter.
 /// Does *not* call `DwmGetWindowAttribute` (cross-process DWM round-trip).
 fn is_cheaply_visible(hwnd: HWND) -> bool {
     if !unsafe { IsWindowVisible(hwnd).as_bool() } {
@@ -49,7 +50,18 @@ fn is_cheaply_visible(hwnd: HWND) -> bool {
     if unsafe { IsIconic(hwnd).as_bool() } {
         return false;
     }
-    true
+    let style = WINDOW_EX_STYLE(unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32);
+    !is_click_through_layered_window(style)
+}
+
+fn is_click_through_layered_window(style: WINDOW_EX_STYLE) -> bool {
+    // Layered windows with WS_EX_TRANSPARENT pass mouse input to windows below.
+    // In particular, the shell handwriting canvas can be visible and topmost
+    // while covering the entire desktop with transparent pixels. Indexing it
+    // would hide every real window from both the UIA and MSAA selectors.
+    // WS_EX_TRANSPARENT alone only specifies paint ordering, so keep those
+    // windows, as well as ordinary interactive layered windows, selectable.
+    style.contains(WS_EX_LAYERED | WS_EX_TRANSPARENT)
 }
 
 /// Desktop-space rectangle used for intelligent selection.
@@ -150,6 +162,56 @@ pub(crate) fn is_window_cloaked(hwnd: HWND) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn click_through_handwriting_canvas_is_not_a_selection_target() {
+        assert!(is_click_through_layered_window(WINDOW_EX_STYLE(
+            0x0a08_00a8
+        )));
+        assert!(!is_click_through_layered_window(WINDOW_EX_STYLE(0)));
+        assert!(!is_click_through_layered_window(WS_EX_LAYERED));
+        assert!(!is_click_through_layered_window(WS_EX_TRANSPARENT));
+    }
+
+    #[test]
+    fn enumeration_skips_click_through_overlay_but_keeps_underlying_window() {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            CreateWindowExW, DestroyWindow, WS_EX_NOACTIVATE, WS_POPUP, WS_VISIBLE,
+        };
+        use windows::core::w;
+
+        struct TestWindow(HWND);
+        impl Drop for TestWindow {
+            fn drop(&mut self) {
+                unsafe { DestroyWindow(self.0).unwrap() };
+            }
+        }
+        let create = |style| {
+            TestWindow(unsafe {
+                CreateWindowExW(
+                    style | WS_EX_NOACTIVATE,
+                    w!("STATIC"),
+                    w!("Snow selector transparency regression"),
+                    WS_POPUP | WS_VISIBLE,
+                    -32000,
+                    -32000,
+                    100,
+                    100,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+            })
+        };
+        let target = create(WINDOW_EX_STYLE(0));
+        let overlay = create(WS_EX_LAYERED | WS_EX_TRANSPARENT);
+        assert!(unsafe { IsWindowVisible(overlay.0).as_bool() });
+        let candidates = enumerate_top_windows().unwrap();
+        assert!(candidates.contains(&target.0));
+        assert!(!candidates.contains(&overlay.0));
+    }
 
     fn rect(left: i32, top: i32, right: i32, bottom: i32) -> RECT {
         RECT {
