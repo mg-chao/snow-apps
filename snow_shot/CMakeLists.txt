@@ -2994,6 +2994,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --click-through-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-click-through-tests PROPERTIES LABELS "unit"
         RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-pinned-always-on-top-tests
+        COMMAND snow-shot-pinned-window-tests --always-on-top-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-always-on-top-tests PROPERTIES LABELS "unit"
+        RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-pinned-click-through-native-tests
         COMMAND snow-shot-pinned-window-tests --click-through-native-only -platform windows)
     set_tests_properties(snow-shot-pinned-click-through-native-tests PROPERTIES

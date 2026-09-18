@@ -53,6 +53,10 @@ applyClientGeometry(WId windowId, const QRect& geometry,
 // Toggles only the input pass-through/no-activation extended styles. The HWND
 // and all unrelated native styles are preserved.
 [[nodiscard]] bool setInputTransparent(WId windowId, bool transparent);
+// Moves the window into or out of the topmost band without recreating the HWND
+// or disturbing its frame styles. Returns false when the targeted call is
+// unavailable so callers can fall back to Qt window flags.
+[[nodiscard]] bool setStaysOnTop(WId windowId, bool staysOnTop);
 [[nodiscard]] bool activateWindow(WId windowId);
 [[nodiscard]] bool installSynchronizedResize(WId windowId, const bool* interactiveResizeActive);
 void removeSynchronizedResize(WId windowId);

@@ -339,6 +339,33 @@ bool screenshot_pinned_window_native::setInputTransparent(WId windowId, bool tra
 #endif
 }
 
+bool screenshot_pinned_window_native::setStaysOnTop(WId windowId, bool staysOnTop) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (QGuiApplication::platformName() != QStringLiteral("windows")) {
+        return false;
+    }
+    const HWND hwnd = toNativeHwnd(windowId);
+    if (hwnd == nullptr) {
+        return false;
+    }
+    const HWND insertAfter = staysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST;
+    if (SetWindowPos(hwnd, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) ==
+        FALSE) {
+        return false;
+    }
+    SetLastError(ERROR_SUCCESS);
+    const LONG_PTR extendedStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+    if (extendedStyle == 0 && GetLastError() != ERROR_SUCCESS) {
+        return false;
+    }
+    return staysOnTop ? (extendedStyle & WS_EX_TOPMOST) != 0 : (extendedStyle & WS_EX_TOPMOST) == 0;
+#else
+    Q_UNUSED(windowId);
+    Q_UNUSED(staysOnTop);
+    return false;
+#endif
+}
+
 bool screenshot_pinned_window_native::activateWindow(WId windowId) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
     const HWND hwnd = toNativeHwnd(windowId);
