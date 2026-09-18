@@ -125,7 +125,6 @@ bool resolveSerialTextConnection(const SnowSceneDisplayItem& serial,
     const bool isBelow = textBounds.top() > serialBounds.bottom();
     const bool centeredHorizontally =
         center.x() >= textBounds.left() && center.x() <= textBounds.right();
-    const double halfLineWidth = lineWidth / 2.0;
 
     QPointF anchor;
     SerialTextConnection connection;
@@ -135,8 +134,7 @@ bool resolveSerialTextConnection(const SnowSceneDisplayItem& serial,
         anchor = QPointF(center.x(), textBounds.top());
     } else {
         const double anchorX = qBound(textBounds.left(), center.x(), textBounds.right());
-        // Match serial_text_attachment: only the underline centerline moves out.
-        const double baselineY = textBounds.bottom() + halfLineWidth;
+        const double baselineY = textBounds.bottom();
         anchor = QPointF(anchorX, baselineY);
         connection.baselineStart = QPointF(textBounds.left(), baselineY);
         connection.baselineEnd = QPointF(textBounds.right(), baselineY);
@@ -146,6 +144,7 @@ bool resolveSerialTextConnection(const SnowSceneDisplayItem& serial,
     const double dx = anchor.x() - center.x();
     const double dy = anchor.y() - center.y();
     const double distance = std::sqrt(dx * dx + dy * dy);
+    const double halfLineWidth = lineWidth / 2.0;
     if (distance <= halfLineWidth) {
         return false;
     }

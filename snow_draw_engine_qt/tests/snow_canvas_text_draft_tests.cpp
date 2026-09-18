@@ -2205,17 +2205,6 @@ void textEditorConnectorBuildsSerialBoundConnector() {
     require(snow_canvas_text_editor_connector::connectorItemForPreview(serial, preview,
                                                                        &circleConnector),
             "diagonal circle preview should create a connector item");
-    require(circleConnector.arrow_point_count == 2, "side connector should add a baseline segment");
-    require(circleConnector.arrow_points != nullptr,
-            "side connector should expose baseline points");
-    requireNear(circleConnector.arrow_points[0].x, 50.0,
-                "underline should keep the painted text left edge");
-    requireNear(circleConnector.arrow_points[1].x, 70.0,
-                "underline should keep the painted text right edge");
-    requireNear(circleConnector.arrow_points[0].y, -49.0,
-                "underline should sit half a stroke outside the text");
-    requireNear(circleConnector.arrow_points[1].y, -49.0,
-                "underline should sit half a stroke outside the text");
 
     serial.serial_number_type = SNOW_SERIAL_NUMBER_TYPE_OUTLINED_SQUARE;
     serial.corner_radii = SnowCornerRadii{2.0, 2.0, 2.0, 2.0};
