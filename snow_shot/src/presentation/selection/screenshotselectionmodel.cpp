@@ -7,6 +7,7 @@
 namespace {
 using snow_shot::presentation::kScreenshotSelectionCornerRadiusMax;
 using snow_shot::presentation::kScreenshotSelectionShadowWidthMax;
+constexpr qreal kNewMarqueeAspectRatio = 1.0;
 } // namespace
 
 void ScreenshotSelectionModel::reset() {
@@ -17,6 +18,7 @@ void ScreenshotSelectionModel::reset() {
     m_cornerRadius = 0;
     m_shadowWidth = 0;
     m_shadowColor = QColor(0x33, 0x33, 0x33);
+    m_aspectRatioLockEnabled = false;
     m_lockedAspectRatio = 0.0;
 }
 
@@ -36,6 +38,7 @@ bool ScreenshotSelectionModel::hasPixelSelection() const {
 void ScreenshotSelectionModel::clearSelection() {
     m_start = QPointF();
     m_end = QPointF();
+    m_lockedAspectRatio = 0.0;
 }
 
 void ScreenshotSelectionModel::setSelectionRect(const QRectF& selection) {
@@ -65,9 +68,14 @@ QRectF ScreenshotSelectionModel::selectionRectForDrag(ScreenshotSelectionDragMod
                                                       const QPointF& position, const QRectF& bounds,
                                                       qreal minimumSelectionSize,
                                                       qreal lockedAspectRatioOverride) const {
-    return draggedScreenshotSelectionRect(
-        dragMode, m_moveOriginalSelection, m_moveStart, position, bounds, minimumSelectionSize,
-        lockedAspectRatioOverride >= 0.0 ? lockedAspectRatioOverride : m_lockedAspectRatio);
+    qreal lockedAspectRatio =
+        lockedAspectRatioOverride >= 0.0 ? lockedAspectRatioOverride : m_lockedAspectRatio;
+    if (lockedAspectRatio <= 0.0 && m_aspectRatioLockEnabled &&
+        dragMode == ScreenshotSelectionDragMode::Marquee) {
+        lockedAspectRatio = kNewMarqueeAspectRatio;
+    }
+    return draggedScreenshotSelectionRect(dragMode, m_moveOriginalSelection, m_moveStart, position,
+                                          bounds, minimumSelectionSize, lockedAspectRatio);
 }
 
 QRectF ScreenshotSelectionModel::boundedSelectionRect(const QRectF& selection, const QRectF& bounds,
@@ -124,7 +132,7 @@ QColor ScreenshotSelectionModel::shadowColor() const {
 }
 
 bool ScreenshotSelectionModel::aspectRatioLocked() const {
-    return m_lockedAspectRatio > 0.0;
+    return m_aspectRatioLockEnabled;
 }
 
 bool ScreenshotSelectionModel::setCornerRadius(int radius) {
@@ -151,16 +159,29 @@ void ScreenshotSelectionModel::setShadowColor(const QColor& color) {
     m_shadowColor = color.isValid() ? color : QColor(0x33, 0x33, 0x33);
 }
 
-void ScreenshotSelectionModel::toggleAspectRatioLock(qreal minimumSelectionSize) {
-    if (m_lockedAspectRatio > 0.0) {
+bool ScreenshotSelectionModel::setAspectRatioLockEnabled(bool enabled, qreal minimumSelectionSize) {
+    const bool enabledChanged = m_aspectRatioLockEnabled != enabled;
+    m_aspectRatioLockEnabled = enabled;
+    if (!enabled) {
+        const bool ratioChanged = m_lockedAspectRatio > 0.0;
         m_lockedAspectRatio = 0.0;
-        return;
+        return enabledChanged || ratioChanged;
     }
 
     const QRectF selection = normalizedSelection();
     if (selection.width() >= minimumSelectionSize && selection.height() >= minimumSelectionSize) {
-        m_lockedAspectRatio = selection.height() / selection.width();
+        const qreal nextAspectRatio = selection.height() / selection.width();
+        const bool ratioChanged = !qFuzzyCompare(1.0 + m_lockedAspectRatio, 1.0 + nextAspectRatio);
+        m_lockedAspectRatio = nextAspectRatio;
+        return enabledChanged || ratioChanged;
     }
+    const bool ratioChanged = m_lockedAspectRatio > 0.0;
+    m_lockedAspectRatio = 0.0;
+    return enabledChanged || ratioChanged;
+}
+
+void ScreenshotSelectionModel::toggleAspectRatioLock(qreal minimumSelectionSize) {
+    static_cast<void>(setAspectRatioLockEnabled(!aspectRatioLocked(), minimumSelectionSize));
 }
 
 ScreenshotSelectionParams ScreenshotSelectionModel::params(const QRect& bounds) const {
@@ -189,6 +210,7 @@ bool ScreenshotSelectionModel::applyParams(const ScreenshotSelectionParams& para
     m_cornerRadius = clamped.radius;
     m_shadowWidth = clamped.shadowWidth;
     setShadowColor(clamped.shadowColor);
+    m_aspectRatioLockEnabled = clamped.lockDragAspectRatio;
     m_lockedAspectRatio = clamped.lockDragAspectRatio
                               ? static_cast<double>(std::max(1, clamped.selection.height())) /
                                     static_cast<double>(std::max(1, clamped.selection.width()))

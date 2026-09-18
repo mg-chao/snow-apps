@@ -86,6 +86,15 @@ void ScreenshotSelectionSettingsStore::setSelectionEffects(int cornerRadius, int
     }));
 }
 
+bool ScreenshotSelectionSettingsStore::aspectRatioLocked() const {
+    return configuration().value(QStringLiteral("screenshot_selection/lock_aspect_ratio")).toBool();
+}
+
+void ScreenshotSelectionSettingsStore::setAspectRatioLocked(bool locked) {
+    static_cast<void>(
+        configuration().setValue(QStringLiteral("screenshot_selection/lock_aspect_ratio"), locked));
+}
+
 ScreenshotIntelligentSelectionTarget ScreenshotSelectionSettingsStore::selectionTarget() const {
     return configuration().value(QStringLiteral("screenshot_selection/selection_target")) ==
                    QStringLiteral("window")
@@ -120,5 +129,6 @@ void ScreenshotSelectionSettingsStore::clear() {
         {QStringLiteral("screenshot_selection/selection_rect_presets"), QJsonArray()},
         {QStringLiteral("screenshot_selection/corner_radius"), 0},
         {QStringLiteral("screenshot_selection/shadow_width"), 0},
+        {QStringLiteral("screenshot_selection/lock_aspect_ratio"), false},
     }));
 }

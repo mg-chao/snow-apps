@@ -121,6 +121,28 @@ void unlockedResizeCanChangeAspectRatio() {
             "unlocked resize should continue to change dimensions independently");
 }
 
+void persistedAspectRatioLockConstrainsNewMarquee() {
+    ScreenshotSelectionModel selection;
+    require(selection.setAspectRatioLockEnabled(true, kMinimumSelectionSize) &&
+                selection.aspectRatioLocked(),
+            "the aspect-ratio lock should be enabled before a selection exists");
+    selection.setSelectionStartEnd(QPointF(40.0, 50.0), QPointF(40.0, 50.0));
+    selection.beginMoveDrag(QPointF(40.0, 50.0));
+
+    const QRectF marquee =
+        selection.selectionRectForDrag(ScreenshotSelectionDragMode::Marquee, QPointF(160.0, 90.0),
+                                       QRectF(0.0, 0.0, 800.0, 600.0), kMinimumSelectionSize);
+    require(std::abs(marquee.width() - marquee.height()) < kComparisonTolerance,
+            "a persisted aspect-ratio lock should constrain a new marquee to a square");
+
+    selection.setSelectionRect(marquee);
+    require(selection.setAspectRatioLockEnabled(true, kMinimumSelectionSize),
+            "confirming the marquee should derive its concrete aspect ratio");
+    selection.clearSelection();
+    require(selection.aspectRatioLocked(),
+            "clearing a selection should preserve the enabled aspect-ratio preference");
+}
+
 void grabAdjustmentSnapsOnlyTheDraggedEdgesToThePressPosition() {
     const QRectF selection(100.0, 100.0, 200.0, 100.0);
     const QRectF bounds(0.0, 0.0, 800.0, 600.0);
@@ -563,6 +585,7 @@ int main() {
     lockedResizeAllowsFlippingAcrossOppositeEdges();
     lockedCornerResizeCanFlipBothAxes();
     unlockedResizeCanChangeAspectRatio();
+    persistedAspectRatioLockConstrainsNewMarquee();
     grabAdjustmentSnapsOnlyTheDraggedEdgesToThePressPosition();
     grabAdjustmentRespectsBoundsAndMinimumSize();
     positionFollowDragTracksThePointerAfterGrabAdjustment();

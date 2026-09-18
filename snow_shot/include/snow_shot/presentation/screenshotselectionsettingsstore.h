@@ -18,6 +18,8 @@ class ScreenshotSelectionSettingsStore final : public ScreenshotSelectionParamsS
     [[nodiscard]] int cornerRadius() const;
     [[nodiscard]] int shadowWidth() const;
     void setSelectionEffects(int cornerRadius, int shadowWidth);
+    [[nodiscard]] bool aspectRatioLocked() const;
+    void setAspectRatioLocked(bool locked);
 
     [[nodiscard]] ScreenshotIntelligentSelectionTarget selectionTarget() const;
     void setSelectionTarget(ScreenshotIntelligentSelectionTarget target);

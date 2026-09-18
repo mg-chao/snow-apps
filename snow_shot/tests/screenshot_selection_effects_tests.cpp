@@ -33,6 +33,8 @@ void selectionEffectsPersistAcrossRestarts() {
     ScreenshotSelectionSettingsStore settings;
     require(settings.cornerRadius() == 0 && settings.shadowWidth() == 0,
             "new installations must default to disabled selection effects");
+    require(!settings.aspectRatioLocked(),
+            "new installations must default to an unlocked selection aspect ratio");
     require(settings.selectionTarget() == ScreenshotIntelligentSelectionTarget::WindowSubElement,
             "new installations must default to the existing child-element selection mode");
     settings.setSelectionTarget(ScreenshotIntelligentSelectionTarget::Window);
@@ -69,12 +71,16 @@ void selectionEffectsPersistAcrossRestarts() {
         selection,
         ui,
         [&](int radius, int shadowWidth) { settings.setSelectionEffects(radius, shadowWidth); },
+        [&](bool locked) { settings.setAspectRatioLocked(locked); },
     });
 
     workflow.setSelectionCornerRadiusFromToolbar(24);
     workflow.setSelectionShadowWidthFromToolbar(12);
+    workflow.toggleSelectionAspectRatioLockFromToolbar();
     require(settings.cornerRadius() == 24 && settings.shadowWidth() == 12,
             "toolbar edits must persist both effects without exporting a screenshot");
+    require(settings.aspectRatioLocked(),
+            "the toolbar aspect-ratio toggle must persist without exporting a screenshot");
     require(!settings.hasPreviousSelectionParams(),
             "editing effects must not create a previous selection rectangle");
 
@@ -84,6 +90,11 @@ void selectionEffectsPersistAcrossRestarts() {
     ScreenshotSelectionSettingsStore restartedSettings;
     require(restartedSettings.cornerRadius() == 24 && restartedSettings.shadowWidth() == 12,
             "selection effects must survive a storage restart");
+    require(restartedSettings.aspectRatioLocked(),
+            "the selection aspect-ratio toggle must survive a storage restart");
+    workflow.toggleSelectionAspectRatioLockFromToolbar();
+    require(!restartedSettings.aspectRatioLocked(),
+            "disabling the toolbar aspect-ratio toggle must update the saved preference");
     require(restartedSettings.selectionTarget() == ScreenshotIntelligentSelectionTarget::Window,
             "selection target preference must survive a storage restart");
     restartedSettings.setSelectionTarget(ScreenshotIntelligentSelectionTarget::WindowSubElement);
@@ -110,8 +121,10 @@ void selectionEffectsPersistAcrossRestarts() {
     auto& configuration = storage.configuration();
     require(!configuration.setValue(QStringLiteral("screenshot_selection/corner_radius"),
                                     QStringLiteral("invalid")) &&
-                !configuration.setValue(QStringLiteral("screenshot_selection/shadow_width"), 1.5),
-            "persistent effect settings must reject non-integer values");
+                !configuration.setValue(QStringLiteral("screenshot_selection/shadow_width"), 1.5) &&
+                !configuration.setValue(QStringLiteral("screenshot_selection/lock_aspect_ratio"),
+                                        QStringLiteral("invalid")),
+            "persistent selection settings must reject values of the wrong type");
 
     workflow.setSelectionCornerRadiusFromToolbar(-1);
     workflow.setSelectionShadowWidthFromToolbar(-1);
@@ -119,11 +132,16 @@ void selectionEffectsPersistAcrossRestarts() {
     require(storage.initialize(options).success, "disabled effects must reload");
     require(settings.cornerRadius() == 0 && settings.shadowWidth() == 0,
             "turning effects off must survive a restart");
+    require(!settings.aspectRatioLocked(),
+            "turning off the aspect-ratio lock must survive a restart");
 
     settings.setSelectionEffects(20, 10);
+    settings.setAspectRatioLocked(true);
     settings.clear();
     require(settings.cornerRadius() == 0 && settings.shadowWidth() == 0,
             "clearing selection settings must reset the persistent effects");
+    require(!settings.aspectRatioLocked(),
+            "clearing selection settings must reset the aspect-ratio lock preference");
     require(settings.selectionTarget() == ScreenshotIntelligentSelectionTarget::WindowSubElement,
             "selection target preference must remain independently persisted when effects clear");
     storage.shutdown();

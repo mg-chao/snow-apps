@@ -24,6 +24,7 @@ struct ScreenshotSelectionEditWorkflowContext {
     ScreenshotSelectionEditUiActions ui;
     std::function<void(int cornerRadius, int shadowWidth)> persistSelectionEffects = [](int, int) {
     };
+    std::function<void(bool locked)> persistSelectionAspectRatioLock = [](bool) {};
 };
 
 class ScreenshotSelectionEditWorkflow final {

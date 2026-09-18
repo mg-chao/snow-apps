@@ -35,7 +35,7 @@ struct ScreenshotCaptureWorkflowContext {
     std::function<void()> captureTerminated = []() {};
     std::function<bool()> smartSelectionEnabled = []() { return true; };
     std::function<void()> refreshCanvasCreationStyles = []() {};
-    std::function<void()> restoreSelectionEffects = []() {};
+    std::function<void()> restoreSelectionPreferences = []() {};
     std::function<bool()> restoreOriginalScreenColors = []() { return true; };
     std::function<bool()> captureCursor = []() { return false; };
     std::function<ScreenshotIntelligentSelectionTarget()> preferredSelectionTarget = []() {

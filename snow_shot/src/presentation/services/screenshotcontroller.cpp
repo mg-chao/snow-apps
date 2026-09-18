@@ -44,6 +44,7 @@
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotselectioneditworkflow.h"
 #include "snow_shot/presentation/screenshotselectionexportuiservices.h"
+#include "snow_shot/presentation/screenshotselectionlimits.h"
 #include "snow_shot/presentation/screenshotselectionmodel.h"
 #include "snow_shot/presentation/screenshotselectionresizeworkflow.h"
 #include "snow_shot/presentation/screenshotselectionsettingsstore.h"
@@ -268,6 +269,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void handleCapturePresented();
     void invalidateDelayedCapture();
     void resetPendingCaptureRequest();
+    [[nodiscard]] bool restoreSelectionAspectRatioLock();
     [[nodiscard]] bool beginCapture(
         PendingSelectionAction action = PendingSelectionAction::None,
         ScreenshotCaptureWorkflow::StartMode mode = ScreenshotCaptureWorkflow::StartMode::Normal);
@@ -1102,6 +1104,7 @@ void ScreenshotController::Impl::createSelectionWorkflows() {
             [this](int cornerRadius, int shadowWidth) {
                 m_selectionSettings->setSelectionEffects(cornerRadius, shadowWidth);
             },
+            [this](bool locked) { m_selectionSettings->setAspectRatioLocked(locked); },
         });
 }
 
@@ -1296,6 +1299,9 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
             [this]() {
                 static_cast<void>(m_selection.setCornerRadius(m_selectionSettings->cornerRadius()));
                 static_cast<void>(m_selection.setShadowWidth(m_selectionSettings->shadowWidth()));
+                static_cast<void>(m_selection.setAspectRatioLockEnabled(
+                    m_selectionSettings->aspectRatioLocked(),
+                    snow_shot::presentation::kScreenshotSelectionMinimumSize));
             },
             []() { return snow_shot::storage::ScreenshotSettings().restoreOriginalScreenColors(); },
             []() { return snow_shot::storage::ScreenshotSettings().captureCursor(); },
@@ -4160,6 +4166,7 @@ bool ScreenshotController::Impl::selectPreviousSelection() {
     if (!m_selection.applyParams(m_selectionSettings->previousSelectionParams(), bounds)) {
         return false;
     }
+    static_cast<void>(restoreSelectionAspectRatioLock());
 
     m_intelligentSelection.clearTransientState();
     m_interaction.confirmSelection();
@@ -4176,7 +4183,18 @@ bool ScreenshotController::Impl::selectPreviousSelection() {
     return true;
 }
 
+bool ScreenshotController::Impl::restoreSelectionAspectRatioLock() {
+    return m_selectionSettings != nullptr &&
+           m_selection.setAspectRatioLockEnabled(
+               m_selectionSettings->aspectRatioLocked(),
+               snow_shot::presentation::kScreenshotSelectionMinimumSize);
+}
+
 void ScreenshotController::Impl::handleSelectionConfirmed() {
+    if (restoreSelectionAspectRatioLock() && m_presentationServices != nullptr) {
+        m_presentationServices->updateOverlayState();
+    }
+
     const PendingSelectionAction action =
         std::exchange(m_pendingSelectionAction, PendingSelectionAction::None);
     if (action == PendingSelectionAction::None) {

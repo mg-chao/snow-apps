@@ -216,7 +216,7 @@ ScreenshotCaptureWorkflow makeWorkflow(ScreenshotCaptureState& state,
     });
 }
 
-void captureRestoresSelectionEffectsAfterReset() {
+void captureRestoresSelectionPreferencesAfterReset() {
     for (const bool prewarm : {false, true}) {
         ScreenshotCaptureState state;
         ScreenshotDisplaySession displays;
@@ -229,9 +229,11 @@ void captureRestoresSelectionEffectsAfterReset() {
             state, runtime, geometry, displays, interaction, selection, intelligentSelection, {}};
         int radius = 24;
         int shadowWidth = 12;
-        context.restoreSelectionEffects = [&]() {
+        bool aspectRatioLocked = true;
+        context.restoreSelectionPreferences = [&]() {
             static_cast<void>(selection.setCornerRadius(radius));
             static_cast<void>(selection.setShadowWidth(shadowWidth));
+            static_cast<void>(selection.setAspectRatioLockEnabled(aspectRatioLocked, 5.0));
         };
         ScreenshotCaptureWorkflow workflow(std::move(context));
         if (prewarm) {
@@ -240,8 +242,8 @@ void captureRestoresSelectionEffectsAfterReset() {
         workflow.startCapture();
         require(selection.cornerRadius() == 24 && selection.shadowWidth() == 12,
                 "cold and prewarmed captures must restore effects after resetting the model");
-        require(!selection.hasPixelSelection() && !selection.aspectRatioLocked(),
-                "restoring effects must not restore selection geometry or aspect ratio locking");
+        require(!selection.hasPixelSelection() && selection.aspectRatioLocked(),
+                "capture startup must restore the lock preference without restoring geometry");
         workflow.cancelCapture();
         radius = 32;
         shadowWidth = 16;
@@ -250,9 +252,11 @@ void captureRestoresSelectionEffectsAfterReset() {
                 "captures after cancellation must reload the latest saved effects");
         radius = 0;
         shadowWidth = 0;
+        aspectRatioLocked = false;
         workflow.startCapture();
-        require(selection.cornerRadius() == 0 && selection.shadowWidth() == 0,
-                "restarting an active capture must restore disabled effects");
+        require(selection.cornerRadius() == 0 && selection.shadowWidth() == 0 &&
+                    !selection.aspectRatioLocked(),
+                "restarting an active capture must restore disabled selection preferences");
     }
 }
 
@@ -1309,7 +1313,7 @@ int main() {
     globalDragCoordinatesStayPhysicalAcrossDifferentDisplayScales();
     externalDragBypassesSelectorAndPreparesBeforeReveal();
     captureSnapshotsScreenColorSetting();
-    captureRestoresSelectionEffectsAfterReset();
+    captureRestoresSelectionPreferencesAfterReset();
     idlePrewarmDoesNotInitializeSelector();
     endingScreenshotReprewarmsOverlaySurfaces();
     cancelConcealsOverlayBeforeClearingVisibleFrame();
