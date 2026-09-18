@@ -287,11 +287,11 @@ pub fn resolve_serial_number_text_connection(
     }
 
     let center = serial.center;
-    let attachment = serial_text_attachment(serial_bounds, text_bounds, center.x);
+    let half_line_width = line_width / 2.0;
+    let attachment = serial_text_attachment(serial_bounds, text_bounds, center.x, half_line_width);
     let dx = attachment.anchor.x - center.x;
     let dy = attachment.anchor.y - center.y;
     let distance = (dx * dx + dy * dy).sqrt();
-    let half_line_width = line_width / 2.0;
     if distance <= half_line_width {
         return None;
     }
@@ -368,6 +368,7 @@ fn serial_text_attachment(
     serial_bounds: DrawRect,
     text_bounds: DrawRect,
     serial_center_x: f64,
+    underline_outset: f64,
 ) -> SerialTextAttachment {
     let is_above = text_bounds.max_y < serial_bounds.min_y;
     let is_below = text_bounds.min_y > serial_bounds.max_y;
@@ -394,8 +395,11 @@ fn serial_text_attachment(
         };
     }
 
+    // The underline is a centered stroke on the bottom edge. Shift only that
+    // centerline out along the edge normal; above/below attachments stay on the
+    // painted edge so the connector cap can meet it after the ray pull-back.
+    let baseline_y = text_bounds.max_y + underline_outset.max(0.0);
     let anchor_x = serial_center_x.clamp(text_bounds.min_x, text_bounds.max_x);
-    let baseline_y = text_bounds.max_y;
     SerialTextAttachment {
         anchor: Point {
             x: anchor_x,
@@ -1179,6 +1183,113 @@ mod tests {
         assert!(square_connection.start.y > circle_connection.start.y);
         assert!(solid_square_connection.start.x > square_connection.start.x);
         assert!(solid_square_connection.start.y > square_connection.start.y);
+    }
+
+    fn filled_serial_bound_text(center: Point<f64>) -> TextData {
+        TextData {
+            center,
+            width: 40.0,
+            height: 20.0,
+            text: "filled".to_owned(),
+            font_size: 20.0,
+            fill: ColorRgba8 {
+                r: 0xff,
+                g: 0xff,
+                b: 0xff,
+                a: 0xff,
+            },
+            ..TextData::default()
+        }
+    }
+
+    fn sample_serial_number() -> SerialNumberData {
+        SerialNumberData {
+            center: Point::new(0.0, 0.0),
+            diameter: 40.0,
+            font_size: 20.0,
+            stroke_width: 2.0,
+            ..SerialNumberData::default()
+        }
+    }
+
+    #[test]
+    fn connector_underline_centerline_clears_text_paint() {
+        let text = filled_serial_bound_text(Point::new(120.0, 100.0));
+        let serial = sample_serial_number();
+        let half_line_width = resolve_serial_number_stroke_width(&serial) / 2.0;
+        assert!((half_line_width - 1.0).abs() < 1e-9);
+
+        let bounds = text_bounds(&text);
+        let connection = resolve_serial_number_text_connection(&serial, &text).unwrap();
+        let baseline_start = connection.text_baseline_start.unwrap();
+        let baseline_end = connection.text_baseline_end.unwrap();
+        assert!((baseline_start.x - bounds.min_x).abs() < 1e-9);
+        assert!((baseline_end.x - bounds.max_x).abs() < 1e-9);
+        assert!((baseline_start.y - (bounds.max_y + half_line_width)).abs() < 1e-9);
+        assert!((baseline_end.y - (bounds.max_y + half_line_width)).abs() < 1e-9);
+        assert!(baseline_start.y - bounds.max_y >= half_line_width - 1e-9);
+        assert!(connection.end.y - bounds.max_y >= -1e-9);
+    }
+
+    #[test]
+    fn vertical_connector_cap_meets_text_edge() {
+        let serial = sample_serial_number();
+        let half_line_width = resolve_serial_number_stroke_width(&serial) / 2.0;
+
+        let text_below = filled_serial_bound_text(Point::new(0.0, 160.0));
+        let below_bounds = text_bounds(&text_below);
+        let below = resolve_serial_number_text_connection(&serial, &text_below).unwrap();
+        assert!(below.text_baseline_start.is_none());
+        assert!((below.end.x).abs() < 1e-9);
+        assert!((below.end.y - (below_bounds.min_y - half_line_width)).abs() < 1e-9);
+
+        let text_above = filled_serial_bound_text(Point::new(0.0, -160.0));
+        let above_bounds = text_bounds(&text_above);
+        let above = resolve_serial_number_text_connection(&serial, &text_above).unwrap();
+        assert!(above.text_baseline_start.is_none());
+        assert!((above.end.x).abs() < 1e-9);
+        assert!((above.end.y - (above_bounds.max_y + half_line_width)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn above_below_classification_uses_unexpanded_text_bounds() {
+        let serial = sample_serial_number();
+        let half_line_width = resolve_serial_number_stroke_width(&serial) / 2.0;
+        let serial_bounds = serial_number_bounds(&serial);
+        let template = filled_serial_bound_text(Point::new(0.0, 0.0));
+        let extent_x = draw_rect_width(text_bounds(&template)) / 2.0;
+        let extent_y = draw_rect_height(text_bounds(&template)) / 2.0;
+        let gap = half_line_width / 2.0;
+
+        let close_above =
+            filled_serial_bound_text(Point::new(0.0, serial_bounds.min_y - gap - extent_y));
+        let close_above_bounds = text_bounds(&close_above);
+        assert!(close_above_bounds.max_y < serial_bounds.min_y);
+        assert!(close_above_bounds.max_y + half_line_width >= serial_bounds.min_y);
+        let close_above_attachment =
+            serial_text_attachment(serial_bounds, close_above_bounds, 0.0, half_line_width);
+        assert!(close_above_attachment.text_baseline_start.is_none());
+
+        let close_below =
+            filled_serial_bound_text(Point::new(0.0, serial_bounds.max_y + gap + extent_y));
+        let close_below_bounds = text_bounds(&close_below);
+        assert!(close_below_bounds.min_y > serial_bounds.max_y);
+        assert!(close_below_bounds.min_y - half_line_width <= serial_bounds.max_y);
+        let close_below_attachment =
+            serial_text_attachment(serial_bounds, close_below_bounds, 0.0, half_line_width);
+        assert!(close_below_attachment.text_baseline_start.is_none());
+
+        let just_outside_above = filled_serial_bound_text(Point::new(gap + extent_x, -160.0));
+        let just_outside_bounds = text_bounds(&just_outside_above);
+        assert!(just_outside_bounds.min_x > 0.0);
+        assert!(just_outside_bounds.min_x - half_line_width <= 0.0);
+        let connection =
+            resolve_serial_number_text_connection(&serial, &just_outside_above).unwrap();
+        let baseline_start = connection.text_baseline_start.unwrap();
+        let baseline_end = connection.text_baseline_end.unwrap();
+        assert!((baseline_start.x - just_outside_bounds.min_x).abs() < 1e-9);
+        assert!((baseline_end.x - just_outside_bounds.max_x).abs() < 1e-9);
+        assert!((baseline_start.y - (just_outside_bounds.max_y + half_line_width)).abs() < 1e-9);
     }
 
     #[test]
