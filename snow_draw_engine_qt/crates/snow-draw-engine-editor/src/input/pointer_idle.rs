@@ -430,6 +430,49 @@ impl Editor {
         }
     }
 
+    fn try_begin_duplicate_drag(
+        &mut self,
+        document: &DocumentModel,
+        event: PointerEvent,
+        intent: PrimaryPointerIntent,
+        canvas_point: Point<f64>,
+    ) -> Option<InteractionOutput> {
+        if !event.modifiers.alt || self.state.active_text_draft.is_some() {
+            return None;
+        }
+
+        // Resolve the drag selection before starting the shared copy workflow.
+        // Existing selections keep all members; a new hit becomes the selection.
+        // Handles, Shift-toggle and empty-canvas intents keep their normal behavior.
+        match intent {
+            PrimaryPointerIntent::BeginSelectionInteraction {
+                target: SelectionHitTarget::Move,
+            }
+            | PrimaryPointerIntent::BeginSelectedArrowInteraction {
+                target: ArrowHitTarget::Move,
+            } => {}
+            PrimaryPointerIntent::BeginArrowElementInteraction { id }
+            | PrimaryPointerIntent::BeginElementSelectionMove { id }
+            | PrimaryPointerIntent::TextEditCandidate { id } => {
+                if !self.state.selection.contains(id) {
+                    self.set_selection_state_with_document(Some(document), vec![id], Some(id));
+                }
+            }
+            _ => return None,
+        }
+
+        let output = self.begin_current_selection_interaction(
+            document,
+            event,
+            SelectionHitTarget::Move,
+            canvas_point,
+        );
+        if let InteractionState::PendingSelectionMove(state) = &mut self.state.interaction {
+            state.duplicate = true;
+        }
+        Some(output)
+    }
+
     pub(super) fn handle_idle_pointer_down(
         &mut self,
         document: &DocumentModel,
@@ -445,34 +488,7 @@ impl Editor {
         let canvas_point = view_to_canvas(event.position, &self.camera(), self.surface_size());
         let intent =
             self.resolve_primary_pointer_intent(document, policy, canvas_point, event.modifiers);
-        // Copy only an existing selection and only for body/move gestures.
-        // Handle and Shift-toggle intents retain their normal precedence.
-        let copy_move = event.modifiers.alt && self.state.active_text_draft.is_none();
-        let copy_move = copy_move
-            && match intent {
-                PrimaryPointerIntent::BeginSelectionInteraction {
-                    target: SelectionHitTarget::Move,
-                }
-                | PrimaryPointerIntent::BeginSelectedArrowInteraction {
-                    target: ArrowHitTarget::Move,
-                } => true,
-                PrimaryPointerIntent::BeginArrowElementInteraction { id }
-                | PrimaryPointerIntent::BeginElementSelectionMove { id }
-                | PrimaryPointerIntent::TextEditCandidate { id } => {
-                    self.state.selection.contains(id)
-                }
-                _ => false,
-            };
-        if copy_move {
-            let output = self.begin_current_selection_interaction(
-                document,
-                event,
-                SelectionHitTarget::Move,
-                canvas_point,
-            );
-            if let InteractionState::PendingSelectionMove(state) = &mut self.state.interaction {
-                state.duplicate = true;
-            }
+        if let Some(output) = self.try_begin_duplicate_drag(document, event, intent, canvas_point) {
             return Ok(output);
         }
         match intent {

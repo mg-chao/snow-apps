@@ -505,7 +505,7 @@ fn alt_drag_serial_number_copies_bound_text_and_connector() {
 }
 
 #[test]
-fn alt_drag_reuses_grid_snapping_and_unselected_drags_still_move() {
+fn alt_drag_reuses_grid_snapping_and_plain_unselected_drags_still_move() {
     let (mut engine, viewport, id) = setup();
     engine
         .set_viewport_grid_config(
@@ -557,7 +557,7 @@ fn alt_drag_reuses_grid_snapping_and_unselected_drags_still_move() {
         PointerEventType::Down,
         400.0,
         200.0,
-        true,
+        false,
     );
     pointer(
         &mut engine,
@@ -565,7 +565,7 @@ fn alt_drag_reuses_grid_snapping_and_unselected_drags_still_move() {
         PointerEventType::Move,
         460.0,
         260.0,
-        true,
+        false,
     );
     pointer(
         &mut engine,
@@ -573,13 +573,213 @@ fn alt_drag_reuses_grid_snapping_and_unselected_drags_still_move() {
         PointerEventType::Up,
         460.0,
         260.0,
-        true,
+        false,
     );
     assert_eq!(engine.model.paint_order(), &[id]);
     assert_eq!(
         engine.model.rectangle(id).unwrap().center,
         Point::new(60.0, 60.0)
     );
+}
+
+#[test]
+fn alt_drag_unselected_element_selects_hit_and_copies_in_one_gesture() {
+    for tool in [ActiveTool::Shape, ActiveTool::Arrow, ActiveTool::Line] {
+        for select_other in [false, true] {
+            let (mut engine, viewport, other) = setup();
+            engine.set_viewport_active_tool(viewport, tool).unwrap();
+            for (kind, x, y) in [
+                (PointerEventType::Down, 550.0, 450.0),
+                (PointerEventType::Move, 750.0, 550.0),
+                (PointerEventType::Up, 750.0, 550.0),
+            ] {
+                pointer(&mut engine, viewport, kind, x, y, false);
+            }
+            let id = engine.model.paint_order()[1];
+            engine
+                .set_viewport_active_tool(viewport, ActiveTool::Select)
+                .unwrap();
+            engine
+                .reset_editing_state_with_viewport_changes(viewport)
+                .unwrap();
+            if select_other {
+                engine
+                    .select_element_with_viewport_changes(viewport, other)
+                    .unwrap();
+            }
+            let original = engine.model.document().clone();
+            let originals: Vec<_> = [other, id]
+                .map(|id| engine.model.element(id).unwrap().clone())
+                .into();
+            let history = engine.history_state();
+            let start = if tool == ActiveTool::Shape {
+                (650.0, 450.0)
+            } else {
+                (650.0, 500.0)
+            };
+            pointer(
+                &mut engine,
+                viewport,
+                PointerEventType::Down,
+                start.0,
+                start.1,
+                true,
+            );
+            assert_eq!(engine.selected_ids(), vec![id]);
+            // Releasing Alt after pointer-down must not change the gesture.
+            pointer(
+                &mut engine,
+                viewport,
+                PointerEventType::Move,
+                start.0 + 40.0,
+                start.1 + 30.0,
+                false,
+            );
+            assert_eq!(engine.model.document(), &original);
+            assert_eq!(engine.history_state(), history);
+            assert_eq!(
+                scene(&engine, viewport).len(),
+                3,
+                "{tool:?}, other={select_other}"
+            );
+            pointer(
+                &mut engine,
+                viewport,
+                PointerEventType::Up,
+                start.0 + 40.0,
+                start.1 + 30.0,
+                false,
+            );
+            let copy = engine.selected_ids()[0];
+            assert_ne!(copy, id);
+            assert_ne!(copy, other);
+            assert_eq!(engine.model.paint_order().len(), 3);
+            for record in &originals {
+                assert_eq!(engine.model.element(record.id).unwrap(), record);
+            }
+            let copied = engine.model.element(copy).unwrap().clone();
+            engine.undo().unwrap();
+            assert_eq!(engine.model.paint_order(), &[other, id]);
+            for record in &originals {
+                assert_eq!(engine.model.element(record.id).unwrap(), record);
+            }
+            assert_eq!(engine.selected_ids(), vec![id]);
+            engine.redo().unwrap();
+            assert_eq!(engine.model.element(copy).unwrap(), &copied);
+            assert_eq!(engine.selected_ids(), vec![copy]);
+        }
+    }
+}
+
+#[test]
+fn alt_drag_unselected_text_copies_without_starting_text_editing() {
+    use snow_draw_engine_document::{ElementMeta, TextData, Transaction};
+    for tool in [ActiveTool::Select, ActiveTool::Text] {
+        let (mut engine, viewport, _) = setup();
+        let id = ElementId {
+            index: 1,
+            generation: 1,
+        };
+        let text = TextData {
+            center: Point::new(250.0, 150.0),
+            text: "copy this text".to_owned(),
+            width: 100.0,
+            height: 30.0,
+            ..TextData::default()
+        };
+        let mut transaction = Transaction::new("insert text");
+        transaction.insert_text(id, ElementMeta::default(), text.clone());
+        engine
+            .commit_transaction(
+                viewport,
+                ApplyTransactionCommand {
+                    transaction,
+                    history_undo_snapshot: None,
+                },
+            )
+            .unwrap();
+        engine.set_viewport_active_tool(viewport, tool).unwrap();
+        engine
+            .reset_editing_state_with_viewport_changes(viewport)
+            .unwrap();
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Down,
+            650.0,
+            450.0,
+            true,
+        );
+        assert_eq!(engine.selected_ids(), vec![id]);
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Move,
+            700.0,
+            490.0,
+            true,
+        );
+        assert_eq!(engine.model.text(id).unwrap(), &text);
+        assert_eq!(scene(&engine, viewport).len(), 3);
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Up,
+            700.0,
+            490.0,
+            true,
+        );
+        let copy = engine.selected_ids()[0];
+        assert_ne!(copy, id);
+        let mut expected = text.clone();
+        expected.center = Point::new(300.0, 190.0);
+        assert_eq!(engine.model.text(copy).unwrap(), &expected);
+        assert_eq!(engine.model.text(id).unwrap(), &text);
+    }
+}
+
+#[test]
+fn alt_drag_unselected_click_and_cancel_do_not_commit_a_copy() {
+    for (end, offset) in [
+        (PointerEventType::Up, 0.0),
+        (PointerEventType::Up, 1.0),
+        (PointerEventType::Cancel, 50.0),
+    ] {
+        let (mut engine, viewport, id) = setup();
+        engine
+            .reset_editing_state_with_viewport_changes(viewport)
+            .unwrap();
+        let original = engine.model.document().clone();
+        let history = engine.history_state();
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Down,
+            400.0,
+            200.0,
+            true,
+        );
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Move,
+            400.0 + offset,
+            200.0 + offset,
+            true,
+        );
+        pointer(
+            &mut engine,
+            viewport,
+            end,
+            400.0 + offset,
+            200.0 + offset,
+            true,
+        );
+        assert_eq!(engine.model.document(), &original);
+        assert_eq!(engine.history_state(), history);
+        assert_eq!(engine.selected_ids(), vec![id]);
+        assert_eq!(scene(&engine, viewport).len(), 1);
+    }
 }
 
 #[test]
