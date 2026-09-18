@@ -1,7 +1,7 @@
 use super::*;
 use snow_draw_engine_core::arrow::{ArrowEndpointEdge, ArrowType, StrokeStyle};
 use snow_draw_engine_document::{
-    ElementMeta, TextLayoutSize, arrow_is_degenerate, resolve_serial_number_diameter,
+    ElementMeta, TextLayoutSize, arrow_is_degenerate, resolve_serial_number_data_diameter,
     text_with_auto_resize_layout, validate_text_layout_size,
 };
 
@@ -194,15 +194,23 @@ impl Editor {
         document: &DocumentModel,
         center: Point<f64>,
     ) -> Result<SerialNumberData, ErrorCode> {
-        let number = next_serial_number(document).max(self.state.default_serial_number.number);
+        let number = if self
+            .state
+            .default_serial_number
+            .serial_number_type
+            .supports_number()
+        {
+            next_serial_number(document).max(self.state.default_serial_number.number)
+        } else {
+            self.state.default_serial_number.number
+        };
         let mut serial = SerialNumberData {
             center,
             number,
             ..self.state.default_serial_number.clone()
         };
         serial.text_element_id = None;
-        serial.diameter =
-            resolve_serial_number_diameter(serial.number, serial.font_size, serial.diameter);
+        serial.diameter = resolve_serial_number_data_diameter(&serial, serial.diameter);
         validate_serial_number(&serial)?;
         Ok(serial)
     }
@@ -214,7 +222,11 @@ impl Editor {
     ) -> Result<ElementId, ErrorCode> {
         validate_serial_number(&serial)?;
         let id = document.peek_next_element_id();
-        let next_default_number = serial.number.saturating_add(1);
+        let next_default_number = if serial.serial_number_type.supports_number() {
+            serial.number.saturating_add(1)
+        } else {
+            self.state.default_serial_number.number
+        };
         let mut transaction = Transaction::new("create serial number");
         transaction.insert_serial_number(id, ElementMeta::default(), serial);
         self.queue_command(EditorCommand::ApplyTransaction(

@@ -129,12 +129,14 @@ enum class SettingsSwitchBinding {
     PinAutoResizeWindow,
     OriginalImageTranslation,
     TranslationPageEnabled,
+    JumpToTranslationPage,
     StandaloneTranslationWindow,
     LoopAnimatedImages,
     ScreenRecordingCaptureToolbar,
     DisableHotkeysOnFocusedFullscreen,
     AutoStartAtBoot,
     LaunchAsAdministrator,
+    DrawingRememberLastUsedTool,
 };
 
 struct SettingsSwitchDefinition {

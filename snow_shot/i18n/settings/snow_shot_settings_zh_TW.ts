@@ -1461,6 +1461,10 @@
             <translation>JPEG XL</translation>
         </message>
         <message>
+            <source>Jump to Translation Page</source>
+            <translation>跳轉至翻譯頁面</translation>
+        </message>
+        <message>
             <source>Keep records permanently</source>
             <translation>永久保留記錄</translation>
         </message>
@@ -1483,6 +1487,10 @@
         <message>
             <source>Language</source>
             <translation>語言</translation>
+        </message>
+        <message>
+            <source>Last used tool</source>
+            <translation>上次使用的工具</translation>
         </message>
         <message>
             <source>Launch as administrator</source>
@@ -1909,6 +1917,10 @@
             <translation>重做</translation>
         </message>
         <message>
+            <source>Remember last used tool</source>
+            <translation>記住上次使用的工具</translation>
+        </message>
+        <message>
             <source>Remove cached screenshot-history thumbnails</source>
             <translation>刪除已快取的截圖歷史縮圖</translation>
         </message>
@@ -2233,6 +2245,10 @@
             <translation>截圖工具與游標移動的快速鍵</translation>
         </message>
         <message>
+            <source>Show a button in the text recognition toolbar that sends recognized text to the Translation page.</source>
+            <translation>在文字辨識工具列中顯示一個按鈕，將辨識出的文字傳送到翻譯頁面。</translation>
+        </message>
+        <message>
             <source>Show main interface</source>
             <translation>顯示主介面</translation>
         </message>
@@ -2331,6 +2347,10 @@
         <message>
             <source>Start a screen recording, or stop and copy the current recording</source>
             <translation>開始螢幕錄製，或停止並複製目前的錄製內容</translation>
+        </message>
+        <message>
+            <source>Start new screenshot sessions and pin drawing mode with the last used drawing tool instead of the move tool</source>
+            <translation>開始新的截圖作業或進入貼圖繪製模式時，自動啟用上次使用的繪圖工具，而不是移動工具</translation>
         </message>
         <message>
             <source>Start/pause/resume recording</source>

@@ -120,6 +120,7 @@ pub(crate) fn next_serial_number(document: &DocumentModel) -> i64 {
         .paint_order()
         .iter()
         .filter_map(|id| document.serial_number(*id).ok())
+        .filter(|serial| serial.serial_number_type.supports_number())
         .map(|serial| serial.number.max(0))
         .max()
         .unwrap_or(0)
@@ -690,6 +691,9 @@ impl Editor {
             let Ok(current) = document.serial_number(id) else {
                 continue;
             };
+            if !current.serial_number_type.supports_number() {
+                continue;
+            }
             let next_number = if delta < 0 {
                 current.number.saturating_sub(delta.saturating_abs()).max(0)
             } else {
@@ -821,6 +825,55 @@ mod tests {
         ArrowData, CanvasFilterType, ElementData, ElementMeta, FreeDrawData, Operation,
         PenFilterData, RectangleData, SerialNumberData, TextData,
     };
+
+    #[test]
+    fn circles_do_not_consume_or_adjust_sequence_numbers() {
+        let mut document = DocumentModel::new();
+        let mut editor = Editor::new(EngineConfig::default()).unwrap();
+        let numbered_id = insert_serial_number(
+            &mut document,
+            SerialNumberData {
+                number: 5,
+                ..SerialNumberData::default()
+            },
+        );
+        editor.state.default_serial_number.serial_number_type =
+            snow_draw_engine_document::SerialNumberType::Circle;
+        editor.state.default_serial_number.number = 6;
+        let preview = editor
+            .serial_number_creation_preview(&document, Point::new(40.0, 50.0))
+            .unwrap();
+        assert_eq!(preview.diameter, 12.0);
+        let circle_id = editor
+            .queue_serial_number_creation(&document, preview)
+            .unwrap();
+        apply_editor_command(&mut document, editor.pending_command.take().unwrap());
+        assert_eq!(editor.state.default_serial_number.number, 6);
+        assert_eq!(next_serial_number(&document), 6);
+        editor.set_selection_state(vec![circle_id], Some(circle_id));
+        assert!(
+            editor
+                .adjust_selected_serial_numbers(&document, 1)
+                .unwrap()
+                .is_none()
+        );
+        let original_circle = document.serial_number(circle_id).unwrap().clone();
+        editor.set_selection_state(vec![numbered_id, circle_id], Some(numbered_id));
+        let command = editor
+            .adjust_selected_serial_numbers(&document, 1)
+            .unwrap()
+            .unwrap();
+        apply_editor_command(&mut document, command);
+        assert_eq!(document.serial_number(numbered_id).unwrap().number, 6);
+        assert_eq!(document.serial_number(circle_id).unwrap(), &original_circle);
+        editor.state.default_serial_number.serial_number_type =
+            snow_draw_engine_document::SerialNumberType::OutlinedCircle;
+        let numbered = editor
+            .serial_number_creation_preview(&document, Point::default())
+            .unwrap();
+        assert_eq!(numbered.number, 7);
+        assert!(numbered.diameter > 12.0);
+    }
 
     fn apply_editor_command(document: &mut DocumentModel, command: EditorCommand) {
         let EditorCommand::ApplyTransaction(command) = command else {

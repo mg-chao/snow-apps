@@ -23,16 +23,7 @@ SelectedTextTranslationCoordinator::SelectedTextTranslationCoordinator(
       m_screenProvider(screenProvider ? std::move(screenProvider)
                                       : [] { return QGuiApplication::screenAt(QCursor::pos()); }) {
     connect(m_capture, &SelectedTextTranslationController::textReady, this,
-            [this](const QString& text) {
-                if (m_shutdown || !m_configuration.value(kMasterKey).toBool()) {
-                    return;
-                }
-                if (m_standalone) {
-                    m_window->showTranslation(text, m_screen);
-                } else {
-                    emit mainTranslationRequested(text);
-                }
-            });
+            [this](const QString& text) { routeText(text, m_standalone, m_screen); });
     connect(&configuration, &storage::ConfigurationStore::valueChanged, this,
             [this](const QString& key, const QJsonValue&) {
                 if (key != kMasterKey && key != kStandaloneKey) {
@@ -58,6 +49,25 @@ void SelectedTextTranslationCoordinator::capture() {
     m_standalone = m_configuration.value(kStandaloneKey).toBool();
     m_screen = m_screenProvider();
     m_capture->capture();
+}
+
+void SelectedTextTranslationCoordinator::presentText(const QString& text) {
+    if (m_shutdown || !m_configuration.value(kMasterKey).toBool()) {
+        return;
+    }
+    routeText(text, m_configuration.value(kStandaloneKey).toBool(), m_screenProvider());
+}
+
+void SelectedTextTranslationCoordinator::routeText(const QString& text, bool standalone,
+                                                   QScreen* screen) {
+    if (m_shutdown || !m_configuration.value(kMasterKey).toBool()) {
+        return;
+    }
+    if (standalone) {
+        m_window->showTranslation(text, screen);
+    } else {
+        emit mainTranslationRequested(text);
+    }
 }
 
 void SelectedTextTranslationCoordinator::shutdown() {

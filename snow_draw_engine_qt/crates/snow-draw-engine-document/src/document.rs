@@ -633,9 +633,14 @@ pub enum SerialNumberType {
     SolidCircle = 1,
     OutlinedSquare = 2,
     SolidSquare = 3,
+    Circle = 4,
 }
 
 impl SerialNumberType {
+    pub fn supports_number(self) -> bool {
+        self != Self::Circle
+    }
+
     pub fn is_square(self) -> bool {
         matches!(self, Self::OutlinedSquare | Self::SolidSquare)
     }

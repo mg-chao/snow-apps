@@ -5295,6 +5295,89 @@ void rememberedDrawingModesPersistAcrossPaletteInstances() {
             "a live palette should follow remembered-mode updates from other instances");
 }
 
+void rememberedDrawingToolRecordedAndRestored() {
+    using Tool = ScreenshotToolPalette::Tool;
+    const snow_shot::storage::ScreenshotToolbarSettings toolbarSettings;
+    const snow_shot::storage::DrawingSettings drawingSettings;
+    const QString originalDrawingTool = toolbarSettings.lastDrawingTool();
+    const QString originalHighlight = toolbarSettings.lastHighlightTool();
+    const bool originalRememberSwitch = drawingSettings.rememberLastUsedTool();
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(toolbarSettings.setLastDrawingTool(originalDrawingTool));
+        static_cast<void>(toolbarSettings.setLastHighlightTool(originalHighlight));
+        static_cast<void>(drawingSettings.setRememberLastUsedTool(originalRememberSwitch));
+    });
+    require(toolbarSettings.setLastDrawingTool(QString()) &&
+                drawingSettings.setRememberLastUsedTool(false),
+            "remembered drawing tool tests must start from cleared preferences");
+
+    ScreenshotToolPalette::Options options;
+    options.showMoveTool = true;
+    options.showHighlightTool = true;
+    options.showWatermarkTool = true;
+
+    // Only drawing tools update the remembered tool; Move and Select never do.
+    ScreenshotToolPalette palette(options);
+    require(palette.activateScreenshotShortcut(QStringLiteral("move_tool")) &&
+                palette.activeToolForTests() == Tool::Move,
+            "the move tool shortcut should activate the move tool");
+    require(toolbarSettings.lastDrawingTool().isEmpty(),
+            "activating the move tool must not become the remembered drawing tool");
+    require(palette.activateDrawingShortcut(QStringLiteral("select")) &&
+                palette.activeToolForTests() == Tool::Select,
+            "the select tool shortcut should activate the select tool");
+    require(toolbarSettings.lastDrawingTool().isEmpty(),
+            "activating the select tool must not become the remembered drawing tool");
+    require(palette.activateDrawingShortcut(QStringLiteral("shape")) &&
+                palette.activeToolForTests() == Tool::Shape,
+            "the shape tool shortcut should activate the shape tool");
+    require(toolbarSettings.lastDrawingTool() == QStringLiteral("shape"),
+            "activating a drawing tool should persist it as the last used tool");
+
+    // The switch gates the restore, not the recording.
+    require(!palette.activateRememberedDrawingTool(),
+            "the remembered drawing tool must not restore while the switch is disabled");
+    require(drawingSettings.setRememberLastUsedTool(true),
+            "the remembered tool switch must be writable");
+
+    // Capture sessions and pin edit sessions rebuild the toolbar, so a fresh
+    // palette must restore the remembered tool with variant resolution.
+    require(toolbarSettings.setLastDrawingTool(QStringLiteral("highlighter")) &&
+                toolbarSettings.setLastHighlightTool(QStringLiteral("rectangle-highlight")),
+            "the remembered highlighter variant must be configurable");
+    ScreenshotToolPalette restored(options);
+    require(restored.activateRememberedDrawingTool() &&
+                restored.activeToolForTests() == Tool::RectangleHighlight,
+            "a rebuilt palette should restore the remembered highlighter variant");
+    require(restored.activateRememberedDrawingTool() &&
+                restored.activeToolForTests() == Tool::RectangleHighlight,
+            "restoring an already-active remembered tool must not toggle it off");
+    restored.setActiveTool(Tool::Select);
+    require(toolbarSettings.setLastDrawingTool(QStringLiteral("watermark")) &&
+                restored.activateRememberedDrawingTool() &&
+                restored.activeToolForTests() == Tool::Watermark,
+            "a live palette should follow remembered-tool updates from other instances");
+    restored.setActiveTool(Tool::Select);
+    require(!toolbarSettings.setLastDrawingTool(QStringLiteral("unknown-tool")) &&
+                toolbarSettings.lastDrawingTool() == QStringLiteral("watermark") &&
+                restored.activateRememberedDrawingTool() &&
+                restored.activeToolForTests() == Tool::Watermark,
+            "unknown remembered tool ids must be rejected without changing the stored tool");
+    restored.setActiveTool(Tool::Select);
+    require(toolbarSettings.setLastDrawingTool(QString()) &&
+                !restored.activateRememberedDrawingTool() &&
+                restored.activeToolForTests() == Tool::Select,
+            "an empty remembered drawing tool must not activate anything");
+
+    ScreenshotToolPalette::Options withoutWatermark = options;
+    withoutWatermark.showWatermarkTool = false;
+    require(toolbarSettings.setLastDrawingTool(QStringLiteral("watermark")),
+            "a valid remembered tool must still round-trip when hidden on another palette");
+    ScreenshotToolPalette hiddenWatermark(withoutWatermark);
+    require(!hiddenWatermark.activateRememberedDrawingTool(),
+            "a palette that does not expose the remembered tool must not activate it");
+}
+
 void filterToolExposesTypeAndIntensityControls() {
     const snow_shot::storage::ScreenshotToolbarSettings toolbarSettings;
     const QString originalFilter = toolbarSettings.lastFilterTool();
@@ -7854,6 +7937,32 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
     require(!fillRoot->isEnabled(),
             "uniform solid sequence-number selections should disable the visible fill editor");
 
+    auto* circleType = qobject_cast<QAbstractButton*>(controlWithTooltip(palette, "Circle"));
+    require(circleType != nullptr, "Circle type should be available");
+    circleType->click();
+    require(emittedStyle.type == SnowCanvasSerialNumberType::Circle && !numberInput->isEnabled() &&
+                !fontSelect->isEnabled() && fontSizeSummary->isEnabled() && fillRoot->isEnabled(),
+            "Circle should disable number and font family while keeping size and fill enabled");
+    const int circleChangeCount = changeCount;
+    numberInput->setText(QStringLiteral("999"));
+    QMetaObject::invokeMethod(numberInput, "editingFinished", Qt::DirectConnection);
+    const QPoint numberCenter = numberInput->rect().center();
+    QWheelEvent circleWheel(QPointF(numberCenter), numberInput->mapToGlobal(numberCenter), QPoint(),
+                            QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(numberInput, &circleWheel);
+    require(changeCount == circleChangeCount && emittedStyle.number == 12,
+            "Circle should ignore number commits and wheel changes");
+    clickStyleControl(palette, "Sequence number font size 30px");
+    require(changeCount == circleChangeCount + 1 && emittedStyle.fontSize == 30.0,
+            "Circle font size should remain editable");
+    clickStyleControl(palette, "Cross-line sequence number fill");
+    require(emittedStyle.fillStyle == SnowCanvasFillStyle::CrossLine,
+            "Circle fill should remain editable");
+    solidSquareType->click();
+    require(numberInput->isEnabled() && fontSelect->isEnabled() && !fillRoot->isEnabled(),
+            "switching back to a numbered type should restore number and family editors");
+    circleType->click();
+
     state.serialNumberStyle = emittedStyle;
     state.serialNumberStyleMixed = SnowCanvasSerialNumberStyleMixedType;
     palette.setStyleToolbarState(state);
@@ -7861,6 +7970,19 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
             "mixed sequence-number types should leave every type button unchecked");
     require(fillRoot->isEnabled(),
             "mixed sequence-number types should keep the fill editor enabled");
+    require(numberInput->isEnabled() && fontSelect->isEnabled(),
+            "mixed Circle and numbered types should keep label editors enabled");
+    state.serialNumberStyleMixed = 0;
+    palette.setStyleToolbarState(state);
+    require(!fontSelect->isEnabled(), "uniform Circle should disable font family again");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Text);
+    auto* textFamily = controlWithAccessibleName(palette, "Text font family");
+    require(textFamily != nullptr && textFamily->isEnabled(),
+            "reusing Circle font controls for Text must restore the family selector");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::SerialNumber);
+    auto* circleFamily = controlWithAccessibleName(palette, "Sequence number font family");
+    require(circleFamily != nullptr && !circleFamily->isEnabled(),
+            "returning to Circle must disable the reused font selector");
 }
 
 void serialNumberInputCommitsEditsAndSupportsWheel() {
@@ -8653,7 +8775,7 @@ void styleToolbarControlsDoNotEnterTabFocusChain() {
 
     const QList<adqt::widgets::AdRadio*> modeButtons =
         palette.findChildren<adqt::widgets::AdRadio*>();
-    require(modeButtons.size() == 20,
+    require(modeButtons.size() == 21,
             "style toolbars should expose the expected number of mode radios");
     for (adqt::widgets::AdRadio* button : modeButtons) {
         require(button != nullptr && button->focusPolicy() == Qt::NoFocus,
@@ -10064,7 +10186,7 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     styles.text.fontFamily = QStringLiteral("Persisted text font");
     styles.text.fontSize = 36.0;
     styles.serialNumber.number = 9'007'199'254'740'993LL;
-    styles.serialNumber.type = SnowCanvasSerialNumberType::SolidSquare;
+    styles.serialNumber.type = SnowCanvasSerialNumberType::Circle;
     styles.serialNumber.color = QColor(17, 18, 19, 20);
     styles.serialNumber.fontFamily = QStringLiteral("Persisted serial font");
     styles.watermark.text = QStringLiteral("must not persist");
@@ -10146,7 +10268,7 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     require(!savedSerialStyle.contains(QStringLiteral("number")),
             "the current serial number must not be saved with its appearance");
     require(savedSerialStyle.value(QStringLiteral("type")).toInt(-1) ==
-                static_cast<int>(SnowCanvasSerialNumberType::SolidSquare),
+                static_cast<int>(SnowCanvasSerialNumberType::Circle),
             "the last sequence-number type should persist with its appearance");
 
     QJsonObject legacySerialStyle = savedSerialStyle;
@@ -10161,7 +10283,7 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
             "legacy settings without a type should use outlined circle and ignore saved numbers");
 
     for (const QJsonValue& invalidType :
-         {QJsonValue(1.5), QJsonValue(-1), QJsonValue(4), QJsonValue(QStringLiteral("3"))}) {
+         {QJsonValue(1.5), QJsonValue(-1), QJsonValue(5), QJsonValue(QStringLiteral("3"))}) {
         QJsonObject invalidSerialStyle = savedSerialStyle;
         invalidSerialStyle.insert(QStringLiteral("type"), invalidType);
         require(snow_shot::storage::ApplicationStorage::instance().configuration().setValue(
@@ -10688,6 +10810,12 @@ int main(int argc, char** argv) {
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
             "the font editor tests require a system TrueType font");
 #endif
+    if (application.arguments().contains(QStringLiteral("--remembered-drawing-tool-only"))) {
+        rememberedDrawingModesPersistAcrossPaletteInstances();
+        rememberedDrawingToolRecordedAndRestored();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--auto-filter-only"))) {
         configurationDrivenStyleEditorsShareStructuralContracts();
         filterEditorsRestoreValuesAfterToolSwitch();
@@ -10698,6 +10826,7 @@ int main(int argc, char** argv) {
         filterToolExposesTypeAndIntensityControls();
         filterStyleEditorsMatchShapeAndSpotlightMetrics();
         rememberedDrawingModesPersistAcrossPaletteInstances();
+        rememberedDrawingToolRecordedAndRestored();
         canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
@@ -10949,6 +11078,7 @@ int main(int argc, char** argv) {
     filterToolExposesTypeAndIntensityControls();
     drawingModeSelectionsSurviveToolbarReentry();
     rememberedDrawingModesPersistAcrossPaletteInstances();
+    rememberedDrawingToolRecordedAndRestored();
     filterStyleEditorsMatchShapeAndSpotlightMetrics();
     watermarkToolExposesSharedStyleControls();
     watermarkStyleEditorMatchesShapeHeight();

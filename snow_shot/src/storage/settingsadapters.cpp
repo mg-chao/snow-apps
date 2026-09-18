@@ -388,6 +388,14 @@ bool ExtendedFeaturesSettings::translationPageEnabled() const {
         .toBool(false);
 }
 
+bool ExtendedFeaturesSettings::jumpToTranslationPage() const {
+    return cache().value(QStringLiteral("extended_features/jump_to_translation_page")).toBool();
+}
+
+bool ExtendedFeaturesSettings::setJumpToTranslationPage(bool enabled) const {
+    return cache().setValue(QStringLiteral("extended_features/jump_to_translation_page"), enabled);
+}
+
 bool ExtendedFeaturesSettings::standaloneTranslationWindow() const {
     return cache()
         .value(QStringLiteral("extended_features/standalone_translation_window"))
@@ -638,6 +646,14 @@ QStringList DrawingSettings::quickSelectionDisabledTools() const {
 bool DrawingSettings::setQuickSelectionDisabledTools(const QStringList& tools) const {
     return cache().setValue(QStringLiteral("drawing/quick_selection_disabled_tools"),
                             stringArray(tools));
+}
+
+bool DrawingSettings::rememberLastUsedTool() const {
+    return cache().value(QStringLiteral("drawing/remember_last_used_tool")).toBool();
+}
+
+bool DrawingSettings::setRememberLastUsedTool(bool enabled) const {
+    return cache().setValue(QStringLiteral("drawing/remember_last_used_tool"), enabled);
 }
 
 shortcuts::ShortcutBindingList ScreenshotShortcutSettings::moveTool() const {
@@ -1316,6 +1332,14 @@ QString ScreenshotToolbarSettings::lastHighlightTool() const {
 
 bool ScreenshotToolbarSettings::setLastHighlightTool(const QString& tool) const {
     return cache().setValue(QStringLiteral("screenshot_toolbar/last_highlight_tool"), tool);
+}
+
+QString ScreenshotToolbarSettings::lastDrawingTool() const {
+    return cache().value(QStringLiteral("screenshot_toolbar/last_drawing_tool")).toString();
+}
+
+bool ScreenshotToolbarSettings::setLastDrawingTool(const QString& tool) const {
+    return cache().setValue(QStringLiteral("screenshot_toolbar/last_drawing_tool"), tool);
 }
 
 namespace {

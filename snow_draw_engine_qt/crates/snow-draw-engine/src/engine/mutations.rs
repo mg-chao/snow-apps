@@ -235,14 +235,14 @@ mod tests {
         };
         engine.editor.select_element(&engine.model, id).unwrap();
         let mut style = engine.editor.serial_number_style(&engine.model);
-        style.serial_number_type = SerialNumberType::SolidSquare;
+        style.serial_number_type = SerialNumberType::Circle;
 
         engine
             .set_viewport_serial_number_style(viewport, style)
             .unwrap();
         assert_eq!(
             engine.model.serial_number(id).unwrap().serial_number_type,
-            SerialNumberType::SolidSquare
+            SerialNumberType::Circle
         );
 
         engine.undo().unwrap();
@@ -254,7 +254,7 @@ mod tests {
         engine.redo().unwrap();
         assert_eq!(
             engine.model.serial_number(id).unwrap().serial_number_type,
-            SerialNumberType::SolidSquare
+            SerialNumberType::Circle
         );
     }
 }

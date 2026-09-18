@@ -426,6 +426,7 @@ pub enum DisplaySerialNumberType {
     SolidCircle = 1,
     OutlinedSquare = 2,
     SolidSquare = 3,
+    Circle = 4,
 }
 
 #[derive(Clone, Debug, PartialEq)]

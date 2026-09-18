@@ -764,6 +764,7 @@ impl From<SnowSerialNumberStyle> for SerialNumberStyle {
                 SnowSerialNumberType::SolidCircle => SerialNumberType::SolidCircle,
                 SnowSerialNumberType::OutlinedSquare => SerialNumberType::OutlinedSquare,
                 SnowSerialNumberType::SolidSquare => SerialNumberType::SolidSquare,
+                SnowSerialNumberType::Circle => SerialNumberType::Circle,
             },
             color: value.color.into(),
             fill: value.fill.into(),
@@ -786,6 +787,7 @@ impl From<SerialNumberStyle> for SnowSerialNumberStyle {
                 SerialNumberType::SolidCircle => SnowSerialNumberType::SolidCircle,
                 SerialNumberType::OutlinedSquare => SnowSerialNumberType::OutlinedSquare,
                 SerialNumberType::SolidSquare => SnowSerialNumberType::SolidSquare,
+                SerialNumberType::Circle => SnowSerialNumberType::Circle,
             },
             color: value.color.into(),
             fill: value.fill.into(),
@@ -964,6 +966,7 @@ pub(crate) fn runtime_config_from_c(
                         SnowSerialNumberType::SolidCircle => SerialNumberType::SolidCircle,
                         SnowSerialNumberType::OutlinedSquare => SerialNumberType::OutlinedSquare,
                         SnowSerialNumberType::SolidSquare => SerialNumberType::SolidSquare,
+                        SnowSerialNumberType::Circle => SerialNumberType::Circle,
                     },
                     color: defaults.serial_number.color.into(),
                     fill: defaults.serial_number.fill.into(),
@@ -1556,7 +1559,7 @@ mod tests {
         expected.editor.pen_filter.stroke_width = 10.0;
         expected.editor.text.font_family = Some("C Text Font".to_owned());
         expected.editor.serial_number.font_family = Some("C Serial Font".to_owned());
-        expected.editor.serial_number.serial_number_type = SerialNumberType::SolidSquare;
+        expected.editor.serial_number.serial_number_type = SerialNumberType::Circle;
         expected.watermark.text = "C watermark".to_owned();
         expected.watermark.template_value = "  {text} {YYYY-MM-DD_HH-mm-ss}  ".to_owned();
         expected.watermark.template_application_time = Some(WatermarkTemplateApplicationTime {
@@ -1582,7 +1585,7 @@ mod tests {
         assert_eq!(c_defaults.serial_number.font_family_truncated, 0);
         assert_eq!(
             c_defaults.serial_number.serial_number_type,
-            SnowSerialNumberType::SolidSquare
+            SnowSerialNumberType::Circle
         );
         let c_config = SnowRuntimeConfig {
             style_defaults: &c_defaults,

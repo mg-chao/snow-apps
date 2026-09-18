@@ -96,6 +96,10 @@
             <translation>Capture cursor</translation>
         </message>
         <message>
+            <source>Circle</source>
+            <translation>Circle</translation>
+        </message>
+        <message>
             <source>Close recording</source>
             <translation>Close recording</translation>
         </message>
@@ -402,6 +406,10 @@
         <message>
             <source>Inversion</source>
             <translation>Inversion</translation>
+        </message>
+        <message>
+            <source>Jump to Translation Page</source>
+            <translation>Jump to Translation Page</translation>
         </message>
         <message>
             <source>Keep line breaks</source>

@@ -63,6 +63,7 @@ class ScreenshotToolbarCommandSink {
     virtual void toggleTextTranslation() {
         beginTextTranslation();
     }
+    virtual void jumpToTranslationPage() {}
     virtual void resetTextEditing() {}
     virtual void openTextTranslationSettings() {}
     virtual void applyTextFormatting(const QString&) {}

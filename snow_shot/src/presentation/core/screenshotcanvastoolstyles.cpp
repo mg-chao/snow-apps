@@ -289,8 +289,8 @@ QJsonObject serialNumberValue(const SnowCanvasSerialNumberStyle& style) {
 void readSerialNumberValue(const QJsonObject& object, SnowCanvasSerialNumberStyle* style) {
     if (style == nullptr)
         return;
-    readEnum(object, QStringLiteral("type"),
-             static_cast<int>(SnowCanvasSerialNumberType::SolidSquare), &style->type);
+    readEnum(object, QStringLiteral("type"), static_cast<int>(SnowCanvasSerialNumberType::Circle),
+             &style->type);
     QColor color;
     if (colorValue(object.value(QStringLiteral("color")), &color))
         style->color = color;

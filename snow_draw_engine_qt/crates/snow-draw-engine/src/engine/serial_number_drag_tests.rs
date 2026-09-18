@@ -1,6 +1,7 @@
 use super::duplicate_drag_tests::pointer;
 use super::*;
 use snow_draw_engine_display::SceneDisplayItem;
+use snow_draw_engine_document::SerialNumberType;
 use snow_draw_engine_interaction::PointerEventType;
 
 fn setup(zoom: f64) -> (Engine, ViewportId) {
@@ -22,6 +23,63 @@ fn setup(zoom: f64) -> (Engine, ViewportId) {
         .set_viewport_active_tool(viewport, ActiveTool::SerialNumber)
         .unwrap();
     (engine, viewport)
+}
+
+#[test]
+fn numberless_circle_drag_preserves_sizing_and_next_number() {
+    let (mut engine, viewport) = setup(1.0);
+    let mut style = engine.editor.serial_number_style(&engine.model);
+    style.number = 42;
+    style.font_size = 48.0;
+    engine
+        .set_viewport_serial_number_style(viewport, style.clone())
+        .unwrap();
+    style.serial_number_type = SerialNumberType::Circle;
+    engine
+        .set_viewport_serial_number_style(viewport, style)
+        .unwrap();
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Down,
+        400.0,
+        300.0,
+        false,
+    );
+    let serial_id = engine.model.paint_order()[0];
+    let serial = engine.model.serial_number(serial_id).unwrap();
+    assert_eq!(serial.serial_number_type, SerialNumberType::Circle);
+    assert_eq!(serial.diameter, 24.0);
+    assert_eq!(serial.number, 42);
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Move,
+        500.0,
+        350.0,
+        false,
+    );
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Up,
+        520.0,
+        360.0,
+        false,
+    );
+    let serial = engine.model.serial_number(serial_id).unwrap();
+    assert_eq!(serial.center, Point::default());
+    assert_eq!(serial.diameter, 24.0);
+    let text_id = serial.text_element_id.unwrap();
+    assert_eq!(
+        engine.model.text(text_id).unwrap().center,
+        Point::new(120.0, 60.0)
+    );
+    assert_eq!(
+        engine.take_text_edit_request(viewport).unwrap(),
+        Some(text_id)
+    );
+    assert_eq!(engine.editor.serial_number_style(&engine.model).number, 42);
 }
 
 #[test]

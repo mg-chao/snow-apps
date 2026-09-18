@@ -429,6 +429,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ExtendedFeaturesSettings().standaloneTranslationWindow();
     case SettingsSwitchBinding::TranslationPageEnabled:
         return storage::ExtendedFeaturesSettings().translationPageEnabled();
+    case SettingsSwitchBinding::JumpToTranslationPage:
+        return storage::ExtendedFeaturesSettings().jumpToTranslationPage();
     case SettingsSwitchBinding::OriginalImageTranslation:
         return storage::ScreenshotTranslationSettings().originalImageTranslationEnabled();
     case SettingsSwitchBinding::LoopAnimatedImages:
@@ -441,6 +443,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::SystemSettings().autoStartAtBoot();
     case SettingsSwitchBinding::LaunchAsAdministrator:
         return storage::SystemSettings().launchAsAdministrator();
+    case SettingsSwitchBinding::DrawingRememberLastUsedTool:
+        return storage::DrawingSettings().rememberLastUsedTool();
     }
     return false;
 }
@@ -468,7 +472,8 @@ bool BuiltInSettingsBackend::switchEnabled(SettingsSwitchBinding binding) const 
             .launchEnabled;
     if (binding == SettingsSwitchBinding::OcrModelHotStart)
         return switchValue(SettingsSwitchBinding::OcrResidentProcess);
-    if (binding == SettingsSwitchBinding::StandaloneTranslationWindow) {
+    if (binding == SettingsSwitchBinding::StandaloneTranslationWindow ||
+        binding == SettingsSwitchBinding::JumpToTranslationPage) {
         return storage::ExtendedFeaturesSettings().translationPageEnabled();
     }
     if (binding == SettingsSwitchBinding::AutoStartAtBoot) {
@@ -534,6 +539,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard) {
         return storage::ScreenshotSettings().setCopyImageFileToClipboard(value);
     }
+    if (binding == SettingsSwitchBinding::DrawingRememberLastUsedTool) {
+        return storage::DrawingSettings().setRememberLastUsedTool(value);
+    }
     if (binding == SettingsSwitchBinding::SaveRecognitionResultAsImage) {
         return storage::TextRecognitionSettings().setSaveRecognitionResultAsImage(value);
     }
@@ -549,6 +557,10 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     }
     if (binding == SettingsSwitchBinding::TranslationPageEnabled) {
         return storage::ExtendedFeaturesSettings().setTranslationPageEnabled(value);
+    }
+    if (binding == SettingsSwitchBinding::JumpToTranslationPage) {
+        return switchEnabled(binding) &&
+               storage::ExtendedFeaturesSettings().setJumpToTranslationPage(value);
     }
     if (binding == SettingsSwitchBinding::OriginalImageTranslation) {
         return storage::ScreenshotTranslationSettings().setOriginalImageTranslationEnabled(value);
@@ -607,6 +619,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::PinAutomaticTextRecognition:
     case SettingsSwitchBinding::PinAutoResizeWindow:
     case SettingsSwitchBinding::TranslationPageEnabled:
+    case SettingsSwitchBinding::JumpToTranslationPage:
     case SettingsSwitchBinding::StandaloneTranslationWindow:
     case SettingsSwitchBinding::OriginalImageTranslation:
     case SettingsSwitchBinding::LoopAnimatedImages:
@@ -614,6 +627,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
     case SettingsSwitchBinding::AutoStartAtBoot:
     case SettingsSwitchBinding::LaunchAsAdministrator:
+    case SettingsSwitchBinding::DrawingRememberLastUsedTool:
         return false;
     }
     return storage::ApplicationStorage::instance().requestCaptureHistoryPolicy(policy);
@@ -1269,6 +1283,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("drawing/quick_selection_disabled_tools"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("drawing/quick_selection_disabled_tools"))},
+            {QStringLiteral("drawing/remember_last_used_tool"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("drawing/remember_last_used_tool"))},
         });
     case SettingsSectionReset::ScreenshotEditorShortcuts: {
         shortcuts::ShortcutBindingMap defaults;

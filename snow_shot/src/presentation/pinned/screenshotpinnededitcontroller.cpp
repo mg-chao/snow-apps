@@ -513,7 +513,10 @@ void ScreenshotPinnedEditController::setEditMode(bool enabled) {
         m_manuallyPlaced = false;
         if (m_toolbarWindow != nullptr) {
             m_toolbarWindow->cancelDrag();
-            activateResizeWindowTool();
+            ScreenshotToolPalette* toolbarPalette = m_toolbarWindow->palette();
+            if (toolbarPalette == nullptr || !toolbarPalette->activateRememberedDrawingTool()) {
+                activateResizeWindowTool();
+            }
             updatePlacement();
             m_toolbarWindow->prepareForDisplay();
             m_toolbarWindow->show();

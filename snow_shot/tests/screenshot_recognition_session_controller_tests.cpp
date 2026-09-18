@@ -345,9 +345,14 @@ void displayedRecognitionSnapshotPreservesCachedResults() {
     controller->activate(ScreenshotRecognitionSessionController::Mode::Text);
     controller->beginTextEditing();
     require(controller->editing() && !controller->originalImageVisible() &&
+                controller->sourceTextDraft() == QStringLiteral("Visible OCR") &&
                 controller->recognitionResultsSnapshot().text->presentation->lines[0].text ==
                     QStringLiteral("Visible OCR"),
             "text editor panels must snapshot cached OCR instead of transient editor content");
+    controller->setTextDraft(QStringLiteral("Edited\nOCR"));
+    controller->applyTextFormatting(QStringLiteral("remove"));
+    require(controller->sourceTextDraft() == QStringLiteral("EditedOCR"),
+            "translation-page source must include current OCR edits and transforms");
     require(recognition.requests == 0, "capturing cached display results must not request OCR");
     controller->endTextEditing();
     require(controller->activateCachedTextTranslation() &&
@@ -355,10 +360,12 @@ void displayedRecognitionSnapshotPreservesCachedResults() {
                 controller->originalImageTranslationActive() &&
                 controller->originalImageVisible() &&
                 controller->originalText() == QStringLiteral("Visible OCR") &&
+                controller->sourceTextDraft() == QStringLiteral("EditedOCR") &&
                 controller->textDraft() == QStringLiteral("Translated OCR"),
-            "restoring cached translation must be idempotent and retain source OCR");
+            "restoring cached translation must retain the edited source separately from output");
     controller->endTextEditing();
-    require(controller->textDraft() == QStringLiteral("Visible OCR") &&
+    require(controller->textDraft() == QStringLiteral("EditedOCR") &&
+                controller->sourceTextDraft() == QStringLiteral("EditedOCR") &&
                 controller->recognitionResultsSnapshot().translatedText != nullptr,
             "canceling translation must restore the source while retaining its translation cache");
     const snow_shot::storage::ScreenshotTranslationSettings translationSettings;
@@ -374,7 +381,8 @@ void displayedRecognitionSnapshotPreservesCachedResults() {
             "change translation settings after restoring a captured translation");
     require(
         controller->recognitionResultsSnapshot().translatedText == nullptr &&
-            controller->textDraft() == QStringLiteral("Visible OCR") && invalidatedResults > 0,
+            controller->textDraft() == QStringLiteral("EditedOCR") &&
+            controller->sourceTextDraft() == QStringLiteral("EditedOCR") && invalidatedResults > 0,
         "an explicit translation settings change must invalidate the capture without changing OCR");
     hidden->activate(ScreenshotRecognitionSessionController::Mode::Text);
     hidden->beginTextTranslation();

@@ -957,6 +957,19 @@ SettingsItemDefinition drawingQuickSelectionItem() {
     };
 }
 
+SettingsItemDefinition drawingRememberLastUsedToolItem() {
+    return switchItem(
+        QStringLiteral("drawing.remember-last-used-tool"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Remember last used tool"),
+        QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Start new screenshot sessions and pin drawing mode with the last used drawing tool "
+            "instead of the move tool"),
+        QStringLiteral("drawing/remember_last_used_tool"),
+        SettingsSwitchBinding::DrawingRememberLastUsedTool,
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Last used tool"))});
+}
+
 SettingsItemDefinition pinZoomModeItem() {
     return fixedSelectItem(
         QStringLiteral("pin-to-screen.mouse-wheel-zoom-mode"),
@@ -1876,7 +1889,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                         "SettingsCatalog",
                         "Configure drawing tools and the screenshot drawing toolbar")),
                     SettingsSectionReset::DrawingQuickSelection,
-                    {drawingQuickSelectionItem()},
+                    {drawingQuickSelectionItem(), drawingRememberLastUsedToolItem()},
                 },
                 {
                     QStringLiteral("screen-recording-settings"),
@@ -2130,6 +2143,15 @@ QVector<SettingsPageDefinition> builtInPages() {
                        "Enable the Translation page and the Translate Selected Text shortcut."),
                    QStringLiteral("extended_features/translation_page_enabled"),
                    SettingsSwitchBinding::TranslationPageEnabled),
+               switchItem(
+                   QStringLiteral("extended-features.jump-to-translation-page"),
+                   QT_TRANSLATE_NOOP("SettingsCatalog", "Jump to Translation Page"),
+                   QT_TRANSLATE_NOOP(
+                       "SettingsCatalog",
+                       "Show a button in the text recognition toolbar that sends recognized text "
+                       "to the Translation page."),
+                   QStringLiteral("extended_features/jump_to_translation_page"),
+                   SettingsSwitchBinding::JumpToTranslationPage),
                switchItem(
                    QStringLiteral("extended-features.standalone-translation-window"),
                    QT_TRANSLATE_NOOP("SettingsCatalog", "Standalone Translation Window"),
@@ -3064,6 +3086,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::TranslationPageEnabled:
                         expectedKey = QStringLiteral("extended_features/translation_page_enabled");
                         break;
+                    case SettingsSwitchBinding::JumpToTranslationPage:
+                        expectedKey = QStringLiteral("extended_features/jump_to_translation_page");
+                        break;
                     case SettingsSwitchBinding::OriginalImageTranslation:
                         expectedKey =
                             QStringLiteral("screenshot_translation/original_image_translation");
@@ -3084,6 +3109,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::AutoStartAtBoot:
                         expectedKey = QStringLiteral("system/auto_start_at_boot");
+                        break;
+                    case SettingsSwitchBinding::DrawingRememberLastUsedTool:
+                        expectedKey = QStringLiteral("drawing/remember_last_used_tool");
                         break;
                     }
                     if (itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||

@@ -96,6 +96,10 @@
             <translation>捕获光标</translation>
         </message>
         <message>
+            <source>Circle</source>
+            <translation>圆形</translation>
+        </message>
+        <message>
             <source>Close recording</source>
             <translation>关闭录制</translation>
         </message>
@@ -402,6 +406,10 @@
         <message>
             <source>Inversion</source>
             <translation>反相</translation>
+        </message>
+        <message>
+            <source>Jump to Translation Page</source>
+            <translation>跳转到翻译页面</translation>
         </message>
         <message>
             <source>Keep line breaks</source>

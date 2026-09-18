@@ -1327,6 +1327,9 @@ void ScreenshotToolPaletteFontEditor::rebind(const ScreenshotToolPaletteFontEdit
                                              const std::function<void()>& cycleSize,
                                              const std::function<void(double)>& setSize,
                                              const std::function<void(const QString&)>& setFamily) {
+    if (m_familySelect != nullptr) {
+        m_familySelect->setEnabled(true);
+    }
     if (m_cycleSize != nullptr) {
         *m_cycleSize = cycleSize;
     }

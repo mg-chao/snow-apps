@@ -58,6 +58,7 @@ ScreenshotToolbarWindow::ScreenshotToolbarWindow(ScreenshotToolbarCommandSink& c
     setActionToolsLayout(
         toolbarSettings.layout(snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools));
     initializePalette();
+    synchronizeJumpToTranslationPageSetting();
 
     auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
     connect(&configuration, &snow_shot::storage::ConfigurationStore::valueChanged, this,
@@ -72,6 +73,9 @@ ScreenshotToolbarWindow::ScreenshotToolbarWindow(ScreenshotToolbarCommandSink& c
                         snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools));
                 } else if (key == QStringLiteral("screenshot/capture_cursor")) {
                     synchronizeCaptureCursorSetting();
+                } else if (key == QStringLiteral("extended_features/translation_page_enabled") ||
+                           key == QStringLiteral("extended_features/jump_to_translation_page")) {
+                    synchronizeJumpToTranslationPageSetting();
                 }
             });
 }
@@ -187,6 +191,8 @@ void ScreenshotToolbarWindow::connectToolCommands(ScreenshotToolPalette& toolPal
             [this]() { m_commands.toggleTextEditing(); });
     connect(&toolPalette, &ScreenshotToolPalette::textTranslateRequested, this,
             [this]() { m_commands.toggleTextTranslation(); });
+    connect(&toolPalette, &ScreenshotToolPalette::jumpToTranslationPageRequested, this,
+            [this]() { m_commands.jumpToTranslationPage(); });
     connect(&toolPalette, &ScreenshotToolPalette::textResetRequested, this,
             [this]() { m_commands.resetTextEditing(); });
     connect(&toolPalette, &ScreenshotToolPalette::textSettingsRequested, this,
@@ -201,6 +207,14 @@ void ScreenshotToolbarWindow::connectToolCommands(ScreenshotToolPalette& toolPal
             [this]() { m_commands.splitTableSelection(); });
     connect(&toolPalette, &ScreenshotToolPalette::tableResetRequested, this,
             [this]() { m_commands.resetTable(); });
+}
+
+void ScreenshotToolbarWindow::synchronizeJumpToTranslationPageSetting() {
+    if (ScreenshotToolPalette* toolPalette = palette()) {
+        const snow_shot::storage::ExtendedFeaturesSettings settings;
+        toolPalette->setJumpToTranslationPageVisible(settings.translationPageEnabled() &&
+                                                     settings.jumpToTranslationPage());
+    }
 }
 
 void ScreenshotToolbarWindow::connectActionCommands(ScreenshotToolPalette& toolPalette) {
@@ -403,6 +417,7 @@ void ScreenshotToolbarWindow::resetForNewCapture() {
         host->setActiveTool(ScreenshotToolPalette::Tool::Move);
     }
     setHistoryState(SnowCanvasHistoryState{});
+    m_rememberedDrawingToolRestorePending = true;
     prepareForDisplay();
 }
 
@@ -426,6 +441,8 @@ void ScreenshotToolbarWindow::setScrollingScreenshotMode(bool enabled) {
 }
 
 void ScreenshotToolbarWindow::setActiveTool(ScreenshotToolPalette::Tool tool) {
+    // An explicit tool set supersedes the remembered-tool restore for this capture.
+    m_rememberedDrawingToolRestorePending = false;
     setActiveToolAndReposition(tool);
 }
 
@@ -445,6 +462,16 @@ void ScreenshotToolbarWindow::synchronizeCaptureCursorSetting() {
 bool ScreenshotToolbarWindow::activateDrawingShortcut(const QString& toolId) {
     ScreenshotToolPalette* toolPalette = palette();
     return toolPalette != nullptr && toolPalette->activateDrawingShortcut(toolId);
+}
+
+void ScreenshotToolbarWindow::restoreRememberedDrawingTool() {
+    if (!m_rememberedDrawingToolRestorePending) {
+        return;
+    }
+    m_rememberedDrawingToolRestorePending = false;
+    if (ScreenshotToolPalette* toolPalette = palette()) {
+        static_cast<void>(toolPalette->activateRememberedDrawingTool());
+    }
 }
 
 void ScreenshotToolbarWindow::setHistoryState(const SnowCanvasHistoryState& state) {
