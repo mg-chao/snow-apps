@@ -5834,8 +5834,16 @@ bool ScreenshotToolPalette::evictSecondaryToolbarContents() {
             }
         };
         takeLayoutItems(takeLayoutItems, layout);
+        // Any of these widgets may be dispatching the very command that triggered
+        // this eviction (a secondary-panel action button that ends or resets the
+        // capture), so destruction must wait until the event loop; deleting here
+        // would free a widget while its own mouseReleaseEvent is on the stack.
+        // Detach each widget first: reparenting removes it from the palette's
+        // QObject tree and hides it immediately, so child discovery and layout
+        // see a consistent state without waiting for the deferred delete.
         for (QWidget* widget : std::as_const(widgets)) {
-            delete widget;
+            widget->setParent(nullptr);
+            widget->deleteLater();
         }
         layout->invalidate();
     };
@@ -6149,7 +6157,7 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
     m_jumpToTranslationPageLeadingSpacer =
         addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING);
     m_jumpToTranslationPageButton =
-        addButton("Jump to Translation Page", outlined_icons::ArrowRight(),
+        addButton("Jump to Translation Page", custom_outlined_icons::JumpTranslate(),
                   QStringLiteral("screenshotOcrJumpToTranslationPageButton"));
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     ScreenshotToolPaletteSelectEditorConfig formattingConfig;

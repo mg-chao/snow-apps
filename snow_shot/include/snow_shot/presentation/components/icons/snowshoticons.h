@@ -65,6 +65,7 @@ namespace outlined {
 [[nodiscard]] adqt::icons::IconRef FontSizeVeryLarge(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Group(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Html(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef JumpTranslate(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Keyboard(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef LaserPointer(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef LineTypeCurved(const adqt::icons::IconColors& colors = {});

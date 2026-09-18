@@ -392,6 +392,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "JumpTranslate",
+      "name": "jump-translate",
+      "source": "../src/presentation/components/icons/resources/jump-translate.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Keyboard",
       "name": "keyboard",
       "source": "../src/presentation/components/icons/resources/keyboard.svg",
