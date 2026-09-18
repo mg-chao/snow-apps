@@ -38,6 +38,12 @@ pub(crate) fn compose_scene_items(
         .collect();
     let mut emitted_preview_ids = HashMap::<ElementId, bool>::new();
     let mut items = Vec::new();
+    let serial_connectors = SerialConnectorEmission {
+        model,
+        preview_texts: &preview_texts,
+        preview_serials: &preview_serials,
+        viewport,
+    };
 
     for id in preview_rects
         .keys()
@@ -56,15 +62,11 @@ pub(crate) fn compose_scene_items(
         {
             emitted_preview_ids.insert(*id, true);
             if bounds_visible(text_bounds(active_text), viewport) {
-                append_serial_connectors_for_text(
+                serial_connectors.push_item(
                     &mut items,
-                    model,
                     *id,
-                    &preview_texts,
-                    &preview_serials,
-                    viewport,
+                    scene_item_from_text(*id, active_text.clone()),
                 );
-                items.push(scene_item_from_text(*id, active_text.clone()));
             }
             continue;
         }
@@ -77,17 +79,7 @@ pub(crate) fn compose_scene_items(
                 preview_text_font_sizes.get(id).copied(),
             ) && bounds_visible(bounds, viewport)
             {
-                if matches!(item, SceneDisplayItem::Text(_)) {
-                    append_serial_connectors_for_text(
-                        &mut items,
-                        model,
-                        *id,
-                        &preview_texts,
-                        &preview_serials,
-                        viewport,
-                    );
-                }
-                items.push(item);
+                serial_connectors.push_item(&mut items, *id, item);
             }
             continue;
         }
@@ -108,18 +100,14 @@ pub(crate) fn compose_scene_items(
             continue;
         }
         if let Some(item) = cache.entry(*id) {
-            append_serial_connectors_for_text(
+            serial_connectors.push_item(
                 &mut items,
-                model,
                 *id,
-                &preview_texts,
-                &preview_serials,
-                viewport,
+                scene_item_with_serial_bound_text(
+                    item.clone(),
+                    model.bound_text_id_for_serial_number(*id),
+                ),
             );
-            items.push(scene_item_with_serial_bound_text(
-                item.clone(),
-                model.bound_text_id_for_serial_number(*id),
-            ));
         }
     }
 
@@ -134,17 +122,7 @@ pub(crate) fn compose_scene_items(
             preview_text_font_sizes.get(&preview.id).copied(),
         ) && bounds_visible(bounds, viewport)
         {
-            if matches!(item, SceneDisplayItem::Text(_)) {
-                append_serial_connectors_for_text(
-                    &mut items,
-                    model,
-                    preview.id,
-                    &preview_texts,
-                    &preview_serials,
-                    viewport,
-                );
-            }
-            items.push(item);
+            serial_connectors.push_item(&mut items, preview.id, item);
         }
     }
     for preview in &presentation.preview_arrows {
@@ -250,6 +228,14 @@ pub(crate) fn compose_scene_items(
             _ => (1, 0),
         });
     }
+    // Emission puts connectors after bound text; later passes can separate them.
+    // Restack is the composition output contract, including copy previews whose
+    // ids are absent from `model` and are recovered from serial display items.
+    restack_serial_connectors_above_bound_text(&mut items, model);
+    debug_assert!(
+        serial_connectors_follow_bound_text(&items, model),
+        "serial connectors must paint immediately above their bound text"
+    );
     items
 }
 
@@ -472,41 +458,149 @@ fn preview_serial_items(
         .collect()
 }
 
-fn append_serial_connectors_for_text(
+// Serial connectors are decorations of bound text. The renderer paints scene
+// items in list order, and the underline centerline sits on the text's painted
+// bottom edge, so a text background fill occludes any connector that is emitted
+// earlier. This helper is the only emission path: push the scene item first,
+// then append connectors when `id` is that bound text.
+struct SerialConnectorEmission<'a> {
+    model: &'a DocumentModel,
+    preview_texts: &'a HashMap<ElementId, TextData>,
+    preview_serials: &'a HashMap<ElementId, SerialNumberData>,
+    viewport: (f64, f64, f64, f64),
+}
+
+impl SerialConnectorEmission<'_> {
+    fn push_item(&self, items: &mut Vec<SceneDisplayItem>, id: ElementId, item: SceneDisplayItem) {
+        items.push(item);
+        self.append_connectors_for_text(items, id);
+    }
+
+    fn append_connectors_for_text(&self, items: &mut Vec<SceneDisplayItem>, text_id: ElementId) {
+        let Some(text) = self
+            .preview_texts
+            .get(&text_id)
+            .cloned()
+            .or_else(|| self.model.text(text_id).ok().cloned())
+        else {
+            return;
+        };
+
+        for serial_id in self.model.serial_number_ids_with_text(text_id) {
+            let Some(serial) = self
+                .preview_serials
+                .get(&serial_id)
+                .cloned()
+                .or_else(|| self.model.serial_number(serial_id).ok().cloned())
+            else {
+                continue;
+            };
+            let Some(connection) = resolve_serial_number_text_connection(&serial, &text) else {
+                continue;
+            };
+            let bounds =
+                serial_connector_bounds(&connection, resolve_serial_number_stroke_width(&serial));
+            if bounds_visible(bounds, self.viewport) {
+                items.push(scene_item_from_serial_connector(
+                    serial_id, &serial, connection,
+                ));
+            }
+        }
+    }
+}
+
+fn serial_bound_text_index(items: &[SceneDisplayItem]) -> HashMap<DisplayItemId, DisplayItemId> {
+    items
+        .iter()
+        .filter_map(|item| match item {
+            SceneDisplayItem::SerialNumber(serial) => {
+                serial.bound_text_id.map(|text_id| (serial.id, text_id))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn connector_bound_text_id(
+    model: &DocumentModel,
+    serial_bound_texts: &HashMap<DisplayItemId, DisplayItemId>,
+    connector_id: DisplayItemId,
+) -> Option<DisplayItemId> {
+    let serial_id = ElementId {
+        index: connector_id.index,
+        generation: connector_id.generation,
+    };
+    model
+        .bound_text_id_for_serial_number(serial_id)
+        .map(display_item_id)
+        .or_else(|| serial_bound_texts.get(&connector_id).copied())
+}
+
+fn restack_serial_connectors_above_bound_text(
     items: &mut Vec<SceneDisplayItem>,
     model: &DocumentModel,
-    text_id: ElementId,
-    preview_texts: &HashMap<ElementId, TextData>,
-    preview_serials: &HashMap<ElementId, SerialNumberData>,
-    viewport: (f64, f64, f64, f64),
 ) {
-    let Some(text) = preview_texts
-        .get(&text_id)
-        .cloned()
-        .or_else(|| model.text(text_id).ok().cloned())
-    else {
-        return;
-    };
+    let serial_bound_texts = serial_bound_text_index(items);
+    let mut connectors_by_text = HashMap::<DisplayItemId, Vec<SceneDisplayItem>>::new();
+    let mut rest = Vec::with_capacity(items.len());
+    for item in items.drain(..) {
+        let SceneDisplayItem::SerialNumberConnector(connector) = &item else {
+            rest.push(item);
+            continue;
+        };
+        match connector_bound_text_id(model, &serial_bound_texts, connector.id) {
+            Some(text_id) => connectors_by_text.entry(text_id).or_default().push(item),
+            None => rest.push(item),
+        }
+    }
 
-    for serial_id in model.serial_number_ids_with_text(text_id) {
-        let Some(serial) = preview_serials
-            .get(&serial_id)
-            .cloned()
-            .or_else(|| model.serial_number(serial_id).ok().cloned())
+    let connector_count = connectors_by_text.values().map(Vec::len).sum::<usize>();
+    let mut stacked = Vec::with_capacity(rest.len() + connector_count);
+    for item in rest {
+        let text_id = match &item {
+            SceneDisplayItem::Text(text) => Some(text.id),
+            _ => None,
+        };
+        stacked.push(item);
+        if let Some(text_id) = text_id
+            && let Some(connectors) = connectors_by_text.remove(&text_id)
+        {
+            stacked.extend(connectors);
+        }
+    }
+    stacked.extend(connectors_by_text.into_values().flatten());
+    *items = stacked;
+}
+
+fn serial_connectors_follow_bound_text(items: &[SceneDisplayItem], model: &DocumentModel) -> bool {
+    let serial_bound_texts = serial_bound_text_index(items);
+    for (index, item) in items.iter().enumerate() {
+        let SceneDisplayItem::SerialNumberConnector(connector) = item else {
+            continue;
+        };
+        let Some(text_display) = connector_bound_text_id(model, &serial_bound_texts, connector.id)
         else {
             continue;
         };
-        let Some(connection) = resolve_serial_number_text_connection(&serial, &text) else {
-            continue;
+        let Some(previous) = index
+            .checked_sub(1)
+            .and_then(|previous| items.get(previous))
+        else {
+            return false;
         };
-        let bounds =
-            serial_connector_bounds(&connection, resolve_serial_number_stroke_width(&serial));
-        if bounds_visible(bounds, viewport) {
-            items.push(scene_item_from_serial_connector(
-                serial_id, &serial, connection,
-            ));
+        match previous {
+            SceneDisplayItem::Text(text) if text.id == text_display => {}
+            SceneDisplayItem::SerialNumberConnector(previous_connector) => {
+                if connector_bound_text_id(model, &serial_bound_texts, previous_connector.id)
+                    != Some(text_display)
+                {
+                    return false;
+                }
+            }
+            _ => return false,
         }
     }
+    true
 }
 
 #[cfg(test)]
@@ -761,6 +855,7 @@ mod tests {
 
         assert_close(connector.end_x, expected.end.x);
         assert_close(connector.end_y, expected.end.y);
+        assert_serial_connectors_follow_bound_text(&items, &model);
     }
 
     #[test]
@@ -873,6 +968,303 @@ mod tests {
 
         assert_close(connector.end_x, expected.end.x);
         assert_close(connector.end_y, expected.end.y);
+        assert_serial_connectors_follow_bound_text(&items, &model);
+    }
+
+    fn filled_bound_text(center: Point<f64>) -> TextData {
+        TextData {
+            center,
+            width: 40.0,
+            height: 20.0,
+            fill: ColorRgba8 {
+                r: 0xff,
+                g: 0xff,
+                b: 0xff,
+                a: 0xff,
+            },
+            ..TextData::default()
+        }
+    }
+
+    fn bound_serial(text_id: ElementId, center: Point<f64>) -> SerialNumberData {
+        SerialNumberData {
+            center,
+            diameter: 24.0,
+            text_element_id: Some(text_id),
+            ..SerialNumberData::default()
+        }
+    }
+
+    fn compose_default(model: &DocumentModel) -> Vec<SceneDisplayItem> {
+        let mut cache = DocumentSceneCache::new();
+        cache.sync(model, None);
+        compose_scene_items(
+            &cache,
+            model,
+            &EditorPresentationState::default(),
+            default_frame_view(),
+        )
+    }
+
+    fn assert_serial_connectors_follow_bound_text(
+        items: &[SceneDisplayItem],
+        model: &DocumentModel,
+    ) {
+        assert!(
+            items
+                .iter()
+                .any(|item| matches!(item, SceneDisplayItem::SerialNumberConnector(_))),
+            "scene should emit a serial connector"
+        );
+        assert!(
+            serial_connectors_follow_bound_text(items, model),
+            "serial connector must paint immediately above its bound text so text background fills cannot occlude it"
+        );
+    }
+
+    #[test]
+    fn committed_serial_connector_paints_above_filled_text() {
+        for text_painted_first in [false, true] {
+            let serial_id = ElementId {
+                index: 0,
+                generation: 1,
+            };
+            let text_id = ElementId {
+                index: 1,
+                generation: 1,
+            };
+            let mut model = DocumentModel::new();
+            let mut transaction = Transaction::new("setup");
+            transaction.insert_serial_number(
+                serial_id,
+                ElementMeta::default(),
+                bound_serial(text_id, Point::new(0.0, 0.0)),
+            );
+            transaction.insert_text(
+                text_id,
+                ElementMeta::default(),
+                filled_bound_text(Point::new(90.0, 40.0)),
+            );
+            model.apply_transaction(transaction).unwrap();
+            if text_painted_first {
+                let mut reorder = Transaction::new("text below serial");
+                reorder.reorder_elements([text_id], 0);
+                model.apply_transaction(reorder).unwrap();
+            }
+
+            let items = compose_default(&model);
+            assert_serial_connectors_follow_bound_text(&items, &model);
+        }
+    }
+
+    #[test]
+    fn restack_moves_preceding_connector_above_bound_text() {
+        let serial_id = ElementId {
+            index: 0,
+            generation: 1,
+        };
+        let text_id = ElementId {
+            index: 1,
+            generation: 1,
+        };
+        let serial = bound_serial(text_id, Point::new(0.0, 0.0));
+        let text = filled_bound_text(Point::new(90.0, 40.0));
+        let connection = resolve_serial_number_text_connection(&serial, &text).unwrap();
+
+        let mut model = DocumentModel::new();
+        let mut transaction = Transaction::new("setup");
+        transaction.insert_serial_number(serial_id, ElementMeta::default(), serial.clone());
+        transaction.insert_text(text_id, ElementMeta::default(), text.clone());
+        model.apply_transaction(transaction).unwrap();
+
+        let mut items = vec![
+            scene_item_from_serial_number(serial_id, serial.clone(), Some(text_id)),
+            scene_item_from_serial_connector(serial_id, &serial, connection),
+            scene_item_from_text(text_id, text),
+        ];
+        assert!(!serial_connectors_follow_bound_text(&items, &model));
+        restack_serial_connectors_above_bound_text(&mut items, &model);
+        assert_serial_connectors_follow_bound_text(&items, &model);
+        assert!(matches!(
+            (&items[1], &items[2]),
+            (
+                SceneDisplayItem::Text(text),
+                SceneDisplayItem::SerialNumberConnector(_)
+            ) if text.id == display_item_id(text_id)
+        ));
+    }
+
+    #[test]
+    fn multiple_serials_keep_connectors_above_shared_text() {
+        let first_serial_id = ElementId {
+            index: 0,
+            generation: 1,
+        };
+        let second_serial_id = ElementId {
+            index: 1,
+            generation: 1,
+        };
+        let text_id = ElementId {
+            index: 2,
+            generation: 1,
+        };
+        let mut model = DocumentModel::new();
+        let mut transaction = Transaction::new("two serials one text");
+        transaction.insert_serial_number(
+            first_serial_id,
+            ElementMeta::default(),
+            bound_serial(text_id, Point::new(0.0, 0.0)),
+        );
+        transaction.insert_serial_number(
+            second_serial_id,
+            ElementMeta::default(),
+            bound_serial(text_id, Point::new(0.0, 80.0)),
+        );
+        transaction.insert_text(
+            text_id,
+            ElementMeta::default(),
+            filled_bound_text(Point::new(90.0, 40.0)),
+        );
+        model.apply_transaction(transaction).unwrap();
+
+        let items = compose_default(&model);
+        assert_eq!(
+            items
+                .iter()
+                .filter(|item| matches!(item, SceneDisplayItem::SerialNumberConnector(_)))
+                .count(),
+            2
+        );
+        assert_serial_connectors_follow_bound_text(&items, &model);
+    }
+
+    #[test]
+    fn serial_selection_preview_keeps_connector_above_bound_text() {
+        let serial_id = ElementId {
+            index: 0,
+            generation: 1,
+        };
+        let text_id = ElementId {
+            index: 1,
+            generation: 1,
+        };
+        let serial = bound_serial(text_id, Point::new(0.0, 0.0));
+        let text = filled_bound_text(Point::new(90.0, 40.0));
+        let mut model = DocumentModel::new();
+        let mut transaction = Transaction::new("setup");
+        transaction.insert_serial_number(serial_id, ElementMeta::default(), serial.clone());
+        transaction.insert_text(text_id, ElementMeta::default(), text.clone());
+        model.apply_transaction(transaction).unwrap();
+
+        let mut cache = DocumentSceneCache::new();
+        cache.sync(&model, None);
+        let preview_rect = RectangleData {
+            rectangle_kind: snow_draw_engine_document::RectangleElementKind::Rectangle,
+            highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
+            center: Point::new(20.0, 30.0),
+            width: serial.diameter,
+            height: serial.diameter,
+            rotation: serial.rotation,
+            fill: serial.fill,
+            fill_style: serial.fill_style,
+            stroke: serial.color,
+            stroke_width: serial.stroke_width,
+            stroke_style: serial.stroke_style,
+            corner_radii: Default::default(),
+            opacity: serial.opacity,
+        };
+        let items = compose_scene_items(
+            &cache,
+            &model,
+            &EditorPresentationState {
+                preview_elements: vec![SelectionRectState {
+                    id: serial_id,
+                    rect: preview_rect,
+                }],
+                ..EditorPresentationState::default()
+            },
+            default_frame_view(),
+        );
+        assert_serial_connectors_follow_bound_text(&items, &model);
+
+        let preview_serial = serial_number_with_selection_rect(&serial, preview_rect);
+        let expected = resolve_serial_number_text_connection(&preview_serial, &text).unwrap();
+        let connector = serial_connector_item(&items);
+        assert_close(connector.end_x, expected.end.x);
+        assert_close(connector.end_y, expected.end.y);
+    }
+
+    #[test]
+    fn arrow_label_restack_does_not_bury_serial_connector() {
+        use snow_draw_engine_core::arrow::{ArrowType, StrokeStyle};
+        let serial_id = ElementId {
+            index: 0,
+            generation: 1,
+        };
+        let serial_text_id = ElementId {
+            index: 1,
+            generation: 1,
+        };
+        let arrow_id = ElementId {
+            index: 2,
+            generation: 1,
+        };
+        let arrow_text_id = ElementId {
+            index: 3,
+            generation: 1,
+        };
+        let mut arrow = ArrowData::from_global_points(
+            &[Point::new(-200.0, 120.0), Point::new(200.0, 120.0)],
+            ColorRgba8::default(),
+            2.0,
+            StrokeStyle::Solid,
+            ArrowType::Straight,
+            None,
+            None,
+        )
+        .unwrap();
+        arrow.text_element_id = Some(arrow_text_id);
+        let mut model = DocumentModel::new();
+        let mut transaction = Transaction::new("serial and arrow labels");
+        transaction.insert_serial_number(
+            serial_id,
+            ElementMeta::default(),
+            bound_serial(serial_text_id, Point::new(0.0, 0.0)),
+        );
+        transaction.insert_text(
+            serial_text_id,
+            ElementMeta::default(),
+            filled_bound_text(Point::new(90.0, 40.0)),
+        );
+        transaction.insert_arrow(arrow_id, ElementMeta::default(), arrow);
+        transaction.insert_text(
+            arrow_text_id,
+            ElementMeta::default(),
+            TextData {
+                text: "arrow label".to_owned(),
+                width: 150.0,
+                height: 60.0,
+                ..TextData::default()
+            },
+        );
+        model.apply_transaction(transaction).unwrap();
+
+        let items = compose_default(&model);
+        assert_serial_connectors_follow_bound_text(&items, &model);
+        let arrow_position = items
+            .iter()
+            .position(|item| matches!(item, SceneDisplayItem::Arrow(_)))
+            .expect("scene should emit the arrow");
+        let label_position = items
+            .iter()
+            .position(|item| {
+                matches!(
+                    item,
+                    SceneDisplayItem::Text(text) if text.id == display_item_id(arrow_text_id)
+                )
+            })
+            .expect("scene should emit the arrow label");
+        assert_eq!(label_position, arrow_position + 1);
     }
 
     #[test]
