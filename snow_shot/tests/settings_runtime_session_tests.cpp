@@ -283,7 +283,12 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
         return {true, false};
     }
 
-    bool triggerAction(settings::SettingsActionBinding) override {
+    bool triggerAction(settings::SettingsActionBinding binding,
+                       const QString& filePath = {}) override {
+        if (binding == settings::SettingsActionBinding::ImportConfiguration) {
+            m_importConfigurationPaths.push_back(filePath);
+            return m_importConfigurationAccepted;
+        }
         return true;
     }
 
@@ -297,6 +302,14 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
 
     int refreshCount() const {
         return m_refreshCount;
+    }
+
+    const QStringList& importConfigurationPaths() const {
+        return m_importConfigurationPaths;
+    }
+
+    void setImportConfigurationAccepted(bool accepted) {
+        m_importConfigurationAccepted = accepted;
     }
 
     void setAppUsage(const storage::AppStorageUsage& usage) {
@@ -489,6 +502,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     bool m_resetAccepted = true;
     bool m_resetHistoryPending = false;
     int m_refreshCount = 0;
+    QStringList m_importConfigurationPaths;
+    bool m_importConfigurationAccepted = true;
 };
 
 settings::SettingsRegistry
@@ -1352,6 +1367,25 @@ void categoryResetFailuresRetainAcceptedValues() {
     }
 }
 
+void configurationImportsDelegateToBackend() {
+    FakeSettingsBackend backend;
+    settings::SettingsRuntimeSession session(testRegistry(), backend);
+
+    require(session.triggerAction(settings::SettingsActionBinding::ImportConfiguration,
+                                  QStringLiteral("C:/exports/configuration.zip")),
+            "accepted configuration imports must report success");
+    require(backend.importConfigurationPaths() ==
+                QStringList{QStringLiteral("C:/exports/configuration.zip")},
+            "the session must forward the archive path to the backend unchanged");
+
+    backend.setImportConfigurationAccepted(false);
+    require(!session.triggerAction(settings::SettingsActionBinding::ImportConfiguration,
+                                   QStringLiteral("C:/missing.zip")),
+            "rejected configuration imports must report failure to the caller");
+    require(backend.importConfigurationPaths().size() == 2,
+            "every configuration import attempt must reach the backend");
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     customModelsPreserveAcceptedStateOnRejectedWrites();
@@ -1375,5 +1409,6 @@ int main(int argc, char** argv) {
     rejectedResetRetainsStateAndErrorUntilDiscarded();
     auxiliaryIntegerValuesRemainReactiveWithoutSyntheticFields();
     globalMouseCombinationsUseTypedStateAndRejectDuplicates();
+    configurationImportsDelegateToBackend();
     return 0;
 }

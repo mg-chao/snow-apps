@@ -205,11 +205,11 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 38, "catalog must contain thirty-eight sections");
+    require(sectionCount == 39, "catalog must contain thirty-nine sections");
 #ifdef Q_OS_MACOS
-    require(itemCount == 163, "the macOS catalog omits DirectML acceleration");
+    require(itemCount == 165, "the macOS catalog omits DirectML acceleration");
 #else
-    require(itemCount == 164, "catalog must contain one hundred sixty-four items");
+    require(itemCount == 166, "catalog must contain one hundred sixty-six items");
 #endif
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -615,14 +615,15 @@ void builtInCatalogIsCompleteAndValid() {
         {QStringLiteral("storage-and-privacy"), QStringLiteral("screen-recording-output"),
          QStringLiteral("screen-recording-output.video-filename-format")});
     require(
-        storagePage != nullptr && storagePage->sections.size() == 4 &&
+        storagePage != nullptr && storagePage->sections.size() == 5 &&
             storagePage->sections.at(0).id == QStringLiteral("screenshots") &&
             storagePage->sections.at(1).id == QStringLiteral("screen-recording-output") &&
             storagePage->sections.at(2).id == QStringLiteral("history") &&
             storagePage->sections.at(2).title.source != nullptr &&
             QString::fromLatin1(storagePage->sections.at(2).title.source) ==
                 QStringLiteral("Screenshot history") &&
-            storagePage->sections.at(3).id == QStringLiteral("storage-status") &&
+            storagePage->sections.at(3).id == QStringLiteral("configuration") &&
+            storagePage->sections.at(4).id == QStringLiteral("storage-status") &&
             imageFormat != nullptr && imageDirectory != nullptr && videoFilename != nullptr &&
             std::get<settings::SettingsSelectDefinition>(imageFormat->payload).options.size() ==
                 7 &&
@@ -634,6 +635,41 @@ void builtInCatalogIsCompleteAndValid() {
             std::get<settings::SettingsTextDefinition>(videoFilename->payload).binding ==
                 settings::SettingsTextBinding::ScreenRecordingVideoFilenameFormat,
         "Storage and privacy must expose ordered screenshot and recording output settings");
+
+    const auto* exportConfiguration =
+        catalog.item({QStringLiteral("storage-and-privacy"), QStringLiteral("configuration"),
+                      QStringLiteral("configuration.export")});
+    const auto* importConfiguration =
+        catalog.item({QStringLiteral("storage-and-privacy"), QStringLiteral("configuration"),
+                      QStringLiteral("configuration.import")});
+    require(exportConfiguration != nullptr && importConfiguration != nullptr &&
+                storagePage->sections.at(3).items.at(0).id == exportConfiguration->id &&
+                storagePage->sections.at(3).items.at(1).id == importConfiguration->id &&
+                exportConfiguration->configurationKey.isEmpty() &&
+                importConfiguration->configurationKey.isEmpty(),
+            "the configuration section must lead with export followed by import");
+    const auto* exportAction =
+        std::get_if<settings::SettingsActionDefinition>(&exportConfiguration->payload);
+    const auto* importAction =
+        std::get_if<settings::SettingsActionDefinition>(&importConfiguration->payload);
+    require(exportAction != nullptr && importAction != nullptr &&
+                exportAction->binding == settings::SettingsActionBinding::ExportConfiguration &&
+                importAction->binding == settings::SettingsActionBinding::ImportConfiguration &&
+                exportAction->buttonText.source != nullptr &&
+                importAction->buttonText.source != nullptr && exportAction->iconFactory &&
+                importAction->iconFactory &&
+                exportAction->iconFactory() ==
+                    snow_shot::presentation::icons::custom::outlined::ExportConfiguration() &&
+                importAction->iconFactory() ==
+                    snow_shot::presentation::icons::custom::outlined::ImportConfiguration() &&
+                !exportAction->confirmation.has_value() && importAction->confirmation.has_value() &&
+                !exportAction->fileOpen.has_value() && importAction->fileOpen.has_value() &&
+                importAction->fileOpen->dialogTitle.source != nullptr &&
+                importAction->fileOpen->fileFilter.source != nullptr &&
+                exportAction->successMessage.has_value() &&
+                importAction->successMessage.has_value(),
+            "configuration items must use the thumbnail-cache action style with dedicated icons, "
+            "catalog-driven import file picking, and success messages");
 
     const auto* pdfPageSize =
         catalog.item({QStringLiteral("storage-and-privacy"), QStringLiteral("screenshots"),
@@ -1463,7 +1499,7 @@ void invalidCatalogReportsAllConformanceErrors() {
     interfacePage.sections[0].items[1].id = QStringLiteral("interface-theme");
     storagePage.sections[0].items[1].configurationKey = QStringLiteral("missing/key");
     auto& custom =
-        std::get<settings::SettingsCustomDefinition>(storagePage.sections[3].items[0].payload);
+        std::get<settings::SettingsCustomDefinition>(storagePage.sections[4].items[0].payload);
     custom.renderer = static_cast<settings::SettingsCustomRenderer>(999);
     pages.push_back({QStringLiteral("empty-page"),
                      QStringLiteral("relative-route"),
@@ -1509,9 +1545,9 @@ void invalidCatalogReportsAllConformanceErrors() {
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
 #ifdef Q_OS_MACOS
-    constexpr qsizetype expectedNodes = 213;
+    constexpr qsizetype expectedNodes = 216;
 #else
-    constexpr qsizetype expectedNodes = 214;
+    constexpr qsizetype expectedNodes = 217;
 #endif
     require(index.entries().size() == expectedNodes &&
                 index.search(QString()).size() == expectedNodes,
@@ -1574,7 +1610,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 38 && items == expectedNodes - pages - sections,
+    require(pages == 12 && sections == 39 && items == expectedNodes - pages - sections,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

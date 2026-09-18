@@ -320,6 +320,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ExportConfiguration",
+      "name": "export-configuration",
+      "source": "../src/presentation/components/icons/resources/export-configuration.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "ExportSettings",
       "name": "export-settings",
       "source": "../src/presentation/components/icons/resources/export-settings.svg",
@@ -387,6 +395,14 @@
       "symbol": "Html",
       "name": "html",
       "source": "../src/presentation/components/icons/resources/html.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ImportConfiguration",
+      "name": "import-configuration",
+      "source": "../src/presentation/components/icons/resources/import-configuration.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },

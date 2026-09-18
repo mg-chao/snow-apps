@@ -603,6 +603,7 @@ set(SNOW_SHOT_STORAGE_SOURCES
     include/snow_shot/storage/appstorageusage.h
     include/snow_shot/storage/capturehistoryrepository.h
     include/snow_shot/storage/capturehistorytypes.h
+    include/snow_shot/storage/configurationarchive.h
     include/snow_shot/storage/configurationstore.h
     include/snow_shot/storage/configurationschema.h
     include/snow_shot/storage/persistedselectioncodec.h
@@ -615,6 +616,7 @@ set(SNOW_SHOT_STORAGE_SOURCES
     src/storage/applicationstorage.cpp
     src/storage/capturehistorypolicy_p.h
     src/storage/capturehistoryrepository.cpp
+    src/storage/configurationarchive.cpp
     src/storage/configurationstore.cpp
     src/storage/configurationschema.cpp
     src/storage/persistedselectioncodec.cpp
@@ -655,6 +657,7 @@ target_link_libraries(snow_shot_storage PUBLIC
     snow_shot_diagnostics
     snow_shot_image_codec
     snow_shot_shortcuts
+    MINIZIP::minizip-ng
     Qt6::Core
     Qt6::Gui
 )
@@ -1522,6 +1525,41 @@ if(SNOW_SHOT_BUILD_TESTS)
         )
     endif()
 
+    add_executable(snow-shot-configuration-transfer-widget-tests
+        tests/configuration_transfer_widget_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+    )
+    target_include_directories(snow-shot-configuration-transfer-widget-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-shot-configuration-transfer-widget-tests PRIVATE
+        snow_shot_image_codec
+        snow_shot_settings
+        snow_shot_settings_catalog
+        snow_shot_storage
+        ant_design_qt
+        Qt6::Widgets
+    )
+    add_test(
+        NAME snow-shot-configuration-transfer-widget-tests
+        COMMAND snow-shot-configuration-transfer-widget-tests
+    )
+    if(WIN32)
+        set_tests_properties(snow-shot-configuration-transfer-widget-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    else()
+        set_tests_properties(snow-shot-configuration-transfer-widget-tests PROPERTIES
+            ENVIRONMENT
+                "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    endif()
+
     add_executable(snow-shot-screenshot-history-page-tests
         tests/screenshot_history_page_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp
@@ -1888,6 +1926,25 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-settings-runtime-session-tests
              COMMAND snow-shot-settings-runtime-session-tests)
     set_tests_properties(snow-shot-settings-runtime-session-tests PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
+    add_executable(snow-shot-configuration-archive-tests
+        tests/configuration_archive_tests.cpp
+    )
+    target_include_directories(snow-shot-configuration-archive-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-shot-configuration-archive-tests PRIVATE
+        snow_shot_storage
+        Qt6::Core
+        Qt6::Gui
+    )
+    add_test(NAME snow-shot-configuration-archive-tests
+             COMMAND snow-shot-configuration-archive-tests)
+    set_tests_properties(snow-shot-configuration-archive-tests PROPERTIES
+        LABELS "unit"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
@@ -5037,6 +5094,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             snow-shot-recognition-window-tests
             snow-shot-recognition-session-controller-tests
             snow-shot-storage-status-widget-tests
+            snow-shot-configuration-transfer-widget-tests
         )
             snow_shot_import_offscreen_platform(${_offscreen_qpa_test_target})
         endforeach()

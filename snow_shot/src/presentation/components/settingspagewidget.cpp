@@ -46,6 +46,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <functional>
 #include <type_traits>
 #include <utility>
 
@@ -768,6 +769,29 @@ class SettingsPageWidget::Impl {
                              else
                                  adqt::widgets::AdMessageService::error(std::move(request), &q);
                          });
+        QObject::connect(
+            &runtimeSession, &settings::SettingsRuntimeSession::actionFinished, &q,
+            [this](settings::SettingsActionBinding action, bool success, const QString& error) {
+                Q_UNUSED(error);
+                if (!q.isVisible() || !success)
+                    return;
+                for (const RuntimeItem& item : items) {
+                    if (item.definition == nullptr)
+                        continue;
+                    const auto* definition =
+                        std::get_if<settings::SettingsActionDefinition>(&item.definition->payload);
+                    if (definition == nullptr || definition->binding != action ||
+                        !definition->successMessage.has_value()) {
+                        continue;
+                    }
+                    adqt::widgets::AdMessage::Request request;
+                    request.key =
+                        QStringLiteral("settings-action-success-%1").arg(static_cast<int>(action));
+                    request.content = definition->successMessage->translated();
+                    adqt::widgets::AdMessageService::success(std::move(request), &q);
+                    return;
+                }
+            });
         auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
         QObject::connect(&themeManager,
                          &snow_shot::presentation::styles::ThemeManager::themeChanged, &q,
@@ -899,18 +923,34 @@ class SettingsPageWidget::Impl {
         if (action == nullptr) {
             return;
         }
-        if (!action->confirmation.has_value()) {
-            if (!runtimeSession.triggerAction(action->binding)) {
+        QString filePath;
+        if (action->fileOpen.has_value()) {
+            filePath =
+                QFileDialog::getOpenFileName(&q, action->fileOpen->dialogTitle.translated(),
+                                             QString(), action->fileOpen->fileFilter.translated());
+            if (filePath.isEmpty()) {
+                return;
+            }
+        }
+        const auto runAction = [this, binding = action->binding, filePath]() {
+            if (!runtimeSession.triggerAction(binding, filePath)) {
                 syncValues();
             }
+        };
+        if (!action->confirmation.has_value()) {
+            runAction();
             return;
         }
+        confirmItemAction(*item, *action->confirmation, runAction);
+    }
 
-        const settings::SettingsConfirmationDefinition& confirmation = *action->confirmation;
+    void confirmItemAction(RuntimeItem& item,
+                           const settings::SettingsConfirmationDefinition& confirmation,
+                           const std::function<void()>& acceptedAction) {
         auto* modal = new adqt::widgets::AdModal(&q);
-        item->modal = modal;
+        item.modal = modal;
         modal->setObjectName(
-            settings::generatedObjectName(QStringLiteral("settings-modal"), item->definition->id));
+            settings::generatedObjectName(QStringLiteral("settings-modal"), item.definition->id));
         modal->setMode(adqt::widgets::AdModal::Mode::Window);
         modal->setOwnerWindow(q.window());
         modal->setPreset(adqt::widgets::AdModal::Preset::Confirm);
@@ -921,14 +961,9 @@ class SettingsPageWidget::Impl {
         modal->setAcceptAccentRole(adqt::widgets::AdButton::AccentRole::Danger);
         modal->setStandardButtons(adqt::widgets::AdModal::StandardButton::Ok |
                                   adqt::widgets::AdModal::StandardButton::Cancel);
-        QObject::connect(modal, &adqt::widgets::AdModal::accepted, &q,
-                         [this, binding = action->binding]() {
-                             if (!runtimeSession.triggerAction(binding)) {
-                                 syncValues();
-                             }
-                         });
+        QObject::connect(modal, &adqt::widgets::AdModal::accepted, &q, acceptedAction);
         QObject::connect(modal, &adqt::widgets::AdModal::finished, &q,
-                         [this, itemId](adqt::widgets::AdModal::DialogCode) {
+                         [this, itemId = item.definition->id](adqt::widgets::AdModal::DialogCode) {
                              RuntimeItem* finishedItem = runtimeItem(itemId);
                              if (finishedItem != nullptr && finishedItem->modal != nullptr) {
                                  finishedItem->modal->deleteLater();

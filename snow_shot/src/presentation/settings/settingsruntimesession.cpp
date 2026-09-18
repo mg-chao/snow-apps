@@ -1424,8 +1424,8 @@ SettingsActionState SettingsRuntimeSession::actionState(SettingsActionBinding bi
     return m_backend.actionState(binding);
 }
 
-bool SettingsRuntimeSession::triggerAction(SettingsActionBinding binding) {
-    return m_backend.triggerAction(binding);
+bool SettingsRuntimeSession::triggerAction(SettingsActionBinding binding, const QString& filePath) {
+    return m_backend.triggerAction(binding, filePath);
 }
 
 CustomAiModels SettingsRuntimeSession::customAiModels() const {

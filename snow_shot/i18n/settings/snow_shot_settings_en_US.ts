@@ -513,6 +513,10 @@
             <source>The clipboard is unavailable.</source>
             <translation>The clipboard is unavailable.</translation>
         </message>
+        <message>
+            <source>The configuration could not be imported.</source>
+            <translation>The configuration could not be imported.</translation>
+        </message>
     </context>
     <context>
         <name>SettingsCatalog</name>
@@ -625,6 +629,10 @@
             <translation>Age</translation>
         </message>
         <message>
+            <source>All current application settings will be replaced by the archive's values. Some changes take effect after the app restarts.</source>
+            <translation>All current application settings will be replaced by the archive's values. Some changes take effect after the app restarts.</translation>
+        </message>
+        <message>
             <source>All screenshot history will be removed</source>
             <translation>All screenshot history will be removed</translation>
         </message>
@@ -721,8 +729,16 @@
             <translation>BMP</translation>
         </message>
         <message>
+            <source>Back up and restore application settings</source>
+            <translation>Back up and restore application settings</translation>
+        </message>
+        <message>
             <source>Background Fill</source>
             <translation>Background Fill</translation>
+        </message>
+        <message>
+            <source>Backup settings</source>
+            <translation>Backup settings</translation>
         </message>
         <message>
             <source>Balance encoding speed against compression efficiency</source>
@@ -965,6 +981,18 @@
             <translation>Color picker display mode</translation>
         </message>
         <message>
+            <source>Configuration</source>
+            <translation>Configuration</translation>
+        </message>
+        <message>
+            <source>Configuration exported to the clipboard.</source>
+            <translation>Configuration exported to the clipboard.</translation>
+        </message>
+        <message>
+            <source>Configuration imported.</source>
+            <translation>Configuration imported.</translation>
+        </message>
+        <message>
             <source>Configure application process behavior</source>
             <translation>Configure application process behavior</translation>
         </message>
@@ -1007,6 +1035,10 @@
         <message>
             <source>Control when the screenshot color picker is visible</source>
             <translation>Control when the screenshot color picker is visible</translation>
+        </message>
+        <message>
+            <source>Copy all application settings as a zip archive to the clipboard</source>
+            <translation>Copy all application settings as a zip archive to the clipboard</translation>
         </message>
         <message>
             <source>Copy color</source>
@@ -1265,8 +1297,20 @@
             <translation>Exit</translation>
         </message>
         <message>
+            <source>Export</source>
+            <translation>Export</translation>
+        </message>
+        <message>
+            <source>Export configuration</source>
+            <translation>Export configuration</translation>
+        </message>
+        <message>
             <source>Export recording</source>
             <translation>Export recording</translation>
+        </message>
+        <message>
+            <source>Export settings</source>
+            <translation>Export settings</translation>
         </message>
         <message>
             <source>Extended Features Settings</source>
@@ -1427,6 +1471,22 @@
         <message>
             <source>Image size</source>
             <translation>Image size</translation>
+        </message>
+        <message>
+            <source>Import</source>
+            <translation>Import</translation>
+        </message>
+        <message>
+            <source>Import configuration</source>
+            <translation>Import configuration</translation>
+        </message>
+        <message>
+            <source>Import configuration?</source>
+            <translation>Import configuration?</translation>
+        </message>
+        <message>
+            <source>Import settings</source>
+            <translation>Import settings</translation>
         </message>
         <message>
             <source>Include the displayed text recognition or original-image translation result when saving an image.</source>
@@ -1965,8 +2025,16 @@
             <translation>Restart as administrator</translation>
         </message>
         <message>
+            <source>Restore application settings from a configuration archive</source>
+            <translation>Restore application settings from a configuration archive</translation>
+        </message>
+        <message>
             <source>Restore original screen colors</source>
             <translation>Restore original screen colors</translation>
+        </message>
+        <message>
+            <source>Restore settings</source>
+            <translation>Restore settings</translation>
         </message>
         <message>
             <source>Retention period</source>
@@ -2588,6 +2656,10 @@
             <source>Write the screenshot to a file and copy that file to the clipboard</source>
             <translation>Write the screenshot to a file and copy that file to the clipboard</translation>
         </message>
+        <message>
+            <source>Zip archives (*.zip);;All files (*.*)</source>
+            <translation>Zip archives (*.zip);;All files (*.*)</translation>
+        </message>
     </context>
     <context>
         <name>ShortcutKeyRow</name>
@@ -2856,6 +2928,29 @@ Unavailable: %2</translation>
         <message>
             <source>Global mouse input is unavailable (error %1).</source>
             <translation>Global mouse input is unavailable (error %1).</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::storage::ConfigurationArchive</name>
+        <message>
+            <source>The configuration archive contains no compatible settings.</source>
+            <translation>The configuration archive contains no compatible settings.</translation>
+        </message>
+        <message>
+            <source>The configuration archive could not be created.</source>
+            <translation>The configuration archive could not be created.</translation>
+        </message>
+        <message>
+            <source>The configuration archive was created by a newer version of Snow Shot.</source>
+            <translation>The configuration archive was created by a newer version of Snow Shot.</translation>
+        </message>
+        <message>
+            <source>The file is not a Snow Shot configuration archive.</source>
+            <translation>The file is not a Snow Shot configuration archive.</translation>
+        </message>
+        <message>
+            <source>The file is not a valid configuration archive.</source>
+            <translation>The file is not a valid configuration archive.</translation>
         </message>
     </context>
     <context>
