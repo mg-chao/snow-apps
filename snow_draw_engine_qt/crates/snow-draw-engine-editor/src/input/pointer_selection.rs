@@ -60,6 +60,9 @@ impl Editor {
                     frame_padding_override: None,
                 }),
             );
+            if let InteractionState::EditingSelection(active) = &mut self.state.interaction {
+                active.duplicate = state.duplicate;
+            }
             self.update_selection_edit_preview(document, event);
             let cursor = match &self.state.interaction {
                 InteractionState::EditingSelection(active) => self

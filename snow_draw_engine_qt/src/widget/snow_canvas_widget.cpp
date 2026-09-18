@@ -2235,11 +2235,29 @@ bool SnowCanvasWidget::Impl::handleMousePress(QMouseEvent* event) {
         }
     }
 
-    if (plan.shouldBeginText && beginText(event->position(), plan.allowCreateText)) {
+    bool copySelectedText = false;
+    if (!textEditorActive && event->button() == Qt::LeftButton &&
+        event->modifiers().testFlag(Qt::AltModifier) &&
+        !event->modifiers().testFlag(Qt::ShiftModifier)) {
+        const QPointF point = widget.canvasToViewTransform().inverted().map(event->position());
+        SnowElementId id{};
+        std::uint8_t hit = 0;
+        std::uint8_t selected = 0;
+        copySelectedText =
+            snow_viewport_hit_text(runtimeBinding.engine(), runtimeBinding.viewportHandle(),
+                                   point.x(), point.y(), &id, &hit) == SNOW_OK &&
+            hit != 0 &&
+            snow_viewport_is_element_selected(runtimeBinding.engine(),
+                                              runtimeBinding.viewportHandle(), id,
+                                              &selected) == SNOW_OK &&
+            selected != 0;
+    }
+    if (!copySelectedText && plan.shouldBeginText &&
+        beginText(event->position(), plan.allowCreateText)) {
         event->accept();
         return true;
     }
-    if (plan.shouldBeginSelectedText && !pointerOverSelectionInteraction &&
+    if (!copySelectedText && plan.shouldBeginSelectedText && !pointerOverSelectionInteraction &&
         beginSelectedText(event->position(), canvasTool() == SnowCanvasTool::SerialNumber)) {
         event->accept();
         return true;

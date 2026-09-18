@@ -124,9 +124,35 @@ impl Editor {
             .map_or_else(Vec::new, |(arrow_id, arrow)| {
                 self.arrow_handle_states(document, arrow_id, &arrow)
             });
+        let duplicate_preview = if let InteractionState::EditingSelection(state) =
+            &self.state.interaction
+            && state.duplicate
+        {
+            let offset = Point::new(
+                state.preview_bounds.center.x - state.original_bounds.center.x,
+                state.preview_bounds.center.y - state.original_bounds.center.y,
+            );
+            preview_elements.clear();
+            preview_arrows.clear();
+            crate::document_ops::duplicate_selection_transaction(
+                document,
+                &self.state.selection.ids,
+                offset,
+            )
+            .ok()
+            .map(|(transaction, _)| transaction)
+        } else {
+            None
+        };
+        let copying = duplicate_preview.is_some();
         EditorPresentationState {
+            duplicate_preview,
             auto_filter_highlights: self.auto_filter_highlights(document),
-            arrow_text_previews: self.arrow_text_previews(document),
+            arrow_text_previews: if copying {
+                Vec::new()
+            } else {
+                self.arrow_text_previews(document)
+            },
             creation_preview: self
                 .pen_filter_creation_preview()
                 .or_else(|| self.free_draw_creation_preview())
@@ -486,6 +512,9 @@ impl Editor {
     ) -> Vec<SelectionArrowState> {
         match &self.state.interaction {
             InteractionState::EditingSelection(state) => {
+                if state.duplicate {
+                    return state.preview_arrows.clone();
+                }
                 let selected_arrow_ids = state
                     .preview_arrows
                     .iter()

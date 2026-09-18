@@ -332,6 +332,8 @@ pub enum ElementCreationPreview {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct EditorPresentationState {
+    /// Additive, uncommitted copies. Uses the same transaction builder as duplication.
+    pub duplicate_preview: Option<snow_draw_engine_document::Transaction>,
     pub creation_preview: Option<ElementCreationPreview>,
     pub active_text_draft: Option<ActiveTextDraftPresentation>,
     pub arrow_text_previews: Vec<(ElementId, TextData)>,

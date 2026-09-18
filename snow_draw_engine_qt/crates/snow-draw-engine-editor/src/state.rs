@@ -192,6 +192,7 @@ pub(crate) enum SelectionEditMode {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct EditSelectionState {
+    pub(crate) duplicate: bool,
     pub(crate) pointer_id: u32,
     pub(crate) original_elements: Vec<SelectionRectState>,
     pub(crate) preview_elements: Vec<SelectionRectState>,
@@ -225,6 +226,7 @@ pub(crate) struct BeginSelectionInteractionRequest {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PendingSelectionMoveState {
+    pub(crate) duplicate: bool,
     pub(crate) pointer_id: u32,
     pub(crate) original_elements: Vec<SelectionRectState>,
     pub(crate) original_arrows: Vec<SelectionArrowState>,

@@ -433,3 +433,87 @@ fn arrow_text_version_one_sessions_without_ownership_remain_readable() {
         assert!(restored.model.arrow(owner).is_ok());
     }
 }
+
+#[test]
+fn alt_drag_arrow_with_label_matches_duplicate_operation_and_preview() {
+    use super::duplicate_drag_tests::pointer;
+    use snow_draw_engine_display::SceneDisplayItem;
+    use snow_draw_engine_interaction::PointerEventType;
+    for tool in [ActiveTool::Select, ActiveTool::Arrow, ActiveTool::Line] {
+        let (mut engine, viewport, owner) = setup();
+        let text_id = label(&mut engine, viewport, owner, "copy label");
+        engine.set_viewport_active_tool(viewport, tool).unwrap();
+        engine
+            .select_element_with_viewport_changes(viewport, owner)
+            .unwrap();
+        let original = engine.model.document().clone();
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Down,
+            280.0,
+            300.0,
+            true,
+        );
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Move,
+            330.0,
+            360.0,
+            false,
+        );
+        let preview: Vec<_> = engine
+            .acquire_patch(viewport, None)
+            .unwrap()
+            .scene
+            .ops
+            .iter()
+            .flat_map(|op| op.insert_items.clone())
+            .collect();
+        assert_eq!(
+            preview
+                .iter()
+                .filter(|i| matches!(i, SceneDisplayItem::Arrow(_)))
+                .count(),
+            2,
+            "{tool:?}"
+        );
+        assert_eq!(
+            preview
+                .iter()
+                .filter(|i| matches!(i, SceneDisplayItem::Text(_)))
+                .count(),
+            2
+        );
+        assert_eq!(engine.model.document(), &original);
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Up,
+            330.0,
+            360.0,
+            false,
+        );
+        let copy = engine.selected_ids()[0];
+        let copied_text = engine.model.bound_text_id_for_arrow(copy).unwrap();
+        assert_ne!(copied_text, text_id);
+        assert_eq!(
+            engine.model.text(copied_text).unwrap().center,
+            Point::new(50.0, 60.0)
+        );
+        let committed: Vec<_> = engine
+            .acquire_patch(viewport, None)
+            .unwrap()
+            .scene
+            .ops
+            .iter()
+            .flat_map(|op| op.insert_items.clone())
+            .collect();
+        // Geometry revisions can differ between transient and committed cache entries.
+        for items in [&preview, &committed] {
+            assert_eq!(items.iter().filter(|i| matches!(i, SceneDisplayItem::Text(t) if t.center_x == 0.0 && t.center_y == 0.0)).count(), 1);
+            assert_eq!(items.iter().filter(|i| matches!(i, SceneDisplayItem::Text(t) if t.center_x == 50.0 && t.center_y == 60.0)).count(), 1);
+        }
+    }
+}

@@ -228,7 +228,110 @@ pub(crate) fn compose_scene_items(
         _ => (1, 0),
     });
     compose_arrow_text(&mut items, model, presentation, &preview_arrows, viewport);
+    if let Some((copy_model, copy_cache, ids)) = duplicate_preview_scene(presentation) {
+        let mut copies = compose_scene_items(
+            &copy_cache,
+            &copy_model,
+            &EditorPresentationState::default(),
+            frame_view,
+        );
+        for item in &mut copies {
+            remap_copy_display_ids(item, &ids);
+        }
+        items.extend(copies);
+        // Smart Erase always occupies the bottom layer, including copy previews.
+        items.sort_by_key(|item| match item {
+            SceneDisplayItem::Filter(f)
+                if f.filter.filter_type
+                    == snow_draw_engine_display::DisplayFilterType::SmartErase =>
+            {
+                (0, f.id.index)
+            }
+            _ => (1, 0),
+        });
+    }
     items
+}
+
+// Build only the copied subset, never clone the full document. This keeps links,
+// arrow labels and serial connectors on the normal scene composition path.
+pub(crate) fn duplicate_preview_scene(
+    presentation: &EditorPresentationState,
+) -> Option<(DocumentModel, DocumentSceneCache, Vec<ElementId>)> {
+    use snow_draw_engine_document::{Operation, Transaction};
+    let transaction = presentation.duplicate_preview.as_ref()?;
+    let ids: Vec<_> = transaction
+        .operations()
+        .iter()
+        .filter_map(|op| match op {
+            Operation::InsertElement { id, .. } => Some(*id),
+            _ => None,
+        })
+        .collect();
+    let local_ids: HashMap<_, _> = ids
+        .iter()
+        .enumerate()
+        .map(|(index, id)| {
+            (
+                *id,
+                ElementId {
+                    index: index as u32,
+                    generation: 1,
+                },
+            )
+        })
+        .collect();
+    let local_id = |id| local_ids.get(&id).copied();
+    let mut compact = Transaction::new("copy preview");
+    for op in transaction.operations() {
+        if let Operation::InsertElement { id, meta, data } = op {
+            let mut data = data.clone();
+            match &mut data {
+                ElementData::Arrow(arrow) => {
+                    arrow.text_element_id = arrow.text_element_id.and_then(local_id);
+                }
+                ElementData::SerialNumber(serial) => {
+                    serial.text_element_id = serial.text_element_id.and_then(local_id);
+                }
+                _ => {}
+            }
+            compact.push(Operation::InsertElement {
+                id: local_id(*id)?,
+                meta: *meta,
+                data,
+            });
+        }
+    }
+    let mut model = DocumentModel::new();
+    model.apply_transaction(compact).ok()?;
+    let mut cache = DocumentSceneCache::new();
+    cache.sync(&model, None);
+    Some((model, cache, ids))
+}
+
+fn remap_copy_display_ids(item: &mut SceneDisplayItem, ids: &[ElementId]) {
+    let remap = |id: &mut DisplayItemId| {
+        *id = display_item_id(ids[id.index as usize]);
+    };
+    match item {
+        SceneDisplayItem::Rectangle(item) => remap(&mut item.id),
+        SceneDisplayItem::Filter(item) => remap(&mut item.id),
+        SceneDisplayItem::Text(item) => remap(&mut item.id),
+        SceneDisplayItem::SerialNumberConnector(item) => remap(&mut item.id),
+        SceneDisplayItem::Arrow(item) => {
+            remap(&mut item.id);
+            if let Some(id) = &mut item.bound_text_id {
+                remap(id);
+            }
+        }
+        SceneDisplayItem::SerialNumber(item) => {
+            remap(&mut item.id);
+            if let Some(id) = &mut item.bound_text_id {
+                remap(id);
+            }
+        }
+        SceneDisplayItem::Stroke | SceneDisplayItem::Image => {}
+    }
 }
 
 fn compose_arrow_text(
