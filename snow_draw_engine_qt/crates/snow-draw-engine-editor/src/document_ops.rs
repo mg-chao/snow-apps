@@ -219,6 +219,88 @@ pub(crate) fn duplicate_id_map(
     map
 }
 
+pub(crate) fn duplicate_selection_transaction(
+    document: &DocumentModel,
+    selected_ids: &[ElementId],
+    offset: Point<f64>,
+) -> Result<(Transaction, Vec<ElementId>), ErrorCode> {
+    let ids = expanded_duplicate_ids(document, selected_ids);
+    if ids.is_empty() {
+        return Ok((Transaction::new("duplicate selection"), Vec::new()));
+    }
+    let id_map = duplicate_id_map(document, &ids);
+    let mut transaction = Transaction::new("duplicate selection");
+    let mut next_selection = Vec::new();
+    for id in ids {
+        let Some(new_id) = id_map.get(&id).copied() else {
+            continue;
+        };
+        let element = document.element(id)?;
+        match &element.data {
+            ElementData::Rectangle(rect) => {
+                let mut duplicate = *rect;
+                duplicate.center.x += offset.x;
+                duplicate.center.y += offset.y;
+                validate_rectangle(&duplicate)?;
+                transaction.insert_rectangle(new_id, element.meta, duplicate);
+            }
+            ElementData::Filter(filter) => {
+                let mut duplicate = *filter;
+                duplicate.center.x += offset.x;
+                duplicate.center.y += offset.y;
+                validate_filter(&duplicate)?;
+                transaction.insert_filter(new_id, element.meta, duplicate);
+            }
+            ElementData::PenFilter(filter) => {
+                let mut duplicate = filter.clone();
+                duplicate.x += offset.x;
+                duplicate.y += offset.y;
+                simplify_pen_filter_geometry(&mut duplicate);
+                validate_pen_filter(&duplicate)?;
+                transaction.insert_pen_filter(new_id, element.meta, duplicate);
+            }
+            ElementData::Arrow(arrow) => {
+                let mut duplicate = arrow.clone();
+                duplicate.text_element_id = arrow
+                    .text_element_id
+                    .and_then(|text_id| id_map.get(&text_id).copied());
+                duplicate.x += offset.x;
+                duplicate.y += offset.y;
+                validate_arrow(&duplicate)?;
+                transaction.insert_arrow(new_id, element.meta, duplicate);
+            }
+            ElementData::FreeDraw(free_draw) => {
+                let mut duplicate = free_draw.clone();
+                duplicate.x += offset.x;
+                duplicate.y += offset.y;
+                validate_free_draw(&duplicate)?;
+                transaction.insert_free_draw(new_id, element.meta, duplicate);
+            }
+            ElementData::Text(text) => {
+                let mut duplicate = text.clone();
+                duplicate.center.x += offset.x;
+                duplicate.center.y += offset.y;
+                validate_text(&duplicate)?;
+                transaction.insert_text(new_id, element.meta, duplicate);
+            }
+            ElementData::SerialNumber(serial) => {
+                let mut duplicate = serial.clone();
+                duplicate.center.x += offset.x;
+                duplicate.center.y += offset.y;
+                duplicate.text_element_id = document
+                    .bound_text_id_for_serial_number(id)
+                    .and_then(|text_id| id_map.get(&text_id).copied());
+                validate_serial_number(&duplicate)?;
+                transaction.insert_serial_number(new_id, element.meta, duplicate);
+            }
+        }
+        if selected_ids.contains(&id) {
+            next_selection.push(new_id);
+        }
+    }
+    Ok((transaction, next_selection))
+}
+
 impl Editor {
     pub fn hit_text_at(&self, document: &DocumentModel, point: Point<f64>) -> Option<ElementId> {
         let active_text = self.active_text_draft_existing_id().and_then(|id| {
@@ -424,80 +506,8 @@ impl Editor {
             return Ok(None);
         }
         let history_undo_snapshot = self.capture_document_sync_snapshot(document);
-        let ids = expanded_duplicate_ids(document, &self.state.selection.ids);
-        if ids.is_empty() {
-            return Ok(None);
-        }
-        let id_map = duplicate_id_map(document, &ids);
-        let mut transaction = Transaction::new("duplicate selection");
-        let mut next_selection = Vec::new();
-        for id in ids {
-            let Some(new_id) = id_map.get(&id).copied() else {
-                continue;
-            };
-            let element = document.element(id)?;
-            match &element.data {
-                ElementData::Rectangle(rect) => {
-                    let mut duplicate = *rect;
-                    duplicate.center.x += offset.x;
-                    duplicate.center.y += offset.y;
-                    validate_rectangle(&duplicate)?;
-                    transaction.insert_rectangle(new_id, element.meta, duplicate);
-                }
-                ElementData::Filter(filter) => {
-                    let mut duplicate = *filter;
-                    duplicate.center.x += offset.x;
-                    duplicate.center.y += offset.y;
-                    validate_filter(&duplicate)?;
-                    transaction.insert_filter(new_id, element.meta, duplicate);
-                }
-                ElementData::PenFilter(filter) => {
-                    let mut duplicate = filter.clone();
-                    duplicate.x += offset.x;
-                    duplicate.y += offset.y;
-                    simplify_pen_filter_geometry(&mut duplicate);
-                    validate_pen_filter(&duplicate)?;
-                    transaction.insert_pen_filter(new_id, element.meta, duplicate);
-                }
-                ElementData::Arrow(arrow) => {
-                    let mut duplicate = arrow.clone();
-                    duplicate.text_element_id = arrow
-                        .text_element_id
-                        .and_then(|text_id| id_map.get(&text_id).copied());
-                    duplicate.x += offset.x;
-                    duplicate.y += offset.y;
-                    validate_arrow(&duplicate)?;
-                    transaction.insert_arrow(new_id, element.meta, duplicate);
-                }
-                ElementData::FreeDraw(free_draw) => {
-                    let mut duplicate = free_draw.clone();
-                    duplicate.x += offset.x;
-                    duplicate.y += offset.y;
-                    validate_free_draw(&duplicate)?;
-                    transaction.insert_free_draw(new_id, element.meta, duplicate);
-                }
-                ElementData::Text(text) => {
-                    let mut duplicate = text.clone();
-                    duplicate.center.x += offset.x;
-                    duplicate.center.y += offset.y;
-                    validate_text(&duplicate)?;
-                    transaction.insert_text(new_id, element.meta, duplicate);
-                }
-                ElementData::SerialNumber(serial) => {
-                    let mut duplicate = serial.clone();
-                    duplicate.center.x += offset.x;
-                    duplicate.center.y += offset.y;
-                    duplicate.text_element_id = document
-                        .bound_text_id_for_serial_number(id)
-                        .and_then(|text_id| id_map.get(&text_id).copied());
-                    validate_serial_number(&duplicate)?;
-                    transaction.insert_serial_number(new_id, element.meta, duplicate);
-                }
-            }
-            if self.state.selection.contains(id) {
-                next_selection.push(new_id);
-            }
-        }
+        let (transaction, next_selection) =
+            duplicate_selection_transaction(document, &self.state.selection.ids, offset)?;
         if transaction.is_empty() {
             return Ok(None);
         }

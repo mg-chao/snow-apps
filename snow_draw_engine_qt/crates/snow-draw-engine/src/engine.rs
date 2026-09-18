@@ -18,6 +18,8 @@ use snow_draw_engine_scene::{DocumentSceneCache, ViewportComposer};
 #[cfg(test)]
 mod auto_filter_tests;
 mod document_commands;
+#[cfg(test)]
+mod duplicate_drag_tests;
 mod input;
 mod mutations;
 mod text_commands;

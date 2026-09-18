@@ -68,6 +68,7 @@ impl Editor {
         };
 
         EditSelectionState {
+            duplicate: false,
             pointer_id: request.pointer_id,
             preview_elements: request.original_elements.clone(),
             preview_arrows: request.original_arrows.clone(),
@@ -138,9 +139,23 @@ impl Editor {
         };
 
         self.clear_transient_visuals();
+        if state.duplicate {
+            self.bump_scene_state_revision();
+        }
         if state.preview_elements == state.original_elements
             && state.preview_arrows == state.original_arrows
         {
+            return Ok(());
+        }
+
+        if state.duplicate {
+            let offset = Point::new(
+                state.preview_bounds.center.x - state.original_bounds.center.x,
+                state.preview_bounds.center.y - state.original_bounds.center.y,
+            );
+            if let Some(command) = self.duplicate_selected(document, offset)? {
+                self.queue_command(command);
+            }
             return Ok(());
         }
 
@@ -948,6 +963,7 @@ mod tests {
             opacity: 1.0,
         };
         let state = EditSelectionState {
+            duplicate: false,
             pointer_id: 1,
             original_elements: vec![SelectionRectState {
                 id: ElementId::default(),
@@ -1465,6 +1481,7 @@ mod tests {
             )
             .unwrap();
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
+            duplicate: false,
             pointer_id: 1,
             original_elements: vec![SelectionRectState {
                 id: text_id,
@@ -1536,6 +1553,7 @@ mod tests {
             )
             .unwrap();
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
+            duplicate: false,
             pointer_id: 1,
             original_elements: vec![SelectionRectState {
                 id: text_id,
@@ -1613,6 +1631,7 @@ mod tests {
             )
             .unwrap();
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
+            duplicate: false,
             pointer_id: 1,
             original_elements: vec![SelectionRectState {
                 id: text_id,
@@ -1789,6 +1808,7 @@ mod tests {
             )
             .unwrap();
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
+            duplicate: false,
             pointer_id: 1,
             original_elements: vec![SelectionRectState {
                 id: text_id,

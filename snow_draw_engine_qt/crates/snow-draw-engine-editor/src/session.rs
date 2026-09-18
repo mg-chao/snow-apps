@@ -260,6 +260,19 @@ impl EditorSession {
             crate::document_ops::next_serial_number(document);
     }
 
+    /// Restore the selection stored with a duplication history entry.
+    pub fn restore_history_selection(
+        &mut self,
+        document: &DocumentModel,
+        snapshot: &DocumentSyncSnapshot,
+    ) {
+        self.editor.set_selection_state_with_document(
+            Some(document),
+            snapshot.selection.ids.clone(),
+            snapshot.selection.primary,
+        );
+    }
+
     pub fn sync_after_document_change(
         &mut self,
         document: &DocumentModel,

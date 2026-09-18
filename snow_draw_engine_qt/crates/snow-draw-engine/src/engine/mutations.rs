@@ -22,6 +22,10 @@ impl Engine {
             self.editor
                 .sync_serial_number_after_history_change(&self.model);
         }
+        if history_result.restore_selection {
+            self.editor
+                .restore_history_selection(&self.model, &history_result.snapshot);
+        }
         Ok(self.finish_document_change(
             &history_result.snapshot,
             &history_result.apply_result.changes,
@@ -41,6 +45,10 @@ impl Engine {
         if follows_serial_number {
             self.editor
                 .sync_serial_number_after_history_change(&self.model);
+        }
+        if history_result.restore_selection {
+            self.editor
+                .restore_history_selection(&self.model, &history_result.snapshot);
         }
         Ok(self.finish_document_change(
             &history_result.snapshot,

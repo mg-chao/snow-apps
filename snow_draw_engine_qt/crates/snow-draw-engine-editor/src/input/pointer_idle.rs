@@ -59,6 +59,7 @@ impl Editor {
         self.state.interaction = match request.target {
             SelectionHitTarget::Move => {
                 InteractionState::PendingSelectionMove(PendingSelectionMoveState {
+                    duplicate: false,
                     pointer_id: request.pointer_id,
                     original_elements: request.original_elements,
                     original_arrows: request.original_arrows,
@@ -444,6 +445,36 @@ impl Editor {
         let canvas_point = view_to_canvas(event.position, &self.camera(), self.surface_size());
         let intent =
             self.resolve_primary_pointer_intent(document, policy, canvas_point, event.modifiers);
+        // Copy only an existing selection and only for body/move gestures.
+        // Handle and Shift-toggle intents retain their normal precedence.
+        let copy_move = event.modifiers.alt && self.state.active_text_draft.is_none();
+        let copy_move = copy_move
+            && match intent {
+                PrimaryPointerIntent::BeginSelectionInteraction {
+                    target: SelectionHitTarget::Move,
+                }
+                | PrimaryPointerIntent::BeginSelectedArrowInteraction {
+                    target: ArrowHitTarget::Move,
+                } => true,
+                PrimaryPointerIntent::BeginArrowElementInteraction { id }
+                | PrimaryPointerIntent::BeginElementSelectionMove { id }
+                | PrimaryPointerIntent::TextEditCandidate { id } => {
+                    self.state.selection.contains(id)
+                }
+                _ => false,
+            };
+        if copy_move {
+            let output = self.begin_current_selection_interaction(
+                document,
+                event,
+                SelectionHitTarget::Move,
+                canvas_point,
+            );
+            if let InteractionState::PendingSelectionMove(state) = &mut self.state.interaction {
+                state.duplicate = true;
+            }
+            return Ok(output);
+        }
         match intent {
             PrimaryPointerIntent::ToggleSelection { id } => {
                 self.toggle_selection(document, id);

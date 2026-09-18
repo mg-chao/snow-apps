@@ -21,6 +21,7 @@ pub struct HistoryEntry {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct HistoryApplyResult {
+    pub restore_selection: bool,
     pub apply_result: ApplyResult,
     pub snapshot: DocumentSyncSnapshot,
 }
@@ -238,9 +239,11 @@ impl HistoryStore {
             }
         };
 
+        let restore_selection = entry.label == "duplicate selection";
         let snapshot = entry.undo_snapshot.clone();
         self.redo_stack.push(entry);
         Ok(Some(HistoryApplyResult {
+            restore_selection,
             apply_result,
             snapshot,
         }))
@@ -265,9 +268,11 @@ impl HistoryStore {
             }
         };
 
+        let restore_selection = entry.label == "duplicate selection";
         let snapshot = entry.redo_snapshot.clone();
         self.undo_stack.push(entry);
         Ok(Some(HistoryApplyResult {
+            restore_selection,
             apply_result,
             snapshot,
         }))

@@ -779,6 +779,14 @@ fn compose_spotlight_cutouts(
     {
         cutouts.push(spotlight_cutout(*rect));
     }
+    if let Some((copy_model, copy_cache, _)) = duplicate_preview_scene(presentation) {
+        cutouts.extend(compose_spotlight_cutouts(
+            &copy_cache,
+            &copy_model,
+            &EditorPresentationState::default(),
+            frame_view,
+        ));
+    }
     cutouts
 }
 
