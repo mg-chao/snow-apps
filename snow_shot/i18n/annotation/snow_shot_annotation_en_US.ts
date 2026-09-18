@@ -96,6 +96,10 @@
             <translation>Capture cursor</translation>
         </message>
         <message>
+            <source>Circle</source>
+            <translation>Circle</translation>
+        </message>
+        <message>
             <source>Close recording</source>
             <translation>Close recording</translation>
         </message>

@@ -586,22 +586,31 @@ fn serial_number_with_style_properties(
     style: &SerialNumberStyle,
     properties: u32,
 ) -> SerialNumberData {
-    let number = if properties & SERIAL_NUMBER_STYLE_MIXED_NUMBER != 0 {
-        style.number
+    let next_type = if properties & SERIAL_NUMBER_STYLE_MIXED_TYPE != 0 {
+        style.serial_number_type
     } else {
-        serial.number
+        serial.serial_number_type
     };
+    let number =
+        if next_type.supports_number() && properties & SERIAL_NUMBER_STYLE_MIXED_NUMBER != 0 {
+            style.number
+        } else {
+            serial.number
+        };
     let font_size = if properties & SERIAL_NUMBER_STYLE_MIXED_FONT_SIZE != 0 {
         style.font_size
     } else {
         serial.font_size
     };
-    let size_affecting_style_changed =
-        serial.number != number.max(0) || serial.font_size != font_size;
+    let size_affecting_style_changed = serial.number != number.max(0)
+        || serial.font_size != font_size
+        || serial.serial_number_type.supports_number() != next_type.supports_number();
+    let mut typed_serial = serial.clone();
+    typed_serial.serial_number_type = next_type;
     let mut updated = if size_affecting_style_changed {
-        serial_number_with_label_style(serial, number, font_size)
+        serial_number_with_label_style(&typed_serial, number, font_size)
     } else {
-        serial.clone()
+        typed_serial
     };
     if properties & SERIAL_NUMBER_STYLE_MIXED_TYPE != 0 {
         updated.serial_number_type = style.serial_number_type;
@@ -615,7 +624,7 @@ fn serial_number_with_style_properties(
     if properties & SERIAL_NUMBER_STYLE_MIXED_FILL_STYLE != 0 {
         updated.fill_style = style.fill_style;
     }
-    if properties & SERIAL_NUMBER_STYLE_MIXED_FONT_FAMILY != 0 {
+    if next_type.supports_number() && properties & SERIAL_NUMBER_STYLE_MIXED_FONT_FAMILY != 0 {
         updated.font_family = normalize_font_family(style.font_family.clone());
     }
     if properties & SERIAL_NUMBER_STYLE_MIXED_STROKE_WIDTH != 0 {
@@ -1816,6 +1825,10 @@ impl Editor {
             || (changed_properties == 0 && mixed & SERIAL_NUMBER_STYLE_MIXED_TYPE != 0);
         let properties = if type_only_change {
             SERIAL_NUMBER_STYLE_MIXED_TYPE
+        } else if mixed & SERIAL_NUMBER_STYLE_MIXED_TYPE != 0
+            && changed_properties & SERIAL_NUMBER_STYLE_MIXED_TYPE == 0
+        {
+            changed_properties
         } else {
             SERIAL_NUMBER_STYLE_ALL_PROPERTIES
         };
@@ -2510,6 +2523,77 @@ mod tests {
         let updated = serial_number_with_style(&serial, &style);
 
         assert_eq!(updated.diameter, serial.diameter);
+    }
+
+    #[test]
+    fn circle_type_changes_recompute_size_and_preserve_unsupported_properties() {
+        let original = SerialNumberData {
+            number: 42,
+            font_family: Some("Saved font".to_owned()),
+            diameter: 123.0,
+            ..SerialNumberData::default()
+        };
+        let mut style = SerialNumberStyle::from_serial_number(&original);
+        style.serial_number_type = snow_draw_engine_document::SerialNumberType::Circle;
+        style.number = 99;
+        style.font_family = Some("Ignored font".to_owned());
+        let circle = serial_number_with_style(&original, &style);
+        assert_eq!(circle.diameter, 12.0);
+        assert_eq!(circle.number, original.number);
+        assert_eq!(circle.font_family, original.font_family);
+        assert_eq!(circle.stroke_width, original.stroke_width);
+        style = SerialNumberStyle::from_serial_number(&circle);
+        style.font_size = 48.0;
+        let larger = serial_number_with_style(&circle, &style);
+        assert_eq!(larger.diameter, 24.0);
+        style.serial_number_type = original.serial_number_type;
+        let numbered = serial_number_with_style(&larger, &style);
+        assert_eq!(
+            numbered.diameter,
+            resolve_serial_number_style_diameter(42, 48.0)
+        );
+        assert_eq!(numbered.number, original.number);
+        assert_eq!(numbered.font_family, original.font_family);
+        assert_eq!(numbered.stroke_width, original.stroke_width);
+    }
+
+    #[test]
+    fn mixed_circle_selection_edits_only_supported_label_properties() {
+        let mut document = DocumentModel::new();
+        let numbered_id = document.allocate_element_id();
+        let circle_id = document.allocate_element_id();
+        let circle = SerialNumberData {
+            serial_number_type: snow_draw_engine_document::SerialNumberType::Circle,
+            diameter: 12.0,
+            number: 87,
+            font_family: Some("Circle saved font".to_owned()),
+            ..SerialNumberData::default()
+        };
+        let mut insert = Transaction::new("insert mixed serial types");
+        insert.insert_serial_number(
+            numbered_id,
+            ElementMeta::default(),
+            SerialNumberData::default(),
+        );
+        insert.insert_serial_number(circle_id, ElementMeta::default(), circle.clone());
+        document.apply_transaction(insert).unwrap();
+        let mut editor = Editor::new(Default::default()).unwrap();
+        editor.set_selection_state(vec![numbered_id, circle_id], Some(numbered_id));
+        let mut style = editor.serial_number_style(&document);
+        style.number = 15;
+        style.font_family = Some("Numbered font".to_owned());
+        let command = editor
+            .set_serial_number_style(&document, style)
+            .unwrap()
+            .unwrap();
+        let EditorCommand::ApplyTransaction(command) = command else {
+            panic!("expected transaction")
+        };
+        document.apply_transaction(command.transaction).unwrap();
+        assert_eq!(document.serial_number(circle_id).unwrap(), &circle);
+        let numbered = document.serial_number(numbered_id).unwrap();
+        assert_eq!(numbered.number, 15);
+        assert_eq!(numbered.font_family.as_deref(), Some("Numbered font"));
     }
 
     #[test]

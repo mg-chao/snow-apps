@@ -267,6 +267,9 @@ QColor solidSerialNumberTextColor(const SnowColorRgba8& fill) {
 
 void drawSerialNumberText(QPainter& painter, const SnowSceneDisplayItem& item,
                           const QRectF& localRect, double zoom, double strokeWidth) {
+    if (item.serial_number_type == SNOW_SERIAL_NUMBER_TYPE_CIRCLE) {
+        return;
+    }
     if ((!serialNumberIsSolid(item) && item.text_color.a == 0) || item.font_size <= 0.0) {
         return;
     }

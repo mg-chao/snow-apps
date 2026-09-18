@@ -96,6 +96,10 @@
             <translation>捕获光标</translation>
         </message>
         <message>
+            <source>Circle</source>
+            <translation>圆形</translation>
+        </message>
+        <message>
             <source>Close recording</source>
             <translation>关闭录制</translation>
         </message>

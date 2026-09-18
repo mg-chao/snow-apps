@@ -2161,6 +2161,9 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
          ScreenshotToolPaletteTranslationText(
              QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Solid square")),
          custom_outlined_icons::SequenceNumberSolidSquare()},
+        {static_cast<int>(SnowCanvasSerialNumberType::Circle),
+         ScreenshotToolPaletteTranslationText(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Circle")),
+         custom_outlined_icons::SequenceNumberCircle()},
     };
     serialNumberTypeConfig.initialId = static_cast<int>(m_state.m_serialNumberStyle.type);
     m_serialNumberTypeControlsContainer =
@@ -2187,7 +2190,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
                      &adqt::widgets::AdRadioButtonGroup::checkedIdChanged, controls,
                      [this](int id) {
                          if (id >= static_cast<int>(SnowCanvasSerialNumberType::OutlinedCircle) &&
-                             id <= static_cast<int>(SnowCanvasSerialNumberType::SolidSquare)) {
+                             id <= static_cast<int>(SnowCanvasSerialNumberType::Circle)) {
                              setSerialNumberType(static_cast<SnowCanvasSerialNumberType>(id));
                          }
                      });
@@ -3095,6 +3098,15 @@ void ScreenshotToolPaletteStyleControls::registerSerialNumberEntries() {
          [this, mixed]() {
              SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.serial_number.type_refresh");
              const bool typeMixed = mixed(SnowCanvasSerialNumberStyleMixedType);
+             const bool supportsNumber = typeMixed || m_state.m_serialNumberStyle.type !=
+                                                          SnowCanvasSerialNumberType::Circle;
+             if (m_serialNumberEditor != nullptr) {
+                 m_serialNumberEditor->setEnabled(supportsNumber);
+             }
+             if (m_serialNumberFontEditor != nullptr &&
+                 m_serialNumberFontEditor->familySelect() != nullptr) {
+                 m_serialNumberFontEditor->familySelect()->setEnabled(supportsNumber);
+             }
              if (m_serialNumberTypeButtonGroup != nullptr) {
                  const QSignalBlocker blocker(m_serialNumberTypeButtonGroup);
                  m_serialNumberTypeButtonGroup->setCheckedId(
@@ -3658,7 +3670,7 @@ bool ScreenshotToolPaletteStyleControls::handleSerialNumberWheel(const QPoint& g
     if (direction == 0) {
         return false;
     }
-    if (m_serialNumberEditor != nullptr &&
+    if (m_serialNumberEditor != nullptr && m_serialNumberEditor->isEnabled() &&
         m_serialNumberEditor->rect().contains(
             m_serialNumberEditor->mapFromGlobal(globalPosition))) {
         bool valid = false;
@@ -4841,6 +4853,10 @@ void ScreenshotToolPaletteStyleControls::setSerialNumberFillStyle(SnowCanvasFill
 }
 
 void ScreenshotToolPaletteStyleControls::setSerialNumber(qint64 number) {
+    if (m_state.m_serialNumberStyle.type == SnowCanvasSerialNumberType::Circle &&
+        (m_state.m_serialNumberStyleMixed & SnowCanvasSerialNumberStyleMixedType) == 0) {
+        return;
+    }
     number = std::max<qint64>(0, number);
     commitSerialNumberProperty(
         SnowCanvasSerialNumberStyleMixedNumber,
@@ -4882,6 +4898,10 @@ void ScreenshotToolPaletteStyleControls::cycleSerialNumberFontSize() {
 }
 
 void ScreenshotToolPaletteStyleControls::setSerialNumberFontFamily(const QString& fontFamily) {
+    if (m_state.m_serialNumberStyle.type == SnowCanvasSerialNumberType::Circle &&
+        (m_state.m_serialNumberStyleMixed & SnowCanvasSerialNumberStyleMixedType) == 0) {
+        return;
+    }
     const QString normalized = fontFamily.trimmed();
     commitSerialNumberProperty(
         SnowCanvasSerialNumberStyleMixedFontFamily,

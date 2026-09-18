@@ -262,6 +262,7 @@ pub(crate) fn scene_item_from_serial_number(
             SerialNumberType::SolidCircle => DisplaySerialNumberType::SolidCircle,
             SerialNumberType::OutlinedSquare => DisplaySerialNumberType::OutlinedSquare,
             SerialNumberType::SolidSquare => DisplaySerialNumberType::SolidSquare,
+            SerialNumberType::Circle => DisplaySerialNumberType::Circle,
         },
         color: serial.color,
         fill: serial.fill,

@@ -96,6 +96,10 @@
             <translation>擷取游標</translation>
         </message>
         <message>
+            <source>Circle</source>
+            <translation>圓形</translation>
+        </message>
+        <message>
             <source>Close recording</source>
             <translation>關閉錄製</translation>
         </message>

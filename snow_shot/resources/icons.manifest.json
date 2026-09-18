@@ -696,6 +696,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "SequenceNumberCircle",
+      "name": "sequence-number-circle",
+      "source": "../src/presentation/components/icons/resources/sequence-number-circle.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "SequenceNumberOutlinedCircle",
       "name": "sequence-number-outlined-circle",
       "source": "../src/presentation/components/icons/resources/sequence-number-outlined-circle.svg",

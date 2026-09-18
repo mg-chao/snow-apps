@@ -89,6 +89,7 @@ snow_c_enum! {
         SolidCircle = 1,
         OutlinedSquare = 2,
         SolidSquare = 3,
+    Circle = 4,
     }
 }
 
@@ -289,6 +290,7 @@ mod spotlight_abi_tests {
         assert_eq!(SnowSerialNumberType::SolidCircle as i32, 1);
         assert_eq!(SnowSerialNumberType::OutlinedSquare as i32, 2);
         assert_eq!(SnowSerialNumberType::SolidSquare as i32, 3);
+        assert_eq!(SnowSerialNumberType::Circle as i32, 4);
         assert_eq!(std::mem::size_of::<SnowSerialNumberStyle>(), 200);
         assert_eq!(std::mem::align_of::<SnowSerialNumberStyle>(), 8);
         assert_eq!(

@@ -514,7 +514,20 @@ pub fn serial_number_with_selection_rect(
 
 pub fn resolve_serial_number_stroke_width(serial: &SerialNumberData) -> f64 {
     let scale = sanitize_non_negative(serial.font_size) / SERIAL_NUMBER_STROKE_REFERENCE_FONT_SIZE;
-    sanitize_non_negative(serial.stroke_width * scale)
+    let multiplier = if serial.serial_number_type.supports_number() {
+        1.0
+    } else {
+        1.5
+    };
+    sanitize_non_negative(serial.stroke_width * scale * multiplier)
+}
+
+pub fn resolve_serial_number_data_diameter(serial: &SerialNumberData, min_diameter: f64) -> f64 {
+    if serial.serial_number_type.supports_number() {
+        resolve_serial_number_diameter(serial.number, serial.font_size, min_diameter)
+    } else {
+        sanitize_non_negative(serial.font_size) * 0.5
+    }
 }
 
 pub fn resolve_serial_number_square_corner_radius(serial: &SerialNumberData) -> f64 {
@@ -531,9 +544,12 @@ pub fn serial_number_with_label_style(
     font_size: f64,
 ) -> SerialNumberData {
     let mut updated = serial.clone();
-    updated.number = number.max(0);
+    if updated.serial_number_type.supports_number() {
+        updated.number = number.max(0);
+    }
     updated.font_size = font_size;
-    updated.diameter = resolve_serial_number_style_diameter(updated.number, updated.font_size);
+    updated.diameter =
+        resolve_serial_number_data_diameter(&updated, SerialNumberData::default().diameter);
     updated
 }
 
@@ -1110,6 +1126,51 @@ mod tests {
         };
 
         assert!((resolve_serial_number_stroke_width(&serial) - 2.4).abs() < 1e-9);
+    }
+
+    #[test]
+    fn circle_geometry_ignores_label_and_scales_with_font_size() {
+        for font_size in [6.0, 24.0, 48.0, 512.0] {
+            let circle = SerialNumberData {
+                serial_number_type: crate::SerialNumberType::Circle,
+                font_size,
+                number: 987654321,
+                font_family: Some("Unused font".to_owned()),
+                stroke_width: 2.0,
+                ..SerialNumberData::default()
+            };
+            let sized = serial_number_with_label_style(&circle, 7, font_size);
+            assert_eq!(sized.number, circle.number);
+            assert_eq!(sized.font_family, circle.font_family);
+            assert_eq!(sized.diameter, font_size * 0.5);
+            let stroke = resolve_serial_number_stroke_width(&sized);
+            assert!((stroke - font_size * 0.15).abs() < 1e-9);
+            let bounds = serial_number_bounds(&sized);
+            let outer_radius = sized.diameter / 2.0 + stroke / 2.0;
+            assert!(bounds.max_x >= outer_radius);
+            assert!(serial_number_hit_test(
+                &sized,
+                Point::new(outer_radius - 0.01, 0.0),
+                0.0
+            ));
+            assert!(!serial_number_hit_test(
+                &sized,
+                Point::new(outer_radius + 0.01, 0.0),
+                0.0
+            ));
+            assert!(!serial_number_hit_test(
+                &sized,
+                Point::new(outer_radius, outer_radius),
+                0.0
+            ));
+            let mut rect = serial_number_rect_proxy(&sized);
+            rect.width *= 2.0;
+            rect.height *= 2.0;
+            let resized = serial_number_with_selection_rect(&sized, rect);
+            assert_eq!(resized.diameter, resized.font_size * 0.5);
+            assert_eq!(resized.font_size, font_size * 2.0);
+            assert!((resolve_serial_number_stroke_width(&resized) - stroke * 2.0).abs() < 1e-9);
+        }
     }
 
     #[test]

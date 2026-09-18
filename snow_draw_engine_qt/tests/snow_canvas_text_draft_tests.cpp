@@ -1987,6 +1987,29 @@ QRect visiblePixelBounds(const QImage& image) {
     return bounds;
 }
 
+void circleRendersFillAndStrokeWithoutNumber() {
+    const SnowColorRgba8 red{255, 0, 0, 255};
+    const SnowColorRgba8 green{0, 255, 0, 255};
+    const SnowColorRgba8 transparent{0, 0, 0, 0};
+    const QImage circle = renderedSerialNumberType(SNOW_SERIAL_NUMBER_TYPE_CIRCLE, red, transparent,
+                                                   SNOW_FILL_STYLE_SOLID, 6.0, 24.0);
+    const QImage unlabeledOutline = renderedSerialNumberType(
+        SNOW_SERIAL_NUMBER_TYPE_OUTLINED_CIRCLE, red, transparent, SNOW_FILL_STYLE_SOLID, 6.0);
+    require(circle == unlabeledOutline, "Circle should paint only its outline, with no number");
+    require(circle.pixelColor(70, 70).alpha() == 0,
+            "transparent Circle should have an empty center");
+    const QImage filled = renderedSerialNumberType(SNOW_SERIAL_NUMBER_TYPE_CIRCLE, red, green,
+                                                   SNOW_FILL_STYLE_SOLID, 6.0, 24.0);
+    require(filled.pixelColor(70, 70) == QColor(0, 255, 0),
+            "Circle should use its independently configured fill color");
+    for (SnowFillStyle style : {SNOW_FILL_STYLE_LINE, SNOW_FILL_STYLE_CROSS_LINE}) {
+        const QImage patterned =
+            renderedSerialNumberType(SNOW_SERIAL_NUMBER_TYPE_CIRCLE, red, green, style, 6.0, 24.0);
+        require(patterned != filled && patterned != circle,
+                "Circle should support each existing patterned fill");
+    }
+}
+
 void serialNumberTypesRenderExpectedSilhouettesAndSolidSemantics() {
     const SnowColorRgba8 red{255, 0, 0, 255};
     const SnowColorRgba8 transparent{0, 0, 0, 0};
@@ -3405,6 +3428,7 @@ int main(int argc, char** argv) {
     longOpenPathsRenderAllCommands();
     textBackgroundUsesRectangleHatchTexture();
     serialNumberBackgroundUsesTextHatchTexture();
+    circleRendersFillAndStrokeWithoutNumber();
     serialNumberTypesRenderExpectedSilhouettesAndSolidSemantics();
     solidSerialNumberChoosesFixedContrastLabelColors();
     textHoverUnderlineRendererDrawsOnlyTheUnderline();

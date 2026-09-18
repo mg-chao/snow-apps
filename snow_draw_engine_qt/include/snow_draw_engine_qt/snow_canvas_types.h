@@ -97,6 +97,7 @@ enum class SnowCanvasSerialNumberType : quint32 {
     SolidCircle = 1,
     OutlinedSquare = 2,
     SolidSquare = 3,
+    Circle = 4,
 };
 
 enum SnowCanvasShapeStyleMixedFlag : quint32 {

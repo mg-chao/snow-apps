@@ -7854,6 +7854,32 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
     require(!fillRoot->isEnabled(),
             "uniform solid sequence-number selections should disable the visible fill editor");
 
+    auto* circleType = qobject_cast<QAbstractButton*>(controlWithTooltip(palette, "Circle"));
+    require(circleType != nullptr, "Circle type should be available");
+    circleType->click();
+    require(emittedStyle.type == SnowCanvasSerialNumberType::Circle && !numberInput->isEnabled() &&
+                !fontSelect->isEnabled() && fontSizeSummary->isEnabled() && fillRoot->isEnabled(),
+            "Circle should disable number and font family while keeping size and fill enabled");
+    const int circleChangeCount = changeCount;
+    numberInput->setText(QStringLiteral("999"));
+    QMetaObject::invokeMethod(numberInput, "editingFinished", Qt::DirectConnection);
+    const QPoint numberCenter = numberInput->rect().center();
+    QWheelEvent circleWheel(QPointF(numberCenter), numberInput->mapToGlobal(numberCenter), QPoint(),
+                            QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(numberInput, &circleWheel);
+    require(changeCount == circleChangeCount && emittedStyle.number == 12,
+            "Circle should ignore number commits and wheel changes");
+    clickStyleControl(palette, "Sequence number font size 30px");
+    require(changeCount == circleChangeCount + 1 && emittedStyle.fontSize == 30.0,
+            "Circle font size should remain editable");
+    clickStyleControl(palette, "Cross-line sequence number fill");
+    require(emittedStyle.fillStyle == SnowCanvasFillStyle::CrossLine,
+            "Circle fill should remain editable");
+    solidSquareType->click();
+    require(numberInput->isEnabled() && fontSelect->isEnabled() && !fillRoot->isEnabled(),
+            "switching back to a numbered type should restore number and family editors");
+    circleType->click();
+
     state.serialNumberStyle = emittedStyle;
     state.serialNumberStyleMixed = SnowCanvasSerialNumberStyleMixedType;
     palette.setStyleToolbarState(state);
@@ -7861,6 +7887,19 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
             "mixed sequence-number types should leave every type button unchecked");
     require(fillRoot->isEnabled(),
             "mixed sequence-number types should keep the fill editor enabled");
+    require(numberInput->isEnabled() && fontSelect->isEnabled(),
+            "mixed Circle and numbered types should keep label editors enabled");
+    state.serialNumberStyleMixed = 0;
+    palette.setStyleToolbarState(state);
+    require(!fontSelect->isEnabled(), "uniform Circle should disable font family again");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Text);
+    auto* textFamily = controlWithAccessibleName(palette, "Text font family");
+    require(textFamily != nullptr && textFamily->isEnabled(),
+            "reusing Circle font controls for Text must restore the family selector");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::SerialNumber);
+    auto* circleFamily = controlWithAccessibleName(palette, "Sequence number font family");
+    require(circleFamily != nullptr && !circleFamily->isEnabled(),
+            "returning to Circle must disable the reused font selector");
 }
 
 void serialNumberInputCommitsEditsAndSupportsWheel() {
@@ -8653,7 +8692,7 @@ void styleToolbarControlsDoNotEnterTabFocusChain() {
 
     const QList<adqt::widgets::AdRadio*> modeButtons =
         palette.findChildren<adqt::widgets::AdRadio*>();
-    require(modeButtons.size() == 20,
+    require(modeButtons.size() == 21,
             "style toolbars should expose the expected number of mode radios");
     for (adqt::widgets::AdRadio* button : modeButtons) {
         require(button != nullptr && button->focusPolicy() == Qt::NoFocus,
@@ -10064,7 +10103,7 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     styles.text.fontFamily = QStringLiteral("Persisted text font");
     styles.text.fontSize = 36.0;
     styles.serialNumber.number = 9'007'199'254'740'993LL;
-    styles.serialNumber.type = SnowCanvasSerialNumberType::SolidSquare;
+    styles.serialNumber.type = SnowCanvasSerialNumberType::Circle;
     styles.serialNumber.color = QColor(17, 18, 19, 20);
     styles.serialNumber.fontFamily = QStringLiteral("Persisted serial font");
     styles.watermark.text = QStringLiteral("must not persist");
@@ -10146,7 +10185,7 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     require(!savedSerialStyle.contains(QStringLiteral("number")),
             "the current serial number must not be saved with its appearance");
     require(savedSerialStyle.value(QStringLiteral("type")).toInt(-1) ==
-                static_cast<int>(SnowCanvasSerialNumberType::SolidSquare),
+                static_cast<int>(SnowCanvasSerialNumberType::Circle),
             "the last sequence-number type should persist with its appearance");
 
     QJsonObject legacySerialStyle = savedSerialStyle;
@@ -10161,7 +10200,7 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
             "legacy settings without a type should use outlined circle and ignore saved numbers");
 
     for (const QJsonValue& invalidType :
-         {QJsonValue(1.5), QJsonValue(-1), QJsonValue(4), QJsonValue(QStringLiteral("3"))}) {
+         {QJsonValue(1.5), QJsonValue(-1), QJsonValue(5), QJsonValue(QStringLiteral("3"))}) {
         QJsonObject invalidSerialStyle = savedSerialStyle;
         invalidSerialStyle.insert(QStringLiteral("type"), invalidType);
         require(snow_shot::storage::ApplicationStorage::instance().configuration().setValue(

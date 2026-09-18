@@ -6,7 +6,7 @@ unsafe fn serial_number_style_type_is_valid(style: *const SnowSerialNumberStyle)
     let raw = unsafe {
         std::ptr::read_unaligned(std::ptr::addr_of!((*style).serial_number_type).cast::<i32>())
     };
-    (SnowSerialNumberType::OutlinedCircle as i32..=SnowSerialNumberType::SolidSquare as i32)
+    (SnowSerialNumberType::OutlinedCircle as i32..=SnowSerialNumberType::Circle as i32)
         .contains(&raw)
 }
 
