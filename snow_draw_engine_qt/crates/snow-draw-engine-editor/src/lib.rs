@@ -5,6 +5,7 @@ mod arrow_text;
 mod auto_filter_workflow;
 pub use arrow_text::ArrowTextLayoutRequest;
 mod creation_workflow;
+pub use creation_workflow::SerialNumberLabelLayoutRequest;
 mod defaults;
 mod document_ops;
 mod edit_workflow;

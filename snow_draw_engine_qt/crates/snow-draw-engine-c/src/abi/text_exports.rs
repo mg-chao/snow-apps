@@ -2,7 +2,10 @@ use snow_draw_engine::{ElementId, Point, TextLayoutSize};
 
 use crate::abi::convert::*;
 use crate::abi::handles::*;
-use crate::abi::text::{active_text_draft_from_c, text_draft_commit_from_c, text_string_from_raw};
+use crate::abi::text::{
+    active_text_draft_from_c, copy_optional_str_to_c_char_field, text_draft_commit_from_c,
+    text_string_from_raw,
+};
 use crate::abi::types::*;
 
 /// # Safety
@@ -644,5 +647,87 @@ pub unsafe extern "C" fn snow_viewport_take_text_edit_request(
             );
             Ok(())
         }))
+    })
+}
+
+/// Returns the pending empty-label measurement for an active serial number drag,
+/// if any. The host measures the empty draft for the requested font and applies
+/// the result via `snow_viewport_apply_serial_label_layout_ex`.
+/// # Safety
+/// `runtime` and `viewport` must be live handles created by this library.
+/// `out_request` must be valid for writes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_get_serial_label_layout_request(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    out_request: *mut SnowSerialLabelLayoutRequest,
+    out_has_request: *mut u8,
+) -> SnowError {
+    ffi_error(|| {
+        if out_request.is_null() || out_has_request.is_null() {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_viewport_ref(
+            runtime,
+            viewport,
+            |engine, id| {
+                let request = engine
+                    .serial_number_label_layout_request(id)
+                    .map_err(SnowError::from)?;
+                write_out(out_has_request, u8::from(request.is_some()));
+                write_out(
+                    out_request,
+                    request
+                        .map(|request| {
+                            let mut out = SnowSerialLabelLayoutRequest::default();
+                            out.text_id = snow_element_id_from_rust(request.text_id);
+                            out.font_size = request.font_size;
+                            copy_optional_str_to_c_char_field(
+                                &mut out.font_family_utf8,
+                                &mut out.font_family_utf8_len,
+                                &mut out.font_family_truncated,
+                                request.font_family.as_deref(),
+                            );
+                            out
+                        })
+                        .unwrap_or_default(),
+                );
+                Ok(())
+            },
+        ))
+    })
+}
+
+/// Applies a host-measured layout to the drag-attached serial number label.
+/// # Safety
+/// `runtime` and `viewport` must be live handles created by this library.
+/// `out_changed_viewports` must be valid for writes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_apply_serial_label_layout_ex(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    text_id: SnowElementId,
+    layout: SnowTextLayoutSize,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if out_changed_viewports.is_null() {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_viewport_mut(
+            runtime,
+            viewport,
+            |engine, id| {
+                let result = engine
+                    .apply_serial_number_label_layout(
+                        id,
+                        snow_element_id_to_rust(text_id),
+                        layout.into(),
+                    )
+                    .map_err(SnowError::from)?;
+                write_changed_viewports(out_changed_viewports, result.changed_viewports);
+                Ok(())
+            },
+        ))
     })
 }

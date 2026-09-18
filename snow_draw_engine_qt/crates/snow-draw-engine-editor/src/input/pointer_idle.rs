@@ -414,6 +414,7 @@ impl Editor {
                         serial_id,
                         start_view_position: event.position,
                         text: None,
+                        label_measured: false,
                     });
                 self.set_creation_preview(None, snap_guides);
                 Ok(InteractionOutput {

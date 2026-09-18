@@ -88,6 +88,8 @@ void clickAndDragLifecycle() {
     require(center.value(QStringLiteral("x")).toDouble() == expected.x() &&
                 center.value(QStringLiteral("y")).toDouble() == expected.y(),
             "text is placed at the final release position");
+    require(text.value(QStringLiteral("width")).toDouble() > 1.0,
+            "release persists the host-measured label layout, not the placeholder width");
     key(canvas, Qt::Key_A, Qt::NoModifier, QStringLiteral("Drag label"));
     key(canvas, Qt::Key_Return, Qt::ControlModifier);
     require(!canvas.hasActiveTextEditing(), "commit closes editor");

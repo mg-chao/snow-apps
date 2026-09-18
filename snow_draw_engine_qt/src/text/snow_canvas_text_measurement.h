@@ -34,6 +34,8 @@ TextLayoutOverrideMeasurement measureAutoResizeLayoutOverrides(const SnowTextEle
 TextLayoutOverrideMeasurement
 measureSelectedAutoResizeLayoutOverrides(const SelectedTextLayoutMeasurementRequest& request);
 SnowTextLayoutSize measureEmptyDraftLayout(const SnowTextStyle& style, const QFont& baseFont);
+SnowTextLayoutSize measureSerialLabelLayout(const SnowSerialLabelLayoutRequest& request,
+                                            const QFont& baseFont);
 SnowTextLayoutSize
 measureSerialNumberBoundTextLayout(const SnowTextStyle& textStyle,
                                    const SnowSerialNumberStyle& serialNumberStyle,

@@ -153,6 +153,108 @@ fn serial_number_drag_previews_bound_text_and_edits_at_final_release_position() 
 }
 
 #[test]
+fn serial_number_drag_applies_measured_label_layout_to_preview_and_release() {
+    let (mut engine, viewport) = setup(1.0);
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Down,
+        400.0,
+        300.0,
+        false,
+    );
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Move,
+        404.0,
+        300.0,
+        false,
+    );
+    let serial_id = engine.model.paint_order()[0];
+    let text_id = engine
+        .model
+        .serial_number(serial_id)
+        .unwrap()
+        .text_element_id
+        .unwrap();
+
+    let request = engine
+        .serial_number_label_layout_request(viewport)
+        .unwrap()
+        .expect("attached label must request a measured layout");
+    assert_eq!(request.text_id, text_id);
+    assert_eq!(
+        request.font_size,
+        engine.model.serial_number(serial_id).unwrap().font_size
+    );
+
+    let history = engine.history_state();
+    assert_eq!(
+        engine
+            .apply_serial_number_label_layout(
+                viewport,
+                text_id,
+                snow_draw_engine_document::TextLayoutSize {
+                    width: 31.0,
+                    height: 36.0,
+                }
+            )
+            .unwrap()
+            .changed_viewports,
+        vec![viewport]
+    );
+    assert_eq!(
+        engine.history_state(),
+        history,
+        "measurement adds no undo entries"
+    );
+    assert_eq!(
+        engine.serial_number_label_layout_request(viewport).unwrap(),
+        None,
+        "measurement is requested only once"
+    );
+
+    let patch = engine.acquire_patch(viewport, None).unwrap();
+    let text = patch
+        .scene
+        .ops
+        .iter()
+        .flat_map(|op| &op.insert_items)
+        .find_map(|item| {
+            if let SceneDisplayItem::Text(text) = item {
+                Some(text)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(text.width, 31.0, "drag preview renders the measured layout");
+    assert_eq!(text.height, 36.0);
+
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Move,
+        320.0,
+        240.0,
+        false,
+    );
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Up,
+        250.0,
+        220.0,
+        false,
+    );
+    let placed = engine.model.text(text_id).unwrap();
+    assert_eq!(placed.center, Point::new(-150.0, -80.0));
+    assert_eq!(placed.width, 31.0, "release persists the measured layout");
+    assert_eq!(placed.height, 36.0);
+}
+
+#[test]
 fn serial_number_release_without_move_still_attaches_text() {
     let (mut engine, viewport) = setup(1.0);
     pointer(

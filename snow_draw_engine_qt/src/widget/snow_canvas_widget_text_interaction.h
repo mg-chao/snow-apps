@@ -93,6 +93,8 @@ class SnowCanvasWidgetTextInteraction final {
 
     snow_canvas_commands::MutationResult measureArrowText(SnowRuntime runtime,
                                                           SnowViewport viewport);
+    snow_canvas_commands::MutationResult measureSerialLabelLayout(SnowRuntime runtime,
+                                                                  SnowViewport viewport);
     bool isActive() const;
     bool editorContains(const SnowCanvasDisplayCache& displayCache, const QPointF& position) const;
     bool selectionInteractionContains(const SnowCanvasDisplayCache& displayCache,

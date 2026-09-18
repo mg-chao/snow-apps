@@ -148,6 +148,31 @@ SnowCanvasWidgetTextInteraction::measureArrowText(SnowRuntime runtime, SnowViewp
     return result;
 }
 
+snow_canvas_commands::MutationResult
+SnowCanvasWidgetTextInteraction::measureSerialLabelLayout(SnowRuntime runtime,
+                                                          SnowViewport viewport) {
+    snow_canvas_commands::MutationResult result;
+    if (runtime == nullptr || viewport == nullptr) {
+        return result;
+    }
+    SnowSerialLabelLayoutRequest request{};
+    std::uint8_t hasRequest = 0;
+    if (snow_viewport_get_serial_label_layout_request(runtime, viewport, &request, &hasRequest) !=
+        SNOW_OK) {
+        return result;
+    }
+    result.success = true;
+    if (hasRequest == 0) {
+        return result;
+    }
+    const SnowTextLayoutSize layout =
+        snow_canvas_text_measurement::measureSerialLabelLayout(request, m_widget.font());
+    result.success =
+        snow_viewport_apply_serial_label_layout_ex(runtime, viewport, request.text_id, layout,
+                                                   result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
 bool SnowCanvasWidgetTextInteraction::isActive() const {
     return m_session.isActive();
 }

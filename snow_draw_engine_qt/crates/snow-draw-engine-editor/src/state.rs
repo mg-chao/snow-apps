@@ -125,6 +125,7 @@ pub(crate) struct CreateSerialNumberState {
     pub(crate) serial_id: ElementId,
     pub(crate) start_view_position: Point<f64>,
     pub(crate) text: Option<(ElementId, TextData)>,
+    pub(crate) label_measured: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -89,6 +89,8 @@ impl Editor {
             && let Some(mut rect) = document.element_rect_proxy(*id)
         {
             rect.center = text.center;
+            rect.width = text.width;
+            rect.height = text.height;
             preview_elements.push(SelectionRectState { id: *id, rect });
         }
         for id in &self.state.eraser.pending_ids {

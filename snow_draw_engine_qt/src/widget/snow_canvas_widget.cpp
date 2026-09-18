@@ -1931,6 +1931,9 @@ void SnowCanvasWidget::Impl::syncChangedViewports(SnowChangedViewportList change
     const auto labels =
         textInteraction.measureArrowText(runtimeBinding.engine(), runtimeBinding.viewportHandle());
     runtimeBinding.syncChangedViewports(labels.changedViewports.get());
+    const auto serialLabels = textInteraction.measureSerialLabelLayout(
+        runtimeBinding.engine(), runtimeBinding.viewportHandle());
+    runtimeBinding.syncChangedViewports(serialLabels.changedViewports.get());
     runtimeBinding.syncChangedViewports(changedViewports);
 }
 

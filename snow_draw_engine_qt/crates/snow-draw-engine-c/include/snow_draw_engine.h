@@ -721,6 +721,17 @@ typedef struct SnowArrowTextLayoutResult {
     SnowTextLayoutSize size;
 } SnowArrowTextLayoutResult;
 
+/* Pending host measurement for the empty label attached by an active serial
+   number drag; measure the empty draft for this font and apply the result. */
+typedef struct SnowSerialLabelLayoutRequest {
+    SnowElementId text_id;
+    double font_size;
+    uint32_t font_family_utf8_len;
+    uint8_t font_family_truncated;
+    uint8_t reserved0[3];
+    char font_family_utf8[SNOW_FONT_FAMILY_UTF8_CAPACITY];
+} SnowSerialLabelLayoutRequest;
+
 uint32_t snow_runtime_arrow_text_count(SnowRuntime runtime);
 SnowError snow_viewport_get_arrow_text_layout_requests(SnowRuntime runtime, SnowViewport viewport,
                                                        SnowArrowTextLayoutRequest* out_items,
@@ -729,6 +740,13 @@ SnowError snow_viewport_apply_arrow_text_layouts_ex(SnowRuntime runtime, SnowVie
                                                     const SnowArrowTextLayoutResult* layouts,
                                                     uint32_t count,
                                                     SnowChangedViewportList* out_changed_viewports);
+SnowError snow_viewport_get_serial_label_layout_request(SnowRuntime runtime, SnowViewport viewport,
+                                                        SnowSerialLabelLayoutRequest* out_request,
+                                                        uint8_t* out_has_request);
+SnowError
+snow_viewport_apply_serial_label_layout_ex(SnowRuntime runtime, SnowViewport viewport,
+                                           SnowElementId text_id, SnowTextLayoutSize layout,
+                                           SnowChangedViewportList* out_changed_viewports);
 
 typedef struct SnowPointerEvent {
     uint32_t pointer_id;

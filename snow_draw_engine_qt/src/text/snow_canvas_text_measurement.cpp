@@ -2,6 +2,7 @@
 
 #include "snow_canvas_text.h"
 #include "snow_canvas_text_layout.h"
+#include "snow_canvas_utf8.h"
 
 #include <QSizeF>
 #include <QString>
@@ -86,6 +87,18 @@ SnowTextLayoutSize measureEmptyDraftLayout(const SnowTextStyle& style, const QFo
     SnowCanvasSceneItem item = previewItemForStyle(info, style);
     const QSizeF size = snow_canvas_text_layout::measureNaturalText(QString(), baseFont, item);
     return SnowTextLayoutSize{size.width(), size.height()};
+}
+
+SnowTextLayoutSize measureSerialLabelLayout(const SnowSerialLabelLayoutRequest& request,
+                                            const QFont& baseFont) {
+    SnowTextStyle style{};
+    style.font_size = request.font_size;
+    const QString fontFamily = snow_canvas_utf8::stringFromField(
+        request.font_family_utf8, request.font_family_utf8_len, SNOW_FONT_FAMILY_UTF8_CAPACITY);
+    snow_canvas_utf8::copyStringToField(fontFamily.trimmed(), style.font_family_utf8,
+                                        style.font_family_utf8_len, style.font_family_truncated,
+                                        SNOW_FONT_FAMILY_UTF8_CAPACITY);
+    return measureEmptyDraftLayout(style, baseFont);
 }
 
 SnowTextLayoutSize

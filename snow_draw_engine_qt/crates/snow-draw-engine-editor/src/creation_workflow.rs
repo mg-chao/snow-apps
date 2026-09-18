@@ -2,7 +2,7 @@ use super::*;
 use snow_draw_engine_core::arrow::{ArrowEndpointEdge, ArrowType, StrokeStyle};
 use snow_draw_engine_document::{
     ElementMeta, TextLayoutSize, arrow_is_degenerate, resolve_serial_number_diameter,
-    validate_text_layout_size,
+    text_with_auto_resize_layout, validate_text_layout_size,
 };
 
 impl Editor {
@@ -991,6 +991,70 @@ impl Editor {
             cursor: CursorCommand::Set(CursorStyle::Default),
         })
     }
+
+    /// Requests a host-side font measurement for the empty label attached by an
+    /// active serial number drag. The drag attaches the label with placeholder
+    /// geometry because only the host can measure text; until the measured
+    /// layout is applied, the painted fill bubble outruns the item bounds used
+    /// for incremental dirty regions.
+    pub fn serial_number_label_layout_request(
+        &self,
+        document: &DocumentModel,
+    ) -> Option<SerialNumberLabelLayoutRequest> {
+        let InteractionState::CreatingSerialNumber(state) = &self.state.interaction else {
+            return None;
+        };
+        let (id, text) = state.text.as_ref()?;
+        if state.label_measured || document.text(*id).is_err() {
+            return None;
+        }
+        Some(SerialNumberLabelLayoutRequest {
+            text_id: *id,
+            font_size: text.font_size,
+            font_family: text.font_family.clone(),
+        })
+    }
+
+    /// Applies the host-measured empty-label layout to the drag-attached label.
+    /// The measurement updates the in-flight drag state (the authority while the
+    /// pointer is captured, like the live center); the release transaction
+    /// persists it into the document, so no extra undo entry is created.
+    pub fn apply_serial_number_label_layout(
+        &mut self,
+        document: &DocumentModel,
+        text_id: ElementId,
+        layout: TextLayoutSize,
+    ) -> Result<bool, ErrorCode> {
+        let layout = validate_text_layout_size(layout)?;
+        let InteractionState::CreatingSerialNumber(state) = &mut self.state.interaction else {
+            return Ok(false);
+        };
+        let Some((id, text)) = &state.text else {
+            return Ok(false);
+        };
+        if *id != text_id || state.label_measured || document.text(text_id).is_err() {
+            return Ok(false);
+        }
+        let updated = text_with_auto_resize_layout(text, layout)?;
+        validate_text(&updated)?;
+        let applied = updated != *text;
+        state.label_measured = true;
+        if applied {
+            state.text = Some((text_id, updated));
+        }
+        self.bump_scene_state_revision();
+        self.bump_overlay_state_revision();
+        Ok(applied)
+    }
+}
+
+/// A pending host measurement for the empty label attached by a serial number
+/// drag; the host measures the empty draft for this font and applies the result.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SerialNumberLabelLayoutRequest {
+    pub text_id: ElementId,
+    pub font_size: f64,
+    pub font_family: Option<String>,
 }
 
 #[cfg(test)]

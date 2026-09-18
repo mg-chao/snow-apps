@@ -48,6 +48,23 @@ impl EditorSession {
         self.editor.state.pending_text_edit.take()
     }
 
+    pub fn serial_number_label_layout_request(
+        &self,
+        document: &DocumentModel,
+    ) -> Option<crate::SerialNumberLabelLayoutRequest> {
+        self.editor.serial_number_label_layout_request(document)
+    }
+
+    pub fn apply_serial_number_label_layout(
+        &mut self,
+        document: &DocumentModel,
+        text_id: ElementId,
+        layout: TextLayoutSize,
+    ) -> Result<bool, ErrorCode> {
+        self.editor
+            .apply_serial_number_label_layout(document, text_id, layout)
+    }
+
     pub fn arrow_text_layout_requests(
         &self,
         document: &DocumentModel,

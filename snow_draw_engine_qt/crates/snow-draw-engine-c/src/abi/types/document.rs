@@ -18,6 +18,30 @@ pub struct SnowArrowTextLayoutResult {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SnowSerialLabelLayoutRequest {
+    pub text_id: SnowElementId,
+    pub font_size: f64,
+    pub font_family_utf8_len: u32,
+    pub font_family_truncated: u8,
+    pub reserved0: [u8; 3],
+    pub font_family_utf8: [std::ffi::c_char; SNOW_FONT_FAMILY_UTF8_CAPACITY],
+}
+
+impl Default for SnowSerialLabelLayoutRequest {
+    fn default() -> Self {
+        Self {
+            text_id: SnowElementId::default(),
+            font_size: 0.0,
+            font_family_utf8_len: 0,
+            font_family_truncated: 0,
+            reserved0: [0; 3],
+            font_family_utf8: [0; SNOW_FONT_FAMILY_UTF8_CAPACITY],
+        }
+    }
+}
+
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SnowElementId {
     pub index: u32,
