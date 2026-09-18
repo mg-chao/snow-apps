@@ -178,12 +178,12 @@ pub(super) fn snap_to_mid(
     None
 }
 
-fn get_snap_outline_mid_point_candidates(bindable: &BindableState) -> Vec<Point> {
-    vec![
-        get_binding_side_mid_point(("candidate", [1.0, 0.5]), bindable),
-        get_binding_side_mid_point(("candidate", [0.5, 1.0]), bindable),
-        get_binding_side_mid_point(("candidate", [0.0, 0.5]), bindable),
-        get_binding_side_mid_point(("candidate", [0.5, 0.0]), bindable),
+fn get_snap_outline_mid_point_candidates(bindable: &BindableState) -> [Point; 4] {
+    [
+        get_binding_side_mid_point([1.0, 0.5], bindable),
+        get_binding_side_mid_point([0.5, 1.0], bindable),
+        get_binding_side_mid_point([0.0, 0.5], bindable),
+        get_binding_side_mid_point([0.5, 0.0], bindable),
     ]
 }
 
@@ -198,6 +198,92 @@ pub fn get_snap_outline_mid_point(
         .find(|&candidate| {
             distance(point, candidate) <= threshold && !is_point_in_bindable(point, bindable)
         })
+}
+
+/// How midpoint indicators behave for a binding suggestion, combining arrow
+/// kind with the angle-lock gate so call sites cannot transpose two booleans.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutlineMidPointMode {
+    /// Angle-locked drag: no indicators at all.
+    Disabled,
+    /// Straight arrows: indicators hidden while the cursor is inside the
+    /// bindable; only the nearest midpoint may show as a proximity hint.
+    Linear,
+    /// Elbow arrows: bindings keep anchoring to the outline midpoints, so all
+    /// candidates stay visible even with the cursor inside the bindable.
+    Elbow,
+}
+
+impl OutlineMidPointMode {
+    pub fn for_arrow(elbowed: bool, midpoint_snapping_enabled: bool) -> Self {
+        if !midpoint_snapping_enabled {
+            Self::Disabled
+        } else if elbowed {
+            Self::Elbow
+        } else {
+            Self::Linear
+        }
+    }
+}
+
+/// Midpoint indicators rendered alongside a binding highlight, mirroring
+/// Excalidraw's interactive-scene dots: the closest side midpoint within the
+/// snap threshold is highlighted, and the remaining candidates are shown as
+/// proximity hints (all of them for elbow arrows, only the closest one within
+/// twice the threshold otherwise).
+pub struct OutlineMidPointSuggestion {
+    pub highlighted: Option<Point>,
+    pub near: Vec<Point>,
+}
+
+pub fn outline_mid_point_suggestion(
+    pointer: Point,
+    bindable: &BindableState,
+    zoom: f64,
+    mode: OutlineMidPointMode,
+) -> OutlineMidPointSuggestion {
+    let elbowed = mode == OutlineMidPointMode::Elbow;
+    let none = OutlineMidPointSuggestion {
+        highlighted: None,
+        near: Vec::new(),
+    };
+    if mode == OutlineMidPointMode::Disabled {
+        return none;
+    }
+    // Indicators are hidden while the cursor is inside the bindable, except
+    // for elbow arrows whose bindings still anchor to the outline midpoints.
+    if !elbowed && is_point_in_bindable(pointer, bindable) {
+        return none;
+    }
+
+    let threshold = max_binding_distance(zoom) + bindable.stroke_width / 2.0;
+    let candidates = get_snap_outline_mid_point_candidates(bindable);
+    let (closest_index, closest_distance) = candidates
+        .iter()
+        .enumerate()
+        .map(|(index, candidate)| (index, distance(pointer, *candidate)))
+        .min_by(|left, right| {
+            left.1
+                .partial_cmp(&right.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap_or((0, f64::INFINITY));
+
+    let highlighted = (closest_distance <= threshold).then(|| candidates[closest_index]);
+    let near = if elbowed {
+        candidates
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| highlighted.is_none() || *index != closest_index)
+            .map(|(_, point)| *point)
+            .collect()
+    } else if highlighted.is_none() && closest_distance <= threshold * 2.0 {
+        vec![candidates[closest_index]]
+    } else {
+        Vec::new()
+    };
+
+    OutlineMidPointSuggestion { highlighted, near }
 }
 
 fn get_diagonal_guide_segments(bindable: &BindableState) -> [LineSegment; 2] {
@@ -275,12 +361,15 @@ pub fn project_fixed_point_onto_diagonal(
     start_or_end: ArrowEndpointEdge,
     bindables: &[BindableState],
     zoom: f64,
+    midpoint_snapping_enabled: bool,
 ) -> Option<Point> {
     if arrow.points.len() < 2 || (arrow.width < 3.0 && arrow.height < 3.0) {
         return None;
     }
 
-    if let Some(side_mid_point) = get_snap_outline_mid_point(point, bindable, zoom) {
+    if midpoint_snapping_enabled
+        && let Some(side_mid_point) = get_snap_outline_mid_point(point, bindable, zoom)
+    {
         return Some(side_mid_point);
     }
 

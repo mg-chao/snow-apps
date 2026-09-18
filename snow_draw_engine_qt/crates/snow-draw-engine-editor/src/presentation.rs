@@ -3,15 +3,15 @@ use snow_draw_engine_core::{
     rectangle_intersects_viewport,
 };
 use snow_draw_engine_document::{
-    ArrowData, ElementId, MIN_TEXT_FONT_SIZE, RectangleData, SerialNumberData, arrow_hit_test,
-    arrow_segment_midpoints,
+    ArrowData, ArrowSuggestedBinding, ElementId, MIN_TEXT_FONT_SIZE, RectangleData,
+    SerialNumberData, arrow_hit_test, arrow_segment_midpoints,
 };
 use snow_draw_engine_model::DocumentModel;
 
 use crate::{
-    ArrowHandleKind, ArrowHandleState, Editor, EditorPresentationState, EditorViewState,
-    SelectionArrowState, SelectionBounds, SelectionRectState, SerialNumberToolbarState,
-    TextPreviewFontSize,
+    ArrowHandleKind, ArrowHandleState, BindingHighlightPresentation, Editor,
+    EditorPresentationState, EditorViewState, MIN_BINDING_HIGHLIGHT_ZOOM, SelectionArrowState,
+    SelectionBounds, SelectionRectState, SerialNumberToolbarState, TextPreviewFontSize,
     geometry::{
         element_hit_tolerance, selection_bounds_from_selection, selection_handle_hit_size,
         selection_handle_size, text_resize_changes_width_only,
@@ -178,6 +178,30 @@ impl Editor {
             selected_single_arrow,
             arrow_handles,
             snap_guides: self.state.ui.snap_guides.clone(),
+            binding_highlight: self.binding_highlight(document),
+        }
+    }
+
+    fn binding_highlight(&self, document: &DocumentModel) -> Option<BindingHighlightPresentation> {
+        let suggested = self.current_suggested_binding()?;
+        let rect = document.element_rect_proxy(suggested.bindable_id)?;
+        // Excalidraw keeps the highlight a constant on-screen width:
+        // clamp(strokeWidth, 1.75, 4) / zoom.
+        let zoom = self.camera().zoom.max(MIN_BINDING_HIGHLIGHT_ZOOM);
+        let stroke_width = rect.stroke_width.clamp(1.75, 4.0) / zoom;
+        Some(BindingHighlightPresentation {
+            rect,
+            stroke_width,
+            mid_point: suggested.mid_point,
+            near_mid_points: suggested.near_mid_points.clone(),
+        })
+    }
+
+    fn current_suggested_binding(&self) -> Option<&ArrowSuggestedBinding> {
+        match &self.state.interaction {
+            InteractionState::EditingArrow(state) => state.suggested_binding.as_ref(),
+            InteractionState::CreatingArrow(state) => state.suggested_binding.as_ref(),
+            _ => None,
         }
     }
 

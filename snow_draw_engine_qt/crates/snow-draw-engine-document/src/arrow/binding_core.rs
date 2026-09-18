@@ -11,14 +11,14 @@ use crate::arrow_hit_test::{
 use crate::{
     ArrowEndpointEdge, ArrowEndpointSelector, ArrowEngineEvent, ArrowPatch, ArrowState, BindMode,
     BindablePatch, BindableState, Bounds, ComputeEndpointDragInput, ElementId,
-    EndpointBindingStrategy, EngineContext, EngineResult, FixedPointBinding, Point,
-    SuggestedBinding, point_updates_to_pairs,
+    EndpointBindingStrategy, EngineResult, FixedPointBinding, Point, SuggestedBinding,
+    point_updates_to_pairs,
 };
 
 use crate::arrow_binding_geometry::heading_for_point_from_bindable;
 pub use crate::arrow_binding_geometry::{
-    bind_point_to_outline, calculate_fixed_point_for_binding,
-    calculate_fixed_point_for_elbow_binding, get_snap_outline_mid_point, max_binding_distance,
+    OutlineMidPointMode, bind_point_to_outline, calculate_fixed_point_for_binding,
+    calculate_fixed_point_for_elbow_binding, max_binding_distance, outline_mid_point_suggestion,
     project_fixed_point_onto_diagonal, update_bound_point,
 };
 
@@ -63,12 +63,4 @@ pub fn get_heading_for_elbow_snap(
     }
 
     heading_for_point_from_bindable(point, bindable, aabb)
-}
-
-pub fn pick_hovered_bindable(
-    point: Point,
-    bindables: &[BindableState],
-    context: &EngineContext,
-) -> Option<BindableState> {
-    get_hovered_bindable(point, bindables, max_binding_distance(context.zoom))
 }

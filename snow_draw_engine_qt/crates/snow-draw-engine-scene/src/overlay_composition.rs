@@ -130,6 +130,22 @@ pub(crate) fn compose_overlay_items(
         )));
     }
 
+    if let Some(highlight) = presentation.binding_highlight.as_ref() {
+        items.push(OverlayDisplayItem::Rectangle(
+            binding_highlight_outline_item(highlight),
+        ));
+        for near_mid_point in &highlight.near_mid_points {
+            items.push(OverlayDisplayItem::Rectangle(
+                binding_near_midpoint_dot_item(*near_mid_point, zoom),
+            ));
+        }
+        if let Some(mid_point) = highlight.mid_point {
+            items.push(OverlayDisplayItem::Rectangle(
+                binding_snapped_midpoint_dot_item(mid_point, zoom),
+            ));
+        }
+    }
+
     items.retain(|item| overlay_item_visible(item, frame_view));
     items
 }
@@ -310,6 +326,7 @@ mod tests {
     use super::*;
     use snow_draw_engine_core::{Camera, SurfaceSize};
     use snow_draw_engine_document::FreeDrawData;
+    use snow_draw_engine_editor::BindingHighlightPresentation;
 
     fn element_id(index: u32) -> ElementId {
         ElementId {
@@ -855,5 +872,50 @@ mod tests {
         assert_eq!(rect_frame.kind, UiShapeKind::SelectionCandidateFrame);
         assert_eq!(rect_frame.width, 88.0);
         assert_eq!(rect_frame.height, 28.0);
+    }
+
+    #[test]
+    fn binding_highlight_composes_outline_and_midpoint_dot() {
+        let mut highlighted = rect(100.0, 80.0);
+        highlighted.center = Point::new(10.0, 20.0);
+        highlighted.stroke_width = 2.0;
+        let presentation = EditorPresentationState {
+            binding_highlight: Some(BindingHighlightPresentation {
+                rect: highlighted,
+                stroke_width: 2.0,
+                mid_point: Some(Point::new(60.0, 20.0)),
+                near_mid_points: vec![Point::new(-40.0, 20.0), Point::new(10.0, -20.0)],
+            }),
+            ..EditorPresentationState::default()
+        };
+
+        let items = compose_overlay_items(SnapConfig::default(), &presentation, frame_view());
+        assert_eq!(items.len(), 4);
+
+        let outline = overlay_rect(&items, 0);
+        assert_eq!(outline.kind, UiShapeKind::BindingHighlight);
+        assert_eq!(outline.center_x, 10.0);
+        assert_eq!(outline.center_y, 20.0);
+        assert_eq!(outline.width, 100.0);
+        assert_eq!(outline.height, 80.0);
+        assert_eq!(outline.stroke_width, 2.0);
+
+        let first_near = overlay_rect(&items, 1);
+        assert_eq!(first_near.center_x, -40.0);
+        assert_eq!(first_near.center_y, 20.0);
+        assert_eq!(first_near.fill, BINDING_NEAR_MIDPOINT_COLOR);
+
+        let second_near = overlay_rect(&items, 2);
+        assert_eq!(second_near.center_x, 10.0);
+        assert_eq!(second_near.center_y, -20.0);
+        assert_eq!(second_near.fill, BINDING_NEAR_MIDPOINT_COLOR);
+
+        let dot = overlay_rect(&items, 3);
+        assert_eq!(dot.kind, UiShapeKind::BindingHighlight);
+        assert_eq!(dot.center_x, 60.0);
+        assert_eq!(dot.center_y, 20.0);
+        assert_eq!(dot.width, 8.0);
+        assert_eq!(dot.height, 8.0);
+        assert_eq!(dot.fill, BINDING_HIGHLIGHT_COLOR);
     }
 }

@@ -8,6 +8,7 @@ pub fn bind_point_to_outline(
     bindable: &BindableState,
     start_or_end: ArrowEndpointEdge,
     custom_intersector: Option<[Point; 2]>,
+    midpoint_snapping_enabled: bool,
 ) -> Point {
     let shape = bindable.shape;
     let point = get_point_at_index_global(
@@ -57,7 +58,11 @@ pub fn bind_point_to_outline(
         let heading =
             heading_for_point_from_bindable(point, bindable, aabb_for_bindable(bindable, None));
         let is_horizontal = matches!(heading, Heading::Left | Heading::Right);
-        let resolved = snap_to_mid(bindable, edge_point, Some(0.05), Some(arrow)).unwrap_or(point);
+        let resolved = if midpoint_snapping_enabled {
+            snap_to_mid(bindable, edge_point, Some(0.05), Some(arrow)).unwrap_or(point)
+        } else {
+            point
+        };
         let other_point = if is_horizontal {
             [bindable_center[0], resolved[1]]
         } else {
@@ -154,10 +159,17 @@ pub fn calculate_fixed_point_for_elbow_binding(
     arrow: &ArrowState,
     bindable: &BindableState,
     start_or_end: ArrowEndpointEdge,
+    midpoint_snapping_enabled: bool,
 ) -> Point {
     calculate_fixed_point_for_binding(
         bindable,
-        bind_point_to_outline(arrow, bindable, start_or_end, None),
+        bind_point_to_outline(
+            arrow,
+            bindable,
+            start_or_end,
+            None,
+            midpoint_snapping_enabled,
+        ),
     )
 }
 

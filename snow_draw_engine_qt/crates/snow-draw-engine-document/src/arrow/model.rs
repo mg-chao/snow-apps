@@ -78,6 +78,7 @@ pub(crate) struct SuggestedBinding {
     pub bindable_id: Option<ElementId>,
     pub element: BindableState,
     pub mid_point: Option<Point>,
+    pub near_mid_points: Vec<Point>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

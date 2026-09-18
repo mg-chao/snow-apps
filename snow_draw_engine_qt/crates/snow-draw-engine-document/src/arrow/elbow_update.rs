@@ -37,6 +37,7 @@ pub struct UpdateElbowArrowPointsOptions {
     pub zoom: Option<f64>,
     pub validate_invariants: Option<bool>,
     pub max_coordinate: Option<f64>,
+    pub midpoint_snapping_enabled: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -189,6 +190,7 @@ fn resolve_endpoint_point(
     bindable: Option<&BindableState>,
     initial_point: Point,
     is_dragging: bool,
+    midpoint_snapping_enabled: bool,
 ) -> Point {
     if is_dragging {
         let Some(bindable) = bindable else {
@@ -198,7 +200,7 @@ fn resolve_endpoint_point(
             EndpointSide::Start => ArrowEndpointEdge::Start,
             EndpointSide::End => ArrowEndpointEdge::End,
         };
-        return bind_point_to_outline(arrow, bindable, edge, None);
+        return bind_point_to_outline(arrow, bindable, edge, None, midpoint_snapping_enabled);
     }
 
     match (binding, bindable) {
@@ -237,6 +239,7 @@ fn resolve_endpoint(
     other_point: Point,
     is_dragging: bool,
     zoom: f64,
+    midpoint_snapping_enabled: bool,
 ) -> EndpointRoute {
     let point = match side {
         EndpointSide::Start => get_point_at_index_global(arrow, 0),
@@ -247,8 +250,15 @@ fn resolve_endpoint(
         EndpointSide::End => arrow.end_binding.as_ref(),
     };
     let bindable = resolve_endpoint_bindable(arrow, bindables_by_id, side, is_dragging, zoom);
-    let resolved_point =
-        resolve_endpoint_point(arrow, side, binding, bindable.as_ref(), point, is_dragging);
+    let resolved_point = resolve_endpoint_point(
+        arrow,
+        side,
+        binding,
+        bindable.as_ref(),
+        point,
+        is_dragging,
+        midpoint_snapping_enabled,
+    );
     let heading =
         resolve_endpoint_heading(resolved_point, other_point, bindable.as_ref(), point, zoom);
     let has_arrowhead = match side {
@@ -378,6 +388,7 @@ pub(super) fn compute_default_route_patch(
     zoom: f64,
     is_dragging: bool,
     max_coordinate: f64,
+    midpoint_snapping_enabled: bool,
 ) -> ArrowPatch {
     let start_point = resolve_endpoint_point(
         working_arrow,
@@ -393,6 +404,7 @@ pub(super) fn compute_default_route_patch(
         .as_ref(),
         get_point_at_index_global(working_arrow, 0),
         is_dragging,
+        midpoint_snapping_enabled,
     );
     let end_point = resolve_endpoint_point(
         working_arrow,
@@ -408,6 +420,7 @@ pub(super) fn compute_default_route_patch(
         .as_ref(),
         get_point_at_index_global(working_arrow, -1),
         is_dragging,
+        midpoint_snapping_enabled,
     );
     let start = resolve_endpoint(
         working_arrow,
@@ -416,6 +429,7 @@ pub(super) fn compute_default_route_patch(
         end_point,
         is_dragging,
         zoom,
+        midpoint_snapping_enabled,
     );
     let end = resolve_endpoint(
         working_arrow,
@@ -424,6 +438,7 @@ pub(super) fn compute_default_route_patch(
         start_point,
         is_dragging,
         zoom,
+        midpoint_snapping_enabled,
     );
 
     let obstacles = bindables_by_id
@@ -500,8 +515,18 @@ pub fn update_elbow_arrow_points(
         .as_ref()
         .and_then(|value| value.is_dragging)
         .unwrap_or(false);
+    let midpoint_snapping_enabled = options
+        .as_ref()
+        .and_then(|value| value.midpoint_snapping_enabled)
+        .unwrap_or(true);
     if !has_elbow_updates(updates) && arrow.fixed_segments.is_some() {
-        return handle_segment_renormalization(arrow, bindables_by_id, zoom, max_coordinate);
+        return handle_segment_renormalization(
+            arrow,
+            bindables_by_id,
+            zoom,
+            max_coordinate,
+            midpoint_snapping_enabled,
+        );
     }
 
     let fixed_segments = sanitized_fixed_segments.clone().unwrap_or_default();
@@ -512,6 +537,7 @@ pub fn update_elbow_arrow_points(
             zoom,
             is_dragging,
             max_coordinate,
+            midpoint_snapping_enabled,
         );
         if sanitized_fixed_segments != arrow.fixed_segments || updates.fixed_segments.is_some() {
             patch.fixed_segments = Some(sanitized_fixed_segments);
@@ -533,6 +559,7 @@ pub fn update_elbow_arrow_points(
             zoom,
             is_dragging,
             max_coordinate,
+            midpoint_snapping_enabled,
         );
         patch.fixed_segments = fixed_segments_patch_value(Some(fixed_segments));
         return patch;
@@ -559,6 +586,7 @@ pub fn update_elbow_arrow_points(
         start_bindable.as_ref(),
         get_point_at_index_global(&working_arrow, 0),
         is_dragging,
+        midpoint_snapping_enabled,
     );
     let end_point = resolve_endpoint_point(
         &working_arrow,
@@ -567,6 +595,7 @@ pub fn update_elbow_arrow_points(
         end_bindable.as_ref(),
         get_point_at_index_global(&working_arrow, -1),
         is_dragging,
+        midpoint_snapping_enabled,
     );
     let start_heading = resolve_endpoint_heading(
         start_point,

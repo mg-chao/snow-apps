@@ -1,18 +1,18 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::arrow_binding_core::{
-    calculate_fixed_point_for_binding, get_snap_outline_mid_point, pick_hovered_bindable,
+    calculate_fixed_point_for_binding, calculate_fixed_point_for_elbow_binding, update_bound_point,
 };
-use crate::arrow_focus_core::{compute_focus_point_drag, resolve_bound_point_local};
-use crate::arrow_geom::{normalize_arrow_from_global_points, points_equal, to_global_point};
-use crate::arrow_hit_test::is_point_in_bindable;
+use crate::arrow_focus_core::compute_focus_point_drag;
+use crate::arrow_geom::points_equal;
 use crate::arrow_state_core::apply_arrow_patch_internal;
 use crate::{
-    ArrowEngineEvent, ArrowPatch, ArrowState, BindMode, BindablePatch, BindableState,
+    ArrowEndpointEdge, ArrowEngineEvent, ArrowPatch, ArrowState, BindablePatch, BindableState,
     ComputeEndpointDragInput, ComputeFocusPointDragInput, ElbowUpdatePatch, ElementId,
     EngineResult, FixedPointBinding, Point, RecomputeAfterBindableChangeInput, RecomputeElbowInput,
     UpdateElbowArrowInput, UpdateElbowArrowOptions, ValidationReport,
 };
+use snow_draw_engine_core::arrow::BindMode;
 
 fn merge_arrow_patches(primary: ArrowPatch, secondary: ArrowPatch) -> ArrowPatch {
     ArrowPatch {
@@ -29,31 +29,6 @@ fn merge_arrow_patches(primary: ArrowPatch, secondary: ArrowPatch) -> ArrowPatch
     }
 }
 
-fn compute_patch_from_local_points(
-    arrow: &ArrowState,
-    points: &[Point],
-    max_coordinate: f64,
-) -> ArrowPatch {
-    let global_points = points
-        .iter()
-        .copied()
-        .map(|point| to_global_point(arrow, point))
-        .collect::<Vec<_>>();
-    let normalized = normalize_arrow_from_global_points(&global_points, max_coordinate);
-    ArrowPatch {
-        x: Some(normalized.x),
-        y: Some(normalized.y),
-        width: Some(normalized.width),
-        height: Some(normalized.height),
-        points: Some(normalized.points),
-        start_binding: None,
-        end_binding: None,
-        fixed_segments: None,
-        start_is_special: None,
-        end_is_special: None,
-    }
-}
-
 fn bindables_by_id(bindables: &[BindableState]) -> BTreeMap<ElementId, BindableState> {
     bindables
         .iter()
@@ -62,209 +37,25 @@ fn bindables_by_id(bindables: &[BindableState]) -> BTreeMap<ElementId, BindableS
         .collect()
 }
 
-fn collect_binding_transition(
-    arrow_id: ElementId,
-    edge: crate::ArrowEndpointEdge,
-    previous_binding: Option<&FixedPointBinding>,
-    next_binding: Option<&FixedPointBinding>,
-    bindable_patches: &mut Vec<BindablePatch>,
-    events: &mut Vec<ArrowEngineEvent>,
-    reorder_targets: &mut BTreeSet<ElementId>,
-) {
-    if let Some(previous_binding) = previous_binding
-        && next_binding
-            .is_none_or(|next_binding| next_binding.element_id != previous_binding.element_id)
-    {
-        bindable_patches.push(BindablePatch {
-            id: previous_binding.element_id,
-            add_bound_arrow_id: None,
-            remove_bound_arrow_id: Some(arrow_id),
-        });
-        if next_binding.is_none() {
-            events.push(ArrowEngineEvent::BindingBroken { arrow_id, edge });
-        }
-    }
-
-    if let Some(next_binding) = next_binding
-        && previous_binding
-            .is_none_or(|previous_binding| previous_binding.element_id != next_binding.element_id)
-    {
-        bindable_patches.push(BindablePatch {
-            id: next_binding.element_id,
-            add_bound_arrow_id: Some(arrow_id),
-            remove_bound_arrow_id: None,
-        });
-        if reorder_targets.insert(next_binding.element_id) {
-            events.push(ArrowEngineEvent::ReorderArrow {
-                arrow_id,
-                bindable_id: next_binding.element_id,
-            });
-        }
-    }
-}
-
-fn apply_binding_to_edge(
-    start_binding: &mut Option<FixedPointBinding>,
-    end_binding: &mut Option<FixedPointBinding>,
-    edge: crate::ArrowEndpointEdge,
-    binding: Option<FixedPointBinding>,
-) {
-    match edge {
-        crate::ArrowEndpointEdge::Start => *start_binding = binding,
-        crate::ArrowEndpointEdge::End => *end_binding = binding,
-    }
-}
-
-fn simple_drag_binding_mode(
-    hovered: &BindableState,
-    pointer: Point,
-    input: &ComputeEndpointDragInput,
-) -> BindMode {
-    if input.arrow.elbowed {
-        return BindMode::Orbit;
-    }
-    if input.context.bind_mode == BindMode::Inside
-        || input
-            .options
-            .as_ref()
-            .and_then(|options| options.alt_key)
-            .unwrap_or(false)
-        || is_point_in_bindable(pointer, hovered)
-    {
-        BindMode::Inside
-    } else {
-        BindMode::Orbit
-    }
-}
-
 fn recompute_endpoint_from_binding(
     arrow: &ArrowState,
+    edge: ArrowEndpointEdge,
     binding: &FixedPointBinding,
     bindables_by_id: &BTreeMap<ElementId, BindableState>,
 ) -> Option<Point> {
-    bindables_by_id
-        .get(&binding.element_id)
-        .map(|bindable| resolve_bound_point_local(arrow, binding, bindable))
-}
-
-fn endpoint_drag_base_result(input: &ComputeEndpointDragInput) -> EngineResult {
-    let mut next_points = input.arrow.points.clone();
-    let point_updates = crate::point_updates_to_pairs(&input.dragged_points);
-    for (index, point) in &point_updates {
-        if *index < next_points.len() {
-            next_points[*index] = *point;
-        }
-    }
-
-    let bindables_by_id = bindables_by_id(&input.bindables);
-    let hovered = if input.context.is_binding_enabled {
-        pick_hovered_bindable(input.pointer, &input.bindables, &input.context)
-    } else {
-        None
+    let bindable = bindables_by_id.get(&binding.element_id)?;
+    let selector = match edge {
+        ArrowEndpointEdge::Start => crate::ArrowEndpointSelector::StartBinding,
+        ArrowEndpointEdge::End => crate::ArrowEndpointSelector::EndBinding,
     };
-
-    let start_index = 0;
-    let end_index = input.arrow.points.len().saturating_sub(1);
-    let start_dragged = point_updates.iter().any(|(index, _)| *index == start_index);
-    let end_dragged = point_updates.iter().any(|(index, _)| *index == end_index);
-
-    let mut start_binding = input.arrow.start_binding;
-    let mut end_binding = input.arrow.end_binding;
-
-    for dragged_edge in [
-        crate::ArrowEndpointEdge::Start,
-        crate::ArrowEndpointEdge::End,
-    ] {
-        let dragged = match dragged_edge {
-            crate::ArrowEndpointEdge::Start => start_dragged,
-            crate::ArrowEndpointEdge::End => end_dragged,
-        };
-        if !dragged {
-            continue;
-        }
-
-        if let Some(hovered_bindable) = hovered.as_ref() {
-            let binding = FixedPointBinding {
-                element_id: hovered_bindable.id,
-                mode: simple_drag_binding_mode(hovered_bindable, input.pointer, input),
-                fixed_point: calculate_fixed_point_for_binding(hovered_bindable, input.pointer),
-            };
-            apply_binding_to_edge(
-                &mut start_binding,
-                &mut end_binding,
-                dragged_edge,
-                Some(binding),
-            );
-        } else {
-            apply_binding_to_edge(&mut start_binding, &mut end_binding, dragged_edge, None);
-        }
-    }
-
-    let simulated_arrow = ArrowState {
-        points: next_points.clone(),
-        start_binding,
-        end_binding,
-        ..input.arrow.clone()
-    };
-
-    if let Some(start_binding_value) = start_binding.as_ref()
-        && let Some(local_point) =
-            recompute_endpoint_from_binding(&simulated_arrow, start_binding_value, &bindables_by_id)
-    {
-        next_points[start_index] = local_point;
-    }
-
-    let simulated_arrow = ArrowState {
-        points: next_points.clone(),
-        start_binding,
-        end_binding,
-        ..input.arrow.clone()
-    };
-
-    if let Some(end_binding_value) = end_binding.as_ref()
-        && let Some(local_point) =
-            recompute_endpoint_from_binding(&simulated_arrow, end_binding_value, &bindables_by_id)
-    {
-        next_points[end_index] = local_point;
-    }
-
-    let mut bindable_patches = Vec::new();
-    let mut events = Vec::new();
-    let mut reorder_targets = BTreeSet::new();
-    collect_binding_transition(
-        input.arrow.id,
-        crate::ArrowEndpointEdge::Start,
-        input.arrow.start_binding.as_ref(),
-        start_binding.as_ref(),
-        &mut bindable_patches,
-        &mut events,
-        &mut reorder_targets,
-    );
-    collect_binding_transition(
-        input.arrow.id,
-        crate::ArrowEndpointEdge::End,
-        input.arrow.end_binding.as_ref(),
-        end_binding.as_ref(),
-        &mut bindable_patches,
-        &mut events,
-        &mut reorder_targets,
-    );
-
-    let mut arrow_patch =
-        compute_patch_from_local_points(&input.arrow, &next_points, input.context.max_coordinate);
-    arrow_patch.start_binding = Some(start_binding);
-    arrow_patch.end_binding = Some(end_binding);
-
-    EngineResult {
-        arrow_patch,
-        bindable_patches,
-        suggested_binding: hovered.clone().map(|element| crate::SuggestedBinding {
-            bindable_id: Some(element.id),
-            mid_point: get_snap_outline_mid_point(input.pointer, &element, input.context.zoom),
-            element,
-        }),
-        events,
-    }
+    update_bound_point(
+        arrow,
+        selector,
+        Some(binding),
+        bindable,
+        bindables_by_id,
+        false,
+    )
 }
 
 fn recompute_elbow_patch_internal(input: &RecomputeElbowInput) -> ArrowPatch {
@@ -295,25 +86,152 @@ fn validate_elbow_invariant(arrow: &ArrowState) -> Vec<String> {
 }
 
 pub fn compute_endpoint_drag(input: &ComputeEndpointDragInput) -> EngineResult {
-    let base = if input.arrow.elbowed {
-        crate::arrow_binding_core::compute_simple_binding_patch(input)
-    } else {
-        endpoint_drag_base_result(input)
-    };
-    let next_arrow = apply_arrow_patch_internal(&input.arrow, &base.arrow_patch);
-
-    if !next_arrow.elbowed {
+    let base = crate::arrow_binding_core::compute_simple_binding_patch(input);
+    if !input.arrow.elbowed {
         return base;
     }
+    compute_elbow_endpoint_drag(input, base)
+}
 
-    let elbow_patch = recompute_elbow_patch_internal(&RecomputeElbowInput {
-        arrow: next_arrow.clone(),
+fn dragged_endpoint_edge(input: &ComputeEndpointDragInput) -> Option<ArrowEndpointEdge> {
+    let end_index = input.arrow.points.len().saturating_sub(1);
+    let mut start = false;
+    let mut end = false;
+    for update in &input.dragged_points {
+        start |= update.index == 0;
+        end |= update.index == end_index;
+    }
+    match (start, end) {
+        (true, false) => Some(ArrowEndpointEdge::Start),
+        (false, true) => Some(ArrowEndpointEdge::End),
+        _ => None,
+    }
+}
+
+/// Route options for a live elbow endpoint drag: the drag is a preview unless
+/// finalizing, and midpoint snapping is gated off by angle-locked drags
+/// (Excalidraw's `isMidpointSnappingEnabled`).
+fn elbow_drag_options(input: &ComputeEndpointDragInput) -> UpdateElbowArrowOptions {
+    let options = input.options.as_ref();
+    UpdateElbowArrowOptions {
+        is_dragging: Some(
+            !options
+                .and_then(|options| options.finalize)
+                .unwrap_or(false),
+        ),
+        validate_invariants: None,
+        midpoint_snapping_enabled: Some(
+            !options
+                .and_then(|options| options.angle_locked)
+                .unwrap_or(false),
+        ),
+    }
+}
+
+/// Live elbow endpoint drag: bind from the shared decision patch, then route
+/// with the pointer as the moving tip and re-anchor on the routed outline.
+/// `recompute_elbow` is for bindable motion, not pointer-following preview.
+fn compute_elbow_endpoint_drag(
+    input: &ComputeEndpointDragInput,
+    base: EngineResult,
+) -> EngineResult {
+    let Some(edge) = dragged_endpoint_edge(input) else {
+        let next_arrow = apply_arrow_patch_internal(&input.arrow, &base.arrow_patch);
+        let elbow_patch = recompute_elbow_patch_internal(&RecomputeElbowInput {
+            arrow: next_arrow,
+            bindables: input.bindables.clone(),
+            context: input.context,
+        });
+        return EngineResult {
+            arrow_patch: merge_arrow_patches(base.arrow_patch, elbow_patch),
+            bindable_patches: base.bindable_patches,
+            suggested_binding: base.suggested_binding,
+            events: base.events,
+        };
+    };
+
+    let route_options = elbow_drag_options(input);
+    let midpoint_snapping_enabled = route_options.midpoint_snapping_enabled.unwrap_or(true);
+    let next_binding = match edge {
+        ArrowEndpointEdge::Start => base
+            .arrow_patch
+            .start_binding
+            .unwrap_or(input.arrow.start_binding),
+        ArrowEndpointEdge::End => base
+            .arrow_patch
+            .end_binding
+            .unwrap_or(input.arrow.end_binding),
+    };
+    let hovered = next_binding.and_then(|binding| {
+        input
+            .bindables
+            .iter()
+            .find(|bindable| bindable.id == binding.element_id)
+            .cloned()
+    });
+
+    let mut working = input.arrow.clone();
+    let tentative = hovered.as_ref().map(|bindable| FixedPointBinding {
+        element_id: bindable.id,
+        fixed_point: calculate_fixed_point_for_binding(bindable, input.pointer),
+        mode: BindMode::Orbit,
+    });
+    match edge {
+        ArrowEndpointEdge::Start => working.start_binding = tentative,
+        ArrowEndpointEdge::End => working.end_binding = tentative,
+    }
+
+    let pointer_local = [input.pointer[0] - working.x, input.pointer[1] - working.y];
+    let start_local = match edge {
+        ArrowEndpointEdge::Start => pointer_local,
+        ArrowEndpointEdge::End => working.points.first().copied().unwrap_or([0.0, 0.0]),
+    };
+    let end_local = match edge {
+        ArrowEndpointEdge::Start => working.points.last().copied().unwrap_or([0.0, 0.0]),
+        ArrowEndpointEdge::End => pointer_local,
+    };
+    let route_patch = update_elbow_arrow_patch_internal(&UpdateElbowArrowInput {
+        arrow: working.clone(),
+        updates: ElbowUpdatePatch {
+            points: Some(vec![start_local, end_local]),
+            ..ElbowUpdatePatch::default()
+        },
         bindables: input.bindables.clone(),
         context: input.context,
+        options: Some(route_options.clone()),
+    });
+    working = apply_arrow_patch_internal(&working, &route_patch);
+
+    let binding = hovered.as_ref().map(|bindable| FixedPointBinding {
+        element_id: bindable.id,
+        fixed_point: calculate_fixed_point_for_elbow_binding(
+            &working,
+            bindable,
+            edge,
+            midpoint_snapping_enabled,
+        ),
+        mode: BindMode::Orbit,
+    });
+    let updates = match edge {
+        ArrowEndpointEdge::Start => ElbowUpdatePatch {
+            start_binding: Some(binding),
+            ..ElbowUpdatePatch::default()
+        },
+        ArrowEndpointEdge::End => ElbowUpdatePatch {
+            end_binding: Some(binding),
+            ..ElbowUpdatePatch::default()
+        },
+    };
+    let binding_patch = update_elbow_arrow_patch_internal(&UpdateElbowArrowInput {
+        arrow: working,
+        updates,
+        bindables: input.bindables.clone(),
+        context: input.context,
+        options: Some(route_options),
     });
 
     EngineResult {
-        arrow_patch: merge_arrow_patches(base.arrow_patch, elbow_patch),
+        arrow_patch: merge_arrow_patches(route_patch, binding_patch),
         bindable_patches: base.bindable_patches,
         suggested_binding: base.suggested_binding,
         events: base.events,
@@ -387,8 +305,12 @@ pub fn recompute_after_bindable_change(input: &RecomputeAfterBindableChangeInput
 
     if should_update_start
         && let Some(binding) = start_binding.as_ref()
-        && let Some(updated) =
-            recompute_endpoint_from_binding(&simulated_arrow, binding, &bindables_by_id)
+        && let Some(updated) = recompute_endpoint_from_binding(
+            &simulated_arrow,
+            crate::ArrowEndpointEdge::Start,
+            binding,
+            &bindables_by_id,
+        )
     {
         next_points[0] = updated;
     }
@@ -402,8 +324,12 @@ pub fn recompute_after_bindable_change(input: &RecomputeAfterBindableChangeInput
 
     if should_update_end
         && let Some(binding) = end_binding.as_ref()
-        && let Some(updated) =
-            recompute_endpoint_from_binding(&simulated_arrow, binding, &bindables_by_id)
+        && let Some(updated) = recompute_endpoint_from_binding(
+            &simulated_arrow,
+            crate::ArrowEndpointEdge::End,
+            binding,
+            &bindables_by_id,
+        )
     {
         let end_index = next_points.len().saturating_sub(1);
         next_points[end_index] = updated;
@@ -479,6 +405,7 @@ pub fn recompute_after_bindable_change(input: &RecomputeAfterBindableChangeInput
             options: Some(UpdateElbowArrowOptions {
                 is_dragging: Some(false),
                 validate_invariants: None,
+                midpoint_snapping_enabled: None,
             }),
         })
     } else {

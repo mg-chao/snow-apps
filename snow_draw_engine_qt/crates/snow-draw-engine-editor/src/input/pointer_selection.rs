@@ -105,6 +105,7 @@ impl Editor {
                 mode: ArrowEditMode::Move,
                 start_canvas_position: state.start_canvas_position,
                 drag_offset: Point::new(0.0, 0.0),
+                suggested_binding: None,
             });
             self.update_arrow_edit_preview(document, event);
             return Ok(InteractionOutput {
