@@ -513,6 +513,10 @@
             <source>The clipboard is unavailable.</source>
             <translation>剪贴板不可用。</translation>
         </message>
+        <message>
+            <source>The configuration could not be imported.</source>
+            <translation>无法导入配置。</translation>
+        </message>
     </context>
     <context>
         <name>SettingsCatalog</name>
@@ -625,6 +629,10 @@
             <translation>期限</translation>
         </message>
         <message>
+            <source>All current application settings will be replaced by the archive's values. Some changes take effect after the app restarts.</source>
+            <translation>当前所有应用设置都将被压缩包中的值替换。部分更改将在应用重启后生效。</translation>
+        </message>
+        <message>
             <source>All screenshot history will be removed</source>
             <translation>所有截图历史都将被删除</translation>
         </message>
@@ -721,8 +729,16 @@
             <translation>BMP</translation>
         </message>
         <message>
+            <source>Back up and restore application settings</source>
+            <translation>备份和恢复应用设置</translation>
+        </message>
+        <message>
             <source>Background Fill</source>
             <translation>背景填充</translation>
+        </message>
+        <message>
+            <source>Backup settings</source>
+            <translation>备份设置</translation>
         </message>
         <message>
             <source>Balance encoding speed against compression efficiency</source>
@@ -965,6 +981,18 @@
             <translation>颜色拾取器显示模式</translation>
         </message>
         <message>
+            <source>Configuration</source>
+            <translation>配置</translation>
+        </message>
+        <message>
+            <source>Configuration exported to the clipboard.</source>
+            <translation>配置已导出到剪贴板。</translation>
+        </message>
+        <message>
+            <source>Configuration imported.</source>
+            <translation>配置已导入。</translation>
+        </message>
+        <message>
             <source>Configure application process behavior</source>
             <translation>配置应用程序进程行为</translation>
         </message>
@@ -1007,6 +1035,10 @@
         <message>
             <source>Control when the screenshot color picker is visible</source>
             <translation>控制截图颜色拾取器何时显示</translation>
+        </message>
+        <message>
+            <source>Copy all application settings as a zip archive to the clipboard</source>
+            <translation>将全部应用设置打包为 zip 压缩包并复制到剪贴板</translation>
         </message>
         <message>
             <source>Copy color</source>
@@ -1265,8 +1297,20 @@
             <translation>退出</translation>
         </message>
         <message>
+            <source>Export</source>
+            <translation>导出</translation>
+        </message>
+        <message>
+            <source>Export configuration</source>
+            <translation>导出配置</translation>
+        </message>
+        <message>
             <source>Export recording</source>
             <translation>导出录屏</translation>
+        </message>
+        <message>
+            <source>Export settings</source>
+            <translation>导出设置</translation>
         </message>
         <message>
             <source>Extended Features Settings</source>
@@ -1427,6 +1471,22 @@
         <message>
             <source>Image size</source>
             <translation>图像大小</translation>
+        </message>
+        <message>
+            <source>Import</source>
+            <translation>导入</translation>
+        </message>
+        <message>
+            <source>Import configuration</source>
+            <translation>导入配置</translation>
+        </message>
+        <message>
+            <source>Import configuration?</source>
+            <translation>导入配置？</translation>
+        </message>
+        <message>
+            <source>Import settings</source>
+            <translation>导入设置</translation>
         </message>
         <message>
             <source>Include the displayed text recognition or original-image translation result when saving an image.</source>
@@ -1965,8 +2025,16 @@
             <translation>以管理员身份重启</translation>
         </message>
         <message>
+            <source>Restore application settings from a configuration archive</source>
+            <translation>从配置压缩包恢复应用设置</translation>
+        </message>
+        <message>
             <source>Restore original screen colors</source>
             <translation>还原屏幕原始颜色</translation>
+        </message>
+        <message>
+            <source>Restore settings</source>
+            <translation>恢复设置</translation>
         </message>
         <message>
             <source>Retention period</source>
@@ -2588,6 +2656,10 @@
             <source>Write the screenshot to a file and copy that file to the clipboard</source>
             <translation>将截图写入文件并将该文件复制到剪贴板</translation>
         </message>
+        <message>
+            <source>Zip archives (*.zip);;All files (*.*)</source>
+            <translation>Zip 压缩包 (*.zip);;所有文件 (*.*)</translation>
+        </message>
     </context>
     <context>
         <name>ShortcutKeyRow</name>
@@ -2856,6 +2928,29 @@ Unavailable: %2</source>
         <message>
             <source>Global mouse input is unavailable (error %1).</source>
             <translation>全局鼠标输入不可用（错误 %1）。</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::storage::ConfigurationArchive</name>
+        <message>
+            <source>The configuration archive contains no compatible settings.</source>
+            <translation>该配置压缩包不包含兼容的设置。</translation>
+        </message>
+        <message>
+            <source>The configuration archive could not be created.</source>
+            <translation>无法创建配置压缩包。</translation>
+        </message>
+        <message>
+            <source>The configuration archive was created by a newer version of Snow Shot.</source>
+            <translation>该配置压缩包由更新版本的 Snow Shot 创建。</translation>
+        </message>
+        <message>
+            <source>The file is not a Snow Shot configuration archive.</source>
+            <translation>该文件不是 Snow Shot 配置压缩包。</translation>
+        </message>
+        <message>
+            <source>The file is not a valid configuration archive.</source>
+            <translation>该文件不是有效的配置压缩包。</translation>
         </message>
     </context>
     <context>

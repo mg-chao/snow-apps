@@ -1705,6 +1705,57 @@ SettingsItemDefinition clearRecordingTempItem() {
     };
 }
 
+SettingsItemDefinition exportConfigurationItem() {
+    SettingsActionDefinition payload;
+    payload.binding = SettingsActionBinding::ExportConfiguration;
+    payload.buttonText = settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Export"));
+    payload.iconFactory = []() { return custom_outlined_icons::ExportConfiguration(); };
+    payload.successMessage = settingsText(
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Configuration exported to the clipboard."));
+    return {
+        QStringLiteral("configuration.export"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Export configuration")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog", "Copy all application settings as a zip archive to the clipboard")),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Export settings")),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Backup settings"))},
+        {},
+        payload,
+    };
+}
+
+SettingsItemDefinition importConfigurationItem() {
+    SettingsActionDefinition payload;
+    payload.binding = SettingsActionBinding::ImportConfiguration;
+    payload.buttonText = settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Import"));
+    payload.iconFactory = []() { return custom_outlined_icons::ImportConfiguration(); };
+    payload.confirmation = {
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Import configuration?")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "All current application settings will be replaced by the archive's values. Some "
+            "changes take effect after the app restarts.")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Import")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Cancel")),
+    };
+    payload.fileOpen = {
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Import configuration")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Zip archives (*.zip);;All files (*.*)")),
+    };
+    payload.successMessage =
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Configuration imported."));
+    return {
+        QStringLiteral("configuration.import"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Import configuration")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog", "Restore application settings from a configuration archive")),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Import settings")),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Restore settings"))},
+        {},
+        payload,
+    };
+}
+
 QVector<SettingsPageDefinition> builtInPages() {
     return {
         {
@@ -2092,6 +2143,14 @@ QVector<SettingsPageDefinition> builtInPages() {
                             {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Disk limit"))}),
                         clearHistoryItem(),
                     },
+                },
+                {
+                    QStringLiteral("configuration"),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Configuration")),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                                   "Back up and restore application settings")),
+                    SettingsSectionReset::None,
+                    {exportConfigurationItem(), importConfigurationItem()},
                 },
                 {
                     QStringLiteral("storage-status"),
@@ -3414,6 +3473,15 @@ QStringList SettingsCatalog::validationErrors() const {
                          !action->confirmation->acceptText.isValid() ||
                          !action->confirmation->rejectText.isValid())) {
                         errors.push_back(QStringLiteral("action confirmation is incomplete: %1")
+                                             .arg(itemDefinition.id));
+                    }
+                    if (action->fileOpen.has_value() && (!action->fileOpen->dialogTitle.isValid() ||
+                                                         !action->fileOpen->fileFilter.isValid())) {
+                        errors.push_back(QStringLiteral("action file open is incomplete: %1")
+                                             .arg(itemDefinition.id));
+                    }
+                    if (action->successMessage.has_value() && !action->successMessage->isValid()) {
+                        errors.push_back(QStringLiteral("action success message is incomplete: %1")
                                              .arg(itemDefinition.id));
                     }
                 }
