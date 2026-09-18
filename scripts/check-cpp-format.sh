@@ -14,4 +14,4 @@ while IFS= read -r -d '' file; do
             clang-format "${args[@]}" "$file" ;;
     esac
 done < <(git ls-files -z --cached --others --exclude-standard -- \
-    ant_design_qt snow_draw_engine_qt snow_image snow_image_viewer snow_shot)
+    ant_design_qt snow-crates snow_draw_engine_qt snow_image snow_image_viewer snow_shot)

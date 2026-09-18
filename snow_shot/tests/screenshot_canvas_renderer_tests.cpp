@@ -1785,8 +1785,7 @@ void roundedSelectionHidesCornerHandlesButKeepsEdgeHandles() {
     const QImage roundedOutput = renderCanvas(canvas);
     renderer.setSelection(selection, false, 18);
     const QImage hiddenHandlesOutput = renderCanvas(canvas);
-    for (const QPoint& corner :
-         {QPoint(10, 10), QPoint(90, 10), QPoint(90, 90), QPoint(10, 90)}) {
+    for (const QPoint& corner : {QPoint(10, 10), QPoint(90, 10), QPoint(90, 90), QPoint(10, 90)}) {
         require(roundedOutput.pixelColor(corner) == hiddenHandlesOutput.pixelColor(corner) &&
                     roundedOutput.pixelColor(corner) != primary,
                 "rounded corners should hide the corner handles");
