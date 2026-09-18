@@ -5295,6 +5295,75 @@ void rememberedDrawingModesPersistAcrossPaletteInstances() {
             "a live palette should follow remembered-mode updates from other instances");
 }
 
+void rememberedDrawingToolRecordedAndRestored() {
+    using Tool = ScreenshotToolPalette::Tool;
+    const snow_shot::storage::ScreenshotToolbarSettings toolbarSettings;
+    const snow_shot::storage::DrawingSettings drawingSettings;
+    const QString originalDrawingTool = toolbarSettings.lastDrawingTool();
+    const QString originalHighlight = toolbarSettings.lastHighlightTool();
+    const bool originalRememberSwitch = drawingSettings.rememberLastUsedTool();
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(toolbarSettings.setLastDrawingTool(originalDrawingTool));
+        static_cast<void>(toolbarSettings.setLastHighlightTool(originalHighlight));
+        static_cast<void>(drawingSettings.setRememberLastUsedTool(originalRememberSwitch));
+    });
+    require(toolbarSettings.setLastDrawingTool(QString()) &&
+                drawingSettings.setRememberLastUsedTool(false),
+            "remembered drawing tool tests must start from cleared preferences");
+
+    ScreenshotToolPalette::Options options;
+    options.showMoveTool = true;
+    options.showHighlightTool = true;
+    options.showWatermarkTool = true;
+
+    // Only drawing tools update the remembered tool; Move and Select never do.
+    ScreenshotToolPalette palette(options);
+    require(palette.activateScreenshotShortcut(QStringLiteral("move_tool")) &&
+                palette.activeToolForTests() == Tool::Move,
+            "the move tool shortcut should activate the move tool");
+    require(toolbarSettings.lastDrawingTool().isEmpty(),
+            "activating the move tool must not become the remembered drawing tool");
+    require(palette.activateDrawingShortcut(QStringLiteral("select")) &&
+                palette.activeToolForTests() == Tool::Select,
+            "the select tool shortcut should activate the select tool");
+    require(toolbarSettings.lastDrawingTool().isEmpty(),
+            "activating the select tool must not become the remembered drawing tool");
+    require(palette.activateDrawingShortcut(QStringLiteral("shape")) &&
+                palette.activeToolForTests() == Tool::Shape,
+            "the shape tool shortcut should activate the shape tool");
+    require(toolbarSettings.lastDrawingTool() == QStringLiteral("shape"),
+            "activating a drawing tool should persist it as the last used tool");
+
+    // The switch gates the restore, not the recording.
+    require(!palette.activateRememberedDrawingTool(),
+            "the remembered drawing tool must not restore while the switch is disabled");
+    require(drawingSettings.setRememberLastUsedTool(true),
+            "the remembered tool switch must be writable");
+
+    // Capture sessions and pin edit sessions rebuild the toolbar, so a fresh
+    // palette must restore the remembered tool with variant resolution.
+    require(toolbarSettings.setLastDrawingTool(QStringLiteral("highlighter")) &&
+                toolbarSettings.setLastHighlightTool(QStringLiteral("rectangle-highlight")),
+            "the remembered highlighter variant must be configurable");
+    ScreenshotToolPalette restored(options);
+    require(restored.activateRememberedDrawingTool() &&
+                restored.activeToolForTests() == Tool::RectangleHighlight,
+            "a rebuilt palette should restore the remembered highlighter variant");
+    restored.setActiveTool(Tool::Select);
+    require(toolbarSettings.setLastDrawingTool(QStringLiteral("watermark")) &&
+                restored.activateRememberedDrawingTool() &&
+                restored.activeToolForTests() == Tool::Watermark,
+            "a live palette should follow remembered-tool updates from other instances");
+    restored.setActiveTool(Tool::Select);
+    require(toolbarSettings.setLastDrawingTool(QStringLiteral("unknown-tool")) &&
+                !restored.activateRememberedDrawingTool(),
+            "unknown remembered tool ids must not activate anything");
+    restored.setActiveTool(Tool::Select);
+    require(toolbarSettings.setLastDrawingTool(QString()) &&
+                !restored.activateRememberedDrawingTool(),
+            "an empty remembered drawing tool must not activate anything");
+}
+
 void filterToolExposesTypeAndIntensityControls() {
     const snow_shot::storage::ScreenshotToolbarSettings toolbarSettings;
     const QString originalFilter = toolbarSettings.lastFilterTool();
@@ -10698,6 +10767,7 @@ int main(int argc, char** argv) {
         filterToolExposesTypeAndIntensityControls();
         filterStyleEditorsMatchShapeAndSpotlightMetrics();
         rememberedDrawingModesPersistAcrossPaletteInstances();
+        rememberedDrawingToolRecordedAndRestored();
         canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
@@ -10949,6 +11019,7 @@ int main(int argc, char** argv) {
     filterToolExposesTypeAndIntensityControls();
     drawingModeSelectionsSurviveToolbarReentry();
     rememberedDrawingModesPersistAcrossPaletteInstances();
+    rememberedDrawingToolRecordedAndRestored();
     filterStyleEditorsMatchShapeAndSpotlightMetrics();
     watermarkToolExposesSharedStyleControls();
     watermarkStyleEditorMatchesShapeHeight();

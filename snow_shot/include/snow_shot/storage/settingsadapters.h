@@ -172,6 +172,8 @@ class DrawingSettings final {
   public:
     [[nodiscard]] QStringList quickSelectionDisabledTools() const;
     bool setQuickSelectionDisabledTools(const QStringList& tools) const;
+    [[nodiscard]] bool rememberLastUsedTool() const;
+    bool setRememberLastUsedTool(bool enabled) const;
 };
 
 class ScreenshotShortcutSettings final {
@@ -348,6 +350,8 @@ class ScreenshotToolbarSettings final {
     bool setLastFilterTool(const QString& tool) const;
     [[nodiscard]] QString lastHighlightTool() const;
     bool setLastHighlightTool(const QString& tool) const;
+    [[nodiscard]] QString lastDrawingTool() const;
+    bool setLastDrawingTool(const QString& tool) const;
     [[nodiscard]] ScreenshotToolbarLayout layout(ScreenshotToolbarLayoutKind kind) const;
     bool setLayout(ScreenshotToolbarLayoutKind kind, const ScreenshotToolbarLayout& layout) const;
 };

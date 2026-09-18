@@ -443,6 +443,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::SystemSettings().autoStartAtBoot();
     case SettingsSwitchBinding::LaunchAsAdministrator:
         return storage::SystemSettings().launchAsAdministrator();
+    case SettingsSwitchBinding::DrawingRememberLastUsedTool:
+        return storage::DrawingSettings().rememberLastUsedTool();
     }
     return false;
 }
@@ -537,6 +539,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard) {
         return storage::ScreenshotSettings().setCopyImageFileToClipboard(value);
     }
+    if (binding == SettingsSwitchBinding::DrawingRememberLastUsedTool) {
+        return storage::DrawingSettings().setRememberLastUsedTool(value);
+    }
     if (binding == SettingsSwitchBinding::SaveRecognitionResultAsImage) {
         return storage::TextRecognitionSettings().setSaveRecognitionResultAsImage(value);
     }
@@ -622,6 +627,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
     case SettingsSwitchBinding::AutoStartAtBoot:
     case SettingsSwitchBinding::LaunchAsAdministrator:
+    case SettingsSwitchBinding::DrawingRememberLastUsedTool:
         return false;
     }
     return storage::ApplicationStorage::instance().requestCaptureHistoryPolicy(policy);
@@ -1277,6 +1283,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("drawing/quick_selection_disabled_tools"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("drawing/quick_selection_disabled_tools"))},
+            {QStringLiteral("drawing/remember_last_used_tool"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("drawing/remember_last_used_tool"))},
         });
     case SettingsSectionReset::ScreenshotEditorShortcuts: {
         shortcuts::ShortcutBindingMap defaults;

@@ -417,6 +417,7 @@ void ScreenshotToolbarWindow::resetForNewCapture() {
         host->setActiveTool(ScreenshotToolPalette::Tool::Move);
     }
     setHistoryState(SnowCanvasHistoryState{});
+    m_rememberedDrawingToolRestorePending = true;
     prepareForDisplay();
 }
 
@@ -440,6 +441,8 @@ void ScreenshotToolbarWindow::setScrollingScreenshotMode(bool enabled) {
 }
 
 void ScreenshotToolbarWindow::setActiveTool(ScreenshotToolPalette::Tool tool) {
+    // An explicit tool set supersedes the remembered-tool restore for this capture.
+    m_rememberedDrawingToolRestorePending = false;
     setActiveToolAndReposition(tool);
 }
 
@@ -459,6 +462,16 @@ void ScreenshotToolbarWindow::synchronizeCaptureCursorSetting() {
 bool ScreenshotToolbarWindow::activateDrawingShortcut(const QString& toolId) {
     ScreenshotToolPalette* toolPalette = palette();
     return toolPalette != nullptr && toolPalette->activateDrawingShortcut(toolId);
+}
+
+void ScreenshotToolbarWindow::restoreRememberedDrawingTool() {
+    if (!m_rememberedDrawingToolRestorePending) {
+        return;
+    }
+    m_rememberedDrawingToolRestorePending = false;
+    if (ScreenshotToolPalette* toolPalette = palette()) {
+        static_cast<void>(toolPalette->activateRememberedDrawingTool());
+    }
 }
 
 void ScreenshotToolbarWindow::setHistoryState(const SnowCanvasHistoryState& state) {

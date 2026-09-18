@@ -207,9 +207,9 @@ void builtInCatalogIsCompleteAndValid() {
     }
     require(sectionCount == 38, "catalog must contain thirty-eight sections");
 #ifdef Q_OS_MACOS
-    require(itemCount == 161, "the macOS catalog omits DirectML acceleration");
+    require(itemCount == 163, "the macOS catalog omits DirectML acceleration");
 #else
-    require(itemCount == 162, "catalog must contain one hundred sixty-two items");
+    require(itemCount == 164, "catalog must contain one hundred sixty-four items");
 #endif
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -512,11 +512,26 @@ void builtInCatalogIsCompleteAndValid() {
                           QStringLiteral("pin-to-screen.auto-resize-window")}) != nullptr &&
             catalog.item({QStringLiteral("function-settings"), QStringLiteral("drawing-settings"),
                           QStringLiteral("drawing.quick-selection-disabled-tools")}) != nullptr &&
+            catalog.item({QStringLiteral("function-settings"), QStringLiteral("drawing-settings"),
+                          QStringLiteral("drawing.remember-last-used-tool")}) != nullptr &&
             catalog.item({QStringLiteral("function-settings"), QStringLiteral("tray-settings"),
                           QStringLiteral("tray.left-click-action")}) != nullptr &&
             catalog.item({QStringLiteral("function-settings"), QStringLiteral("tray-settings"),
                           QStringLiteral("tray.menu-options")}) != nullptr,
         "Function settings must own the moved Pin to screen, Drawing, and Tray controls");
+
+    const auto* rememberLastUsedTool =
+        catalog.item({QStringLiteral("function-settings"), QStringLiteral("drawing-settings"),
+                      QStringLiteral("drawing.remember-last-used-tool")});
+    require(
+        rememberLastUsedTool != nullptr &&
+            rememberLastUsedTool->configurationKey ==
+                QStringLiteral("drawing/remember_last_used_tool") &&
+            std::get<settings::SettingsSwitchDefinition>(rememberLastUsedTool->payload).binding ==
+                settings::SettingsSwitchBinding::DrawingRememberLastUsedTool &&
+            !storage::ConfigurationSchema::defaultValue(rememberLastUsedTool->configurationKey)
+                 .toBool(),
+        "Drawing settings must expose the default-off remembered drawing tool switch");
 
     const auto& traySection = functionPage->sections.at(6);
     require(traySection.items.size() == 3 &&
@@ -1494,9 +1509,9 @@ void invalidCatalogReportsAllConformanceErrors() {
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
 #ifdef Q_OS_MACOS
-    constexpr qsizetype expectedNodes = 211;
+    constexpr qsizetype expectedNodes = 213;
 #else
-    constexpr qsizetype expectedNodes = 212;
+    constexpr qsizetype expectedNodes = 214;
 #endif
     require(index.entries().size() == expectedNodes &&
                 index.search(QString()).size() == expectedNodes,

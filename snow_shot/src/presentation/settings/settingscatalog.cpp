@@ -957,6 +957,19 @@ SettingsItemDefinition drawingQuickSelectionItem() {
     };
 }
 
+SettingsItemDefinition drawingRememberLastUsedToolItem() {
+    return switchItem(
+        QStringLiteral("drawing.remember-last-used-tool"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Remember last used tool"),
+        QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Start new screenshot sessions and pin drawing mode with the last used drawing tool "
+            "instead of the move tool"),
+        QStringLiteral("drawing/remember_last_used_tool"),
+        SettingsSwitchBinding::DrawingRememberLastUsedTool,
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Last used tool"))});
+}
+
 SettingsItemDefinition pinZoomModeItem() {
     return fixedSelectItem(
         QStringLiteral("pin-to-screen.mouse-wheel-zoom-mode"),
@@ -1876,7 +1889,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                         "SettingsCatalog",
                         "Configure drawing tools and the screenshot drawing toolbar")),
                     SettingsSectionReset::DrawingQuickSelection,
-                    {drawingQuickSelectionItem()},
+                    {drawingQuickSelectionItem(), drawingRememberLastUsedToolItem()},
                 },
                 {
                     QStringLiteral("screen-recording-settings"),
@@ -3096,6 +3109,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::AutoStartAtBoot:
                         expectedKey = QStringLiteral("system/auto_start_at_boot");
+                        break;
+                    case SettingsSwitchBinding::DrawingRememberLastUsedTool:
+                        expectedKey = QStringLiteral("drawing/remember_last_used_tool");
                         break;
                     }
                     if (itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||
