@@ -26,8 +26,20 @@
             <translation>自動儲存截圖失敗：%1</translation>
         </message>
         <message>
+            <source>Cancel</source>
+            <translation>取消</translation>
+        </message>
+        <message>
             <source>Could not recapture the screen</source>
             <translation>無法重新擷取螢幕</translation>
+        </message>
+        <message>
+            <source>Exit</source>
+            <translation>結束</translation>
+        </message>
+        <message>
+            <source>Exit screenshot?</source>
+            <translation>結束截圖？</translation>
         </message>
         <message>
             <source>No recognized result is available to copy</source>
@@ -88,6 +100,10 @@
         <message>
             <source>The scrolling screenshot could not be prepared</source>
             <translation>無法準備滾動截圖</translation>
+        </message>
+        <message>
+            <source>Your current screenshot will be discarded.</source>
+            <translation>目前的截圖將被捨棄。</translation>
         </message>
     </context>
     <context>

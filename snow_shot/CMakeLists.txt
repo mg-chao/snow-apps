@@ -924,6 +924,8 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotcolorpickercontroller.h
     include/snow_shot/presentation/screenshotcolorpickerwidget.h
     include/snow_shot/presentation/screenshotcontroller.h
+    include/snow_shot/presentation/screenshotdialogowner.h
+    include/snow_shot/presentation/screenshotshortcutexitconfirmation.h
     include/snow_shot/presentation/pinnedwindowgroupmanager.h
     include/snow_shot/presentation/globalshortcuttypes.h
     include/snow_shot/presentation/screenshotdefaultstyles.h
@@ -1055,6 +1057,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/services/screenshotclipboardservice.cpp
     src/presentation/services/screenshotcolorpickerwidget.cpp
     src/presentation/services/screenshotcontroller.cpp
+    src/presentation/services/screenshotshortcutexitconfirmation.cpp
     src/presentation/services/screenshotexportcoordinator.cpp
     src/presentation/services/screenshotmessageservice.cpp
     src/presentation/services/screenshothistoryservice.cpp
@@ -1962,8 +1965,15 @@ if(SNOW_SHOT_BUILD_TESTS)
              COMMAND snow-shot-window-element-api-tests)
     add_test(NAME snow-shot-selector-phased-tests
              COMMAND snow-shot-window-element-api-tests --selector-only)
+    add_test(NAME snow-shot-shortcut-exit-confirmation-settings-tests
+             COMMAND snow-shot-window-element-api-tests
+                     --shortcut-exit-confirmation-settings-only)
     snow_shot_import_offscreen_platform(snow-shot-window-element-api-tests)
-    set_tests_properties(snow-shot-window-element-api-tests snow-shot-selector-phased-tests PROPERTIES
+    set_tests_properties(
+        snow-shot-window-element-api-tests
+        snow-shot-selector-phased-tests
+        snow-shot-shortcut-exit-confirmation-settings-tests
+        PROPERTIES
         ENVIRONMENT
             "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION
@@ -2475,7 +2485,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_include_directories(snow-shot-selection-export-workflow-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
-    target_link_libraries(snow-shot-selection-export-workflow-tests PRIVATE snow_shot_image_codec Qt6::Gui)
+    target_link_libraries(snow-shot-selection-export-workflow-tests PRIVATE
+        snow_shot_diagnostics
+        snow_shot_image_codec
+        Qt6::Gui
+    )
     if(WIN32)
         target_link_libraries(snow-shot-selection-export-workflow-tests PRIVATE user32)
     endif()
@@ -2518,10 +2532,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshotinteractionstate.h
         include/snow_shot/presentation/screenshotoverlayinputhandler.h
         include/snow_shot/presentation/screenshotoverlayshortcutcontroller.h
+        include/snow_shot/presentation/screenshotshortcutexitconfirmation.h
         include/snow_shot/presentation/screenshotselectiongeometry.h
         include/snow_shot/presentation/screenshotselectionmodel.h
         include/snow_shot/presentation/screenshotselectionparams.h
         src/presentation/services/screenshothistoryservice.cpp
+        src/presentation/services/screenshotshortcutexitconfirmation.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/core/screenshotintelligentselectionmodel.cpp
         src/presentation/core/screenshotinteractionstate.cpp
@@ -2537,6 +2553,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-screenshot-history-tests PRIVATE
         snow_draw_engine_qt_canvas
         snow_shot_window_shortcuts
+        ant_design_qt
         Qt6::Widgets
     )
     add_test(

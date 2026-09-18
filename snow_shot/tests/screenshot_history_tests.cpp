@@ -10,12 +10,14 @@
 #include "snow_shot/presentation/screenshotoverlayinputhandler.h"
 #include "snow_shot/presentation/screenshotoverlayshortcutcontroller.h"
 #include "snow_shot/presentation/screenshotselectionmodel.h"
+#include "snow_shot/presentation/screenshotshortcutexitconfirmation.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
+#include "widgets/modal.h"
 
 #include <QApplication>
 #include <QDir>
@@ -27,6 +29,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QKeyEvent>
+#include <QShortcut>
 #include <QTemporaryDir>
 #include <QThread>
 #include <QVector>
@@ -2033,6 +2036,7 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
     int drawingToolActivations = 0;
     int pinActivations = 0;
     int cancelActivations = 0;
+    int genericCancelActivations = 0;
     int copyActivations = 0;
     int undoActivations = 0;
     int redoActivations = 0;
@@ -2069,7 +2073,7 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
         } else if (actionId == QStringLiteral("pin_to_screen")) {
             ++pinActivations;
         } else if (actionId == QStringLiteral("cancel_screenshot")) {
-            ++cancelActivations;
+            ++genericCancelActivations;
         } else if (actionId == QStringLiteral("copy_to_clipboard")) {
             ++copyActivations;
         } else if (actionId == QStringLiteral("undo")) {
@@ -2081,6 +2085,10 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
         } else {
             return false;
         }
+        return true;
+    };
+    actions.cancelCaptureViaShortcut = [&cancelActivations]() {
+        ++cancelActivations;
         return true;
     };
     ScreenshotOverlayInputHandler handler({
@@ -2159,7 +2167,7 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
                 dispatchShortcut(shortcutWindow, Qt::Key_Z, Qt::ControlModifier) &&
                 dispatchShortcut(shortcutWindow, Qt::Key_Y, Qt::ControlModifier) &&
                 pinActivations == 1 && cancelActivations == 1 && copyActivations == 1 &&
-                undoActivations == 1 && redoActivations == 1,
+                genericCancelActivations == 0 && undoActivations == 1 && redoActivations == 1,
             "default toolbar command shortcuts must invoke their configured actions");
 
     require(dispatchShortcut(shortcutWindow, Qt::Key_W) &&
@@ -2261,6 +2269,102 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
             "restored cursor shortcut must use the persisted configuration");
 }
 
+void shortcutExitConfirmationGatesCancellation() {
+    QWidget owner;
+    owner.show();
+    snow_shot::presentation::WindowShortcutManager shortcutManager;
+    shortcutManager.addScopeWindow(&owner);
+
+    int unrelatedActivations = 0;
+    snow_shot::presentation::WindowShortcutManager::Binding unrelated;
+    unrelated.id = QStringLiteral("confirmation-test.unrelated");
+    unrelated.keyCombinations = {QKeyCombination(Qt::NoModifier, Qt::Key_F11)};
+    unrelated.activate = [&unrelatedActivations](const auto&) {
+        ++unrelatedActivations;
+        return true;
+    };
+    require(shortcutManager.addBinding(&owner, std::move(unrelated)) != 0,
+            "failed to register confirmation suspension probe");
+
+    int exits = 0;
+    int restores = 0;
+    QWidget* restoredOwner = nullptr;
+    snow_shot::presentation::ScreenshotShortcutExitConfirmation confirmation(
+        shortcutManager, [&exits]() { ++exits; },
+        [&restores, &restoredOwner](QWidget* widget) {
+            ++restores;
+            restoredOwner = widget;
+        });
+
+    require(confirmation.request(false, &owner) && exits == 1 &&
+                owner.findChild<adqt::widgets::AdModal*>(
+                    QStringLiteral("screenshotShortcutExitConfirmation")) == nullptr,
+            "disabled confirmation must exit immediately without creating a modal");
+    exits = 0;
+
+    require(confirmation.request(true, &owner), "enabled confirmation request was declined");
+    auto* modal = owner.findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotShortcutExitConfirmation"));
+    require(modal != nullptr && modal->ownerWindow() == &owner &&
+                modal->mode() == adqt::widgets::AdModal::Mode::Overlay &&
+                modal->windowTitle() == QStringLiteral("Exit screenshot?") &&
+                modal->text() == QStringLiteral("Your current screenshot will be discarded.") &&
+                modal->acceptButton() != nullptr &&
+                modal->acceptButton()->text() == QStringLiteral("Exit") &&
+                modal->acceptAccentRole() == adqt::widgets::AdButton::AccentRole::Danger &&
+                modal->rejectButton() != nullptr &&
+                modal->rejectButton()->text() == QStringLiteral("Cancel") && exits == 0,
+            "enabled confirmation must show the configured destructive modal on its owner");
+    require(confirmation.request(true, &owner) &&
+                owner.findChildren<adqt::widgets::AdModal*>(
+                         QStringLiteral("screenshotShortcutExitConfirmation"))
+                        .size() == 1,
+            "repeated shortcut cancellation must reuse the active confirmation");
+    require(!dispatchShortcut(owner, Qt::Key_F11) && unrelatedActivations == 0,
+            "screenshot shortcuts must remain suspended while confirmation is open");
+
+    modal->rejectButton()->click();
+    QCoreApplication::processEvents();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(exits == 0 && restores == 1 && restoredOwner == &owner &&
+                dispatchShortcut(owner, Qt::Key_F11) && unrelatedActivations == 1,
+            "rejecting confirmation must preserve capture, restore its owner, and resume input");
+
+    require(confirmation.request(true, &owner), "Escape confirmation request was declined");
+    modal = owner.findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotShortcutExitConfirmation"));
+    const auto modalOverlays = owner.findChildren<QWidget*>(QStringLiteral("ad-modal-overlay"));
+    const auto visibleOverlay =
+        std::find_if(modalOverlays.cbegin(), modalOverlays.cend(),
+                     [](const QWidget* overlay) { return overlay->isVisible(); });
+    QWidget* modalOverlay = visibleOverlay != modalOverlays.cend() ? *visibleOverlay : nullptr;
+    require(modal != nullptr && modalOverlay != nullptr, "Escape confirmation modal did not open");
+    const auto modalShortcuts = modalOverlay->findChildren<QShortcut*>();
+    const auto escapeShortcut =
+        std::find_if(modalShortcuts.cbegin(), modalShortcuts.cend(), [](const QShortcut* shortcut) {
+            return shortcut->key() == QKeySequence(Qt::Key_Escape);
+        });
+    require(escapeShortcut != modalShortcuts.cend(),
+            "Escape confirmation shortcut was not available");
+    (*escapeShortcut)->activated();
+    QCoreApplication::processEvents();
+    require(!modal->isOpen(), "Escape must close the confirmation modal");
+    require(exits == 0, "Escape must not exit capture");
+    require(restores == 2, "Escape must restore the capture owner");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+
+    require(confirmation.request(true, &owner), "acceptance confirmation request was declined");
+    modal = owner.findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotShortcutExitConfirmation"));
+    require(modal != nullptr, "acceptance confirmation modal did not open");
+    modal->acceptButton()->click();
+    QCoreApplication::processEvents();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(exits == 1 && restores == 2 && dispatchShortcut(owner, Qt::Key_F11) &&
+                unrelatedActivations == 2,
+            "accepting confirmation must exit exactly once and resume shortcut input");
+}
+
 void rightClickSeparatesDismissalFromSelectionChanges() {
     ScreenshotCaptureState captureState;
     ScreenshotDisplaySession displays;
@@ -2324,6 +2428,13 @@ void scrollingCaptureRoutesEveryToolbarShortcut() {
             return false;
         }
         dispatched.append(id);
+        return true;
+    };
+    actions.cancelCaptureViaShortcut = [&]() {
+        if (!commandEnabled) {
+            return false;
+        }
+        dispatched.append(QStringLiteral("cancel_screenshot"));
         return true;
     };
     ScreenshotOverlayInputHandler handler(
@@ -2675,6 +2786,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (QCoreApplication::arguments().contains(QStringLiteral("--shortcut-input-only"))) {
+        shortcutExitConfirmationGatesCancellation();
         rightClickSeparatesDismissalFromSelectionChanges();
         scrollingCaptureRoutesEveryToolbarShortcut();
         externalSelectionSupportsHeldShortcuts();
@@ -2725,6 +2837,7 @@ int main(int argc, char** argv) {
     intelligentSelectionSupportsCursorMovementShortcuts();
     cursorMovementEligibilityFollowsInteractionState();
     configuredScreenshotShortcutsControlMoveAndCursorNavigation();
+    shortcutExitConfirmationGatesCancellation();
     scrollingCaptureRoutesEveryToolbarShortcut();
     hiddenToolbarDisablesToolSwitchShortcutsDuringSelectionResize();
     canvasColorSamplingConsumesOneCanvasClick();

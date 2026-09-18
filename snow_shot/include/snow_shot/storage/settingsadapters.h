@@ -120,6 +120,8 @@ class ScreenshotSettings final {
   public:
     [[nodiscard]] bool shutterSoundNotification() const;
     bool setShutterSoundNotification(bool enabled) const;
+    [[nodiscard]] bool confirmBeforeExitingViaShortcut() const;
+    bool setConfirmBeforeExitingViaShortcut(bool enabled) const;
     [[nodiscard]] bool captureCursor() const;
     bool setCaptureCursor(bool enabled) const;
     [[nodiscard]] bool captureUiInScrollingScreenshot() const;

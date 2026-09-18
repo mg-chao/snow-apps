@@ -681,6 +681,10 @@
             <translation>箭頭</translation>
         </message>
         <message>
+            <source>Ask for confirmation when using the Cancel screenshot shortcut.</source>
+            <translation>使用「取消截圖」快速鍵時要求確認。</translation>
+        </message>
+        <message>
             <source>Auto</source>
             <translation>自動</translation>
         </message>
@@ -995,6 +999,10 @@
         <message>
             <source>Configure the screenshot, pinned, and recording toolbars</source>
             <translation>設定截圖、釘選與螢幕錄製工具列</translation>
+        </message>
+        <message>
+            <source>Confirm before exiting screenshot via shortcut</source>
+            <translation>使用快速鍵結束截圖前確認</translation>
         </message>
         <message>
             <source>Control when the screenshot color picker is visible</source>

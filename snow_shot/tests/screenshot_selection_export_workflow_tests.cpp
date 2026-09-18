@@ -3,7 +3,7 @@
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotselectionexportworkflow.h"
 #include "snow_shot/presentation/screenshotselectionmodel.h"
-#include "snow_shot/presentation/screenshotsavedialogowner.h"
+#include "snow_shot/presentation/screenshotdialogowner.h"
 
 #include <QCoreApplication>
 #include <QObject>
@@ -38,23 +38,24 @@ void saveDialogOwnerFollowsSelection() {
     displays.appendDisplay(right, rightOverlay);
     ScreenshotGeometryMapper geometry;
 
-    require(screenshotSaveDialogOwner(displays, geometry, QRectF(-2400, 100, 800, 600),
-                                      rightOverlay) == leftOverlay,
+    require(screenshotSelectionDialogOwner(displays, geometry, QRectF(-2400, 100, 800, 600),
+                                           rightOverlay) == leftOverlay,
             "Save dialog must follow the selection display when keyboard focus is elsewhere");
-    require(screenshotSaveDialogOwner(displays, geometry, QRectF(200, 100, 800, 600),
-                                      leftOverlay) == rightOverlay,
+    require(screenshotSelectionDialogOwner(displays, geometry, QRectF(200, 100, 800, 600),
+                                           leftOverlay) == rightOverlay,
             "Save dialog must follow the selection in either monitor direction");
-    require(screenshotSaveDialogOwner(displays, geometry, QRectF(-200, 100, 800, 600),
-                                      leftOverlay) == rightOverlay,
+    require(screenshotSelectionDialogOwner(displays, geometry, QRectF(-200, 100, 800, 600),
+                                           leftOverlay) == rightOverlay,
             "a spanning selection must use the display containing its canvas center");
-    require(screenshotSaveDialogOwner(displays, geometry, QRectF(-2400, 100, 800, 600), nullptr) ==
-                leftOverlay,
+    require(screenshotSelectionDialogOwner(displays, geometry, QRectF(-2400, 100, 800, 600),
+                                           nullptr) == leftOverlay,
             "a selection must provide a Save dialog owner without keyboard focus");
-    require(screenshotSaveDialogOwner(displays, geometry, QRectF(), rightOverlay) == rightOverlay,
+    require(screenshotSelectionDialogOwner(displays, geometry, QRectF(), rightOverlay) ==
+                rightOverlay,
             "an empty selection must preserve the keyboard owner fallback");
     displays.clear();
-    require(screenshotSaveDialogOwner(displays, geometry, QRectF(10, 10, 100, 100), rightOverlay) ==
-                rightOverlay,
+    require(screenshotSelectionDialogOwner(displays, geometry, QRectF(10, 10, 100, 100),
+                                           rightOverlay) == rightOverlay,
             "missing displays must preserve the keyboard owner fallback");
 }
 

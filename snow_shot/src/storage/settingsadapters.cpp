@@ -448,6 +448,15 @@ bool ScreenshotSettings::setShutterSoundNotification(bool enabled) const {
     return cache().setValue(QStringLiteral("screenshot/shutter_sound_notification"), enabled);
 }
 
+bool ScreenshotSettings::confirmBeforeExitingViaShortcut() const {
+    return cache().value(QStringLiteral("screenshot/confirm_before_exiting_via_shortcut")).toBool();
+}
+
+bool ScreenshotSettings::setConfirmBeforeExitingViaShortcut(bool enabled) const {
+    return cache().setValue(QStringLiteral("screenshot/confirm_before_exiting_via_shortcut"),
+                            enabled);
+}
+
 bool ScreenshotSettings::captureCursor() const {
     return cache().value(QStringLiteral("screenshot/capture_cursor")).toBool();
 }

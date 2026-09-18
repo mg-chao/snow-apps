@@ -29,7 +29,7 @@
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
 #include "snow_shot/presentation/screenshotimagefileservice.h"
 #include "snow_shot/presentation/screenshotsaveasfiledialog.h"
-#include "snow_shot/presentation/screenshotsavedialogowner.h"
+#include "snow_shot/presentation/screenshotdialogowner.h"
 #include "widgets/modal.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshothistoryservice.h"
@@ -58,6 +58,7 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenshotselectorcoordinator.h"
 #include "snow_shot/presentation/screenshotselectorworkflow.h"
+#include "snow_shot/presentation/screenshotshortcutexitconfirmation.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
 #include "snow_shot/presentation/screenshottoolbarpresenter.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
@@ -283,6 +284,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     [[nodiscard]] ScreenshotOverlayWindow* keyboardOwnerOverlay() const;
     void rememberKeyboardOwner(QWidget* widget = nullptr);
     void restoreKeyboardOwnerQueued(ScreenshotOverlayWindow* overlay);
+    [[nodiscard]] bool activateScreenshotShortcut(const QString& actionId);
+    [[nodiscard]] bool requestCancelCaptureViaShortcut();
     void setHistoryLoadingMessageVisible(bool visible);
     [[nodiscard]] bool stopScrollingCapture(bool restoreScreenshotPresentation);
     void pauseScrollingCaptureForSelectionResize();
@@ -481,6 +484,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     std::unique_ptr<ScreenshotScrollingCaptureController> m_scrollingCaptureController;
     std::unique_ptr<ScreenshotOverlayInputHandler> m_overlayInputHandler;
     std::unique_ptr<ScreenshotOverlayShortcutController> m_overlayShortcutController;
+    std::unique_ptr<snow_shot::presentation::ScreenshotShortcutExitConfirmation>
+        m_shortcutExitConfirmation;
     std::unique_ptr<ScreenshotSelectorWorkflow> m_selectorWorkflow;
     QPointer<ScreenshotOverlayWindow> m_historyLoadingMessageOwner;
     QPointer<ScreenshotOverlayWindow> m_keyboardOwnerOverlay;
@@ -836,6 +841,34 @@ void ScreenshotController::Impl::restoreKeyboardOwnerQueued(ScreenshotOverlayWin
             }
         });
     });
+}
+
+bool ScreenshotController::Impl::activateScreenshotShortcut(const QString& actionId) {
+    ScreenshotToolbarWindow* toolbar = m_overlayCoordinator->ensureToolbar();
+    ScreenshotToolPalette* palette = toolbar != nullptr ? toolbar->palette() : nullptr;
+    return palette != nullptr && palette->activateScreenshotShortcut(actionId);
+}
+
+bool ScreenshotController::Impl::requestCancelCaptureViaShortcut() {
+    const bool confirmationRequired =
+        snow_shot::storage::ScreenshotSettings().confirmBeforeExitingViaShortcut();
+    if (!confirmationRequired) {
+        return activateScreenshotShortcut(QStringLiteral("cancel_screenshot"));
+    }
+
+    rememberKeyboardOwner(QApplication::focusWidget());
+    const QPointer<ScreenshotOverlayWindow> keyboardOwner(keyboardOwnerOverlay());
+    const QRectF dialogSelection =
+        m_scrollingCaptureController != nullptr && m_scrollingCaptureController->active()
+            ? QRectF(m_scrollingCaptureController->canvasSelection())
+            : m_selection.normalizedSelection();
+    ScreenshotOverlayWindow* dialogOwner = screenshotSelectionDialogOwner(
+        m_displaySession, m_geometry, dialogSelection, keyboardOwner.data());
+    if (dialogOwner == nullptr) {
+        dialogOwner = overlayUnderCursor();
+    }
+    return m_shortcutExitConfirmation != nullptr &&
+           m_shortcutExitConfirmation->request(true, dialogOwner);
 }
 
 void ScreenshotController::Impl::setHistoryLoadingMessageVisible(bool visible) {
@@ -1364,6 +1397,16 @@ void ScreenshotController::Impl::createDisplayConfigurationObserver() {
 }
 
 void ScreenshotController::Impl::createOverlayInputPipeline() {
+    m_shortcutExitConfirmation =
+        std::make_unique<snow_shot::presentation::ScreenshotShortcutExitConfirmation>(
+            *m_windowShortcutManager,
+            [this]() {
+                static_cast<void>(activateScreenshotShortcut(QStringLiteral("cancel_screenshot")));
+            },
+            [this](QWidget* overlay) {
+                restoreKeyboardOwnerQueued(static_cast<ScreenshotOverlayWindow*>(overlay));
+            },
+            &owner);
     ScreenshotOverlayInputActions actions{
         [this](const QPoint& physicalPoint) {
             return m_selectorWorkflow->returnToSelection(physicalPoint);
@@ -1406,11 +1449,7 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
                 });
             return allowed;
         },
-        [this](const QString& actionId) {
-            ScreenshotToolbarWindow* toolbar = m_overlayCoordinator->ensureToolbar();
-            ScreenshotToolPalette* palette = toolbar != nullptr ? toolbar->palette() : nullptr;
-            return palette != nullptr && palette->activateScreenshotShortcut(actionId);
-        },
+        [this](const QString& actionId) { return activateScreenshotShortcut(actionId); },
         [this](const QString& toolId) {
             ScreenshotToolbarWindow* toolbar =
                 m_overlayCoordinator != nullptr ? m_overlayCoordinator->toolbar() : nullptr;
@@ -1502,6 +1541,7 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
             m_selectionSettings->setSelectionTarget(target);
         },
         [this]() { return canRecapture(); },
+        [this]() { return requestCancelCaptureViaShortcut(); },
     };
     m_overlayInputHandler =
         std::make_unique<ScreenshotOverlayInputHandler>(ScreenshotOverlayInputHandlerContext{
@@ -3103,8 +3143,8 @@ void ScreenshotController::Impl::saveSelectionWithSnowDialog() {
         m_scrollingCaptureController && m_scrollingCaptureController->active()
             ? QRectF(m_scrollingCaptureController->canvasSelection())
             : m_selection.normalizedSelection();
-    const QPointer<ScreenshotOverlayWindow> dialogOwner(
-        screenshotSaveDialogOwner(m_displaySession, m_geometry, dialogSelection, keyboardOwner));
+    const QPointer<ScreenshotOverlayWindow> dialogOwner(screenshotSelectionDialogOwner(
+        m_displaySession, m_geometry, dialogSelection, keyboardOwner));
     if (!dialogOwner)
         return;
     auto history = std::make_shared<std::optional<ScreenshotHistoryEntry>>();
@@ -3369,6 +3409,9 @@ void ScreenshotController::Impl::publishHistoryResult(
 }
 
 void ScreenshotController::Impl::cancelCapture() {
+    if (m_shortcutExitConfirmation != nullptr) {
+        m_shortcutExitConfirmation->dismiss();
+    }
     if (auto cancel = std::exchange(m_cancelSaveDialog, {}))
         cancel();
     if (m_autoFilterController) {

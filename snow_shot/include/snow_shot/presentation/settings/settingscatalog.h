@@ -121,6 +121,7 @@ enum class SettingsSwitchBinding {
     ScreenshotCaptureCursor,
     ScreenshotCaptureUiInScrollingScreenshot,
     ScreenshotShutterSoundNotification,
+    ScreenshotConfirmBeforeExitingViaShortcut,
     ScreenshotRestoreOriginalScreenColors,
     ScreenshotCopyImageFileToClipboard,
     SaveRecognitionResultAsImage,

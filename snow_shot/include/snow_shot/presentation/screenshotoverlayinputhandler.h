@@ -102,6 +102,7 @@ struct ScreenshotOverlayInputActions {
     std::function<void(ScreenshotIntelligentSelectionTarget)> persistSelectionTarget =
         [](ScreenshotIntelligentSelectionTarget) {};
     std::function<bool()> recaptureAvailable = []() { return false; };
+    std::function<bool()> cancelCaptureViaShortcut = []() { return false; };
 };
 
 struct ScreenshotOverlayInputHandlerContext {

@@ -191,9 +191,9 @@ void builtInCatalogIsCompleteAndValid() {
     }
     require(sectionCount == 38, "catalog must contain thirty-eight sections");
 #ifdef Q_OS_MACOS
-    require(itemCount == 160, "the macOS catalog omits DirectML acceleration");
+    require(itemCount == 161, "the macOS catalog omits DirectML acceleration");
 #else
-    require(itemCount == 161, "catalog must contain one hundred sixty-one items");
+    require(itemCount == 162, "catalog must contain one hundred sixty-two items");
 #endif
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -365,12 +365,24 @@ void builtInCatalogIsCompleteAndValid() {
     const auto* shutterSound =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
                       QStringLiteral("screenshot.shutter-sound-notification")});
+    const auto* confirmShortcutExit =
+        catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
+                      QStringLiteral("screenshot.confirm-before-exiting-via-shortcut")});
     const auto* screenshotSettings =
         catalog.section(QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"));
-    require(screenshotSettings != nullptr && !screenshotSettings->items.isEmpty() &&
-                screenshotSettings->items.constLast().id ==
-                    QStringLiteral("screenshot.shutter-sound-notification"),
-            "shutter notification must be the final item in Function Screenshot settings");
+    const auto shutterItem =
+        screenshotSettings != nullptr
+            ? std::find_if(screenshotSettings->items.cbegin(), screenshotSettings->items.cend(),
+                           [](const auto& item) {
+                               return item.id ==
+                                      QStringLiteral("screenshot.shutter-sound-notification");
+                           })
+            : decltype(screenshotSettings->items.cbegin()){};
+    require(screenshotSettings != nullptr && shutterItem != screenshotSettings->items.cend() &&
+                std::next(shutterItem) != screenshotSettings->items.cend() &&
+                std::next(shutterItem)->id ==
+                    QStringLiteral("screenshot.confirm-before-exiting-via-shortcut"),
+            "shortcut exit confirmation must immediately follow the shutter notification");
     require(shutterSound != nullptr &&
                 shutterSound->title.translated() == QStringLiteral("Shutter Sound Notification") &&
                 shutterSound->configurationKey ==
@@ -379,6 +391,19 @@ void builtInCatalogIsCompleteAndValid() {
                     settings::SettingsSwitchBinding::ScreenshotShutterSoundNotification &&
                 storage::ConfigurationSchema::defaultValue(shutterSound->configurationKey).toBool(),
             "Function Screenshot settings must expose the enabled shutter notification switch");
+    require(
+        confirmShortcutExit != nullptr &&
+            confirmShortcutExit->title.translated() ==
+                QStringLiteral("Confirm before exiting screenshot via shortcut") &&
+            confirmShortcutExit->description.translated() ==
+                QStringLiteral("Ask for confirmation when using the Cancel screenshot shortcut.") &&
+            confirmShortcutExit->configurationKey ==
+                QStringLiteral("screenshot/confirm_before_exiting_via_shortcut") &&
+            std::get<settings::SettingsSwitchDefinition>(confirmShortcutExit->payload).binding ==
+                settings::SettingsSwitchBinding::ScreenshotConfirmBeforeExitingViaShortcut &&
+            !storage::ConfigurationSchema::defaultValue(confirmShortcutExit->configurationKey)
+                 .toBool(),
+        "Function Screenshot settings must expose the disabled shortcut exit confirmation");
     const auto* smartSelection =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
                       QStringLiteral("screenshot.smart-selection")});
@@ -1453,9 +1478,9 @@ void invalidCatalogReportsAllConformanceErrors() {
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
 #ifdef Q_OS_MACOS
-    constexpr qsizetype expectedNodes = 210;
-#else
     constexpr qsizetype expectedNodes = 211;
+#else
+    constexpr qsizetype expectedNodes = 212;
 #endif
     require(index.entries().size() == expectedNodes &&
                 index.search(QString()).size() == expectedNodes,

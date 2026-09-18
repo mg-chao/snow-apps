@@ -861,6 +861,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot/shutter_sound_notification"), true,
      ConfigurationValueKind::Boolean},
+    {QStringLiteral("screenshot/confirm_before_exiting_via_shortcut"), false,
+     ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot/restore_original_screen_colors"), true,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot/delay_seconds"), 3, ConfigurationValueKind::Integer,

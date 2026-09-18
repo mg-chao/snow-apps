@@ -413,6 +413,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ScreenshotSettings().captureUiInScrollingScreenshot();
     case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
         return storage::ScreenshotSettings().shutterSoundNotification();
+    case SettingsSwitchBinding::ScreenshotConfirmBeforeExitingViaShortcut:
+        return storage::ScreenshotSettings().confirmBeforeExitingViaShortcut();
     case SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors:
         return storage::ScreenshotSettings().restoreOriginalScreenColors();
     case SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard:
@@ -491,6 +493,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     }
     if (binding == SettingsSwitchBinding::ScreenshotShutterSoundNotification) {
         return storage::ScreenshotSettings().setShutterSoundNotification(value);
+    }
+    if (binding == SettingsSwitchBinding::ScreenshotConfirmBeforeExitingViaShortcut) {
+        return storage::ScreenshotSettings().setConfirmBeforeExitingViaShortcut(value);
     }
     if (binding == SettingsSwitchBinding::ScreenshotCaptureCursor) {
         return storage::ScreenshotSettings().setCaptureCursor(value);
@@ -595,6 +600,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::ScreenshotCaptureCursor:
     case SettingsSwitchBinding::ScreenshotCaptureUiInScrollingScreenshot:
     case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
+    case SettingsSwitchBinding::ScreenshotConfirmBeforeExitingViaShortcut:
     case SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors:
     case SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard:
     case SettingsSwitchBinding::SaveRecognitionResultAsImage:
@@ -1171,6 +1177,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                    {QStringLiteral("screenshot/shutter_sound_notification"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/shutter_sound_notification"))},
+                   {QStringLiteral("screenshot/confirm_before_exiting_via_shortcut"),
+                    storage::ConfigurationSchema::defaultValue(
+                        QStringLiteral("screenshot/confirm_before_exiting_via_shortcut"))},
                    {QStringLiteral("screenshot/auto_execute_after_text_recognition"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/auto_execute_after_text_recognition"))},

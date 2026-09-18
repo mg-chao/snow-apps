@@ -288,6 +288,9 @@ struct ScreenshotOverlayShortcutController::Impl {
                     actions.cancelCapture();
                     return true;
                 }
+                if (actionId == QStringLiteral("cancel_screenshot")) {
+                    return actions.cancelCaptureViaShortcut();
+                }
                 return actions.activateScreenshotShortcut(actionId);
             };
             if (actionId == QStringLiteral("move_entire_selection")) {
