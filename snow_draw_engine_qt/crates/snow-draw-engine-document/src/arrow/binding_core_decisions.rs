@@ -65,12 +65,13 @@ pub(super) fn to_binding(
     element: &BindableState,
     mode: BindMode,
     focus_point: Point,
+    midpoint_snapping_enabled: bool,
 ) -> FixedPointBinding {
     FixedPointBinding {
         element_id: element.id,
         mode: if arrow.elbowed { BindMode::Orbit } else { mode },
         fixed_point: if arrow.elbowed {
-            calculate_fixed_point_for_elbow_binding(arrow, element, edge)
+            calculate_fixed_point_for_elbow_binding(arrow, element, edge, midpoint_snapping_enabled)
         } else {
             calculate_fixed_point_for_binding(element, focus_point)
         },
@@ -97,16 +98,15 @@ fn pick_drag_edge_decisions(
 
 fn strategy_for_elbow_endpoint(input: &ComputeEndpointDragInput) -> EndpointBindingDecisionPair {
     let dragged = normalize_dragged_points(&input.arrow, &input.dragged_points);
-    let Some((&dragged_index, &dragged_point)) = dragged.iter().next() else {
+    let Some((&dragged_index, _)) = dragged.iter().next() else {
         return EndpointBindingDecisionPair {
             start: unchanged_decision(),
             end: unchanged_decision(),
         };
     };
 
-    let global_point = to_global_point(&input.arrow, dragged_point);
     let hit = get_hovered_bindable(
-        global_point,
+        input.pointer,
         &input.bindables,
         max_binding_distance(input.context.zoom),
     );
@@ -191,7 +191,18 @@ pub(super) fn get_endpoint_binding_decisions(
     };
 
     let global_point = to_global_point(arrow, dragged_point);
-    let hit = get_hovered_bindable(global_point, bindables, max_binding_distance(context.zoom));
+    // While angle-locked the dragged point slides along the locked ray, so
+    // hit-test the raw pointer instead (Excalidraw uses the scene pointer
+    // there as well).
+    let angle_locked = options
+        .and_then(|options| options.angle_locked)
+        .unwrap_or(false);
+    let hit_target = if angle_locked {
+        input.pointer
+    } else {
+        global_point
+    };
+    let hit = get_hovered_bindable(hit_target, bindables, max_binding_distance(context.zoom));
     let other_binding = if start_dragged {
         arrow.end_binding.as_ref()
     } else {
@@ -212,17 +223,9 @@ pub(super) fn get_endpoint_binding_decisions(
     });
     let bind_mode_forces_inside = matches!(context.bind_mode, BindMode::Inside | BindMode::Skip);
     let alt_forces_inside = options.and_then(|options| options.alt_key).unwrap_or(false);
-    let point_in_hit = hit.as_ref().is_some_and(|hit| {
-        let point = if options
-            .and_then(|options| options.angle_locked)
-            .unwrap_or(false)
-        {
-            input.pointer
-        } else {
-            global_point
-        };
-        is_point_in_bindable(point, hit)
-    });
+    let point_in_hit = hit
+        .as_ref()
+        .is_some_and(|hit| is_point_in_bindable(hit_target, hit));
     let other_focus_point = match (other_binding, other_bindable) {
         (Some(other_binding), Some(other_bindable)) => {
             Some(get_global_fixed_point(other_binding, other_bindable))
@@ -241,16 +244,10 @@ pub(super) fn get_endpoint_binding_decisions(
             || distance_to_bindable_outline(global_point, other_bindable)
                 <= max_binding_distance(context.zoom)
     });
-    let other_never_override = if options
-        .and_then(|options| options.new_arrow)
-        .unwrap_or(false)
-    {
-        options
-            .and_then(|options| options.preserve_opposite_inside_binding)
-            .unwrap_or(false)
-    } else {
-        other_binding.is_some_and(|binding| binding.mode == BindMode::Inside)
-    };
+    // An opposite inside binding is never overridden (Excalidraw's
+    // `arrowStartIsInside` / inside-mode guard).
+    let other_never_override =
+        other_binding.is_some_and(|binding| binding.mode == BindMode::Inside);
     let opposite_index = if start_dragged {
         end_index
     } else {
@@ -258,12 +255,11 @@ pub(super) fn get_endpoint_binding_decisions(
     };
     let opposite_point = get_point_at_index_global(arrow, opposite_index as isize);
 
-    let angle_locked_other = if let Some(other_bindable) = other_bindable.filter(|_| {
-        !other_never_override
-            && options
-                .and_then(|options| options.angle_locked)
-                .unwrap_or(false)
-    }) {
+    let midpoint_snapping_enabled = !angle_locked;
+
+    let angle_locked_other = if let Some(other_bindable) =
+        other_bindable.filter(|_| !other_never_override && angle_locked)
+    {
         let edge = if start_dragged {
             ArrowEndpointEdge::End
         } else {
@@ -276,6 +272,9 @@ pub(super) fn get_endpoint_binding_decisions(
             edge,
             bindables,
             context.zoom,
+            // The opposite end keeps midpoint snapping while angle-locked:
+            // Excalidraw gates only the dragged end on `angleLocked`.
+            true,
         )
         .unwrap_or(opposite_point);
         bind_decision(BindMode::Orbit, other_bindable, projected)
@@ -301,21 +300,6 @@ pub(super) fn get_endpoint_binding_decisions(
     } else {
         unchanged_decision()
     };
-
-    if options
-        .and_then(|options| options.initial_binding)
-        .unwrap_or(false)
-        && options
-            .and_then(|options| options.new_arrow)
-            .unwrap_or(false)
-        && start_dragged
-    {
-        let decision = hit
-            .as_ref()
-            .map(|hit| bind_decision(BindMode::Inside, hit, global_point))
-            .unwrap_or_else(clear_decision);
-        return pick_drag_edge_decisions(start_dragged, decision, unchanged_decision());
-    }
 
     if bind_mode_forces_inside {
         let bind_target = if hit.is_some() && is_overlapping_other {
@@ -377,6 +361,7 @@ pub(super) fn get_endpoint_binding_decisions(
                 edge,
                 bindables,
                 context.zoom,
+                midpoint_snapping_enabled,
             )
             .unwrap_or(global_point);
             let current = bind_decision(BindMode::Orbit, hit, projected_focus);
@@ -411,29 +396,9 @@ pub(super) fn get_endpoint_binding_decisions(
         return pick_drag_edge_decisions(start_dragged, current, unchanged_decision());
     }
 
-    let mode = if options
-        .and_then(|options| options.new_arrow)
-        .unwrap_or(false)
-        && start_dragged
-    {
-        BindMode::Inside
-    } else if options
-        .and_then(|options| options.new_arrow)
-        .unwrap_or(false)
-        && other_binding.is_none()
-    {
-        BindMode::Orbit
-    } else if options
-        .and_then(|options| options.new_arrow)
-        .unwrap_or(false)
-        && other_binding.is_some()
-    {
-        if bind_mode_forces_inside {
-            BindMode::Inside
-        } else {
-            BindMode::Orbit
-        }
-    } else if complex_bindings {
+    // Normal case: inside when the pointer is within the hit element,
+    // orbit otherwise — new arrows included (Excalidraw `_simple`).
+    let mode = if complex_bindings {
         BindMode::Orbit
     } else if point_in_hit && !is_nested {
         BindMode::Inside
@@ -453,6 +418,7 @@ pub(super) fn get_endpoint_binding_decisions(
             },
             bindables,
             context.zoom,
+            midpoint_snapping_enabled,
         )
         .unwrap_or(global_point)
     } else {

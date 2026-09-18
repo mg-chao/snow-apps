@@ -24,10 +24,11 @@ mod text;
 
 pub use api::{
     ActiveTextDraftPresentation, ActiveTextDraftTarget, ActiveTool, ArrowHandleKind,
-    ArrowHandleState, ArrowStyle, EditorPresentationState, EditorViewState, EditorViewportState,
-    ElementCreationPreview, FILTER_STYLE_PROPERTY_ALL, FILTER_STYLE_PROPERTY_OPACITY,
-    FILTER_STYLE_PROPERTY_STRENGTH, FILTER_STYLE_PROPERTY_STROKE_WIDTH, FILTER_STYLE_PROPERTY_TYPE,
-    FilterStyle, FreeDrawPreview, HistoryState, PenFilterPreview, RectangleShapeStyle,
+    ArrowHandleState, ArrowStyle, BindingHighlightPresentation, EditorPresentationState,
+    EditorViewState, EditorViewportState, ElementCreationPreview, FILTER_STYLE_PROPERTY_ALL,
+    FILTER_STYLE_PROPERTY_OPACITY, FILTER_STYLE_PROPERTY_STRENGTH,
+    FILTER_STYLE_PROPERTY_STROKE_WIDTH, FILTER_STYLE_PROPERTY_TYPE, FilterStyle, FreeDrawPreview,
+    HistoryState, MIN_BINDING_HIGHLIGHT_ZOOM, PenFilterPreview, RectangleShapeStyle,
     SERIAL_NUMBER_STYLE_MIXED_COLOR, SERIAL_NUMBER_STYLE_MIXED_FILL,
     SERIAL_NUMBER_STYLE_MIXED_FILL_STYLE, SERIAL_NUMBER_STYLE_MIXED_FONT_FAMILY,
     SERIAL_NUMBER_STYLE_MIXED_FONT_SIZE, SERIAL_NUMBER_STYLE_MIXED_NUMBER,

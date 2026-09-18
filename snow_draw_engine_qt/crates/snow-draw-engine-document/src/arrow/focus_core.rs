@@ -1,18 +1,20 @@
 use std::collections::BTreeMap;
 
+use crate::arrow_binding_geometry::{OutlineMidPointMode, outline_mid_point_suggestion};
 use crate::arrow_geom::{
     center, clamp, distance, get_global_fixed_point, get_point_at_index_global,
     normalize_arrow_from_global_points, normalize_fixed_point, to_global_point, to_local_point,
     unrotate_point,
 };
 use crate::arrow_hit_test::{
-    distance_to_bindable_outline, get_binding_side_mid_point, get_hovered_bindable,
-    is_bindable_visible_at_point, is_point_in_bindable,
+    distance_to_bindable_outline, get_hovered_bindable, is_bindable_visible_at_point,
+    is_point_in_bindable,
 };
 use crate::{
-    ArrowEndpointEdge, ArrowEngineEvent, ArrowPatch, ArrowState, BindMode, BindablePatch,
-    BindableState, ComputeFocusPointDragInput, ElementId, EngineResult, FixedPointBinding,
-    FocusPointContext, FocusPointDescriptor, ListVisibleFocusPointsInput, Point, SuggestedBinding,
+    ArrowEndpointEdge, ArrowEndpointSelector, ArrowEngineEvent, ArrowPatch, ArrowState, BindMode,
+    BindablePatch, BindableState, ComputeFocusPointDragInput, ElementId, EngineResult,
+    FixedPointBinding, FocusPointContext, FocusPointDescriptor, ListVisibleFocusPointsInput, Point,
+    SuggestedBinding,
 };
 
 const BASE_BINDING_GAP: f64 = 5.0;
@@ -43,26 +45,6 @@ fn calculate_fixed_point_for_binding(bindable: &BindableState, global_point: Poi
     let fixed_x = (local[0] - bindable.x) / bindable.width.max(1e-6);
     let fixed_y = (local[1] - bindable.y) / bindable.height.max(1e-6);
     normalize_fixed_point([fixed_x, fixed_y])
-}
-
-fn snap_outline_mid_point_candidates(bindable: &BindableState) -> [Point; 4] {
-    [
-        get_binding_side_mid_point((&bindable.id, [1.0, 0.5]), bindable),
-        get_binding_side_mid_point((&bindable.id, [0.5, 1.0]), bindable),
-        get_binding_side_mid_point((&bindable.id, [0.0, 0.5]), bindable),
-        get_binding_side_mid_point((&bindable.id, [0.5, 0.0]), bindable),
-    ]
-}
-
-fn get_snap_outline_mid_point(point: Point, bindable: &BindableState, zoom: f64) -> Option<Point> {
-    if is_point_in_bindable(point, bindable) {
-        return None;
-    }
-
-    let threshold = max_binding_distance(zoom) + bindable.stroke_width / 2.0;
-    snap_outline_mid_point_candidates(bindable)
-        .into_iter()
-        .find(|candidate| distance(point, *candidate) <= threshold)
 }
 
 fn pick_hovered_bindable(
@@ -109,16 +91,28 @@ fn bindables_by_id(bindables: &[BindableState]) -> BTreeMap<ElementId, BindableS
 
 pub(crate) fn resolve_bound_point_local(
     arrow: &ArrowState,
+    edge: ArrowEndpointEdge,
     binding: &FixedPointBinding,
     bindable: &BindableState,
+    bindables_by_id: &BTreeMap<ElementId, BindableState>,
+    dragging: bool,
 ) -> Point {
-    let focus_point = get_global_fixed_point(binding, bindable);
-    let global_point = if binding.mode == BindMode::Inside {
-        focus_point
-    } else {
-        get_binding_side_mid_point((&bindable.id, binding.fixed_point), bindable)
+    let selector = match edge {
+        ArrowEndpointEdge::Start => ArrowEndpointSelector::StartBinding,
+        ArrowEndpointEdge::End => ArrowEndpointSelector::EndBinding,
     };
-    to_local_point(arrow, global_point)
+    crate::arrow_binding_core::update_bound_point(
+        arrow,
+        selector,
+        Some(binding),
+        bindable,
+        bindables_by_id,
+        dragging,
+    )
+    .unwrap_or_else(|| {
+        let focus_point = get_global_fixed_point(binding, bindable);
+        to_local_point(arrow, focus_point)
+    })
 }
 
 pub fn is_focus_point_visible(
@@ -307,10 +301,21 @@ fn resolve_suggested_binding(
     pointer: Point,
     zoom: f64,
 ) -> Option<SuggestedBinding> {
-    hovered.cloned().map(|element| SuggestedBinding {
-        bindable_id: Some(element.id),
-        mid_point: get_snap_outline_mid_point(pointer, &element, zoom),
-        element,
+    hovered.cloned().map(|element| {
+        // Focus-point drags only apply to straight arrows; snapping is on
+        // (focus drags have no angle-lock mode).
+        let mid_points = outline_mid_point_suggestion(
+            pointer,
+            &element,
+            zoom,
+            OutlineMidPointMode::for_arrow(false, true),
+        );
+        SuggestedBinding {
+            bindable_id: Some(element.id),
+            mid_point: mid_points.highlighted,
+            near_mid_points: mid_points.near,
+            element,
+        }
     })
 }
 
@@ -409,8 +414,11 @@ pub fn compute_focus_point_drag(input: &ComputeFocusPointDragInput) -> EngineRes
                 end_binding,
                 ..arrow.clone()
             },
+            dragged_edge,
             binding,
             bindable,
+            &bindables_by_id,
+            true,
         );
         (start_binding, end_binding) =
             with_edge_binding(start_binding, end_binding, dragged_edge, Some(*binding));
@@ -440,8 +448,11 @@ pub fn compute_focus_point_drag(input: &ComputeFocusPointDragInput) -> EngineRes
                 end_binding,
                 ..arrow.clone()
             },
+            other_edge,
             &other_binding,
             other_bindable,
+            &bindables_by_id,
+            false,
         );
         (start_binding, end_binding) =
             with_edge_binding(start_binding, end_binding, other_edge, Some(other_binding));

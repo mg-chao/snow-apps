@@ -223,8 +223,6 @@ pub struct PartialEngineContext {
 #[serde(rename_all = "camelCase")]
 pub struct ComputeEndpointDragOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub new_arrow: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alt_key: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub angle_locked: Option<bool>,
@@ -232,10 +230,6 @@ pub struct ComputeEndpointDragOptions {
     pub finalize: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub complex_bindings: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub initial_binding: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub preserve_opposite_inside_binding: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opposite_orbit_focus_point: Option<Point>,
 }
@@ -254,6 +248,11 @@ pub struct UpdateElbowArrowOptions {
     pub is_dragging: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub validate_invariants: Option<bool>,
+    /// Whether elbow endpoint routing may magnetize to bindable side
+    /// midpoints. Defaults to `true`; disabled while angle-locked drags
+    /// (Excalidraw's `isMidpointSnappingEnabled`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub midpoint_snapping_enabled: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

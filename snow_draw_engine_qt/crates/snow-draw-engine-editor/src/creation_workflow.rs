@@ -1,9 +1,15 @@
 use super::*;
 use snow_draw_engine_core::arrow::{ArrowEndpointEdge, ArrowType, StrokeStyle};
 use snow_draw_engine_document::{
-    ElementMeta, TextLayoutSize, arrow_is_degenerate, resolve_serial_number_data_diameter,
-    validate_text_layout_size,
+    ArrowSuggestedBinding, ElementMeta, TextLayoutSize, arrow_is_degenerate,
+    resolve_serial_number_data_diameter, validate_text_layout_size,
 };
+
+#[derive(Clone, Debug, PartialEq)]
+struct BoundArrowPreview {
+    arrow: ArrowData,
+    suggested_binding: Option<ArrowSuggestedBinding>,
+}
 
 impl Editor {
     fn pen_highlight_preview(&self, start: Point<f64>, end: Point<f64>) -> Option<ArrowData> {
@@ -104,6 +110,7 @@ impl Editor {
             committed_points: vec![start_canvas_position],
             press_view_position: start_view_position,
             phase: ArrowCreationPhase::InitialPress,
+            ..Default::default()
         });
         self.clear_transient_visuals();
     }
@@ -120,18 +127,46 @@ impl Editor {
         self.state.interaction = InteractionState::CreatingArrow(state);
     }
 
-    pub(crate) fn keep_arrow_creation_active(
+    fn keep_arrow_creation_active(
         &mut self,
         mut state: CreateArrowState,
-        preview_arrow: Option<ArrowData>,
+        preview: Option<BoundArrowPreview>,
         snap_guides: Vec<SnapGuide>,
     ) {
         state.phase = ArrowCreationPhase::AwaitingEndpoint;
+        state.suggested_binding = preview
+            .as_ref()
+            .and_then(|preview| preview.suggested_binding.clone());
         self.set_creation_preview(
-            preview_arrow.map(ElementCreationPreview::Arrow),
+            preview.map(|preview| ElementCreationPreview::Arrow(preview.arrow)),
             snap_guides,
         );
         self.state.interaction = InteractionState::CreatingArrow(state);
+        self.bump_overlay_state_revision();
+    }
+
+    fn set_arrow_creation_preview(
+        &mut self,
+        preview: Option<BoundArrowPreview>,
+        snap_guides: Vec<SnapGuide>,
+    ) {
+        let suggested_binding = preview
+            .as_ref()
+            .and_then(|preview| preview.suggested_binding.clone());
+        let suggestion_changed = match &self.state.interaction {
+            InteractionState::CreatingArrow(state) => state.suggested_binding != suggested_binding,
+            _ => false,
+        };
+        if let InteractionState::CreatingArrow(state) = &mut self.state.interaction {
+            state.suggested_binding = suggested_binding;
+        }
+        self.set_creation_preview(
+            preview.map(|preview| ElementCreationPreview::Arrow(preview.arrow)),
+            snap_guides,
+        );
+        if suggestion_changed {
+            self.bump_overlay_state_revision();
+        }
     }
 
     pub(crate) fn queue_arrow_creation(
@@ -274,14 +309,15 @@ impl Editor {
         points: &[Point<f64>],
         modifiers: Modifiers,
     ) -> Result<bool, ErrorCode> {
-        let Some(arrow) = self.arrow_preview_from_points(document, points, modifiers, true) else {
+        let Some(preview) = self.arrow_preview_from_points(document, points, modifiers, true)
+        else {
             return Ok(false);
         };
-        if arrow_length(&arrow) < self.minimum_committed_linear_length() {
+        if arrow_length(&preview.arrow) < self.minimum_committed_linear_length() {
             return Ok(false);
         }
         self.cancel_interaction();
-        self.queue_arrow_creation(document, arrow)?;
+        self.queue_arrow_creation(document, preview.arrow)?;
         Ok(true)
     }
 
@@ -317,13 +353,13 @@ impl Editor {
         }
     }
 
-    pub(crate) fn arrow_creation_preview(
+    fn arrow_creation_preview(
         &self,
         document: &DocumentModel,
         committed_points: &[Point<f64>],
         current: Point<f64>,
         modifiers: Modifiers,
-    ) -> (Point<f64>, Option<ArrowData>, Vec<SnapGuide>) {
+    ) -> (Point<f64>, Option<BoundArrowPreview>, Vec<SnapGuide>) {
         let (mut snapped_current, guides) =
             self.snap_arrow_creation_point(document, current, modifiers);
         if modifiers.shift
@@ -358,13 +394,13 @@ impl Editor {
         (snapped_current, preview, guides)
     }
 
-    pub(crate) fn arrow_preview_from_points(
+    fn arrow_preview_from_points(
         &self,
         document: &DocumentModel,
         points: &[Point<f64>],
         modifiers: Modifiers,
         finalize: bool,
-    ) -> Option<ArrowData> {
+    ) -> Option<BoundArrowPreview> {
         let arrow = if self.state.active_tool == ActiveTool::Line {
             let style = self.state.default_line_style;
             preview_arrow_from_points(
@@ -386,49 +422,29 @@ impl Editor {
         let bindables = self.bindable_elements(document, &[]);
         let arrow_context = self.arrow_engine_context(modifiers);
 
-        if arrow.is_elbow() && points.len() == 2 {
-            let mut preview_arrow = arrow.clone();
-            for (edge, pointer) in [
-                (ArrowEndpointEdge::Start, points.first().copied()?),
-                (ArrowEndpointEdge::End, points.last().copied()?),
-            ] {
-                preview_arrow = preview_elbow_arrow_endpoint_binding(
-                    &preview_arrow,
-                    edge,
-                    pointer,
-                    &bindables,
-                    arrow_context,
-                    arrow_id,
-                    finalize,
-                );
-            }
-            return Some(preview_arrow);
-        }
-
         let mut preview_arrow = arrow;
-
+        let mut suggested_binding = None;
         for (edge, pointer) in [
             (ArrowEndpointEdge::Start, points.first().copied()?),
             (ArrowEndpointEdge::End, points.last().copied()?),
         ] {
-            preview_arrow = compute_arrow_endpoint_drag(
+            let result = compute_arrow_endpoint_drag(
                 arrow_id,
                 &preview_arrow,
                 edge,
                 pointer,
                 &bindables,
                 arrow_context,
-                ArrowEndpointDragOptions {
-                    new_arrow: true,
-                    initial_binding: true,
-                    alt_key: modifiers.alt,
-                    finalize,
-                },
-            )
-            .arrow;
+                arrow_endpoint_drag_options(modifiers, finalize),
+            );
+            preview_arrow = result.arrow;
+            suggested_binding = result.suggested_binding;
         }
 
-        Some(preview_arrow)
+        Some(BoundArrowPreview {
+            arrow: preview_arrow,
+            suggested_binding,
+        })
     }
 
     pub(crate) fn process_rectangle_creation_pointer_event(
@@ -702,7 +718,7 @@ impl Editor {
                 }
 
                 self.arm_arrow_endpoint_creation(state, event.pointer_id, event.position);
-                self.set_creation_preview(preview.map(ElementCreationPreview::Arrow), snap_guides);
+                self.set_arrow_creation_preview(preview, snap_guides);
 
                 Ok(InteractionOutput {
                     consumed: true,
@@ -753,7 +769,7 @@ impl Editor {
             current_canvas,
             event.modifiers,
         );
-        self.set_creation_preview(preview.map(ElementCreationPreview::Arrow), snap_guides);
+        self.set_arrow_creation_preview(preview, snap_guides);
 
         Ok(InteractionOutput {
             consumed: true,
@@ -784,12 +800,15 @@ impl Editor {
         );
         let is_click_release = pointer_drag_distance(state.press_view_position, event.position)
             < MINIMUM_ARROW_SIZE_PX;
-        let committed_arrow = preview.clone().filter(|arrow| {
-            arrow_length(arrow) >= self.minimum_drag_created_linear_length()
-                && state.committed_points.last().is_none_or(|last| {
-                    point_distance(*last, snapped_current) >= self.line_confirm_threshold()
-                })
-        });
+        let committed_arrow = preview
+            .as_ref()
+            .map(|preview| preview.arrow.clone())
+            .filter(|arrow| {
+                arrow_length(arrow) >= self.minimum_drag_created_linear_length()
+                    && state.committed_points.last().is_none_or(|last| {
+                        point_distance(*last, snapped_current) >= self.line_confirm_threshold()
+                    })
+            });
 
         match state.phase {
             ArrowCreationPhase::InitialPress => {
@@ -979,8 +998,12 @@ impl Editor {
 #[cfg(test)]
 mod line_creation_tests {
     use super::*;
-    use snow_draw_engine_core::{SnapGuideAxis, SnapGuideKind};
-    use snow_draw_engine_document::{CanvasFilterType, ElementData};
+    use snow_draw_engine_core::{
+        ColorRgba8, CornerRadii, SnapGuideAxis, SnapGuideKind, arrow::StrokeStyle,
+    };
+    use snow_draw_engine_document::{
+        CanvasFilterType, ElementData, FillStyle, HighlightShape, RectangleElementKind,
+    };
     use snow_draw_engine_interaction::{PointerButtons, PointerDevice};
 
     fn editor_with_non_dominant_x_snap_reference() -> (Editor, DocumentModel) {
@@ -1207,10 +1230,10 @@ mod line_creation_tests {
         assert_eq!(snapped, committed[0]);
         let preview = preview.unwrap();
         assert_eq!(
-            preview.global_points().first(),
-            preview.global_points().last()
+            preview.arrow.global_points().first(),
+            preview.arrow.global_points().last()
         );
-        assert_eq!(preview.global_points().len(), 3);
+        assert_eq!(preview.arrow.global_points().len(), 3);
     }
 
     #[test]
@@ -1229,6 +1252,7 @@ mod line_creation_tests {
             ],
             press_view_position: Point::new(150.0, 100.0),
             phase: ArrowCreationPhase::AwaitingEndpoint,
+            ..Default::default()
         });
 
         editor
@@ -1270,6 +1294,7 @@ mod line_creation_tests {
             ],
             press_view_position: Point::new(150.0, 100.0),
             phase: ArrowCreationPhase::AwaitingEndpoint,
+            ..Default::default()
         });
 
         editor
@@ -1308,6 +1333,7 @@ mod line_creation_tests {
             committed_points: vec![Point::new(-50.0, 0.0), Point::new(50.0, 0.0)],
             press_view_position: Point::new(150.0, 100.0),
             phase: ArrowCreationPhase::AwaitingEndpoint,
+            ..Default::default()
         });
 
         let output = editor
@@ -1345,6 +1371,7 @@ mod line_creation_tests {
             committed_points: vec![Point::new(-50.0, 0.0), Point::new(50.0, 0.0)],
             press_view_position: Point::new(150.0, 100.0),
             phase: ArrowCreationPhase::EndpointPress,
+            ..Default::default()
         });
 
         editor
@@ -1383,6 +1410,7 @@ mod line_creation_tests {
             committed_points: vec![Point::new(-50.0, -40.0)],
             press_view_position: Point::new(50.0, 60.0),
             phase: ArrowCreationPhase::AwaitingEndpoint,
+            ..Default::default()
         });
 
         let output = editor
@@ -1428,6 +1456,7 @@ mod line_creation_tests {
             committed_points: vec![Point::new(-50.0, 0.0), Point::new(50.0, 0.0)],
             press_view_position: Point::new(150.0, 100.0),
             phase: ArrowCreationPhase::AwaitingEndpoint,
+            ..Default::default()
         });
 
         let output = editor
@@ -1641,5 +1670,80 @@ mod line_creation_tests {
             assert!(editor.pending_command.is_none());
             assert!(editor.state.creation_preview.is_none());
         }
+    }
+
+    #[test]
+    fn creating_arrow_near_bindable_surfaces_binding_highlight() {
+        let mut document = DocumentModel::new();
+        let mut insert = Transaction::new("insert bindable rectangle");
+        insert.insert_rectangle(
+            document.peek_next_element_id(),
+            ElementMeta::default(),
+            RectangleData {
+                rectangle_kind: RectangleElementKind::Rectangle,
+                highlight_shape: HighlightShape::Rectangle,
+                center: Point::new(0.0, 0.0),
+                width: 100.0,
+                height: 100.0,
+                rotation: 0.0,
+                fill: ColorRgba8::default(),
+                fill_style: FillStyle::Solid,
+                stroke: ColorRgba8::default(),
+                stroke_width: 2.0,
+                stroke_style: StrokeStyle::Solid,
+                corner_radii: CornerRadii::default(),
+                opacity: 1.0,
+            },
+        );
+        document.apply_transaction(insert).unwrap();
+
+        let mut editor = Editor::new(EngineConfig::default()).unwrap();
+        editor.set_surface_size(400, 400).unwrap();
+        editor.set_active_tool(ActiveTool::Arrow).unwrap();
+        editor.begin_arrow_creation(1, Point::new(-150.0, 0.0), Point::new(50.0, 200.0));
+        editor
+            .handle_arrow_pointer_move(
+                &document,
+                PointerEvent {
+                    pointer_id: 1,
+                    event_type: PointerEventType::Move,
+                    device: PointerDevice::Mouse,
+                    position: Point::new(253.0, 203.0),
+                    button: None,
+                    buttons: PointerButtons::default(),
+                    modifiers: Modifiers::default(),
+                },
+            )
+            .unwrap();
+
+        let highlight = editor
+            .presentation_state(&document)
+            .binding_highlight
+            .expect("binding highlight while drawing toward the bindable");
+        assert!((highlight.rect.center.x - 0.0).abs() < 1e-9);
+        assert!((highlight.rect.width - 100.0).abs() < 1e-9);
+        let mid_point = highlight.mid_point.expect("snapped midpoint");
+        assert!((mid_point.x - 50.0).abs() < 0.1 && mid_point.y.abs() < 0.1);
+
+        editor
+            .handle_arrow_pointer_move(
+                &document,
+                PointerEvent {
+                    pointer_id: 1,
+                    event_type: PointerEventType::Move,
+                    device: PointerDevice::Mouse,
+                    position: Point::new(500.0, 500.0),
+                    button: None,
+                    buttons: PointerButtons::default(),
+                    modifiers: Modifiers::default(),
+                },
+            )
+            .unwrap();
+        assert!(
+            editor
+                .presentation_state(&document)
+                .binding_highlight
+                .is_none()
+        );
     }
 }

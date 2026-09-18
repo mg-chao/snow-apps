@@ -337,9 +337,7 @@ impl StreamingFreeDrawBuilder {
             .as_ref()
             .map(|preview| preview.geometry.clone());
         self.flush_pending();
-        let Some(&start) = self.committed_vertices.first() else {
-            return None;
-        };
+        let &start = self.committed_vertices.first()?;
         if self.committed_vertices.len() == 1 {
             self.committed_vertices
                 .push(Point::new(start.x + DOT_SEGMENT_LENGTH, start.y));
@@ -765,7 +763,9 @@ mod tests {
         let mut style = crate::defaults::editor_style_defaults().free_draw;
         style.stroke_width = 1.0;
         let builder = StreamingFreeDrawBuilder::new(Point::new(12.0, 34.0), 1.0, style);
-        let (data, _) = builder.finish().expect("a click without movement draws a dot");
+        let (data, _) = builder
+            .finish()
+            .expect("a click without movement draws a dot");
         let vertices = data.global_vertices();
         assert_eq!(vertices.len(), 2);
         assert_eq!(vertices[0], Point::new(12.0, 34.0));
@@ -779,11 +779,10 @@ mod tests {
         style.stroke_width = 1.0;
         let mut builder = StreamingFreeDrawBuilder::new(Point::new(0.0, 0.0), 1.0, style);
         builder.append(Point::new(0.5, 0.0), false);
-        let (data, _) = builder.finish().expect("a short drag still registers a stroke");
-        assert_eq!(
-            data.global_vertices().last(),
-            Some(&Point::new(0.5, 0.0))
-        );
+        let (data, _) = builder
+            .finish()
+            .expect("a short drag still registers a stroke");
+        assert_eq!(data.global_vertices().last(), Some(&Point::new(0.5, 0.0)));
     }
 
     #[test]

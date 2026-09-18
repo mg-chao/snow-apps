@@ -134,6 +134,10 @@ pub fn update_elbow_arrow_patch(input: UpdateElbowArrowInput) -> ArrowPatch {
                 .as_ref()
                 .and_then(|options| options.validate_invariants),
             max_coordinate: Some(input.context.max_coordinate),
+            midpoint_snapping_enabled: input
+                .options
+                .as_ref()
+                .and_then(|options| options.midpoint_snapping_enabled),
         }),
     );
 
@@ -167,6 +171,7 @@ pub fn recompute_elbow_patch(input: RecomputeElbowInput) -> ArrowPatch {
             zoom: Some(input.context.zoom),
             validate_invariants: None,
             max_coordinate: Some(input.context.max_coordinate),
+            midpoint_snapping_enabled: None,
         }),
     );
 

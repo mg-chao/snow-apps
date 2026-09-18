@@ -348,6 +348,23 @@ pub enum ElementCreationPreview {
     SerialNumber(SerialNumberData),
 }
 
+/// Lower zoom bound for sizing binding-highlight strokes and midpoint dots,
+/// keeping them readable on screen instead of shrinking with the camera.
+pub const MIN_BINDING_HIGHLIGHT_ZOOM: f64 = 0.25;
+
+/// Hover feedback for the bindable an arrow endpoint/focus drag would attach to.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BindingHighlightPresentation {
+    /// Outline geometry of the bindable in canvas coordinates.
+    pub rect: RectangleData,
+    /// Screen-constant highlight stroke width in canvas units (already zoom-divided).
+    pub stroke_width: f64,
+    /// Side midpoint the drag currently snaps to, if any.
+    pub mid_point: Option<Point<f64>>,
+    /// Remaining side midpoints rendered as proximity hints.
+    pub near_mid_points: Vec<Point<f64>>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct EditorPresentationState {
     /// Additive, uncommitted copies. Uses the same transaction builder as duplication.
@@ -376,6 +393,7 @@ pub struct EditorPresentationState {
     pub selected_single_arrow: Option<ArrowData>,
     pub arrow_handles: Vec<ArrowHandleState>,
     pub snap_guides: Vec<SnapGuide>,
+    pub binding_highlight: Option<BindingHighlightPresentation>,
 }
 
 /// Whether the generic selection frame and its controls apply to these members.

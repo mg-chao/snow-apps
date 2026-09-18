@@ -14,6 +14,7 @@ pub(super) fn handle_segment_renormalization(
     bindables_by_id: &BTreeMap<ElementId, BindableState>,
     zoom: f64,
     max_coordinate: f64,
+    midpoint_snapping_enabled: bool,
 ) -> ArrowPatch {
     let Some(mut next_fixed_segments) = arrow.fixed_segments.clone() else {
         return ArrowPatch {
@@ -140,6 +141,7 @@ pub(super) fn handle_segment_renormalization(
             zoom,
             false,
             max_coordinate,
+            midpoint_snapping_enabled,
         );
     }
 

@@ -153,6 +153,7 @@ pub enum SnowOverlayRectKind {
     TextActualFrame = 11,
     TextHoverUnderline = 12,
     EraserCursor = 13,
+    BindingHighlight = 14,
 }
 
 #[repr(C)]

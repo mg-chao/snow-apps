@@ -8,7 +8,77 @@ use snow_draw_engine_document::{
     CanvasFilterType, FilterData, FreeDrawData, PenFilterData, SerialNumberType, filter_bounds,
     pen_filter_bounds, resolve_serial_number_square_corner_radius,
 };
-use snow_draw_engine_editor::{FreeDrawPreview, PenFilterPreview};
+use snow_draw_engine_editor::{
+    BindingHighlightPresentation, FreeDrawPreview, MIN_BINDING_HIGHLIGHT_ZOOM, PenFilterPreview,
+};
+
+pub(crate) const BINDING_HIGHLIGHT_COLOR: ColorRgba8 = ColorRgba8 {
+    r: 106,
+    g: 189,
+    b: 252,
+    a: 255,
+};
+// Excalidraw's light-theme `BINDING_MIDPOINT_COLOR`: rgba(65, 65, 65, 0.5).
+pub(crate) const BINDING_NEAR_MIDPOINT_COLOR: ColorRgba8 = ColorRgba8 {
+    r: 65,
+    g: 65,
+    b: 65,
+    a: 128,
+};
+const BINDING_MIDPOINT_DOT_RADIUS_PX: f64 = 4.0;
+
+pub(crate) fn binding_highlight_outline_item(
+    highlight: &BindingHighlightPresentation,
+) -> UiRectangleDisplayItem {
+    UiRectangleDisplayItem {
+        kind: UiShapeKind::BindingHighlight,
+        center_x: highlight.rect.center.x,
+        center_y: highlight.rect.center.y,
+        width: highlight.rect.width,
+        height: highlight.rect.height,
+        rotation: highlight.rect.rotation,
+        fill: ColorRgba8::default(),
+        fill_style: DisplayFillStyle::Solid,
+        stroke: BINDING_HIGHLIGHT_COLOR,
+        stroke_width: highlight.stroke_width,
+        corner_radii: highlight.rect.corner_radii,
+    }
+}
+
+fn binding_midpoint_dot_item(
+    mid_point: Point<f64>,
+    zoom: f64,
+    color: ColorRgba8,
+) -> UiRectangleDisplayItem {
+    let radius = BINDING_MIDPOINT_DOT_RADIUS_PX / zoom.max(MIN_BINDING_HIGHLIGHT_ZOOM);
+    UiRectangleDisplayItem {
+        kind: UiShapeKind::BindingHighlight,
+        center_x: mid_point.x,
+        center_y: mid_point.y,
+        width: radius * 2.0,
+        height: radius * 2.0,
+        rotation: 0.0,
+        fill: color,
+        fill_style: DisplayFillStyle::Solid,
+        stroke: ColorRgba8::default(),
+        stroke_width: 0.0,
+        corner_radii: CornerRadii::splat(radius),
+    }
+}
+
+pub(crate) fn binding_snapped_midpoint_dot_item(
+    mid_point: Point<f64>,
+    zoom: f64,
+) -> UiRectangleDisplayItem {
+    binding_midpoint_dot_item(mid_point, zoom, BINDING_HIGHLIGHT_COLOR)
+}
+
+pub(crate) fn binding_near_midpoint_dot_item(
+    mid_point: Point<f64>,
+    zoom: f64,
+) -> UiRectangleDisplayItem {
+    binding_midpoint_dot_item(mid_point, zoom, BINDING_NEAR_MIDPOINT_COLOR)
+}
 
 pub(crate) fn scene_item_from_rect(id: ElementId, rect: RectangleData) -> SceneDisplayItem {
     SceneDisplayItem::Rectangle(RectangleDisplayItem {
