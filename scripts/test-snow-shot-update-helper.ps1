@@ -38,17 +38,30 @@ function Write-CanaryFile([string]$Path, [string]$Content) {
 }
 function Wait-CanaryFile([string]$Path) {
     $deadline = [DateTime]::UtcNow.AddSeconds($(if ($testElevation) { 180 } else { 45 }))
-    while (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    while ($true) {
+        if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            try {
+                # A file becomes visible before its writer has closed it. Read
+                # only after publication completes; keep the same deadline.
+                return [IO.File]::ReadAllText($Path)
+            } catch [IO.IOException] {
+                $code = $_.Exception.HResult -band 0xffff
+                if ($code -notin @(2, 3, 32, 33)) { throw }
+            }
+        }
         if ($Path.EndsWith('.canary-handoff.txt') -and $null -ne $parent -and $parent.HasExited) {
             throw "Helper parent exited before handoff with code $($parent.ExitCode): $Path"
         }
         if ([DateTime]::UtcNow -gt $deadline) { throw "Helper canary timed out: $Path" }
         Start-Sleep -Milliseconds 100
     }
-    return Get-Content -LiteralPath $Path -Raw
 }
 $variants = if ($testElevation) { @('offline') } else { @('portable', 'online', 'offline') }
-$modes = switch ($ElevationAction) { 'Cancel' { @('elevation-cancel') } 'Approve' { @('recover') } default { @('cancel', 'recover') } }
+$modes = switch ($ElevationAction) {
+    'Cancel' { @('elevation-cancel') }
+    'Approve' { @('recover', 'recover-helper-change') }
+    default { @('cancel', 'recover', 'recover-helper-change', 'recover-failure') }
+}
 foreach ($variant in $variants) {
     foreach ($mode in $modes) {
         $root = Join-Path $testRoot "$variant $mode"
@@ -68,18 +81,34 @@ foreach ($variant in $variants) {
         Write-CanaryFile (Join-Path $bin 'recovered.txt') 'incomplete replacement'
         $saved = Join-Path $backup 'recovered.txt'
         Write-CanaryFile $saved 'previous payload'
+        $entries = @(@{ path = 'bin/recovered.txt'; existed = $true; size = (Get-Item -LiteralPath $saved).Length; sha256 = (Get-FileHash -LiteralPath $saved).Hash.ToLowerInvariant() })
+        $replacementHash = $null
+        if ($mode -eq 'recover-helper-change') {
+            # Replace the installed helper through the real recovery transaction.
+            # A PE overlay changes its identity while preserving a runnable image;
+            # this exercises update completion without production signing keys.
+            $replacement = Join-Path $backup 'snow-shot-updater.exe'
+            [IO.File]::WriteAllBytes($replacement, ([IO.File]::ReadAllBytes($helper) + [Text.Encoding]::ASCII.GetBytes('helper replacement regression')))
+            $replacementHash = (Get-FileHash -LiteralPath $replacement).Hash.ToLowerInvariant()
+            $entries += @{ path = 'bin/snow-shot-updater.exe'; existed = $true; size = (Get-Item -LiteralPath $replacement).Length; sha256 = $replacementHash }
+        }
         $journal = Join-Path $root '.snow-shot-update/journal.json'
         Write-CanaryFile $journal (@{
             schema = 1; state = 'applying'; previousVersion = '1.0.0-alpha'; version = '1.0.0-beta'
-            files = @(@{ path = 'bin/recovered.txt'; existed = $true; size = (Get-Item -LiteralPath $saved).Length; sha256 = (Get-FileHash -LiteralPath $saved).Hash.ToLowerInvariant() })
+            files = $entries
         } | ConvertTo-Json -Depth 5)
+        if ($mode -eq 'recover-failure') {
+            # Recovery must report failure over the same session and must not
+            # restart an application while its journal is unresolved.
+            Write-CanaryFile $saved 'corrupt backup'
+        }
         $parent = $null
         $originalAcl = $null
         $registered = $false
         $results = $root
         try {
             if ($testElevation) {
-                $results = Join-Path $testRoot 'telemetry'
+                $results = Join-Path $testRoot "telemetry-$mode"
                 $null = New-Item -ItemType Directory -Path $results
                 $key = $registry.CreateSubKey($registrationPath)
                 try { $key.SetValue('', $root) } finally { $key.Dispose() }
@@ -119,6 +148,14 @@ foreach ($variant in $variants) {
                     (Test-Path -LiteralPath (Join-Path $results '.canary-restarted.txt'))) {
                     throw 'Cancellation changed files, exited the parent, or relaunched.'
                 }
+            } elseif ($mode -eq 'recover-failure') {
+                if (-not $parent.WaitForExit(10000) -or $parent.ExitCode -ne 0) { throw 'Parent did not hand off cleanly.' }
+                if ((Wait-CanaryFile (Join-Path $results '.canary-result.txt')) -notlike 'failed:*' -or
+                    -not (Test-Path -LiteralPath $journal) -or
+                    (Test-Path -LiteralPath (Join-Path $results '.canary-restarted.txt')) -or
+                    (Get-Content -Raw (Join-Path $bin 'recovered.txt')) -cne 'incomplete replacement') {
+                    throw 'Failed recovery did not report failure or relaunched an incomplete installation.'
+                }
             } else {
                 if (-not $parent.WaitForExit(10000) -or $parent.ExitCode -ne 0) { throw 'Parent did not hand off cleanly.' }
                 if ((Wait-CanaryFile (Join-Path $results '.canary-result.txt')) -cne 'success' -or
@@ -128,6 +165,9 @@ foreach ($variant in $variants) {
                     (Get-Content -Raw (Join-Path $bin 'recovered.txt')) -cne 'previous payload') {
                     throw 'Recovery or original-user relaunch failed.'
                 }
+                if ($replacementHash -and (Get-FileHash -LiteralPath (Join-Path $bin 'snow-shot-updater.exe')).Hash.ToLowerInvariant() -cne $replacementHash) {
+                    throw 'The helper replacement regression did not replace the installed reference image.'
+                }
             }
             if ((Get-Content -Raw (Join-Path $root 'user-note.txt')) -cne 'preserve user data') { throw 'User data changed.' }
             Write-Output "PASS: actual helper $variant $mode; user data preserved"
@@ -136,6 +176,11 @@ foreach ($variant in $variants) {
                 if (-not $parent.HasExited) { $parent.Kill(); $parent.WaitForExit() }
                 $parent.Dispose()
             }
+            # A failed status handoff leaves the broker waiting on its watchdog.
+            # Match the exact fixture target, never an installed application.
+            Get-CimInstance Win32_Process -Filter "Name = 'coordinator.exe' OR Name LIKE 'worker-%.exe' OR Name = 'snow-shot-updater.exe'" |
+                Where-Object { $_.CommandLine -and $_.CommandLine.Contains('--target "' + $root + '"') } |
+                ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
             if ($null -ne $originalAcl) {
                 # Each root is newly created and originally inherits only the test directory ACL.
                 # icacls resets only its DACL; Set-Acl can request unavailable SACL privileges.

@@ -18,6 +18,7 @@
 #include <QUuid>
 #include <QDateTime>
 #include <QRegularExpression>
+#include <QElapsedTimer>
 #include <cstdio>
 
 #ifdef Q_OS_WIN
@@ -83,16 +84,28 @@ void sendLine(const QString& pipe, const QByteArray& line) {
     requireUpdate(socket.waitForBytesWritten(5000), "Could not send updater status");
 }
 
+QByteArray exchangeLine(QLocalSocket& socket, const QByteArray& line) {
+    const QByteArray frame = line + '\n';
+    requireUpdate(socket.write(frame) == frame.size() &&
+                      (socket.bytesToWrite() == 0 || socket.waitForBytesWritten(5000)),
+                  "Could not send updater status");
+    QElapsedTimer deadline;
+    deadline.start();
+    while (!socket.canReadLine()) {
+        const auto remaining = 30000 - deadline.elapsed();
+        requireUpdate(socket.bytesAvailable() < 4096 && remaining > 0 &&
+                          socket.waitForReadyRead(static_cast<int>(remaining)),
+                      "The update handoff was not acknowledged");
+    }
+    return socket.readLine(4096).trimmed();
+}
+
 QByteArray exchangeLine(const QString& pipe, const QByteArray& line) {
     QLocalSocket socket;
     socket.connectToServer(pipe);
     requireUpdate(socket.waitForConnected(10000), "Could not contact the update coordinator");
     verifyCoordinator(socket, pipe);
-    socket.write(line + '\n');
-    requireUpdate(socket.waitForBytesWritten(5000) &&
-                      (socket.canReadLine() || socket.waitForReadyRead(30000)),
-                  "The update handoff was not acknowledged");
-    return socket.readLine(4096).trimmed();
+    return exchangeLine(socket, line);
 }
 
 bool writable(const QString& root) {
@@ -203,24 +216,33 @@ int worker(const QStringList& args) {
                       "Could not stage the verified update package");
         verifyFile(archive, package.size, package.sha256);
     }
-    requireUpdate(exchangeLine(pipe, QByteArrayLiteral("ready")) == "go",
+    // Authenticate once, before changing the installed helper, and retain this
+    // connection through completion. Reconnecting afterwards would compare the
+    // old broker with the new on-disk helper and reject a legitimate update.
+    // It also races peer PID verification against a short-lived worker's exit.
+    QLocalSocket coordinator;
+    coordinator.connectToServer(pipe);
+    requireUpdate(coordinator.waitForConnected(10000), "Could not contact the update coordinator");
+    verifyCoordinator(coordinator, pipe);
+    requireUpdate(exchangeLine(coordinator, QByteArrayLiteral("ready")) == "go",
                   "The application cancelled the update handoff");
 #ifdef Q_OS_WIN
     requireUpdate(WaitForSingleObject(parent, 45000) == WAIT_OBJECT_0,
                   "The application did not exit; the update was cancelled");
 #endif
+    QByteArray status = QByteArrayLiteral("success");
     try {
         if (recovery) {
             recoverTransaction(root);
         } else {
             applyTransaction(root, archive, release);
         }
-        sendLine(pipe, QByteArrayLiteral("success"));
     } catch (const std::exception& error) {
-        sendLine(pipe, QByteArrayLiteral("failed:") + error.what());
-        return 1;
+        status = QByteArrayLiteral("failed:") + error.what();
     }
-    return 0;
+    requireUpdate(exchangeLine(coordinator, status) == "done",
+                  "The update handoff was not acknowledged");
+    return status == "success" ? 0 : 1;
 }
 
 int broker(QCoreApplication& app, const QStringList& args) {
@@ -299,6 +321,12 @@ int broker(QCoreApplication& app, const QStringList& args) {
                                 QByteArrayLiteral("failed:Application coordinator disconnected"));
                         }
                     } else {
+                        if (handedOff) {
+                            // Acknowledge the final status on the authenticated
+                            // session before either side tears down its process.
+                            socket->write("done\n");
+                            socket->flush();
+                        }
                         finish(status);
                     }
                 };
