@@ -530,6 +530,8 @@ class ScreenshotToolPalette final : public QWidget {
     Tool rememberedDrawingMode(Tool tool) const;
     void rememberDrawingMode(Tool tool);
     void rememberLastUsedDrawingTool(Tool tool);
+    void recordUserDrawingToolIntent(Tool tool);
+    [[nodiscard]] bool drawingToolCanBeActivated(Tool tool) const;
     void clearDrawingToolGroups();
     bool activateToolFromToolbar(Tool tool, bool toggleVisibleButton = true);
     void activateDrawingTool(Tool tool);

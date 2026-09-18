@@ -1610,13 +1610,13 @@ void pinnedEditStartsWithRememberedDrawingTool() {
     }
     controller.setEditMode(false);
 
-    // An unavailable remembered tool falls back to the Resize window tool.
-    require(toolbarSettings.setLastDrawingTool(QStringLiteral("unknown-tool")),
-            "the remembered drawing tool store accepts arbitrary strings");
+    // An empty remembered tool falls back to the Resize window tool.
+    require(toolbarSettings.setLastDrawingTool(QString()),
+            "the remembered drawing tool can be cleared");
     controller.setEditMode(true);
     require(controller.resizeWindowToolActive() &&
                 controller.toolbarWindow()->palette()->activeToolForTests() == Tool::Move,
-            "an unknown remembered tool must fall back to the Resize window tool");
+            "an empty remembered tool must fall back to the Resize window tool");
     controller.setEditMode(false);
 }
 
