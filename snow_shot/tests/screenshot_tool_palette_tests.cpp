@@ -5349,19 +5349,33 @@ void rememberedDrawingToolRecordedAndRestored() {
     require(restored.activateRememberedDrawingTool() &&
                 restored.activeToolForTests() == Tool::RectangleHighlight,
             "a rebuilt palette should restore the remembered highlighter variant");
+    require(restored.activateRememberedDrawingTool() &&
+                restored.activeToolForTests() == Tool::RectangleHighlight,
+            "restoring an already-active remembered tool must not toggle it off");
     restored.setActiveTool(Tool::Select);
     require(toolbarSettings.setLastDrawingTool(QStringLiteral("watermark")) &&
                 restored.activateRememberedDrawingTool() &&
                 restored.activeToolForTests() == Tool::Watermark,
             "a live palette should follow remembered-tool updates from other instances");
     restored.setActiveTool(Tool::Select);
-    require(toolbarSettings.setLastDrawingTool(QStringLiteral("unknown-tool")) &&
-                !restored.activateRememberedDrawingTool(),
-            "unknown remembered tool ids must not activate anything");
+    require(!toolbarSettings.setLastDrawingTool(QStringLiteral("unknown-tool")) &&
+                toolbarSettings.lastDrawingTool() == QStringLiteral("watermark") &&
+                restored.activateRememberedDrawingTool() &&
+                restored.activeToolForTests() == Tool::Watermark,
+            "unknown remembered tool ids must be rejected without changing the stored tool");
     restored.setActiveTool(Tool::Select);
     require(toolbarSettings.setLastDrawingTool(QString()) &&
-                !restored.activateRememberedDrawingTool(),
+                !restored.activateRememberedDrawingTool() &&
+                restored.activeToolForTests() == Tool::Select,
             "an empty remembered drawing tool must not activate anything");
+
+    ScreenshotToolPalette::Options withoutWatermark = options;
+    withoutWatermark.showWatermarkTool = false;
+    require(toolbarSettings.setLastDrawingTool(QStringLiteral("watermark")),
+            "a valid remembered tool must still round-trip when hidden on another palette");
+    ScreenshotToolPalette hiddenWatermark(withoutWatermark);
+    require(!hiddenWatermark.activateRememberedDrawingTool(),
+            "a palette that does not expose the remembered tool must not activate it");
 }
 
 void filterToolExposesTypeAndIntensityControls() {
@@ -10757,6 +10771,12 @@ int main(int argc, char** argv) {
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
             "the font editor tests require a system TrueType font");
 #endif
+    if (application.arguments().contains(QStringLiteral("--remembered-drawing-tool-only"))) {
+        rememberedDrawingModesPersistAcrossPaletteInstances();
+        rememberedDrawingToolRecordedAndRestored();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--auto-filter-only"))) {
         configurationDrivenStyleEditorsShareStructuralContracts();
         filterEditorsRestoreValuesAfterToolSwitch();

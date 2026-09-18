@@ -28,7 +28,7 @@ void rememberLastUsedToolDefaultsPersistsAndResets(const QString& configurationP
     require(backend.switchEnabled(binding) && !backend.switchValue(binding) &&
                 !storage::DrawingSettings().rememberLastUsedTool() &&
                 !storage::ConfigurationSchema::defaultValue(
-                    QStringLiteral("drawing/remember_last_used_tool"))
+                     QStringLiteral("drawing/remember_last_used_tool"))
                      .toBool(),
             "remember last used tool must default to disabled");
     require(backend.applySwitchValue(binding, true) && backend.switchValue(binding) &&
@@ -41,13 +41,31 @@ void rememberLastUsedToolDefaultsPersistsAndResets(const QString& configurationP
             "the remembered tool preference must survive a configuration reload");
     require(storage::ScreenshotToolbarSettings().lastDrawingTool().isEmpty(),
             "no drawing tool is remembered before any tool activation");
+    const auto* lastDrawingToolEntry =
+        storage::ConfigurationSchema::entry(QStringLiteral("screenshot_toolbar/last_drawing_tool"));
+    require(lastDrawingToolEntry != nullptr &&
+                lastDrawingToolEntry->allowedStringValues.contains(QString()) &&
+                lastDrawingToolEntry->allowedStringValues.contains(QStringLiteral("shape")) &&
+                lastDrawingToolEntry->allowedStringValues.contains(QStringLiteral("watermark")) &&
+                storage::ConfigurationSchema::normalize(
+                    QStringLiteral("screenshot_toolbar/last_drawing_tool"), QString())
+                    .valid &&
+                storage::ConfigurationSchema::normalize(
+                    QStringLiteral("screenshot_toolbar/last_drawing_tool"), QStringLiteral("shape"))
+                    .valid &&
+                !storage::ConfigurationSchema::normalize(
+                     QStringLiteral("screenshot_toolbar/last_drawing_tool"),
+                     QStringLiteral("unknown-tool"))
+                     .valid &&
+                !storage::ScreenshotToolbarSettings().setLastDrawingTool(
+                    QStringLiteral("unknown-tool")) &&
+                storage::ScreenshotToolbarSettings().lastDrawingTool().isEmpty(),
+            "the remembered drawing tool must accept toolbar item ids and reject unknown ids");
     require(storage::ScreenshotToolbarSettings().setLastDrawingTool(QStringLiteral("shape")) &&
-                storage::ScreenshotToolbarSettings().lastDrawingTool() ==
-                    QStringLiteral("shape"),
+                storage::ScreenshotToolbarSettings().lastDrawingTool() == QStringLiteral("shape"),
             "the remembered drawing tool must round-trip through the toolbar settings");
     require(backend.resetSection(settings::SettingsSectionReset::DrawingQuickSelection) &&
-                !backend.switchValue(binding) &&
-                !storage::DrawingSettings().rememberLastUsedTool(),
+                !backend.switchValue(binding) && !storage::DrawingSettings().rememberLastUsedTool(),
             "resetting the Drawing function settings must restore the default disabled switch");
 }
 } // namespace

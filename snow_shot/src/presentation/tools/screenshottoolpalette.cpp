@@ -3528,8 +3528,7 @@ void ScreenshotToolPalette::clearDrawingToolGroups() {
 void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
     // Toolbar activations express user intent; reflective canvas synchronization
     // must not rewrite the remembered drawing modes.
-    rememberDrawingMode(tool);
-    rememberLastUsedDrawingTool(tool);
+    recordUserDrawingToolIntent(tool);
     setActiveTool(tool);
     switch (tool) {
     case Tool::Move:
@@ -3692,6 +3691,19 @@ void ScreenshotToolPalette::rememberLastUsedDrawingTool(Tool tool) {
     if (settings.lastDrawingTool() != itemId) {
         static_cast<void>(settings.setLastDrawingTool(itemId));
     }
+}
+
+void ScreenshotToolPalette::recordUserDrawingToolIntent(Tool tool) {
+    rememberDrawingMode(tool);
+    rememberLastUsedDrawingTool(tool);
+}
+
+bool ScreenshotToolPalette::drawingToolCanBeActivated(Tool tool) const {
+    if (drawingToolItemId(tool).isEmpty() || isRecordingUnavailableTool(tool)) {
+        return false;
+    }
+    adqt::widgets::AdButton* button = drawingToolEntryButton(tool);
+    return button != nullptr && button->isEnabled();
 }
 
 bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibleButton) {
@@ -4834,7 +4846,15 @@ bool ScreenshotToolPalette::activateRememberedDrawingTool() {
     if (descriptor == nullptr) {
         return false;
     }
-    return activateToolFromToolbar(drawingToolFromItem(descriptor->item), false);
+    const Tool tool = rememberedDrawingMode(drawingToolFromItem(descriptor->item));
+    if (!drawingToolCanBeActivated(tool)) {
+        return false;
+    }
+    if (m_activeTool.has_value() && *m_activeTool == tool) {
+        return true;
+    }
+    activateDrawingTool(tool);
+    return true;
 }
 
 bool ScreenshotToolPalette::activateScreenshotShortcut(const QString& actionId) {
@@ -5036,8 +5056,7 @@ QWidget* ScreenshotToolPalette::createStyleModeSelector(
         createScreenshotToolPaletteRadioEditor(parent, config, styleButtonMetrics(m_physicalScale));
     connect(editor.group, &QButtonGroup::idClicked, this, [this](int id) {
         const Tool tool = static_cast<Tool>(id);
-        rememberDrawingMode(tool);
-        rememberLastUsedDrawingTool(tool);
+        recordUserDrawingToolIntent(tool);
         setActiveTool(tool);
         switch (tool) {
         case Tool::RectangleHighlight:

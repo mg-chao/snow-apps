@@ -88,6 +88,9 @@ void rememberedDrawingToolRestoresOncePerCapture() {
     require(commands.shapeToolCount == 1 && commands.moveToolCount == 0 &&
                 window.palette()->activeTool() == Tool::Shape,
             "the first restore of a capture must activate the remembered drawing tool");
+    require(window.palette()->activateRememberedDrawingTool() && commands.shapeToolCount == 1 &&
+                window.palette()->activeTool() == Tool::Shape,
+            "restoring an already-active remembered tool must not emit another tool command");
     window.restoreRememberedDrawingTool();
     require(commands.shapeToolCount == 1,
             "repeated restore requests must not re-activate the remembered tool");
