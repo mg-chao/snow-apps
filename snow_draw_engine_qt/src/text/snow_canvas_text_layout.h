@@ -58,10 +58,25 @@ FontResolution resolveFont(QFont baseFont, const SnowSceneDisplayItem& item, dou
 QFont fontForItem(QFont baseFont, const SnowSceneDisplayItem& item, double zoom);
 void applyFontPixelSize(QFont& font, double pixelSize);
 
+// A text measurement: the stored layout rectangle (wrap or natural width plus
+// the auto-resize safety margin, document height) together with the painted
+// ink box (widest laid-out line, document height). Serial connectors and dirty
+// regions anchor to the ink box aligned inside the layout rectangle, so both
+// must travel together.
+struct TextMeasuredLayout {
+    QSizeF layout;
+    QSizeF content;
+};
+
 QSizeF measureNaturalText(const QString& text, const QFont& baseFont,
                           const SnowSceneDisplayItem& item, double zoom = 1.0);
+TextMeasuredLayout measureNaturalTextLayout(const QString& text, const QFont& baseFont,
+                                            const SnowSceneDisplayItem& item, double zoom = 1.0);
 QSizeF measureWrappedText(const QString& text, const QFont& baseFont,
                           const SnowSceneDisplayItem& item, double width, double zoom = 1.0);
+TextMeasuredLayout measureWrappedTextLayout(const QString& text, const QFont& baseFont,
+                                            const SnowSceneDisplayItem& item, double width,
+                                            double zoom = 1.0);
 double measureMinimumWrappedWidth(const QFont& baseFont, const SnowSceneDisplayItem& item,
                                   double zoom = 1.0);
 

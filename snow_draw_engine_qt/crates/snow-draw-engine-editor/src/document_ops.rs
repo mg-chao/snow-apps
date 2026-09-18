@@ -18,7 +18,7 @@ use crate::{
     state::ResizeHandle,
     style::stepped_font_size,
     text::{
-        SerialNumberTextCreationRequest, TextSelectionResizeHandle,
+        MeasuredTextResize, SerialNumberTextCreationRequest, TextSelectionResizeHandle,
         create_serial_number_text_creation_plan, text_layout_override_size,
         text_with_committed_draft, text_with_selection_rect, text_with_style_attributes,
     },
@@ -30,7 +30,7 @@ pub(crate) fn append_selection_element_update(
     preview: SelectionRectState,
     resize_handle: Option<ResizeHandle>,
     single_text_resize: bool,
-    single_text_resize_font_size: Option<f64>,
+    measured_resize: Option<MeasuredTextResize>,
 ) -> Result<(), ErrorCode> {
     if document.rectangle(preview.id).is_ok() {
         validate_rectangle(&preview.rect)?;
@@ -97,7 +97,7 @@ pub(crate) fn append_selection_element_update(
                 y_sign: handle.y_sign(),
             }),
             single_text_resize,
-            single_text_resize_font_size,
+            measured_resize,
         );
         validate_text(&updated)?;
         if *text != updated {
@@ -1069,20 +1069,18 @@ mod tests {
             &mut document,
             TextData {
                 center: Point::new(0.0, 0.0),
-                width: 40.0,
-                height: 20.0,
                 text: "committed".to_owned(),
                 auto_resize: false,
+                layout: TextLayoutSize::new(40.0, 20.0),
                 ..TextData::default()
             },
         );
         let mut editor = Editor::new(EngineConfig::default()).unwrap();
         let draft_text = TextData {
             center: Point::new(160.0, 0.0),
-            width: 60.0,
-            height: 30.0,
             text: "draft".to_owned(),
             auto_resize: false,
+            layout: TextLayoutSize::new(60.0, 30.0),
             ..document.text(id).unwrap().clone()
         };
 
@@ -1307,8 +1305,7 @@ mod tests {
             &mut document,
             TextData {
                 text: "old".to_owned(),
-                width: 80.0,
-                height: 24.0,
+                layout: TextLayoutSize::new(80.0, 24.0),
                 ..TextData::default()
             },
         );
@@ -1344,10 +1341,7 @@ mod tests {
                     TextCommitTarget::Existing(id),
                     Point::new(10.0, 20.0),
                     "new",
-                    TextLayoutSize {
-                        width: 120.0,
-                        height: 48.0,
-                    },
+                    TextLayoutSize::new(120.0, 48.0),
                     style.clone(),
                     false,
                     true,
@@ -1375,8 +1369,8 @@ mod tests {
         assert_eq!(updated.text, "new");
         assert_eq!(updated.center, Point::new(10.0, 20.0));
         assert_eq!(updated.rotation, 0.75);
-        assert_eq!(updated.width, 120.0);
-        assert_eq!(updated.height, 48.0);
+        assert_eq!(updated.width(), 120.0);
+        assert_eq!(updated.height(), 48.0);
         assert_eq!(updated.font_size, style.font_size);
         assert_eq!(updated.color, style.color);
         assert_eq!(updated.font_family, style.font_family);
@@ -1411,10 +1405,7 @@ mod tests {
                     TextCommitTarget::New,
                     Point::new(45.0, 67.0),
                     "created",
-                    TextLayoutSize {
-                        width: 180.0,
-                        height: 64.0,
-                    },
+                    TextLayoutSize::new(180.0, 64.0),
                     style.clone(),
                     true,
                     true,
@@ -1435,8 +1426,8 @@ mod tests {
         };
         assert_eq!(created.text, "created");
         assert_eq!(created.center, Point::new(45.0, 67.0));
-        assert_eq!(created.width, 180.0);
-        assert_eq!(created.height, 64.0);
+        assert_eq!(created.width(), 180.0);
+        assert_eq!(created.height(), 64.0);
         assert_eq!(created.font_size, style.font_size);
         assert_eq!(created.color, style.color);
         assert_eq!(created.font_family, style.font_family);
@@ -1457,8 +1448,7 @@ mod tests {
             &mut document,
             TextData {
                 text: "bound".to_owned(),
-                width: 80.0,
-                height: 24.0,
+                layout: TextLayoutSize::new(80.0, 24.0),
                 ..TextData::default()
             },
         );
@@ -1479,10 +1469,7 @@ mod tests {
                     TextCommitTarget::Existing(text_id),
                     Point::new(0.0, 0.0),
                     "   ",
-                    TextLayoutSize {
-                        width: 1.0,
-                        height: 1.0,
-                    },
+                    TextLayoutSize::new(1.0, 1.0),
                     text_style(
                         12.0,
                         ColorRgba8 {
@@ -1525,8 +1512,7 @@ mod tests {
             &mut document,
             TextData {
                 text: "bound".to_owned(),
-                width: 80.0,
-                height: 24.0,
+                layout: TextLayoutSize::new(80.0, 24.0),
                 ..TextData::default()
             },
         );
@@ -1603,8 +1589,7 @@ mod tests {
             TextData {
                 center: Point::new(100.0, 0.0),
                 text: "bound".to_owned(),
-                width: 80.0,
-                height: 24.0,
+                layout: TextLayoutSize::new(80.0, 24.0),
                 ..TextData::default()
             },
         );
@@ -1703,8 +1688,7 @@ mod tests {
             &mut document,
             TextData {
                 text: "old".to_owned(),
-                width: 80.0,
-                height: 24.0,
+                layout: TextLayoutSize::new(80.0, 24.0),
                 ..TextData::default()
             },
         );
@@ -1727,10 +1711,7 @@ mod tests {
                     TextCommitTarget::Existing(id),
                     Point::new(10.0, 20.0),
                     "new",
-                    TextLayoutSize {
-                        width: 120.0,
-                        height: 48.0,
-                    },
+                    TextLayoutSize::new(120.0, 48.0),
                     style,
                     false,
                     false,

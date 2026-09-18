@@ -163,12 +163,18 @@ void updatePreviewFromEditorText(SnowCanvasSceneItem& item, const QString& text,
                                  const QFont& baseFont) {
     copyTextToSceneItem(item, text);
     if (autoResize) {
-        const QSizeF size = text_layout::measureNaturalText(text, baseFont, item);
-        item.width = size.width();
-        item.height = size.height();
+        const text_layout::TextMeasuredLayout measured =
+            text_layout::measureNaturalTextLayout(text, baseFont, item);
+        item.width = measured.layout.width();
+        item.height = measured.layout.height();
+        item.content_width = measured.content.width();
+        item.content_height = measured.content.height();
     } else {
-        const QSizeF size = text_layout::measureWrappedText(text, baseFont, item, item.width);
-        item.height = size.height();
+        const text_layout::TextMeasuredLayout measured =
+            text_layout::measureWrappedTextLayout(text, baseFont, item, item.width);
+        item.height = measured.layout.height();
+        item.content_width = measured.content.width();
+        item.content_height = measured.content.height();
     }
 }
 

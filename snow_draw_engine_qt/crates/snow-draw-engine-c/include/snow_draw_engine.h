@@ -635,6 +635,12 @@ typedef struct SnowTextLayoutSize {
     double width;
     /* Exact host-renderer measured text height. */
     double height;
+    /* Measured painted ink width (widest line); 0 means "not measured" and
+       consumers fall back to width. */
+    double content_width;
+    /* Measured painted ink height; 0 means "not measured" and consumers fall
+       back to height. */
+    double content_height;
 } SnowTextLayoutSize;
 
 typedef struct SnowTextLayoutOverride {
@@ -679,6 +685,9 @@ typedef struct SnowActiveTextDraftPresentation {
     double width;
     double height;
     double rotation;
+    /* Painted ink box of the draft preview; 0 means "not measured". */
+    double content_width;
+    double content_height;
     const char* text_utf8;
     uint32_t text_utf8_len;
     uint32_t reserved1;
@@ -970,6 +979,35 @@ typedef struct SnowFilterRenderSpec {
 
 SnowFilterRenderSpec snow_filter_render_spec_resolve(uint32_t filter_type, double strength);
 
+typedef struct SnowTextPaintOutset {
+    double x;
+    double y;
+} SnowTextPaintOutset;
+
+/* Conservative document-space ink bounds of a text item: the aligned content
+   box expanded by the fill padding and the text stroke halo. Dirty regions and
+   visibility culling must consume this instead of reconstructing the
+   arithmetic. */
+typedef struct SnowTextPaintBounds {
+    double min_x;
+    double min_y;
+    double max_x;
+    double max_y;
+} SnowTextPaintBounds;
+
+typedef struct SnowSerialTextConnection {
+    double start_x;
+    double start_y;
+    double end_x;
+    double end_y;
+    double baseline_start_x;
+    double baseline_start_y;
+    double baseline_end_x;
+    double baseline_end_y;
+    uint8_t has_baseline;
+    uint8_t reserved[7];
+} SnowSerialTextConnection;
+
 typedef struct SnowSceneDisplayItem {
     SnowSceneDisplayItemKind kind;
     SnowBlendMode blend_mode;
@@ -999,6 +1037,11 @@ typedef struct SnowSceneDisplayItem {
     const SnowArrowheadPrimitive* arrowhead_primitives;
     double font_size;
     double opacity;
+    /* Text items: painted ink box (widest line x laid-out height), resolved to
+       at least the item size. Serial connectors anchor to this box aligned
+       inside the item rectangle, never to the wrap rectangle. */
+    double content_width;
+    double content_height;
     int64_t serial_number;
     uint32_t text_utf8_len;
     SnowTextHorizontalAlign text_horizontal_align;
@@ -1017,6 +1060,18 @@ typedef struct SnowSceneDisplayItem {
     uint32_t font_family_utf8_len;
     const char* font_family_utf8;
 } SnowSceneDisplayItem;
+
+/* Conservative ink (fill padding plus text stroke halo) for dirty regions. */
+SnowTextPaintOutset snow_scene_text_paint_outset(const SnowSceneDisplayItem* item);
+/* Fill-pill padding only. The host text painter must consume this instead of
+   measuring its own padding so the painted edge matches the connector anchor. */
+SnowTextPaintOutset snow_scene_text_fill_outset(const SnowSceneDisplayItem* item);
+/* Conservative document-space ink bounds (aligned content box + fill padding +
+   stroke halo) for dirty regions and culling. */
+SnowTextPaintBounds snow_scene_text_paint_bounds(const SnowSceneDisplayItem* item);
+uint8_t snow_scene_resolve_serial_text_connection(const SnowSceneDisplayItem* serial,
+                                                  const SnowSceneDisplayItem* text,
+                                                  SnowSerialTextConnection* out_connection);
 
 /* Pointer fields follow the same SnowPatchHandle lifetime as scene items. */
 /* The visitor borrows each item for the duration of the call and must not reenter runtime. */

@@ -5,7 +5,7 @@ mod serial;
 use serde::{Deserialize, Serialize};
 use snow_draw_engine_core::{ColorRgba8, CornerRadii, ErrorCode};
 use snow_draw_engine_document::{
-    ElementId, FillStyle, SerialNumberType, StrokeStyle, TextData, TextHorizontalAlign,
+    ElementId, FillStyle, InkBox, SerialNumberType, StrokeStyle, TextData, TextHorizontalAlign,
     TextLayoutSize, TextVerticalAlign, validate_text_layout_size,
 };
 
@@ -14,9 +14,9 @@ pub use resize::TextResizeMeasurementRequest;
 
 pub(crate) use commit::{text_with_committed_draft, text_with_style_attributes};
 pub(crate) use resize::{
-    TextResizeLayoutOverride, TextSelectionResizeHandle, text_resize_layout_override_matches_rect,
-    text_resize_measurement_font_size, text_resize_measurement_requested_values,
-    text_with_selection_rect,
+    MeasuredTextResize, TextResizeLayoutOverride, TextSelectionResizeHandle,
+    text_resize_layout_override_matches_rect, text_resize_measurement_font_size,
+    text_resize_measurement_requested_values, text_with_selection_rect,
 };
 pub(crate) use serial::{SerialNumberTextCreationRequest, create_serial_number_text_creation_plan};
 
@@ -61,10 +61,21 @@ pub struct TextLayoutOverride {
     pub size: TextLayoutSize,
 }
 
+/// Paint-relevant overlay applied to a committed text during live selection
+/// resize. Serial connectors and dirty regions derive from the emitted display
+/// item, so every field the painter uses that is not already in the preview
+/// rectangle must travel here: the preview font (fill padding) and the
+/// host-measured ink box.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct TextPreviewFontSize {
+pub struct TextPreviewPaint {
     pub id: ElementId,
-    pub font_size: f64,
+    /// Preview font the renderer paints; `None` keeps the committed size
+    /// (width-only wraps do not scale the font).
+    pub font_size: Option<f64>,
+    /// Host-measured painted ink; `None` means unmeasured, and the scene
+    /// scales the committed ink with the preview font, or keeps it when the
+    /// font is unchanged.
+    pub ink: Option<InkBox>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

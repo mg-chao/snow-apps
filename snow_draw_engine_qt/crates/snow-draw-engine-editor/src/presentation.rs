@@ -11,7 +11,7 @@ use snow_draw_engine_model::DocumentModel;
 use crate::{
     ArrowHandleKind, ArrowHandleState, Editor, EditorPresentationState, EditorViewState,
     SelectionArrowState, SelectionBounds, SelectionRectState, SerialNumberToolbarState,
-    TextPreviewFontSize,
+    TextPreviewPaint,
     geometry::{
         element_hit_tolerance, selection_bounds_from_selection, selection_handle_hit_size,
         selection_handle_size, text_resize_changes_width_only,
@@ -89,8 +89,8 @@ impl Editor {
             && let Some(mut rect) = document.element_rect_proxy(*id)
         {
             rect.center = text.center;
-            rect.width = text.width;
-            rect.height = text.height;
+            rect.width = text.width();
+            rect.height = text.height();
             preview_elements.push(SelectionRectState { id: *id, rect });
         }
         for id in &self.state.eraser.pending_ids {
@@ -169,7 +169,7 @@ impl Editor {
             active_text_draft: self.active_text_draft_display_presentation(),
             preview_arrows,
             preview_elements,
-            preview_text_font_sizes: self.selection_preview_text_font_sizes(document),
+            preview_text_paints: self.selection_preview_text_paints(document),
             marquee: self.state.ui.marquee,
             marquee_candidate_elements,
             marquee_candidate_arrows,
@@ -242,10 +242,10 @@ impl Editor {
         }
     }
 
-    pub(crate) fn selection_preview_text_font_sizes(
+    pub(crate) fn selection_preview_text_paints(
         &self,
         document: &DocumentModel,
-    ) -> Vec<TextPreviewFontSize> {
+    ) -> Vec<TextPreviewPaint> {
         let InteractionState::EditingSelection(state) = &self.state.interaction else {
             return Vec::new();
         };
@@ -270,10 +270,12 @@ impl Editor {
                     .iter()
                     .find(|element| element.id == preview.id)?;
                 let text = document.text(preview.id).ok()?;
-                let font_size = if single_text_resize
-                    && !text_resize_changes_width_only(handle)
-                    && let Some(layout_override) = text_layout_override
-                    && text_resize_layout_override_matches_rect(layout_override, preview.rect)
+                let matching_override = text_layout_override.filter(|layout_override| {
+                    single_text_resize
+                        && text_resize_layout_override_matches_rect(*layout_override, preview.rect)
+                });
+                let font_size = if !text_resize_changes_width_only(handle)
+                    && let Some(layout_override) = matching_override
                 {
                     Some(layout_override.requested_font_size)
                 } else {
@@ -284,10 +286,16 @@ impl Editor {
                         handle,
                         single_text_resize,
                     )
-                }?;
-                Some(TextPreviewFontSize {
+                };
+                let ink =
+                    matching_override.and_then(|layout_override| layout_override.layout.ink());
+                if font_size.is_none() && ink.is_none() {
+                    return None;
+                }
+                Some(TextPreviewPaint {
                     id: preview.id,
                     font_size,
+                    ink,
                 })
             })
             .collect()
@@ -832,9 +840,13 @@ fn scaled_text_font_size_from_height(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ActiveTextDraftPresentation, ActiveTextDraftTarget};
+    use crate::state::{EditSelectionState, InteractionState, ResizeHandle, SelectionEditMode};
+    use crate::text::TextResizeLayoutOverride;
+    use crate::{
+        ActiveTextDraftPresentation, ActiveTextDraftTarget, SelectionBounds, SelectionRectState,
+    };
     use snow_draw_engine_core::{ColorRgba8, CornerRadii, EngineConfig, Point};
-    use snow_draw_engine_document::{ElementMeta, TextData, Transaction};
+    use snow_draw_engine_document::{ElementMeta, InkBox, TextData, TextLayoutSize, Transaction};
 
     fn insert_rectangle(document: &mut DocumentModel, rect: RectangleData) -> ElementId {
         let id = document.peek_next_element_id();
@@ -936,10 +948,9 @@ mod tests {
             &mut document,
             TextData {
                 center: Point::new(0.0, 0.0),
-                width: 80.0,
-                height: 24.0,
                 text: "committed".to_owned(),
                 auto_resize: false,
+                layout: TextLayoutSize::new(80.0, 24.0),
                 ..TextData::default()
             },
         );
@@ -947,19 +958,18 @@ mod tests {
         editor.select_element(&document, text_id).unwrap();
         let draft_text = TextData {
             center: Point::new(140.0, 20.0),
-            width: 120.0,
-            height: 48.0,
             rotation: 0.25,
             text: "draft".to_owned(),
             auto_resize: false,
+            layout: TextLayoutSize::new(120.0, 48.0),
             ..document.text(text_id).unwrap().clone()
         };
         let draft_rect = RectangleData {
             rectangle_kind: snow_draw_engine_document::RectangleElementKind::Rectangle,
             highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
             center: draft_text.center,
-            width: draft_text.width,
-            height: draft_text.height,
+            width: draft_text.width(),
+            height: draft_text.height(),
             rotation: draft_text.rotation,
             fill: draft_text.fill,
             fill_style: draft_text.fill_style,
@@ -1009,11 +1019,10 @@ mod tests {
             &mut document,
             TextData {
                 center: Point::new(0.0, 0.0),
-                width: 80.0,
-                height: 24.0,
                 rotation: 0.0,
                 text: "committed".to_owned(),
                 auto_resize: false,
+                layout: TextLayoutSize::new(80.0, 24.0),
                 ..TextData::default()
             },
         );
@@ -1205,5 +1214,160 @@ mod tests {
         let state = editor.serial_number_toolbar_state(&document);
 
         assert_eq!(state, SerialNumberToolbarState::default());
+    }
+
+    fn text_element_rect(text: &TextData) -> RectangleData {
+        RectangleData {
+            rectangle_kind: snow_draw_engine_document::RectangleElementKind::Rectangle,
+            highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
+            center: text.center,
+            width: text.width(),
+            height: text.height(),
+            rotation: text.rotation,
+            fill: text.fill,
+            fill_style: text.fill_style,
+            stroke: text.stroke,
+            stroke_width: text.stroke_width,
+            stroke_style: snow_draw_engine_document::StrokeStyle::Solid,
+            corner_radii: text.corner_radii,
+            opacity: text.opacity,
+        }
+    }
+
+    #[test]
+    fn width_only_resize_publishes_measured_ink_without_font() {
+        let mut document = DocumentModel::new();
+        let text = TextData {
+            center: Point::new(0.0, 0.0),
+            text: "a wrapped annotation note".to_owned(),
+            font_size: 20.0,
+            auto_resize: false,
+            layout: TextLayoutSize::with_content(160.0, 20.0, 150.0, 20.0),
+            ..TextData::default()
+        };
+        let text_id = insert_text(&mut document, text.clone());
+        let original_rect = text_element_rect(&text);
+        let preview_rect = RectangleData {
+            center: Point::new(0.0, 10.0),
+            width: 80.0,
+            height: 40.0,
+            ..original_rect
+        };
+        let mut editor = editor_with_surface();
+        editor.select_element(&document, text_id).unwrap();
+        editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
+            duplicate: false,
+            pointer_id: 1,
+            original_elements: vec![SelectionRectState {
+                id: text_id,
+                rect: original_rect,
+            }],
+            preview_elements: vec![SelectionRectState {
+                id: text_id,
+                rect: preview_rect,
+            }],
+            original_arrows: Vec::new(),
+            preview_arrows: Vec::new(),
+            original_bounds: SelectionBounds {
+                center: original_rect.center,
+                width: original_rect.width,
+                height: original_rect.height,
+                rotation: original_rect.rotation,
+            },
+            preview_bounds: SelectionBounds {
+                center: preview_rect.center,
+                width: preview_rect.width,
+                height: preview_rect.height,
+                rotation: preview_rect.rotation,
+            },
+            mode: SelectionEditMode::Resize {
+                handle: ResizeHandle::Right,
+                handle_offset_canvas: Point::default(),
+                frame_padding: 0.0,
+                corner_handle_outset: 0.0,
+                scale_from_center: false,
+                text_layout_override: Some(TextResizeLayoutOverride {
+                    requested_width: 80.0,
+                    requested_height: 40.0,
+                    requested_font_size: 20.0,
+                    layout: TextLayoutSize::with_content(80.0, 40.0, 44.0, 40.0),
+                }),
+            },
+        });
+
+        let paints = editor.presentation_state(&document).preview_text_paints;
+        assert_eq!(paints.len(), 1);
+        assert_eq!(paints[0].id, text_id);
+        assert_eq!(
+            paints[0].font_size, None,
+            "width-only wrap must not publish a scaled font"
+        );
+        assert_eq!(paints[0].ink, InkBox::new(44.0, 40.0));
+    }
+
+    #[test]
+    fn height_resize_publishes_measured_font_and_ink() {
+        let mut document = DocumentModel::new();
+        let text = TextData {
+            center: Point::new(0.0, 0.0),
+            text: "note".to_owned(),
+            font_size: 10.0,
+            auto_resize: true,
+            layout: TextLayoutSize::with_content(100.0, 20.0, 96.0, 20.0),
+            ..TextData::default()
+        };
+        let text_id = insert_text(&mut document, text.clone());
+        let original_rect = text_element_rect(&text);
+        let preview_rect = RectangleData {
+            center: Point::new(0.0, 10.0),
+            height: 40.0,
+            ..original_rect
+        };
+        let mut editor = editor_with_surface();
+        editor.select_element(&document, text_id).unwrap();
+        editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
+            duplicate: false,
+            pointer_id: 1,
+            original_elements: vec![SelectionRectState {
+                id: text_id,
+                rect: original_rect,
+            }],
+            preview_elements: vec![SelectionRectState {
+                id: text_id,
+                rect: preview_rect,
+            }],
+            original_arrows: Vec::new(),
+            preview_arrows: Vec::new(),
+            original_bounds: SelectionBounds {
+                center: original_rect.center,
+                width: original_rect.width,
+                height: original_rect.height,
+                rotation: original_rect.rotation,
+            },
+            preview_bounds: SelectionBounds {
+                center: preview_rect.center,
+                width: preview_rect.width,
+                height: preview_rect.height,
+                rotation: preview_rect.rotation,
+            },
+            mode: SelectionEditMode::Resize {
+                handle: ResizeHandle::Bottom,
+                handle_offset_canvas: Point::default(),
+                frame_padding: 0.0,
+                corner_handle_outset: 0.0,
+                scale_from_center: false,
+                text_layout_override: Some(TextResizeLayoutOverride {
+                    requested_width: 100.0,
+                    requested_height: 40.0,
+                    requested_font_size: 22.0,
+                    layout: TextLayoutSize::with_content(100.0, 40.0, 144.0, 40.0),
+                }),
+            },
+        });
+
+        let paints = editor.presentation_state(&document).preview_text_paints;
+        assert_eq!(paints.len(), 1);
+        assert_eq!(paints[0].font_size, Some(22.0));
+        assert_eq!(paints[0].ink, InkBox::new(144.0, 40.0));
     }
 }

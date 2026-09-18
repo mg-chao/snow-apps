@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     ApplyResult, ArrowData, ChangeSet, DocumentDelta, ElementChangeSnapshot, FreeDrawData,
@@ -270,12 +270,192 @@ pub struct TextLayoutRect {
     pub rotation: f64,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+/// Painted text ink (the box the glyphs actually cover) as measured by the
+/// host renderer. Constructed only from positive, finite pairs, so an
+/// `InkBox` always is a real measurement; "not measured" is `None`, never a
+/// sentinel number.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct InkBox {
+    width: f64,
+    height: f64,
+}
+
+impl InkBox {
+    /// `Some` only when both axes are finite and positive. The legacy
+    /// serialized form and the C ABI use `0` for "not measured"; mixed,
+    /// negative, or non-finite pairs are garbage and read the same way.
+    pub fn new(width: f64, height: f64) -> Option<Self> {
+        if width.is_finite() && width > 0.0 && height.is_finite() && height > 0.0 {
+            Some(Self { width, height })
+        } else {
+            None
+        }
+    }
+
+    pub fn width(self) -> f64 {
+        self.width
+    }
+
+    pub fn height(self) -> f64 {
+        self.height
+    }
+
+    fn scaled(self, scale: f64) -> Self {
+        Self {
+            width: self.width * scale,
+            height: self.height * scale,
+        }
+    }
+}
+
+/// Host-measured wrap rectangle plus painted ink. Fields are private so a
+/// measurement can only be stored as one value; splitting wrap from ink is
+/// what left serial connectors and dirty regions on stale edges. Ink is
+/// `None` until the host measures it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TextLayoutSize {
-    /// Exact text layout width supplied by the host renderer.
-    pub width: f64,
-    /// Exact text layout height supplied by the host renderer.
-    pub height: f64,
+    width: f64,
+    height: f64,
+    ink: Option<InkBox>,
+}
+
+/// On-disk form of [`TextLayoutSize`]: the flat `width` / `height` /
+/// `content_width` / `content_height` keys documents have always used, with
+/// `0` ink standing in for "not measured".
+#[derive(Serialize, Deserialize)]
+struct TextLayoutSizeFields {
+    width: f64,
+    height: f64,
+    #[serde(default)]
+    content_width: f64,
+    #[serde(default)]
+    content_height: f64,
+}
+
+impl From<TextLayoutSizeFields> for TextLayoutSize {
+    fn from(fields: TextLayoutSizeFields) -> Self {
+        Self::with_content(
+            fields.width,
+            fields.height,
+            fields.content_width,
+            fields.content_height,
+        )
+    }
+}
+
+impl From<TextLayoutSize> for TextLayoutSizeFields {
+    fn from(layout: TextLayoutSize) -> Self {
+        let (content_width, content_height) = layout
+            .ink
+            .map(|ink| (ink.width, ink.height))
+            .unwrap_or((0.0, 0.0));
+        Self {
+            width: layout.width,
+            height: layout.height,
+            content_width,
+            content_height,
+        }
+    }
+}
+
+impl Serialize for TextLayoutSize {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        TextLayoutSizeFields::from(*self).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for TextLayoutSize {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(TextLayoutSizeFields::deserialize(deserializer)?.into())
+    }
+}
+
+impl TextLayoutSize {
+    /// Layout whose painted ink the host has not measured yet.
+    pub fn new(width: f64, height: f64) -> Self {
+        Self {
+            width,
+            height,
+            ink: None,
+        }
+    }
+
+    /// Layout together with its measured painted ink; a pair that is not a
+    /// real measurement (see [`InkBox::new`]) is stored as unmeasured.
+    pub fn with_content(width: f64, height: f64, content_width: f64, content_height: f64) -> Self {
+        Self {
+            width,
+            height,
+            ink: InkBox::new(content_width, content_height),
+        }
+    }
+
+    pub fn width(self) -> f64 {
+        self.width
+    }
+
+    pub fn height(self) -> f64 {
+        self.height
+    }
+
+    /// The measured painted ink, if the host measured one.
+    pub fn ink(self) -> Option<InkBox> {
+        self.ink
+    }
+
+    /// The content box paint geometry must use: the measured ink, or the wrap
+    /// rectangle while no measurement has landed. Paint geometry, scene
+    /// items, and connector resolution all resolve through here, so they can
+    /// never disagree about the painted edge.
+    pub fn ink_or_wrap(self) -> (f64, f64) {
+        self.ink
+            .map(|ink| (ink.width, ink.height))
+            .unwrap_or((self.width, self.height))
+    }
+
+    /// Keeps the stored ink and replaces only the wrap rectangle (user-driven
+    /// frames such as creation defaults, moves, and resize drags).
+    pub fn with_wrap(self, width: f64, height: f64) -> Self {
+        Self {
+            width,
+            height,
+            ink: self.ink,
+        }
+    }
+
+    /// Keeps the wrap rectangle and replaces only the painted ink with a host
+    /// report; `None` marks the ink unmeasured again.
+    pub fn with_ink(self, ink: Option<InkBox>) -> Self {
+        Self { ink, ..self }
+    }
+
+    /// Keeps the wrap width, replaces height and ink. Used when fixed-width
+    /// text reflows and the top edge must stay put via a center adjustment.
+    pub fn with_wrapped_height(self, height: f64, ink: Option<InkBox>) -> Self {
+        Self {
+            height,
+            ink,
+            ..self
+        }
+    }
+
+    /// Scales a previously measured ink box with the font. Unmeasured ink
+    /// stays unmeasured so consumers keep falling back to the wrap size.
+    pub fn scaled_ink(self, scale: f64) -> Self {
+        if !(scale.is_finite() && scale > 0.0) {
+            return self;
+        }
+        Self {
+            ink: self.ink.map(|ink| ink.scaled(scale)),
+            ..self
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -653,8 +833,14 @@ impl SerialNumberType {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TextData {
     pub center: Point<f64>,
-    pub width: f64,
-    pub height: f64,
+    /// Wrap rectangle and painted ink as one stored measurement. Assign this
+    /// field as a whole (`TextLayoutSize::new` / `with_content` / `with_wrap`
+    /// / `with_ink`); splitting wrap from ink left serial connectors and dirty
+    /// regions anchored to stale edges. Flattened so on-disk documents keep
+    /// the legacy `width` / `height` / `content_width` / `content_height`
+    /// keys, with `0` ink reading back as unmeasured.
+    #[serde(flatten)]
+    pub layout: TextLayoutSize,
     pub rotation: f64,
     pub text: String,
     pub color: ColorRgba8,
@@ -669,6 +855,16 @@ pub struct TextData {
     pub vertical_align: TextVerticalAlign,
     pub auto_resize: bool,
     pub opacity: f64,
+}
+
+impl TextData {
+    pub fn width(&self) -> f64 {
+        self.layout.width()
+    }
+
+    pub fn height(&self) -> f64 {
+        self.layout.height()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -756,7 +952,7 @@ impl ElementData {
                 free_draw.x + free_draw.width,
                 free_draw.y + free_draw.height,
             ),
-            Self::Text(text) => centered_rect(text.center, text.width, text.height),
+            Self::Text(text) => centered_rect(text.center, text.width(), text.height()),
             Self::SerialNumber(serial) => {
                 centered_rect(serial.center, serial.diameter, serial.diameter)
             }
@@ -1202,8 +1398,8 @@ impl Document {
                 rectangle_kind: RectangleElementKind::Rectangle,
                 highlight_shape: HighlightShape::Rectangle,
                 center: text.center,
-                width: text.width,
-                height: text.height,
+                width: text.width(),
+                height: text.height(),
                 rotation: text.rotation,
                 fill: text.fill,
                 fill_style: text.fill_style,
@@ -1724,6 +1920,115 @@ fn element_data_arrow_relation_targets_changed(previous: &ElementData, next: &El
 mod tests {
 
     use super::*;
+
+    #[test]
+    fn text_layout_size_roundtrips_through_legacy_flat_keys() {
+        let layout = TextLayoutSize::with_content(80.0, 40.0, 44.0, 20.0);
+        let json = serde_json::to_value(layout).unwrap();
+        assert_eq!(json["width"], 80.0);
+        assert_eq!(json["height"], 40.0);
+        assert_eq!(json["content_width"], 44.0);
+        assert_eq!(json["content_height"], 20.0);
+        assert_eq!(
+            serde_json::from_value::<TextLayoutSize>(json).unwrap(),
+            layout
+        );
+
+        // Unmeasured ink keeps writing the legacy 0 keys so older readers and
+        // diff tools see the shape they always did.
+        let unmeasured = TextLayoutSize::new(80.0, 40.0);
+        let json = serde_json::to_value(unmeasured).unwrap();
+        assert_eq!(json["content_width"], 0.0);
+        assert_eq!(json["content_height"], 0.0);
+        assert_eq!(
+            serde_json::from_value::<TextLayoutSize>(json).unwrap(),
+            unmeasured
+        );
+    }
+
+    #[test]
+    fn text_layout_size_reads_legacy_documents() {
+        // Very old documents have no content keys at all.
+        let legacy = serde_json::json!({
+            "width": 80.0,
+            "height": 40.0,
+        });
+        assert_eq!(
+            serde_json::from_value::<TextLayoutSize>(legacy).unwrap(),
+            TextLayoutSize::new(80.0, 40.0)
+        );
+
+        // 0 ink reads as unmeasured; mixed or negative pairs are garbage and
+        // must not surface as a half-measurement.
+        for (content_width, content_height) in [(0.0, 0.0), (0.0, 20.0), (44.0, 0.0), (-1.0, 20.0)]
+        {
+            let json = serde_json::json!({
+                "width": 80.0,
+                "height": 40.0,
+                "content_width": content_width,
+                "content_height": content_height,
+            });
+            assert_eq!(
+                serde_json::from_value::<TextLayoutSize>(json)
+                    .unwrap()
+                    .ink(),
+                None,
+                "pair ({content_width}, {content_height}) must read as unmeasured"
+            );
+        }
+
+        // Non-finite reports cannot travel through JSON; they arrive through
+        // the constructors, which read them the same way.
+        assert_eq!(
+            TextLayoutSize::with_content(80.0, 40.0, f64::NAN, 20.0).ink(),
+            None
+        );
+    }
+
+    #[test]
+    fn text_data_flattens_layout_into_legacy_keys() {
+        let text = TextData {
+            layout: TextLayoutSize::with_content(80.0, 40.0, 44.0, 20.0),
+            ..TextData::default()
+        };
+        let json = serde_json::to_value(&text).unwrap();
+        assert_eq!(json["width"], 80.0);
+        assert_eq!(json["height"], 40.0);
+        assert_eq!(json["content_width"], 44.0);
+        assert_eq!(json["content_height"], 20.0);
+        assert_eq!(
+            serde_json::from_value::<TextData>(json).unwrap().layout,
+            text.layout
+        );
+    }
+
+    #[test]
+    fn ink_or_wrap_resolves_the_single_content_box() {
+        assert_eq!(
+            TextLayoutSize::with_content(80.0, 40.0, 44.0, 20.0).ink_or_wrap(),
+            (44.0, 20.0)
+        );
+        assert_eq!(TextLayoutSize::new(80.0, 40.0).ink_or_wrap(), (80.0, 40.0));
+    }
+
+    #[test]
+    fn text_element_data_roundtrips_through_the_tagged_enum() {
+        // The flattened layout sits inside an externally tagged enum; this is
+        // the shape persisted documents actually carry.
+        let element = ElementData::Text(TextData {
+            layout: TextLayoutSize::with_content(80.0, 40.0, 44.0, 20.0),
+            text: "note".to_owned(),
+            ..TextData::default()
+        });
+        let json = serde_json::to_value(&element).unwrap();
+        let variant = json.get("Text").expect("externally tagged variant");
+        assert_eq!(variant["width"], 80.0);
+        assert_eq!(variant["content_width"], 44.0);
+        assert_eq!(
+            serde_json::from_value::<ElementData>(json).unwrap(),
+            element
+        );
+    }
 
     #[test]
     fn reorder_inverse_restores_permuted_and_disjoint_layers() {

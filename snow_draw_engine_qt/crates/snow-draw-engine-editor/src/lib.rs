@@ -25,25 +25,25 @@ mod text;
 
 pub use api::{
     ActiveTextDraftPresentation, ActiveTextDraftTarget, ActiveTool, ArrowHandleKind,
-    ArrowHandleState, ArrowStyle, EditorPresentationState, EditorViewState,
-    EditorViewportState, ElementCreationPreview, FILTER_STYLE_PROPERTY_ALL,
-    FILTER_STYLE_PROPERTY_OPACITY, FILTER_STYLE_PROPERTY_STRENGTH,
-    FILTER_STYLE_PROPERTY_STROKE_WIDTH, FILTER_STYLE_PROPERTY_TYPE, FilterStyle, FreeDrawPreview,
-    HistoryState, PenFilterPreview, RectangleShapeStyle, SERIAL_NUMBER_STYLE_MIXED_COLOR,
-    SERIAL_NUMBER_STYLE_MIXED_FILL, SERIAL_NUMBER_STYLE_MIXED_FILL_STYLE,
-    SERIAL_NUMBER_STYLE_MIXED_FONT_FAMILY, SERIAL_NUMBER_STYLE_MIXED_FONT_SIZE,
-    SERIAL_NUMBER_STYLE_MIXED_NUMBER, SERIAL_NUMBER_STYLE_MIXED_OPACITY,
-    SERIAL_NUMBER_STYLE_MIXED_STROKE_STYLE, SERIAL_NUMBER_STYLE_MIXED_STROKE_WIDTH,
-    SERIAL_NUMBER_STYLE_MIXED_TYPE, SHAPE_STYLE_MIXED_ARROW_TYPE, SHAPE_STYLE_MIXED_CORNER_RADII,
-    SHAPE_STYLE_MIXED_END_ARROWHEAD, SHAPE_STYLE_MIXED_FILL, SHAPE_STYLE_MIXED_FILL_STYLE,
-    SHAPE_STYLE_MIXED_HIGHLIGHT_SHAPE, SHAPE_STYLE_MIXED_OPACITY, SHAPE_STYLE_MIXED_SHAPE,
-    SHAPE_STYLE_MIXED_START_ARROWHEAD, SHAPE_STYLE_MIXED_STROKE, SHAPE_STYLE_MIXED_STROKE_STYLE,
-    SHAPE_STYLE_MIXED_STROKE_WIDTH, SHAPE_STYLE_PROPERTY_ALL, SHAPE_STYLE_PROPERTY_ARROW,
-    SHAPE_STYLE_PROPERTY_ARROW_TYPE, SHAPE_STYLE_PROPERTY_CORNER_RADII,
-    SHAPE_STYLE_PROPERTY_END_ARROWHEAD, SHAPE_STYLE_PROPERTY_FILL, SHAPE_STYLE_PROPERTY_FILL_STYLE,
-    SHAPE_STYLE_PROPERTY_FREE_DRAW, SHAPE_STYLE_PROPERTY_HIGHLIGHT_SHAPE,
-    SHAPE_STYLE_PROPERTY_LINE, SHAPE_STYLE_PROPERTY_OPACITY, SHAPE_STYLE_PROPERTY_RECTANGLE,
-    SHAPE_STYLE_PROPERTY_SHAPE, SHAPE_STYLE_PROPERTY_START_ARROWHEAD, SHAPE_STYLE_PROPERTY_STROKE,
+    ArrowHandleState, ArrowStyle, EditorPresentationState, EditorViewState, EditorViewportState,
+    ElementCreationPreview, FILTER_STYLE_PROPERTY_ALL, FILTER_STYLE_PROPERTY_OPACITY,
+    FILTER_STYLE_PROPERTY_STRENGTH, FILTER_STYLE_PROPERTY_STROKE_WIDTH, FILTER_STYLE_PROPERTY_TYPE,
+    FilterStyle, FreeDrawPreview, HistoryState, PenFilterPreview, RectangleShapeStyle,
+    SERIAL_NUMBER_STYLE_MIXED_COLOR, SERIAL_NUMBER_STYLE_MIXED_FILL,
+    SERIAL_NUMBER_STYLE_MIXED_FILL_STYLE, SERIAL_NUMBER_STYLE_MIXED_FONT_FAMILY,
+    SERIAL_NUMBER_STYLE_MIXED_FONT_SIZE, SERIAL_NUMBER_STYLE_MIXED_NUMBER,
+    SERIAL_NUMBER_STYLE_MIXED_OPACITY, SERIAL_NUMBER_STYLE_MIXED_STROKE_STYLE,
+    SERIAL_NUMBER_STYLE_MIXED_STROKE_WIDTH, SERIAL_NUMBER_STYLE_MIXED_TYPE,
+    SHAPE_STYLE_MIXED_ARROW_TYPE, SHAPE_STYLE_MIXED_CORNER_RADII, SHAPE_STYLE_MIXED_END_ARROWHEAD,
+    SHAPE_STYLE_MIXED_FILL, SHAPE_STYLE_MIXED_FILL_STYLE, SHAPE_STYLE_MIXED_HIGHLIGHT_SHAPE,
+    SHAPE_STYLE_MIXED_OPACITY, SHAPE_STYLE_MIXED_SHAPE, SHAPE_STYLE_MIXED_START_ARROWHEAD,
+    SHAPE_STYLE_MIXED_STROKE, SHAPE_STYLE_MIXED_STROKE_STYLE, SHAPE_STYLE_MIXED_STROKE_WIDTH,
+    SHAPE_STYLE_PROPERTY_ALL, SHAPE_STYLE_PROPERTY_ARROW, SHAPE_STYLE_PROPERTY_ARROW_TYPE,
+    SHAPE_STYLE_PROPERTY_CORNER_RADII, SHAPE_STYLE_PROPERTY_END_ARROWHEAD,
+    SHAPE_STYLE_PROPERTY_FILL, SHAPE_STYLE_PROPERTY_FILL_STYLE, SHAPE_STYLE_PROPERTY_FREE_DRAW,
+    SHAPE_STYLE_PROPERTY_HIGHLIGHT_SHAPE, SHAPE_STYLE_PROPERTY_LINE, SHAPE_STYLE_PROPERTY_OPACITY,
+    SHAPE_STYLE_PROPERTY_RECTANGLE, SHAPE_STYLE_PROPERTY_SHAPE,
+    SHAPE_STYLE_PROPERTY_START_ARROWHEAD, SHAPE_STYLE_PROPERTY_STROKE,
     SHAPE_STYLE_PROPERTY_STROKE_STYLE, SHAPE_STYLE_PROPERTY_STROKE_WIDTH, SelectionArrowState,
     SelectionBounds, SelectionRectState, SerialNumberToolbarState, ShapeKind, ShapeStyle,
     ShapeStylePatch, StyleToolbarSource, StyleToolbarState, TEXT_STYLE_MIXED_COLOR,
@@ -58,7 +58,7 @@ pub use session::{
 };
 pub use state::DocumentSyncSnapshot;
 pub use text::{
-    SerialNumberStyle, TextCommitTarget, TextDraftCommit, TextLayoutOverride, TextPreviewFontSize,
+    SerialNumberStyle, TextCommitTarget, TextDraftCommit, TextLayoutOverride, TextPreviewPaint,
     TextResizeMeasurementRequest, TextStyle,
 };
 
@@ -73,7 +73,7 @@ use snow_draw_engine_core::{
 };
 use snow_draw_engine_document::{
     ArrowData, DEFAULT_ARROW_MAX_COORDINATE, ElementId, ElementKind, PenFilterData, RectangleData,
-    RectangleElementKind, SerialNumberData, TextData, TextLayoutSize, Transaction, arrow_bounds,
+    RectangleElementKind, SerialNumberData, TextData, Transaction, arrow_bounds,
     arrow_length as document_arrow_length, normalize_corner_radii, validate_arrow, validate_filter,
     validate_rectangle, validate_serial_number, validate_text, validate_text_layout_size,
 };
@@ -367,6 +367,7 @@ impl Editor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use snow_draw_engine_document::TextLayoutSize;
 
     fn selected_editor(active_tool: ActiveTool) -> Editor {
         let mut editor = Editor::new(EngineConfig::default()).unwrap();
@@ -460,8 +461,7 @@ mod tests {
             text: "unchanged".to_owned(),
             ..TextData::default()
         };
-        text.width = 120.0;
-        text.height = 30.0;
+        text.layout = TextLayoutSize::new(120.0, 30.0);
 
         let mut transaction = Transaction::new("insert text");
         transaction.insert_text(id, snow_draw_engine_document::ElementMeta::default(), text);
@@ -471,15 +471,7 @@ mod tests {
         editor.select_element(&document, id).unwrap();
 
         let command = editor
-            .update_text_element(
-                &document,
-                id,
-                "unchanged",
-                TextLayoutSize {
-                    width: 120.0,
-                    height: 30.0,
-                },
-            )
+            .update_text_element(&document, id, "unchanged", TextLayoutSize::new(120.0, 30.0))
             .unwrap();
 
         assert!(command.is_none());

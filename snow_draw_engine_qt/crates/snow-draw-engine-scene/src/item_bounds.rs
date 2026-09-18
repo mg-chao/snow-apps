@@ -1,4 +1,5 @@
 use crate::dirty_regions::clip_dirty_region;
+use crate::item_conversions::text_paint_geometry_from_display_item;
 use snow_draw_engine_core::{
     ColorRgba8, DrawRect, Point, SnapGuideAxis, SnapGuideKind,
     arrow::{ArrowType, Arrowhead, StrokeStyle},
@@ -10,6 +11,7 @@ use snow_draw_engine_display::{
 };
 use snow_draw_engine_document::{
     ArrowData, FillStyle, LinearElementKind, RectangleData, arrow_bounds, arrow_is_degenerate,
+    text_paint_bounds,
 };
 
 pub(crate) fn rect_bounds(rect: RectangleData) -> DrawRect {
@@ -127,35 +129,33 @@ fn draw_path_item_bounds(
 }
 
 fn draw_text_bounds(frame_view: FrameView, item: &TextDisplayItem) -> Option<DirtyRegion> {
-    const DIRTY_FILL_LINE_HEIGHT_PER_FONT_SIZE: f64 = 1.5;
-    const HORIZONTAL_FILL_PADDING_PER_FONT_SIZE: f64 = DIRTY_FILL_LINE_HEIGHT_PER_FONT_SIZE * 0.32;
-    const VERTICAL_FILL_PADDING_PER_FONT_SIZE: f64 = DIRTY_FILL_LINE_HEIGHT_PER_FONT_SIZE * 0.1;
-
-    let can_paint_text = !item.text.is_empty() && item.font_size > 0.0;
-    let stroke_outset = if can_paint_text && item.stroke.a != 0 {
-        item.stroke_width.max(0.0) / 2.0
-    } else {
-        0.0
-    };
-    let (fill_outset_x, fill_outset_y) = if item.fill.a != 0 && item.font_size > 0.0 {
-        (
-            item.font_size * HORIZONTAL_FILL_PADDING_PER_FONT_SIZE,
-            item.font_size * VERTICAL_FILL_PADDING_PER_FONT_SIZE,
-        )
-    } else {
-        (0.0, 0.0)
-    };
-    let outset_x = stroke_outset.max(fill_outset_x);
-    let outset_y = stroke_outset.max(fill_outset_y);
-    draw_rect_bounds(
+    // Consume the published paint bounds (aligned content box + fill padding +
+    // stroke halo). Reconstructing from the wrap rectangle would miss overflow
+    // ink and over-invalidate wrapped labels.
+    draw_document_bounds(
         frame_view,
-        item.center_x,
-        item.center_y,
-        item.width + outset_x * 2.0,
-        item.height + outset_y * 2.0,
-        item.rotation,
-        0.0,
+        text_paint_bounds(&text_paint_geometry_from_display_item(item)),
     )
+}
+
+fn draw_document_bounds(frame_view: FrameView, bounds: DrawRect) -> Option<DirtyRegion> {
+    if !bounds.min_x.is_finite()
+        || !bounds.min_y.is_finite()
+        || !bounds.max_x.is_finite()
+        || !bounds.max_y.is_finite()
+        || bounds.max_x <= bounds.min_x
+        || bounds.max_y <= bounds.min_y
+    {
+        return None;
+    }
+    let top_left = canvas_point_to_surface(frame_view, Point::new(bounds.min_x, bounds.min_y));
+    let bottom_right = canvas_point_to_surface(frame_view, Point::new(bounds.max_x, bounds.max_y));
+    Some(DirtyRegion::new(
+        top_left.x.min(bottom_right.x),
+        top_left.y.min(bottom_right.y),
+        top_left.x.max(bottom_right.x),
+        top_left.y.max(bottom_right.y),
+    ))
 }
 
 pub(crate) fn overlay_display_item_bounds(
@@ -543,6 +543,8 @@ mod tests {
             width: 100.0,
             height: 40.0,
             rotation: 0.0,
+            content_width: 100.0,
+            content_height: 40.0,
             text: "editing".to_owned(),
             color: ColorRgba8::default(),
             font_size: 20.0,
@@ -558,8 +560,30 @@ mod tests {
         }
     }
 
+    fn published_fill_outset(font_size: f64) -> (f64, f64) {
+        let line_height = font_size.max(1.0) * 1.2;
+        (line_height * 0.32, line_height * 0.1)
+    }
+
+    fn surface_dirty_for_canvas_rect(
+        min_x: f64,
+        min_y: f64,
+        max_x: f64,
+        max_y: f64,
+    ) -> DirtyRegion {
+        let view = frame_view();
+        let top_left = canvas_point_to_surface(view, Point::new(min_x, min_y));
+        let bottom_right = canvas_point_to_surface(view, Point::new(max_x, max_y));
+        DirtyRegion::new(
+            top_left.x.min(bottom_right.x),
+            top_left.y.min(bottom_right.y),
+            top_left.x.max(bottom_right.x),
+            top_left.y.max(bottom_right.y),
+        )
+    }
+
     #[test]
-    fn active_text_scene_bounds_include_fill_and_stroke_paint() {
+    fn active_text_scene_bounds_follow_published_paint_outset() {
         let mut item = text_item();
         item.fill = ColorRgba8 {
             r: 0xff,
@@ -567,26 +591,49 @@ mod tests {
             b: 0xff,
             a: 0xff,
         };
+        let (pad_x, pad_y) = published_fill_outset(item.font_size);
         let fill_bounds = draw_text_bounds(frame_view(), &item).unwrap();
-        assert!((fill_bounds.min_x - 440.4).abs() < 1e-9);
-        assert!((fill_bounds.max_x - 559.6).abs() < 1e-9);
-        assert!((fill_bounds.min_y - 477.0).abs() < 1e-9);
-        assert!((fill_bounds.max_y - 523.0).abs() < 1e-9);
+        assert_eq!(
+            fill_bounds,
+            surface_dirty_for_canvas_rect(
+                -item.width / 2.0 - pad_x,
+                -item.height / 2.0 - pad_y,
+                item.width / 2.0 + pad_x,
+                item.height / 2.0 + pad_y,
+            )
+        );
 
-        item.fill = ColorRgba8::default();
         item.stroke = ColorRgba8 {
             r: 0,
             g: 0,
             b: 0,
             a: 0xff,
         };
+        item.stroke_width = 40.0;
+        let stroked_fill_bounds = draw_text_bounds(frame_view(), &item).unwrap();
+        assert!(
+            stroked_fill_bounds.min_x < fill_bounds.min_x
+                && stroked_fill_bounds.max_y > fill_bounds.max_y,
+            "dominant stroke must widen dirty regions past the pill"
+        );
+        assert_eq!(
+            stroked_fill_bounds,
+            surface_dirty_for_canvas_rect(
+                -item.width / 2.0 - 20.0,
+                -item.height / 2.0 - 20.0,
+                item.width / 2.0 + 20.0,
+                item.height / 2.0 + 20.0,
+            )
+        );
+
+        item.fill = ColorRgba8::default();
         item.stroke_width = 10.0;
         let stroke_bounds = draw_text_bounds(frame_view(), &item).unwrap();
         assert_eq!(stroke_bounds, DirtyRegion::new(445.0, 475.0, 555.0, 525.0));
     }
 
     #[test]
-    fn large_text_scene_bounds_keep_proportional_fill_safety() {
+    fn large_text_scene_bounds_follow_published_fill_padding() {
         let mut item = text_item();
         item.font_size = 400.0;
         item.fill = ColorRgba8 {
@@ -595,10 +642,51 @@ mod tests {
             b: 0xff,
             a: 0xff,
         };
-
+        let (pad_x, pad_y) = published_fill_outset(item.font_size);
         let fill_bounds = draw_text_bounds(frame_view(), &item).unwrap();
+        assert_eq!(
+            fill_bounds,
+            surface_dirty_for_canvas_rect(
+                -item.width / 2.0 - pad_x,
+                -item.height / 2.0 - pad_y,
+                item.width / 2.0 + pad_x,
+                item.height / 2.0 + pad_y,
+            )
+        );
+    }
 
-        assert_eq!(fill_bounds, DirtyRegion::new(258.0, 420.0, 742.0, 580.0));
+    #[test]
+    fn wrapped_text_scene_bounds_follow_aligned_ink() {
+        let mut item = text_item();
+        item.width = 80.0;
+        item.height = 40.0;
+        item.content_width = 40.0;
+        item.content_height = 20.0;
+        item.horizontal_align = DisplayTextHorizontalAlign::Left;
+        item.vertical_align = DisplayTextVerticalAlign::Top;
+        item.fill = ColorRgba8 {
+            r: 0xff,
+            g: 0xff,
+            b: 0xff,
+            a: 0xff,
+        };
+        let (pad_x, pad_y) = published_fill_outset(item.font_size);
+        let fill_bounds = draw_text_bounds(frame_view(), &item).unwrap();
+        let ink_left = -item.width / 2.0;
+        let ink_top = -item.height / 2.0;
+        assert_eq!(
+            fill_bounds,
+            surface_dirty_for_canvas_rect(
+                ink_left - pad_x,
+                ink_top - pad_y,
+                ink_left + item.content_width + pad_x,
+                ink_top + item.content_height + pad_y,
+            )
+        );
+        assert!(
+            fill_bounds.max_x - fill_bounds.min_x < item.width + 2.0 * pad_x,
+            "dirty region must track the ink box, not the wrap rectangle"
+        );
     }
 
     #[test]

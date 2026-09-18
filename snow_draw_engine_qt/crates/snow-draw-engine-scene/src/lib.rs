@@ -33,10 +33,10 @@ use snow_draw_engine_display::{
     ViewportPatch, full_surface_dirty_region,
 };
 use snow_draw_engine_document::{
-    ArrowData, ElementData, ElementId, FillStyle, RectangleData, SerialNumberData, TextData,
-    TextHorizontalAlign, TextVerticalAlign, arrow_bounds, arrow_is_degenerate,
+    ArrowData, ElementData, ElementId, FillStyle, RectangleData, SerialNumberData,
+    SerialPaintGeometry, TextData, TextPaintGeometry, arrow_bounds, arrow_is_degenerate,
     arrowhead_render_primitives, filter_bounds, resolve_serial_number_stroke_width,
-    resolve_serial_number_text_connection, serial_number_bounds, serial_number_with_selection_rect,
+    resolve_serial_paint_text_connection, serial_number_bounds, serial_number_with_selection_rect,
     text_bounds,
 };
 use snow_draw_engine_editor::{
@@ -1292,12 +1292,76 @@ fn build_layer_patch<T: Clone + PartialEq>(
     )
 }
 
+/// Uncropped Smart Erase presentation for asynchronous computation and export snapshots.
+pub fn smart_erase_items(
+    model: &DocumentModel,
+    presentation: &EditorPresentationState,
+) -> Vec<SceneDisplayItem> {
+    use snow_draw_engine_document::{CanvasFilterType, ElementData};
+    use snow_draw_engine_editor::ElementCreationPreview;
+    let mut items = Vec::new();
+    for id in model.document().paint_order() {
+        let Ok(element) = model.element(*id) else {
+            continue;
+        };
+        if !element.data.is_smart_erase() || !element.meta.visible {
+            continue;
+        }
+        let mut item = if let Some(preview) =
+            presentation.preview_elements.iter().find(|p| p.id == *id)
+        {
+            let Some((mut item, _)) =
+                item_conversions::scene_item_from_selection_preview(model, *id, preview.rect, None)
+            else {
+                continue;
+            };
+            if let SceneDisplayItem::Filter(f) = &mut item {
+                f.filter.render_phase = 2;
+            }
+            item
+        } else {
+            match &element.data {
+                ElementData::Filter(f) => item_conversions::scene_item_from_filter(*id, *f),
+                ElementData::PenFilter(f) => {
+                    item_conversions::scene_item_from_pen_filter(*id, f.clone())
+                }
+                _ => continue,
+            }
+        };
+        if let SceneDisplayItem::Filter(f) = &mut item {
+            f.filter.strength = 0.5;
+        }
+        items.push(item);
+    }
+    let id = model.peek_next_element_id();
+    let creation = match presentation.creation_preview.as_ref() {
+        Some(ElementCreationPreview::Filter(f))
+            if f.filter_type == CanvasFilterType::SmartErase =>
+        {
+            Some(item_conversions::scene_item_from_filter(id, *f))
+        }
+        Some(ElementCreationPreview::PenFilter(f))
+            if f.filter_type == CanvasFilterType::SmartErase =>
+        {
+            item_conversions::scene_item_from_pen_filter_preview(id, f).map(|(item, _)| item)
+        }
+        _ => None,
+    };
+    if let Some(mut item) = creation {
+        if let SceneDisplayItem::Filter(f) = &mut item {
+            f.filter.render_phase = 1;
+        }
+        items.push(item);
+    }
+    items
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use snow_draw_engine_core::{Camera, PathCommand, PathGeometry, SurfaceSize};
     use snow_draw_engine_document::{
-        ElementMeta, Transaction, WatermarkConfig, WatermarkTemplateApplicationTime,
+        ElementMeta, TextLayoutSize, Transaction, WatermarkConfig, WatermarkTemplateApplicationTime,
     };
 
     fn frame_view() -> FrameView {
@@ -1328,8 +1392,7 @@ mod tests {
         };
         let text = TextData {
             center: text_center,
-            width: 40.0,
-            height: 20.0,
+            layout: TextLayoutSize::new(40.0, 20.0),
             ..TextData::default()
         };
         let mut transaction = Transaction::new("setup bound serial");
@@ -2598,68 +2661,4 @@ mod tests {
             dirty_region_through_filters(&[rectangle, filter.clone(), filter], 0, base, frame);
         assert_eq!(stacked, one);
     }
-}
-
-/// Uncropped Smart Erase presentation for asynchronous computation and export snapshots.
-pub fn smart_erase_items(
-    model: &DocumentModel,
-    presentation: &EditorPresentationState,
-) -> Vec<SceneDisplayItem> {
-    use snow_draw_engine_document::{CanvasFilterType, ElementData};
-    use snow_draw_engine_editor::ElementCreationPreview;
-    let mut items = Vec::new();
-    for id in model.document().paint_order() {
-        let Ok(element) = model.element(*id) else {
-            continue;
-        };
-        if !element.data.is_smart_erase() || !element.meta.visible {
-            continue;
-        }
-        let mut item = if let Some(preview) =
-            presentation.preview_elements.iter().find(|p| p.id == *id)
-        {
-            let Some((mut item, _)) =
-                item_conversions::scene_item_from_selection_preview(model, *id, preview.rect, None)
-            else {
-                continue;
-            };
-            if let SceneDisplayItem::Filter(f) = &mut item {
-                f.filter.render_phase = 2;
-            }
-            item
-        } else {
-            match &element.data {
-                ElementData::Filter(f) => item_conversions::scene_item_from_filter(*id, *f),
-                ElementData::PenFilter(f) => {
-                    item_conversions::scene_item_from_pen_filter(*id, f.clone())
-                }
-                _ => continue,
-            }
-        };
-        if let SceneDisplayItem::Filter(f) = &mut item {
-            f.filter.strength = 0.5;
-        }
-        items.push(item);
-    }
-    let id = model.peek_next_element_id();
-    let creation = match presentation.creation_preview.as_ref() {
-        Some(ElementCreationPreview::Filter(f))
-            if f.filter_type == CanvasFilterType::SmartErase =>
-        {
-            Some(item_conversions::scene_item_from_filter(id, *f))
-        }
-        Some(ElementCreationPreview::PenFilter(f))
-            if f.filter_type == CanvasFilterType::SmartErase =>
-        {
-            item_conversions::scene_item_from_pen_filter_preview(id, f).map(|(item, _)| item)
-        }
-        _ => None,
-    };
-    if let Some(mut item) = creation {
-        if let SceneDisplayItem::Filter(f) = &mut item {
-            f.filter.render_phase = 1;
-        }
-        items.push(item);
-    }
-    items
 }

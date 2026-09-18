@@ -10,7 +10,7 @@ use snow_draw_engine_document::{
 };
 use std::sync::Arc;
 
-use crate::text::{SerialNumberStyle, TextPreviewFontSize, TextStyle};
+use crate::text::{SerialNumberStyle, TextPreviewPaint, TextStyle};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActiveTool {
@@ -339,7 +339,7 @@ pub struct EditorPresentationState {
     pub arrow_text_previews: Vec<(ElementId, TextData)>,
     pub preview_arrows: Vec<SelectionArrowState>,
     pub preview_elements: Vec<SelectionRectState>,
-    pub preview_text_font_sizes: Vec<TextPreviewFontSize>,
+    pub preview_text_paints: Vec<TextPreviewPaint>,
     pub auto_filter_highlights: Vec<RectangleData>,
     pub marquee: Option<RectangleData>,
     pub marquee_candidate_elements: Vec<SelectionRectState>,
@@ -474,8 +474,8 @@ impl ActiveTextDraftPresentation {
             rectangle_kind: snow_draw_engine_document::RectangleElementKind::Rectangle,
             highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
             center: self.text.center,
-            width: self.text.width,
-            height: self.text.height,
+            width: self.text.width(),
+            height: self.text.height(),
             rotation: self.text.rotation,
             fill: self.text.fill,
             fill_style: self.text.fill_style,
@@ -490,8 +490,7 @@ impl ActiveTextDraftPresentation {
     pub fn with_rect(&self, rect: RectangleData) -> Self {
         let mut next = self.clone();
         next.text.center = rect.center;
-        next.text.width = rect.width;
-        next.text.height = rect.height;
+        next.text.layout = next.text.layout.with_wrap(rect.width, rect.height);
         next.text.rotation = rect.rotation;
         next.text.corner_radii = rect.corner_radii;
         next

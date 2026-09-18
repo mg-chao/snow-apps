@@ -218,10 +218,9 @@ mod tests {
     fn test_text(center: Point<f64>) -> TextData {
         TextData {
             center,
-            width: 100.0,
-            height: 100.0,
             text: "top".to_owned(),
             auto_resize: false,
+            layout: snow_draw_engine_document::TextLayoutSize::new(100.0, 100.0),
             ..TextData::default()
         }
     }

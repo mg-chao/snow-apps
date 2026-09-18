@@ -1,5 +1,6 @@
 use super::*;
 use snow_draw_engine_display::SceneDisplayItem;
+use snow_draw_engine_document::TextLayoutSize;
 use snow_draw_engine_interaction::{
     KeyCode, KeyEvent, KeyEventType, Modifiers, PointerButton, PointerButtons, PointerDevice,
     PointerEvent, PointerEventType,
@@ -416,8 +417,7 @@ fn alt_drag_serial_number_copies_bound_text_and_connector() {
         TextData {
             center: Point::new(130.0, 0.0),
             text: "bound".to_owned(),
-            width: 80.0,
-            height: 24.0,
+            layout: TextLayoutSize::new(80.0, 24.0),
             ..TextData::default()
         },
     );
@@ -683,8 +683,7 @@ fn alt_drag_unselected_text_copies_without_starting_text_editing() {
         let text = TextData {
             center: Point::new(250.0, 150.0),
             text: "copy this text".to_owned(),
-            width: 100.0,
-            height: 30.0,
+            layout: TextLayoutSize::new(100.0, 30.0),
             ..TextData::default()
         };
         let mut transaction = Transaction::new("insert text");

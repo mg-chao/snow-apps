@@ -302,6 +302,8 @@ pub(crate) fn snow_scene_display_item_from_rust(
             out.corner_radii = item.corner_radii.into();
             out.font_size = item.font_size;
             out.opacity = item.opacity;
+            out.content_width = item.content_width;
+            out.content_height = item.content_height;
             out.text_horizontal_align = snow_text_horizontal_align_from_rust(item.horizontal_align);
             out.text_vertical_align = snow_text_vertical_align_from_rust(item.vertical_align);
             out.fill_style = snow_fill_style_from_rust(item.fill_style);
@@ -604,7 +606,7 @@ mod tests {
 
     #[test]
     fn compact_display_views_stay_below_the_abi_size_budget() {
-        assert_eq!(std::mem::size_of::<SnowSceneDisplayItem>(), 328);
+        assert_eq!(std::mem::size_of::<SnowSceneDisplayItem>(), 344);
         assert!(std::mem::size_of::<SnowOverlayDisplayItem>() <= 384);
     }
 

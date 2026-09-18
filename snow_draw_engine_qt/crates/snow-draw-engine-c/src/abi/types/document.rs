@@ -55,6 +55,12 @@ pub struct SnowTextLayoutSize {
     pub width: f64,
     /// Exact host-renderer measured text height.
     pub height: f64,
+    /// Measured painted ink width (widest line); 0 means "not measured" and
+    /// consumers fall back to `width`.
+    pub content_width: f64,
+    /// Measured painted ink height; 0 means "not measured" and consumers fall
+    /// back to `height`.
+    pub content_height: f64,
 }
 
 #[repr(C)]
@@ -116,6 +122,9 @@ pub struct SnowActiveTextDraftPresentation {
     pub width: f64,
     pub height: f64,
     pub rotation: f64,
+    /* Painted ink box of the draft preview; 0 means "not measured". */
+    pub content_width: f64,
+    pub content_height: f64,
     pub text_utf8: *const std::ffi::c_char,
     pub text_utf8_len: u32,
     pub reserved1: u32,
@@ -135,6 +144,8 @@ impl Default for SnowActiveTextDraftPresentation {
             width: 0.0,
             height: 0.0,
             rotation: 0.0,
+            content_width: 0.0,
+            content_height: 0.0,
             text_utf8: std::ptr::null(),
             text_utf8_len: 0,
             reserved1: 0,

@@ -2,7 +2,8 @@ use super::*;
 use snow_draw_engine_core::arrow::{ArrowEndpointEdge, ArrowType, StrokeStyle};
 use snow_draw_engine_document::{
     ElementMeta, TextLayoutSize, arrow_is_degenerate, resolve_serial_number_data_diameter,
-    text_with_auto_resize_layout, validate_text_layout_size,
+    text_with_auto_resize_layout, text_with_measured_ink, text_with_measured_layout,
+    validate_text_layout_size,
 };
 
 impl Editor {
@@ -173,10 +174,13 @@ impl Editor {
             text: text_content,
             ..self.state.default_text.clone()
         };
-        if text.auto_resize {
-            text.width = layout.width;
-            text.height = layout.height;
-        }
+        // Fixed-width creation keeps the configured wrap rectangle; the
+        // measured ink joins the element either way.
+        text = if text.auto_resize {
+            text_with_measured_layout(&text, layout)?
+        } else {
+            text_with_measured_ink(&text, layout)?
+        };
         validate_text(&text)?;
         let id = document.peek_next_element_id();
         let mut transaction = Transaction::new("create text");
@@ -913,13 +917,11 @@ impl Editor {
         {
             let mut serial = document.serial_number(state.serial_id)?.clone();
             let text_id = document.peek_next_element_id();
-            let text = TextData {
-                center: current_canvas,
-                font_size: serial.font_size,
-                height: self.state.default_text.height * serial.font_size
-                    / self.state.default_text.font_size,
-                ..self.state.default_text.clone()
-            };
+            let mut text = self.state.default_text.clone();
+            text.center = current_canvas;
+            text.font_size = serial.font_size;
+            let height = text.height() * serial.font_size / self.state.default_text.font_size;
+            text.layout = text.layout.with_wrap(text.width(), height);
             validate_text(&text)?;
             serial.text_element_id = Some(text_id);
             let mut transaction = Transaction::new("create serial number text");

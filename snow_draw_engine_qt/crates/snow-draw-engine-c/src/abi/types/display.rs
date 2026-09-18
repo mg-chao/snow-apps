@@ -79,6 +79,41 @@ pub struct SnowFilterRenderSpec {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SnowTextPaintOutset {
+    pub x: f64,
+    pub y: f64,
+}
+
+/// Conservative document-space ink bounds of a text item: the aligned content
+/// box expanded by the fill padding and the text stroke halo. Host dirty
+/// regions and visibility culling must consume this instead of reconstructing
+/// the arithmetic.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SnowTextPaintBounds {
+    pub min_x: f64,
+    pub min_y: f64,
+    pub max_x: f64,
+    pub max_y: f64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SnowSerialTextConnection {
+    pub start_x: f64,
+    pub start_y: f64,
+    pub end_x: f64,
+    pub end_y: f64,
+    pub baseline_start_x: f64,
+    pub baseline_start_y: f64,
+    pub baseline_end_x: f64,
+    pub baseline_end_y: f64,
+    pub has_baseline: u8,
+    pub reserved: [u8; 7],
+}
+
+#[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SnowSceneDisplayItem {
     pub kind: SnowSceneDisplayItemKind,
@@ -109,6 +144,11 @@ pub struct SnowSceneDisplayItem {
     pub arrowhead_primitives: *const SnowArrowheadPrimitive,
     pub font_size: f64,
     pub opacity: f64,
+    /* Text items: painted ink box (widest line × laid-out height), resolved to
+    at least the item size. Serial connectors anchor to this box aligned
+    inside the item rectangle, never to the wrap rectangle. */
+    pub content_width: f64,
+    pub content_height: f64,
     pub serial_number: i64,
     pub text_utf8_len: u32,
     pub text_horizontal_align: SnowTextHorizontalAlign,
@@ -260,6 +300,8 @@ impl Default for SnowSceneDisplayItem {
             arrowhead_primitives: std::ptr::null(),
             font_size: 0.0,
             opacity: 1.0,
+            content_width: 0.0,
+            content_height: 0.0,
             serial_number: 0,
             text_utf8_len: 0,
             text_horizontal_align: SnowTextHorizontalAlign::Left,
@@ -338,7 +380,7 @@ mod tests {
         let scene_size = std::mem::size_of::<SnowSceneDisplayItem>();
         let overlay_size = std::mem::size_of::<SnowOverlayDisplayItem>();
         assert_eq!(
-            scene_size, 328,
+            scene_size, 344,
             "scene display ABI layout must remain stable"
         );
         assert_eq!(

@@ -457,10 +457,12 @@ pub(crate) fn snow_element_id_to_rust(id: SnowElementId) -> ElementId {
 
 impl From<SnowTextLayoutSize> for TextLayoutSize {
     fn from(value: SnowTextLayoutSize) -> Self {
-        Self {
-            width: value.width,
-            height: value.height,
-        }
+        Self::with_content(
+            value.width,
+            value.height,
+            value.content_width,
+            value.content_height,
+        )
     }
 }
 
@@ -755,17 +757,21 @@ impl From<TextStyle> for SnowTextStyle {
     }
 }
 
+pub(crate) fn snow_serial_number_type_to_rust(value: SnowSerialNumberType) -> SerialNumberType {
+    match value {
+        SnowSerialNumberType::OutlinedCircle => SerialNumberType::OutlinedCircle,
+        SnowSerialNumberType::SolidCircle => SerialNumberType::SolidCircle,
+        SnowSerialNumberType::OutlinedSquare => SerialNumberType::OutlinedSquare,
+        SnowSerialNumberType::SolidSquare => SerialNumberType::SolidSquare,
+        SnowSerialNumberType::Circle => SerialNumberType::Circle,
+    }
+}
+
 impl From<SnowSerialNumberStyle> for SerialNumberStyle {
     fn from(value: SnowSerialNumberStyle) -> Self {
         Self {
             number: value.number.max(0),
-            serial_number_type: match value.serial_number_type {
-                SnowSerialNumberType::OutlinedCircle => SerialNumberType::OutlinedCircle,
-                SnowSerialNumberType::SolidCircle => SerialNumberType::SolidCircle,
-                SnowSerialNumberType::OutlinedSquare => SerialNumberType::OutlinedSquare,
-                SnowSerialNumberType::SolidSquare => SerialNumberType::SolidSquare,
-                SnowSerialNumberType::Circle => SerialNumberType::Circle,
-            },
+            serial_number_type: snow_serial_number_type_to_rust(value.serial_number_type),
             color: value.color.into(),
             fill: value.fill.into(),
             fill_style: snow_fill_style_to_rust(value.fill_style),

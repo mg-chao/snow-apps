@@ -5,10 +5,11 @@ use snow_draw_engine_display::{
     DisplayFilterType, DisplaySerialNumberType, FilterDisplayItem, FilterRenderSpec,
 };
 use snow_draw_engine_document::{
-    CanvasFilterType, FilterData, FreeDrawData, PenFilterData, SerialNumberType, filter_bounds,
+    CanvasFilterType, FilterData, FreeDrawData, PenFilterData, SerialNumberType,
+    SerialPaintGeometry, TextHorizontalAlign, TextPaintGeometry, TextVerticalAlign, filter_bounds,
     pen_filter_bounds, resolve_serial_number_square_corner_radius,
 };
-use snow_draw_engine_editor::{FreeDrawPreview, PenFilterPreview};
+use snow_draw_engine_editor::{FreeDrawPreview, PenFilterPreview, TextPreviewPaint};
 
 pub(crate) fn scene_item_from_rect(id: ElementId, rect: RectangleData) -> SceneDisplayItem {
     SceneDisplayItem::Rectangle(RectangleDisplayItem {
@@ -221,13 +222,16 @@ fn arrowhead_display_dash_mode(dash_mode: ArrowheadDashMode) -> ArrowheadDisplay
 }
 
 pub(crate) fn scene_item_from_text(id: ElementId, text: TextData) -> SceneDisplayItem {
+    let (content_width, content_height) = text.layout.ink_or_wrap();
     SceneDisplayItem::Text(TextDisplayItem {
         id: display_item_id(id),
         center_x: text.center.x,
         center_y: text.center.y,
-        width: text.width,
-        height: text.height,
+        width: text.width(),
+        height: text.height(),
         rotation: text.rotation,
+        content_width,
+        content_height,
         text: text.text,
         color: text.color,
         font_size: text.font_size,
@@ -287,9 +291,11 @@ pub(crate) fn scene_item_with_serial_bound_text(
     item
 }
 
-pub(crate) fn scene_item_from_serial_connector(
+pub(crate) fn scene_item_from_serial_connector_paint(
     id: ElementId,
-    serial: &SerialNumberData,
+    stroke: ColorRgba8,
+    stroke_width: f64,
+    opacity: f64,
     connection: snow_draw_engine_document::SerialNumberTextConnection,
 ) -> SceneDisplayItem {
     let baseline_start = connection.text_baseline_start.unwrap_or_default();
@@ -306,9 +312,9 @@ pub(crate) fn scene_item_from_serial_connector(
         baseline_end_y: baseline_end.y,
         has_baseline: connection.text_baseline_start.is_some()
             && connection.text_baseline_end.is_some(),
-        stroke: serial.color,
-        stroke_width: resolve_serial_number_stroke_width(serial),
-        opacity: serial.opacity,
+        stroke,
+        stroke_width,
+        opacity,
     })
 }
 
@@ -336,11 +342,106 @@ pub(crate) fn serial_connector_bounds(
     )
 }
 
+/// Presented-text geometry for serial connectors. Connectors must read this
+/// from the emitted display item, never from a parallel reconstruction of the
+/// document element, so drafts and live resize previews cannot drift from what
+/// the frame paints.
+pub(crate) fn text_paint_geometry_from_display_item(text: &TextDisplayItem) -> TextPaintGeometry {
+    TextPaintGeometry {
+        center: Point::new(text.center_x, text.center_y),
+        width: text.width,
+        height: text.height,
+        rotation: text.rotation,
+        content_width: text.content_width,
+        content_height: text.content_height,
+        horizontal_align: document_text_horizontal_align(text.horizontal_align),
+        vertical_align: document_text_vertical_align(text.vertical_align),
+        has_text: !text.text.is_empty(),
+        font_size: text.font_size,
+        fill: text.fill,
+        stroke: text.stroke,
+        stroke_width: text.stroke_width,
+    }
+}
+
+fn document_text_horizontal_align(value: DisplayTextHorizontalAlign) -> TextHorizontalAlign {
+    match value {
+        DisplayTextHorizontalAlign::Left => TextHorizontalAlign::Left,
+        DisplayTextHorizontalAlign::Center => TextHorizontalAlign::Center,
+        DisplayTextHorizontalAlign::Right => TextHorizontalAlign::Right,
+    }
+}
+
+fn document_text_vertical_align(value: DisplayTextVerticalAlign) -> TextVerticalAlign {
+    match value {
+        DisplayTextVerticalAlign::Top => TextVerticalAlign::Top,
+        DisplayTextVerticalAlign::Center => TextVerticalAlign::Center,
+        DisplayTextVerticalAlign::Bottom => TextVerticalAlign::Bottom,
+    }
+}
+
+pub(crate) fn serial_paint_geometry_from_display_item(
+    serial: &SerialNumberDisplayItem,
+) -> SerialPaintGeometry {
+    SerialPaintGeometry {
+        center: Point::new(serial.center_x, serial.center_y),
+        diameter: serial.diameter,
+        rotation: serial.rotation,
+        serial_number_type: document_serial_number_type(serial.serial_number_type),
+        stroke_width: serial.stroke_width,
+        corner_radius: serial.corner_radii.top_left,
+    }
+}
+
+fn document_serial_number_type(serial_number_type: DisplaySerialNumberType) -> SerialNumberType {
+    match serial_number_type {
+        DisplaySerialNumberType::OutlinedCircle => SerialNumberType::OutlinedCircle,
+        DisplaySerialNumberType::SolidCircle => SerialNumberType::SolidCircle,
+        DisplaySerialNumberType::OutlinedSquare => SerialNumberType::OutlinedSquare,
+        DisplaySerialNumberType::SolidSquare => SerialNumberType::SolidSquare,
+        DisplaySerialNumberType::Circle => SerialNumberType::Circle,
+    }
+}
+
+/// The one place that turns a committed text plus its selection preview into
+/// the text geometry the frame presents. Serial connectors then derive from
+/// the emitted display item so they track that same preview exactly.
+pub(crate) fn text_with_selection_preview(
+    text: &TextData,
+    rect: &RectangleData,
+    paint: Option<TextPreviewPaint>,
+) -> TextData {
+    let mut preview = text.clone();
+    preview.center = rect.center;
+    preview.layout = preview.layout.with_wrap(rect.width, rect.height);
+    preview.rotation = rect.rotation;
+    preview.corner_radii = rect.corner_radii;
+    preview.opacity = rect.opacity;
+    let Some(paint) = paint else {
+        return preview;
+    };
+    if let Some(font_size) = paint.font_size {
+        if text.font_size > f64::EPSILON && font_size.is_finite() && font_size > f64::EPSILON {
+            // Until the host's exact re-measurement lands, keep the committed
+            // ink box proportional to the preview font.
+            let scale = font_size / text.font_size;
+            preview.layout = preview.layout.scaled_ink(scale);
+        }
+        preview.font_size = font_size;
+    }
+    // Host-measured ink overwrites the font-scaled approximation, including
+    // width-only wraps that do not change the font at all.
+    if let Some(ink) = paint.ink {
+        preview.layout = preview.layout.with_ink(Some(ink));
+    }
+    preview
+}
+
 pub(crate) fn scene_item_from_selection_preview(
     model: &DocumentModel,
     id: ElementId,
     rect: RectangleData,
-    text_font_size: Option<f64>,
+    text_paint: Option<TextPreviewPaint>,
 ) -> Option<(SceneDisplayItem, DrawRect)> {
     match &model.element(id).ok()?.data {
         ElementData::Rectangle(committed) if !committed.is_spotlight() => {
@@ -371,16 +472,7 @@ pub(crate) fn scene_item_from_selection_preview(
             Some((scene_item_from_pen_filter(id, preview), bounds))
         }
         ElementData::Text(text) => {
-            let mut preview = text.clone();
-            preview.center = rect.center;
-            preview.width = rect.width;
-            preview.height = rect.height;
-            preview.rotation = rect.rotation;
-            preview.corner_radii = rect.corner_radii;
-            preview.opacity = rect.opacity;
-            if let Some(font_size) = text_font_size {
-                preview.font_size = font_size;
-            }
+            let preview = text_with_selection_preview(text, &rect, text_paint);
             Some((
                 scene_item_from_text(id, preview.clone()),
                 text_bounds(&preview),
@@ -660,7 +752,9 @@ pub(crate) fn display_item_id(id: ElementId) -> DisplayItemId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use snow_draw_engine_document::{ElementMeta, Transaction, pen_filter_rect_proxy};
+    use snow_draw_engine_document::{
+        ElementMeta, InkBox, TextLayoutSize, Transaction, pen_filter_rect_proxy, text_paint_bounds,
+    };
     use snow_draw_engine_model::DocumentModel;
 
     #[test]
@@ -689,6 +783,136 @@ mod tests {
 
         assert_eq!((item.width, item.height), (filter.width, filter.height));
         assert_eq!(bounds, pen_filter_bounds(&filter));
+    }
+
+    #[test]
+    fn serial_connector_text_geometry_roundtrips_paint_bounds() {
+        let text = TextData {
+            center: Point::new(130.0, 10.0),
+            text: "note".to_owned(),
+            font_size: 40.0,
+            fill: ColorRgba8 {
+                r: 0xff,
+                g: 0xff,
+                b: 0xff,
+                a: 0xff,
+            },
+            layout: TextLayoutSize::new(80.0, 40.0),
+            ..TextData::default()
+        };
+        let SceneDisplayItem::Text(display) = scene_item_from_text(
+            ElementId {
+                index: 1,
+                generation: 1,
+            },
+            text.clone(),
+        ) else {
+            panic!("expected a text display item");
+        };
+
+        assert_eq!(
+            text_paint_bounds(&text_paint_geometry_from_display_item(&display)),
+            text_bounds(&text)
+        );
+    }
+
+    #[test]
+    fn serial_display_item_preserves_resolved_stroke_for_connectors() {
+        let serial = SerialNumberData {
+            center: Point::new(0.0, 0.0),
+            diameter: 24.0,
+            font_size: 40.0,
+            stroke_width: 2.0,
+            ..SerialNumberData::default()
+        };
+        let SceneDisplayItem::SerialNumber(display) = scene_item_from_serial_number(
+            ElementId {
+                index: 0,
+                generation: 1,
+            },
+            serial.clone(),
+            None,
+        ) else {
+            panic!("expected a serial display item");
+        };
+
+        let paint = serial_paint_geometry_from_display_item(&display);
+        assert_eq!(paint, SerialPaintGeometry::from_serial(&serial));
+        assert!((paint.stroke_width - 4.0).abs() < 1e-9);
+    }
+
+    fn preview_rect(center: Point<f64>, width: f64, height: f64) -> RectangleData {
+        RectangleData {
+            rectangle_kind: snow_draw_engine_document::RectangleElementKind::Rectangle,
+            highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
+            center,
+            width,
+            height,
+            rotation: 0.0,
+            fill: ColorRgba8::default(),
+            fill_style: FillStyle::Solid,
+            stroke: ColorRgba8::default(),
+            stroke_width: 0.0,
+            stroke_style: StrokeStyle::Solid,
+            corner_radii: CornerRadii::default(),
+            opacity: 1.0,
+        }
+    }
+
+    #[test]
+    fn selection_preview_applies_measured_ink_without_scaling_font() {
+        let text = TextData {
+            font_size: 20.0,
+            auto_resize: false,
+            layout: TextLayoutSize::with_content(80.0, 20.0, 80.0, 20.0),
+            ..TextData::default()
+        };
+        let preview = text_with_selection_preview(
+            &text,
+            &preview_rect(Point::new(0.0, 10.0), 80.0, 40.0),
+            Some(TextPreviewPaint {
+                id: ElementId {
+                    index: 1,
+                    generation: 1,
+                },
+                font_size: None,
+                ink: InkBox::new(44.0, 40.0),
+            }),
+        );
+        assert_eq!(
+            preview.font_size, 20.0,
+            "width-only wrap must keep the font"
+        );
+        assert_eq!(preview.width(), 80.0);
+        assert_eq!(preview.height(), 40.0);
+        assert_eq!(preview.layout.ink(), InkBox::new(44.0, 40.0));
+    }
+
+    #[test]
+    fn selection_preview_measured_ink_replaces_font_scaled_approximation() {
+        let text = TextData {
+            font_size: 20.0,
+            layout: TextLayoutSize::with_content(80.0, 20.0, 80.0, 20.0),
+            ..TextData::default()
+        };
+        let preview = text_with_selection_preview(
+            &text,
+            &preview_rect(Point::new(0.0, 10.0), 80.0, 40.0),
+            Some(TextPreviewPaint {
+                id: ElementId {
+                    index: 1,
+                    generation: 1,
+                },
+                font_size: Some(40.0),
+                ink: InkBox::new(90.0, 38.0),
+            }),
+        );
+        assert_eq!(preview.font_size, 40.0);
+        assert_eq!(
+            preview.layout.ink(),
+            InkBox::new(90.0, 38.0),
+            "host-measured ink must replace the font-scaled 160-wide approximation"
+        );
     }
 
     #[test]

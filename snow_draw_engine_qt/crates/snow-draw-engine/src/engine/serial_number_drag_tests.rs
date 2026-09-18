@@ -253,10 +253,7 @@ fn serial_number_drag_applies_measured_label_layout_to_preview_and_release() {
             .apply_serial_number_label_layout(
                 viewport,
                 text_id,
-                snow_draw_engine_document::TextLayoutSize {
-                    width: 31.0,
-                    height: 36.0,
-                }
+                snow_draw_engine_document::TextLayoutSize::new(31.0, 36.0)
             )
             .unwrap()
             .changed_viewports,
@@ -308,12 +305,16 @@ fn serial_number_drag_applies_measured_label_layout_to_preview_and_release() {
     );
     let placed = engine.model.text(text_id).unwrap();
     assert_eq!(placed.center, Point::new(-150.0, -80.0));
-    assert_eq!(placed.width, 31.0, "release persists the measured layout");
-    assert_eq!(placed.height, 36.0);
+    assert_eq!(placed.width(), 31.0, "release persists the measured layout");
+    assert_eq!(placed.height(), 36.0);
 }
 
 #[test]
 fn serial_number_release_without_move_still_attaches_text() {
+    // "Without move" means no intermediate Move events: the host coalesced the
+    // drag, so the release position must itself attach and place the label
+    // (creation_workflow.rs:962). A same-point release is a plain click and
+    // intentionally attaches nothing, as the jitter test asserts.
     let (mut engine, viewport) = setup(1.0);
     pointer(
         &mut engine,
@@ -345,6 +346,123 @@ fn serial_number_release_without_move_still_attaches_text() {
         engine.take_text_edit_request(viewport).unwrap(),
         Some(text_id)
     );
+}
+
+#[test]
+fn serial_connector_tracks_ink_committed_with_edited_label() {
+    use snow_draw_engine_document::{
+        SerialPaintGeometry, TextPaintGeometry, resolve_serial_paint_text_connection,
+    };
+    use snow_draw_engine_editor::{TextCommitTarget, TextDraftCommit};
+
+    let (mut engine, viewport) = setup(1.0);
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Down,
+        400.0,
+        300.0,
+        false,
+    );
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Move,
+        450.0,
+        350.0,
+        false,
+    );
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Up,
+        450.0,
+        350.0,
+        false,
+    );
+    let serial_id = engine.model.paint_order()[0];
+    let serial = engine.model.serial_number(serial_id).unwrap().clone();
+    let text_id = serial.text_element_id.unwrap();
+
+    // The host exits label editing and commits the session with the layout it
+    // re-measured for the edited text, as SnowCanvasTextEditorSession::finish
+    // does: layout rectangle plus painted ink box.
+    engine
+        .select_element_with_viewport_changes(viewport, text_id)
+        .unwrap();
+    let style = engine.editor.text_style(&engine.model);
+    let center = engine.model.text(text_id).unwrap().center;
+    engine
+        .commit_text_draft_with_viewport_changes(
+            viewport,
+            TextDraftCommit::new(
+                TextCommitTarget::Existing(text_id),
+                center,
+                "grown label",
+                snow_draw_engine_document::TextLayoutSize::with_content(220.0, 60.0, 208.0, 60.0),
+                style,
+                true,
+                false,
+            ),
+        )
+        .unwrap();
+
+    let committed = engine.model.text(text_id).unwrap().clone();
+    assert_eq!(
+        committed.layout.ink(),
+        snow_draw_engine_document::InkBox::new(208.0, 60.0),
+        "commit must persist the measured ink, not keep the creation-time ink"
+    );
+
+    let patch = engine.acquire_patch(viewport, None).unwrap();
+    let connector = patch
+        .scene
+        .ops
+        .iter()
+        .flat_map(|op| &op.insert_items)
+        .find_map(|item| {
+            if let SceneDisplayItem::SerialNumberConnector(connector) = item {
+                Some(connector)
+            } else {
+                None
+            }
+        })
+        .expect("committed serial label must render a connector");
+
+    let measured_paint = TextPaintGeometry {
+        center,
+        width: 220.0,
+        height: 60.0,
+        rotation: committed.rotation,
+        content_width: 208.0,
+        content_height: 60.0,
+        horizontal_align: committed.horizontal_align,
+        vertical_align: committed.vertical_align,
+        has_text: true,
+        font_size: committed.font_size,
+        fill: committed.fill,
+        stroke: committed.stroke,
+        stroke_width: committed.stroke_width,
+    };
+    let expected = resolve_serial_paint_text_connection(
+        &SerialPaintGeometry::from_serial(&serial),
+        &measured_paint,
+    )
+    .unwrap();
+    assert!((connector.end_x - expected.end.x).abs() < 1e-9);
+    assert!((connector.end_y - expected.end.y).abs() < 1e-9);
+    assert_eq!(
+        connector.has_baseline,
+        expected.text_baseline_start.is_some()
+    );
+    if let (Some(expected_start), Some(expected_end)) =
+        (expected.text_baseline_start, expected.text_baseline_end)
+    {
+        assert!((connector.baseline_start_x - expected_start.x).abs() < 1e-9);
+        assert!((connector.baseline_start_y - expected_start.y).abs() < 1e-9);
+        assert!((connector.baseline_end_x - expected_end.x).abs() < 1e-9);
+        assert!((connector.baseline_end_y - expected_end.y).abs() < 1e-9);
+    }
 }
 
 #[test]

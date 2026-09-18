@@ -1,7 +1,7 @@
 use snow_draw_engine_core::ErrorCode;
 use snow_draw_engine_document::{
     ElementId, ElementMeta, TextData, TextLayoutSize, Transaction, serial_number_bound_text_rect,
-    validate_serial_number, validate_text, validate_text_layout_size,
+    text_with_measured_layout, validate_serial_number, validate_text, validate_text_layout_size,
 };
 use snow_draw_engine_model::DocumentModel;
 
@@ -50,9 +50,10 @@ pub(crate) fn create_serial_number_text_creation_plan(
         text.font_size = serial.font_size;
         let layout = serial_number_bound_text_rect(&serial, &text, measured_layout)?;
         text.center = layout.center;
-        text.width = layout.width;
-        text.height = layout.height;
         text.rotation = layout.rotation;
+        // `serial_number_bound_text_rect` passes the measured size through, so
+        // the shared helper stores the wrap rectangle and the ink together.
+        text = text_with_measured_layout(&text, measured_layout)?;
         validate_text(&text)?;
         let mut updated_serial = serial;
         updated_serial.text_element_id = Some(text_id);
@@ -114,10 +115,7 @@ mod tests {
                     font_size: 21.0,
                     ..TextData::default()
                 },
-                measured_layout: TextLayoutSize {
-                    width: 120.0,
-                    height: 32.0,
-                },
+                measured_layout: TextLayoutSize::new(120.0, 32.0),
                 next_text_id,
             },
         )
@@ -135,8 +133,8 @@ mod tests {
         };
         assert_eq!(text.text, "default");
         assert_eq!(text.font_size, 42.0);
-        assert_eq!(text.width, 120.0);
-        assert_eq!(text.height, 32.0);
+        assert_eq!(text.width(), 120.0);
+        assert_eq!(text.height(), 32.0);
         assert_eq!(text.center, Point::new(216.0, 50.0));
         let Operation::UpdateElementData { id, data } = &operations[1] else {
             panic!("expected serial update");
@@ -155,8 +153,7 @@ mod tests {
             &mut document,
             TextData {
                 text: "existing".to_owned(),
-                width: 80.0,
-                height: 24.0,
+                layout: TextLayoutSize::new(80.0, 24.0),
                 ..TextData::default()
             },
         );
@@ -173,10 +170,7 @@ mod tests {
             SerialNumberTextCreationRequest {
                 selected_ids: &[serial_id],
                 default_text: &TextData::default(),
-                measured_layout: TextLayoutSize {
-                    width: 120.0,
-                    height: 32.0,
-                },
+                measured_layout: TextLayoutSize::new(120.0, 32.0),
                 next_text_id: document.peek_next_element_id(),
             },
         )
@@ -219,10 +213,7 @@ mod tests {
                     text: "note".to_owned(),
                     ..TextData::default()
                 },
-                measured_layout: TextLayoutSize {
-                    width: 80.0,
-                    height: 24.0,
-                },
+                measured_layout: TextLayoutSize::new(80.0, 24.0),
                 next_text_id,
             },
         )

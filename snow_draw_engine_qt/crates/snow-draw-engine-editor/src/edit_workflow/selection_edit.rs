@@ -1,11 +1,11 @@
 use super::*;
 use crate::text::{
-    TextResizeLayoutOverride, text_resize_layout_override_matches_rect,
+    MeasuredTextResize, TextResizeLayoutOverride, text_resize_layout_override_matches_rect,
     text_resize_measurement_font_size, text_resize_measurement_requested_values,
 };
 use snow_draw_engine_document::{
-    MIN_TEXT_FONT_SIZE, serial_number_minimum_selection_scale, serial_number_rect_proxy,
-    serial_number_with_selection_rect,
+    MIN_TEXT_FONT_SIZE, TextLayoutSize, serial_number_minimum_selection_scale,
+    serial_number_rect_proxy, serial_number_with_selection_rect,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -194,14 +194,14 @@ impl Editor {
             && state.original_arrows.is_empty()
             && state.original_elements.len() == 1
             && document.text(state.original_elements[0].id).is_ok();
-        let single_text_resize_font_size = if single_text_resize
+        let single_text_resize_measured = if single_text_resize
             && state.preview_elements.len() == 1
             && let Some(layout_override) = text_resize_layout_override
             && text_resize_layout_override_matches_rect(
                 layout_override,
                 state.preview_elements[0].rect,
             ) {
-            Some(layout_override.requested_font_size)
+            Some(MeasuredTextResize::from_layout_override(layout_override))
         } else {
             None
         };
@@ -212,7 +212,7 @@ impl Editor {
                     preview.rect,
                     resize_handle,
                     single_text_resize,
-                    single_text_resize_font_size,
+                    single_text_resize_measured,
                 )?;
                 continue;
             }
@@ -222,7 +222,7 @@ impl Editor {
                 preview,
                 resize_handle,
                 single_text_resize,
-                single_text_resize_font_size,
+                single_text_resize_measured,
             )?;
         }
         for preview in state.preview_arrows {
@@ -859,7 +859,7 @@ impl Editor {
                 requested_font_size,
                 existing_text_layout_override,
             );
-            if changes_width_only && layout.width + 1e-3 < requested_rect.width {
+            if changes_width_only && layout.width() + 1e-3 < requested_rect.width {
                 return Ok(false);
             }
 
@@ -867,8 +867,8 @@ impl Editor {
                 &element.rect,
                 &state.original_bounds,
                 text_resize_anchor(*handle, *scale_from_center),
-                layout.width,
-                layout.height,
+                layout.width(),
+                layout.height(),
             );
             let next_elements = vec![SelectionRectState {
                 id: element.id,
@@ -924,8 +924,8 @@ mod tests {
             rectangle_kind: snow_draw_engine_document::RectangleElementKind::Rectangle,
             highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
             center: text.center,
-            width: text.width,
-            height: text.height,
+            width: text.width(),
+            height: text.height(),
             rotation: text.rotation,
             fill: text.fill,
             fill_style: text.fill_style,
@@ -1068,10 +1068,9 @@ mod tests {
         );
         let text = TextData {
             center: Point::new(300.0, 0.0),
-            width: 100.0,
-            height: 40.0,
             text: "text".to_owned(),
             auto_resize: false,
+            layout: TextLayoutSize::new(100.0, 40.0),
             ..TextData::default()
         };
         let text_id = insert_text(&mut document, text.clone());
@@ -1371,20 +1370,18 @@ mod tests {
         let mut document = DocumentModel::new();
         let first_text = TextData {
             center: Point::new(-60.0, 0.0),
-            width: 80.0,
-            height: 20.0,
             text: "first".to_owned(),
             font_size: 12.0,
             auto_resize: false,
+            layout: TextLayoutSize::new(80.0, 20.0),
             ..TextData::default()
         };
         let second_text = TextData {
             center: Point::new(60.0, 0.0),
-            width: 80.0,
-            height: 20.0,
             text: "second".to_owned(),
             font_size: 24.0,
             auto_resize: true,
+            layout: TextLayoutSize::new(80.0, 20.0),
             ..TextData::default()
         };
         let first_id = insert_text(&mut document, first_text.clone());
@@ -1455,10 +1452,9 @@ mod tests {
         let mut document = DocumentModel::new();
         let text = TextData {
             center: Point::new(0.0, 0.0),
-            width: 100.0,
-            height: 30.0,
             text: "draft".to_owned(),
             auto_resize: false,
+            layout: TextLayoutSize::new(100.0, 30.0),
             ..TextData::default()
         };
         let text_id = insert_text(&mut document, text.clone());
@@ -1526,11 +1522,10 @@ mod tests {
         let mut document = DocumentModel::new();
         let text = TextData {
             center: Point::new(0.0, 0.0),
-            width: 100.0,
-            height: 20.0,
             text: "draft".to_owned(),
             font_size: 10.0,
             auto_resize: true,
+            layout: TextLayoutSize::new(100.0, 20.0),
             ..TextData::default()
         };
         let text_id = insert_text(&mut document, text.clone());
@@ -1604,11 +1599,10 @@ mod tests {
         let mut document = DocumentModel::new();
         let text = TextData {
             center: Point::new(0.0, 0.0),
-            width: 100.0,
-            height: 20.0,
             text: "draft".to_owned(),
             font_size: 10.0,
             auto_resize: true,
+            layout: TextLayoutSize::new(100.0, 20.0),
             ..TextData::default()
         };
         let text_id = insert_text(&mut document, text.clone());
@@ -1665,10 +1659,7 @@ mod tests {
                     requested_width: 100.0,
                     requested_height: 40.0,
                     requested_font_size: 22.0,
-                    layout: TextLayoutSize {
-                        width: 100.0,
-                        height: 40.0,
-                    },
+                    layout: TextLayoutSize::new(100.0, 40.0),
                 }),
             },
         });
@@ -1698,11 +1689,10 @@ mod tests {
         let mut document = DocumentModel::new();
         let text = TextData {
             center: Point::new(0.0, 0.0),
-            width: 100.0,
-            height: 20.0,
             text: "draft".to_owned(),
             font_size: 10.0,
             auto_resize: true,
+            layout: TextLayoutSize::new(100.0, 20.0),
             ..TextData::default()
         };
         let text_id = insert_text(&mut document, text.clone());
@@ -1762,10 +1752,9 @@ mod tests {
         let mut document = DocumentModel::new();
         let text = TextData {
             center: Point::new(0.0, 0.0),
-            width: 100.0,
-            height: 40.0,
             text: "draft".to_owned(),
             auto_resize: false,
+            layout: TextLayoutSize::new(100.0, 40.0),
             ..TextData::default()
         };
         let text_id = insert_text(&mut document, text.clone());
@@ -1883,35 +1872,31 @@ mod tests {
     fn repeated_text_resize_measurement_preserves_requested_size_for_release_preview() {
         let text = TextData {
             center: Point::new(0.0, 0.0),
-            width: 100.0,
-            height: 20.0,
             text: "hello".to_owned(),
             font_size: 10.0,
             auto_resize: false,
+            layout: TextLayoutSize::new(100.0, 20.0),
             ..TextData::default()
         };
         let original_rect = text_rect(&text);
         let original_bounds = SelectionBounds {
             center: text.center,
-            width: text.width,
-            height: text.height,
+            width: text.width(),
+            height: text.height(),
             rotation: text.rotation,
         };
         let first_override = TextResizeLayoutOverride {
             requested_width: 100.0,
             requested_height: 40.0,
             requested_font_size: 20.0,
-            layout: TextLayoutSize {
-                width: 100.0,
-                height: 36.0,
-            },
+            layout: TextLayoutSize::new(100.0, 36.0),
         };
         let measured_preview_rect = resized_text_rect_from_size(
             &original_rect,
             &original_bounds,
             text_resize_anchor(ResizeHandle::Bottom, false),
-            first_override.layout.width,
-            first_override.layout.height,
+            first_override.layout.width(),
+            first_override.layout.height(),
         );
 
         let requested = text_resize_measurement_requested_values(
@@ -1948,7 +1933,7 @@ mod tests {
             repeated_override.requested_font_size,
             first_override.requested_font_size,
         );
-        assert_close(release_preview.height, first_override.layout.height);
+        assert_close(release_preview.height, first_override.layout.height());
         assert_close(release_preview.center.y, measured_preview_rect.center.y);
     }
 }

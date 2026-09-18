@@ -133,13 +133,16 @@ SnowCanvasWidgetTextInteraction::measureArrowText(SnowRuntime runtime, SnowViewp
             }
             text = QString::fromUtf8(utf8);
         }
-        const QSizeF natural =
-            snow_canvas_text_layout::measureNaturalText(text, m_widget.font(), item);
-        const double width = qMin(natural.width(), request.max_width);
-        const QSizeF size =
-            snow_canvas_text_layout::measureWrappedText(text, m_widget.font(), item, width);
-        layouts.push_back(
-            SnowArrowTextLayoutResult{request.info.id, request.key, {width, size.height()}});
+        const snow_canvas_text_layout::TextMeasuredLayout natural =
+            snow_canvas_text_layout::measureNaturalTextLayout(text, m_widget.font(), item);
+        const double width = qMin(natural.layout.width(), request.max_width);
+        const snow_canvas_text_layout::TextMeasuredLayout wrapped =
+            snow_canvas_text_layout::measureWrappedTextLayout(text, m_widget.font(), item, width);
+        layouts.push_back(SnowArrowTextLayoutResult{
+            request.info.id,
+            request.key,
+            {width, wrapped.layout.height(), wrapped.content.width(), wrapped.content.height()},
+        });
     }
     result.success =
         snow_viewport_apply_arrow_text_layouts_ex(runtime, viewport, layouts.data(),
@@ -220,6 +223,8 @@ SnowCanvasWidgetTextInteraction::publishActiveDraftPresentation(SnowRuntime runt
             preview->width,
             preview->height,
             preview->rotation,
+            preview->content_width,
+            preview->content_height,
             utf8.constData(),
             static_cast<std::uint32_t>(utf8.size()),
             snow_canvas_text::textStyleFromSceneItem(*preview),
