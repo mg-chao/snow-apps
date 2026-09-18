@@ -411,6 +411,159 @@ mod tests {
     }
 
     #[test]
+    fn object_snap_plan_excludes_filter_overlays() {
+        use crate::snapping::ObjectSnapActor;
+        use snow_draw_engine_document::{ElementMeta, FilterData};
+
+        assert!(!ObjectSnapActor::Creation(ActiveTool::RectangleFilter).participates());
+        assert!(!ObjectSnapActor::Creation(ActiveTool::PenFilter).participates());
+        assert!(!ObjectSnapActor::Creation(ActiveTool::AutoFilter).participates());
+        assert!(ObjectSnapActor::Creation(ActiveTool::Shape).participates());
+        assert!(ObjectSnapActor::Creation(ActiveTool::Spotlight).participates());
+
+        let mut document = DocumentModel::new();
+        let rect_id = document.peek_next_element_id();
+        let mut rect_transaction = Transaction::new("insert rectangle");
+        rect_transaction.insert_rectangle(rect_id, ElementMeta::default(), test_rect());
+        document.apply_transaction(rect_transaction).unwrap();
+        let filter_id = document.peek_next_element_id();
+        let mut filter_transaction = Transaction::new("insert filter");
+        filter_transaction.insert_filter(
+            filter_id,
+            ElementMeta::default(),
+            FilterData {
+                center: Point::new(140.0, 490.0),
+                width: 80.0,
+                height: 80.0,
+                ..FilterData::default()
+            },
+        );
+        document.apply_transaction(filter_transaction).unwrap();
+        let pen_filter_id = document.peek_next_element_id();
+        let mut pen_filter_transaction = Transaction::new("insert pen filter");
+        pen_filter_transaction.insert_pen_filter(
+            pen_filter_id,
+            ElementMeta::default(),
+            PenFilterData::default(),
+        );
+        document.apply_transaction(pen_filter_transaction).unwrap();
+
+        let rect_state = SelectionRectState {
+            id: rect_id,
+            rect: test_rect(),
+        };
+        let filter_state = SelectionRectState {
+            id: filter_id,
+            rect: test_rect(),
+        };
+        let pen_filter_state = SelectionRectState {
+            id: pen_filter_id,
+            rect: test_rect(),
+        };
+        let arrow_state = SelectionArrowState {
+            id: rect_id,
+            arrow: ArrowData::from_global_points(
+                &[Point::new(0.0, 0.0), Point::new(40.0, 0.0)],
+                snow_draw_engine_core::ColorRgba8::default(),
+                2.0,
+                snow_draw_engine_document::StrokeStyle::Solid,
+                snow_draw_engine_core::arrow::ArrowType::default(),
+                None,
+                None,
+            )
+            .unwrap(),
+        };
+
+        assert!(ObjectSnapActor::selection(&document, &[], &[]).participates());
+        assert!(!ObjectSnapActor::selection(&document, &[filter_state], &[]).participates());
+        assert!(!ObjectSnapActor::selection(&document, &[pen_filter_state], &[]).participates());
+        assert!(
+            !ObjectSnapActor::selection(&document, &[filter_state, pen_filter_state], &[])
+                .participates()
+        );
+        assert!(
+            ObjectSnapActor::selection(&document, &[filter_state, rect_state], &[]).participates()
+        );
+        assert!(
+            ObjectSnapActor::selection(&document, &[filter_state], &[arrow_state]).participates()
+        );
+        assert!(ObjectSnapActor::selection(&document, &[rect_state], &[]).participates());
+
+        let editor = Editor::new(EngineConfig::default()).unwrap();
+        assert!(
+            editor
+                .object_snap_plan(
+                    &document,
+                    ObjectSnapActor::Creation(ActiveTool::RectangleFilter),
+                    &[],
+                    SnappingMode::Object,
+                )
+                .is_none()
+        );
+        assert!(
+            editor
+                .object_snap_plan(
+                    &document,
+                    ObjectSnapActor::Creation(ActiveTool::PenFilter),
+                    &[],
+                    SnappingMode::Object,
+                )
+                .is_none()
+        );
+        assert!(
+            editor
+                .object_snap_plan(
+                    &document,
+                    ObjectSnapActor::selection(&document, &[filter_state], &[]),
+                    &[],
+                    SnappingMode::Object,
+                )
+                .is_none()
+        );
+
+        let plan = editor
+            .object_snap_plan(
+                &document,
+                ObjectSnapActor::Creation(ActiveTool::Shape),
+                &[],
+                SnappingMode::Object,
+            )
+            .expect("layout creation should object-snap");
+        assert_eq!(plan.references.len(), 1);
+
+        let plan = editor
+            .object_snap_plan(
+                &document,
+                ObjectSnapActor::selection(&document, &[rect_state], &[]),
+                &[rect_id],
+                SnappingMode::Object,
+            )
+            .expect("layout selection should object-snap");
+        assert!(plan.references.is_empty());
+
+        assert!(
+            editor
+                .object_snap_plan(
+                    &document,
+                    ObjectSnapActor::Creation(ActiveTool::Shape),
+                    &[],
+                    SnappingMode::Grid,
+                )
+                .is_none()
+        );
+        assert!(
+            editor
+                .object_snap_plan(
+                    &document,
+                    ObjectSnapActor::selection(&document, &[filter_state, rect_state], &[]),
+                    &[],
+                    SnappingMode::Object,
+                )
+                .is_some()
+        );
+    }
+
+    #[test]
     fn marquee_only_bumps_overlay_revision() {
         let mut editor = Editor::new(EngineConfig::default()).unwrap();
         let scene_revision = editor.scene_input_revision();

@@ -43,6 +43,24 @@ impl ActiveTool {
     pub(crate) const fn uses_stroke_cursor(self) -> bool {
         matches!(self, Self::FreeDraw | Self::PenHighlight | Self::PenFilter)
     }
+
+    pub(crate) const fn is_filter(self) -> bool {
+        match self {
+            Self::RectangleFilter | Self::PenFilter | Self::AutoFilter => true,
+            Self::Select
+            | Self::Shape
+            | Self::Arrow
+            | Self::Line
+            | Self::FreeDraw
+            | Self::RectangleHighlight
+            | Self::PenHighlight
+            | Self::Watermark
+            | Self::Eraser
+            | Self::Text
+            | Self::SerialNumber
+            | Self::Spotlight => false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
