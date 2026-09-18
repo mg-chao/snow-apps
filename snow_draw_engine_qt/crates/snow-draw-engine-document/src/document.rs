@@ -720,6 +720,10 @@ impl ElementData {
         }
     }
 
+    pub fn is_filter(&self) -> bool {
+        self.kind().is_filter()
+    }
+
     pub(crate) fn bounds(&self) -> DrawRect {
         match self {
             Self::Rectangle(rect) => rect_bounds(rect),
@@ -811,6 +815,24 @@ pub enum ElementKind {
     SerialNumber,
     Spotlight,
     AutoFilter,
+}
+
+impl ElementKind {
+    /// Coverage overlays, not layout objects. New variants must choose a branch.
+    pub const fn is_filter(self) -> bool {
+        match self {
+            Self::Filter | Self::AutoFilter | Self::PenFilter => true,
+            Self::Rectangle
+            | Self::Arrow
+            | Self::Line
+            | Self::FreeDraw
+            | Self::RectangleHighlight
+            | Self::PenHighlight
+            | Self::Text
+            | Self::SerialNumber
+            | Self::Spotlight => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1754,6 +1776,25 @@ mod tests {
             assert!(document.apply(&tx).is_err());
             assert!(document.has_same_session_content(&original));
         }
+    }
+
+    #[test]
+    fn filter_element_kinds_classify_coverage_overlays() {
+        assert!(ElementKind::Filter.is_filter());
+        assert!(ElementKind::AutoFilter.is_filter());
+        assert!(ElementKind::PenFilter.is_filter());
+        assert!(!ElementKind::Rectangle.is_filter());
+        assert!(!ElementKind::Spotlight.is_filter());
+
+        let auto = FilterData {
+            auto_region_id: Some(1),
+            ..FilterData::default()
+        };
+        let data = ElementData::Filter(auto);
+        assert_eq!(data.kind(), ElementKind::AutoFilter);
+        assert!(data.is_filter());
+        assert!(ElementData::Filter(FilterData::default()).is_filter());
+        assert!(ElementData::PenFilter(PenFilterData::default()).is_filter());
     }
 
     #[test]
