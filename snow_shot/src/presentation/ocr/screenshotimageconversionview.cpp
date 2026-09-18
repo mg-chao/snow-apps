@@ -119,7 +119,9 @@ void ScreenshotImageConversionView::render() {
     colors.setColor(QPalette::Link, theme.colorLink);
     m_browser->setPalette(colors);
     QTextDocument* document = m_browser->document();
-    QFont font = theme.appFont;
+    // A default theme.appFont is an unresolved placeholder; deriving from the widget keeps
+    // the preview on the application's unhinted outlines like every other themed surface.
+    QFont font = theme.appFont.family().isEmpty() ? m_browser->font() : theme.appFont;
     font.setPixelSize(qRound(theme.fontSize));
     document->setDefaultFont(font);
     document->setDocumentMargin(12);

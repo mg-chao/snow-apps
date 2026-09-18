@@ -64,6 +64,7 @@ class ThemeManager final : public QObject {
   explicit ThemeManager(QObject* parent = nullptr);
 
   void refreshGlobalState(bool updateApplicationPalette);
+  void applyApplicationTypography();
   void ensureApplicationStyle();
   ThemeConfig resolvedConfigFor(const QWidget* widget, const QWidget* logicalOwner = nullptr) const;
   void applyScopeState(QObject* scope);
@@ -79,6 +80,7 @@ class ThemeManager final : public QObject {
   QHash<QObject*, ScopeState> scopeStates_;
   QFont originalAppFont_;
   bool originalAppFontCaptured_ = false;
+  QHash<QString, QFont> originalPopupClassFonts_;
   quint64 revision_ = 1;
 };
 

@@ -16,6 +16,18 @@ QColor validOr(const QColor& value, const QColor& fallback) {
   return value.isValid() ? value : fallback;
 }
 
+// DirectWrite's default hinting keeps grid-fitting even at fractional device scale factors,
+// which makes the design system's smooth text render rough next to unhinted surfaces.
+// Configured fonts keep their family and size but always resolve to unhinted outlines;
+// the default-constructed font stays untouched so it keeps meaning "not configured".
+QFont smoothOutlineFont(const QFont& font) {
+  QFont smooth = font;
+  if (smooth != QFont()) {
+    smooth.setHintingPreference(QFont::PreferNoHinting);
+  }
+  return smooth;
+}
+
 QColor tone(const QVector<QColor>& mapped, int index, const QColor& fallback) {
   return index >= 0 && index < mapped.size() && mapped[index].isValid() ? mapped[index] : fallback;
 }
@@ -752,8 +764,8 @@ AdTheme makeTheme(const ThemeConfig& config) {
   AdTheme theme;
   theme.scheme = config.scheme;
   theme.density = config.density;
-  theme.appFont = config.appFont;
-  theme.codeFont = config.codeFont;
+  theme.appFont = smoothOutlineFont(config.appFont);
+  theme.codeFont = smoothOutlineFont(config.codeFont);
   theme.wireframe = config.wireframe;
 
   copyAccents(&theme.accents, config);

@@ -2063,6 +2063,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         ant_design_qt
         Qt6::Widgets
     )
+    snow_shot_import_offscreen_platform(snow-shot-context-menu-rendering-tests)
     add_test(
         NAME snow-shot-context-menu-rendering-tests
         COMMAND snow-shot-context-menu-rendering-tests

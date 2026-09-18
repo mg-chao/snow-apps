@@ -3,6 +3,7 @@
 #include <QColor>
 #include <QCoreApplication>
 #include <QElapsedTimer>
+#include <QFont>
 #include <QImage>
 #include <QKeyEvent>
 #include <QPainter>
@@ -145,6 +146,35 @@ void unrelatedShortcutsDoNotChangeItemElision() {
             require(renderTarget() != baseline, "the item must account for its own shortcut");
         }
     }
+}
+
+void popupFontsKeepSmoothRendering() {
+    const QFont applicationFont = QApplication::font();
+    QWidget owner;
+    const QFont ownerFont = owner.font();
+    for (QWidget* parent : {static_cast<QWidget*>(nullptr), &owner}) {
+        adqt::widgets::AdContextMenu menu(parent);
+        menu.addItem(QStringLiteral("Copy to clipboard\tCtrl+C"));
+        auto* submenu = menu.addSubMenu(QStringLiteral("Process image"));
+        submenu->addItem(QStringLiteral("Rotate clockwise"));
+        for (auto scheme : {adqt::widgets::AdContextMenu::ColorScheme::Light,
+                            adqt::widgets::AdContextMenu::ColorScheme::Dark}) {
+            menu.setColorScheme(scheme);
+            submenu->setColorScheme(scheme);
+            for (auto* popup : {&menu, submenu}) {
+                popup->ensurePolished();
+                for (auto type : {QEvent::LanguageChange, QEvent::DevicePixelRatioChange}) {
+                    QEvent event(type);
+                    QCoreApplication::sendEvent(popup, &event);
+                }
+                require(popup->font().hintingPreference() == QFont::PreferNoHinting,
+                        "popup labels and shortcuts must use unhinted outlines independently of "
+                        "their owner, theme, language, and DPI");
+            }
+        }
+    }
+    require(QApplication::font() == applicationFont && owner.font() == ownerFont,
+            "context menu typography must not change application or owner fonts");
 }
 
 void dirtyRenderTargetCornersAreCleared() {
@@ -414,6 +444,7 @@ int main(int argc, char** argv) {
     QApplication application(argc, argv);
     adqt::theme::ThemeManager::instance().applyTo(application);
     try {
+        popupFontsKeepSmoothRendering();
         borderGeometryUsesWholeDevicePixels();
         constrainedPopupKeepsActionGeometryInsideSurface();
         nativePopupCornersCompositeOverTheirBackdrop();

@@ -126,6 +126,10 @@ ThemeConfig transitionedDefaults(const ThemeConfig& current, ThemeScheme nextSch
   return next;
 }
 
+// Popup classes resolve their font from application class fonts instead of their owner's
+// font chain, so an unhinted application font alone cannot reach them.
+const char* const kSmoothOutlineFontClasses[] = {"QTipLabel", "QMessageBox", "QMenu"};
+
 }  // namespace
 
 ThemeManager& ThemeManager::instance() {
@@ -157,14 +161,29 @@ void ThemeManager::refreshGlobalState(bool updateApplicationPalette) {
       originalAppFontCaptured_ = true;
     }
 
-    if (resolved_.config.appFont != QFont()) {
-      QApplication::setFont(resolved_.config.appFont);
-    } else if (originalAppFontCaptured_) {
-      QApplication::setFont(originalAppFont_);
-    }
+    applyApplicationTypography();
   }
 
   refreshScopeStates();
+}
+
+void ThemeManager::applyApplicationTypography() {
+  // Every themed surface renders unhinted outlines: DirectWrite's default hinting keeps
+  // grid fitting at fractional device scale factors, which looks rough next to the smooth
+  // geometry this design system draws everywhere else. Unresolved font properties merge
+  // with the application font (QFont::resolve), so parentless top-level windows, popup
+  // surfaces, and partially-configured widget fonts all inherit this preference.
+  QFont applicationFont =
+      resolved_.config.appFont != QFont() ? resolved_.theme.appFont : originalAppFont_;
+  applicationFont.setHintingPreference(QFont::PreferNoHinting);
+  QApplication::setFont(applicationFont);
+
+  for (const char* className : kSmoothOutlineFontClasses) {
+    const QString classNameText = QString::fromLatin1(className);
+    QFont popupFont = originalPopupClassFonts_.value(classNameText, QApplication::font());
+    popupFont.setHintingPreference(QFont::PreferNoHinting);
+    QApplication::setFont(popupFont, className);
+  }
 }
 
 void ThemeManager::ensureApplicationStyle() {
@@ -321,7 +340,7 @@ void ThemeManager::applyScopeState(QObject* scope) {
 
   widget->setPalette(localResolved.palette);
   if (localResolved.config.appFont != QFont()) {
-    widget->setFont(localResolved.config.appFont);
+    widget->setFont(localResolved.theme.appFont);
   } else if (it->hadExplicitFont) {
     widget->setFont(it->originalFont);
   } else {
@@ -422,6 +441,18 @@ void ThemeManager::applyTo(QApplication& app) {
   if (!originalAppFontCaptured_) {
     originalAppFont_ = QApplication::font();
     originalAppFontCaptured_ = true;
+  }
+  for (const char* className : kSmoothOutlineFontClasses) {
+    const QString classNameText = QString::fromLatin1(className);
+    if (originalPopupClassFonts_.contains(classNameText)) {
+      continue;
+    }
+    // Only remember class fonts the platform actually customized; unset ones keep
+    // following the application font on every refresh instead of pinning a stale copy.
+    const QFont classFont = QApplication::font(className);
+    if (classFont != QApplication::font()) {
+      originalPopupClassFonts_.insert(classNameText, classFont);
+    }
   }
   ensureApplicationStyle();
   refreshGlobalState(true);
