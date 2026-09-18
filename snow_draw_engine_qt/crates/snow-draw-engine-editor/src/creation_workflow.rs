@@ -893,19 +893,34 @@ impl Editor {
         }
 
         let current_canvas = view_to_canvas(event.position, &self.camera(), self.surface_size());
-        let (center, snap_guides) =
-            self.snap_serial_number_creation_center(document, current_canvas, event.modifiers);
-        let mut preview = state.preview;
-        preview.center = center;
-        validate_serial_number(&preview)?;
-        self.state.interaction = InteractionState::CreatingSerialNumber(CreateSerialNumberState {
-            pointer_id: event.pointer_id,
-            preview: preview.clone(),
-        });
-        self.set_creation_preview(
-            Some(ElementCreationPreview::SerialNumber(preview)),
-            snap_guides,
-        );
+        let mut state = state;
+        if let Some((_, text)) = &mut state.text {
+            text.center = current_canvas;
+        } else if pointer_drag_distance(state.start_view_position, event.position)
+            >= POINTER_DRAG_THRESHOLD
+        {
+            let mut serial = document.serial_number(state.serial_id)?.clone();
+            let text_id = document.peek_next_element_id();
+            let text = TextData {
+                center: current_canvas,
+                font_size: serial.font_size,
+                height: self.state.default_text.height * serial.font_size
+                    / self.state.default_text.font_size,
+                ..self.state.default_text.clone()
+            };
+            validate_text(&text)?;
+            serial.text_element_id = Some(text_id);
+            let mut transaction = Transaction::new("create serial number text");
+            transaction.insert_text(text_id, ElementMeta::default(), text.clone());
+            transaction.update_serial_number(state.serial_id, serial);
+            self.queue_command(EditorCommand::ApplyTransaction(
+                ApplyTransactionCommand::new(transaction),
+            ));
+            state.text = Some((text_id, text));
+        }
+        self.state.interaction = InteractionState::CreatingSerialNumber(state);
+        self.bump_scene_state_revision();
+        self.bump_overlay_state_revision();
 
         Ok(InteractionOutput {
             consumed: true,
@@ -927,14 +942,28 @@ impl Editor {
             return Ok(InteractionOutput::default());
         }
 
-        let current_canvas = view_to_canvas(event.position, &self.camera(), self.surface_size());
-        let (center, _) =
-            self.snap_serial_number_creation_center(document, current_canvas, event.modifiers);
-        let mut preview = state.preview;
-        preview.center = center;
-        validate_serial_number(&preview)?;
+        if event.button != Some(PointerButton::Primary) {
+            return Ok(InteractionOutput::default());
+        }
+        // Include the release position even if the host coalesced all move events.
+        self.handle_serial_number_pointer_move(document, event)?;
+        let InteractionState::CreatingSerialNumber(state) = &self.state.interaction else {
+            return Ok(InteractionOutput::default());
+        };
+        let text = state.text.clone();
         self.cancel_interaction();
-        self.queue_serial_number_creation(document, preview)?;
+        if let Some((id, text)) = text {
+            if let Ok(original) = document.text(id)
+                && original != &text
+            {
+                let mut transaction = Transaction::new("place serial number text");
+                transaction.update_text(id, text);
+                self.queue_command(EditorCommand::ApplyTransaction(
+                    ApplyTransactionCommand::new(transaction),
+                ));
+            }
+            self.state.pending_text_edit = Some(id);
+        }
 
         Ok(InteractionOutput {
             consumed: true,

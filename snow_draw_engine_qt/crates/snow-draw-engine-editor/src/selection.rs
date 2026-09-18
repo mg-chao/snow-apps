@@ -142,6 +142,13 @@ impl Editor {
         previous_selection: &SelectionState,
     ) {
         let interaction_contains_missing = match &self.state.interaction {
+            InteractionState::CreatingSerialNumber(state) => {
+                document.serial_number(state.serial_id).is_err()
+                    || state
+                        .text
+                        .as_ref()
+                        .is_some_and(|(id, _)| document.text(*id).is_err())
+            }
             InteractionState::PendingSelectionMove(state) => {
                 state
                     .original_elements

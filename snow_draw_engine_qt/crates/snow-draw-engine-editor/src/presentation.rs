@@ -84,6 +84,13 @@ impl Editor {
             .map(<[SelectionRectState]>::to_vec)
             .unwrap_or_default();
         let mut preview_arrows = self.preview_selection_arrows(document);
+        if let InteractionState::CreatingSerialNumber(state) = &self.state.interaction
+            && let Some((id, text)) = &state.text
+            && let Some(mut rect) = document.element_rect_proxy(*id)
+        {
+            rect.center = text.center;
+            preview_elements.push(SelectionRectState { id: *id, rect });
+        }
         for id in &self.state.eraser.pending_ids {
             preview_elements.retain(|preview| preview.id != *id);
             preview_arrows.retain(|preview| preview.id != *id);

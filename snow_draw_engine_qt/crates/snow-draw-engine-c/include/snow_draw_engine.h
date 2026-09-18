@@ -1259,6 +1259,10 @@ snow_viewport_create_serial_number_text_ex(SnowRuntime runtime, SnowViewport vie
                                            SnowElementId* out_text_id, uint8_t* out_has_text_id,
                                            SnowChangedViewportList* out_changed_viewports);
 
+SnowError snow_viewport_take_text_edit_request(SnowRuntime runtime, SnowViewport viewport,
+                                               SnowElementId* out_text_id,
+                                               uint8_t* out_has_text_id);
+
 SnowError snow_viewport_process_input_ex(SnowRuntime runtime, SnowViewport viewport,
                                          const SnowInputEvent* event,
                                          SnowInteractionOutput* out_output,

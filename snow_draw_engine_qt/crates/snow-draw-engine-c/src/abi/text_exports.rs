@@ -616,3 +616,33 @@ pub unsafe extern "C" fn snow_viewport_create_serial_number_text_ex(
         }))
     })
 }
+
+/// # Safety
+/// `runtime` and `viewport` must be live handles created by this library.
+/// `out_text_id` and `out_has_text_id` must be valid for writes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_take_text_edit_request(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    out_text_id: *mut SnowElementId,
+    out_has_text_id: *mut u8,
+) -> SnowError {
+    ffi_error(|| {
+        if out_text_id.is_null() || out_has_text_id.is_null() {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_impl_mut(runtime, |state| {
+            let id = viewport_id(viewport)?;
+            let text_id = state
+                .runtime
+                .take_text_edit_request(id)
+                .map_err(SnowError::from)?;
+            write_out(out_has_text_id, u8::from(text_id.is_some()));
+            write_out(
+                out_text_id,
+                text_id.map(snow_element_id_from_rust).unwrap_or_default(),
+            );
+            Ok(())
+        }))
+    })
+}

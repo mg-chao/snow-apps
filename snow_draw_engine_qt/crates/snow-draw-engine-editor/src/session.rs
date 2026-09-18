@@ -44,6 +44,10 @@ pub struct PersistedEditorSession {
 }
 
 impl EditorSession {
+    pub fn take_text_edit_request(&mut self) -> Option<ElementId> {
+        self.editor.state.pending_text_edit.take()
+    }
+
     pub fn arrow_text_layout_requests(
         &self,
         document: &DocumentModel,

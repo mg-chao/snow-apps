@@ -400,11 +400,6 @@ impl Editor {
             ToolEmptyCanvasAction::CreateSerialNumber => {
                 if !self.state.selection.is_empty() {
                     self.clear_selection();
-                    return Ok(InteractionOutput {
-                        consumed: true,
-                        capture: PointerCaptureCommand::NoChange,
-                        cursor: CursorCommand::Set(policy.default_cursor),
-                    });
                 }
                 let (center, snap_guides) = self.snap_serial_number_creation_center(
                     document,
@@ -412,15 +407,15 @@ impl Editor {
                     event.modifiers,
                 );
                 let preview = self.serial_number_creation_preview(document, center)?;
+                let serial_id = self.queue_serial_number_creation(document, preview)?;
                 self.state.interaction =
                     InteractionState::CreatingSerialNumber(CreateSerialNumberState {
                         pointer_id: event.pointer_id,
-                        preview: preview.clone(),
+                        serial_id,
+                        start_view_position: event.position,
+                        text: None,
                     });
-                self.set_creation_preview(
-                    Some(ElementCreationPreview::SerialNumber(preview)),
-                    snap_guides,
-                );
+                self.set_creation_preview(None, snap_guides);
                 Ok(InteractionOutput {
                     consumed: true,
                     capture: self.capture_command_for_start(event.pointer_id),

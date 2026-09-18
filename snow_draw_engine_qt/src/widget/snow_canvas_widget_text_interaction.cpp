@@ -517,6 +517,21 @@ SnowCanvasWidgetTextInteraction::createSerialNumberText(
     return result;
 }
 
+SnowCanvasWidgetTextInteraction::BeginResult
+SnowCanvasWidgetTextInteraction::beginRequestedTextEdit(
+    SnowRuntime runtime, SnowViewport viewport, const SnowCanvasDisplayCache& displayCache) {
+    snow_canvas_commands::CreateSerialNumberTextResult request;
+    std::uint8_t hasTextId = 0;
+    if (snow_viewport_take_text_edit_request(runtime, viewport, &request.textId, &hasTextId) !=
+            SNOW_OK ||
+        hasTextId == 0) {
+        return {};
+    }
+    request.success = true;
+    request.hasTextId = true;
+    return beginCreatedText(runtime, viewport, request, displayCache);
+}
+
 SnowCanvasWidgetTextInteraction::ActiveResizeMeasurementState
 SnowCanvasWidgetTextInteraction::activeResizeMeasurementState(SnowRuntime runtime,
                                                               SnowViewport viewport) const {

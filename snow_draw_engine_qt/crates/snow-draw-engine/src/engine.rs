@@ -754,3 +754,7 @@ impl Engine {
         snow_draw_engine_scene::smart_erase_items(&self.model, &presentation)
     }
 }
+
+#[cfg(test)]
+#[path = "engine/serial_number_drag_tests.rs"]
+mod serial_number_drag_tests;

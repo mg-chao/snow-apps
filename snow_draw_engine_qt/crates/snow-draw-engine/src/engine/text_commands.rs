@@ -375,6 +375,14 @@ impl Engine {
         self.model.is_text_bound_to_serial_number(id)
     }
 
+    pub fn take_text_edit_request(
+        &mut self,
+        viewport: ViewportId,
+    ) -> Result<Option<ElementId>, ErrorCode> {
+        self.ensure_viewport(viewport)?;
+        Ok(self.editor.take_text_edit_request())
+    }
+
     pub fn create_serial_number_text_with_viewport_changes(
         &mut self,
         source_viewport_id: ViewportId,

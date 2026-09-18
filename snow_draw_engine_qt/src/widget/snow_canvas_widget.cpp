@@ -2446,7 +2446,18 @@ bool SnowCanvasWidget::Impl::handleMouseRelease(QMouseEvent* event) {
     }
     flushLiveStrokeMoves();
     flushEraserMove();
-    return dispatchInput(event, snow_canvas_input::makePointerInput(*event, SNOW_POINTER_EVENT_UP));
+    const bool handled =
+        dispatchInput(event, snow_canvas_input::makePointerInput(*event, SNOW_POINTER_EVENT_UP));
+    if (handled && event->button() == Qt::LeftButton) {
+        auto result = textInteraction.beginRequestedTextEdit(
+            runtimeBinding.engine(), runtimeBinding.viewportHandle(), displayState.displayCache());
+        syncChangedViewports(result.firstChangedViewports.get());
+        if (result.started) {
+            refocusWidget();
+            emit widget.styleToolbarStateChanged();
+        }
+    }
+    return handled;
 }
 
 void SnowCanvasWidget::mouseReleaseEvent(QMouseEvent* event) {

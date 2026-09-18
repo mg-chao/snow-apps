@@ -130,6 +130,8 @@ class SnowCanvasWidgetTextInteraction final {
                                                     const SnowCanvasDisplayCache& displayCache,
                                                     const SnowTextStyle& textStyle,
                                                     const SnowSerialNumberStyle& serialNumberStyle);
+    BeginResult beginRequestedTextEdit(SnowRuntime runtime, SnowViewport viewport,
+                                       const SnowCanvasDisplayCache& displayCache);
     ActiveResizeMeasurementState activeResizeMeasurementState(SnowRuntime runtime,
                                                               SnowViewport viewport) const;
     ActiveResizeMeasurementResult

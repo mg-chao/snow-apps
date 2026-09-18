@@ -290,6 +290,7 @@ impl Editor {
     }
 
     fn cancel_interaction(&mut self) {
+        self.state.pending_text_edit = None;
         self.state.auto_filter = Default::default();
         self.bump_overlay_state_revision();
         let had_selection_edit = matches!(
@@ -297,6 +298,7 @@ impl Editor {
             InteractionState::PendingSelectionMove(_)
                 | InteractionState::EditingSelection(_)
                 | InteractionState::EditingArrow(_)
+                | InteractionState::CreatingSerialNumber(_)
         );
         self.state.interaction = InteractionState::Idle;
         if had_selection_edit {
