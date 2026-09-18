@@ -291,6 +291,10 @@ void pageActionsAndLifecycle() {
     SnowShotApiClient client(server.url());
     auto state = std::make_shared<CaptureState>();
     const storage::ExtendedFeaturesSettings settings;
+    // Earlier suites in this binary close windows, which now persists their size.
+    require(storage::ApplicationStorage::instance().configuration().setValue(
+                QStringLiteral("interface/translation_window_size"), QJsonObject()),
+            "clear remembered standalone window size");
     require(settings.setTranslationPageEnabled(true) &&
                 settings.setStandaloneTranslationWindow(true),
             "enable standalone page behavior");
@@ -385,8 +389,10 @@ void pageActionsAndLifecycle() {
     page = qobject_cast<TranslationPageWidget*>(modal->contentWidget());
     require(page && page->window() == surface && visibleTranslationWindows() == 1,
             "reopening creates fresh content in the same modal surface");
-    require(page->window()->size() == QSize(720, 500).boundedTo(available.size()),
-            "reopen restores default size rather than persisting geometry");
+    require(page->window()->size() == QSize(680, 460).boundedTo(available.size()),
+            "reopen restores the remembered size instead of the default");
+    require((page->window()->geometry().center() - available.center()).manhattanLength() <= 2,
+            "reopen keeps centering on the trigger screen at the remembered size");
     controller = page->findChild<TranslationPageController*>();
     waitUntil([&] { return server.streams.size() == 2; }, "reopened page translates");
     server.fail(1);

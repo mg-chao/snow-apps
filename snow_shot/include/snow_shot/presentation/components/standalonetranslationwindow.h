@@ -3,8 +3,12 @@
 
 #include <QObject>
 #include <QPointer>
+#include <QSize>
+
+#include <optional>
 
 class QScreen;
+class QWidget;
 class SnowShotApiClient;
 class TranslationPageWidget;
 namespace adqt::widgets {
@@ -12,6 +16,12 @@ class AdModal;
 }
 
 namespace snow_shot::presentation {
+// Remembers only the size of the standalone translation window: it must keep
+// opening centered on the screen the translation was triggered from.
+[[nodiscard]] std::optional<QSize> restoredTranslationWindowSize(const QSize& minimumSize,
+                                                                 const QSize& maximumSize);
+void rememberTranslationWindowSize(const QWidget& widget);
+
 class StandaloneTranslationWindow final : public QObject {
     Q_OBJECT
   public:
