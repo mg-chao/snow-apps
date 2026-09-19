@@ -11,18 +11,15 @@
 
 #include <QAbstractButton>
 #include <QApplication>
-#include <QColor>
 #include <QDir>
 #include <QEvent>
 #include <QFontDatabase>
-#include <QImage>
 #include <QLabel>
 #include <QMenu>
 #include <QPointer>
 #include <QTemporaryDir>
 #include <QWidget>
 
-#include <cmath>
 #include <cstdlib>
 #include <iostream>
 
@@ -55,23 +52,6 @@ void requireSmoothTitles(QWidget& container, int expectedSize) {
     require(titleCount > 0, "exercise actual large title labels, not just the window font");
 }
 
-#ifndef Q_OS_MACOS
-bool colorsApproximatelyMatch(const QColor& actual, const QColor& expected) {
-    constexpr int tolerance = 4;
-    return std::abs(actual.red() - expected.red()) <= tolerance &&
-           std::abs(actual.green() - expected.green()) <= tolerance &&
-           std::abs(actual.blue() - expected.blue()) <= tolerance;
-}
-
-QColor trafficLightFillColor(QWidget& widget) {
-    const QImage image = widget.grab().toImage();
-    require(!image.isNull(), "traffic-light control must render");
-    const qreal imageScale = static_cast<qreal>(image.height()) / widget.height();
-    const int fillSampleY = image.height() / 2 + qRound(4.0 * imageScale);
-    return image.pixelColor(image.width() / 2, fillSampleY);
-}
-#endif
-
 void customTitleBarUsesPlatformWindowControls() {
     const auto scheme = styles::ThemeManager::instance().themeColorScheme();
     QWidget host;
@@ -92,29 +72,19 @@ void customTitleBarUsesPlatformWindowControls() {
 #else
     require(closeButton != nullptr && minimizeButton != nullptr && maximizeButton != nullptr,
             "the custom title bar must own close, minimize, and maximize controls");
-    require(closeButton->x() < minimizeButton->x() && minimizeButton->x() < maximizeButton->x(),
-            "traffic-light controls must use macOS close/minimize/maximize order on the left");
-    require(maximizeButton->geometry().right() < titleBar.width() / 2,
-            "traffic-light controls must replace right-aligned Windows caption buttons");
-
-    require(colorsApproximatelyMatch(trafficLightFillColor(*closeButton),
-                                     QColor(QStringLiteral("#ff5f57"))),
-            "the close traffic light must render red");
-    require(colorsApproximatelyMatch(trafficLightFillColor(*minimizeButton),
-                                     QColor(QStringLiteral("#febc2e"))),
-            "the minimize traffic light must render yellow");
-    require(colorsApproximatelyMatch(trafficLightFillColor(*maximizeButton),
-                                     QColor(QStringLiteral("#28c840"))),
-            "the maximize traffic light must render green");
+    require(minimizeButton->x() < maximizeButton->x() && maximizeButton->x() < closeButton->x(),
+            "caption buttons must keep the Windows minimize/maximize/close order");
+    require(minimizeButton->x() >= titleBar.width() / 2,
+            "Windows caption buttons must stay right-aligned in the custom title bar");
 
     const QString maximizeText = maximizeButton->accessibleName();
     titleBar.setMaximized(true);
     require(!maximizeButton->accessibleName().isEmpty() &&
                 maximizeButton->accessibleName() != maximizeText,
-            "the green control must expose its restore action while maximized");
+            "the maximize control must expose its restore action while maximized");
     titleBar.setMaximized(false);
     require(maximizeButton->accessibleName() == maximizeText,
-            "the green control must restore its maximize action in the normal state");
+            "the maximize control must restore its maximize action in the normal state");
 #endif
 }
 
@@ -147,10 +117,10 @@ void mainWindowTitlesKeepSmoothRendering() {
             "the custom main-window title bar must expose a maximize control");
     titleBar->maximizeButton()->click();
     flushEvents();
-    require(window.isMaximized(), "the green title-bar control must maximize the main window");
+    require(window.isMaximized(), "the maximize title-bar control must maximize the main window");
     titleBar->maximizeButton()->click();
     flushEvents();
-    require(!window.isMaximized(), "the green title-bar control must restore the main window");
+    require(!window.isMaximized(), "the maximize title-bar control must restore the main window");
 #endif
     auto* card = window.findChild<ContentCardWidget*>();
     require(card != nullptr, "main window content exists");

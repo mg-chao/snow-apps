@@ -4,7 +4,9 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 
+#include "antd_icons.h"
 #include "icon_renderer.h"
+#include "widgets/button.h"
 
 #include <algorithm>
 #include <cmath>
@@ -18,26 +20,13 @@
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPainter>
-#include <QPainterPath>
 #include <QPalette>
 #include <QPixmap>
 #include <QWindow>
 
 namespace {
+namespace outlined_icons = adqt::icons::antd::outlined;
 namespace custom_icons = snow_shot::presentation::icons::custom;
-
-#ifndef Q_OS_MACOS
-constexpr int TRAFFIC_LIGHT_DIAMETER = 12;
-constexpr int TRAFFIC_LIGHT_HIT_SIZE = 20;
-
-constexpr QRgb CLOSE_COLOR = 0xffff5f57;
-constexpr QRgb CLOSE_BORDER_COLOR = 0xffe0443e;
-constexpr QRgb MINIMIZE_COLOR = 0xfffebc2e;
-constexpr QRgb MINIMIZE_BORDER_COLOR = 0xffd89e24;
-constexpr QRgb MAXIMIZE_COLOR = 0xff28c840;
-constexpr QRgb MAXIMIZE_BORDER_COLOR = 0xff1aab29;
-constexpr QRgb GLYPH_COLOR = 0x99000000;
-#endif
 
 QPixmap renderBrandLogo(int logicalHeight, const QColor& color) {
     if (logicalHeight <= 0 || !color.isValid()) {
@@ -61,113 +50,76 @@ QPixmap renderBrandLogo(int logicalHeight, const QColor& color) {
 
 #ifndef Q_OS_MACOS
 enum class WindowButtonKind : std::uint8_t {
-    Close,
     Minimize,
     Maximize,
+    Close,
 };
 
-QColor windowControlColor(WindowButtonKind kind) {
+adqt::icons::IconRef windowControlIcon(WindowButtonKind kind) {
     switch (kind) {
-    case WindowButtonKind::Close:
-        return QColor::fromRgba(CLOSE_COLOR);
     case WindowButtonKind::Minimize:
-        return QColor::fromRgba(MINIMIZE_COLOR);
+        return outlined_icons::Minus();
     case WindowButtonKind::Maximize:
-        return QColor::fromRgba(MAXIMIZE_COLOR);
+        return outlined_icons::Border();
+    case WindowButtonKind::Close:
+        return outlined_icons::Close();
     default:
         return {};
     }
 }
 
-QColor windowControlBorderColor(WindowButtonKind kind) {
-    switch (kind) {
-    case WindowButtonKind::Close:
-        return QColor::fromRgba(CLOSE_BORDER_COLOR);
-    case WindowButtonKind::Minimize:
-        return QColor::fromRgba(MINIMIZE_BORDER_COLOR);
-    case WindowButtonKind::Maximize:
-        return QColor::fromRgba(MAXIMIZE_BORDER_COLOR);
-    default:
-        return {};
-    }
-}
-
-class WindowControlButton final : public QAbstractButton {
+class WindowControlButton final : public adqt::widgets::AdButton {
   public:
-    explicit WindowControlButton(WindowButtonKind kind, QWidget* parent = nullptr)
-        : QAbstractButton(parent), m_kind(kind) {
+    WindowControlButton(WindowButtonKind kind,
+                        const snow_shot::presentation::styles::ThemeAliasMetricToken& metric,
+                        QWidget* parent = nullptr)
+        : adqt::widgets::AdButton(parent), m_kind(kind) {
+        setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
+        setSizeClass(adqt::widgets::AdButton::SizeClass::Small);
+        setIconRef(windowControlIcon(m_kind));
+        setIconSize(QSize(metric.fontSize, metric.fontSize));
         setFocusPolicy(Qt::NoFocus);
-        setFixedSize(TRAFFIC_LIGHT_HIT_SIZE, TRAFFIC_LIGHT_HIT_SIZE);
-        setCursor(Qt::ArrowCursor);
+        setFixedSize(metric.controlHeightSM, metric.controlHeightSM);
+        syncAccentRole();
     }
 
   protected:
     void enterEvent(QEnterEvent* event) override {
-        QAbstractButton::enterEvent(event);
-        update();
+        adqt::widgets::AdButton::enterEvent(event);
+        syncAccentRole();
     }
 
     void leaveEvent(QEvent* event) override {
-        QAbstractButton::leaveEvent(event);
-        update();
+        adqt::widgets::AdButton::leaveEvent(event);
+        syncAccentRole();
     }
 
-    void paintEvent(QPaintEvent* event) override {
-        (void)event;
+    void mousePressEvent(QMouseEvent* event) override {
+        adqt::widgets::AdButton::mousePressEvent(event);
+        syncAccentRole();
+    }
 
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-
-        QColor fill = windowControlColor(m_kind);
-        QColor border = windowControlBorderColor(m_kind);
-        if (isDown()) {
-            fill = fill.darker(112);
-            border = border.darker(112);
-        }
-
-        const QRectF circle((width() - TRAFFIC_LIGHT_DIAMETER) / 2.0,
-                            (height() - TRAFFIC_LIGHT_DIAMETER) / 2.0, TRAFFIC_LIGHT_DIAMETER,
-                            TRAFFIC_LIGHT_DIAMETER);
-        painter.setPen(QPen(border, 1.0));
-        painter.setBrush(fill);
-        painter.drawEllipse(circle);
-
-        if (!underMouse()) {
-            return;
-        }
-
-        painter.setPen(
-            QPen(QColor::fromRgba(GLYPH_COLOR), 1.15, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        const QPointF center = circle.center();
-        switch (m_kind) {
-        case WindowButtonKind::Close:
-            painter.drawLine(center + QPointF(-2.0, -2.0), center + QPointF(2.0, 2.0));
-            painter.drawLine(center + QPointF(2.0, -2.0), center + QPointF(-2.0, 2.0));
-            break;
-        case WindowButtonKind::Minimize:
-            painter.drawLine(center + QPointF(-2.5, 0.0), center + QPointF(2.5, 0.0));
-            break;
-        case WindowButtonKind::Maximize: {
-            QPainterPath glyph;
-            glyph.moveTo(center.x() - 2.5, center.y() + 0.5);
-            glyph.lineTo(center.x() - 0.5, center.y() + 2.5);
-            glyph.lineTo(center.x() - 2.5, center.y() + 2.5);
-            glyph.closeSubpath();
-            glyph.moveTo(center.x() + 2.5, center.y() - 0.5);
-            glyph.lineTo(center.x() + 0.5, center.y() - 2.5);
-            glyph.lineTo(center.x() + 2.5, center.y() - 2.5);
-            glyph.closeSubpath();
-            painter.setPen(Qt::NoPen);
-            painter.setBrush(QColor::fromRgba(GLYPH_COLOR));
-            painter.drawPath(glyph);
-            break;
-        }
-        }
+    void mouseReleaseEvent(QMouseEvent* event) override {
+        adqt::widgets::AdButton::mouseReleaseEvent(event);
+        syncAccentRole();
     }
 
   private:
+    void syncAccentRole() {
+        const bool closeDangerState =
+            m_kind == WindowButtonKind::Close && (underMouse() || isDown());
+        setAccentRole(closeDangerState ? adqt::widgets::AdButton::AccentRole::Danger
+                                       : adqt::widgets::AdButton::AccentRole::Neutral);
+    }
+
     WindowButtonKind m_kind;
 };
+
+void refreshWindowControlButtonTheme(QAbstractButton* button) {
+    if (button != nullptr) {
+        button->update();
+    }
+}
 #endif
 } // namespace
 
@@ -178,25 +130,25 @@ TitleBarWidget::TitleBarWidget(const snow_shot::presentation::styles::ThemeAlias
     setFixedHeight(metric.controlHeight);
 
 #ifndef Q_OS_MACOS
-    m_closeButton = new WindowControlButton(WindowButtonKind::Close, this);
-    m_minimizeButton = new WindowControlButton(WindowButtonKind::Minimize, this);
-    m_maximizeButton = new WindowControlButton(WindowButtonKind::Maximize, this);
-    m_closeButton->setObjectName(QStringLiteral("closeWindowButton"));
+    m_minimizeButton = new WindowControlButton(WindowButtonKind::Minimize, metric, this);
+    m_maximizeButton = new WindowControlButton(WindowButtonKind::Maximize, metric, this);
+    m_closeButton = new WindowControlButton(WindowButtonKind::Close, metric, this);
     m_minimizeButton->setObjectName(QStringLiteral("minimizeWindowButton"));
     m_maximizeButton->setObjectName(QStringLiteral("maximizeWindowButton"));
+    m_closeButton->setObjectName(QStringLiteral("closeWindowButton"));
 #endif
 
     auto* layout = new QHBoxLayout(this);
-    layout->setContentsMargins(metric.paddingXS, 0, metric.paddingXS, 0);
-    layout->setSpacing(0);
+    layout->setContentsMargins(0, 0, metric.paddingSM + metric.borderRadiusXS, 0);
+    layout->setSpacing(metric.marginXXS);
 
     retranslateUi();
+    layout->addStretch();
 #ifndef Q_OS_MACOS
-    layout->addWidget(m_closeButton);
     layout->addWidget(m_minimizeButton);
     layout->addWidget(m_maximizeButton);
+    layout->addWidget(m_closeButton);
 #endif
-    layout->addStretch();
 
     const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
     connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
@@ -273,6 +225,12 @@ void TitleBarWidget::applyTheme(const snow_shot::presentation::styles::ThemeColo
     palette.setColor(QPalette::Window, scheme.map.colorBgContainer);
     setPalette(palette);
     m_logoColor = scheme.map.colorText;
+
+#ifndef Q_OS_MACOS
+    refreshWindowControlButtonTheme(m_minimizeButton);
+    refreshWindowControlButtonTheme(m_maximizeButton);
+    refreshWindowControlButtonTheme(m_closeButton);
+#endif
 
     update();
 }
