@@ -206,8 +206,11 @@ struct ScreenshotOverlayShortcutController::Impl {
                            actions.localShortcutInputAllowed();
                 }
                 if (actionId == QStringLiteral("keep_selection_width_and_height_consistent")) {
+                    // Includes intelligent selection so the key can be held in
+                    // advance, before the pointer drag creates a selection.
                     return (interaction.movingSelection() || interaction.modifyingSelection() ||
-                            interaction.manualSelecting() || interaction.editing()) &&
+                            interaction.manualSelecting() || interaction.editing() ||
+                            interaction.intelligentSelecting()) &&
                            !recognitionTool(interaction.activeTool()) &&
                            actions.localShortcutInputAllowed();
                 }

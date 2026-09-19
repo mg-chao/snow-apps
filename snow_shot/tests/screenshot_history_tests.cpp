@@ -1709,6 +1709,25 @@ void sharedShiftShortcutChoosesResizeOrColorFormat() {
     require(dispatchShortcutRelease(shortcutWindow, Qt::Key_Shift) && colorFormatCycles == 1,
             "Shift plus whole-selection movement also switched color format");
 
+    // The overlay starts in intelligent-selection mode; the aspect shortcut
+    // must arm there so it can be held before the selection drag begins.
+    interaction.enterOverlayVisible(true);
+    selection.clearSelection();
+    require(dispatchShortcut(shortcutWindow, Qt::Key_Shift, Qt::ShiftModifier),
+            "pre-held Shift was rejected before any selection existed");
+    handler.handleMousePress(nullptr, QPointF(50, 50));
+    handler.handleMouseMove(nullptr, QPointF(90, 75));
+    require(interaction.dragging() &&
+                interaction.dragMode() == ScreenshotSelectionDragMode::Marquee,
+            "an intelligent-selection press did not convert into a marquee drag");
+    require(selection.normalizedSelection().size() == QSizeF(41, 41),
+            "pre-held Shift did not keep the new selection width and height equal");
+    handler.handleMouseRelease(nullptr, QPointF(90, 75));
+    require(interaction.movingSelection(),
+            "releasing the constrained marquee did not confirm the selection");
+    require(dispatchShortcutRelease(shortcutWindow, Qt::Key_Shift) && colorFormatCycles == 1,
+            "using pre-held Shift for a new selection also switched color format");
+
     require(shortcutSettings.setKeepSelectionWidthAndHeightConsistent({QStringLiteral("K")}),
             "failed to remap the aspect shortcut");
     shortcutController.reloadConfiguredShortcuts();

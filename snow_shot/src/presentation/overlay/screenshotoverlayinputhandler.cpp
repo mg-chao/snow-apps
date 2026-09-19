@@ -562,8 +562,12 @@ bool ScreenshotOverlayInputHandler::activateMoveEntireSelectionShortcut() {
 
 bool ScreenshotOverlayInputHandler::activateKeepSelectionAspectRatioShortcut(
     bool cycleColorFormatIfUnused) {
+    // The shortcut must arm in every state a constrained selection drag can
+    // start from. Intelligent selection is the pre-selection state, where the
+    // key is held in advance of the pointer drag.
     if (!(m_context.interaction.movingSelection() || m_context.interaction.modifyingSelection() ||
-          m_context.interaction.manualSelecting() || m_context.interaction.editing()) ||
+          m_context.interaction.manualSelecting() || m_context.interaction.editing() ||
+          m_context.interaction.intelligentSelecting()) ||
         recognitionTool(m_context.interaction.activeTool()) ||
         !m_context.actions.localShortcutInputAllowed()) {
         return false;
