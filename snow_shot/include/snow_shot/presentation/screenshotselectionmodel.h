@@ -54,6 +54,7 @@ class ScreenshotSelectionModel final {
     [[nodiscard]] bool setCornerRadius(int radius);
     [[nodiscard]] bool setShadowWidth(int shadowWidth);
     void setShadowColor(const QColor& color);
+    [[nodiscard]] bool setAspectRatioLockEnabled(bool enabled, qreal minimumSelectionSize);
     void toggleAspectRatioLock(qreal minimumSelectionSize);
 
     [[nodiscard]] ScreenshotSelectionParams params(const QRect& bounds) const;
@@ -67,6 +68,7 @@ class ScreenshotSelectionModel final {
     int m_cornerRadius = 0;
     int m_shadowWidth = 0;
     QColor m_shadowColor = QColor(0x33, 0x33, 0x33);
+    bool m_aspectRatioLockEnabled = false;
     double m_lockedAspectRatio = 0.0;
 };
 

@@ -38,10 +38,12 @@ bool SnowCanvasTextEditorSession::begin(const SnowTextElementInfo& info,
         if (newTextStyle != nullptr) {
             snow_canvas_text::applyTextStyleToSceneItem(preview, *newTextStyle);
         }
-        const QSizeF initialSize =
-            snow_canvas_text_layout::measureNaturalText(initialText, baseFont, preview);
-        preview.width = initialSize.width();
-        preview.height = initialSize.height();
+        const snow_canvas_text_layout::TextMeasuredLayout initialMeasured =
+            snow_canvas_text_layout::measureNaturalTextLayout(initialText, baseFont, preview);
+        preview.width = initialMeasured.layout.width();
+        preview.height = initialMeasured.layout.height();
+        preview.content_width = initialMeasured.content.width();
+        preview.content_height = initialMeasured.content.height();
     }
 
     if (newTextStyle != nullptr && snow_canvas_element_id::hasElementId(m_arrowId)) {
@@ -87,6 +89,8 @@ SnowCanvasTextEditorSession::finish(const QFont& baseFont) {
     result.measuredLayout = SnowTextLayoutSize{
         m_previewItem.width,
         m_previewItem.height,
+        m_previewItem.content_width,
+        m_previewItem.content_height,
     };
     result.style = snow_canvas_text::textStyleFromSceneItem(m_previewItem);
     result.autoResize = m_previewAutoResize;
@@ -396,13 +400,16 @@ void SnowCanvasTextEditorSession::updatePreviewLayout(const QFont& baseFont, boo
 
     if (snow_canvas_element_id::hasElementId(m_arrowId)) {
         snow_canvas_text::copyTextToSceneItem(m_previewItem, text);
-        const QSizeF natural =
-            snow_canvas_text_layout::measureNaturalText(text, baseFont, m_previewItem);
+        const snow_canvas_text_layout::TextMeasuredLayout natural =
+            snow_canvas_text_layout::measureNaturalTextLayout(text, baseFont, m_previewItem);
         const double maximum = qMax(m_arrowWidth * 0.7, m_previewItem.font_size * 11.0);
-        m_previewItem.width = qMin(natural.width(), maximum);
-        m_previewItem.height = snow_canvas_text_layout::measureWrappedText(
-                                   text, baseFont, m_previewItem, m_previewItem.width)
-                                   .height();
+        m_previewItem.width = qMin(natural.layout.width(), maximum);
+        const snow_canvas_text_layout::TextMeasuredLayout wrapped =
+            snow_canvas_text_layout::measureWrappedTextLayout(text, baseFont, m_previewItem,
+                                                              m_previewItem.width);
+        m_previewItem.height = wrapped.layout.height();
+        m_previewItem.content_width = wrapped.content.width();
+        m_previewItem.content_height = wrapped.content.height();
         m_previewItem.rotation = 0.0;
         m_previewItem.center_x = m_canvasAnchor.x();
         m_previewItem.center_y = m_canvasAnchor.y();

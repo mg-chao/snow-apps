@@ -195,6 +195,9 @@ class QtPinnedWindowPlatform final : public PinnedWindowPlatform {
         m_transparent = transparent;
         return true; // Offscreen state emulation, never selected for a native desktop.
     }
+    bool setStaysOnTop(bool) override {
+        return false; // Let the caller update Qt window flags.
+    }
     bool activate() override {
         if (!m_window)
             return false;
@@ -309,6 +312,11 @@ class WindowsPinnedWindowPlatform final : public PinnedWindowPlatform {
             return false;
         m_transparent = transparent;
         return true;
+    }
+    bool setStaysOnTop(bool staysOnTop) override {
+        return m_window && m_window->internalWinId() != 0 &&
+               screenshot_pinned_window_native::setStaysOnTop(m_window->internalWinId(),
+                                                              staysOnTop);
     }
     bool activate() override {
         return m_window &&

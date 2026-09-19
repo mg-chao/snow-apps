@@ -71,6 +71,8 @@ constexpr int kRecordingSettingsColorPickerWidth = 154;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Auto Filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Fill regions"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Capture cursor"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Recapture"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter type"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mosaic"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Gaussian blur"),
@@ -120,6 +122,7 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Barcode recognition"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Edit"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Text translation"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Jump to Translation Page"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Translation settings"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Merge cells"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Split cells"),
@@ -243,8 +246,9 @@ bool filterTypeSupportsIntensity(SnowCanvasFilterType type) {
            type != SnowCanvasFilterType::SmartErase;
 }
 
-bool toolUsesActionToolbar(ScreenshotToolPalette::Tool tool) {
-    return tool == ScreenshotToolPalette::Tool::Select ||
+bool toolUsesActionToolbar(ScreenshotToolPalette::Tool tool, bool showMoveOptionsToolbar) {
+    return (tool == ScreenshotToolPalette::Tool::Move && showMoveOptionsToolbar) ||
+           tool == ScreenshotToolPalette::Tool::Select ||
            tool == ScreenshotToolPalette::Tool::Ocr ||
            tool == ScreenshotToolPalette::Tool::TextTranslation ||
            tool == ScreenshotToolPalette::Tool::Table ||
@@ -256,6 +260,8 @@ bool toolUsesActionToolbar(ScreenshotToolPalette::Tool tool) {
 std::optional<ScreenshotToolPalette::ActionFamily>
 actionFamilyForTool(ScreenshotToolPalette::Tool tool) {
     switch (tool) {
+    case ScreenshotToolPalette::Tool::Move:
+        return ScreenshotToolPalette::ActionFamily::Move;
     case ScreenshotToolPalette::Tool::Markdown:
     case ScreenshotToolPalette::Tool::Html:
         return ScreenshotToolPalette::ActionFamily::ImageConversion;
@@ -274,7 +280,7 @@ actionFamilyForTool(ScreenshotToolPalette::Tool tool) {
     }
 }
 
-bool toolUsesStyleToolbar(ScreenshotToolPalette::Tool tool) {
+bool toolUsesStandardStyleToolbar(ScreenshotToolPalette::Tool tool) {
     switch (tool) {
     case ScreenshotToolPalette::Tool::Shape:
     case ScreenshotToolPalette::Tool::Arrow:
@@ -303,13 +309,6 @@ bool toolUsesStyleToolbar(ScreenshotToolPalette::Tool tool) {
         return false;
     }
     return false;
-}
-
-std::optional<ScreenshotToolPalette::Tool> styleFamilyForTool(ScreenshotToolPalette::Tool tool) {
-    if (!toolUsesStyleToolbar(tool)) {
-        return std::nullopt;
-    }
-    return tool;
 }
 
 namespace toolbar_settings = snow_shot::storage;
@@ -1133,12 +1132,17 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
     const bool qrVisible = m_activeTool == Tool::Qr;
     const bool conversionVisible = m_activeTool == Tool::Markdown || m_activeTool == Tool::Html;
     const bool scrollingVisible = m_activeTool == Tool::ScrollingScreenshot;
-    const bool recognitionActionVisible =
-        ocrVisible || tableVisible || qrVisible || scrollingVisible || conversionVisible;
+    const bool moveVisible = m_activeTool == Tool::Move && m_options.showMoveOptionsToolbar;
+    const bool recognitionActionVisible = ocrVisible || tableVisible || qrVisible ||
+                                          scrollingVisible || conversionVisible || moveVisible;
     const bool recognitionControlsMatch =
+        (m_moveActionControls == nullptr || m_moveActionControls->isHidden() == !moveVisible) &&
         (m_conversionSettingsButton == nullptr ||
          m_conversionSettingsButton->isHidden() == !conversionVisible) &&
         (m_textEditButton == nullptr || m_textEditButton->isHidden() == !ocrVisible) &&
+        (m_jumpToTranslationPageButton == nullptr ||
+         m_jumpToTranslationPageButton->isHidden() ==
+             !(ocrVisible && m_jumpToTranslationPageVisible)) &&
         (m_tableMergeButton == nullptr || m_tableMergeButton->isHidden() == !tableVisible) &&
         (m_scrollingRecognitionControls == nullptr ||
          m_scrollingRecognitionControls->isHidden() == !scrollingVisible);
@@ -1149,6 +1153,9 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
 
     m_actionToolbarTargetVisible = actionToolbarVisible;
     m_styleToolbarTargetVisible = styleToolbarVisible;
+    if (m_moveActionControls != nullptr) {
+        m_moveActionControls->setVisible(moveVisible);
+    }
     if (m_conversionSettingsButton != nullptr) {
         m_conversionSettingsButton->setVisible(conversionVisible);
     }
@@ -1163,6 +1170,11 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
     if (m_textTranslateButton != nullptr) {
         m_textTranslateButton->setVisible(ocrVisible);
     }
+    if (m_jumpToTranslationPageButton != nullptr) {
+        m_jumpToTranslationPageButton->setVisible(ocrVisible && m_jumpToTranslationPageVisible);
+    }
+    setStyleToolbarSpacingVisible(m_jumpToTranslationPageLeadingSpacer,
+                                  ocrVisible && m_jumpToTranslationPageVisible);
     if (m_textResetButton != nullptr) {
         m_textResetButton->setVisible(ocrVisible);
     }
@@ -1312,6 +1324,15 @@ void ScreenshotToolPalette::updatePenFilterStrokeWidthControls() {
         m_styleControls->styleState().penFilterStyle.strokeWidth, mixed);
 }
 
+bool ScreenshotToolPalette::toolUsesStyleToolbar(Tool tool) const {
+    return toolUsesStandardStyleToolbar(tool);
+}
+
+std::optional<ScreenshotToolPalette::Tool>
+ScreenshotToolPalette::styleFamilyForTool(Tool tool) const {
+    return toolUsesStyleToolbar(tool) ? std::optional<Tool>(tool) : std::nullopt;
+}
+
 bool ScreenshotToolPalette::prepareStyleControlsForActivation(Tool destinationTool) {
     if (!m_activeStyleTool.has_value() || *m_activeStyleTool == destinationTool ||
         !toolUsesStyleToolbar(*m_activeStyleTool) || !toolUsesStyleToolbar(destinationTool)) {
@@ -1424,7 +1445,7 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
         }
     }
     if (const std::optional<ActionFamily> family = actionFamilyForTool(tool);
-        family.has_value() && toolUsesActionToolbar(tool)) {
+        family.has_value() && toolUsesActionToolbar(tool, m_options.showMoveOptionsToolbar)) {
         static_cast<void>(ensureActionFamily(*family));
     }
     if (toolUsesStyleToolbar(tool)) {
@@ -1906,6 +1927,26 @@ bool ScreenshotToolPalette::recordingCursorVisible() const {
     return m_recordingCursorVisible;
 }
 
+void ScreenshotToolPalette::setCaptureCursorEnabled(bool enabled) {
+    m_captureCursorEnabled = enabled;
+    setScreenshotToolPaletteButtonActive(m_captureCursorButton, enabled);
+}
+
+bool ScreenshotToolPalette::captureCursorEnabled() const {
+    return m_captureCursorEnabled;
+}
+
+void ScreenshotToolPalette::setRecaptureBusy(bool busy) {
+    m_recaptureBusy = busy;
+    if (m_recaptureButton != nullptr) {
+        m_recaptureButton->setEnabled(!busy);
+    }
+}
+
+bool ScreenshotToolPalette::recaptureBusy() const {
+    return m_recaptureBusy;
+}
+
 void ScreenshotToolPalette::setOcrBusy(bool busy) {
     m_ocrBusy = busy;
     updateTextRecognitionBusy();
@@ -2000,6 +2041,7 @@ void ScreenshotToolPalette::setTableEditingState(bool available, bool canUndo, b
 
 void ScreenshotToolPalette::setTextEditingState(bool available, bool editing, bool canUndo,
                                                 bool canRedo) {
+    m_textResultAvailable = available;
     m_textEditing = editing;
     m_textEditingAvailable = available && (editing || m_textTranslating);
     m_textCanUndo = canUndo;
@@ -2010,6 +2052,9 @@ void ScreenshotToolPalette::setTextEditingState(bool available, bool editing, bo
     }
     if (m_textTranslateButton != nullptr) {
         m_textTranslateButton->setEnabled(available);
+    }
+    if (m_jumpToTranslationPageButton != nullptr) {
+        m_jumpToTranslationPageButton->setEnabled(available);
     }
     if (m_textFormattingSelect != nullptr) {
         m_textFormattingSelect->setEnabled(available && !m_textTranslating);
@@ -2028,6 +2073,7 @@ void ScreenshotToolPalette::setTextEditingState(bool available, bool editing, bo
 void ScreenshotToolPalette::setTextTranslationState(bool available, bool translating,
                                                     bool streaming, bool canUndo, bool canRedo,
                                                     bool canReset, bool originalImage) {
+    m_textResultAvailable = available;
     m_textTranslating = translating;
     m_textTranslationStreaming = streaming;
     m_textTranslationInImage = translating && originalImage;
@@ -2041,6 +2087,9 @@ void ScreenshotToolPalette::setTextTranslationState(bool available, bool transla
     if (m_textTranslateButton != nullptr) {
         m_textTranslateButton->setEnabled(available);
         setScreenshotToolPaletteButtonActive(m_textTranslateButton, translating);
+    }
+    if (m_jumpToTranslationPageButton != nullptr) {
+        m_jumpToTranslationPageButton->setEnabled(available);
     }
     if (m_textEditButton != nullptr) {
         setScreenshotToolPaletteButtonActive(m_textEditButton,
@@ -2065,6 +2114,21 @@ void ScreenshotToolPalette::setTextTranslationState(bool available, bool transla
         updateTextRecognitionBusy();
     }
     updateHistoryActionAvailability();
+}
+
+void ScreenshotToolPalette::setJumpToTranslationPageVisible(bool visible) {
+    if (m_jumpToTranslationPageVisible == visible) {
+        return;
+    }
+    m_jumpToTranslationPageVisible = visible;
+    if (m_jumpToTranslationPageButton == nullptr) {
+        return;
+    }
+    if (applyActiveToolSecondaryToolbarVisibility()) {
+        updateToolbarGeometry();
+        update();
+        emit visibleContentChanged();
+    }
 }
 
 void ScreenshotToolPalette::setTextTransformSelections(const QString& formatting,
@@ -3261,6 +3325,9 @@ void ScreenshotToolPalette::retranslateUi() {
     refreshRecordingExportSettingsText();
     updateRecordingControls();
     refreshShortcutTooltips();
+    if (m_captureCursorButton != nullptr) {
+        configureScreenshotToolPaletteTooltip(m_captureCursorButton, "Capture cursor");
+    }
 }
 
 void ScreenshotToolPalette::refreshShortcutTooltips() {
@@ -3301,6 +3368,10 @@ void ScreenshotToolPalette::refreshShortcutTooltips() {
     refreshActionToolGroups();
     refreshConfirmShortcutHint();
     refreshRecordingShortcutTooltips();
+    if (m_recaptureButton != nullptr) {
+        applyScreenshotShortcutTooltip(m_recaptureButton, QStringLiteral("Recapture"),
+                                       QStringLiteral("recapture"));
+    }
 }
 
 void ScreenshotToolPalette::refreshConfirmShortcutHint() {
@@ -3457,7 +3528,7 @@ void ScreenshotToolPalette::clearDrawingToolGroups() {
 void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
     // Toolbar activations express user intent; reflective canvas synchronization
     // must not rewrite the remembered drawing modes.
-    rememberDrawingMode(tool);
+    recordUserDrawingToolIntent(tool);
     setActiveTool(tool);
     switch (tool) {
     case Tool::Move:
@@ -3606,6 +3677,33 @@ void ScreenshotToolPalette::rememberDrawingMode(Tool tool) {
         m_lastFilterTool = tool;
         static_cast<void>(settings.setLastFilterTool(filterToolSetting(tool)));
     }
+}
+
+void ScreenshotToolPalette::rememberLastUsedDrawingTool(Tool tool) {
+    const QString itemId = drawingToolItemId(tool);
+    if (itemId.isEmpty()) {
+        return;
+    }
+    // Like the remembered highlight/filter modes, the last used tool must
+    // outlive this palette: capture sessions rebuild the toolbar and pin edit
+    // sessions recreate it, so the memory lives in the persisted settings.
+    const toolbar_settings::ScreenshotToolbarSettings settings;
+    if (settings.lastDrawingTool() != itemId) {
+        static_cast<void>(settings.setLastDrawingTool(itemId));
+    }
+}
+
+void ScreenshotToolPalette::recordUserDrawingToolIntent(Tool tool) {
+    rememberDrawingMode(tool);
+    rememberLastUsedDrawingTool(tool);
+}
+
+bool ScreenshotToolPalette::drawingToolCanBeActivated(Tool tool) const {
+    if (drawingToolItemId(tool).isEmpty() || isRecordingUnavailableTool(tool)) {
+        return false;
+    }
+    adqt::widgets::AdButton* button = drawingToolEntryButton(tool);
+    return button != nullptr && button->isEnabled();
 }
 
 bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibleButton) {
@@ -4738,9 +4836,41 @@ bool ScreenshotToolPalette::activateToolShortcut(Tool tool) {
                               : activateActionTool(actionId, false);
 }
 
+bool ScreenshotToolPalette::activateRememberedDrawingTool() {
+    if (!toolbar_settings::DrawingSettings().rememberLastUsedTool()) {
+        return false;
+    }
+    const QString itemId = toolbar_settings::ScreenshotToolbarSettings().lastDrawingTool();
+    const toolbar_layout::Descriptor* descriptor =
+        itemId.isEmpty() ? nullptr : toolbar_layout::descriptor(itemId);
+    if (descriptor == nullptr) {
+        return false;
+    }
+    const Tool tool = rememberedDrawingMode(drawingToolFromItem(descriptor->item));
+    if (!drawingToolCanBeActivated(tool)) {
+        return false;
+    }
+    if (m_activeTool.has_value() && *m_activeTool == tool) {
+        return true;
+    }
+    activateDrawingTool(tool);
+    return true;
+}
+
 bool ScreenshotToolPalette::activateScreenshotShortcut(const QString& actionId) {
     if (actionId == QStringLiteral("move_tool")) {
         return activateToolShortcut(Tool::Move);
+    }
+    if (actionId == QStringLiteral("recapture")) {
+        if (!m_activeTool.has_value() || *m_activeTool != Tool::Move) {
+            return false;
+        }
+        static_cast<void>(ensureActionFamily(ActionFamily::Move));
+        if (m_recaptureButton == nullptr || !m_recaptureButton->isEnabled()) {
+            return false;
+        }
+        m_recaptureButton->click();
+        return true;
     }
     static const QMap<QString, QString> actionItems{
         {QStringLiteral("table_recognition"), QStringLiteral("table-recognition")},
@@ -4926,7 +5056,7 @@ QWidget* ScreenshotToolPalette::createStyleModeSelector(
         createScreenshotToolPaletteRadioEditor(parent, config, styleButtonMetrics(m_physicalScale));
     connect(editor.group, &QButtonGroup::idClicked, this, [this](int id) {
         const Tool tool = static_cast<Tool>(id);
-        rememberDrawingMode(tool);
+        recordUserDrawingToolIntent(tool);
         setActiveTool(tool);
         switch (tool) {
         case Tool::RectangleHighlight:
@@ -5668,6 +5798,8 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_selectionOpacitySlider = nullptr;
     m_textEditButton = nullptr;
     m_textTranslateButton = nullptr;
+    m_jumpToTranslationPageButton = nullptr;
+    m_jumpToTranslationPageLeadingSpacer = nullptr;
     m_textResetButton = nullptr;
     m_textSettingsButton = nullptr;
     m_conversionSettingsButton = nullptr;
@@ -5682,6 +5814,9 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_scrollingHorizontalButton = nullptr;
 
     m_rectangleStyleControlsWidget = nullptr;
+    m_moveActionControls = nullptr;
+    m_captureCursorButton = nullptr;
+    m_recaptureButton = nullptr;
     m_lineStyleControlsWidget = nullptr;
     m_freeDrawStyleControlsWidget = nullptr;
     m_arrowStyleControlsWidget = nullptr;
@@ -5747,8 +5882,16 @@ bool ScreenshotToolPalette::evictSecondaryToolbarContents() {
             }
         };
         takeLayoutItems(takeLayoutItems, layout);
+        // Any of these widgets may be dispatching the very command that triggered
+        // this eviction (a secondary-panel action button that ends or resets the
+        // capture), so destruction must wait until the event loop; deleting here
+        // would free a widget while its own mouseReleaseEvent is on the stack.
+        // Detach each widget first: reparenting removes it from the palette's
+        // QObject tree and hides it immediately, so child discovery and layout
+        // see a consistent state without waiting for the deferred delete.
         for (QWidget* widget : std::as_const(widgets)) {
-            delete widget;
+            widget->setParent(nullptr);
+            widget->deleteLater();
         }
         layout->invalidate();
     };
@@ -5853,6 +5996,7 @@ bool ScreenshotToolPalette::evictStyleToolbarContentsExcept(QWidget* retainedCon
         }
     };
     clearRemoved(m_rectangleStyleControlsWidget);
+
     clearRemoved(m_lineStyleControlsWidget);
     clearRemoved(m_freeDrawStyleControlsWidget);
     clearRemoved(m_arrowStyleControlsWidget);
@@ -5935,6 +6079,9 @@ bool ScreenshotToolPalette::ensureActionFamily(ActionFamily family) {
     }
     m_actionFamilyStates.insert(key, MaterializationState::Constructing);
     switch (family) {
+    case ActionFamily::Move:
+        createMoveActionFamily();
+        break;
     case ActionFamily::Selection:
         createSelectionActionFamily();
         break;
@@ -6055,6 +6202,11 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     m_textTranslateButton = addButton("Text translation", custom_outlined_icons::OcrTranslate(),
                                       QStringLiteral("screenshotOcrTextTranslateButton"));
+    m_jumpToTranslationPageLeadingSpacer =
+        addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING);
+    m_jumpToTranslationPageButton =
+        addButton("Jump to Translation Page", custom_outlined_icons::JumpTranslate(),
+                  QStringLiteral("screenshotOcrJumpToTranslationPageButton"));
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     ScreenshotToolPaletteSelectEditorConfig formattingConfig;
     formattingConfig.objectName = QStringLiteral("screenshotOcrTextFormattingSelect");
@@ -6095,6 +6247,8 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
             &ScreenshotToolPalette::textEditRequested);
     connect(m_textTranslateButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::textTranslateRequested);
+    connect(m_jumpToTranslationPageButton, &adqt::widgets::AdButton::clicked, this,
+            &ScreenshotToolPalette::jumpToTranslationPageRequested);
     connect(m_textResetButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::textResetRequested);
     connect(m_textSettingsButton, &adqt::widgets::AdButton::clicked, this,
@@ -6111,10 +6265,11 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
                     emit textPunctuationRequested(value.toString());
                 }
             });
-    setTextEditingState(m_textEditingAvailable, m_textEditing, m_textCanUndo, m_textCanRedo);
-    setTextTranslationState(m_textEditingAvailable, m_textTranslating, m_textTranslationStreaming,
+    setTextEditingState(m_textResultAvailable, m_textEditing, m_textCanUndo, m_textCanRedo);
+    setTextTranslationState(m_textResultAvailable, m_textTranslating, m_textTranslationStreaming,
                             m_textCanUndo, m_textCanRedo, m_textCanReset, m_textTranslationInImage);
     setTextTransformSelections(m_textFormattingSelection, m_textPunctuationSelection);
+    static_cast<void>(applyActiveToolSecondaryToolbarVisibility());
 }
 
 void ScreenshotToolPalette::setImageConversionEnabled(bool enabled) {
@@ -6180,6 +6335,48 @@ void ScreenshotToolPalette::createTableRecognitionActionFamily() {
             &ScreenshotToolPalette::tableResetRequested);
     setTableEditingState(m_tableEditingAvailable, m_tableCanUndo, m_tableCanRedo, m_tableCanMerge,
                          m_tableCanSplit, m_tableCanReset);
+}
+
+void ScreenshotToolPalette::createMoveActionFamily() {
+    if (!m_options.showMoveOptionsToolbar || m_selectActionLayout == nullptr ||
+        m_moveActionControls != nullptr) {
+        return;
+    }
+    m_moveActionControls = new QWidget(m_selectActionPanel);
+    m_moveActionControls->setObjectName(QStringLiteral("screenshotMoveActionControls"));
+    auto* layout = new QHBoxLayout(m_moveActionControls);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    m_styleControlLayouts.push_back(layout);
+
+    m_captureCursorButton = createScreenshotToolPaletteStyleActionButton(
+        m_moveActionControls, "Capture cursor", custom_outlined_icons::RecordingCursor(),
+        actionButtonMetrics(m_physicalScale));
+    m_captureCursorButton->setObjectName(QStringLiteral("screenshotCaptureCursorButton"));
+    layout->addWidget(m_captureCursorButton);
+    addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
+    layout->addWidget(createStyleToolbarSeparator(m_moveActionControls));
+    addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
+    m_recaptureButton = createScreenshotToolPaletteStyleActionButton(
+        m_moveActionControls, "Recapture", custom_outlined_icons::RefreshCapture(),
+        actionButtonMetrics(m_physicalScale));
+    m_recaptureButton->setObjectName(QStringLiteral("screenshotRecaptureButton"));
+    applyScreenshotShortcutTooltip(m_recaptureButton, QStringLiteral("Recapture"),
+                                   QStringLiteral("recapture"));
+    layout->addWidget(m_recaptureButton);
+
+    connect(m_captureCursorButton, &adqt::widgets::AdButton::clicked, this, [this]() {
+        setCaptureCursorEnabled(!m_captureCursorEnabled);
+        emit captureCursorToggled(m_captureCursorEnabled);
+    });
+    connect(m_recaptureButton, &adqt::widgets::AdButton::clicked, this,
+            &ScreenshotToolPalette::recaptureRequested);
+    m_selectActionLayout->addWidget(m_moveActionControls);
+    stampScreenshotToolbarReferenceWidth(m_moveActionControls,
+                                         actionButtonMetrics(1.0).buttonSize * 2 +
+                                             STYLE_GROUP_SPACING * 4 + TOOLBAR_SEPARATOR_WIDTH);
+    setCaptureCursorEnabled(m_captureCursorEnabled);
+    setRecaptureBusy(m_recaptureBusy);
 }
 
 void ScreenshotToolPalette::createScrollingRecognitionActionFamily() {
@@ -6873,8 +7070,9 @@ bool ScreenshotToolPalette::applyActiveToolSecondaryToolbarVisibility() {
     if (!m_activeTool.has_value()) {
         return setSecondaryToolbarVisibility(false, false);
     }
-    return setSecondaryToolbarVisibility(toolUsesActionToolbar(*m_activeTool),
-                                         toolUsesStyleToolbar(*m_activeTool));
+    return setSecondaryToolbarVisibility(
+        toolUsesActionToolbar(*m_activeTool, m_options.showMoveOptionsToolbar),
+        toolUsesStyleToolbar(*m_activeTool));
 }
 
 bool ScreenshotToolPalette::activeToolUsesStyleToolbar() const {

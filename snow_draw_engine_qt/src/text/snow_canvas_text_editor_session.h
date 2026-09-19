@@ -24,7 +24,7 @@ class SnowCanvasTextEditorSession final {
         SnowElementId elementId{};
         SnowElementId arrowId{};
         bool hasExistingElement = false;
-        SnowTextLayoutSize measuredLayout{1.0, 1.0};
+        SnowTextLayoutSize measuredLayout{1.0, 1.0, 0.0, 0.0};
         SnowTextStyle style{};
         bool autoResize = false;
         bool styleChanged = false;

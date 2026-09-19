@@ -8,6 +8,7 @@
 #include <QMap>
 #include <QMutex>
 #include <QObject>
+#include <QPair>
 #include <QString>
 #include <QTimer>
 #include <QVector>
@@ -27,6 +28,8 @@ class ConfigurationStore final : public QObject {
     ConfigurationStore(QString configurationFile, bool readAvailable, bool writeAvailable,
                        int debounceMilliseconds = 1000, QObject* parent = nullptr);
 
+    [[nodiscard]] static int currentSchemaVersion();
+
     [[nodiscard]] QJsonValue value(const QString& key) const;
     [[nodiscard]] QMap<QString, QJsonValue> snapshot() const;
     [[nodiscard]] bool isDirty() const;
@@ -36,6 +39,15 @@ class ConfigurationStore final : public QObject {
 
     bool setValue(const QString& key, const QJsonValue& value);
     bool setValues(const QMap<QString, QJsonValue>& values);
+    // Replaces the whole configuration with `values` overlaid on schema
+    // defaults, using the same per-key salvage rules as loading a
+    // configuration file. Keys absent from `values` revert to defaults.
+    // Unknown keys are ignored. `schemaVersion` is the version the overlay
+    // was written against: older versions are upgraded, and versions newer
+    // than this application are rejected. Pass 0 to treat the overlay as
+    // already at the current schema. Returns false when storage is
+    // read-only or `schemaVersion` is from a newer application.
+    bool applySnapshot(const QMap<QString, QJsonValue>& values, int schemaVersion = 0);
     [[nodiscard]] StorageResult flushNow();
 
   signals:
@@ -48,6 +60,7 @@ class ConfigurationStore final : public QObject {
     void scheduleFlush();
     void setLastError(const QString& error);
     void rejectMutation(const QString& key, const QString& error);
+    void announceChanges(QVector<QPair<QString, QJsonValue>> changed);
 
     QString m_configurationFile;
     bool m_readAvailable = false;

@@ -7,7 +7,6 @@
 #include <QAbstractTextDocumentLayout>
 #include <QBrush>
 #include <QColor>
-#include <QFontMetricsF>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPen>
@@ -64,20 +63,24 @@ void drawBackground(QPainter& painter, const SnowSceneDisplayItem& item, const Q
         text_layout::createDocumentLayout(item, baseFont, zoom, text, true);
 
     QTextDocument& document = layout.textDocument();
-    const double lineHeight = qMax(1.0, QFontMetricsF(layout.resolution.font).lineSpacing());
-    const double horizontalPadding = lineHeight * 0.32;
-    const double verticalPadding = lineHeight * 0.1;
+    // The pill padding comes from the engine's published fill-padding
+    // contract. Never measure padding here: a font-metrics line height would
+    // drift from the contract edge the dirty regions are derived from.
+    const SnowTextPaintOutset fillOutset = snow_scene_text_fill_outset(&item);
+    const double canvasToDocument = layout.safeZoom / layout.resolution.scale;
+    const double horizontalPadding = fillOutset.x * canvasToDocument;
+    const double verticalPadding = fillOutset.y * canvasToDocument;
     const double radius =
         qMax(qMax(item.corner_radii.top_left, item.corner_radii.top_right),
              qMax(item.corner_radii.bottom_right, item.corner_radii.bottom_left)) *
-        layout.safeZoom / layout.resolution.scale;
+        canvasToDocument;
 
     painter.save();
     painter.translate(localRect.left(), localRect.top() + layout.topOffset);
     painter.scale(layout.resolution.scale, layout.resolution.scale);
     painter.setPen(Qt::NoPen);
 
-    const double fillCoordinateScale = layout.safeZoom / layout.resolution.scale;
+    const double fillCoordinateScale = canvasToDocument;
     for (QTextBlock block = document.begin(); block.isValid(); block = block.next()) {
         QTextLayout* blockLayout = block.layout();
         if (blockLayout == nullptr) {

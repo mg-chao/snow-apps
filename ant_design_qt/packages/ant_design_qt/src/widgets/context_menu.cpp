@@ -556,6 +556,13 @@ AdContextMenu::AdContextMenu(QWidget* parent) : QMenu(parent), d_(std::make_uniq
   setSeparatorsCollapsible(false);
   setToolTipsVisible(true);
 
+  // Popups do not inherit their owner's font by default. DirectWrite's default
+  // hinting retains grid fitting at fractional DPI, so give every menu (including
+  // submenus and ownerless tray menus) smooth outlines for labels and shortcuts.
+  QFont menuFont = font();
+  menuFont.setHintingPreference(QFont::PreferNoHinting);
+  setFont(menuFont);
+
   // A translucent top-level widget must be frameless on Windows.  Keeping the
   // Popup type preserves QMenu's native focus, keyboard, submenu, and tray
   // integration while preventing the platform from adding an opaque frame or

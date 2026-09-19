@@ -33,7 +33,7 @@ struct CommitTextRequest {
     double centerY = 0.0;
     const char* utf8Data = nullptr;
     std::uint32_t utf8Len = 0;
-    SnowTextLayoutSize measuredLayout{1.0, 1.0};
+    SnowTextLayoutSize measuredLayout{1.0, 1.0, 0.0, 0.0};
     SnowTextStyle style{};
     bool autoResize = false;
     bool updateDefaultStyle = false;
@@ -50,6 +50,8 @@ struct ActiveTextDraftPresentationRequest {
     double width = 1.0;
     double height = 1.0;
     double rotation = 0.0;
+    double contentWidth = 0.0;
+    double contentHeight = 0.0;
     const char* utf8Data = nullptr;
     std::uint32_t utf8Len = 0;
     SnowTextStyle style{};

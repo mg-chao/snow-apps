@@ -363,6 +363,27 @@ void setWidgetTranslationSource(QWidget* widget, const char* source) {
     }
 }
 
+// Moves a top-level surface into or out of the always-on-top band without
+// recreating its native window when the platform backend supports it. The
+// recorded Qt flags follow so a later platform update cannot resurrect the band.
+void applyStaysOnTopFlag(QWidget* window, bool staysOnTop,
+                         pinned_platform::PinnedWindowPlatform* platform = nullptr) {
+    if (window == nullptr) {
+        return;
+    }
+    const Qt::WindowFlags flags = staysOnTop ? window->windowFlags() | Qt::WindowStaysOnTopHint
+                                             : window->windowFlags() & ~Qt::WindowStaysOnTopHint;
+    if (flags == window->windowFlags()) {
+        return;
+    }
+    if (platform == nullptr || !platform->setStaysOnTop(staysOnTop)) {
+        if (QWindow* handle = window->windowHandle()) {
+            handle->setFlags(flags);
+        }
+    }
+    window->overrideWindowFlags(flags);
+}
+
 void updatePinnedBorderGeometry(QFrame& border, const QRect& geometry) {
     // No widget mask: the frame paints only its rim in physical device
     // pixels, so the interior never covers the canvas. A mask would have to
@@ -1272,6 +1293,7 @@ snow_shot::storage::PinnedWindowRecord ScreenshotPinnedWindow::persistenceRecord
     record.quarterTurns = m_quarterTurns;
     record.thumbnailMode = m_thumbnailMode;
     record.clickThroughMode = m_clickThroughActive;
+    record.alwaysOnTop = m_alwaysOnTop;
     record.preThumbnailNativeGeometry = m_preThumbnailNativeGeometry;
     record.resultStyle = serializeResultStyle(m_resultStyle);
     record.canvasSession = m_runtime.serializeDocumentSession();
@@ -1305,6 +1327,10 @@ void ScreenshotPinnedWindow::restorePersistentState(const Config& config) {
     if (!config.restorePersistentState) {
         return;
     }
+    // Applied before the native window exists: the cleared hint then shapes
+    // the window flags the platform window is created with.
+    m_alwaysOnTop = config.persistedAlwaysOnTop;
+    applyStaysOnTopFlag(this, m_alwaysOnTop, m_platform.get());
     // The scale value is not restored state: it derives from the restored
     // physical geometry alone, so the monitor DPI never influences it.
     m_hideToTop->setAccentIndex(config.persistedHideToTopAccentIndex);
@@ -2461,6 +2487,13 @@ void ScreenshotPinnedWindow::createContextMenu() {
     connect(m_clickThroughAction, &QAction::triggered, this,
             &ScreenshotPinnedWindow::toggleClickThrough);
 
+    m_alwaysOnTopAction = m_contextMenu->addItem(tr("Always on Top"), outlined_icons::ToTop());
+    setActionTranslationSource(m_alwaysOnTopAction, "Always on Top");
+    m_alwaysOnTopAction->setObjectName(QStringLiteral("screenshotPinnedAlwaysOnTopAction"));
+    m_alwaysOnTopAction->setCheckable(true);
+    connect(m_alwaysOnTopAction, &QAction::triggered, this,
+            &ScreenshotPinnedWindow::toggleAlwaysOnTop);
+
     auto* focusMenu = m_contextMenu->addSubMenu(tr("Focus mode"), outlined_icons::Eye());
     setActionTranslationSource(focusMenu->menuAction(), "Focus mode");
     focusMenu->setObjectName(QStringLiteral("screenshotPinnedFocusMenu"));
@@ -2580,6 +2613,10 @@ void ScreenshotPinnedWindow::refreshContextMenu() {
     if (m_clickThroughAction != nullptr) {
         const QSignalBlocker blocker(m_clickThroughAction);
         m_clickThroughAction->setChecked(m_clickThroughActive);
+    }
+    if (m_alwaysOnTopAction != nullptr) {
+        const QSignalBlocker blocker(m_alwaysOnTopAction);
+        m_alwaysOnTopAction->setChecked(m_alwaysOnTop);
     }
     if (m_thumbnailAction != nullptr) {
         m_thumbnailAction->setChecked(m_thumbnailMode);
@@ -5117,8 +5154,12 @@ bool ScreenshotPinnedWindow::ensureClickThroughExitButton() {
         createControlButton(nullptr, "Exit click-through mode", custom_outlined_icons::Mouse(),
                             PinnedControlButton::Intent::Edit));
     button->setObjectName(QStringLiteral("screenshotPinnedClickThroughExitButton"));
-    button->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
-                           Qt::WindowDoesNotAcceptFocus);
+    Qt::WindowFlags controlFlags =
+        Qt::Tool | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus;
+    if (m_alwaysOnTop) {
+        controlFlags |= Qt::WindowStaysOnTopHint;
+    }
+    button->setWindowFlags(controlFlags);
     button->setAttribute(Qt::WA_TranslucentBackground, true);
     button->setAttribute(Qt::WA_NoSystemBackground, true);
     button->setAttribute(Qt::WA_ShowWithoutActivating, true);
@@ -5356,6 +5397,31 @@ bool ScreenshotPinnedWindow::setClickThroughMode(bool enabled) {
 
 void ScreenshotPinnedWindow::toggleClickThrough() {
     static_cast<void>(setClickThroughMode(!m_clickThroughActive));
+}
+
+void ScreenshotPinnedWindow::setAlwaysOnTop(bool enabled) {
+    if (enabled == m_alwaysOnTop) {
+        refreshContextMenu();
+        return;
+    }
+    m_alwaysOnTop = enabled;
+    applyStaysOnTopFlag(this, enabled, m_platform.get());
+    // The click-through overlay controls are separate top-level surfaces of
+    // this pin; they must stay in the same stacking band as the pin itself.
+    if (m_clickThroughExitButton != nullptr) {
+        const auto applyAuxiliary = [enabled](QWidget* window) {
+            applyStaysOnTopFlag(window, enabled, pinned_platform::configurePinnedAuxiliary(window));
+        };
+        applyAuxiliary(m_clickThroughExitButton.get());
+        applyAuxiliary(m_clickThroughMoveButton.get());
+        applyAuxiliary(m_clickThroughOpacityEditor.get());
+    }
+    refreshContextMenu();
+    schedulePersistence();
+}
+
+void ScreenshotPinnedWindow::toggleAlwaysOnTop() {
+    setAlwaysOnTop(!m_alwaysOnTop);
 }
 
 void ScreenshotPinnedWindow::shutdownClickThrough() {

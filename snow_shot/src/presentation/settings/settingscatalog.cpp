@@ -893,6 +893,16 @@ SettingsItemDefinition screenshotShutterSoundNotificationItem() {
         SettingsSwitchBinding::ScreenshotShutterSoundNotification);
 }
 
+SettingsItemDefinition screenshotConfirmBeforeExitingViaShortcutItem() {
+    return switchItem(
+        QStringLiteral("screenshot.confirm-before-exiting-via-shortcut"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Confirm before exiting screenshot via shortcut"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Ask for confirmation when using the Cancel screenshot shortcut."),
+        QStringLiteral("screenshot/confirm_before_exiting_via_shortcut"),
+        SettingsSwitchBinding::ScreenshotConfirmBeforeExitingViaShortcut);
+}
+
 SettingsItemDefinition screenshotAutoSaveAfterCopyItem() {
     return switchItem(
         QStringLiteral("screenshot.auto-save-after-copy"),
@@ -948,6 +958,19 @@ SettingsItemDefinition drawingQuickSelectionItem() {
         QStringLiteral("drawing/quick_selection_disabled_tools"),
         std::move(payload),
     };
+}
+
+SettingsItemDefinition drawingRememberLastUsedToolItem() {
+    return switchItem(
+        QStringLiteral("drawing.remember-last-used-tool"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Remember last used tool"),
+        QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Start new screenshot sessions and pin drawing mode with the last used drawing tool "
+            "instead of the move tool"),
+        QStringLiteral("drawing/remember_last_used_tool"),
+        SettingsSwitchBinding::DrawingRememberLastUsedTool,
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Last used tool"))});
 }
 
 SettingsItemDefinition pinZoomModeItem() {
@@ -1350,6 +1373,9 @@ QVector<SettingsItemDefinition> screenshotShortcutItems() {
                           QStringLiteral("select_previously_selected_area"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Select previously selected area"),
                           []() { return outlined_icons::Rest(); }),
+        localShortcutItem(SettingsLocalShortcutScope::Screenshot, QStringLiteral("recapture"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Recapture"),
+                          []() { return custom_outlined_icons::RefreshCapture(); }),
         localShortcutItem(SettingsLocalShortcutScope::Screenshot, QStringLiteral("copy_color"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Copy color"),
                           []() { return outlined_icons::Copy(); }),
@@ -1682,6 +1708,57 @@ SettingsItemDefinition clearRecordingTempItem() {
     };
 }
 
+SettingsItemDefinition exportConfigurationItem() {
+    SettingsActionDefinition payload;
+    payload.binding = SettingsActionBinding::ExportConfiguration;
+    payload.buttonText = settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Export"));
+    payload.iconFactory = []() { return custom_outlined_icons::ExportConfiguration(); };
+    payload.successMessage = settingsText(
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Configuration exported to the clipboard."));
+    return {
+        QStringLiteral("configuration.export"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Export configuration")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog", "Copy all application settings as a zip archive to the clipboard")),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Export settings")),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Backup settings"))},
+        {},
+        payload,
+    };
+}
+
+SettingsItemDefinition importConfigurationItem() {
+    SettingsActionDefinition payload;
+    payload.binding = SettingsActionBinding::ImportConfiguration;
+    payload.buttonText = settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Import"));
+    payload.iconFactory = []() { return custom_outlined_icons::ImportConfiguration(); };
+    payload.confirmation = {
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Import configuration?")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "All current application settings will be replaced by the archive's values. Some "
+            "changes take effect after the app restarts.")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Import")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Cancel")),
+    };
+    payload.fileOpen = {
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Import configuration")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Zip archives (*.zip);;All files (*.*)")),
+    };
+    payload.successMessage =
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Configuration imported."));
+    return {
+        QStringLiteral("configuration.import"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Import configuration")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog", "Restore application settings from a configuration archive")),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Import settings")),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Restore settings"))},
+        {},
+        payload,
+    };
+}
+
 QVector<SettingsPageDefinition> builtInPages() {
     return {
         {
@@ -1831,7 +1908,8 @@ QVector<SettingsPageDefinition> builtInPages() {
                     {smartSelectionItem(), selectionResizeModeItem(), screenshotOcrActionItem(),
                      screenshotDoubleClickActionItem(), screenshotMiddleClickActionItem(),
                      screenshotAutoSaveAfterCopyItem(), screenshotCopyFileItem(),
-                     screenshotSaveAsFileDialogItem(), screenshotShutterSoundNotificationItem()},
+                     screenshotSaveAsFileDialogItem(), screenshotShutterSoundNotificationItem(),
+                     screenshotConfirmBeforeExitingViaShortcutItem()},
                 },
                 {
                     QStringLiteral("pin-to-screen-settings"),
@@ -1865,7 +1943,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                         "SettingsCatalog",
                         "Configure drawing tools and the screenshot drawing toolbar")),
                     SettingsSectionReset::DrawingQuickSelection,
-                    {drawingQuickSelectionItem()},
+                    {drawingQuickSelectionItem(), drawingRememberLastUsedToolItem()},
                 },
                 {
                     QStringLiteral("screen-recording-settings"),
@@ -2070,6 +2148,14 @@ QVector<SettingsPageDefinition> builtInPages() {
                     },
                 },
                 {
+                    QStringLiteral("configuration"),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Configuration")),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                                   "Back up and restore application settings")),
+                    SettingsSectionReset::None,
+                    {exportConfigurationItem(), importConfigurationItem()},
+                },
+                {
                     QStringLiteral("storage-status"),
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Storage status")),
                     settingsText(QT_TRANSLATE_NOOP(
@@ -2119,6 +2205,15 @@ QVector<SettingsPageDefinition> builtInPages() {
                        "Enable the Translation page and the Translate Selected Text shortcut."),
                    QStringLiteral("extended_features/translation_page_enabled"),
                    SettingsSwitchBinding::TranslationPageEnabled),
+               switchItem(
+                   QStringLiteral("extended-features.jump-to-translation-page"),
+                   QT_TRANSLATE_NOOP("SettingsCatalog", "Jump to Translation Page"),
+                   QT_TRANSLATE_NOOP(
+                       "SettingsCatalog",
+                       "Show a button in the text recognition toolbar that sends recognized text "
+                       "to the Translation page."),
+                   QStringLiteral("extended_features/jump_to_translation_page"),
+                   SettingsSwitchBinding::JumpToTranslationPage),
                switchItem(
                    QStringLiteral("extended-features.standalone-translation-window"),
                    QT_TRANSLATE_NOOP("SettingsCatalog", "Standalone Translation Window"),
@@ -3029,6 +3124,10 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
                         expectedKey = QStringLiteral("screenshot/shutter_sound_notification");
                         break;
+                    case SettingsSwitchBinding::ScreenshotConfirmBeforeExitingViaShortcut:
+                        expectedKey =
+                            QStringLiteral("screenshot/confirm_before_exiting_via_shortcut");
+                        break;
                     case SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors:
                         expectedKey = QStringLiteral("screenshot/restore_original_screen_colors");
                         break;
@@ -3052,6 +3151,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::TranslationPageEnabled:
                         expectedKey = QStringLiteral("extended_features/translation_page_enabled");
                         break;
+                    case SettingsSwitchBinding::JumpToTranslationPage:
+                        expectedKey = QStringLiteral("extended_features/jump_to_translation_page");
+                        break;
                     case SettingsSwitchBinding::OriginalImageTranslation:
                         expectedKey =
                             QStringLiteral("screenshot_translation/original_image_translation");
@@ -3072,6 +3174,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::AutoStartAtBoot:
                         expectedKey = QStringLiteral("system/auto_start_at_boot");
+                        break;
+                    case SettingsSwitchBinding::DrawingRememberLastUsedTool:
+                        expectedKey = QStringLiteral("drawing/remember_last_used_tool");
                         break;
                     }
                     if (itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||
@@ -3374,6 +3479,15 @@ QStringList SettingsCatalog::validationErrors() const {
                          !action->confirmation->acceptText.isValid() ||
                          !action->confirmation->rejectText.isValid())) {
                         errors.push_back(QStringLiteral("action confirmation is incomplete: %1")
+                                             .arg(itemDefinition.id));
+                    }
+                    if (action->fileOpen.has_value() && (!action->fileOpen->dialogTitle.isValid() ||
+                                                         !action->fileOpen->fileFilter.isValid())) {
+                        errors.push_back(QStringLiteral("action file open is incomplete: %1")
+                                             .arg(itemDefinition.id));
+                    }
+                    if (action->successMessage.has_value() && !action->successMessage->isValid()) {
+                        errors.push_back(QStringLiteral("action success message is incomplete: %1")
                                              .arg(itemDefinition.id));
                     }
                 }

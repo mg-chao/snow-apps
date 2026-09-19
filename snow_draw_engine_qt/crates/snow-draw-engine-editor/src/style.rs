@@ -6,8 +6,8 @@ use snow_draw_engine_document::{
     ArrowData, FillStyle, FilterData, MIN_SERIAL_NUMBER_FONT_SIZE, MIN_TEXT_FONT_SIZE,
     RectangleData, SerialNumberData, SpotlightConfig, TextData, Transaction, WatermarkConfig,
     normalize_corner_radii, normalize_font_family, serial_number_rect_proxy,
-    serial_number_with_label_style, text_with_auto_resize_layout, validate_serial_number,
-    validate_text,
+    serial_number_with_label_style, text_with_auto_resize_layout, text_with_wrapped_layout,
+    validate_serial_number, validate_text,
 };
 use snow_draw_engine_interaction::Modifiers;
 use snow_draw_engine_model::DocumentModel;
@@ -531,6 +531,14 @@ fn text_with_style(
     if updated.auto_resize {
         let layout = text_layout_override_size(layouts, id)?;
         updated = text_with_auto_resize_layout(&updated, layout)?;
+        return Ok(updated);
+    }
+    // A style change re-renders the glyphs, so the stored rectangle and ink box
+    // must follow the re-measured layout even for fixed-width text; otherwise
+    // the painted content drifts off the stored geometry and decorations
+    // (serial connectors) and dirty regions anchor to stale edges.
+    if let Ok(layout) = text_layout_override_size(layouts, id) {
+        updated = text_with_wrapped_layout(&updated, layout)?;
     }
     Ok(updated)
 }
@@ -586,22 +594,31 @@ fn serial_number_with_style_properties(
     style: &SerialNumberStyle,
     properties: u32,
 ) -> SerialNumberData {
-    let number = if properties & SERIAL_NUMBER_STYLE_MIXED_NUMBER != 0 {
-        style.number
+    let next_type = if properties & SERIAL_NUMBER_STYLE_MIXED_TYPE != 0 {
+        style.serial_number_type
     } else {
-        serial.number
+        serial.serial_number_type
     };
+    let number =
+        if next_type.supports_number() && properties & SERIAL_NUMBER_STYLE_MIXED_NUMBER != 0 {
+            style.number
+        } else {
+            serial.number
+        };
     let font_size = if properties & SERIAL_NUMBER_STYLE_MIXED_FONT_SIZE != 0 {
         style.font_size
     } else {
         serial.font_size
     };
-    let size_affecting_style_changed =
-        serial.number != number.max(0) || serial.font_size != font_size;
+    let size_affecting_style_changed = serial.number != number.max(0)
+        || serial.font_size != font_size
+        || serial.serial_number_type.supports_number() != next_type.supports_number();
+    let mut typed_serial = serial.clone();
+    typed_serial.serial_number_type = next_type;
     let mut updated = if size_affecting_style_changed {
-        serial_number_with_label_style(serial, number, font_size)
+        serial_number_with_label_style(&typed_serial, number, font_size)
     } else {
-        serial.clone()
+        typed_serial
     };
     if properties & SERIAL_NUMBER_STYLE_MIXED_TYPE != 0 {
         updated.serial_number_type = style.serial_number_type;
@@ -615,7 +632,7 @@ fn serial_number_with_style_properties(
     if properties & SERIAL_NUMBER_STYLE_MIXED_FILL_STYLE != 0 {
         updated.fill_style = style.fill_style;
     }
-    if properties & SERIAL_NUMBER_STYLE_MIXED_FONT_FAMILY != 0 {
+    if next_type.supports_number() && properties & SERIAL_NUMBER_STYLE_MIXED_FONT_FAMILY != 0 {
         updated.font_family = normalize_font_family(style.font_family.clone());
     }
     if properties & SERIAL_NUMBER_STYLE_MIXED_STROKE_WIDTH != 0 {
@@ -1749,8 +1766,8 @@ impl Editor {
                                 snow_draw_engine_document::RectangleElementKind::Rectangle,
                             highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
                             center: updated_text.center,
-                            width: updated_text.width,
-                            height: updated_text.height,
+                            width: updated_text.width(),
+                            height: updated_text.height(),
                             rotation: updated_text.rotation,
                             fill: updated_text.fill,
                             fill_style: updated_text.fill_style,
@@ -1816,6 +1833,10 @@ impl Editor {
             || (changed_properties == 0 && mixed & SERIAL_NUMBER_STYLE_MIXED_TYPE != 0);
         let properties = if type_only_change {
             SERIAL_NUMBER_STYLE_MIXED_TYPE
+        } else if mixed & SERIAL_NUMBER_STYLE_MIXED_TYPE != 0
+            && changed_properties & SERIAL_NUMBER_STYLE_MIXED_TYPE == 0
+        {
+            changed_properties
         } else {
             SERIAL_NUMBER_STYLE_ALL_PROPERTIES
         };
@@ -1890,7 +1911,9 @@ mod tests {
     use super::*;
     use crate::defaults::editor_style_defaults;
     use snow_draw_engine_core::Point;
-    use snow_draw_engine_document::{ElementMeta, resolve_serial_number_style_diameter};
+    use snow_draw_engine_document::{
+        ElementId, ElementMeta, TextLayoutSize, resolve_serial_number_style_diameter,
+    };
 
     fn assert_close(actual: f64, expected: f64) {
         assert!(
@@ -2513,6 +2536,77 @@ mod tests {
     }
 
     #[test]
+    fn circle_type_changes_recompute_size_and_preserve_unsupported_properties() {
+        let original = SerialNumberData {
+            number: 42,
+            font_family: Some("Saved font".to_owned()),
+            diameter: 123.0,
+            ..SerialNumberData::default()
+        };
+        let mut style = SerialNumberStyle::from_serial_number(&original);
+        style.serial_number_type = snow_draw_engine_document::SerialNumberType::Circle;
+        style.number = 99;
+        style.font_family = Some("Ignored font".to_owned());
+        let circle = serial_number_with_style(&original, &style);
+        assert_eq!(circle.diameter, 12.0);
+        assert_eq!(circle.number, original.number);
+        assert_eq!(circle.font_family, original.font_family);
+        assert_eq!(circle.stroke_width, original.stroke_width);
+        style = SerialNumberStyle::from_serial_number(&circle);
+        style.font_size = 48.0;
+        let larger = serial_number_with_style(&circle, &style);
+        assert_eq!(larger.diameter, 24.0);
+        style.serial_number_type = original.serial_number_type;
+        let numbered = serial_number_with_style(&larger, &style);
+        assert_eq!(
+            numbered.diameter,
+            resolve_serial_number_style_diameter(42, 48.0)
+        );
+        assert_eq!(numbered.number, original.number);
+        assert_eq!(numbered.font_family, original.font_family);
+        assert_eq!(numbered.stroke_width, original.stroke_width);
+    }
+
+    #[test]
+    fn mixed_circle_selection_edits_only_supported_label_properties() {
+        let mut document = DocumentModel::new();
+        let numbered_id = document.allocate_element_id();
+        let circle_id = document.allocate_element_id();
+        let circle = SerialNumberData {
+            serial_number_type: snow_draw_engine_document::SerialNumberType::Circle,
+            diameter: 12.0,
+            number: 87,
+            font_family: Some("Circle saved font".to_owned()),
+            ..SerialNumberData::default()
+        };
+        let mut insert = Transaction::new("insert mixed serial types");
+        insert.insert_serial_number(
+            numbered_id,
+            ElementMeta::default(),
+            SerialNumberData::default(),
+        );
+        insert.insert_serial_number(circle_id, ElementMeta::default(), circle.clone());
+        document.apply_transaction(insert).unwrap();
+        let mut editor = Editor::new(Default::default()).unwrap();
+        editor.set_selection_state(vec![numbered_id, circle_id], Some(numbered_id));
+        let mut style = editor.serial_number_style(&document);
+        style.number = 15;
+        style.font_family = Some("Numbered font".to_owned());
+        let command = editor
+            .set_serial_number_style(&document, style)
+            .unwrap()
+            .unwrap();
+        let EditorCommand::ApplyTransaction(command) = command else {
+            panic!("expected transaction")
+        };
+        document.apply_transaction(command.transaction).unwrap();
+        assert_eq!(document.serial_number(circle_id).unwrap(), &circle);
+        let numbered = document.serial_number(numbered_id).unwrap();
+        assert_eq!(numbered.number, 15);
+        assert_eq!(numbered.font_family.as_deref(), Some("Numbered font"));
+    }
+
+    #[test]
     fn serial_number_type_change_preserves_size_and_fill_settings() {
         let serial = SerialNumberData {
             diameter: 123.0,
@@ -2624,6 +2718,55 @@ mod tests {
         assert_eq!(
             validate_serial_number_style(&style),
             Err(ErrorCode::InvalidArgument)
+        );
+    }
+
+    #[test]
+    fn text_style_refits_fixed_width_text_from_measured_layout() {
+        // The stale-height regression: a style change re-renders the glyphs, so
+        // a fixed-width (width-resized) text must adopt the re-measured wrapped
+        // height and ink box. Otherwise top/bottom-aligned text paints its pill
+        // off the stored rectangle and decorations detach.
+        let id = ElementId {
+            index: 1,
+            generation: 1,
+        };
+        let mut text = TextData {
+            auto_resize: false,
+            layout: TextLayoutSize::with_content(120.0, 40.0, 100.0, 40.0),
+            ..TextData::default()
+        };
+        let mut style = TextStyle::from_text(&text);
+        style.font_size = 60.0;
+        let layouts = vec![TextLayoutOverride {
+            id,
+            size: TextLayoutSize::with_content(120.0, 80.0, 88.0, 80.0),
+        }];
+
+        let updated = text_with_style(id, &text, &style, &layouts).unwrap();
+
+        assert_eq!(updated.font_size, 60.0);
+        assert!(!updated.auto_resize);
+        assert_eq!(updated.width(), 120.0, "the wrap rectangle must stay fixed");
+        assert_eq!(
+            updated.height(),
+            80.0,
+            "height must follow the re-measured layout"
+        );
+        assert_eq!(
+            updated.layout.ink(),
+            snow_draw_engine_document::InkBox::new(88.0, 80.0)
+        );
+        // The stored rectangle grows symmetrically around the text center.
+        assert!((updated.center.y - text.center.y - 20.0).abs() < 1e-9);
+
+        // Without a host measurement the stored geometry stays untouched.
+        text.vertical_align = snow_draw_engine_document::TextVerticalAlign::Top;
+        let unchanged = text_with_style(id, &text, &style, &[]).unwrap();
+        assert_eq!(unchanged.height(), 40.0);
+        assert_eq!(
+            unchanged.layout.ink(),
+            snow_draw_engine_document::InkBox::new(100.0, 40.0)
         );
     }
 

@@ -403,12 +403,16 @@ std::shared_ptr<UnitEntry> findOrBuildUnit(const UnitKey& key, const QFont& font
             return {};
         }
         const QString fontDescription = font.toString();
+        const QFont::HintingPreference hintingPreference = font.hintingPreference();
         std::shared_ptr<UnitEntry> result;
         const bool invoked = QMetaObject::invokeMethod(
             application,
-            [&result, &key, &fontDescription]() {
+            [&result, &key, &fontDescription, hintingPreference]() {
                 QFont guiFont;
                 guiFont.fromString(fontDescription);
+                // The serialized description does not carry the hinting preference, so
+                // re-apply the caller's outline policy (smooth rendering at fractional DPI).
+                guiFont.setHintingPreference(hintingPreference);
                 result = findOrBuildUnit(key, guiFont);
             },
             Qt::BlockingQueuedConnection);

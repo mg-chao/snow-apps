@@ -14,6 +14,19 @@ typedef struct SnowCaptureMonitorSessionImpl SnowCaptureMonitorSession;
 typedef struct SnowCaptureFrameLeaseImpl SnowCaptureFrameLease;
 typedef struct SnowCaptureCancellationTokenImpl SnowCaptureCancellationToken;
 typedef struct SnowCaptureScreenshotResultImpl SnowCaptureScreenshotResult;
+typedef struct SnowCaptureCursorSnapshotImpl SnowCaptureCursorSnapshot;
+
+/* Copies the current global cursor, including its pixels, hotspot, physical position and
+ * visibility. Immutable and safe to share across capture threads. Null reports a sampling error;
+ * a hidden cursor is a valid snapshot. */
+SnowCaptureCursorSnapshot* snow_capture_cursor_snapshot_create(void);
+void snow_capture_cursor_snapshot_destroy(SnowCaptureCursorSnapshot* snapshot);
+/* Apply once to a result captured WITHOUT INCLUDE_CURSOR, before publishing image leases.
+ * Uses this exact snapshot for every display, never the backend's cached cursor metadata.
+ * Existing leases remain immutable. Returns 1 on success, including a hidden/out-of-frame cursor.
+ */
+uint8_t snow_capture_screenshot_result_composite_cursor(SnowCaptureScreenshotResult* result,
+                                                        const SnowCaptureCursorSnapshot* snapshot);
 typedef struct SnowCaptureStreamImpl SnowCaptureStream;
 typedef struct SnowCaptureStreamFrameImpl SnowCaptureStreamFrame;
 

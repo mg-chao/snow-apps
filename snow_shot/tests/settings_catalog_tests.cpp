@@ -116,6 +116,22 @@ void builtInCatalogIsCompleteAndValid() {
                      translationToggle->configurationKey)
                      .toBool(true),
             "extended translation page exposes a persisted default-off toggle");
+    const auto* jumpToggle =
+        catalog.item({QStringLiteral("extended-features"), QStringLiteral("translation"),
+                      QStringLiteral("extended-features.jump-to-translation-page")});
+    const auto* extendedTranslation =
+        catalog.section(QStringLiteral("extended-features"), QStringLiteral("translation"));
+    require(jumpToggle != nullptr && extendedTranslation != nullptr &&
+                extendedTranslation->items.size() == 3 &&
+                extendedTranslation->items.at(1).id == jumpToggle->id &&
+                jumpToggle->title.translated() == QStringLiteral("Jump to Translation Page") &&
+                jumpToggle->configurationKey ==
+                    QStringLiteral("extended_features/jump_to_translation_page") &&
+                std::get<settings::SettingsSwitchDefinition>(jumpToggle->payload).binding ==
+                    settings::SettingsSwitchBinding::JumpToTranslationPage &&
+                !snow_shot::storage::ConfigurationSchema::defaultValue(jumpToggle->configurationKey)
+                     .toBool(true),
+            "OCR translation jump exposes an ordered persisted default-off switch");
     const auto* standaloneToggle =
         catalog.item({QStringLiteral("extended-features"), QStringLiteral("translation"),
                       QStringLiteral("extended-features.standalone-translation-window")});
@@ -189,11 +205,11 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 38, "catalog must contain thirty-eight sections");
+    require(sectionCount == 39, "catalog must contain thirty-nine sections");
 #ifdef Q_OS_MACOS
-    require(itemCount == 158, "the macOS catalog omits DirectML and Windows element API choices");
+    require(itemCount == 164, "the macOS catalog omits DirectML and Windows element API choices");
 #else
-    require(itemCount == 160, "catalog must contain one hundred sixty items");
+    require(itemCount == 166, "catalog must contain one hundred sixty-six items");
 #endif
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -370,12 +386,24 @@ void builtInCatalogIsCompleteAndValid() {
     const auto* shutterSound =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
                       QStringLiteral("screenshot.shutter-sound-notification")});
+    const auto* confirmShortcutExit =
+        catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
+                      QStringLiteral("screenshot.confirm-before-exiting-via-shortcut")});
     const auto* screenshotSettings =
         catalog.section(QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"));
-    require(screenshotSettings != nullptr && !screenshotSettings->items.isEmpty() &&
-                screenshotSettings->items.constLast().id ==
-                    QStringLiteral("screenshot.shutter-sound-notification"),
-            "shutter notification must be the final item in Function Screenshot settings");
+    const auto shutterItem =
+        screenshotSettings != nullptr
+            ? std::find_if(screenshotSettings->items.cbegin(), screenshotSettings->items.cend(),
+                           [](const auto& item) {
+                               return item.id ==
+                                      QStringLiteral("screenshot.shutter-sound-notification");
+                           })
+            : decltype(screenshotSettings->items.cbegin()){};
+    require(screenshotSettings != nullptr && shutterItem != screenshotSettings->items.cend() &&
+                std::next(shutterItem) != screenshotSettings->items.cend() &&
+                std::next(shutterItem)->id ==
+                    QStringLiteral("screenshot.confirm-before-exiting-via-shortcut"),
+            "shortcut exit confirmation must immediately follow the shutter notification");
     require(shutterSound != nullptr &&
                 shutterSound->title.translated() == QStringLiteral("Shutter Sound Notification") &&
                 shutterSound->configurationKey ==
@@ -384,6 +412,19 @@ void builtInCatalogIsCompleteAndValid() {
                     settings::SettingsSwitchBinding::ScreenshotShutterSoundNotification &&
                 storage::ConfigurationSchema::defaultValue(shutterSound->configurationKey).toBool(),
             "Function Screenshot settings must expose the enabled shutter notification switch");
+    require(
+        confirmShortcutExit != nullptr &&
+            confirmShortcutExit->title.translated() ==
+                QStringLiteral("Confirm before exiting screenshot via shortcut") &&
+            confirmShortcutExit->description.translated() ==
+                QStringLiteral("Ask for confirmation when using the Cancel screenshot shortcut.") &&
+            confirmShortcutExit->configurationKey ==
+                QStringLiteral("screenshot/confirm_before_exiting_via_shortcut") &&
+            std::get<settings::SettingsSwitchDefinition>(confirmShortcutExit->payload).binding ==
+                settings::SettingsSwitchBinding::ScreenshotConfirmBeforeExitingViaShortcut &&
+            !storage::ConfigurationSchema::defaultValue(confirmShortcutExit->configurationKey)
+                 .toBool(),
+        "Function Screenshot settings must expose the disabled shortcut exit confirmation");
     const auto* smartSelection =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
                       QStringLiteral("screenshot.smart-selection")});
@@ -476,11 +517,26 @@ void builtInCatalogIsCompleteAndValid() {
                           QStringLiteral("pin-to-screen.auto-resize-window")}) != nullptr &&
             catalog.item({QStringLiteral("function-settings"), QStringLiteral("drawing-settings"),
                           QStringLiteral("drawing.quick-selection-disabled-tools")}) != nullptr &&
+            catalog.item({QStringLiteral("function-settings"), QStringLiteral("drawing-settings"),
+                          QStringLiteral("drawing.remember-last-used-tool")}) != nullptr &&
             catalog.item({QStringLiteral("function-settings"), QStringLiteral("tray-settings"),
                           QStringLiteral("tray.left-click-action")}) != nullptr &&
             catalog.item({QStringLiteral("function-settings"), QStringLiteral("tray-settings"),
                           QStringLiteral("tray.menu-options")}) != nullptr,
         "Function settings must own the moved Pin to screen, Drawing, and Tray controls");
+
+    const auto* rememberLastUsedTool =
+        catalog.item({QStringLiteral("function-settings"), QStringLiteral("drawing-settings"),
+                      QStringLiteral("drawing.remember-last-used-tool")});
+    require(
+        rememberLastUsedTool != nullptr &&
+            rememberLastUsedTool->configurationKey ==
+                QStringLiteral("drawing/remember_last_used_tool") &&
+            std::get<settings::SettingsSwitchDefinition>(rememberLastUsedTool->payload).binding ==
+                settings::SettingsSwitchBinding::DrawingRememberLastUsedTool &&
+            !storage::ConfigurationSchema::defaultValue(rememberLastUsedTool->configurationKey)
+                 .toBool(),
+        "Drawing settings must expose the default-off remembered drawing tool switch");
 
     const auto& traySection = functionPage->sections.at(6);
     require(traySection.items.size() == 3 &&
@@ -564,14 +620,15 @@ void builtInCatalogIsCompleteAndValid() {
         {QStringLiteral("storage-and-privacy"), QStringLiteral("screen-recording-output"),
          QStringLiteral("screen-recording-output.video-filename-format")});
     require(
-        storagePage != nullptr && storagePage->sections.size() == 4 &&
+        storagePage != nullptr && storagePage->sections.size() == 5 &&
             storagePage->sections.at(0).id == QStringLiteral("screenshots") &&
             storagePage->sections.at(1).id == QStringLiteral("screen-recording-output") &&
             storagePage->sections.at(2).id == QStringLiteral("history") &&
             storagePage->sections.at(2).title.source != nullptr &&
             QString::fromLatin1(storagePage->sections.at(2).title.source) ==
                 QStringLiteral("Screenshot history") &&
-            storagePage->sections.at(3).id == QStringLiteral("storage-status") &&
+            storagePage->sections.at(3).id == QStringLiteral("configuration") &&
+            storagePage->sections.at(4).id == QStringLiteral("storage-status") &&
             imageFormat != nullptr && imageDirectory != nullptr && videoFilename != nullptr &&
             std::get<settings::SettingsSelectDefinition>(imageFormat->payload).options.size() ==
                 7 &&
@@ -583,6 +640,41 @@ void builtInCatalogIsCompleteAndValid() {
             std::get<settings::SettingsTextDefinition>(videoFilename->payload).binding ==
                 settings::SettingsTextBinding::ScreenRecordingVideoFilenameFormat,
         "Storage and privacy must expose ordered screenshot and recording output settings");
+
+    const auto* exportConfiguration =
+        catalog.item({QStringLiteral("storage-and-privacy"), QStringLiteral("configuration"),
+                      QStringLiteral("configuration.export")});
+    const auto* importConfiguration =
+        catalog.item({QStringLiteral("storage-and-privacy"), QStringLiteral("configuration"),
+                      QStringLiteral("configuration.import")});
+    require(exportConfiguration != nullptr && importConfiguration != nullptr &&
+                storagePage->sections.at(3).items.at(0).id == exportConfiguration->id &&
+                storagePage->sections.at(3).items.at(1).id == importConfiguration->id &&
+                exportConfiguration->configurationKey.isEmpty() &&
+                importConfiguration->configurationKey.isEmpty(),
+            "the configuration section must lead with export followed by import");
+    const auto* exportAction =
+        std::get_if<settings::SettingsActionDefinition>(&exportConfiguration->payload);
+    const auto* importAction =
+        std::get_if<settings::SettingsActionDefinition>(&importConfiguration->payload);
+    require(exportAction != nullptr && importAction != nullptr &&
+                exportAction->binding == settings::SettingsActionBinding::ExportConfiguration &&
+                importAction->binding == settings::SettingsActionBinding::ImportConfiguration &&
+                exportAction->buttonText.source != nullptr &&
+                importAction->buttonText.source != nullptr && exportAction->iconFactory &&
+                importAction->iconFactory &&
+                exportAction->iconFactory() ==
+                    snow_shot::presentation::icons::custom::outlined::ExportConfiguration() &&
+                importAction->iconFactory() ==
+                    snow_shot::presentation::icons::custom::outlined::ImportConfiguration() &&
+                !exportAction->confirmation.has_value() && importAction->confirmation.has_value() &&
+                !exportAction->fileOpen.has_value() && importAction->fileOpen.has_value() &&
+                importAction->fileOpen->dialogTitle.source != nullptr &&
+                importAction->fileOpen->fileFilter.source != nullptr &&
+                exportAction->successMessage.has_value() &&
+                importAction->successMessage.has_value(),
+            "configuration items must use the thumbnail-cache action style with dedicated icons, "
+            "catalog-driven import file picking, and success messages");
 
     const auto* pdfPageSize =
         catalog.item({QStringLiteral("storage-and-privacy"), QStringLiteral("screenshots"),
@@ -742,15 +834,16 @@ void builtInCatalogIsCompleteAndValid() {
          "screenshot_shortcuts/next_screenshot_history"},
         {10, "screenshot-shortcut.select_previously_selected_area",
          "screenshot_shortcuts/select_previously_selected_area"},
-        {11, "screenshot-shortcut.copy_color", "screenshot_shortcuts/copy_color"},
-        {12, "screenshot-shortcut.pin_to_screen", "screenshot_shortcuts/pin_to_screen"},
-        {13, "screenshot-shortcut.video_recording", "screenshot_shortcuts/video_recording"},
-        {14, "screenshot-shortcut.scrolling_screenshot",
+        {11, "screenshot-shortcut.recapture", "screenshot_shortcuts/recapture"},
+        {12, "screenshot-shortcut.copy_color", "screenshot_shortcuts/copy_color"},
+        {13, "screenshot-shortcut.pin_to_screen", "screenshot_shortcuts/pin_to_screen"},
+        {14, "screenshot-shortcut.video_recording", "screenshot_shortcuts/video_recording"},
+        {15, "screenshot-shortcut.scrolling_screenshot",
          "screenshot_shortcuts/scrolling_screenshot"},
-        {15, "screenshot-shortcut.quick_save", "screenshot_shortcuts/quick_save"},
-        {16, "screenshot-shortcut.save_as_file", "screenshot_shortcuts/save_as_file"},
-        {17, "screenshot-shortcut.cancel_screenshot", "screenshot_shortcuts/cancel_screenshot"},
-        {18, "screenshot-shortcut.copy_to_clipboard", "screenshot_shortcuts/copy_to_clipboard"},
+        {16, "screenshot-shortcut.quick_save", "screenshot_shortcuts/quick_save"},
+        {17, "screenshot-shortcut.save_as_file", "screenshot_shortcuts/save_as_file"},
+        {18, "screenshot-shortcut.cancel_screenshot", "screenshot_shortcuts/cancel_screenshot"},
+        {19, "screenshot-shortcut.copy_to_clipboard", "screenshot_shortcuts/copy_to_clipboard"},
     };
     bool newScreenshotShortcutContractsMatch = screenshotShortcuts != nullptr;
     for (const ScreenshotShortcutContract& contract : newScreenshotShortcutContracts) {
@@ -764,7 +857,7 @@ void builtInCatalogIsCompleteAndValid() {
     require(
         applicationShortcutsPage != nullptr && applicationShortcutsPage->sections.size() == 5 &&
             everyHotkeySectionUsesTwoColumns && screenshotShortcuts != nullptr &&
-            screenshotShortcuts->items.size() == 19 &&
+            screenshotShortcuts->items.size() == 20 &&
             screenshotShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
             screenshotShortcuts->items.constFirst().id ==
                 QStringLiteral("screenshot-shortcut.move_tool") &&
@@ -782,19 +875,20 @@ void builtInCatalogIsCompleteAndValid() {
                 QStringLiteral("Next screenshot history") &&
             screenshotShortcuts->items.at(10).title.translated() ==
                 QStringLiteral("Select previously selected area") &&
-            screenshotShortcuts->items.at(11).title.translated() == QStringLiteral("Copy color") &&
-            screenshotShortcuts->items.at(12).title.translated() ==
-                QStringLiteral("Pin to screen") &&
+            screenshotShortcuts->items.at(11).title.translated() == QStringLiteral("Recapture") &&
+            screenshotShortcuts->items.at(12).title.translated() == QStringLiteral("Copy color") &&
             screenshotShortcuts->items.at(13).title.translated() ==
-                QStringLiteral("Video recording") &&
+                QStringLiteral("Pin to screen") &&
             screenshotShortcuts->items.at(14).title.translated() ==
+                QStringLiteral("Video recording") &&
+            screenshotShortcuts->items.at(15).title.translated() ==
                 QStringLiteral("Scrolling screenshot") &&
-            screenshotShortcuts->items.at(15).title.translated() == QStringLiteral("Quick save") &&
-            screenshotShortcuts->items.at(16).title.translated() ==
-                QStringLiteral("Save as file") &&
+            screenshotShortcuts->items.at(16).title.translated() == QStringLiteral("Quick save") &&
             screenshotShortcuts->items.at(17).title.translated() ==
-                QStringLiteral("Cancel screenshot") &&
+                QStringLiteral("Save as file") &&
             screenshotShortcuts->items.at(18).title.translated() ==
+                QStringLiteral("Cancel screenshot") &&
+            screenshotShortcuts->items.at(19).title.translated() ==
                 QStringLiteral("Copy to clipboard") &&
             newScreenshotShortcutContractsMatch &&
             std::get<settings::SettingsLocalShortcutDefinition>(
@@ -1410,7 +1504,7 @@ void invalidCatalogReportsAllConformanceErrors() {
     interfacePage.sections[0].items[1].id = QStringLiteral("interface-theme");
     storagePage.sections[0].items[1].configurationKey = QStringLiteral("missing/key");
     auto& custom =
-        std::get<settings::SettingsCustomDefinition>(storagePage.sections[3].items[0].payload);
+        std::get<settings::SettingsCustomDefinition>(storagePage.sections[4].items[0].payload);
     custom.renderer = static_cast<settings::SettingsCustomRenderer>(999);
     pages.push_back({QStringLiteral("empty-page"),
                      QStringLiteral("relative-route"),
@@ -1521,7 +1615,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 38 && items == expectedNodes - pages - sections,
+    require(pages == 12 && sections == 39 && items == expectedNodes - pages - sections,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

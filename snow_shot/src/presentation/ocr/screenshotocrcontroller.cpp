@@ -472,6 +472,10 @@ bool ScreenshotOcrController::hasTextResult() const {
     return m_session->hasTextResult();
 }
 
+QString ScreenshotOcrController::sourceTextDraft() const {
+    return m_session->sourceTextDraft();
+}
+
 ScreenshotRecognitionResults ScreenshotOcrController::cachedRecognitionResults() const {
     return m_session->cachedRecognitionResults();
 }

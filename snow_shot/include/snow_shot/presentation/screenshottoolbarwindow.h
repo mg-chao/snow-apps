@@ -23,7 +23,9 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
     void setActionToolsLayout(const snow_shot::storage::ScreenshotToolbarLayout& layout);
     void setScrollingScreenshotMode(bool enabled);
     void setActiveTool(ScreenshotToolPalette::Tool tool);
+    void setRecaptureBusy(bool busy);
     [[nodiscard]] bool activateDrawingShortcut(const QString& toolId);
+    void restoreRememberedDrawingTool();
     void setHistoryState(const SnowCanvasHistoryState& state);
     void setStyleToolbarState(const SnowCanvasStyleToolbarState& state);
     void setWatermarkConfig(const SnowCanvasWatermarkConfig& config);
@@ -58,6 +60,8 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
     void connectStyleCommands(ScreenshotToolPalette& toolPalette);
     void connectSerialNumberCommands(ScreenshotToolPalette& toolPalette);
     void connectScrollingScreenshotCommands(ScreenshotToolPalette& toolPalette);
+    void synchronizeCaptureCursorSetting();
+    void synchronizeJumpToTranslationPageSetting();
     void setActiveToolAndReposition(ScreenshotToolPalette::Tool tool);
 
     ScreenshotToolbarCommandSink& m_commands;
@@ -65,6 +69,7 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
     QRect m_movementPhysicalBounds;
     QScreen* m_placementScreen = nullptr;
     bool m_manuallyDragged = false;
+    bool m_rememberedDrawingToolRestorePending = true;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTTOOLBARWINDOW_H

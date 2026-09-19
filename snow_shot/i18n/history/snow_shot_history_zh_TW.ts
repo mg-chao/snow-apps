@@ -192,6 +192,10 @@
             <translation>%1%</translation>
         </message>
         <message>
+            <source>Always on Top</source>
+            <translation>永遠置於最上層</translation>
+        </message>
+        <message>
             <source>Click-through</source>
             <translation>滑鼠穿透</translation>
         </message>

@@ -137,7 +137,7 @@ class SettingsRuntimeSession final : public QObject {
     globalMouseCombinationAvailable(SettingsGlobalMouseAction action,
                                     const SettingsGlobalMouseCombination& combination) const;
     [[nodiscard]] SettingsActionState actionState(SettingsActionBinding binding) const;
-    [[nodiscard]] bool triggerAction(SettingsActionBinding binding);
+    [[nodiscard]] bool triggerAction(SettingsActionBinding binding, const QString& filePath = {});
     [[nodiscard]] CustomAiModels customAiModels() const;
     bool applyCustomAiModels(const CustomAiModels& models);
     [[nodiscard]] storage::StorageStatus storageStatus() const;

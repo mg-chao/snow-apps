@@ -54,6 +54,8 @@ SnowActiveTextDraftPresentation ActiveTextDraftPresentationRequest::toAbi() cons
     draft.width = width;
     draft.height = height;
     draft.rotation = rotation;
+    draft.content_width = contentWidth;
+    draft.content_height = contentHeight;
     draft.text_utf8 = utf8Data;
     draft.text_utf8_len = utf8Len;
     draft.style = style;

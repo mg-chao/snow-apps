@@ -341,6 +341,8 @@ void customModelPageAndScreenshotParity(bool originalImage) {
                    screenshot.controller->textDraft() == QStringLiteral("translated");
         },
         "both views display streamed custom translation");
+    require(screenshot.controller->sourceTextDraft() == QStringLiteral("source 0"),
+            "streamed translation output must not replace the OCR source draft");
     model.name = QStringLiteral("Renamed translator");
     model.supportsVision = false;
     require(apiSettings.setCustomModels({model}), "edit custom model display metadata");

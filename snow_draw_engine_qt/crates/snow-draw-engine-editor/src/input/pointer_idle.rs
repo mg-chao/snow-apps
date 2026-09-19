@@ -59,6 +59,7 @@ impl Editor {
         self.state.interaction = match request.target {
             SelectionHitTarget::Move => {
                 InteractionState::PendingSelectionMove(PendingSelectionMoveState {
+                    duplicate: false,
                     pointer_id: request.pointer_id,
                     original_elements: request.original_elements,
                     original_arrows: request.original_arrows,
@@ -117,6 +118,7 @@ impl Editor {
                 mode: ArrowEditMode::Endpoint(edge),
                 start_canvas_position: canvas_point,
                 drag_offset,
+                suggested_binding: None,
             }),
             ArrowHitTarget::Point(index) => InteractionState::EditingArrow(EditArrowState {
                 pointer_id: event.pointer_id,
@@ -126,6 +128,7 @@ impl Editor {
                 mode: ArrowEditMode::Point(index),
                 start_canvas_position: canvas_point,
                 drag_offset,
+                suggested_binding: None,
             }),
             ArrowHitTarget::FocusPoint(edge) => InteractionState::EditingArrow(EditArrowState {
                 pointer_id: event.pointer_id,
@@ -135,6 +138,7 @@ impl Editor {
                 mode: ArrowEditMode::FocusPoint(edge),
                 start_canvas_position: canvas_point,
                 drag_offset,
+                suggested_binding: None,
             }),
             ArrowHitTarget::Segment(index) => InteractionState::EditingArrow(EditArrowState {
                 pointer_id: event.pointer_id,
@@ -144,6 +148,7 @@ impl Editor {
                 mode: ArrowEditMode::Segment(index),
                 start_canvas_position: canvas_point,
                 drag_offset,
+                suggested_binding: None,
             }),
         };
 
@@ -399,11 +404,6 @@ impl Editor {
             ToolEmptyCanvasAction::CreateSerialNumber => {
                 if !self.state.selection.is_empty() {
                     self.clear_selection();
-                    return Ok(InteractionOutput {
-                        consumed: true,
-                        capture: PointerCaptureCommand::NoChange,
-                        cursor: CursorCommand::Set(policy.default_cursor),
-                    });
                 }
                 let (center, snap_guides) = self.snap_serial_number_creation_center(
                     document,
@@ -411,15 +411,16 @@ impl Editor {
                     event.modifiers,
                 );
                 let preview = self.serial_number_creation_preview(document, center)?;
+                let serial_id = self.queue_serial_number_creation(document, preview)?;
                 self.state.interaction =
                     InteractionState::CreatingSerialNumber(CreateSerialNumberState {
                         pointer_id: event.pointer_id,
-                        preview: preview.clone(),
+                        serial_id,
+                        start_view_position: event.position,
+                        text: None,
+                        label_measured: false,
                     });
-                self.set_creation_preview(
-                    Some(ElementCreationPreview::SerialNumber(preview)),
-                    snap_guides,
-                );
+                self.set_creation_preview(None, snap_guides);
                 Ok(InteractionOutput {
                     consumed: true,
                     capture: self.capture_command_for_start(event.pointer_id),
@@ -427,6 +428,49 @@ impl Editor {
                 })
             }
         }
+    }
+
+    fn try_begin_duplicate_drag(
+        &mut self,
+        document: &DocumentModel,
+        event: PointerEvent,
+        intent: PrimaryPointerIntent,
+        canvas_point: Point<f64>,
+    ) -> Option<InteractionOutput> {
+        if !event.modifiers.alt || self.state.active_text_draft.is_some() {
+            return None;
+        }
+
+        // Resolve the drag selection before starting the shared copy workflow.
+        // Existing selections keep all members; a new hit becomes the selection.
+        // Handles, Shift-toggle and empty-canvas intents keep their normal behavior.
+        match intent {
+            PrimaryPointerIntent::BeginSelectionInteraction {
+                target: SelectionHitTarget::Move,
+            }
+            | PrimaryPointerIntent::BeginSelectedArrowInteraction {
+                target: ArrowHitTarget::Move,
+            } => {}
+            PrimaryPointerIntent::BeginArrowElementInteraction { id }
+            | PrimaryPointerIntent::BeginElementSelectionMove { id }
+            | PrimaryPointerIntent::TextEditCandidate { id } => {
+                if !self.state.selection.contains(id) {
+                    self.set_selection_state_with_document(Some(document), vec![id], Some(id));
+                }
+            }
+            _ => return None,
+        }
+
+        let output = self.begin_current_selection_interaction(
+            document,
+            event,
+            SelectionHitTarget::Move,
+            canvas_point,
+        );
+        if let InteractionState::PendingSelectionMove(state) = &mut self.state.interaction {
+            state.duplicate = true;
+        }
+        Some(output)
     }
 
     pub(super) fn handle_idle_pointer_down(
@@ -444,6 +488,9 @@ impl Editor {
         let canvas_point = view_to_canvas(event.position, &self.camera(), self.surface_size());
         let intent =
             self.resolve_primary_pointer_intent(document, policy, canvas_point, event.modifiers);
+        if let Some(output) = self.try_begin_duplicate_drag(document, event, intent, canvas_point) {
+            return Ok(output);
+        }
         match intent {
             PrimaryPointerIntent::ToggleSelection { id } => {
                 self.toggle_selection(document, id);

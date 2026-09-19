@@ -654,6 +654,9 @@ void ScreenshotOverlayUiHost::showToolbar() {
         return;
     }
     toolbarWindow->prepareForDisplay();
+    // Restore before the synchronous first paint in showPreparedWidget(),
+    // otherwise one frame reaches the screen with the move tool still checked.
+    toolbarWindow->restoreRememberedDrawingTool();
     showPreparedWidget(toolbarWindow);
     toolbarWindow->raise();
 }

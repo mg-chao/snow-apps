@@ -18,7 +18,7 @@ use crate::{
     state::ResizeHandle,
     style::stepped_font_size,
     text::{
-        SerialNumberTextCreationRequest, TextSelectionResizeHandle,
+        MeasuredTextResize, SerialNumberTextCreationRequest, TextSelectionResizeHandle,
         create_serial_number_text_creation_plan, text_layout_override_size,
         text_with_committed_draft, text_with_selection_rect, text_with_style_attributes,
     },
@@ -30,7 +30,7 @@ pub(crate) fn append_selection_element_update(
     preview: SelectionRectState,
     resize_handle: Option<ResizeHandle>,
     single_text_resize: bool,
-    single_text_resize_font_size: Option<f64>,
+    measured_resize: Option<MeasuredTextResize>,
 ) -> Result<(), ErrorCode> {
     if document.rectangle(preview.id).is_ok() {
         validate_rectangle(&preview.rect)?;
@@ -97,7 +97,7 @@ pub(crate) fn append_selection_element_update(
                 y_sign: handle.y_sign(),
             }),
             single_text_resize,
-            single_text_resize_font_size,
+            measured_resize,
         );
         validate_text(&updated)?;
         if *text != updated {
@@ -120,6 +120,7 @@ pub(crate) fn next_serial_number(document: &DocumentModel) -> i64 {
         .paint_order()
         .iter()
         .filter_map(|id| document.serial_number(*id).ok())
+        .filter(|serial| serial.serial_number_type.supports_number())
         .map(|serial| serial.number.max(0))
         .max()
         .unwrap_or(0)
@@ -217,6 +218,88 @@ pub(crate) fn duplicate_id_map(
         next.index = next.index.saturating_add(1);
     }
     map
+}
+
+pub(crate) fn duplicate_selection_transaction(
+    document: &DocumentModel,
+    selected_ids: &[ElementId],
+    offset: Point<f64>,
+) -> Result<(Transaction, Vec<ElementId>), ErrorCode> {
+    let ids = expanded_duplicate_ids(document, selected_ids);
+    if ids.is_empty() {
+        return Ok((Transaction::new("duplicate selection"), Vec::new()));
+    }
+    let id_map = duplicate_id_map(document, &ids);
+    let mut transaction = Transaction::new("duplicate selection");
+    let mut next_selection = Vec::new();
+    for id in ids {
+        let Some(new_id) = id_map.get(&id).copied() else {
+            continue;
+        };
+        let element = document.element(id)?;
+        match &element.data {
+            ElementData::Rectangle(rect) => {
+                let mut duplicate = *rect;
+                duplicate.center.x += offset.x;
+                duplicate.center.y += offset.y;
+                validate_rectangle(&duplicate)?;
+                transaction.insert_rectangle(new_id, element.meta, duplicate);
+            }
+            ElementData::Filter(filter) => {
+                let mut duplicate = *filter;
+                duplicate.center.x += offset.x;
+                duplicate.center.y += offset.y;
+                validate_filter(&duplicate)?;
+                transaction.insert_filter(new_id, element.meta, duplicate);
+            }
+            ElementData::PenFilter(filter) => {
+                let mut duplicate = filter.clone();
+                duplicate.x += offset.x;
+                duplicate.y += offset.y;
+                simplify_pen_filter_geometry(&mut duplicate);
+                validate_pen_filter(&duplicate)?;
+                transaction.insert_pen_filter(new_id, element.meta, duplicate);
+            }
+            ElementData::Arrow(arrow) => {
+                let mut duplicate = arrow.clone();
+                duplicate.text_element_id = arrow
+                    .text_element_id
+                    .and_then(|text_id| id_map.get(&text_id).copied());
+                duplicate.x += offset.x;
+                duplicate.y += offset.y;
+                validate_arrow(&duplicate)?;
+                transaction.insert_arrow(new_id, element.meta, duplicate);
+            }
+            ElementData::FreeDraw(free_draw) => {
+                let mut duplicate = free_draw.clone();
+                duplicate.x += offset.x;
+                duplicate.y += offset.y;
+                validate_free_draw(&duplicate)?;
+                transaction.insert_free_draw(new_id, element.meta, duplicate);
+            }
+            ElementData::Text(text) => {
+                let mut duplicate = text.clone();
+                duplicate.center.x += offset.x;
+                duplicate.center.y += offset.y;
+                validate_text(&duplicate)?;
+                transaction.insert_text(new_id, element.meta, duplicate);
+            }
+            ElementData::SerialNumber(serial) => {
+                let mut duplicate = serial.clone();
+                duplicate.center.x += offset.x;
+                duplicate.center.y += offset.y;
+                duplicate.text_element_id = document
+                    .bound_text_id_for_serial_number(id)
+                    .and_then(|text_id| id_map.get(&text_id).copied());
+                validate_serial_number(&duplicate)?;
+                transaction.insert_serial_number(new_id, element.meta, duplicate);
+            }
+        }
+        if selected_ids.contains(&id) {
+            next_selection.push(new_id);
+        }
+    }
+    Ok((transaction, next_selection))
 }
 
 impl Editor {
@@ -424,80 +507,8 @@ impl Editor {
             return Ok(None);
         }
         let history_undo_snapshot = self.capture_document_sync_snapshot(document);
-        let ids = expanded_duplicate_ids(document, &self.state.selection.ids);
-        if ids.is_empty() {
-            return Ok(None);
-        }
-        let id_map = duplicate_id_map(document, &ids);
-        let mut transaction = Transaction::new("duplicate selection");
-        let mut next_selection = Vec::new();
-        for id in ids {
-            let Some(new_id) = id_map.get(&id).copied() else {
-                continue;
-            };
-            let element = document.element(id)?;
-            match &element.data {
-                ElementData::Rectangle(rect) => {
-                    let mut duplicate = *rect;
-                    duplicate.center.x += offset.x;
-                    duplicate.center.y += offset.y;
-                    validate_rectangle(&duplicate)?;
-                    transaction.insert_rectangle(new_id, element.meta, duplicate);
-                }
-                ElementData::Filter(filter) => {
-                    let mut duplicate = *filter;
-                    duplicate.center.x += offset.x;
-                    duplicate.center.y += offset.y;
-                    validate_filter(&duplicate)?;
-                    transaction.insert_filter(new_id, element.meta, duplicate);
-                }
-                ElementData::PenFilter(filter) => {
-                    let mut duplicate = filter.clone();
-                    duplicate.x += offset.x;
-                    duplicate.y += offset.y;
-                    simplify_pen_filter_geometry(&mut duplicate);
-                    validate_pen_filter(&duplicate)?;
-                    transaction.insert_pen_filter(new_id, element.meta, duplicate);
-                }
-                ElementData::Arrow(arrow) => {
-                    let mut duplicate = arrow.clone();
-                    duplicate.text_element_id = arrow
-                        .text_element_id
-                        .and_then(|text_id| id_map.get(&text_id).copied());
-                    duplicate.x += offset.x;
-                    duplicate.y += offset.y;
-                    validate_arrow(&duplicate)?;
-                    transaction.insert_arrow(new_id, element.meta, duplicate);
-                }
-                ElementData::FreeDraw(free_draw) => {
-                    let mut duplicate = free_draw.clone();
-                    duplicate.x += offset.x;
-                    duplicate.y += offset.y;
-                    validate_free_draw(&duplicate)?;
-                    transaction.insert_free_draw(new_id, element.meta, duplicate);
-                }
-                ElementData::Text(text) => {
-                    let mut duplicate = text.clone();
-                    duplicate.center.x += offset.x;
-                    duplicate.center.y += offset.y;
-                    validate_text(&duplicate)?;
-                    transaction.insert_text(new_id, element.meta, duplicate);
-                }
-                ElementData::SerialNumber(serial) => {
-                    let mut duplicate = serial.clone();
-                    duplicate.center.x += offset.x;
-                    duplicate.center.y += offset.y;
-                    duplicate.text_element_id = document
-                        .bound_text_id_for_serial_number(id)
-                        .and_then(|text_id| id_map.get(&text_id).copied());
-                    validate_serial_number(&duplicate)?;
-                    transaction.insert_serial_number(new_id, element.meta, duplicate);
-                }
-            }
-            if self.state.selection.contains(id) {
-                next_selection.push(new_id);
-            }
-        }
+        let (transaction, next_selection) =
+            duplicate_selection_transaction(document, &self.state.selection.ids, offset)?;
         if transaction.is_empty() {
             return Ok(None);
         }
@@ -680,6 +691,9 @@ impl Editor {
             let Ok(current) = document.serial_number(id) else {
                 continue;
             };
+            if !current.serial_number_type.supports_number() {
+                continue;
+            }
             let next_number = if delta < 0 {
                 current.number.saturating_sub(delta.saturating_abs()).max(0)
             } else {
@@ -811,6 +825,55 @@ mod tests {
         ArrowData, CanvasFilterType, ElementData, ElementMeta, FreeDrawData, Operation,
         PenFilterData, RectangleData, SerialNumberData, TextData,
     };
+
+    #[test]
+    fn circles_do_not_consume_or_adjust_sequence_numbers() {
+        let mut document = DocumentModel::new();
+        let mut editor = Editor::new(EngineConfig::default()).unwrap();
+        let numbered_id = insert_serial_number(
+            &mut document,
+            SerialNumberData {
+                number: 5,
+                ..SerialNumberData::default()
+            },
+        );
+        editor.state.default_serial_number.serial_number_type =
+            snow_draw_engine_document::SerialNumberType::Circle;
+        editor.state.default_serial_number.number = 6;
+        let preview = editor
+            .serial_number_creation_preview(&document, Point::new(40.0, 50.0))
+            .unwrap();
+        assert_eq!(preview.diameter, 12.0);
+        let circle_id = editor
+            .queue_serial_number_creation(&document, preview)
+            .unwrap();
+        apply_editor_command(&mut document, editor.pending_command.take().unwrap());
+        assert_eq!(editor.state.default_serial_number.number, 6);
+        assert_eq!(next_serial_number(&document), 6);
+        editor.set_selection_state(vec![circle_id], Some(circle_id));
+        assert!(
+            editor
+                .adjust_selected_serial_numbers(&document, 1)
+                .unwrap()
+                .is_none()
+        );
+        let original_circle = document.serial_number(circle_id).unwrap().clone();
+        editor.set_selection_state(vec![numbered_id, circle_id], Some(numbered_id));
+        let command = editor
+            .adjust_selected_serial_numbers(&document, 1)
+            .unwrap()
+            .unwrap();
+        apply_editor_command(&mut document, command);
+        assert_eq!(document.serial_number(numbered_id).unwrap().number, 6);
+        assert_eq!(document.serial_number(circle_id).unwrap(), &original_circle);
+        editor.state.default_serial_number.serial_number_type =
+            snow_draw_engine_document::SerialNumberType::OutlinedCircle;
+        let numbered = editor
+            .serial_number_creation_preview(&document, Point::default())
+            .unwrap();
+        assert_eq!(numbered.number, 7);
+        assert!(numbered.diameter > 12.0);
+    }
 
     fn apply_editor_command(document: &mut DocumentModel, command: EditorCommand) {
         let EditorCommand::ApplyTransaction(command) = command else {
@@ -1006,20 +1069,18 @@ mod tests {
             &mut document,
             TextData {
                 center: Point::new(0.0, 0.0),
-                width: 40.0,
-                height: 20.0,
                 text: "committed".to_owned(),
                 auto_resize: false,
+                layout: TextLayoutSize::new(40.0, 20.0),
                 ..TextData::default()
             },
         );
         let mut editor = Editor::new(EngineConfig::default()).unwrap();
         let draft_text = TextData {
             center: Point::new(160.0, 0.0),
-            width: 60.0,
-            height: 30.0,
             text: "draft".to_owned(),
             auto_resize: false,
+            layout: TextLayoutSize::new(60.0, 30.0),
             ..document.text(id).unwrap().clone()
         };
 
@@ -1244,8 +1305,7 @@ mod tests {
             &mut document,
             TextData {
                 text: "old".to_owned(),
-                width: 80.0,
-                height: 24.0,
+                layout: TextLayoutSize::new(80.0, 24.0),
                 ..TextData::default()
             },
         );
@@ -1281,10 +1341,7 @@ mod tests {
                     TextCommitTarget::Existing(id),
                     Point::new(10.0, 20.0),
                     "new",
-                    TextLayoutSize {
-                        width: 120.0,
-                        height: 48.0,
-                    },
+                    TextLayoutSize::new(120.0, 48.0),
                     style.clone(),
                     false,
                     true,
@@ -1312,8 +1369,8 @@ mod tests {
         assert_eq!(updated.text, "new");
         assert_eq!(updated.center, Point::new(10.0, 20.0));
         assert_eq!(updated.rotation, 0.75);
-        assert_eq!(updated.width, 120.0);
-        assert_eq!(updated.height, 48.0);
+        assert_eq!(updated.width(), 120.0);
+        assert_eq!(updated.height(), 48.0);
         assert_eq!(updated.font_size, style.font_size);
         assert_eq!(updated.color, style.color);
         assert_eq!(updated.font_family, style.font_family);
@@ -1348,10 +1405,7 @@ mod tests {
                     TextCommitTarget::New,
                     Point::new(45.0, 67.0),
                     "created",
-                    TextLayoutSize {
-                        width: 180.0,
-                        height: 64.0,
-                    },
+                    TextLayoutSize::new(180.0, 64.0),
                     style.clone(),
                     true,
                     true,
@@ -1372,8 +1426,8 @@ mod tests {
         };
         assert_eq!(created.text, "created");
         assert_eq!(created.center, Point::new(45.0, 67.0));
-        assert_eq!(created.width, 180.0);
-        assert_eq!(created.height, 64.0);
+        assert_eq!(created.width(), 180.0);
+        assert_eq!(created.height(), 64.0);
         assert_eq!(created.font_size, style.font_size);
         assert_eq!(created.color, style.color);
         assert_eq!(created.font_family, style.font_family);
@@ -1394,8 +1448,7 @@ mod tests {
             &mut document,
             TextData {
                 text: "bound".to_owned(),
-                width: 80.0,
-                height: 24.0,
+                layout: TextLayoutSize::new(80.0, 24.0),
                 ..TextData::default()
             },
         );
@@ -1416,10 +1469,7 @@ mod tests {
                     TextCommitTarget::Existing(text_id),
                     Point::new(0.0, 0.0),
                     "   ",
-                    TextLayoutSize {
-                        width: 1.0,
-                        height: 1.0,
-                    },
+                    TextLayoutSize::new(1.0, 1.0),
                     text_style(
                         12.0,
                         ColorRgba8 {
@@ -1462,8 +1512,7 @@ mod tests {
             &mut document,
             TextData {
                 text: "bound".to_owned(),
-                width: 80.0,
-                height: 24.0,
+                layout: TextLayoutSize::new(80.0, 24.0),
                 ..TextData::default()
             },
         );
@@ -1540,8 +1589,7 @@ mod tests {
             TextData {
                 center: Point::new(100.0, 0.0),
                 text: "bound".to_owned(),
-                width: 80.0,
-                height: 24.0,
+                layout: TextLayoutSize::new(80.0, 24.0),
                 ..TextData::default()
             },
         );
@@ -1640,8 +1688,7 @@ mod tests {
             &mut document,
             TextData {
                 text: "old".to_owned(),
-                width: 80.0,
-                height: 24.0,
+                layout: TextLayoutSize::new(80.0, 24.0),
                 ..TextData::default()
             },
         );
@@ -1664,10 +1711,7 @@ mod tests {
                     TextCommitTarget::Existing(id),
                     Point::new(10.0, 20.0),
                     "new",
-                    TextLayoutSize {
-                        width: 120.0,
-                        height: 48.0,
-                    },
+                    TextLayoutSize::new(120.0, 48.0),
                     style,
                     false,
                     false,

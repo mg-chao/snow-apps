@@ -1,11 +1,12 @@
 use super::*;
+use crate::snapping::ObjectSnapActor;
 use crate::text::{
-    TextResizeLayoutOverride, text_resize_layout_override_matches_rect,
+    MeasuredTextResize, TextResizeLayoutOverride, text_resize_layout_override_matches_rect,
     text_resize_measurement_font_size, text_resize_measurement_requested_values,
 };
 use snow_draw_engine_document::{
-    MIN_TEXT_FONT_SIZE, serial_number_minimum_selection_scale, serial_number_rect_proxy,
-    serial_number_with_selection_rect,
+    MIN_TEXT_FONT_SIZE, TextLayoutSize, serial_number_minimum_selection_scale,
+    serial_number_rect_proxy, serial_number_with_selection_rect,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -68,6 +69,7 @@ impl Editor {
         };
 
         EditSelectionState {
+            duplicate: false,
             pointer_id: request.pointer_id,
             preview_elements: request.original_elements.clone(),
             preview_arrows: request.original_arrows.clone(),
@@ -138,9 +140,23 @@ impl Editor {
         };
 
         self.clear_transient_visuals();
+        if state.duplicate {
+            self.bump_scene_state_revision();
+        }
         if state.preview_elements == state.original_elements
             && state.preview_arrows == state.original_arrows
         {
+            return Ok(());
+        }
+
+        if state.duplicate {
+            let offset = Point::new(
+                state.preview_bounds.center.x - state.original_bounds.center.x,
+                state.preview_bounds.center.y - state.original_bounds.center.y,
+            );
+            if let Some(command) = self.duplicate_selected(document, offset)? {
+                self.queue_command(command);
+            }
             return Ok(());
         }
 
@@ -179,14 +195,14 @@ impl Editor {
             && state.original_arrows.is_empty()
             && state.original_elements.len() == 1
             && document.text(state.original_elements[0].id).is_ok();
-        let single_text_resize_font_size = if single_text_resize
+        let single_text_resize_measured = if single_text_resize
             && state.preview_elements.len() == 1
             && let Some(layout_override) = text_resize_layout_override
             && text_resize_layout_override_matches_rect(
                 layout_override,
                 state.preview_elements[0].rect,
             ) {
-            Some(layout_override.requested_font_size)
+            Some(MeasuredTextResize::from_layout_override(layout_override))
         } else {
             None
         };
@@ -197,7 +213,7 @@ impl Editor {
                     preview.rect,
                     resize_handle,
                     single_text_resize,
-                    single_text_resize_font_size,
+                    single_text_resize_measured,
                 )?;
                 continue;
             }
@@ -207,7 +223,7 @@ impl Editor {
                 preview,
                 resize_handle,
                 single_text_resize,
-                single_text_resize_font_size,
+                single_text_resize_measured,
             )?;
         }
         for preview in state.preview_arrows {
@@ -593,35 +609,44 @@ impl Editor {
                 ),
                 Vec::new(),
             ),
-            SnappingMode::Object if self.config.snap.enable_point_snaps => {
+            SnappingMode::Object => {
                 let excluded = context
                     .original_elements
                     .iter()
                     .map(|element| element.id)
                     .collect::<Vec<_>>();
-                let anchors_x = resize_snap_anchors_for_sign(dragged_x_sign);
-                let anchors_y = resize_snap_anchors_for_sign(dragged_y_sign);
-                let snap_result = OBJECT_SNAP_SERVICE.snap_resize(
-                    unsnapped_rect,
-                    &Self::visible_reference_rects(document, &excluded),
-                    self.zoom_adjusted_snap_distance(),
-                    &anchors_x,
-                    &anchors_y,
-                    self.config.snap.enable_point_snaps,
-                );
-                (
-                    DrawRect::new(
-                        unsnapped_rect.min_x + if snap_min_x { snap_result.dx } else { 0.0 },
-                        unsnapped_rect.min_y + if snap_min_y { snap_result.dy } else { 0.0 },
-                        unsnapped_rect.max_x + if snap_max_x { snap_result.dx } else { 0.0 },
-                        unsnapped_rect.max_y + if snap_max_y { snap_result.dy } else { 0.0 },
+                if let Some(plan) = self.object_snap_plan(
+                    document,
+                    ObjectSnapActor::selection(
+                        document,
+                        context.original_elements,
+                        context.original_arrows,
                     ),
-                    if self.config.snap.show_guides {
-                        snap_result.guides
-                    } else {
-                        Vec::new()
-                    },
-                )
+                    &excluded,
+                    snapping_mode,
+                ) {
+                    let anchors_x = resize_snap_anchors_for_sign(dragged_x_sign);
+                    let anchors_y = resize_snap_anchors_for_sign(dragged_y_sign);
+                    let snap_result = OBJECT_SNAP_SERVICE.snap_resize(
+                        unsnapped_rect,
+                        &plan.references,
+                        plan.snap_distance,
+                        &anchors_x,
+                        &anchors_y,
+                        plan.enable_point_snaps,
+                    );
+                    (
+                        DrawRect::new(
+                            unsnapped_rect.min_x + if snap_min_x { snap_result.dx } else { 0.0 },
+                            unsnapped_rect.min_y + if snap_min_y { snap_result.dy } else { 0.0 },
+                            unsnapped_rect.max_x + if snap_max_x { snap_result.dx } else { 0.0 },
+                            unsnapped_rect.max_y + if snap_max_y { snap_result.dy } else { 0.0 },
+                        ),
+                        plan.guides(snap_result.guides),
+                    )
+                } else {
+                    (unsnapped_rect, Vec::new())
+                }
             }
             _ => (unsnapped_rect, Vec::new()),
         };
@@ -844,7 +869,7 @@ impl Editor {
                 requested_font_size,
                 existing_text_layout_override,
             );
-            if changes_width_only && layout.width + 1e-3 < requested_rect.width {
+            if changes_width_only && layout.width() + 1e-3 < requested_rect.width {
                 return Ok(false);
             }
 
@@ -852,8 +877,8 @@ impl Editor {
                 &element.rect,
                 &state.original_bounds,
                 text_resize_anchor(*handle, *scale_from_center),
-                layout.width,
-                layout.height,
+                layout.width(),
+                layout.height(),
             );
             let next_elements = vec![SelectionRectState {
                 id: element.id,
@@ -909,8 +934,8 @@ mod tests {
             rectangle_kind: snow_draw_engine_document::RectangleElementKind::Rectangle,
             highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
             center: text.center,
-            width: text.width,
-            height: text.height,
+            width: text.width(),
+            height: text.height(),
             rotation: text.rotation,
             fill: text.fill,
             fill_style: text.fill_style,
@@ -948,6 +973,7 @@ mod tests {
             opacity: 1.0,
         };
         let state = EditSelectionState {
+            duplicate: false,
             pointer_id: 1,
             original_elements: vec![SelectionRectState {
                 id: ElementId::default(),
@@ -1052,10 +1078,9 @@ mod tests {
         );
         let text = TextData {
             center: Point::new(300.0, 0.0),
-            width: 100.0,
-            height: 40.0,
             text: "text".to_owned(),
             auto_resize: false,
+            layout: TextLayoutSize::new(100.0, 40.0),
             ..TextData::default()
         };
         let text_id = insert_text(&mut document, text.clone());
@@ -1355,20 +1380,18 @@ mod tests {
         let mut document = DocumentModel::new();
         let first_text = TextData {
             center: Point::new(-60.0, 0.0),
-            width: 80.0,
-            height: 20.0,
             text: "first".to_owned(),
             font_size: 12.0,
             auto_resize: false,
+            layout: TextLayoutSize::new(80.0, 20.0),
             ..TextData::default()
         };
         let second_text = TextData {
             center: Point::new(60.0, 0.0),
-            width: 80.0,
-            height: 20.0,
             text: "second".to_owned(),
             font_size: 24.0,
             auto_resize: true,
+            layout: TextLayoutSize::new(80.0, 20.0),
             ..TextData::default()
         };
         let first_id = insert_text(&mut document, first_text.clone());
@@ -1439,10 +1462,9 @@ mod tests {
         let mut document = DocumentModel::new();
         let text = TextData {
             center: Point::new(0.0, 0.0),
-            width: 100.0,
-            height: 30.0,
             text: "draft".to_owned(),
             auto_resize: false,
+            layout: TextLayoutSize::new(100.0, 30.0),
             ..TextData::default()
         };
         let text_id = insert_text(&mut document, text.clone());
@@ -1465,6 +1487,7 @@ mod tests {
             )
             .unwrap();
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
+            duplicate: false,
             pointer_id: 1,
             original_elements: vec![SelectionRectState {
                 id: text_id,
@@ -1509,11 +1532,10 @@ mod tests {
         let mut document = DocumentModel::new();
         let text = TextData {
             center: Point::new(0.0, 0.0),
-            width: 100.0,
-            height: 20.0,
             text: "draft".to_owned(),
             font_size: 10.0,
             auto_resize: true,
+            layout: TextLayoutSize::new(100.0, 20.0),
             ..TextData::default()
         };
         let text_id = insert_text(&mut document, text.clone());
@@ -1536,6 +1558,7 @@ mod tests {
             )
             .unwrap();
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
+            duplicate: false,
             pointer_id: 1,
             original_elements: vec![SelectionRectState {
                 id: text_id,
@@ -1586,11 +1609,10 @@ mod tests {
         let mut document = DocumentModel::new();
         let text = TextData {
             center: Point::new(0.0, 0.0),
-            width: 100.0,
-            height: 20.0,
             text: "draft".to_owned(),
             font_size: 10.0,
             auto_resize: true,
+            layout: TextLayoutSize::new(100.0, 20.0),
             ..TextData::default()
         };
         let text_id = insert_text(&mut document, text.clone());
@@ -1613,6 +1635,7 @@ mod tests {
             )
             .unwrap();
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
+            duplicate: false,
             pointer_id: 1,
             original_elements: vec![SelectionRectState {
                 id: text_id,
@@ -1646,10 +1669,7 @@ mod tests {
                     requested_width: 100.0,
                     requested_height: 40.0,
                     requested_font_size: 22.0,
-                    layout: TextLayoutSize {
-                        width: 100.0,
-                        height: 40.0,
-                    },
+                    layout: TextLayoutSize::new(100.0, 40.0),
                 }),
             },
         });
@@ -1679,11 +1699,10 @@ mod tests {
         let mut document = DocumentModel::new();
         let text = TextData {
             center: Point::new(0.0, 0.0),
-            width: 100.0,
-            height: 20.0,
             text: "draft".to_owned(),
             font_size: 10.0,
             auto_resize: true,
+            layout: TextLayoutSize::new(100.0, 20.0),
             ..TextData::default()
         };
         let text_id = insert_text(&mut document, text.clone());
@@ -1743,10 +1762,9 @@ mod tests {
         let mut document = DocumentModel::new();
         let text = TextData {
             center: Point::new(0.0, 0.0),
-            width: 100.0,
-            height: 40.0,
             text: "draft".to_owned(),
             auto_resize: false,
+            layout: TextLayoutSize::new(100.0, 40.0),
             ..TextData::default()
         };
         let text_id = insert_text(&mut document, text.clone());
@@ -1789,6 +1807,7 @@ mod tests {
             )
             .unwrap();
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
+            duplicate: false,
             pointer_id: 1,
             original_elements: vec![SelectionRectState {
                 id: text_id,
@@ -1863,35 +1882,31 @@ mod tests {
     fn repeated_text_resize_measurement_preserves_requested_size_for_release_preview() {
         let text = TextData {
             center: Point::new(0.0, 0.0),
-            width: 100.0,
-            height: 20.0,
             text: "hello".to_owned(),
             font_size: 10.0,
             auto_resize: false,
+            layout: TextLayoutSize::new(100.0, 20.0),
             ..TextData::default()
         };
         let original_rect = text_rect(&text);
         let original_bounds = SelectionBounds {
             center: text.center,
-            width: text.width,
-            height: text.height,
+            width: text.width(),
+            height: text.height(),
             rotation: text.rotation,
         };
         let first_override = TextResizeLayoutOverride {
             requested_width: 100.0,
             requested_height: 40.0,
             requested_font_size: 20.0,
-            layout: TextLayoutSize {
-                width: 100.0,
-                height: 36.0,
-            },
+            layout: TextLayoutSize::new(100.0, 36.0),
         };
         let measured_preview_rect = resized_text_rect_from_size(
             &original_rect,
             &original_bounds,
             text_resize_anchor(ResizeHandle::Bottom, false),
-            first_override.layout.width,
-            first_override.layout.height,
+            first_override.layout.width(),
+            first_override.layout.height(),
         );
 
         let requested = text_resize_measurement_requested_values(
@@ -1928,7 +1943,7 @@ mod tests {
             repeated_override.requested_font_size,
             first_override.requested_font_size,
         );
-        assert_close(release_preview.height, first_override.layout.height);
+        assert_close(release_preview.height, first_override.layout.height());
         assert_close(release_preview.center.y, measured_preview_rect.center.y);
     }
 }

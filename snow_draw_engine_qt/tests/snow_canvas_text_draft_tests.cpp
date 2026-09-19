@@ -8,6 +8,7 @@
 #include "snow_canvas_text_edit_target.h"
 #include "snow_canvas_text_edit_geometry.h"
 #include "snow_canvas_text_layout.h"
+#include "snow_canvas_text_render.h"
 #include "snow_canvas_text_measurement.h"
 #include "snow_canvas_type_conversions.h"
 #include "snow_canvas_changed_viewports.h"
@@ -573,13 +574,22 @@ void textMeasurementBuildsAutoResizeLayoutOverridesFromSnapshots() {
     infos[1].id = SnowElementId{11, 2};
     infos[1].font_size = style.font_size;
     infos[1].auto_resize = 0;
+    infos[1].width = 40.0;
+    infos[1].height = 20.0;
+    const QByteArray fixedText = QByteArrayLiteral("fixed width note that wraps");
+    std::memcpy(infos[1].text_utf8, fixedText.constData(),
+                static_cast<std::size_t>(fixedText.size()));
+    infos[1].text_utf8_len = static_cast<std::uint32_t>(fixedText.size());
 
     const snow_canvas_text_measurement::TextLayoutOverrideMeasurement measurement =
         snow_canvas_text_measurement::measureAutoResizeLayoutOverrides(infos, 2, style, QFont());
 
     require(measurement.success, "snapshot layout measurement should succeed");
-    require(measurement.layouts.size() == 1,
-            "snapshot layout measurement should skip fixed-size text");
+    // A style change re-renders the glyphs, so fixed-size text must be measured
+    // too: the re-measured wrapped height and ink box anchor decorations and
+    // dirty regions to the edges the frame actually paints.
+    require(measurement.layouts.size() == 2,
+            "snapshot layout measurement must also measure fixed-size text");
     require(measurement.layouts[0].id.index == infos[0].id.index &&
                 measurement.layouts[0].id.generation == infos[0].id.generation,
             "snapshot layout measurement should preserve measured text id");
@@ -587,6 +597,11 @@ void textMeasurementBuildsAutoResizeLayoutOverridesFromSnapshots() {
             "snapshot layout measurement should produce width");
     require(measurement.layouts[0].size.height > 1.0,
             "snapshot layout measurement should produce height");
+    require(measurement.layouts[1].size.width > 1.0 && measurement.layouts[1].size.height > 1.0,
+            "fixed-size text measurement should produce a wrapped layout");
+    require(measurement.layouts[1].size.content_width > 1.0 &&
+                measurement.layouts[1].size.content_width <= measurement.layouts[1].size.width,
+            "fixed-size text measurement should report the wrapped ink box");
 }
 
 void textEditTargetResolvesCreateHitAndSelectedText() {
@@ -1987,6 +2002,29 @@ QRect visiblePixelBounds(const QImage& image) {
     return bounds;
 }
 
+void circleRendersFillAndStrokeWithoutNumber() {
+    const SnowColorRgba8 red{255, 0, 0, 255};
+    const SnowColorRgba8 green{0, 255, 0, 255};
+    const SnowColorRgba8 transparent{0, 0, 0, 0};
+    const QImage circle = renderedSerialNumberType(SNOW_SERIAL_NUMBER_TYPE_CIRCLE, red, transparent,
+                                                   SNOW_FILL_STYLE_SOLID, 6.0, 24.0);
+    const QImage unlabeledOutline = renderedSerialNumberType(
+        SNOW_SERIAL_NUMBER_TYPE_OUTLINED_CIRCLE, red, transparent, SNOW_FILL_STYLE_SOLID, 6.0);
+    require(circle == unlabeledOutline, "Circle should paint only its outline, with no number");
+    require(circle.pixelColor(70, 70).alpha() == 0,
+            "transparent Circle should have an empty center");
+    const QImage filled = renderedSerialNumberType(SNOW_SERIAL_NUMBER_TYPE_CIRCLE, red, green,
+                                                   SNOW_FILL_STYLE_SOLID, 6.0, 24.0);
+    require(filled.pixelColor(70, 70) == QColor(0, 255, 0),
+            "Circle should use its independently configured fill color");
+    for (SnowFillStyle style : {SNOW_FILL_STYLE_LINE, SNOW_FILL_STYLE_CROSS_LINE}) {
+        const QImage patterned =
+            renderedSerialNumberType(SNOW_SERIAL_NUMBER_TYPE_CIRCLE, red, green, style, 6.0, 24.0);
+        require(patterned != filled && patterned != circle,
+                "Circle should support each existing patterned fill");
+    }
+}
+
 void serialNumberTypesRenderExpectedSilhouettesAndSolidSemantics() {
     const SnowColorRgba8 red{255, 0, 0, 255};
     const SnowColorRgba8 transparent{0, 0, 0, 0};
@@ -2201,6 +2239,338 @@ void textEditorConnectorBuildsSerialBoundConnector() {
     require(std::hypot(solidSquareConnector.center_x, solidSquareConnector.center_y) >
                 std::hypot(squareConnector.center_x, squareConnector.center_y),
             "solid square connector should include the reserved stroke footprint");
+}
+
+// Canvas-space text paint bounds, straight from the engine's published paint
+// contract — the same bounds dirty regions derive from. Production code
+// currently has no canvas-space caller, so the helper lives with its only
+// consumer.
+QRectF textItemCanvasBounds(const SnowSceneDisplayItem& item) {
+    const SnowTextPaintBounds bounds = snow_scene_text_paint_bounds(&item);
+    return QRectF(QPointF(bounds.min_x, bounds.min_y), QPointF(bounds.max_x, bounds.max_y));
+}
+
+void textEditorConnectorAnchorsAtInkEdgeRegardlessOfFill() {
+    const char* text = "note";
+    SnowSceneDisplayItem preview{};
+    preview.kind = SNOW_SCENE_DISPLAY_ITEM_TEXT;
+    preview.element_id = SnowElementId{42, 7};
+    preview.center_x = 130.0;
+    preview.center_y = 10.0;
+    preview.width = 80.0;
+    preview.height = 40.0;
+    preview.font_size = 40.0;
+    preview.fill = SnowColorRgba8{0xff, 0xff, 0xff, 0xff};
+    preview.text_utf8 = text;
+    preview.text_utf8_len = 4;
+
+    SnowSceneDisplayItem serial{};
+    serial.kind = SNOW_SCENE_DISPLAY_ITEM_SERIAL_NUMBER;
+    serial.element_id = SnowElementId{3, 11};
+    serial.center_x = 0.0;
+    serial.center_y = 0.0;
+    serial.width = 24.0;
+    serial.height = 24.0;
+    serial.stroke_width = 2.0;
+    bindSerialToTextPreview(serial, preview.element_id);
+
+    SnowCanvasSceneItem connector;
+    require(snow_canvas_text_editor_connector::connectorItemForPreview(serial, preview, &connector),
+            "filled bound text preview should create a connector item");
+    require(connector.arrow_point_count == 2,
+            "side-attached connector should add a baseline segment");
+
+    // The underline belongs on the text's aligned ink edge; the background fill
+    // padding moves the painted pill, never the connector geometry.
+    const double left = preview.center_x - preview.width / 2.0;
+    const double right = preview.center_x + preview.width / 2.0;
+    const double bottom = preview.center_y + preview.height / 2.0;
+    const QRectF paintedBounds = textItemCanvasBounds(preview);
+    require(paintedBounds.width() > preview.width &&
+                paintedBounds.bottom() > preview.center_y + preview.height / 2.0,
+            "filled text paint bounds should extend past the raw item rectangle");
+    requireNear(connector.arrow_points[0].x, left, "baseline start x");
+    requireNear(connector.arrow_points[0].y, bottom, "baseline start y");
+    requireNear(connector.arrow_points[1].x, right, "baseline end x");
+    requireNear(connector.arrow_points[1].y, bottom, "baseline end y");
+
+    // A dominant text stroke widens the stroke-inclusive bounds used for dirty
+    // regions but must not move the connector off the ink edge.
+    preview.stroke = SnowColorRgba8{0, 0, 0, 0xff};
+    preview.stroke_width = 40.0;
+    const SnowTextPaintOutset paintOutset = snow_scene_text_paint_outset(&preview);
+    const SnowTextPaintOutset fillOutset = snow_scene_text_fill_outset(&preview);
+    require(paintOutset.y > fillOutset.y,
+            "dominant stroke should widen the dirty-region outset beyond the pill padding");
+    SnowCanvasSceneItem strokedConnector;
+    require(snow_canvas_text_editor_connector::connectorItemForPreview(serial, preview,
+                                                                       &strokedConnector),
+            "stroked bound text preview should still create a connector item");
+    requireNear(strokedConnector.arrow_points[0].y, bottom, "stroked baseline start y");
+    requireNear(strokedConnector.arrow_points[1].y, bottom, "stroked baseline end y");
+    const QRectF strokedPaintBounds = textItemCanvasBounds(preview);
+    require(strokedPaintBounds.bottom() > bottom,
+            "dirty-region bounds should still cover the stroke halo");
+}
+
+void textEditorConnectorUnderlinesWrappedInkNotWrapRectangle() {
+    // A width-resized bound label: the wrap rectangle stays wide, but the
+    // aligned ink block hugs the narrower wrapped ink on the left and top.
+    SnowSceneDisplayItem preview{};
+    preview.kind = SNOW_SCENE_DISPLAY_ITEM_TEXT;
+    preview.element_id = SnowElementId{42, 7};
+    preview.center_x = 130.0;
+    preview.center_y = 10.0;
+    preview.width = 160.0;
+    preview.height = 40.0;
+    preview.content_width = 60.0;
+    preview.content_height = 20.0;
+    preview.font_size = 40.0;
+    preview.fill = SnowColorRgba8{0xff, 0xff, 0xff, 0xff};
+    preview.text_horizontal_align = SNOW_TEXT_HORIZONTAL_ALIGN_LEFT;
+    preview.text_vertical_align = SNOW_TEXT_VERTICAL_ALIGN_TOP;
+    preview.text_utf8 = "note";
+    preview.text_utf8_len = 4;
+
+    SnowSceneDisplayItem serial{};
+    serial.kind = SNOW_SCENE_DISPLAY_ITEM_SERIAL_NUMBER;
+    serial.element_id = SnowElementId{3, 11};
+    serial.center_x = 0.0;
+    serial.center_y = 0.0;
+    serial.width = 24.0;
+    serial.height = 24.0;
+    serial.stroke_width = 2.0;
+    bindSerialToTextPreview(serial, preview.element_id);
+
+    SnowCanvasSceneItem connector;
+    require(snow_canvas_text_editor_connector::connectorItemForPreview(serial, preview, &connector),
+            "wrapped bound text preview should create a connector item");
+    require(connector.arrow_point_count == 2,
+            "side-attached connector should add a baseline segment");
+
+    // Left-aligned ink: the underline starts at the wrap rectangle's left edge.
+    const double inkLeft = preview.center_x - preview.width / 2.0;
+    // Top-aligned ink: the underline bottom is the item top plus the ink height.
+    const double inkBottom = preview.center_y - preview.height / 2.0 + preview.content_height;
+    requireNear(connector.arrow_points[0].x, inkLeft, "wrapped baseline start x");
+    requireNear(connector.arrow_points[1].x, inkLeft + preview.content_width,
+                "wrapped baseline end x");
+    requireNear(connector.arrow_points[0].y, inkBottom, "wrapped baseline start y");
+    requireNear(connector.arrow_points[1].y, inkBottom, "wrapped baseline end y");
+    // The underline must not reach the wrap rectangle's right edge.
+    require(connector.arrow_points[1].x <
+                preview.center_x + preview.width / 2.0 - preview.content_width / 2.0,
+            "underline must span the ink block, not the wrap rectangle");
+}
+
+void paintBoundsFollowAlignedWrappedInk() {
+    SnowSceneDisplayItem item{};
+    item.kind = SNOW_SCENE_DISPLAY_ITEM_TEXT;
+    item.element_id = SnowElementId{42, 7};
+    item.center_x = 200.0;
+    item.center_y = 150.0;
+    item.width = 160.0;
+    item.height = 80.0;
+    item.content_width = 60.0;
+    item.content_height = 30.0;
+    item.font_size = 40.0;
+    item.fill = SnowColorRgba8{0xff, 0xff, 0xff, 0xff};
+    item.stroke = SnowColorRgba8{0, 0, 0, 0xff};
+    item.stroke_width = 30.0;
+    item.text_horizontal_align = SNOW_TEXT_HORIZONTAL_ALIGN_RIGHT;
+    item.text_vertical_align = SNOW_TEXT_VERTICAL_ALIGN_BOTTOM;
+    item.text_utf8 = "note";
+    item.text_utf8_len = 4;
+
+    const double lineHeight = qMax(1.0, item.font_size) * 1.2;
+    const double padX = lineHeight * 0.32;
+    const double padY = lineHeight * 0.1;
+    // Right/bottom-aligned ink: the pill block hugs the wrap rectangle's
+    // bottom-right corner.
+    const double pillRight = item.center_x + item.width / 2.0 + padX;
+    const double pillBottom = item.center_y + item.height / 2.0 + padY;
+    // The conservative paint bounds take the larger of fill padding and the
+    // stroke halo per axis: horizontally the fill padding (15.36) dominates
+    // the 15.0 halo, vertically the halo dominates the 4.8 padding.
+    const double halo = item.stroke_width / 2.0;
+
+    const QRectF bounds = textItemCanvasBounds(item);
+    requireNear(bounds.right(), pillRight, "paint bounds right edge follows aligned ink");
+    requireNear(bounds.bottom(), pillBottom + (halo - padY),
+                "paint bounds bottom edge covers the dominant stroke halo");
+    require(bounds.bottom() > pillBottom, "paint bounds should extend past the pill edge");
+    require(bounds.width() < item.width + 2.0 * (padX + halo) + 1.0,
+            "paint bounds should track the narrower ink box, not the wrap rectangle");
+}
+
+QRect alphaPixelBounds(const QImage& image) {
+    QRect bounds;
+    bool hasPixel = false;
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            if (image.pixelColor(x, y).alpha() == 0) {
+                continue;
+            }
+            const QRect pixelRect(x, y, 1, 1);
+            bounds = hasPixel ? bounds.united(pixelRect) : pixelRect;
+            hasPixel = true;
+        }
+    }
+    return bounds;
+}
+
+void connectorAnchorIgnoresPillEdgeAtZoom(double zoom) {
+    const QString text = QStringLiteral("note");
+    SnowSceneDisplayItem item{};
+    item.kind = SNOW_SCENE_DISPLAY_ITEM_TEXT;
+    item.element_id = SnowElementId{42, 7};
+    item.font_size = 40.0;
+    item.fill = SnowColorRgba8{0xff, 0x10, 0x10, 0xff};
+    // A dominant stroke proves the pill edge and the anchor stay put even when
+    // the stroke-inclusive dirty-region outset is much larger.
+    item.stroke = SnowColorRgba8{0, 0, 0, 0xff};
+    item.stroke_width = 30.0;
+    item.text_utf8 = "note";
+    item.text_utf8_len = 4;
+
+    const QFont baseFont = QApplication::font();
+    const QSizeF measured = snow_canvas_text_layout::measureNaturalText(text, baseFont, item, zoom);
+    item.width = measured.width();
+    item.height = measured.height();
+    item.center_x = 200.0;
+    item.center_y = 150.0;
+
+    const SnowTextPaintOutset fillOutset = snow_scene_text_fill_outset(&item);
+    const double contractBottom = item.center_y + item.height / 2.0 + fillOutset.y;
+    const double contractLeft = item.center_x - item.width / 2.0 - fillOutset.x;
+    const double inkBottom = item.center_y + item.height / 2.0;
+
+    SnowSceneDisplayItem serial{};
+    serial.kind = SNOW_SCENE_DISPLAY_ITEM_SERIAL_NUMBER;
+    serial.element_id = SnowElementId{3, 11};
+    serial.center_x = 0.0;
+    serial.center_y = 150.0;
+    serial.width = 24.0;
+    serial.height = 24.0;
+    serial.stroke_width = 2.0;
+    bindSerialToTextPreview(serial, item.element_id);
+    SnowCanvasSceneItem connector;
+    require(snow_canvas_text_editor_connector::connectorItemForPreview(serial, item, &connector),
+            "side-bound serial should attach to the preview text");
+    require(connector.arrow_point_count == 2, "side attachment should emit a baseline segment");
+    requireNear(connector.arrow_points[0].y, inkBottom,
+                "connector baseline should sit on the ink bottom edge, ignoring the fill padding");
+
+    const QSize imageSize(640, 480);
+    QImage image(imageSize, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+    {
+        QPainter painter(&image);
+        painter.setFont(baseFont);
+        const double width = item.width * zoom;
+        const double height = item.height * zoom;
+        const QRectF localRect(200.0 * zoom - width / 2.0, 150.0 * zoom - height / 2.0, width,
+                               height);
+        snow_canvas_text_render::drawBackground(painter, item, baseFont, localRect, zoom);
+    }
+
+    const QRect painted = alphaPixelBounds(image);
+    require(!painted.isEmpty(), "background pill should paint visible pixels");
+    // Pixel edges are inclusive row/column indices; the continuous edge sits
+    // within one pixel of the last painted row. The right edge is skipped:
+    // natural-width measurement adds a small safety margin the pill does not.
+    const double tolerance = 2.0;
+    const double paintedBottom = static_cast<double>(painted.bottom()) + 1.0;
+    const double paintedLeft = static_cast<double>(painted.left());
+    require(std::abs(paintedBottom - contractBottom * zoom) <= tolerance,
+            "painted pill bottom must match the published fill-padding contract");
+    require(std::abs(paintedLeft - contractLeft * zoom) <= tolerance,
+            "painted pill left must match the published fill-padding contract");
+    require(std::abs(paintedBottom - connector.arrow_points[0].y * zoom) > tolerance,
+            "connector baseline must stay off the padded pill edge the painter paints");
+}
+
+void connectorAnchorIgnoresPillEdge() {
+    connectorAnchorIgnoresPillEdgeAtZoom(1.0);
+    connectorAnchorIgnoresPillEdgeAtZoom(2.5);
+}
+
+void wrappedConnectorAnchorIgnoresPillEdge() {
+    // A width-resized label wraps inside an item rectangle wider than the ink.
+    // Top-aligned wrapped ink must keep the underline on the ink block's bottom
+    // edge, not on the wrap rectangle's bottom or the padded pill edge.
+    const QString text = QStringLiteral("a wrapped annotation note");
+    SnowSceneDisplayItem item{};
+    item.kind = SNOW_SCENE_DISPLAY_ITEM_TEXT;
+    item.element_id = SnowElementId{42, 7};
+    item.font_size = 32.0;
+    item.fill = SnowColorRgba8{0xff, 0x10, 0x10, 0xff};
+    item.text_utf8 = "a wrapped annotation note";
+    item.text_utf8_len =
+        static_cast<std::uint32_t>(QStringLiteral("a wrapped annotation note").size());
+    item.text_vertical_align = SNOW_TEXT_VERTICAL_ALIGN_TOP;
+    item.text_horizontal_align = SNOW_TEXT_HORIZONTAL_ALIGN_LEFT;
+
+    const QFont baseFont = QApplication::font();
+    // Wrap at the item width; the wrapped lines are narrower than the wrap
+    // rectangle, which is exactly the state a width-resized label paints.
+    item.width = 240.0;
+    const snow_canvas_text_layout::TextMeasuredLayout wrapped =
+        snow_canvas_text_layout::measureWrappedTextLayout(text, baseFont, item, item.width);
+    item.height = wrapped.layout.height();
+    item.content_width = wrapped.content.width();
+    item.content_height = wrapped.content.height();
+    require(wrapped.content.width() < item.width,
+            "fixture must wrap into ink narrower than the wrap rectangle");
+    item.center_x = 260.0;
+    item.center_y = 200.0;
+
+    const SnowTextPaintOutset fillOutset = snow_scene_text_fill_outset(&item);
+    const double contractBottom =
+        item.center_y - item.height / 2.0 + item.content_height + fillOutset.y;
+    const double contractLeft = item.center_x - item.width / 2.0 - fillOutset.x;
+    const double inkBottom = item.center_y - item.height / 2.0 + item.content_height;
+
+    SnowSceneDisplayItem serial{};
+    serial.kind = SNOW_SCENE_DISPLAY_ITEM_SERIAL_NUMBER;
+    serial.element_id = SnowElementId{3, 11};
+    serial.center_x = 0.0;
+    serial.center_y = 200.0;
+    serial.width = 24.0;
+    serial.height = 24.0;
+    serial.stroke_width = 2.0;
+    bindSerialToTextPreview(serial, item.element_id);
+    SnowCanvasSceneItem connector;
+    require(snow_canvas_text_editor_connector::connectorItemForPreview(serial, item, &connector),
+            "wrapped serial-bound text should attach to the preview text");
+    requireNear(connector.arrow_points[0].y, inkBottom,
+                "wrapped connector baseline must sit on the top-aligned ink bottom edge");
+
+    const double zoom = 1.0;
+    const QSize imageSize(720, 480);
+    QImage image(imageSize, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+    {
+        QPainter painter(&image);
+        painter.setFont(baseFont);
+        const double width = item.width * zoom;
+        const double height = item.height * zoom;
+        const QRectF localRect(item.center_x * zoom - width / 2.0,
+                               item.center_y * zoom - height / 2.0, width, height);
+        snow_canvas_text_render::drawBackground(painter, item, baseFont, localRect, zoom);
+    }
+
+    const QRect painted = alphaPixelBounds(image);
+    require(!painted.isEmpty(), "wrapped background pills should paint visible pixels");
+    const double tolerance = 2.0;
+    const double paintedBottom = static_cast<double>(painted.bottom()) + 1.0;
+    const double paintedLeft = static_cast<double>(painted.left());
+    require(std::abs(paintedBottom - contractBottom * zoom) <= tolerance,
+            "painted wrapped pill bottom must match the aligned ink contract");
+    require(std::abs(paintedLeft - contractLeft * zoom) <= tolerance,
+            "painted wrapped pill left must match the aligned ink contract");
+    require(std::abs(paintedBottom - connector.arrow_points[0].y * zoom) > tolerance,
+            "wrapped connector baseline must stay off the padded pill edge");
 }
 
 void widgetPointerFlowPlansSuppressedTextCreate() {
@@ -3405,12 +3775,18 @@ int main(int argc, char** argv) {
     longOpenPathsRenderAllCommands();
     textBackgroundUsesRectangleHatchTexture();
     serialNumberBackgroundUsesTextHatchTexture();
+    circleRendersFillAndStrokeWithoutNumber();
     serialNumberTypesRenderExpectedSilhouettesAndSolidSemantics();
     solidSerialNumberChoosesFixedContrastLabelColors();
     textHoverUnderlineRendererDrawsOnlyTheUnderline();
     multilineTextHoverRendererDrawsEveryLineUnderline();
     hatchTextureCacheReusesSaturatedStrokeWidths();
     textEditorConnectorBuildsSerialBoundConnector();
+    textEditorConnectorAnchorsAtInkEdgeRegardlessOfFill();
+    textEditorConnectorUnderlinesWrappedInkNotWrapRectangle();
+    paintBoundsFollowAlignedWrappedInk();
+    connectorAnchorIgnoresPillEdge();
+    wrappedConnectorAnchorIgnoresPillEdge();
     textEditorStylePopupInteractionPreservesDraftUntilItCloses();
     cancelingAnActiveTextDraftDoesNotCommitIt();
     inputMethodEnablementTracksInlineTextEditing();

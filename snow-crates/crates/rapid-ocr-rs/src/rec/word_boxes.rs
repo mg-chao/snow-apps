@@ -389,7 +389,7 @@ fn reverse_rotate_crop_image_opencv(
         Point2f::new(0.0, img_crop_height as f32),
     ];
 
-    let m = imgproc::get_perspective_transform_slice(&src, &dst, core::DECOMP_LU).map_err(|e| {
+    let m = imgproc::get_perspective_transform_slice(src, dst, core::DECOMP_LU).map_err(|e| {
         RapidOcrError::Config(format!("opencv getPerspectiveTransform failed: {e}"))
     })?;
 

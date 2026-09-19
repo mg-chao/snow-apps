@@ -3,15 +3,15 @@ use snow_draw_engine_core::{
     rectangle_intersects_viewport,
 };
 use snow_draw_engine_document::{
-    ArrowData, ElementId, MIN_TEXT_FONT_SIZE, RectangleData, SerialNumberData, arrow_hit_test,
-    arrow_segment_midpoints,
+    ArrowData, ArrowSuggestedBinding, ElementId, MIN_TEXT_FONT_SIZE, RectangleData,
+    SerialNumberData, arrow_hit_test, arrow_segment_midpoints,
 };
 use snow_draw_engine_model::DocumentModel;
 
 use crate::{
-    ArrowHandleKind, ArrowHandleState, Editor, EditorPresentationState, EditorViewState,
-    SelectionArrowState, SelectionBounds, SelectionRectState, SerialNumberToolbarState,
-    TextPreviewFontSize,
+    ArrowHandleKind, ArrowHandleState, BindingHighlightPresentation, Editor,
+    EditorPresentationState, EditorViewState, MIN_BINDING_HIGHLIGHT_ZOOM, SelectionArrowState,
+    SelectionBounds, SelectionRectState, SerialNumberToolbarState, TextPreviewPaint,
     geometry::{
         element_hit_tolerance, selection_bounds_from_selection, selection_handle_hit_size,
         selection_handle_size, text_resize_changes_width_only,
@@ -84,6 +84,15 @@ impl Editor {
             .map(<[SelectionRectState]>::to_vec)
             .unwrap_or_default();
         let mut preview_arrows = self.preview_selection_arrows(document);
+        if let InteractionState::CreatingSerialNumber(state) = &self.state.interaction
+            && let Some((id, text)) = &state.text
+            && let Some(mut rect) = document.element_rect_proxy(*id)
+        {
+            rect.center = text.center;
+            rect.width = text.width();
+            rect.height = text.height();
+            preview_elements.push(SelectionRectState { id: *id, rect });
+        }
         for id in &self.state.eraser.pending_ids {
             preview_elements.retain(|preview| preview.id != *id);
             preview_arrows.retain(|preview| preview.id != *id);
@@ -124,9 +133,35 @@ impl Editor {
             .map_or_else(Vec::new, |(arrow_id, arrow)| {
                 self.arrow_handle_states(document, arrow_id, &arrow)
             });
+        let duplicate_preview = if let InteractionState::EditingSelection(state) =
+            &self.state.interaction
+            && state.duplicate
+        {
+            let offset = Point::new(
+                state.preview_bounds.center.x - state.original_bounds.center.x,
+                state.preview_bounds.center.y - state.original_bounds.center.y,
+            );
+            preview_elements.clear();
+            preview_arrows.clear();
+            crate::document_ops::duplicate_selection_transaction(
+                document,
+                &self.state.selection.ids,
+                offset,
+            )
+            .ok()
+            .map(|(transaction, _)| transaction)
+        } else {
+            None
+        };
+        let copying = duplicate_preview.is_some();
         EditorPresentationState {
+            duplicate_preview,
             auto_filter_highlights: self.auto_filter_highlights(document),
-            arrow_text_previews: self.arrow_text_previews(document),
+            arrow_text_previews: if copying {
+                Vec::new()
+            } else {
+                self.arrow_text_previews(document)
+            },
             creation_preview: self
                 .pen_filter_creation_preview()
                 .or_else(|| self.free_draw_creation_preview())
@@ -134,7 +169,7 @@ impl Editor {
             active_text_draft: self.active_text_draft_display_presentation(),
             preview_arrows,
             preview_elements,
-            preview_text_font_sizes: self.selection_preview_text_font_sizes(document),
+            preview_text_paints: self.selection_preview_text_paints(document),
             marquee: self.state.ui.marquee,
             marquee_candidate_elements,
             marquee_candidate_arrows,
@@ -152,6 +187,30 @@ impl Editor {
             selected_single_arrow,
             arrow_handles,
             snap_guides: self.state.ui.snap_guides.clone(),
+            binding_highlight: self.binding_highlight(document),
+        }
+    }
+
+    fn binding_highlight(&self, document: &DocumentModel) -> Option<BindingHighlightPresentation> {
+        let suggested = self.current_suggested_binding()?;
+        let rect = document.element_rect_proxy(suggested.bindable_id)?;
+        // Excalidraw keeps the highlight a constant on-screen width:
+        // clamp(strokeWidth, 1.75, 4) / zoom.
+        let zoom = self.camera().zoom.max(MIN_BINDING_HIGHLIGHT_ZOOM);
+        let stroke_width = rect.stroke_width.clamp(1.75, 4.0) / zoom;
+        Some(BindingHighlightPresentation {
+            rect,
+            stroke_width,
+            mid_point: suggested.mid_point,
+            near_mid_points: suggested.near_mid_points.clone(),
+        })
+    }
+
+    fn current_suggested_binding(&self) -> Option<&ArrowSuggestedBinding> {
+        match &self.state.interaction {
+            InteractionState::EditingArrow(state) => state.suggested_binding.as_ref(),
+            InteractionState::CreatingArrow(state) => state.suggested_binding.as_ref(),
+            _ => None,
         }
     }
 
@@ -195,22 +254,26 @@ impl Editor {
         let center_x = (selection_left + selection_right) / 2.0;
         let top = selection_bottom + SERIAL_TOOLBAR_VERTICAL_OFFSET;
 
+        let supports_number = serial_numbers
+            .iter()
+            .any(|(_, serial)| serial.serial_number_type.supports_number());
         SerialNumberToolbarState {
             visible: true,
             left: center_x - SERIAL_TOOLBAR_WIDTH / 2.0,
             top,
             width: SERIAL_TOOLBAR_WIDTH,
             height: SERIAL_TOOLBAR_HEIGHT,
-            can_decrease: serial_numbers.iter().any(|(_, serial)| serial.number > 0),
-            can_increase: true,
+            can_decrease: supports_number
+                && serial_numbers.iter().any(|(_, serial)| serial.number > 0),
+            can_increase: supports_number,
             can_create_text: true,
         }
     }
 
-    pub(crate) fn selection_preview_text_font_sizes(
+    pub(crate) fn selection_preview_text_paints(
         &self,
         document: &DocumentModel,
-    ) -> Vec<TextPreviewFontSize> {
+    ) -> Vec<TextPreviewPaint> {
         let InteractionState::EditingSelection(state) = &self.state.interaction else {
             return Vec::new();
         };
@@ -235,10 +298,12 @@ impl Editor {
                     .iter()
                     .find(|element| element.id == preview.id)?;
                 let text = document.text(preview.id).ok()?;
-                let font_size = if single_text_resize
-                    && !text_resize_changes_width_only(handle)
-                    && let Some(layout_override) = text_layout_override
-                    && text_resize_layout_override_matches_rect(layout_override, preview.rect)
+                let matching_override = text_layout_override.filter(|layout_override| {
+                    single_text_resize
+                        && text_resize_layout_override_matches_rect(*layout_override, preview.rect)
+                });
+                let font_size = if !text_resize_changes_width_only(handle)
+                    && let Some(layout_override) = matching_override
                 {
                     Some(layout_override.requested_font_size)
                 } else {
@@ -249,10 +314,16 @@ impl Editor {
                         handle,
                         single_text_resize,
                     )
-                }?;
-                Some(TextPreviewFontSize {
+                };
+                let ink =
+                    matching_override.and_then(|layout_override| layout_override.layout.ink());
+                if font_size.is_none() && ink.is_none() {
+                    return None;
+                }
+                Some(TextPreviewPaint {
                     id: preview.id,
                     font_size,
+                    ink,
                 })
             })
             .collect()
@@ -486,6 +557,9 @@ impl Editor {
     ) -> Vec<SelectionArrowState> {
         match &self.state.interaction {
             InteractionState::EditingSelection(state) => {
+                if state.duplicate {
+                    return state.preview_arrows.clone();
+                }
                 let selected_arrow_ids = state
                     .preview_arrows
                     .iter()
@@ -794,9 +868,13 @@ fn scaled_text_font_size_from_height(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ActiveTextDraftPresentation, ActiveTextDraftTarget};
+    use crate::state::{EditSelectionState, InteractionState, ResizeHandle, SelectionEditMode};
+    use crate::text::TextResizeLayoutOverride;
+    use crate::{
+        ActiveTextDraftPresentation, ActiveTextDraftTarget, SelectionBounds, SelectionRectState,
+    };
     use snow_draw_engine_core::{ColorRgba8, CornerRadii, EngineConfig, Point};
-    use snow_draw_engine_document::{ElementMeta, TextData, Transaction};
+    use snow_draw_engine_document::{ElementMeta, InkBox, TextData, TextLayoutSize, Transaction};
 
     fn insert_rectangle(document: &mut DocumentModel, rect: RectangleData) -> ElementId {
         let id = document.peek_next_element_id();
@@ -898,10 +976,9 @@ mod tests {
             &mut document,
             TextData {
                 center: Point::new(0.0, 0.0),
-                width: 80.0,
-                height: 24.0,
                 text: "committed".to_owned(),
                 auto_resize: false,
+                layout: TextLayoutSize::new(80.0, 24.0),
                 ..TextData::default()
             },
         );
@@ -909,19 +986,18 @@ mod tests {
         editor.select_element(&document, text_id).unwrap();
         let draft_text = TextData {
             center: Point::new(140.0, 20.0),
-            width: 120.0,
-            height: 48.0,
             rotation: 0.25,
             text: "draft".to_owned(),
             auto_resize: false,
+            layout: TextLayoutSize::new(120.0, 48.0),
             ..document.text(text_id).unwrap().clone()
         };
         let draft_rect = RectangleData {
             rectangle_kind: snow_draw_engine_document::RectangleElementKind::Rectangle,
             highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
             center: draft_text.center,
-            width: draft_text.width,
-            height: draft_text.height,
+            width: draft_text.width(),
+            height: draft_text.height(),
             rotation: draft_text.rotation,
             fill: draft_text.fill,
             fill_style: draft_text.fill_style,
@@ -971,11 +1047,10 @@ mod tests {
             &mut document,
             TextData {
                 center: Point::new(0.0, 0.0),
-                width: 80.0,
-                height: 24.0,
                 rotation: 0.0,
                 text: "committed".to_owned(),
                 auto_resize: false,
+                layout: TextLayoutSize::new(80.0, 24.0),
                 ..TextData::default()
             },
         );
@@ -1082,6 +1157,29 @@ mod tests {
     }
 
     #[test]
+    fn serial_number_toolbar_disables_number_buttons_for_numberless_circle() {
+        let mut document = DocumentModel::new();
+        let serial_id = insert_serial_number(
+            &mut document,
+            SerialNumberData {
+                center: Point::new(0.0, 0.0),
+                number: 5,
+                serial_number_type: snow_draw_engine_document::SerialNumberType::Circle,
+                ..SerialNumberData::default()
+            },
+        );
+        let mut editor = editor_with_surface();
+        editor.set_selection_state_with_document(Some(&document), vec![serial_id], Some(serial_id));
+
+        let state = editor.serial_number_toolbar_state(&document);
+
+        assert!(state.visible);
+        assert!(!state.can_decrease);
+        assert!(!state.can_increase);
+        assert!(state.can_create_text);
+    }
+
+    #[test]
     fn serial_number_toolbar_is_hidden_when_selected_serial_is_outside_viewport() {
         let mut document = DocumentModel::new();
         let serial_id = insert_serial_number(
@@ -1167,5 +1265,160 @@ mod tests {
         let state = editor.serial_number_toolbar_state(&document);
 
         assert_eq!(state, SerialNumberToolbarState::default());
+    }
+
+    fn text_element_rect(text: &TextData) -> RectangleData {
+        RectangleData {
+            rectangle_kind: snow_draw_engine_document::RectangleElementKind::Rectangle,
+            highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
+            center: text.center,
+            width: text.width(),
+            height: text.height(),
+            rotation: text.rotation,
+            fill: text.fill,
+            fill_style: text.fill_style,
+            stroke: text.stroke,
+            stroke_width: text.stroke_width,
+            stroke_style: snow_draw_engine_document::StrokeStyle::Solid,
+            corner_radii: text.corner_radii,
+            opacity: text.opacity,
+        }
+    }
+
+    #[test]
+    fn width_only_resize_publishes_measured_ink_without_font() {
+        let mut document = DocumentModel::new();
+        let text = TextData {
+            center: Point::new(0.0, 0.0),
+            text: "a wrapped annotation note".to_owned(),
+            font_size: 20.0,
+            auto_resize: false,
+            layout: TextLayoutSize::with_content(160.0, 20.0, 150.0, 20.0),
+            ..TextData::default()
+        };
+        let text_id = insert_text(&mut document, text.clone());
+        let original_rect = text_element_rect(&text);
+        let preview_rect = RectangleData {
+            center: Point::new(0.0, 10.0),
+            width: 80.0,
+            height: 40.0,
+            ..original_rect
+        };
+        let mut editor = editor_with_surface();
+        editor.select_element(&document, text_id).unwrap();
+        editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
+            duplicate: false,
+            pointer_id: 1,
+            original_elements: vec![SelectionRectState {
+                id: text_id,
+                rect: original_rect,
+            }],
+            preview_elements: vec![SelectionRectState {
+                id: text_id,
+                rect: preview_rect,
+            }],
+            original_arrows: Vec::new(),
+            preview_arrows: Vec::new(),
+            original_bounds: SelectionBounds {
+                center: original_rect.center,
+                width: original_rect.width,
+                height: original_rect.height,
+                rotation: original_rect.rotation,
+            },
+            preview_bounds: SelectionBounds {
+                center: preview_rect.center,
+                width: preview_rect.width,
+                height: preview_rect.height,
+                rotation: preview_rect.rotation,
+            },
+            mode: SelectionEditMode::Resize {
+                handle: ResizeHandle::Right,
+                handle_offset_canvas: Point::default(),
+                frame_padding: 0.0,
+                corner_handle_outset: 0.0,
+                scale_from_center: false,
+                text_layout_override: Some(TextResizeLayoutOverride {
+                    requested_width: 80.0,
+                    requested_height: 40.0,
+                    requested_font_size: 20.0,
+                    layout: TextLayoutSize::with_content(80.0, 40.0, 44.0, 40.0),
+                }),
+            },
+        });
+
+        let paints = editor.presentation_state(&document).preview_text_paints;
+        assert_eq!(paints.len(), 1);
+        assert_eq!(paints[0].id, text_id);
+        assert_eq!(
+            paints[0].font_size, None,
+            "width-only wrap must not publish a scaled font"
+        );
+        assert_eq!(paints[0].ink, InkBox::new(44.0, 40.0));
+    }
+
+    #[test]
+    fn height_resize_publishes_measured_font_and_ink() {
+        let mut document = DocumentModel::new();
+        let text = TextData {
+            center: Point::new(0.0, 0.0),
+            text: "note".to_owned(),
+            font_size: 10.0,
+            auto_resize: true,
+            layout: TextLayoutSize::with_content(100.0, 20.0, 96.0, 20.0),
+            ..TextData::default()
+        };
+        let text_id = insert_text(&mut document, text.clone());
+        let original_rect = text_element_rect(&text);
+        let preview_rect = RectangleData {
+            center: Point::new(0.0, 10.0),
+            height: 40.0,
+            ..original_rect
+        };
+        let mut editor = editor_with_surface();
+        editor.select_element(&document, text_id).unwrap();
+        editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
+            duplicate: false,
+            pointer_id: 1,
+            original_elements: vec![SelectionRectState {
+                id: text_id,
+                rect: original_rect,
+            }],
+            preview_elements: vec![SelectionRectState {
+                id: text_id,
+                rect: preview_rect,
+            }],
+            original_arrows: Vec::new(),
+            preview_arrows: Vec::new(),
+            original_bounds: SelectionBounds {
+                center: original_rect.center,
+                width: original_rect.width,
+                height: original_rect.height,
+                rotation: original_rect.rotation,
+            },
+            preview_bounds: SelectionBounds {
+                center: preview_rect.center,
+                width: preview_rect.width,
+                height: preview_rect.height,
+                rotation: preview_rect.rotation,
+            },
+            mode: SelectionEditMode::Resize {
+                handle: ResizeHandle::Bottom,
+                handle_offset_canvas: Point::default(),
+                frame_padding: 0.0,
+                corner_handle_outset: 0.0,
+                scale_from_center: false,
+                text_layout_override: Some(TextResizeLayoutOverride {
+                    requested_width: 100.0,
+                    requested_height: 40.0,
+                    requested_font_size: 22.0,
+                    layout: TextLayoutSize::with_content(100.0, 40.0, 144.0, 40.0),
+                }),
+            },
+        });
+
+        let paints = editor.presentation_state(&document).preview_text_paints;
+        assert_eq!(paints.len(), 1);
+        assert_eq!(paints[0].font_size, Some(22.0));
+        assert_eq!(paints[0].ink, InkBox::new(144.0, 40.0));
     }
 }

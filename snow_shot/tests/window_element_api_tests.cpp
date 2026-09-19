@@ -136,6 +136,33 @@ void shutterSoundSettingsPersistAndReset(const QString& configurationPath) {
     require(!invalid.valid, "shutter preference must reject nonboolean values");
 }
 
+void shortcutExitConfirmationSettingsPersistAndReset(const QString& configurationPath) {
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    constexpr auto binding =
+        settings::SettingsSwitchBinding::ScreenshotConfirmBeforeExitingViaShortcut;
+    require(!backend.switchValue(binding), "shortcut exit confirmation must default to disabled");
+    require(backend.applySwitchValue(binding, true) && backend.switchValue(binding) &&
+                storage::ScreenshotSettings().confirmBeforeExitingViaShortcut(),
+            "shortcut exit confirmation must be enabled through the settings backend");
+    require(storage::ApplicationStorage::instance().configuration().flushNow().success,
+            "shortcut exit confirmation preference must be flushable");
+    storage::ConfigurationStore reloaded(configurationPath, true, true, 60000);
+    require(
+        reloaded.value(QStringLiteral("screenshot/confirm_before_exiting_via_shortcut")).toBool(),
+        "enabled shortcut exit confirmation must survive a configuration reload");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotCapture) &&
+                backend.switchValue(binding),
+            "system screenshot reset must preserve shortcut exit confirmation");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotSettings) &&
+                !backend.switchValue(binding),
+            "function screenshot reset must disable shortcut exit confirmation");
+    const auto invalid = storage::ConfigurationSchema::normalize(
+        QStringLiteral("screenshot/confirm_before_exiting_via_shortcut"),
+        QStringLiteral("enabled"));
+    require(!invalid.valid, "shortcut exit confirmation preference must reject nonboolean values");
+}
+
 void ownUiCapturePreferencesPersistAndReset() {
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
@@ -557,9 +584,18 @@ int main(int argc, char** argv) {
         applicationStorage.initialize({temporary.filePath(QStringLiteral("bin")),
                                        temporary.filePath(QStringLiteral("data")), 60000}));
     const bool selectorOnly = application.arguments().contains(QStringLiteral("--selector-only"));
+    if (application.arguments().contains(
+            QStringLiteral("--shortcut-exit-confirmation-settings-only"))) {
+        shortcutExitConfirmationSettingsPersistAndReset(
+            temporary.filePath(QStringLiteral("data/config.json")));
+        applicationStorage.shutdown();
+        return 0;
+    }
     if (!selectorOnly) {
         settingsPersistAndResetToUia(temporary.filePath(QStringLiteral("data/config.json")));
         shutterSoundSettingsPersistAndReset(temporary.filePath(QStringLiteral("data/config.json")));
+        shortcutExitConfirmationSettingsPersistAndReset(
+            temporary.filePath(QStringLiteral("data/config.json")));
         ownUiCapturePreferencesPersistAndReset();
         toolbarLayoutSectionResetsRemainIndependent();
     }

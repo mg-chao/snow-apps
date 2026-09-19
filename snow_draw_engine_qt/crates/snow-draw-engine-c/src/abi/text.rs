@@ -1,6 +1,6 @@
 use snow_draw_engine::{
     ActiveTextDraftPresentation, ActiveTextDraftTarget, Point, TextCommitTarget, TextData,
-    TextDraftCommit, TextStyle,
+    TextDraftCommit, TextLayoutSize, TextStyle,
 };
 
 use crate::abi::convert::snow_element_id_to_rust;
@@ -117,8 +117,12 @@ pub(crate) fn active_text_draft_from_c(
         revision: 0,
         text: TextData {
             center: Point::new(draft.center_x, draft.center_y),
-            width: draft.width,
-            height: draft.height,
+            layout: TextLayoutSize::with_content(
+                draft.width,
+                draft.height,
+                draft.content_width,
+                draft.content_height,
+            ),
             rotation: draft.rotation,
             text,
             color: style.color,
@@ -232,6 +236,8 @@ mod tests {
             measured_layout: SnowTextLayoutSize {
                 width: 120.0,
                 height: 44.0,
+                content_width: 0.0,
+                content_height: 0.0,
             },
             style: SnowTextStyle {
                 font_size: 27.0,
@@ -252,8 +258,8 @@ mod tests {
         assert_eq!(commit.center.x, 12.0);
         assert_eq!(commit.center.y, 34.0);
         assert_eq!(commit.text, "draft text");
-        assert_eq!(commit.measured_layout.width, 120.0);
-        assert_eq!(commit.measured_layout.height, 44.0);
+        assert_eq!(commit.measured_layout.width(), 120.0);
+        assert_eq!(commit.measured_layout.height(), 44.0);
         assert_eq!(commit.style.font_size, 27.0);
         assert!(commit.auto_resize);
         assert!(commit.update_default_style);
@@ -296,8 +302,8 @@ mod tests {
         assert_eq!(active.revision, 0);
         assert_eq!(active.text.center.x, 14.0);
         assert_eq!(active.text.center.y, 28.0);
-        assert_eq!(active.text.width, 120.0);
-        assert_eq!(active.text.height, 44.0);
+        assert_eq!(active.text.width(), 120.0);
+        assert_eq!(active.text.height(), 44.0);
         assert_eq!(active.text.rotation, 0.25);
         assert_eq!(active.text.text, "active draft");
         assert_eq!(active.text.font_size, 31.0);

@@ -31,7 +31,7 @@ pub use active::StageTiming;
 #[cfg(feature = "stage-timing")]
 pub(crate) use active::{
     StageScope, attach_stage_timings, qpc_duration_between, qpc_ticks_to_duration,
-    stage_checkpoint, stage_mark, stage_record, stage_record_since, stage_recording,
+    stage_checkpoint, stage_record, stage_record_since, stage_recording,
 };
 
 #[cfg(not(feature = "stage-timing"))]

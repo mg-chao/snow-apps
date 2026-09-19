@@ -221,7 +221,7 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     settings::SettingsActionState actionState(settings::SettingsActionBinding) const override {
         return {true, false};
     }
-    bool triggerAction(settings::SettingsActionBinding) override {
+    bool triggerAction(settings::SettingsActionBinding, const QString& = {}) override {
         return false;
     }
     storage::StorageStatus storageStatus() const override {

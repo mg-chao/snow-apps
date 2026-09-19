@@ -53,23 +53,45 @@ void ScreenshotCaptureCoordinator::refreshLayoutAsync(quint64 requestId) {
 }
 
 void ScreenshotCaptureCoordinator::captureAsync(const ScreenshotCaptureRequest& request) {
+    // Cold worker initialization calls shutdown(); do it before publishing the new token.
+    ensureWorker();
     cancelActiveCapture();
     auto cancellation = std::make_shared<CancellationState>();
     if (cancellation->token == nullptr) {
         ScreenshotCaptureResult result;
         result.requestId = request.requestId;
+        result.purpose = request.purpose;
         result.errorMessage = QStringLiteral("Failed to create capture cancellation token");
         emit captureFinished(std::move(result));
         return;
     }
     m_activeCancellation = cancellation;
+    ScreenshotCaptureRequest preparedRequest = request;
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (request.purpose == ScreenshotCapturePurpose::Recapture && request.captureCursor &&
+        !preparedRequest.cursorSnapshot) {
+        preparedRequest.cursorSnapshot = std::shared_ptr<SnowCaptureCursorSnapshot>(
+            snow_capture_cursor_snapshot_create(), snow_capture_cursor_snapshot_destroy);
+        if (!preparedRequest.cursorSnapshot) {
+            m_activeCancellation.reset();
+            ScreenshotCaptureResult result;
+            result.requestId = request.requestId;
+            result.purpose = request.purpose;
+            result.errorMessage = QStringLiteral("Could not snapshot the refreshed cursor");
+            emit captureFinished(std::move(result));
+            return;
+        }
+    }
+#endif
     const QPointer<ScreenshotCaptureCoordinator> coordinator(this);
-    if (!postWorkerTask([coordinator, request, cancellation](ScreenshotCaptureWorker& worker) {
-            worker.capture(request, coordinator, cancellation->token);
-        })) {
+    if (!postWorkerTask(
+            [coordinator, preparedRequest, cancellation](ScreenshotCaptureWorker& worker) {
+                worker.capture(preparedRequest, coordinator, cancellation->token);
+            })) {
         cancellation->cancel();
         ScreenshotCaptureResult result;
         result.requestId = request.requestId;
+        result.purpose = request.purpose;
         result.errorMessage = QStringLiteral("Capture worker is unavailable");
         emit captureFinished(std::move(result));
     }

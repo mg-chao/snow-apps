@@ -6,7 +6,7 @@ use crate::{
     ActiveTextDraftPresentation, ActiveTextDraftTarget, Editor,
     state::{InteractionState, ResizeHandle, SelectionEditMode},
     text::{
-        TextSelectionResizeHandle, text_resize_layout_override_matches_rect,
+        MeasuredTextResize, TextSelectionResizeHandle, text_resize_layout_override_matches_rect,
         text_with_selection_rect,
     },
 };
@@ -34,13 +34,13 @@ impl Editor {
 
         let single_text_resize =
             state.original_arrows.is_empty() && state.original_elements.len() == 1;
-        let (resize_handle, measured_font_size) = match state.mode {
+        let (resize_handle, measured_resize) = match state.mode {
             SelectionEditMode::Resize {
                 handle,
                 text_layout_override,
                 ..
             } => {
-                let measured_font_size = text_layout_override
+                let measured_resize = text_layout_override
                     .filter(|layout_override| {
                         single_text_resize
                             && text_resize_layout_override_matches_rect(
@@ -48,8 +48,8 @@ impl Editor {
                                 preview.rect,
                             )
                     })
-                    .map(|layout_override| layout_override.requested_font_size);
-                (Some(handle), measured_font_size)
+                    .map(MeasuredTextResize::from_layout_override);
+                (Some(handle), measured_resize)
             }
             _ => (None, None),
         };
@@ -61,7 +61,7 @@ impl Editor {
                 y_sign: handle.y_sign(),
             }),
             single_text_resize,
-            measured_font_size,
+            measured_resize,
         );
         Some(draft)
     }
@@ -147,7 +147,7 @@ impl Editor {
         rect: RectangleData,
         resize_handle: Option<ResizeHandle>,
         single_text_resize: bool,
-        single_text_resize_font_size: Option<f64>,
+        measured_resize: Option<MeasuredTextResize>,
     ) -> Result<bool, ErrorCode> {
         let Some(draft) = self.state.active_text_draft.as_mut() else {
             return Ok(false);
@@ -162,7 +162,7 @@ impl Editor {
                 y_sign: handle.y_sign(),
             }),
             single_text_resize,
-            single_text_resize_font_size,
+            measured_resize,
         );
         validate_text(&next_text)?;
         if draft.text == next_text {

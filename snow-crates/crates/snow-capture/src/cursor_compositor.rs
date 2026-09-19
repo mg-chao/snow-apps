@@ -11,6 +11,13 @@ pub(crate) fn composite(frame: &mut Frame, cursor: &AttachedCursorSample) -> boo
         return false;
     }
 
+    composite_clipped(frame, cursor)
+}
+
+pub(crate) fn composite_clipped(frame: &mut Frame, cursor: &AttachedCursorSample) -> bool {
+    if !cursor.visible {
+        return false;
+    }
     let CursorShapeState::Embedded(shape) = &cursor.shape else {
         return false;
     };

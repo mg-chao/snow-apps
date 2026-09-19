@@ -468,6 +468,12 @@ void renderingCopyAndPersistence() {
                 !browser->toPlainText().contains(QStringLiteral("**bold**")) &&
                 browser->toPlainText().contains(QStringLiteral("int n = 42;")),
             "Markdown preview renders structure and preserves fenced code");
+#if defined(Q_OS_WIN)
+    // Only Windows configures a themed app font for this suite; the preview document
+    // must carry the theme's unhinted outline policy either way.
+    require(browser->document()->defaultFont().hintingPreference() == QFont::PreferNoHinting,
+            "conversion previews must render unhinted outlines");
+#endif
     require(view.copyToClipboard() && QApplication::clipboard()->text() == markdown,
             "copy without selection preserves exact Markdown source");
     QTextCursor cursor(browser->document());

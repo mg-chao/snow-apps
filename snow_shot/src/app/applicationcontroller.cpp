@@ -314,6 +314,11 @@ class ApplicationController::Impl {
                              &ScreenshotController::showMainWindowRequested, &q,
                              [this]() { showMainWindow(); });
             QObject::connect(screenshotController.get(),
+                             &ScreenshotController::translationPageRequested, &q,
+                             [this](const QString& text) {
+                                 ensureSelectedTextTranslationCoordinator().presentText(text);
+                             });
+            QObject::connect(screenshotController.get(),
                              &ScreenshotController::captureAvailabilityChanged, &globalMouseManager,
                              &presentation::GlobalMouseManager::setCaptureAvailable);
             QObject::connect(screenshotController.get(),

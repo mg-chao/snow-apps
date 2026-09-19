@@ -1,9 +1,16 @@
 use super::*;
 use snow_draw_engine_core::arrow::{ArrowEndpointEdge, ArrowType, StrokeStyle};
 use snow_draw_engine_document::{
-    ElementMeta, TextLayoutSize, arrow_is_degenerate, resolve_serial_number_diameter,
-    validate_text_layout_size,
+    ArrowSuggestedBinding, ElementMeta, TextLayoutSize, arrow_is_degenerate,
+    resolve_serial_number_data_diameter, text_with_measured_ink, text_with_measured_layout,
+    text_with_pinned_alignment_layout, validate_text_layout_size,
 };
+
+#[derive(Clone, Debug, PartialEq)]
+struct BoundArrowPreview {
+    arrow: ArrowData,
+    suggested_binding: Option<ArrowSuggestedBinding>,
+}
 
 impl Editor {
     fn pen_highlight_preview(&self, start: Point<f64>, end: Point<f64>) -> Option<ArrowData> {
@@ -104,6 +111,7 @@ impl Editor {
             committed_points: vec![start_canvas_position],
             press_view_position: start_view_position,
             phase: ArrowCreationPhase::InitialPress,
+            ..Default::default()
         });
         self.clear_transient_visuals();
     }
@@ -120,18 +128,46 @@ impl Editor {
         self.state.interaction = InteractionState::CreatingArrow(state);
     }
 
-    pub(crate) fn keep_arrow_creation_active(
+    fn keep_arrow_creation_active(
         &mut self,
         mut state: CreateArrowState,
-        preview_arrow: Option<ArrowData>,
+        preview: Option<BoundArrowPreview>,
         snap_guides: Vec<SnapGuide>,
     ) {
         state.phase = ArrowCreationPhase::AwaitingEndpoint;
+        state.suggested_binding = preview
+            .as_ref()
+            .and_then(|preview| preview.suggested_binding.clone());
         self.set_creation_preview(
-            preview_arrow.map(ElementCreationPreview::Arrow),
+            preview.map(|preview| ElementCreationPreview::Arrow(preview.arrow)),
             snap_guides,
         );
         self.state.interaction = InteractionState::CreatingArrow(state);
+        self.bump_overlay_state_revision();
+    }
+
+    fn set_arrow_creation_preview(
+        &mut self,
+        preview: Option<BoundArrowPreview>,
+        snap_guides: Vec<SnapGuide>,
+    ) {
+        let suggested_binding = preview
+            .as_ref()
+            .and_then(|preview| preview.suggested_binding.clone());
+        let suggestion_changed = match &self.state.interaction {
+            InteractionState::CreatingArrow(state) => state.suggested_binding != suggested_binding,
+            _ => false,
+        };
+        if let InteractionState::CreatingArrow(state) = &mut self.state.interaction {
+            state.suggested_binding = suggested_binding;
+        }
+        self.set_creation_preview(
+            preview.map(|preview| ElementCreationPreview::Arrow(preview.arrow)),
+            snap_guides,
+        );
+        if suggestion_changed {
+            self.bump_overlay_state_revision();
+        }
     }
 
     pub(crate) fn queue_arrow_creation(
@@ -173,10 +209,13 @@ impl Editor {
             text: text_content,
             ..self.state.default_text.clone()
         };
-        if text.auto_resize {
-            text.width = layout.width;
-            text.height = layout.height;
-        }
+        // Fixed-width creation keeps the configured wrap rectangle; the
+        // measured ink joins the element either way.
+        text = if text.auto_resize {
+            text_with_measured_layout(&text, layout)?
+        } else {
+            text_with_measured_ink(&text, layout)?
+        };
         validate_text(&text)?;
         let id = document.peek_next_element_id();
         let mut transaction = Transaction::new("create text");
@@ -194,15 +233,23 @@ impl Editor {
         document: &DocumentModel,
         center: Point<f64>,
     ) -> Result<SerialNumberData, ErrorCode> {
-        let number = next_serial_number(document).max(self.state.default_serial_number.number);
+        let number = if self
+            .state
+            .default_serial_number
+            .serial_number_type
+            .supports_number()
+        {
+            next_serial_number(document).max(self.state.default_serial_number.number)
+        } else {
+            self.state.default_serial_number.number
+        };
         let mut serial = SerialNumberData {
             center,
             number,
             ..self.state.default_serial_number.clone()
         };
         serial.text_element_id = None;
-        serial.diameter =
-            resolve_serial_number_diameter(serial.number, serial.font_size, serial.diameter);
+        serial.diameter = resolve_serial_number_data_diameter(&serial, serial.diameter);
         validate_serial_number(&serial)?;
         Ok(serial)
     }
@@ -214,7 +261,11 @@ impl Editor {
     ) -> Result<ElementId, ErrorCode> {
         validate_serial_number(&serial)?;
         let id = document.peek_next_element_id();
-        let next_default_number = serial.number.saturating_add(1);
+        let next_default_number = if serial.serial_number_type.supports_number() {
+            serial.number.saturating_add(1)
+        } else {
+            self.state.default_serial_number.number
+        };
         let mut transaction = Transaction::new("create serial number");
         transaction.insert_serial_number(id, ElementMeta::default(), serial);
         self.queue_command(EditorCommand::ApplyTransaction(
@@ -262,14 +313,15 @@ impl Editor {
         points: &[Point<f64>],
         modifiers: Modifiers,
     ) -> Result<bool, ErrorCode> {
-        let Some(arrow) = self.arrow_preview_from_points(document, points, modifiers, true) else {
+        let Some(preview) = self.arrow_preview_from_points(document, points, modifiers, true)
+        else {
             return Ok(false);
         };
-        if arrow_length(&arrow) < self.minimum_committed_linear_length() {
+        if arrow_length(&preview.arrow) < self.minimum_committed_linear_length() {
             return Ok(false);
         }
         self.cancel_interaction();
-        self.queue_arrow_creation(document, arrow)?;
+        self.queue_arrow_creation(document, preview.arrow)?;
         Ok(true)
     }
 
@@ -305,13 +357,13 @@ impl Editor {
         }
     }
 
-    pub(crate) fn arrow_creation_preview(
+    fn arrow_creation_preview(
         &self,
         document: &DocumentModel,
         committed_points: &[Point<f64>],
         current: Point<f64>,
         modifiers: Modifiers,
-    ) -> (Point<f64>, Option<ArrowData>, Vec<SnapGuide>) {
+    ) -> (Point<f64>, Option<BoundArrowPreview>, Vec<SnapGuide>) {
         let (mut snapped_current, guides) =
             self.snap_arrow_creation_point(document, current, modifiers);
         if modifiers.shift
@@ -346,13 +398,13 @@ impl Editor {
         (snapped_current, preview, guides)
     }
 
-    pub(crate) fn arrow_preview_from_points(
+    fn arrow_preview_from_points(
         &self,
         document: &DocumentModel,
         points: &[Point<f64>],
         modifiers: Modifiers,
         finalize: bool,
-    ) -> Option<ArrowData> {
+    ) -> Option<BoundArrowPreview> {
         let arrow = if self.state.active_tool == ActiveTool::Line {
             let style = self.state.default_line_style;
             preview_arrow_from_points(
@@ -374,49 +426,29 @@ impl Editor {
         let bindables = self.bindable_elements(document, &[]);
         let arrow_context = self.arrow_engine_context(modifiers);
 
-        if arrow.is_elbow() && points.len() == 2 {
-            let mut preview_arrow = arrow.clone();
-            for (edge, pointer) in [
-                (ArrowEndpointEdge::Start, points.first().copied()?),
-                (ArrowEndpointEdge::End, points.last().copied()?),
-            ] {
-                preview_arrow = preview_elbow_arrow_endpoint_binding(
-                    &preview_arrow,
-                    edge,
-                    pointer,
-                    &bindables,
-                    arrow_context,
-                    arrow_id,
-                    finalize,
-                );
-            }
-            return Some(preview_arrow);
-        }
-
         let mut preview_arrow = arrow;
-
+        let mut suggested_binding = None;
         for (edge, pointer) in [
             (ArrowEndpointEdge::Start, points.first().copied()?),
             (ArrowEndpointEdge::End, points.last().copied()?),
         ] {
-            preview_arrow = compute_arrow_endpoint_drag(
+            let result = compute_arrow_endpoint_drag(
                 arrow_id,
                 &preview_arrow,
                 edge,
                 pointer,
                 &bindables,
                 arrow_context,
-                ArrowEndpointDragOptions {
-                    new_arrow: true,
-                    initial_binding: true,
-                    alt_key: modifiers.alt,
-                    finalize,
-                },
-            )
-            .arrow;
+                arrow_endpoint_drag_options(modifiers, finalize),
+            );
+            preview_arrow = result.arrow;
+            suggested_binding = result.suggested_binding;
         }
 
-        Some(preview_arrow)
+        Some(BoundArrowPreview {
+            arrow: preview_arrow,
+            suggested_binding,
+        })
     }
 
     pub(crate) fn process_rectangle_creation_pointer_event(
@@ -690,7 +722,7 @@ impl Editor {
                 }
 
                 self.arm_arrow_endpoint_creation(state, event.pointer_id, event.position);
-                self.set_creation_preview(preview.map(ElementCreationPreview::Arrow), snap_guides);
+                self.set_arrow_creation_preview(preview, snap_guides);
 
                 Ok(InteractionOutput {
                     consumed: true,
@@ -741,7 +773,7 @@ impl Editor {
             current_canvas,
             event.modifiers,
         );
-        self.set_creation_preview(preview.map(ElementCreationPreview::Arrow), snap_guides);
+        self.set_arrow_creation_preview(preview, snap_guides);
 
         Ok(InteractionOutput {
             consumed: true,
@@ -772,12 +804,15 @@ impl Editor {
         );
         let is_click_release = pointer_drag_distance(state.press_view_position, event.position)
             < MINIMUM_ARROW_SIZE_PX;
-        let committed_arrow = preview.clone().filter(|arrow| {
-            arrow_length(arrow) >= self.minimum_drag_created_linear_length()
-                && state.committed_points.last().is_none_or(|last| {
-                    point_distance(*last, snapped_current) >= self.line_confirm_threshold()
-                })
-        });
+        let committed_arrow = preview
+            .as_ref()
+            .map(|preview| preview.arrow.clone())
+            .filter(|arrow| {
+                arrow_length(arrow) >= self.minimum_drag_created_linear_length()
+                    && state.committed_points.last().is_none_or(|last| {
+                        point_distance(*last, snapped_current) >= self.line_confirm_threshold()
+                    })
+            });
 
         match state.phase {
             ArrowCreationPhase::InitialPress => {
@@ -893,19 +928,31 @@ impl Editor {
         }
 
         let current_canvas = view_to_canvas(event.position, &self.camera(), self.surface_size());
-        let (center, snap_guides) =
-            self.snap_serial_number_creation_center(document, current_canvas, event.modifiers);
-        let mut preview = state.preview;
-        preview.center = center;
-        validate_serial_number(&preview)?;
-        self.state.interaction = InteractionState::CreatingSerialNumber(CreateSerialNumberState {
-            pointer_id: event.pointer_id,
-            preview: preview.clone(),
-        });
-        self.set_creation_preview(
-            Some(ElementCreationPreview::SerialNumber(preview)),
-            snap_guides,
-        );
+        let mut state = state;
+        if let Some((_, text)) = &mut state.text {
+            text.center = current_canvas;
+        } else if pointer_drag_distance(state.start_view_position, event.position)
+            >= POINTER_DRAG_THRESHOLD
+        {
+            let mut serial = document.serial_number(state.serial_id)?.clone();
+            let text_id = document.peek_next_element_id();
+            // The drag label starts from the same definition the floating
+            // toolbar's Create Text button uses, so both paths style and size
+            // the bound label identically before the host measurement lands.
+            let mut text = crate::text::new_serial_bound_label(&serial, &self.state.default_text)?;
+            text.center = current_canvas;
+            serial.text_element_id = Some(text_id);
+            let mut transaction = Transaction::new("create serial number text");
+            transaction.insert_text(text_id, ElementMeta::default(), text.clone());
+            transaction.update_serial_number(state.serial_id, serial);
+            self.queue_command(EditorCommand::ApplyTransaction(
+                ApplyTransactionCommand::new(transaction),
+            ));
+            state.text = Some((text_id, text));
+        }
+        self.state.interaction = InteractionState::CreatingSerialNumber(state);
+        self.bump_scene_state_revision();
+        self.bump_overlay_state_revision();
 
         Ok(InteractionOutput {
             consumed: true,
@@ -927,14 +974,28 @@ impl Editor {
             return Ok(InteractionOutput::default());
         }
 
-        let current_canvas = view_to_canvas(event.position, &self.camera(), self.surface_size());
-        let (center, _) =
-            self.snap_serial_number_creation_center(document, current_canvas, event.modifiers);
-        let mut preview = state.preview;
-        preview.center = center;
-        validate_serial_number(&preview)?;
+        if event.button != Some(PointerButton::Primary) {
+            return Ok(InteractionOutput::default());
+        }
+        // Include the release position even if the host coalesced all move events.
+        self.handle_serial_number_pointer_move(document, event)?;
+        let InteractionState::CreatingSerialNumber(state) = &self.state.interaction else {
+            return Ok(InteractionOutput::default());
+        };
+        let text = state.text.clone();
         self.cancel_interaction();
-        self.queue_serial_number_creation(document, preview)?;
+        if let Some((id, text)) = text {
+            if let Ok(original) = document.text(id)
+                && original != &text
+            {
+                let mut transaction = Transaction::new("place serial number text");
+                transaction.update_text(id, text);
+                self.queue_command(EditorCommand::ApplyTransaction(
+                    ApplyTransactionCommand::new(transaction),
+                ));
+            }
+            self.state.pending_text_edit = Some(id);
+        }
 
         Ok(InteractionOutput {
             consumed: true,
@@ -962,13 +1023,84 @@ impl Editor {
             cursor: CursorCommand::Set(CursorStyle::Default),
         })
     }
+
+    /// Requests a host-side font measurement for the empty label attached by an
+    /// active serial number drag. The drag attaches the label with placeholder
+    /// geometry because only the host can measure text; until the measured
+    /// layout is applied, the painted fill bubble outruns the item bounds used
+    /// for incremental dirty regions.
+    pub fn serial_number_label_layout_request(
+        &self,
+        document: &DocumentModel,
+    ) -> Option<SerialNumberLabelLayoutRequest> {
+        let InteractionState::CreatingSerialNumber(state) = &self.state.interaction else {
+            return None;
+        };
+        let (id, text) = state.text.as_ref()?;
+        if state.label_measured || document.text(*id).is_err() {
+            return None;
+        }
+        Some(SerialNumberLabelLayoutRequest {
+            text_id: *id,
+            font_size: text.font_size,
+            font_family: text.font_family.clone(),
+        })
+    }
+
+    /// Applies the host-measured empty-label layout to the drag-attached label.
+    /// The measurement updates the in-flight drag state (the authority while the
+    /// pointer is captured, like the live center); the release transaction
+    /// persists it into the document, so no extra undo entry is created. The
+    /// layout is stored unconditionally, with the center following the pinned
+    /// alignment edge: a label that does not auto-resize must still receive the
+    /// measurement, exactly like the floating toolbar's Create Text path.
+    pub fn apply_serial_number_label_layout(
+        &mut self,
+        document: &DocumentModel,
+        text_id: ElementId,
+        layout: TextLayoutSize,
+    ) -> Result<bool, ErrorCode> {
+        let layout = validate_text_layout_size(layout)?;
+        let InteractionState::CreatingSerialNumber(state) = &mut self.state.interaction else {
+            return Ok(false);
+        };
+        let Some((id, text)) = &state.text else {
+            return Ok(false);
+        };
+        if *id != text_id || state.label_measured || document.text(text_id).is_err() {
+            return Ok(false);
+        }
+        let updated = text_with_pinned_alignment_layout(text, layout)?;
+        validate_text(&updated)?;
+        let applied = updated != *text;
+        state.label_measured = true;
+        if applied {
+            state.text = Some((text_id, updated));
+        }
+        self.bump_scene_state_revision();
+        self.bump_overlay_state_revision();
+        Ok(applied)
+    }
+}
+
+/// A pending host measurement for the empty label attached by a serial number
+/// drag; the host measures the empty draft for this font and applies the result.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SerialNumberLabelLayoutRequest {
+    pub text_id: ElementId,
+    pub font_size: f64,
+    pub font_family: Option<String>,
 }
 
 #[cfg(test)]
 mod line_creation_tests {
     use super::*;
-    use snow_draw_engine_core::{SnapGuideAxis, SnapGuideKind};
-    use snow_draw_engine_document::{CanvasFilterType, ElementData};
+    use snow_draw_engine_core::{
+        ColorRgba8, CornerRadii, SnapGuideAxis, SnapGuideKind, arrow::StrokeStyle,
+    };
+    use snow_draw_engine_document::{
+        CanvasFilterType, ElementData, FillStyle, HighlightShape, RectangleElementKind,
+    };
     use snow_draw_engine_interaction::{PointerButtons, PointerDevice};
 
     fn editor_with_non_dominant_x_snap_reference() -> (Editor, DocumentModel) {
@@ -1195,10 +1327,10 @@ mod line_creation_tests {
         assert_eq!(snapped, committed[0]);
         let preview = preview.unwrap();
         assert_eq!(
-            preview.global_points().first(),
-            preview.global_points().last()
+            preview.arrow.global_points().first(),
+            preview.arrow.global_points().last()
         );
-        assert_eq!(preview.global_points().len(), 3);
+        assert_eq!(preview.arrow.global_points().len(), 3);
     }
 
     #[test]
@@ -1217,6 +1349,7 @@ mod line_creation_tests {
             ],
             press_view_position: Point::new(150.0, 100.0),
             phase: ArrowCreationPhase::AwaitingEndpoint,
+            ..Default::default()
         });
 
         editor
@@ -1258,6 +1391,7 @@ mod line_creation_tests {
             ],
             press_view_position: Point::new(150.0, 100.0),
             phase: ArrowCreationPhase::AwaitingEndpoint,
+            ..Default::default()
         });
 
         editor
@@ -1296,6 +1430,7 @@ mod line_creation_tests {
             committed_points: vec![Point::new(-50.0, 0.0), Point::new(50.0, 0.0)],
             press_view_position: Point::new(150.0, 100.0),
             phase: ArrowCreationPhase::AwaitingEndpoint,
+            ..Default::default()
         });
 
         let output = editor
@@ -1333,6 +1468,7 @@ mod line_creation_tests {
             committed_points: vec![Point::new(-50.0, 0.0), Point::new(50.0, 0.0)],
             press_view_position: Point::new(150.0, 100.0),
             phase: ArrowCreationPhase::EndpointPress,
+            ..Default::default()
         });
 
         editor
@@ -1371,6 +1507,7 @@ mod line_creation_tests {
             committed_points: vec![Point::new(-50.0, -40.0)],
             press_view_position: Point::new(50.0, 60.0),
             phase: ArrowCreationPhase::AwaitingEndpoint,
+            ..Default::default()
         });
 
         let output = editor
@@ -1416,6 +1553,7 @@ mod line_creation_tests {
             committed_points: vec![Point::new(-50.0, 0.0), Point::new(50.0, 0.0)],
             press_view_position: Point::new(150.0, 100.0),
             phase: ArrowCreationPhase::AwaitingEndpoint,
+            ..Default::default()
         });
 
         let output = editor
@@ -1629,5 +1767,80 @@ mod line_creation_tests {
             assert!(editor.pending_command.is_none());
             assert!(editor.state.creation_preview.is_none());
         }
+    }
+
+    #[test]
+    fn creating_arrow_near_bindable_surfaces_binding_highlight() {
+        let mut document = DocumentModel::new();
+        let mut insert = Transaction::new("insert bindable rectangle");
+        insert.insert_rectangle(
+            document.peek_next_element_id(),
+            ElementMeta::default(),
+            RectangleData {
+                rectangle_kind: RectangleElementKind::Rectangle,
+                highlight_shape: HighlightShape::Rectangle,
+                center: Point::new(0.0, 0.0),
+                width: 100.0,
+                height: 100.0,
+                rotation: 0.0,
+                fill: ColorRgba8::default(),
+                fill_style: FillStyle::Solid,
+                stroke: ColorRgba8::default(),
+                stroke_width: 2.0,
+                stroke_style: StrokeStyle::Solid,
+                corner_radii: CornerRadii::default(),
+                opacity: 1.0,
+            },
+        );
+        document.apply_transaction(insert).unwrap();
+
+        let mut editor = Editor::new(EngineConfig::default()).unwrap();
+        editor.set_surface_size(400, 400).unwrap();
+        editor.set_active_tool(ActiveTool::Arrow).unwrap();
+        editor.begin_arrow_creation(1, Point::new(-150.0, 0.0), Point::new(50.0, 200.0));
+        editor
+            .handle_arrow_pointer_move(
+                &document,
+                PointerEvent {
+                    pointer_id: 1,
+                    event_type: PointerEventType::Move,
+                    device: PointerDevice::Mouse,
+                    position: Point::new(253.0, 203.0),
+                    button: None,
+                    buttons: PointerButtons::default(),
+                    modifiers: Modifiers::default(),
+                },
+            )
+            .unwrap();
+
+        let highlight = editor
+            .presentation_state(&document)
+            .binding_highlight
+            .expect("binding highlight while drawing toward the bindable");
+        assert!((highlight.rect.center.x - 0.0).abs() < 1e-9);
+        assert!((highlight.rect.width - 100.0).abs() < 1e-9);
+        let mid_point = highlight.mid_point.expect("snapped midpoint");
+        assert!((mid_point.x - 50.0).abs() < 0.1 && mid_point.y.abs() < 0.1);
+
+        editor
+            .handle_arrow_pointer_move(
+                &document,
+                PointerEvent {
+                    pointer_id: 1,
+                    event_type: PointerEventType::Move,
+                    device: PointerDevice::Mouse,
+                    position: Point::new(500.0, 500.0),
+                    button: None,
+                    buttons: PointerButtons::default(),
+                    modifiers: Modifiers::default(),
+                },
+            )
+            .unwrap();
+        assert!(
+            editor
+                .presentation_state(&document)
+                .binding_highlight
+                .is_none()
+        );
     }
 }

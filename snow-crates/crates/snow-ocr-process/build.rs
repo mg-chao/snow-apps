@@ -15,18 +15,28 @@ use std::path::PathBuf;
 fn main() {
     if env::var_os("CARGO_FEATURE_CRASH_DIAGNOSTICS").is_some() {
         println!("cargo:rerun-if-env-changed=SNOW_CRASHPAD_LINK_FILE");
-        let path = env::var("SNOW_CRASHPAD_LINK_FILE").expect("Crashpad link manifest is required");
-        println!("cargo:rerun-if-changed={path}");
-        for argument in fs::read_to_string(path)
-            .expect("read Crashpad link manifest")
-            .lines()
-        {
-            if !argument.trim().is_empty() {
-                if std::path::Path::new(argument).is_absolute() {
-                    println!("cargo:rerun-if-changed={argument}");
+        if let Some(path) = env::var_os("SNOW_CRASHPAD_LINK_FILE").map(PathBuf::from) {
+            println!("cargo:rerun-if-changed={}", path.display());
+            let manifest = fs::read_to_string(&path).unwrap_or_else(|error| {
+                panic!(
+                    "failed to read the Crashpad link manifest {}: {error}",
+                    path.display()
+                )
+            });
+            for argument in manifest.lines() {
+                if !argument.trim().is_empty() {
+                    if std::path::Path::new(argument).is_absolute() {
+                        println!("cargo:rerun-if-changed={argument}");
+                    }
+                    println!("cargo:rustc-link-arg={argument}");
                 }
-                println!("cargo:rustc-link-arg={argument}");
             }
+        } else {
+            println!(
+                "cargo:warning=snow-ocr-process was built with crash-diagnostics but \
+                 SNOW_CRASHPAD_LINK_FILE is not set; the link will fail unless the \
+                 Crashpad closure is provided another way"
+            );
         }
     }
     #[cfg(windows)]

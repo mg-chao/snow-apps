@@ -44,6 +44,27 @@ pub struct PersistedEditorSession {
 }
 
 impl EditorSession {
+    pub fn take_text_edit_request(&mut self) -> Option<ElementId> {
+        self.editor.state.pending_text_edit.take()
+    }
+
+    pub fn serial_number_label_layout_request(
+        &self,
+        document: &DocumentModel,
+    ) -> Option<crate::SerialNumberLabelLayoutRequest> {
+        self.editor.serial_number_label_layout_request(document)
+    }
+
+    pub fn apply_serial_number_label_layout(
+        &mut self,
+        document: &DocumentModel,
+        text_id: ElementId,
+        layout: TextLayoutSize,
+    ) -> Result<bool, ErrorCode> {
+        self.editor
+            .apply_serial_number_label_layout(document, text_id, layout)
+    }
+
     pub fn arrow_text_layout_requests(
         &self,
         document: &DocumentModel,
@@ -258,6 +279,19 @@ impl EditorSession {
     pub fn sync_serial_number_after_history_change(&mut self, document: &DocumentModel) {
         self.editor.state.default_serial_number.number =
             crate::document_ops::next_serial_number(document);
+    }
+
+    /// Restore the selection stored with a duplication history entry.
+    pub fn restore_history_selection(
+        &mut self,
+        document: &DocumentModel,
+        snapshot: &DocumentSyncSnapshot,
+    ) {
+        self.editor.set_selection_state_with_document(
+            Some(document),
+            snapshot.selection.ids.clone(),
+            snapshot.selection.primary,
+        );
     }
 
     pub fn sync_after_document_change(

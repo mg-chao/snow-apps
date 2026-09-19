@@ -16,6 +16,7 @@ class ScreenshotToolbarCommandSink {
 
     virtual void undoCanvasEdit() {}
     virtual void redoCanvasEdit() {}
+    virtual void requestRecapture() {}
     virtual void setMoveTool() = 0;
     virtual void setSelectTool() = 0;
     virtual void setShapeTool() = 0;
@@ -62,6 +63,7 @@ class ScreenshotToolbarCommandSink {
     virtual void toggleTextTranslation() {
         beginTextTranslation();
     }
+    virtual void jumpToTranslationPage() {}
     virtual void resetTextEditing() {}
     virtual void openTextTranslationSettings() {}
     virtual void applyTextFormatting(const QString&) {}

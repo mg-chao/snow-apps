@@ -7,9 +7,13 @@
 #include "snow_capture.h"
 
 #include <QCoreApplication>
+#include <QEventLoop>
+#include <QSemaphore>
 #include <QTemporaryDir>
+#include <QTimer>
 
 #include <array>
+#include <atomic>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -30,7 +34,13 @@ struct SnowCaptureScreenshotResultImpl {
     SnowCaptureFrameLease frame;
 };
 
-struct SnowCaptureCancellationTokenImpl {};
+struct SnowCaptureCancellationTokenImpl {
+    std::atomic<bool> canceled{false};
+};
+
+struct SnowCaptureCursorSnapshotImpl {
+    uint8_t pixel = 0;
+};
 
 namespace {
 int created = 0;
@@ -42,6 +52,14 @@ bool failCapture = false;
 uint8_t preparedBackend = SNOW_CAPTURE_BACKEND_AUTO;
 uint8_t refreshedBackend = SNOW_CAPTURE_BACKEND_AUTO;
 uint32_t capturedFlags = 0;
+std::atomic<uint8_t> liveCursorPixel{71};
+std::atomic<int> cursorSnapshots{0};
+std::atomic<int> cursorCompositions{0};
+bool failCursorSnapshot = false;
+bool failCursorComposition = false;
+bool blockCapture = false;
+QSemaphore captureEntered;
+QSemaphore resumeCapture;
 
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -56,7 +74,8 @@ void setMode(const char* mode) {
 }
 
 ScreenshotCaptureResult capture(ScreenshotCaptureWorker& worker, bool restoreColors = false,
-                                bool captureCursor = false) {
+                                bool captureCursor = false,
+                                std::shared_ptr<SnowCaptureCursorSnapshot> cursorSnapshot = {}) {
     ScreenshotCaptureCoordinator coordinator;
     ScreenshotCaptureResult result;
     bool received = false;
@@ -69,6 +88,7 @@ ScreenshotCaptureResult capture(ScreenshotCaptureWorker& worker, bool restoreCol
     request.requestId = 42;
     request.restoreOriginalScreenColors = restoreColors;
     request.captureCursor = captureCursor;
+    request.cursorSnapshot = std::move(cursorSnapshot);
     worker.capture(request, &coordinator, nullptr);
     QCoreApplication::sendPostedEvents(&coordinator);
     require(received && result.requestId == request.requestId, "capture result was not delivered");
@@ -194,6 +214,90 @@ void modeChangeAfterCaptureFailurePreservesRetainedFrame() {
     require(retained.displays.front().image.constBits()[0] == 10,
             "replacing a session invalidated an already delivered image");
 }
+
+#if defined(Q_OS_WIN) || defined(_WIN32)
+void recaptureOwnsCursorBeforeDispatch(bool cancel) {
+    setMode("dxgi");
+    ScreenshotCaptureResult result;
+    bool received = false;
+    const int compositionsBefore = cursorCompositions;
+    {
+        ScreenshotCaptureCoordinator coordinator;
+        QEventLoop loop;
+        QObject::connect(&coordinator, &ScreenshotCaptureCoordinator::captureFinished, &loop,
+                         [&](const ScreenshotCaptureResult& value) {
+                             result = value;
+                             received = true;
+                             loop.quit();
+                         });
+        ScreenshotCaptureRequest request;
+        request.requestId = 91;
+        request.purpose = ScreenshotCapturePurpose::Recapture;
+        request.captureCursor = true;
+        liveCursorPixel = 71;
+        blockCapture = true;
+        coordinator.captureAsync(request);
+        require(cursorSnapshots == 1, "recapture must own its cursor before returning to the UI");
+        require(captureEntered.tryAcquire(1, 3000), "capture worker did not reach the barrier");
+        require((capturedFlags & SNOW_CAPTURE_SCREENSHOT_REQUEST_INCLUDE_CURSOR) == 0,
+                "snapshot capture must disable backend cursor composition");
+        // Simulate a cursor change while desktop capture is still running.
+        liveCursorPixel = 29;
+        if (cancel) {
+            coordinator.cancelActiveCapture();
+        }
+        resumeCapture.release();
+        QTimer::singleShot(3000, &loop, &QEventLoop::quit);
+        loop.exec();
+        coordinator.shutdown();
+        blockCapture = false;
+    }
+    require(received && result.requestId == 91 &&
+                result.purpose == ScreenshotCapturePurpose::Recapture,
+            "asynchronous recapture must deliver its original identity");
+    require(cursorSnapshots == 0, "completion and cancellation must release the owned cursor");
+    if (cancel) {
+        require(!result.succeeded && cursorCompositions == compositionsBefore,
+                "canceled capture must not composite a cursor or publish an image");
+    } else {
+        require(result.succeeded && result.displays.front().image.constBits()[0] == 71 &&
+                    cursorCompositions == compositionsBefore + 1,
+                "capture must use the saved cursor, never the cursor changed during capture");
+    }
+}
+
+void cursorSnapshotFailureDoesNotDispatchCapture() {
+    ScreenshotCaptureCoordinator coordinator;
+    bool failed = false;
+    QObject::connect(&coordinator, &ScreenshotCaptureCoordinator::captureFinished, &coordinator,
+                     [&](const ScreenshotCaptureResult& result) {
+                         failed = !result.succeeded && !result.errorMessage.isEmpty();
+                     });
+    ScreenshotCaptureRequest request;
+    request.purpose = ScreenshotCapturePurpose::Recapture;
+    request.captureCursor = true;
+    const int capturedBefore = captured;
+    failCursorSnapshot = true;
+    coordinator.captureAsync(request);
+    failCursorSnapshot = false;
+    require(failed && captured == capturedBefore && cursorSnapshots == 0,
+            "snapshot failure must not fall back to a stale live/backend cursor");
+}
+#endif
+
+void cursorCompositionFailureDoesNotPublishAnImage() {
+    ScreenshotCaptureWorker worker;
+    auto snapshot = std::shared_ptr<SnowCaptureCursorSnapshot>(
+        snow_capture_cursor_snapshot_create(), snow_capture_cursor_snapshot_destroy);
+    failCursorComposition = true;
+    const auto failed = capture(worker, false, true, snapshot);
+    require(!failed.succeeded && failed.displays.isEmpty() && !failed.errorMessage.isEmpty(),
+            "failed snapshot composition must not publish a cursor-free or stale image");
+    const auto disabled = capture(worker, false, false, snapshot);
+    require(disabled.succeeded && disabled.displays.front().image.constBits()[0] == 10,
+            "disabled cursor capture must ignore an attached snapshot");
+    failCursorComposition = false;
+}
 } // namespace
 
 // Substitute only the native API; settings, policy, worker, and result delivery are production
@@ -241,11 +345,41 @@ snow_capture_desktop_session_capture(SnowCaptureDesktopSession* session,
                                      const SnowCaptureScreenshotRequest* request) {
     capturedFlags = request->flags;
     ++captured;
-    if (failCapture) {
+    if (blockCapture) {
+        captureEntered.release();
+        resumeCapture.acquire();
+    }
+    if (failCapture ||
+        (request->cancellation_token != nullptr && request->cancellation_token->canceled)) {
         return nullptr;
     }
     return new SnowCaptureScreenshotResult{
         session->config.capture_backend, session->config.pixel_format, {}};
+}
+
+SnowCaptureCursorSnapshot* snow_capture_cursor_snapshot_create() {
+    if (failCursorSnapshot) {
+        return nullptr;
+    }
+    ++cursorSnapshots;
+    return new SnowCaptureCursorSnapshot{liveCursorPixel.load()};
+}
+
+void snow_capture_cursor_snapshot_destroy(SnowCaptureCursorSnapshot* snapshot) {
+    if (snapshot != nullptr) {
+        --cursorSnapshots;
+        delete snapshot;
+    }
+}
+
+uint8_t snow_capture_screenshot_result_composite_cursor(SnowCaptureScreenshotResult* result,
+                                                        const SnowCaptureCursorSnapshot* snapshot) {
+    if (failCursorComposition) {
+        return 0;
+    }
+    ++cursorCompositions;
+    (*result->frame.pixels)[0] = snapshot->pixel;
+    return 1;
 }
 
 size_t snow_capture_screenshot_result_display_count(const SnowCaptureScreenshotResult*) {
@@ -287,7 +421,9 @@ const char* snow_capture_last_error_message() {
 SnowCaptureCancellationToken* snow_capture_cancellation_token_create() {
     return new SnowCaptureCancellationToken;
 }
-void snow_capture_cancellation_token_cancel(SnowCaptureCancellationToken*) {}
+void snow_capture_cancellation_token_cancel(SnowCaptureCancellationToken* token) {
+    token->canceled = true;
+}
 void snow_capture_cancellation_token_destroy(SnowCaptureCancellationToken* token) {
     delete token;
 }
@@ -307,6 +443,13 @@ int main(int argc, char** argv) {
     preparationAndLayoutRefreshUseCurrentMode();
     failedReplacementDoesNotCaptureWithOldBackend();
     modeChangeAfterCaptureFailurePreservesRetainedFrame();
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    recaptureOwnsCursorBeforeDispatch(false);
+    recaptureOwnsCursorBeforeDispatch(true);
+    cursorSnapshotFailureDoesNotDispatchCapture();
+#endif
+    cursorCompositionFailureDoesNotPublishAnImage();
+    require(cursorSnapshots == 0, "worker leaked a cursor snapshot");
     require(created == destroyed, "worker leaked a native capture session");
     require(leases == 0, "worker leaked a native frame lease");
     storage.shutdown();

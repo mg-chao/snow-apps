@@ -65,6 +65,7 @@ void ScreenshotSelectionEditWorkflow::setSelectionShadowWidthFromToolbar(int sha
 void ScreenshotSelectionEditWorkflow::toggleSelectionAspectRatioLockFromToolbar() {
     m_context.selection.toggleAspectRatioLock(
         snow_shot::presentation::kScreenshotSelectionMinimumSize);
+    m_context.persistSelectionAspectRatioLock(m_context.selection.aspectRatioLocked());
     if (m_context.ui.updateOverlayState) {
         m_context.ui.updateOverlayState();
     }

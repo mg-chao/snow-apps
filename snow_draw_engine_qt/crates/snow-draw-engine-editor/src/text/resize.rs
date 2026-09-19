@@ -1,6 +1,6 @@
 use snow_draw_engine_core::Point;
 use snow_draw_engine_document::{
-    ElementId, MIN_TEXT_FONT_SIZE, RectangleData, TextData, TextLayoutSize,
+    ElementId, InkBox, MIN_TEXT_FONT_SIZE, RectangleData, TextData, TextLayoutSize,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -39,6 +39,24 @@ pub(crate) struct TextResizeMeasurementRequestedValues {
     pub(crate) width: f64,
     pub(crate) height: f64,
     pub(crate) font_size: f64,
+}
+
+/// Host-measured outcome of a single-text resize drag for the preview
+/// rectangle: the requested font and the measured ink box. The commit stores
+/// these so the committed element describes exactly what the frame paints.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct MeasuredTextResize {
+    pub(crate) font_size: f64,
+    pub(crate) ink: Option<InkBox>,
+}
+
+impl MeasuredTextResize {
+    pub(crate) fn from_layout_override(layout_override: TextResizeLayoutOverride) -> Self {
+        Self {
+            font_size: layout_override.requested_font_size,
+            ink: layout_override.layout.ink(),
+        }
+    }
 }
 
 pub(crate) fn text_resize_measurement_requested_values(
@@ -89,8 +107,8 @@ pub(crate) fn text_resize_layout_override_matches_rect(
     layout_override: TextResizeLayoutOverride,
     rect: RectangleData,
 ) -> bool {
-    (layout_override.layout.width - rect.width).abs() <= 1e-3
-        && (layout_override.layout.height - rect.height).abs() <= 1e-3
+    (layout_override.layout.width() - rect.width).abs() <= 1e-3
+        && (layout_override.layout.height() - rect.height).abs() <= 1e-3
 }
 
 fn text_resize_font_size_from_height(
@@ -116,14 +134,16 @@ pub(crate) fn text_with_selection_rect(
     rect: RectangleData,
     resize_handle: Option<TextSelectionResizeHandle>,
     single_text_resize: bool,
-    single_text_resize_font_size: Option<f64>,
+    measured_resize: Option<MeasuredTextResize>,
 ) -> TextData {
+    let single_text_resize_font_size = measured_resize.map(|measured| measured.font_size);
     let mut updated = text.clone();
-    let size_changed = (updated.width - rect.width).abs() > f64::EPSILON
-        || (updated.height - rect.height).abs() > f64::EPSILON;
+    let size_changed = (updated.width() - rect.width).abs() > f64::EPSILON
+        || (updated.height() - rect.height).abs() > f64::EPSILON;
     updated.center = rect.center;
-    updated.width = rect.width.max(0.0);
-    updated.height = rect.height.max(0.0);
+    updated.layout = updated
+        .layout
+        .with_wrap(rect.width.max(0.0), rect.height.max(0.0));
     updated.rotation = rect.rotation;
     updated.corner_radii = rect.corner_radii;
     if size_changed {
@@ -151,18 +171,41 @@ pub(crate) fn text_with_selection_rect(
                 updated.auto_resize = false;
             }
         }
+        scale_text_content_from_font(text, &mut updated);
+        if let Some(ink) = measured_resize.and_then(|measured| measured.ink) {
+            // Keep the font-scaled approximation until the host's exact
+            // re-measurement lands.
+            updated.layout = updated.layout.with_ink(Some(ink));
+        }
     }
     updated.font_size = updated.font_size.max(MIN_TEXT_FONT_SIZE);
     updated
 }
 
-fn scale_text_font_size_from_width(original: &TextData, updated: &mut TextData) {
-    if original.width.is_finite()
-        && original.width > f64::EPSILON
-        && updated.width.is_finite()
-        && updated.width > f64::EPSILON
+/// The painted ink scales with the font: keep the measured content box
+/// proportional through resize previews and commits until the host's exact
+/// re-measurement lands. Width-only resizes keep the font and therefore the
+/// ink; the rewrapped measurement replaces it asynchronously.
+fn scale_text_content_from_font(original: &TextData, updated: &mut TextData) {
+    if original.font_size.is_finite()
+        && original.font_size > f64::EPSILON
+        && updated.font_size.is_finite()
+        && updated.font_size > f64::EPSILON
     {
-        let scale = updated.width / original.width;
+        let scale = updated.font_size / original.font_size;
+        if scale.is_finite() && scale > f64::EPSILON {
+            updated.layout = updated.layout.scaled_ink(scale);
+        }
+    }
+}
+
+fn scale_text_font_size_from_width(original: &TextData, updated: &mut TextData) {
+    if original.width().is_finite()
+        && original.width() > f64::EPSILON
+        && updated.width().is_finite()
+        && updated.width() > f64::EPSILON
+    {
+        let scale = updated.width() / original.width();
         if scale.is_finite() && scale > f64::EPSILON {
             updated.font_size *= scale;
         }
@@ -170,12 +213,12 @@ fn scale_text_font_size_from_width(original: &TextData, updated: &mut TextData) 
 }
 
 fn scale_text_font_size_from_height(original: &TextData, updated: &mut TextData) {
-    if original.height.is_finite()
-        && original.height > f64::EPSILON
-        && updated.height.is_finite()
-        && updated.height > f64::EPSILON
+    if original.height().is_finite()
+        && original.height() > f64::EPSILON
+        && updated.height().is_finite()
+        && updated.height() > f64::EPSILON
     {
-        let scale = updated.height / original.height;
+        let scale = updated.height() / original.height();
         if scale.is_finite() && scale > f64::EPSILON {
             updated.font_size *= scale;
         }
@@ -206,10 +249,9 @@ mod tests {
 
     fn text() -> TextData {
         TextData {
-            width: 100.0,
-            height: 40.0,
             font_size: 20.0,
             auto_resize: true,
+            layout: TextLayoutSize::with_content(100.0, 40.0, 96.0, 40.0),
             ..TextData::default()
         }
     }
@@ -229,7 +271,7 @@ mod tests {
 
         assert!(!updated.auto_resize);
         assert_eq!(updated.font_size, 20.0);
-        assert_eq!(updated.width, 120.0);
+        assert_eq!(updated.width(), 120.0);
     }
 
     #[test]
@@ -242,11 +284,41 @@ mod tests {
                 y_sign: 1.0,
             }),
             true,
-            Some(30.0),
+            Some(MeasuredTextResize {
+                font_size: 30.0,
+                ink: InkBox::new(144.0, 60.0),
+            }),
         );
 
         assert_eq!(updated.font_size, 30.0);
         assert!(updated.auto_resize);
-        assert_eq!(updated.height, 80.0);
+        assert_eq!(updated.height(), 80.0);
+        assert_eq!(updated.layout.ink(), InkBox::new(144.0, 60.0));
+    }
+
+    #[test]
+    fn height_resize_without_measurement_scales_content_with_font() {
+        let updated = text_with_selection_rect(
+            &text(),
+            rect(100.0, 80.0),
+            Some(TextSelectionResizeHandle {
+                x_sign: 0.0,
+                y_sign: 1.0,
+            }),
+            true,
+            None,
+        );
+
+        // Font scales by the height ratio 80/40; the ink box follows until the
+        // host's exact measurement lands.
+        assert_eq!(updated.font_size, 40.0);
+        assert_eq!(updated.layout.ink(), InkBox::new(192.0, 80.0));
+    }
+
+    #[test]
+    fn move_keeps_measured_content_untouched() {
+        let updated = text_with_selection_rect(&text(), rect(100.0, 40.0), None, false, None);
+
+        assert_eq!(updated.layout.ink(), InkBox::new(96.0, 40.0));
     }
 }

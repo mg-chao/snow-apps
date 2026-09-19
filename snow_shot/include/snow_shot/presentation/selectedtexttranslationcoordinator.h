@@ -26,12 +26,15 @@ class SelectedTextTranslationCoordinator final : public QObject {
                                        ScreenProvider screenProvider = {});
     ~SelectedTextTranslationCoordinator() override;
     void capture();
+    void presentText(const QString& text);
     void shutdown();
 
   signals:
     void mainTranslationRequested(const QString& text);
 
   private:
+    void routeText(const QString& text, bool standalone, QScreen* screen);
+
     storage::ConfigurationStore& m_configuration;
     SelectedTextTranslationController* m_capture;
     StandaloneTranslationWindow* m_window;

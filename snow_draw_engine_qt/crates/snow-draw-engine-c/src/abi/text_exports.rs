@@ -1,8 +1,15 @@
 use snow_draw_engine::{ElementId, Point, TextLayoutSize};
+use snow_draw_engine_document::{
+    SerialNumberType, SerialPaintGeometry, TextPaintGeometry, resolve_serial_paint_text_connection,
+    text_fill_outset, text_paint_bounds, text_paint_outset,
+};
 
 use crate::abi::convert::*;
 use crate::abi::handles::*;
-use crate::abi::text::{active_text_draft_from_c, text_draft_commit_from_c, text_string_from_raw};
+use crate::abi::text::{
+    active_text_draft_from_c, copy_optional_str_to_c_char_field, text_draft_commit_from_c,
+    text_string_from_raw,
+};
 use crate::abi::types::*;
 
 /// # Safety
@@ -215,10 +222,7 @@ pub unsafe extern "C" fn snow_viewport_create_text(
                     id,
                     Point::new(center_x, center_y),
                     text,
-                    TextLayoutSize {
-                        width: measured_width,
-                        height: measured_height,
-                    },
+                    TextLayoutSize::new(measured_width, measured_height),
                 )
                 .map(|_| ())
                 .map_err(SnowError::from)?;
@@ -598,10 +602,7 @@ pub unsafe extern "C" fn snow_viewport_create_serial_number_text_ex(
                 .runtime
                 .create_serial_number_text_with_viewport_changes(
                     id,
-                    TextLayoutSize {
-                        width: measured_width,
-                        height: measured_height,
-                    },
+                    TextLayoutSize::new(measured_width, measured_height),
                 )
                 .map_err(SnowError::from)?;
             if let Some(text_id) = text_id {
@@ -615,4 +616,461 @@ pub unsafe extern "C" fn snow_viewport_create_serial_number_text_ex(
             Ok(())
         }))
     })
+}
+
+/// # Safety
+/// `runtime` and `viewport` must be live handles created by this library.
+/// `out_text_id` and `out_has_text_id` must be valid for writes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_take_text_edit_request(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    out_text_id: *mut SnowElementId,
+    out_has_text_id: *mut u8,
+) -> SnowError {
+    ffi_error(|| {
+        if out_text_id.is_null() || out_has_text_id.is_null() {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_impl_mut(runtime, |state| {
+            let id = viewport_id(viewport)?;
+            let text_id = state
+                .runtime
+                .take_text_edit_request(id)
+                .map_err(SnowError::from)?;
+            write_out(out_has_text_id, u8::from(text_id.is_some()));
+            write_out(
+                out_text_id,
+                text_id.map(snow_element_id_from_rust).unwrap_or_default(),
+            );
+            Ok(())
+        }))
+    })
+}
+
+/// Returns the pending empty-label measurement for an active serial number drag,
+/// if any. The host measures the empty draft for the requested font and applies
+/// the result via `snow_viewport_apply_serial_label_layout_ex`.
+/// # Safety
+/// `runtime` and `viewport` must be live handles created by this library.
+/// `out_request` must be valid for writes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_get_serial_label_layout_request(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    out_request: *mut SnowSerialLabelLayoutRequest,
+    out_has_request: *mut u8,
+) -> SnowError {
+    ffi_error(|| {
+        if out_request.is_null() || out_has_request.is_null() {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_viewport_ref(
+            runtime,
+            viewport,
+            |engine, id| {
+                let request = engine
+                    .serial_number_label_layout_request(id)
+                    .map_err(SnowError::from)?;
+                write_out(out_has_request, u8::from(request.is_some()));
+                write_out(
+                    out_request,
+                    request
+                        .map(|request| {
+                            let mut out = SnowSerialLabelLayoutRequest {
+                                text_id: snow_element_id_from_rust(request.text_id),
+                                font_size: request.font_size,
+                                ..SnowSerialLabelLayoutRequest::default()
+                            };
+                            copy_optional_str_to_c_char_field(
+                                &mut out.font_family_utf8,
+                                &mut out.font_family_utf8_len,
+                                &mut out.font_family_truncated,
+                                request.font_family.as_deref(),
+                            );
+                            out
+                        })
+                        .unwrap_or_default(),
+                );
+                Ok(())
+            },
+        ))
+    })
+}
+
+/// Applies a host-measured layout to the drag-attached serial number label.
+/// # Safety
+/// `runtime` and `viewport` must be live handles created by this library.
+/// `out_changed_viewports` must be valid for writes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_apply_serial_label_layout_ex(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    text_id: SnowElementId,
+    layout: SnowTextLayoutSize,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if out_changed_viewports.is_null() {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_viewport_mut(
+            runtime,
+            viewport,
+            |engine, id| {
+                let result = engine
+                    .apply_serial_number_label_layout(
+                        id,
+                        snow_element_id_to_rust(text_id),
+                        layout.into(),
+                    )
+                    .map_err(SnowError::from)?;
+                write_changed_viewports(out_changed_viewports, result.changed_viewports);
+                Ok(())
+            },
+        ))
+    })
+}
+
+fn text_paint_geometry_from_c(item: &SnowSceneDisplayItem) -> TextPaintGeometry {
+    // Display items carry the resolved content box; a default-constructed
+    // item has no measurement, and the single fallback decides that.
+    let (content_width, content_height) = TextLayoutSize::with_content(
+        item.width,
+        item.height,
+        item.content_width,
+        item.content_height,
+    )
+    .ink_or_wrap();
+    TextPaintGeometry {
+        center: Point::new(item.center_x, item.center_y),
+        width: item.width,
+        height: item.height,
+        rotation: item.rotation,
+        content_width,
+        content_height,
+        horizontal_align: snow_text_horizontal_align_to_rust(item.text_horizontal_align),
+        vertical_align: snow_text_vertical_align_to_rust(item.text_vertical_align),
+        has_text: item.text_utf8_len != 0,
+        font_size: item.font_size,
+        fill: item.fill.into(),
+        stroke: item.stroke.into(),
+        stroke_width: item.stroke_width,
+    }
+}
+
+fn serial_number_type_from_c(value: u8) -> Option<SerialNumberType> {
+    Some(snow_serial_number_type_to_rust(
+        <SnowSerialNumberType as crate::abi::raw_enum::SnowRawEnum>::from_raw(i32::from(value))?,
+    ))
+}
+
+fn serial_paint_geometry_from_c(item: &SnowSceneDisplayItem) -> Option<SerialPaintGeometry> {
+    Some(SerialPaintGeometry {
+        center: Point::new(item.center_x, item.center_y),
+        diameter: item.width.min(item.height),
+        rotation: item.rotation,
+        serial_number_type: serial_number_type_from_c(item.serial_number_type)?,
+        stroke_width: item.stroke_width,
+        corner_radius: item.corner_radii.top_left,
+    })
+}
+
+/// Painted text outset for host dirty regions; combines the fill padding with
+/// the text stroke halo. The text painter measures its background pill padding
+/// through `snow_scene_text_fill_outset` instead.
+/// # Safety
+/// `item` may be null; non-null pointers must reference a readable display item.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_scene_text_paint_outset(
+    item: *const SnowSceneDisplayItem,
+) -> SnowTextPaintOutset {
+    ffi_value(SnowTextPaintOutset::default(), || {
+        let Some(item) = (unsafe { item.as_ref() }) else {
+            return SnowTextPaintOutset::default();
+        };
+        if item.kind != SnowSceneDisplayItemKind::Text {
+            return SnowTextPaintOutset::default();
+        }
+        let (x, y) = text_paint_outset(&text_paint_geometry_from_c(item));
+        SnowTextPaintOutset { x, y }
+    })
+}
+
+/// Fill-pill padding the text painter must draw around every line. The host
+/// painter consumes this instead of measuring its own padding, so the painted
+/// pill and the dirty regions cannot drift apart.
+/// # Safety
+/// `item` may be null; non-null pointers must reference a readable display item.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_scene_text_fill_outset(
+    item: *const SnowSceneDisplayItem,
+) -> SnowTextPaintOutset {
+    ffi_value(SnowTextPaintOutset::default(), || {
+        let Some(item) = (unsafe { item.as_ref() }) else {
+            return SnowTextPaintOutset::default();
+        };
+        if item.kind != SnowSceneDisplayItemKind::Text {
+            return SnowTextPaintOutset::default();
+        }
+        let (x, y) = text_fill_outset(&text_paint_geometry_from_c(item));
+        SnowTextPaintOutset { x, y }
+    })
+}
+
+/// Conservative document-space ink bounds of a text item: the aligned content
+/// box expanded by the fill padding and the text stroke halo. Host dirty
+/// regions and visibility culling consume this instead of reconstructing the
+/// arithmetic, so they cannot drift from the engine's bounds.
+/// # Safety
+/// `item` may be null; non-null pointers must reference a readable display item.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_scene_text_paint_bounds(
+    item: *const SnowSceneDisplayItem,
+) -> SnowTextPaintBounds {
+    ffi_value(SnowTextPaintBounds::default(), || {
+        let Some(item) = (unsafe { item.as_ref() }) else {
+            return SnowTextPaintBounds::default();
+        };
+        if item.kind != SnowSceneDisplayItemKind::Text {
+            return SnowTextPaintBounds::default();
+        }
+        let bounds = text_paint_bounds(&text_paint_geometry_from_c(item));
+        SnowTextPaintBounds {
+            min_x: bounds.min_x,
+            min_y: bounds.min_y,
+            max_x: bounds.max_x,
+            max_y: bounds.max_y,
+        }
+    })
+}
+
+/// Resolve a serial-number connector from the displayed serial and text items.
+/// # Safety
+/// Pointers may be null. Non-null `serial` and `text` must be readable;
+/// `out_connection` must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_scene_resolve_serial_text_connection(
+    serial: *const SnowSceneDisplayItem,
+    text: *const SnowSceneDisplayItem,
+    out_connection: *mut SnowSerialTextConnection,
+) -> u8 {
+    ffi_value(0, || {
+        if out_connection.is_null() {
+            return 0;
+        }
+        let Some(serial) = (unsafe { serial.as_ref() }) else {
+            return 0;
+        };
+        let Some(text) = (unsafe { text.as_ref() }) else {
+            return 0;
+        };
+        if serial.kind != SnowSceneDisplayItemKind::SerialNumber
+            || text.kind != SnowSceneDisplayItemKind::Text
+        {
+            return 0;
+        }
+        let Some(serial_geometry) = serial_paint_geometry_from_c(serial) else {
+            return 0;
+        };
+        let Some(connection) = resolve_serial_paint_text_connection(
+            &serial_geometry,
+            &text_paint_geometry_from_c(text),
+        ) else {
+            return 0;
+        };
+        let has_baseline =
+            connection.text_baseline_start.is_some() && connection.text_baseline_end.is_some();
+        let baseline_start = connection.text_baseline_start.unwrap_or_default();
+        let baseline_end = connection.text_baseline_end.unwrap_or_default();
+        write_out(
+            out_connection,
+            SnowSerialTextConnection {
+                start_x: connection.start.x,
+                start_y: connection.start.y,
+                end_x: connection.end.x,
+                end_y: connection.end.y,
+                baseline_start_x: baseline_start.x,
+                baseline_start_y: baseline_start.y,
+                baseline_end_x: baseline_end.x,
+                baseline_end_y: baseline_end.y,
+                has_baseline: u8::from(has_baseline),
+                reserved: [0; 7],
+            },
+        );
+        1
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn zero_item() -> SnowSceneDisplayItem {
+        unsafe { std::mem::zeroed() }
+    }
+
+    #[test]
+    fn text_paint_outset_ffi_matches_filled_padding_contract() {
+        let mut item = zero_item();
+        item.kind = SnowSceneDisplayItemKind::Text;
+        item.width = 80.0;
+        item.height = 40.0;
+        item.font_size = 40.0;
+        item.fill = SnowColorRgba8 {
+            r: 0xff,
+            g: 0xff,
+            b: 0xff,
+            a: 0xff,
+        };
+        item.text_utf8_len = 4;
+        let outset = unsafe { snow_scene_text_paint_outset(&item) };
+        let line_height = 40.0_f64.max(1.0) * 1.2;
+        assert!((outset.x - line_height * 0.32).abs() < 1e-9);
+        assert!((outset.y - line_height * 0.1).abs() < 1e-9);
+    }
+
+    #[test]
+    fn text_fill_outset_ffi_is_the_painter_padding_contract() {
+        let mut item = zero_item();
+        item.kind = SnowSceneDisplayItemKind::Text;
+        item.width = 80.0;
+        item.height = 40.0;
+        item.font_size = 40.0;
+        item.fill = SnowColorRgba8 {
+            r: 0xff,
+            g: 0xff,
+            b: 0xff,
+            a: 0xff,
+        };
+        item.text_utf8_len = 4;
+        let fill = unsafe { snow_scene_text_fill_outset(&item) };
+        let line_height = 40.0_f64.max(1.0) * 1.2;
+        assert!((fill.x - line_height * 0.32).abs() < 1e-9);
+        assert!((fill.y - line_height * 0.1).abs() < 1e-9);
+
+        // A dominant stroke widens the paint (dirty-region) outset but must not
+        // move the painted pill edge.
+        item.stroke = SnowColorRgba8 {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 0xff,
+        };
+        item.stroke_width = 40.0;
+        let paint = unsafe { snow_scene_text_paint_outset(&item) };
+        let fill_with_stroke = unsafe { snow_scene_text_fill_outset(&item) };
+        assert_eq!(paint.x, 20.0);
+        assert_eq!(paint.y, 20.0);
+        assert_eq!(fill_with_stroke, fill);
+    }
+
+    #[test]
+    fn serial_text_connection_ffi_ignores_text_fill() {
+        let mut text = zero_item();
+        text.kind = SnowSceneDisplayItemKind::Text;
+        text.center_x = 130.0;
+        text.center_y = 10.0;
+        text.width = 80.0;
+        text.height = 40.0;
+        text.font_size = 40.0;
+        text.fill = SnowColorRgba8 {
+            r: 0xff,
+            g: 0xff,
+            b: 0xff,
+            a: 0xff,
+        };
+        text.text_utf8_len = 4;
+
+        let mut serial = zero_item();
+        serial.kind = SnowSceneDisplayItemKind::SerialNumber;
+        serial.width = 24.0;
+        serial.height = 24.0;
+        serial.stroke_width = 2.0;
+
+        let mut connection = SnowSerialTextConnection::default();
+        assert_eq!(
+            unsafe { snow_scene_resolve_serial_text_connection(&serial, &text, &mut connection) },
+            1
+        );
+        assert_ne!(connection.has_baseline, 0);
+        // The underline sits on the aligned ink box; the background fill
+        // padding moves the painted pill, never the connector.
+        assert!((connection.baseline_start_x - (130.0 - 40.0)).abs() < 1e-9);
+        assert!((connection.baseline_end_x - (130.0 + 40.0)).abs() < 1e-9);
+        assert!((connection.baseline_end_y - (10.0 + 20.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn serial_text_connection_ffi_honors_aligned_wrapped_ink() {
+        let mut text = zero_item();
+        text.kind = SnowSceneDisplayItemKind::Text;
+        text.center_x = 130.0;
+        text.center_y = 10.0;
+        text.width = 80.0;
+        text.height = 40.0;
+        // Wrapped ink narrower than the wrap rectangle, top-left aligned.
+        text.content_width = 40.0;
+        text.content_height = 20.0;
+        text.text_horizontal_align = SnowTextHorizontalAlign::Left;
+        text.text_vertical_align = SnowTextVerticalAlign::Top;
+        text.font_size = 40.0;
+        text.fill = SnowColorRgba8 {
+            r: 0xff,
+            g: 0xff,
+            b: 0xff,
+            a: 0xff,
+        };
+        text.text_utf8_len = 4;
+
+        let mut serial = zero_item();
+        serial.kind = SnowSceneDisplayItemKind::SerialNumber;
+        serial.width = 24.0;
+        serial.height = 24.0;
+        serial.stroke_width = 2.0;
+
+        let mut connection = SnowSerialTextConnection::default();
+        assert_eq!(
+            unsafe { snow_scene_resolve_serial_text_connection(&serial, &text, &mut connection) },
+            1
+        );
+        assert_ne!(connection.has_baseline, 0);
+        // The underline spans the aligned ink block: left edge at the item's
+        // left, bottom at the item top plus the ink height.
+        assert!((connection.baseline_start_x - (130.0 - 40.0)).abs() < 1e-9);
+        assert!((connection.baseline_end_x - (130.0 - 40.0 + 40.0)).abs() < 1e-9);
+        assert!((connection.baseline_end_y - (10.0 - 20.0 + 20.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn text_paint_bounds_ffi_tracks_aligned_ink() {
+        let mut item = zero_item();
+        item.kind = SnowSceneDisplayItemKind::Text;
+        item.center_x = 100.0;
+        item.center_y = 100.0;
+        item.width = 80.0;
+        item.height = 40.0;
+        item.content_width = 40.0;
+        item.content_height = 20.0;
+        item.text_horizontal_align = SnowTextHorizontalAlign::Right;
+        item.text_vertical_align = SnowTextVerticalAlign::Bottom;
+        item.font_size = 40.0;
+        item.fill = SnowColorRgba8 {
+            r: 0xff,
+            g: 0xff,
+            b: 0xff,
+            a: 0xff,
+        };
+        item.text_utf8_len = 4;
+
+        let bounds = unsafe { snow_scene_text_paint_bounds(&item) };
+        let line_height = 40.0_f64.max(1.0) * 1.2;
+        let pad_x = line_height * 0.32;
+        let pad_y = line_height * 0.1;
+        // Right/bottom-aligned ink hugs the item's bottom-right corner.
+        assert!((bounds.max_x - (100.0 + 40.0 + pad_x)).abs() < 1e-9);
+        assert!((bounds.max_y - (100.0 + 20.0 + pad_y)).abs() < 1e-9);
+        assert!((bounds.min_x - (100.0 + 40.0 - 40.0 - pad_x)).abs() < 1e-9);
+        assert!((bounds.min_y - (100.0 + 20.0 - 20.0 - pad_y)).abs() < 1e-9);
+    }
 }

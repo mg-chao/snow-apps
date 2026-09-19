@@ -9,9 +9,11 @@
 #include <QVector>
 
 #include <optional>
+#include <memory>
 
 class QScreen;
 class ScreenshotOverlayWindow;
+struct SnowCaptureCursorSnapshotImpl;
 
 enum class ScreenshotSessionState {
     IdleCold,
@@ -43,11 +45,19 @@ enum class ScreenshotCaptureBackend {
     Gdi = 3,
 };
 
+enum class ScreenshotCapturePurpose {
+    Initial,
+    Recapture,
+};
+
 struct ScreenshotCaptureRequest {
     quint64 requestId = 0;
     bool refreshLayout = false;
     bool restoreOriginalScreenColors = false;
     bool captureCursor = false;
+    ScreenshotCapturePurpose purpose = ScreenshotCapturePurpose::Initial;
+    // Owned before worker dispatch; native snapshot data is immutable.
+    std::shared_ptr<SnowCaptureCursorSnapshotImpl> cursorSnapshot;
 };
 
 struct ScreenshotDisplayPresentationState {
@@ -72,6 +82,7 @@ struct ScreenshotCaptureResult {
     QVector<CapturedDisplayModel> displays;
     QString errorMessage;
     bool succeeded = false;
+    ScreenshotCapturePurpose purpose = ScreenshotCapturePurpose::Initial;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTTYPES_H

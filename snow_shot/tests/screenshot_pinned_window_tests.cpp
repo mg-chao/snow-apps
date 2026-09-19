@@ -1644,6 +1644,74 @@ void pinnedEditingRemembersLastFilterToolAcrossSessions() {
     controller.setEditMode(false);
 }
 
+void pinnedEditStartsWithRememberedDrawingTool() {
+    namespace storage = snow_shot::storage;
+    using Tool = ScreenshotToolPalette::Tool;
+    const storage::ScreenshotToolbarSettings toolbarSettings;
+    const storage::DrawingSettings drawingSettings;
+    const QString originalDrawingTool = toolbarSettings.lastDrawingTool();
+    const QString originalHighlight = toolbarSettings.lastHighlightTool();
+    const bool originalRememberSwitch = drawingSettings.rememberLastUsedTool();
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(toolbarSettings.setLastDrawingTool(originalDrawingTool));
+        static_cast<void>(toolbarSettings.setLastHighlightTool(originalHighlight));
+        static_cast<void>(drawingSettings.setRememberLastUsedTool(originalRememberSwitch));
+    });
+
+    ScreenshotPinnedWindow window;
+    SnowCanvasWidget canvas;
+    snow_shot::presentation::WindowShortcutManager manager;
+    ScreenshotPinnedEditController controller(window, canvas, manager);
+    canvas.show();
+
+    // Without the preference, pinned editing starts with the Resize window tool.
+    require(drawingSettings.setRememberLastUsedTool(false) &&
+                toolbarSettings.setLastDrawingTool(QStringLiteral("shape")),
+            "pinned remembered tool tests must start with the switch disabled");
+    controller.setEditMode(true);
+    require(controller.resizeWindowToolActive() &&
+                controller.toolbarWindow()->palette()->activeToolForTests() == Tool::Move &&
+                !canvas.interactionEnabled(),
+            "a disabled switch must keep the Resize window tool when entering pinned editing");
+    controller.setEditMode(false);
+
+    // With the preference, entering pinned editing activates the remembered tool.
+    require(drawingSettings.setRememberLastUsedTool(true),
+            "the remembered tool switch must be writable");
+    controller.setEditMode(true);
+    {
+        ScreenshotToolPalette* palette = controller.toolbarWindow()->palette();
+        require(palette != nullptr && !controller.resizeWindowToolActive() &&
+                    palette->activeToolForTests() == Tool::Shape &&
+                    canvas.canvasTool() == SnowCanvasTool::Shape && canvas.interactionEnabled(),
+                "entering pinned editing must activate the remembered shape tool");
+    }
+    controller.setEditMode(false);
+
+    // Highlighter variants resolve through the persisted remembered mode.
+    require(toolbarSettings.setLastDrawingTool(QStringLiteral("highlighter")) &&
+                toolbarSettings.setLastHighlightTool(QStringLiteral("rectangle-highlight")),
+            "the remembered highlighter variant must be configurable");
+    controller.setEditMode(true);
+    {
+        ScreenshotToolPalette* palette = controller.toolbarWindow()->palette();
+        require(palette != nullptr && !controller.resizeWindowToolActive() &&
+                    palette->activeToolForTests() == Tool::RectangleHighlight &&
+                    canvas.canvasTool() == SnowCanvasTool::RectangleHighlight,
+                "entering pinned editing must restore the remembered highlighter variant");
+    }
+    controller.setEditMode(false);
+
+    // An empty remembered tool falls back to the Resize window tool.
+    require(toolbarSettings.setLastDrawingTool(QString()),
+            "the remembered drawing tool can be cleared");
+    controller.setEditMode(true);
+    require(controller.resizeWindowToolActive() &&
+                controller.toolbarWindow()->palette()->activeToolForTests() == Tool::Move,
+            "an empty remembered tool must fall back to the Resize window tool");
+    controller.setEditMode(false);
+}
+
 void pinnedRecognitionShortcutTogglesResults() {
     const bool offscreen = QGuiApplication::platformName() == QStringLiteral("offscreen");
     auto config = cachedOcrPinConfig(nullptr);
@@ -6697,6 +6765,88 @@ void pinnedClickThroughOffscreen() {
     require(guardedExit.isNull(), "closing the pin must destroy the separate exit surface");
 }
 
+void pinnedAlwaysOnTopOffscreen() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "always-on-top needs a primary screen");
+    int persistenceWrites = 0;
+    snow_shot::storage::PinnedWindowRecord lastPersisted;
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    ScreenshotPinnedWindow::Config config = clickThroughTestConfig(*screen);
+    config.persistenceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    config.persistenceWriter = [&](const snow_shot::storage::PinnedWindowRecord& record) {
+        ++persistenceWrites;
+        lastPersisted = record;
+    };
+    Access::restoreOffscreen(window, config);
+    window.show();
+    waitForUi(20);
+
+    auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedContextMenu"));
+    auto* clickThrough =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedClickThroughAction"));
+    auto* alwaysOnTop =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedAlwaysOnTopAction"));
+    require(menu != nullptr && clickThrough != nullptr && alwaysOnTop != nullptr,
+            "always-on-top fixture needs the pinned menu");
+    emit menu->aboutToShow();
+    require(alwaysOnTop->isCheckable() && alwaysOnTop->isChecked() &&
+                menu->actions().indexOf(alwaysOnTop) == menu->actions().indexOf(clickThrough) + 1,
+            "Always on Top must be a checked item directly below Click-through");
+    require(window.windowFlags().testFlag(Qt::WindowStaysOnTopHint),
+            "a new pin must stay on top by default");
+
+    alwaysOnTop->trigger();
+    waitForUi(20);
+    require(!alwaysOnTop->isChecked() && !window.windowFlags().testFlag(Qt::WindowStaysOnTopHint) &&
+                !window.persistenceSnapshot().alwaysOnTop,
+            "unchecking must remove the pin's always-on-top state");
+    waitForUi(300);
+    require(persistenceWrites > 0 && !lastPersisted.alwaysOnTop,
+            "unchecking must schedule a durable always-on-top opt-out");
+
+    require(Access::setClickThrough(window, true),
+            "always-on-top fixture must enter click-through");
+    auto* exitButton = Access::clickThroughExitButton(window);
+    require(exitButton != nullptr && !exitButton->windowFlags().testFlag(Qt::WindowStaysOnTopHint),
+            "click-through controls must follow the pin out of the topmost band");
+    alwaysOnTop->trigger();
+    waitForUi(20);
+    require(alwaysOnTop->isChecked() && window.windowFlags().testFlag(Qt::WindowStaysOnTopHint) &&
+                exitButton->windowFlags().testFlag(Qt::WindowStaysOnTopHint) &&
+                window.persistenceSnapshot().alwaysOnTop,
+            "re-checking must restore the topmost band for the pin and its click-through controls");
+    static_cast<void>(Access::setClickThrough(window, false));
+
+    window.close();
+
+    // A restored pin adopts its saved stacking band before the menu opens.
+    for (const bool persisted : {false, true}) {
+        ScreenshotPinnedWindow restored;
+        restored.setAttribute(Qt::WA_DeleteOnClose, false);
+        ScreenshotPinnedWindow::Config restoreConfig = clickThroughTestConfig(*screen);
+        restoreConfig.restorePersistentState = true;
+        restoreConfig.persistedAlwaysOnTop = persisted;
+        Access::restoreOffscreen(restored, restoreConfig);
+        restored.show();
+        waitForUi(20);
+        auto* restoredMenu = restored.findChild<adqt::widgets::AdContextMenu*>(
+            QStringLiteral("screenshotPinnedContextMenu"));
+        auto* restoredAction =
+            restored.findChild<QAction*>(QStringLiteral("screenshotPinnedAlwaysOnTopAction"));
+        require(restoredMenu != nullptr && restoredAction != nullptr,
+                "restored always-on-top fixture needs the pinned menu");
+        emit restoredMenu->aboutToShow();
+        require(restored.windowFlags().testFlag(Qt::WindowStaysOnTopHint) == persisted &&
+                    restoredAction->isChecked() == persisted &&
+                    restored.persistenceSnapshot().alwaysOnTop == persisted,
+                "a restored pin must adopt its saved always-on-top state");
+        restored.close();
+    }
+}
+
 #if defined(Q_OS_WIN) || defined(_WIN32)
 void pinnedClickThroughRecreationNative() {
     QScreen* screen = QGuiApplication::primaryScreen();
@@ -8850,6 +9000,10 @@ int main(int argc, char* argv[]) {
             pinnedEditingRemembersLastFilterToolAcrossSessions();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--remembered-drawing-tool-only"))) {
+            pinnedEditStartsWithRememberedDrawingTool();
+            return 0;
+        }
 #if defined(Q_OS_WIN) || defined(_WIN32)
         if (app.arguments().contains(QStringLiteral("--resize-window-native-only"))) {
             pinnedResizeWindowNativeInteractions();
@@ -8870,6 +9024,10 @@ int main(int argc, char* argv[]) {
             pinnedClickThroughMoveOffscreen();
             pinnedClickThroughOpacityOffscreen();
             pinnedClickThroughOffscreen();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--always-on-top-only"))) {
+            pinnedAlwaysOnTopOffscreen();
             return 0;
         }
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -9128,6 +9286,7 @@ int main(int argc, char* argv[]) {
         pinnedRecognitionShortcutTogglesResults();
         pinnedEditingRecognitionShortcutsUsePaletteCommands();
         pinnedEditingRemembersLastFilterToolAcrossSessions();
+        pinnedEditStartsWithRememberedDrawingTool();
         cachedPinnedOcrAvailableWithoutRecognitionProvider();
         transformedPinnedOcrTracksCanvasViewport();
         pinnedTransformResetPersistsWithoutResize();

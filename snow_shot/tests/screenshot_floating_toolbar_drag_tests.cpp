@@ -22,6 +22,7 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QKeyEvent>
+#include <QPointer>
 #include <QPoint>
 #include <QRect>
 #include <QScreen>
@@ -216,6 +217,14 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void toggleTextTranslation() override {
         ++textTranslationToggleCount;
     }
+    void jumpToTranslationPage() override {
+        ++jumpToTranslationPageCount;
+        // Mirrors the real sink: the command ends the capture, whose teardown
+        // resets the toolbar and evicts the secondary contents synchronously.
+        if (jumpToTranslationPageResetTarget != nullptr) {
+            jumpToTranslationPageResetTarget->resetForNewCapture();
+        }
+    }
     void startScrollingScreenshot() override {}
     void pinSelectionToScreen() override {}
     void cancelCapture() override {}
@@ -241,6 +250,8 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     int presentationRepositionCount = 0;
     int textTranslationToolCount = 0;
     int textTranslationToggleCount = 0;
+    int jumpToTranslationPageCount = 0;
+    ScreenshotToolbarWindow* jumpToTranslationPageResetTarget = nullptr;
 };
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -2068,6 +2079,109 @@ void translateButtonRoutesEveryClickThroughTheToggleCommand() {
             "clicking active Translate should exit through the same toggle command");
 }
 
+void jumpToTranslationPageFollowsLiveSettingsAndOcrAvailability() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "jump toolbar test requires isolated storage");
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(storage.initialize({directory.path(), directory.path(), 60000}).success,
+            "initialize jump toolbar test storage");
+
+    const snow_shot::storage::ExtendedFeaturesSettings settings;
+    NoOpToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    window.setActiveTool(ScreenshotToolPalette::Tool::Ocr);
+    auto* jump = window.findChild<QAbstractButton*>(
+        QStringLiteral("screenshotOcrJumpToTranslationPageButton"));
+    auto* translate =
+        window.findChild<QAbstractButton*>(QStringLiteral("screenshotOcrTextTranslateButton"));
+    auto* formatting =
+        window.findChild<QWidget*>(QStringLiteral("screenshotOcrTextFormattingSelect"));
+    require(jump != nullptr && translate != nullptr && formatting != nullptr && jump->isHidden(),
+            "default-off setting must hide the OCR jump action");
+    QLayout* row = jump->parentWidget()->layout();
+    require(row != nullptr, "the OCR jump action must live in a laid-out action row");
+    // The whole-window hint only grows when the action row is the widest row, which
+    // depends on unrelated toolbar content; the row width is the real contract.
+    const int hiddenRowWidth = row->sizeHint().width();
+
+    require(settings.setJumpToTranslationPage(true), "enable preserved child preference");
+    QCoreApplication::processEvents();
+    require(jump->isHidden(), "master-off setting must keep the OCR jump action hidden");
+    require(settings.setTranslationPageEnabled(true), "enable Translation page master");
+    QCoreApplication::processEvents();
+    require(!jump->isHidden() && !jump->isEnabled() && row->sizeHint().width() > hiddenRowWidth,
+            "both settings must reveal a result-gated OCR jump action and expand the row");
+
+    require(row->indexOf(translate) < row->indexOf(jump) &&
+                row->indexOf(jump) < row->indexOf(formatting),
+            "OCR jump action must follow Text translation and precede formatting");
+    window.setTextEditingState(true, false);
+    window.setTextTranslationState(true, false, false);
+    require(jump->isEnabled(), "completed OCR must enable the jump action");
+    jump->click();
+    require(commands.jumpToTranslationPageCount == 1,
+            "OCR jump action must dispatch exactly one toolbar command");
+
+    require(settings.setTranslationPageEnabled(false), "disable Translation page master");
+    QCoreApplication::processEvents();
+    require(jump->isHidden() && settings.jumpToTranslationPage() &&
+                row->sizeHint().width() == hiddenRowWidth,
+            "master-off must hide the action, restore row width, and preserve child preference");
+    storage.shutdown();
+}
+
+void jumpToTranslationPageCommandMustOutliveItsClickDispatch() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "jump teardown test requires isolated storage");
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(storage.initialize({directory.path(), directory.path(), 60000}).success,
+            "initialize jump teardown test storage");
+
+    const snow_shot::storage::ExtendedFeaturesSettings settings;
+    require(settings.setTranslationPageEnabled(true) && settings.setJumpToTranslationPage(true),
+            "reveal the OCR jump action for the teardown test");
+    QCoreApplication::processEvents();
+
+    NoOpToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    commands.jumpToTranslationPageResetTarget = &window;
+    window.setActiveTool(ScreenshotToolPalette::Tool::Ocr);
+    QCoreApplication::processEvents();
+    QPointer<QAbstractButton> jump = window.findChild<QAbstractButton*>(
+        QStringLiteral("screenshotOcrJumpToTranslationPageButton"));
+    require(jump != nullptr && !jump->isHidden(), "OCR jump action must be visible");
+    window.setTextEditingState(true, false);
+    window.setTextTranslationState(true, false, false);
+    require(jump->isEnabled(), "completed OCR must enable the jump action");
+
+    // Release through the real mouse path: the command resets the toolbar for a new
+    // capture, which synchronously evicts the secondary toolbar contents from the
+    // dispatching button's own mouseReleaseEvent. The eviction must detach the
+    // widgets but defer their destruction, so the button survives its release
+    // event and the event loop reaps it afterwards.
+    const QPointF local = QPointF(jump->rect().center());
+    QMouseEvent press(QEvent::MouseButtonPress, local, QPointF(jump->mapToGlobal(local.toPoint())),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(jump.data(), &press);
+    QMouseEvent release(QEvent::MouseButtonRelease, local,
+                        QPointF(jump->mapToGlobal(local.toPoint())), Qt::LeftButton, Qt::NoButton,
+                        Qt::NoModifier);
+    QApplication::sendEvent(jump.data(), &release);
+    require(commands.jumpToTranslationPageCount == 1,
+            "the jump command must dispatch synchronously from the click");
+    require(!jump.isNull(),
+            "eviction must not destroy the dispatching button inside its own mouseReleaseEvent");
+    require(window.palette()->activeToolForTests() == ScreenshotToolPalette::Tool::Move,
+            "the jump command must still reset the toolbar for the next capture");
+    QCoreApplication::processEvents();
+    require(jump.isNull(),
+            "evicted secondary contents must be destroyed once control returns to the event loop");
+
+    require(settings.setTranslationPageEnabled(false) && settings.setJumpToTranslationPage(false),
+            "restore jump teardown test settings");
+    storage.shutdown();
+}
+
 void mainTextTranslationButtonUsesTranslationPresentation() {
     NoOpToolbarCommands commands;
     ScreenshotToolbarWindow window(commands);
@@ -2463,6 +2577,11 @@ int main(int argc, char* argv[]) {
         if (app.arguments().contains(QStringLiteral("--ocr-translation-toggle-only"))) {
             translateButtonRoutesEveryClickThroughTheToggleCommand();
             mainTextTranslationButtonUsesTranslationPresentation();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--jump-to-translation-page-only"))) {
+            jumpToTranslationPageFollowsLiveSettingsAndOcrAvailability();
+            jumpToTranslationPageCommandMustOutliveItsClickDispatch();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--toolbar-size-only"))) {

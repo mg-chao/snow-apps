@@ -292,8 +292,8 @@ pub(crate) fn text_resize_preview_rect(
         rectangle_kind: snow_draw_engine_document::RectangleElementKind::Rectangle,
         highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
         center: text.center,
-        width: text.width,
-        height: text.height,
+        width: text.width(),
+        height: text.height(),
         rotation: text.rotation,
         fill: text.fill,
         fill_style: text.fill_style,
@@ -313,8 +313,8 @@ pub(crate) fn text_resize_preview_rect(
                     &original_rect,
                     original_bounds,
                     text_resize_anchor(handle, scale_from_center),
-                    layout.width,
-                    layout.height,
+                    layout.width(),
+                    layout.height(),
                 ));
             }
             return Some(resized_text_rect_from_size(
@@ -325,14 +325,14 @@ pub(crate) fn text_resize_preview_rect(
                 text_resize_height(text, next_width, layout_override),
             ));
         }
-        let next_width = (text.width * scale_x).max(MIN_RECT_SIZE);
+        let next_width = (text.width() * scale_x).max(MIN_RECT_SIZE);
         if let Some(layout) = text_resize_layout_for_width(next_width, layout_override) {
             return Some(resized_text_rect_from_size(
                 &original_rect,
                 original_bounds,
                 text_resize_anchor(handle, scale_from_center),
-                layout.width,
-                layout.height,
+                layout.width(),
+                layout.height(),
             ));
         }
         let next_height = text_resize_height(text, next_width, layout_override);
@@ -352,7 +352,7 @@ pub(crate) fn text_resize_preview_rect(
         1.0
     };
     let scale = scale.max(min_font_scale);
-    let next_height = text.height * scale;
+    let next_height = text.height() * scale;
     if next_height <= f64::EPSILON || !next_height.is_finite() {
         return None;
     }
@@ -365,11 +365,11 @@ pub(crate) fn text_resize_preview_rect(
             &original_rect,
             original_bounds,
             text_resize_anchor(handle, scale_from_center),
-            layout.width,
-            layout.height,
+            layout.width(),
+            layout.height(),
         ));
     }
-    let next_width = (text.width * scale).max(MIN_RECT_SIZE);
+    let next_width = (text.width() * scale).max(MIN_RECT_SIZE);
     Some(resized_text_rect_from_size(
         &original_rect,
         original_bounds,
@@ -535,7 +535,7 @@ fn text_resize_height(
     layout_override: Option<TextResizeLayoutOverride>,
 ) -> f64 {
     if let Some(layout) = text_resize_layout_for_width(width, layout_override) {
-        return layout.height;
+        return layout.height();
     }
     estimated_wrapped_text_height(text, width)
 }
@@ -546,18 +546,18 @@ fn text_resize_layout_for_width(
 ) -> Option<TextLayoutSize> {
     let layout_override = layout_override?;
     let layout = layout_override.layout;
-    if !layout.width.is_finite()
-        || layout.width <= 0.0
-        || !layout.height.is_finite()
-        || layout.height <= 0.0
+    if !layout.width().is_finite()
+        || layout.width() <= 0.0
+        || !layout.height().is_finite()
+        || layout.height() <= 0.0
     {
         return None;
     }
-    if (layout.width - width).abs() <= 1e-3 {
+    if (layout.width() - width).abs() <= 1e-3 {
         return Some(layout);
     }
-    let is_min_width_clamp = layout_override.requested_width + 1e-3 < layout.width;
-    if is_min_width_clamp && width <= layout.width + 1e-3 {
+    let is_min_width_clamp = layout_override.requested_width + 1e-3 < layout.width();
+    if is_min_width_clamp && width <= layout.width() + 1e-3 {
         return Some(layout);
     }
     None
@@ -569,10 +569,10 @@ fn text_resize_layout_for_height(
 ) -> Option<TextLayoutSize> {
     let layout_override = layout_override?;
     let layout = layout_override.layout;
-    if !layout.width.is_finite()
-        || layout.width <= 0.0
-        || !layout.height.is_finite()
-        || layout.height <= 0.0
+    if !layout.width().is_finite()
+        || layout.width() <= 0.0
+        || !layout.height().is_finite()
+        || layout.height() <= 0.0
     {
         return None;
     }

@@ -12,7 +12,9 @@
 #include <QEvent>
 #include <QFontDatabase>
 #include <QLabel>
+#include <QMenu>
 #include <QTemporaryDir>
+#include <QWidget>
 
 #include <cstdlib>
 #include <iostream>
@@ -83,6 +85,24 @@ void mainWindowTitlesKeepSmoothRendering() {
     require(QApplication::font() == applicationFont,
             "main window typography must not change the application font for other windows");
 }
+
+void applicationTypographyCoversUnownedSurfaces() {
+    // The theme owns application-wide typography: tooltips, message boxes, native menus,
+    // and ownerless overlay-style windows all resolve unhinted outlines at fractional DPI.
+    require(QApplication::font().hintingPreference() == QFont::PreferNoHinting,
+            "the themed application font must render unhinted outlines");
+    for (const char* popupClass : {"QTipLabel", "QMessageBox", "QMenu"}) {
+        const QFont popupFont = QApplication::font(popupClass);
+        require(popupFont.hintingPreference() == QFont::PreferNoHinting,
+                "native popup class fonts must render unhinted outlines");
+    }
+    QWidget standalone; // models overlay, palette, pinned, and recognition windows
+    require(standalone.font().hintingPreference() == QFont::PreferNoHinting,
+            "parentless top-level widgets must inherit unhinted outlines");
+    QMenu trayMenu; // seeds from the QMenu class font instead of an owner chain
+    require(trayMenu.font().hintingPreference() == QFont::PreferNoHinting,
+            "native menus must render unhinted outlines");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -100,6 +120,7 @@ int main(int argc, char** argv) {
     require(storage.initialize({directory.path(), directory.path(), 8000}).success,
             "initialize isolated font test storage");
     styles::ThemeManager::instance().initialize(application);
+    applicationTypographyCoversUnownedSurfaces();
     mainWindowTitlesKeepSmoothRendering();
     storage.shutdown();
     return 0;

@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace snow_shot::storage {
 namespace {
@@ -26,6 +27,7 @@ const QStringList kDrawingToolbarItemIds = {
     QStringLiteral("text"),      QStringLiteral("serial-number"), QStringLiteral("filter"),
     QStringLiteral("eraser"),    QStringLiteral("watermark"),
 };
+const QStringList kLastDrawingToolIds = QStringList{QStringLiteral("")} + kDrawingToolbarItemIds;
 
 const QStringList kActionToolbarItemIds = {
     QStringLiteral("barcode-recognition"),  QStringLiteral("table-recognition"),
@@ -166,6 +168,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::String},
     {QStringLiteral("extended_features/standalone_translation_window"), false,
      ConfigurationValueKind::Boolean},
+    {QStringLiteral("extended_features/jump_to_translation_page"), false,
+     ConfigurationValueKind::Boolean},
     {QStringLiteral("extended_features/translation_page_enabled"), false,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot_translation/original_image_translation"), true,
@@ -176,6 +180,10 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {QStringLiteral("smart_merge"), QStringLiteral("original")}},
     {QStringLiteral("interface/sidebar_collapsed"), false, ConfigurationValueKind::Boolean},
+    {QStringLiteral("interface/main_window_geometry"), QJsonObject(),
+     ConfigurationValueKind::Structured},
+    {QStringLiteral("interface/translation_window_size"), QJsonObject(),
+     ConfigurationValueKind::Structured},
     {QStringLiteral("text_recognition/save_recognition_result_as_image"), true,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("text_recognition/fill_style"),
@@ -379,6 +387,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
       QStringLiteral("pen-highlight"), QStringLiteral("spotlight"),
       QStringLiteral("rectangle-filter"), QStringLiteral("pen-filter"), QStringLiteral("text"),
       QStringLiteral("serial-number"), QStringLiteral("eraser"), QStringLiteral("watermark")}},
+    {QStringLiteral("drawing/remember_last_used_tool"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("drawing/shape_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/arrow_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/line_style"), QJsonObject(), ConfigurationValueKind::Structured},
@@ -519,6 +528,12 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      2},
     {QStringLiteral("screenshot_shortcuts/select_previously_selected_area"),
      QJsonArray{QStringLiteral("R")},
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
+    {QStringLiteral("screenshot_shortcuts/recapture"),
+     QJsonArray{QStringLiteral("Alt+R")},
      ConfigurationValueKind::StringList,
      std::nullopt,
      {},
@@ -741,6 +756,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("rectangle-highlight"), QStringLiteral("pen-highlight")}},
+    {QStringLiteral("screenshot_toolbar/last_drawing_tool"), QString(),
+     ConfigurationValueKind::String, std::nullopt, kLastDrawingToolIds},
     {QStringLiteral("screenshot_toolbar/layout"),
      defaultToolbarLayout(defaultDrawingToolbarPositions()), ConfigurationValueKind::Structured},
     {QStringLiteral("pin_to_screen/action_tools_layout"),
@@ -863,10 +880,14 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationIntegerRange{0, 256, 1}},
     {QStringLiteral("screenshot_selection/shadow_width"), 0, ConfigurationValueKind::Integer,
      ConfigurationIntegerRange{0, 64, 1}},
+    {QStringLiteral("screenshot_selection/lock_aspect_ratio"), false,
+     ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot/capture_cursor"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot/capture_ui_in_scrolling_screenshot"), true,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot/shutter_sound_notification"), true,
+     ConfigurationValueKind::Boolean},
+    {QStringLiteral("screenshot/confirm_before_exiting_via_shortcut"), false,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot/restore_original_screen_colors"), true,
      ConfigurationValueKind::Boolean},
@@ -1598,6 +1619,22 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
         return exactType(value, QJsonValue::Object);
     }
     return {};
+}
+
+bool ConfigurationSchema::parseIntegerVersion(const QJsonValue& value, int* version) {
+    if (!value.isDouble() || !std::isfinite(value.toDouble()) ||
+        std::floor(value.toDouble()) != value.toDouble() || value.toDouble() < 1.0 ||
+        value.toDouble() > static_cast<double>(std::numeric_limits<int>::max())) {
+        return false;
+    }
+    if (version != nullptr) {
+        *version = value.toInt();
+    }
+    return true;
+}
+
+int ConfigurationSchema::currentVersion() {
+    return defaultValue(QStringLiteral("storage/schema_version")).toInt();
 }
 
 QJsonObject ConfigurationSchema::completeDefaultDocument() {

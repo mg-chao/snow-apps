@@ -18,6 +18,10 @@ use snow_draw_engine_scene::{DocumentSceneCache, ViewportComposer};
 #[cfg(test)]
 mod auto_filter_tests;
 mod document_commands;
+#[cfg(test)]
+mod duplicate_drag_tests;
+#[cfg(test)]
+mod filter_snap_tests;
 mod input;
 mod mutations;
 mod text_commands;
@@ -752,3 +756,7 @@ impl Engine {
         snow_draw_engine_scene::smart_erase_items(&self.model, &presentation)
     }
 }
+
+#[cfg(test)]
+#[path = "engine/serial_number_drag_tests.rs"]
+mod serial_number_drag_tests;

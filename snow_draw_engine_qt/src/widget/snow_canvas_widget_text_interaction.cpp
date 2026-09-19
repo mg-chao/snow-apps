@@ -133,18 +133,46 @@ SnowCanvasWidgetTextInteraction::measureArrowText(SnowRuntime runtime, SnowViewp
             }
             text = QString::fromUtf8(utf8);
         }
-        const QSizeF natural =
-            snow_canvas_text_layout::measureNaturalText(text, m_widget.font(), item);
-        const double width = qMin(natural.width(), request.max_width);
-        const QSizeF size =
-            snow_canvas_text_layout::measureWrappedText(text, m_widget.font(), item, width);
-        layouts.push_back(
-            SnowArrowTextLayoutResult{request.info.id, request.key, {width, size.height()}});
+        const snow_canvas_text_layout::TextMeasuredLayout natural =
+            snow_canvas_text_layout::measureNaturalTextLayout(text, m_widget.font(), item);
+        const double width = qMin(natural.layout.width(), request.max_width);
+        const snow_canvas_text_layout::TextMeasuredLayout wrapped =
+            snow_canvas_text_layout::measureWrappedTextLayout(text, m_widget.font(), item, width);
+        layouts.push_back(SnowArrowTextLayoutResult{
+            request.info.id,
+            request.key,
+            {width, wrapped.layout.height(), wrapped.content.width(), wrapped.content.height()},
+        });
     }
     result.success =
         snow_viewport_apply_arrow_text_layouts_ex(runtime, viewport, layouts.data(),
                                                   static_cast<std::uint32_t>(layouts.size()),
                                                   result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
+snow_canvas_commands::MutationResult
+SnowCanvasWidgetTextInteraction::measureSerialLabelLayout(SnowRuntime runtime,
+                                                          SnowViewport viewport) {
+    snow_canvas_commands::MutationResult result;
+    if (runtime == nullptr || viewport == nullptr) {
+        return result;
+    }
+    SnowSerialLabelLayoutRequest request{};
+    std::uint8_t hasRequest = 0;
+    if (snow_viewport_get_serial_label_layout_request(runtime, viewport, &request, &hasRequest) !=
+        SNOW_OK) {
+        return result;
+    }
+    result.success = true;
+    if (hasRequest == 0) {
+        return result;
+    }
+    const SnowTextLayoutSize layout =
+        snow_canvas_text_measurement::measureSerialLabelLayout(request, m_widget.font());
+    result.success =
+        snow_viewport_apply_serial_label_layout_ex(runtime, viewport, request.text_id, layout,
+                                                   result.changedViewports.outParam()) == SNOW_OK;
     return result;
 }
 
@@ -195,6 +223,8 @@ SnowCanvasWidgetTextInteraction::publishActiveDraftPresentation(SnowRuntime runt
             preview->width,
             preview->height,
             preview->rotation,
+            preview->content_width,
+            preview->content_height,
             utf8.constData(),
             static_cast<std::uint32_t>(utf8.size()),
             snow_canvas_text::textStyleFromSceneItem(*preview),
@@ -495,26 +525,29 @@ SnowCanvasWidgetTextInteraction::BeginResult SnowCanvasWidgetTextInteraction::be
     return beginResult;
 }
 
-SnowCanvasWidgetTextInteraction::SerialTextCreationResult
+snow_canvas_commands::CreateSerialNumberTextResult
 SnowCanvasWidgetTextInteraction::createSerialNumberText(
-    SnowRuntime runtime, SnowViewport viewport, const SnowCanvasDisplayCache& displayCache,
-    const SnowTextStyle& textStyle, const SnowSerialNumberStyle& serialNumberStyle) {
-    SerialTextCreationResult result;
+    SnowRuntime runtime, SnowViewport viewport, const SnowTextStyle& textStyle,
+    const SnowSerialNumberStyle& serialNumberStyle) {
     const SnowTextLayoutSize layout =
         snow_canvas_text_measurement::measureSerialNumberBoundTextLayout(
             textStyle, serialNumberStyle, m_widget.font());
-    snow_canvas_commands::CreateSerialNumberTextResult createResult =
-        snow_canvas_commands::createSerialNumberText(runtime, viewport, layout);
-    if (!createResult.success) {
-        return result;
-    }
+    return snow_canvas_commands::createSerialNumberText(runtime, viewport, layout);
+}
 
-    result.success = true;
-    result.firstChangedViewports = std::move(createResult.changedViewports);
-    BeginResult beginResult = beginCreatedText(runtime, viewport, createResult, displayCache);
-    result.shouldRefocus = beginResult.started;
-    result.secondChangedViewports = std::move(beginResult.firstChangedViewports);
-    return result;
+SnowCanvasWidgetTextInteraction::BeginResult
+SnowCanvasWidgetTextInteraction::beginRequestedTextEdit(
+    SnowRuntime runtime, SnowViewport viewport, const SnowCanvasDisplayCache& displayCache) {
+    snow_canvas_commands::CreateSerialNumberTextResult request;
+    std::uint8_t hasTextId = 0;
+    if (snow_viewport_take_text_edit_request(runtime, viewport, &request.textId, &hasTextId) !=
+            SNOW_OK ||
+        hasTextId == 0) {
+        return {};
+    }
+    request.success = true;
+    request.hasTextId = true;
+    return beginCreatedText(runtime, viewport, request, displayCache);
 }
 
 SnowCanvasWidgetTextInteraction::ActiveResizeMeasurementState

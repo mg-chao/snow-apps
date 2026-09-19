@@ -1,8 +1,8 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use snow_draw_engine_core::{ErrorCode, Point, SnapGuide, arrow::ArrowEndpointEdge};
 use snow_draw_engine_document::{
-    ArrowData, ElementId, ElementKind, FilterData, PenFilterData, RectangleData, SerialNumberData,
-    TextData,
+    ArrowData, ArrowSuggestedBinding, ElementId, ElementKind, FilterData, PenFilterData,
+    RectangleData, SerialNumberData, TextData,
 };
 use snow_draw_engine_interaction::CursorStyle;
 use snow_draw_engine_model::DocumentModel;
@@ -93,6 +93,7 @@ pub(crate) struct CreateArrowState {
     pub(crate) committed_points: Vec<Point<f64>>,
     pub(crate) press_view_position: Point<f64>,
     pub(crate) phase: ArrowCreationPhase,
+    pub(crate) suggested_binding: Option<ArrowSuggestedBinding>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -122,7 +123,10 @@ pub(crate) struct CreatePenFilterState {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CreateSerialNumberState {
     pub(crate) pointer_id: u32,
-    pub(crate) preview: SerialNumberData,
+    pub(crate) serial_id: ElementId,
+    pub(crate) start_view_position: Point<f64>,
+    pub(crate) text: Option<(ElementId, TextData)>,
+    pub(crate) label_measured: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -192,6 +196,7 @@ pub(crate) enum SelectionEditMode {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct EditSelectionState {
+    pub(crate) duplicate: bool,
     pub(crate) pointer_id: u32,
     pub(crate) original_elements: Vec<SelectionRectState>,
     pub(crate) preview_elements: Vec<SelectionRectState>,
@@ -225,6 +230,7 @@ pub(crate) struct BeginSelectionInteractionRequest {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PendingSelectionMoveState {
+    pub(crate) duplicate: bool,
     pub(crate) pointer_id: u32,
     pub(crate) original_elements: Vec<SelectionRectState>,
     pub(crate) original_arrows: Vec<SelectionArrowState>,
@@ -269,6 +275,7 @@ pub(crate) struct EditArrowState {
     pub(crate) mode: ArrowEditMode,
     pub(crate) start_canvas_position: Point<f64>,
     pub(crate) drag_offset: Point<f64>,
+    pub(crate) suggested_binding: Option<ArrowSuggestedBinding>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -381,6 +388,10 @@ impl SelectionState {
     }
 }
 
+// The arrow edit state carries the original and preview arrow payloads; the
+// size difference to the other variants is intentional and the state is
+// short-lived, so keep it inline instead of boxing.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) enum InteractionState {
     #[default]
@@ -407,6 +418,7 @@ pub(crate) struct EditorState {
     pub(crate) ui: UiState,
     pub(crate) interaction: InteractionState,
     pub(crate) active_text_draft: Option<ActiveTextDraftPresentation>,
+    pub(crate) pending_text_edit: Option<ElementId>,
     pub(crate) arrow_text_measurements: Vec<crate::arrow_text::ArrowTextMeasurement>,
     pub(crate) default_rectangle_shape_style: RectangleShapeStyle,
     pub(crate) default_arrow_style: ArrowStyle,
@@ -492,6 +504,7 @@ impl EditorState {
             ui: UiState::default(),
             interaction: InteractionState::default(),
             active_text_draft: None,
+            pending_text_edit: None,
             arrow_text_measurements: Vec::new(),
             default_rectangle_shape_style: default_styles.rectangle,
             default_arrow_style: default_styles.arrow,

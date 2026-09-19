@@ -4,15 +4,17 @@ use std::mem;
 use windows::Win32::Foundation::{HWND, LPARAM, RECT};
 use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumChildWindows, EnumWindows, GetWindowInfo, GetWindowRect, IsIconic, IsWindowVisible,
-    WINDOWINFO,
+    EnumChildWindows, EnumWindows, GWL_EXSTYLE, GetWindowInfo, GetWindowLongPtrW, GetWindowRect,
+    IsIconic, IsWindowVisible, WINDOW_EX_STYLE, WINDOWINFO, WS_EX_LAYERED, WS_EX_TRANSPARENT,
 };
 use windows::core::{BOOL, Result};
 
 use crate::windows::geometry::{intersect_rect, is_empty, same_rect};
 
-/// Enumerate top-level windows that pass cheap visibility checks
-/// (`IsWindowVisible` + `!IsIconic`).  The more expensive DWM cloaking check
+/// Enumerate visible, non-minimized top-level selection candidates in Z order.
+/// Mouse-through layered windows are intentionally ineligible, even when they
+/// display visible content: automatic selection should reach the window below.
+/// The more expensive DWM cloaking check
 /// is deferred to [`is_window_cloaked`] so callers can batch or skip it.
 pub(crate) fn enumerate_top_windows() -> Result<Vec<HWND>> {
     // Typical desktops have 50-200 top-level windows; pre-allocate to avoid
@@ -31,7 +33,7 @@ unsafe extern "system" fn enum_window_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
     // Only cheap Win32 checks here — the DWM cloaking call is deferred to the
     // cache-building phase so it can be skipped for windows that fail earlier
     // geometry checks.
-    if !is_cheaply_visible(hwnd) {
+    if !is_top_level_selection_candidate(hwnd) {
         return true.into();
     }
 
@@ -40,16 +42,28 @@ unsafe extern "system" fn enum_window_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
     true.into()
 }
 
-/// Fast visibility pre-filter: only `IsWindowVisible` + `!IsIconic`.
+/// Fast visibility and input-transparency pre-filter.
 /// Does *not* call `DwmGetWindowAttribute` (cross-process DWM round-trip).
-fn is_cheaply_visible(hwnd: HWND) -> bool {
+fn is_top_level_selection_candidate(hwnd: HWND) -> bool {
     if !unsafe { IsWindowVisible(hwnd).as_bool() } {
         return false;
     }
     if unsafe { IsIconic(hwnd).as_bool() } {
         return false;
     }
-    true
+    let style = WINDOW_EX_STYLE(unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32);
+    !is_click_through_layered_window(style)
+}
+
+fn is_click_through_layered_window(style: WINDOW_EX_STYLE) -> bool {
+    // Layered windows with WS_EX_TRANSPARENT pass mouse input to windows below.
+    // https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#layered-windows
+    // In particular, the shell handwriting canvas can be visible and topmost
+    // while covering the entire desktop with transparent pixels. Indexing it
+    // would hide every real window from both the UIA and MSAA selectors.
+    // WS_EX_TRANSPARENT alone only specifies paint ordering, so keep those
+    // windows, as well as ordinary interactive layered windows, selectable.
+    style.contains(WS_EX_LAYERED | WS_EX_TRANSPARENT)
 }
 
 /// Desktop-space rectangle used for intelligent selection.
@@ -150,6 +164,123 @@ pub(crate) fn is_window_cloaked(hwnd: HWND) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::rect_to_aabb;
+    use crate::spatial::{IndexedWindow, SMALL_WINDOW_LINEAR_SCAN_THRESHOLD, WindowSpatialIndex};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, DestroyWindow, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        SetWindowPos, WS_EX_NOACTIVATE, WS_POPUP, WS_VISIBLE,
+    };
+    use windows::core::w;
+
+    struct TestWindow(HWND);
+
+    impl TestWindow {
+        fn new(style: WINDOW_EX_STYLE) -> Self {
+            Self(unsafe {
+                CreateWindowExW(
+                    style | WS_EX_NOACTIVATE,
+                    w!("STATIC"),
+                    w!("Snow selector transparency regression"),
+                    WS_POPUP | WS_VISIBLE,
+                    -32000,
+                    -32000,
+                    100,
+                    100,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+            })
+        }
+
+        fn bring_to_front(&self) {
+            unsafe {
+                SetWindowPos(
+                    self.0,
+                    Some(HWND_TOP),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
+                )
+                .unwrap();
+            }
+        }
+    }
+
+    impl Drop for TestWindow {
+        fn drop(&mut self) {
+            // Best-effort cleanup must not cause a second panic after a failed assertion.
+            let _ = unsafe { DestroyWindow(self.0) };
+        }
+    }
+
+    #[test]
+    fn click_through_handwriting_canvas_is_not_a_selection_target() {
+        assert!(is_click_through_layered_window(WINDOW_EX_STYLE(
+            0x0a08_00a8
+        )));
+        assert!(!is_click_through_layered_window(WINDOW_EX_STYLE(0)));
+        assert!(!is_click_through_layered_window(WS_EX_LAYERED));
+        assert!(!is_click_through_layered_window(WS_EX_TRANSPARENT));
+    }
+
+    #[test]
+    fn enumeration_excludes_only_the_combined_mouse_through_style() {
+        let styles = [
+            (WINDOW_EX_STYLE(0), true),
+            (WS_EX_LAYERED, true),
+            (WS_EX_TRANSPARENT, true),
+            (WS_EX_LAYERED | WS_EX_TRANSPARENT, false),
+        ];
+        let windows = styles.map(|(style, expected)| (TestWindow::new(style), expected));
+        let candidates = enumerate_top_windows().unwrap();
+        for (window, expected) in windows {
+            assert!(unsafe { IsWindowVisible(window.0).as_bool() });
+            assert_eq!(candidates.contains(&window.0), expected);
+        }
+    }
+
+    #[test]
+    fn selection_reaches_underlying_window_in_both_spatial_index_paths() {
+        for count in [2, SMALL_WINDOW_LINEAR_SCAN_THRESHOLD + 1] {
+            let targets = (0..count)
+                .map(|_| TestWindow::new(WINDOW_EX_STYLE(0)))
+                .collect::<Vec<_>>();
+            let target = targets.last().unwrap();
+            let overlay = TestWindow::new(WS_EX_LAYERED | WS_EX_TRANSPARENT);
+            target.bring_to_front();
+            overlay.bring_to_front();
+
+            // Preserve native enumeration order, but isolate these offscreen
+            // fixtures from unrelated desktop windows and parallel tests.
+            let candidates = enumerate_top_windows()
+                .unwrap()
+                .into_iter()
+                .filter(|hwnd| *hwnd == overlay.0 || targets.iter().any(|w| w.0 == *hwnd))
+                .collect::<Vec<_>>();
+            let index = WindowSpatialIndex::build(
+                candidates
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &hwnd)| IndexedWindow {
+                        envelope: rect_to_aabb(visible_window_rect(hwnd).unwrap()),
+                        cache_index: i,
+                        z_order: i,
+                    })
+                    .collect(),
+            );
+            let bounds = visible_window_rect(target.0).unwrap();
+            let hit = index
+                .window_at_point([bounds.left + 50, bounds.top + 50])
+                .unwrap();
+            assert_eq!(candidates[hit.cache_index], target.0);
+            assert_eq!(candidates.len(), count);
+        }
+    }
 
     fn rect(left: i32, top: i32, right: i32, bottom: i32) -> RECT {
         RECT {

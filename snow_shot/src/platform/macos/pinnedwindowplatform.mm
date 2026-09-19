@@ -64,7 +64,7 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
                               environmentChanged();
                         }] retain];
         }
-        window.level = NSFloatingWindowLevel;
+        window.level = m_staysOnTop ? NSFloatingWindowLevel : NSNormalWindowLevel;
         window.collectionBehavior =
             (window.collectionBehavior & ~(NSWindowCollectionBehaviorMoveToActiveSpace |
                                            NSWindowCollectionBehaviorFullScreenPrimary)) |
@@ -143,6 +143,13 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
         m_transparent = transparent;
         return true;
     }
+    bool setStaysOnTop(bool staysOnTop) override {
+        m_staysOnTop = staysOnTop;
+        if (!attach())
+            return false;
+        m_native.level = staysOnTop ? NSFloatingWindowLevel : NSNormalWindowLevel;
+        return m_native.level == (staysOnTop ? NSFloatingWindowLevel : NSNormalWindowLevel);
+    }
     bool activate() override {
         if (m_transparent || !attach())
             return false;
@@ -176,6 +183,7 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
     bool m_ignoresMouse = false;
     bool m_hidesOnDeactivate = false;
     bool m_applying = false;
+    bool m_staysOnTop = true;
 };
 } // namespace
 QRect cocoaPinnedUsableGeometry(const QScreen& screen) {

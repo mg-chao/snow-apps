@@ -48,6 +48,7 @@ fn primary_stages(kind: CaptureBackendKind) -> &'static [&'static str] {
             "gdi.convert",
         ],
         CaptureBackendKind::Auto => &[],
+        CaptureBackendKind::ScreenCaptureKit => &[],
     }
 }
 
@@ -57,6 +58,7 @@ fn stage_prefix(kind: CaptureBackendKind) -> &'static str {
         CaptureBackendKind::WindowsGraphicsCapture => "wgc.",
         CaptureBackendKind::Gdi => "gdi.",
         CaptureBackendKind::Auto => "",
+        CaptureBackendKind::ScreenCaptureKit => "",
     }
 }
 

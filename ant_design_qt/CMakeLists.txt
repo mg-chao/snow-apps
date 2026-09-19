@@ -321,6 +321,17 @@ if(ADQT_BUILD_TESTS)
     set_tests_properties(adqt-locale-manager-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+    add_executable(adqt-theme-typography-tests
+        packages/ant_design_qt/tests/theme_typography_tests.cpp)
+    target_link_libraries(adqt-theme-typography-tests PRIVATE adqt::widgets Qt6::Widgets)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        target_link_libraries(adqt-theme-typography-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-theme-typography-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-theme-typography-tests COMMAND adqt-theme-typography-tests)
+    set_tests_properties(adqt-theme-typography-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
     add_executable(adqt-divider-tests packages/ant_design_qt/tests/tst_divider.cpp)
     set_target_properties(adqt-divider-tests PROPERTIES AUTOMOC ON)
     target_link_libraries(adqt-divider-tests PRIVATE adqt::widgets Qt6::Test)

@@ -527,6 +527,51 @@ void clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata() {
                 "opacity endpoints and recovered defaults must survive another round trip");
     }
 }
+void alwaysOnTopStateRoundTripsAndDefaultsToEnabledForLegacyRecords() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary always-on-top storage is unavailable");
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    auto record = recordWithId(id, patternedImage(QSize(200, 100), 5));
+    record.alwaysOnTop = false;
+    const QString manifest =
+        QDir(directory.path()).filePath(QStringLiteral("pinned_windows/index.json"));
+    {
+        storage::PinnedWindowRepository repository(directory.path());
+        require(repository.upsert(record).success && repository.flush().success,
+                "the always-on-top opt-out must be committed to disk");
+        const auto demoted = repository.loadRecord(id);
+        require(demoted.has_value() && !demoted->alwaysOnTop,
+                "the always-on-top opt-out must survive payload demotion");
+        record.alwaysOnTop = true;
+        require(repository.updateState(record).success && repository.flush().success,
+                "re-enabling always-on-top must update persisted metadata");
+    }
+    {
+        storage::PinnedWindowRepository repository(directory.path());
+        const auto loaded = repository.loadRecord(id);
+        require(loaded.has_value() && loaded->alwaysOnTop,
+                "always-on-top state must survive repository recreation");
+    }
+
+    // Records saved before the preference existed only ever floated above
+    // everything, so a missing key must restore as enabled.
+    auto root = QJsonDocument::fromJson(readBytes(manifest)).object();
+    auto records = root.value(QStringLiteral("records")).toArray();
+    auto item = records.at(0).toObject();
+    item.remove(QStringLiteral("always_on_top"));
+    records.replace(0, item);
+    root.insert(QStringLiteral("records"), records);
+    QFile file(manifest);
+    require(file.open(QIODevice::WriteOnly | QIODevice::Truncate),
+            "open always-on-top legacy fixture");
+    const QByteArray bytes = QJsonDocument(root).toJson();
+    require(file.write(bytes) == bytes.size(), "write always-on-top legacy fixture");
+    file.close();
+    storage::PinnedWindowRepository repository(directory.path());
+    const auto loaded = repository.loadRecord(id);
+    require(loaded.has_value() && loaded->alwaysOnTop,
+            "legacy records must restore with always-on-top enabled");
+}
 void thumbnailStateSurvivesRestartAndExit() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary thumbnail storage is unavailable");
@@ -667,6 +712,7 @@ int main(int argc, char* argv[]) {
     specifiedGroupRemovalIsAtomicAndPersistent();
     recognitionVisibilityRoundTripsAndDefaultsToHidden();
     clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata();
+    alwaysOnTopStateRoundTripsAndDefaultsToEnabledForLegacyRecords();
     thumbnailStateSurvivesRestartAndExit();
     hideToTopRoundTripsAndRecoversLegacyMetadata();
     return 0;

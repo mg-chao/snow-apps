@@ -897,6 +897,7 @@ void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
         config.persistedHideToTopAccentIndex = record.hideToTopAccentIndex;
         config.persistedThumbnailMode = record.thumbnailMode;
         config.persistedClickThroughMode = record.clickThroughMode;
+        config.persistedAlwaysOnTop = record.alwaysOnTop;
         config.persistedPreThumbnailNativeGeometry = restored.preThumbnailNativeGeometry;
         if (record.preThumbnailPlacement.isValid()) {
             config.persistedPreThumbnailPlacement = snow_shot::presentation::recoverPinnedPlacement(

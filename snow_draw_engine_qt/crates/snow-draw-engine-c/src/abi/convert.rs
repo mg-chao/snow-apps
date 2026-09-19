@@ -457,10 +457,12 @@ pub(crate) fn snow_element_id_to_rust(id: SnowElementId) -> ElementId {
 
 impl From<SnowTextLayoutSize> for TextLayoutSize {
     fn from(value: SnowTextLayoutSize) -> Self {
-        Self {
-            width: value.width,
-            height: value.height,
-        }
+        Self::with_content(
+            value.width,
+            value.height,
+            value.content_width,
+            value.content_height,
+        )
     }
 }
 
@@ -755,16 +757,21 @@ impl From<TextStyle> for SnowTextStyle {
     }
 }
 
+pub(crate) fn snow_serial_number_type_to_rust(value: SnowSerialNumberType) -> SerialNumberType {
+    match value {
+        SnowSerialNumberType::OutlinedCircle => SerialNumberType::OutlinedCircle,
+        SnowSerialNumberType::SolidCircle => SerialNumberType::SolidCircle,
+        SnowSerialNumberType::OutlinedSquare => SerialNumberType::OutlinedSquare,
+        SnowSerialNumberType::SolidSquare => SerialNumberType::SolidSquare,
+        SnowSerialNumberType::Circle => SerialNumberType::Circle,
+    }
+}
+
 impl From<SnowSerialNumberStyle> for SerialNumberStyle {
     fn from(value: SnowSerialNumberStyle) -> Self {
         Self {
             number: value.number.max(0),
-            serial_number_type: match value.serial_number_type {
-                SnowSerialNumberType::OutlinedCircle => SerialNumberType::OutlinedCircle,
-                SnowSerialNumberType::SolidCircle => SerialNumberType::SolidCircle,
-                SnowSerialNumberType::OutlinedSquare => SerialNumberType::OutlinedSquare,
-                SnowSerialNumberType::SolidSquare => SerialNumberType::SolidSquare,
-            },
+            serial_number_type: snow_serial_number_type_to_rust(value.serial_number_type),
             color: value.color.into(),
             fill: value.fill.into(),
             fill_style: snow_fill_style_to_rust(value.fill_style),
@@ -786,6 +793,7 @@ impl From<SerialNumberStyle> for SnowSerialNumberStyle {
                 SerialNumberType::SolidCircle => SnowSerialNumberType::SolidCircle,
                 SerialNumberType::OutlinedSquare => SnowSerialNumberType::OutlinedSquare,
                 SerialNumberType::SolidSquare => SnowSerialNumberType::SolidSquare,
+                SerialNumberType::Circle => SnowSerialNumberType::Circle,
             },
             color: value.color.into(),
             fill: value.fill.into(),
@@ -964,6 +972,7 @@ pub(crate) fn runtime_config_from_c(
                         SnowSerialNumberType::SolidCircle => SerialNumberType::SolidCircle,
                         SnowSerialNumberType::OutlinedSquare => SerialNumberType::OutlinedSquare,
                         SnowSerialNumberType::SolidSquare => SerialNumberType::SolidSquare,
+                        SnowSerialNumberType::Circle => SerialNumberType::Circle,
                     },
                     color: defaults.serial_number.color.into(),
                     fill: defaults.serial_number.fill.into(),
@@ -1556,7 +1565,7 @@ mod tests {
         expected.editor.pen_filter.stroke_width = 10.0;
         expected.editor.text.font_family = Some("C Text Font".to_owned());
         expected.editor.serial_number.font_family = Some("C Serial Font".to_owned());
-        expected.editor.serial_number.serial_number_type = SerialNumberType::SolidSquare;
+        expected.editor.serial_number.serial_number_type = SerialNumberType::Circle;
         expected.watermark.text = "C watermark".to_owned();
         expected.watermark.template_value = "  {text} {YYYY-MM-DD_HH-mm-ss}  ".to_owned();
         expected.watermark.template_application_time = Some(WatermarkTemplateApplicationTime {
@@ -1582,7 +1591,7 @@ mod tests {
         assert_eq!(c_defaults.serial_number.font_family_truncated, 0);
         assert_eq!(
             c_defaults.serial_number.serial_number_type,
-            SnowSerialNumberType::SolidSquare
+            SnowSerialNumberType::Circle
         );
         let c_config = SnowRuntimeConfig {
             style_defaults: &c_defaults,

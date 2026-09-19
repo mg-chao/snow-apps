@@ -52,6 +52,7 @@ pub(crate) struct ArrowEditPreview {
     pub(crate) arrow: ArrowData,
     pub(crate) reorder_targets: Vec<ElementId>,
     pub(crate) next_mode: Option<ArrowEditMode>,
+    pub(crate) suggested_binding: Option<ArrowSuggestedBinding>,
 }
 
 #[derive(Clone, Copy, Debug)]

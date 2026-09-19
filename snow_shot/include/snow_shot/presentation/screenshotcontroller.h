@@ -58,6 +58,7 @@ class ScreenshotController : public QObject {
 
   signals:
     void showMainWindowRequested();
+    void translationPageRequested(const QString& text);
     void captureAvailabilityChanged(bool available);
     void globalMouseCaptureEnded(quint64 gestureId);
 

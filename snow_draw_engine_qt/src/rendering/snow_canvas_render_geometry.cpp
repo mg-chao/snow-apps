@@ -12,9 +12,6 @@ namespace snow_canvas_render_geometry {
 namespace {
 
 constexpr double kRadiansToDegrees = 180.0 / 3.14159265358979323846;
-constexpr double kTextLineHeightPerFontSize = 1.2;
-constexpr double kTextBackgroundHorizontalPaddingPerLineHeight = 0.32;
-constexpr double kTextBackgroundVerticalPaddingPerLineHeight = 0.1;
 struct CurveSegment {
     QPointF start;
     QPointF control1;
@@ -152,23 +149,16 @@ QRectF overlayRectBounds(const ViewProjection& projection, const SnowOverlayDisp
 }
 
 QRectF textItemBounds(const ViewProjection& projection, const SnowSceneDisplayItem& item) {
-    const bool canPaintText = item.text_utf8_len != 0 && item.font_size > 0.0;
-    const double strokeOutset =
-        canPaintText && item.stroke.a != 0 ? qMax(0.0, item.stroke_width) / 2.0 : 0.0;
-    double fillOutsetX = 0.0;
-    double fillOutsetY = 0.0;
-    if (item.fill.a != 0 && item.font_size > 0.0) {
-        const double lineHeight = item.font_size * kTextLineHeightPerFontSize;
-        fillOutsetX = lineHeight * kTextBackgroundHorizontalPaddingPerLineHeight;
-        fillOutsetY = lineHeight * kTextBackgroundVerticalPaddingPerLineHeight;
+    // The engine owns the paint contract: the bounds are the aligned content
+    // box plus fill padding and stroke halo, so dirty regions cannot drift
+    // from what the frame paints or what serial connectors anchor to.
+    const SnowTextPaintBounds bounds = snow_scene_text_paint_bounds(&item);
+    if (bounds.max_x <= bounds.min_x || bounds.max_y <= bounds.min_y) {
+        return QRectF();
     }
-
-    const double outsetX = qMax(strokeOutset, fillOutsetX);
-    const double outsetY = qMax(strokeOutset, fillOutsetY);
-    const QPointF center = canvasToView(projection, item.center_x, item.center_y);
-    return rotatedRectBounds(center, (item.width + outsetX * 2.0) * projection.cameraZoom,
-                             (item.height + outsetY * 2.0) * projection.cameraZoom, item.rotation,
-                             0.0);
+    const QPointF topLeft = canvasToView(projection, bounds.min_x, bounds.min_y);
+    const QPointF bottomRight = canvasToView(projection, bounds.max_x, bounds.max_y);
+    return QRectF(topLeft, bottomRight).normalized();
 }
 
 QRectF snapGuideBounds(const ViewProjection& projection, const SnowOverlayDisplayItem& item) {

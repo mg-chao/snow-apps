@@ -1,8 +1,8 @@
 use crate::{
     ElementData, ElementRecord, FillStyle, FilterData, PenFilterData, RectangleData,
-    SerialNumberData, SerialNumberTextConnection, StrokeStyle, TextData, TextHorizontalAlign,
-    TextLayoutRect, TextLayoutSize, TextVerticalAlign, arrow_bounds, arrow_is_degenerate,
-    validate_arrow, validate_free_draw,
+    SerialNumberData, SerialNumberTextConnection, SerialNumberType, StrokeStyle, TextData,
+    TextHorizontalAlign, TextLayoutRect, TextLayoutSize, TextVerticalAlign, arrow_bounds,
+    arrow_is_degenerate, validate_arrow, validate_free_draw,
 };
 use snow_draw_engine_core::{
     ColorRgba8, CornerRadii, DrawRect, ErrorCode, Point, rotated_rect_extents,
@@ -122,8 +122,7 @@ impl Default for TextData {
     fn default() -> Self {
         Self {
             center: Point::default(),
-            width: 1.0,
-            height: 36.0,
+            layout: TextLayoutSize::new(1.0, 36.0),
             rotation: 0.0,
             text: String::new(),
             color: ColorRgba8 {
@@ -189,10 +188,12 @@ pub fn text_line_height(font_size: f64) -> f64 {
 }
 
 pub fn validate_text_layout_size(layout: TextLayoutSize) -> Result<TextLayoutSize, ErrorCode> {
-    if !layout.width.is_finite()
-        || !layout.height.is_finite()
-        || layout.width <= 0.0
-        || layout.height <= 0.0
+    // Ink cannot be invalid here: `TextLayoutSize` normalizes any host report
+    // into "measured" or "unmeasured" at construction.
+    if !layout.width().is_finite()
+        || !layout.height().is_finite()
+        || layout.width() <= 0.0
+        || layout.height() <= 0.0
     {
         return Err(ErrorCode::InvalidArgument);
     }
@@ -202,33 +203,112 @@ pub fn validate_text_layout_size(layout: TextLayoutSize) -> Result<TextLayoutSiz
 pub fn resolve_text_layout_rect(text: &TextData) -> TextLayoutRect {
     TextLayoutRect {
         center: text.center,
-        width: sanitize_positive(text.width, 1.0),
-        height: sanitize_positive(text.height, text_line_height(text.font_size)),
+        width: sanitize_positive(text.width(), 1.0),
+        height: sanitize_positive(text.height(), text_line_height(text.font_size)),
         rotation: text.rotation,
     }
 }
 
-pub fn text_with_auto_resize_layout(
+// A host-measured `TextLayoutSize` is one wrap rectangle plus one painted ink
+// box. `TextData.layout` stores that value as a whole, so call sites cannot
+// copy wrap size and leave the previous text's ink behind.
+
+/// Stores a host-measured layout on an element the host has already
+/// positioned (creation, draft commit, measurement overlays): the wrap
+/// rectangle and ink box replace whatever the element carried before.
+pub fn text_with_measured_layout(
     text: &TextData,
     layout: TextLayoutSize,
 ) -> Result<TextData, ErrorCode> {
     let layout = validate_text_layout_size(layout)?;
     let mut updated = text.clone();
-    if updated.auto_resize {
-        let delta_x = match updated.horizontal_align {
-            TextHorizontalAlign::Left => (layout.width - updated.width) / 2.0,
-            TextHorizontalAlign::Center => 0.0,
-            TextHorizontalAlign::Right => -(layout.width - updated.width) / 2.0,
-        };
-        let delta_y = (layout.height - updated.height) / 2.0;
-        let cos = updated.rotation.cos();
-        let sin = updated.rotation.sin();
-        updated.center.x += cos * delta_x - sin * delta_y;
-        updated.center.y += sin * delta_x + cos * delta_y;
-        updated.width = layout.width;
-        updated.height = layout.height;
-    }
+    updated.layout = layout;
     Ok(updated)
+}
+
+/// Center shift that holds an element's pinned edges still while its measured
+/// size changes: horizontally per the alignment, vertically the top edge.
+/// One definition, shared by every layout application that pins an edge.
+fn pinned_alignment_deltas(text: &TextData, width: f64, height: f64) -> (f64, f64) {
+    let delta_x = match text.horizontal_align {
+        TextHorizontalAlign::Left => (width - text.width()) / 2.0,
+        TextHorizontalAlign::Center => 0.0,
+        TextHorizontalAlign::Right => -(width - text.width()) / 2.0,
+    };
+    (delta_x, (height - text.height()) / 2.0)
+}
+
+/// The center after moving by the pinned-edge deltas, rotated into document
+/// space so rotated elements pin the same edges.
+fn center_shifted_by(text: &TextData, delta_x: f64, delta_y: f64) -> Point<f64> {
+    let cos = text.rotation.cos();
+    let sin = text.rotation.sin();
+    Point::new(
+        text.center.x + cos * delta_x - sin * delta_y,
+        text.center.y + sin * delta_x + cos * delta_y,
+    )
+}
+
+/// Stores a host-measured layout on a label whose alignment edge is pinned by
+/// an ongoing placement (the serial drag holds the label's aligned edge under
+/// the pointer): the measured wrap rectangle and ink box always replace the
+/// stored geometry — including for labels that do not auto-resize, whose
+/// placeholder would otherwise silently survive — and the center shifts so the
+/// pinned edge holds still.
+pub fn text_with_pinned_alignment_layout(
+    text: &TextData,
+    layout: TextLayoutSize,
+) -> Result<TextData, ErrorCode> {
+    let layout = validate_text_layout_size(layout)?;
+    let mut updated = text.clone();
+    let (delta_x, delta_y) = pinned_alignment_deltas(&updated, layout.width(), layout.height());
+    updated.center = center_shifted_by(&updated, delta_x, delta_y);
+    updated.layout = layout;
+    Ok(updated)
+}
+
+/// Stores only the painted ink of a host measurement, for fixed-width elements
+/// that keep their configured wrap rectangle (creation from style defaults).
+pub fn text_with_measured_ink(
+    text: &TextData,
+    layout: TextLayoutSize,
+) -> Result<TextData, ErrorCode> {
+    let layout = validate_text_layout_size(layout)?;
+    let mut updated = text.clone();
+    updated.layout = updated.layout.with_ink(layout.ink());
+    Ok(updated)
+}
+
+/// Re-fits a fixed-width element to a re-measured layout: the wrap width
+/// stays, the measured height and ink box replace the stored ones, and the
+/// center follows the vertical growth so the painted top edge holds still.
+pub fn text_with_wrapped_layout(
+    text: &TextData,
+    layout: TextLayoutSize,
+) -> Result<TextData, ErrorCode> {
+    let layout = validate_text_layout_size(layout)?;
+    let mut updated = text.clone();
+    let (_, delta_y) = pinned_alignment_deltas(&updated, layout.width(), layout.height());
+    updated.center = center_shifted_by(&updated, 0.0, delta_y);
+    updated.layout = updated
+        .layout
+        .with_wrapped_height(layout.height(), layout.ink());
+    Ok(updated)
+}
+
+/// Applies a host-measured layout under the element's resize policy: an
+/// auto-resizing label pins its aligned edges exactly like an ongoing
+/// placement; a fixed-width label keeps its configured wrap rectangle.
+pub fn text_with_auto_resize_layout(
+    text: &TextData,
+    layout: TextLayoutSize,
+) -> Result<TextData, ErrorCode> {
+    if text.auto_resize {
+        text_with_pinned_alignment_layout(text, layout)
+    } else {
+        validate_text_layout_size(layout)?;
+        Ok(text.clone())
+    }
 }
 
 pub fn text_with_content_and_layout(
@@ -236,16 +316,13 @@ pub fn text_with_content_and_layout(
     content: impl Into<String>,
     layout: TextLayoutSize,
 ) -> Result<TextData, ErrorCode> {
-    let layout = validate_text_layout_size(layout)?;
     let mut updated = if text.auto_resize {
         text_with_auto_resize_layout(text, layout)?
     } else {
-        let mut updated = text.clone();
-        let delta_y = (layout.height - updated.height) / 2.0;
-        updated.center.x -= updated.rotation.sin() * delta_y;
-        updated.center.y += updated.rotation.cos() * delta_y;
-        updated.height = layout.height;
-        updated
+        // Fixed-width text keeps its wrap rectangle; the re-measured height
+        // and ink box still apply, otherwise the stored rectangle would no
+        // longer describe what the frame paints.
+        text_with_wrapped_layout(text, layout)?
     };
     updated.text = content.into();
     Ok(updated)
@@ -262,26 +339,136 @@ pub fn serial_number_bound_text_rect(
         .max(resolve_serial_number_stroke_width(serial) * 2.0);
     Ok(TextLayoutRect {
         center: Point {
-            x: serial.center.x + serial.diameter.max(0.0) / 2.0 + gap + layout.width / 2.0,
+            x: serial.center.x + serial.diameter.max(0.0) / 2.0 + gap + layout.width() / 2.0,
             y: serial.center.y,
         },
-        width: layout.width,
-        height: layout.height,
+        width: layout.width(),
+        height: layout.height(),
         rotation: 0.0,
     })
+}
+
+/// Geometry the frame actually paints for a text item. Serial connectors and
+/// host dirty regions must derive from this, not from a parallel reconstruction
+/// of the document element, so drafts and live previews cannot drift.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextPaintGeometry {
+    pub center: Point<f64>,
+    pub width: f64,
+    pub height: f64,
+    pub rotation: f64,
+    /// Painted ink size (widest line × laid-out height), resolved to at least
+    /// the item size when the host has not measured it. The painter paints the
+    /// background pill per line inside this box, aligned per the fields below.
+    pub content_width: f64,
+    pub content_height: f64,
+    pub horizontal_align: TextHorizontalAlign,
+    pub vertical_align: TextVerticalAlign,
+    pub has_text: bool,
+    pub font_size: f64,
+    pub fill: ColorRgba8,
+    pub stroke: ColorRgba8,
+    pub stroke_width: f64,
+}
+
+impl TextPaintGeometry {
+    pub fn from_text(text: &TextData) -> Self {
+        let (content_width, content_height) = text.layout.ink_or_wrap();
+        Self {
+            center: text.center,
+            width: text.width(),
+            height: text.height(),
+            rotation: text.rotation,
+            content_width,
+            content_height,
+            horizontal_align: text.horizontal_align,
+            vertical_align: text.vertical_align,
+            has_text: !text.text.is_empty(),
+            font_size: text.font_size,
+            fill: text.fill,
+            stroke: text.stroke,
+            stroke_width: text.stroke_width,
+        }
+    }
+}
+
+/// Center of the painted content box, offset from the item center by the
+/// alignment slack. Mirrors how the host painter positions the text document
+/// inside the item rectangle (`verticalTextOffsetForItem`, QTextOption
+/// alignment): the content hugs the aligned edge, the item rectangle keeps the
+/// wrap width and the stored layout height.
+pub fn text_content_center(text: &TextPaintGeometry) -> Point<f64> {
+    let width_slack = text.width - text.content_width;
+    let height_slack = text.height - text.content_height;
+    let offset_x = match text.horizontal_align {
+        TextHorizontalAlign::Left => -width_slack / 2.0,
+        TextHorizontalAlign::Center => 0.0,
+        TextHorizontalAlign::Right => width_slack / 2.0,
+    };
+    let offset_y = match text.vertical_align {
+        TextVerticalAlign::Top => -height_slack / 2.0,
+        TextVerticalAlign::Center => 0.0,
+        TextVerticalAlign::Bottom => height_slack / 2.0,
+    };
+    let cos = text.rotation.cos();
+    let sin = text.rotation.sin();
+    Point {
+        x: text.center.x + cos * offset_x - sin * offset_y,
+        y: text.center.y + sin * offset_x + cos * offset_y,
+    }
+}
+
+/// Geometry the frame actually paints for a serial badge. `stroke_width` and
+/// `corner_radius` are the resolved paint values, not the document storage
+/// values; converting a display item back into `SerialNumberData` and resolving
+/// again would double-scale the stroke.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SerialPaintGeometry {
+    pub center: Point<f64>,
+    pub diameter: f64,
+    pub rotation: f64,
+    pub serial_number_type: SerialNumberType,
+    pub stroke_width: f64,
+    pub corner_radius: f64,
+}
+
+impl SerialPaintGeometry {
+    pub fn from_serial(serial: &SerialNumberData) -> Self {
+        Self {
+            center: serial.center,
+            diameter: serial.diameter,
+            rotation: serial.rotation,
+            serial_number_type: serial.serial_number_type,
+            stroke_width: resolve_serial_number_stroke_width(serial),
+            corner_radius: resolve_serial_number_square_corner_radius(serial),
+        }
+    }
 }
 
 pub fn resolve_serial_number_text_connection(
     serial: &SerialNumberData,
     text: &TextData,
 ) -> Option<SerialNumberTextConnection> {
-    let line_width = resolve_serial_number_stroke_width(serial);
+    resolve_serial_paint_text_connection(
+        &SerialPaintGeometry::from_serial(serial),
+        &TextPaintGeometry::from_text(text),
+    )
+}
+
+pub fn resolve_serial_paint_text_connection(
+    serial: &SerialPaintGeometry,
+    text: &TextPaintGeometry,
+) -> Option<SerialNumberTextConnection> {
+    let line_width = serial.stroke_width;
     if line_width <= 0.0 || serial.diameter <= 0.0 || text.width <= 0.0 || text.height <= 0.0 {
         return None;
     }
 
-    let serial_bounds = serial_number_bounds(serial);
-    let text_bounds = text_bounds(text);
+    let serial_bounds = serial_paint_bounds(serial);
+    // Connectors ignore the text background fill and stroke halo: the
+    // underline always sits on the aligned ink box, the same geometry
+    // unfilled text resolves to.
+    let text_bounds = text_bounds_with_outset(text, 0.0, 0.0);
     if draw_rect_width(text_bounds) <= 0.0 || draw_rect_height(text_bounds) <= 0.0 {
         return None;
     }
@@ -297,7 +484,7 @@ pub fn resolve_serial_number_text_connection(
     }
     let ux = dx / distance;
     let uy = dy / distance;
-    let shape_edge_offset = serial_number_ray_edge_distance(serial, ux, uy);
+    let shape_edge_offset = serial_paint_ray_edge_distance(serial, ux, uy);
     let start_offset = shape_edge_offset + 8.0;
     if distance <= start_offset + half_line_width {
         return None;
@@ -317,9 +504,9 @@ pub fn resolve_serial_number_text_connection(
     })
 }
 
-fn serial_number_ray_edge_distance(serial: &SerialNumberData, ux: f64, uy: f64) -> f64 {
+fn serial_paint_ray_edge_distance(serial: &SerialPaintGeometry, ux: f64, uy: f64) -> f64 {
     let solid_outset = if serial.serial_number_type.is_solid() {
-        resolve_serial_number_stroke_width(serial) / 2.0
+        serial.stroke_width / 2.0
     } else {
         0.0
     };
@@ -332,8 +519,7 @@ fn serial_number_ray_edge_distance(serial: &SerialNumberData, ux: f64, uy: f64) 
     let sin_rotation = serial.rotation.sin();
     let local_x = cos_rotation * ux + sin_rotation * uy;
     let local_y = -sin_rotation * ux + cos_rotation * uy;
-    let radius =
-        (resolve_serial_number_square_corner_radius(serial) + solid_outset).min(half_extent);
+    let radius = (serial.corner_radius + solid_outset).min(half_extent);
     let inner_extent = half_extent - radius;
     let inside = |distance: f64| {
         let x = (local_x * distance).abs();
@@ -412,14 +598,12 @@ fn serial_text_attachment(
     }
 }
 
-pub fn text_bounds(text: &TextData) -> DrawRect {
-    let can_paint_text = !text.text.is_empty() && text.font_size > 0.0;
-    let stroke_outset = if can_paint_text && text.stroke.a != 0 {
-        text.stroke_width.max(0.0) / 2.0
-    } else {
-        0.0
-    };
-    let (fill_outset_x, fill_outset_y) = if text.fill.a != 0 && text.font_size > 0.0 {
+/// Padding the painter draws around every text line for the background fill.
+/// This is the published paint contract: the host painter consumes it through
+/// `snow_scene_text_fill_outset` instead of measuring its own padding. One
+/// definition, so the painted pill and the dirty regions cannot drift apart.
+pub fn text_fill_outset(text: &TextPaintGeometry) -> (f64, f64) {
+    if text.fill.a != 0 && text.font_size > 0.0 {
         let line_height = text_line_height(text.font_size);
         (
             line_height * TEXT_BACKGROUND_HORIZONTAL_PADDING_PER_LINE_HEIGHT,
@@ -427,34 +611,65 @@ pub fn text_bounds(text: &TextData) -> DrawRect {
         )
     } else {
         (0.0, 0.0)
+    }
+}
+
+/// Conservative ink outset combining the fill padding with the text stroke
+/// halo. Dirty regions and visibility culling must use this, because they have
+/// to cover everything the frame paints; edge decorations must not.
+pub fn text_paint_outset(text: &TextPaintGeometry) -> (f64, f64) {
+    let can_paint_text = text.has_text && text.font_size > 0.0;
+    let stroke_outset = if can_paint_text && text.stroke.a != 0 {
+        text.stroke_width.max(0.0) / 2.0
+    } else {
+        0.0
     };
-    let paint_outset_x = stroke_outset.max(fill_outset_x);
-    let paint_outset_y = stroke_outset.max(fill_outset_y);
+    let (fill_outset_x, fill_outset_y) = text_fill_outset(text);
+    (
+        stroke_outset.max(fill_outset_x),
+        stroke_outset.max(fill_outset_y),
+    )
+}
+
+pub fn text_paint_bounds(text: &TextPaintGeometry) -> DrawRect {
+    let (paint_outset_x, paint_outset_y) = text_paint_outset(text);
+    text_bounds_with_outset(text, paint_outset_x, paint_outset_y)
+}
+
+fn text_bounds_with_outset(text: &TextPaintGeometry, outset_x: f64, outset_y: f64) -> DrawRect {
+    let center = text_content_center(text);
     let (extent_x, extent_y) = rotated_rect_extents(
-        text.width + paint_outset_x * 2.0,
-        text.height + paint_outset_y * 2.0,
+        text.content_width + outset_x * 2.0,
+        text.content_height + outset_y * 2.0,
         text.rotation,
         0.0,
     );
     DrawRect::new(
-        text.center.x - extent_x,
-        text.center.y - extent_y,
-        text.center.x + extent_x,
-        text.center.y + extent_y,
+        center.x - extent_x,
+        center.y - extent_y,
+        center.x + extent_x,
+        center.y + extent_y,
     )
 }
 
-pub fn serial_number_bounds(serial: &SerialNumberData) -> DrawRect {
+pub fn text_bounds(text: &TextData) -> DrawRect {
+    text_paint_bounds(&TextPaintGeometry::from_text(text))
+}
+
+pub fn serial_paint_bounds(serial: &SerialPaintGeometry) -> DrawRect {
     let diameter = sanitize_non_negative(serial.diameter);
-    let stroke_outset = resolve_serial_number_stroke_width(serial);
     let (extent_x, extent_y) =
-        rotated_rect_extents(diameter, diameter, serial.rotation, stroke_outset);
+        rotated_rect_extents(diameter, diameter, serial.rotation, serial.stroke_width);
     DrawRect::new(
         serial.center.x - extent_x,
         serial.center.y - extent_y,
         serial.center.x + extent_x,
         serial.center.y + extent_y,
     )
+}
+
+pub fn serial_number_bounds(serial: &SerialNumberData) -> DrawRect {
+    serial_paint_bounds(&SerialPaintGeometry::from_serial(serial))
 }
 
 pub fn serial_number_rect_proxy(serial: &SerialNumberData) -> RectangleData {
@@ -514,7 +729,20 @@ pub fn serial_number_with_selection_rect(
 
 pub fn resolve_serial_number_stroke_width(serial: &SerialNumberData) -> f64 {
     let scale = sanitize_non_negative(serial.font_size) / SERIAL_NUMBER_STROKE_REFERENCE_FONT_SIZE;
-    sanitize_non_negative(serial.stroke_width * scale)
+    let multiplier = if serial.serial_number_type.supports_number() {
+        1.0
+    } else {
+        1.5
+    };
+    sanitize_non_negative(serial.stroke_width * scale * multiplier)
+}
+
+pub fn resolve_serial_number_data_diameter(serial: &SerialNumberData, min_diameter: f64) -> f64 {
+    if serial.serial_number_type.supports_number() {
+        resolve_serial_number_diameter(serial.number, serial.font_size, min_diameter)
+    } else {
+        sanitize_non_negative(serial.font_size) * 0.5
+    }
 }
 
 pub fn resolve_serial_number_square_corner_radius(serial: &SerialNumberData) -> f64 {
@@ -531,9 +759,12 @@ pub fn serial_number_with_label_style(
     font_size: f64,
 ) -> SerialNumberData {
     let mut updated = serial.clone();
-    updated.number = number.max(0);
+    if updated.serial_number_type.supports_number() {
+        updated.number = number.max(0);
+    }
     updated.font_size = font_size;
-    updated.diameter = resolve_serial_number_style_diameter(updated.number, updated.font_size);
+    updated.diameter =
+        resolve_serial_number_data_diameter(&updated, SerialNumberData::default().diameter);
     updated
 }
 
@@ -558,8 +789,8 @@ fn serial_number_label_size(number: i64, font_size: f64) -> (f64, f64) {
 }
 
 pub fn text_hit_test(text: &TextData, point: Point<f64>, hit_tolerance: f64) -> bool {
-    let width = sanitize_non_negative(text.width);
-    let height = sanitize_non_negative(text.height);
+    let width = sanitize_non_negative(text.width());
+    let height = sanitize_non_negative(text.height());
     if width <= 0.0 || height <= 0.0 {
         return false;
     }
@@ -611,8 +842,8 @@ pub fn validate_text(text: &TextData) -> Result<(), ErrorCode> {
     let scalar_fields = [
         text.center.x,
         text.center.y,
-        text.width,
-        text.height,
+        text.width(),
+        text.height(),
         text.rotation,
         text.font_size,
         text.stroke_width,
@@ -625,8 +856,8 @@ pub fn validate_text(text: &TextData) -> Result<(), ErrorCode> {
     if scalar_fields.iter().any(|value| !value.is_finite()) {
         return Err(ErrorCode::InvalidArgument);
     }
-    if text.width < 0.0
-        || text.height < 0.0
+    if text.width() < 0.0
+        || text.height() < 0.0
         || text.font_size < MIN_TEXT_FONT_SIZE
         || text.stroke_width < 0.0
         || text.corner_radii.top_left < 0.0
@@ -1033,7 +1264,9 @@ pub(crate) fn element_visible_bounds(element: &ElementRecord) -> Option<DrawRect
         }
         ElementData::Arrow(arrow) if !arrow_is_degenerate(arrow) => Some(arrow_bounds(arrow)),
         ElementData::FreeDraw(free_draw) => Some(crate::free_draw_bounds(free_draw)),
-        ElementData::Text(text) if text.width > 0.0 && text.height > 0.0 => Some(text_bounds(text)),
+        ElementData::Text(text) if text.width() > 0.0 && text.height() > 0.0 => {
+            Some(text_bounds(text))
+        }
         ElementData::SerialNumber(serial) if serial.diameter > 0.0 => {
             Some(serial_number_bounds(serial))
         }
@@ -1044,6 +1277,37 @@ pub(crate) fn element_visible_bounds(element: &ElementRecord) -> Option<DrawRect
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::InkBox;
+
+    /// Paint geometry whose content fills the item rectangle, centered both
+    /// ways — the state of a freshly measured auto-resize text.
+    fn centered_text_geometry(
+        center_x: f64,
+        center_y: f64,
+        width: f64,
+        height: f64,
+    ) -> TextPaintGeometry {
+        TextPaintGeometry {
+            center: Point::new(center_x, center_y),
+            width,
+            height,
+            rotation: 0.0,
+            content_width: width,
+            content_height: height,
+            horizontal_align: TextHorizontalAlign::Center,
+            vertical_align: TextVerticalAlign::Center,
+            has_text: true,
+            font_size: 40.0,
+            fill: ColorRgba8 {
+                r: 0xff,
+                g: 0xff,
+                b: 0xff,
+                a: 0xff,
+            },
+            stroke: ColorRgba8::default(),
+            stroke_width: 0.0,
+        }
+    }
 
     #[test]
     fn text_defaults_use_product_color_and_corner_radius() {
@@ -1113,6 +1377,51 @@ mod tests {
     }
 
     #[test]
+    fn circle_geometry_ignores_label_and_scales_with_font_size() {
+        for font_size in [6.0, 24.0, 48.0, 512.0] {
+            let circle = SerialNumberData {
+                serial_number_type: crate::SerialNumberType::Circle,
+                font_size,
+                number: 987654321,
+                font_family: Some("Unused font".to_owned()),
+                stroke_width: 2.0,
+                ..SerialNumberData::default()
+            };
+            let sized = serial_number_with_label_style(&circle, 7, font_size);
+            assert_eq!(sized.number, circle.number);
+            assert_eq!(sized.font_family, circle.font_family);
+            assert_eq!(sized.diameter, font_size * 0.5);
+            let stroke = resolve_serial_number_stroke_width(&sized);
+            assert!((stroke - font_size * 0.15).abs() < 1e-9);
+            let bounds = serial_number_bounds(&sized);
+            let outer_radius = sized.diameter / 2.0 + stroke / 2.0;
+            assert!(bounds.max_x >= outer_radius);
+            assert!(serial_number_hit_test(
+                &sized,
+                Point::new(outer_radius - 0.01, 0.0),
+                0.0
+            ));
+            assert!(!serial_number_hit_test(
+                &sized,
+                Point::new(outer_radius + 0.01, 0.0),
+                0.0
+            ));
+            assert!(!serial_number_hit_test(
+                &sized,
+                Point::new(outer_radius, outer_radius),
+                0.0
+            ));
+            let mut rect = serial_number_rect_proxy(&sized);
+            rect.width *= 2.0;
+            rect.height *= 2.0;
+            let resized = serial_number_with_selection_rect(&sized, rect);
+            assert_eq!(resized.diameter, resized.font_size * 0.5);
+            assert_eq!(resized.font_size, font_size * 2.0);
+            assert!((resolve_serial_number_stroke_width(&resized) - stroke * 2.0).abs() < 1e-9);
+        }
+    }
+
+    #[test]
     fn serial_number_square_corner_radius_scales_with_font_size() {
         let serial = SerialNumberData {
             font_size: 35.0,
@@ -1156,8 +1465,7 @@ mod tests {
     fn square_connector_starts_at_square_edge_plus_existing_gap() {
         let text = TextData {
             center: Point::new(100.0, 100.0),
-            width: 40.0,
-            height: 20.0,
+            layout: TextLayoutSize::new(40.0, 20.0),
             ..TextData::default()
         };
         let circle = SerialNumberData {
@@ -1179,6 +1487,421 @@ mod tests {
         assert!(square_connection.start.y > circle_connection.start.y);
         assert!(solid_square_connection.start.x > square_connection.start.x);
         assert!(solid_square_connection.start.y > square_connection.start.y);
+    }
+
+    #[test]
+    fn connector_underline_ignores_text_fill() {
+        let text = TextData {
+            center: Point::new(120.0, 100.0),
+            layout: TextLayoutSize::new(40.0, 20.0),
+            text: "filled".to_owned(),
+            font_size: 20.0,
+            fill: ColorRgba8 {
+                r: 0xff,
+                g: 0xff,
+                b: 0xff,
+                a: 0xff,
+            },
+            ..TextData::default()
+        };
+        let serial = SerialNumberData {
+            center: Point::new(0.0, 0.0),
+            diameter: 40.0,
+            font_size: 20.0,
+            stroke_width: 2.0,
+            ..SerialNumberData::default()
+        };
+
+        // The connector geometry must not depend on the background fill: a
+        // filled label resolves exactly like the same label without a fill.
+        // Occlusion by the fill is handled by paint order (the connector
+        // renders above the text), never by moving this centerline.
+        let mut unfilled = text.clone();
+        unfilled.fill = ColorRgba8::default();
+        assert_eq!(
+            resolve_serial_number_text_connection(&serial, &text),
+            resolve_serial_number_text_connection(&serial, &unfilled)
+        );
+        let connection = resolve_serial_number_text_connection(&serial, &text).unwrap();
+        let baseline_start = connection.text_baseline_start.unwrap();
+        let baseline_end = connection.text_baseline_end.unwrap();
+        assert!((baseline_start.x - (120.0 - 20.0)).abs() < 1e-9);
+        assert!((baseline_end.x - (120.0 + 20.0)).abs() < 1e-9);
+        assert!((baseline_start.y - (100.0 + 10.0)).abs() < 1e-9);
+        assert!((baseline_end.y - (100.0 + 10.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn text_paint_outset_follows_line_height_padding_contract() {
+        let geometry = centered_text_geometry(130.0, 10.0, 80.0, 40.0);
+        let line_height = 40.0_f64.max(1.0) * 1.2;
+        let (outset_x, outset_y) = text_paint_outset(&geometry);
+        assert!((outset_x - line_height * 0.32).abs() < 1e-9);
+        assert!((outset_y - line_height * 0.1).abs() < 1e-9);
+
+        let bounds = text_paint_bounds(&geometry);
+        assert!((bounds.min_x - (130.0 - 40.0 - outset_x)).abs() < 1e-9);
+        assert!((bounds.max_x - (130.0 + 40.0 + outset_x)).abs() < 1e-9);
+        assert!((bounds.max_y - (10.0 + 20.0 + outset_y)).abs() < 1e-9);
+
+        let (fill_x, fill_y) = text_fill_outset(&geometry);
+        assert_eq!((fill_x, fill_y), (outset_x, outset_y));
+    }
+
+    #[test]
+    fn fill_outset_stays_on_pill_edge_when_stroke_dominates() {
+        let mut geometry = centered_text_geometry(130.0, 10.0, 80.0, 40.0);
+        geometry.stroke = ColorRgba8 {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 0xff,
+        };
+        geometry.stroke_width = 40.0;
+        let line_height = 40.0_f64.max(1.0) * 1.2;
+        let (fill_x, fill_y) = text_fill_outset(&geometry);
+        assert!((fill_x - line_height * 0.32).abs() < 1e-9);
+        assert!((fill_y - line_height * 0.1).abs() < 1e-9);
+
+        let (paint_x, paint_y) = text_paint_outset(&geometry);
+        assert_eq!(paint_x, 20.0);
+        assert_eq!(paint_y, 20.0);
+        assert!(
+            fill_y < paint_y,
+            "the painted pill edge must stay below the stroke-inclusive bounds"
+        );
+    }
+
+    #[test]
+    fn serial_connector_ignores_dominant_text_stroke_and_fill() {
+        let mut text = centered_text_geometry(120.0, 0.0, 80.0, 40.0);
+        text.stroke = ColorRgba8 {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 0xff,
+        };
+        text.stroke_width = 40.0;
+        let serial = SerialPaintGeometry {
+            center: Point::new(0.0, 0.0),
+            diameter: 24.0,
+            rotation: 0.0,
+            serial_number_type: SerialNumberType::OutlinedCircle,
+            stroke_width: 4.0,
+            corner_radius: 0.0,
+        };
+        let connection = resolve_serial_paint_text_connection(&serial, &text)
+            .expect("dominant text stroke must not suppress the connector");
+        let baseline_start = connection
+            .text_baseline_start
+            .expect("side attachment should emit a baseline");
+        assert!((baseline_start.y - (0.0 + 20.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn serial_paint_geometry_uses_resolved_stroke_not_storage_width() {
+        let serial = SerialNumberData {
+            font_size: 40.0,
+            stroke_width: 2.0,
+            ..SerialNumberData::default()
+        };
+        let paint = SerialPaintGeometry::from_serial(&serial);
+        assert!((paint.stroke_width - 4.0).abs() < 1e-9);
+
+        let mut doubled = serial.clone();
+        doubled.stroke_width = paint.stroke_width;
+        assert!(
+            (resolve_serial_number_stroke_width(&doubled) - 8.0).abs() < 1e-9,
+            "feeding a display-item stroke back into SerialNumberData would double-scale"
+        );
+    }
+
+    #[test]
+    fn resolve_serial_paint_text_connection_matches_document_wrapper() {
+        let text = TextData {
+            center: Point::new(120.0, 0.0),
+            layout: TextLayoutSize::new(80.0, 40.0),
+            text: "note".to_owned(),
+            font_size: 40.0,
+            fill: ColorRgba8 {
+                r: 0xff,
+                g: 0xff,
+                b: 0xff,
+                a: 0xff,
+            },
+            ..TextData::default()
+        };
+        let serial = SerialNumberData {
+            center: Point::new(0.0, 0.0),
+            diameter: 24.0,
+            font_size: 40.0,
+            stroke_width: 2.0,
+            ..SerialNumberData::default()
+        };
+        assert_eq!(
+            resolve_serial_paint_text_connection(
+                &SerialPaintGeometry::from_serial(&serial),
+                &TextPaintGeometry::from_text(&text),
+            ),
+            resolve_serial_number_text_connection(&serial, &text)
+        );
+    }
+
+    #[test]
+    fn unmeasured_content_falls_back_to_item_rectangle() {
+        let text = TextData {
+            center: Point::new(50.0, 60.0),
+            layout: TextLayoutSize::new(80.0, 40.0),
+            ..TextData::default()
+        };
+        let geometry = TextPaintGeometry::from_text(&text);
+        assert_eq!(geometry.content_width, 80.0);
+        assert_eq!(geometry.content_height, 40.0);
+    }
+
+    #[test]
+    fn content_box_follows_alignment_slack() {
+        let mut geometry = centered_text_geometry(100.0, 100.0, 80.0, 40.0);
+        geometry.content_width = 40.0;
+        geometry.content_height = 20.0;
+
+        geometry.horizontal_align = TextHorizontalAlign::Left;
+        geometry.vertical_align = TextVerticalAlign::Top;
+        let top_left = text_content_center(&geometry);
+        assert!((top_left.x - (100.0 - 20.0)).abs() < 1e-9);
+        assert!((top_left.y - (100.0 - 10.0)).abs() < 1e-9);
+
+        geometry.horizontal_align = TextHorizontalAlign::Right;
+        geometry.vertical_align = TextVerticalAlign::Bottom;
+        let bottom_right = text_content_center(&geometry);
+        assert!((bottom_right.x - (100.0 + 20.0)).abs() < 1e-9);
+        assert!((bottom_right.y - (100.0 + 10.0)).abs() < 1e-9);
+
+        geometry.horizontal_align = TextHorizontalAlign::Center;
+        geometry.vertical_align = TextVerticalAlign::Center;
+        let centered = text_content_center(&geometry);
+        assert!((centered.x - 100.0).abs() < 1e-9);
+        assert!((centered.y - 100.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn pill_box_tracks_aligned_content_not_wrap_rectangle() {
+        let mut geometry = centered_text_geometry(100.0, 100.0, 80.0, 40.0);
+        // A wrapped label: the wrap rectangle is 80×40, the painted ink block
+        // only 40×20, left- and top-aligned. No stroke, so the paint bounds are
+        // the fill-padded pill around that block.
+        geometry.content_width = 40.0;
+        geometry.content_height = 20.0;
+        geometry.horizontal_align = TextHorizontalAlign::Left;
+        geometry.vertical_align = TextVerticalAlign::Top;
+        let (_, fill_outset_y) = text_fill_outset(&geometry);
+
+        let bounds = text_paint_bounds(&geometry);
+        // Top-left aligned content: the pill hugs the top-left of the item
+        // rectangle, so its bottom sits at item top + content height + padding.
+        assert!((bounds.max_y - (100.0 - 20.0 + 20.0 + fill_outset_y)).abs() < 1e-9);
+        assert!(bounds.max_y < 100.0 + 20.0 + fill_outset_y);
+    }
+
+    #[test]
+    fn connector_underlines_wrapped_ink_block_not_wrap_rectangle() {
+        let mut text = centered_text_geometry(120.0, 0.0, 80.0, 40.0);
+        text.content_width = 40.0;
+        text.content_height = 20.0;
+        text.horizontal_align = TextHorizontalAlign::Left;
+        let serial = SerialPaintGeometry {
+            center: Point::new(0.0, 0.0),
+            diameter: 24.0,
+            rotation: 0.0,
+            serial_number_type: SerialNumberType::OutlinedCircle,
+            stroke_width: 4.0,
+            corner_radius: 0.0,
+        };
+
+        let connection = resolve_serial_paint_text_connection(&serial, &text)
+            .expect("wrapped ink must still emit a connector");
+        let baseline_start = connection
+            .text_baseline_start
+            .expect("side attachment should emit a baseline");
+        let baseline_end = connection.text_baseline_end.unwrap();
+        // Left-aligned 40-wide ink inside an 80-wide wrap rectangle: the
+        // underline spans the ink block on the left, not the wrap rectangle,
+        // with no fill padding added.
+        assert!((baseline_start.x - (120.0 - 40.0)).abs() < 1e-9);
+        assert!((baseline_end.x - (120.0 - 40.0 + 40.0)).abs() < 1e-9);
+        assert!((baseline_start.y - (0.0 + 10.0)).abs() < 1e-9);
+        assert!((baseline_end.y - baseline_start.y).abs() < 1e-9);
+    }
+
+    #[test]
+    fn rotated_content_center_rotates_the_alignment_offset() {
+        let mut geometry = centered_text_geometry(0.0, 0.0, 80.0, 40.0);
+        geometry.content_width = 40.0;
+        geometry.rotation = std::f64::consts::FRAC_PI_2;
+        // Right align on rotated text: the +20 local-x offset rotates to +20
+        // on the world y axis (sin(90°) = 1).
+        geometry.horizontal_align = TextHorizontalAlign::Right;
+        let center = text_content_center(&geometry);
+        assert!((center.x - 0.0).abs() < 1e-9);
+        assert!((center.y - 20.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn auto_resize_layout_stores_measured_ink() {
+        let text = TextData {
+            layout: TextLayoutSize::new(90.0, 48.0),
+            ..TextData::default()
+        };
+        let updated = text_with_auto_resize_layout(
+            &text,
+            TextLayoutSize::with_content(84.0, 48.0, 79.0, 48.0),
+        )
+        .unwrap();
+        assert_eq!(updated.layout.ink(), InkBox::new(79.0, 48.0));
+
+        // Hosts that do not measure ink store `None`; a later true
+        // measurement replaces it.
+        let unmeasured =
+            text_with_auto_resize_layout(&text, TextLayoutSize::new(84.0, 48.0)).unwrap();
+        assert_eq!(unmeasured.layout.ink(), None);
+    }
+
+    #[test]
+    fn pinned_alignment_layout_always_stores_the_measurement() {
+        // The serial drag attaches its label with a placeholder and corrects it
+        // with one host measurement. A label that does not auto-resize must
+        // receive that measurement too — dropping it would leave the toolbar
+        // path and the drag path with permanently different label geometry.
+        let text = TextData {
+            auto_resize: false,
+            ..TextData::default()
+        };
+        let updated = text_with_pinned_alignment_layout(
+            &text,
+            TextLayoutSize::with_content(31.0, 36.0, 7.0, 36.0),
+        )
+        .unwrap();
+        assert_eq!(updated.width(), 31.0);
+        assert_eq!(updated.height(), 36.0);
+        assert_eq!(updated.layout.ink(), InkBox::new(7.0, 36.0));
+
+        // The pinned left edge of a left-aligned label holds still while the
+        // measured layout replaces the placeholder.
+        assert!((updated.center.x - (text.center.x + (31.0 - text.width()) / 2.0)).abs() < 1e-9);
+        assert!(
+            ((updated.center.x - updated.width() / 2.0) - (text.center.x - text.width() / 2.0))
+                .abs()
+                < 1e-9,
+            "left edge stays at the pointer anchor"
+        );
+    }
+
+    #[test]
+    fn measured_layout_replaces_stale_rectangle_and_ink_together() {
+        // Regression shape of the serial-label edit bug: the element carries
+        // the ink of its creation-time text, the host re-measures after an
+        // edit, and the stored geometry must follow as one unit.
+        let text = TextData {
+            layout: TextLayoutSize::with_content(31.0, 36.0, 6.0, 36.0),
+            ..TextData::default()
+        };
+        let updated = text_with_measured_layout(
+            &text,
+            TextLayoutSize::with_content(200.0, 60.0, 188.0, 60.0),
+        )
+        .unwrap();
+        assert_eq!((updated.width(), updated.height()), (200.0, 60.0));
+        assert_eq!(updated.layout.ink(), InkBox::new(188.0, 60.0));
+        assert_eq!(
+            updated.center, text.center,
+            "positioning stays with callers"
+        );
+        assert_eq!(updated.text, text.text);
+    }
+
+    #[test]
+    fn measured_layout_rejects_invalid_host_size() {
+        let text = TextData::default();
+        assert_eq!(
+            text_with_measured_layout(&text, TextLayoutSize::new(0.0, 10.0)),
+            Err(ErrorCode::InvalidArgument)
+        );
+        assert_eq!(
+            text_with_measured_ink(&text, TextLayoutSize::new(f64::NAN, 10.0)),
+            Err(ErrorCode::InvalidArgument)
+        );
+    }
+
+    #[test]
+    fn layout_size_keeps_ink_when_replacing_wrap() {
+        let layout = TextLayoutSize::with_content(80.0, 40.0, 44.0, 40.0);
+        let resized = layout.with_wrap(120.0, 40.0);
+        assert_eq!(resized.width(), 120.0);
+        assert_eq!(resized.height(), 40.0);
+        assert_eq!(resized.ink(), InkBox::new(44.0, 40.0));
+
+        let scaled = layout.scaled_ink(2.0);
+        assert_eq!((scaled.width(), scaled.height()), (80.0, 40.0));
+        assert_eq!(scaled.ink(), InkBox::new(88.0, 80.0));
+        assert_eq!(
+            TextLayoutSize::new(80.0, 40.0).scaled_ink(2.0).ink(),
+            None,
+            "unmeasured ink stays unmeasured so consumers still fall back"
+        );
+    }
+
+    #[test]
+    fn measured_ink_keeps_the_configured_wrap_rectangle() {
+        let text = TextData {
+            auto_resize: false,
+            layout: TextLayoutSize::with_content(160.0, 40.0, 120.0, 40.0),
+            ..TextData::default()
+        };
+        let updated =
+            text_with_measured_ink(&text, TextLayoutSize::with_content(90.0, 40.0, 84.0, 40.0))
+                .unwrap();
+        assert_eq!(
+            (updated.width(), updated.height()),
+            (160.0, 40.0),
+            "fixed-width creation keeps the configured rectangle"
+        );
+        assert_eq!(updated.layout.ink(), InkBox::new(84.0, 40.0));
+    }
+
+    #[test]
+    fn wrapped_layout_keeps_width_refits_height_and_ink_and_holds_the_top_edge() {
+        let text = TextData {
+            auto_resize: false,
+            layout: TextLayoutSize::with_content(120.0, 40.0, 100.0, 40.0),
+            center: Point::new(50.0, 70.0),
+            ..TextData::default()
+        };
+        let updated =
+            text_with_wrapped_layout(&text, TextLayoutSize::with_content(120.0, 60.0, 88.0, 60.0))
+                .unwrap();
+        assert_eq!(updated.width(), 120.0, "wrap rectangle must stay fixed");
+        assert_eq!(updated.height(), 60.0);
+        assert_eq!(updated.layout.ink(), InkBox::new(88.0, 60.0));
+        // The center follows half the growth so the top edge holds still.
+        assert_eq!(updated.center, Point::new(50.0, 80.0));
+    }
+
+    #[test]
+    fn fixed_width_text_layout_still_refits_ink() {
+        let text = TextData {
+            auto_resize: false,
+            layout: TextLayoutSize::with_content(120.0, 40.0, 100.0, 40.0),
+            ..TextData::default()
+        };
+        let updated = text_with_content_and_layout(
+            &text,
+            "wrapped note",
+            TextLayoutSize::with_content(120.0, 60.0, 88.0, 60.0),
+        )
+        .unwrap();
+        assert_eq!(updated.width(), 120.0, "wrap rectangle must stay fixed");
+        assert_eq!(updated.height(), 60.0);
+        assert_eq!(updated.layout.ink(), InkBox::new(88.0, 60.0));
     }
 
     #[test]
@@ -1216,8 +1939,7 @@ mod tests {
     fn text_bounds_include_only_visible_stroke_paint() {
         let visible_stroke = TextData {
             center: Point::new(10.0, 20.0),
-            width: 100.0,
-            height: 40.0,
+            layout: TextLayoutSize::new(100.0, 40.0),
             text: "outlined".to_owned(),
             fill: ColorRgba8::default(),
             stroke: ColorRgba8 {
@@ -1249,8 +1971,7 @@ mod tests {
     fn text_bounds_include_background_paint_padding() {
         let text = TextData {
             center: Point::new(0.0, 0.0),
-            width: 100.0,
-            height: 40.0,
+            layout: TextLayoutSize::new(100.0, 40.0),
             text: "filled".to_owned(),
             font_size: 20.0,
             fill: ColorRgba8 {

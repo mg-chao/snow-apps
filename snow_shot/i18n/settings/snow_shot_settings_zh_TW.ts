@@ -525,6 +525,10 @@
             <source>The clipboard is unavailable.</source>
             <translation>剪貼簿無法使用。</translation>
         </message>
+        <message>
+            <source>The configuration could not be imported.</source>
+            <translation>無法匯入設定。</translation>
+        </message>
     </context>
     <context>
         <name>SettingsCatalog</name>
@@ -637,6 +641,10 @@
             <translation>期限</translation>
         </message>
         <message>
+            <source>All current application settings will be replaced by the archive's values. Some changes take effect after the app restarts.</source>
+            <translation>目前所有應用程式設定都將被壓縮檔中的值取代。部分變更將在應用程式重新啟動後生效。</translation>
+        </message>
+        <message>
             <source>All screenshot history will be removed</source>
             <translation>所有截圖歷史都將被移除</translation>
         </message>
@@ -693,6 +701,10 @@
             <translation>箭頭</translation>
         </message>
         <message>
+            <source>Ask for confirmation when using the Cancel screenshot shortcut.</source>
+            <translation>使用「取消截圖」快速鍵時要求確認。</translation>
+        </message>
+        <message>
             <source>Auto</source>
             <translation>自動</translation>
         </message>
@@ -729,8 +741,16 @@
             <translation>BMP</translation>
         </message>
         <message>
+            <source>Back up and restore application settings</source>
+            <translation>備份和還原應用程式設定</translation>
+        </message>
+        <message>
             <source>Background Fill</source>
             <translation>背景填充</translation>
+        </message>
+        <message>
+            <source>Backup settings</source>
+            <translation>備份設定</translation>
         </message>
         <message>
             <source>Balance encoding speed against compression efficiency</source>
@@ -973,6 +993,18 @@
             <translation>色彩選擇器顯示模式</translation>
         </message>
         <message>
+            <source>Configuration</source>
+            <translation>設定</translation>
+        </message>
+        <message>
+            <source>Configuration exported to the clipboard.</source>
+            <translation>設定已匯出到剪貼簿。</translation>
+        </message>
+        <message>
+            <source>Configuration imported.</source>
+            <translation>設定已匯入。</translation>
+        </message>
+        <message>
             <source>Configure application process behavior</source>
             <translation>設定應用程式處理程序行為</translation>
         </message>
@@ -1009,8 +1041,16 @@
             <translation>設定截圖、釘選與螢幕錄製工具列</translation>
         </message>
         <message>
+            <source>Confirm before exiting screenshot via shortcut</source>
+            <translation>使用快速鍵結束截圖前確認</translation>
+        </message>
+        <message>
             <source>Control when the screenshot color picker is visible</source>
             <translation>控制截圖色彩選擇器的顯示時機</translation>
+        </message>
+        <message>
+            <source>Copy all application settings as a zip archive to the clipboard</source>
+            <translation>將全部應用程式設定打包成 zip 壓縮檔並複製到剪貼簿</translation>
         </message>
         <message>
             <source>Copy color</source>
@@ -1269,8 +1309,20 @@
             <translation>結束</translation>
         </message>
         <message>
+            <source>Export</source>
+            <translation>匯出</translation>
+        </message>
+        <message>
+            <source>Export configuration</source>
+            <translation>匯出設定</translation>
+        </message>
+        <message>
             <source>Export recording</source>
             <translation>匯出錄影</translation>
+        </message>
+        <message>
+            <source>Export settings</source>
+            <translation>匯出設定</translation>
         </message>
         <message>
             <source>Extended Features Settings</source>
@@ -1433,6 +1485,22 @@
             <translation>圖像大小</translation>
         </message>
         <message>
+            <source>Import</source>
+            <translation>匯入</translation>
+        </message>
+        <message>
+            <source>Import configuration</source>
+            <translation>匯入設定</translation>
+        </message>
+        <message>
+            <source>Import configuration?</source>
+            <translation>匯入設定？</translation>
+        </message>
+        <message>
+            <source>Import settings</source>
+            <translation>匯入設定</translation>
+        </message>
+        <message>
             <source>Include the displayed text recognition or original-image translation result when saving an image.</source>
             <translation>儲存圖片時包含目前顯示的文字辨識或原圖翻譯結果。</translation>
         </message>
@@ -1465,6 +1533,10 @@
             <translation>JPEG XL</translation>
         </message>
         <message>
+            <source>Jump to Translation Page</source>
+            <translation>跳轉至翻譯頁面</translation>
+        </message>
+        <message>
             <source>Keep records permanently</source>
             <translation>永久保留記錄</translation>
         </message>
@@ -1487,6 +1559,10 @@
         <message>
             <source>Language</source>
             <translation>語言</translation>
+        </message>
+        <message>
+            <source>Last used tool</source>
+            <translation>上次使用的工具</translation>
         </message>
         <message>
             <source>Launch as administrator</source>
@@ -1857,6 +1933,10 @@
             <translation>即時</translation>
         </message>
         <message>
+            <source>Recapture</source>
+            <translation>重新擷取</translation>
+        </message>
+        <message>
             <source>Recognize text</source>
             <translation>文字辨識</translation>
         </message>
@@ -1909,6 +1989,10 @@
             <translation>重做</translation>
         </message>
         <message>
+            <source>Remember last used tool</source>
+            <translation>記住上次使用的工具</translation>
+        </message>
+        <message>
             <source>Remove cached screenshot-history thumbnails</source>
             <translation>刪除已快取的截圖歷史縮圖</translation>
         </message>
@@ -1953,8 +2037,16 @@
             <translation>以系統管理員身分重新啟動</translation>
         </message>
         <message>
+            <source>Restore application settings from a configuration archive</source>
+            <translation>從設定壓縮檔還原應用程式設定</translation>
+        </message>
+        <message>
             <source>Restore original screen colors</source>
             <translation>還原螢幕原始色彩</translation>
+        </message>
+        <message>
+            <source>Restore settings</source>
+            <translation>還原設定</translation>
         </message>
         <message>
             <source>Retention period</source>
@@ -2233,6 +2325,10 @@
             <translation>截圖工具與游標移動的快速鍵</translation>
         </message>
         <message>
+            <source>Show a button in the text recognition toolbar that sends recognized text to the Translation page.</source>
+            <translation>在文字辨識工具列中顯示一個按鈕，將辨識出的文字傳送到翻譯頁面。</translation>
+        </message>
+        <message>
             <source>Show main interface</source>
             <translation>顯示主介面</translation>
         </message>
@@ -2331,6 +2427,10 @@
         <message>
             <source>Start a screen recording, or stop and copy the current recording</source>
             <translation>開始螢幕錄製，或停止並複製目前的錄製內容</translation>
+        </message>
+        <message>
+            <source>Start new screenshot sessions and pin drawing mode with the last used drawing tool instead of the move tool</source>
+            <translation>開始新的截圖作業或進入貼圖繪製模式時，自動啟用上次使用的繪圖工具，而不是移動工具</translation>
         </message>
         <message>
             <source>Start/pause/resume recording</source>
@@ -2567,6 +2667,10 @@
         <message>
             <source>Write the screenshot to a file and copy that file to the clipboard</source>
             <translation>將截圖寫入檔案並將該檔案複製到剪貼簿</translation>
+        </message>
+        <message>
+            <source>Zip archives (*.zip);;All files (*.*)</source>
+            <translation>Zip 壓縮檔 (*.zip);;所有檔案 (*.*)</translation>
         </message>
     </context>
     <context>
@@ -2894,6 +2998,29 @@ Unavailable: %2</source>
         <message>
             <source>Global mouse input is unavailable. Check permissions and retry.</source>
             <translation>全域滑鼠輸入無法使用。請檢查權限後重試。</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::storage::ConfigurationArchive</name>
+        <message>
+            <source>The configuration archive contains no compatible settings.</source>
+            <translation>該設定壓縮檔不包含相容的設定。</translation>
+        </message>
+        <message>
+            <source>The configuration archive could not be created.</source>
+            <translation>無法建立設定壓縮檔。</translation>
+        </message>
+        <message>
+            <source>The configuration archive was created by a newer version of Snow Shot.</source>
+            <translation>該設定壓縮檔由較新版本的 Snow Shot 建立。</translation>
+        </message>
+        <message>
+            <source>The file is not a Snow Shot configuration archive.</source>
+            <translation>該檔案不是 Snow Shot 設定壓縮檔。</translation>
+        </message>
+        <message>
+            <source>The file is not a valid configuration archive.</source>
+            <translation>該檔案不是有效的設定壓縮檔。</translation>
         </message>
     </context>
     <context>

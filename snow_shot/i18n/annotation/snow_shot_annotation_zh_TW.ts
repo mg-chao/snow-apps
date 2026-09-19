@@ -92,6 +92,14 @@
             <translation>取消截圖</translation>
         </message>
         <message>
+            <source>Capture cursor</source>
+            <translation>擷取游標</translation>
+        </message>
+        <message>
+            <source>Circle</source>
+            <translation>圓形</translation>
+        </message>
+        <message>
             <source>Close recording</source>
             <translation>關閉錄製</translation>
         </message>
@@ -400,6 +408,10 @@
             <translation>反相</translation>
         </message>
         <message>
+            <source>Jump to Translation Page</source>
+            <translation>跳轉至翻譯頁面</translation>
+        </message>
+        <message>
             <source>Keep line breaks</source>
             <translation>保留換行</translation>
         </message>
@@ -558,6 +570,10 @@
         <message>
             <source>Quick save</source>
             <translation>快速儲存</translation>
+        </message>
+        <message>
+            <source>Recapture</source>
+            <translation>重新擷取</translation>
         </message>
         <message>
             <source>Record microphone</source>

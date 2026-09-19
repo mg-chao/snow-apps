@@ -92,6 +92,14 @@
             <translation>Cancel screenshot</translation>
         </message>
         <message>
+            <source>Capture cursor</source>
+            <translation>Capture cursor</translation>
+        </message>
+        <message>
+            <source>Circle</source>
+            <translation>Circle</translation>
+        </message>
+        <message>
             <source>Close recording</source>
             <translation>Close recording</translation>
         </message>
@@ -400,6 +408,10 @@
             <translation>Inversion</translation>
         </message>
         <message>
+            <source>Jump to Translation Page</source>
+            <translation>Jump to Translation Page</translation>
+        </message>
+        <message>
             <source>Keep line breaks</source>
             <translation>Keep line breaks</translation>
         </message>
@@ -558,6 +570,10 @@
         <message>
             <source>Quick save</source>
             <translation>Quick save</translation>
+        </message>
+        <message>
+            <source>Recapture</source>
+            <translation>Recapture</translation>
         </message>
         <message>
             <source>Record microphone</source>

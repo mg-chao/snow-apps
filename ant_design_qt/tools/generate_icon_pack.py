@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -337,6 +338,40 @@ def _render_source(data: dict[str, Any], entries: list[Entry], header_name: str)
     return "\n".join(lines)
 
 
+def _clang_format(content: str, path: Path) -> str:
+    """Format generated output with the .clang-format governing ``path``.
+
+    ``--assume-filename`` makes clang-format read stdin while resolving the
+    style configuration from the destination file's directory, so packs under
+    different projects pick up that project's nested .clang-format. Reformat
+    until the output stabilizes: a first pass over long raw-string literals can
+    leave lines that only a second pass learns to break.
+    """
+    for _ in range(5):
+        try:
+            completed = subprocess.run(
+                ["clang-format", "--style=file", f"--assume-filename={path}"],
+                # Pass bytes: text mode would translate \n to \r\n on Windows
+                # and clang-format reaches a different fixpoint on CRLF input.
+                input=content.encode("utf-8"),
+                capture_output=True,
+            )
+        except FileNotFoundError as error:
+            raise ManifestError(
+                "clang-format was not found on PATH; it is required to keep generated icon packs format-clean"
+            ) from error
+        if completed.returncode != 0:
+            detail = completed.stderr.decode("utf-8", "replace").strip() or (
+                f"exit code {completed.returncode}"
+            )
+            raise ManifestError(f"clang-format failed for {path}: {detail}")
+        formatted = completed.stdout.decode("utf-8").replace("\r\n", "\n")
+        if formatted == content:
+            return formatted
+        content = formatted
+    raise ManifestError(f"clang-format output for {path} did not stabilize")
+
+
 def _check_or_write(path: Path, expected: str, check: bool) -> bool:
     if check:
         try:
@@ -361,8 +396,8 @@ def main() -> int:
     args = parser.parse_args()
     try:
         data, entries = _load_manifest(args.manifest.resolve())
-        header = _render_header(data, entries, args.header.name)
-        source = _render_source(data, entries, args.header.name)
+        header = _clang_format(_render_header(data, entries, args.header.name), args.header)
+        source = _clang_format(_render_source(data, entries, args.header.name), args.source)
     except ManifestError as error:
         print(f"icon manifest error: {error}", file=sys.stderr)
         return 2

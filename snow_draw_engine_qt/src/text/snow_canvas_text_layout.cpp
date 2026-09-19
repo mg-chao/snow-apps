@@ -102,18 +102,8 @@ void configureTextDocument(QTextDocument& document, const SnowSceneDisplayItem& 
     document.setTextWidth(qMax(1.0, textWidth));
 }
 
-QSizeF resolvedDocumentViewSize(const SnowSceneDisplayItem& item, const QFont& font, double zoom,
-                                const QString& text) {
-    const FontResolution resolution = resolveFont(font, item, zoom);
-    QTextDocument document;
-    configureTextDocument(document, item, resolution.font, item.width * zoom / resolution.scale,
-                          text, true);
-    const QSizeF size = document.size();
-    return QSizeF(size.width() * resolution.scale, size.height() * resolution.scale);
-}
-
 QSizeF naturalTextLayoutSize(const QString& text, const QFont& font,
-                             const SnowSceneDisplayItem& item) {
+                             const SnowSceneDisplayItem& item, double* outInkWidth = nullptr) {
     const QString measuredText = text.isEmpty() ? QStringLiteral(" ") : text;
     const QStringList lines = measuredText.split(QLatin1Char('\n'), Qt::KeepEmptyParts);
     QTextOption option;
@@ -133,6 +123,9 @@ QSizeF naturalTextLayoutSize(const QString& text, const QFont& font,
         }
         layout.endLayout();
     }
+    if (outInkWidth != nullptr) {
+        *outInkWidth = maxWidth;
+    }
 
     const double measuredWidth = qMax(1.0, maxWidth + autoResizeTextWidthSafety(font));
     // QTextLine::height() can differ substantially from QTextDocument's line
@@ -141,6 +134,26 @@ QSizeF naturalTextLayoutSize(const QString& text, const QFont& font,
     QTextDocument document;
     configureTextDocument(document, item, font, measuredWidth, text, true);
     return QSizeF(measuredWidth, qMax(1.0, static_cast<double>(document.size().height())));
+}
+
+// Widest laid-out line of a wrapped document, in document (unwrapped ink)
+// units. The painted per-line pills span each line's natural text width, so
+// this is the width of their union regardless of the text alignment.
+double documentInkWidth(const QTextDocument& document) {
+    double widest = 1.0;
+    for (QTextBlock block = document.begin(); block.isValid(); block = block.next()) {
+        const QTextLayout* blockLayout = block.layout();
+        if (blockLayout == nullptr) {
+            continue;
+        }
+        for (int index = 0; index < blockLayout->lineCount(); ++index) {
+            const QTextLine line = blockLayout->lineAt(index);
+            if (line.isValid()) {
+                widest = qMax(widest, static_cast<double>(line.naturalTextWidth()));
+            }
+        }
+    }
+    return widest;
 }
 
 QRectF layoutSingleLineText(QTextLayout& layout) {
@@ -250,20 +263,48 @@ void applyFontPixelSize(QFont& font, double pixelSize) {
 
 QSizeF measureNaturalText(const QString& text, const QFont& baseFont,
                           const SnowSceneDisplayItem& item, double zoom) {
+    return measureNaturalTextLayout(text, baseFont, item, zoom).layout;
+}
+
+TextMeasuredLayout measureNaturalTextLayout(const QString& text, const QFont& baseFont,
+                                            const SnowSceneDisplayItem& item, double zoom) {
     const double safeZoom = qMax(0.0001, zoom);
     const FontResolution resolution = resolveFont(baseFont, item, safeZoom);
-    const QSizeF documentSize = naturalTextLayoutSize(text, resolution.font, item);
-    return QSizeF(qMax(1.0, documentSize.width() * resolution.scale / safeZoom),
-                  qMax(1.0, documentSize.height() * resolution.scale / safeZoom));
+    double inkWidth = 1.0;
+    const QSizeF documentSize = naturalTextLayoutSize(text, resolution.font, item, &inkWidth);
+    const double toDocument = resolution.scale / safeZoom;
+    TextMeasuredLayout measured;
+    measured.layout = QSizeF(qMax(1.0, documentSize.width() * toDocument),
+                             qMax(1.0, documentSize.height() * toDocument));
+    measured.content =
+        QSizeF(qMax(1.0, inkWidth * toDocument), qMax(1.0, documentSize.height() * toDocument));
+    return measured;
 }
 
 QSizeF measureWrappedText(const QString& text, const QFont& baseFont,
                           const SnowSceneDisplayItem& item, double width, double zoom) {
+    return measureWrappedTextLayout(text, baseFont, item, width, zoom).layout;
+}
+
+TextMeasuredLayout measureWrappedTextLayout(const QString& text, const QFont& baseFont,
+                                            const SnowSceneDisplayItem& item, double width,
+                                            double zoom) {
     const double safeZoom = qMax(0.0001, zoom);
     SnowSceneDisplayItem measured = item;
     measured.width = qMax(1.0, width);
-    const QSizeF viewSize = resolvedDocumentViewSize(measured, baseFont, safeZoom, text);
-    return QSizeF(qMax(1.0, viewSize.width() / safeZoom), qMax(1.0, viewSize.height() / safeZoom));
+    const FontResolution resolution = resolveFont(baseFont, measured, safeZoom);
+    QTextDocument document;
+    configureTextDocument(document, measured, resolution.font,
+                          measured.width * safeZoom / resolution.scale, text, true);
+    const QSizeF size = document.size();
+    const double inkWidth = documentInkWidth(document);
+    const double toDocument = resolution.scale / safeZoom;
+    TextMeasuredLayout result;
+    result.layout =
+        QSizeF(qMax(1.0, size.width() * toDocument), qMax(1.0, size.height() * toDocument));
+    result.content =
+        QSizeF(qMax(1.0, inkWidth * toDocument), qMax(1.0, size.height() * toDocument));
+    return result;
 }
 
 double measureMinimumWrappedWidth(const QFont& baseFont, const SnowSceneDisplayItem& item,

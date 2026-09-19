@@ -146,7 +146,8 @@ class SettingsBackend : public QObject {
     virtual void refreshGlobalMousePermission() {}
 
     [[nodiscard]] virtual SettingsActionState actionState(SettingsActionBinding binding) const = 0;
-    [[nodiscard]] virtual bool triggerAction(SettingsActionBinding binding) = 0;
+    [[nodiscard]] virtual bool triggerAction(SettingsActionBinding binding,
+                                             const QString& filePath = {}) = 0;
     [[nodiscard]] virtual storage::StorageStatus storageStatus() const = 0;
     virtual void refreshStorageStatus() {}
     // Show-event path; backends may throttle repeated refreshes.  Defaults to
@@ -243,7 +244,8 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     applyGlobalMouseCombination(SettingsGlobalMouseAction action,
                                 const SettingsGlobalMouseCombination& combination) override;
     [[nodiscard]] SettingsActionState actionState(SettingsActionBinding binding) const override;
-    [[nodiscard]] bool triggerAction(SettingsActionBinding binding) override;
+    [[nodiscard]] bool triggerAction(SettingsActionBinding binding,
+                                     const QString& filePath = {}) override;
     [[nodiscard]] CustomAiModels customAiModels() const override;
     bool applyCustomAiModels(const CustomAiModels& models) override;
     [[nodiscard]] storage::StorageStatus storageStatus() const override;
@@ -255,6 +257,7 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     ::snow_shot::presentation::GlobalShortcutManager& m_shortcutManager;
     GlobalMouseManager* m_mouseManager = nullptr;
     bool m_copyLogBusy = false;
+    bool m_configurationBusy = false;
 };
 
 } // namespace settings

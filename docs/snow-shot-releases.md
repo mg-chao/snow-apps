@@ -71,6 +71,10 @@ The limits are 8 MiB for metadata, 20,000 files and 4 GiB expanded payload per p
 The helper verifies the parent process's real executable path, stages outside `bin`, and
 requests elevation only for a matching registered installation. The broker remains under
 the original user's identity for relaunch. Named pipes are random and user-restricted.
+The worker authenticates the broker before mutation and retains that connection for the
+ready/go exchange and final success/failure report. The broker acknowledges the final report
+before the worker exits. Neither side re-authenticates completion against the installed
+helper, whose bytes may now belong to the next release (or a restored earlier release).
 Only a validated ready/go exchange lets the app exit. The transaction then acquires a
 per-install lock, extracts and checks the inventory, checks free space and user-file
 collisions, persists backups and a journal, replaces owned files, updates matching uninstall
@@ -203,7 +207,8 @@ ctest --test-dir build/snow-shot-msvc-release/snow_shot -C Release -R '^snow-sho
 ```
 
 The helper canary uses a native parent/relaunch fixture and the real compiled helper. It
-checks handoff cancellation, journal recovery, original-user relaunch, and preservation of
+checks handoff cancellation, journal recovery including replacement of the installed helper,
+original-user relaunch, and preservation of
 unowned data for all three variants without launching the user's application or reading its
 settings. For interactive elevation checks, run it from a non-elevated shell with
 `-ElevationAction Cancel` and then `-ElevationAction Approve`. The operator must perform the

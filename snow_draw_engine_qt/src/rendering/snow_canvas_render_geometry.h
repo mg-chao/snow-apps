@@ -5,6 +5,7 @@
 #include <QRect>
 #include <QRectF>
 #include <QRegion>
+#include <QSizeF>
 #include <QVector>
 
 #include "snow_canvas_display_cache.h"

@@ -131,6 +131,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         int persistedHideToTopAccentIndex = -1;
         bool persistedThumbnailMode = false;
         bool persistedClickThroughMode = false;
+        bool persistedAlwaysOnTop = true;
         QRect persistedPreThumbnailNativeGeometry;
         snow_shot::storage::PinnedWindowPlacement persistedPreThumbnailPlacement;
         QByteArray persistedCanvasSession;
@@ -304,6 +305,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     [[nodiscard]] bool hideToTopActive() const;
     [[nodiscard]] bool setClickThroughMode(bool enabled);
     void toggleClickThrough();
+    void setAlwaysOnTop(bool enabled);
+    void toggleAlwaysOnTop();
     [[nodiscard]] bool ensureClickThroughExitButton();
     [[nodiscard]] bool updateClickThroughExitButtonGeometry();
     void setClickThroughScreen(QScreen* screen);
@@ -414,6 +417,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QAction* m_thumbnailAction = nullptr;
     QAction* m_hideToTopAction = nullptr;
     QAction* m_clickThroughAction = nullptr;
+    QAction* m_alwaysOnTopAction = nullptr;
     QAction* m_showMainInterfaceAction = nullptr;
     QAction* m_closeAction = nullptr;
     QAction* m_loadContentAction = nullptr;
@@ -486,6 +490,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_editingEnabled = true;
     bool m_thumbnailMode = false;
     bool m_clickThroughActive = false;
+    bool m_alwaysOnTop = true;
     bool m_geometryAnimating = false;
     bool m_preserveScaleForSettledGeometry = false;
     bool m_presented = false;

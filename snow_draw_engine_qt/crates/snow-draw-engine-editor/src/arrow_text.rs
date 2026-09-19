@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 use snow_draw_engine_core::ErrorCode;
 use snow_draw_engine_document::{
     ArrowData, ElementData, ElementId, Operation, TextData, TextLayoutSize, Transaction,
-    arrow_text_anchor, arrow_text_max_width, validate_text_layout_size,
+    arrow_text_anchor, arrow_text_max_width, text_with_measured_layout, validate_text_layout_size,
 };
 use snow_draw_engine_model::DocumentModel;
 
@@ -137,7 +137,7 @@ impl Editor {
         else {
             return Ok(false);
         };
-        if size.width > request.max_width + 0.01 {
+        if size.width() > request.max_width + 0.01 {
             return Err(ErrorCode::InvalidArgument);
         }
         self.state
@@ -159,8 +159,8 @@ impl Editor {
             .iter()
             .find(|m| m.text_id == request.text_id && m.key == request.key)
         {
-            text.width = measurement.size.width;
-            text.height = measurement.size.height;
+            text = text_with_measured_layout(&text, measurement.size)
+                .expect("arrow measurements are validated when they are applied");
         }
         text
     }
@@ -282,8 +282,7 @@ mod tests {
             ElementMeta::default(),
             TextData {
                 text: "wide label".to_owned(),
-                width: 210.0,
-                height: 80.0,
+                layout: TextLayoutSize::new(210.0, 80.0),
                 ..TextData::default()
             },
         );

@@ -51,6 +51,7 @@ ScreenshotCaptureWorkflow::ScreenshotCaptureWorkflow(ScreenshotCaptureWorkflowCo
 }
 
 ScreenshotCaptureWorkflow::~ScreenshotCaptureWorkflow() {
+    completeRecapture(false);
     m_context.runtime.setEventSink(nullptr);
 }
 
@@ -71,6 +72,7 @@ bool ScreenshotCaptureWorkflow::suppressCaptureToolbar() const {
 
 void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation toolbarPreparation,
                                              ToolbarVisibility toolbarVisibility) {
+    completeRecapture(false);
     if (m_deferredExportCleanup) {
         completeDeferredExportCleanup();
     }
@@ -101,12 +103,39 @@ void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation 
         resetCanvasRuntimeState();
     }
     m_captureModelsClean = false;
-    m_context.restoreSelectionEffects();
+    m_context.restoreSelectionPreferences();
     m_context.interaction.beginCapture();
     m_context.intelligentSelection.beginCaptureSession(mode != StartMode::ExternalDrag &&
                                                            m_context.smartSelectionEnabled(),
                                                        m_context.preferredSelectionTarget());
     beginCapturePreparation(sessionId);
+}
+
+bool ScreenshotCaptureWorkflow::startRecapture() {
+    if (m_recaptureInProgress || m_state.captureInProgress ||
+        m_state.sessionState != ScreenshotSessionState::Editing ||
+        !m_context.interaction.moveToolActive()) {
+        return false;
+    }
+    if (!m_context.runtime.captureWorkerCreated()) {
+        m_context.runtime.ensureCaptureWorker();
+    }
+
+    m_state.restoreOriginalScreenColors = m_context.restoreOriginalScreenColors();
+    m_state.captureCursor = m_context.captureCursor();
+    m_recaptureInProgress = true;
+    m_recaptureRequestId = ++m_nextRecaptureRequestId;
+    m_context.runtime.captureAsync(ScreenshotCaptureRequest{m_recaptureRequestId,
+                                                            true,
+                                                            m_state.restoreOriginalScreenColors,
+                                                            m_state.captureCursor,
+                                                            ScreenshotCapturePurpose::Recapture,
+                                                            {}});
+    return true;
+}
+
+bool ScreenshotCaptureWorkflow::recaptureInProgress() const {
+    return m_recaptureInProgress;
 }
 
 void ScreenshotCaptureWorkflow::handleInitialSmartSelectionResolved(quint64 sessionId) {
@@ -124,6 +153,7 @@ void ScreenshotCaptureWorkflow::cancelCapture() {
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("workflow.cancel_requested");
     SNOW_SHOT_CAPTURE_PERF_FINISH(false);
     m_context.runtime.cancelActiveCapture();
+    completeRecapture(false);
     if (m_context.captureTerminated) {
         m_context.captureTerminated();
     }
@@ -150,6 +180,7 @@ void ScreenshotCaptureWorkflow::cancelCaptureForExport() {
         SNOW_SHOT_PIN_PERF_SCOPE("cleanup.cancel_active_capture");
         m_context.runtime.cancelActiveCapture();
     }
+    completeRecapture(false);
     if (m_context.captureTerminated) {
         SNOW_SHOT_PIN_PERF_SCOPE("cleanup.capture_terminated");
         m_context.captureTerminated();
@@ -269,6 +300,7 @@ void ScreenshotCaptureWorkflow::cleanupActiveSessionForRestart() {
         completeDeferredExportCleanup();
     }
     m_context.runtime.cancelActiveCapture();
+    completeRecapture(false);
     if (m_context.captureTerminated) {
         m_context.captureTerminated();
     }
@@ -292,6 +324,7 @@ void ScreenshotCaptureWorkflow::destroyUiSelectorService() {
 }
 
 void ScreenshotCaptureWorkflow::shutdownCaptureWorker() {
+    completeRecapture(false);
     m_context.runtime.shutdownCaptureWorker();
     m_layoutRefreshInFlight = false;
     m_refreshAfterCapture = false;
@@ -311,7 +344,7 @@ void ScreenshotCaptureWorkflow::handleDisplayConfigurationChanged() {
     if (m_context.runtime.captureWorkerCreated()) {
         m_state.layoutDirty = true;
         const quint64 refreshId = ++m_layoutChangeSerial;
-        if (m_state.captureInProgress) {
+        if (m_state.captureInProgress || m_recaptureInProgress) {
             m_refreshAfterCapture = true;
         } else {
             scheduleLayoutRefresh(refreshId);
@@ -340,9 +373,12 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
     // Once Snow Shot's windows are excluded, start native acquisition at
     // once. The capture worker can initialize lazy GPU resources while the
     // UI thread prepares selector and presentation state.
-    m_context.runtime.captureAsync(ScreenshotCaptureRequest{sessionId, m_state.layoutDirty,
+    m_context.runtime.captureAsync(ScreenshotCaptureRequest{sessionId,
+                                                            m_state.layoutDirty,
                                                             m_state.restoreOriginalScreenColors,
-                                                            m_state.captureCursor});
+                                                            m_state.captureCursor,
+                                                            ScreenshotCapturePurpose::Initial,
+                                                            {}});
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.async_dispatched");
     if (sessionId != m_state.sessionId || !m_state.captureInProgress) {
         return;
@@ -448,6 +484,70 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
     }
 }
 
+void ScreenshotCaptureWorkflow::finishRecapturePreparation(const ScreenshotCaptureResult& result) {
+    if (!m_recaptureInProgress || result.requestId != m_recaptureRequestId) {
+        return;
+    }
+
+    const bool validResult =
+        result.succeeded && !result.displays.isEmpty() &&
+        std::all_of(result.displays.cbegin(), result.displays.cend(), [](const auto& display) {
+            return display.active && !display.image.isNull() && !display.physicalRect.isEmpty();
+        });
+    if (!validResult) {
+        completeRecapture(false, result.errorMessage.isEmpty()
+                                     ? QStringLiteral("Screenshot recapture returned invalid data")
+                                     : result.errorMessage);
+        return;
+    }
+
+    QVector<CapturedDisplayModel> previousDisplays;
+    previousDisplays.reserve(m_context.displaySession.size());
+    m_context.displaySession.forEachDisplay(
+        [&previousDisplays](qsizetype, const CapturedDisplayModel& display) {
+            previousDisplays.push_back(display);
+        });
+
+    ScreenshotCaptureDisplayModelReconciler::applySnapshots(m_context.displaySession,
+                                                            result.displays);
+    m_context.geometry.clear();
+    m_context.geometry.rebuild(m_context.displaySession);
+    if (!m_context.displaySession.hasActiveDisplays() || m_context.geometry.isEmpty()) {
+        ScreenshotCaptureDisplayModelReconciler::applySnapshots(m_context.displaySession,
+                                                                previousDisplays);
+        m_context.geometry.clear();
+        m_context.geometry.rebuild(m_context.displaySession);
+        completeRecapture(false, QStringLiteral("Screenshot recapture geometry is invalid"));
+        return;
+    }
+
+    m_context.runtime.applyDisplayModels(m_context.displaySession);
+    if (m_context.presentation.updateOverlayState) {
+        m_context.presentation.updateOverlayState();
+    }
+    if (m_context.presentation.updateColorPicker) {
+        m_context.presentation.updateColorPicker();
+    }
+    m_state.layoutDirty = false;
+    completeRecapture(true);
+}
+
+void ScreenshotCaptureWorkflow::completeRecapture(bool succeeded, const QString& errorMessage) {
+    if (!m_recaptureInProgress) {
+        return;
+    }
+    m_recaptureInProgress = false;
+    m_recaptureRequestId = 0;
+    const bool refreshLayout = m_refreshAfterCapture;
+    m_refreshAfterCapture = false;
+    if (m_context.recaptureCompleted) {
+        m_context.recaptureCompleted(succeeded, errorMessage);
+    }
+    if (refreshLayout && m_context.runtime.captureWorkerCreated()) {
+        scheduleLayoutRefresh(m_layoutChangeSerial);
+    }
+}
+
 void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 sessionId) {
     if (sessionId != m_state.sessionId || m_capturedPresentationSessionId != sessionId ||
         m_visiblePresentationSessionId == sessionId ||
@@ -536,7 +636,11 @@ void ScreenshotCaptureWorkflow::handleCapturePrepared(quint64, bool ok) {
 }
 
 void ScreenshotCaptureWorkflow::handleCaptureFinished(const ScreenshotCaptureResult& result) {
-    finishCapturePreparation(result);
+    if (result.purpose == ScreenshotCapturePurpose::Recapture) {
+        finishRecapturePreparation(result);
+    } else {
+        finishCapturePreparation(result);
+    }
 }
 
 void ScreenshotCaptureWorkflow::handleLayoutRefreshed(quint64 refreshId, bool ok) {

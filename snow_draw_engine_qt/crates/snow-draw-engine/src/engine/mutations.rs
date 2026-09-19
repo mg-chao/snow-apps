@@ -22,6 +22,10 @@ impl Engine {
             self.editor
                 .sync_serial_number_after_history_change(&self.model);
         }
+        if history_result.restore_selection {
+            self.editor
+                .restore_history_selection(&self.model, &history_result.snapshot);
+        }
         Ok(self.finish_document_change(
             &history_result.snapshot,
             &history_result.apply_result.changes,
@@ -41,6 +45,10 @@ impl Engine {
         if follows_serial_number {
             self.editor
                 .sync_serial_number_after_history_change(&self.model);
+        }
+        if history_result.restore_selection {
+            self.editor
+                .restore_history_selection(&self.model, &history_result.snapshot);
         }
         Ok(self.finish_document_change(
             &history_result.snapshot,
@@ -227,14 +235,14 @@ mod tests {
         };
         engine.editor.select_element(&engine.model, id).unwrap();
         let mut style = engine.editor.serial_number_style(&engine.model);
-        style.serial_number_type = SerialNumberType::SolidSquare;
+        style.serial_number_type = SerialNumberType::Circle;
 
         engine
             .set_viewport_serial_number_style(viewport, style)
             .unwrap();
         assert_eq!(
             engine.model.serial_number(id).unwrap().serial_number_type,
-            SerialNumberType::SolidSquare
+            SerialNumberType::Circle
         );
 
         engine.undo().unwrap();
@@ -246,7 +254,7 @@ mod tests {
         engine.redo().unwrap();
         assert_eq!(
             engine.model.serial_number(id).unwrap().serial_number_type,
-            SerialNumberType::SolidSquare
+            SerialNumberType::Circle
         );
     }
 }

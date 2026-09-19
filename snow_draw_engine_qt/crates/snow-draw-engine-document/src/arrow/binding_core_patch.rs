@@ -4,25 +4,33 @@ use super::decisions::{
 };
 use super::*;
 
+/// Accumulates the bindable patches, events and reorder targets produced
+/// while applying binding decisions for both arrow edges.
+#[derive(Default)]
+struct BindingTransitions {
+    bindable_patches: Vec<BindablePatch>,
+    events: Vec<ArrowEngineEvent>,
+    reorder_target_ids: BTreeSet<ElementId>,
+}
+
 fn add_or_remove_binding_patch(
     arrow: &ArrowState,
     edge: ArrowEndpointEdge,
     decision: &EndpointBindingDecision,
     previous_binding: Option<&FixedPointBinding>,
-    bindable_patches: &mut Vec<BindablePatch>,
-    events: &mut Vec<ArrowEngineEvent>,
-    reorder_target_ids: &mut BTreeSet<ElementId>,
+    transitions: &mut BindingTransitions,
+    midpoint_snapping_enabled: bool,
 ) -> Option<Option<FixedPointBinding>> {
     match decision.disposition {
         EndpointBindingDisposition::Unchanged => None,
         EndpointBindingDisposition::Clear => {
             if let Some(previous_binding) = previous_binding {
-                bindable_patches.push(BindablePatch {
+                transitions.bindable_patches.push(BindablePatch {
                     id: previous_binding.element_id,
                     add_bound_arrow_id: None,
                     remove_bound_arrow_id: Some(arrow.id),
                 });
-                events.push(ArrowEngineEvent::BindingBroken {
+                transitions.events.push(ArrowEngineEvent::BindingBroken {
                     arrow_id: arrow.id,
                     edge,
                 });
@@ -38,25 +46,32 @@ fn add_or_remove_binding_patch(
                 return previous_binding.cloned().map(Some);
             };
 
-            let binding = to_binding(arrow, edge, element, mode, focus_point);
+            let binding = to_binding(
+                arrow,
+                edge,
+                element,
+                mode,
+                focus_point,
+                midpoint_snapping_enabled,
+            );
             if previous_binding.is_none()
                 || previous_binding
                     .is_some_and(|previous| previous.element_id != binding.element_id)
             {
                 if let Some(previous_binding) = previous_binding {
-                    bindable_patches.push(BindablePatch {
+                    transitions.bindable_patches.push(BindablePatch {
                         id: previous_binding.element_id,
                         add_bound_arrow_id: None,
                         remove_bound_arrow_id: Some(arrow.id),
                     });
                 }
-                bindable_patches.push(BindablePatch {
+                transitions.bindable_patches.push(BindablePatch {
                     id: binding.element_id,
                     add_bound_arrow_id: Some(arrow.id),
                     remove_bound_arrow_id: None,
                 });
-                if reorder_target_ids.insert(binding.element_id) {
-                    events.push(ArrowEngineEvent::ReorderArrow {
+                if transitions.reorder_target_ids.insert(binding.element_id) {
+                    transitions.events.push(ArrowEngineEvent::ReorderArrow {
                         arrow_id: arrow.id,
                         bindable_id: binding.element_id,
                     });
@@ -65,6 +80,43 @@ fn add_or_remove_binding_patch(
             Some(Some(binding))
         }
     }
+}
+
+/// Hover feedback for one edge's binding strategy: the bindable outline plus
+/// midpoint indicators (highlighted snap target and proximity hints), based
+/// on the dragged point when this edge is the one being dragged.
+fn suggested_binding_for_edge(
+    strategy: &EndpointBindingStrategy,
+    dragged: bool,
+    dragged_index: usize,
+    dragged_points: &BTreeMap<usize, Point>,
+    arrow: &ArrowState,
+    zoom: f64,
+    midpoint_snapping_enabled: bool,
+) -> Option<SuggestedBinding> {
+    let element = strategy.element.as_ref()?;
+    let strategy_focus = strategy.focus_point?;
+    let focus_point = if dragged {
+        dragged_points
+            .get(&dragged_index)
+            .copied()
+            .map(|point| to_global_point(arrow, point))
+            .unwrap_or(strategy_focus)
+    } else {
+        strategy_focus
+    };
+    let mid_points = outline_mid_point_suggestion(
+        focus_point,
+        element,
+        zoom,
+        OutlineMidPointMode::for_arrow(arrow.elbowed, midpoint_snapping_enabled),
+    );
+    Some(SuggestedBinding {
+        bindable_id: strategy.bindable_id,
+        element: element.clone(),
+        mid_point: mid_points.highlighted,
+        near_mid_points: mid_points.near,
+    })
 }
 
 pub fn compute_simple_binding_patch(input: &ComputeEndpointDragInput) -> EngineResult {
@@ -82,27 +134,35 @@ pub fn compute_simple_binding_patch(input: &ComputeEndpointDragInput) -> EngineR
         .map(|bindable| (bindable.id, bindable.clone()))
         .collect::<BTreeMap<_, _>>();
 
-    let mut bindable_patches = Vec::new();
-    let mut events = Vec::new();
-    let mut reorder_target_ids = BTreeSet::new();
+    let mut transitions = BindingTransitions::default();
+    // Midpoint snapping of binding anchors is disabled while angle-locked
+    // (Excalidraw's `isMidpointSnappingEnabled` gate).
+    let midpoint_snapping_enabled = !input
+        .options
+        .as_ref()
+        .and_then(|options| options.angle_locked)
+        .unwrap_or(false);
     let next_start_binding = add_or_remove_binding_patch(
         arrow,
         ArrowEndpointEdge::Start,
         &decisions.start,
         arrow.start_binding.as_ref(),
-        &mut bindable_patches,
-        &mut events,
-        &mut reorder_target_ids,
+        &mut transitions,
+        midpoint_snapping_enabled,
     );
     let next_end_binding = add_or_remove_binding_patch(
         arrow,
         ArrowEndpointEdge::End,
         &decisions.end,
         arrow.end_binding.as_ref(),
-        &mut bindable_patches,
-        &mut events,
-        &mut reorder_target_ids,
+        &mut transitions,
+        midpoint_snapping_enabled,
     );
+    let BindingTransitions {
+        bindable_patches,
+        events,
+        ..
+    } = transitions;
 
     let mut effective_start_binding = next_start_binding.unwrap_or(arrow.start_binding);
     let mut effective_end_binding = next_end_binding.unwrap_or(arrow.end_binding);
@@ -126,45 +186,26 @@ pub fn compute_simple_binding_patch(input: &ComputeEndpointDragInput) -> EngineR
         .as_ref()
         .and_then(|binding| bindables_by_id.get(&binding.element_id));
 
-    let suggested_binding = if let (Some(element), Some(focus_point)) = (
-        decisions.start.strategy.element.as_ref(),
-        decisions.start.strategy.focus_point,
-    ) {
-        let focus_point = if start_dragged {
-            dragged_points
-                .get(&start_index)
-                .copied()
-                .map(|point| to_global_point(arrow, point))
-                .unwrap_or(focus_point)
-        } else {
-            focus_point
-        };
-        Some(SuggestedBinding {
-            bindable_id: decisions.start.strategy.bindable_id,
-            element: element.clone(),
-            mid_point: get_snap_outline_mid_point(focus_point, element, context.zoom),
-        })
-    } else if let (Some(element), Some(focus_point)) = (
-        decisions.end.strategy.element.as_ref(),
-        decisions.end.strategy.focus_point,
-    ) {
-        let focus_point = if end_dragged {
-            dragged_points
-                .get(&end_index)
-                .copied()
-                .map(|point| to_global_point(arrow, point))
-                .unwrap_or(focus_point)
-        } else {
-            focus_point
-        };
-        Some(SuggestedBinding {
-            bindable_id: decisions.end.strategy.bindable_id,
-            element: element.clone(),
-            mid_point: get_snap_outline_mid_point(focus_point, element, context.zoom),
-        })
-    } else {
-        None
-    };
+    let suggested_binding = suggested_binding_for_edge(
+        &decisions.start.strategy,
+        start_dragged,
+        start_index,
+        &dragged_points,
+        arrow,
+        context.zoom,
+        midpoint_snapping_enabled,
+    )
+    .or_else(|| {
+        suggested_binding_for_edge(
+            &decisions.end.strategy,
+            end_dragged,
+            end_index,
+            &dragged_points,
+            arrow,
+            context.zoom,
+            midpoint_snapping_enabled,
+        )
+    });
 
     let complex_bindings = input
         .options
@@ -208,11 +249,16 @@ pub fn compute_simple_binding_patch(input: &ComputeEndpointDragInput) -> EngineR
             .unwrap_or(next_points[end_index])
         };
         next_points[end_index] = updated_end;
-        let updated_end_global = to_global_point(&simulated_arrow, updated_end);
-        effective_end_binding = Some(FixedPointBinding {
-            fixed_point: calculate_fixed_point_for_binding(end_bindable, updated_end_global),
-            ..*end_binding
-        });
+        // Non-elbow bindings keep their focus-based anchor (matching
+        // Excalidraw) so midpoint-snapped and projected anchors survive the
+        // drag; only elbowed arrows re-anchor to the routed outline point.
+        if arrow.elbowed {
+            let updated_end_global = to_global_point(&simulated_arrow, updated_end);
+            effective_end_binding = Some(FixedPointBinding {
+                fixed_point: calculate_fixed_point_for_binding(end_bindable, updated_end_global),
+                ..*end_binding
+            });
+        }
     }
 
     let simulated_with_end = ArrowState {
@@ -244,11 +290,16 @@ pub fn compute_simple_binding_patch(input: &ComputeEndpointDragInput) -> EngineR
             .unwrap_or(next_points[0])
         };
         next_points[0] = updated_start;
-        let updated_start_global = to_global_point(&simulated_with_end, updated_start);
-        effective_start_binding = Some(FixedPointBinding {
-            fixed_point: calculate_fixed_point_for_binding(start_bindable, updated_start_global),
-            ..*start_binding
-        });
+        if arrow.elbowed {
+            let updated_start_global = to_global_point(&simulated_with_end, updated_start);
+            effective_start_binding = Some(FixedPointBinding {
+                fixed_point: calculate_fixed_point_for_binding(
+                    start_bindable,
+                    updated_start_global,
+                ),
+                ..*start_binding
+            });
+        }
     }
 
     let origin = next_points.first().copied().unwrap_or([0.0, 0.0]);

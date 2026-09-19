@@ -193,6 +193,10 @@
             <translation>%1%</translation>
         </message>
         <message>
+            <source>Always on Top</source>
+            <translation>Always on Top</translation>
+        </message>
+        <message>
             <source>Click-through</source>
             <translation>Click-through</translation>
         </message>

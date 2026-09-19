@@ -26,6 +26,22 @@
             <translation>Automatic screenshot saving failed: %1</translation>
         </message>
         <message>
+            <source>Cancel</source>
+            <translation>Cancel</translation>
+        </message>
+        <message>
+            <source>Could not recapture the screen</source>
+            <translation>Could not recapture the screen</translation>
+        </message>
+        <message>
+            <source>Exit</source>
+            <translation>Exit</translation>
+        </message>
+        <message>
+            <source>Exit screenshot?</source>
+            <translation>Exit screenshot?</translation>
+        </message>
+        <message>
             <source>No recognized result is available to copy</source>
             <translation>No recognized result is available to copy</translation>
         </message>
@@ -88,6 +104,10 @@
         <message>
             <source>The scrolling screenshot could not be prepared</source>
             <translation>The scrolling screenshot could not be prepared</translation>
+        </message>
+        <message>
+            <source>Your current screenshot will be discarded.</source>
+            <translation>Your current screenshot will be discarded.</translation>
         </message>
     </context>
     <context>

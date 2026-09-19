@@ -64,6 +64,7 @@ struct PinnedWindowRecord final {
     int hideToTopAccentIndex = -1;
     bool thumbnailMode = false;
     bool clickThroughMode = false;
+    bool alwaysOnTop = true;
     QRect preThumbnailNativeGeometry;
     QByteArray resultStyle;
     QByteArray canvasSession;

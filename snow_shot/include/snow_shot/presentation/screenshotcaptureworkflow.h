@@ -35,12 +35,13 @@ struct ScreenshotCaptureWorkflowContext {
     std::function<void()> captureTerminated = []() {};
     std::function<bool()> smartSelectionEnabled = []() { return true; };
     std::function<void()> refreshCanvasCreationStyles = []() {};
-    std::function<void()> restoreSelectionEffects = []() {};
+    std::function<void()> restoreSelectionPreferences = []() {};
     std::function<bool()> restoreOriginalScreenColors = []() { return true; };
     std::function<bool()> captureCursor = []() { return false; };
     std::function<ScreenshotIntelligentSelectionTarget()> preferredSelectionTarget = []() {
         return ScreenshotIntelligentSelectionTarget::WindowSubElement;
     };
+    std::function<void(bool, const QString&)> recaptureCompleted = [](bool, const QString&) {};
 };
 
 class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink {
@@ -55,6 +56,8 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     void startCapture(StartMode mode = StartMode::Normal,
                       ToolbarPreparation toolbarPreparation = ToolbarPreparation::Prewarm,
                       ToolbarVisibility toolbarVisibility = ToolbarVisibility::ShowAfterSelection);
+    [[nodiscard]] bool startRecapture();
+    [[nodiscard]] bool recaptureInProgress() const;
     [[nodiscard]] bool suppressCaptureToolbar() const;
     void cancelCapture();
     void cancelCaptureForExport();
@@ -76,6 +79,8 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     [[nodiscard]] bool beginCapturePresentation(quint64 sessionId);
     void prepareOverlayPresentation(quint64 sessionId);
     void finishCapturePreparation(const ScreenshotCaptureResult& result);
+    void finishRecapturePreparation(const ScreenshotCaptureResult& result);
+    void completeRecapture(bool succeeded, const QString& errorMessage = {});
     void showCapturePresentationWhenReady(quint64 sessionId);
     void enterOverlaySelectionModeAtCursor();
     void handleCapturePrepared(quint64 requestId, bool ok) override;
@@ -99,6 +104,9 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     bool m_deferredExportCleanup = false;
     bool m_layoutRefreshInFlight = false;
     bool m_refreshAfterCapture = false;
+    bool m_recaptureInProgress = false;
+    quint64 m_recaptureRequestId = 0;
+    quint64 m_nextRecaptureRequestId = 0;
     quint64 m_layoutChangeSerial = 0;
     StartMode m_startMode = StartMode::Normal;
     ToolbarPreparation m_toolbarPreparation = ToolbarPreparation::Prewarm;

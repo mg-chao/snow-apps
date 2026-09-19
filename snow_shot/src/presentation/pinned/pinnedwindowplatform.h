@@ -47,6 +47,9 @@ class PinnedWindowPlatform : public QObject {
                    GeometryUpdate update = GeometryUpdate::PreserveContents) = 0;
     [[nodiscard]] virtual std::optional<PinnedPlacement> placement() const = 0;
     [[nodiscard]] virtual bool setInputTransparent(bool transparent) = 0;
+    [[nodiscard]] virtual bool setStaysOnTop(bool) {
+        return false;
+    }
     [[nodiscard]] virtual bool activate() = 0;
     virtual bool handleNativeEvent(const QByteArray&, void*, qintptr*) {
         return false;

@@ -121,6 +121,7 @@ enum class SettingsSwitchBinding {
     ScreenshotCaptureCursor,
     ScreenshotCaptureUiInScrollingScreenshot,
     ScreenshotShutterSoundNotification,
+    ScreenshotConfirmBeforeExitingViaShortcut,
     ScreenshotRestoreOriginalScreenColors,
     ScreenshotCopyImageFileToClipboard,
     SaveRecognitionResultAsImage,
@@ -128,12 +129,14 @@ enum class SettingsSwitchBinding {
     PinAutoResizeWindow,
     OriginalImageTranslation,
     TranslationPageEnabled,
+    JumpToTranslationPage,
     StandaloneTranslationWindow,
     LoopAnimatedImages,
     ScreenRecordingCaptureToolbar,
     DisableHotkeysOnFocusedFullscreen,
     AutoStartAtBoot,
     LaunchAsAdministrator,
+    DrawingRememberLastUsedTool,
 };
 
 struct SettingsSwitchDefinition {
@@ -265,6 +268,8 @@ enum class SettingsActionBinding {
     ClearThumbnailCache,
     ClearRecordingTemp,
     CopyTodayLog,
+    ExportConfiguration,
+    ImportConfiguration,
 };
 
 enum class SettingsActionAccent {
@@ -279,12 +284,19 @@ struct SettingsConfirmationDefinition {
     TranslatableText rejectText;
 };
 
+struct SettingsActionFileOpenDefinition {
+    TranslatableText dialogTitle;
+    TranslatableText fileFilter;
+};
+
 struct SettingsActionDefinition {
     SettingsActionBinding binding = SettingsActionBinding::ClearCaptureHistory;
     TranslatableText buttonText;
     SettingsActionAccent accent = SettingsActionAccent::Neutral;
     std::function<adqt::icons::IconRef()> iconFactory;
     std::optional<SettingsConfirmationDefinition> confirmation;
+    std::optional<SettingsActionFileOpenDefinition> fileOpen;
+    std::optional<TranslatableText> successMessage;
 };
 
 enum class SettingsCustomRenderer {

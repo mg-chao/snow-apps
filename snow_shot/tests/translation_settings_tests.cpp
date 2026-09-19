@@ -109,10 +109,16 @@ void selectedTextShortcutSettings() {
         const auto standaloneBinding = settings::SettingsSwitchBinding::StandaloneTranslationWindow;
         const QString standaloneId =
             QStringLiteral("extended-features.standalone-translation-window");
+        const auto jumpBinding = settings::SettingsSwitchBinding::JumpToTranslationPage;
+        const QString jumpId = QStringLiteral("extended-features.jump-to-translation-page");
         require(!storage::ExtendedFeaturesSettings().standaloneTranslationWindow() &&
                     session.state(standaloneId).visible && !session.state(standaloneId).enabled &&
                     !backend.applySwitchValue(standaloneBinding, true),
                 "standalone defaults off and is visible but disabled under master off");
+        require(!storage::ExtendedFeaturesSettings().jumpToTranslationPage() &&
+                    session.state(jumpId).visible && !session.state(jumpId).enabled &&
+                    !backend.applySwitchValue(jumpBinding, true),
+                "OCR translation jump defaults off and is disabled under master off");
         require(manager.state(action).status == GlobalShortcutStatus::Unset,
                 "unassigned action does not register a native shortcut");
         require(!storage::ExtendedFeaturesSettings().translationPageEnabled(),
@@ -144,6 +150,8 @@ void selectedTextShortcutSettings() {
             backend.applySwitchValue(settings::SettingsSwitchBinding::TranslationPageEnabled, true),
             "enable translation page through settings backend");
         QCoreApplication::processEvents();
+        require(backend.applySwitchValue(jumpBinding, true),
+                "enable OCR translation jump before category reset");
         require(!translationCheckbox->isHidden() && translationCheckbox->isChecked(),
                 "live enabling restores the selected tray customization checkbox");
         require(tray.setMenuOptions(defaultMenu),
@@ -175,13 +183,15 @@ void selectedTextShortcutSettings() {
             QCoreApplication::processEvents();
             require(confirmation->isVisible(), "extended reset opens shared confirmation");
             confirmation->button(adqt::widgets::AdPopconfirm::StandardButton::Cancel)->click();
-            require(storage::ExtendedFeaturesSettings().translationPageEnabled(),
-                    "cancel extended category reset preserves feature opt-in");
+            require(storage::ExtendedFeaturesSettings().translationPageEnabled() &&
+                        storage::ExtendedFeaturesSettings().jumpToTranslationPage(),
+                    "cancel extended category reset preserves feature opt-ins");
             clickWidget(reset);
             QCoreApplication::processEvents();
             confirmation->button(adqt::widgets::AdPopconfirm::StandardButton::Ok)->click();
             QCoreApplication::processEvents();
             require(!storage::ExtendedFeaturesSettings().translationPageEnabled() &&
+                        !storage::ExtendedFeaturesSettings().jumpToTranslationPage() &&
                         !toggle->isChecked() &&
                         !session.state(QStringLiteral("extended-features.translation-page"))
                              .acceptedValue.toBool() &&
@@ -199,7 +209,11 @@ void selectedTextShortcutSettings() {
             }
             QCoreApplication::processEvents();
         }
-        require(session.state(standaloneId).enabled, "master on enables standalone switch live");
+        require(session.state(standaloneId).enabled && session.state(jumpId).enabled,
+                "master on enables both dependent translation switches live");
+        require(backend.applySwitchValue(jumpBinding, true) &&
+                    storage::ExtendedFeaturesSettings().jumpToTranslationPage(),
+                "OCR translation jump persists through the settings backend");
         for (const bool enabled : {true, false, true}) {
             require(backend.applySwitchValue(standaloneBinding, enabled) &&
                         storage::ExtendedFeaturesSettings().standaloneTranslationWindow() ==
@@ -222,9 +236,10 @@ void selectedTextShortcutSettings() {
         require(storage::ExtendedFeaturesSettings().setTranslationPageEnabled(false),
                 "disable feature live");
         QCoreApplication::processEvents();
-        require(!session.state(standaloneId).enabled &&
-                    storage::ExtendedFeaturesSettings().standaloneTranslationWindow(),
-                "master off disables child control without clearing preference");
+        require(!session.state(standaloneId).enabled && !session.state(jumpId).enabled &&
+                    storage::ExtendedFeaturesSettings().standaloneTranslationWindow() &&
+                    storage::ExtendedFeaturesSettings().jumpToTranslationPage(),
+                "master off disables child controls without clearing either preference");
         input->handler(id);
         require(activations == 1 && !input->registrations.values().contains(keys.first()) &&
                     persisted.translateSelectedText() == keys,
