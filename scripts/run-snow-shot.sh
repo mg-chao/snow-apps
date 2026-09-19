@@ -38,5 +38,12 @@ app="$snow_build_dir/snow_shot/snow_shot.app"
 # plugins resolve exactly as they do in a package. Leave build products intact.
 export PATH="$snow_repo_root/.tools/macos-dev/bin:$PATH"
 cmake --install "$snow_build_dir" --component SnowShot --prefix "$snow_build_dir/run"
+# The development bundle keeps the same path and version between builds. Force
+# LaunchServices to discard stale metadata (including a previously missing icon)
+# before Finder and the Dock resolve the bundle for the next launch.
+touch "$deployed_app"
+default_launch_services_register='/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister'
+launch_services_register="${SNOW_LAUNCH_SERVICES_REGISTER:-$default_launch_services_register}"
+"$launch_services_register" -f "$deployed_app"
 # LaunchServices establishes the bundle identity used by macOS permissions.
 exec open -n "$deployed_app" --args "$@"

@@ -30,7 +30,9 @@ if name == 'uname': print('Darwin' if sys.argv[1] == '-s' else 'arm64')
 if name == 'xcode-select': print('/mock Xcode')
 if name == 'cmake' and '--preset' in sys.argv and os.environ.get('FAIL_CONFIGURE'): sys.exit(17)
 """
-        for name in ("cmake", "cpack", "ninja", "cargo", "rustup", "pkg-config", "uname", "open", "xcode-select", "xcrun", "git"):
+        tools = ("cmake", "cpack", "ninja", "cargo", "rustup", "pkg-config", "uname",
+                 "open", "xcode-select", "xcrun", "git", "lsregister")
+        for name in tools:
             path = self.bin / name
             path.write_text(mock)
             path.chmod(0o755)
@@ -43,7 +45,8 @@ if name == 'cmake' and '--preset' in sys.argv and os.environ.get('FAIL_CONFIGURE
         qt.mkdir(parents=True)
         (qt / "Qt6Config.cmake").touch()
         self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
-                        Qt6_DIR=str(qt), SNOW_TEST_LOG=str(self.log))
+                        Qt6_DIR=str(qt), SNOW_TEST_LOG=str(self.log),
+                        SNOW_LAUNCH_SERVICES_REGISTER=str(self.bin / 'lsregister'))
 
     def run_script(self, script, *args, success=True):
         result = subprocess.run(["/bin/bash", str(self.root / "scripts" / script), *args],
@@ -99,12 +102,14 @@ if name == 'cmake' and '--preset' in sys.argv and os.environ.get('FAIL_CONFIGURE
         binary.parent.mkdir(parents=True)
         binary.touch()
         binary.chmod(0o755)
+        deployed = app.parent.parent / 'run/snow_shot.app'
+        deployed.mkdir(parents=True)
         calls = self.run_script('run-snow-shot.sh', '--', '--example', 'a path')
         self.assertIn(['cmake', '--build', '--preset', 'build-snow-shot-macos-arm64-debug',
                        '--target', 'snow_shot', '--parallel'], calls)
-        self.assertEqual(calls[-1], ['open', '-n', str(app.parent.parent / 'run/snow_shot.app'),
-                                    '--args', '--example', 'a path'])
-        self.assertIn('--install', calls[-2])
+        self.assertEqual(calls[-1], ['open', '-n', str(deployed), '--args', '--example', 'a path'])
+        self.assertIn('--install', calls[-3])
+        self.assertEqual(calls[-2], ['lsregister', '-f', str(deployed)])
 
     def test_launch_can_skip_or_clean_the_automatic_build(self):
         app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/snow_shot.app'
@@ -138,6 +143,24 @@ if name == 'cmake' and '--preset' in sys.argv and os.environ.get('FAIL_CONFIGURE
         self.assertIn('set(_snow_vcpkg_library_dir "@SNOW_FFMPEG_ROOT@/debug/lib")', deployment)
         self.assertIn('set(_snow_vcpkg_library_dir "@SNOW_FFMPEG_ROOT@/lib")', deployment)
         self.assertEqual(deployment.count('"-libpath=${_snow_vcpkg_library_dir}"'), 1)
+
+    def test_macos_icon_uses_native_visual_bounds_and_bundle_metadata(self):
+        generator = (ROOT / 'cmake/GenerateMacOSIcon.cmake').read_text()
+        bounds = 'x=\\"100\\" y=\\"100\\" width=\\"824\\" height=\\"824\\"'
+        self.assertIn(bounds, generator)
+
+        macos = (ROOT / 'cmake/SnowShotMacOS.cmake').read_text()
+        self.assertIn('snow_shot/resources/app-icon.svg', macos)
+        self.assertNotIn('packaging/macos/app-icon.svg', macos)
+
+        plist = (ROOT / 'snow_shot/packaging/macos/Info.plist.in').read_text()
+        self.assertIn('<key>CFBundleIconFile</key>', plist)
+        self.assertIn('${MACOSX_BUNDLE_ICON_FILE}', plist)
+
+        main = (ROOT / 'snow_shot/src/app/main.cpp').read_text()
+        self.assertNotIn('installApplicationIconFromBundle', main)
+        self.assertNotIn('setApplicationIconImage', main)
+        self.assertIn('#ifndef Q_OS_MACOS\n    QApplication::setWindowIcon(', main)
 
 
 class MacOSSigningDeployment(unittest.TestCase):
@@ -221,6 +244,10 @@ class MacOSBundle(unittest.TestCase):
             run("cmake", "--build", str(out))
             run("cmake", "--install", str(out), "--component", "SnowShot", "--prefix", str(stage))
             app = stage / "snow_shot.app"
+            info = run("plutil", "-extract", "CFBundleIconFile", "raw", "-o", "-",
+                       str(app / "Contents/Info.plist")).strip()
+            self.assertEqual(info, "snow-shot.icns")
+            self.assertTrue((app / "Contents/Resources/snow-shot.icns").is_file())
             self.assertTrue((app / "Contents/PlugIns/platforms/libqoffscreen.dylib").is_file())
             for name in ("snow_shot", "snow-ocr-process", "snow-shot-updater"):
                 binary = app / "Contents/MacOS" / name

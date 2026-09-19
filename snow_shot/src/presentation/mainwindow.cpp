@@ -35,7 +35,6 @@ constexpr int MAIN_WINDOW_WIDTH = 900;
 constexpr int MAIN_WINDOW_HEIGHT = 556;
 constexpr int MAIN_WINDOW_MIN_WIDTH = 512;
 constexpr int MAIN_WINDOW_MIN_HEIGHT = 316;
-#ifndef Q_OS_MACOS
 constexpr int TITLE_BAR_BOTTOM_SHADOW_HEIGHT = 6;
 constexpr int TITLE_BAR_BOTTOM_SHADOW_ALPHA = 10;
 
@@ -63,7 +62,6 @@ class TitleBarBottomShadowWidget final : public QWidget {
         painter.fillRect(rect(), shadowGradient);
     }
 };
-#endif
 } // namespace
 
 MainWindow::MainWindow(const snow_shot::presentation::settings::SettingsRegistry& registry,
@@ -71,6 +69,10 @@ MainWindow::MainWindow(const snow_shot::presentation::settings::SettingsRegistry
                        QWidget* parent, SnowShotApiClient* translationClient)
     : QMainWindow(parent), m_translationClient(translationClient), m_settingsRegistry(registry),
       m_runtimeSession(runtimeSession), m_geometryMemory(this) {
+#ifdef Q_OS_MACOS
+    setWindowFlags(windowFlags() | Qt::ExpandedClientAreaHint | Qt::NoTitleBarBackgroundHint);
+    setAttribute(Qt::WA_LayoutOnEntireRect);
+#endif
     setObjectName(QStringLiteral("snowShotMainWindow"));
     setAccessibleName(QStringLiteral("SnowShot"));
     setWindowTitle(QStringLiteral("SnowShot"));
@@ -109,9 +111,18 @@ bool MainWindow::event(QEvent* event) {
     const bool handled = QMainWindow::event(event);
 
 #ifdef Q_OS_WIN
+    if (event->type() == QEvent::WindowStateChange && m_titleBar != nullptr) {
+        m_titleBar->setMaximized(isMaximized());
+    }
+
     // The DWM frame extension belongs to the HWND, which Qt recreates after close().
     if (event->type() == QEvent::WinIdChange && internalWinId() != 0) {
         setupDwmShadow();
+    }
+#elif defined(Q_OS_MACOS)
+    if (event->type() == QEvent::WinIdChange || event->type() == QEvent::Show ||
+        event->type() == QEvent::WindowStateChange) {
+        setupNativeTitleBar();
     }
 #endif
 
@@ -130,6 +141,9 @@ void MainWindow::changeEvent(QEvent* event) {
 void MainWindow::resizeEvent(QResizeEvent* event) {
     QMainWindow::resizeEvent(event);
     syncTitleBarBottomShadowGeometry();
+#ifdef Q_OS_MACOS
+    setupNativeTitleBar();
+#endif
 }
 
 void MainWindow::setupDwmShadow() {
@@ -137,6 +151,14 @@ void MainWindow::setupDwmShadow() {
     snow_shot::platform::windows::setupDwmShadow(this);
 #endif
 }
+
+#ifdef Q_OS_MACOS
+void MainWindow::setupNativeTitleBar() {
+    if (m_titleBar != nullptr) {
+        snow_shot::platform::macos::configureMainWindowTitleBar(this, m_titleBar->height());
+    }
+}
+#endif
 
 #ifdef Q_OS_WIN
 bool MainWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr* result) {
@@ -159,7 +181,6 @@ void MainWindow::buildUi() {
     rootLayout->setContentsMargins(0, 0, 0, 0);
     rootLayout->setSpacing(0);
 
-#ifndef Q_OS_MACOS
     m_titleBarBottomShadow = new TitleBarBottomShadowWidget(root);
     m_titleBarBottomShadow->setObjectName(QStringLiteral("titleBarBottomShadow"));
     m_titleBarBottomShadow->hide();
@@ -167,10 +188,18 @@ void MainWindow::buildUi() {
     auto* titleBar = new TitleBarWidget(metric, root);
     rootLayout->addWidget(titleBar, 0);
 
+#ifndef Q_OS_MACOS
     connect(titleBar->minimizeButton(), &QAbstractButton::clicked, this, &QWidget::showMinimized);
+    connect(titleBar->maximizeButton(), &QAbstractButton::clicked, this, [this]() {
+        if (isMaximized()) {
+            showNormal();
+        } else {
+            showMaximized();
+        }
+    });
     connect(titleBar->closeButton(), &QAbstractButton::clicked, this, &QWidget::close);
-    m_titleBar = titleBar;
 #endif
+    m_titleBar = titleBar;
 
     auto* body = new QWidget(root);
     body->setAutoFillBackground(true);
@@ -250,6 +279,12 @@ void MainWindow::showAppPermissions(const QString& permissionId) {
     Q_UNUSED(permissionId);
 #endif
     showAndActivate();
+#ifdef Q_OS_MACOS
+    adqt::widgets::AdMessage::Request request;
+    request.key = QStringLiteral("main-app-permission-required");
+    request.content = tr("Grant the required permission to continue");
+    adqt::widgets::AdMessageService::warning(std::move(request), this);
+#endif
 }
 
 void MainWindow::showFunctionSettings() {
@@ -303,9 +338,6 @@ void MainWindow::showAndActivate() {
 }
 
 void MainWindow::syncTitleBarBottomShadowGeometry() {
-#ifdef Q_OS_MACOS
-    return;
-#else
     if (m_titleBar == nullptr || m_titleBarBottomShadow == nullptr) {
         return;
     }
@@ -320,7 +352,6 @@ void MainWindow::syncTitleBarBottomShadowGeometry() {
                                         root->width(), TITLE_BAR_BOTTOM_SHADOW_HEIGHT);
     m_titleBarBottomShadow->show();
     m_titleBarBottomShadow->raise();
-#endif
 }
 
 void MainWindow::applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) {

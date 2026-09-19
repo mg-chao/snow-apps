@@ -7,16 +7,22 @@
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "widgets/message.h"
 
+#include <QAbstractButton>
 #include <QApplication>
+#include <QColor>
 #include <QDir>
 #include <QEvent>
 #include <QFontDatabase>
+#include <QImage>
 #include <QLabel>
 #include <QMenu>
+#include <QPointer>
 #include <QTemporaryDir>
 #include <QWidget>
 
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 
@@ -49,6 +55,69 @@ void requireSmoothTitles(QWidget& container, int expectedSize) {
     require(titleCount > 0, "exercise actual large title labels, not just the window font");
 }
 
+#ifndef Q_OS_MACOS
+bool colorsApproximatelyMatch(const QColor& actual, const QColor& expected) {
+    constexpr int tolerance = 4;
+    return std::abs(actual.red() - expected.red()) <= tolerance &&
+           std::abs(actual.green() - expected.green()) <= tolerance &&
+           std::abs(actual.blue() - expected.blue()) <= tolerance;
+}
+
+QColor trafficLightFillColor(QWidget& widget) {
+    const QImage image = widget.grab().toImage();
+    require(!image.isNull(), "traffic-light control must render");
+    const qreal imageScale = static_cast<qreal>(image.height()) / widget.height();
+    const int fillSampleY = image.height() / 2 + qRound(4.0 * imageScale);
+    return image.pixelColor(image.width() / 2, fillSampleY);
+}
+#endif
+
+void customTitleBarUsesPlatformWindowControls() {
+    const auto scheme = styles::ThemeManager::instance().themeColorScheme();
+    QWidget host;
+    host.resize(360, 80);
+    TitleBarWidget titleBar(scheme.metricAlias, &host);
+    titleBar.resize(host.width(), titleBar.height());
+    host.show();
+    flushEvents();
+
+    auto* closeButton = titleBar.findChild<QAbstractButton*>(QStringLiteral("closeWindowButton"));
+    auto* minimizeButton =
+        titleBar.findChild<QAbstractButton*>(QStringLiteral("minimizeWindowButton"));
+    auto* maximizeButton =
+        titleBar.findChild<QAbstractButton*>(QStringLiteral("maximizeWindowButton"));
+#ifdef Q_OS_MACOS
+    require(closeButton == nullptr && minimizeButton == nullptr && maximizeButton == nullptr,
+            "macOS must leave traffic-light rendering and interaction to AppKit");
+#else
+    require(closeButton != nullptr && minimizeButton != nullptr && maximizeButton != nullptr,
+            "the custom title bar must own close, minimize, and maximize controls");
+    require(closeButton->x() < minimizeButton->x() && minimizeButton->x() < maximizeButton->x(),
+            "traffic-light controls must use macOS close/minimize/maximize order on the left");
+    require(maximizeButton->geometry().right() < titleBar.width() / 2,
+            "traffic-light controls must replace right-aligned Windows caption buttons");
+
+    require(colorsApproximatelyMatch(trafficLightFillColor(*closeButton),
+                                     QColor(QStringLiteral("#ff5f57"))),
+            "the close traffic light must render red");
+    require(colorsApproximatelyMatch(trafficLightFillColor(*minimizeButton),
+                                     QColor(QStringLiteral("#febc2e"))),
+            "the minimize traffic light must render yellow");
+    require(colorsApproximatelyMatch(trafficLightFillColor(*maximizeButton),
+                                     QColor(QStringLiteral("#28c840"))),
+            "the maximize traffic light must render green");
+
+    const QString maximizeText = maximizeButton->accessibleName();
+    titleBar.setMaximized(true);
+    require(!maximizeButton->accessibleName().isEmpty() &&
+                maximizeButton->accessibleName() != maximizeText,
+            "the green control must expose its restore action while maximized");
+    titleBar.setMaximized(false);
+    require(maximizeButton->accessibleName() == maximizeText,
+            "the green control must restore its maximize action in the normal state");
+#endif
+}
+
 void mainWindowTitlesKeepSmoothRendering() {
     const QFont applicationFont = QApplication::font();
     const auto& registry = settings::builtInSettingsRegistry();
@@ -59,13 +128,29 @@ void mainWindowTitlesKeepSmoothRendering() {
     window.show();
     flushEvents();
 #ifdef Q_OS_MACOS
-    require(window.findChild<TitleBarWidget*>() == nullptr,
-            "macOS must use the native title bar instead of an in-content title bar");
-    require(window.findChild<QWidget*>(QStringLiteral("titleBarBottomShadow")) == nullptr,
-            "macOS must not retain the custom title-bar shadow");
+    auto* titleBar = window.findChild<TitleBarWidget*>();
+    require(titleBar != nullptr,
+            "macOS must place native traffic lights over SnowShot's in-content title bar");
+    require(window.windowFlags().testFlag(Qt::ExpandedClientAreaHint) &&
+                window.windowFlags().testFlag(Qt::NoTitleBarBackgroundHint) &&
+                window.testAttribute(Qt::WA_LayoutOnEntireRect),
+            "macOS must expand SnowShot's layout into the transparent native title-bar area");
+    require(window.findChild<QWidget*>(QStringLiteral("titleBarBottomShadow")) != nullptr,
+            "macOS must retain SnowShot's custom title-bar separator shadow");
+    require(titleBar->closeButton() == nullptr && titleBar->minimizeButton() == nullptr &&
+                titleBar->maximizeButton() == nullptr,
+            "macOS must not render duplicate custom traffic-light controls");
 #else
-    require(window.findChild<TitleBarWidget*>() != nullptr,
-            "non-macOS windows must retain the existing custom title bar");
+    auto* titleBar = window.findChild<TitleBarWidget*>();
+    require(titleBar != nullptr, "non-macOS windows must retain the existing custom title bar");
+    require(titleBar->maximizeButton() != nullptr,
+            "the custom main-window title bar must expose a maximize control");
+    titleBar->maximizeButton()->click();
+    flushEvents();
+    require(window.isMaximized(), "the green title-bar control must maximize the main window");
+    titleBar->maximizeButton()->click();
+    flushEvents();
+    require(!window.isMaximized(), "the green title-bar control must restore the main window");
 #endif
     auto* card = window.findChild<ContentCardWidget*>();
     require(card != nullptr, "main window content exists");
@@ -95,6 +180,40 @@ void mainWindowTitlesKeepSmoothRendering() {
     require(QApplication::font() == applicationFont,
             "main window typography must not change the application font for other windows");
 }
+
+#ifdef Q_OS_MACOS
+void permissionRedirectShowsMainInterfacePrompt() {
+    const auto& registry = settings::builtInSettingsRegistry();
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    settings::SettingsRuntimeSession session(registry, backend);
+    MainWindow window(registry, session);
+    auto* messages = adqt::widgets::AdMessageService::instance(&window);
+    QPointer<adqt::widgets::AdMessageHandle> prompt;
+    QObject::connect(messages, &adqt::widgets::AdMessage::messageOpened, &window,
+                     [&prompt](adqt::widgets::AdMessageHandle* handle) { prompt = handle; });
+
+    window.showAppPermissions(QStringLiteral("accessibility"));
+    flushEvents();
+    auto* card = window.findChild<ContentCardWidget*>();
+    require(window.isVisible() && card != nullptr &&
+                card->currentLocation().pageId == QStringLiteral("app-permissions") &&
+                card->currentLocation().itemId == QStringLiteral("accessibility"),
+            "permission failure must open the main interface at the affected permission");
+    require(prompt != nullptr && messages->count() == 1 &&
+                prompt->key() == QStringLiteral("main-app-permission-required") &&
+                prompt->type() == adqt::widgets::AdMessage::Type::Warning &&
+                prompt->content() == QStringLiteral("Grant the required permission to continue"),
+            "permission failure must show a warning through the main-interface message component");
+
+    window.showAppPermissions(QStringLiteral("screen-recording"));
+    flushEvents();
+    require(messages->count() == 1 &&
+                card->currentLocation().itemId == QStringLiteral("screen-recording"),
+            "repeated permission failures must update one prompt while navigating to the latest "
+            "permission");
+}
+#endif
 
 void applicationTypographyCoversUnownedSurfaces() {
     // The theme owns application-wide typography: tooltips, message boxes, native menus,
@@ -131,7 +250,11 @@ int main(int argc, char** argv) {
             "initialize isolated font test storage");
     styles::ThemeManager::instance().initialize(application);
     applicationTypographyCoversUnownedSurfaces();
+    customTitleBarUsesPlatformWindowControls();
     mainWindowTitlesKeepSmoothRendering();
+#ifdef Q_OS_MACOS
+    permissionRedirectShowsMainInterfacePrompt();
+#endif
     storage.shutdown();
     return 0;
 }

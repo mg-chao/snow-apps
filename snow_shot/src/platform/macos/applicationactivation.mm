@@ -8,6 +8,7 @@
 #include <QWidget>
 #include <QWindow>
 
+#include <array>
 #include <utility>
 
 @interface SnowShotApplicationDelegateProxy : NSObject <NSApplicationDelegate> {
@@ -61,6 +62,64 @@
 @end
 
 namespace snow_shot::platform::macos {
+namespace {
+constexpr CGFloat TRAFFIC_LIGHT_LEFT_MARGIN = 14.0;
+constexpr CGFloat TRAFFIC_LIGHT_SPACING = 6.0;
+
+void positionStandardWindowButtons(NSWindow* window, int titleBarHeight) {
+    if (window == nil || titleBarHeight <= 0 || window.contentView == nil) {
+        return;
+    }
+
+    [window.contentView.superview layoutSubtreeIfNeeded];
+    const NSRect contentBoundsInWindow = [window.contentView convertRect:window.contentView.bounds
+                                                                  toView:nil];
+    const CGFloat buttonCenterY = NSMaxY(contentBoundsInWindow) - titleBarHeight / 2.0;
+    CGFloat buttonLeft = NSMinX(contentBoundsInWindow) + TRAFFIC_LIGHT_LEFT_MARGIN;
+    const std::array<NSWindowButton, 3> buttonKinds = {
+        NSWindowCloseButton,
+        NSWindowMiniaturizeButton,
+        NSWindowZoomButton,
+    };
+
+    for (const NSWindowButton kind : buttonKinds) {
+        NSButton* button = [window standardWindowButton:kind];
+        NSView* buttonSuperview = button.superview;
+        if (button == nil || buttonSuperview == nil) {
+            continue;
+        }
+
+        const NSRect frame = button.frame;
+        const NSPoint originInWindow =
+            NSMakePoint(buttonLeft, buttonCenterY - NSHeight(frame) / 2.0);
+        const NSPoint originInSuperview = [buttonSuperview convertPoint:originInWindow
+                                                               fromView:nil];
+        [button setFrameOrigin:originInSuperview];
+        button.hidden = NO;
+        buttonLeft += NSWidth(frame) + TRAFFIC_LIGHT_SPACING;
+    }
+}
+} // namespace
+
+void configureMainWindowTitleBar(QWidget* window, int titleBarHeight) {
+    if (window == nullptr || titleBarHeight <= 0 || QThread::currentThread() != qApp->thread() ||
+        QGuiApplication::platformName() != QStringLiteral("cocoa") ||
+        window->internalWinId() == 0) {
+        return;
+    }
+
+    NSView* view = reinterpret_cast<NSView*>(window->internalWinId());
+    NSWindow* nativeWindow = view.window;
+    if (nativeWindow == nil) {
+        return;
+    }
+
+    nativeWindow.titleVisibility = NSWindowTitleHidden;
+    nativeWindow.titlebarSeparatorStyle = NSTitlebarSeparatorStyleNone;
+    nativeWindow.movableByWindowBackground = NO;
+    positionStandardWindowButtons(nativeWindow, titleBarHeight);
+}
+
 void activateWindow(QWidget* window) {
     if (window == nullptr || QThread::currentThread() != qApp->thread() ||
         QGuiApplication::platformName() != QStringLiteral("cocoa")) {

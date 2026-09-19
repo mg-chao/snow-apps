@@ -309,6 +309,10 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <source>Failed to retrieve selected text</source>
             <translation>获取选中文本失败</translation>
         </message>
+        <message>
+            <source>Grant the required permission to continue</source>
+            <translation>请授予所需权限以继续</translation>
+        </message>
     </context>
     <context>
         <name>QObject</name>
@@ -556,8 +560,16 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>关闭</translation>
         </message>
         <message>
+            <source>Maximize</source>
+            <translation>最大化</translation>
+        </message>
+        <message>
             <source>Minimize</source>
             <translation>最小化</translation>
+        </message>
+        <message>
+            <source>Restore</source>
+            <translation>还原</translation>
         </message>
     </context>
     <context>

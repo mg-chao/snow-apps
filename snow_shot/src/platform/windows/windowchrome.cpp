@@ -161,7 +161,9 @@ bool handleNcHitTest(QWidget* titleBar, const MSG* msg, qintptr* result) {
     // Let the DWM run its default hit-test first (for things like the
     // top-of-screen snap zone).
     LRESULT dpiResult = 0;
-    if (DwmDefWindowProc(msg->hwnd, msg->message, msg->wParam, msg->lParam, &dpiResult) != 0) {
+    const bool handledByDwm =
+        DwmDefWindowProc(msg->hwnd, msg->message, msg->wParam, msg->lParam, &dpiResult) != 0;
+    if (handledByDwm && !detail::isNativeCaptionControlHit(dpiResult)) {
         *result = dpiResult;
         return true;
     }
@@ -181,6 +183,11 @@ bool handleNcHitTest(QWidget* titleBar, const MSG* msg, qintptr* result) {
     return true;
 }
 } // namespace
+
+bool detail::isNativeCaptionControlHit(qintptr hitTestResult) {
+    return hitTestResult == HTSYSMENU || hitTestResult == HTMINBUTTON ||
+           hitTestResult == HTMAXBUTTON || hitTestResult == HTCLOSE || hitTestResult == HTHELP;
+}
 
 void setupDwmShadow(QWidget* window) {
     if (window == nullptr) {

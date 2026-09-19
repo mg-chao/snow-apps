@@ -115,6 +115,18 @@ void raisedOverlayPreventsTitleBarDragging() {
     QCursor::setPos(originalCursorPosition);
 }
 
+void nativeCaptionControlHitsAreSuppressed() {
+    using snow_shot::platform::windows::detail::isNativeCaptionControlHit;
+    for (const qintptr nativeControl : {HTSYSMENU, HTMINBUTTON, HTMAXBUTTON, HTCLOSE, HTHELP}) {
+        require(isNativeCaptionControlHit(nativeControl),
+                "DWM caption controls must not override SnowShot title-bar controls");
+    }
+    for (const qintptr customChrome : {HTCLIENT, HTCAPTION, HTLEFT, HTRIGHT, HTTOP, HTBOTTOM}) {
+        require(!isNativeCaptionControlHit(customChrome),
+                "dragging and resizing must remain owned by the custom window chrome");
+    }
+}
+
 void captureExclusionCapabilityAndNativeVisibilityAreReported() {
     require(snow_shot::platform::windows::supportsWindowCaptureExclusion() ==
                 currentWindowsSupportsCaptureExclusion(),
@@ -172,6 +184,7 @@ void layeredWindowInputTransparencyPreservesNativeState() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    nativeCaptionControlHitsAreSuppressed();
     layeredWindowInputTransparencyPreservesNativeState();
     captureExclusionCapabilityAndNativeVisibilityAreReported();
     raisedOverlayPreventsTitleBarDragging();

@@ -261,8 +261,10 @@ int main(int argc, char* argv[]) {
     } historyTaskDrain;
     static_cast<void>(snow_shot::presentation::settings::applyConfiguredApplicationPriority());
     QApplication::setQuitOnLastWindowClosed(false);
+#ifndef Q_OS_MACOS
     QApplication::setWindowIcon(
         adqt::icons::makeIcon(snow_shot::presentation::icons::custom::app::ApplicationIcon()));
+#endif
     adqt::locale::LocaleManager::instance().applyTo(app);
     snow_shot::presentation::LanguageManager::instance().initialize();
     const auto startupSettings = snow_shot::storage::SystemSettings();

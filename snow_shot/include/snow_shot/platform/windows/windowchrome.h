@@ -36,6 +36,9 @@ class CursorRefresh final {
 [[nodiscard]] bool isNativeWindowVisible(QWidget* window);
 [[nodiscard]] bool flushWindowComposition();
 bool handleNativeWindowEvent(QWidget* titleBar, void* message, qintptr* result);
+namespace detail {
+[[nodiscard]] bool isNativeCaptionControlHit(qintptr hitTestResult);
+}
 } // namespace snow_shot::platform::windows
 #endif
 

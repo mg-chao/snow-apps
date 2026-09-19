@@ -8,6 +8,7 @@ class QWidget;
 
 namespace snow_shot::platform::macos {
 void activateWindow(QWidget* window);
+void configureMainWindowTitleBar(QWidget* window, int titleBarHeight);
 
 class ApplicationReopenHandler final {
   public:
