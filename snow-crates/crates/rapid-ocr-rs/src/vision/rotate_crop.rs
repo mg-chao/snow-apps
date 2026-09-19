@@ -159,7 +159,7 @@ fn rotate_crop_image_opencv(img: &RecImage, points: Quad) -> Result<RecImage> {
         Point2f::new(points[3][0], points[3][1]),
     ];
 
-    let m = imgproc::get_perspective_transform_slice(&src_pts, &pts_std, core::DECOMP_LU).map_err(
+    let m = imgproc::get_perspective_transform_slice(src_pts, pts_std, core::DECOMP_LU).map_err(
         |e| RapidOcrError::Config(format!("opencv getPerspectiveTransform failed: {e}")),
     )?;
 

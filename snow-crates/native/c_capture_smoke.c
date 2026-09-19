@@ -1,5 +1,9 @@
 #include "snow_capture_macos.h"
-#define REQUIRE(condition) do { if (!(condition)) return __LINE__; } while (0)
+#define REQUIRE(condition)                                                                         \
+    do {                                                                                           \
+        if (!(condition))                                                                          \
+            return __LINE__;                                                                       \
+    } while (0)
 #include <stdio.h>
 
 int main(void) {

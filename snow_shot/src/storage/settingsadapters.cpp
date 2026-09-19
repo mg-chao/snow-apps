@@ -273,6 +273,27 @@ bool InterfaceSettings::setSidebarCollapsed(bool collapsed) const {
     return cache().setValue(QStringLiteral("interface/sidebar_collapsed"), collapsed);
 }
 
+std::optional<PersistedWindowGeometry> WindowMemorySettings::mainWindowGeometry() const {
+    return parseWindowGeometry(
+        cache().value(QStringLiteral("interface/main_window_geometry")).toObject());
+}
+
+bool WindowMemorySettings::setMainWindowGeometry(const QRect& normalGeometry,
+                                                 bool maximized) const {
+    return cache().setValue(QStringLiteral("interface/main_window_geometry"),
+                            windowGeometryToJson(normalGeometry, maximized));
+}
+
+std::optional<QSize> WindowMemorySettings::translationWindowSize() const {
+    return parseWindowSize(
+        cache().value(QStringLiteral("interface/translation_window_size")).toObject());
+}
+
+bool WindowMemorySettings::setTranslationWindowSize(const QSize& size) const {
+    return cache().setValue(QStringLiteral("interface/translation_window_size"),
+                            windowSizeToJson(size));
+}
+
 shortcuts::ShortcutBindingList ShortcutSettings::screenshot() const {
     return shortcutValue(QStringLiteral("global_shortcuts/screenshot"));
 }

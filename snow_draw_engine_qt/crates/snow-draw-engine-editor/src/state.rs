@@ -1,8 +1,8 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use snow_draw_engine_core::{ErrorCode, Point, SnapGuide, arrow::ArrowEndpointEdge};
 use snow_draw_engine_document::{
-    ArrowData, ElementId, ElementKind, FilterData, PenFilterData, RectangleData, SerialNumberData,
-    TextData,
+    ArrowData, ArrowSuggestedBinding, ElementId, ElementKind, FilterData, PenFilterData,
+    RectangleData, SerialNumberData, TextData,
 };
 use snow_draw_engine_interaction::CursorStyle;
 use snow_draw_engine_model::DocumentModel;
@@ -93,6 +93,7 @@ pub(crate) struct CreateArrowState {
     pub(crate) committed_points: Vec<Point<f64>>,
     pub(crate) press_view_position: Point<f64>,
     pub(crate) phase: ArrowCreationPhase,
+    pub(crate) suggested_binding: Option<ArrowSuggestedBinding>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -274,6 +275,7 @@ pub(crate) struct EditArrowState {
     pub(crate) mode: ArrowEditMode,
     pub(crate) start_canvas_position: Point<f64>,
     pub(crate) drag_offset: Point<f64>,
+    pub(crate) suggested_binding: Option<ArrowSuggestedBinding>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -386,6 +388,10 @@ impl SelectionState {
     }
 }
 
+// The arrow edit state carries the original and preview arrow payloads; the
+// size difference to the other variants is intentional and the state is
+// short-lived, so keep it inline instead of boxing.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) enum InteractionState {
     #[default]

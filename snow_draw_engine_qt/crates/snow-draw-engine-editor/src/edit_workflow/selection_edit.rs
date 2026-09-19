@@ -1,4 +1,5 @@
 use super::*;
+use crate::snapping::ObjectSnapActor;
 use crate::text::{
     MeasuredTextResize, TextResizeLayoutOverride, text_resize_layout_override_matches_rect,
     text_resize_measurement_font_size, text_resize_measurement_requested_values,
@@ -608,35 +609,44 @@ impl Editor {
                 ),
                 Vec::new(),
             ),
-            SnappingMode::Object if self.config.snap.enable_point_snaps => {
+            SnappingMode::Object => {
                 let excluded = context
                     .original_elements
                     .iter()
                     .map(|element| element.id)
                     .collect::<Vec<_>>();
-                let anchors_x = resize_snap_anchors_for_sign(dragged_x_sign);
-                let anchors_y = resize_snap_anchors_for_sign(dragged_y_sign);
-                let snap_result = OBJECT_SNAP_SERVICE.snap_resize(
-                    unsnapped_rect,
-                    &Self::visible_reference_rects(document, &excluded),
-                    self.zoom_adjusted_snap_distance(),
-                    &anchors_x,
-                    &anchors_y,
-                    self.config.snap.enable_point_snaps,
-                );
-                (
-                    DrawRect::new(
-                        unsnapped_rect.min_x + if snap_min_x { snap_result.dx } else { 0.0 },
-                        unsnapped_rect.min_y + if snap_min_y { snap_result.dy } else { 0.0 },
-                        unsnapped_rect.max_x + if snap_max_x { snap_result.dx } else { 0.0 },
-                        unsnapped_rect.max_y + if snap_max_y { snap_result.dy } else { 0.0 },
+                if let Some(plan) = self.object_snap_plan(
+                    document,
+                    ObjectSnapActor::selection(
+                        document,
+                        context.original_elements,
+                        context.original_arrows,
                     ),
-                    if self.config.snap.show_guides {
-                        snap_result.guides
-                    } else {
-                        Vec::new()
-                    },
-                )
+                    &excluded,
+                    snapping_mode,
+                ) {
+                    let anchors_x = resize_snap_anchors_for_sign(dragged_x_sign);
+                    let anchors_y = resize_snap_anchors_for_sign(dragged_y_sign);
+                    let snap_result = OBJECT_SNAP_SERVICE.snap_resize(
+                        unsnapped_rect,
+                        &plan.references,
+                        plan.snap_distance,
+                        &anchors_x,
+                        &anchors_y,
+                        plan.enable_point_snaps,
+                    );
+                    (
+                        DrawRect::new(
+                            unsnapped_rect.min_x + if snap_min_x { snap_result.dx } else { 0.0 },
+                            unsnapped_rect.min_y + if snap_min_y { snap_result.dy } else { 0.0 },
+                            unsnapped_rect.max_x + if snap_max_x { snap_result.dx } else { 0.0 },
+                            unsnapped_rect.max_y + if snap_max_y { snap_result.dy } else { 0.0 },
+                        ),
+                        plan.guides(snap_result.guides),
+                    )
+                } else {
+                    (unsnapped_rect, Vec::new())
+                }
             }
             _ => (unsnapped_rect, Vec::new()),
         };

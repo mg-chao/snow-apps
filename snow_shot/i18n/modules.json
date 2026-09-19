@@ -26,6 +26,7 @@
     "ShortcutKeyRow",
     "StorageStatusSettingsWidget",
     "snow_shot::presentation::GlobalMouseManager",
+    "snow_shot::storage::ConfigurationArchive",
     "snow_shot::storage::ConfigurationStore"
   ],
   "capture": [

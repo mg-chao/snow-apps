@@ -92,7 +92,7 @@ typedef struct SnowSelectedTextError {
 typedef struct SnowSelectedTextMetadata {
     uintptr_t native_window; /* Zero when the platform exposes no stable native identifier. */
     uint32_t process_id;
-    uintptr_t native_focus;  /* Zero when unavailable. */
+    uintptr_t native_focus; /* Zero when unavailable. */
     uint32_t method;
     uint32_t clipboard_status;
     SnowSelectedTextBytes executable;

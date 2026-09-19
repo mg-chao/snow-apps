@@ -477,6 +477,7 @@ fn snow_overlay_rect_kind_from_rust(value: UiRectKind) -> SnowOverlayRectKind {
         UiRectKind::ArrowFocusHandle => SnowOverlayRectKind::ArrowFocusHandle,
         UiRectKind::ArrowSegmentHandle => SnowOverlayRectKind::ArrowSegmentHandle,
         UiRectKind::EraserCursor => SnowOverlayRectKind::EraserCursor,
+        UiRectKind::BindingHighlight => SnowOverlayRectKind::BindingHighlight,
     }
 }
 

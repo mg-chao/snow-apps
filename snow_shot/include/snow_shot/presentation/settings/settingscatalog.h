@@ -268,6 +268,8 @@ enum class SettingsActionBinding {
     ClearThumbnailCache,
     ClearRecordingTemp,
     CopyTodayLog,
+    ExportConfiguration,
+    ImportConfiguration,
 };
 
 enum class SettingsActionAccent {
@@ -282,12 +284,19 @@ struct SettingsConfirmationDefinition {
     TranslatableText rejectText;
 };
 
+struct SettingsActionFileOpenDefinition {
+    TranslatableText dialogTitle;
+    TranslatableText fileFilter;
+};
+
 struct SettingsActionDefinition {
     SettingsActionBinding binding = SettingsActionBinding::ClearCaptureHistory;
     TranslatableText buttonText;
     SettingsActionAccent accent = SettingsActionAccent::Neutral;
     std::function<adqt::icons::IconRef()> iconFactory;
     std::optional<SettingsConfirmationDefinition> confirmation;
+    std::optional<SettingsActionFileOpenDefinition> fileOpen;
+    std::optional<TranslatableText> successMessage;
 };
 
 enum class SettingsCustomRenderer {

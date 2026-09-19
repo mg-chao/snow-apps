@@ -16,6 +16,7 @@ impl Editor {
             self.arrow_edit_preview(document, state, canvas_point, event.modifiers, false);
         if next_preview.arrow == state.preview_arrow
             && next_preview.next_mode.unwrap_or(state.mode) == state.mode
+            && next_preview.suggested_binding == state.suggested_binding
         {
             return;
         }
@@ -25,6 +26,7 @@ impl Editor {
             if let Some(next_mode) = next_preview.next_mode {
                 active.mode = next_mode;
             }
+            active.suggested_binding = next_preview.suggested_binding;
         }
         self.bump_scene_state_revision();
         self.bump_overlay_state_revision();
@@ -99,6 +101,7 @@ impl Editor {
                 ),
                 reorder_targets: Vec::new(),
                 next_mode: None,
+                suggested_binding: None,
             },
             ArrowEditMode::Endpoint(edge) => {
                 let mut drag_target = self.snap_linear_arrow_control_point(drag_target, modifiers);
@@ -121,12 +124,7 @@ impl Editor {
                     drag_target,
                     &bindables,
                     context,
-                    ArrowEndpointDragOptions {
-                        new_arrow: false,
-                        initial_binding: false,
-                        alt_key: modifiers.alt,
-                        finalize,
-                    },
+                    arrow_endpoint_drag_options(modifiers, finalize),
                 );
                 let arrow = snap_linear_arrow_loop_endpoint(
                     &result.arrow,
@@ -169,6 +167,7 @@ impl Editor {
                     arrow,
                     reorder_targets: result.reorder_targets,
                     next_mode: None,
+                    suggested_binding: result.suggested_binding,
                 }
             }
             ArrowEditMode::Point(index) => {
@@ -198,6 +197,7 @@ impl Editor {
                     arrow,
                     reorder_targets: Vec::new(),
                     next_mode: None,
+                    suggested_binding: None,
                 }
             }
             ArrowEditMode::FocusPoint(edge) => {
@@ -218,6 +218,7 @@ impl Editor {
                     arrow: result.arrow,
                     reorder_targets: result.reorder_targets,
                     next_mode: None,
+                    suggested_binding: result.suggested_binding,
                 }
             }
             ArrowEditMode::Segment(index) => {
@@ -239,6 +240,7 @@ impl Editor {
                             arrow: state.original_arrow.clone(),
                             reorder_targets: Vec::new(),
                             next_mode: None,
+                            suggested_binding: None,
                         };
                     }
 
@@ -251,6 +253,7 @@ impl Editor {
                         .unwrap_or_else(|| state.original_arrow.clone()),
                         reorder_targets: Vec::new(),
                         next_mode: None,
+                        suggested_binding: None,
                     };
                 }
 
@@ -267,6 +270,7 @@ impl Editor {
                     arrow: result.arrow,
                     reorder_targets: Vec::new(),
                     next_mode: Some(ArrowEditMode::Segment(result.next_segment_index)),
+                    suggested_binding: state.suggested_binding.clone(),
                 }
             }
         }
@@ -347,6 +351,7 @@ mod tests {
             mode: ArrowEditMode::Segment(visible_drag.next_segment_index),
             start_canvas_position: last_midpoint,
             drag_offset: Point::default(),
+            suggested_binding: None,
         });
         let pointer_up = PointerEvent {
             pointer_id: 9,
@@ -415,6 +420,7 @@ mod tests {
             mode: ArrowEditMode::Endpoint(ArrowEndpointEdge::End),
             start_canvas_position: Point::new(-100.0, 30.0),
             drag_offset: Point::default(),
+            suggested_binding: None,
         };
         let editor = Editor::new(EngineConfig::default()).unwrap();
         let bindables = editor.bindable_elements(&document, &[]);
@@ -461,6 +467,116 @@ mod tests {
         assert_ne!(
             visible_endpoint, pointer,
             "the fixture must exercise binding auto-snap away from the pointer"
+        );
+    }
+
+    #[test]
+    fn endpoint_drag_near_bindable_surfaces_binding_highlight() {
+        let mut document = DocumentModel::new();
+        let rectangle_id = document.peek_next_element_id();
+        let mut insert = Transaction::new("insert bindable rectangle");
+        insert.insert_rectangle(
+            rectangle_id,
+            ElementMeta::default(),
+            RectangleData {
+                rectangle_kind: RectangleElementKind::Rectangle,
+                highlight_shape: HighlightShape::Rectangle,
+                center: Point::new(0.0, 0.0),
+                width: 100.0,
+                height: 100.0,
+                rotation: 0.0,
+                fill: ColorRgba8::default(),
+                fill_style: FillStyle::Solid,
+                stroke: ColorRgba8::default(),
+                stroke_width: 2.0,
+                stroke_style: StrokeStyle::Solid,
+                corner_radii: CornerRadii::default(),
+                opacity: 1.0,
+            },
+        );
+        document.apply_transaction(insert).unwrap();
+
+        let arrow = ArrowData::from_global_points(
+            &[Point::new(-150.0, 30.0), Point::new(-100.0, 30.0)],
+            ColorRgba8::default(),
+            2.0,
+            StrokeStyle::Solid,
+            ArrowType::Straight,
+            None,
+            None,
+        )
+        .unwrap();
+        let arrow_id = document.peek_next_element_id();
+        let mut editor = Editor::new(EngineConfig::default()).unwrap();
+        editor.set_surface_size(400, 400).unwrap();
+
+        let move_event = |canvas_x: f64, canvas_y: f64| PointerEvent {
+            pointer_id: 1,
+            event_type: PointerEventType::Move,
+            device: PointerDevice::Mouse,
+            position: Point::new(200.0 + canvas_x, 200.0 + canvas_y),
+            button: None,
+            buttons: PointerButtons::default(),
+            modifiers: Modifiers::default(),
+        };
+
+        // Hovering the endpoint near the right-edge midpoint highlights the
+        // bindable and reports the snap midpoint.
+        editor.state.interaction = InteractionState::EditingArrow(EditArrowState {
+            pointer_id: 1,
+            arrow_id,
+            original_arrow: arrow.clone(),
+            preview_arrow: arrow,
+            mode: ArrowEditMode::Endpoint(ArrowEndpointEdge::End),
+            start_canvas_position: Point::new(-100.0, 30.0),
+            drag_offset: Point::default(),
+            suggested_binding: None,
+        });
+        editor.update_arrow_edit_preview(&document, move_event(53.0, 3.0));
+        let highlight = editor
+            .presentation_state(&document)
+            .binding_highlight
+            .expect("binding highlight while dragging near the bindable");
+        assert!((highlight.rect.center.x - 0.0).abs() < 1e-9);
+        assert!((highlight.rect.width - 100.0).abs() < 1e-9);
+        assert!((highlight.stroke_width - 2.0).abs() < 1e-9);
+        let mid_point = highlight.mid_point.expect("snapped midpoint");
+        assert!((mid_point.x - 50.0).abs() < 0.1 && mid_point.y.abs() < 0.1);
+
+        // Away from every bindable the highlight disappears.
+        editor.update_arrow_edit_preview(&document, move_event(300.0, 300.0));
+        assert!(
+            editor
+                .presentation_state(&document)
+                .binding_highlight
+                .is_none()
+        );
+
+        // Releasing the endpoint clears the highlight with the interaction.
+        editor.update_arrow_edit_preview(&document, move_event(53.0, 3.0));
+        assert!(
+            editor
+                .presentation_state(&document)
+                .binding_highlight
+                .is_some()
+        );
+        let pointer_up = PointerEvent {
+            pointer_id: 1,
+            event_type: PointerEventType::Up,
+            device: PointerDevice::Mouse,
+            position: Point::new(253.0, 203.0),
+            button: Some(PointerButton::Primary),
+            buttons: PointerButtons::default(),
+            modifiers: Modifiers::default(),
+        };
+        editor
+            .process_input(&document, InputEvent::Pointer(pointer_up))
+            .unwrap();
+        assert!(
+            editor
+                .presentation_state(&document)
+                .binding_highlight
+                .is_none()
         );
     }
 }

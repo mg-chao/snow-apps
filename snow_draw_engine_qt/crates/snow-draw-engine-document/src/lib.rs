@@ -40,8 +40,8 @@ pub use arrow::{
     arrow_text_max_width, arrowhead_render_primitives, validate_arrow,
 };
 pub use arrow_operations::{
-    ArrowEndpointDragOptions, ArrowFocusDragOptions, compute_arrow_endpoint_drag,
-    compute_arrow_focus_drag, drag_elbow_arrow_segment, preview_elbow_arrow_endpoint_binding,
+    ArrowEditResult, ArrowEndpointDragOptions, ArrowFocusDragOptions, ArrowSuggestedBinding,
+    compute_arrow_endpoint_drag, compute_arrow_focus_drag, drag_elbow_arrow_segment,
     recompute_arrow_after_bindable_change, visible_arrow_focus_points,
 };
 pub use bindings::*;
@@ -57,6 +57,6 @@ pub(crate) use snow_draw_engine_core::arrow::{
     ArrowEndpointEdge, ArrowEndpointPosition, ArrowEndpointSelector, ArrowPathCommand, Arrowhead,
     ArrowheadCirclePrimitive, ArrowheadDashMode, ArrowheadFillMode, ArrowheadLinePrimitive,
     ArrowheadPoints, ArrowheadPolygonPrimitive, ArrowheadPrimitiveKind, ArrowheadRenderPrimitive,
-    BindMode, BindableShape, CurvePathOp, EngineContext, FixedSegment, FocusPointContext,
-    UpdateElbowArrowOptions, normalize_arrow_endpoint_edge,
+    BindMode, BindableShape, CurvePathOp, FixedSegment, FocusPointContext, UpdateElbowArrowOptions,
+    normalize_arrow_endpoint_edge,
 };

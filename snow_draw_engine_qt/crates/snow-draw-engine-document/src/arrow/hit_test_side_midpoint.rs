@@ -1,11 +1,8 @@
 use super::*;
 
-pub fn get_binding_side_mid_point<T: ?Sized>(
-    binding: (&T, Point),
-    bindable: &BindableState,
-) -> Point {
+pub fn get_binding_side_mid_point(fixed_point: Point, bindable: &BindableState) -> Point {
     let shape = bindable.shape;
-    let side = get_shape_side(normalize_fixed_point(binding.1), shape);
+    let side = get_shape_side(normalize_fixed_point(fixed_point), shape);
     let bindable_center = center(bindable.x, bindable.y, bindable.width, bindable.height);
     const OFFSET: f64 = 0.01;
     const OFFSET_DIAGONAL: f64 = OFFSET * 0.707;

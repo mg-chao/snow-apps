@@ -137,25 +137,22 @@ typedef struct SnowCaptureDirectRecordingConfig {
     uint32_t loop_animated_images;
 } SnowCaptureDirectRecordingConfig;
 
-SnowRecordingSession*
-snow_recording_session_create(const SnowRecordingConfig* config);
+SnowRecordingSession* snow_recording_session_create(const SnowRecordingConfig* config);
 /* Pure output sizing shared by recording and effects preview. Zero maximums mean uncapped. */
-int32_t snow_recording_output_dimensions(uint32_t width, uint32_t height,
-                                                 uint32_t maximum_width, uint32_t maximum_height,
-                                                 uint32_t format, uint32_t* output_width,
-                                                 uint32_t* output_height);
+int32_t snow_recording_output_dimensions(uint32_t width, uint32_t height, uint32_t maximum_width,
+                                         uint32_t maximum_height, uint32_t format,
+                                         uint32_t* output_width, uint32_t* output_height);
 
 SnowRecordingResult
 snow_recording_session_create_direct(const SnowCaptureDirectRecordingConfig* config,
-                                             SnowRecordingSession** out_session);
+                                     SnowRecordingSession** out_session);
 void snow_recording_session_destroy(SnowRecordingSession* session);
 uint8_t snow_recording_session_start(SnowRecordingSession* session);
 uint8_t snow_recording_session_pause(SnowRecordingSession* session);
 uint8_t snow_recording_session_resume(SnowRecordingSession* session);
 uint8_t snow_recording_session_state(const SnowRecordingSession* session,
-                                             SnowRecordingState* out_state);
-uint8_t
-snow_recording_session_stop_and_export(SnowRecordingSession* session,
+                                     SnowRecordingState* out_state);
+uint8_t snow_recording_session_stop_and_export(SnowRecordingSession* session,
                                                const SnowRecordingExportConfig* config);
 SnowRecordingResult snow_recording_session_stop(SnowRecordingSession* session);
 /* Disposable one-second native-GPU diagnostic using the regular direct recording
@@ -164,7 +161,7 @@ SnowRecordingResult snow_recording_session_stop(SnowRecordingSession* session);
  * GPU capture and require successful software recovery; otherwise use 0.
  * Existing config layouts are unchanged. */
 SnowRecordingResult snow_recording_gpu_probe(const SnowCaptureDirectRecordingConfig* config,
-                                                   uint32_t recover);
+                                             uint32_t recover);
 /* Live recording sessions created and not yet destroyed; for leak diagnostics in tests. */
 size_t snow_recording_session_live_count(void);
 

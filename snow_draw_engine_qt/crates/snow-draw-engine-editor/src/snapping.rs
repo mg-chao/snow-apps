@@ -179,24 +179,36 @@ impl Editor {
             preview = preview.map(RectangleData::into_spotlight);
         }
 
-        let should_object_snap = snapping_mode == SnappingMode::Object
-            && preview.is_some()
-            && (self.config.snap.enable_point_snaps || self.config.snap.enable_gap_snaps);
-        if !should_object_snap {
+        let Some(plan) = self.object_snap_plan(
+            document,
+            ObjectSnapActor::Creation(self.state.active_tool),
+            &[],
+            snapping_mode,
+        ) else {
             return (preview, Vec::new());
-        }
-
+        };
         let Some(rect) = preview else {
             return (None, Vec::new());
         };
+        self.snap_created_rectangle(&plan, start, constrained_current, modifiers, rect, style)
+    }
+
+    fn snap_created_rectangle(
+        &self,
+        plan: &ObjectSnapPlan,
+        start: Point<f64>,
+        constrained_current: Point<f64>,
+        modifiers: Modifiers,
+        rect: RectangleData,
+        style: RectangleShapeStyle,
+    ) -> (Option<RectangleData>, Vec<SnapGuide>) {
+        let mut preview = Some(rect);
         let move_min_x = constrained_current.x < start.x;
         let move_min_y = constrained_current.y < start.y;
-        let reference_rects = Self::visible_reference_rects(document, &[]);
-        let snap_distance = self.zoom_adjusted_snap_distance();
         let mut snap_result = OBJECT_SNAP_SERVICE.snap_rect(ObjectSnapRectRequest {
             target_rect: rectangle_to_draw_rect(&rect),
-            reference_rects: &reference_rects,
-            snap_distance,
+            reference_rects: &plan.references,
+            snap_distance: plan.snap_distance,
             target_anchors_x: if move_min_x {
                 &[SnapAxisAnchor::Start]
             } else {
@@ -207,8 +219,8 @@ impl Editor {
             } else {
                 &[SnapAxisAnchor::End]
             },
-            enable_point_snaps: self.config.snap.enable_point_snaps,
-            enable_gap_snaps: self.config.snap.enable_gap_snaps,
+            enable_point_snaps: plan.enable_point_snaps,
+            enable_gap_snaps: plan.enable_gap_snaps,
         });
         if snap_result.has_snap() {
             if !modifiers.alt && !modifiers.shift {
@@ -222,14 +234,7 @@ impl Editor {
                     ),
                     &rect,
                 ));
-                return (
-                    preview,
-                    if self.config.snap.show_guides {
-                        snap_result.guides
-                    } else {
-                        Vec::new()
-                    },
-                );
+                return (preview, plan.guides(snap_result.guides));
             }
             // Rebuild from the constrained dragged edge rather than the raw
             // pointer. A single-axis snap drives both square dimensions, so
@@ -285,12 +290,12 @@ impl Editor {
                     };
                     let verified_snap = OBJECT_SNAP_SERVICE.snap_rect(ObjectSnapRectRequest {
                         target_rect: rectangle_to_draw_rect(&next),
-                        reference_rects: &reference_rects,
-                        snap_distance,
+                        reference_rects: &plan.references,
+                        snap_distance: plan.snap_distance,
                         target_anchors_x: &target_anchors_x,
                         target_anchors_y: &target_anchors_y,
-                        enable_point_snaps: self.config.snap.enable_point_snaps,
-                        enable_gap_snaps: self.config.snap.enable_gap_snaps,
+                        enable_point_snaps: plan.enable_point_snaps,
+                        enable_gap_snaps: plan.enable_gap_snaps,
                     });
                     let verified = !verified_snap.guides.is_empty()
                         && (!constrained_snap.snap_x || verified_snap.dx.abs() <= 1e-6)
@@ -311,14 +316,7 @@ impl Editor {
             }
         }
 
-        (
-            preview,
-            if self.config.snap.show_guides {
-                snap_result.guides
-            } else {
-                Vec::new()
-            },
-        )
+        (preview, plan.guides(snap_result.guides))
     }
 
     pub(crate) fn resolve_move_snap(&self, request: MoveSnapRequest<'_>) -> ObjectSnapResult {
@@ -344,31 +342,31 @@ impl Editor {
                 )
             }
             SnappingMode::Object => {
-                if !self.config.snap.enable_point_snaps && !self.config.snap.enable_gap_snaps {
-                    return ObjectSnapResult::new(base_dx, base_dy, Vec::new());
-                }
-
                 let excluded = original_elements
                     .iter()
                     .map(|element| element.id)
                     .chain(original_arrows.iter().map(|arrow| arrow.id))
                     .collect::<Vec<_>>();
+                let Some(plan) = self.object_snap_plan(
+                    document,
+                    ObjectSnapActor::selection(document, original_elements, original_arrows),
+                    &excluded,
+                    snapping_mode,
+                ) else {
+                    return ObjectSnapResult::new(base_dx, base_dy, Vec::new());
+                };
                 let snap_result = OBJECT_SNAP_SERVICE.snap_move(
                     target_rect,
-                    &Self::visible_reference_rects(document, &excluded),
-                    self.zoom_adjusted_snap_distance(),
-                    self.config.snap.enable_point_snaps,
-                    self.config.snap.enable_gap_snaps,
+                    &plan.references,
+                    plan.snap_distance,
+                    plan.enable_point_snaps,
+                    plan.enable_gap_snaps,
                 );
 
                 ObjectSnapResult::new(
                     base_dx + snap_result.dx,
                     base_dy + snap_result.dy,
-                    if self.config.snap.show_guides {
-                        snap_result.guides
-                    } else {
-                        Vec::new()
-                    },
+                    plan.guides(snap_result.guides),
                 )
             }
             SnappingMode::None => ObjectSnapResult::new(base_dx, base_dy, Vec::new()),
@@ -379,7 +377,33 @@ impl Editor {
         self.config.snap.distance / self.camera().zoom.max(0.0001)
     }
 
-    pub(crate) fn visible_reference_rects(
+    /// Sole object-snap gateway for creation, move, and resize.
+    ///
+    /// Returns `None` unless the actor participates. The reference set never
+    /// includes filter overlays, even when the actor is layout geometry.
+    pub(crate) fn object_snap_plan(
+        &self,
+        document: &DocumentModel,
+        actor: ObjectSnapActor<'_>,
+        excluded_ids: &[ElementId],
+        snapping_mode: SnappingMode,
+    ) -> Option<ObjectSnapPlan> {
+        if snapping_mode != SnappingMode::Object || !actor.participates() {
+            return None;
+        }
+        if !self.config.snap.enable_point_snaps && !self.config.snap.enable_gap_snaps {
+            return None;
+        }
+        Some(ObjectSnapPlan {
+            references: Self::visible_reference_rects(document, excluded_ids),
+            snap_distance: self.zoom_adjusted_snap_distance(),
+            enable_point_snaps: self.config.snap.enable_point_snaps,
+            enable_gap_snaps: self.config.snap.enable_gap_snaps,
+            show_guides: self.config.snap.show_guides,
+        })
+    }
+
+    fn visible_reference_rects(
         document: &DocumentModel,
         excluded_ids: &[ElementId],
     ) -> Vec<DrawRect> {
@@ -392,6 +416,9 @@ impl Editor {
                 continue;
             };
             if !element.meta.visible {
+                continue;
+            }
+            if element.data.is_filter() {
                 continue;
             }
             if let Some(rect) = document.element_rect_proxy(*id) {
@@ -488,6 +515,75 @@ pub(crate) struct MoveSnapRequest<'a> {
     pub(crate) base_dx: f64,
     pub(crate) base_dy: f64,
     pub(crate) modifiers: Modifiers,
+}
+
+/// Subject of an object-snap attempt: the geometry being created, moved, or resized.
+///
+/// Object snapping aligns layout geometry. Filter overlays never participate as
+/// this actor. Every object-snap application goes through `object_snap_plan`,
+/// which also omits filter overlays from the reference set. Grid snapping is a
+/// separate mode and is unchanged.
+#[derive(Clone, Copy)]
+pub(crate) enum ObjectSnapActor<'a> {
+    Creation(ActiveTool),
+    Selection {
+        document: &'a DocumentModel,
+        elements: &'a [SelectionRectState],
+        arrows: &'a [SelectionArrowState],
+    },
+}
+
+impl<'a> ObjectSnapActor<'a> {
+    pub(crate) fn selection(
+        document: &'a DocumentModel,
+        elements: &'a [SelectionRectState],
+        arrows: &'a [SelectionArrowState],
+    ) -> Self {
+        Self::Selection {
+            document,
+            elements,
+            arrows,
+        }
+    }
+
+    pub(crate) fn participates(&self) -> bool {
+        match self {
+            Self::Creation(tool) => !tool.is_filter(),
+            Self::Selection {
+                document,
+                elements,
+                arrows,
+            } => !selection_is_filter_only(document, elements, arrows),
+        }
+    }
+}
+
+pub(crate) struct ObjectSnapPlan {
+    pub(crate) references: Vec<DrawRect>,
+    pub(crate) snap_distance: f64,
+    pub(crate) enable_point_snaps: bool,
+    enable_gap_snaps: bool,
+    show_guides: bool,
+}
+
+impl ObjectSnapPlan {
+    pub(crate) fn guides(&self, guides: Vec<SnapGuide>) -> Vec<SnapGuide> {
+        if self.show_guides { guides } else { Vec::new() }
+    }
+}
+
+fn selection_is_filter_only(
+    document: &DocumentModel,
+    elements: &[SelectionRectState],
+    arrows: &[SelectionArrowState],
+) -> bool {
+    arrows.is_empty()
+        && !elements.is_empty()
+        && elements.iter().all(|element| {
+            document
+                .element_kind(element.id)
+                .is_ok_and(ElementKind::is_filter)
+        })
 }
 
 fn preview_rectangle(

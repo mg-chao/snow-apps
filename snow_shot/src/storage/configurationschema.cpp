@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace snow_shot::storage {
 namespace {
@@ -178,6 +179,10 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {QStringLiteral("smart_merge"), QStringLiteral("original")}},
     {QStringLiteral("interface/sidebar_collapsed"), false, ConfigurationValueKind::Boolean},
+    {QStringLiteral("interface/main_window_geometry"), QJsonObject(),
+     ConfigurationValueKind::Structured},
+    {QStringLiteral("interface/translation_window_size"), QJsonObject(),
+     ConfigurationValueKind::Structured},
     {QStringLiteral("text_recognition/save_recognition_result_as_image"), true,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("text_recognition/fill_style"),
@@ -1602,6 +1607,22 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
         return exactType(value, QJsonValue::Object);
     }
     return {};
+}
+
+bool ConfigurationSchema::parseIntegerVersion(const QJsonValue& value, int* version) {
+    if (!value.isDouble() || !std::isfinite(value.toDouble()) ||
+        std::floor(value.toDouble()) != value.toDouble() || value.toDouble() < 1.0 ||
+        value.toDouble() > static_cast<double>(std::numeric_limits<int>::max())) {
+        return false;
+    }
+    if (version != nullptr) {
+        *version = value.toInt();
+    }
+    return true;
+}
+
+int ConfigurationSchema::currentVersion() {
+    return defaultValue(QStringLiteral("storage/schema_version")).toInt();
 }
 
 QJsonObject ConfigurationSchema::completeDefaultDocument() {

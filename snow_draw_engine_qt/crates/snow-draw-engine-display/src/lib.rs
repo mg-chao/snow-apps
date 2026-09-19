@@ -605,6 +605,7 @@ pub enum UiShapeKind {
     ArrowFocusHandle,
     ArrowSegmentHandle,
     EraserCursor,
+    BindingHighlight,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

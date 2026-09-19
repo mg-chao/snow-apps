@@ -118,6 +118,7 @@ impl Editor {
                 mode: ArrowEditMode::Endpoint(edge),
                 start_canvas_position: canvas_point,
                 drag_offset,
+                suggested_binding: None,
             }),
             ArrowHitTarget::Point(index) => InteractionState::EditingArrow(EditArrowState {
                 pointer_id: event.pointer_id,
@@ -127,6 +128,7 @@ impl Editor {
                 mode: ArrowEditMode::Point(index),
                 start_canvas_position: canvas_point,
                 drag_offset,
+                suggested_binding: None,
             }),
             ArrowHitTarget::FocusPoint(edge) => InteractionState::EditingArrow(EditArrowState {
                 pointer_id: event.pointer_id,
@@ -136,6 +138,7 @@ impl Editor {
                 mode: ArrowEditMode::FocusPoint(edge),
                 start_canvas_position: canvas_point,
                 drag_offset,
+                suggested_binding: None,
             }),
             ArrowHitTarget::Segment(index) => InteractionState::EditingArrow(EditArrowState {
                 pointer_id: event.pointer_id,
@@ -145,6 +148,7 @@ impl Editor {
                 mode: ArrowEditMode::Segment(index),
                 start_canvas_position: canvas_point,
                 drag_offset,
+                suggested_binding: None,
             }),
         };
 

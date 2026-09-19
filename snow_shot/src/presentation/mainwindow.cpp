@@ -11,6 +11,7 @@
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 #include "widgets/message.h"
 
+#include <QCloseEvent>
 #include <QEvent>
 #include <QFont>
 #include <QHBoxLayout>
@@ -19,6 +20,7 @@
 #include <QPainter>
 #include <QPalette>
 #include <QPoint>
+#include <QResizeEvent>
 #include <QScopedValueRollback>
 #include <QStatusBar>
 #include <QAbstractButton>
@@ -63,7 +65,7 @@ MainWindow::MainWindow(const snow_shot::presentation::settings::SettingsRegistry
                        snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession,
                        QWidget* parent, SnowShotApiClient* translationClient)
     : QMainWindow(parent), m_translationClient(translationClient), m_settingsRegistry(registry),
-      m_runtimeSession(runtimeSession) {
+      m_runtimeSession(runtimeSession), m_geometryMemory(this) {
     setObjectName(QStringLiteral("snowShotMainWindow"));
     setAccessibleName(QStringLiteral("SnowShot"));
     setWindowTitle(QStringLiteral("SnowShot"));
@@ -71,6 +73,7 @@ MainWindow::MainWindow(const snow_shot::presentation::settings::SettingsRegistry
     setMinimumSize(MAIN_WINDOW_MIN_WIDTH, MAIN_WINDOW_MIN_HEIGHT);
     setMouseTracking(true);
     setAttribute(Qt::WA_DeleteOnClose);
+    m_geometryMemory.restoreMainWindow(QSize(MAIN_WINDOW_MIN_WIDTH, MAIN_WINDOW_MIN_HEIGHT));
 
     // DirectWrite's default hinting can retain grid fitting even at fractional DPI.
     // Let all main-interface labels inherit smooth outlines before setting their sizes.
@@ -88,6 +91,13 @@ MainWindow::MainWindow(const snow_shot::presentation::settings::SettingsRegistry
                 applyTheme(scheme);
             });
     applyTheme(themeManager.themeColorScheme());
+}
+
+void MainWindow::closeEvent(QCloseEvent* event) {
+    QMainWindow::closeEvent(event);
+    if (event->isAccepted()) {
+        m_geometryMemory.captureAcceptedClose();
+    }
 }
 
 bool MainWindow::event(QEvent* event) {

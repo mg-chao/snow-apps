@@ -28,7 +28,9 @@ pub use projection::{
     bind_point_to_outline, calculate_fixed_point_for_binding,
     calculate_fixed_point_for_elbow_binding, update_bound_point,
 };
-pub use snap_points::{get_snap_outline_mid_point, project_fixed_point_onto_diagonal};
+pub use snap_points::{
+    OutlineMidPointMode, outline_mid_point_suggestion, project_fixed_point_onto_diagonal,
+};
 
 pub fn get_binding_gap(bind_target: &BindableState, elbowed: bool) -> f64 {
     (if elbowed {

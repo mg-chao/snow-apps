@@ -20,6 +20,8 @@ mod auto_filter_tests;
 mod document_commands;
 #[cfg(test)]
 mod duplicate_drag_tests;
+#[cfg(test)]
+mod filter_snap_tests;
 mod input;
 mod mutations;
 mod text_commands;
