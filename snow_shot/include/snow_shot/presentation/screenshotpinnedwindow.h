@@ -489,6 +489,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::unique_ptr<ScreenshotPinnedPointerPresence> m_pointerPresence;
     bool m_windowActive = false;
     bool m_passiveGeometryReconciliationActive = false;
+    bool m_nativeRestoreInFlight = false;
     WId m_synchronizedResizeWindowId = 0;
 };
 

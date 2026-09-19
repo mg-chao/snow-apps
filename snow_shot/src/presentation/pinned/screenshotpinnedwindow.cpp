@@ -3756,7 +3756,15 @@ void ScreenshotPinnedWindow::finishDeferredPresentationSetup(quint64 generation)
     configureRecognitionTarget();
     updateRecognitionContentGeometry();
     if (m_canvas != nullptr) {
-        m_canvas->setInteractionEnabled(m_editingEnabled && !m_ocrMode);
+        // This queued setup can run after a drawing session is already active
+        // (the user may enter drawing mode before the first content frame
+        // publishes). While a session is active the edit controller owns the
+        // interaction flag, and its Resize window tool keeps the canvas inert.
+        const bool editSessionAllowsInteraction = m_editController == nullptr ||
+                                                  !m_editController->editMode() ||
+                                                  !m_editController->resizeWindowToolActive();
+        m_canvas->setInteractionEnabled(m_editingEnabled && !m_ocrMode &&
+                                        editSessionAllowsInteraction);
     }
     if (m_editingEnabled && m_editButton != nullptr) {
         m_editButton->show();
@@ -6293,9 +6301,16 @@ bool ScreenshotPinnedWindow::reconcilePassiveNativeGeometry() {
 }
 
 bool ScreenshotPinnedWindow::restoreCommittedNativeGeometry(bool closeOnFailure) {
-    if (m_nativeGeometryController == nullptr) {
+    // applyClientGeometry drives SetWindowPos, which delivers
+    // WM_WINDOWPOSCHANGED synchronously; that handler re-enters this restore
+    // while the geometry still does not match. Bail out of the nested call so
+    // the controller state is never mutated re-entrantly and the outer call
+    // finishes (and schedules its close-on-failure) instead of recursing.
+    if (m_nativeGeometryController == nullptr || m_nativeRestoreInFlight) {
         return false;
     }
+    m_nativeRestoreInFlight = true;
+    const auto restoreGuard = qScopeGuard([this]() { m_nativeRestoreInFlight = false; });
 
     m_nativeGeometryController->prepareRollback();
     const QRect committed = m_nativeGeometryController->targetGeometry();
