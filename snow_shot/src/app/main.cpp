@@ -1,5 +1,4 @@
 #include "snow_shot/app/applicationcontroller.h"
-#include "snow_shot/update/updatetransaction.h"
 #include <QTemporaryDir>
 #include <QProcess>
 #include <QLocalServer>
@@ -29,11 +28,13 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDebug>
+#include <QFileInfo>
 #include <QRegularExpression>
 #include <QString>
 #include <QDir>
 #include <QStandardPaths>
 #include <QSysInfo>
+#include <optional>
 #include "snow_capture.h"
 #include "snow_recording.h"
 
@@ -42,6 +43,28 @@
 #endif
 
 extern "C" void snow_diagnostics_install_panic_hook(void (*callback)(const unsigned char*, size_t));
+
+namespace {
+QString updateInstallationRoot(const QString& executableDirectory) {
+    return QFileInfo(executableDirectory).dir().absolutePath();
+}
+
+std::optional<bool> updateTransactionPending(const QString& helperPath, const QString& root) {
+    QProcess helper;
+    helper.start(helperPath,
+                 {QStringLiteral("--transaction-state"), QStringLiteral("--target"), root},
+                 QIODevice::ReadOnly);
+    if (!helper.waitForStarted(10000) || !helper.waitForFinished(10000)) {
+        return std::nullopt;
+    }
+    const QByteArray output = helper.readAllStandardOutput().trimmed();
+    if (helper.exitStatus() != QProcess::NormalExit || helper.exitCode() != 0 ||
+        (output != "pending" && output != "clean")) {
+        return std::nullopt;
+    }
+    return output == "pending";
+}
+} // namespace
 
 int main(int argc, char* argv[]) {
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShot"));
@@ -143,12 +166,20 @@ int main(int argc, char* argv[]) {
         executablePath = QString::fromWCharArray(modulePath, static_cast<int>(moduleLength));
     }
 #endif
-    const QString updateRoot =
-        snow_shot::update::installationRoot(QFileInfo(executablePath).absolutePath());
-    if (snow_shot::update::transactionPending(updateRoot)) {
+    const QString updateRoot = updateInstallationRoot(QFileInfo(executablePath).absolutePath());
+    const QString updateHelper = QDir(QFileInfo(executablePath).absolutePath())
+#ifdef Q_OS_WIN
+                                     .filePath(QStringLiteral("snow-shot-updater.exe"));
+#else
+                                     .filePath(QStringLiteral("snow-shot-updater"));
+#endif
+    const auto pendingUpdate = updateTransactionPending(updateHelper, updateRoot);
+    if (!pendingUpdate.has_value()) {
+        return 6;
+    }
+    if (*pendingUpdate) {
         QCoreApplication recovery(argc, argv);
-        const QString root =
-            snow_shot::update::installationRoot(QCoreApplication::applicationDirPath());
+        const QString root = updateInstallationRoot(QCoreApplication::applicationDirPath());
         const QString pipe =
             QStringLiteral("snow-shot-recover-") + QUuid::createUuid().toString(QUuid::Id128);
         QLocalServer server;
@@ -164,8 +195,7 @@ int main(int argc, char* argv[]) {
             QStringLiteral("--parent"), QString::number(QCoreApplication::applicationPid()),
             QStringLiteral("--pipe"),   pipe,
             QStringLiteral("--result"), result};
-        if (!QProcess::startDetached(
-                QDir(root).filePath(QStringLiteral("bin/snow-shot-updater.exe")), args)) {
+        if (!QProcess::startDetached(updateHelper, args)) {
             return 6;
         }
         if (!server.waitForNewConnection(180000)) {

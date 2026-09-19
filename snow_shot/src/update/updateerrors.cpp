@@ -4,6 +4,10 @@
 // The worker sends English diagnostic identifiers; the receiving application translates them.
 namespace {
 [[maybe_unused]] const char* const updateErrorSources[] = {
+    QT_TRANSLATE_NOOP("UpdateErrors", "The update service could not be initialized"),
+    QT_TRANSLATE_NOOP("UpdateErrors", "The update service protocol message is invalid"),
+    QT_TRANSLATE_NOOP("UpdateErrors", "The update service protocol version is unsupported"),
+    QT_TRANSLATE_NOOP("UpdateErrors", "The update service sent an oversized protocol message"),
     QT_TRANSLATE_NOOP("UpdateErrors", "The update coordinator identity could not be verified"),
     QT_TRANSLATE_NOOP("UpdateErrors", "Could not verify the running update coordinator"),
     QT_TRANSLATE_NOOP("UpdateErrors", "Invalid previous installation path"),

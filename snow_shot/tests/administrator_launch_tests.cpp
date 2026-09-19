@@ -1,20 +1,12 @@
 #include "snow_shot/platform/windows/administratorlaunch.h"
-#include "snow_shot/platform/windows/privilegedlocalserver.h"
 #include <QCoreApplication>
-#include <QEventLoop>
-#include <QTimer>
-#include <QCryptographicHash>
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
 #include <aclapi.h>
 #include <sddl.h>
 #endif
 #include <QTranslator>
-#include <QLocalServer>
-#include <QLocalSocket>
 #include <QUuid>
-#include <QFile>
-#include <QTemporaryDir>
 #include <iostream>
 #include <stdexcept>
 using namespace snow_shot::platform::windows;
@@ -161,86 +153,6 @@ void restartFailures() {
         require(result.cancelled == (scenario == 0),
                 "UAC cancellation must remain distinguishable for warning messages");
     }
-}
-void pipeIdentity() {
-#ifdef Q_OS_WIN
-    QLocalServer server;
-    server.setSocketOptions(QLocalServer::UserAccessOption);
-    const QString name =
-        QStringLiteral("snow-shot-admin-test-") + QUuid::createUuid().toString(QUuid::Id128);
-    require(server.listen(name), "test pipe must listen");
-    QLocalSocket client;
-    client.connectToServer(name);
-    require(client.waitForConnected(1000), "test client must connect");
-    require(server.hasPendingConnections() || server.waitForNewConnection(1000),
-            "test server must accept");
-    std::unique_ptr<QLocalSocket> peer(server.nextPendingConnection());
-    const auto pid = static_cast<quint32>(QCoreApplication::applicationPid());
-    require(verifyLocalPeer(client, true, QCoreApplication::applicationFilePath(), false, pid),
-            "client must verify actual pipe server PID and executable");
-    require(verifyLocalPeer(*peer, false, QCoreApplication::applicationFilePath(), false, pid),
-            "server must verify actual client PID and executable");
-    require(!verifyLocalPeer(*peer, false, QCoreApplication::applicationFilePath(), false, pid + 1),
-            "mismatching PID must be rejected");
-    QTemporaryDir directory;
-    QFile fake(directory.filePath(QStringLiteral("fake.exe")));
-    require(fake.open(QIODevice::WriteOnly), "fake peer fixture must open");
-    fake.write("not an executable");
-    fake.close();
-    require(!verifyLocalPeer(*peer, false, fake.fileName(), true),
-            "unverified executable copies must be rejected");
-    QFile executable(QCoreApplication::applicationFilePath());
-    require(executable.open(QIODevice::ReadOnly), "current image must be readable");
-    QCryptographicHash trusted(QCryptographicHash::Sha256);
-    require(trusted.addData(&executable), "current image digest must be readable");
-    require(verifyLocalPeer(*peer, false, fake.fileName(), true, pid, trusted.result()),
-            "worker verification must survive replacement of the installed reference image");
-#endif
-}
-void privilegedPipe() {
-#ifdef Q_OS_WIN
-    PrivilegedLocalServer server;
-    const QString name =
-        QStringLiteral("snow-shot-privileged-test-") + QUuid::createUuid().toString(QUuid::Id128);
-    require(server.listen(name), "privileged worker pipe must listen without elevation");
-    for (int index = 0; index < 3; ++index) {
-        QEventLoop loop;
-        QTimer timeout;
-        timeout.setSingleShot(true);
-        QObject::connect(&server, &PrivilegedLocalServer::newConnection, &loop, &QEventLoop::quit);
-        QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
-        QLocalSocket client;
-        client.connectToServer(name);
-        require(client.waitForConnected(1000), "privileged worker client must connect");
-        timeout.start(2000);
-        loop.exec();
-        std::unique_ptr<QLocalSocket> accepted(server.nextPendingConnection());
-        require(accepted != nullptr, "native server must accept repeated worker connections");
-        require(verifyLocalPeer(*accepted, false, QCoreApplication::applicationFilePath()),
-                "native pipe must preserve kernel peer identity");
-        PACL acl = nullptr;
-        PSECURITY_DESCRIPTOR descriptor = nullptr;
-        require(GetSecurityInfo(reinterpret_cast<HANDLE>(accepted->socketDescriptor()),
-                                SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, nullptr, nullptr, &acl,
-                                nullptr, &descriptor) == ERROR_SUCCESS,
-                "native pipe ACL must be readable");
-        bool administrators = false, everyone = false;
-        for (DWORD i = 0; i < acl->AceCount; ++i) {
-            void* entry = nullptr;
-            require(GetAce(acl, i, &entry) != FALSE, "ACL entries must be readable");
-            const auto* ace = static_cast<ACCESS_ALLOWED_ACE*>(entry);
-            if (ace->Header.AceType == ACCESS_ALLOWED_ACE_TYPE) {
-                PSID sid = const_cast<DWORD*>(&ace->SidStart);
-                administrators |= IsWellKnownSid(sid, WinBuiltinAdministratorsSid) != FALSE;
-                everyone |= IsWellKnownSid(sid, WinWorldSid) != FALSE;
-            }
-        }
-        LocalFree(descriptor);
-        require(administrators && !everyone,
-                "worker IPC must admit administrators without granting world access");
-    }
-    server.close();
-#endif
 }
 void accountIdentity() {
 #ifdef Q_OS_WIN
@@ -444,8 +356,6 @@ int main(int argc, char** argv) {
         presentationStates();
         transactions();
         restartFailures();
-        pipeIdentity();
-        privilegedPipe();
         accountIdentity();
         translations();
         startupRunValueReconciliation();

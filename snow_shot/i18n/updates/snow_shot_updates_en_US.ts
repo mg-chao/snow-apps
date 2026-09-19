@@ -376,6 +376,22 @@
             <translation>The update server must use HTTPS</translation>
         </message>
         <message>
+            <source>The update service could not be initialized</source>
+            <translation>The update service could not be initialized</translation>
+        </message>
+        <message>
+            <source>The update service protocol message is invalid</source>
+            <translation>The update service protocol message is invalid</translation>
+        </message>
+        <message>
+            <source>The update service protocol version is unsupported</source>
+            <translation>The update service protocol version is unsupported</translation>
+        </message>
+        <message>
+            <source>The update service sent an oversized protocol message</source>
+            <translation>The update service sent an oversized protocol message</translation>
+        </message>
+        <message>
             <source>The update target does not match its application process</source>
             <translation>The update target does not match its application process</translation>
         </message>
@@ -450,13 +466,6 @@
         <message>
             <source>Update permission was declined or could not be obtained</source>
             <translation>Update permission was declined or could not be obtained</translation>
-        </message>
-    </context>
-    <context>
-        <name>snow_shot::update::UpdateService</name>
-        <message>
-            <source>The update helper did not respond. Please retry.</source>
-            <translation>The update helper did not respond. Please retry.</translation>
         </message>
     </context>
 </TS>

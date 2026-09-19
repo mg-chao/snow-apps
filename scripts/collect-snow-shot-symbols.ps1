@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$BuildDirectory,
     [Parameter(Mandatory = $true)][string]$InstallDirectory,
-    [string]$OcrAssetManifest
+    [string]$OcrAssetManifest,
+    [string]$UpdaterProfileDirectory
 )
 
 $ErrorActionPreference = "Stop"
@@ -101,7 +102,11 @@ foreach ($binary in Get-ChildItem -LiteralPath (Join-Path $installRoot "bin") -F
             $record.age = $Matches.age
             $pdb = $Matches.path.Trim()
             if (-not [System.IO.Path]::IsPathRooted($pdb)) {
-                $pdb = Join-Path $buildRoot "cargo\x86_64-pc-windows-msvc\release\$pdb"
+                if ($binary.Name -eq 'snow-shot-updater.exe' -and $UpdaterProfileDirectory) {
+                    $pdb = Join-Path $UpdaterProfileDirectory $pdb
+                } else {
+                    $pdb = Join-Path $buildRoot "cargo\x86_64-pc-windows-msvc\release\$pdb"
+                }
             }
             if (Test-Path -LiteralPath $pdb -PathType Leaf) {
                 Assert-PdbIdentity -Path $pdb -Signature $record.signature -Age $record.age

@@ -1,57 +1,62 @@
-# The updater deliberately does not depend on presentation, capture, storage, or Rust.
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/resources/update-trusted-keys.json" SNOW_SHOT_UPDATE_KEYS_JSON)
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/update/updatekeys.h.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/generated/updatekeys.h" @ONLY)
-add_library(snow_shot_update_core STATIC
-    src/update/updatecontract.cpp src/update/updatetransaction.cpp src/update/updateerrors.cpp)
-target_include_directories(snow_shot_update_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
-target_link_libraries(snow_shot_update_core PUBLIC Qt6::Core PRIVATE MINIZIP::minizip-ng)
-if(WIN32)
-    target_compile_definitions(snow_shot_update_core PRIVATE NOMINMAX)
-    target_link_libraries(snow_shot_update_core PRIVATE bcrypt advapi32)
-endif()
-add_executable(snow-shot-updater src/update/updatermain.cpp)
-target_link_libraries(snow-shot-updater PRIVATE snow_shot_administrator)
-target_link_libraries(snow-shot-updater PRIVATE snow_shot_update_core Qt6::Network)
-if(WIN32)
-    target_link_libraries(snow-shot-updater PRIVATE shell32 advapi32)
-    target_compile_definitions(snow-shot-updater PRIVATE NOMINMAX)
-    set_target_properties(snow-shot-updater PROPERTIES WIN32_EXECUTABLE TRUE)
-    if(MSVC)
-        set_property(TARGET snow-shot-updater PROPERTY qt_no_entrypoint TRUE)
-        target_link_options(snow-shot-updater PRIVATE /ENTRY:mainCRTStartup)
-        # Keep matching symbols for the independently launched recovery helper, just
-        # as for snow_shot. CMake's default Release flags do not generate a PDB.
-        target_compile_options(snow-shot-updater PRIVATE $<$<CONFIG:Release>:/Z7>)
-        target_link_options(snow-shot-updater PRIVATE $<$<CONFIG:Release>:/DEBUG:FULL>)
-    endif()
-endif()
-if(APPLE)
-    install(TARGETS snow-shot-updater
-        RUNTIME DESTINATION "snow_shot.app/Contents/MacOS" COMPONENT SnowShot)
-else()
-    install(TARGETS snow-shot-updater RUNTIME DESTINATION bin)
-endif()
+# The GPL updater is a standalone Rust package inside the Snow Shot license boundary. The main
+# application links only the Qt process/protocol adapter below.
+set(_snow_shot_updater_manifest_dir
+    "${CMAKE_CURRENT_SOURCE_DIR}/rust/snow-shot-updater")
+snow_add_rust_executable(snow-shot-updater-binary
+    PACKAGE snow-shot-updater
+    MANIFEST_DIR "${_snow_shot_updater_manifest_dir}"
+    OUTPUT_NAME snow-shot-updater
+    PRODUCTION_PROFILE release-size
+    REPRODUCIBLE
+    SIZE_OPTIMIZED
+    ENVIRONMENT
+        "SNOW_SHOT_UPDATE_KEYS_PATH=${CMAKE_CURRENT_SOURCE_DIR}/resources/update-trusted-keys.json"
+        "SNOW_SHOT_VERSION=${SNOW_SHOT_VERSION}"
+        "SNOW_SHOT_ICON_PATH=${CMAKE_CURRENT_SOURCE_DIR}/resources/app-icon.ico"
+)
+# Imported executable targets do not create build-system targets. Keep the
+# public snow-shot-updater target used by scripts and release automation as a
+# real proxy for the Cargo build while the imported target supplies its path.
+# Also materialize the traditional build-tree output when this target is built
+# directly, rather than only as a dependency of snow_shot.
+add_custom_target(snow-shot-updater
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:snow_shot>"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "$<TARGET_FILE:snow-shot-updater-binary>"
+        "$<TARGET_FILE_DIR:snow_shot>/$<TARGET_FILE_NAME:snow-shot-updater-binary>"
+    DEPENDS snow-shot-updater-binary_build
+    VERBATIM)
+
 add_library(snow_shot_updates STATIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include/snow_shot/update/updateservice.h"
-    src/update/updateservice.cpp)
+    src/update/updateservice.cpp
+    # This file is an extraction-only inventory for stable translated Rust error messages.
+    src/update/updateerrors.cpp)
 target_include_directories(snow_shot_updates PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(snow_shot_updates PUBLIC snow_shot_update_core Qt6::Network snow_shot_administrator)
+target_link_libraries(snow_shot_updates PUBLIC Qt6::Core)
 target_link_libraries(snow_shot_settings PUBLIC snow_shot_updates)
+
 add_dependencies(snow_shot snow-shot-updater)
-snow_shot_import_offscreen_platform(snow_shot)
 target_link_libraries(snow_shot PRIVATE snow_shot_updates)
 add_custom_command(TARGET snow_shot POST_BUILD
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:snow-shot-updater>"
-        "$<TARGET_FILE_DIR:snow_shot>/$<TARGET_FILE_NAME:snow-shot-updater>")
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "$<TARGET_FILE:snow-shot-updater-binary>"
+        "$<TARGET_FILE_DIR:snow_shot>/$<TARGET_FILE_NAME:snow-shot-updater-binary>")
 
-option(SNOW_SHOT_BUILD_UPDATE_TESTS "Build focused update tests without unrelated test targets" ${SNOW_SHOT_BUILD_TESTS})
-if(SNOW_SHOT_BUILD_UPDATE_TESTS AND WIN32)
+if(APPLE)
+    install(PROGRAMS "$<TARGET_FILE:snow-shot-updater-binary>"
+        DESTINATION "snow_shot.app/Contents/MacOS" COMPONENT SnowShot)
+else()
+    install(PROGRAMS "$<TARGET_FILE:snow-shot-updater-binary>"
+        DESTINATION bin COMPONENT SnowShot)
+endif()
+
+option(SNOW_SHOT_BUILD_UPDATE_TESTS "Build focused update tests without unrelated test targets"
+    ${SNOW_SHOT_BUILD_TESTS})
+if(SNOW_SHOT_BUILD_UPDATE_TESTS)
     enable_testing()
-    add_executable(snow-shot-update-tests tests/update_tests.cpp)
-    target_compile_definitions(snow-shot-update-tests PRIVATE NOMINMAX)
-    target_link_libraries(snow-shot-update-tests PRIVATE snow_shot_updates MINIZIP::minizip-ng bcrypt)
-    add_test(NAME snow-shot-update-tests COMMAND snow-shot-update-tests)
-    set_tests_properties(snow-shot-update-tests PROPERTIES LABELS "unit;windows" TIMEOUT 120)
+    add_executable(snow-shot-update-adapter-tests tests/update_adapter_tests.cpp)
+    target_link_libraries(snow-shot-update-adapter-tests PRIVATE snow_shot_updates Qt6::Core)
+    add_test(NAME snow-shot-update-adapter-tests COMMAND snow-shot-update-adapter-tests)
+    set_tests_properties(snow-shot-update-adapter-tests PROPERTIES LABELS "unit" TIMEOUT 30)
 endif()

@@ -828,8 +828,6 @@ endif()
 unset(_snow_shot_history_source)
 unset(_snow_shot_history_global_pool_call)
 add_library(snow_shot_administrator STATIC
-    include/snow_shot/platform/windows/privilegedlocalserver.h
-    src/platform/windows/privilegedlocalserver.cpp
     src/platform/windows/autostartregistration.cpp
     src/platform/windows/administratorlaunch.cpp)
 target_include_directories(snow_shot_administrator PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")

@@ -28,7 +28,8 @@ if ([string]::IsNullOrWhiteSpace($env:FFMPEG_DIR)) {
 
 $rustWorkspaces = @(
     (Join-Path $workspaceRoot "snow-crates"),
-    (Join-Path $workspaceRoot "snow_draw_engine_qt")
+    (Join-Path $workspaceRoot "snow_draw_engine_qt"),
+    (Join-Path $workspaceRoot "snow_shot\rust\snow-shot-updater")
 )
 
 foreach ($rustWorkspace in $rustWorkspaces) {

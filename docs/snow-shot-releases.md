@@ -68,9 +68,19 @@ The limits are 8 MiB for metadata, 20,000 files and 4 GiB expanded payload per p
 | Helper watchdog fires after handoff | Do not start a possibly incomplete app; manual launch enters recovery |
 | Development copy without installation metadata | Show updates unavailable; never infer an install layout |
 
-The helper verifies the parent process's real executable path, stages outside `bin`, and
-requests elevation only for a matching registered installation. The broker remains under
-the original user's identity for relaunch. Named pipes are random and user-restricted.
+The GPL-3.0-only Rust sidecar is one long-lived child of each Snow Shot session. Private
+inherited stdin/stdout pipes carry a versioned, 64-KiB-bounded NDJSON protocol; stdout is
+reserved for frames and bounded operational diagnostics use stderr. Rust owns release
+validation, network/cache policy, scheduling, archive processing, transactions, recovery,
+elevation, installer commands, and release audits. The remaining C++ `snow_shot_updates`
+target is only a Qt `QProcess`/signal adapter and translated-error lookup.
+
+For apply and recovery, the helper verifies the parent process's real executable path,
+stages outside `bin`, and requests elevation only for a matching registered installation.
+The installed service copies itself to a narrowly named temporary broker and exits before
+its installed path is replaced. The broker remains under the original user's identity for
+relaunch. Named pipes are random and restricted to the current user, Administrators, and
+SYSTEM with medium-integrity and remote-client rejection.
 The worker authenticates the broker before mutation and retains that connection for the
 ready/go exchange and final success/failure report. The broker acknowledges the final report
 before the worker exits. Neither side re-authenticates completion against the installed
@@ -88,9 +98,11 @@ is stopped. Close other instances and repair with a verified installer; do not d
 journal or backups before recovery. A process-termination test is not a simulation of
 physical storage failure.
 
-`snow_shot_update_core` depends on Qt Core and minizip, not capture, presentation, storage,
-or Rust. `snow_shot_updates` adds network/state coordination; About and ApplicationController
-consume it. These boundaries are enforced by CMake target dependencies.
+The Rust updater uses native platform TLS, Tokio/Reqwest, Serde, RSA/SHA-256, SemVer, and
+ZIP/Deflate without linking Qt or minizip. Windows release packages use the static CRT and a
+dedicated size profile with fat LTO, one codegen unit, aborting panics, overflow checks, and
+external CodeView/PDB information. macOS bundles and signs the same executable, but the
+service reports updates unavailable and does not expose a self-update channel there.
 
 ## Operator setup and commands
 
@@ -195,14 +207,21 @@ Authenticode certificate, remove SmartScreen prompts, or establish installer rep
 ```powershell
 python scripts/test-snow-shot-publisher.py
 & scripts/test-snow-shot-ocr-release-runtime.ps1
-& scripts/test-snow-shot-release-symbols.ps1 -ReleaseHelperPath build/snow-shot-msvc-release/snow_shot/Release/snow-shot-updater.exe
+& scripts/test-snow-shot-release-symbols.ps1 `
+    -ReleaseHelperPath build/snow-shot-msvc-release/snow_shot/Release/snow-shot-updater.exe
 & scripts/test-snow-shot-installer.ps1
 & scripts/test-snow-shot-installer-i18n.ps1
 
+cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml
+cargo clippy --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml `
+    --all-targets -- -D warnings
+
 # Production static Qt kit omits QtTest; these focused targets do not require it.
 cmake --preset snow-shot-msvc-release -DSNOW_SHOT_BUILD_UPDATE_TESTS=ON
-cmake --build --preset build-snow-shot-msvc-release --target snow-shot-update-tests snow-shot-update-about-tests snow-shot-update-settings-tests
-ctest --test-dir build/snow-shot-msvc-release/snow_shot -C Release -R '^snow-shot-update-(tests|about-tests|settings-tests)$' --output-on-failure
+cmake --build --preset build-snow-shot-msvc-release --target `
+    snow-shot-update-adapter-tests snow-shot-update-about-tests snow-shot-update-settings-tests
+ctest --test-dir build/snow-shot-msvc-release/snow_shot -C Release `
+    -R '^snow-shot-update-(adapter-tests|about-tests|settings-tests)$' --output-on-failure
 & scripts/test-snow-shot-update-helper.ps1
 ```
 
@@ -225,56 +244,47 @@ than 24 hours, skips running/locked executables, and never recursively sweeps th
 directory. Transaction staging and backup payloads are replaced on the next transaction;
 download cache cleanup retains only the currently accepted release's ZIP/partial download.
 
-### Current delivery evidence (2026-09-10)
+### Current delivery evidence (2026-09-20)
 
-- Publisher tests: eight focused tests pass, including every promotion checkpoint failure,
-  corruption, concurrent lease, stale recovery, identical retry, version conflict/downgrade,
-  repeated commit, retention-boundary rollback and republishing.
-- Installer tests and all three installer-language tests pass, including CPack fixture builds.
-- Rebased onto main `93108309`, preserving the redesigned About page and new translation/settings
-  behavior. All three focused C++ targets pass in the production static Qt build: updater contract/
-  service/transaction tests, offscreen About tests, and settings catalog/search tests (12.29 seconds
-  combined). The updater core also passed in a separate verification tree before the main sync.
-- Covered failure cases include actual updater process termination at journal checkpoints,
-  long installation paths, archive traversal/corruption, mismatched ownership inventories,
-  unknown-file collisions, reserved-work-directory data collisions, failed-version suppression,
-  resumed downloads, canceled requests, and policy changes during metadata requests.
-- The updater helper builds and links. Six real-helper canaries pass: cancellation and journal
-  recovery/relaunch for online, offline, and portable copies, including original-user SID and
-  preservation of unrelated files. The initial main-app Release link succeeded; package
-  preflight then correctly rejected stale static FFmpeg components before release creation.
-  Installed FFmpeg and ONNX Runtime receipts predated main's overlays; a verified local
-  PowerShell 7.6.5 tool limited vcpkg's repair to those two packages instead of an unrelated
-  full dependency rebuild. Both packages now match current ABI receipts, ONNX Runtime's
-  rebuild/post-build validation passes, and the unchanged 41-component static audit passes.
-  The corrected application relink and all three focused C++ tests pass (12.29 seconds).
-  Packaging passes: both installers and all three ZIPs were generated, matching release
-  symbols retained, five PE dependencies checked, and all 37 required linked FFmpeg
-  registrations verified with no disabled providers present.
-- Interactive same-account UAC canaries pass with the operator: approval recovers the protected
-  fixture and relaunches under the original user and elevation level; declining permission
-  keeps the parent running, preserves the pending journal/files, and does not relaunch. The
-  fixture ACL and temporary HKCU registration are restored; the machine installation is untouched.
-- Translation extraction and lrelease report 1,451 finished messages and zero unfinished messages
-  in each of en_US, zh_CN and zh_TW. Changed C++ files pass clang-format; changed PowerShell
-  scripts parse; `git diff --check` passes.
-- The owner published OCR `1.0.5`; its remote archive now matches the pinned 17,345,756 bytes and
-  SHA-256 `8589896e11f00c80520ac1886f73ff90566b3017b0e688225593f337b71ed15f`. Normal application
-  packaging imports those exact bytes instead of requiring a byte-identical local recompilation.
-  Twelve deterministic import checks pass, and the downloaded executable passes its version/
-  protocol invocation. Pinned hashes and remote OCR assets were not changed.
-- The wrapper's `-WhatIf` output confirms the exact eight-file public allowlist. `-AuditOnly`
-  passed with the actual signing key and compiled updater: all five package hashes, exhaustive
-  ZIP inventories/extraction, embedded packaged-helper trust, and isolated online/offline/
-  portable startup probes passed without uploading or activating a production transaction.
-- The real Release helper now emits a matching PDB with the same symbol flags as the
-  application. Packaging exposed CMake's default disabled Release symbols; the original
-  synthetic symbol fixture did not cover that target configuration. A new real-helper
-  regression check reproduced the missing PDB before the fix and passes afterward, while
-  missing-PDB rejection remains enforced. The release workflow runs this check, and all six
-  real-helper cancellation/recovery canaries pass again with the rebuilt executable.
-- The pre-deployment inventory records `0.8.1-dev`, three current Windows downloads, five
-  legacy Windows/macOS downloads, and no signed JSON feed. Deployment must compare the
-  legacy files against that snapshot; none belongs to this release's mutation allowlist.
-- The earlier interrupted Debug dependency operation was checked: ONNX Runtime's installed
-  package inventory reports zero missing files; no dependency repair is outstanding.
+- The standalone updater package passes rustfmt, 28 focused Rust tests, and Clippy for all
+  targets with warnings denied. Coverage includes RSA-3072/PSS verification, strict SemVer,
+  package and inventory identity, unsafe paths and collisions, ZIP central-directory rejection,
+  transaction commit/rollback/recovery, bounded NDJSON framing, generated coordinator paths,
+  and injected-clock/network checks for scheduling, timeouts, cancellation, retry delays,
+  strong-ETag resume, invalid ranges, and restart-on-200 behavior. Real child-process protocol
+  tests cover the Rust service handshake, duplicate IDs, fatal malformed frames, peer closure,
+  and orderly shutdown over its inherited standard streams.
+- The Debug application and updater adapter build with the ordinary Cargo `dev` profile and
+  debug CRT; production-only LTO/linker switches are absent. The focused Debug adapter and
+  unrelated administrator-settings tests pass after removal of the old privileged-pipe code.
+- The production static-Qt adapter, offscreen About-page, and settings-catalog tests pass. The
+  application-wide translation extraction finds no new strings; lrelease reports 1,618 finished
+  and zero unfinished messages for each of en_US, zh_CN, and zh_TW.
+- Eight publisher tests, the installer process suite, and all three installer-language suites
+  pass, including their CPack fixtures. Twelve real-helper canaries pass across online, offline,
+  and portable installations: cancellation, applying-journal recovery, helper replacement,
+  verified recovery failure, original-user relaunch, and preservation of unowned data.
+- Same-account UAC cancellation and approval pass from a non-elevated shell against protected
+  fixtures. Approval covers recovery after helper self-replacement, verifies original-user
+  relaunch, and creates or updates the matching 32-bit uninstall registration; cancellation
+  leaves the protected installation untouched and never relaunches a partially updated app.
+- A complete `snow-shot-msvc-release` package build passes. It collects 672 license notices for
+  316 resolved Rust packages and 41 vcpkg packages plus Qt; installs the Rust updater; validates
+  five PE binaries; verifies matching PDB identities; audits all 44 enabled FFmpeg registrations;
+  and produces the online/offline installers plus online/offline update and portable ZIPs.
+- The compiled Rust `--verify-release` and `--audit-release` commands accept the live production
+  schema-1 envelope and all five downloaded packages, including exhaustive update-archive
+  inventories and isolated startup probes. This is direct backward-compatibility evidence for
+  the last release produced with the C++ updater.
+- Reusing published version `1.0.7` with the rebuilt packages is correctly rejected because the
+  signed hashes differ. The first Rust-updater publication must increment `SNOW_SHOT_VERSION`;
+  after that explicit release decision, rerun `-AuditOnly` to sign and audit the newly versioned
+  local packages before upload.
+- The final production updater is 2,306,560 bytes (2.200 MiB), 7,154,176 bytes and 75.620% smaller
+  than the 9,460,736-byte Qt/C++ baseline. Raw sections are `.text` 1,639,424, `.rdata` 551,936,
+  `.data` 4,608, `.pdata` 56,832, `.fptable` 512, `.rsrc` 32,768, and `.reloc` 19,456 bytes.
+  Imports are Windows system DLLs only: Advapi32, the synchronization API set,
+  BcryptPrimitives, Crypt32, Kernel32, Ntdll, Ole32, OleAut32, Secur32, Shell32, and Ws2_32.
+  The matching external PDB is 33,771,520 bytes (32.207 MiB) and passes RSDS GUID/age checks.
+- Both native macOS architecture/package jobs remain platform release gates. Cross-account UAC
+  and physical power-loss behavior likewise require dedicated runtime validation.

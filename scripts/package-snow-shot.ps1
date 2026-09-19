@@ -262,15 +262,28 @@ if (-not $SkipBuild) {
     }
 }
 
+$updaterSizeReporter = Join-Path $PSScriptRoot 'report-snow-shot-updater-size.ps1'
+$updaterBuildExecutable = Join-Path $BuildDirectory 'snow_shot\Release\snow-shot-updater.exe'
+$updaterCargoProfileDirectory =
+    Join-Path $BuildDirectory 'cargo\x86_64-pc-windows-msvc\release-size'
+$updaterSizeEvidence = Join-Path $BuildDirectory 'release-evidence\snow-shot-updater-size.json'
+& $updaterSizeReporter -Executable $updaterBuildExecutable `
+    -CargoProfileDirectory $updaterCargoProfileDirectory -Output $updaterSizeEvidence
+if ($LASTEXITCODE -ne 0) {
+    throw 'Snow Shot updater size reporting failed.'
+}
+
 $thirdPartyLicenseCollector = Join-Path $PSScriptRoot "collect-third-party-licenses.ps1"
 $thirdPartyLicenseDirectory = Join-Path $buildDirectory "snow_shot\third-party-licenses\third-party"
 $ocrCargoManifest = Join-Path $repoRoot "snow-crates\crates\snow-ocr-process\Cargo.toml"
+$updaterCargoManifest = Join-Path $repoRoot "snow_shot\rust\snow-shot-updater\Cargo.toml"
 & $thirdPartyLicenseCollector `
     -Destination $thirdPartyLicenseDirectory `
     -AllowedRoot $buildDirectory `
     -VcpkgPrefix $staticVcpkgPrefix `
     -QtPrefix $qtPrefix `
-    -CargoManifest @((Join-Path $repoRoot "snow_rust_ffi\Cargo.toml"), $ocrCargoManifest) `
+    -CargoManifest @((Join-Path $repoRoot "snow_rust_ffi\Cargo.toml"), $ocrCargoManifest,
+        $updaterCargoManifest) `
     -CargoOptions @{ $ocrCargoManifest = @('--no-default-features', '--features',
         'static-onnx-runtime,directml-provider,crash-diagnostics') } `
     -AntDesignNotice (Join-Path $repoRoot "ant_design_qt\THIRD_PARTY_NOTICES.md") `
@@ -306,6 +319,26 @@ $expectedBinaryMetadata = @{
 foreach ($property in $expectedBinaryMetadata.Keys) {
     if ($versionInfo.$property -ne $expectedBinaryMetadata[$property]) {
         throw "Snow Shot binary metadata '$property' is '$($versionInfo.$property)'; expected '$($expectedBinaryMetadata[$property])'."
+    }
+}
+
+$updaterExecutable = Join-Path $installDirectory 'bin\snow-shot-updater.exe'
+if (-not (Test-Path -LiteralPath $updaterExecutable -PathType Leaf)) {
+    throw "The staged Rust updater was not found: $updaterExecutable"
+}
+$updaterVersionInfo = (Get-Item -LiteralPath $updaterExecutable).VersionInfo
+$expectedUpdaterMetadata = @{
+    CompanyName = 'Snow Apps'
+    FileDescription = 'Snow Shot update service'
+    InternalName = 'snow-shot-updater'
+    LegalCopyright = 'Copyright (C) 2025-2026 mg-chao'
+    OriginalFilename = 'snow-shot-updater.exe'
+    ProductName = 'Snow Shot'
+    ProductVersion = $versionInfo.ProductVersion
+}
+foreach ($property in $expectedUpdaterMetadata.Keys) {
+    if ($updaterVersionInfo.$property -ne $expectedUpdaterMetadata[$property]) {
+        throw "Snow Shot updater metadata '$property' is '$($updaterVersionInfo.$property)'; expected '$($expectedUpdaterMetadata[$property])'."
     }
 }
 
@@ -511,7 +544,10 @@ if ($unexpectedImports.Count -gt 0) {
     throw "Release staging imports non-system or disallowed libraries: $($unexpectedImports -join ', ')"
 }
 Write-Output "PE dependency audit: $($stagedBinaries.Count) binaries checked"
-$symbolOptions = @{ OcrAssetManifest = Join-Path $repoRoot 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json' }
+$symbolOptions = @{
+    OcrAssetManifest = Join-Path $repoRoot 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json'
+    UpdaterProfileDirectory = $updaterCargoProfileDirectory
+}
 & (Join-Path $PSScriptRoot "collect-snow-shot-symbols.ps1") -BuildDirectory $buildDirectory -InstallDirectory $installDirectory @symbolOptions
 
 $linkMapPath = Join-Path $buildDirectory "snow_shot\Release\snow_shot.map"

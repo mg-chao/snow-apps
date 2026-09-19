@@ -3,7 +3,6 @@
 #include "snow_shot/translation/translationservice.h"
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/update/updateservice.h"
-#include "snow_shot/update/updatetransaction.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
 #include <QStandardPaths>
 #include <QCryptographicHash>
@@ -28,6 +27,7 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonValue>
 #include <QPointer>
@@ -178,7 +178,8 @@ class ApplicationController::Impl {
             std::make_unique<ScreenshotOcrRecognitionService>(ocrOptions, backendPreference, &q);
         auto& configuration = applicationStorage.configuration();
         update::UpdateService::Options updateOptions;
-        updateOptions.root = update::installationRoot(QCoreApplication::applicationDirPath());
+        updateOptions.applicationDirectory = QCoreApplication::applicationDirPath();
+        updateOptions.root = QFileInfo(updateOptions.applicationDirectory).dir().absolutePath();
         const QString updateId = QString::fromLatin1(
             QCryptographicHash::hash(updateOptions.root.toUtf8(), QCryptographicHash::Sha256)
                 .toHex()

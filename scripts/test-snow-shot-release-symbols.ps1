@@ -69,11 +69,20 @@ Write-Output 'PASS: missing app/helper PDB is rejected'
 if ($ReleaseHelperPath) {
     # Exercise the real CMake-built helper as well as the synthetic fixture. A fixture
     # compiled with /DEBUG cannot detect missing symbol flags on the production target.
+    $resolvedHelper = (Resolve-Path -LiteralPath $ReleaseHelperPath).Path
+    $helperBuildRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $resolvedHelper))
+    $helperPdbs = @(Get-ChildItem -LiteralPath (Join-Path $helperBuildRoot 'cargo') `
+        -Filter 'snow_shot_updater.pdb' -File -Recurse | Where-Object {
+            Test-Path -LiteralPath (Join-Path $_.DirectoryName 'snow-shot-updater.exe') -PathType Leaf
+        })
+    if ($helperPdbs.Count -ne 1) {
+        throw "Expected exactly one configured updater PDB under $helperBuildRoot; found $($helperPdbs.Count)."
+    }
     $realStage = Join-Path $root 'release-helper'
     $realBin = Join-Path $realStage 'bin'
     $null = New-Item -ItemType Directory -Path $realBin
-    Copy-Item -LiteralPath (Resolve-Path -LiteralPath $ReleaseHelperPath).Path `
-        -Destination (Join-Path $realBin 'snow-shot-updater.exe')
-    & (Join-Path $PSScriptRoot 'collect-snow-shot-symbols.ps1') -BuildDirectory $root -InstallDirectory $realStage
+    Copy-Item -LiteralPath $resolvedHelper -Destination (Join-Path $realBin 'snow-shot-updater.exe')
+    & (Join-Path $PSScriptRoot 'collect-snow-shot-symbols.ps1') -BuildDirectory $root `
+        -InstallDirectory $realStage -UpdaterProfileDirectory $helperPdbs[0].DirectoryName
     Write-Output 'PASS: actual Release updater has a matching PDB'
 }

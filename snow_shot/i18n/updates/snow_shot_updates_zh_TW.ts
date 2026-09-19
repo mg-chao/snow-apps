@@ -376,6 +376,22 @@
             <translation>更新伺服器必須使用 HTTPS</translation>
         </message>
         <message>
+            <source>The update service could not be initialized</source>
+            <translation>更新服務無法初始化</translation>
+        </message>
+        <message>
+            <source>The update service protocol message is invalid</source>
+            <translation>更新服務通訊協定訊息無效</translation>
+        </message>
+        <message>
+            <source>The update service protocol version is unsupported</source>
+            <translation>更新服務通訊協定版本不受支援</translation>
+        </message>
+        <message>
+            <source>The update service sent an oversized protocol message</source>
+            <translation>更新服務傳送了超過大小限制的通訊協定訊息</translation>
+        </message>
+        <message>
             <source>The update target does not match its application process</source>
             <translation>更新目標與應用程式處理程序不匹配</translation>
         </message>
@@ -450,13 +466,6 @@
         <message>
             <source>Update permission was declined or could not be obtained</source>
             <translation>更新權限被拒絕，或無法獲取權限</translation>
-        </message>
-    </context>
-    <context>
-        <name>snow_shot::update::UpdateService</name>
-        <message>
-            <source>The update helper did not respond. Please retry.</source>
-            <translation>更新程式未回應。請重試。</translation>
         </message>
     </context>
 </TS>

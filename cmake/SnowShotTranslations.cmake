@@ -69,7 +69,6 @@ function(snow_shot_add_translations target)
             snow_shot_translation
             snow_shot_diagnostics
             snow_shot_updates
-            snow_shot_update_core
         TS_FILES ${_snow_shot_update_ts}
         LUPDATE_TARGET snow_shot_update_translations
         OPTIONS -no-obsolete -locations none

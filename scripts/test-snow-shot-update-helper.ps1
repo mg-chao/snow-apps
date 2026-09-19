@@ -165,6 +165,16 @@ foreach ($variant in $variants) {
                     (Get-Content -Raw (Join-Path $bin 'recovered.txt')) -cne 'previous payload') {
                     throw 'Recovery or original-user relaunch failed.'
                 }
+                if ($testElevation) {
+                    $key = $registry.OpenSubKey($uninstallPath)
+                    try {
+                        if ($null -eq $key -or $key.GetValue('DisplayVersion') -cne '1.0.0-alpha') {
+                            throw 'Recovery did not create or update the matching 32-bit uninstall registration.'
+                        }
+                    } finally {
+                        if ($null -ne $key) { $key.Dispose() }
+                    }
+                }
                 if ($replacementHash -and (Get-FileHash -LiteralPath (Join-Path $bin 'snow-shot-updater.exe')).Hash.ToLowerInvariant() -cne $replacementHash) {
                     throw 'The helper replacement regression did not replace the installed reference image.'
                 }

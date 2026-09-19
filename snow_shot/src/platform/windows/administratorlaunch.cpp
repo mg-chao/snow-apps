@@ -631,53 +631,6 @@ std::optional<StartupMode> observedStartupMode() {
     return std::nullopt;
 #endif
 }
-bool verifyLocalPeer(QLocalSocket& socket, bool serverPeer, const QString& expectedExecutable,
-                     bool allowVerifiedCopy, quint32 expectedPid,
-                     const QByteArray& expectedDigest) {
-#ifdef Q_OS_WIN
-    ULONG pid = 0;
-    const HANDLE pipe = reinterpret_cast<HANDLE>(socket.socketDescriptor());
-    if (!(serverPeer ? GetNamedPipeServerProcessId(pipe, &pid)
-                     : GetNamedPipeClientProcessId(pipe, &pid)) ||
-        (expectedPid && pid != expectedPid))
-        return false;
-    Handle process{OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid)};
-    if (!process.value)
-        return false;
-    // An elevated worker may belong to the alternate administrator used for UAC.
-    // Executable validation is required in either direction; same-user endpoints are additionally
-    // ACL protected.
-    const QString path = processPath(process.value);
-    if (path.isEmpty())
-        return false;
-    const QString expected = QDir::cleanPath(QDir::fromNativeSeparators(expectedExecutable));
-    if (path.compare(expected, Qt::CaseInsensitive) == 0)
-        return true;
-    if (!allowVerifiedCopy)
-        return false;
-    QFile actual(path);
-    if (!actual.open(QIODevice::ReadOnly))
-        return false;
-    QCryptographicHash a(QCryptographicHash::Sha256);
-    if (!a.addData(&actual))
-        return false;
-    if (!expectedDigest.isEmpty())
-        return a.result() == expectedDigest;
-    QFile reference(expected);
-    if (!reference.open(QIODevice::ReadOnly))
-        return false;
-    QCryptographicHash b(QCryptographicHash::Sha256);
-    return b.addData(&reference) && a.result() == b.result();
-#else
-    Q_UNUSED(socket);
-    Q_UNUSED(serverPeer);
-    Q_UNUSED(expectedExecutable);
-    Q_UNUSED(allowVerifiedCopy);
-    Q_UNUSED(expectedPid);
-    Q_UNUSED(expectedDigest);
-    return false;
-#endif
-}
 bool administratorOperationPending() {
     return operationPending;
 }
