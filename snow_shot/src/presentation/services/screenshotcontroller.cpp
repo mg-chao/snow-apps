@@ -650,6 +650,7 @@ void ScreenshotController::Impl::reloadUiPreferences() {
             settings.selectionTransitionAnimationEnabled();
         preferences.colorPickerDisplayMode =
             screenshotColorPickerDisplayModeFromString(settings.colorPickerDisplayMode());
+        preferences.selectionBorderColor = settings.selectionBorderColor();
         preferences.selectionMaskColor = settings.selectionMaskColor();
         preferences.shortcutHintOpacity =
             static_cast<qreal>(settings.shortcutHintOpacity()) / 100.0;

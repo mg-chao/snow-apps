@@ -293,6 +293,7 @@ impl Editor {
 
     fn cancel_interaction(&mut self) {
         self.state.pending_text_edit = None;
+        self.state.pending_new_text_draft = false;
         self.state.auto_filter = Default::default();
         self.bump_overlay_state_revision();
         let had_selection_edit = matches!(

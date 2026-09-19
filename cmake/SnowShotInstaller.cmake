@@ -125,32 +125,10 @@ snowDesktopDone:
 FunctionEnd
 ]=])
 # Future self-updates can add files that this uninstaller did not know at build time.
-# Run a copy of the installed helper before CPack's original file deletion list.
+# The shared ownership-cleanup sequence treats missing components of a partial
+# installation like any other missing file, so uninstallation still completes.
 snow_shot_nsis_replace("@CPACK_NSIS_DELETE_FILES@" [=[
-  Push "$INSTDIR\bin\snow_shot.exe"
-  Call un.SnowShotEnsureAppClosed
-  Push "$INSTDIR\bin\crashpad_handler.exe"
-  Call un.SnowShotEnsureAppClosed
-  IfFileExists "$INSTDIR\snow-shot-installation.json" 0 snowOwnedDone
-    InitPluginsDir
-    ClearErrors
-    CopyFiles /SILENT "$INSTDIR\bin\snow-shot-updater.exe" "$PLUGINSDIR\snow-shot-updater.exe"
-    IfErrors snowOwnedFailed
-    StrCpy $1 ""
-    ${GetParameters} $2
-    ClearErrors
-    ${GetOptions} $2 "/SNOWUPGRADE" $3
-    IfErrors +2
-      StrCpy $1 "--upgrade"
-    ClearErrors
-    ExecWait '"$PLUGINSDIR\snow-shot-updater.exe" --uninstall --target "$INSTDIR" $1' $0
-    IfErrors snowOwnedFailed
-    StrCmp $0 0 snowOwnedDone
-snowOwnedFailed:
-    MessageBox MB_OK|MB_ICONSTOP "$(SnowShotStartupCleanupFailed)" /SD IDOK
-    SetErrorLevel 12
-    Quit
-snowOwnedDone:
+  !insertmacro SnowShotUninstallOwnedCleanup
 @CPACK_NSIS_DELETE_FILES@
 ]=])
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/snow-shot-nsis")
@@ -158,11 +136,14 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/snow-shot-nsis/NSIS.template.in" "${_sno
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_BINARY_DIR}/snow-shot-nsis")
 set(_snow_nsis_guard "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/RunningApplication.nsh")
 cmake_path(NATIVE_PATH _snow_nsis_guard NORMALIZE _snow_nsis_guard_native)
+set(_snow_nsis_owned_cleanup "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/OwnedCleanup.nsh")
+cmake_path(NATIVE_PATH _snow_nsis_owned_cleanup NORMALIZE _snow_nsis_owned_cleanup_native)
 set(_snow_nsis_localization "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/InstallerLanguages.nsh")
 cmake_path(NATIVE_PATH _snow_nsis_localization NORMALIZE _snow_nsis_localization_native)
 set(_snow_nsis_directory "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/InstallDirectory.nsh")
 cmake_path(NATIVE_PATH _snow_nsis_directory NORMALIZE _snow_nsis_directory_native)
-string(APPEND CPACK_NSIS_DEFINES "\nVar SnowShotPreviousRoot\n!include \"FileFunc.nsh\"\nUnicode true\n!include \"${_snow_nsis_guard_native}\"\n"
+string(APPEND CPACK_NSIS_DEFINES "\nVar SnowShotPreviousRoot\nUnicode true\n!include \"${_snow_nsis_guard_native}\"\n"
+    "!include \"${_snow_nsis_owned_cleanup_native}\"\n"
     "!include \"${_snow_nsis_directory_native}\"\n"
     "!include \"${_snow_nsis_localization_native}\"\n"
     "!define MUI_LANGDLL_REGISTRY_ROOT SHCTX\n"

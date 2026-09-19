@@ -168,6 +168,8 @@ void defaultsAndTypedRoundTrip() {
                 screenshotUi.value(QStringLiteral("toolbar_size")).toString() ==
                     QStringLiteral("normal") &&
                 screenshotUi.value(QStringLiteral("selection_transition_animation")).toBool() &&
+                screenshotUi.value(QStringLiteral("selection_border_color")).toString() ==
+                    QStringLiteral("#4096FFFF") &&
                 screenshotUi.value(QStringLiteral("selection_mask_color")).toString() ==
                     QStringLiteral("#00000080") &&
                 screenshotUi.value(QStringLiteral("shortcut_hint_opacity")).toInt() == 100 &&

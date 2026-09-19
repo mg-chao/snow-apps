@@ -383,6 +383,11 @@ impl Engine {
         Ok(self.editor.take_text_edit_request())
     }
 
+    pub fn take_new_text_draft_request(&mut self, viewport: ViewportId) -> Result<bool, ErrorCode> {
+        self.ensure_viewport(viewport)?;
+        Ok(self.editor.take_new_text_draft_request())
+    }
+
     pub fn serial_number_label_layout_request(
         &self,
         viewport: ViewportId,

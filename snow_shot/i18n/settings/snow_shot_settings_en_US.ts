@@ -2335,6 +2335,10 @@
             <translation>Selection animation</translation>
         </message>
         <message>
+            <source>Selection border color</source>
+            <translation>Selection border color</translation>
+        </message>
+        <message>
             <source>Selection mask color</source>
             <translation>Selection mask color</translation>
         </message>
@@ -2353,6 +2357,10 @@
         <message>
             <source>Set the border color of pinned screenshots while they have focus</source>
             <translation>Set the border color of pinned screenshots while they have focus</translation>
+        </message>
+        <message>
+            <source>Set the border color of the screenshot selection</source>
+            <translation>Set the border color of the screenshot selection</translation>
         </message>
         <message>
             <source>Set the color and opacity outside the screenshot selection</source>

@@ -11,13 +11,17 @@
 #include <QTest>
 #include <QWidget>
 
+#include <algorithm>
+
 #include "widgets/date_picker.h"
+#include "widgets/color_picker.h"
 #include "widgets/detail/overlay_popup_surface.h"
 #include "widgets/detail/qt_tooltip_bridge.h"
 #include "widgets/popover.h"
 #include "widgets/select.h"
 #include "widgets/tooltip.h"
 
+using adqt::widgets::AdColorPicker;
 using adqt::widgets::AdDatePicker;
 using adqt::widgets::AdDateRangePicker;
 using adqt::widgets::AdPopover;
@@ -103,6 +107,10 @@ class QtToolPopupTest final : public QObject {
   void dateRangePickerReleasesAndRecreatesNativeResources();
   void recreateLifetimeStillDestroysPopupSurface();
   void retainedPopupCachesFollowVisibilityAndStayComponentLocal();
+  void retainedFactoryContentIsLazyAndOwnerBound();
+  void recreateFactoryContentIsReleasedAfterHide();
+  void directContentRemainsCompatibleWithFactoryApi();
+  void colorPickerPrewarmCanBeDisabled();
 };
 
 void QtToolPopupTest::popupOptionTooltipsRemainVisible() {
@@ -753,6 +761,182 @@ void QtToolPopupTest::retainedPopupCachesFollowVisibilityAndStayComponentLocal()
   QTRY_VERIFY(first.isVisible());
   QTRY_VERIFY(adqt::widgets::detail::OverlayPopupSurfaceTestAccess::pathCacheValid(first));
   QTRY_VERIFY(adqt::widgets::detail::OverlayPopupSurfaceTestAccess::shadowCacheValid(first));
+}
+
+void QtToolPopupTest::retainedFactoryContentIsLazyAndOwnerBound() {
+  QWidget host;
+  host.resize(640, 360);
+  auto* trigger = new QPushButton(QStringLiteral("Open"), &host);
+  trigger->setGeometry(24, 24, 100, 32);
+  auto* popover = new AdPopover(trigger);
+  popover->setSourceWidget(trigger);
+  popover->setPopupLayerMode(AdPopover::PopupLayerMode::QtTool);
+
+  int creationCount = 0;
+  popover->setContentFactory([&creationCount]() {
+    ++creationCount;
+    auto* content = new QWidget;
+    content->setFixedSize(120, 48);
+    return content;
+  });
+  QCOMPARE(popover->contentWidget(), nullptr);
+  QCOMPARE(creationCount, 0);
+
+  bool contentExistedWhenShown = false;
+  connect(popover, &AdPopover::visibleChanged, popover,
+          [popover, &contentExistedWhenShown](bool value) {
+            if (value) {
+              contentExistedWhenShown = popover->contentWidget() != nullptr;
+            }
+          });
+  host.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&host));
+
+  popover->show();
+  QTRY_VERIFY(popover->isVisible());
+  QCOMPARE(creationCount, 1);
+  QVERIFY(contentExistedWhenShown);
+  QPointer<QWidget> retainedContent = popover->contentWidget();
+  QVERIFY(retainedContent);
+
+  popover->hide();
+  QTRY_VERIFY(!popover->isVisible());
+  QCOMPARE(popover->contentWidget(), retainedContent.data());
+  QVERIFY(retainedContent);
+
+  popover->show();
+  QTRY_VERIFY(popover->isVisible());
+  QCOMPARE(creationCount, 1);
+  QCOMPARE(popover->contentWidget(), retainedContent.data());
+
+  delete popover;
+  QTRY_VERIFY(retainedContent.isNull());
+}
+
+void QtToolPopupTest::recreateFactoryContentIsReleasedAfterHide() {
+  QWidget host;
+  host.resize(640, 360);
+  auto* trigger = new QPushButton(QStringLiteral("Open"), &host);
+  trigger->setGeometry(24, 24, 100, 32);
+  AdPopover popover;
+  popover.setSourceWidget(trigger);
+  popover.setPopupLayerMode(AdPopover::PopupLayerMode::QtTool);
+
+  int creationCount = 0;
+  popover.setContentFactory(
+      [&creationCount]() {
+        auto* content = new QWidget;
+        content->setFixedSize(120, 48);
+        content->setProperty("factoryGeneration", ++creationCount);
+        auto* button = new QPushButton(QStringLiteral("Option"), content);
+        button->setGeometry(8, 8, 80, 28);
+        return content;
+      },
+      AdPopover::FactoryContentLifetime::RecreateOnOpen);
+  host.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&host));
+
+  popover.show();
+  QTRY_VERIFY(popover.isVisible());
+  QCOMPARE(creationCount, 1);
+  QPointer<QWidget> firstContent = popover.contentWidget();
+  QPointer<QPushButton> firstButton = firstContent->findChild<QPushButton*>();
+  QVERIFY(firstContent && firstButton);
+
+  popover.hide();
+  QTRY_VERIFY(!popover.isVisible());
+  QCOMPARE(popover.contentWidget(), nullptr);
+  QTRY_VERIFY(firstContent.isNull());
+  QTRY_VERIFY(firstButton.isNull());
+
+  popover.show();
+  QTRY_VERIFY(popover.isVisible());
+  QCOMPARE(creationCount, 2);
+  QVERIFY(popover.contentWidget());
+  QCOMPARE(popover.contentWidget()->property("factoryGeneration").toInt(), 2);
+  QVERIFY(popover.contentWidget()->findChild<QPushButton*>());
+}
+
+void QtToolPopupTest::directContentRemainsCompatibleWithFactoryApi() {
+  QWidget host;
+  host.resize(640, 360);
+  auto* trigger = new QPushButton(QStringLiteral("Open"), &host);
+  trigger->setGeometry(24, 24, 100, 32);
+  AdPopover popover;
+  popover.setSourceWidget(trigger);
+  popover.setPopupLayerMode(AdPopover::PopupLayerMode::QtTool);
+  popover.setContentFactory([]() {
+    auto* content = new QWidget;
+    content->setFixedSize(120, 48);
+    return content;
+  });
+  popover.setContentWidget(nullptr);
+  QVERIFY(!popover.contentFactory());
+  popover.setContentFactory([]() {
+    auto* content = new QWidget;
+    content->setFixedSize(120, 48);
+    return content;
+  });
+
+  auto* directContent = new QWidget;
+  directContent->setFixedSize(140, 52);
+  popover.setContentWidget(directContent);
+  QVERIFY(!popover.contentFactory());
+  QCOMPARE(popover.contentWidget(), directContent);
+
+  host.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&host));
+  for (int cycle = 0; cycle < 2; ++cycle) {
+    popover.show();
+    QTRY_VERIFY(popover.isVisible());
+    QCOMPARE(popover.contentWidget(), directContent);
+    popover.hide();
+    QTRY_VERIFY(!popover.isVisible());
+    QCOMPARE(popover.contentWidget(), directContent);
+  }
+}
+
+void QtToolPopupTest::colorPickerPrewarmCanBeDisabled() {
+  const auto pickerPanelCount = []() {
+    const QWidgetList widgets = QApplication::allWidgets();
+    return static_cast<int>(std::count_if(widgets.cbegin(), widgets.cend(), [](QWidget* widget) {
+      return widget && widget->objectName() == QStringLiteral("ad-color-picker-picker-panel");
+    }));
+  };
+  const int initialPickerPanelCount = pickerPanelCount();
+  QWidget host;
+  host.resize(640, 360);
+  auto* defaultPicker = new AdColorPicker(&host);
+  defaultPicker->setGeometry(24, 24, 120, 32);
+  auto* explicitPicker = new AdColorPicker(&host);
+  explicitPicker->setGeometry(24, 80, 120, 32);
+  explicitPicker->setPopupPrewarmEnabled(false);
+  auto* hoverPicker = new AdColorPicker(&host);
+  hoverPicker->setGeometry(24, 136, 120, 32);
+  hoverPicker->setPopupPrewarmEnabled(false);
+  hoverPicker->setTrigger(AdColorPicker::Trigger::Hover);
+
+  QCOMPARE(defaultPicker->popupPrewarmEnabled(), true);
+  QCOMPARE(explicitPicker->popupPrewarmEnabled(), false);
+  host.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&host));
+  QTRY_COMPARE(pickerPanelCount(), initialPickerPanelCount + 1);
+  QTest::qWait(100);
+  QCOMPARE(pickerPanelCount(), initialPickerPanelCount + 1);
+
+  explicitPicker->setPopupVisible(true);
+  QTRY_VERIFY(explicitPicker->popupVisible());
+  QCOMPARE(pickerPanelCount(), initialPickerPanelCount + 2);
+  explicitPicker->setPopupVisible(false);
+  QTRY_VERIFY(!explicitPicker->popupVisible());
+
+  QWidget* hoverTrigger =
+      hoverPicker->findChild<QWidget*>(QStringLiteral("ad-color-picker-trigger-frame"));
+  QVERIFY(hoverTrigger);
+  QTest::mouseMove(&host, QPoint(400, 280));
+  QTest::mouseMove(hoverTrigger, hoverTrigger->rect().center());
+  QTRY_VERIFY(hoverPicker->popupVisible());
+  QCOMPARE(pickerPanelCount(), initialPickerPanelCount + 3);
 }
 
 QTEST_MAIN(QtToolPopupTest)

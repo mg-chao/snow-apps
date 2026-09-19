@@ -1347,6 +1347,9 @@ SnowError snow_viewport_take_text_edit_request(SnowRuntime runtime, SnowViewport
                                                SnowElementId* out_text_id,
                                                uint8_t* out_has_text_id);
 
+SnowError snow_viewport_take_new_text_draft_request(SnowRuntime runtime, SnowViewport viewport,
+                                                    uint8_t* out_requested);
+
 SnowError snow_viewport_process_input_ex(SnowRuntime runtime, SnowViewport viewport,
                                          const SnowInputEvent* event,
                                          SnowInteractionOutput* out_output,

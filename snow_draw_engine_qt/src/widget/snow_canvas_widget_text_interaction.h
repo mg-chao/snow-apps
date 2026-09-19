@@ -132,6 +132,12 @@ class SnowCanvasWidgetTextInteraction final {
                            const SnowSerialNumberStyle& serialNumberStyle);
     BeginResult beginRequestedTextEdit(SnowRuntime runtime, SnowViewport viewport,
                                        const SnowCanvasDisplayCache& displayCache);
+    // Starts a blank-canvas draft only after the engine authorized it by
+    // `snow_viewport_take_new_text_draft_request` during this press.
+    BeginResult beginRequestedNewTextDraft(SnowRuntime runtime, SnowViewport viewport,
+                                           SnowCanvasDisplayCache& displayCache,
+                                           const QPointF& viewPosition,
+                                           const SnowTextStyle& newTextStyle);
     // Begins editing a freshly created bound label; requires the creation's
     // changed viewports to have been synced so the styled scene item exists.
     BeginResult beginCreatedText(SnowRuntime runtime, SnowViewport viewport,

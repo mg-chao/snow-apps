@@ -2493,16 +2493,6 @@ QWidget* ScreenshotToolPaletteStyleControls::buildWatermarkFamily(
             return addButton;
         });
 
-        QListView* view = m_watermarkTemplateSelect->view();
-        auto* delegate = new WatermarkTemplateOptionActionDelegate(
-            m_watermarkTemplateSelect, view, view != nullptr ? view->itemDelegate() : nullptr,
-            [this](const QString& key) {
-                if (m_watermarkTemplateSelect != nullptr) {
-                    m_watermarkTemplateSelect->hidePopup();
-                }
-                openDeleteWatermarkTemplateModal(key);
-            });
-        m_watermarkTemplateSelect->setItemDelegate(delegate);
     } else {
         m_watermarkTemplateEmptyLabel = m_watermarkTemplateSelect->findChild<QLabel*>(
             QStringLiteral("screenshotWatermarkTemplateEmptyLabel"));
@@ -2524,8 +2514,27 @@ QWidget* ScreenshotToolPaletteStyleControls::buildWatermarkFamily(
     setScreenshotToolPalettePlaceholderSource(m_watermarkTemplateSelect, "Template");
     setScreenshotToolPaletteTooltipSource(m_watermarkTemplateSelect, "Template");
     setScreenshotToolPaletteAccessibleNameSource(m_watermarkTemplateSelect, "Template");
-    QObject::connect(m_watermarkTemplateSelect, &adqt::widgets::AdSelect::popupOpening, controls,
-                     [this]() { refreshWatermarkTemplateOptions(); });
+    QObject::connect(
+        m_watermarkTemplateSelect, &adqt::widgets::AdSelect::popupOpening, controls, [this]() {
+            if (m_watermarkTemplateSelect == nullptr) {
+                return;
+            }
+            QListView* view = m_watermarkTemplateSelect->view();
+            m_watermarkTemplateView = view;
+            if (view != nullptr && dynamic_cast<WatermarkTemplateOptionActionDelegate*>(
+                                       view->itemDelegate()) == nullptr) {
+                auto* delegate = new WatermarkTemplateOptionActionDelegate(
+                    m_watermarkTemplateSelect, view, view->itemDelegate(),
+                    [this](const QString& key) {
+                        if (m_watermarkTemplateSelect != nullptr) {
+                            m_watermarkTemplateSelect->hidePopup();
+                        }
+                        openDeleteWatermarkTemplateModal(key);
+                    });
+                m_watermarkTemplateSelect->setItemDelegate(delegate);
+            }
+            refreshWatermarkTemplateOptions();
+        });
     QObject::connect(m_watermarkTemplateSelect, &adqt::widgets::AdSelect::selected, controls,
                      [this](const QVariant& selected, const QString&) {
                          const int index = watermarkTemplateIndex(selected.toString());
@@ -3321,6 +3330,7 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_watermarkTextEdit = nullptr;
     m_watermarkFontEditor.reset();
     m_watermarkTemplateSelect = nullptr;
+    m_watermarkTemplateView = nullptr;
     m_watermarkTemplateEmptyLabel = nullptr;
     m_watermarkTemplateAddButton = nullptr;
     m_createWatermarkTemplateModal = nullptr;
@@ -3414,6 +3424,7 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
         m_watermarkColorPreviewPending = false;
         m_watermarkTextEdit = nullptr;
         m_watermarkTemplateSelect = nullptr;
+        m_watermarkTemplateView = nullptr;
         m_watermarkTemplateEmptyLabel = nullptr;
         m_watermarkTemplateAddButton = nullptr;
         m_watermarkAngleEditor = nullptr;
@@ -4705,8 +4716,7 @@ void ScreenshotToolPaletteStyleControls::retranslateWatermarkTemplateUi() {
         m_watermarkTemplateAddButton->setToolTip(watermarkTemplateText("Add template"));
         m_watermarkTemplateAddButton->setAccessibleName(watermarkTemplateText("Add template"));
     }
-    QListView* templateView =
-        m_watermarkTemplateSelect != nullptr ? m_watermarkTemplateSelect->view() : nullptr;
+    QListView* templateView = m_watermarkTemplateView;
     QWidget* templatePopup = templateView != nullptr ? templateView->window() : nullptr;
     if (templatePopup != nullptr) {
         const auto addButtons = templatePopup->findChildren<adqt::widgets::AdButton*>(

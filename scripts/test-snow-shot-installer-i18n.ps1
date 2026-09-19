@@ -173,9 +173,24 @@ if (($compileOutput -join "`n") -match 'warning 6040|LangString .*not set') {
 }
 foreach ($hook in 'MUI_FINISHPAGE_RUN_FUNCTION SnowShotLaunchDesktop',
     '--launch-desktop --target "$INSTDIR"', '/S /SNOWUPGRADE _?=$3',
-    '${GetOptions} $2 "/SNOWUPGRADE" $3', 'StrCpy $1 "--upgrade"',
-    '--uninstall --target "$INSTDIR" $1', '--migrate-startup --previous "$SnowShotPreviousRoot" --target "$INSTDIR"', '$(SnowShotStartupCleanupFailed)') {
+    '--migrate-startup --previous "$SnowShotPreviousRoot" --target "$INSTDIR"',
+    '!insertmacro SnowShotUninstallOwnedCleanup') {
     if (-not $generated.Contains($hook)) { throw "Missing privilege lifecycle hook: $hook" }
+}
+# The ownership-cleanup sequence is a shared fragment; missing components of
+# a partial installation must be skipped without any dedicated message, so
+# only a helper that ran and fails can stop the uninstallation.
+$ownedCleanup = Get-Content -LiteralPath (Join-Path $repoRoot "snow_shot\packaging\OwnedCleanup.nsh") -Raw
+foreach ($hook in '${GetOptions} $2 "/SNOWUPGRADE" $3', 'StrCpy $1 "--upgrade"',
+    '--uninstall --target "$INSTDIR" $1',
+    'IfFileExists "$INSTDIR\bin\snow-shot-updater.exe" 0 snowOwnedDone',
+    'StrCpy $4 "$INSTDIR\bin\snow-shot-updater.exe"',
+    'IfErrors snowOwnedRun',
+    'StrCpy $4 "$PLUGINSDIR\snow-shot-updater.exe"',
+    'IfErrors snowOwnedDone',
+    'StrCmp $0 0 snowOwnedDone snowOwnedFailed',
+    '$(SnowShotStartupCleanupFailed)') {
+    if (-not $ownedCleanup.Contains($hook)) { throw "Missing owned cleanup hook: $hook" }
 }
 Write-Output "PASS: installer uses desktop-shell launch, explicit upgrade context, and checked startup cleanup."
 Write-Output "PASS: CPack compiles complete language tables and localizes prompts before upgrade handling."

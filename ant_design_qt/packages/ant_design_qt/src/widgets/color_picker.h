@@ -52,6 +52,8 @@ class AdColorPicker final : public QWidget {
   Q_PROPERTY(bool triggerTextVisible READ triggerTextVisible WRITE setTriggerTextVisible NOTIFY
                  triggerTextVisibleChanged)
   Q_PROPERTY(bool popupVisible READ popupVisible WRITE setPopupVisible NOTIFY popupVisibleChanged)
+  Q_PROPERTY(bool popupPrewarmEnabled READ popupPrewarmEnabled WRITE setPopupPrewarmEnabled NOTIFY
+                 popupPrewarmEnabledChanged)
   Q_PROPERTY(bool alphaChannelEnabled READ alphaChannelEnabled WRITE setAlphaChannelEnabled NOTIFY
                  alphaChannelEnabledChanged)
   Q_PROPERTY(bool formatSelectorEnabled READ formatSelectorEnabled WRITE setFormatSelectorEnabled
@@ -172,6 +174,9 @@ class AdColorPicker final : public QWidget {
   bool popupVisible() const;
   void setPopupVisible(bool value);
 
+  bool popupPrewarmEnabled() const;
+  void setPopupPrewarmEnabled(bool value);
+
   bool disabled() const;
   void setDisabled(bool value);
 
@@ -238,6 +243,7 @@ class AdColorPicker final : public QWidget {
   // Emitted before opening transfers keyboard focus into the popup.
   void popupOpening();
   void popupVisibleChanged(bool value);
+  void popupPrewarmEnabledChanged(bool value);
   void disabledChanged(bool value);
   void alphaChannelEnabledChanged(bool value);
   void formatSelectorEnabledChanged(bool value);
@@ -416,6 +422,7 @@ class AdColorPicker final : public QWidget {
   LivePanelSyncSource livePanelSyncSource_ = LivePanelSyncSource::None;
   bool interactiveEditorRefreshPending_ = false;
   bool editorPrewarmScheduled_ = false;
+  bool popupPrewarmEnabled_ = true;
   bool pendingEditingFinished_ = false;
   AdColorSelection pendingFinishedValue_;
 

@@ -11,6 +11,7 @@
 #include <QByteArray>
 #include <QDateTime>
 #include <QPoint>
+#include <QPointer>
 #include <QSet>
 #include <QVector>
 
@@ -21,6 +22,7 @@
 class QBoxLayout;
 class QFrame;
 class QLabel;
+class QListView;
 class QObject;
 class QSpacerItem;
 class QWidget;
@@ -494,6 +496,7 @@ class ScreenshotToolPaletteStyleControls final {
     adqt::widgets::AdLineEdit* m_watermarkTextEdit = nullptr;
     std::unique_ptr<ScreenshotToolPaletteFontEditor> m_watermarkFontEditor;
     adqt::widgets::AdSelect* m_watermarkTemplateSelect = nullptr;
+    QPointer<QListView> m_watermarkTemplateView;
     QLabel* m_watermarkTemplateEmptyLabel = nullptr;
     adqt::widgets::AdButton* m_watermarkTemplateAddButton = nullptr;
     adqt::widgets::AdModal* m_createWatermarkTemplateModal = nullptr;

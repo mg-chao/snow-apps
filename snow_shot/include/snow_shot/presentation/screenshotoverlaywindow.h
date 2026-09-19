@@ -41,6 +41,7 @@ class ScreenshotOverlayWindow final : public QWidget {
     void setScreenshotImage(QImage image, const QRectF& canvasRect);
     void setScreenshotImageSource(ScreenshotImageSource source);
     void setScreenshotMaskVisible(bool visible);
+    void setScreenshotSelectionBorderColor(const QColor& color);
     void setScreenshotMaskColor(const QColor& color);
     void setScreenshotGuideLines(const QPointF& cursorPosition, const QColor& cursorColor,
                                  const QColor& monitorCenterColor);

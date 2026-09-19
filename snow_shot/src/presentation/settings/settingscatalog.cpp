@@ -1998,6 +1998,13 @@ QVector<SettingsPageDefinition> builtInPages() {
                         selectionTransitionAnimationItem(),
                         colorPickerDisplayModeItem(),
                         screenshotColorItem(
+                            QStringLiteral("interface.screenshot.selection-border-color"),
+                            QT_TRANSLATE_NOOP("SettingsCatalog", "Selection border color"),
+                            QT_TRANSLATE_NOOP("SettingsCatalog",
+                                              "Set the border color of the screenshot selection"),
+                            QStringLiteral("screenshot_ui/selection_border_color"),
+                            SettingsColorBinding::SelectionBorderColor),
+                        screenshotColorItem(
                             QStringLiteral("interface.screenshot.selection-mask-color"),
                             QT_TRANSLATE_NOOP("SettingsCatalog", "Selection mask color"),
                             QT_TRANSLATE_NOOP(
@@ -3402,6 +3409,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     switch (color->binding) {
                     case SettingsColorBinding::ThemePrimaryColor:
                         expectedKey = QStringLiteral("interface/theme_primary_color");
+                        break;
+                    case SettingsColorBinding::SelectionBorderColor:
+                        expectedKey = QStringLiteral("screenshot_ui/selection_border_color");
                         break;
                     case SettingsColorBinding::SelectionMaskColor:
                         expectedKey = QStringLiteral("screenshot_ui/selection_mask_color");

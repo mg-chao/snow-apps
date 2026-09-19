@@ -33,6 +33,31 @@ function Run-Installer {
     return $process.ExitCode
 }
 
+function Run-Uninstaller {
+    param([string]$Destination)
+    $uninstaller = Join-Path $Destination "uninstall.exe"
+    $process = Start-Process -FilePath $uninstaller -ArgumentList "/S", "_?=$Destination" `
+        -WindowStyle Hidden -PassThru
+    if (-not $process.WaitForExit(20000)) {
+        $process.Kill()
+        $process.WaitForExit()
+        throw "Uninstaller test timed out."
+    }
+    return $process.ExitCode
+}
+
+function Reset-OwnedInstallation {
+    param([string]$Installer, [string]$Destination, [string]$Updater)
+    if (Test-Path -LiteralPath $Destination) {
+        Remove-Item -LiteralPath $Destination -Recurse -Force
+    }
+    if ((Run-Installer $Installer) -ne 0) { throw "Owned cleanup installation failed." }
+    Set-Content -LiteralPath (Join-Path $Destination "snow-shot-installation.json") -Value '{"schema":1}'
+    if ($Updater) {
+        Copy-Item -LiteralPath $Updater -Destination (Join-Path $Destination "bin\snow-shot-updater.exe")
+    }
+}
+
 function Start-Fixture {
     param([string]$Path)
     $process = Start-Process -FilePath $Path -WindowStyle Hidden -PassThru
@@ -142,6 +167,73 @@ if (-not $ReproduceOnly) {
     New-Item -ItemType Directory -Path $installed | Out-Null
     if ((Run-Installer $guarded) -ne 11) { throw "Detection errors must stop setup with exit code 11." }
     Write-Output "PASS: Restart Manager detection errors stop setup."
+
+    # A partial installation with missing components must still uninstall,
+    # while a helper that ran and failed must keep blocking the uninstall.
+    $ownedDestination = Join-Path $testRoot ("owned cleanup " + [char]0x5b89)
+    $stubSource = Join-Path $repoRoot "snow_shot\tests\installer_updater_stub.cpp"
+    $stubWorking = Join-Path $testRoot "updater-stub.exe"
+    $stubFailing = Join-Path $testRoot "updater-stub-failing.exe"
+    & cl /nologo /std:c++20 /W4 /WX /O2 /MT /DUNICODE /D_UNICODE "/Fe:$stubWorking" `
+        "/Fo:$testRoot\updater-stub.obj" $stubSource /link /SUBSYSTEM:WINDOWS shell32.lib
+    if ($LASTEXITCODE -ne 0) { throw "Update helper stub compilation failed." }
+    & cl /nologo /std:c++20 /W4 /WX /O2 /MT /DUNICODE /D_UNICODE /DSNOW_SHOT_UPDATER_STUB_FAIL `
+        "/Fe:$stubFailing" "/Fo:$testRoot\updater-stub-failing.obj" $stubSource /link /SUBSYSTEM:WINDOWS shell32.lib
+    if ($LASTEXITCODE -ne 0) { throw "Failing update helper stub compilation failed." }
+    $ownedInstaller = Join-Path $testRoot "owned-cleanup.exe"
+    & $compiler /V2 "/DOUTPUT=$ownedInstaller" "/DDESTINATION=$ownedDestination" "/DPAYLOAD=$fixture" `
+        "/DGUARD=$repoRoot\snow_shot\packaging\RunningApplication.nsh" `
+        "/DOWNED_CLEANUP=$repoRoot\snow_shot\packaging\OwnedCleanup.nsh" `
+        "$repoRoot\snow_shot\tests\installer_owned_cleanup_tests.nsi"
+    if ($LASTEXITCODE -ne 0) { throw "Owned cleanup test compilation failed." }
+    $ownedApp = Join-Path $ownedDestination "bin\snow_shot.exe"
+    $ownedManifest = Join-Path $ownedDestination "snow-shot-installation.json"
+    $ownedMarker = Join-Path $ownedDestination "snow-shot-updater-ran.txt"
+
+    Reset-OwnedInstallation $ownedInstaller $ownedDestination $null
+    $result = Run-Uninstaller $ownedDestination
+    if ($result -ne 0 -or (Test-Path -LiteralPath $ownedApp) -or (Test-Path -LiteralPath $ownedManifest)) {
+        throw "A missing update helper must not block uninstallation; exit code $result."
+    }
+    Write-Output "PASS: silent uninstall completes when the update helper is missing."
+
+    Reset-OwnedInstallation $ownedInstaller $ownedDestination $stubWorking
+    $result = Run-Uninstaller $ownedDestination
+    if ($result -ne 0 -or -not (Test-Path -LiteralPath $ownedMarker)) {
+        throw "Uninstall must run the update helper when it is present; exit code $result."
+    }
+    Write-Output "PASS: uninstall still runs the update helper when it is present."
+
+    Reset-OwnedInstallation $ownedInstaller $ownedDestination $stubFailing
+    $result = Run-Uninstaller $ownedDestination
+    if ($result -ne 12 -or -not (Test-Path -LiteralPath $ownedApp)) {
+        throw "A failing update helper must still block uninstallation; exit code $result."
+    }
+    Write-Output "PASS: uninstall still blocks when the update helper fails."
+
+    Reset-OwnedInstallation $ownedInstaller $ownedDestination $stubWorking
+    Remove-Item -LiteralPath $ownedManifest
+    $result = Run-Uninstaller $ownedDestination
+    if ($result -ne 0 -or -not (Test-Path -LiteralPath $ownedMarker)) {
+        throw "Uninstall must still run the update helper without a manifest; exit code $result."
+    }
+    Write-Output "PASS: uninstall still runs the update helper without a manifest."
+
+    Reset-OwnedInstallation $ownedInstaller $ownedDestination $stubWorking
+    Remove-Item -LiteralPath $ownedApp
+    $result = Run-Uninstaller $ownedDestination
+    if ($result -ne 0 -or (Test-Path -LiteralPath $ownedManifest)) {
+        throw "A missing application binary must not block uninstallation; exit code $result."
+    }
+    Write-Output "PASS: uninstall completes when the application binary is missing."
+
+    Reset-OwnedInstallation $ownedInstaller $ownedDestination $stubWorking
+    Set-Content -LiteralPath (Join-Path $ownedDestination "bin\snow-shot-updater.exe") -Value "not executable"
+    $result = Run-Uninstaller $ownedDestination
+    if ($result -ne 0 -or (Test-Path -LiteralPath $ownedApp)) {
+        throw "An unlaunchable update helper must not block uninstallation; exit code $result."
+    }
+    Write-Output "PASS: uninstall completes when the update helper cannot start."
 
     $cpackBuild = Join-Path $testRoot "cpack"
     & cmake -S "$repoRoot\snow_shot\tests\installer_packaging" -B $cpackBuild

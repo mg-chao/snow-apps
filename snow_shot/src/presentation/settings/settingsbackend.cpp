@@ -767,6 +767,8 @@ QColor BuiltInSettingsBackend::colorValue(SettingsColorBinding binding) const {
     switch (binding) {
     case SettingsColorBinding::ThemePrimaryColor:
         return storage::InterfaceSettings().themePrimaryColor();
+    case SettingsColorBinding::SelectionBorderColor:
+        return screenshot.selectionBorderColor();
     case SettingsColorBinding::SelectionMaskColor:
         return screenshot.selectionMaskColor();
     case SettingsColorBinding::CursorGuideLineColor:
@@ -788,6 +790,8 @@ bool BuiltInSettingsBackend::applyColorValue(SettingsColorBinding binding, const
     switch (binding) {
     case SettingsColorBinding::ThemePrimaryColor:
         return styles::ThemeManager::instance().setThemePrimaryColor(value);
+    case SettingsColorBinding::SelectionBorderColor:
+        return screenshot.setSelectionBorderColor(value);
     case SettingsColorBinding::SelectionMaskColor:
         return screenshot.setSelectionMaskColor(value);
     case SettingsColorBinding::CursorGuideLineColor:
@@ -1402,6 +1406,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("screenshot_ui/color_picker_display_mode"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_ui/color_picker_display_mode"))},
+            {QStringLiteral("screenshot_ui/selection_border_color"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot_ui/selection_border_color"))},
             {QStringLiteral("screenshot_ui/selection_mask_color"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_ui/selection_mask_color"))},

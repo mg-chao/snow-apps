@@ -784,6 +784,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {QStringLiteral("hex"), QStringLiteral("hex_without_hash"), QStringLiteral("rgb"),
       QStringLiteral("hsl")}},
+    {QStringLiteral("screenshot_ui/selection_border_color"), QStringLiteral("#4096FFFF"),
+     ConfigurationValueKind::String},
     {QStringLiteral("screenshot_ui/selection_mask_color"), QStringLiteral("#00000080"),
      ConfigurationValueKind::String},
     {QStringLiteral("screenshot_ui/shortcut_hint_opacity"), 100, ConfigurationValueKind::Integer,
@@ -1230,6 +1232,7 @@ ConfigurationNormalization normalizeWatermarkTemplates(const QJsonValue& value) 
 
 bool isRgbaColorKey(const QString& key) {
     return key == QStringLiteral("interface/theme_primary_color") ||
+           key == QStringLiteral("screenshot_ui/selection_border_color") ||
            key == QStringLiteral("screenshot_ui/selection_mask_color") ||
            key == QStringLiteral("screenshot_ui/cursor_guide_line_color") ||
            key == QStringLiteral("screenshot_ui/monitor_center_guide_line_color") ||

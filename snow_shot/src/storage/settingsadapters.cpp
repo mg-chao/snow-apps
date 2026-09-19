@@ -1112,6 +1112,14 @@ bool ScreenshotUiSettings::setColorPickerFormat(const QString& format) const {
     return cache().setValue(QStringLiteral("screenshot_ui/color_picker_format"), format);
 }
 
+QColor ScreenshotUiSettings::selectionBorderColor() const {
+    return colorValue(QStringLiteral("screenshot_ui/selection_border_color"));
+}
+
+bool ScreenshotUiSettings::setSelectionBorderColor(const QColor& color) const {
+    return setColorValue(QStringLiteral("screenshot_ui/selection_border_color"), color);
+}
+
 QColor ScreenshotUiSettings::selectionMaskColor() const {
     return colorValue(QStringLiteral("screenshot_ui/selection_mask_color"));
 }

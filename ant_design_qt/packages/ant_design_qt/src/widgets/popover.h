@@ -82,6 +82,13 @@ class AdPopover final : public QObject, private detail::OverlayPopupControllerDe
   using VisibilityPolicy = AdPopupActivationMode;
   using PopupLifetime = AdPopupLifetime;
   using PopupLayerMode = AdPopupLayerMode;
+  using ContentFactory = std::function<QWidget*()>;
+
+  enum class FactoryContentLifetime {
+    Retained,
+    RecreateOnOpen,
+  };
+  Q_ENUM(FactoryContentLifetime)
 
   explicit AdPopover(QObject* parent = nullptr);
   ~AdPopover() override;
@@ -155,6 +162,11 @@ class AdPopover final : public QObject, private detail::OverlayPopupControllerDe
   QWidget* contentWidget() const { return contentWidget_; }
   void setContentWidget(QWidget* widget);
   QWidget* takeContentWidget();
+
+  ContentFactory contentFactory() const { return contentFactory_; }
+  void setContentFactory(ContentFactory factory,
+                         FactoryContentLifetime lifetime = FactoryContentLifetime::Retained);
+  FactoryContentLifetime factoryContentLifetime() const { return factoryContentLifetime_; }
 
   QFont titleFont() const;
   void setTitleFont(const QFont& value);
@@ -268,6 +280,8 @@ class AdPopover final : public QObject, private detail::OverlayPopupControllerDe
   void clearObservedWidgets();
   void handleObservedWidgetDestroyed(QObject* object);
   void handleControllerPopupVisibleChanged(bool value);
+  void ensureFactoryContent();
+  void releaseFactoryContent();
   void applyDefaultVisibleIfNeeded();
   void emitVisibleSignals(bool value);
 
@@ -332,6 +346,10 @@ class AdPopover final : public QObject, private detail::OverlayPopupControllerDe
   QPointer<QWidget> contentWidget_;
   QMetaObject::Connection titleWidgetDestroyedConnection_;
   QMetaObject::Connection contentWidgetDestroyedConnection_;
+  ContentFactory contentFactory_;
+  FactoryContentLifetime factoryContentLifetime_ = FactoryContentLifetime::Retained;
+  bool updatingFactoryContent_ = false;
+  bool contentCreatedByFactory_ = false;
 
   QPointer<QWidget> popupSurface_;
   QPointer<QWidget> popupBodyHost_;
