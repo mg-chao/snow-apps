@@ -564,9 +564,16 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
     }
 
     std::shared_future<StorageResult> remove(const QString& id) override {
+        return removeMany({id});
+    }
+
+    std::shared_future<StorageResult> removeMany(QVector<QString> ids) override {
+        if (ids.isEmpty()) {
+            return readyFuture(StorageResult::ok());
+        }
         Command command;
         command.kind = Kind::Remove;
-        command.id = id;
+        command.ids = std::move(ids);
         return submit(std::move(command));
     }
 
@@ -598,7 +605,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
         CaptureHistoryDraft draft;
         CaptureHistoryRecord record;
         CaptureHistoryPolicy policy;
-        QString id;
+        QVector<QString> ids;
         QString reason;
         std::shared_ptr<std::promise<CaptureHistoryPublishResult>> publication;
         std::shared_ptr<std::promise<StorageResult>> completion;
@@ -858,17 +865,25 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
         return {StorageResult::ok(), encoded.stored.record};
     }
 
-    StorageResult removeNow(const QString& id) {
+    StorageResult removeManyNow(const QVector<QString>& ids) {
         Snapshot next = snapshot();
-        const auto found = std::find_if(next.records.begin(), next.records.end(),
-                                        [&](const auto& record) { return record.record.id == id; });
-        if (found != next.records.end()) {
-            next.pendingDeletions.insert(id, found->record.totalBytes);
-            next.records.erase(found);
-            if (!commit(std::move(next)))
-                return StorageResult::failure(lastError());
-            changed();
+        const QSet<QString> requested(ids.cbegin(), ids.cend());
+        bool removed = false;
+        for (auto iterator = next.records.begin(); iterator != next.records.end();) {
+            if (!requested.contains(iterator->record.id)) {
+                ++iterator;
+                continue;
+            }
+            next.pendingDeletions.insert(iterator->record.id, iterator->record.totalBytes);
+            iterator = next.records.erase(iterator);
+            removed = true;
         }
+        if (!removed) {
+            return StorageResult::ok();
+        }
+        if (!commit(std::move(next)))
+            return StorageResult::failure(lastError());
+        changed();
         return cleanup() ? StorageResult::ok() : StorageResult::failure(lastError());
     }
 
@@ -1008,7 +1023,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
                     command.publication->set_value(publishNow(command.draft));
                     break;
                 case Kind::Remove:
-                    result = removeNow(command.id);
+                    result = removeManyNow(command.ids);
                     break;
                 case Kind::Clear:
                     result = clearNow();
@@ -1019,7 +1034,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
                 case Kind::ReadFailure:
                     if (find(command.record)) {
                         fail(command.reason);
-                        result = removeNow(command.record.id);
+                        result = removeManyNow({command.record.id});
                     }
                     break;
                 case Kind::Policy: {

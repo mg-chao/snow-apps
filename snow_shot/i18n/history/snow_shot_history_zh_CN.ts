@@ -113,6 +113,10 @@
             <translation>所有来源</translation>
         </message>
         <message>
+            <source>Bulk actions for selected screenshot history entries</source>
+            <translation>所选截图历史记录的批量操作</translation>
+        </message>
+        <message>
             <source>Cancel</source>
             <translation>取消</translation>
         </message>
@@ -133,6 +137,16 @@
             <translation>当前显示器</translation>
         </message>
         <message>
+            <source>Delete</source>
+            <translation>删除</translation>
+        </message>
+        <message numerus="yes">
+            <source>Delete %n selected item(s)?</source>
+            <translation>
+            <numerusform>删除选中的 %n 项？</numerusform>
+        </translation>
+        </message>
+        <message>
             <source>Delete all</source>
             <translation>全部删除</translation>
         </message>
@@ -143,6 +157,18 @@
         <message>
             <source>Delete all screenshot history?</source>
             <translation>删除所有截图历史？</translation>
+        </message>
+        <message>
+            <source>Delete selected history entries</source>
+            <translation>删除选中的历史记录</translation>
+        </message>
+        <message>
+            <source>Deselect all</source>
+            <translation>取消全选</translation>
+        </message>
+        <message>
+            <source>Deselect all history entries</source>
+            <translation>取消选择所有历史记录</translation>
         </message>
         <message>
             <source>End date</source>
@@ -177,8 +203,26 @@
             <translation>截图历史</translation>
         </message>
         <message>
+            <source>Select all</source>
+            <translation>全选</translation>
+        </message>
+        <message>
+            <source>Select all entries on this page</source>
+            <translation>选择此页的所有条目</translation>
+        </message>
+        <message numerus="yes">
+            <source>Selected %n item(s)</source>
+            <translation>
+            <numerusform>已选择 %n 项</numerusform>
+        </translation>
+        </message>
+        <message>
             <source>Start date</source>
             <translation>开始日期</translation>
+        </message>
+        <message>
+            <source>This action cannot be undone</source>
+            <translation>此操作无法撤销</translation>
         </message>
         <message>
             <source>This permanently removes every saved screenshot history entry</source>

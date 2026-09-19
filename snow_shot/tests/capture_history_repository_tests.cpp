@@ -645,6 +645,77 @@ void startupExpiresAgeButDoesNotEnforceCapacity() {
             "read-only repository modified history");
 }
 
+void batchRemovalCommitsAndNotifiesOnce() {
+    QTemporaryDir temporary;
+    std::atomic_int indexWrites{0};
+    std::atomic_int recordChanges{0};
+    storage::CaptureHistoryRepositoryOptions options;
+    options.operationObserved = [&](storage::CaptureHistoryOperation operation) {
+        if (operation == storage::CaptureHistoryOperation::IndexWrite) {
+            ++indexWrites;
+        }
+    };
+    options.callbacks.recordsChanged = [&]() { ++recordChanges; };
+    auto repository = storage::makeCaptureHistoryRepository(temporary.path(), options);
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    QVector<storage::CaptureHistoryRecord> published;
+    for (int index = 0; index < 4; ++index) {
+        const auto result = repository->publish(draftAt(now.addSecs(-index))).get();
+        require(result.storage.success, "failed to publish batch-removal fixture");
+        published.push_back(result.record);
+    }
+    const auto payloadPath = [&](const QString& id) {
+        return QDir(temporary.path())
+            .filePath(QStringLiteral("capture_history/records/%1").arg(id));
+    };
+    indexWrites = 0;
+    recordChanges = 0;
+
+    const QString unknownId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const auto result =
+        repository->removeMany({published[0].id, published[2].id, published[0].id, unknownId})
+            .get();
+    require(result.success, "batch removal failed");
+    const QVector<storage::CaptureHistoryRecord> remaining = repository->records();
+    require(remaining.size() == 2 && remaining[0].id == published[1].id &&
+                remaining[1].id == published[3].id,
+            "batch removal did not retain exactly the unselected records");
+    require(repository->usage().entryCount == 2 && recordChanges.load() == 1,
+            "batch removal did not update usage and notify exactly once");
+    require(indexWrites.load() == 2,
+            "batch removal must use one state commit and one payload-cleanup commit");
+    require(!QFileInfo::exists(payloadPath(published[0].id)) &&
+                !QFileInfo::exists(payloadPath(published[2].id)) &&
+                QFileInfo::exists(payloadPath(published[1].id)) &&
+                QFileInfo::exists(payloadPath(published[3].id)),
+            "batch removal did not clean only the selected payload directories");
+
+    indexWrites = 0;
+    recordChanges = 0;
+    require(repository->removeMany({}).get().success &&
+                repository->removeMany({unknownId, unknownId}).get().success,
+            "empty and unknown-only removal batches must be successful no-ops");
+    require(indexWrites.load() == 0 && recordChanges.load() == 0,
+            "no-op removal batches must not write or notify");
+
+    repository.reset();
+    storage::CaptureHistoryRepositoryOptions readOnlyOptions;
+    readOnlyOptions.writeAvailable = false;
+    auto readOnly =
+        storage::makeCaptureHistoryRepository(temporary.path(), std::move(readOnlyOptions));
+    require(readOnly->records().size() == 2 &&
+                !readOnly->removeMany({published[1].id}).get().success &&
+                readOnly->records().size() == 2,
+            "read-only batch removal modified persisted history");
+    readOnly.reset();
+
+    repository = storage::makeCaptureHistoryRepository(temporary.path());
+    require(repository->remove(published[1].id).get().success &&
+                repository->records().size() == 1 &&
+                repository->records().first().id == published[3].id,
+            "single removal no longer follows the shared batch path");
+}
+
 void permanentHistoryBypassesLimitsAndAllowsManualDeletion() {
     QTemporaryDir temporary;
     const auto now = QDateTime::fromString(QStringLiteral("2026-09-08T12:00:00Z"), Qt::ISODate);
@@ -732,6 +803,7 @@ int main(int argc, char** argv) {
     failedCommitPreservesPublishedHistory();
     pendingDeletionResumesWithoutScanningOrphans();
     startupExpiresAgeButDoesNotEnforceCapacity();
+    batchRemovalCommitsAndNotifiesOnce();
     permanentHistoryBypassesLimitsAndAllowsManualDeletion();
     clearCancelsQueuedPublicationsAndShutdownDrains();
     return 0;

@@ -52,6 +52,7 @@ class CaptureHistoryRepository {
     loadResultPng(const CaptureHistoryRecord& record) const = 0;
     virtual void reportReadFailure(const CaptureHistoryRecord& record, const QString& reason) = 0;
     [[nodiscard]] virtual std::shared_future<StorageResult> remove(const QString& id) = 0;
+    [[nodiscard]] virtual std::shared_future<StorageResult> removeMany(QVector<QString> ids) = 0;
     [[nodiscard]] virtual std::shared_future<StorageResult>
     updatePolicy(CaptureHistoryPolicy policy) = 0;
     [[nodiscard]] virtual std::shared_future<StorageResult> requestClear() = 0;

@@ -1650,6 +1650,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    snow_shot_add_translations(snow-shot-screenshot-history-page-tests)
     snow_shot_import_offscreen_platform(snow-shot-screenshot-history-page-tests)
 
     add_executable(snow-shot-single-instance-coordinator-tests
@@ -5501,6 +5502,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         tests/screenshot_history_performance_benchmark.cpp
         include/snow_shot/presentation/components/contentcardwidget.h
         src/presentation/components/contentcardwidget.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
     )
     target_compile_definitions(snow-shot-history-performance-benchmark PRIVATE
         NOMINMAX
@@ -5517,6 +5519,11 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         Qt6::Widgets
         Psapi
     )
+    if(WIN32)
+        target_link_libraries(snow-shot-history-performance-benchmark PRIVATE
+            PkgConfig::SNOW_SHOT_FFMPEG
+        )
+    endif()
 
     # This executable deliberately is not registered with CTest. It publishes
     # generated images through the real Windows clipboard for explicit Release

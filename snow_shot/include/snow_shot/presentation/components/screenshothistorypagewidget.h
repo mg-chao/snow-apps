@@ -31,6 +31,7 @@ struct ScreenshotHistoryResultResolution {
 Q_DECLARE_METATYPE(ScreenshotHistoryResultResolution)
 
 class QEvent;
+class QBoxLayout;
 class QLabel;
 class QResizeEvent;
 class QShowEvent;
@@ -67,6 +68,7 @@ class ScreenshotHistoryPageDataSource : public QObject {
                                       quint64) {}
     virtual void requestResultImage(const snow_shot::storage::CaptureHistoryRecord&, quint64) {}
     virtual void remove(const QString& id) = 0;
+    [[nodiscard]] virtual bool requestRemoveMany(const QVector<QString>& ids) = 0;
     virtual void reportReadFailure(const snow_shot::storage::CaptureHistoryRecord&,
                                    const QString&) {}
     [[nodiscard]] virtual bool requestClear() = 0;
@@ -106,6 +108,11 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     void rebuildFilteredRecords(bool resetPage);
     void rebuildEntries();
     void updateHeader();
+    void updateSelectionBar();
+    void clearSelection();
+    void selectCurrentPage();
+    void requestDeleteSelected();
+    void handleEntrySelectionChanged(const QString& entryId, bool selected);
     void requestDeleteAll();
     void removeEntry(const QString& entryId);
     void handleHistoryChanged();
@@ -126,6 +133,15 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     adqt::widgets::AdButton* m_deleteAllButton = nullptr;
     adqt::widgets::AdButton* m_refreshButton = nullptr;
     adqt::widgets::AdPopconfirm* m_deleteAllConfirmation = nullptr;
+    QWidget* m_selectionBar = nullptr;
+    QWidget* m_selectionPanel = nullptr;
+    QLabel* m_selectionSummary = nullptr;
+    QWidget* m_selectionActions = nullptr;
+    QBoxLayout* m_selectionBarLayout = nullptr;
+    adqt::widgets::AdButton* m_deleteSelectedButton = nullptr;
+    adqt::widgets::AdButton* m_selectAllButton = nullptr;
+    adqt::widgets::AdButton* m_deselectAllButton = nullptr;
+    adqt::widgets::AdPopconfirm* m_deleteSelectedConfirmation = nullptr;
     adqt::widgets::AdScrollArea* m_scrollArea = nullptr;
     QWidget* m_entriesHost = nullptr;
     QVBoxLayout* m_entriesLayout = nullptr;
@@ -138,6 +154,7 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     QPointer<ScreenshotHistoryPageDataSource> m_dataSource;
     QHash<QString, QWidget*> m_entryWidgetsById;
     QVector<QString> m_entryLayoutIds;
+    QSet<QString> m_selectedRecordIds;
     QHash<QString, std::optional<snow_shot::storage::CaptureHistoryAssetSet>> m_resolvedAssets;
     snow_shot::presentation::styles::ThemeColorScheme m_colorScheme;
     bool m_active = false;

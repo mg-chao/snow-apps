@@ -5,6 +5,10 @@
 #include "widgets/select.h"
 #include "widgets/image.h"
 #include "widgets/button.h"
+#include "widgets/checkbox.h"
+#include "widgets/pagination.h"
+#include "widgets/popconfirm.h"
+#include "widgets/scroll_area.h"
 #include "snow_shot/storage/storageusagetracker.h"
 
 #include <QApplication>
@@ -14,11 +18,18 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QDir>
+#include <QFrame>
+#include <QImage>
+#include <QPainter>
+#include <QRegion>
 #include <QCryptographicHash>
 #include <QUuid>
 #include <QLabel>
+#include <QLayout>
 #include <QTemporaryDir>
+#include <QTranslator>
 
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <utility>
@@ -49,14 +60,22 @@ class MutableHistoryDataSource final : public ScreenshotHistoryPageDataSource {
 
     std::optional<storage::CaptureHistoryAssetSet>
     displayAssets(const storage::CaptureHistoryRecord&) const override {
+        ++displayAssetRequests;
         return std::nullopt;
     }
 
     void remove(const QString&) override {}
+    bool requestRemoveMany(const QVector<QString>& ids) override {
+        removedBatches.push_back(ids);
+        return acceptRemoval;
+    }
     void reportReadFailure(const storage::CaptureHistoryRecord&, const QString&) override {
         ++readFailures;
     }
     int readFailures = 0;
+    mutable int displayAssetRequests = 0;
+    QVector<QVector<QString>> removedBatches;
+    bool acceptRemoval = true;
     bool requestClear() override {
         return true;
     }
@@ -68,6 +87,282 @@ class MutableHistoryDataSource final : public ScreenshotHistoryPageDataSource {
   private:
     QVector<storage::CaptureHistoryRecord> m_records;
 };
+
+QVector<storage::CaptureHistoryRecord> historyRecords(int count) {
+    QVector<storage::CaptureHistoryRecord> records;
+    records.reserve(count);
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    for (int index = 0; index < count; ++index) {
+        storage::CaptureHistoryRecord record;
+        record.id = QStringLiteral("record-%1").arg(index);
+        record.createdUtc = now.addSecs(-index);
+        record.source = index % 2 == 0 ? storage::CaptureHistorySource::CopiedToClipboard
+                                       : storage::CaptureHistorySource::PinnedToScreen;
+        record.selection.rectangle = QRect(10 + index, 20 + index, 320, 180);
+        record.totalBytes = 1024 + index;
+        records.push_back(record);
+    }
+    return records;
+}
+
+QList<adqt::widgets::AdCheckbox*> entryCheckboxes(ScreenshotHistoryPageWidget& page) {
+    return page.findChildren<adqt::widgets::AdCheckbox*>(
+        QStringLiteral("screenshotHistoryEntrySelection"));
+}
+
+QString entryId(adqt::widgets::AdCheckbox* checkbox) {
+    QWidget* entry = checkbox != nullptr && checkbox->parentWidget() != nullptr
+                         ? checkbox->parentWidget()->parentWidget()
+                         : nullptr;
+    const QString prefix = QStringLiteral("screenshotHistoryEntry-");
+    return entry != nullptr && entry->objectName().startsWith(prefix)
+               ? entry->objectName().mid(prefix.size())
+               : QString();
+}
+
+int verticalLayoutGap(QWidget& root, QWidget* upper, QWidget* lower) {
+    const int upperBottom = upper->mapTo(&root, QPoint(0, upper->height())).y();
+    const int lowerTop = lower->mapTo(&root, QPoint()).y();
+    return lowerTop - upperBottom;
+}
+
+int colorDistance(const QColor& first, const QColor& second) {
+    return std::max({std::abs(first.red() - second.red()), std::abs(first.green() - second.green()),
+                     std::abs(first.blue() - second.blue()),
+                     std::abs(first.alpha() - second.alpha())});
+}
+
+void requireUniformEntryBorder(QWidget* entry) {
+    constexpr qreal devicePixelRatio = 2.0;
+    const QSize pixelSize(qRound(entry->width() * devicePixelRatio),
+                          qRound(entry->height() * devicePixelRatio));
+    QImage rendered(pixelSize, QImage::Format_ARGB32_Premultiplied);
+    rendered.setDevicePixelRatio(devicePixelRatio);
+    rendered.fill(Qt::transparent);
+    QPainter painter(&rendered);
+    entry->render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
+    painter.end();
+
+    const int centerX = rendered.width() / 2;
+    const int centerY = rendered.height() / 2;
+    constexpr int profileDepth = 8;
+    for (int offset = 0; offset < profileDepth; ++offset) {
+        const QColor top = rendered.pixelColor(centerX, offset);
+        const QColor bottom = rendered.pixelColor(centerX, rendered.height() - 1 - offset);
+        const QColor left = rendered.pixelColor(offset, centerY);
+        const QColor right = rendered.pixelColor(rendered.width() - 1 - offset, centerY);
+        require(colorDistance(top, bottom) <= 2 && colorDistance(top, left) <= 2 &&
+                    colorDistance(top, right) <= 2,
+                "history entry borders must have uniform device-pixel stroke profiles");
+    }
+
+    const QColor stroke = rendered.pixelColor(centerX, qRound(devicePixelRatio));
+    const QColor fill = rendered.pixelColor(centerX, qRound(8.0 * devicePixelRatio));
+    require(colorDistance(stroke, fill) > 2,
+            "history entries must visibly paint a border around the container fill");
+}
+
+void entriesUseBordersAndSupportCrossPageSelection() {
+    MutableHistoryDataSource dataSource;
+    const QVector<storage::CaptureHistoryRecord> records = historyRecords(12);
+    dataSource.setRecords(records);
+    ScreenshotHistoryPageWidget page(&dataSource, nullptr);
+    page.resize(900, 720);
+    page.show();
+    page.setActive(true);
+    flushEvents();
+
+    auto checkboxes = entryCheckboxes(page);
+    require(checkboxes.size() == 10, "the first history page must expose ten title checkboxes");
+    require(page.findChildren<QWidget*>(QStringLiteral("screenshotHistoryEntryDivider")).isEmpty(),
+            "history entries must not retain divider widgets after restoring record borders");
+    for (adqt::widgets::AdCheckbox* checkbox : checkboxes) {
+        QWidget* entry = checkbox->parentWidget()->parentWidget();
+        auto* frame = qobject_cast<QFrame*>(entry);
+        require(frame != nullptr && frame->frameShape() == QFrame::NoFrame,
+                "history entry borders must be custom-painted instead of using QFrame strokes");
+        require(!checkbox->text().isEmpty() && !entryId(checkbox).isEmpty(),
+                "history title checkboxes must retain the timestamp and record identity");
+    }
+    requireUniformEntryBorder(checkboxes.first()->parentWidget()->parentWidget());
+
+    auto* filters = page.findChild<QWidget*>(QStringLiteral("screenshotHistoryFilters"));
+    auto* selectionBar = page.findChild<QWidget*>(QStringLiteral("screenshotHistorySelectionBar"));
+    auto* selectionPanel =
+        page.findChild<QWidget*>(QStringLiteral("screenshotHistorySelectionPanel"));
+    auto* selectionActions =
+        page.findChild<QWidget*>(QStringLiteral("screenshotHistorySelectionActions"));
+    auto* summary = page.findChild<QLabel*>(QStringLiteral("screenshotHistorySelectionSummary"));
+    auto* deleteSelected =
+        page.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotHistoryDeleteSelected"));
+    auto* selectAll =
+        page.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotHistorySelectAll"));
+    auto* deselectAll =
+        page.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotHistoryDeselectAll"));
+    auto* pagination =
+        page.findChild<adqt::widgets::AdPagination*>(QStringLiteral("screenshotHistoryPagination"));
+    auto* sourceFilter =
+        page.findChild<adqt::widgets::AdSelect*>(QStringLiteral("screenshotHistorySourceFilter"));
+    auto* dateFilter = page.findChild<adqt::widgets::AdDateRangePicker*>(
+        QStringLiteral("screenshotHistoryDateRangeFilter"));
+    require(filters != nullptr && selectionBar != nullptr && selectionPanel != nullptr &&
+                selectionActions != nullptr && summary != nullptr && deleteSelected != nullptr &&
+                selectAll != nullptr && deselectAll != nullptr && pagination != nullptr &&
+                sourceFilter != nullptr && dateFilter != nullptr,
+            "history selection controls must be discoverable");
+    require(!selectionBar->isVisible(), "selection bar must be hidden before selection");
+    QWidget* firstEntry = checkboxes.first()->parentWidget()->parentWidget();
+    require(verticalLayoutGap(page, filters, firstEntry) > 0,
+            "history entries must retain a gap below the filters when selection is empty");
+    require(selectionActions->layout() != nullptr && selectionActions->layout()->spacing() == 0,
+            "selection actions must not add redundant spacing between link buttons");
+    require(deleteSelected->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Link &&
+                deleteSelected->accentRole() == adqt::widgets::AdButton::AccentRole::Danger &&
+                selectAll->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Link &&
+                deselectAll->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Link,
+            "selection actions must use link styling with a danger Delete action");
+
+    adqt::widgets::AdCheckbox* firstCheckbox = checkboxes.first();
+    const int assetRequestsBeforeSelection = dataSource.displayAssetRequests;
+    auto* scrollArea =
+        page.findChild<adqt::widgets::AdScrollArea*>(QStringLiteral("screenshotHistoryScrollArea"));
+    require(scrollArea != nullptr && scrollArea->verticalScrollBar()->maximum() > 0,
+            "selection performance test requires a scrollable history page");
+    scrollArea->verticalScrollBar()->setValue(
+        std::min(100, scrollArea->verticalScrollBar()->maximum()));
+    const int scrollPositionBeforeSelection = scrollArea->verticalScrollBar()->value();
+    firstCheckbox->click();
+    flushEvents();
+    require(selectionBar->isVisible() && summary->text() == QStringLiteral("Selected 1 item"),
+            "selecting one entry must show the singular selection summary");
+    require(verticalLayoutGap(page, filters, selectionPanel) > 0 &&
+                verticalLayoutGap(page, selectionPanel, firstEntry) > 0,
+            "the selection bar must preserve gaps below the filters and above the first entry");
+    require(entryCheckboxes(page).first() == firstCheckbox &&
+                dataSource.displayAssetRequests == assetRequestsBeforeSelection &&
+                scrollArea->verticalScrollBar()->value() == scrollPositionBeforeSelection,
+            "selection must not recreate entries, request assets, or reset scrolling");
+
+    QTranslator chineseTranslator;
+    require(chineseTranslator.load(QStringLiteral(":/i18n/snow_shot_zh_CN.qm")),
+            "load the Simplified Chinese history translations");
+    QCoreApplication::installTranslator(&chineseTranslator);
+    flushEvents();
+    QString translatedSummary = chineseTranslator.translate("ScreenshotHistoryPageWidget",
+                                                            "Selected %n item(s)", nullptr, 1);
+    translatedSummary.replace(QStringLiteral("%n"), QStringLiteral("1"));
+    require(summary->text() == translatedSummary && firstCheckbox->isChecked(),
+            "language changes must retranslate the summary without changing selection");
+    QCoreApplication::removeTranslator(&chineseTranslator);
+    flushEvents();
+    require(summary->text() == QStringLiteral("Selected 1 item") && firstCheckbox->isChecked(),
+            "removing a translator must restore English without changing selection");
+
+    selectAll->click();
+    flushEvents();
+    require(summary->text() == QStringLiteral("Selected 10 items") && !selectAll->isEnabled(),
+            "Select all must add only the current page and disable when that page is complete");
+
+    pagination->setCurrentPage(2);
+    flushEvents();
+    checkboxes = entryCheckboxes(page);
+    require(checkboxes.size() == 2 && summary->text() == QStringLiteral("Selected 10 items") &&
+                selectionBar->isVisible(),
+            "page navigation must carry selection while rendering only the new page");
+    require(!checkboxes.first()->isChecked() && !checkboxes.last()->isChecked(),
+            "Select all on page one must not select page two");
+    checkboxes.first()->click();
+    flushEvents();
+    require(summary->text() == QStringLiteral("Selected 11 items"),
+            "cross-page selection count must include the newly selected entry");
+
+    pagination->setCurrentPage(1);
+    flushEvents();
+    checkboxes = entryCheckboxes(page);
+    require(std::all_of(checkboxes.cbegin(), checkboxes.cend(),
+                        [](const auto* checkbox) { return checkbox->isChecked(); }),
+            "returning to a page must restore its selected checkboxes");
+    pagination->setPageSize(20);
+    flushEvents();
+    require(summary->text() == QStringLiteral("Selected 11 items"),
+            "page-size changes must preserve cross-page selection");
+
+    deselectAll->click();
+    flushEvents();
+    checkboxes = entryCheckboxes(page);
+    require(!selectionBar->isVisible() &&
+                std::none_of(checkboxes.cbegin(), checkboxes.cend(),
+                             [](const auto* checkbox) { return checkbox->isChecked(); }),
+            "Deselect all must clear the complete cross-page selection");
+
+    entryCheckboxes(page).first()->click();
+    sourceFilter->setCurrentValues({QStringLiteral("clipboard")});
+    flushEvents();
+    require(!selectionBar->isVisible(), "changing the source filter must clear selection");
+    sourceFilter->setCurrentValues({});
+    flushEvents();
+    entryCheckboxes(page).first()->click();
+    dateFilter->setRange(QDate::currentDate(), QDate::currentDate());
+    flushEvents();
+    require(!selectionBar->isVisible(), "changing the date filter must clear selection");
+
+    dateFilter->clear();
+    flushEvents();
+    pagination->setPageSize(10);
+    pagination->setCurrentPage(1);
+    flushEvents();
+    checkboxes = entryCheckboxes(page);
+    const QString removedSelectionId = entryId(checkboxes.first());
+    checkboxes.first()->click();
+    pagination->setCurrentPage(2);
+    flushEvents();
+    entryCheckboxes(page).first()->click();
+    require(summary->text() == QStringLiteral("Selected 2 items"),
+            "refresh-pruning fixture must begin with two selected records");
+    QVector<storage::CaptureHistoryRecord> reducedRecords = records;
+    reducedRecords.removeIf([&](const auto& record) { return record.id == removedSelectionId; });
+    dataSource.setRecords(reducedRecords);
+    page.refresh();
+    flushEvents();
+    require(summary->text() == QStringLiteral("Selected 1 item"),
+            "refresh must prune selected IDs that no longer exist");
+
+    deselectAll->click();
+    dataSource.setRecords(records);
+    page.refresh();
+    pagination->setPageSize(10);
+    pagination->setCurrentPage(1);
+    flushEvents();
+    selectAll->click();
+    pagination->setCurrentPage(2);
+    flushEvents();
+    entryCheckboxes(page).first()->click();
+    auto* confirmation = page.findChild<adqt::widgets::AdPopconfirm*>(
+        QStringLiteral("screenshotHistoryDeleteSelectedConfirm"));
+    require(confirmation != nullptr &&
+                confirmation->text() == QStringLiteral("Delete 11 selected items?"),
+            "bulk deletion confirmation must describe the complete cross-page selection");
+    QMetaObject::invokeMethod(confirmation, "rejected", Qt::DirectConnection);
+    require(dataSource.removedBatches.isEmpty(), "canceling bulk deletion must submit no batch");
+    dataSource.acceptRemoval = false;
+    QMetaObject::invokeMethod(confirmation, "accepted", Qt::DirectConnection);
+    flushEvents();
+    require(dataSource.removedBatches.size() == 1 && selectionBar->isVisible() &&
+                summary->text() == QStringLiteral("Selected 11 items"),
+            "a synchronously rejected batch must preserve the complete selection");
+    dataSource.removedBatches.clear();
+    dataSource.acceptRemoval = true;
+    QMetaObject::invokeMethod(confirmation, "accepted", Qt::DirectConnection);
+    flushEvents();
+    require(dataSource.removedBatches.size() == 1 && dataSource.removedBatches.first().size() == 11,
+            "confirming bulk deletion must submit exactly one complete batch");
+    for (qsizetype index = 0; index < dataSource.removedBatches.first().size(); ++index) {
+        require(dataSource.removedBatches.first()[index] == records[index].id,
+                "bulk deletion IDs must follow deterministic repository order");
+    }
+    require(!selectionBar->isVisible(),
+            "an accepted bulk deletion request must clear the selection bar");
+}
 
 void emptyStateRemainsVisibleAfterFilteringEmptyHistory() {
     MutableHistoryDataSource dataSource;
@@ -268,6 +563,10 @@ void shutdownDrainsBacklogThenRejectsNewWork() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    QTranslator englishTranslator;
+    require(englishTranslator.load(QStringLiteral(":/i18n/snow_shot_en_US.qm")),
+            "load the English application translations");
+    QCoreApplication::installTranslator(&englishTranslator);
     QTemporaryDir temporary;
     require(temporary.isValid(), "temporary storage directory must be available");
     require(storage::ApplicationStorage::instance()
@@ -275,8 +574,10 @@ int main(int argc, char** argv) {
                 .success,
             "isolated application storage must initialize");
     emptyStateRemainsVisibleAfterFilteringEmptyHistory();
+    entriesUseBordersAndSupportCrossPageSelection();
     imageFailuresRespectCacheFallbackAndCancellation();
     shutdownDrainsBacklogThenRejectsNewWork();
     storage::ApplicationStorage::instance().shutdown();
+    QCoreApplication::removeTranslator(&englishTranslator);
     return 0;
 }

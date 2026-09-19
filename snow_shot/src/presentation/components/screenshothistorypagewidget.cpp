@@ -16,7 +16,9 @@
 #include "icons/widget_icons.h"
 #include "widgets/button.h"
 #include "widgets/carousel.h"
+#include "widgets/checkbox.h"
 #include "widgets/date_picker.h"
+#include "widgets/detail/button_rendering.h"
 #include "widgets/image.h"
 #include "widgets/pagination.h"
 #include "widgets/popconfirm.h"
@@ -35,6 +37,7 @@
 #include <QHideEvent>
 #include <QLabel>
 #include <QSaveFile>
+#include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QPainter>
 #include <QPalette>
@@ -50,6 +53,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -417,6 +421,20 @@ class ApplicationStorageHistoryDataSource final : public ScreenshotHistoryPageDa
         }
     }
 
+    bool requestRemoveMany(const QVector<QString>& ids) override {
+        auto& applicationStorage = storage::ApplicationStorage::instance();
+        if (ids.isEmpty()) {
+            return true;
+        }
+        if (!applicationStorage.isInitialized() || !applicationStorage.status().writeAvailable) {
+            return false;
+        }
+        const auto result = applicationStorage.captureHistory().removeMany(ids);
+        return result.valid() &&
+               (result.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready ||
+                result.get().success);
+    }
+
     bool requestClear() override {
         return storage::ApplicationStorage::instance().requestCaptureHistoryClear();
     }
@@ -682,16 +700,43 @@ void shutdownScreenshotHistoryTasks() {
 
 namespace {
 
+class HistorySelectionBar final : public QWidget {
+  public:
+    using QWidget::QWidget;
+
+    void applyTheme(const styles::ThemeColorScheme& scheme) {
+        m_background = scheme.map.colorFillQuaternary;
+        m_radius = scheme.metricAlias.borderRadiusLG;
+        update();
+    }
+
+  protected:
+    void paintEvent(QPaintEvent* event) override {
+        Q_UNUSED(event)
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(m_background);
+        painter.drawRoundedRect(QRectF(rect()), m_radius, m_radius);
+    }
+
+  private:
+    QColor m_background;
+    qreal m_radius = 0.0;
+};
+
 class HistoryEntryWidget final : public QFrame {
     Q_DECLARE_TR_FUNCTIONS(HistoryEntryWidget)
 
   public:
     HistoryEntryWidget(const storage::CaptureHistoryRecord& record,
                        const std::optional<storage::CaptureHistoryAssetSet>& assets,
-                       ScreenshotHistoryPageDataSource* dataSource,
+                       ScreenshotHistoryPageDataSource* dataSource, bool selected,
+                       std::function<void(bool)> selectionChanged,
                        std::function<void()> editRequested, std::function<void()> copyRequested,
                        std::function<void()> deleteRequested, QWidget* parent = nullptr)
         : QFrame(parent), m_record(record), m_assets(assets),
+          m_selectionChanged(std::move(selectionChanged)),
           m_editRequested(std::move(editRequested)), m_copyRequested(std::move(copyRequested)),
           m_deleteRequested(std::move(deleteRequested)) {
         setObjectName(QStringLiteral("screenshotHistoryEntry-%1").arg(record.id));
@@ -711,12 +756,12 @@ class HistoryEntryWidget final : public QFrame {
         auto* topRow = new QHBoxLayout;
         topRow->setContentsMargins(0, 0, 0, 0);
         topRow->setSpacing(8);
-        m_dateLabel = new QLabel(
+        m_selectionCheckbox = new adqt::widgets::AdCheckbox(
             record.createdUtc.toLocalTime().toString(QStringLiteral("yyyy-MM-dd  HH:mm:ss")),
             details);
-        m_dateLabel->setObjectName(QStringLiteral("screenshotHistoryEntryDate"));
-        m_dateLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        topRow->addWidget(m_dateLabel, 0, Qt::AlignVCenter);
+        m_selectionCheckbox->setObjectName(QStringLiteral("screenshotHistoryEntrySelection"));
+        m_selectionCheckbox->setChecked(selected);
+        topRow->addWidget(m_selectionCheckbox, 0, Qt::AlignVCenter);
         topRow->addStretch(1);
         m_sourceLabel = new QLabel(details);
         m_sourceLabel->setObjectName(QStringLiteral("screenshotHistorySourceBadge"));
@@ -844,6 +889,11 @@ class HistoryEntryWidget final : public QFrame {
                 m_editRequested();
             }
         });
+        connect(m_selectionCheckbox, &QAbstractButton::toggled, this, [this](bool checked) {
+            if (m_selectionChanged) {
+                m_selectionChanged(checked);
+            }
+        });
         connect(m_copyButton, &QAbstractButton::clicked, this, [this]() {
             if (m_copyRequested) {
                 m_copyButton->setEnabled(false);
@@ -868,6 +918,14 @@ class HistoryEntryWidget final : public QFrame {
         return m_assets == assets;
     }
 
+    void setSelected(bool selected) {
+        if (m_selectionCheckbox == nullptr || m_selectionCheckbox->isChecked() == selected) {
+            return;
+        }
+        const QSignalBlocker blocker(m_selectionCheckbox);
+        m_selectionCheckbox->setChecked(selected);
+    }
+
     void setCopyEnabled(bool enabled) {
         if (m_copyButton != nullptr) {
             m_copyButton->setEnabled(enabled);
@@ -876,13 +934,13 @@ class HistoryEntryWidget final : public QFrame {
 
     void applyTheme(const styles::ThemeColorScheme& scheme) {
         m_scheme = scheme;
-        QPalette primary = m_dateLabel->palette();
+        QPalette primary = m_selectionCheckbox->palette();
         primary.setColor(QPalette::WindowText, scheme.map.colorText);
-        m_dateLabel->setPalette(primary);
-        QFont dateFont = m_dateLabel->font();
+        m_selectionCheckbox->setPalette(primary);
+        QFont dateFont = m_selectionCheckbox->font();
         dateFont.setPixelSize(scheme.metricAlias.fontSizeLG);
         dateFont.setWeight(QFont::DemiBold);
-        m_dateLabel->setFont(dateFont);
+        m_selectionCheckbox->setFont(dateFont);
 
         QPalette secondary = m_summaryLabel->palette();
         secondary.setColor(QPalette::WindowText, scheme.map.colorTextSecondary);
@@ -972,13 +1030,24 @@ class HistoryEntryWidget final : public QFrame {
 
     void paintEvent(QPaintEvent* event) override {
         Q_UNUSED(event)
+
+        const qreal borderWidth = std::max<qreal>(1.0, m_scheme.metricAlias.lineWidth);
+        const QRectF shapeRect =
+            adqt::widgets::detail::joinedButtonBorderRect(rect(), borderWidth, false, false);
+        if (shapeRect.isEmpty()) {
+            return;
+        }
+
+        const qreal radius = m_scheme.metricAlias.borderRadius;
+        const QPainterPath shapePath =
+            adqt::widgets::detail::roundedButtonPath(shapeRect, radius, radius, radius, radius);
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
-        const QRectF bounds = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
-        painter.setPen(QPen(m_scheme.map.colorBorderSecondary, 1));
-        painter.setBrush(m_scheme.map.colorBgContainer);
-        painter.drawRoundedRect(bounds, m_scheme.metricAlias.borderRadius,
-                                m_scheme.metricAlias.borderRadius);
+        painter.fillPath(shapePath, m_scheme.map.colorBgContainer);
+        painter.setPen(adqt::widgets::detail::makeButtonBorderPen(m_scheme.map.colorBorderSecondary,
+                                                                  borderWidth, Qt::SolidLine));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawPath(shapePath);
     }
 
   private:
@@ -992,11 +1061,12 @@ class HistoryEntryWidget final : public QFrame {
 
     storage::CaptureHistoryRecord m_record;
     std::optional<storage::CaptureHistoryAssetSet> m_assets;
+    std::function<void(bool)> m_selectionChanged;
     std::function<void()> m_editRequested;
     std::function<void()> m_copyRequested;
     std::function<void()> m_deleteRequested;
     QBoxLayout* m_layout = nullptr;
-    QLabel* m_dateLabel = nullptr;
+    adqt::widgets::AdCheckbox* m_selectionCheckbox = nullptr;
     QLabel* m_sourceLabel = nullptr;
     QLabel* m_summaryLabel = nullptr;
     QLabel* m_metaLabel = nullptr;
@@ -1095,13 +1165,64 @@ ScreenshotHistoryPageWidget::ScreenshotHistoryPageWidget(
     filtersLayout->addWidget(m_dateRangeFilter, 0);
     filtersLayout->addStretch(1);
     contentLayout->addWidget(filtersHost, 0);
-    contentLayout->addSpacing(14);
+    contentLayout->addSpacing(metric.marginSM);
+
+    m_selectionBar = new QWidget(content);
+    m_selectionBar->setObjectName(QStringLiteral("screenshotHistorySelectionBar"));
+    m_selectionBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    auto* selectionBarOuterLayout = new QVBoxLayout(m_selectionBar);
+    selectionBarOuterLayout->setContentsMargins(0, 0, 0, metric.marginSM);
+    selectionBarOuterLayout->setSpacing(0);
+    m_selectionPanel = new HistorySelectionBar(m_selectionBar);
+    m_selectionPanel->setObjectName(QStringLiteral("screenshotHistorySelectionPanel"));
+    m_selectionPanel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_selectionBarLayout = new QBoxLayout(QBoxLayout::LeftToRight, m_selectionPanel);
+    m_selectionBarLayout->setContentsMargins(metric.paddingMD, metric.paddingSM, metric.paddingMD,
+                                             metric.paddingSM);
+    m_selectionBarLayout->setSpacing(metric.marginXS);
+    m_selectionSummary = new QLabel(m_selectionPanel);
+    m_selectionSummary->setObjectName(QStringLiteral("screenshotHistorySelectionSummary"));
+    m_selectionBarLayout->addWidget(m_selectionSummary, 0, Qt::AlignVCenter);
+    m_selectionBarLayout->addStretch(1);
+
+    m_selectionActions = new QWidget(m_selectionPanel);
+    m_selectionActions->setObjectName(QStringLiteral("screenshotHistorySelectionActions"));
+    m_selectionActions->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    auto* selectionActionsLayout = new QHBoxLayout(m_selectionActions);
+    selectionActionsLayout->setContentsMargins(0, 0, 0, 0);
+    selectionActionsLayout->setSpacing(0);
+    m_deleteSelectedButton = new adqt::widgets::AdButton(m_selectionActions);
+    m_deleteSelectedButton->setObjectName(QStringLiteral("screenshotHistoryDeleteSelected"));
+    m_deleteSelectedButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Link);
+    m_deleteSelectedButton->setAccentRole(adqt::widgets::AdButton::AccentRole::Danger);
+    selectionActionsLayout->addWidget(m_deleteSelectedButton);
+    m_selectAllButton = new adqt::widgets::AdButton(m_selectionActions);
+    m_selectAllButton->setObjectName(QStringLiteral("screenshotHistorySelectAll"));
+    m_selectAllButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Link);
+    m_selectAllButton->setAccentRole(adqt::widgets::AdButton::AccentRole::Primary);
+    selectionActionsLayout->addWidget(m_selectAllButton);
+    m_deselectAllButton = new adqt::widgets::AdButton(m_selectionActions);
+    m_deselectAllButton->setObjectName(QStringLiteral("screenshotHistoryDeselectAll"));
+    m_deselectAllButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Link);
+    m_deselectAllButton->setAccentRole(adqt::widgets::AdButton::AccentRole::Primary);
+    selectionActionsLayout->addWidget(m_deselectAllButton);
+    m_selectionBarLayout->addWidget(m_selectionActions, 0, Qt::AlignRight | Qt::AlignVCenter);
+    selectionBarOuterLayout->addWidget(m_selectionPanel);
+    m_selectionBar->hide();
+    contentLayout->addWidget(m_selectionBar, 0);
 
     m_deleteAllConfirmation = new adqt::widgets::AdPopconfirm(content);
     m_deleteAllConfirmation->setObjectName(QStringLiteral("screenshotHistoryDeleteAllConfirm"));
     m_deleteAllConfirmation->setSourceWidget(m_deleteAllButton);
     m_deleteAllConfirmation->setButtonAccentRole(adqt::widgets::AdPopconfirm::StandardButton::Ok,
                                                  adqt::widgets::AdButton::AccentRole::Danger);
+    m_deleteSelectedConfirmation = new adqt::widgets::AdPopconfirm(content);
+    m_deleteSelectedConfirmation->setObjectName(
+        QStringLiteral("screenshotHistoryDeleteSelectedConfirm"));
+    m_deleteSelectedConfirmation->setSourceWidget(m_deleteSelectedButton);
+    m_deleteSelectedConfirmation->setButtonAccentRole(
+        adqt::widgets::AdPopconfirm::StandardButton::Ok,
+        adqt::widgets::AdButton::AccentRole::Danger);
 
     m_entriesHost = new QWidget(content);
     m_entriesHost->setObjectName(QStringLiteral("screenshotHistoryEntries"));
@@ -1109,7 +1230,7 @@ ScreenshotHistoryPageWidget::ScreenshotHistoryPageWidget(
     m_emptyStateMinimumHeight = kEmptyStateBaselineHeight;
     m_entriesLayout = new QVBoxLayout(m_entriesHost);
     m_entriesLayout->setContentsMargins(0, 0, 0, 0);
-    m_entriesLayout->setSpacing(10);
+    m_entriesLayout->setSpacing(metric.marginSM);
     contentLayout->addWidget(m_entriesHost, 1);
 
     m_emptyIcon = new QLabel(m_entriesHost);
@@ -1143,13 +1264,25 @@ ScreenshotHistoryPageWidget::ScreenshotHistoryPageWidget(
     contentLayout->addWidget(m_pagination, 0);
 
     connect(m_sourceFilter, &adqt::widgets::AdSelect::currentValuesChanged, this,
-            [this](const QVariantList&) { rebuildFilteredRecords(true); });
+            [this](const QVariantList&) {
+                clearSelection();
+                rebuildFilteredRecords(true);
+            });
     connect(m_dateRangeFilter, &adqt::widgets::AdDateRangePicker::rangeChanged, this,
-            [this](const QDate&, const QDate&) { rebuildFilteredRecords(true); });
+            [this](const QDate&, const QDate&) {
+                clearSelection();
+                rebuildFilteredRecords(true);
+            });
     connect(m_refreshButton, &QAbstractButton::clicked, this,
             &ScreenshotHistoryPageWidget::refresh);
     connect(m_deleteAllConfirmation, &adqt::widgets::AdPopconfirm::accepted, this,
             &ScreenshotHistoryPageWidget::requestDeleteAll);
+    connect(m_deleteSelectedConfirmation, &adqt::widgets::AdPopconfirm::accepted, this,
+            &ScreenshotHistoryPageWidget::requestDeleteSelected);
+    connect(m_selectAllButton, &QAbstractButton::clicked, this,
+            &ScreenshotHistoryPageWidget::selectCurrentPage);
+    connect(m_deselectAllButton, &QAbstractButton::clicked, this,
+            &ScreenshotHistoryPageWidget::clearSelection);
     connect(m_pagination, &adqt::widgets::AdPagination::currentPageChanged, this, [this](int) {
         if (!m_updatingPagination) {
             rebuildEntries();
@@ -1198,6 +1331,12 @@ void ScreenshotHistoryPageWidget::refresh() {
     m_resolvedAssets.clear();
     m_records = m_dataSource != nullptr ? m_dataSource->records()
                                         : QVector<storage::CaptureHistoryRecord>{};
+    QSet<QString> existingIds;
+    existingIds.reserve(m_records.size());
+    for (const storage::CaptureHistoryRecord& record : std::as_const(m_records)) {
+        existingIds.insert(record.id);
+    }
+    m_selectedRecordIds.intersect(existingIds);
     rebuildFilteredRecords(false);
 }
 
@@ -1317,6 +1456,7 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
     for (int index = firstIndex; index < lastIndex; ++index) {
         desiredIds.push_back(m_filteredRecords[index].id);
     }
+    const QSet<QString> desiredIdSet(desiredIds.cbegin(), desiredIds.cend());
 
     bool layoutNeedsRebuild = desiredIds != m_entryLayoutIds;
     for (int index = firstIndex; index < lastIndex; ++index) {
@@ -1332,7 +1472,7 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
     }
 
     for (auto iterator = m_entryWidgetsById.begin(); iterator != m_entryWidgetsById.end();) {
-        if (desiredIds.contains(iterator.key())) {
+        if (desiredIdSet.contains(iterator.key())) {
             ++iterator;
             continue;
         }
@@ -1346,6 +1486,7 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
         m_emptyDescription->show();
         updateEmptyStateText();
         if (!layoutNeedsRebuild && m_entriesLayout->count() > 0) {
+            updateSelectionBar();
             requestUnresolvedAssets();
             return;
         }
@@ -1362,6 +1503,7 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
         m_entriesLayout->addSpacing(48);
         retranslateUi();
         applyTheme(m_colorScheme);
+        updateSelectionBar();
         return;
     }
 
@@ -1370,11 +1512,19 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
     m_emptyDescription->hide();
 
     if (!layoutNeedsRebuild) {
+        for (const QString& id : std::as_const(desiredIds)) {
+            if (auto* entry =
+                    dynamic_cast<HistoryEntryWidget*>(m_entryWidgetsById.value(id, nullptr));
+                entry != nullptr) {
+                entry->setSelected(m_selectedRecordIds.contains(id));
+            }
+        }
         const int responsiveEntryMinimumHeight = m_entriesHost->width() >= kWideEntryBreakpoint
                                                      ? kPreviewHeight + 32
                                                      : kPreviewHeight + 190;
         m_entriesHost->setMinimumHeight(
             std::max(m_emptyStateMinimumHeight, responsiveEntryMinimumHeight));
+        updateSelectionBar();
         requestUnresolvedAssets();
         return;
     }
@@ -1404,7 +1554,11 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
             (assetsResolved && !entry->matchesAssets(assets))) {
             delete entry;
             entry = new HistoryEntryWidget(
-                record, assets, m_dataSource, [this, id = record.id]() { emit editRequested(id); },
+                record, assets, m_dataSource, m_selectedRecordIds.contains(record.id),
+                [this, id = record.id](bool selected) {
+                    handleEntrySelectionChanged(id, selected);
+                },
+                [this, id = record.id]() { emit editRequested(id); },
                 [this, record]() { copyEntry(record); },
                 [this, id = record.id]() { removeEntry(id); }, m_entriesHost);
             entry->applyTheme(m_colorScheme);
@@ -1414,6 +1568,7 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
     }
     m_entriesLayout->addStretch(1);
     m_entryLayoutIds = desiredIds;
+    updateSelectionBar();
     requestUnresolvedAssets();
     QTimer::singleShot(0, this, [this]() {
         if (m_scrollArea != nullptr && m_scrollArea->verticalScrollBar() != nullptr) {
@@ -1497,6 +1652,92 @@ void ScreenshotHistoryPageWidget::updateEmptyStateMinimumHeight() {
     m_entriesHost->setMinimumHeight(m_emptyStateMinimumHeight);
 }
 
+void ScreenshotHistoryPageWidget::handleEntrySelectionChanged(const QString& entryId,
+                                                              bool selected) {
+    if (selected) {
+        m_selectedRecordIds.insert(entryId);
+    } else {
+        m_selectedRecordIds.remove(entryId);
+    }
+    updateSelectionBar();
+}
+
+void ScreenshotHistoryPageWidget::clearSelection() {
+    m_selectedRecordIds.clear();
+    for (const QString& id : std::as_const(m_entryLayoutIds)) {
+        if (auto* entry = dynamic_cast<HistoryEntryWidget*>(m_entryWidgetsById.value(id, nullptr));
+            entry != nullptr) {
+            entry->setSelected(false);
+        }
+    }
+    updateSelectionBar();
+}
+
+void ScreenshotHistoryPageWidget::selectCurrentPage() {
+    for (const QString& id : std::as_const(m_entryLayoutIds)) {
+        m_selectedRecordIds.insert(id);
+        if (auto* entry = dynamic_cast<HistoryEntryWidget*>(m_entryWidgetsById.value(id, nullptr));
+            entry != nullptr) {
+            entry->setSelected(true);
+        }
+    }
+    updateSelectionBar();
+}
+
+void ScreenshotHistoryPageWidget::updateSelectionBar() {
+    if (m_selectionBar == nullptr) {
+        return;
+    }
+
+    const int selectionCount = static_cast<int>(m_selectedRecordIds.size());
+    const QString summary = tr("Selected %n item(s)", nullptr, selectionCount);
+    m_selectionSummary->setText(summary);
+    m_selectionBar->setAccessibleName(summary);
+    m_deleteSelectedConfirmation->setText(
+        tr("Delete %n selected item(s)?", nullptr, selectionCount));
+
+    bool currentPageFullySelected = !m_entryLayoutIds.isEmpty();
+    for (const QString& id : std::as_const(m_entryLayoutIds)) {
+        if (!m_selectedRecordIds.contains(id)) {
+            currentPageFullySelected = false;
+            break;
+        }
+    }
+    m_selectAllButton->setEnabled(!m_entryLayoutIds.isEmpty() && !currentPageFullySelected);
+
+    const auto status = storage::ApplicationStorage::instance().status();
+    const bool canDelete = m_dataSource != nullptr && status.writeAvailable && selectionCount > 0;
+    m_deleteSelectedButton->setEnabled(canDelete);
+    m_deleteSelectedConfirmation->setEnabled(canDelete);
+
+    const int availableWidth = m_entriesHost != nullptr ? m_entriesHost->width() : width();
+    const bool wide = availableWidth >= kWideEntryBreakpoint;
+    m_selectionBarLayout->setDirection(wide ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
+    m_selectionBarLayout->setAlignment(m_selectionSummary, wide ? Qt::AlignVCenter : Qt::AlignLeft);
+    m_selectionBarLayout->setAlignment(m_selectionActions, wide ? Qt::AlignRight | Qt::AlignVCenter
+                                                                : Qt::AlignRight | Qt::AlignTop);
+    m_selectionBar->setVisible(selectionCount > 0);
+}
+
+void ScreenshotHistoryPageWidget::requestDeleteSelected() {
+    if (m_dataSource == nullptr || m_selectedRecordIds.isEmpty()) {
+        return;
+    }
+
+    QVector<QString> selectedIds;
+    selectedIds.reserve(m_selectedRecordIds.size());
+    for (const storage::CaptureHistoryRecord& record : std::as_const(m_records)) {
+        if (m_selectedRecordIds.contains(record.id)) {
+            selectedIds.push_back(record.id);
+        }
+    }
+    if (!selectedIds.isEmpty() && m_dataSource->requestRemoveMany(selectedIds)) {
+        clearSelection();
+    } else {
+        updateSelectionBar();
+    }
+}
+
 void ScreenshotHistoryPageWidget::updateHeader() {
     if (m_countLabel != nullptr) {
         m_countLabel->setText(tr("%n screenshot(s)", nullptr, static_cast<int>(m_records.size())));
@@ -1506,6 +1747,7 @@ void ScreenshotHistoryPageWidget::updateHeader() {
         m_dataSource != nullptr && status.writeAvailable && !status.historyClearing;
     m_deleteAllButton->setEnabled(canClear);
     m_deleteAllConfirmation->setEnabled(canClear);
+    updateSelectionBar();
 }
 
 void ScreenshotHistoryPageWidget::requestDeleteAll() {
@@ -1525,14 +1767,33 @@ void ScreenshotHistoryPageWidget::retranslateUi() {
     m_titleLabel->setText(tr("Screenshot history"));
     m_sourceFilter->setPlaceholder(tr("All sources"));
     const QVariantList selectedSources = m_sourceFilter->currentValues();
-    m_sourceFilter->setOptions(
-        {sourceOption(QStringLiteral("clipboard"), tr("Copy to clipboard")),
-         sourceOption(QStringLiteral("file"), tr("Save as file")),
-         sourceOption(QStringLiteral("pinned"), tr("Pin to screen")),
-         sourceOption(QStringLiteral("current-monitor"), tr("Current monitor")),
-         sourceOption(QStringLiteral("focused-window"), tr("Focused window"))});
-    m_sourceFilter->setCurrentValues(selectedSources);
+    {
+        const QSignalBlocker blocker(m_sourceFilter);
+        m_sourceFilter->setOptions(
+            {sourceOption(QStringLiteral("clipboard"), tr("Copy to clipboard")),
+             sourceOption(QStringLiteral("file"), tr("Save as file")),
+             sourceOption(QStringLiteral("pinned"), tr("Pin to screen")),
+             sourceOption(QStringLiteral("current-monitor"), tr("Current monitor")),
+             sourceOption(QStringLiteral("focused-window"), tr("Focused window"))});
+        m_sourceFilter->setCurrentValues(selectedSources);
+    }
     m_dateRangeFilter->setRangePlaceholders(tr("Start date"), tr("End date"));
+    m_selectionBar->setAccessibleDescription(
+        tr("Bulk actions for selected screenshot history entries"));
+    m_deleteSelectedButton->setText(tr("Delete"));
+    m_deleteSelectedButton->setToolTip(tr("Delete selected history entries"));
+    m_deleteSelectedButton->setAccessibleName(tr("Delete selected history entries"));
+    m_selectAllButton->setText(tr("Select all"));
+    m_selectAllButton->setToolTip(tr("Select all entries on this page"));
+    m_selectAllButton->setAccessibleName(tr("Select all entries on this page"));
+    m_deselectAllButton->setText(tr("Deselect all"));
+    m_deselectAllButton->setToolTip(tr("Deselect all history entries"));
+    m_deselectAllButton->setAccessibleName(tr("Deselect all history entries"));
+    m_deleteSelectedConfirmation->setInformativeText(tr("This action cannot be undone"));
+    m_deleteSelectedConfirmation->setButtonText(adqt::widgets::AdPopconfirm::StandardButton::Ok,
+                                                tr("Delete"));
+    m_deleteSelectedConfirmation->setButtonText(adqt::widgets::AdPopconfirm::StandardButton::Cancel,
+                                                tr("Cancel"));
     m_deleteAllButton->setToolTip(tr("Delete all history"));
     m_deleteAllButton->setAccessibleName(tr("Delete all history"));
     m_refreshButton->setToolTip(tr("Refresh history"));
@@ -1571,6 +1832,19 @@ void ScreenshotHistoryPageWidget::applyTheme(const styles::ThemeColorScheme& sch
     countFont.setPixelSize(scheme.metricAlias.fontSize);
     countFont.setWeight(QFont::Normal);
     m_countLabel->setFont(countFont);
+    if (auto* selectionPanel = dynamic_cast<HistorySelectionBar*>(m_selectionPanel);
+        selectionPanel != nullptr) {
+        selectionPanel->applyTheme(scheme);
+    }
+    if (m_selectionSummary != nullptr) {
+        QPalette selectionPalette = m_selectionSummary->palette();
+        selectionPalette.setColor(QPalette::WindowText, scheme.map.colorTextSecondary);
+        m_selectionSummary->setPalette(selectionPalette);
+        QFont selectionFont = m_selectionSummary->font();
+        selectionFont.setPixelSize(scheme.metricAlias.fontSize);
+        selectionFont.setWeight(QFont::Normal);
+        m_selectionSummary->setFont(selectionFont);
+    }
     if (m_emptyTitle != nullptr) {
         m_emptyTitle->setPalette(titlePalette);
         QFont emptyFont = m_emptyTitle->font();
@@ -1598,6 +1872,7 @@ void ScreenshotHistoryPageWidget::applyTheme(const styles::ThemeColorScheme& sch
         }
     }
     updateEmptyStateMinimumHeight();
+    updateSelectionBar();
     update();
 }
 
@@ -1611,6 +1886,7 @@ void ScreenshotHistoryPageWidget::changeEvent(QEvent* event) {
 void ScreenshotHistoryPageWidget::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     updateEmptyStateMinimumHeight();
+    updateSelectionBar();
 }
 
 void ScreenshotHistoryPageWidget::showEvent(QShowEvent* event) {

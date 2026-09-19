@@ -114,6 +114,10 @@
             <translation>All sources</translation>
         </message>
         <message>
+            <source>Bulk actions for selected screenshot history entries</source>
+            <translation>Bulk actions for selected screenshot history entries</translation>
+        </message>
+        <message>
             <source>Cancel</source>
             <translation>Cancel</translation>
         </message>
@@ -134,6 +138,17 @@
             <translation>Current monitor</translation>
         </message>
         <message>
+            <source>Delete</source>
+            <translation>Delete</translation>
+        </message>
+        <message numerus="yes">
+            <source>Delete %n selected item(s)?</source>
+            <translation>
+            <numerusform>Delete %n selected item?</numerusform>
+            <numerusform>Delete %n selected items?</numerusform>
+        </translation>
+        </message>
+        <message>
             <source>Delete all</source>
             <translation>Delete all</translation>
         </message>
@@ -144,6 +159,18 @@
         <message>
             <source>Delete all screenshot history?</source>
             <translation>Delete all screenshot history?</translation>
+        </message>
+        <message>
+            <source>Delete selected history entries</source>
+            <translation>Delete selected history entries</translation>
+        </message>
+        <message>
+            <source>Deselect all</source>
+            <translation>Deselect all</translation>
+        </message>
+        <message>
+            <source>Deselect all history entries</source>
+            <translation>Deselect all history entries</translation>
         </message>
         <message>
             <source>End date</source>
@@ -178,8 +205,27 @@
             <translation>Screenshot history</translation>
         </message>
         <message>
+            <source>Select all</source>
+            <translation>Select all</translation>
+        </message>
+        <message>
+            <source>Select all entries on this page</source>
+            <translation>Select all entries on this page</translation>
+        </message>
+        <message numerus="yes">
+            <source>Selected %n item(s)</source>
+            <translation>
+            <numerusform>Selected %n item</numerusform>
+            <numerusform>Selected %n items</numerusform>
+        </translation>
+        </message>
+        <message>
             <source>Start date</source>
             <translation>Start date</translation>
+        </message>
+        <message>
+            <source>This action cannot be undone</source>
+            <translation>This action cannot be undone</translation>
         </message>
         <message>
             <source>This permanently removes every saved screenshot history entry</source>
