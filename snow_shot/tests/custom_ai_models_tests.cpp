@@ -491,7 +491,7 @@ void widgetContracts(QApplication& application) {
         flush();
 
         const auto args = application.arguments();
-        const int previewIndex = args.indexOf(QStringLiteral("--preview-dir"));
+        const qsizetype previewIndex = args.indexOf(QStringLiteral("--preview-dir"));
         if (previewIndex >= 0 && previewIndex + 1 < args.size()) {
             QDir output(args[previewIndex + 1]);
             output.mkpath(QStringLiteral("."));

@@ -44,6 +44,11 @@ SectionHeaderWidget::SectionHeaderWidget(
     m_resetPopconfirm->setSourceWidget(m_resetButton);
     connect(m_resetPopconfirm, &adqt::widgets::AdPopconfirm::accepted, this,
             &SectionHeaderWidget::resetRequested);
+    connect(m_resetButton, &QAbstractButton::clicked, this, [this] {
+        if (m_trailingAction == TrailingAction::Refresh) {
+            emit refreshRequested();
+        }
+    });
 
     const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
     connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
@@ -60,15 +65,23 @@ void SectionHeaderWidget::setTitle(const QString& title) {
     updateResetConfirmationText();
 }
 
+void SectionHeaderWidget::setTrailingAction(TrailingAction action) {
+    m_trailingAction = action;
+    m_resetButton->setVisible(action != TrailingAction::None);
+    m_resetButton->setObjectName(action == TrailingAction::Refresh
+                                     ? QStringLiteral("sectionRefreshButton")
+                                     : QStringLiteral("sectionResetButton"));
+    m_resetPopconfirm->setEnabled(action == TrailingAction::Reset && m_resetButton->isEnabled());
+    retranslateUi();
+}
+
 void SectionHeaderWidget::setResetVisible(bool visible) {
-    m_resetVisible = visible;
-    m_resetButton->setVisible(visible);
-    m_resetPopconfirm->setEnabled(visible && m_resetButton->isEnabled());
+    setTrailingAction(visible ? TrailingAction::Reset : TrailingAction::None);
 }
 
 void SectionHeaderWidget::setResetEnabled(bool enabled) {
     m_resetButton->setEnabled(enabled);
-    m_resetPopconfirm->setEnabled(m_resetVisible && enabled);
+    m_resetPopconfirm->setEnabled(m_trailingAction == TrailingAction::Reset && enabled);
 }
 
 void SectionHeaderWidget::changeEvent(QEvent* event) {
@@ -79,8 +92,10 @@ void SectionHeaderWidget::changeEvent(QEvent* event) {
 }
 
 void SectionHeaderWidget::retranslateUi() {
-    m_resetButton->setToolTip(tr("Reset"));
-    m_resetButton->setAccessibleName(tr("Reset"));
+    const QString actionText =
+        m_trailingAction == TrailingAction::Refresh ? tr("Refresh") : tr("Reset");
+    m_resetButton->setToolTip(actionText);
+    m_resetButton->setAccessibleName(actionText);
     updateResetConfirmationText();
 }
 

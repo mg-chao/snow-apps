@@ -424,6 +424,10 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     <context>
         <name>SectionHeaderWidget</name>
         <message>
+            <source>Refresh</source>
+            <translation>Refresh</translation>
+        </message>
+        <message>
             <source>Reset</source>
             <translation>Reset</translation>
         </message>

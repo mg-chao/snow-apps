@@ -144,6 +144,10 @@ class SettingsRuntimeSession final : public QObject {
     void refreshStorageStatus();
     void refreshStorageStatusIfStale();
 
+    AppPermissionService* appPermissions() const {
+        return m_backend.appPermissions();
+    }
+
     GlobalMousePermissionState globalMousePermissionState() const {
         return m_backend.globalMousePermissionState();
     }

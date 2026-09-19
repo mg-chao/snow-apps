@@ -908,6 +908,11 @@ QVariant SettingsRuntimeSession::readValue(const SettingsFieldDescriptor& descri
                 return QVariantList{state.enabled, state.busy};
             } else if constexpr (std::is_same_v<Payload, SettingsCustomDefinition>) {
                 switch (payload.renderer) {
+                case SettingsCustomRenderer::PermissionScreenRecording:
+                case SettingsCustomRenderer::PermissionAccessibility:
+                case SettingsCustomRenderer::PermissionInputMonitoring:
+                case SettingsCustomRenderer::PermissionMicrophone:
+                    return {};
                 case SettingsCustomRenderer::DrawingToolbarEditor:
                     return QVariant::fromValue(m_backend.toolbarLayout(
                         storage::ScreenshotToolbarLayoutKind::DrawingTools));
@@ -973,6 +978,11 @@ bool SettingsRuntimeSession::writeValue(const SettingsFieldDescriptor& descripto
                     payload.action, value.value<SettingsGlobalMouseCombination>());
             } else if constexpr (std::is_same_v<Payload, SettingsCustomDefinition>) {
                 switch (payload.renderer) {
+                case SettingsCustomRenderer::PermissionScreenRecording:
+                case SettingsCustomRenderer::PermissionAccessibility:
+                case SettingsCustomRenderer::PermissionInputMonitoring:
+                case SettingsCustomRenderer::PermissionMicrophone:
+                    return {};
                 case SettingsCustomRenderer::PinnedToolbarEditor:
                     return value.canConvert<storage::ScreenshotToolbarLayout>() &&
                            m_backend.applyToolbarLayout(
@@ -1081,7 +1091,12 @@ bool SettingsRuntimeSession::isReadOnly(const SettingsFieldDescriptor& descripto
         return true;
     }
     if (const auto* custom = std::get_if<SettingsCustomDefinition>(&descriptor.definition->payload);
-        custom != nullptr && custom->renderer == SettingsCustomRenderer::StorageStatus) {
+        custom != nullptr &&
+        (custom->renderer == SettingsCustomRenderer::StorageStatus ||
+         custom->renderer == SettingsCustomRenderer::PermissionScreenRecording ||
+         custom->renderer == SettingsCustomRenderer::PermissionAccessibility ||
+         custom->renderer == SettingsCustomRenderer::PermissionInputMonitoring ||
+         custom->renderer == SettingsCustomRenderer::PermissionMicrophone)) {
         return true;
     }
     return false;

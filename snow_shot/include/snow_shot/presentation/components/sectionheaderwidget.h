@@ -21,16 +21,20 @@ class SectionHeaderWidget : public QFrame {
     Q_OBJECT
 
   public:
+    enum class TrailingAction { None, Reset, Refresh };
+
     explicit SectionHeaderWidget(
         const QString& title, const snow_shot::presentation::styles::ThemeAliasMetricToken& metric,
         QWidget* parent = nullptr);
     void setTitle(const QString& title);
+    void setTrailingAction(TrailingAction action);
     void setResetVisible(bool visible);
     void setResetEnabled(bool enabled);
     void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme);
 
   signals:
     void resetRequested();
+    void refreshRequested();
 
   protected:
     void changeEvent(QEvent* event) override;
@@ -43,7 +47,7 @@ class SectionHeaderWidget : public QFrame {
     QLabel* m_titleLabel = nullptr;
     adqt::widgets::AdButton* m_resetButton = nullptr;
     adqt::widgets::AdPopconfirm* m_resetPopconfirm = nullptr;
-    bool m_resetVisible = true;
+    TrailingAction m_trailingAction = TrailingAction::Reset;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_COMPONENTS_SECTIONHEADERWIDGET_H

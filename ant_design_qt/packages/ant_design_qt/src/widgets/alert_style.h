@@ -19,7 +19,7 @@ struct AlertMetrics {
   int paddingInline = 12;
   int paddingBlock = 8;
   int paddingWithInformativeTextInline = 24;
-  int paddingWithInformativeTextBlock = 20;
+  int paddingWithInformativeTextBlock = 24;
   int gapLeadingContent = 8;
   int gapLeadingContentWithInformativeText = 12;
   int gapContentActions = 8;

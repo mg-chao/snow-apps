@@ -79,8 +79,7 @@ AlertVisualStyle resolveAlertVisualStyle(const AlertStyleInput& input,
   style.metrics.paddingBlock = std::max(4, qRound(metrics.sizeXS));
   style.metrics.paddingWithInformativeTextInline =
       std::max(style.metrics.paddingInline, qRound(metrics.sizeLG));
-  style.metrics.paddingWithInformativeTextBlock =
-      std::max(style.metrics.paddingBlock, qRound(metrics.sizeMD));
+  style.metrics.paddingWithInformativeTextBlock = style.metrics.paddingWithInformativeTextInline;
   style.metrics.gapLeadingContent = std::max(4, qRound(metrics.sizeXS));
   style.metrics.gapLeadingContentWithInformativeText =
       std::max(style.metrics.gapLeadingContent, qRound(metrics.sizeSM));

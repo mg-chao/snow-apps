@@ -81,7 +81,11 @@ void builtInCatalogIsCompleteAndValid() {
                     settings::SettingsColorBinding::ThemePrimaryColor &&
                 !std::get<settings::SettingsColorDefinition>(primary->payload).alphaChannelEnabled,
             "general settings must expose an opaque theme primary color picker");
-    require(catalog.pages().size() == 12, "catalog must contain twelve pages");
+#ifdef Q_OS_MACOS
+    require(catalog.pages().size() == 13, "macOS includes App Permissions");
+#else
+    require(catalog.pages().size() == 12, "other platforms retain twelve pages");
+#endif
 
     for (const auto& pageId :
          {QStringLiteral("api-configuration"), QStringLiteral("extended-features")}) {
@@ -205,10 +209,11 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 39, "catalog must contain thirty-nine sections");
 #ifdef Q_OS_MACOS
-    require(itemCount == 164, "the macOS catalog omits DirectML and Windows element API choices");
+    require(sectionCount == 40, "macOS adds one permissions section");
+    require(itemCount == 168, "macOS adds four permission rows and omits Windows-only choices");
 #else
+    require(sectionCount == 39, "catalog must contain thirty-nine sections");
     require(itemCount == 166, "catalog must contain one hundred sixty-six items");
 #endif
     require(foundUpdates, "catalog must contain the update mode item");
@@ -766,13 +771,20 @@ void builtInCatalogIsCompleteAndValid() {
                 settingsGroup->pages.at(0).pageId == QStringLiteral("interface-settings") &&
                 settingsGroup->pages.at(1).pageId == QStringLiteral("function-settings"),
             "Function settings must appear below Interface settings in the Settings navigation");
+#ifdef Q_OS_MACOS
+    constexpr int expectedSettingsPages = 8;
+    require(settingsGroup->pages.constLast().pageId == QStringLiteral("app-permissions"),
+            "macOS App Permissions follows System settings");
+#else
+    constexpr int expectedSettingsPages = 7;
+#endif
     require(settingsGroup->title.translated() == QStringLiteral("Settings") &&
-                settingsGroup->pages.size() == 7 &&
+                settingsGroup->pages.size() == expectedSettingsPages &&
                 settingsGroup->pages.at(3).pageId == QStringLiteral("storage-and-privacy") &&
                 settingsGroup->pages.at(4).pageId == QStringLiteral("api-configuration") &&
                 settingsGroup->pages.at(5).pageId == QStringLiteral("extended-features") &&
                 settingsGroup->pages.at(2).pageId == QStringLiteral("application-shortcuts") &&
-                settingsGroup->pages.constLast().pageId == QStringLiteral("system-settings"),
+                settingsGroup->pages.at(6).pageId == QStringLiteral("system-settings"),
             "Settings navigation group must expose Application shortcuts and System settings");
     const auto* applicationShortcutsPage = catalog.page(QStringLiteral("application-shortcuts"));
     require(applicationShortcutsPage != nullptr &&
@@ -1615,7 +1627,15 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 12 && sections == 39 && items == expectedNodes - pages - sections,
+#ifdef Q_OS_MACOS
+    constexpr int expectedPages = 13;
+    constexpr int expectedSections = 40;
+#else
+    constexpr int expectedPages = 12;
+    constexpr int expectedSections = 39;
+#endif
+    require(pages == expectedPages && sections == expectedSections &&
+                items == expectedNodes - pages - sections,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

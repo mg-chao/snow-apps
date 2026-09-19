@@ -241,6 +241,17 @@ void MainWindow::buildUi() {
     m_contentHeader->setCurrentSection(m_contentCard->currentLocation().sectionId);
 }
 
+void MainWindow::showAppPermissions(const QString& permissionId) {
+#ifdef Q_OS_MACOS
+    if (m_contentCard)
+        m_contentCard->navigateTo(
+            {QStringLiteral("app-permissions"), QStringLiteral("permissions"), permissionId});
+#else
+    Q_UNUSED(permissionId);
+#endif
+    showAndActivate();
+}
+
 void MainWindow::showFunctionSettings() {
     if (m_contentCard != nullptr) {
         m_contentCard->showFunctionSettings();

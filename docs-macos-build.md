@@ -28,6 +28,8 @@ scripts/run-snow-shot.sh
 
 Bootstrap checks the host tools, installs the matching Rust target, bootstraps
 repository-local vcpkg at the registry baseline, and configures the project.
+The run script rebuilds the `snow_shot` target before launching by default; pass
+`--no-build` to launch an existing build or `--clean` to request a clean rebuild.
 CMake installs native dependencies from the manifest. The first run builds
 FFmpeg, image codecs, OpenCV, and CPU ONNX Runtime and can take considerable time.
 Dependencies live in `.tools/macos/installed`, isolated from Windows and the

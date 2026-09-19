@@ -9,6 +9,8 @@
 #include <memory>
 
 class QEvent;
+class QHideEvent;
+class QShowEvent;
 
 namespace snow_shot::presentation::settings {
 class SettingsRuntimeSession;
@@ -35,6 +37,8 @@ class SettingsPageWidget final : public QWidget {
 
   protected:
     void changeEvent(QEvent* event) override;
+    void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
 
   private:
     class Impl;

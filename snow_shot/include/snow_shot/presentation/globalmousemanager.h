@@ -24,6 +24,8 @@ class GlobalMouseBackend {
     using StateHandler = std::function<void(GlobalMousePermissionState)>;
     virtual void setStateHandler(StateHandler) {}
     virtual void refreshPermission() {}
+    virtual void usePermissionSnapshot(bool, bool) {}
+    virtual void setPermissionRefreshHandler(std::function<void()>) {}
     virtual void requestPermission() {}
     virtual void openPermissionSettings() {}
 };
@@ -45,10 +47,12 @@ class GlobalMouseManager final : public QObject {
     void beginButtonDrag(settings::SettingsGlobalMouseAction action);
     [[nodiscard]] GlobalMousePermissionState permissionState() const;
     void refreshPermission();
+    void usePermissionSnapshot(bool listen, bool accessibility);
     void requestPermission();
     void openPermissionSettings();
 
   signals:
+    void permissionRefreshRequested();
     void dragEvent(const snow_shot::presentation::GlobalMouseDragEvent& event);
     void operationFailed(const QString& message);
     void permissionStateChanged(snow_shot::presentation::GlobalMousePermissionState state);

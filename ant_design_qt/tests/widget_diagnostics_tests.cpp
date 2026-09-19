@@ -1,12 +1,18 @@
+#include "theme/theme.h"
+#include "widgets/alert.h"
 #include "widgets/form.h"
 #include "widgets/navigation_menu.h"
 
 #include <QAccessible>
 #include <QApplication>
 #include <QHash>
+#include <QImage>
 #include <QLabel>
+#include <QLayout>
+#include <QPalette>
 #include <QStandardItemModel>
 #include <QTreeView>
+#include <QVBoxLayout>
 
 #include <cstdio>
 #include <cstdlib>
@@ -79,11 +85,51 @@ void menuPublishesRowsBeforeSelection() {
   QAccessible::installUpdateHandler(previousHandler);
   QAccessible::setActive(wasActive);
 }
+
+void ancestorPaletteDoesNotOverrideSemanticAlertStyle() {
+  QWidget parent;
+  auto* layout = new QVBoxLayout(&parent);
+  QPalette palette = parent.palette();
+  palette.setColor(QPalette::Window, QColor(QStringLiteral("#ff00ff")));
+  palette.setColor(QPalette::Mid, QColor(QStringLiteral("#00ff00")));
+  palette.setColor(QPalette::WindowText, QColor(QStringLiteral("#0000ff")));
+  parent.setPalette(palette);
+
+  auto* alert = new AdAlert(&parent);
+  alert->setSeverity(AdAlert::Severity::Warning);
+  alert->setText(QStringLiteral("Permissions needed"));
+  alert->setInformativeText(QStringLiteral("Review access in System Settings."));
+  layout->addWidget(alert);
+  parent.resize(480, 160);
+  parent.show();
+  QApplication::processEvents();
+
+  const QImage rendered = alert->grab().toImage();
+  const qreal scale = rendered.devicePixelRatio();
+  const QPoint sample(qRound((alert->width() - 8) * scale), qRound(alert->height() / 2.0 * scale));
+  const QColor actual = rendered.pixelColor(sample);
+  const QColor expected =
+      adqt::theme::ThemeManager::instance().resolve(alert).theme.palette.colorWarningBg;
+  require(actual == expected,
+          "An ancestor palette must not replace an alert's semantic warning background");
+}
+
+void descriptiveAlertUsesBalancedPadding() {
+  AdAlert alert;
+  alert.setText(QStringLiteral("Permissions needed"));
+  alert.setInformativeText(QStringLiteral("Review access in System Settings."));
+  const QMargins margins = alert.layout()->contentsMargins();
+  require(margins.left() == margins.top() && margins.top() == margins.right() &&
+              margins.right() == margins.bottom(),
+          "Alerts with informative text must use balanced padding on every edge");
+}
 }  // namespace
 
 int main(int argc, char* argv[]) {
   QApplication app(argc, argv);
   requiredMarkUsesLabelFont();
   menuPublishesRowsBeforeSelection();
+  ancestorPaletteDoesNotOverrideSemanticAlertStyle();
+  descriptiveAlertUsesBalancedPadding();
   return EXIT_SUCCESS;
 }

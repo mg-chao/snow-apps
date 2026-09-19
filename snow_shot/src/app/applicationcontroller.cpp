@@ -1,5 +1,6 @@
 #include "snow_shot/app/applicationcontroller.h"
 #include "snow_shot/app/featureavailability.h"
+#include "snow_shot/presentation/apppermissionservice.h"
 #ifdef Q_OS_MACOS
 #include "snow_shot/platform/macos/applicationactivation.h"
 #endif
@@ -80,6 +81,10 @@ class ApplicationController::Impl {
           featureRouter([this](FeatureFamily feature) { showUnavailableFeature(feature); }) {
         QObject::connect(
             &systemTray, &presentation::SystemTrayController::screenshotRequested, &q, [this]() {
+                if (!allowPermissions(presentation::requiredPermissions(
+                        presentation::GlobalShortcutAction::Screenshot,
+                        permissions.microphoneEnabled())))
+                    return;
                 static_cast<void>(featureRouter.dispatch(FeatureFamily::Screenshot, [this]() {
                     if (ScreenshotController* controller = ensureScreenshotController()) {
                         controller->startCapture();
@@ -130,13 +135,27 @@ class ApplicationController::Impl {
                          &presentation::GlobalMouseManager::shutdown);
         QObject::connect(
             &globalMouseManager, &presentation::GlobalMouseManager::operationFailed, &q,
-            [this](const QString& message) { systemTray.showCaptureMessage(message, true); });
+            [this](const QString& message) {
+#ifdef Q_OS_MACOS
+                const auto state = globalMouseManager.permissionState().status;
+                if (state == presentation::GlobalMousePermissionState::Status::ListenRequired ||
+                    state ==
+                        presentation::GlobalMousePermissionState::Status::AccessibilityRequired)
+                    return;
+#endif
+                systemTray.showCaptureMessage(message, true);
+            });
         QObject::connect(
             &globalMouseManager, &presentation::GlobalMouseManager::dragEvent, &q,
             [this](const presentation::GlobalMouseDragEvent& event) {
                 using Kind = presentation::GlobalMouseDragEvent::Kind;
                 const FeatureFamily feature = featureFamilyFor(event.action);
                 if (event.kind == Kind::Begin) {
+                    if (!allowPermissions(presentation::requiredPermissions(
+                            event.action, permissions.microphoneEnabled()))) {
+                        globalMouseManager.cancelGesture(event.id);
+                        return;
+                    }
                     static_cast<void>(featureRouter.beginGesture(
                         feature, [this, id = event.id]() { globalMouseManager.cancelGesture(id); },
                         [this, event]() { dispatchGlobalMouseEvent(event); }));
@@ -297,6 +316,24 @@ class ApplicationController::Impl {
         started = true;
         updates->start();
 
+#ifdef Q_OS_MACOS
+        permissions.setMicrophoneEnabled(storage::RecordingSettings().microphoneEnabled());
+        globalMouseManager.usePermissionSnapshot(false, false);
+        QObject::connect(&permissions, &presentation::AppPermissionService::refreshed, &q, [this] {
+            const auto& snapshot = permissions.snapshot();
+            globalMouseManager.usePermissionSnapshot(
+                snapshot.granted(presentation::AppPermission::InputMonitoring),
+                snapshot.granted(presentation::AppPermission::Accessibility));
+            const auto missing = permissions.takeStartupMissing();
+            if (!missing.isEmpty())
+                ensureMainWindow().showAppPermissions(
+                    presentation::appPermissionId(missing.first()));
+        });
+        QObject::connect(&globalMouseManager,
+                         &presentation::GlobalMouseManager::permissionRefreshRequested,
+                         &permissions, &presentation::AppPermissionService::refresh);
+        permissions.refresh();
+#endif
         systemTray.show();
         globalShortcutManager.initialize();
 #ifdef Q_OS_MACOS
@@ -309,8 +346,13 @@ class ApplicationController::Impl {
         globalMouseManager.initialize();
         QObject::connect(&app, &QGuiApplication::applicationStateChanged, &globalMouseManager,
                          [this](Qt::ApplicationState state) {
-                             if (state == Qt::ApplicationActive)
+                             if (state == Qt::ApplicationActive) {
+#ifdef Q_OS_MACOS
+                                 permissions.refresh();
+#else
                                  globalMouseManager.refreshPermission();
+#endif
+                             }
                          });
         static_cast<void>(featureRouter.dispatch(
             FeatureFamily::Screenshot,
@@ -355,6 +397,8 @@ class ApplicationController::Impl {
     }
 
     void applyRuntimeConfiguration(const QJsonValue& value, const QString& key) {
+        if (key == QStringLiteral("screen_recording/enable_microphone"))
+            permissions.setMicrophoneEnabled(value.toBool());
         if (key == QStringLiteral("extended_features/translation_page_enabled")) {
             systemTray.setMenuOptions(
                 stringList(storage::ApplicationStorage::instance().configuration().value(
@@ -408,6 +452,10 @@ class ApplicationController::Impl {
             QObject::connect(mainWindow, &QObject::destroyed, &q,
                              [this]() { mainWindow = nullptr; });
             QObject::connect(mainWindow, &MainWindow::screenshotRequested, &q, [this]() {
+                if (!allowPermissions(presentation::requiredPermissions(
+                        presentation::GlobalShortcutAction::Screenshot,
+                        permissions.microphoneEnabled())))
+                    return;
                 static_cast<void>(featureRouter.dispatch(FeatureFamily::Screenshot, [this]() {
                     if (ScreenshotController* controller = ensureScreenshotController()) {
                         controller->startCapture();
@@ -419,6 +467,9 @@ class ApplicationController::Impl {
                 [this](presentation::GlobalShortcutAction action) { dispatchQuickAction(action); });
             QObject::connect(mainWindow, &MainWindow::globalMouseDragRequested, &q,
                              [this](presentation::settings::SettingsGlobalMouseAction action) {
+                                 if (!allowPermissions(presentation::requiredPermissions(
+                                         action, permissions.microphoneEnabled())))
+                                     return;
                                  static_cast<void>(featureRouter.dispatch(
                                      featureFamilyFor(action), [this, action]() {
                                          globalMouseManager.beginButtonDrag(action);
@@ -445,7 +496,7 @@ class ApplicationController::Impl {
         }
         if (settingsBackend == nullptr) {
             settingsBackend = std::make_unique<presentation::settings::BuiltInSettingsBackend>(
-                globalShortcutManager, nullptr, &globalMouseManager);
+                globalShortcutManager, nullptr, &globalMouseManager, &permissions);
         }
         if (runtimeSession == nullptr) {
             runtimeSession = std::make_unique<presentation::settings::SettingsRuntimeSession>(
@@ -453,7 +504,21 @@ class ApplicationController::Impl {
         }
     }
 
+    bool allowPermissions(const presentation::AppPermissions& requirements) {
+#ifdef Q_OS_MACOS
+        return permissions.allow(requirements, [this](const presentation::AppPermissions& missing) {
+            ensureMainWindow().showAppPermissions(presentation::appPermissionId(missing.first()));
+        });
+#else
+        Q_UNUSED(requirements);
+#endif
+        return true;
+    }
+
     void dispatchQuickAction(presentation::GlobalShortcutAction action) {
+        if (!allowPermissions(
+                presentation::requiredPermissions(action, permissions.microphoneEnabled())))
+            return;
         const std::optional<FeatureFamily> feature = featureFamilyFor(action);
         if (feature && !featureRouter.dispatch(
                            *feature, [this, action]() { dispatchAvailableQuickAction(action); })) {
@@ -667,6 +732,7 @@ class ApplicationController::Impl {
     presentation::SystemTrayController systemTray;
     FeatureActionRouter featureRouter;
     presentation::GlobalShortcutManager globalShortcutManager;
+    presentation::AppPermissionService permissions;
     presentation::GlobalMouseManager globalMouseManager;
     // Settings are intentionally constructed on first window access.  The
     // tray and shortcut manager use only their compact bootstrap data.

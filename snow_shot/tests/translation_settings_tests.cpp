@@ -263,7 +263,9 @@ void selectedTextShortcutSettings() {
         require(activations == 1, "fullscreen suppression applies to selected text translation");
         fullscreen = false;
         require(store.setValue(fullscreenKey, previousFullscreen), "restore fullscreen preference");
-        manager.setShortcuts(action, {QStringLiteral("F3")});
+        const auto conflict = persisted.pinClipboardContent();
+        require(!conflict.isEmpty(), "pin clipboard default provides a conflict fixture");
+        manager.setShortcuts(action, {conflict.first()});
         require(manager.state(action).status == GlobalShortcutStatus::Failed &&
                     manager.state(action).bindings.first().failureReason ==
                         GlobalShortcutFailureReason::AlreadyInUse,

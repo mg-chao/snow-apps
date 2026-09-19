@@ -113,6 +113,25 @@
         </message>
     </context>
     <context>
+        <name>AppPermissions</name>
+        <message>
+            <source>Accessibility</source>
+            <translation>輔助使用</translation>
+        </message>
+        <message>
+            <source>Input Monitoring</source>
+            <translation>輸入監控</translation>
+        </message>
+        <message>
+            <source>Microphone</source>
+            <translation>麥克風</translation>
+        </message>
+        <message>
+            <source>Screen &amp; System Audio Recording</source>
+            <translation>螢幕與系統音訊錄製</translation>
+        </message>
+    </context>
+    <context>
         <name>CustomAiModelsSettingsWidget</name>
         <message>
             <source>%1 (Copy %2)</source>
@@ -633,6 +652,10 @@
             <translation>高於正常</translation>
         </message>
         <message>
+            <source>Accessibility</source>
+            <translation>輔助使用</translation>
+        </message>
+        <message>
             <source>Active window</source>
             <translation>作用中視窗</translation>
         </message>
@@ -671,6 +694,10 @@
         <message>
             <source>Animated image frame rate</source>
             <translation>動態圖片畫面播放速率</translation>
+        </message>
+        <message>
+            <source>App Permissions</source>
+            <translation>應用程式權限</translation>
         </message>
         <message>
             <source>App-wide storage usage breakdown, location, mode, and latest errors</source>
@@ -811,6 +838,10 @@
         <message>
             <source>Capture every monitor and copy the monitor under the pointer</source>
             <translation>擷取所有顯示器並複製指標所在的顯示器</translation>
+        </message>
+        <message>
+            <source>Capture screenshots and record your screen and system audio.</source>
+            <translation>擷取螢幕，以及錄製螢幕和系統音訊。</translation>
         </message>
         <message>
             <source>Capture selected text and open it in Translation</source>
@@ -1517,6 +1548,10 @@
             <translation>在拼接後的捲動截圖中包含截圖視窗及其工具列。</translation>
         </message>
         <message>
+            <source>Input Monitoring</source>
+            <translation>輸入監控</translation>
+        </message>
+        <message>
             <source>Interface settings</source>
             <translation>介面設定</translation>
         </message>
@@ -1609,6 +1644,10 @@
             <translation>放大鏡顯示</translation>
         </message>
         <message>
+            <source>Manage macOS permissions for Snow Shot</source>
+            <translation>管理 Snow Shot 的 macOS 權限</translation>
+        </message>
+        <message>
             <source>Manual</source>
             <translation>手動</translation>
         </message>
@@ -1651,6 +1690,10 @@
         <message>
             <source>Menu options</source>
             <translation>選單選項</translation>
+        </message>
+        <message>
+            <source>Microphone</source>
+            <translation>麥克風</translation>
         </message>
         <message>
             <source>Middle Mouse Button Action</source>
@@ -1769,6 +1812,10 @@
             <translation>相容 OpenAI 的 Chat Completions</translation>
         </message>
         <message>
+            <source>Optional. Record your microphone when microphone audio is enabled for recording.</source>
+            <translation>選用。啟用錄製麥克風音訊時，用於錄製麥克風聲音。</translation>
+        </message>
+        <message>
             <source>Original</source>
             <translation>原始</translation>
         </message>
@@ -1815,6 +1862,10 @@
         <message>
             <source>Permanently remove all saved screenshots</source>
             <translation>永久移除所有已儲存的截圖</translation>
+        </message>
+        <message>
+            <source>Permission status and access</source>
+            <translation>權限狀態與授權</translation>
         </message>
         <message>
             <source>Persistent screenshot history</source>
@@ -1935,6 +1986,10 @@
         <message>
             <source>Recapture</source>
             <translation>重新擷取</translation>
+        </message>
+        <message>
+            <source>Recognize global mouse gestures while you use other apps.</source>
+            <translation>在使用其他應用程式時辨識全域滑鼠手勢。</translation>
         </message>
         <message>
             <source>Recognize text</source>
@@ -2083,6 +2138,10 @@
         <message>
             <source>Scale recordings that exceed the selected maximum resolution</source>
             <translation>縮放超過所選最大解析度的錄製螢幕</translation>
+        </message>
+        <message>
+            <source>Screen &amp; System Audio Recording</source>
+            <translation>螢幕與系統音訊錄製</translation>
         </message>
         <message>
             <source>Screen capture</source>
@@ -2613,6 +2672,10 @@
             <translation>可用時使用 DirectML 透過 GPU 加速文字辨識</translation>
         </message>
         <message>
+            <source>Use global mouse gestures, select individual window elements, and translate selected text.</source>
+            <translation>使用全域滑鼠手勢、選取視窗內的個別元素，以及翻譯選取的文字。</translation>
+        </message>
+        <message>
             <source>Use system proxy</source>
             <translation>使用系統代理</translation>
         </message>
@@ -2676,12 +2739,52 @@
     <context>
         <name>SettingsPageWidget</name>
         <message>
-            <source>Open System Settings</source>
-            <translation>開啟系統設定</translation>
+            <source>, </source>
+            <translation>、</translation>
         </message>
         <message>
-            <source>Retry</source>
-            <translation>重試</translation>
+            <source>Authorized</source>
+            <translation>已授權</translation>
+        </message>
+        <message>
+            <source>Checking…</source>
+            <translation>正在檢查…</translation>
+        </message>
+        <message>
+            <source>Could not open System Settings. Open System Settings &gt; Privacy &amp; Security &gt; %1.</source>
+            <translation>無法開啟系統設定。請前往「系統設定 &gt; 隱私權與安全性 &gt; %1」。</translation>
+        </message>
+        <message>
+            <source>Global mouse actions need access to: %1.</source>
+            <translation>全域滑鼠操作需要以下權限：%1。</translation>
+        </message>
+        <message>
+            <source>Go to Settings</source>
+            <translation>前往設定</translation>
+        </message>
+        <message>
+            <source>Permissions needed</source>
+            <translation>需要授權</translation>
+        </message>
+        <message>
+            <source>Review permissions</source>
+            <translation>檢視權限</translation>
+        </message>
+        <message>
+            <source>To use %1, review access to: %2.</source>
+            <translation>若要使用%1，請檢查以下權限：%2。</translation>
+        </message>
+        <message>
+            <source>microphone recording</source>
+            <translation>麥克風錄音</translation>
+        </message>
+        <message>
+            <source>screenshots and screen recording</source>
+            <translation>擷取畫面和螢幕錄影</translation>
+        </message>
+        <message>
+            <source>selected-text translation</source>
+            <translation>選取文字翻譯</translation>
         </message>
     </context>
     <context>
@@ -2773,29 +2876,6 @@ Unavailable: %2</source>
         <message>
             <source>the system rejected this shortcut (error %1)</source>
             <translation>系統拒絕了此快速鍵（錯誤 %1）</translation>
-        </message>
-    </context>
-    <context>
-        <name>SmartSelectionPermissionWidget</name>
-        <message>
-            <source>Accessibility access is enabled for Smart selection.</source>
-            <translation>已為智慧選取啟用輔助使用權限。</translation>
-        </message>
-        <message>
-            <source>Allow Accessibility access to select window elements. Smart selection currently selects whole windows.</source>
-            <translation>允許輔助使用存取以選取視窗元素。智慧選取目前只能選取整個視窗。</translation>
-        </message>
-        <message>
-            <source>Open System Settings</source>
-            <translation>開啟系統設定</translation>
-        </message>
-        <message>
-            <source>Request Accessibility Access</source>
-            <translation>要求輔助使用權限</translation>
-        </message>
-        <message>
-            <source>Retry</source>
-            <translation>重試</translation>
         </message>
     </context>
     <context>

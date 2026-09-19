@@ -178,6 +178,15 @@ void GlobalMouseManager::initialize() {
                         m_impl->reload();
                     }
                 });
+    impl.backend->setPermissionRefreshHandler([this, epoch] {
+        QMetaObject::invokeMethod(
+            this,
+            [this, epoch] {
+                if (m_impl->started && epoch == m_impl->generation)
+                    emit permissionRefreshRequested();
+            },
+            Qt::QueuedConnection);
+    });
     impl.backend->setStateHandler([this, epoch](GlobalMousePermissionState state) {
         QMetaObject::invokeMethod(
             this,
@@ -222,6 +231,9 @@ GlobalMousePermissionState GlobalMouseManager::permissionState() const {
     return m_impl->permission;
 }
 
+void GlobalMouseManager::usePermissionSnapshot(bool listen, bool accessibility) {
+    m_impl->backend->usePermissionSnapshot(listen, accessibility);
+}
 void GlobalMouseManager::refreshPermission() {
     m_impl->backend->refreshPermission();
 }

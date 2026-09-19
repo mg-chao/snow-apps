@@ -100,9 +100,26 @@ if name == 'cmake' and '--preset' in sys.argv and os.environ.get('FAIL_CONFIGURE
         binary.touch()
         binary.chmod(0o755)
         calls = self.run_script('run-snow-shot.sh', '--', '--example', 'a path')
+        self.assertIn(['cmake', '--build', '--preset', 'build-snow-shot-macos-arm64-debug',
+                       '--target', 'snow_shot', '--parallel'], calls)
         self.assertEqual(calls[-1], ['open', '-n', str(app.parent.parent / 'run/snow_shot.app'),
                                     '--args', '--example', 'a path'])
         self.assertIn('--install', calls[-2])
+
+    def test_launch_can_skip_or_clean_the_automatic_build(self):
+        app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/snow_shot.app'
+        binary = app / 'Contents/MacOS/snow_shot'
+        binary.parent.mkdir(parents=True)
+        binary.touch()
+        binary.chmod(0o755)
+
+        calls = self.run_script('run-snow-shot.sh', '--no-build')
+        self.assertFalse(any('--build' in call for call in calls))
+
+        self.log.unlink()
+        calls = self.run_script('run-snow-shot.sh', '--clean')
+        self.assertIn(['cmake', '--build', '--preset', 'build-snow-shot-macos-arm64-debug',
+                       '--target', 'snow_shot', '--clean-first', '--parallel'], calls)
 
     def test_deployment_uses_the_matching_vcpkg_library_configuration(self):
         deployment = (ROOT / 'cmake/DeploySnowShotMacOS.cmake.in').read_text()

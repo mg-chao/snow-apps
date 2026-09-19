@@ -300,6 +300,10 @@ struct SettingsActionDefinition {
 };
 
 enum class SettingsCustomRenderer {
+    PermissionScreenRecording,
+    PermissionAccessibility,
+    PermissionInputMonitoring,
+    PermissionMicrophone,
     CustomAiModels,
     StorageStatus,
     DrawingToolbarEditor,

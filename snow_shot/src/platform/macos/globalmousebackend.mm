@@ -214,7 +214,23 @@ class MacOSGlobalMouseBackend final : public QObject, public GlobalMouseBackend 
             }
         });
     }
+    void setPermissionRefreshHandler(std::function<void()> handler) override {
+        QMutexLocker lock(&mutex);
+        permissionRefreshHandler = std::move(handler);
+    }
+    void usePermissionSnapshot(bool listen, bool accessibility) override {
+        const int value = (listen ? 1 : 0) | (accessibility ? 2 : 0);
+        if (sharedPermissions.exchange(value) != value)
+            submit([this] { reconcile(); });
+    }
     void refreshPermission() override {
+        std::function<void()> refresh;
+        {
+            QMutexLocker lock(&mutex);
+            refresh = permissionRefreshHandler;
+        }
+        if (sharedPermissions >= 0 && refresh)
+            refresh();
         submit([this] { reconcile(); });
     }
     void requestPermission() override {
@@ -285,8 +301,9 @@ class MacOSGlobalMouseBackend final : public QObject, public GlobalMouseBackend 
         input.reset();
     }
     void reconcile() {
-        const bool listen = api.listenAccess();
-        const bool accessibility = api.accessibilityAccess();
+        const int cached = sharedPermissions.load();
+        const bool listen = cached >= 0 ? (cached & 1) != 0 : api.listenAccess();
+        const bool accessibility = cached >= 0 ? (cached & 2) != 0 : api.accessibilityAccess();
         const bool inactive = suspended || (api.sessionActive && !api.sessionActive());
         if (inactive || !listen || !accessibility) {
             interrupt();
@@ -327,8 +344,8 @@ class MacOSGlobalMouseBackend final : public QObject, public GlobalMouseBackend 
     void run() {
         @autoreleasepool {
             // A source keeps the run loop asleep even when permission prevents
-            // tap creation. Wakeups process commands; the one-second deadline
-            // rechecks TCC without polling pointer movement.
+            // tap creation. The application supplies cached grants and wakes this loop
+            // on changes. Standalone backends retain their native recovery checks.
             CFRunLoopSourceContext context{};
             context.perform = [](void*) {};
             CFRunLoopSourceRef commandSource = CFRunLoopSourceCreate(nullptr, 0, &context);
@@ -355,12 +372,13 @@ class MacOSGlobalMouseBackend final : public QObject, public GlobalMouseBackend 
                     command();
                 }
                 const auto now = CFAbsoluteTimeGetCurrent();
-                if (now >= nextCheck) {
+                if (sharedPermissions < 0 && now >= nextCheck) {
                     reconcile();
                     nextCheck = now + 1.0;
                 }
                 if (!stopping)
-                    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 1.0, true);
+                    CFRunLoopRunInMode(kCFRunLoopDefaultMode, sharedPermissions >= 0 ? 3600.0 : 1.0,
+                                       true);
             }
             interrupt();
             retireTap();
@@ -385,6 +403,7 @@ class MacOSGlobalMouseBackend final : public QObject, public GlobalMouseBackend 
             self.recoverInputState();
             if (self.tap)
                 self.api.enableTap(self.tap, true);
+            self.refreshPermission();
             self.reconcile();
             return event;
         }
@@ -402,6 +421,8 @@ class MacOSGlobalMouseBackend final : public QObject, public GlobalMouseBackend 
     mutable QMutex mutex;
     GlobalMousePermissionState state;
     StateHandler stateHandler;
+    std::function<void()> permissionRefreshHandler;
+    std::atomic_int sharedPermissions{-1};
     GlobalMouseConfiguration desired;
     std::deque<std::function<void()>> commands;
     CFRunLoopRef loop = nullptr;              // Protected by mutex, valid until the worker exits.

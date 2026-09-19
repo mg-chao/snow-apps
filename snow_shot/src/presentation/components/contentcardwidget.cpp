@@ -131,7 +131,10 @@ void ContentCardWidget::navigateTo(
 
     m_currentLocation = resolved;
     if (auto* page = dynamic_cast<SettingsPageWidget*>(m_activePage.data()); page != nullptr) {
-        page->reveal(resolved);
+        // Keep page-level navigation distinct from an explicit request for the first section.
+        // The canonical location selects that section for the header, but the page-level request
+        // must leave any introductory content above it visible.
+        page->reveal(requested.pageId == resolved.pageId ? requested : resolved);
     }
 
     if (previousPageId != resolved.pageId) {

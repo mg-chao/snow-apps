@@ -920,16 +920,8 @@ void globalMousePermissionGuidance() {
     page.resize(900, 720);
     page.show();
     flushEvents();
-    auto* label = page.findChild<QLabel*>(QStringLiteral("globalMousePermissionLabel"));
-    auto* action = page.findChild<QAbstractButton*>(QStringLiteral("globalMousePermissionButton"));
-    auto* retry = page.findChild<QAbstractButton*>(QStringLiteral("globalMousePermissionRetry"));
-    require(label && action && retry &&
-                label->text().contains(QStringLiteral("Input Monitoring")) && action->isVisible(),
-            "missing listen access must offer actionable permission guidance");
-    action->click();
-    retry->click();
-    require(backend.permissionRequests == 1 && backend.settingsOpened == 1 && backend.retries == 1,
-            "permission actions must reach the backend exactly once");
+    require(!page.findChild<QLabel*>(QStringLiteral("globalMousePermissionLabel")),
+            "legacy permission hints are replaced by App Permissions alerts");
     require(session.applyGlobalMouseCombination(
                 settings::SettingsGlobalMouseAction::ScreenshotCopy,
                 {{QStringLiteral("command")}, QStringLiteral("left_drag")}),
@@ -939,22 +931,10 @@ void globalMousePermissionGuidance() {
                 static_cast<int>(presentation::GlobalShortcutStatus::Failed),
             "an unavailable binding must not claim to be registered");
     backend.setPermission({Status::AccessibilityRequired, true});
-    require(label->text().contains(QStringLiteral("Accessibility")), "live Accessibility guidance");
     backend.setPermission({Status::Ready, true, true, true});
-    require(!action->isVisible() && !retry->isVisible() &&
-                configurationButton(*row)->property("registrationStatus").toInt() ==
-                    static_cast<int>(presentation::GlobalShortcutStatus::Registered),
-            "granted permissions must immediately refresh the banner and binding status");
-    GlobalMouseTranslator translator;
-    QCoreApplication::installTranslator(&translator);
-    flushEvents();
-    require(label->text() == QStringLiteral("Globale Mausgesten sind bereit."),
-            "permission guidance must retranslate on LanguageChange");
-    QCoreApplication::removeTranslator(&translator);
-    flushEvents();
-    backend.setPermission({Status::Suspended, true, true});
-    require(label->text().contains(QStringLiteral("inactive")) && !action->isVisible(),
-            "inactive sessions must not be presented as missing permission");
+    require(configurationButton(*row)->property("registrationStatus").toInt() ==
+                static_cast<int>(presentation::GlobalShortcutStatus::Registered),
+            "granted permissions must refresh binding status");
 #endif
 }
 

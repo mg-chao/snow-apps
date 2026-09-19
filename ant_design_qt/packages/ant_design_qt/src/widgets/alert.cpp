@@ -388,7 +388,7 @@ class AdAlertPrivate {
   bool hasInformativeTextContent() const;
   bool closeAnimationEnabled(const detail::AlertVisualStyle& style) const;
   QPalette::ColorGroup effectivePaletteGroup() const;
-  bool hasPaletteOverrideInHierarchy() const;
+  bool hasPaletteOverride() const;
   void invalidateResolvedCache();
   void ensureResolvedCache() const;
   void refresh();
@@ -593,7 +593,7 @@ detail::AlertVisualStyle AdAlertPrivate::resolveVisualStyle(const DerivedState& 
   input.severity = state.severity;
   input.displayMode = displayMode;
   input.enabled = q->isEnabled();
-  input.hasPaletteOverride = hasPaletteOverrideInHierarchy();
+  input.hasPaletteOverride = hasPaletteOverride();
   input.paletteGroup = effectivePaletteGroup();
   input.baseFont = q->font();
   input.palette = q->palette();
@@ -635,15 +635,9 @@ QPalette::ColorGroup AdAlertPrivate::effectivePaletteGroup() const {
   return group == QPalette::Disabled ? QPalette::Active : group;
 }
 
-bool AdAlertPrivate::hasPaletteOverrideInHierarchy() const {
+bool AdAlertPrivate::hasPaletteOverride() const {
   Q_Q(const AdAlert);
-
-  for (const QWidget* current = q; current; current = current->parentWidget()) {
-    if (usesCustomPalette(current)) {
-      return true;
-    }
-  }
-  return false;
+  return usesCustomPalette(q);
 }
 
 void AdAlertPrivate::invalidateResolvedCache() { resolvedCacheValid = false; }

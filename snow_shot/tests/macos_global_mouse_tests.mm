@@ -177,7 +177,7 @@ void inputMappingAndOwnership() {
 struct Fixture {
     std::atomic_bool listen{false}, trusted{false}, enabled{false}, creationFails{false},
         enableFails{false};
-    std::atomic_int installs{0}, removals{0}, requests{0};
+    std::atomic_int installs{0}, removals{0}, requests{0}, permissionQueries{0};
     std::atomic_int heldButtons{0};
     std::atomic_bool openedListen{false}, sessionActive{true};
     QSemaphore changed;
@@ -190,8 +190,14 @@ struct Fixture {
     std::unique_ptr<GlobalMouseBackend> backend;
     Fixture() {
         detail::MacGlobalMouseApi api;
-        api.listenAccess = [this] { return listen.load(); };
-        api.accessibilityAccess = [this] { return trusted.load(); };
+        api.listenAccess = [this] {
+            ++permissionQueries;
+            return listen.load();
+        };
+        api.accessibilityAccess = [this] {
+            ++permissionQueries;
+            return trusted.load();
+        };
         api.createTap = [this](CGEventMask mask, CGEventTapCallBack handler, void* receiver) {
             require((mask & CGEventMaskBit(kCGEventOtherMouseDragged)) != 0,
                     "tap mask covers auxiliary drags");
@@ -251,6 +257,49 @@ struct Fixture {
         require(completed.tryAcquire(1, 5000), "worker scenario must complete");
     }
 };
+void sharedPermissionSnapshot() {
+    Fixture f;
+    std::atomic_int refreshes{0};
+    f.backend->setPermissionRefreshHandler([&] { ++refreshes; });
+    f.backend->usePermissionSnapshot(true, true);
+    f.start();
+    f.await(Status::Ready);
+    require(f.permissionQueries == 0 && f.installs == 1,
+            "shared permissions must avoid independent TCC queries");
+    for (int i = 0; i < 100; ++i)
+        f.backend->usePermissionSnapshot(true, true);
+    f.onWorker([&] {
+        Event down(kCGEventLeftMouseDown);
+        f.callback(nullptr, kCGEventLeftMouseDown, down.value, f.context);
+        f.enabled = false;
+        f.callback(nullptr, kCGEventTapDisabledByTimeout, nullptr, f.context);
+        require(f.enabled, "cached permissions must preserve timeout recovery");
+    });
+    require(refreshes == 1 && f.permissionQueries == 0 && f.installs == 1,
+            "disabled tap requests central refresh without rebuilding a healthy tap");
+    f.backend->usePermissionSnapshot(true, false);
+    f.await(Status::AccessibilityRequired);
+    require(f.removals > 0 && f.permissionQueries == 0,
+            "central revocation retires the tap without new permission probes");
+    {
+        std::lock_guard lock(f.mutex);
+        require(f.events.size() == 2 && f.events.back().kind == Kind::Cancel,
+                "permission interruption cancels a gesture once");
+    }
+    f.backend->usePermissionSnapshot(true, true);
+    f.await(Status::Ready);
+    f.sessionActive = false;
+    f.backend->refreshPermission();
+    f.await(Status::Suspended);
+    require(f.backend->permissionState().listenGranted &&
+                f.backend->permissionState().accessibilityGranted,
+            "session suspension must preserve granted permission state");
+    f.sessionActive = true;
+    f.backend->refreshPermission();
+    f.await(Status::Ready);
+    require(f.permissionQueries == 0, "session recovery also uses the shared snapshot");
+}
+
 void lifecycleAndRecovery() {
     Fixture f;
     f.start();
@@ -419,5 +468,6 @@ int main(int argc, char** argv) {
         return smoke();
     inputMappingAndOwnership();
     lifecycleAndRecovery();
+    sharedPermissionSnapshot();
     return 0;
 }

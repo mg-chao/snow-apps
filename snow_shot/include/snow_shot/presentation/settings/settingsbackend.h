@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSBACKEND_H
 
 #include "snow_shot/presentation/globalshortcuttypes.h"
+#include "snow_shot/presentation/apppermissionservice.h"
 #include "snow_shot/presentation/settings/settingscatalog.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -138,6 +139,10 @@ class SettingsBackend : public QObject {
         return false;
     }
 
+    virtual AppPermissionService* appPermissions() const {
+        return nullptr;
+    }
+
     virtual GlobalMousePermissionState globalMousePermissionState() const {
         return {GlobalMousePermissionState::Status::Ready, true, true, true};
     }
@@ -180,7 +185,11 @@ class BuiltInSettingsBackend final : public SettingsBackend {
   public:
     explicit BuiltInSettingsBackend(
         ::snow_shot::presentation::GlobalShortcutManager& shortcutManager,
-        QObject* parent = nullptr, GlobalMouseManager* mouseManager = nullptr);
+        QObject* parent = nullptr, GlobalMouseManager* mouseManager = nullptr,
+        AppPermissionService* permissions = nullptr);
+    AppPermissionService* appPermissions() const override {
+        return m_permissions;
+    }
 
     GlobalMousePermissionState globalMousePermissionState() const override;
     void requestGlobalMousePermission() override;
@@ -255,6 +264,7 @@ class BuiltInSettingsBackend final : public SettingsBackend {
 
   private:
     ::snow_shot::presentation::GlobalShortcutManager& m_shortcutManager;
+    AppPermissionService* m_permissions = nullptr;
     GlobalMouseManager* m_mouseManager = nullptr;
     bool m_copyLogBusy = false;
     bool m_configurationBusy = false;

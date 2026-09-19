@@ -182,8 +182,9 @@ platform::windows::AdministratorResult applyStartupSettings(bool enabled, bool e
 
 BuiltInSettingsBackend::BuiltInSettingsBackend(
     ::snow_shot::presentation::GlobalShortcutManager& shortcutManager, QObject* parent,
-    GlobalMouseManager* mouseManager)
-    : SettingsBackend(parent), m_shortcutManager(shortcutManager), m_mouseManager(mouseManager) {
+    GlobalMouseManager* mouseManager, AppPermissionService* permissions)
+    : SettingsBackend(parent), m_shortcutManager(shortcutManager), m_permissions(permissions),
+      m_mouseManager(mouseManager) {
     if (m_mouseManager)
         connect(m_mouseManager, &GlobalMouseManager::permissionStateChanged, this,
                 &SettingsBackend::globalMousePermissionChanged);
@@ -998,14 +999,32 @@ GlobalMousePermissionState BuiltInSettingsBackend::globalMousePermissionState() 
                           : SettingsBackend::globalMousePermissionState();
 }
 void BuiltInSettingsBackend::requestGlobalMousePermission() {
+    if (m_permissions) {
+        const auto missing =
+            m_permissions->missing({AppPermission::InputMonitoring, AppPermission::Accessibility});
+        if (!missing.isEmpty())
+            m_permissions->request(missing.first());
+        return;
+    }
     if (m_mouseManager)
         m_mouseManager->requestPermission();
 }
 void BuiltInSettingsBackend::openGlobalMousePermissionSettings() {
+    if (m_permissions) {
+        const auto missing =
+            m_permissions->missing({AppPermission::InputMonitoring, AppPermission::Accessibility});
+        if (!missing.isEmpty())
+            static_cast<void>(m_permissions->openSettings(missing.first()));
+        return;
+    }
     if (m_mouseManager)
         m_mouseManager->openPermissionSettings();
 }
 void BuiltInSettingsBackend::refreshGlobalMousePermission() {
+    if (m_permissions) {
+        m_permissions->refresh();
+        return;
+    }
     if (m_mouseManager)
         m_mouseManager->refreshPermission();
 }

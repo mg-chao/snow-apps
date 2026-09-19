@@ -65,6 +65,7 @@ function(snow_shot_add_translations target)
             snow_shot_settings_catalog
             snow_shot_settings_search
             snow_shot_settings
+            snow_shot_permissions
             snow_shot_global_mouse
             snow_shot_translation
             snow_shot_diagnostics

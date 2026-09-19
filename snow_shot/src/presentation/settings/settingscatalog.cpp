@@ -2287,6 +2287,48 @@ QVector<SettingsPageDefinition> builtInPages() {
                 },
             },
         },
+#ifdef Q_OS_MACOS
+        {QStringLiteral("app-permissions"),
+         QStringLiteral("/settings/appPermissions"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "App Permissions")),
+         settingsText(
+             QT_TRANSLATE_NOOP("SettingsCatalog", "Manage macOS permissions for Snow Shot")),
+         {{QStringLiteral("permissions"),
+           settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "App Permissions")),
+           settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Permission status and access")),
+           SettingsSectionReset::None,
+           {{QStringLiteral("screen-recording"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screen & System Audio Recording")),
+             settingsText(
+                 QT_TRANSLATE_NOOP("SettingsCatalog",
+                                   "Capture screenshots and record your screen and system audio.")),
+             {},
+             {},
+             SettingsCustomDefinition{SettingsCustomRenderer::PermissionScreenRecording}},
+            {QStringLiteral("accessibility"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Accessibility")),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                            "Use global mouse gestures, select individual window "
+                                            "elements, and translate selected text.")),
+             {},
+             {},
+             SettingsCustomDefinition{SettingsCustomRenderer::PermissionAccessibility}},
+            {QStringLiteral("input-monitoring"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Input Monitoring")),
+             settingsText(QT_TRANSLATE_NOOP(
+                 "SettingsCatalog", "Recognize global mouse gestures while you use other apps.")),
+             {},
+             {},
+             SettingsCustomDefinition{SettingsCustomRenderer::PermissionInputMonitoring}},
+            {QStringLiteral("microphone"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Microphone")),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                            "Optional. Record your microphone when microphone "
+                                            "audio is enabled for recording.")),
+             {},
+             {},
+             SettingsCustomDefinition{SettingsCustomRenderer::PermissionMicrophone}}}}}},
+#endif
         {
             QString::fromLatin1(APPLICATION_SHORTCUTS_PAGE_ID),
             QStringLiteral("/settings/applicationShortcuts"),
@@ -2412,6 +2454,11 @@ QVector<SettingsNavigationNode> builtInNavigation() {
         },
     };
 
+#ifdef Q_OS_MACOS
+    settingsGroup.pages.push_back({QStringLiteral("nav.app-permissions"),
+                                   QStringLiteral("app-permissions"),
+                                   []() { return outlined_icons::Lock(); }});
+#endif
     SettingsNavigationPageDefinition about;
     about.id = QStringLiteral("nav.about");
     about.pageId = QStringLiteral("about");
@@ -3502,6 +3549,10 @@ QStringList SettingsCatalog::validationErrors() const {
                         rendererSupported = true;
                         expectedKey = QStringLiteral("api_configuration/custom_models");
                         break;
+                    case SettingsCustomRenderer::PermissionScreenRecording:
+                    case SettingsCustomRenderer::PermissionAccessibility:
+                    case SettingsCustomRenderer::PermissionInputMonitoring:
+                    case SettingsCustomRenderer::PermissionMicrophone:
                     case SettingsCustomRenderer::StorageStatus:
                         rendererSupported = true;
                         break;
@@ -3527,7 +3578,7 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     }
                     if (itemDefinition.configurationKey != expectedKey || !rendererSupported ||
-                        (custom->renderer != SettingsCustomRenderer::StorageStatus &&
+                        (!expectedKey.isEmpty() &&
                          (schemaEntry == nullptr || schemaEntry->valueKind != expectedKind))) {
                         errors.push_back(
                             QStringLiteral("custom item is incomplete: %1").arg(itemDefinition.id));

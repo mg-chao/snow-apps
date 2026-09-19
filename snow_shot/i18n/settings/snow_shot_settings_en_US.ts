@@ -113,6 +113,25 @@
         </message>
     </context>
     <context>
+        <name>AppPermissions</name>
+        <message>
+            <source>Accessibility</source>
+            <translation>Accessibility</translation>
+        </message>
+        <message>
+            <source>Input Monitoring</source>
+            <translation>Input Monitoring</translation>
+        </message>
+        <message>
+            <source>Microphone</source>
+            <translation>Microphone</translation>
+        </message>
+        <message>
+            <source>Screen &amp; System Audio Recording</source>
+            <translation>Screen &amp; System Audio Recording</translation>
+        </message>
+    </context>
+    <context>
         <name>CustomAiModelsSettingsWidget</name>
         <message>
             <source>%1 (Copy %2)</source>
@@ -633,6 +652,10 @@
             <translation>Above normal</translation>
         </message>
         <message>
+            <source>Accessibility</source>
+            <translation>Accessibility</translation>
+        </message>
+        <message>
             <source>Active window</source>
             <translation>Active window</translation>
         </message>
@@ -671,6 +694,10 @@
         <message>
             <source>Animated image frame rate</source>
             <translation>Animated image frame rate</translation>
+        </message>
+        <message>
+            <source>App Permissions</source>
+            <translation>App Permissions</translation>
         </message>
         <message>
             <source>App-wide storage usage breakdown, location, mode, and latest errors</source>
@@ -811,6 +838,10 @@
         <message>
             <source>Capture every monitor and copy the monitor under the pointer</source>
             <translation>Capture every monitor and copy the monitor under the pointer</translation>
+        </message>
+        <message>
+            <source>Capture screenshots and record your screen and system audio.</source>
+            <translation>Capture screenshots and record your screen and system audio.</translation>
         </message>
         <message>
             <source>Capture selected text and open it in Translation</source>
@@ -1517,6 +1548,10 @@
             <translation>Include the screenshot window and its toolbar in the stitched scrolling screenshot.</translation>
         </message>
         <message>
+            <source>Input Monitoring</source>
+            <translation>Input Monitoring</translation>
+        </message>
+        <message>
             <source>Interface settings</source>
             <translation>Interface settings</translation>
         </message>
@@ -1609,6 +1644,10 @@
             <translation>Magnifier visibility</translation>
         </message>
         <message>
+            <source>Manage macOS permissions for Snow Shot</source>
+            <translation>Manage macOS permissions for Snow Shot</translation>
+        </message>
+        <message>
             <source>Manual</source>
             <translation>Manual</translation>
         </message>
@@ -1651,6 +1690,10 @@
         <message>
             <source>Menu options</source>
             <translation>Menu options</translation>
+        </message>
+        <message>
+            <source>Microphone</source>
+            <translation>Microphone</translation>
         </message>
         <message>
             <source>Middle Mouse Button Action</source>
@@ -1769,6 +1812,10 @@
             <translation>OpenAI-compatible Chat Completions</translation>
         </message>
         <message>
+            <source>Optional. Record your microphone when microphone audio is enabled for recording.</source>
+            <translation>Optional. Record your microphone when microphone audio is enabled for recording.</translation>
+        </message>
+        <message>
             <source>Original</source>
             <translation>Original</translation>
         </message>
@@ -1815,6 +1862,10 @@
         <message>
             <source>Permanently remove all saved screenshots</source>
             <translation>Permanently remove all saved screenshots</translation>
+        </message>
+        <message>
+            <source>Permission status and access</source>
+            <translation>Permission status and access</translation>
         </message>
         <message>
             <source>Persistent screenshot history</source>
@@ -1935,6 +1986,10 @@
         <message>
             <source>Recapture</source>
             <translation>Recapture</translation>
+        </message>
+        <message>
+            <source>Recognize global mouse gestures while you use other apps.</source>
+            <translation>Recognize global mouse gestures while you use other apps.</translation>
         </message>
         <message>
             <source>Recognize text</source>
@@ -2083,6 +2138,10 @@
         <message>
             <source>Scale recordings that exceed the selected maximum resolution</source>
             <translation>Scale recordings that exceed the selected maximum resolution</translation>
+        </message>
+        <message>
+            <source>Screen &amp; System Audio Recording</source>
+            <translation>Screen &amp; System Audio Recording</translation>
         </message>
         <message>
             <source>Screen capture</source>
@@ -2613,6 +2672,10 @@
             <translation>Use DirectML for GPU-accelerated text recognition when available</translation>
         </message>
         <message>
+            <source>Use global mouse gestures, select individual window elements, and translate selected text.</source>
+            <translation>Use global mouse gestures, select individual window elements, and translate selected text.</translation>
+        </message>
+        <message>
             <source>Use system proxy</source>
             <translation>Use system proxy</translation>
         </message>
@@ -2676,12 +2739,52 @@
     <context>
         <name>SettingsPageWidget</name>
         <message>
-            <source>Open System Settings</source>
-            <translation>Open System Settings</translation>
+            <source>, </source>
+            <translation>, </translation>
         </message>
         <message>
-            <source>Retry</source>
-            <translation>Retry</translation>
+            <source>Authorized</source>
+            <translation>Authorized</translation>
+        </message>
+        <message>
+            <source>Checking…</source>
+            <translation>Checking…</translation>
+        </message>
+        <message>
+            <source>Could not open System Settings. Open System Settings &gt; Privacy &amp; Security &gt; %1.</source>
+            <translation>Could not open System Settings. Open System Settings &gt; Privacy &amp; Security &gt; %1.</translation>
+        </message>
+        <message>
+            <source>Global mouse actions need access to: %1.</source>
+            <translation>Global mouse actions need access to: %1.</translation>
+        </message>
+        <message>
+            <source>Go to Settings</source>
+            <translation>Go to Settings</translation>
+        </message>
+        <message>
+            <source>Permissions needed</source>
+            <translation>Permissions needed</translation>
+        </message>
+        <message>
+            <source>Review permissions</source>
+            <translation>Review permissions</translation>
+        </message>
+        <message>
+            <source>To use %1, review access to: %2.</source>
+            <translation>To use %1, review access to: %2.</translation>
+        </message>
+        <message>
+            <source>microphone recording</source>
+            <translation>microphone recording</translation>
+        </message>
+        <message>
+            <source>screenshots and screen recording</source>
+            <translation>screenshots and screen recording</translation>
+        </message>
+        <message>
+            <source>selected-text translation</source>
+            <translation>selected-text translation</translation>
         </message>
     </context>
     <context>
@@ -2773,29 +2876,6 @@ Unavailable: %2</translation>
         <message>
             <source>the system rejected this shortcut (error %1)</source>
             <translation>the system rejected this shortcut (error %1)</translation>
-        </message>
-    </context>
-    <context>
-        <name>SmartSelectionPermissionWidget</name>
-        <message>
-            <source>Accessibility access is enabled for Smart selection.</source>
-            <translation>Accessibility access is enabled for Smart selection.</translation>
-        </message>
-        <message>
-            <source>Allow Accessibility access to select window elements. Smart selection currently selects whole windows.</source>
-            <translation>Allow Accessibility access to select window elements. Smart selection currently selects whole windows.</translation>
-        </message>
-        <message>
-            <source>Open System Settings</source>
-            <translation>Open System Settings</translation>
-        </message>
-        <message>
-            <source>Request Accessibility Access</source>
-            <translation>Request Accessibility Access</translation>
-        </message>
-        <message>
-            <source>Retry</source>
-            <translation>Retry</translation>
         </message>
     </context>
     <context>
