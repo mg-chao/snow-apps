@@ -11,17 +11,10 @@ globalMouseBinding(settings::SettingsGlobalMouseAction action,
         return std::nullopt;
     }
     for (const QString& key : combination.activationKeys) {
-        if (key == QStringLiteral("windows")) {
-            binding.modifiers |= Qt::MetaModifier;
-        } else if (key == QStringLiteral("ctrl")) {
-            binding.modifiers |= Qt::ControlModifier;
-        } else if (key == QStringLiteral("alt")) {
-            binding.modifiers |= Qt::AltModifier;
-        } else if (key == QStringLiteral("shift")) {
-            binding.modifiers |= Qt::ShiftModifier;
-        } else {
+        const auto modifier = globalMouseModifier(key);
+        if (!modifier)
             return std::nullopt;
-        }
+        binding.modifiers |= *modifier;
     }
     if (combination.mouseButton == QStringLiteral("left_drag")) {
         binding.button = Qt::LeftButton;
@@ -41,7 +34,7 @@ globalMouseBinding(settings::SettingsGlobalMouseAction action,
 
 GlobalMouseInputResult
 GlobalMouseGesture::beginButtonDrag(settings::SettingsGlobalMouseAction action,
-                                    const QPoint& position) {
+                                    const QPointF& position) {
     if (pending() || m_consumedButtons != Qt::NoButton) {
         return {};
     }
@@ -72,7 +65,8 @@ GlobalMouseInputResult GlobalMouseGesture::handle(const GlobalMouseInput& input,
         return result;
     }
     // Drain every swallowed press even if capture was cancelled before its release.
-    if (input.kind == GlobalMouseInput::Kind::Release && m_consumedButtons.testFlag(input.button)) {
+    if (input.kind == GlobalMouseInput::Kind::Release && input.button != Qt::NoButton &&
+        m_consumedButtons.testFlag(input.button)) {
         m_consumedButtons &= ~Qt::MouseButtons(input.button);
         result.consumed = true;
         if (active() && input.button == m_button) {
@@ -82,12 +76,17 @@ GlobalMouseInputResult GlobalMouseGesture::handle(const GlobalMouseInput& input,
         }
         return result;
     }
+    if (input.kind == GlobalMouseInput::Kind::Press && m_consumedButtons != Qt::NoButton) {
+        m_consumedButtons |= input.button;
+        result.consumed = true;
+        return result;
+    }
     if (active()) {
         result.consumed = true;
         if (input.kind == GlobalMouseInput::Kind::Press) {
             m_consumedButtons |= input.button;
         } else if (input.kind == GlobalMouseInput::Kind::Move) {
-            // Windows must still advance the cursor. The swallowed button sequence
+            // The system must still advance the cursor. The swallowed button sequence
             // prevents this motion from becoming a drag in the foreground application.
             result.consumed = false;
             result.event = GlobalMouseDragEvent{GlobalMouseDragEvent::Kind::Update, m_activeId,
@@ -125,8 +124,7 @@ GlobalMouseInputResult GlobalMouseGesture::handle(const GlobalMouseInput& input,
     m_button = input.button;
     m_consumedButtons |= m_button;
     result.consumed = true;
-    result.maskActivationKey =
-        input.modifiers.testFlag(Qt::MetaModifier) || input.modifiers.testFlag(Qt::AltModifier);
+    result.activationModifiers = match->modifiers;
     result.event = GlobalMouseDragEvent{GlobalMouseDragEvent::Kind::Begin, m_activeId, m_action,
                                         input.position};
     return result;

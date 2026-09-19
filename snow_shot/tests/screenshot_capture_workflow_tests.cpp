@@ -765,7 +765,7 @@ void phasedWorkflowOnlySignalsInitialReadinessOnce() {
     state.sessionId = 10;
     ScreenshotDisplaySession displays;
     CapturedDisplayModel display;
-    display.stableId = QStringLiteral("phased-test-display");
+    display.stableId = QStringLiteral("display:1");
     display.physicalRect = QRect(0, 0, 100, 100);
     display.image = QImage(100, 100, QImage::Format_RGBA8888);
     ScreenshotCaptureDisplayModelReconciler::applySnapshots(displays, {display});
@@ -788,13 +788,16 @@ void phasedWorkflowOnlySignalsInitialReadinessOnce() {
                                          interaction, selection, intelligent, callbacks});
     const QRectF bounds(0, 0, 100, 100), parent(0, 0, 80, 80), child(0, 0, 40, 40),
         leaf(0, 0, 20, 20);
-    workflow.handleInitialResult(true, {parent, bounds});
-    workflow.handleInitialResult(true, {parent, bounds});
-    workflow.handleRefinement({child, parent, bounds});
+    workflow.handleInitialResult(true, {bounds}, 1);
+    require(intelligent.currentSelection() == bounds,
+            "permission fallback must apply the window on the queried display");
+    workflow.handleInitialResult(true, {parent, bounds}, 1);
+    workflow.handleRefinement({child, parent, bounds}, 1);
     require(readyCount == 1 && updates == 3 && intelligent.currentSelection() == child,
             "refinement must update presentation without repeating initial readiness");
     intelligent.beginPress(QPointF(5, 5), child);
     workflow.handleRefinement({leaf, child, parent, bounds});
+    workflow.handleRefinement({bounds}, 1, true);
     require(updates == 3 && intelligent.takePressSelection() == child,
             "press must suppress late refinement");
     interaction.confirmSelection();
@@ -804,6 +807,9 @@ void phasedWorkflowOnlySignalsInitialReadinessOnce() {
     interaction.returnToSelectionMode(true);
     workflow.handleInitialResult(true, {parent, bounds});
     require(readyCount == 2, "a new capture must notify readiness again");
+    workflow.handleRefinement({bounds}, 1, true);
+    require(intelligent.currentSelection() == bounds && readyCount == 2,
+            "permission revocation during refinement must replace children with the window");
 }
 
 void phasedSelectionPreservesUserIntent() {

@@ -125,9 +125,12 @@ bool ScreenshotCaptureWorkflow::startRecapture() {
     m_state.captureCursor = m_context.captureCursor();
     m_recaptureInProgress = true;
     m_recaptureRequestId = ++m_nextRecaptureRequestId;
-    m_context.runtime.captureAsync(
-        ScreenshotCaptureRequest{m_recaptureRequestId, true, m_state.restoreOriginalScreenColors,
-                                 m_state.captureCursor, ScreenshotCapturePurpose::Recapture});
+    m_context.runtime.captureAsync(ScreenshotCaptureRequest{m_recaptureRequestId,
+                                                            true,
+                                                            m_state.restoreOriginalScreenColors,
+                                                            m_state.captureCursor,
+                                                            ScreenshotCapturePurpose::Recapture,
+                                                            {}});
     return true;
 }
 
@@ -370,9 +373,12 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
     // Once Snow Shot's windows are excluded, start native acquisition at
     // once. The capture worker can initialize lazy GPU resources while the
     // UI thread prepares selector and presentation state.
-    m_context.runtime.captureAsync(ScreenshotCaptureRequest{sessionId, m_state.layoutDirty,
+    m_context.runtime.captureAsync(ScreenshotCaptureRequest{sessionId,
+                                                            m_state.layoutDirty,
                                                             m_state.restoreOriginalScreenColors,
-                                                            m_state.captureCursor});
+                                                            m_state.captureCursor,
+                                                            ScreenshotCapturePurpose::Initial,
+                                                            {}});
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.async_dispatched");
     if (sessionId != m_state.sessionId || !m_state.captureInProgress) {
         return;

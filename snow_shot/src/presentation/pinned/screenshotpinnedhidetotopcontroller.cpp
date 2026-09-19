@@ -1,7 +1,7 @@
 #include "screenshotpinnedhidetotopcontroller.h"
 #include "screenshotpinnedpointerpresence.h"
+#include "pinnedwindowplatform.h"
 
-#include "screenshotpinnedwindownative.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "theme/theme_color_utils.h"
 #include "theme/theme_manager.h"
@@ -18,7 +18,6 @@
 #include <utility>
 
 namespace geometry = screenshot_pinned_hide_to_top;
-namespace native = screenshot_pinned_window_native;
 
 namespace {
 constexpr int kHandleBorderDevicePixels = 2;
@@ -64,14 +63,14 @@ class Handle final : public QWidget {
             qRound(mappedExtent.left()), qRound(mappedExtent.top()),
             qRound(mappedExtent.left() + mappedExtent.width()) - qRound(mappedExtent.left()),
             qRound(mappedExtent.top() + mappedExtent.height()) - qRound(mappedExtent.top()));
-#if defined(Q_OS_WIN) || defined(_WIN32)
         if (internalWinId() != 0) {
-            const QRect client = native::currentClientGeometry(internalWinId());
+            const auto* backend = snow_shot::presentation::configurePinnedAuxiliary(this);
+            const QRect client = backend->pixelGeometry();
             if (client.isValid() && !client.isEmpty()) {
                 deviceRect = deviceRect.intersected(QRect(QPoint(), client.size()));
             }
         }
-#endif
+
         if (deviceRect.isEmpty()) {
             return;
         }
@@ -113,7 +112,8 @@ geometry::Screen geometry::screenGeometry(QScreen* screen) {
     }
     const QRect physical = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
     const QRect logical = screen->geometry();
-    const QRect available = screen->availableGeometry();
+    const QRect available =
+        snow_shot::presentation::pinnedDisplayGeometry(*screen).usableBounds.toRect();
     const qreal dpi = screen->devicePixelRatio() > 0 ? screen->devicePixelRatio() : 1.0;
     return {screen,
             QRect(physical.left() + qRound((available.left() - logical.left()) * dpi),
@@ -184,6 +184,7 @@ ScreenshotPinnedHideToTopController::ScreenshotPinnedHideToTopController(QWidget
                 hideWindow();
             }
         });
+    snow_shot::presentation::configurePinnedAuxiliary(m_handle.get());
     m_handle->installEventFilter(this);
     retranslate();
     m_animation.setObjectName(QStringLiteral("screenshotPinnedHideToTopAnimation"));
@@ -216,7 +217,7 @@ ScreenshotPinnedHideToTopController::ScreenshotPinnedHideToTopController(QWidget
             m_handle.get(), qOverload<>(&QWidget::update));
     connect(qApp, &QGuiApplication::screenRemoved, this, [this](QScreen* removed) {
         if (active() && !m_shutdown && m_screen.screen == removed) {
-            QScreen* target = ScreenshotGeometryMapper::screenForPhysicalRect(shownGeometry());
+            QScreen* target = m_owner ? m_owner->screen() : QGuiApplication::primaryScreen();
             if (target == removed) {
                 target = QGuiApplication::primaryScreen();
             }
@@ -424,20 +425,21 @@ void ScreenshotPinnedHideToTopController::showHandle() {
     }
     handle->resize(std::max(1, qRound(hit.width() / m_screen.dpi)),
                    std::max(1, qRound(hit.height() / m_screen.dpi)));
-    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
-        if (!native::applyClientGeometry(handle->winId(), hit)) {
+    auto* backend = snow_shot::presentation::configurePinnedAuxiliary(handle);
+    handle->winId();
+    if (m_screen.screen) {
+        if (!backend->attach() || !backend->applyPixelGeometry(hit, m_screen.screen)) {
             exit();
             return;
         }
     } else {
+        // Synthetic display fixtures have no QScreen or native placement.
         handle->move(hit.topLeft());
     }
     handle->show();
-    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
-        if (!native::applyClientGeometry(handle->winId(), hit)) {
-            exit();
-            return;
-        }
+    if (m_screen.screen && !backend->applyPixelGeometry(hit, m_screen.screen)) {
+        exit();
+        return;
     }
     handle->raise();
     handle->update();
@@ -459,6 +461,8 @@ void ScreenshotPinnedHideToTopController::reveal() {
     }
     m_state = State::Revealed;
     refreshOpacity();
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa"))
+        m_owner->setAttribute(Qt::WA_ShowWithoutActivating, true);
     m_owner->show();
     m_owner->raise();
     m_handle->raise();

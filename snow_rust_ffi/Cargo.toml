@@ -17,7 +17,7 @@ snow-draw-engine-c = { path = "../snow_draw_engine_qt/crates/snow-draw-engine-c"
 snow-stitch-images-c = { path = "../snow-crates/crates/snow-stitch-images-c" }
 snow-selected-text-c = { path = "../snow-crates/crates/snow-selected-text-c" }
 
-[target.'cfg(windows)'.dependencies]
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 snow-ui-selector-c = { path = "../snow-crates/crates/snow-ui-selector-c" }
 
 [features]

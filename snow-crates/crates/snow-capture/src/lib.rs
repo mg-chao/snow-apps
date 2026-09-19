@@ -7,6 +7,7 @@ pub mod convert;
 mod cursor_compositor;
 pub mod cursor_snapshot;
 pub mod error;
+pub mod exclusions;
 pub mod frame;
 #[cfg(windows)]
 pub mod gpu;

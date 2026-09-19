@@ -39,9 +39,11 @@ class ScreenshotSelectorCoordinator final : public QObject, public ScreenshotSel
 
   signals:
     void refreshFinished(bool ok);
-    void initialResultReady(bool ok, QVector<QRectF> hitRects);
-    void refinementReady(QVector<QRectF> hitRects);
+    void initialResultReady(bool ok, QVector<QRectF> hitRects, quint32 displayId = 0);
+    void refinementReady(QVector<QRectF> hitRects, quint32 displayId = 0,
+                         bool permissionRequired = false);
     void targetChanged();
+    void accessibilityPermissionRequired();
 
   private:
     void startNextHitTest();
@@ -62,10 +64,12 @@ class ScreenshotSelectorCoordinator final : public QObject, public ScreenshotSel
     quint64 m_refreshRequestId = 0;
     quint64 m_hitTestRequestId = 0;
     bool m_ready = false;
+    bool m_permissionWarningShown = false;
     bool m_refreshInFlight = false;
     bool m_hitTestInFlight = false;
     bool m_hasPendingHitTestPoint = false;
     QPoint m_pendingHitTestPoint;
+    quint32 m_pendingDisplayId = 0;
     ScreenshotSelectorHitTestMode m_pendingHitTestMode = ScreenshotSelectorHitTestMode::Window;
     QVector<std::uintptr_t> m_lastExcludedHwnds;
 };

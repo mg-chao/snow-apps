@@ -341,8 +341,16 @@
             <translation>取消</translation>
         </message>
         <message>
+            <source>Command</source>
+            <translation>Command</translation>
+        </message>
+        <message>
             <source>Configure mouse combination for %1</source>
             <translation>為%1設定滑鼠組合</translation>
+        </message>
+        <message>
+            <source>Control</source>
+            <translation>控制</translation>
         </message>
         <message>
             <source>Ctrl</source>
@@ -367,6 +375,10 @@
         <message>
             <source>OK</source>
             <translation>確定</translation>
+        </message>
+        <message>
+            <source>Option</source>
+            <translation>選項</translation>
         </message>
         <message>
             <source>Right-button drag</source>
@@ -2662,6 +2674,17 @@
         </message>
     </context>
     <context>
+        <name>SettingsPageWidget</name>
+        <message>
+            <source>Open System Settings</source>
+            <translation>開啟系統設定</translation>
+        </message>
+        <message>
+            <source>Retry</source>
+            <translation>重試</translation>
+        </message>
+    </context>
+    <context>
         <name>ShortcutKeyRow</name>
         <message>
             <source>%1 (%2 s)</source>
@@ -2750,6 +2773,29 @@ Unavailable: %2</source>
         <message>
             <source>the system rejected this shortcut (error %1)</source>
             <translation>系統拒絕了此快速鍵（錯誤 %1）</translation>
+        </message>
+    </context>
+    <context>
+        <name>SmartSelectionPermissionWidget</name>
+        <message>
+            <source>Accessibility access is enabled for Smart selection.</source>
+            <translation>已為智慧選取啟用輔助使用權限。</translation>
+        </message>
+        <message>
+            <source>Allow Accessibility access to select window elements. Smart selection currently selects whole windows.</source>
+            <translation>允許輔助使用存取以選取視窗元素。智慧選取目前只能選取整個視窗。</translation>
+        </message>
+        <message>
+            <source>Open System Settings</source>
+            <translation>開啟系統設定</translation>
+        </message>
+        <message>
+            <source>Request Accessibility Access</source>
+            <translation>要求輔助使用權限</translation>
+        </message>
+        <message>
+            <source>Retry</source>
+            <translation>重試</translation>
         </message>
     </context>
     <context>
@@ -2926,8 +2972,32 @@ Unavailable: %2</source>
     <context>
         <name>snow_shot::presentation::GlobalMouseManager</name>
         <message>
+            <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Accessibility to use global mouse gestures.</source>
+            <translation>請在「系統設定 &gt; 隱私權與安全性 &gt; 輔助使用」中允許 Snow Shot，以使用全域滑鼠手勢。</translation>
+        </message>
+        <message>
+            <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Input Monitoring to use global mouse gestures.</source>
+            <translation>請在「系統設定 &gt; 隱私權與安全性 &gt; 輸入監控」中允許 Snow Shot，以使用全域滑鼠手勢。</translation>
+        </message>
+        <message>
+            <source>Checking global mouse permissions...</source>
+            <translation>正在檢查全域滑鼠權限…</translation>
+        </message>
+        <message>
+            <source>Global mouse gestures are paused while this session is inactive.</source>
+            <translation>目前階段作業處於非作用中狀態，全域滑鼠手勢已暫停。</translation>
+        </message>
+        <message>
+            <source>Global mouse gestures are ready.</source>
+            <translation>全域滑鼠手勢已就緒。</translation>
+        </message>
+        <message>
             <source>Global mouse input is unavailable (error %1).</source>
             <translation>全域滑鼠輸入無法使用（錯誤 %1）。</translation>
+        </message>
+        <message>
+            <source>Global mouse input is unavailable. Check permissions and retry.</source>
+            <translation>全域滑鼠輸入無法使用。請檢查權限後重試。</translation>
         </message>
     </context>
     <context>

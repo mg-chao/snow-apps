@@ -563,12 +563,28 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>更新已準備就緒。請開啟「關於」頁面，重新啟動並更新 Snow Shot。</translation>
         </message>
         <message>
+            <source>Feature unavailable</source>
+            <translation>功能暫時無法使用</translation>
+        </message>
+        <message>
             <source>Finish capturing, recording, or exporting before updating.</source>
             <translation>請先完成擷取、錄影或匯出，再進行更新。</translation>
         </message>
         <message>
+            <source>Pin to screen is not available on macOS yet.</source>
+            <translation>固定到螢幕功能尚未支援 macOS。</translation>
+        </message>
+        <message>
             <source>Restart and update</source>
             <translation>重新啟動並更新</translation>
+        </message>
+        <message>
+            <source>Screen recording is not available on macOS yet.</source>
+            <translation>螢幕錄影功能尚未支援 macOS。</translation>
+        </message>
+        <message>
+            <source>Screenshot is not available on macOS yet.</source>
+            <translation>截圖功能尚未支援 macOS。</translation>
         </message>
         <message>
             <source>Snow Shot will close and restart to install the update. Continue?</source>

@@ -1486,6 +1486,9 @@ dependencies = [
 name = "snow-ui-selector"
 version = "0.1.0"
 dependencies = [
+ "accessibility-sys",
+ "core-foundation",
+ "core-foundation-sys",
  "crossbeam-channel",
  "rstar",
  "windows",

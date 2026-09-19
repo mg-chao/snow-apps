@@ -46,6 +46,7 @@ class PhysicalCursor final {
     explicit PhysicalCursor(PhysicalCursorAccess access);
 
     [[nodiscard]] bool isSupported() const noexcept;
+    [[nodiscard]] bool canRead() const noexcept;
     [[nodiscard]] std::optional<QPoint> position() const;
     [[nodiscard]] PhysicalCursorMoveResult moveOnePixel(PhysicalCursorDirection direction) const;
 

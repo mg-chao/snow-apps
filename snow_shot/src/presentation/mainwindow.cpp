@@ -1,6 +1,9 @@
 #include "snow_shot/presentation/mainwindow.h"
 
 #include "snow_shot/platform/windows/windowchrome.h"
+#ifdef Q_OS_MACOS
+#include "snow_shot/platform/macos/applicationactivation.h"
+#endif
 #include "snow_shot/presentation/components/contentcardwidget.h"
 #include "snow_shot/presentation/components/maincontentheaderwidget.h"
 #include "snow_shot/presentation/components/sidebarwidget.h"
@@ -32,6 +35,7 @@ constexpr int MAIN_WINDOW_WIDTH = 900;
 constexpr int MAIN_WINDOW_HEIGHT = 556;
 constexpr int MAIN_WINDOW_MIN_WIDTH = 512;
 constexpr int MAIN_WINDOW_MIN_HEIGHT = 316;
+#ifndef Q_OS_MACOS
 constexpr int TITLE_BAR_BOTTOM_SHADOW_HEIGHT = 6;
 constexpr int TITLE_BAR_BOTTOM_SHADOW_ALPHA = 10;
 
@@ -59,6 +63,7 @@ class TitleBarBottomShadowWidget final : public QWidget {
         painter.fillRect(rect(), shadowGradient);
     }
 };
+#endif
 } // namespace
 
 MainWindow::MainWindow(const snow_shot::presentation::settings::SettingsRegistry& registry,
@@ -150,12 +155,14 @@ void MainWindow::buildUi() {
     root->setAutoFillBackground(true);
     setCentralWidget(root);
 
-    m_titleBarBottomShadow = new TitleBarBottomShadowWidget(root);
-    m_titleBarBottomShadow->hide();
-
     auto* rootLayout = new QVBoxLayout(root);
     rootLayout->setContentsMargins(0, 0, 0, 0);
     rootLayout->setSpacing(0);
+
+#ifndef Q_OS_MACOS
+    m_titleBarBottomShadow = new TitleBarBottomShadowWidget(root);
+    m_titleBarBottomShadow->setObjectName(QStringLiteral("titleBarBottomShadow"));
+    m_titleBarBottomShadow->hide();
 
     auto* titleBar = new TitleBarWidget(metric, root);
     rootLayout->addWidget(titleBar, 0);
@@ -163,6 +170,7 @@ void MainWindow::buildUi() {
     connect(titleBar->minimizeButton(), &QAbstractButton::clicked, this, &QWidget::showMinimized);
     connect(titleBar->closeButton(), &QAbstractButton::clicked, this, &QWidget::close);
     m_titleBar = titleBar;
+#endif
 
     auto* body = new QWidget(root);
     body->setAutoFillBackground(true);
@@ -278,10 +286,15 @@ void MainWindow::showAndActivate() {
     activateWindow();
 #ifdef Q_OS_WIN
     snow_shot::platform::windows::bringWindowToForeground(this);
+#elif defined(Q_OS_MACOS)
+    snow_shot::platform::macos::activateWindow(this);
 #endif
 }
 
 void MainWindow::syncTitleBarBottomShadowGeometry() {
+#ifdef Q_OS_MACOS
+    return;
+#else
     if (m_titleBar == nullptr || m_titleBarBottomShadow == nullptr) {
         return;
     }
@@ -296,6 +309,7 @@ void MainWindow::syncTitleBarBottomShadowGeometry() {
                                         root->width(), TITLE_BAR_BOTTOM_SHADOW_HEIGHT);
     m_titleBarBottomShadow->show();
     m_titleBarBottomShadow->raise();
+#endif
 }
 
 void MainWindow::applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) {

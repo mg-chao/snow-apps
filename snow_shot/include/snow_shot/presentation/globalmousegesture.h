@@ -3,7 +3,7 @@
 
 #include "snow_shot/presentation/globalmousetypes.h"
 
-#include <QPoint>
+#include <QPointF>
 #include <QVector>
 #include <Qt>
 #include <optional>
@@ -11,7 +11,7 @@
 namespace snow_shot::presentation {
 struct GlobalMouseBinding {
     settings::SettingsGlobalMouseAction action;
-    Qt::KeyboardModifiers modifiers{};
+    GlobalMouseModifiers modifiers{};
     Qt::MouseButton button = Qt::NoButton;
 };
 
@@ -27,9 +27,9 @@ struct GlobalMouseConfiguration {
 struct GlobalMouseInput {
     enum class Kind { Press, Move, Release, Cancel, Other };
     Kind kind = Kind::Other;
-    QPoint position;
+    QPointF position;
     Qt::MouseButton button = Qt::NoButton;
-    Qt::KeyboardModifiers modifiers{};
+    GlobalMouseModifiers modifiers{};
     bool injected = false;
     Qt::MouseButtons heldButtons{};
 };
@@ -40,19 +40,20 @@ struct GlobalMouseDragEvent {
     quint64 id = 0;
     settings::SettingsGlobalMouseAction action =
         settings::SettingsGlobalMouseAction::ScreenshotCopy;
-    QPoint position;
+    QPointF position;
+    GlobalMouseCoordinateSpace coordinateSpace = GlobalMouseCoordinateSpace::PhysicalPixels;
 };
 
 struct GlobalMouseInputResult {
     bool consumed = false;
-    bool maskActivationKey = false;
+    GlobalMouseModifiers activationModifiers;
     std::optional<GlobalMouseDragEvent> event;
 };
 
 class GlobalMouseGesture final {
   public:
     [[nodiscard]] GlobalMouseInputResult beginButtonDrag(settings::SettingsGlobalMouseAction action,
-                                                         const QPoint& position);
+                                                         const QPointF& position);
     [[nodiscard]] GlobalMouseInputResult handle(const GlobalMouseInput& input,
                                                 const GlobalMouseConfiguration& configuration);
     void cancel(quint64 id);
@@ -64,6 +65,9 @@ class GlobalMouseGesture final {
     }
     [[nodiscard]] bool needsMouseInput() const {
         return active() || m_consumedButtons != Qt::NoButton;
+    }
+    [[nodiscard]] bool ownsButton(Qt::MouseButton button) const {
+        return button != Qt::NoButton && m_consumedButtons.testFlag(button);
     }
     void reset() {
         const quint64 nextId = m_nextId;

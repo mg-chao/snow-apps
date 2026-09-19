@@ -102,6 +102,8 @@ pub struct DirectRecordingConfig {
     pub mouse_trail_rgba: [u8; 4],
     pub mouse_trail_duration_ms: u64,
     pub mouse_click_rgba: [u8; 4],
+    pub excluded_windows: Arc<[u32]>,
+    pub excluded_processes: Arc<[i32]>,
 }
 
 impl DirectRecordingConfig {
@@ -111,6 +113,11 @@ impl DirectRecordingConfig {
     }
 
     pub fn validate(&self) -> std::result::Result<(), String> {
+        if self.excluded_windows.len() > snow_capture::exclusions::MAX_EXCLUSIONS
+            || self.excluded_processes.len() > snow_capture::exclusions::MAX_EXCLUSIONS
+        {
+            return Err("capture exclusions exceed 4096 entries".into());
+        }
         if !(100..=2000).contains(&self.mouse_trail_duration_ms) {
             return Err("trail duration must be between 100 and 2000 ms".into());
         }
@@ -2899,6 +2906,8 @@ mod tests {
 
     fn config() -> DirectRecordingConfig {
         DirectRecordingConfig {
+            excluded_windows: Default::default(),
+            excluded_processes: Default::default(),
             loop_animated_images: true,
             region: RecordingRegion::new(0, 0, 4, 4),
             capture_backend: CaptureBackendKind::Auto,
@@ -2919,6 +2928,19 @@ mod tests {
             mouse_trail_duration_ms: 500,
             mouse_click_rgba: [0, 0, 0, 0],
         }
+    }
+
+    #[test]
+    fn direct_capture_preserves_exclusions_and_bounds_input() {
+        let mut value = config();
+        value.excluded_windows = vec![7, 9].into();
+        value.excluded_processes = vec![42].into();
+        let options = capture::capture_options(&value);
+        assert_eq!(options.excluded_windows, value.excluded_windows);
+        assert_eq!(options.excluded_processes, value.excluded_processes);
+        assert_eq!(options.workload, CaptureWorkload::Continuous);
+        value.excluded_windows = vec![7; 4097].into();
+        assert!(value.validate().is_err());
     }
 
     #[test]

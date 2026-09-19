@@ -19,4 +19,8 @@ struct GlobalMouseNativeApi {
 [[nodiscard]] std::unique_ptr<GlobalMouseBackend>
 createGlobalMouseBackend(GlobalMouseNativeApi api);
 } // namespace snow_shot::presentation::detail
+
+namespace snow_shot::presentation {
+[[nodiscard]] std::unique_ptr<GlobalMouseBackend> createWindowsGlobalMouseBackend();
+}
 #endif

@@ -124,7 +124,7 @@ void ScreenshotToolbarWindow::initializePalette() {
     connectSerialNumberCommands(*toolPalette);
     connectScrollingScreenshotCommands(*toolPalette);
     connect(toolPalette, &ScreenshotToolPalette::captureCursorToggled, this,
-            [this, toolPalette](bool enabled) {
+            [toolPalette](bool enabled) {
                 if (!snow_shot::storage::ScreenshotSettings().setCaptureCursor(enabled)) {
                     toolPalette->setCaptureCursorEnabled(
                         snow_shot::storage::ScreenshotSettings().captureCursor());

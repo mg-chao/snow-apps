@@ -360,3 +360,23 @@ supports `-StandaloneMedia` without requiring Qt and collects Cargo and vcpkg
 notices. Upstream objc2-family license sources are retained under `licenses/cargo`.
 Redistribution must include the generated notices and the applicable source/license
 obligations; local harness signing does not change the libraries' licenses.
+
+## Capture exclusion through common APIs
+
+The common `CaptureOptions` now carries owned `excluded_windows` and
+`excluded_processes` arrays. macOS propagates them to every display source of
+snapshots and continuous sessions, including region composition and stream
+recreation. Lists are bounded to 4096 entries and normalized; direct window
+capture rejects display exclusions before native acquisition. The common C
+interfaces use `SnowCaptureExclusions`, copy input arrays during creation, and
+carry the same filters through direct recording. Stream config version 2 and
+direct recording config version 6 include this structure. Recompile unversioned
+C desktop/monitor/region configuration callers after this layout change.
+
+Qt resolves NSView handles to NSWindow window numbers on the GUI thread. It passes
+successful exclusion IDs into recording and scrolling configs before workers
+start, preserves them across scrolling direction changes/export pauses, and
+restores original sharing policies on cleanup. Explicit ScreenCaptureKit filters
+are required: NSWindow sharing policy is not a system-wide exclusion guarantee.
+Native pixel acceptance and related commands are documented in
+`../../snow_shot/tests/window_capture_exclusion_tests.md`.

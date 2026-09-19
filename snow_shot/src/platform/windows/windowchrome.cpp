@@ -1,4 +1,5 @@
 #include "snow_shot/platform/windows/windowchrome.h"
+#include "snow_shot/platform/windowcaptureexclusion.h"
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 
@@ -436,5 +437,17 @@ bool handleNativeWindowEvent(QWidget* titleBar, void* message, qintptr* result) 
 }
 
 } // namespace snow_shot::platform::windows
+
+namespace snow_shot::platform {
+bool setWindowExcludedFromCapture(QWidget* window, bool excluded) {
+    return windows::setWindowExcludedFromCapture(window, excluded);
+}
+
+std::optional<std::uint32_t> captureWindowId(QWidget* window) {
+    Q_UNUSED(window);
+    // Windows uses display affinity; HWNDs are not macOS window IDs.
+    return std::nullopt;
+}
+} // namespace snow_shot::platform
 
 #endif

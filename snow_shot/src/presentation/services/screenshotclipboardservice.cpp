@@ -23,6 +23,40 @@
 #include <utility>
 
 namespace {
+#if !defined(Q_OS_WIN)
+// Keep canonical PNG bytes for native consumers and lazily provide Qt's image
+// representation when a local reader requests it. Publishing never decodes.
+class PngClipboardMimeData final : public QMimeData {
+  public:
+    explicit PngClipboardMimeData(QByteArray png) {
+        setData(QStringLiteral("image/png"), std::move(png));
+    }
+    QStringList formats() const override {
+        auto result = QMimeData::formats();
+        result.append(QStringLiteral("application/x-qt-image"));
+        return result;
+    }
+    bool hasFormat(const QString& mime) const override {
+        return mime == QStringLiteral("application/x-qt-image") || QMimeData::hasFormat(mime);
+    }
+
+  protected:
+    QVariant retrieveData(const QString& mime, QMetaType type) const override {
+        if (mime == QStringLiteral("application/x-qt-image")) {
+            if (m_image.isNull()) {
+                m_image = snow_shot::image_codec::decode(data(QStringLiteral("image/png")),
+                                                         snow::image::Format::png, "clipboard.png");
+            }
+            return m_image;
+        }
+        return QMimeData::retrieveData(mime, type);
+    }
+
+  private:
+    mutable QImage m_image;
+};
+#endif
+
 constexpr int kMaximumCommitAttempts = 5;
 constexpr qint64 kMaximumCommitDurationMs = 300;
 constexpr std::array<int, kMaximumCommitAttempts - 1> kCommitRetryDelaysMs{10, 25, 60, 100};
@@ -430,8 +464,7 @@ ScreenshotClipboardService::commit(QClipboard* clipboard, QObject* receiver,
         if (!sharedPayload->isValid()) {
             return ClipboardPublishAttempt{ScreenshotClipboardCommitFailure::InvalidPayload, 0};
         }
-        auto* mime = new QMimeData();
-        mime->setData(QStringLiteral("image/png"), sharedPayload->m_pngBytes);
+        auto* mime = new PngClipboardMimeData(sharedPayload->m_pngBytes);
         guardedClipboard->setMimeData(mime, QClipboard::Clipboard);
         sharedPayload->reset();
         return ClipboardPublishAttempt{};
@@ -508,8 +541,7 @@ bool ScreenshotClipboardService::publish(QClipboard* clipboard,
         qWarning("Screenshot clipboard is unavailable");
         return false;
     }
-    auto* mime = new QMimeData();
-    mime->setData(QStringLiteral("image/png"), payload.m_pngBytes);
+    auto* mime = new PngClipboardMimeData(payload.m_pngBytes);
     clipboard->setMimeData(mime, QClipboard::Clipboard);
     return true;
 #endif

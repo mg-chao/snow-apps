@@ -9,7 +9,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{BOOL, Result};
 
-use crate::geometry::{intersect_rect, is_empty, same_rect};
+use crate::windows::geometry::{intersect_rect, is_empty, same_rect};
 
 /// Enumerate visible, non-minimized top-level selection candidates in Z order.
 /// Mouse-through layered windows are intentionally ineligible, even when they

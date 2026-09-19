@@ -18,9 +18,18 @@ class GlobalMouseBackend {
     virtual void configure(const GlobalMouseConfiguration& configuration) = 0;
     virtual void cancel(quint64 id) = 0;
     virtual void beginButtonDrag(settings::SettingsGlobalMouseAction action) = 0;
+    virtual GlobalMousePermissionState permissionState() const {
+        return {GlobalMousePermissionState::Status::Ready, true, true, true};
+    }
+    using StateHandler = std::function<void(GlobalMousePermissionState)>;
+    virtual void setStateHandler(StateHandler) {}
+    virtual void refreshPermission() {}
+    virtual void requestPermission() {}
+    virtual void openPermissionSettings() {}
 };
 
 [[nodiscard]] std::unique_ptr<GlobalMouseBackend> createGlobalMouseBackend();
+[[nodiscard]] QString globalMousePermissionMessage(const GlobalMousePermissionState& state);
 
 class GlobalMouseManager final : public QObject {
     Q_OBJECT
@@ -34,10 +43,15 @@ class GlobalMouseManager final : public QObject {
     void setCaptureAvailable(bool available);
     void cancelGesture(quint64 id);
     void beginButtonDrag(settings::SettingsGlobalMouseAction action);
+    [[nodiscard]] GlobalMousePermissionState permissionState() const;
+    void refreshPermission();
+    void requestPermission();
+    void openPermissionSettings();
 
   signals:
     void dragEvent(const snow_shot::presentation::GlobalMouseDragEvent& event);
     void operationFailed(const QString& message);
+    void permissionStateChanged(snow_shot::presentation::GlobalMousePermissionState state);
 
   private:
     struct Impl;

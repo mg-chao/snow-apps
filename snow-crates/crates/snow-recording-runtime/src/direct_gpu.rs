@@ -711,6 +711,8 @@ mod tests {
 
     fn config(path: PathBuf, backend: CaptureBackendKind) -> DirectRecordingConfig {
         DirectRecordingConfig {
+            excluded_windows: Default::default(),
+            excluded_processes: Default::default(),
             loop_animated_images: true,
             region: RecordingRegion {
                 x: 0,

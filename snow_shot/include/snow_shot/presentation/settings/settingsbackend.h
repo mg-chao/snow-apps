@@ -12,6 +12,7 @@
 
 namespace snow_shot::presentation {
 class GlobalShortcutManager;
+class GlobalMouseManager;
 namespace settings {
 
 struct SettingsRuntimeOption {
@@ -137,6 +138,13 @@ class SettingsBackend : public QObject {
         return false;
     }
 
+    virtual GlobalMousePermissionState globalMousePermissionState() const {
+        return {GlobalMousePermissionState::Status::Ready, true, true, true};
+    }
+    virtual void requestGlobalMousePermission() {}
+    virtual void openGlobalMousePermissionSettings() {}
+    virtual void refreshGlobalMousePermission() {}
+
     [[nodiscard]] virtual SettingsActionState actionState(SettingsActionBinding binding) const = 0;
     [[nodiscard]] virtual bool triggerAction(SettingsActionBinding binding,
                                              const QString& filePath = {}) = 0;
@@ -160,6 +168,7 @@ class SettingsBackend : public QObject {
   signals:
     void operationMessage(const QString& message, bool warning);
     void synchronized();
+    void globalMousePermissionChanged();
     void actionFinished(snow_shot::presentation::settings::SettingsActionBinding action,
                         bool success, const QString& error);
     void
@@ -171,7 +180,12 @@ class BuiltInSettingsBackend final : public SettingsBackend {
   public:
     explicit BuiltInSettingsBackend(
         ::snow_shot::presentation::GlobalShortcutManager& shortcutManager,
-        QObject* parent = nullptr);
+        QObject* parent = nullptr, GlobalMouseManager* mouseManager = nullptr);
+
+    GlobalMousePermissionState globalMousePermissionState() const override;
+    void requestGlobalMousePermission() override;
+    void openGlobalMousePermissionSettings() override;
+    void refreshGlobalMousePermission() override;
 
     [[nodiscard]] QVariant selectValue(SettingsSelectBinding binding) const override;
     [[nodiscard]] QVector<SettingsRuntimeOption>
@@ -241,6 +255,7 @@ class BuiltInSettingsBackend final : public SettingsBackend {
 
   private:
     ::snow_shot::presentation::GlobalShortcutManager& m_shortcutManager;
+    GlobalMouseManager* m_mouseManager = nullptr;
     bool m_copyLogBusy = false;
     bool m_configurationBusy = false;
 };

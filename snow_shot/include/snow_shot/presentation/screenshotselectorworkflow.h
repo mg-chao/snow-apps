@@ -49,11 +49,12 @@ class ScreenshotSelectorWorkflow final {
 
     [[nodiscard]] bool updateSelectionAt(const QPoint& physicalPoint);
     [[nodiscard]] bool requestHitTest(const QPoint& physicalPoint);
-    void handleInitialResult(bool ok, const QVector<QRectF>& hitRects);
-    void handleRefinement(const QVector<QRectF>& hitRects);
+    void handleInitialResult(bool ok, const QVector<QRectF>& hitRects, quint32 displayId = 0);
+    void handleRefinement(const QVector<QRectF>& hitRects, quint32 displayId = 0,
+                          bool permissionRequired = false);
     void handleTargetChanged();
 
-    void applyHitPath(const QVector<QRectF>& hitRects);
+    void applyHitPath(const QVector<QRectF>& hitRects, quint32 displayId = 0);
     void clearSelection();
     [[nodiscard]] bool returnToSelection(const QPoint& physicalPoint);
 

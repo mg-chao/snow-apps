@@ -521,6 +521,7 @@ SettingsItemDefinition screenshotApiModeItem() {
     };
 }
 
+#ifndef Q_OS_MACOS
 SettingsItemDefinition windowElementApiItem() {
     SettingsSelectDefinition payload;
     payload.binding = SettingsSelectBinding::WindowElementApi;
@@ -538,6 +539,8 @@ SettingsItemDefinition windowElementApiItem() {
         payload,
     };
 }
+
+#endif
 
 SettingsItemDefinition historyEnabledItem() {
     return {
@@ -2240,7 +2243,10 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot")),
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screen capture settings")),
                     SettingsSectionReset::ScreenshotCapture,
-                    {screenshotApiModeItem(), windowElementApiItem(),
+                    {screenshotApiModeItem(),
+#ifndef Q_OS_MACOS
+                     windowElementApiItem(),
+#endif
                      screenshotRestoreOriginalScreenColorsItem(), screenshotCaptureCursorItem(),
                      screenshotCaptureUiInScrollingScreenshotItem()},
                 },

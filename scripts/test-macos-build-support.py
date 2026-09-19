@@ -104,6 +104,13 @@ if name == 'cmake' and '--preset' in sys.argv and os.environ.get('FAIL_CONFIGURE
                                     '--args', '--example', 'a path'])
         self.assertIn('--install', calls[-2])
 
+    def test_deployment_uses_the_matching_vcpkg_library_configuration(self):
+        deployment = (ROOT / 'cmake/DeploySnowShotMacOS.cmake.in').read_text()
+        self.assertIn('if(_snow_install_config STREQUAL "debug")', deployment)
+        self.assertIn('set(_snow_vcpkg_library_dir "@SNOW_FFMPEG_ROOT@/debug/lib")', deployment)
+        self.assertIn('set(_snow_vcpkg_library_dir "@SNOW_FFMPEG_ROOT@/lib")', deployment)
+        self.assertEqual(deployment.count('"-libpath=${_snow_vcpkg_library_dir}"'), 1)
+
 
 @unittest.skipUnless(os.environ.get("SNOW_TEST_MACOS_BUNDLE") == "1",
                      "Set SNOW_TEST_MACOS_BUNDLE=1 for the native deployment fixture")

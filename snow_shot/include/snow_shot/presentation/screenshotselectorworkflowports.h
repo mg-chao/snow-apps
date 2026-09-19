@@ -22,7 +22,8 @@ enum class ScreenshotSelectorStopReason {
     ProviderTimeout,
     ProviderFailure,
     Cancelled,
-    TraversalLimit
+    TraversalLimit,
+    PermissionRequired
 };
 struct ScreenshotSelectorResult {
     quint64 epoch = 0;
@@ -35,6 +36,7 @@ struct ScreenshotSelectorResult {
     bool ok = false;
     bool canRefine = false;
     quint64 elapsedUs = 0;
+    quint32 displayId = 0;
     QVector<QRectF> rects;
 };
 

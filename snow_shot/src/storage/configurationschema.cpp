@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/globalmousetypes.h"
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/customaimodelconfiguration.h"
 
@@ -289,15 +290,27 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
     {QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window"), false,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("global_mouse/screenshot_copy"),
+#ifdef Q_OS_MACOS
+     QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("command")}},
+#else
      QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("windows")}},
+#endif
                  {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}},
      ConfigurationValueKind::Structured},
     {QStringLiteral("global_mouse/screenshot_fixed"),
+#ifdef Q_OS_MACOS
+     QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("command")}},
+#else
      QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("windows")}},
+#endif
                  {QStringLiteral("mouse_button"), QStringLiteral("wheel_drag")}},
      ConfigurationValueKind::Structured},
     {QStringLiteral("global_mouse/screenshot_ocr"),
+#ifdef Q_OS_MACOS
+     QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("command")}},
+#else
      QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("windows")}},
+#endif
                  {QStringLiteral("mouse_button"), QStringLiteral("right_drag")}},
      ConfigurationValueKind::Structured},
     {QStringLiteral("global_mouse/screenshot_translation"), QJsonObject(),
@@ -1442,8 +1455,7 @@ ConfigurationNormalization normalizeGlobalMouseCombination(const QJsonValue& val
         }
     }
     const QString mouseButton = object.value(QStringLiteral("mouse_button")).toString().trimmed();
-    static const QSet<QString> activationKeys{QStringLiteral("windows"), QStringLiteral("ctrl"),
-                                              QStringLiteral("alt"), QStringLiteral("shift")};
+    static const QStringList activationKeys = presentation::globalMouseActivationKeys();
     static const QSet<QString> mouseButtons{
         QStringLiteral("left_drag"), QStringLiteral("right_drag"), QStringLiteral("wheel_drag"),
         QStringLiteral("side_button_1_drag"), QStringLiteral("side_button_2_drag")};

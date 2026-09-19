@@ -7,9 +7,12 @@
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
 
+#if defined(Q_OS_WIN) || defined(_WIN32) || defined(Q_OS_MACOS)
+#include "snow_shot/platform/windowcaptureexclusion.h"
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include "snow_shot/platform/windows/windowchrome.h"
 #include <qt_windows.h>
+#endif
 #endif
 
 #include "adaptivescrollingcapturecadence.h"
@@ -102,7 +105,6 @@ struct ScreenshotScrollingCaptureController::Impl {
 
     ~Impl() {
         stop(false);
-        shutdownWorker();
     }
 
     bool start(QRect selection, ScreenshotScrollingRecognitionMode requestedMode) {
@@ -178,10 +180,10 @@ struct ScreenshotScrollingCaptureController::Impl {
             canvasSelection.translated(context.geometry.canvasOrigin());
         autoScroller.start(requestPhysicalSelection, mode);
         const AdaptiveScrollCadence::Config requestCadenceConfig = cadenceConfig;
-        pipeline->begin(
-            requestGeneration, requestSelection.size(), mode,
-            nativeScrollingSource(requestPhysicalSelection, restoreOriginalColors, generation),
-            requestCadenceConfig);
+        pipeline->begin(requestGeneration, requestSelection.size(), mode,
+                        nativeScrollingSource(requestPhysicalSelection, restoreOriginalColors,
+                                              exclusionWindowIds, generation),
+                        requestCadenceConfig);
         return true;
     }
 
@@ -229,10 +231,10 @@ struct ScreenshotScrollingCaptureController::Impl {
         thumbnailHost->beginScrollingThumbnail(
             logicalSelection.translated(-thumbnailHost->geometry().topLeft()), mode);
 
-        pipeline->begin(
-            requestGeneration, requestSelection.size(), mode,
-            nativeScrollingSource(requestPhysicalSelection, restoreOriginalColors, generation),
-            requestCadenceConfig);
+        pipeline->begin(requestGeneration, requestSelection.size(), mode,
+                        nativeScrollingSource(requestPhysicalSelection, restoreOriginalColors,
+                                              exclusionWindowIds, generation),
+                        requestCadenceConfig);
         return true;
     }
 
@@ -273,13 +275,13 @@ struct ScreenshotScrollingCaptureController::Impl {
         } else if (thumbnailHost != nullptr) {
             thumbnailHost->clearScrollingThumbnail();
         }
-        restoreScrollingWindowsCaptureVisibility();
         thumbnailHost = nullptr;
 
         // Scrolling workers are session-scoped.  Tear them down after invalidating all
         // in-flight work so the stitch session and its native resources are released between
         // captures; the next start() recreates them on demand.
         shutdownWorker();
+        restoreScrollingWindowsCaptureVisibility();
     }
 
     void detachPendingResultRequest() {
@@ -290,7 +292,7 @@ struct ScreenshotScrollingCaptureController::Impl {
     }
 
     bool excludeScrollingWindowsFromCapture(ScreenshotOverlayWindow* overlay) {
-#if defined(Q_OS_WIN) || defined(_WIN32)
+#if defined(Q_OS_WIN) || defined(_WIN32) || defined(Q_OS_MACOS)
         ScreenshotToolbarWindow* const toolbar = context.overlayCoordinator.toolbar();
         if (context.captureUiInScrollingScreenshot() ||
             QCoreApplication::arguments().contains(QStringLiteral("--e2e-allow-overlay-capture"))) {
@@ -301,6 +303,7 @@ struct ScreenshotScrollingCaptureController::Impl {
         }
         captureExclusion.exclude(overlay);
         captureExclusion.exclude(toolbar);
+        exclusionWindowIds = captureExclusion.windowIds(snow_shot::platform::captureWindowId);
 #else
         Q_UNUSED(overlay);
 #endif
@@ -309,6 +312,7 @@ struct ScreenshotScrollingCaptureController::Impl {
 
     void restoreScrollingWindowsCaptureVisibility() {
         captureExclusion.restore();
+        exclusionWindowIds.clear();
     }
 
     void ensureWorker() {
@@ -336,6 +340,15 @@ struct ScreenshotScrollingCaptureController::Impl {
         ++generation;
         pendingResultRequestId.reset();
         pipeline->reset(generation);
+        // Leave the pipeline's error callback before destroying it. stop() joins
+        // capture before restoring native sharing policies, including failed starts.
+        QMetaObject::invokeMethod(
+            &owner,
+            [this, failedGeneration = generation]() {
+                if (active && generation == failedGeneration)
+                    stop(true);
+            },
+            Qt::QueuedConnection);
     }
 
     void handleFrame(ScrollingPipelineFrame result) {
@@ -463,7 +476,7 @@ struct ScreenshotScrollingCaptureController::Impl {
             pipeline->resume(
                 generation, canvasSelection.size(),
                 nativeScrollingSource(canvasSelection.translated(context.geometry.canvasOrigin()),
-                                      restoreOriginalColors, generation),
+                                      restoreOriginalColors, exclusionWindowIds, generation),
                 cadenceConfig);
         }
     }
@@ -497,13 +510,20 @@ struct ScreenshotScrollingCaptureController::Impl {
     bool restoreOriginalColors = false;
     std::unique_ptr<ScreenshotScrollingPipeline> pipeline;
     QPointer<ScreenshotOverlayWindow> thumbnailHost;
+    QVector<std::uint32_t> exclusionWindowIds;
     snow_shot::presentation::WindowCaptureExclusion captureExclusion{
-#if defined(Q_OS_WIN) || defined(_WIN32)
+#if defined(Q_OS_WIN) || defined(_WIN32) || defined(Q_OS_MACOS)
         [this](QWidget* window, bool excluded) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
             SetLastError(ERROR_SUCCESS);
             const bool succeeded =
-                snow_shot::platform::windows::setWindowExcludedFromCapture(window, excluded);
+                snow_shot::platform::setWindowExcludedFromCapture(window, excluded);
             const DWORD error = succeeded ? ERROR_SUCCESS : GetLastError();
+#else
+            const bool succeeded =
+                snow_shot::platform::setWindowExcludedFromCapture(window, excluded);
+            const qint64 error = 0;
+#endif
             logScrollingEvent("scrolling.window_exclusion", exclusionGeneration,
                               {{QStringLiteral("status"), excluded},
                                {QStringLiteral("outcome"),

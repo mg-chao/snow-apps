@@ -178,3 +178,11 @@ The first run uses a fresh temporary cache and an unreachable download proxy. Th
 second acquires another model; the third proves cache reuse without network access.
 Run with `DYLD_LIBRARY_PATH`, `DYLD_FALLBACK_LIBRARY_PATH`, and `ORT_DYLIB_PATH` unset.
 Also launch the packaged app through Finder and check its screenshot-to-OCR flow.
+
+## Pin to Screen
+
+See [macOS pinned-window validation](snow_shot/tests/macos_pinned_windows.md) for
+placement semantics, targeted tests, and the hardware qualification checklist.
+Pinned images use all Spaces and preserve their backing-pixel size across display
+changes; toolbars retain their logical size. Pinned persistence now uses format 2
+in `pinned_windows_v2`, leaving previous-version data untouched.

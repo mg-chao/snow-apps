@@ -11,9 +11,9 @@ use windows::Win32::UI::Accessibility::{
 };
 use windows::core::Result;
 
-use crate::geometry::*;
-use crate::spatial::*;
-use crate::window;
+use crate::windows::geometry::*;
+use crate::windows::spatial::*;
+use crate::windows::window;
 use crate::{ElementRect, QueryControl, QueryResult, StopReason, WindowSnapshot};
 use cache::{Batch, Candidate, Provider, QueryClock, WindowTree};
 
@@ -54,16 +54,24 @@ impl UiaBackend {
     }
 
     pub(crate) fn snapshot(&self) -> WindowSnapshot {
-        WindowSnapshot(self.windows.iter().map(|w| (w.hwnd, w.bounds)).collect())
+        WindowSnapshot {
+            windows: self
+                .windows
+                .iter()
+                .map(|w| (w.hwnd as usize, w.bounds.into()))
+                .collect(),
+        }
     }
 
     pub(crate) fn from_snapshot(snapshot: &WindowSnapshot) -> Result<Self> {
         let mut entries = Vec::new();
         let windows = snapshot
-            .0
+            .windows
             .iter()
             .enumerate()
             .map(|(i, &(hwnd, bounds))| {
+                let bounds: RECT = bounds.into();
+                let hwnd = hwnd as isize;
                 entries.push(IndexedWindow {
                     envelope: rect_to_aabb(bounds),
                     cache_index: i,
@@ -273,7 +281,7 @@ fn collect_window_snapshot(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::com::ComApartment;
+    use crate::windows::com::ComApartment;
 
     static UIA_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -326,7 +334,7 @@ mod tests {
         };
         let snapshot = source.snapshot();
         let mut refinement = UiaBackend::from_snapshot(&snapshot).unwrap();
-        assert_eq!(refinement.snapshot().0, snapshot.0);
+        assert_eq!(refinement.snapshot().windows, snapshot.windows);
         assert_eq!(refinement.windows[0].hwnd, 11);
         assert_eq!(refinement.windows[1].hwnd, 33);
         let result = refinement
@@ -337,7 +345,7 @@ mod tests {
                 &mut |_| panic!("window lookup must not publish progress"),
             )
             .unwrap();
-        assert_eq!(result.path.unwrap()[0].rect, bounds());
+        assert_eq!(result.path.unwrap()[0].rect, bounds().into());
     }
 
     #[test]

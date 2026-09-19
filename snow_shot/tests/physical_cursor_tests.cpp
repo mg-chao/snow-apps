@@ -103,6 +103,12 @@ void operatingSystemResolutionIsReadBack() {
 }
 
 void failuresHaveDistinctOutcomes() {
+    PhysicalCursor readOnly(
+        PhysicalCursorAccess{true, [] { return std::optional<QPoint>(QPoint(-10, 20)); }, {}});
+    require(readOnly.canRead() && !readOnly.isSupported() &&
+                readOnly.position() == QPoint(-10, 20) &&
+                !readOnly.moveOnePixel(PhysicalCursorDirection::Right).commandApplied(),
+            "pointer reading must remain available without a cursor writer");
     PhysicalCursor unsupported;
 #if defined(Q_OS_WIN) || defined(_WIN32)
     require(unsupported.isSupported(), "the Windows physical cursor backend is unavailable");
@@ -110,7 +116,7 @@ void failuresHaveDistinctOutcomes() {
     require(!unsupported.isSupported() &&
                 unsupported.moveOnePixel(PhysicalCursorDirection::Up).status ==
                     PhysicalCursorMoveStatus::Unsupported,
-            "a non-Windows build exposed logical cursor movement as physical movement");
+            "a process without a native GUI exposed cursor movement");
 #endif
 
     PhysicalCursor readFailure(PhysicalCursorAccess{

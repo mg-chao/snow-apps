@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/components/actionrow.h"
 #include "snow_shot/presentation/components/contentcardwidget.h"
+#include "snow_shot/presentation/components/titlebarwidget.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/mainwindow.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
@@ -57,6 +58,15 @@ void mainWindowTitlesKeepSmoothRendering() {
     MainWindow window(registry, session);
     window.show();
     flushEvents();
+#ifdef Q_OS_MACOS
+    require(window.findChild<TitleBarWidget*>() == nullptr,
+            "macOS must use the native title bar instead of an in-content title bar");
+    require(window.findChild<QWidget*>(QStringLiteral("titleBarBottomShadow")) == nullptr,
+            "macOS must not retain the custom title-bar shadow");
+#else
+    require(window.findChild<TitleBarWidget*>() != nullptr,
+            "non-macOS windows must retain the existing custom title bar");
+#endif
     auto* card = window.findChild<ContentCardWidget*>();
     require(card != nullptr, "main window content exists");
     const QString shortcutRoute = card->currentRoute();

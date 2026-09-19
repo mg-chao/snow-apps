@@ -1,3 +1,4 @@
+#include "snow_shot/platform/windowcaptureexclusion.h"
 #include "snow_shot/presentation/screenshotoverlaycoordinator.h"
 
 #include "snow_shot/presentation/screenshotdisplaysession.h"
@@ -549,7 +550,12 @@ ScreenshotOverlayCoordinator::excludedHwnds(const ScreenshotDisplaySession& disp
         // native surface was deliberately retired at the end of a capture.
         const WId id = widget->internalWinId();
         if (id != 0) {
+#ifdef Q_OS_MACOS
+            if (const auto windowId = snow_shot::platform::captureWindowId(widget))
+                hwnds.push_back(*windowId);
+#else
             hwnds.push_back(static_cast<std::uintptr_t>(id));
+#endif
         }
     };
 

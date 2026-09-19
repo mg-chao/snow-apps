@@ -1,6 +1,7 @@
 #include "snow_shot/storage/storageusagetracker.h"
 
 #include "snow_shot/storage/storagelogging.h"
+#include "pinnedwindowstorageconstants_p.h"
 
 #include <QDir>
 #include <QFile>
@@ -19,7 +20,6 @@ namespace {
 // services: capturehistoryrepository.cpp, pinnedwindowrepository.cpp, and the
 // OCR asset cache root (configurationDirectory()/assets).
 constexpr auto kHistoryDirectoryName = "capture_history";
-constexpr auto kPinnedWindowDirectoryName = "pinned_windows";
 constexpr auto kAssetDirectoryName = "assets";
 constexpr auto kThumbnailSuffix = "png";
 
@@ -200,7 +200,7 @@ AppStorageUsage StorageUsageTracker::scanNow() {
             if (!historyProvided) {
                 scanned.historyBytes += bytes;
             }
-        } else if (name == QLatin1String(kPinnedWindowDirectoryName)) {
+        } else if (name == QLatin1String(pinned_window_storage::kDirectoryName)) {
             scanned.pinnedWindowBytes += bytes;
         } else if (name == QLatin1String(kAssetDirectoryName)) {
             scanned.ocrAssetBytes += bytes;

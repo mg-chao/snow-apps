@@ -16,7 +16,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_CREATE, WM_DESTROY, WM_NCCREATE, WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_LAYERED,
     WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP, WS_VISIBLE,
 };
-use windows::core::{Result, w};
+use windows::core::w;
 
 const TIMER_ID: usize = 1;
 const TIMER_INTERVAL_MS: u32 = 30;
@@ -34,12 +34,12 @@ struct AppState {
     w_key_was_down: bool,
 }
 
-fn main() -> Result<()> {
+fn main() -> snow_ui_selector::SelectorResult<()> {
     let backend = parse_backend_from_args();
     run_overlay(backend)
 }
 
-fn run_overlay(backend: AccessibilityBackend) -> Result<()> {
+fn run_overlay(backend: AccessibilityBackend) -> snow_ui_selector::SelectorResult<()> {
     let mut selector = ElementRegionService::with_backend(backend)?;
     selector.refresh()?;
 
@@ -95,7 +95,7 @@ fn run_overlay(backend: AccessibilityBackend) -> Result<()> {
             unsafe {
                 drop(Box::from_raw(state_ptr));
             }
-            return Err(err);
+            return Err(err.into());
         }
     };
 
@@ -226,7 +226,11 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                         state
                             .selector
                             .query(
-                                cursor,
+                                snow_ui_selector::Point {
+                                    x: cursor.x,
+                                    y: cursor.y,
+                                    display_id: 0,
+                                },
                                 state.hit_test_mode,
                                 &QueryControl::foreground(),
                                 &mut |_| {},

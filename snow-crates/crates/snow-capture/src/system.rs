@@ -10,13 +10,18 @@ use crate::error::CaptureResult;
 use crate::monitor::MonitorId;
 use crate::region::MonitorLayout;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct CaptureOptions {
     pub backend_tuning: crate::tuning::BackendTuning,
     pub capture_retry_count: usize,
     pub workload: CaptureWorkload,
     /// Packed 8-bit pixel layout returned by capture sessions.
     pub output_pixel_format: CapturePixelFormat,
+    /// Session-scoped macOS ScreenCaptureKit exclusions. Other backends ignore
+    /// these filters; display and region targets accept them while independent
+    /// window targets reject them.
+    pub excluded_windows: Arc<[u32]>,
+    pub excluded_processes: Arc<[i32]>,
     /// Record a per-stage timing breakdown inside participating backends and
     /// attach it to each frame's metadata (`FrameMetadata::stage_timings`).
     ///
@@ -36,6 +41,8 @@ impl Default for CaptureOptions {
             capture_retry_count: 1,
             workload: CaptureWorkload::Snapshot,
             output_pixel_format: CapturePixelFormat::Rgba8,
+            excluded_windows: Arc::from(Vec::<u32>::new()),
+            excluded_processes: Arc::from(Vec::<i32>::new()),
             #[cfg(feature = "stage-timing")]
             record_stage_timings: false,
         }

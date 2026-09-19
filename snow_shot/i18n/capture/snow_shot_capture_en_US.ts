@@ -50,6 +50,10 @@
             <translation>Save screenshot</translation>
         </message>
         <message>
+            <source>Smart selection is using window mode. Enable Accessibility access in Screenshot settings to select window elements.</source>
+            <translation>Smart selection is using window mode. Enable Accessibility access in Screenshot settings to select window elements.</translation>
+        </message>
+        <message>
             <source>The clipboard content could not be pinned</source>
             <translation>The clipboard content could not be pinned</translation>
         </message>

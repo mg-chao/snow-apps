@@ -341,8 +341,16 @@
             <translation>取消</translation>
         </message>
         <message>
+            <source>Command</source>
+            <translation>Command</translation>
+        </message>
+        <message>
             <source>Configure mouse combination for %1</source>
             <translation>为%1配置鼠标组合</translation>
+        </message>
+        <message>
+            <source>Control</source>
+            <translation>控制</translation>
         </message>
         <message>
             <source>Ctrl</source>
@@ -367,6 +375,10 @@
         <message>
             <source>OK</source>
             <translation>确定</translation>
+        </message>
+        <message>
+            <source>Option</source>
+            <translation>选项</translation>
         </message>
         <message>
             <source>Right-button drag</source>
@@ -2662,6 +2674,17 @@
         </message>
     </context>
     <context>
+        <name>SettingsPageWidget</name>
+        <message>
+            <source>Open System Settings</source>
+            <translation>打开系统设置</translation>
+        </message>
+        <message>
+            <source>Retry</source>
+            <translation>重试</translation>
+        </message>
+    </context>
+    <context>
         <name>ShortcutKeyRow</name>
         <message>
             <source>%1 (%2 s)</source>
@@ -2750,6 +2773,29 @@ Unavailable: %2</source>
         <message>
             <source>the system rejected this shortcut (error %1)</source>
             <translation>系统拒绝了此快捷键（错误 %1）</translation>
+        </message>
+    </context>
+    <context>
+        <name>SmartSelectionPermissionWidget</name>
+        <message>
+            <source>Accessibility access is enabled for Smart selection.</source>
+            <translation>已为智能选择启用辅助功能权限。</translation>
+        </message>
+        <message>
+            <source>Allow Accessibility access to select window elements. Smart selection currently selects whole windows.</source>
+            <translation>允许辅助功能访问以选择窗口元素。智能选择目前只能选择整个窗口。</translation>
+        </message>
+        <message>
+            <source>Open System Settings</source>
+            <translation>打开系统设置</translation>
+        </message>
+        <message>
+            <source>Request Accessibility Access</source>
+            <translation>请求辅助功能权限</translation>
+        </message>
+        <message>
+            <source>Retry</source>
+            <translation>重试</translation>
         </message>
     </context>
     <context>
@@ -2926,8 +2972,32 @@ Unavailable: %2</source>
     <context>
         <name>snow_shot::presentation::GlobalMouseManager</name>
         <message>
+            <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Accessibility to use global mouse gestures.</source>
+            <translation>请在“系统设置 &gt; 隐私与安全性 &gt; 辅助功能”中允许 Snow Shot，以使用全局鼠标手势。</translation>
+        </message>
+        <message>
+            <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Input Monitoring to use global mouse gestures.</source>
+            <translation>请在“系统设置 &gt; 隐私与安全性 &gt; 输入监控”中允许 Snow Shot，以使用全局鼠标手势。</translation>
+        </message>
+        <message>
+            <source>Checking global mouse permissions...</source>
+            <translation>正在检查全局鼠标权限…</translation>
+        </message>
+        <message>
+            <source>Global mouse gestures are paused while this session is inactive.</source>
+            <translation>当前会话处于非活动状态，全局鼠标手势已暂停。</translation>
+        </message>
+        <message>
+            <source>Global mouse gestures are ready.</source>
+            <translation>全局鼠标手势已就绪。</translation>
+        </message>
+        <message>
             <source>Global mouse input is unavailable (error %1).</source>
             <translation>全局鼠标输入不可用（错误 %1）。</translation>
+        </message>
+        <message>
+            <source>Global mouse input is unavailable. Check permissions and retry.</source>
+            <translation>全局鼠标输入不可用。请检查权限后重试。</translation>
         </message>
     </context>
     <context>

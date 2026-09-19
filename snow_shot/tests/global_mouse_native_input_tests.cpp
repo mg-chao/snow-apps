@@ -35,9 +35,10 @@ struct NativeInput {
     QSemaphore completed;
     GlobalMouseBackend* backend = nullptr;
     std::function<void()> afterMouseInstall;
-    GlobalMouseConfiguration configuration{{{settings::SettingsGlobalMouseAction::ScreenshotCopy,
-                                             Qt::MetaModifier | Qt::AltModifier, Qt::LeftButton}},
-                                           true};
+    GlobalMouseConfiguration configuration{
+        {{settings::SettingsGlobalMouseAction::ScreenshotCopy,
+          GlobalMouseModifier::Super | GlobalMouseModifier::Alt, Qt::LeftButton}},
+        true};
 
     static HHOOK WINAPI install(int kind, HOOKPROC callback, HINSTANCE, DWORD) {
         if (kind == WH_MOUSE_LL) {
@@ -204,11 +205,11 @@ void globalMouseNativeActivationKeyTests() {
         }
     }
 
-    for (const auto modifier : {Qt::MetaModifier, Qt::AltModifier}) {
+    for (const auto modifier : {GlobalMouseModifier::Super, GlobalMouseModifier::Alt}) {
         NativeInput input;
         input.configuration.bindings[0].modifiers = modifier;
-        const DWORD left = modifier == Qt::MetaModifier ? VK_LWIN : VK_LMENU;
-        const DWORD right = modifier == Qt::MetaModifier ? VK_RWIN : VK_RMENU;
+        const DWORD left = modifier == GlobalMouseModifier::Super ? VK_LWIN : VK_LMENU;
+        const DWORD right = modifier == GlobalMouseModifier::Super ? VK_RWIN : VK_RMENU;
         input.scenario = [&] {
             require(input.key(left, false) == 0 && input.key(left, true) == 0 && input.sent.empty(),
                     "standalone Windows and Alt must pass through without masking");
@@ -227,7 +228,7 @@ void globalMouseNativeActivationKeyTests() {
 
     for (const bool captureAvailable : {false, true}) {
         NativeInput input;
-        input.configuration.bindings[0].modifiers = Qt::MetaModifier;
+        input.configuration.bindings[0].modifiers = GlobalMouseModifier::Super;
         input.configuration.captureAvailable = captureAvailable;
         input.scenario = [&] {
             require(input.key(VK_LWIN, false) == 0, "initial key-down must pass through");
@@ -304,11 +305,11 @@ void globalMouseNativePerformanceTests() {
         input.run();
         require(input.failures == 0, "normal native lifecycle must not report failures");
     }
-    for (const auto modifier : {Qt::ControlModifier, Qt::ShiftModifier}) {
+    for (const auto modifier : {GlobalMouseModifier::Control, GlobalMouseModifier::Shift}) {
         NativeInput input;
         input.configuration.bindings[0].modifiers = modifier;
-        const DWORD left = modifier == Qt::ControlModifier ? VK_LCONTROL : VK_LSHIFT;
-        const DWORD right = modifier == Qt::ControlModifier ? VK_RCONTROL : VK_RSHIFT;
+        const DWORD left = modifier == GlobalMouseModifier::Control ? VK_LCONTROL : VK_LSHIFT;
+        const DWORD right = modifier == GlobalMouseModifier::Control ? VK_RCONTROL : VK_RSHIFT;
         input.down[left] = true;
         input.scenario = [&] {
             require(input.mouse != nullptr, "startup must recognize already-held modifiers");
@@ -333,7 +334,8 @@ void globalMouseNativePerformanceTests() {
     }
     {
         NativeInput input;
-        input.configuration.bindings[0].modifiers = Qt::ControlModifier | Qt::AltModifier;
+        input.configuration.bindings[0].modifiers =
+            GlobalMouseModifier::Control | GlobalMouseModifier::Alt;
         input.scenario = [&] {
             input.key(VK_LCONTROL, false);
             input.key(VK_LMENU, false);
@@ -347,7 +349,7 @@ void globalMouseNativePerformanceTests() {
     }
     {
         NativeInput input;
-        input.configuration.bindings[0].modifiers = Qt::MetaModifier;
+        input.configuration.bindings[0].modifiers = GlobalMouseModifier::Super;
         input.mouseInstallBlocked = true;
         input.scenario = [&] {
             input.key(VK_LWIN, false);

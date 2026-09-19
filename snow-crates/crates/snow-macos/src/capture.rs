@@ -132,6 +132,18 @@ fn excluded_window_is_exception(window_excluded: bool, application_excluded: boo
     window_excluded && !application_excluded
 }
 pub(crate) fn prepare(options: &CaptureConfig) -> MacResult<Prepared> {
+    if options.excluded_windows.len() > 4096 || options.excluded_processes.len() > 4096 {
+        return Err(MacError::InvalidConfig(
+            "capture exclusions exceed 4096 entries".into(),
+        ));
+    }
+    if matches!(options.target, Target::Window(_))
+        && (!options.excluded_windows.is_empty() || !options.excluded_processes.is_empty())
+    {
+        return Err(MacError::InvalidConfig(
+            "exclusions apply only to display capture".into(),
+        ));
+    }
     if options.frames_per_second == 0
         || options.frames_per_second > 240
         || options.timeout.is_zero()

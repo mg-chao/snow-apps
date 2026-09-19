@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/globalmousetypes.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/configurationstore.h"
@@ -532,8 +533,10 @@ void globalMouseCombinationSchemaIsStrictAndPersistent() {
         QStringLiteral("global_mouse/screenshot_save"),
         QStringLiteral("global_mouse/screenshot_quick_save"),
     };
-    const QStringList activationKeys{QStringLiteral("windows"), QStringLiteral("ctrl"),
-                                     QStringLiteral("alt"), QStringLiteral("shift")};
+    const QStringList activationKeys{snow_shot::presentation::globalMouseActivationKeys().at(0),
+                                     snow_shot::presentation::globalMouseActivationKeys().at(1),
+                                     snow_shot::presentation::globalMouseActivationKeys().at(2),
+                                     QStringLiteral("shift")};
     const QStringList mouseButtons{
         QStringLiteral("left_drag"),          QStringLiteral("right_drag"),
         QStringLiteral("wheel_drag"),         QStringLiteral("side_button_1_drag"),
@@ -548,11 +551,13 @@ void globalMouseCombinationSchemaIsStrictAndPersistent() {
             : key.endsWith(QStringLiteral("screenshot_fixed")) ? QStringLiteral("wheel_drag")
             : key.endsWith(QStringLiteral("screenshot_ocr"))   ? QStringLiteral("right_drag")
                                                                : QString();
-        const QJsonObject expected = button.isEmpty()
-                                         ? QJsonObject{}
-                                         : QJsonObject{{QStringLiteral("activation_key"),
-                                                        QJsonArray{QStringLiteral("windows")}},
-                                                       {QStringLiteral("mouse_button"), button}};
+        const QJsonObject expected =
+            button.isEmpty()
+                ? QJsonObject{}
+                : QJsonObject{
+                      {QStringLiteral("activation_key"),
+                       QJsonArray{snow_shot::presentation::globalMouseActivationKeys().at(0)}},
+                      {QStringLiteral("mouse_button"), button}};
         require(entry->defaultValue == expected,
                 "copy, pin, and OCR must default to Windows plus left, middle, and right drag");
         const auto unset = storage::ConfigurationSchema::normalize(key, QJsonObject());
@@ -572,35 +577,54 @@ void globalMouseCombinationSchemaIsStrictAndPersistent() {
     }
 
     const QString key = keys.constFirst();
+#ifdef Q_OS_MACOS
+    for (const auto* oldName : {"windows", "ctrl", "alt"}) {
+        require(
+            !storage::ConfigurationSchema::normalize(
+                 key, QJsonObject{{QStringLiteral("activation_key"), QString::fromLatin1(oldName)},
+                                  {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}})
+                 .valid,
+            "macOS must reject Windows-oriented modifier names instead of silently remapping");
+    }
+#endif
     const QJsonObject multi{
         {QStringLiteral("activation_key"),
-         QJsonArray{QStringLiteral("shift"), QStringLiteral("ctrl"), QStringLiteral("ctrl")}},
+         QJsonArray{QStringLiteral("shift"),
+                    snow_shot::presentation::globalMouseActivationKeys().at(1),
+                    snow_shot::presentation::globalMouseActivationKeys().at(1)}},
         {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}};
     const auto normalizedMulti = storage::ConfigurationSchema::normalize(key, multi);
     require(normalizedMulti.valid && normalizedMulti.changed &&
                 normalizedMulti.value.toObject().value(QStringLiteral("activation_key")) ==
-                    QJsonArray{QStringLiteral("ctrl"), QStringLiteral("shift")},
+                    QJsonArray{snow_shot::presentation::globalMouseActivationKeys().at(1),
+                               QStringLiteral("shift")},
             "multiple activation keys must normalize as a sorted unique set");
     const QVector<QJsonValue> malformed{
         QStringLiteral("windows+left_drag"),
-        QJsonArray{QStringLiteral("windows"), QStringLiteral("left_drag")},
-        QJsonObject{{QStringLiteral("activation_key"), QStringLiteral("windows")}},
+        QJsonArray{snow_shot::presentation::globalMouseActivationKeys().at(0),
+                   QStringLiteral("left_drag")},
+        QJsonObject{{QStringLiteral("activation_key"),
+                     snow_shot::presentation::globalMouseActivationKeys().at(0)}},
         QJsonObject{{QStringLiteral("mouse_button"), QStringLiteral("left_drag")}},
         QJsonObject{{QStringLiteral("activation_key"), QStringLiteral("meta")},
                     {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}},
-        QJsonObject{{QStringLiteral("activation_key"), QStringLiteral("windows")},
+        QJsonObject{{QStringLiteral("activation_key"),
+                     snow_shot::presentation::globalMouseActivationKeys().at(0)},
                     {QStringLiteral("mouse_button"), QStringLiteral("middle_drag")}},
-        QJsonObject{{QStringLiteral("activation_key"), QStringLiteral("windows")},
+        QJsonObject{{QStringLiteral("activation_key"),
+                     snow_shot::presentation::globalMouseActivationKeys().at(0)},
                     {QStringLiteral("mouse_button"), QStringLiteral("left_drag")},
                     {QStringLiteral("extra"), true}},
         QJsonObject{{QStringLiteral("activation_key"), 1},
                     {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}},
         QJsonObject{{QStringLiteral("activation_key"), QJsonArray{}},
                     {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}},
-        QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("ctrl"), 1}},
+        QJsonObject{{QStringLiteral("activation_key"),
+                     QJsonArray{snow_shot::presentation::globalMouseActivationKeys().at(1), 1}},
                     {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}},
         QJsonObject{{QStringLiteral("activation_key"),
-                     QJsonArray{QStringLiteral("ctrl"), QStringLiteral("bad")}},
+                     QJsonArray{snow_shot::presentation::globalMouseActivationKeys().at(1),
+                                QStringLiteral("bad")}},
                     {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}},
     };
     for (const QJsonValue& value : malformed) {
@@ -614,7 +638,8 @@ void globalMouseCombinationSchemaIsStrictAndPersistent() {
         QDir(roundTripDirectory.path()).filePath(QStringLiteral("config.json"));
     const QJsonObject savedCombination{
         {QStringLiteral("activation_key"),
-         QJsonArray{QStringLiteral("ctrl"), QStringLiteral("shift")}},
+         QJsonArray{snow_shot::presentation::globalMouseActivationKeys().at(1),
+                    QStringLiteral("shift")}},
         {QStringLiteral("mouse_button"), QStringLiteral("side_button_2_drag")},
     };
     {
@@ -1741,7 +1766,7 @@ void appUsageScanAndCacheCleanup() {
     setLastModified(activeRecording, QDateTime::currentDateTime().addSecs(3600));
     writeBytes(QDir(root).filePath(QStringLiteral("capture_history/records/dummy/display.png")),
                QByteArray(200, 'x'));
-    writeBytes(QDir(root).filePath(QStringLiteral("pinned_windows/index.json")),
+    writeBytes(QDir(root).filePath(QStringLiteral("pinned_windows_v2/index.json")),
                QByteArray(30, 'x'));
     writeBytes(QDir(root).filePath(QStringLiteral("assets/ocr/model.bin")), QByteArray(150, 'x'));
 
@@ -1916,6 +1941,10 @@ void watermarkTemplateSettingsRepairAndSurviveRestart() {
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--global-mouse-only"))) {
+        globalMouseCombinationSchemaIsStrictAndPersistent();
+        return 0;
+    }
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShotTests"));
     QCoreApplication::setApplicationName(QStringLiteral("storage-tests"));
     if (application.arguments().contains(QStringLiteral("--quit-lifetime-only"))) {

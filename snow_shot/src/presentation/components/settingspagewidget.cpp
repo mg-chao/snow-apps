@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/components/settingspagewidget.h"
 
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
+#include "snow_shot/presentation/components/smartselectionpermissionwidget.h"
 #include "snow_shot/presentation/components/globalmouserow.h"
 #include "snow_shot/presentation/components/pathinput.h"
 #include "snow_shot/presentation/components/sectionheaderwidget.h"
@@ -29,6 +30,7 @@
 #include "widgets/switch.h"
 
 #include <QAbstractButton>
+#include "snow_shot/presentation/globalmousemanager.h"
 #include <QEvent>
 #include <QFileDialog>
 #include <QGridLayout>
@@ -37,12 +39,14 @@
 #include <QIcon>
 #include <QLabel>
 #include <QPointer>
+
 #include <QScrollBar>
 #include <QSignalBlocker>
 #include <QScopedValueRollback>
 #include <QStyle>
 #include <QSizePolicy>
 #include <QTimer>
+
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -156,6 +160,38 @@ class SettingsPageWidget::Impl {
         contentLayout = pageContainer->contentLayout();
         contentLayout->setSpacing(0);
 
+#ifdef Q_OS_MACOS
+        if (page->id == QStringLiteral("global-mouse")) {
+            permissionBanner = new QWidget(contentWidget);
+            permissionBanner->setObjectName(QStringLiteral("globalMousePermissionBanner"));
+            auto* bannerLayout = new QHBoxLayout(permissionBanner);
+            bannerLayout->setContentsMargins(metric.padding, metric.paddingSM, metric.padding,
+                                             metric.paddingSM);
+            permissionLabel = new QLabel(permissionBanner);
+            permissionLabel->setWordWrap(true);
+            permissionLabel->setObjectName(QStringLiteral("globalMousePermissionLabel"));
+            bannerLayout->addWidget(permissionLabel, 1);
+            permissionButton = new adqt::widgets::AdButton(permissionBanner);
+            permissionButton->setObjectName(QStringLiteral("globalMousePermissionButton"));
+            connect(permissionButton, &QAbstractButton::clicked, &q, [this] {
+                runtimeSession.requestGlobalMousePermission();
+                runtimeSession.openGlobalMousePermissionSettings();
+            });
+            bannerLayout->addWidget(permissionButton);
+            permissionRetry = new adqt::widgets::AdButton(permissionBanner);
+            permissionRetry->setObjectName(QStringLiteral("globalMousePermissionRetry"));
+            connect(permissionRetry, &QAbstractButton::clicked, &q,
+                    [this] { runtimeSession.refreshGlobalMousePermission(); });
+            bannerLayout->addWidget(permissionRetry);
+            connect(&runtimeSession,
+                    &settings::SettingsRuntimeSession::globalMousePermissionChanged, &q, [this] {
+                        syncMousePermission();
+                        syncValues();
+                    });
+            contentLayout->addWidget(permissionBanner);
+        }
+#endif
+
         if (pagePlan != nullptr) {
             for (const settings::SettingsSectionPlan& sectionPlan : pagePlan->sectionPlans) {
                 Q_ASSERT(sectionPlan.sectionIndex >= 0 &&
@@ -196,6 +232,10 @@ class SettingsPageWidget::Impl {
             QStringLiteral("%1-%2").arg(page->id, sectionDefinition.id)));
         runtimeSection.header->setResetVisible(reset != settings::SettingsSectionReset::None);
         contentLayout->addWidget(runtimeSection.header);
+#ifdef Q_OS_MACOS
+        if (sectionDefinition.id == QStringLiteral("screenshot-settings"))
+            contentLayout->addWidget(new SmartSelectionPermissionWidget(contentWidget));
+#endif
         sections.push_back(runtimeSection);
         sectionIndexes.insert(sectionDefinition.id, static_cast<int>(sections.size()) - 1);
 
@@ -1188,6 +1228,20 @@ class SettingsPageWidget::Impl {
         }
     }
 
+    void syncMousePermission() {
+#ifdef Q_OS_MACOS
+        if (!permissionLabel)
+            return;
+        const auto state = runtimeSession.globalMousePermissionState();
+        permissionLabel->setText(snow_shot::presentation::globalMousePermissionMessage(state));
+        using Status = snow_shot::presentation::GlobalMousePermissionState::Status;
+        permissionButton->setVisible(state.status == Status::ListenRequired ||
+                                     state.status == Status::AccessibilityRequired ||
+                                     state.status == Status::Unavailable);
+        permissionRetry->setVisible(state.status != Status::Ready);
+#endif
+    }
+
     void syncValues() {
         const auto storageStatus = runtimeSession.storageStatus();
         for (RuntimeItem& runtime : items) {
@@ -1316,6 +1370,14 @@ class SettingsPageWidget::Impl {
                 runtime.customControl->retranslateUi();
             }
         }
+#ifdef Q_OS_MACOS
+        if (permissionLabel != nullptr && permissionButton != nullptr) {
+            syncMousePermission();
+            permissionButton->setText(q.tr("Open System Settings"));
+            permissionButton->setAccessibleName(permissionButton->text());
+            permissionRetry->setText(q.tr("Retry"));
+        }
+#endif
         syncValues();
         requestVisibleSectionSync();
     }
@@ -1476,6 +1538,12 @@ class SettingsPageWidget::Impl {
     bool suppressVisibleSectionTracking = false;
     bool synchronizingValues = false;
     bool visibleSectionSyncPending = false;
+#ifdef Q_OS_MACOS
+    QPointer<QWidget> permissionBanner;
+    QPointer<QLabel> permissionLabel;
+    QPointer<adqt::widgets::AdButton> permissionButton;
+    QPointer<adqt::widgets::AdButton> permissionRetry;
+#endif
 };
 
 SettingsPageWidget::SettingsPageWidget(

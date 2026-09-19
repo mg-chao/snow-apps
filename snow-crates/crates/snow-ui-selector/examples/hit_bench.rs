@@ -41,7 +41,7 @@ impl Default for Options {
     }
 }
 
-fn main() -> Result<()> {
+fn main() -> snow_ui_selector::SelectorResult<()> {
     let options = parse_options();
     snow_ui_selector::enable_high_dpi_support();
     let _fixture = options
@@ -73,7 +73,11 @@ fn main() -> Result<()> {
             selector.refresh()?;
             selector
                 .query(
-                    point,
+                    snow_ui_selector::Point {
+                        x: point.x,
+                        y: point.y,
+                        display_id: 0,
+                    },
                     options.mode,
                     &QueryControl::foreground(),
                     &mut |_| {},
@@ -82,7 +86,11 @@ fn main() -> Result<()> {
         } else {
             selector
                 .query(
-                    point,
+                    snow_ui_selector::Point {
+                        x: point.x,
+                        y: point.y,
+                        display_id: 0,
+                    },
                     options.mode,
                     &QueryControl::foreground(),
                     &mut |_| {},
@@ -160,7 +168,10 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_sequence(options: &Options, selector: &mut ElementRegionService) -> Result<()> {
+fn run_sequence(
+    options: &Options,
+    selector: &mut ElementRegionService,
+) -> snow_ui_selector::SelectorResult<()> {
     let mut timings: BTreeMap<&str, Vec<f64>> = BTreeMap::new();
     println!("stage,round,point_index,sample,elapsed_ms,x,y,rect_count,path");
     for round in 0..options.rounds {
@@ -186,7 +197,11 @@ fn run_sequence(options: &Options, selector: &mut ElementRegionService) -> Resul
                 }
                 let path = selector
                     .query(
-                        point,
+                        snow_ui_selector::Point {
+                            x: point.x,
+                            y: point.y,
+                            display_id: 0,
+                        },
                         options.mode,
                         &QueryControl::foreground(),
                         &mut |_| {},
@@ -246,6 +261,7 @@ fn cursor_pos() -> Result<POINT> {
 fn backend_name(backend: AccessibilityBackend) -> &'static str {
     match backend {
         AccessibilityBackend::Uia => "uia",
+        AccessibilityBackend::Accessibility => "accessibility",
         AccessibilityBackend::Msaa => "msaa",
     }
 }

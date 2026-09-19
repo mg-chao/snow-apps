@@ -1,4 +1,4 @@
-#include "screenshotpinnedwindownative.h"
+#include "pinnedwindownative.h"
 
 #include <QCursor>
 #include <QEventLoop>
@@ -177,10 +177,6 @@ void screenshot_pinned_window_native::SystemMoveKeyboard::stop() {
         m_impl->pressedKeys.clear();
     }
 #endif
-}
-
-Qt::WindowFlags screenshot_pinned_window_native::windowFlags() {
-    return Qt::FramelessWindowHint | Qt::Tool | Qt::WindowStaysOnTopHint;
 }
 
 bool screenshot_pinned_window_native::applyClientGeometry(WId windowId, const QRect& geometry,

@@ -2,6 +2,7 @@
 
 #include "snowimageqtcodec.h"
 #include "snow_shot/storage/storagelogging.h"
+#include "pinnedwindowstorageconstants_p.h"
 
 #include <QBuffer>
 #include <QDir>
@@ -26,14 +27,13 @@
 
 namespace snow_shot::storage {
 namespace {
-constexpr int kFormatVersion = 1;
+constexpr int kFormatVersion = 2;
 constexpr auto kDefaultGroupId = "default";
 constexpr auto kDefaultGroupName = "Default";
 constexpr int kMaximumRecords = 128;
 constexpr int kMaximumGroups = PinnedWindowRepository::maximumGroupCount();
 constexpr qint64 kMaximumImageBytes = 256LL * 1024LL * 1024LL;
 constexpr qint64 kMaximumPayloadBytes = 32LL * 1024LL * 1024LL;
-constexpr auto kDirectoryName = "pinned_windows";
 constexpr auto kManifestName = "index.json";
 
 QString sourceKindToString(PinnedWindowSourceKind kind) {
@@ -359,6 +359,49 @@ QJsonObject payloadsToJson(const PinnedWindowRecord& record) {
     return payloads;
 }
 
+PinnedWindowPlacement placementForRecord(const PinnedWindowPlacement& placement,
+                                         const QRect& pixels, const PinnedWindowRecord& record) {
+    if (placement.isValid())
+        return placement;
+    const qreal dpr = record.screenDpi > 0 ? record.screenDpi : 1.;
+    return {record.screenName, record.screenSerial,
+            QPointF(pixels.topLeft() - record.screenPhysicalGeometry.topLeft()) / dpr,
+            pixels.size()};
+}
+void normalizePlacement(PinnedWindowRecord& record) {
+    record.placement = placementForRecord(record.placement, record.nativeGeometry, record);
+    record.preThumbnailPlacement =
+        placementForRecord(record.preThumbnailPlacement, record.preThumbnailNativeGeometry, record);
+    record.hideToTopPlacement =
+        placementForRecord(record.hideToTopPlacement, record.hideToTopHandleNativeGeometry, record);
+}
+QJsonObject placementToJson(const PinnedWindowPlacement& placement) {
+    if (!placement.isValid())
+        return {};
+    return {{QStringLiteral("display_name"), placement.displayName},
+            {QStringLiteral("display_serial"), placement.displaySerial},
+            {QStringLiteral("x_points"), placement.position.x()},
+            {QStringLiteral("y_points"), placement.position.y()},
+            {QStringLiteral("pixel_size"), sizeToJson(placement.pixelSize)}};
+}
+bool placementFromJson(const QJsonValue& value, PinnedWindowPlacement* placement,
+                       bool optional = false) {
+    if (!value.isObject())
+        return false;
+    const auto object = value.toObject();
+    if (optional && object.isEmpty())
+        return true;
+    double x = 0, y = 0;
+    if (!finiteNumber(object.value(QStringLiteral("x_points")), -10000000, 10000000, &x) ||
+        !finiteNumber(object.value(QStringLiteral("y_points")), -10000000, 10000000, &y) ||
+        !sizeFromJson(object.value(QStringLiteral("pixel_size")), &placement->pixelSize))
+        return false;
+    placement->displayName = object.value(QStringLiteral("display_name")).toString();
+    placement->displaySerial = object.value(QStringLiteral("display_serial")).toString();
+    placement->position = QPointF(x, y);
+    return placement->isValid();
+}
+
 QJsonObject recordToJson(const PinnedWindowRecord& record, const QJsonObject& payloads) {
     return QJsonObject{
         {QStringLiteral("id"), record.id},
@@ -368,6 +411,14 @@ QJsonObject recordToJson(const PinnedWindowRecord& record, const QJsonObject& pa
         {QStringLiteral("content_canvas_rect"), rectFToJson(record.contentCanvasRect)},
         {QStringLiteral("surface_canvas_rect"), rectFToJson(record.surfaceCanvasRect)},
         {QStringLiteral("initial_physical_size"), sizeToJson(record.initialPhysicalSize)},
+        {QStringLiteral("placement"),
+         placementToJson(placementForRecord(record.placement, record.nativeGeometry, record))},
+        {QStringLiteral("pre_thumbnail_placement"),
+         placementToJson(placementForRecord(record.preThumbnailPlacement,
+                                            record.preThumbnailNativeGeometry, record))},
+        {QStringLiteral("hide_to_top_placement"),
+         placementToJson(placementForRecord(record.hideToTopPlacement,
+                                            record.hideToTopHandleNativeGeometry, record))},
         {QStringLiteral("native_geometry"), rectToJson(record.nativeGeometry)},
         {QStringLiteral("screen_name"), record.screenName},
         {QStringLiteral("screen_serial"), record.screenSerial},
@@ -654,7 +705,12 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
     PinnedWindowRecord record;
     record.id = object.value(QStringLiteral("id")).toString();
     record.groupId = object.value(QStringLiteral("group_id")).toString();
-    if (!safeGroupId(record.groupId) ||
+    if (!placementFromJson(object.value(QStringLiteral("placement")), &record.placement) ||
+        !placementFromJson(object.value(QStringLiteral("pre_thumbnail_placement")),
+                           &record.preThumbnailPlacement, true) ||
+        !placementFromJson(object.value(QStringLiteral("hide_to_top_placement")),
+                           &record.hideToTopPlacement, true) ||
+        !safeGroupId(record.groupId) ||
         !sourceKindFromString(object.value(QStringLiteral("source_kind")).toString(),
                               &record.sourceKind) ||
         !rectFFromJson(object.value(QStringLiteral("canvas_source_rect")),
@@ -850,7 +906,8 @@ struct PinnedWindowRepository::Impl final {
 PinnedWindowRepository::PinnedWindowRepository(QString configurationDirectory, bool writeAvailable,
                                                int debounceMilliseconds)
     : m_impl(std::make_unique<Impl>()) {
-    m_impl->root = QDir(configurationDirectory).filePath(QString::fromLatin1(kDirectoryName));
+    m_impl->root = QDir(configurationDirectory)
+                       .filePath(QString::fromLatin1(pinned_window_storage::kDirectoryName));
     m_impl->writeAvailable = writeAvailable && !configurationDirectory.isEmpty();
     m_impl->debounceMilliseconds = std::clamp(debounceMilliseconds, 0, 30000);
     if (!configurationDirectory.isEmpty()) {
@@ -1199,6 +1256,7 @@ StorageResult PinnedWindowRepository::removeGroupAndRecords(const QString& group
 
 StorageResult PinnedWindowRepository::create(PinnedWindowRecord record,
                                              PreparedPngImage sourceImage) {
+    normalizePlacement(record);
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
     }
@@ -1248,6 +1306,7 @@ StorageResult PinnedWindowRepository::create(PinnedWindowRecord record,
 }
 
 StorageResult PinnedWindowRepository::create(PinnedWindowRecord record) {
+    normalizePlacement(record);
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
     }
@@ -1300,6 +1359,7 @@ StorageResult PinnedWindowRepository::create(PinnedWindowRecord record) {
 }
 
 StorageResult PinnedWindowRepository::updateState(PinnedWindowRecord record) {
+    normalizePlacement(record);
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
     }
@@ -1389,6 +1449,7 @@ StorageResult PinnedWindowRepository::updateState(PinnedWindowRecord record) {
 }
 
 StorageResult PinnedWindowRepository::upsert(PinnedWindowRecord record) {
+    normalizePlacement(record);
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
     }

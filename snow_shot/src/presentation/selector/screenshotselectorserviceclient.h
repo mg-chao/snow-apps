@@ -26,6 +26,7 @@ class ScreenshotSelectorServiceClient final : public QObject {
                                              QObject* parent = nullptr);
     ~ScreenshotSelectorServiceClient() override;
 
+    [[nodiscard]] static quint32 displayIdAtCursor();
     [[nodiscard]] bool hasService() const;
     [[nodiscard]] bool ensureService();
     [[nodiscard]] bool releaseCache();
@@ -34,8 +35,8 @@ class ScreenshotSelectorServiceClient final : public QObject {
     [[nodiscard]] bool startRefresh(quint64 requestId,
                                     const QVector<std::uintptr_t>& excludedHwnds);
     [[nodiscard]] bool startHitTest(quint64 epoch, quint64 requestId, quint64 generation,
-                                    const QPoint& physicalPoint,
-                                    ScreenshotSelectorHitTestMode mode);
+                                    const QPoint& physicalPoint, ScreenshotSelectorHitTestMode mode,
+                                    quint32 displayId = 0);
     [[nodiscard]] bool startRefinement(const ScreenshotSelectorResult& initial);
     void invalidateRefinement();
 

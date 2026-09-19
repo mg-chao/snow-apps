@@ -44,7 +44,7 @@ storage::PinnedWindowRecord record(const QString& id) {
 }
 
 QString manifestPath(const QTemporaryDir& directory) {
-    return QDir(directory.path()).filePath(QStringLiteral("pinned_windows/index.json"));
+    return QDir(directory.path()).filePath(QStringLiteral("pinned_windows_v2/index.json"));
 }
 
 QJsonObject readManifest(const QString& path) {
@@ -69,7 +69,7 @@ void defaultGroupAndFreshSchema() {
     require(repository.flush().success, "failed to flush the pinned-window index");
 
     const QJsonObject manifest = readManifest(manifestPath(directory));
-    require(manifest.value(QStringLiteral("format_version")).toInt() == 1,
+    require(manifest.value(QStringLiteral("format_version")).toInt() == 2,
             "the fresh pinned-window index should use the current schema");
     require(manifest.value(QStringLiteral("groups")).toArray().size() == 1 &&
                 manifest.value(QStringLiteral("records")).toArray().size() == 1,
