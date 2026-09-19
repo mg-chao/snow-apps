@@ -63,11 +63,7 @@ fn run() -> Result<i32> {
         }
         "--uninstall" => {
             let root = path_option(&args, "--target")?;
-            transaction::validate_root(&root)?;
-            if !args.iter().any(|argument| argument == "--upgrade") {
-                snow_shot_updater::platform::remove_installation_startup(&root)?;
-            }
-            transaction::uninstall_owned_files(&root)?;
+            transaction::uninstall(&root, !args.iter().any(|argument| argument == "--upgrade"))?;
             Ok(0)
         }
         "--migrate-startup" => {

@@ -21,7 +21,7 @@ use uuid::Uuid;
 pub const INSTALLATION_RECORD: &str = "snow-shot-installation.json";
 pub const UPDATE_WORK: &str = ".snow-shot-update";
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct InstallationRecord {
     pub schema: u64,
     pub variant: String,
@@ -123,16 +123,30 @@ fn selected_data_root(root: &Path) -> Result<Option<PathBuf>> {
     Ok(Some(fs::canonicalize(&selected).unwrap_or(selected)))
 }
 
-fn path_starts_with_case_insensitive(path: &Path, parent: &Path) -> bool {
-    let path = absolute_clean(path).to_string_lossy().replace('\\', "/");
-    let parent = absolute_clean(parent).to_string_lossy().replace('\\', "/");
-    path.eq_ignore_ascii_case(&parent)
-        || path.get(parent.len()..).is_some_and(|tail| {
-            tail.starts_with('/') && path[..parent.len()].eq_ignore_ascii_case(&parent)
-        })
+fn comparable_path(path: &Path) -> String {
+    let text = absolute_clean(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+        .to_ascii_lowercase();
+    if let Some(rest) = text.strip_prefix("//?/unc/") {
+        format!("//{rest}")
+    } else if let Some(rest) = text.strip_prefix("//?/") {
+        rest.to_owned()
+    } else {
+        text
+    }
 }
 
-pub fn validate_root(root: &Path) -> Result<()> {
+fn path_starts_with_case_insensitive(path: &Path, parent: &Path) -> bool {
+    let path = comparable_path(path);
+    let parent = comparable_path(parent);
+    path == parent
+        || path
+            .get(parent.len()..)
+            .is_some_and(|tail| tail.starts_with('/') && path[..parent.len()] == parent)
+}
+
+fn installation_root_identity(root: &Path) -> Result<PathBuf> {
     let root = absolute_clean(root);
     let metadata = fs::metadata(&root).ok();
     let home =
@@ -150,13 +164,33 @@ pub fn validate_root(root: &Path) -> Result<()> {
         "invalid_installation_root",
         "Invalid Snow Shot installation root",
     )?;
+    Ok(root)
+}
+
+fn data_collides_with_work_tree(root: &Path, data: &Path) -> bool {
+    let work = work_path(root, "");
+    path_starts_with_case_insensitive(&work, data) || path_starts_with_case_insensitive(data, &work)
+}
+
+fn selected_data_root_if_known(root: &Path) -> Option<PathBuf> {
+    selected_data_root(root).ok().flatten()
+}
+
+fn is_payload_relative(relative: &str) -> bool {
+    safe_relative_path(relative)
+        && (relative.starts_with("bin/")
+            || relative.starts_with("share/snow-shot/")
+            || relative == INSTALLATION_RECORD)
+        && !relative.eq_ignore_ascii_case("bin/__data_directory")
+}
+
+pub fn validate_root(root: &Path) -> Result<()> {
+    let root = installation_root_identity(root)?;
     no_links(&root)?;
     no_links(&work_path(&root, ""))?;
     if let Some(data) = selected_data_root(&root)? {
-        let work = work_path(&root, "");
         require(
-            !path_starts_with_case_insensitive(&work, &data)
-                && !path_starts_with_case_insensitive(&data, &work),
+            !data_collides_with_work_tree(&root, &data),
             "selected_data_collision",
             "An update file would overwrite the selected data directory",
         )?;
@@ -209,11 +243,7 @@ pub fn installation_record(root: &Path) -> Result<InstallationRecord> {
 
 pub fn validate_target_path(root: &Path, relative: &str) -> Result<()> {
     require(
-        safe_relative_path(relative)
-            && (relative.starts_with("bin/")
-                || relative.starts_with("share/snow-shot/")
-                || relative == INSTALLATION_RECORD)
-            && !relative.eq_ignore_ascii_case("bin/__data_directory"),
+        is_payload_relative(relative),
         "target_outside_payload",
         "Refusing to change a file outside the application payload",
     )?;
@@ -816,31 +846,58 @@ pub fn prune_update_work(root: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn uninstall_owned_files(root: &Path) -> Result<()> {
-    validate_root(root)?;
-    fs::create_dir_all(root.join(UPDATE_WORK)).map_err(|error| {
-        io_error(
-            "uninstall_lock_directory_failed",
-            "Could not create uninstall lock directory",
-            error,
-        )
-    })?;
-    let lock = acquire_lock(root, "An update is still running")?;
-    if transaction_pending(root) {
-        restore(root)?;
+fn uninstall_work_tree_mutable(root: &Path) -> bool {
+    no_links(&work_path(root, "")).is_ok()
+        && selected_data_root_if_known(root)
+            .is_none_or(|data| !data_collides_with_work_tree(root, &data))
+}
+
+fn uninstall_target_removable(root: &Path, relative: &str) -> bool {
+    if !is_payload_relative(relative) {
+        return false;
     }
-    let record = installation_record(root)?;
-    for file in &record.files {
-        if file.path != "bin/__data_directory" {
-            validate_target_path(root, &file.path)?;
-        }
+    let target = root.join(relative);
+    no_links(&target).is_ok()
+        && selected_data_root_if_known(root)
+            .is_none_or(|data| !path_starts_with_case_insensitive(&target, &data))
+}
+
+fn acquire_uninstall_lock(root: &Path) -> Result<Option<File>> {
+    if !uninstall_work_tree_mutable(root) {
+        return Ok(None);
     }
+    if fs::create_dir_all(root.join(UPDATE_WORK)).is_err() {
+        return Ok(None);
+    }
+    let Ok(lock) = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(work_path(root, "transaction.lock"))
+    else {
+        return Ok(None);
+    };
+    lock.try_lock_exclusive()
+        .map_err(|error| io_error("update_lock_failed", "An update is still running", error))?;
+    Ok(Some(lock))
+}
+
+fn uninstall_owned_files(root: &Path) -> Result<()> {
+    let lock = acquire_uninstall_lock(root)?;
+    if lock.is_some() && transaction_pending(root) {
+        // Recovery only restores owned files that uninstall deletes next. A
+        // damaged journal or backup is a partial installation, not a live
+        // update, so it must not retain the application.
+        restore(root).ok();
+    }
+    let record = installation_record(root).unwrap_or_default();
     for file in &record.files {
-        if file.path == "bin/__data_directory" {
+        if !uninstall_target_removable(root, &file.path) {
             continue;
         }
         let path = root.join(&file.path);
-        if path.exists() {
+        if path.is_file() {
             fs::remove_file(&path).map_err(|error| {
                 io_error(
                     "owned_file_remove_failed",
@@ -851,7 +908,21 @@ pub fn uninstall_owned_files(root: &Path) -> Result<()> {
         }
     }
     drop(lock);
-    clear_work_tree(root, "")
+    if uninstall_work_tree_mutable(root) {
+        clear_work_tree(root, "").ok();
+    }
+    Ok(())
+}
+
+pub fn uninstall(root: &Path, remove_startup: bool) -> Result<()> {
+    installation_root_identity(root)?;
+    if remove_startup {
+        // Startup cleanup is extra work. Once the helper is running, a
+        // damaged or inaccessible registration must not keep the payload
+        // installed; CPack still deletes the files it knew at build time.
+        platform::remove_installation_startup(root).ok();
+    }
+    uninstall_owned_files(root)
 }
 
 pub fn audit_release(directory: &Path, release: &UpdateRelease) -> Result<()> {
@@ -1130,5 +1201,255 @@ mod tests {
                 assert!(!transaction_pending(&root));
             }
         }
+    }
+
+    #[test]
+    fn uninstall_tolerates_missing_and_damaged_installation_records() {
+        for damaged in [None, Some(b"not json".as_slice())] {
+            let directory = tempfile::tempdir().unwrap();
+            let root = directory.path().join("SnowShot");
+            fs::create_dir_all(root.join("bin")).unwrap();
+            fs::write(root.join("bin/snow_shot.exe"), b"application").unwrap();
+            if let Some(bytes) = damaged {
+                fs::write(root.join(INSTALLATION_RECORD), bytes).unwrap();
+            }
+
+            uninstall(&root, false).unwrap();
+            assert!(root.join("bin/snow_shot.exe").is_file());
+            assert!(!root.join(UPDATE_WORK).exists());
+        }
+    }
+
+    #[test]
+    fn uninstall_removes_owned_files_and_skips_missing_ones() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("SnowShot");
+        fs::create_dir_all(root.join("bin")).unwrap();
+        let application = b"application";
+        let helper = b"helper";
+        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        let record = InstallationRecord {
+            schema: 1,
+            variant: "online".to_owned(),
+            version: "1.0.0".to_owned(),
+            files: vec![
+                descriptor("bin/snow_shot.exe", application),
+                descriptor("bin/snow-shot-updater.exe", helper),
+            ],
+        };
+        fs::write(
+            root.join(INSTALLATION_RECORD),
+            serde_json::to_vec(&record).unwrap(),
+        )
+        .unwrap();
+
+        uninstall(&root, false).unwrap();
+        assert!(!root.join("bin/snow_shot.exe").exists());
+        assert!(!root.join("bin/snow-shot-updater.exe").exists());
+    }
+
+    #[test]
+    fn uninstall_tolerates_damaged_recovery_journal() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("SnowShot");
+        fs::create_dir_all(root.join("bin")).unwrap();
+        fs::create_dir_all(work_path(&root, "backup/bin")).unwrap();
+        let application = b"application";
+        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        fs::write(root.join("bin/user-data.dat"), b"user data").unwrap();
+        let record = InstallationRecord {
+            schema: 1,
+            variant: "online".to_owned(),
+            version: "1.0.0".to_owned(),
+            files: vec![descriptor("bin/snow_shot.exe", application)],
+        };
+        fs::write(
+            root.join(INSTALLATION_RECORD),
+            serde_json::to_vec(&record).unwrap(),
+        )
+        .unwrap();
+        fs::write(work_path(&root, "journal.json"), b"damaged journal").unwrap();
+
+        uninstall(&root, false).unwrap();
+        assert!(!root.join("bin/snow_shot.exe").exists());
+        assert!(root.join("bin/user-data.dat").is_file());
+        assert!(!root.join(UPDATE_WORK).exists());
+    }
+
+    #[test]
+    fn uninstall_skips_entries_colliding_with_the_data_directory() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("SnowShot");
+        fs::create_dir_all(root.join("bin")).unwrap();
+        let application = b"application";
+        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        // The selected data directory covers one claimed file; removing that
+        // entry must not block removal of the remaining owned files.
+        fs::write(root.join("bin/__data_directory"), b"missing-data").unwrap();
+        let record = InstallationRecord {
+            schema: 1,
+            variant: "online".to_owned(),
+            version: "1.0.0".to_owned(),
+            files: vec![
+                descriptor("bin/snow_shot.exe", application),
+                descriptor("bin/missing-data/plugin.dll", b"plugin"),
+            ],
+        };
+        fs::write(
+            root.join(INSTALLATION_RECORD),
+            serde_json::to_vec(&record).unwrap(),
+        )
+        .unwrap();
+
+        uninstall(&root, false).unwrap();
+        assert!(!root.join("bin/snow_shot.exe").exists());
+        assert!(!root.join(UPDATE_WORK).exists());
+    }
+
+    #[test]
+    fn validate_target_path_rejects_files_under_an_existing_data_directory() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("SnowShot");
+        fs::create_dir_all(root.join("bin/my-data")).unwrap();
+        fs::write(root.join("bin/__data_directory"), b"my-data").unwrap();
+        assert_eq!(
+            validate_target_path(&root, "bin/my-data/plugin.dll")
+                .unwrap_err()
+                .code,
+            "selected_data_collision"
+        );
+    }
+
+    #[test]
+    fn uninstall_rejects_an_invalid_installation_root() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("x");
+        fs::create_dir(&root).unwrap();
+        assert_eq!(
+            uninstall(&root, false).unwrap_err().code,
+            "invalid_installation_root"
+        );
+        assert_eq!(
+            validate_root(&root).unwrap_err().code,
+            "invalid_installation_root"
+        );
+    }
+
+    #[test]
+    fn uninstall_tolerates_a_damaged_data_directory_marker() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("SnowShot");
+        fs::create_dir_all(root.join("bin")).unwrap();
+        let application = b"application";
+        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        fs::write(root.join("bin/__data_directory"), [0xff]).unwrap();
+        let record = InstallationRecord {
+            schema: 1,
+            variant: "online".to_owned(),
+            version: "1.0.0".to_owned(),
+            files: vec![descriptor("bin/snow_shot.exe", application)],
+        };
+        fs::write(
+            root.join(INSTALLATION_RECORD),
+            serde_json::to_vec(&record).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            validate_root(&root).unwrap_err().code,
+            "data_directory_invalid"
+        );
+        uninstall(&root, true).unwrap();
+        assert!(!root.join("bin/snow_shot.exe").exists());
+    }
+
+    #[test]
+    fn uninstall_skips_a_work_tree_that_collides_with_user_data() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("SnowShot");
+        fs::create_dir_all(root.join("bin")).unwrap();
+        let application = b"application";
+        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        fs::create_dir_all(work_path(&root, "user")).unwrap();
+        fs::write(work_path(&root, "user/photo.png"), b"photo").unwrap();
+        fs::write(root.join("bin/__data_directory"), b"../.snow-shot-update").unwrap();
+        let record = InstallationRecord {
+            schema: 1,
+            variant: "online".to_owned(),
+            version: "1.0.0".to_owned(),
+            files: vec![descriptor("bin/snow_shot.exe", application)],
+        };
+        fs::write(
+            root.join(INSTALLATION_RECORD),
+            serde_json::to_vec(&record).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            validate_root(&root).unwrap_err().code,
+            "selected_data_collision"
+        );
+        uninstall(&root, false).unwrap();
+        assert!(!root.join("bin/snow_shot.exe").exists());
+        assert_eq!(
+            fs::read(work_path(&root, "user/photo.png")).unwrap(),
+            b"photo"
+        );
+    }
+
+    // LockFileEx contends per handle; POSIX process-wide locks would not.
+    #[cfg(windows)]
+    #[test]
+    fn uninstall_blocks_while_an_update_lock_is_held() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("SnowShot");
+        fs::create_dir_all(root.join("bin")).unwrap();
+        let application = b"application";
+        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        let record = InstallationRecord {
+            schema: 1,
+            variant: "online".to_owned(),
+            version: "1.0.0".to_owned(),
+            files: vec![descriptor("bin/snow_shot.exe", application)],
+        };
+        fs::write(
+            root.join(INSTALLATION_RECORD),
+            serde_json::to_vec(&record).unwrap(),
+        )
+        .unwrap();
+        let _lock = acquire_lock(&root, "held").unwrap();
+
+        assert_eq!(
+            uninstall(&root, false).unwrap_err().code,
+            "update_lock_failed"
+        );
+        assert!(root.join("bin/snow_shot.exe").is_file());
+    }
+
+    #[test]
+    fn uninstall_skips_directories_claimed_as_owned_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("SnowShot");
+        fs::create_dir_all(root.join("bin/plugin.dll")).unwrap();
+        let application = b"application";
+        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        let record = InstallationRecord {
+            schema: 1,
+            variant: "online".to_owned(),
+            version: "1.0.0".to_owned(),
+            files: vec![
+                descriptor("bin/snow_shot.exe", application),
+                descriptor("bin/plugin.dll", b"plugin"),
+            ],
+        };
+        fs::write(
+            root.join(INSTALLATION_RECORD),
+            serde_json::to_vec(&record).unwrap(),
+        )
+        .unwrap();
+
+        uninstall(&root, false).unwrap();
+        assert!(!root.join("bin/snow_shot.exe").exists());
+        assert!(root.join("bin/plugin.dll").is_dir());
     }
 }
