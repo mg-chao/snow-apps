@@ -3,6 +3,7 @@
 #include "snow_shot/presentation/apppermissionservice.h"
 #ifdef Q_OS_MACOS
 #include "snow_shot/platform/macos/applicationactivation.h"
+#include "snow_shot/presentation/permissionguidecontroller.h"
 #endif
 #include "snow_shot/platform/windows/administratorlaunch.h"
 #include "snow_shot/translation/translationservice.h"
@@ -733,6 +734,9 @@ class ApplicationController::Impl {
     FeatureActionRouter featureRouter;
     presentation::GlobalShortcutManager globalShortcutManager;
     presentation::AppPermissionService permissions;
+#ifdef Q_OS_MACOS
+    presentation::PermissionGuideController permissionGuide{permissions};
+#endif
     presentation::GlobalMouseManager globalMouseManager;
     // Settings are intentionally constructed on first window access.  The
     // tray and shortcut manager use only their compact bootstrap data.

@@ -162,7 +162,10 @@ void AppPermissionService::request(AppPermission permission) {
     });
 }
 bool AppPermissionService::openSettings(AppPermission permission) {
-    return m_backend->openSettings(permission);
+    if (!m_backend->openSettings(permission))
+        return false;
+    emit settingsOpened(permission);
+    return true;
 }
 void AppPermissionService::observe(QObject* owner, bool visible) {
     if (!owner)

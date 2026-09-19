@@ -21,6 +21,7 @@
     "DrawingToolbarEditorSettingsWidget",
     "GlobalMouseRow",
     "PinnedToolbarEditorSettingsWidget",
+    "PermissionGuide",
     "ScreenshotToolbarEditorSettingsWidget",
     "SettingsBackend",
     "SettingsCatalog",

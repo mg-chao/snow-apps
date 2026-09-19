@@ -441,6 +441,57 @@
         </message>
     </context>
     <context>
+        <name>PermissionGuide</name>
+        <message>
+            <source>Close guidance</source>
+            <translation>Close guidance</translation>
+        </message>
+        <message>
+            <source>Drag %1 to System Settings</source>
+            <translation>Drag %1 to System Settings</translation>
+        </message>
+        <message>
+            <source>Drag ‘%1’ into the permissions list above. If it is already listed, turn it on.</source>
+            <translation>Drag ‘%1’ into the permissions list above. If it is already listed, turn it on.</translation>
+        </message>
+        <message>
+            <source>Drag ‘%1’ into the permissions list in System Settings. If it is already listed, turn it on.</source>
+            <translation>Drag ‘%1’ into the permissions list in System Settings. If it is already listed, turn it on.</translation>
+        </message>
+        <message>
+            <source>Microphone access is unavailable. Open the installed application and try again.</source>
+            <translation>Microphone access is unavailable. Open the installed application and try again.</translation>
+        </message>
+        <message>
+            <source>Open the installed application to add it to the permissions list.</source>
+            <translation>Open the installed application to add it to the permissions list.</translation>
+        </message>
+        <message>
+            <source>Permission setup</source>
+            <translation>Permission setup</translation>
+        </message>
+        <message>
+            <source>Request Access</source>
+            <translation>Request Access</translation>
+        </message>
+        <message>
+            <source>Request microphone access, then allow it in the macOS prompt.</source>
+            <translation>Request microphone access, then allow it in the macOS prompt.</translation>
+        </message>
+        <message>
+            <source>Requesting…</source>
+            <translation>Requesting…</translation>
+        </message>
+        <message>
+            <source>This permission is restricted by your Mac's administrator.</source>
+            <translation>This permission is restricted by your Mac's administrator.</translation>
+        </message>
+        <message>
+            <source>Turn on microphone access for ‘%1’ in System Settings.</source>
+            <translation>Turn on microphone access for ‘%1’ in System Settings.</translation>
+        </message>
+    </context>
+    <context>
         <name>PinnedToolbarEditorSettingsWidget</name>
         <message>
             <source>Drag tools here to hide them from the pinned toolbar.</source>

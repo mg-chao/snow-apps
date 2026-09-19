@@ -441,6 +441,57 @@
         </message>
     </context>
     <context>
+        <name>PermissionGuide</name>
+        <message>
+            <source>Close guidance</source>
+            <translation>关闭引导</translation>
+        </message>
+        <message>
+            <source>Drag %1 to System Settings</source>
+            <translation>将 %1 拖到系统设置</translation>
+        </message>
+        <message>
+            <source>Drag ‘%1’ into the permissions list above. If it is already listed, turn it on.</source>
+            <translation>将“%1”拖到上方的权限列表中；若已在列表中，请开启权限。</translation>
+        </message>
+        <message>
+            <source>Drag ‘%1’ into the permissions list in System Settings. If it is already listed, turn it on.</source>
+            <translation>将“%1”拖到系统设置的权限列表中；若已在列表中，请开启权限。</translation>
+        </message>
+        <message>
+            <source>Microphone access is unavailable. Open the installed application and try again.</source>
+            <translation>麦克风访问不可用。请打开已安装的应用后重试。</translation>
+        </message>
+        <message>
+            <source>Open the installed application to add it to the permissions list.</source>
+            <translation>请打开已安装的应用，以将其添加到权限列表。</translation>
+        </message>
+        <message>
+            <source>Permission setup</source>
+            <translation>权限设置</translation>
+        </message>
+        <message>
+            <source>Request Access</source>
+            <translation>请求权限</translation>
+        </message>
+        <message>
+            <source>Request microphone access, then allow it in the macOS prompt.</source>
+            <translation>请求麦克风权限，然后在 macOS 提示中选择允许。</translation>
+        </message>
+        <message>
+            <source>Requesting…</source>
+            <translation>正在请求…</translation>
+        </message>
+        <message>
+            <source>This permission is restricted by your Mac's administrator.</source>
+            <translation>此权限受到 Mac 管理员的限制。</translation>
+        </message>
+        <message>
+            <source>Turn on microphone access for ‘%1’ in System Settings.</source>
+            <translation>在系统设置中开启“%1”的麦克风权限。</translation>
+        </message>
+    </context>
+    <context>
         <name>PinnedToolbarEditorSettingsWidget</name>
         <message>
             <source>Drag tools here to hide them from the pinned toolbar.</source>

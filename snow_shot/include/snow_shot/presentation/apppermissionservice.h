@@ -83,6 +83,7 @@ class AppPermissionService final : public QObject {
   signals:
     void changed();
     void refreshed();
+    void settingsOpened(AppPermission permission);
 
   private:
     std::unique_ptr<AppPermissionBackend> m_backend;
