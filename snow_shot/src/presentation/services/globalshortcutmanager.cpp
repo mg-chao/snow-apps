@@ -300,6 +300,12 @@ class GlobalShortcutManager::Impl {
                 if (action == *owner) {
                     continue;
                 }
+                // Only actions that hold a runtime registration own the
+                // identity; a colliding binding whose registration failed
+                // must not veto the action that actually owns the shortcut.
+                if (m_states[actionIndex(action)].status == GlobalShortcutStatus::Failed) {
+                    continue;
+                }
                 const auto& configured = m_shortcuts[actionIndex(action)];
                 if (std::any_of(configured.cbegin(), configured.cend(),
                                 [&binding](const auto& existing) {

@@ -109,7 +109,21 @@ class ShortcutRegistrationSuspensionGuard final : public QObject {
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override {
         if (event->type() == QEvent::Hide || event->type() == QEvent::Close) {
-            QMetaObject::invokeMethod(this, [this] { resume(); }, Qt::QueuedConnection);
+            // The modal hides transiently while it opens, and a queued
+            // callback can run after it has already reopened; only lift the
+            // suspension once the dialog is actually closed at run time.
+            QMetaObject::invokeMethod(
+                this,
+                [this] {
+                    const auto* modal = qobject_cast<adqt::widgets::AdModal*>(parent());
+                    const bool recorderAlive = modal != nullptr && modal->isOpen() &&
+                                               modal->contentWidget() != nullptr &&
+                                               !modal->contentWidget()->isHidden();
+                    if (!recorderAlive) {
+                        resume();
+                    }
+                },
+                Qt::QueuedConnection);
         }
         return QObject::eventFilter(watched, event);
     }
