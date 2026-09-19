@@ -66,6 +66,8 @@ void ScreenshotPresentationServices::setSelectionToolbarHovered(bool hovered) {
 void ScreenshotPresentationServices::setUiPreferences(const ScreenshotUiPreferences& preferences) {
     m_uiPreferences = preferences.normalized();
     m_smartSelectionTransition.setEnabled(m_uiPreferences.selectionTransitionAnimationEnabled);
+    m_context.overlayCoordinator.setSelectionBorderColor(m_context.displaySession,
+                                                         m_uiPreferences.selectionBorderColor);
     m_context.overlayCoordinator.setSelectionMaskColor(m_context.displaySession,
                                                        m_uiPreferences.selectionMaskColor);
     m_context.overlayCoordinator.setColorPickerCenterGuideLineColor(
@@ -124,6 +126,8 @@ void ScreenshotPresentationServices::presentSelectionFrame(const QRectF& selecti
 }
 
 void ScreenshotPresentationServices::presentOverlayState(const QRectF& selection) const {
+    m_context.overlayCoordinator.setSelectionBorderColor(m_context.displaySession,
+                                                         m_uiPreferences.selectionBorderColor);
     m_context.overlayCoordinator.setSelectionMaskColor(m_context.displaySession,
                                                        m_uiPreferences.selectionMaskColor);
     {

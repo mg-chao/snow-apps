@@ -107,13 +107,6 @@ std::size_t regionPixelCount(const QRegion& region) {
 }
 #endif
 
-QColor selectionAccentColor(int alpha = 255) {
-    const QColor primary = adqt::theme::ThemeManager::instance().resolveTheme().colorPrimary;
-    QColor accent = primary.isValid() ? primary : QColor(0x40, 0x96, 0xff);
-    accent.setAlpha(alpha);
-    return accent;
-}
-
 QPainterPath selectionShapePath(const QRectF& selection, int cornerRadius,
                                 const QTransform& canvasToViewTransform, qreal inset = 0.0) {
     QRectF viewRect = canvasToViewTransform.mapRect(selection.normalized());
@@ -947,6 +940,17 @@ void ScreenshotCanvasRenderer::setMaskVisible(bool visible) {
     m_canvas.update();
 }
 
+void ScreenshotCanvasRenderer::setSelectionBorderColor(const QColor& color) {
+    const QColor next = color.isValid() ? color : QColor(0x40, 0x96, 0xff);
+    if (m_selectionBorderColor == next) {
+        return;
+    }
+    m_selectionBorderColor = next;
+    if (m_selectionState.present) {
+        m_canvas.update();
+    }
+}
+
 void ScreenshotCanvasRenderer::setMaskColor(const QColor& color) {
     const QColor next = color.isValid() ? color : QColor(0, 0, 0, 128);
     if (m_maskColor == next) {
@@ -1487,7 +1491,7 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
                                   &context.exposedRegion);
     }
     if (m_renderMode == RenderMode::Standard && m_selectionState.present) {
-        const QColor selectionAccent = selectionAccentColor();
+        const QColor selectionAccent = m_selectionBorderColor;
         const QRectF selectionView = context.canvasToViewTransform.mapRect(m_selectionState.bounds);
         if (m_selectionState.toolbarHovered) {
             renderSelectionShadow(painter, context, m_selectionState.bounds, visibleCornerRadius,

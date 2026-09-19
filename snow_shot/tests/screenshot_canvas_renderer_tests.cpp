@@ -804,6 +804,7 @@ QColor sourceOverOpaqueBackground(const QColor& source, const QColor& background
 
 void screenshotUiPreferencesNormalizeAndApplyPickerVisibilityPolicies() {
     ScreenshotUiPreferences preferences;
+    preferences.selectionBorderColor = QColor();
     preferences.selectionMaskColor = QColor();
     preferences.shortcutHintOpacity = 1.5;
     preferences.cursorGuideLineColor = QColor();
@@ -811,6 +812,8 @@ void screenshotUiPreferencesNormalizeAndApplyPickerVisibilityPolicies() {
     preferences.colorPickerCenterGuideLineColor = QColor();
     const ScreenshotUiPreferences normalized = preferences.normalized();
 
+    require(normalized.selectionBorderColor == QColor(0x40, 0x96, 0xff),
+            "invalid screenshot border colors must normalize to the default border color");
     require(normalized.selectionMaskColor == QColor(0, 0, 0, 128),
             "invalid screenshot mask colors must normalize to the default mask");
     require(normalized.shortcutHintOpacity == 1.0,
@@ -1333,22 +1336,22 @@ void screenshotImageMaskAndSelectionRenderInTheirOwnedPasses() {
     canvas.setCustomRenderer(nullptr);
 }
 
-void selectionBorderAndHandlesFollowTheThemePrimaryColor() {
+void selectionBorderAndHandlesFollowTheConfiguredColor() {
     auto& themeManager = adqt::theme::ThemeManager::instance();
     const auto originalConfig = themeManager.config();
     auto themedConfig = originalConfig;
-    themedConfig.primary = QColor(184, 28, 136);
+    themedConfig.primary = QColor(96, 128, 16);
     themeManager.setConfig(themedConfig);
     const QColor primary = themeManager.resolveTheme().colorPrimary;
-    require(primary.isValid() && primary != QColor(0x40, 0x96, 0xff) &&
-                primary != QColor(0, 80, 240),
-            "the themed selection test requires a distinctive primary color");
+    const QColor borderColor(184, 28, 136);
+    require(primary.isValid() && primary != borderColor && primary != QColor(0, 80, 240),
+            "the configured selection test requires a distinctive theme primary color");
 
     SnowCanvasWidget canvas;
     canvas.resize(80, 80);
     canvas.setClearBackgroundEnabled(false);
     require(canvas.setViewportCamera(0.0, 0.0, 1.0),
-            "the themed selection test should initialize the camera");
+            "the configured selection test should initialize the camera");
 
     ScreenshotCanvasRenderer renderer(canvas);
     canvas.setCustomRenderer(&renderer);
@@ -1357,15 +1360,26 @@ void selectionBorderAndHandlesFollowTheThemePrimaryColor() {
     renderer.setImage(std::move(screenshot), QRectF(-40.0, -40.0, 80.0, 80.0));
     renderer.setSelection(QRectF(-20.0, -20.0, 40.0, 40.0));
 
+    const QImage themedOutput = renderCanvas(canvas);
+    require(themedOutput.pixelColor(20, 40) == QColor(0x40, 0x96, 0xff),
+            "the selection border must default to the configured border color, not the theme");
+
+    renderer.setSelectionBorderColor(borderColor);
     const QImage output = renderCanvas(canvas);
-    require(output.pixelColor(20, 40) == primary,
-            "the selection border must paint the theme primary color on its left edge");
-    require(output.pixelColor(40, 20) == primary,
-            "the selection border must paint the theme primary color on its top edge");
-    require(output.pixelColor(20, 20) == primary,
-            "the selection corner handle must paint the theme primary color");
+    require(output.pixelColor(20, 40) == borderColor,
+            "the selection border must paint the configured color on its left edge");
+    require(output.pixelColor(40, 20) == borderColor,
+            "the selection border must paint the configured color on its top edge");
+    require(output.pixelColor(20, 20) == borderColor,
+            "the selection corner handle must paint the configured color");
     require(output.pixelColor(40, 40) == QColor(0, 80, 240),
-            "the themed border must leave the selection interior untouched");
+            "the configured border must leave the selection interior untouched");
+    require(output.pixelColor(20, 40) != primary,
+            "the selection border must not follow the theme primary color");
+
+    renderer.setSelectionBorderColor(QColor());
+    require(renderCanvas(canvas).pixelColor(20, 40) == QColor(0x40, 0x96, 0xff),
+            "an invalid configured border color must fall back to the default border color");
 
     themeManager.setConfig(originalConfig);
     canvas.setCustomRenderer(nullptr);
@@ -1751,14 +1765,9 @@ void ocrPresentationSelectionBorderIgnoresRoundedCorners() {
 }
 
 void roundedSelectionHidesCornerHandlesButKeepsEdgeHandles() {
-    auto& themeManager = adqt::theme::ThemeManager::instance();
-    const auto originalConfig = themeManager.config();
-    auto themedConfig = originalConfig;
-    themedConfig.primary = QColor(184, 28, 136);
-    themeManager.setConfig(themedConfig);
-    const QColor primary = themeManager.resolveTheme().colorPrimary;
-    require(primary.isValid() && primary != QColor(0, 80, 240),
-            "the rounded handle test requires a distinctive primary color");
+    const QColor borderColor(184, 28, 136);
+    require(borderColor != QColor(0, 80, 240),
+            "the rounded handle test requires a distinctive border color");
 
     SnowCanvasWidget canvas;
     canvas.resize(100, 100);
@@ -1767,6 +1776,7 @@ void roundedSelectionHidesCornerHandlesButKeepsEdgeHandles() {
 
     ScreenshotCanvasRenderer renderer(canvas);
     canvas.setCustomRenderer(&renderer);
+    renderer.setSelectionBorderColor(borderColor);
     QImage screenshot(100, 100, QImage::Format_RGBA8888);
     screenshot.fill(QColor(0, 80, 240));
     renderer.setImage(std::move(screenshot), QRectF(-50.0, -50.0, 100.0, 100.0));
@@ -1775,10 +1785,10 @@ void roundedSelectionHidesCornerHandlesButKeepsEdgeHandles() {
 
     renderer.setSelection(selection, true, 0);
     const QImage squareOutput = renderCanvas(canvas);
-    require(squareOutput.pixelColor(10, 10) == primary &&
-                squareOutput.pixelColor(90, 10) == primary &&
-                squareOutput.pixelColor(90, 90) == primary &&
-                squareOutput.pixelColor(10, 90) == primary,
+    require(squareOutput.pixelColor(10, 10) == borderColor &&
+                squareOutput.pixelColor(90, 10) == borderColor &&
+                squareOutput.pixelColor(90, 90) == borderColor &&
+                squareOutput.pixelColor(10, 90) == borderColor,
             "a square selection should paint all four corner handles");
 
     renderer.setSelection(selection, true, 18);
@@ -1787,14 +1797,13 @@ void roundedSelectionHidesCornerHandlesButKeepsEdgeHandles() {
     const QImage hiddenHandlesOutput = renderCanvas(canvas);
     for (const QPoint& corner : {QPoint(10, 10), QPoint(90, 10), QPoint(90, 90), QPoint(10, 90)}) {
         require(roundedOutput.pixelColor(corner) == hiddenHandlesOutput.pixelColor(corner) &&
-                    roundedOutput.pixelColor(corner) != primary,
+                    roundedOutput.pixelColor(corner) != borderColor,
                 "rounded corners should hide the corner handles");
     }
-    require(roundedOutput.pixelColor(50, 8) == primary &&
-                hiddenHandlesOutput.pixelColor(50, 8) != primary,
+    require(roundedOutput.pixelColor(50, 8) == borderColor &&
+                hiddenHandlesOutput.pixelColor(50, 8) != borderColor,
             "rounded corners should keep the edge midpoint handles");
 
-    themeManager.setConfig(originalConfig);
     canvas.setCustomRenderer(nullptr);
 }
 
@@ -3934,7 +3943,7 @@ int main(int argc, char** argv) {
     ocrBackgroundFillSamplesRobustlyAndChoosesContrastingText();
     ocrSolidFillRendersAdaptiveTextPerBlock();
     screenshotImageMaskAndSelectionRenderInTheirOwnedPasses();
-    selectionBorderAndHandlesFollowTheThemePrimaryColor();
+    selectionBorderAndHandlesFollowTheConfiguredColor();
     rendererCoversTheWidgetRectOnceAScreenshotFillsTheViewport();
     overlayPaintSkipsRedundantTransparentClearWhenRendererCoversTheRect();
     layeredImageSourceMatchesMaterializedOutput();

@@ -17,6 +17,7 @@ struct ScreenshotUiPreferences {
     bool selectionTransitionAnimationEnabled = true;
     ScreenshotColorPickerDisplayMode colorPickerDisplayMode =
         ScreenshotColorPickerDisplayMode::HideOutsideSelection;
+    QColor selectionBorderColor = QColor(0x40, 0x96, 0xff);
     QColor selectionMaskColor = QColor(0, 0, 0, 128);
     qreal shortcutHintOpacity = 1.0;
     QColor cursorGuideLineColor = QColor(0, 0, 0, 0);
@@ -25,6 +26,9 @@ struct ScreenshotUiPreferences {
 
     [[nodiscard]] ScreenshotUiPreferences normalized() const {
         ScreenshotUiPreferences result = *this;
+        if (!result.selectionBorderColor.isValid()) {
+            result.selectionBorderColor = QColor(0x40, 0x96, 0xff);
+        }
         if (!result.selectionMaskColor.isValid()) {
             result.selectionMaskColor = QColor(0, 0, 0, 128);
         }

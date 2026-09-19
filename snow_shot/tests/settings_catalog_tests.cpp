@@ -211,10 +211,10 @@ void builtInCatalogIsCompleteAndValid() {
     }
 #ifdef Q_OS_MACOS
     require(sectionCount == 40, "macOS adds one permissions section");
-    require(itemCount == 168, "macOS adds four permission rows and omits Windows-only choices");
+    require(itemCount == 169, "macOS adds four permission rows and omits Windows-only choices");
 #else
     require(sectionCount == 39, "catalog must contain thirty-nine sections");
-    require(itemCount == 166, "catalog must contain one hundred sixty-six items");
+    require(itemCount == 167, "catalog must contain one hundred sixty-seven items");
 #endif
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -1025,6 +1025,27 @@ void builtInCatalogIsCompleteAndValid() {
             trayIcon->configurationKey == QStringLiteral("tray/icon") &&
             std::get<settings::SettingsRadioDefinition>(trayIcon->payload).options.size() == 6,
         "new Interface settings controls must retain their schema contracts");
+
+    const auto* selectionBorderColor =
+        catalog.item({QStringLiteral("interface-settings"), QStringLiteral("interface-screenshot"),
+                      QStringLiteral("interface.screenshot.selection-border-color")});
+    require(
+        selectionBorderColor != nullptr &&
+            screenshotSection.items.at(2).id ==
+                QStringLiteral("interface.screenshot.selection-border-color") &&
+            screenshotSection.items.at(3).id ==
+                QStringLiteral("interface.screenshot.selection-mask-color") &&
+            selectionBorderColor->configurationKey ==
+                QStringLiteral("screenshot_ui/selection_border_color") &&
+            selectionBorderColor->title.translated() == QStringLiteral("Selection border color") &&
+            selectionBorderColor->description.translated() ==
+                QStringLiteral("Set the border color of the screenshot selection") &&
+            std::get<settings::SettingsColorDefinition>(selectionBorderColor->payload).binding ==
+                settings::SettingsColorBinding::SelectionBorderColor &&
+            storage::ConfigurationSchema::defaultValue(selectionBorderColor->configurationKey) ==
+                QStringLiteral("#4096FFFF"),
+        "the interface Screenshot section must expose a selection border color above the mask "
+        "color, defaulting to #4096ff");
 
     const auto& pinSection = interfacePage->sections.at(5);
     const auto* pinBorderActiveColor =

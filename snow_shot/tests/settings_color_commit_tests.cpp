@@ -98,7 +98,7 @@ void settingsColorsCommitOnPopupClose(QApplication& application) {
                 "opening and closing without editing does not apply another change");
         ++tested;
     }
-    require(tested == 7, "cover all seven settings color pickers");
+    require(tested == 8, "cover all eight settings color pickers");
 }
 } // namespace
 

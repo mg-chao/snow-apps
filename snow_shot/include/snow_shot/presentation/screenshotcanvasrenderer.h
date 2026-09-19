@@ -97,6 +97,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
                                 const ScreenshotResultStyle& style);
     void setPinnedBackgroundColor(const QColor& color);
     void setMaskVisible(bool visible);
+    void setSelectionBorderColor(const QColor& color);
     void setMaskColor(const QColor& color);
     void setGuideLines(const QPointF& cursorPosition, const QColor& cursorColor,
                        const QColor& monitorCenterColor);
@@ -164,6 +165,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     ScreenshotSelectionVisualState m_selectionState;
     RenderMode m_renderMode = RenderMode::Standard;
     bool m_maskVisible = false;
+    QColor m_selectionBorderColor = QColor(0x40, 0x96, 0xff);
     QColor m_maskColor = QColor(0, 0, 0, 128);
     QPoint m_guideLineCursorPosition;
     QColor m_cursorGuideLineColor = QColor(0, 0, 0, 0);

@@ -177,6 +177,7 @@ struct SettingsSliderDefinition {
 
 enum class SettingsColorBinding {
     ThemePrimaryColor,
+    SelectionBorderColor,
     SelectionMaskColor,
     CursorGuideLineColor,
     MonitorCenterGuideLineColor,

@@ -61,6 +61,8 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
                                  const QRectF& selection, bool enabled);
     void updateOverlayCursors(const ScreenshotDisplaySession& displaySession, bool selecting,
                               bool dragging) const;
+    void setSelectionBorderColor(const ScreenshotDisplaySession& displaySession,
+                                 const QColor& color) const;
     void setSelectionMaskColor(const ScreenshotDisplaySession& displaySession,
                                const QColor& color) const;
     void updateGuideLines(const ScreenshotDisplaySession& displaySession,

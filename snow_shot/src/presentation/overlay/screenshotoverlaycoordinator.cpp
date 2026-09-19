@@ -263,6 +263,13 @@ void ScreenshotOverlayCoordinator::updateOverlayCursors(
     m_canvasPresenter.updateOverlayCursors(displaySession, selecting, dragging);
 }
 
+void ScreenshotOverlayCoordinator::setSelectionBorderColor(
+    const ScreenshotDisplaySession& displaySession, const QColor& color) const {
+    displaySession.forEachOverlay([&color](qsizetype, ScreenshotOverlayWindow* overlay) {
+        overlay->setScreenshotSelectionBorderColor(color);
+    });
+}
+
 void ScreenshotOverlayCoordinator::setSelectionMaskColor(
     const ScreenshotDisplaySession& displaySession, const QColor& color) const {
     displaySession.forEachOverlay([&color](qsizetype, ScreenshotOverlayWindow* overlay) {

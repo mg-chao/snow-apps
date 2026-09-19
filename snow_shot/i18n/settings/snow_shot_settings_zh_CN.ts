@@ -2335,6 +2335,10 @@
             <translation>选区动画</translation>
         </message>
         <message>
+            <source>Selection border color</source>
+            <translation>选区边框颜色</translation>
+        </message>
+        <message>
             <source>Selection mask color</source>
             <translation>选区遮罩颜色</translation>
         </message>
@@ -2353,6 +2357,10 @@
         <message>
             <source>Set the border color of pinned screenshots while they have focus</source>
             <translation>设置固定截图获得焦点时的边框颜色</translation>
+        </message>
+        <message>
+            <source>Set the border color of the screenshot selection</source>
+            <translation>设置截图选区的边框颜色</translation>
         </message>
         <message>
             <source>Set the color and opacity outside the screenshot selection</source>

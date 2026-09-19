@@ -111,6 +111,12 @@ void ScreenshotOverlayWindow::setScreenshotMaskVisible(bool visible) {
     }
 }
 
+void ScreenshotOverlayWindow::setScreenshotSelectionBorderColor(const QColor& color) {
+    if (m_screenshotRenderer != nullptr) {
+        m_screenshotRenderer->setSelectionBorderColor(color);
+    }
+}
+
 void ScreenshotOverlayWindow::setScreenshotMaskColor(const QColor& color) {
     if (m_screenshotRenderer != nullptr) {
         m_screenshotRenderer->setMaskColor(color);
