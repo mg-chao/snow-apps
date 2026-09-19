@@ -822,7 +822,19 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
 }
 
 ScreenshotToolPalette::~ScreenshotToolPalette() {
+    m_destroying = true;
     m_styleControls->clearTextStylePopupInteractions();
+    for (const DrawingToolGroup& group : std::as_const(m_drawingToolGroups)) {
+        if (group.popover != nullptr) {
+            group.popover->hide();
+        }
+    }
+    for (const ActionToolGroup& group : std::as_const(m_actionToolGroups)) {
+        if (group.popover != nullptr) {
+            group.popover->hide();
+        }
+    }
+    evictSecondaryToolbarContents();
     // Close the settings dialog while the palette is still alive so it restores
     // focus and tears down its own window instead of being destroyed as a child
     // while still mapped.
@@ -3525,6 +3537,18 @@ void ScreenshotToolPalette::clearDrawingToolGroups() {
     m_drawingToolGroups.clear();
 }
 
+void ScreenshotToolPalette::releaseDrawingToolGroupPopover(adqt::widgets::AdButton* trigger) {
+    for (DrawingToolGroup& group : m_drawingToolGroups) {
+        if (group.trigger != trigger) {
+            continue;
+        }
+        group.optionButtons.clear();
+        group.optionValues.clear();
+        group.popoverConstructing = false;
+        return;
+    }
+}
+
 void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
     // Toolbar activations express user intent; reflective canvas synchronization
     // must not rewrite the remembered drawing modes.
@@ -3994,7 +4018,24 @@ void ScreenshotToolPalette::clearActionToolGroups() {
         m_qrButton = nullptr;
         m_tableQrOptionButtons.clear();
         m_tableQrOptionValues.clear();
-        m_tableQrPopover->setContentWidget(nullptr);
+    }
+}
+
+void ScreenshotToolPalette::releaseActionToolGroupPopover(adqt::widgets::AdButton* trigger) {
+    for (ActionToolGroup& group : m_actionToolGroups) {
+        if (group.trigger != trigger) {
+            continue;
+        }
+        group.optionButtons.clear();
+        group.optionValues.clear();
+        group.popoverConstructing = false;
+        if (group.popover == m_tableQrPopover) {
+            m_tableOptionButton = nullptr;
+            m_qrButton = nullptr;
+            m_tableQrOptionButtons.clear();
+            m_tableQrOptionValues.clear();
+        }
+        return;
     }
 }
 
@@ -4182,7 +4223,8 @@ adqt::widgets::AdButton* ScreenshotToolPalette::createActionToolGroup(const QStr
         if (availableItemIds.size() > 1) {
             group.popover = createScreenshotToolPaletteOptionPopoverShell(
                 group.trigger, this,
-                [this, trigger = group.trigger]() { ensureActionToolGroupPopover(trigger); });
+                [this, trigger = group.trigger]() { ensureActionToolGroupPopover(trigger); },
+                [this, trigger = group.trigger]() { releaseActionToolGroupPopover(trigger); });
             group.trigger->installEventFilter(this);
         }
         connect(group.trigger, &adqt::widgets::AdButton::clicked, this,
@@ -4304,7 +4346,8 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
 
             group.popover = createScreenshotToolPaletteOptionPopoverShell(
                 group.trigger, this,
-                [this, trigger = group.trigger]() { ensureDrawingToolGroupPopover(trigger); });
+                [this, trigger = group.trigger]() { ensureDrawingToolGroupPopover(trigger); },
+                [this, trigger = group.trigger]() { releaseDrawingToolGroupPopover(trigger); });
             group.trigger->installEventFilter(this);
             connect(group.trigger, &adqt::widgets::AdButton::clicked, this,
                     [this, trigger = group.trigger]() {
@@ -4662,7 +4705,8 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
         addButton(m_tableButton);
 
         m_tableQrPopover = createScreenshotToolPaletteOptionPopoverShell(
-            m_tableButton, this, [this]() { ensureActionToolGroupPopover(m_tableButton); });
+            m_tableButton, this, [this]() { ensureActionToolGroupPopover(m_tableButton); },
+            [this]() { releaseActionToolGroupPopover(m_tableButton); });
         m_tableButton->installEventFilter(this);
         connect(m_tableButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateActionTool(actionToolItemId(m_tableQrEntryTool)); });
@@ -5545,6 +5589,7 @@ bool ScreenshotToolPalette::ensureRecordingEffectSettingsModal() {
     const auto addKeyboardPicker = [form](const QString& name, const QString& label,
                                           const QString& key, const QColor& color) {
         auto* picker = new adqt::widgets::AdColorPicker(form);
+        picker->setPopupPrewarmEnabled(false);
         picker->setObjectName(name);
         picker->setPopupLayerMode(adqt::widgets::AdColorPicker::PopupLayerMode::QtTool);
         picker->setAccessibleName(label);
@@ -5854,19 +5899,14 @@ bool ScreenshotToolPalette::evictSecondaryToolbarContents() {
     m_releasingSecondaryResources = true;
     m_styleReconcilePending = false;
     m_styleReconcileSource.reset();
-    m_styleControls->releaseControlBindings();
     m_actionToolbarTargetVisible = false;
     m_styleToolbarTargetVisible = false;
 
-    // Publish null bindings before destroying the child widget subtrees.
-    // Destruction can synchronously invoke focus, popup, or layout callbacks.
-    clearSecondaryResourceBindings();
-
-    const auto clearLayout = [](QBoxLayout* layout) {
+    QVector<QWidget*> widgets;
+    const auto takeLayoutWidgets = [&widgets](QBoxLayout* layout) {
         if (layout == nullptr) {
             return;
         }
-        QVector<QWidget*> widgets;
         const auto takeLayoutItems = [&widgets](auto&& self, QLayout* currentLayout) -> void {
             while (QLayoutItem* item = currentLayout->takeAt(0)) {
                 if (QWidget* widget = item->widget()) {
@@ -5882,6 +5922,35 @@ bool ScreenshotToolPalette::evictSecondaryToolbarContents() {
             }
         };
         takeLayoutItems(takeLayoutItems, layout);
+        layout->invalidate();
+    };
+    takeLayoutWidgets(m_selectActionLayout);
+    takeLayoutWidgets(m_rectangleStyleLayout);
+
+    // Close popups while their editor components and callbacks are still valid. This also
+    // balances text-edit popup interactions before any owner subtree is detached or destroyed.
+    for (QWidget* widget : std::as_const(widgets)) {
+        const auto colorPickers = widget->findChildren<adqt::widgets::AdColorPicker*>();
+        for (adqt::widgets::AdColorPicker* picker : colorPickers) {
+            picker->setPopupVisible(false);
+        }
+        const auto selects = widget->findChildren<adqt::widgets::AdSelect*>();
+        for (adqt::widgets::AdSelect* select : selects) {
+            select->setPopupVisible(false);
+        }
+        const auto popovers = widget->findChildren<adqt::widgets::AdPopover*>();
+        for (adqt::widgets::AdPopover* popover : popovers) {
+            popover->hide();
+        }
+    }
+    m_styleControls->clearTextStylePopupInteractions();
+
+    // Publish null palette bindings before destroying the child widget subtrees. Destruction can
+    // synchronously invoke focus, popup, or layout callbacks. The style-component bindings stay
+    // alive until after synchronous destruction so those callbacks cannot reach freed components.
+    clearSecondaryResourceBindings();
+
+    const auto releaseWidgets = [this](const QVector<QWidget*>& removedWidgets) {
         // Any of these widgets may be dispatching the very command that triggered
         // this eviction (a secondary-panel action button that ends or resets the
         // capture), so destruction must wait until the event loop; deleting here
@@ -5889,14 +5958,17 @@ bool ScreenshotToolPalette::evictSecondaryToolbarContents() {
         // Detach each widget first: reparenting removes it from the palette's
         // QObject tree and hides it immediately, so child discovery and layout
         // see a consistent state without waiting for the deferred delete.
-        for (QWidget* widget : std::as_const(widgets)) {
+        for (QWidget* widget : removedWidgets) {
+            if (m_destroying) {
+                delete widget;
+                continue;
+            }
             widget->setParent(nullptr);
             widget->deleteLater();
         }
-        layout->invalidate();
     };
-    clearLayout(m_selectActionLayout);
-    clearLayout(m_rectangleStyleLayout);
+    releaseWidgets(widgets);
+    m_styleControls->releaseControlBindings();
     if (m_selectActionPanel != nullptr) {
         m_selectActionPanel->hide();
         m_selectActionPanel->updateGeometry();
@@ -5938,6 +6010,21 @@ bool ScreenshotToolPalette::evictStyleToolbarContentsExcept(QWidget* retainedCon
         return false;
     }
     m_releasingSecondaryResources = true;
+    for (QWidget* row : std::as_const(removedRows)) {
+        const auto colorPickers = row->findChildren<adqt::widgets::AdColorPicker*>();
+        for (adqt::widgets::AdColorPicker* picker : colorPickers) {
+            picker->setPopupVisible(false);
+        }
+        const auto selects = row->findChildren<adqt::widgets::AdSelect*>();
+        for (adqt::widgets::AdSelect* select : selects) {
+            select->setPopupVisible(false);
+        }
+        const auto popovers = row->findChildren<adqt::widgets::AdPopover*>();
+        for (adqt::widgets::AdPopover* popover : popovers) {
+            popover->hide();
+        }
+    }
+    m_styleControls->clearTextStylePopupInteractions();
     const auto belongsToRemovedRow = [&removedRows](const QObject* object) {
         for (const QObject* current = object; current != nullptr; current = current->parent()) {
             if (std::any_of(removedRows.cbegin(), removedRows.cend(),

@@ -3769,6 +3769,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screenshot-tool-palette-tests --popup-recovery-only -platform offscreen)
     set_tests_properties(snow-shot-toolbar-popup-recovery-tests PROPERTIES LABELS "unit" TIMEOUT 60
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-toolbar-popover-lifecycle-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --popover-lifecycle-only
+            -platform offscreen)
+    set_tests_properties(snow-shot-toolbar-popover-lifecycle-tests PROPERTIES LABELS "unit"
+        TIMEOUT 90
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(
         NAME snow-shot-screenshot-action-toolbar-layout-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --action-toolbar-layout-only

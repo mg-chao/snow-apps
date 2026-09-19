@@ -297,6 +297,12 @@ if(ADQT_BUILD_TESTS)
         COMMAND adqt-qt-tool-popup-tests siblingPopoversReopenAfterOverdueHoverTasks
                 siblingPopoversReopenAfterScopeRecreation -platform offscreen)
     set_tests_properties(adqt-popup-hover-recovery-tests PROPERTIES LABELS "unit")
+    add_test(NAME adqt-popover-content-lifecycle-tests
+        COMMAND adqt-qt-tool-popup-tests retainedFactoryContentIsLazyAndOwnerBound
+                recreateFactoryContentIsReleasedAfterHide
+                directContentRemainsCompatibleWithFactoryApi
+                colorPickerPrewarmCanBeDisabled -platform offscreen)
+    set_tests_properties(adqt-popover-content-lifecycle-tests PROPERTIES LABELS "unit")
     add_executable(adqt-popup-hover-geometry-tests tests/popup_hover_geometry_tests.cpp)
     target_link_libraries(adqt-popup-hover-geometry-tests PRIVATE adqt::widgets Qt6::Test)
     if(TARGET Qt6::QOffscreenIntegrationPlugin)

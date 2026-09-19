@@ -127,7 +127,8 @@ struct ScreenshotToolPaletteOptionPopoverEditorConfig {
 
 [[nodiscard]] adqt::widgets::AdPopover*
 createScreenshotToolPaletteOptionPopoverShell(adqt::widgets::AdButton* trigger, QObject* receiver,
-                                              const std::function<void()>& materialize);
+                                              const std::function<void()>& materialize,
+                                              const std::function<void()>& release);
 
 [[nodiscard]] ScreenshotToolPaletteOptionPopoverEditor
 materializeScreenshotToolPaletteOptionPopoverEditor(

@@ -2603,6 +2603,16 @@ void AdColorPicker::setPopupVisible(bool value) {
   popover_->setVisible(value);
 }
 
+bool AdColorPicker::popupPrewarmEnabled() const { return popupPrewarmEnabled_; }
+
+void AdColorPicker::setPopupPrewarmEnabled(bool value) {
+  if (popupPrewarmEnabled_ == value) {
+    return;
+  }
+  popupPrewarmEnabled_ = value;
+  emit popupPrewarmEnabledChanged(popupPrewarmEnabled_);
+}
+
 bool AdColorPicker::disabled() const { return !isEnabled(); }
 
 void AdColorPicker::setDisabled(bool value) {
@@ -2966,14 +2976,15 @@ void AdColorPicker::resizeEvent(QResizeEvent* event) {
 
 void AdColorPicker::showEvent(QShowEvent* event) {
   QWidget::showEvent(event);
-  if (hostMode_ != HostMode::WithTrigger || pickerPanel_ || editorPrewarmScheduled_) {
+  if (hostMode_ != HostMode::WithTrigger || pickerPanel_ || editorPrewarmScheduled_ ||
+      !popupPrewarmEnabled_) {
     return;
   }
 
   editorPrewarmScheduled_ = true;
   detail::deferTimingTask(this, QStringLiteral("AdColorPicker.PrewarmPopup"), [this]() {
     editorPrewarmScheduled_ = false;
-    if (!isVisible() || pickerPanel_) {
+    if (!isVisible() || pickerPanel_ || !popupPrewarmEnabled_) {
       return;
     }
     ensureEditorUi();

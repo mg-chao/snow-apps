@@ -182,11 +182,16 @@ class ScreenshotToolPaletteStrokeEditor final : public ScreenshotToolPaletteStyl
     void release() override;
 
   private:
+    void ensurePopupContent(const ScreenshotToolPaletteButtonMetrics& metrics);
+
     adqt::widgets::AdColorPicker* m_picker = nullptr;
     ColorPickerTrigger* m_trigger = nullptr;
     ScreenshotToolPaletteColorPresets m_colorPresets;
     QVector<StrokeStylePreviewButton*> m_styleButtons;
     QVector<SnowCanvasStrokeStyle> m_styleValues;
+    ScreenshotToolPaletteStrokeEditorConfig m_config;
+    SnowCanvasStrokeStyle m_currentStyle = SnowCanvasStrokeStyle::Solid;
+    bool m_styleMixed = false;
     std::shared_ptr<std::function<void(const QColor&)>> m_setColor;
     std::shared_ptr<std::function<void(SnowCanvasStrokeStyle)>> m_setStyle;
     bool m_handlingChange = false;
@@ -224,11 +229,16 @@ class ScreenshotToolPaletteFillEditor final : public ScreenshotToolPaletteStyleE
     void release() override;
 
   private:
+    void ensurePopupContent(const ScreenshotToolPaletteButtonMetrics& metrics);
+
     adqt::widgets::AdColorPicker* m_picker = nullptr;
     ColorPickerTrigger* m_trigger = nullptr;
     ScreenshotToolPaletteColorPresets m_colorPresets;
     QVector<FillStylePreviewButton*> m_styleButtons;
     QVector<SnowCanvasFillStyle> m_styleValues;
+    ScreenshotToolPaletteFillEditorConfig m_config;
+    QColor m_currentColor;
+    bool m_colorMixed = false;
     std::shared_ptr<std::function<void(const QColor&)>> m_setColor;
     std::shared_ptr<std::function<void(SnowCanvasFillStyle)>> m_setStyle;
     bool m_handlingChange = false;
@@ -274,11 +284,18 @@ class ScreenshotToolPaletteWidthColorEditor final
     void release() override;
 
   private:
+    void ensurePopupContent(const ScreenshotToolPaletteButtonMetrics& metrics);
+
     adqt::widgets::AdColorPicker* m_picker = nullptr;
     ColorPickerTrigger* m_trigger = nullptr;
     QVector<adqt::widgets::AdButton*> m_widthButtons;
     QVector<double> m_widthValues;
     ScreenshotToolPaletteColorPresets m_colorButtons;
+    ScreenshotToolPaletteWidthColorEditorConfig m_config;
+    double m_currentWidth = 0.0;
+    QColor m_currentColor;
+    bool m_widthMixed = false;
+    bool m_colorMixed = false;
     std::shared_ptr<std::function<void(double)>> m_setWidth;
     std::shared_ptr<std::function<void(const QColor&)>> m_setColor;
     bool m_handlingChange = false;
@@ -397,10 +414,15 @@ class ScreenshotToolPaletteIconOptionEditor final
     void release() override;
 
   private:
+    QWidget* createPopupContent(const ScreenshotToolPaletteButtonMetrics& metrics);
+
     IconValuePreviewTrigger* m_trigger = nullptr;
     adqt::widgets::AdPopover* m_popover = nullptr;
     QVector<adqt::widgets::AdButton*> m_buttons;
     QVector<ScreenshotToolPaletteIconOption> m_options;
+    ScreenshotToolPaletteIconOptionEditorConfig m_config;
+    int m_currentValue = 0;
+    bool m_mixed = false;
     std::shared_ptr<std::function<void(int)>> m_setValue;
 };
 

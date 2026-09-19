@@ -533,6 +533,7 @@ class ScreenshotToolPalette final : public QWidget {
     void recordUserDrawingToolIntent(Tool tool);
     [[nodiscard]] bool drawingToolCanBeActivated(Tool tool) const;
     void clearDrawingToolGroups();
+    void releaseDrawingToolGroupPopover(adqt::widgets::AdButton* trigger);
     bool activateToolFromToolbar(Tool tool, bool toggleVisibleButton = true);
     void activateDrawingTool(Tool tool);
     [[nodiscard]] bool isRecordingUnavailableTool(Tool tool) const;
@@ -695,6 +696,7 @@ class ScreenshotToolPalette final : public QWidget {
 
     void ensureDrawingToolGroupPopover(adqt::widgets::AdButton* trigger);
     void ensureActionToolGroupPopover(adqt::widgets::AdButton* trigger);
+    void releaseActionToolGroupPopover(adqt::widgets::AdButton* trigger);
     void clearActionToolGroups();
     [[nodiscard]] adqt::widgets::AdButton* actionToolSourceButton(const QString& itemId) const;
     [[nodiscard]] adqt::widgets::AdButton* actionToolEntryButton(const QString& itemId) const;
@@ -903,6 +905,7 @@ class ScreenshotToolPalette final : public QWidget {
     qint64 m_recordingDurationMilliseconds = 0;
     bool m_replayingMaterializedState = false;
     bool m_releasingSecondaryResources = false;
+    bool m_destroying = false;
     bool m_styleReconcilePending = false;
     std::optional<Tool> m_styleReconcileSource;
     QHash<int, MaterializationState> m_actionFamilyStates;
