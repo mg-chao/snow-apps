@@ -672,6 +672,12 @@ void ScreenshotFloatingToolPaletteWindow::handlePaletteContentChange() {
     if (m_paletteHost == nullptr) {
         return;
     }
+    // Switching tools retires the previous tool's input row. Any keyboard
+    // focus interaction that row owned must not outlive it.
+    if (m_keyboardFocusInteractionActive && m_keyboardFocusEditor != nullptr &&
+        !m_keyboardFocusEditor->isVisible()) {
+        endKeyboardFocusInteraction();
+    }
     // A secondary panel can change visibility without changing the fixed frame
     // or the main-row anchor.
     updateWindowMask();
