@@ -6,6 +6,9 @@
 #include "windowcursorrefresh.h"
 
 #include <QCursor>
+#include <QAbstractButton>
+#include <QVariant>
+#include <QPointer>
 #include <QGuiApplication>
 #include <QPoint>
 #include <QRect>
@@ -168,8 +171,22 @@ bool handleNcHitTest(QWidget* titleBar, const MSG* msg, qintptr* result) {
         return true;
     }
 
-    if (hitTestResizeBorder(msg, result)) {
+    if (IsZoomed(msg->hwnd) == 0 && hitTestResizeBorder(msg, result)) {
         return true;
+    }
+
+    // Only the visible child may opt into native caption behavior. This keeps
+    // raised overlays in control and enables the system menu and Windows 11 Snap.
+    if (titleBar != nullptr) {
+        QWidget* hit =
+            titleBar->window()->childAt(titleBar->window()->mapFromGlobal(QCursor::pos()));
+        if (hit != nullptr && titleBar->isAncestorOf(hit)) {
+            const int captionHit = hit->property("snowWindowCaptionHit").toInt();
+            if (hit->isEnabled() && (captionHit == HTSYSMENU || captionHit == HTMAXBUTTON)) {
+                *result = captionHit;
+                return true;
+            }
+        }
     }
 
     // Use QCursor::pos() which is already in Qt logical coordinates,
@@ -437,6 +454,58 @@ bool handleNativeWindowEvent(QWidget* titleBar, void* message, qintptr* result) 
 
     case WM_NCHITTEST:
         return handleNcHitTest(titleBar, msg, result);
+
+    case WM_NCMOUSEMOVE:
+    case WM_NCMOUSELEAVE:
+    case WM_MOUSEMOVE:
+        if (titleBar != nullptr) {
+            for (auto* button : titleBar->findChildren<QAbstractButton*>()) {
+                if (button->property("snowWindowCaptionHit").toInt() != HTMAXBUTTON) {
+                    continue;
+                }
+                const bool hovered = msg->message == WM_NCMOUSEMOVE && msg->wParam == HTMAXBUTTON;
+                button->setProperty("snowNativeCaptionHover", hovered);
+                button->update();
+                if (hovered) {
+                    TRACKMOUSEEVENT tracking{sizeof(TRACKMOUSEEVENT), TME_LEAVE | TME_NONCLIENT,
+                                             msg->hwnd, 0};
+                    TrackMouseEvent(&tracking);
+                }
+            }
+        }
+        // Keep DWM hover processing, including the Windows 11 Snap flyout.
+        if (msg->message == WM_NCMOUSEMOVE || msg->message == WM_NCMOUSELEAVE) {
+            LRESULT nativeResult = 0;
+            if (DwmDefWindowProc(msg->hwnd, msg->message, msg->wParam, msg->lParam,
+                                 &nativeResult)) {
+                *result = nativeResult;
+                return true;
+            }
+        }
+        return false;
+
+    case WM_NCLBUTTONDOWN:
+        if (titleBar != nullptr && msg->wParam == HTMAXBUTTON) {
+            QPointer<QAbstractButton> maximize;
+            for (auto* button : titleBar->findChildren<QAbstractButton*>()) {
+                if (button->property("snowWindowCaptionHit").toInt() == HTMAXBUTTON) {
+                    maximize = button;
+                    break;
+                }
+            }
+            if (maximize != nullptr) {
+                maximize->setDown(true);
+                // USER32 owns tracking, cancellation and the maximize/restore command.
+                *result = DefWindowProcW(msg->hwnd, msg->message, msg->wParam, msg->lParam);
+                if (maximize != nullptr) {
+                    maximize->setDown(false);
+                    maximize->setProperty("snowNativeCaptionHover", false);
+                    maximize->update();
+                }
+                return true;
+            }
+        }
+        return false;
 
     default:
         return false;

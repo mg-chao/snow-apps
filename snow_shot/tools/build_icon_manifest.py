@@ -46,7 +46,6 @@ def main() -> int:
         "source": "app-icon.svg",
         "colorModel": "fullColor",
         "fit": "contain",
-        "allowEmbeddedDataImages": True,
     })
     entries.sort(key=lambda item: (item["variant"], item["name"]))
     manifest = {

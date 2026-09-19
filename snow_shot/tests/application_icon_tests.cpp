@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <iostream>
 #include <stdexcept>
+#include <string_view>
 
 namespace {
 
@@ -40,6 +41,36 @@ bool containsGreenNearBorder(const QImage& image) {
         }
     }
     return false;
+}
+
+void applicationIconScalesWithoutEmbeddedRasterImages() {
+    const auto icon = snow_shot::presentation::icons::custom::app::ApplicationIcon();
+    require(icon.isValid(), "application icon must have a valid descriptor");
+    const auto svg = icon.descriptor()->svg;
+    require(svg.find("<image") == std::string_view::npos &&
+                svg.find("data:image") == std::string_view::npos,
+            "the small caption icon must rasterize vector paths directly at the target DPI");
+
+    for (const qreal scale : {1.0, 1.25, 1.5, 1.75, 2.0, 3.0}) {
+        adqt::icons::IconRenderRequest request;
+        request.logicalSize = QSize(16, 16);
+        request.devicePixelRatio = scale;
+        const QPixmap pixmap = adqt::icons::renderIconPixmap(icon, request);
+        require(pixmap.size() == QSize(qRound(16 * scale), qRound(16 * scale)) &&
+                    pixmap.devicePixelRatio() == scale,
+                "caption icon must provide physical pixels for the window's display scale");
+        const QImage image = pixmap.toImage();
+        require(containsGreenNearBorder(image), "caption icon must retain its green scan frame");
+        bool containsPurple = false;
+        for (int y = 0; y < image.height(); ++y) {
+            for (int x = 0; x < image.width(); ++x) {
+                const QColor color = image.pixelColor(x, y);
+                containsPurple |= color.alpha() >= 180 && color.red() > color.green() + 25 &&
+                                  color.blue() > color.red() + 25;
+            }
+        }
+        require(containsPurple, "caption icon must retain its purple lightning mark");
+    }
 }
 
 void installedApplicationIconPreservesItsGreenTaskbarBorder() {
@@ -78,6 +109,7 @@ void executableIconResourcePreservesItsGreenTaskbarBorder() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     try {
+        applicationIconScalesWithoutEmbeddedRasterImages();
         installedApplicationIconPreservesItsGreenTaskbarBorder();
 #ifdef Q_OS_WIN
         executableIconResourcePreservesItsGreenTaskbarBorder();

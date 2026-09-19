@@ -11,8 +11,7 @@
       "name": "application-icon",
       "source": "app-icon.svg",
       "colorModel": "fullColor",
-      "fit": "contain",
-      "allowEmbeddedDataImages": true
+      "fit": "contain"
     },
     {
       "variant": "brand",

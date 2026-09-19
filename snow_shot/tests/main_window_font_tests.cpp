@@ -1,6 +1,9 @@
 #include "snow_shot/presentation/components/actionrow.h"
 #include "snow_shot/presentation/components/contentcardwidget.h"
 #include "snow_shot/presentation/components/titlebarwidget.h"
+#include "snow_shot/presentation/components/icons/snowshoticons.h"
+#include "icon_renderer.h"
+#include <QPainter>
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/mainwindow.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
@@ -13,6 +16,8 @@
 #include <QApplication>
 #include <QDir>
 #include <QEvent>
+#include <QImage>
+#include <QPixmap>
 #include <QFontDatabase>
 #include <QLabel>
 #include <QMenu>
@@ -21,6 +26,7 @@
 #include <QWidget>
 
 #include <cstdlib>
+#include <algorithm>
 #include <iostream>
 
 namespace settings = snow_shot::presentation::settings;
@@ -56,6 +62,7 @@ void customTitleBarUsesPlatformWindowControls() {
     const auto scheme = styles::ThemeManager::instance().themeColorScheme();
     QWidget host;
     host.resize(360, 80);
+    host.setWindowTitle(QStringLiteral("SnowShot"));
     TitleBarWidget titleBar(scheme.metricAlias, &host);
     titleBar.resize(host.width(), titleBar.height());
     host.show();
@@ -77,14 +84,114 @@ void customTitleBarUsesPlatformWindowControls() {
     require(minimizeButton->x() >= titleBar.width() / 2,
             "Windows caption buttons must stay right-aligned in the custom title bar");
 
+#ifdef Q_OS_WIN
+    require(titleBar.height() == 32, "Windows caption must use the standard 32 DIP height");
+    auto* icon = titleBar.findChild<QLabel*>(QStringLiteral("windowSystemMenuIcon"));
+    require(icon != nullptr && icon->geometry() == QRect(16, 8, 16, 16),
+            "the 16 DIP app icon must have the standard leading inset and vertical alignment");
+    require(!icon->pixmap().isNull(), "the caption must render the actual application icon");
+    for (const auto* button : {minimizeButton, maximizeButton, closeButton}) {
+        require(button->size() == QSize(46, 32) && button->y() == 0,
+                "caption buttons must provide full-height 46 DIP targets");
+    }
+    require(closeButton->geometry().right() == titleBar.width() - 1 &&
+                minimizeButton->geometry().right() + 1 == maximizeButton->x() &&
+                maximizeButton->geometry().right() + 1 == closeButton->x(),
+            "caption buttons must touch each other and the right window edge");
+    const QImage maximizeImage = maximizeButton->grab().toImage();
+#endif
     const QString maximizeText = maximizeButton->accessibleName();
     titleBar.setMaximized(true);
     require(!maximizeButton->accessibleName().isEmpty() &&
                 maximizeButton->accessibleName() != maximizeText,
             "the maximize control must expose its restore action while maximized");
+#ifdef Q_OS_WIN
+    require(maximizeButton->grab().toImage() != maximizeImage,
+            "maximizing must change the visible glyph to overlapping restore windows");
+#endif
     titleBar.setMaximized(false);
     require(maximizeButton->accessibleName() == maximizeText,
             "the maximize control must restore its maximize action in the normal state");
+#ifdef Q_OS_WIN
+    require(maximizeButton->grab().toImage() == maximizeImage,
+            "restoring must recover the original maximize glyph");
+    for (const auto appearance : {styles::ThemeAppearance::Light, styles::ThemeAppearance::Dark}) {
+        styles::ThemeManager::instance().setThemeAppearance(appearance);
+        flushEvents();
+        closeButton->setDown(true);
+        require(closeButton->grab().toImage().pixelColor(0, 0) == QColor(196, 43, 28),
+                "close pressed state must fill the entire button red in both themes");
+        closeButton->setDown(false);
+        const QImage minimize = minimizeButton->grab().toImage();
+        const QColor buttonBackground = minimize.pixelColor(0, 0);
+        const auto currentScheme = styles::ThemeManager::instance().themeColorScheme();
+        const QColor ink = host.isActiveWindow() ? currentScheme.map.colorText
+                                                 : currentScheme.map.colorTextTertiary;
+        QImage solid(1, 1, QImage::Format_ARGB32_Premultiplied);
+        solid.fill(buttonBackground);
+        {
+            QPainter painter(&solid);
+            painter.fillRect(solid.rect(), ink);
+        }
+        const QColor solidInk = solid.pixelColor(0, 0);
+        // The straight minimize stroke must consist entirely of solid physical
+        // pixels, even when the window is rendered at a fractional display scale.
+        for (int y = 0; y < minimize.height(); ++y) {
+            for (int x = 0; x < minimize.width(); ++x) {
+                const QColor pixel = minimize.pixelColor(x, y);
+                require(pixel == buttonBackground || pixel == solidInk,
+                        "caption strokes must not acquire blurred fractional-pixel edges");
+            }
+        }
+        const auto normal = titleBar.grab().toImage();
+        const qreal scale = normal.devicePixelRatio();
+        const QColor background = titleBar.palette().color(QPalette::Window);
+        adqt::icons::IconRenderRequest wordmarkRequest;
+        const int logoHeight = std::clamp(scheme.metricAlias.fontSizeSM, 10, 14);
+        wordmarkRequest.logicalSize = QSize(qRound(logoHeight * 95.0 / 17.0), logoHeight);
+        wordmarkRequest.devicePixelRatio = scale;
+        const auto wordmark = adqt::icons::renderIconPixmap(
+            snow_shot::presentation::icons::custom::brand::SnowShotLogo(
+                adqt::icons::IconColors::primary(ink)),
+            wordmarkRequest);
+        QImage expected(wordmark.size(), QImage::Format_ARGB32_Premultiplied);
+        expected.setDevicePixelRatio(scale);
+        expected.fill(background);
+        {
+            QPainter painter(&expected);
+            painter.drawPixmap(0, 0, wordmark);
+        }
+        const QRect wordmarkRect(qRound(48 * scale),
+                                 qRound((titleBar.height() * scale - wordmark.height()) / 2.0),
+                                 wordmark.width(), wordmark.height());
+        require(normal.copy(wordmarkRect).convertToFormat(expected.format()) == expected,
+                "the title must preserve the original SVG wordmark artwork exactly");
+        bool hasCaptionText = false;
+        for (int y = 8; y < 24; ++y) {
+            for (int x = 48; x < 110; ++x) {
+                hasCaptionText |=
+                    normal.pixelColor(qRound(x * scale), qRound(y * scale)) != background;
+            }
+        }
+        require(hasCaptionText, "the original wordmark must be rendered next to the left icon");
+        const QString renderDir = qEnvironmentVariable("SNOW_TITLEBAR_RENDER_DIR");
+        if (!renderDir.isEmpty()) {
+            QDir().mkpath(renderDir);
+            require(
+                normal.save(QDir(renderDir).filePath(appearance == styles::ThemeAppearance::Light
+                                                         ? QStringLiteral("titlebar-light.png")
+                                                         : QStringLiteral("titlebar-dark.png"))),
+                "save requested title-bar visual review images");
+        }
+    }
+    host.setWindowTitle(QString(200, QLatin1Char('W')));
+    titleBar.resize(240, titleBar.height());
+    flushEvents();
+    require(closeButton->geometry().right() == titleBar.width() - 1 &&
+                minimizeButton->x() == titleBar.width() - 138,
+            "a long caption must not displace or shrink the window controls");
+    titleBar.grab();
+#endif
 #endif
 }
 

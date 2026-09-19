@@ -6,6 +6,7 @@
 #include <QEvent>
 #include <QToolButton>
 #include <QWidget>
+#include <QVariant>
 
 #include <cstdlib>
 #include <iostream>
@@ -92,6 +93,17 @@ void raisedOverlayPreventsTitleBarDragging() {
     require(hitTestAt(window, titleBar, windowControlPosition) == HTCLIENT,
             "a title-bar control should remain in the client area");
 
+    windowControl.setProperty("snowWindowCaptionHit", HTMAXBUTTON);
+    require(hitTestAt(window, titleBar, windowControlPosition) == HTMAXBUTTON,
+            "the custom maximize button must expose native Windows Snap hit testing");
+    windowControl.setProperty("snowWindowCaptionHit", HTSYSMENU);
+    require(hitTestAt(window, titleBar, windowControlPosition) == HTSYSMENU,
+            "the application icon must expose the native system menu hit target");
+    windowControl.setEnabled(false);
+    require(hitTestAt(window, titleBar, windowControlPosition) == HTCLIENT,
+            "disabled caption controls must not invoke native commands");
+    windowControl.setEnabled(true);
+
     QWidget previewOverlay(&window);
     previewOverlay.setGeometry(window.rect());
     QToolButton previewClose(&previewOverlay);
@@ -105,6 +117,9 @@ void raisedOverlayPreventsTitleBarDragging() {
             "a raised preview control over the title bar must not start a window drag");
     require(hitTestAt(window, titleBar, dragPosition) == HTCLIENT,
             "a raised preview surface must occlude the title-bar drag region");
+
+    require(hitTestAt(window, titleBar, windowControlPosition) == HTCLIENT,
+            "an overlay must occlude native caption control hit targets too");
 
     previewOverlay.hide();
     flushEvents();
