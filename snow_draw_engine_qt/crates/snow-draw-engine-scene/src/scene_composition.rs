@@ -628,7 +628,7 @@ mod tests {
     use snow_draw_engine_core::{Camera, SurfaceSize};
     use snow_draw_engine_document::{
         ElementMeta, InkBox, TextLayoutSize, Transaction, resolve_serial_number_stroke_width,
-        resolve_serial_number_text_connection, text_fill_outset,
+        resolve_serial_number_text_connection,
     };
     use snow_draw_engine_editor::{
         ActiveTextDraftPresentation, ActiveTextDraftTarget, TextPreviewPaint,
@@ -948,16 +948,13 @@ mod tests {
         assert_close(text.width, 80.0);
         assert_close(text.height, 40.0);
 
-        // Independent of the production adapter: the published paint-padding
-        // contract is line_height = max(1, font_size) * 1.2, then 0.32 / 0.1.
-        let line_height = 40.0_f64.max(1.0) * 1.2;
-        let pad_x = line_height * 0.32;
-        let pad_y = line_height * 0.1;
+        // Independent of the production adapter: the connector anchors on the
+        // aligned ink box and ignores the background fill padding.
         let connector = serial_connector_item(&items);
-        assert_close(connector.baseline_start_x, 130.0 - 40.0 - pad_x);
-        assert_close(connector.baseline_end_x, 130.0 + 40.0 + pad_x);
-        assert_close(connector.baseline_start_y, 10.0 + 20.0 + pad_y);
-        assert_close(connector.baseline_end_y, 10.0 + 20.0 + pad_y);
+        assert_close(connector.baseline_start_x, 130.0 - 40.0);
+        assert_close(connector.baseline_end_x, 130.0 + 40.0);
+        assert_close(connector.baseline_start_y, 10.0 + 20.0);
+        assert_close(connector.baseline_end_y, 10.0 + 20.0);
 
         let expected = resolve_serial_paint_text_connection(
             &SerialPaintGeometry::from_serial(&serial),
@@ -1038,14 +1035,12 @@ mod tests {
         assert_close(text.content_width, 40.0);
         assert_close(text.content_height, 40.0);
 
-        let (fill_outset_x, fill_outset_y) =
-            text_fill_outset(&text_paint_geometry_from_display_item(text));
         let connector = serial_connector_item(&items);
         let ink_left = 120.0 - 40.0;
         let ink_bottom = 10.0 - 20.0 + 40.0;
-        assert_close(connector.baseline_start_x, ink_left - fill_outset_x);
-        assert_close(connector.baseline_end_x, ink_left + 40.0 + fill_outset_x);
-        assert_close(connector.baseline_start_y, ink_bottom + fill_outset_y);
+        assert_close(connector.baseline_start_x, ink_left);
+        assert_close(connector.baseline_end_x, ink_left + 40.0);
+        assert_close(connector.baseline_start_y, ink_bottom);
         assert!(
             connector.baseline_end_x < 120.0 + 40.0,
             "underline must not span the wrap rectangle or the committed one-line ink"
@@ -1313,20 +1308,14 @@ mod tests {
 
         let items = compose_default(&model);
         let connector = serial_connector_item(&items);
-        let (fill_outset_x, fill_outset_y) = text_fill_outset(
-            &text_paint_geometry_from_display_item(displayed_text(&items, text_id)),
-        );
         // Top-aligned ink: the underline sits at item top + ink height, not at
         // the wrap rectangle's bottom.
         let ink_bottom = 0.0 - 20.0 + 20.0;
-        assert_close(connector.baseline_start_y, ink_bottom + fill_outset_y);
+        assert_close(connector.baseline_start_y, ink_bottom);
         // Left-aligned 40-wide ink inside the 80-wide wrap rectangle: the
         // underline ends at the ink's right edge, not the wrap rectangle's.
-        assert_close(connector.baseline_start_x, 120.0 - 40.0 - fill_outset_x);
-        assert_close(
-            connector.baseline_end_x,
-            120.0 - 40.0 + 40.0 + fill_outset_x,
-        );
+        assert_close(connector.baseline_start_x, 120.0 - 40.0);
+        assert_close(connector.baseline_end_x, 120.0 - 40.0 + 40.0);
         assert_serial_connectors_follow_bound_text(&items, &model);
     }
 

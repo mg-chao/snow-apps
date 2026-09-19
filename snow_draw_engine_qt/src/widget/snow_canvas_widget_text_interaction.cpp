@@ -525,26 +525,14 @@ SnowCanvasWidgetTextInteraction::BeginResult SnowCanvasWidgetTextInteraction::be
     return beginResult;
 }
 
-SnowCanvasWidgetTextInteraction::SerialTextCreationResult
+snow_canvas_commands::CreateSerialNumberTextResult
 SnowCanvasWidgetTextInteraction::createSerialNumberText(
-    SnowRuntime runtime, SnowViewport viewport, const SnowCanvasDisplayCache& displayCache,
-    const SnowTextStyle& textStyle, const SnowSerialNumberStyle& serialNumberStyle) {
-    SerialTextCreationResult result;
+    SnowRuntime runtime, SnowViewport viewport, const SnowTextStyle& textStyle,
+    const SnowSerialNumberStyle& serialNumberStyle) {
     const SnowTextLayoutSize layout =
         snow_canvas_text_measurement::measureSerialNumberBoundTextLayout(
             textStyle, serialNumberStyle, m_widget.font());
-    snow_canvas_commands::CreateSerialNumberTextResult createResult =
-        snow_canvas_commands::createSerialNumberText(runtime, viewport, layout);
-    if (!createResult.success) {
-        return result;
-    }
-
-    result.success = true;
-    result.firstChangedViewports = std::move(createResult.changedViewports);
-    BeginResult beginResult = beginCreatedText(runtime, viewport, createResult, displayCache);
-    result.shouldRefocus = beginResult.started;
-    result.secondChangedViewports = std::move(beginResult.firstChangedViewports);
-    return result;
+    return snow_canvas_commands::createSerialNumberText(runtime, viewport, layout);
 }
 
 SnowCanvasWidgetTextInteraction::BeginResult

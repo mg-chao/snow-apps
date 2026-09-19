@@ -18,7 +18,10 @@ pub(crate) use resize::{
     text_resize_layout_override_matches_rect, text_resize_measurement_font_size,
     text_resize_measurement_requested_values, text_with_selection_rect,
 };
-pub(crate) use serial::{SerialNumberTextCreationRequest, create_serial_number_text_creation_plan};
+pub(crate) use serial::{
+    SerialNumberTextCreationRequest, create_serial_number_text_creation_plan,
+    new_serial_bound_label,
+};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TextStyle {

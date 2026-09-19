@@ -197,8 +197,7 @@ struct RecordingSessionDeleter {
         snow_recording_session_destroy(session);
     }
 };
-using RecordingSessionHandle =
-    std::unique_ptr<SnowRecordingSession, RecordingSessionDeleter>;
+using RecordingSessionHandle = std::unique_ptr<SnowRecordingSession, RecordingSessionDeleter>;
 
 struct StartAttemptResult {
     RecordingSessionHandle session;
@@ -1035,12 +1034,12 @@ struct ScreenRecordingController::Impl {
         const auto output = directRecordingSettings(outputFormat, captureRegion.size());
         uint32_t width = 0;
         uint32_t height = 0;
-        if (snow_recording_output_dimensions(
-                static_cast<uint32_t>(captureRegion.width()),
-                static_cast<uint32_t>(captureRegion.height()),
-                static_cast<uint32_t>(output.maximumSize.width()),
-                static_cast<uint32_t>(output.maximumSize.height()),
-                static_cast<uint32_t>(output.format), &width, &height) == 0) {
+        if (snow_recording_output_dimensions(static_cast<uint32_t>(captureRegion.width()),
+                                             static_cast<uint32_t>(captureRegion.height()),
+                                             static_cast<uint32_t>(output.maximumSize.width()),
+                                             static_cast<uint32_t>(output.maximumSize.height()),
+                                             static_cast<uint32_t>(output.format), &width,
+                                             &height) == 0) {
             uiSession->preview->setEligible(false);
             return;
         }

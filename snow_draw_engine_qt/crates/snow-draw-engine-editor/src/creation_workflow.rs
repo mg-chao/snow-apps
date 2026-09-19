@@ -2,7 +2,7 @@ use super::*;
 use snow_draw_engine_core::arrow::{ArrowEndpointEdge, ArrowType, StrokeStyle};
 use snow_draw_engine_document::{
     ElementMeta, TextLayoutSize, arrow_is_degenerate, resolve_serial_number_data_diameter,
-    text_with_auto_resize_layout, text_with_measured_ink, text_with_measured_layout,
+    text_with_measured_ink, text_with_measured_layout, text_with_pinned_alignment_layout,
     validate_text_layout_size,
 };
 
@@ -917,12 +917,11 @@ impl Editor {
         {
             let mut serial = document.serial_number(state.serial_id)?.clone();
             let text_id = document.peek_next_element_id();
-            let mut text = self.state.default_text.clone();
+            // The drag label starts from the same definition the floating
+            // toolbar's Create Text button uses, so both paths style and size
+            // the bound label identically before the host measurement lands.
+            let mut text = crate::text::new_serial_bound_label(&serial, &self.state.default_text)?;
             text.center = current_canvas;
-            text.font_size = serial.font_size;
-            let height = text.height() * serial.font_size / self.state.default_text.font_size;
-            text.layout = text.layout.with_wrap(text.width(), height);
-            validate_text(&text)?;
             serial.text_element_id = Some(text_id);
             let mut transaction = Transaction::new("create serial number text");
             transaction.insert_text(text_id, ElementMeta::default(), text.clone());
@@ -1032,7 +1031,10 @@ impl Editor {
     /// Applies the host-measured empty-label layout to the drag-attached label.
     /// The measurement updates the in-flight drag state (the authority while the
     /// pointer is captured, like the live center); the release transaction
-    /// persists it into the document, so no extra undo entry is created.
+    /// persists it into the document, so no extra undo entry is created. The
+    /// layout is stored unconditionally, with the center following the pinned
+    /// alignment edge: a label that does not auto-resize must still receive the
+    /// measurement, exactly like the floating toolbar's Create Text path.
     pub fn apply_serial_number_label_layout(
         &mut self,
         document: &DocumentModel,
@@ -1049,7 +1051,7 @@ impl Editor {
         if *id != text_id || state.label_measured || document.text(text_id).is_err() {
             return Ok(false);
         }
-        let updated = text_with_auto_resize_layout(text, layout)?;
+        let updated = text_with_pinned_alignment_layout(text, layout)?;
         validate_text(&updated)?;
         let applied = updated != *text;
         state.label_measured = true;

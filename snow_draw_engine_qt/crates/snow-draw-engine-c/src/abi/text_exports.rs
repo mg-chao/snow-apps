@@ -777,9 +777,8 @@ fn serial_paint_geometry_from_c(item: &SnowSceneDisplayItem) -> Option<SerialPai
 }
 
 /// Painted text outset for host dirty regions; combines the fill padding with
-/// the text stroke halo. Consumers that must sit on the painted background
-/// edge (the text painter, serial connectors) use `snow_scene_text_fill_outset`
-/// instead.
+/// the text stroke halo. The text painter measures its background pill padding
+/// through `snow_scene_text_fill_outset` instead.
 /// # Safety
 /// `item` may be null; non-null pointers must reference a readable display item.
 #[unsafe(no_mangle)]
@@ -799,9 +798,8 @@ pub unsafe extern "C" fn snow_scene_text_paint_outset(
 }
 
 /// Fill-pill padding the text painter must draw around every line. The host
-/// painter consumes this instead of measuring its own padding, and serial
-/// connectors anchor to the same edge, so the painted edge and the connector
-/// geometry cannot drift apart.
+/// painter consumes this instead of measuring its own padding, so the painted
+/// pill and the dirty regions cannot drift apart.
 /// # Safety
 /// `item` may be null; non-null pointers must reference a readable display item.
 #[unsafe(no_mangle)]
@@ -952,7 +950,7 @@ mod tests {
         assert!((fill.y - line_height * 0.1).abs() < 1e-9);
 
         // A dominant stroke widens the paint (dirty-region) outset but must not
-        // move the painted pill edge the connector anchors to.
+        // move the painted pill edge.
         item.stroke = SnowColorRgba8 {
             r: 0,
             g: 0,
@@ -968,7 +966,7 @@ mod tests {
     }
 
     #[test]
-    fn serial_text_connection_ffi_anchors_at_painted_bottom() {
+    fn serial_text_connection_ffi_ignores_text_fill() {
         let mut text = zero_item();
         text.kind = SnowSceneDisplayItemKind::Text;
         text.center_x = 130.0;
@@ -996,12 +994,11 @@ mod tests {
             1
         );
         assert_ne!(connection.has_baseline, 0);
-        let line_height = 40.0_f64.max(1.0) * 1.2;
-        let pad_x = line_height * 0.32;
-        let pad_y = line_height * 0.1;
-        assert!((connection.baseline_start_x - (130.0 - 40.0 - pad_x)).abs() < 1e-9);
-        assert!((connection.baseline_end_x - (130.0 + 40.0 + pad_x)).abs() < 1e-9);
-        assert!((connection.baseline_end_y - (10.0 + 20.0 + pad_y)).abs() < 1e-9);
+        // The underline sits on the aligned ink box; the background fill
+        // padding moves the painted pill, never the connector.
+        assert!((connection.baseline_start_x - (130.0 - 40.0)).abs() < 1e-9);
+        assert!((connection.baseline_end_x - (130.0 + 40.0)).abs() < 1e-9);
+        assert!((connection.baseline_end_y - (10.0 + 20.0)).abs() < 1e-9);
     }
 
     #[test]
@@ -1038,14 +1035,11 @@ mod tests {
             1
         );
         assert_ne!(connection.has_baseline, 0);
-        let line_height = 40.0_f64.max(1.0) * 1.2;
-        let pad_x = line_height * 0.32;
-        let pad_y = line_height * 0.1;
         // The underline spans the aligned ink block: left edge at the item's
         // left, bottom at the item top plus the ink height.
-        assert!((connection.baseline_start_x - (130.0 - 40.0 - pad_x)).abs() < 1e-9);
-        assert!((connection.baseline_end_x - (130.0 - 40.0 + 40.0 + pad_x)).abs() < 1e-9);
-        assert!((connection.baseline_end_y - (10.0 - 20.0 + 20.0 + pad_y)).abs() < 1e-9);
+        assert!((connection.baseline_start_x - (130.0 - 40.0)).abs() < 1e-9);
+        assert!((connection.baseline_end_x - (130.0 - 40.0 + 40.0)).abs() < 1e-9);
+        assert!((connection.baseline_end_y - (10.0 - 20.0 + 20.0)).abs() < 1e-9);
     }
 
     #[test]

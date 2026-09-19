@@ -631,3 +631,154 @@ fn serial_number_drag_ignores_other_pointer_and_secondary_release() {
     );
     assert!(engine.take_text_edit_request(viewport).unwrap().is_some());
 }
+
+#[test]
+fn drag_label_placeholder_follows_line_height_contract_not_stale_default() {
+    // The persisted default text style keeps the wrap rectangle it was
+    // initialized with (1x36 at font 30) even after the user changes the
+    // default font size. The drag-attached label must size itself from the
+    // published line-height contract at the serial number's font size, never
+    // from that stale rectangle scaled by a font ratio (36 * 24 / 50 = 17.28).
+    let (mut engine, viewport) = setup(1.0);
+    let mut style = engine.editor.text_style(&engine.model);
+    style.font_size = 50.0;
+    engine
+        .set_viewport_text_style(viewport, style, &[])
+        .unwrap();
+
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Down,
+        400.0,
+        300.0,
+        false,
+    );
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Move,
+        460.0,
+        320.0,
+        false,
+    );
+    let serial_id = engine.model.paint_order()[0];
+    let text_id = engine
+        .model
+        .serial_number(serial_id)
+        .unwrap()
+        .text_element_id
+        .unwrap();
+    let label = engine.model.text(text_id).unwrap();
+    assert_eq!(label.font_size, 24.0);
+    assert_eq!(label.width(), 1.0);
+    assert_eq!(
+        label.height(),
+        snow_draw_engine_document::text_line_height(24.0),
+        "drag label placeholder must be one contract line height tall, not the stale default rectangle"
+    );
+}
+
+#[test]
+fn drag_and_toolbar_bound_labels_share_styling_and_layout() {
+    // The floating toolbar's Create Text button and the serial drag are the two
+    // ways to attach a bound label. Given the same default style and the same
+    // host measurement, both must produce the same label styling and layout;
+    // only the center differs (pointer placement vs. beside the badge).
+    let (mut engine, viewport) = setup(1.0);
+    let mut style = engine.editor.text_style(&engine.model);
+    style.font_size = 50.0;
+    engine
+        .set_viewport_text_style(viewport, style, &[])
+        .unwrap();
+
+    // Toolbar path: click creates the badge, then Create Text measures first.
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Down,
+        400.0,
+        300.0,
+        false,
+    );
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Up,
+        400.0,
+        300.0,
+        false,
+    );
+    let toolbar_serial_id = engine.model.paint_order()[0];
+    engine
+        .select_element_with_viewport_changes(viewport, toolbar_serial_id)
+        .unwrap();
+    let measured = snow_draw_engine_document::TextLayoutSize::with_content(31.0, 36.0, 7.0, 36.0);
+    let (_, toolbar_text_id) = engine
+        .create_serial_number_text_with_viewport_changes(viewport, measured)
+        .unwrap();
+    let toolbar_text = engine
+        .model
+        .text(toolbar_text_id.expect("toolbar path creates the label"))
+        .unwrap()
+        .clone();
+
+    // Drag path: press, drag, host measurement lands, release.
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Down,
+        100.0,
+        100.0,
+        false,
+    );
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Move,
+        160.0,
+        120.0,
+        false,
+    );
+    let drag_serial_id = *engine
+        .model
+        .paint_order()
+        .iter()
+        .filter(|id| engine.model.serial_number(**id).is_ok())
+        .nth(1)
+        .unwrap();
+    let drag_text_id = engine
+        .model
+        .serial_number(drag_serial_id)
+        .unwrap()
+        .text_element_id
+        .unwrap();
+    engine
+        .apply_serial_number_label_layout(viewport, drag_text_id, measured)
+        .unwrap();
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Up,
+        160.0,
+        120.0,
+        false,
+    );
+    let drag_text = engine.model.text(drag_text_id).unwrap().clone();
+
+    assert_eq!(drag_text.font_size, toolbar_text.font_size);
+    assert_eq!(drag_text.color, toolbar_text.color);
+    assert_eq!(drag_text.fill, toolbar_text.fill);
+    assert_eq!(drag_text.fill_style, toolbar_text.fill_style);
+    assert_eq!(drag_text.stroke, toolbar_text.stroke);
+    assert_eq!(drag_text.stroke_width, toolbar_text.stroke_width);
+    assert_eq!(drag_text.font_family, toolbar_text.font_family);
+    assert_eq!(drag_text.corner_radii, toolbar_text.corner_radii);
+    assert_eq!(drag_text.horizontal_align, toolbar_text.horizontal_align);
+    assert_eq!(drag_text.vertical_align, toolbar_text.vertical_align);
+    assert_eq!(drag_text.opacity, toolbar_text.opacity);
+    assert_eq!(drag_text.auto_resize, toolbar_text.auto_resize);
+    assert_eq!(drag_text.rotation, toolbar_text.rotation);
+    assert_eq!(drag_text.layout, toolbar_text.layout);
+    assert_ne!(drag_text.center, toolbar_text.center);
+}

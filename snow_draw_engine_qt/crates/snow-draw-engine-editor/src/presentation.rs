@@ -230,14 +230,18 @@ impl Editor {
         let center_x = (selection_left + selection_right) / 2.0;
         let top = selection_bottom + SERIAL_TOOLBAR_VERTICAL_OFFSET;
 
+        let supports_number = serial_numbers
+            .iter()
+            .any(|(_, serial)| serial.serial_number_type.supports_number());
         SerialNumberToolbarState {
             visible: true,
             left: center_x - SERIAL_TOOLBAR_WIDTH / 2.0,
             top,
             width: SERIAL_TOOLBAR_WIDTH,
             height: SERIAL_TOOLBAR_HEIGHT,
-            can_decrease: serial_numbers.iter().any(|(_, serial)| serial.number > 0),
-            can_increase: true,
+            can_decrease: supports_number
+                && serial_numbers.iter().any(|(_, serial)| serial.number > 0),
+            can_increase: supports_number,
             can_create_text: true,
         }
     }
@@ -1125,6 +1129,29 @@ mod tests {
         assert!(state.visible);
         assert!(!state.can_decrease);
         assert!(state.can_increase);
+        assert!(state.can_create_text);
+    }
+
+    #[test]
+    fn serial_number_toolbar_disables_number_buttons_for_numberless_circle() {
+        let mut document = DocumentModel::new();
+        let serial_id = insert_serial_number(
+            &mut document,
+            SerialNumberData {
+                center: Point::new(0.0, 0.0),
+                number: 5,
+                serial_number_type: snow_draw_engine_document::SerialNumberType::Circle,
+                ..SerialNumberData::default()
+            },
+        );
+        let mut editor = editor_with_surface();
+        editor.set_selection_state_with_document(Some(&document), vec![serial_id], Some(serial_id));
+
+        let state = editor.serial_number_toolbar_state(&document);
+
+        assert!(state.visible);
+        assert!(!state.can_decrease);
+        assert!(!state.can_increase);
         assert!(state.can_create_text);
     }
 

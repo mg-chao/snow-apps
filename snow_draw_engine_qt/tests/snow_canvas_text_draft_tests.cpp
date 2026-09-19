@@ -2250,7 +2250,7 @@ QRectF textItemCanvasBounds(const SnowSceneDisplayItem& item) {
     return QRectF(QPointF(bounds.min_x, bounds.min_y), QPointF(bounds.max_x, bounds.max_y));
 }
 
-void textEditorConnectorAnchorsAtPaintedTextEdge() {
+void textEditorConnectorAnchorsAtInkEdgeRegardlessOfFill() {
     const char* text = "note";
     SnowSceneDisplayItem preview{};
     preview.kind = SNOW_SCENE_DISPLAY_ITEM_TEXT;
@@ -2280,28 +2280,22 @@ void textEditorConnectorAnchorsAtPaintedTextEdge() {
     require(connector.arrow_point_count == 2,
             "side-attached connector should add a baseline segment");
 
-    // The underline belongs on the text's painted bottom edge, which includes
-    // the background fill padding; it must not use the raw item rectangle.
-    const double lineHeight = qMax(1.0, preview.font_size) * 1.2;
-    const double padX = lineHeight * 0.32;
-    const double padY = lineHeight * 0.1;
-    const double left = preview.center_x - preview.width / 2.0 - padX;
-    const double right = preview.center_x + preview.width / 2.0 + padX;
-    const double bottom = preview.center_y + preview.height / 2.0 + padY;
+    // The underline belongs on the text's aligned ink edge; the background fill
+    // padding moves the painted pill, never the connector geometry.
+    const double left = preview.center_x - preview.width / 2.0;
+    const double right = preview.center_x + preview.width / 2.0;
+    const double bottom = preview.center_y + preview.height / 2.0;
     const QRectF paintedBounds = textItemCanvasBounds(preview);
     require(paintedBounds.width() > preview.width &&
                 paintedBounds.bottom() > preview.center_y + preview.height / 2.0,
             "filled text paint bounds should extend past the raw item rectangle");
-    requireNear(paintedBounds.left(), left, "canvas paint bounds left");
-    requireNear(paintedBounds.right(), right, "canvas paint bounds right");
-    requireNear(paintedBounds.bottom(), bottom, "canvas paint bounds bottom");
     requireNear(connector.arrow_points[0].x, left, "baseline start x");
     requireNear(connector.arrow_points[0].y, bottom, "baseline start y");
     requireNear(connector.arrow_points[1].x, right, "baseline end x");
     requireNear(connector.arrow_points[1].y, bottom, "baseline end y");
 
     // A dominant text stroke widens the stroke-inclusive bounds used for dirty
-    // regions but must not move the connector off the painted pill edge.
+    // regions but must not move the connector off the ink edge.
     preview.stroke = SnowColorRgba8{0, 0, 0, 0xff};
     preview.stroke_width = 40.0;
     const SnowTextPaintOutset paintOutset = snow_scene_text_paint_outset(&preview);
@@ -2321,7 +2315,7 @@ void textEditorConnectorAnchorsAtPaintedTextEdge() {
 
 void textEditorConnectorUnderlinesWrappedInkNotWrapRectangle() {
     // A width-resized bound label: the wrap rectangle stays wide, but the
-    // painted pill block hugs the narrower wrapped ink on the left and top.
+    // aligned ink block hugs the narrower wrapped ink on the left and top.
     SnowSceneDisplayItem preview{};
     preview.kind = SNOW_SCENE_DISPLAY_ITEM_TEXT;
     preview.element_id = SnowElementId{42, 7};
@@ -2354,18 +2348,15 @@ void textEditorConnectorUnderlinesWrappedInkNotWrapRectangle() {
     require(connector.arrow_point_count == 2,
             "side-attached connector should add a baseline segment");
 
-    const double lineHeight = qMax(1.0, preview.font_size) * 1.2;
-    const double padX = lineHeight * 0.32;
-    const double padY = lineHeight * 0.1;
-    // Left-aligned ink: the pill starts at the wrap rectangle's left edge.
+    // Left-aligned ink: the underline starts at the wrap rectangle's left edge.
     const double inkLeft = preview.center_x - preview.width / 2.0;
-    // Top-aligned ink: the pill bottom is the item top plus the ink height.
+    // Top-aligned ink: the underline bottom is the item top plus the ink height.
     const double inkBottom = preview.center_y - preview.height / 2.0 + preview.content_height;
-    requireNear(connector.arrow_points[0].x, inkLeft - padX, "wrapped baseline start x");
-    requireNear(connector.arrow_points[1].x, inkLeft + preview.content_width + padX,
+    requireNear(connector.arrow_points[0].x, inkLeft, "wrapped baseline start x");
+    requireNear(connector.arrow_points[1].x, inkLeft + preview.content_width,
                 "wrapped baseline end x");
-    requireNear(connector.arrow_points[0].y, inkBottom + padY, "wrapped baseline start y");
-    requireNear(connector.arrow_points[1].y, inkBottom + padY, "wrapped baseline end y");
+    requireNear(connector.arrow_points[0].y, inkBottom, "wrapped baseline start y");
+    requireNear(connector.arrow_points[1].y, inkBottom, "wrapped baseline end y");
     // The underline must not reach the wrap rectangle's right edge.
     require(connector.arrow_points[1].x <
                 preview.center_x + preview.width / 2.0 - preview.content_width / 2.0,
@@ -2428,7 +2419,7 @@ QRect alphaPixelBounds(const QImage& image) {
     return bounds;
 }
 
-void paintedBackgroundEdgeMatchesConnectorAnchorAtZoom(double zoom) {
+void connectorAnchorIgnoresPillEdgeAtZoom(double zoom) {
     const QString text = QStringLiteral("note");
     SnowSceneDisplayItem item{};
     item.kind = SNOW_SCENE_DISPLAY_ITEM_TEXT;
@@ -2452,6 +2443,7 @@ void paintedBackgroundEdgeMatchesConnectorAnchorAtZoom(double zoom) {
     const SnowTextPaintOutset fillOutset = snow_scene_text_fill_outset(&item);
     const double contractBottom = item.center_y + item.height / 2.0 + fillOutset.y;
     const double contractLeft = item.center_x - item.width / 2.0 - fillOutset.x;
+    const double inkBottom = item.center_y + item.height / 2.0;
 
     SnowSceneDisplayItem serial{};
     serial.kind = SNOW_SCENE_DISPLAY_ITEM_SERIAL_NUMBER;
@@ -2466,8 +2458,8 @@ void paintedBackgroundEdgeMatchesConnectorAnchorAtZoom(double zoom) {
     require(snow_canvas_text_editor_connector::connectorItemForPreview(serial, item, &connector),
             "side-bound serial should attach to the preview text");
     require(connector.arrow_point_count == 2, "side attachment should emit a baseline segment");
-    requireNear(connector.arrow_points[0].y, contractBottom,
-                "connector baseline should sit on the painted pill bottom edge");
+    requireNear(connector.arrow_points[0].y, inkBottom,
+                "connector baseline should sit on the ink bottom edge, ignoring the fill padding");
 
     const QSize imageSize(640, 480);
     QImage image(imageSize, QImage::Format_ARGB32_Premultiplied);
@@ -2494,19 +2486,19 @@ void paintedBackgroundEdgeMatchesConnectorAnchorAtZoom(double zoom) {
             "painted pill bottom must match the published fill-padding contract");
     require(std::abs(paintedLeft - contractLeft * zoom) <= tolerance,
             "painted pill left must match the published fill-padding contract");
-    require(std::abs(paintedBottom - connector.arrow_points[0].y * zoom) <= tolerance,
-            "connector baseline must sit on the edge the painter actually paints");
+    require(std::abs(paintedBottom - connector.arrow_points[0].y * zoom) > tolerance,
+            "connector baseline must stay off the padded pill edge the painter paints");
 }
 
-void paintedBackgroundEdgeMatchesConnectorAnchor() {
-    paintedBackgroundEdgeMatchesConnectorAnchorAtZoom(1.0);
-    paintedBackgroundEdgeMatchesConnectorAnchorAtZoom(2.5);
+void connectorAnchorIgnoresPillEdge() {
+    connectorAnchorIgnoresPillEdgeAtZoom(1.0);
+    connectorAnchorIgnoresPillEdgeAtZoom(2.5);
 }
 
-void paintedWrappedBackgroundEdgeMatchesConnectorAnchor() {
-    // The D1 regression: a width-resized label wraps inside an item rectangle
-    // wider than the ink. Top-aligned wrapped ink must keep the underline on
-    // the last line's painted pill edge, not on the wrap rectangle's bottom.
+void wrappedConnectorAnchorIgnoresPillEdge() {
+    // A width-resized label wraps inside an item rectangle wider than the ink.
+    // Top-aligned wrapped ink must keep the underline on the ink block's bottom
+    // edge, not on the wrap rectangle's bottom or the padded pill edge.
     const QString text = QStringLiteral("a wrapped annotation note");
     SnowSceneDisplayItem item{};
     item.kind = SNOW_SCENE_DISPLAY_ITEM_TEXT;
@@ -2537,6 +2529,7 @@ void paintedWrappedBackgroundEdgeMatchesConnectorAnchor() {
     const double contractBottom =
         item.center_y - item.height / 2.0 + item.content_height + fillOutset.y;
     const double contractLeft = item.center_x - item.width / 2.0 - fillOutset.x;
+    const double inkBottom = item.center_y - item.height / 2.0 + item.content_height;
 
     SnowSceneDisplayItem serial{};
     serial.kind = SNOW_SCENE_DISPLAY_ITEM_SERIAL_NUMBER;
@@ -2550,8 +2543,8 @@ void paintedWrappedBackgroundEdgeMatchesConnectorAnchor() {
     SnowCanvasSceneItem connector;
     require(snow_canvas_text_editor_connector::connectorItemForPreview(serial, item, &connector),
             "wrapped serial-bound text should attach to the preview text");
-    requireNear(connector.arrow_points[0].y, contractBottom,
-                "wrapped connector baseline must sit on the top-aligned pill bottom edge");
+    requireNear(connector.arrow_points[0].y, inkBottom,
+                "wrapped connector baseline must sit on the top-aligned ink bottom edge");
 
     const double zoom = 1.0;
     const QSize imageSize(720, 480);
@@ -2576,8 +2569,8 @@ void paintedWrappedBackgroundEdgeMatchesConnectorAnchor() {
             "painted wrapped pill bottom must match the aligned ink contract");
     require(std::abs(paintedLeft - contractLeft * zoom) <= tolerance,
             "painted wrapped pill left must match the aligned ink contract");
-    require(std::abs(paintedBottom - connector.arrow_points[0].y * zoom) <= tolerance,
-            "wrapped connector baseline must sit on the edge the painter paints");
+    require(std::abs(paintedBottom - connector.arrow_points[0].y * zoom) > tolerance,
+            "wrapped connector baseline must stay off the padded pill edge");
 }
 
 void widgetPointerFlowPlansSuppressedTextCreate() {
@@ -3789,11 +3782,11 @@ int main(int argc, char** argv) {
     multilineTextHoverRendererDrawsEveryLineUnderline();
     hatchTextureCacheReusesSaturatedStrokeWidths();
     textEditorConnectorBuildsSerialBoundConnector();
-    textEditorConnectorAnchorsAtPaintedTextEdge();
+    textEditorConnectorAnchorsAtInkEdgeRegardlessOfFill();
     textEditorConnectorUnderlinesWrappedInkNotWrapRectangle();
     paintBoundsFollowAlignedWrappedInk();
-    paintedBackgroundEdgeMatchesConnectorAnchor();
-    paintedWrappedBackgroundEdgeMatchesConnectorAnchor();
+    connectorAnchorIgnoresPillEdge();
+    wrappedConnectorAnchorIgnoresPillEdge();
     textEditorStylePopupInteractionPreservesDraftUntilItCloses();
     cancelingAnActiveTextDraftDoesNotCommitIt();
     inputMethodEnablementTracksInlineTextEditing();

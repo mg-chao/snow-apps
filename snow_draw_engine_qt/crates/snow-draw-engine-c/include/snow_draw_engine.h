@@ -1064,7 +1064,7 @@ typedef struct SnowSceneDisplayItem {
 /* Conservative ink (fill padding plus text stroke halo) for dirty regions. */
 SnowTextPaintOutset snow_scene_text_paint_outset(const SnowSceneDisplayItem* item);
 /* Fill-pill padding only. The host text painter must consume this instead of
-   measuring its own padding so the painted edge matches the connector anchor. */
+   measuring its own padding so the painted edge matches the dirty regions. */
 SnowTextPaintOutset snow_scene_text_fill_outset(const SnowSceneDisplayItem* item);
 /* Conservative document-space ink bounds (aligned content box + fill padding +
    stroke halo) for dirty regions and culling. */

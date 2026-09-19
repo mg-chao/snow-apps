@@ -70,12 +70,6 @@ class SnowCanvasWidgetTextInteraction final {
         bool toolbarStateChanged = false;
         ScopedChangedViewportList changedViewports;
     };
-    struct SerialTextCreationResult {
-        bool success = false;
-        bool shouldRefocus = false;
-        ScopedChangedViewportList firstChangedViewports;
-        ScopedChangedViewportList secondChangedViewports;
-    };
     struct ActiveResizeMeasurementState {
         bool success = false;
         bool active = false;
@@ -128,12 +122,21 @@ class SnowCanvasWidgetTextInteraction final {
                          const QPointF& fallbackViewPosition,
                          const SnowTextStyle* newTextStyle = nullptr,
                          bool placeCursorFromViewPosition = true, SnowRuntime runtime = nullptr);
-    SerialTextCreationResult createSerialNumberText(SnowRuntime runtime, SnowViewport viewport,
-                                                    const SnowCanvasDisplayCache& displayCache,
-                                                    const SnowTextStyle& textStyle,
-                                                    const SnowSerialNumberStyle& serialNumberStyle);
+    // Creates the bound label only. The caller must sync the returned changed
+    // viewports into its display cache before beginning the editor: the editor
+    // session needs the label's styled scene item, or its commit strips the
+    // styling the label was created with.
+    snow_canvas_commands::CreateSerialNumberTextResult
+    createSerialNumberText(SnowRuntime runtime, SnowViewport viewport,
+                           const SnowTextStyle& textStyle,
+                           const SnowSerialNumberStyle& serialNumberStyle);
     BeginResult beginRequestedTextEdit(SnowRuntime runtime, SnowViewport viewport,
                                        const SnowCanvasDisplayCache& displayCache);
+    // Begins editing a freshly created bound label; requires the creation's
+    // changed viewports to have been synced so the styled scene item exists.
+    BeginResult beginCreatedText(SnowRuntime runtime, SnowViewport viewport,
+                                 const snow_canvas_commands::CreateSerialNumberTextResult& result,
+                                 const SnowCanvasDisplayCache& displayCache);
     ActiveResizeMeasurementState activeResizeMeasurementState(SnowRuntime runtime,
                                                               SnowViewport viewport) const;
     ActiveResizeMeasurementResult
@@ -169,9 +172,6 @@ class SnowCanvasWidgetTextInteraction final {
                                       bool keepSelection);
 
   private:
-    BeginResult beginCreatedText(SnowRuntime runtime, SnowViewport viewport,
-                                 const snow_canvas_commands::CreateSerialNumberTextResult& result,
-                                 const SnowCanvasDisplayCache& displayCache);
     QRegion applyEditorTextStyle(const SnowTextStyle& style,
                                  const SnowCanvasDisplayCache& displayCache, const QFont& baseFont);
     QRegion editingRegion(const SnowCanvasDisplayCache& displayCache, const QFont& baseFont) const;

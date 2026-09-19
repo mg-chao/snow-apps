@@ -1,7 +1,8 @@
 use snow_draw_engine_core::ErrorCode;
 use snow_draw_engine_document::{
-    ElementId, ElementMeta, TextData, TextLayoutSize, Transaction, serial_number_bound_text_rect,
-    text_with_measured_layout, validate_serial_number, validate_text, validate_text_layout_size,
+    ElementId, ElementMeta, SerialNumberData, TextData, TextLayoutSize, Transaction,
+    serial_number_bound_text_rect, text_line_height, text_with_measured_layout,
+    validate_serial_number, validate_text, validate_text_layout_size,
 };
 use snow_draw_engine_model::DocumentModel;
 
@@ -16,6 +17,26 @@ pub(crate) struct SerialNumberTextCreationRequest<'a> {
 pub(crate) struct SerialNumberTextCreationPlan {
     pub(crate) transaction: Transaction,
     pub(crate) single_text_id: Option<ElementId>,
+}
+
+/// The one definition of a newly attached serial-number label: the default
+/// text style at the serial number's font size, carrying the published
+/// empty-label placeholder (one contract line-height tall and minimal width)
+/// until a host measurement lands. Every creation path — the floating
+/// toolbar's Create Text button and the serial-number drag — must start here,
+/// so their styling and pre-measurement geometry cannot drift apart. The
+/// placeholder never reuses the default text's stored wrap rectangle: that
+/// rectangle belongs to the last created text and its font size, not to this
+/// label.
+pub(crate) fn new_serial_bound_label(
+    serial: &SerialNumberData,
+    default_text: &TextData,
+) -> Result<TextData, ErrorCode> {
+    let mut text = default_text.clone();
+    text.font_size = serial.font_size;
+    text.layout = TextLayoutSize::new(1.0, text_line_height(serial.font_size));
+    validate_text(&text)?;
+    Ok(text)
 }
 
 pub(crate) fn create_serial_number_text_creation_plan(
@@ -46,8 +67,7 @@ pub(crate) fn create_serial_number_text_creation_plan(
 
         let text_id = next_text_id;
         next_text_id.index = next_text_id.index.saturating_add(1);
-        let mut text = request.default_text.clone();
-        text.font_size = serial.font_size;
+        let mut text = new_serial_bound_label(&serial, request.default_text)?;
         let layout = serial_number_bound_text_rect(&serial, &text, measured_layout)?;
         text.center = layout.center;
         text.rotation = layout.rotation;
@@ -75,7 +95,7 @@ pub(crate) fn create_serial_number_text_creation_plan(
 mod tests {
     use super::*;
     use snow_draw_engine_core::Point;
-    use snow_draw_engine_document::{ElementData, Operation, SerialNumberData};
+    use snow_draw_engine_document::{ElementData, Operation};
 
     fn insert_serial_number(document: &mut DocumentModel, serial: SerialNumberData) -> ElementId {
         let id = document.peek_next_element_id();
@@ -91,6 +111,39 @@ mod tests {
         transaction.insert_text(id, ElementMeta::default(), text);
         document.apply_transaction(transaction).unwrap();
         id
+    }
+
+    #[test]
+    fn new_serial_bound_label_ignores_stale_default_wrap_rectangle() {
+        // The persisted default text carries the wrap rectangle of the last
+        // created text at its own font size. A freshly attached label must not
+        // inherit that rectangle: its placeholder follows the published
+        // line-height contract at the serial number's font size, so drag- and
+        // toolbar-created labels look identical before the host measurement.
+        let default_text = TextData {
+            font_size: 50.0,
+            layout: TextLayoutSize::new(300.0, 120.0),
+            ..TextData::default()
+        };
+        let label = new_serial_bound_label(
+            &SerialNumberData {
+                font_size: 24.0,
+                ..SerialNumberData::default()
+            },
+            &default_text,
+        )
+        .unwrap();
+
+        assert_eq!(label.font_size, 24.0);
+        assert_eq!(label.width(), 1.0);
+        assert_eq!(label.height(), text_line_height(24.0));
+        assert_eq!(label.color, default_text.color);
+        assert_eq!(label.fill, default_text.fill);
+        assert_eq!(label.stroke, default_text.stroke);
+        assert_eq!(label.font_family, default_text.font_family);
+        assert_eq!(label.horizontal_align, default_text.horizontal_align);
+        assert_eq!(label.vertical_align, default_text.vertical_align);
+        assert_eq!(label.opacity, default_text.opacity);
     }
 
     #[test]

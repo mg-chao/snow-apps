@@ -2,6 +2,7 @@
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 
 #include <QApplication>
+#include <QColor>
 #include <QFocusEvent>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -123,6 +124,54 @@ void releaseWithoutMoveAndCancellation() {
                 "only an uncancelled release starts editing, even without move events");
     }
 }
+
+bool textRecordHasColor(const QJsonObject& color, int red, int green, int blue, int alpha) {
+    return color.value(QStringLiteral("r")).toInt() == red &&
+           color.value(QStringLiteral("g")).toInt() == green &&
+           color.value(QStringLiteral("b")).toInt() == blue &&
+           color.value(QStringLiteral("a")).toInt() == alpha;
+}
+
+void toolbarCreatedTextKeepsDefaultStyling() {
+    // The floating serial toolbar's Create Text button and the serial drag are
+    // the two ways to attach a bound label. Both must commit the label with the
+    // default text styling intact: the editor session has to begin from the
+    // label's styled scene item, or its commit strips the fill, color, and
+    // stroke the label was created with.
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(600, 360);
+    canvas.show();
+    QApplication::processEvents();
+
+    SnowCanvasTextStyle style;
+    style.color = QColor(0xff, 0xff, 0xff, 0xff);
+    style.fill = QColor(0x21, 0x6b, 0xa5, 0xff);
+    require(canvas.setCanvasTextStyle(style), "apply default text style");
+
+    require(canvas.setCanvasTool(SnowCanvasTool::SerialNumber), "activate serial number tool");
+    mouse(canvas, QEvent::MouseButtonPress, {100.0, 100.0}, Qt::LeftButton, Qt::LeftButton);
+    mouse(canvas, QEvent::MouseButtonRelease, {102.0, 100.0}, Qt::LeftButton, Qt::NoButton);
+    require(records(runtime, QStringLiteral("SerialNumber")).size() == 1,
+            "click creates the badge");
+
+    require(canvas.setCanvasTool(SnowCanvasTool::Select), "activate select tool");
+    mouse(canvas, QEvent::MouseButtonPress, {100.0, 100.0}, Qt::LeftButton, Qt::LeftButton);
+    mouse(canvas, QEvent::MouseButtonRelease, {102.0, 100.0}, Qt::LeftButton, Qt::NoButton);
+    require(canvas.createSerialNumberText(), "toolbar Create Text attaches a label");
+    require(canvas.hasActiveTextEditing(), "Create Text starts editing the label");
+    key(canvas, Qt::Key_T, Qt::NoModifier, QStringLiteral("Toolbar label"));
+    key(canvas, Qt::Key_Return, Qt::ControlModifier);
+    require(!canvas.hasActiveTextEditing(), "commit closes the editor");
+
+    const auto toolbarText = payload(runtime, QStringLiteral("Text"));
+    require(textRecordHasColor(toolbarText.value(QStringLiteral("fill")).toObject(), 0x21, 0x6b,
+                               0xa5, 0xff),
+            "toolbar-created label keeps the default fill color");
+    require(textRecordHasColor(toolbarText.value(QStringLiteral("color")).toObject(), 0xff, 0xff,
+                               0xff, 0xff),
+            "toolbar-created label keeps the default text color");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -134,5 +183,6 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     clickAndDragLifecycle();
     releaseWithoutMoveAndCancellation();
+    toolbarCreatedTextKeepsDefaultStyling();
     std::cout << "Serial number drag tests passed\n";
 }

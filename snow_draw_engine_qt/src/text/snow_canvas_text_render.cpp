@@ -63,10 +63,9 @@ void drawBackground(QPainter& painter, const SnowSceneDisplayItem& item, const Q
         text_layout::createDocumentLayout(item, baseFont, zoom, text, true);
 
     QTextDocument& document = layout.textDocument();
-    // The pill padding comes from the engine's published fill-padding contract —
-    // the same values serial connectors anchor to. Never measure padding here:
-    // a font-metrics line height would drift from the contract edge and detach
-    // the connector underline from the pill.
+    // The pill padding comes from the engine's published fill-padding
+    // contract. Never measure padding here: a font-metrics line height would
+    // drift from the contract edge the dirty regions are derived from.
     const SnowTextPaintOutset fillOutset = snow_scene_text_fill_outset(&item);
     const double canvasToDocument = layout.safeZoom / layout.resolution.scale;
     const double horizontalPadding = fillOutset.x * canvasToDocument;

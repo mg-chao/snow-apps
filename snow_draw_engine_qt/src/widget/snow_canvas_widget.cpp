@@ -1612,17 +1612,25 @@ bool SnowCanvasWidget::adjustSelectedSerialNumbers(qint64 delta) {
 
 bool SnowCanvasWidget::Impl::createSerialNumberText() {
     const SnowStyleToolbarState& styleState = displayState.snapshot().styleToolbarState;
-    SnowCanvasWidgetTextInteraction::SerialTextCreationResult result =
+    snow_canvas_commands::CreateSerialNumberTextResult createResult =
         textInteraction.createSerialNumberText(
-            runtimeBinding.engine(), runtimeBinding.viewportHandle(), displayState.displayCache(),
-            styleState.text_style, styleState.serial_number_style);
-    if (!result.success) {
+            runtimeBinding.engine(), runtimeBinding.viewportHandle(), styleState.text_style,
+            styleState.serial_number_style);
+    if (!createResult.success) {
         return false;
     }
 
-    syncChangedViewports(result.firstChangedViewports.get());
-    syncChangedViewports(result.secondChangedViewports.get());
-    if (result.shouldRefocus) {
+    // The editor session must begin from the label's styled scene item, the
+    // same authority the serial drag's release path uses. Sync the creation
+    // into the display cache first; beginning before the sync leaves the
+    // editor a style-less preview whose commit strips the label's fill,
+    // color, and stroke.
+    syncChangedViewports(createResult.changedViewports.get());
+    SnowCanvasWidgetTextInteraction::BeginResult beginResult =
+        textInteraction.beginCreatedText(runtimeBinding.engine(), runtimeBinding.viewportHandle(),
+                                         createResult, displayState.displayCache());
+    syncChangedViewports(beginResult.firstChangedViewports.get());
+    if (beginResult.started) {
         refocusWidget();
     }
     return true;
