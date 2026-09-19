@@ -19,6 +19,7 @@
 #include "../capture/windowcaptureexclusion.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/presentation/styles/themecolorscheme.h"
+#include "snow_shot/presentation/screenrecordingfolder.h"
 
 #if defined(Q_OS_WIN) || defined(_WIN32) || defined(Q_OS_MACOS)
 #include "snow_shot/platform/windowcaptureexclusion.h"
@@ -33,14 +34,11 @@
 
 #include <QApplication>
 #include <QClipboard>
-#include <QDesktopServices>
 #include <QDir>
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QMimeData>
-#include <QStandardPaths>
 #include <QTimer>
-#include <QUrl>
 
 #include <chrono>
 #include <cstdint>
@@ -127,49 +125,6 @@ DirectRecordingSettings directRecordingSettings(const QString& outputFormat,
         result.extension = QStringLiteral("gif");
     }
     return result;
-}
-
-QStringList defaultRecordingDirectories() {
-    QStringList directories;
-    for (QStandardPaths::StandardLocation location :
-         {QStandardPaths::MoviesLocation, QStandardPaths::DocumentsLocation}) {
-        const QString directory = QStandardPaths::writableLocation(location);
-        if (directory.isEmpty()) {
-            continue;
-        }
-        if (!directories.contains(directory, Qt::CaseInsensitive)) {
-            directories.push_back(directory);
-        }
-    }
-    return directories;
-}
-
-QStringList recordingDirectories() {
-    QStringList directories;
-    const QString configured =
-        QDir::cleanPath(snow_shot::storage::RecordingSettings().videoSaveDirectory().trimmed());
-    const QFileInfo configuredInfo(configured);
-    if (!configured.isEmpty() && configuredInfo.isDir() && configuredInfo.isWritable()) {
-        directories.push_back(configured);
-    }
-    for (const QString& fallback : defaultRecordingDirectories()) {
-        if (!directories.contains(fallback, Qt::CaseInsensitive)) {
-            directories.push_back(fallback);
-        }
-    }
-    return directories;
-}
-
-QString recordingDirectory() {
-    const QStringList directories = recordingDirectories();
-    for (const QString& candidate : directories) {
-        QDir directory(candidate);
-        if ((directory.exists() || directory.mkpath(QStringLiteral("."))) &&
-            QFileInfo(directory.absolutePath()).isWritable()) {
-            return directory.absolutePath();
-        }
-    }
-    return directories.isEmpty() ? QString() : directories.constFirst();
 }
 
 // Runs on the start worker thread: only touches the filesystem, never storage or UI.
@@ -791,7 +746,8 @@ struct ScreenRecordingController::Impl {
             };
             const QString baseName =
                 ScreenshotImageFileService::suggestedBaseName(settings.videoFilenameFormat());
-            const QStringList directories = recordingDirectories();
+            const QStringList directories =
+                snow_shot::presentation::recording::screenRecordingDirectories();
             const QString extension = sessionOutputSettings.extension;
             const bool keyboard = showKeyboard;
             // Session creation blocks on capture, audio, hooks, and encoder
@@ -989,9 +945,7 @@ struct ScreenRecordingController::Impl {
     }
 
     void openFolder() {
-        QDir directory(recordingDirectory());
-        directory.mkpath(QStringLiteral("."));
-        QDesktopServices::openUrl(QUrl::fromLocalFile(directory.absolutePath()));
+        static_cast<void>(snow_shot::presentation::recording::openScreenRecordingFolder());
     }
 
     void close() {

@@ -563,12 +563,28 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>An update is ready. Open About to restart and update Snow Shot.</translation>
         </message>
         <message>
+            <source>Feature unavailable</source>
+            <translation>Feature unavailable</translation>
+        </message>
+        <message>
             <source>Finish capturing, recording, or exporting before updating.</source>
             <translation>Finish capturing, recording, or exporting before updating.</translation>
         </message>
         <message>
+            <source>Pin to screen is not available on macOS yet.</source>
+            <translation>Pin to screen is not available on macOS yet.</translation>
+        </message>
+        <message>
             <source>Restart and update</source>
             <translation>Restart and update</translation>
+        </message>
+        <message>
+            <source>Screen recording is not available on macOS yet.</source>
+            <translation>Screen recording is not available on macOS yet.</translation>
+        </message>
+        <message>
+            <source>Screenshot is not available on macOS yet.</source>
+            <translation>Screenshot is not available on macOS yet.</translation>
         </message>
         <message>
             <source>Snow Shot will close and restart to install the update. Continue?</source>

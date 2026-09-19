@@ -931,6 +931,7 @@ if(WIN32)
 endif()
 
 set(PROJECT_HEADERS
+    include/snow_shot/app/featureavailability.h
     include/snow_shot/presentation/directcapturecontroller.h
     include/snow_shot/presentation/directcaptureworkflow.h
     include/snow_shot/presentation/directcapturehistory.h
@@ -1048,6 +1049,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotuipreferences.h
     include/snow_shot/presentation/screenrecordingareawindow.h
     include/snow_shot/presentation/screenrecordingcontroller.h
+    include/snow_shot/presentation/screenrecordingfolder.h
     include/snow_shot/presentation/screenrecordingshortcutcontroller.h
     include/snow_shot/presentation/screenrecordingtoolbarwindow.h
     include/snow_shot/presentation/styles/mainwindowcomponenttoken.h
@@ -1065,6 +1067,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/capture/directcapturehistory.cpp
     src/presentation/capture/camerashuttersound.cpp
     src/app/applicationcontroller.cpp
+    src/app/featureavailability.cpp
     src/app/main.cpp
     src/app/singleinstancecoordinator.cpp
     src/platform/physicalcursor.cpp
@@ -1196,6 +1199,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/toolbar/screenshottoolbarwindow.cpp
     src/presentation/recording/screenrecordingareawindow.cpp
     src/presentation/recording/screenrecordingcontroller.cpp
+    src/presentation/recording/screenrecordingfolder.cpp
     src/presentation/recording/recordingcountdownoverlay.cpp
     src/presentation/recording/recordingcountdownoverlay.h
         src/presentation/recording/recordingeffectpreview.cpp
@@ -1206,7 +1210,10 @@ set(PROJECT_CXX_SOURCES
     src/presentation/recording/screenrecordingtoolbarwindow.cpp
 )
 if(APPLE)
-    list(APPEND PROJECT_CXX_SOURCES src/platform/macos/windowcaptureexclusion.mm)
+    list(APPEND PROJECT_CXX_SOURCES
+        src/platform/macos/applicationactivation.mm
+        src/platform/macos/windowcaptureexclusion.mm)
+    list(APPEND PROJECT_HEADERS include/snow_shot/platform/macos/applicationactivation.h)
 endif()
 
 if(MSVC)
@@ -1847,6 +1854,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/services/screenshotclipboardservice.cpp
         src/platform/windows/windowchrome.cpp
     )
+    if(APPLE)
+        target_sources(snow-shot-about-page-tests PRIVATE
+            src/platform/macos/applicationactivation.mm)
+        target_link_libraries(snow-shot-about-page-tests PRIVATE "-framework AppKit")
+    endif()
     target_link_libraries(snow-shot-about-page-tests PRIVATE
         snow_shot_settings
         snow_shot_image_codec
@@ -1874,6 +1886,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     target_link_libraries(snow-shot-main-window-font-tests PRIVATE
         snow_shot_settings snow_shot_image_codec snow_shot_updates)
+    if(APPLE)
+        target_link_libraries(snow-shot-main-window-font-tests PRIVATE "-framework AppKit")
+    endif()
     snow_shot_import_offscreen_platform(snow-shot-main-window-font-tests)
     add_test(NAME snow-shot-main-window-font-tests COMMAND snow-shot-main-window-font-tests)
     set_tests_properties(snow-shot-main-window-font-tests PROPERTIES
@@ -1889,6 +1904,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     target_link_libraries(snow-shot-window-geometry-memory-tests PRIVATE
         snow_shot_settings snow_shot_image_codec snow_shot_updates)
+    if(APPLE)
+        target_link_libraries(snow-shot-window-geometry-memory-tests PRIVATE "-framework AppKit")
+    endif()
     snow_shot_import_offscreen_platform(snow-shot-window-geometry-memory-tests)
     add_test(NAME snow-shot-window-geometry-memory-tests
              COMMAND snow-shot-window-geometry-memory-tests)
@@ -4548,11 +4566,13 @@ if(SNOW_SHOT_BUILD_TESTS)
         ${_recording_test_sources}
         tests/screen_recording_controller_tests.cpp
         include/snow_shot/presentation/screenrecordingcontroller.h
+        include/snow_shot/presentation/screenrecordingfolder.h
         include/snow_shot/presentation/screenrecordingareawindow.h
         include/snow_shot/presentation/screenrecordingtoolbarwindow.h
         include/snow_shot/presentation/screenshotfloatingtoolpalettewindow.h
         include/snow_shot/presentation/screenshottoolpalettehost.h
         src/presentation/recording/screenrecordingcontroller.cpp
+        src/presentation/recording/screenrecordingfolder.cpp
         src/presentation/recording/recordingeffectpreview.cpp
         src/presentation/recording/recordingeffectpreview.h
         src/presentation/recording/recordingeffectstyle.h
@@ -6595,6 +6615,29 @@ if(SNOW_SHOT_BUILD_TESTS)
 endif()
 
 if(APPLE AND SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-macos-shell-policy-tests
+        tests/macos_shell_policy_tests.cpp
+        include/snow_shot/app/featureavailability.h
+        src/app/featureavailability.cpp)
+    target_include_directories(snow-shot-macos-shell-policy-tests PRIVATE include)
+    target_link_libraries(snow-shot-macos-shell-policy-tests PRIVATE Qt6::Core)
+    add_test(NAME snow-shot-macos-shell-policy-tests
+        COMMAND snow-shot-macos-shell-policy-tests)
+    set_tests_properties(snow-shot-macos-shell-policy-tests PROPERTIES
+        LABELS "unit;macos" TIMEOUT 30)
+
+    add_executable(snow-shot-macos-shell-native-tests
+        tests/macos_shell_native_tests.mm
+        include/snow_shot/platform/macos/applicationactivation.h
+        src/platform/macos/applicationactivation.mm)
+    target_include_directories(snow-shot-macos-shell-native-tests PRIVATE include)
+    target_link_libraries(snow-shot-macos-shell-native-tests PRIVATE
+        Qt6::Widgets "-framework AppKit")
+    add_test(NAME snow-shot-macos-shell-native-tests
+        COMMAND snow-shot-macos-shell-native-tests -platform cocoa)
+    set_tests_properties(snow-shot-macos-shell-native-tests PROPERTIES
+        LABELS "unit;macos" RUN_SERIAL TRUE TIMEOUT 30)
+
     add_executable(snow-shot-macos-pinned-window-tests
         tests/macos_pinned_window_tests.mm
         ${SNOW_PINNED_PLATFORM_SOURCES}

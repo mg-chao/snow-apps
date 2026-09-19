@@ -33,7 +33,9 @@ class SystemTrayController final : public QObject {
     void show();
     void hide();
     void showCaptureMessage(const QString& message, bool warning);
+    void showWarningMessage(const QString& title, const QString& message);
     void showUpdateMessage(const QString& message);
+    [[nodiscard]] bool canShowMessages() const;
     void setEnabled(bool enabled);
     [[nodiscard]] bool isEnabled() const;
     void setIconSelection(const QString& selection);

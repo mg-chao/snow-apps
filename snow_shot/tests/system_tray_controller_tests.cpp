@@ -21,6 +21,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QPushButton>
+#include <QSet>
 #include <QString>
 #include <QSystemTrayIcon>
 #include <QTemporaryDir>
@@ -83,6 +84,10 @@ int main(int argc, char* argv[]) {
         controller.findChild<QSystemTrayIcon*>(QStringLiteral("snowShotSystemTrayIcon"));
     require(trayIcon != nullptr, "the controller should own a system tray icon");
     require(!trayIcon->icon().isNull(), "the bundled tray icon should load");
+#ifdef Q_OS_MACOS
+    require(trayIcon->icon().isMask(),
+            "bundled macOS tray icons must use native template rendering");
+#endif
     require(trayIcon->toolTip() == QStringLiteral("SnowShot"),
             "the tray tooltip should be SnowShot");
     controller.show();
@@ -114,10 +119,15 @@ int main(int argc, char* argv[]) {
     requireBalloon(trayIcon, QStringLiteral("Capture"), QStringLiteral("Capture timed out"),
                    QSystemTrayIcon::Warning,
                    "a capture warning balloon must stay titled Capture with a warning icon");
+    controller.showWarningMessage(QStringLiteral("Feature unavailable"),
+                                  QStringLiteral("Screenshot is unavailable"));
+    requireBalloon(trayIcon, QStringLiteral("Feature unavailable"),
+                   QStringLiteral("Screenshot is unavailable"), QSystemTrayIcon::Warning,
+                   "a general tray warning must preserve its title and warning severity");
     controller.setEnabled(false);
     controller.showUpdateMessage(QStringLiteral("Ignored while disabled"));
-    requireBalloon(trayIcon, QStringLiteral("Capture"), QStringLiteral("Capture timed out"),
-                   QSystemTrayIcon::Warning,
+    requireBalloon(trayIcon, QStringLiteral("Feature unavailable"),
+                   QStringLiteral("Screenshot is unavailable"), QSystemTrayIcon::Warning,
                    "a disabled tray must not replace the last balloon with an update notice");
     controller.setEnabled(true);
 
@@ -144,6 +154,10 @@ int main(int argc, char* argv[]) {
     customImage.fill(QColor(242, 17, 137));
     require(customImage.save(customIconPath), "the custom tray icon fixture should be writable");
     controller.setCustomIconPath(customIconPath);
+#ifdef Q_OS_MACOS
+    require(!trayIcon->icon().isMask(),
+            "custom macOS tray icons must preserve their original colors");
+#endif
     require(controller.customIconPath() == customIconPath &&
                 trayIcon->icon().pixmap(QSize(64, 64)).toImage().pixelColor(32, 32) ==
                     QColor(242, 17, 137),
@@ -312,23 +326,26 @@ int main(int argc, char* argv[]) {
     auto* exitMenuAction = actionForId(QStringLiteral("tray.exit"));
     auto* windowGroupMenuAction =
         actionForObjectName(QStringLiteral("systemTrayWindowGroupAction"));
-    require(controller.menuOptions() == defaultMenuOptions && defaultVisibleActions.size() == 14 &&
-                screenshotMenuAction != nullptr && screenshotMenuAction->isVisible() &&
-                delayedScreenshotMenuAction != nullptr &&
-                delayedScreenshotMenuAction->isVisible() && recordingToggleMenuAction != nullptr &&
-                !recordingToggleMenuAction->isVisible() && !screenshotMenuAction->icon().isNull() &&
-                disableMenuAction != nullptr && disableMenuAction->isVisible() &&
-                disableMenuAction->isCheckable() && !disableMenuAction->isChecked() &&
-                showMainWindowMenuAction != nullptr && showMainWindowMenuAction->isVisible() &&
-                !showMainWindowMenuAction->icon().isNull() && exitMenuAction != nullptr &&
-                exitMenuAction->isVisible() && !exitMenuAction->icon().isNull() &&
-                windowGroupMenuAction != nullptr && windowGroupMenuAction->isVisible() &&
-                actionForId(QStringLiteral("tray.window-grouping")) == windowGroupMenuAction &&
-                defaultVisibleActions.contains(disableMenuAction) &&
-                defaultVisibleActions.contains(showMainWindowMenuAction) &&
-                defaultVisibleActions.indexOf(windowGroupMenuAction) ==
-                    defaultVisibleActions.indexOf(disableMenuAction) - 1,
-            "the tray menu should expose the eleven default options in four catalog groups");
+    const QStringList normalizedDefaultMenuOptions = controller.menuOptions();
+    require(
+        QSet<QString>(normalizedDefaultMenuOptions.cbegin(), normalizedDefaultMenuOptions.cend()) ==
+                QSet<QString>(defaultMenuOptions.cbegin(), defaultMenuOptions.cend()) &&
+            defaultVisibleActions.size() == 14 && screenshotMenuAction != nullptr &&
+            screenshotMenuAction->isVisible() && delayedScreenshotMenuAction != nullptr &&
+            delayedScreenshotMenuAction->isVisible() && recordingToggleMenuAction != nullptr &&
+            !recordingToggleMenuAction->isVisible() && !screenshotMenuAction->icon().isNull() &&
+            disableMenuAction != nullptr && disableMenuAction->isVisible() &&
+            disableMenuAction->isCheckable() && !disableMenuAction->isChecked() &&
+            showMainWindowMenuAction != nullptr && showMainWindowMenuAction->isVisible() &&
+            !showMainWindowMenuAction->icon().isNull() && exitMenuAction != nullptr &&
+            exitMenuAction->isVisible() && !exitMenuAction->icon().isNull() &&
+            windowGroupMenuAction != nullptr && windowGroupMenuAction->isVisible() &&
+            actionForId(QStringLiteral("tray.window-grouping")) == windowGroupMenuAction &&
+            defaultVisibleActions.contains(disableMenuAction) &&
+            defaultVisibleActions.contains(showMainWindowMenuAction) &&
+            defaultVisibleActions.indexOf(windowGroupMenuAction) ==
+                defaultVisibleActions.indexOf(disableMenuAction) - 1,
+        "the tray menu should expose the eleven default options in four catalog groups");
     requireActionText(screenshotMenuAction, QStringLiteral("Screenshot"),
                       "Screenshot should use its catalog label");
     requireActionText(delayedScreenshotMenuAction, QStringLiteral("Delay 3s to execute"),

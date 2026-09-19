@@ -496,9 +496,11 @@ class SystemTrayController::Impl {
     void updateIcon() {
         QIcon icon = iconCache.load(customIconPath);
         QString resolvedSource = customIconPath;
+        [[maybe_unused]] bool bundled = false;
         if (icon.isNull()) {
             resolvedSource = bundledIconResource(iconSelection);
             icon = QIcon(resolvedSource);
+            bundled = !icon.isNull();
         }
         if (icon.isNull()) {
             resolvedSource = QStringLiteral("application-window-icon");
@@ -508,6 +510,9 @@ class SystemTrayController::Impl {
             resolvedSource = QCoreApplication::applicationFilePath();
             icon = QIcon(QCoreApplication::applicationFilePath());
         }
+#ifdef Q_OS_MACOS
+        icon.setIsMask(bundled);
+#endif
         trayIcon->setIcon(icon);
         trayIcon->setProperty("resolvedIconSource", resolvedSource);
         trayIcon->setProperty("customIconCacheHits",
@@ -595,8 +600,16 @@ void SystemTrayController::showCaptureMessage(const QString& message, bool warni
                         warning ? QSystemTrayIcon::Warning : QSystemTrayIcon::Critical);
 }
 
+void SystemTrayController::showWarningMessage(const QString& title, const QString& message) {
+    m_impl->showBalloon(title, message, QSystemTrayIcon::Warning);
+}
+
 void SystemTrayController::showUpdateMessage(const QString& message) {
     m_impl->showBalloon(tr("Update"), message, QSystemTrayIcon::Information);
+}
+
+bool SystemTrayController::canShowMessages() const {
+    return m_impl->enabled && QSystemTrayIcon::isSystemTrayAvailable();
 }
 
 void SystemTrayController::setEnabled(bool enabled) {

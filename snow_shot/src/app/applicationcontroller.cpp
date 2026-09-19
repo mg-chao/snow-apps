@@ -1,4 +1,8 @@
 #include "snow_shot/app/applicationcontroller.h"
+#include "snow_shot/app/featureavailability.h"
+#ifdef Q_OS_MACOS
+#include "snow_shot/platform/macos/applicationactivation.h"
+#endif
 #include "snow_shot/platform/windows/administratorlaunch.h"
 #include "snow_shot/translation/translationservice.h"
 #include "snow_shot/presentation/languagemanager.h"
@@ -18,6 +22,7 @@
 #include "snow_shot/presentation/selectedtexttranslationcoordinator.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/screenrecordingfolder.h"
 #include "snow_shot/presentation/systemtraycontroller.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
@@ -25,6 +30,7 @@
 #include "snow_shot/platform/windows/selectedfiles.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "widgets/message.h"
 
 #include <QApplication>
 #include <QDir>
@@ -70,13 +76,16 @@ class ApplicationController::Impl {
   public:
     Impl(ApplicationController& owner, QApplication& application)
         : q(owner), app(application), groupManager(initializedPinnedWindowRepository()),
-          systemTray(presentation::settings::builtInTrayCommandManifest(), &groupManager) {
-        QObject::connect(&systemTray, &presentation::SystemTrayController::screenshotRequested, &q,
-                         [this]() {
-                             if (ScreenshotController* controller = ensureScreenshotController()) {
-                                 controller->startCapture();
-                             }
-                         });
+          systemTray(presentation::settings::builtInTrayCommandManifest(), &groupManager),
+          featureRouter([this](FeatureFamily feature) { showUnavailableFeature(feature); }) {
+        QObject::connect(
+            &systemTray, &presentation::SystemTrayController::screenshotRequested, &q, [this]() {
+                static_cast<void>(featureRouter.dispatch(FeatureFamily::Screenshot, [this]() {
+                    if (ScreenshotController* controller = ensureScreenshotController()) {
+                        controller->startCapture();
+                    }
+                }));
+            });
         QObject::connect(&systemTray, &presentation::SystemTrayController::showMainWindowRequested,
                          &q, [this]() { showMainWindow(); });
         QObject::connect(&systemTray,
@@ -97,9 +106,14 @@ class ApplicationController::Impl {
             &groupManager,
             &presentation::PinnedWindowGroupManager::restoreActiveGroupWindowsRequested, &q,
             [this]() {
-                if (ScreenshotController* controller = ensureScreenshotController()) {
-                    controller->restoreActivePinnedGroupWindows();
-                }
+                static_cast<void>(featureRouter.dispatch(
+                    FeatureFamily::PinToScreen,
+                    [this]() {
+                        if (ScreenshotController* controller = ensureScreenshotController()) {
+                            controller->restoreActivePinnedGroupWindows();
+                        }
+                    },
+                    started));
             });
         QObject::connect(
             &globalShortcutManager, &presentation::GlobalShortcutManager::activated, &q,
@@ -117,29 +131,20 @@ class ApplicationController::Impl {
         QObject::connect(
             &globalMouseManager, &presentation::GlobalMouseManager::operationFailed, &q,
             [this](const QString& message) { systemTray.showCaptureMessage(message, true); });
-        QObject::connect(&globalMouseManager, &presentation::GlobalMouseManager::dragEvent, &q,
-                         [this](const presentation::GlobalMouseDragEvent& event) {
-                             auto* controller = ensureScreenshotController();
-                             using Kind = presentation::GlobalMouseDragEvent::Kind;
-                             switch (event.kind) {
-                             case Kind::Begin:
-                                 if (!controller->beginGlobalMouseCapture(event.action, event.id,
-                                                                          event.position,
-                                                                          event.coordinateSpace)) {
-                                     globalMouseManager.cancelGesture(event.id);
-                                 }
-                                 break;
-                             case Kind::Update:
-                                 controller->updateGlobalMouseCapture(event.id, event.position);
-                                 break;
-                             case Kind::Finish:
-                                 controller->finishGlobalMouseCapture(event.id, event.position);
-                                 break;
-                             case Kind::Cancel:
-                                 controller->cancelGlobalMouseCapture(event.id);
-                                 break;
-                             }
-                         });
+        QObject::connect(
+            &globalMouseManager, &presentation::GlobalMouseManager::dragEvent, &q,
+            [this](const presentation::GlobalMouseDragEvent& event) {
+                using Kind = presentation::GlobalMouseDragEvent::Kind;
+                const FeatureFamily feature = featureFamilyFor(event.action);
+                if (event.kind == Kind::Begin) {
+                    static_cast<void>(featureRouter.beginGesture(
+                        feature, [this, id = event.id]() { globalMouseManager.cancelGesture(id); },
+                        [this, event]() { dispatchGlobalMouseEvent(event); }));
+                    return;
+                }
+                static_cast<void>(featureRouter.dispatch(
+                    feature, [this, event]() { dispatchGlobalMouseEvent(event); }, false));
+            });
         auto& applicationStorage = storage::ApplicationStorage::instance();
         if (!applicationStorage.isInitialized()) {
             static_cast<void>(applicationStorage.initialize());
@@ -258,6 +263,10 @@ class ApplicationController::Impl {
                          [this](const QString& key, const QJsonValue& value) {
                              applyRuntimeConfiguration(value, key);
                          });
+#ifdef Q_OS_MACOS
+        reopenHandler = std::make_unique<platform::macos::ApplicationReopenHandler>(
+            [this]() { showMainWindow(); });
+#endif
     }
 
     ~Impl() {
@@ -290,19 +299,32 @@ class ApplicationController::Impl {
 
         systemTray.show();
         globalShortcutManager.initialize();
+#ifdef Q_OS_MACOS
+        // Capture remains unavailable, but the native listener must recognize a configured
+        // gesture so ApplicationController can present the not-yet-supported notice.
+        globalMouseManager.setCaptureAvailable(true);
+#else
         globalMouseManager.setCaptureAvailable(ensureScreenshotController()->captureAvailable());
+#endif
         globalMouseManager.initialize();
         QObject::connect(&app, &QGuiApplication::applicationStateChanged, &globalMouseManager,
                          [this](Qt::ApplicationState state) {
                              if (state == Qt::ApplicationActive)
                                  globalMouseManager.refreshPermission();
                          });
-        QTimer::singleShot(0, &q, [this]() {
-            if (ScreenshotController* controller = ensureScreenshotController()) {
-                controller->prewarmResources();
-            }
-        });
-        QTimer::singleShot(0, &q, [this]() { restorePinnedWindows(); });
+        static_cast<void>(featureRouter.dispatch(
+            FeatureFamily::Screenshot,
+            [this]() {
+                QTimer::singleShot(0, &q, [this]() {
+                    if (ScreenshotController* controller = ensureScreenshotController()) {
+                        controller->prewarmResources();
+                    }
+                });
+            },
+            false));
+        static_cast<void>(featureRouter.dispatch(
+            FeatureFamily::PinToScreen,
+            [this]() { QTimer::singleShot(0, &q, [this]() { restorePinnedWindows(); }); }, false));
         QTimer::singleShot(0, &q, [this]() { applyOcrConfiguration(); });
     }
 
@@ -318,9 +340,13 @@ class ApplicationController::Impl {
                              [this](const QString& text) {
                                  ensureSelectedTextTranslationCoordinator().presentText(text);
                              });
-            QObject::connect(screenshotController.get(),
-                             &ScreenshotController::captureAvailabilityChanged, &globalMouseManager,
-                             &presentation::GlobalMouseManager::setCaptureAvailable);
+            if (isFeatureAvailable(FeatureFamily::Screenshot) ||
+                isFeatureAvailable(FeatureFamily::PinToScreen) ||
+                isFeatureAvailable(FeatureFamily::ScreenRecording)) {
+                QObject::connect(
+                    screenshotController.get(), &ScreenshotController::captureAvailabilityChanged,
+                    &globalMouseManager, &presentation::GlobalMouseManager::setCaptureAvailable);
+            }
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::globalMouseCaptureEnded, &globalMouseManager,
                              &presentation::GlobalMouseManager::cancelGesture);
@@ -382,22 +408,32 @@ class ApplicationController::Impl {
             QObject::connect(mainWindow, &QObject::destroyed, &q,
                              [this]() { mainWindow = nullptr; });
             QObject::connect(mainWindow, &MainWindow::screenshotRequested, &q, [this]() {
-                if (ScreenshotController* controller = ensureScreenshotController()) {
-                    controller->startCapture();
-                }
+                static_cast<void>(featureRouter.dispatch(FeatureFamily::Screenshot, [this]() {
+                    if (ScreenshotController* controller = ensureScreenshotController()) {
+                        controller->startCapture();
+                    }
+                }));
             });
             QObject::connect(
                 mainWindow, &MainWindow::quickActionRequested, &q,
                 [this](presentation::GlobalShortcutAction action) { dispatchQuickAction(action); });
-            QObject::connect(mainWindow, &MainWindow::globalMouseDragRequested, &globalMouseManager,
-                             &presentation::GlobalMouseManager::beginButtonDrag);
-            QObject::connect(mainWindow, &MainWindow::screenshotHistoryEditRequested, &q,
-                             [this](const QString& recordId) {
-                                 if (ScreenshotController* controller =
-                                         ensureScreenshotController()) {
-                                     controller->editHistoryRecord(recordId);
-                                 }
+            QObject::connect(mainWindow, &MainWindow::globalMouseDragRequested, &q,
+                             [this](presentation::settings::SettingsGlobalMouseAction action) {
+                                 static_cast<void>(featureRouter.dispatch(
+                                     featureFamilyFor(action), [this, action]() {
+                                         globalMouseManager.beginButtonDrag(action);
+                                     }));
                              });
+            QObject::connect(
+                mainWindow, &MainWindow::screenshotHistoryEditRequested, &q,
+                [this](const QString& recordId) {
+                    static_cast<void>(
+                        featureRouter.dispatch(FeatureFamily::Screenshot, [this, recordId]() {
+                            if (ScreenshotController* controller = ensureScreenshotController()) {
+                                controller->editHistoryRecord(recordId);
+                            }
+                        }));
+                });
         }
         return *mainWindow;
     }
@@ -418,6 +454,17 @@ class ApplicationController::Impl {
     }
 
     void dispatchQuickAction(presentation::GlobalShortcutAction action) {
+        const std::optional<FeatureFamily> feature = featureFamilyFor(action);
+        if (feature && !featureRouter.dispatch(
+                           *feature, [this, action]() { dispatchAvailableQuickAction(action); })) {
+            return;
+        }
+        if (!feature) {
+            dispatchAvailableQuickAction(action);
+        }
+    }
+
+    void dispatchAvailableQuickAction(presentation::GlobalShortcutAction action) {
         switch (action) {
         case presentation::GlobalShortcutAction::Screenshot:
             if (ScreenshotController* controller = ensureScreenshotController()) {
@@ -466,9 +513,7 @@ class ApplicationController::Impl {
             }
             break;
         case presentation::GlobalShortcutAction::OpenScreenRecordingFolder:
-            if (ScreenshotController* controller = ensureScreenshotController()) {
-                controller->openScreenRecordingFolder();
-            }
+            static_cast<void>(presentation::recording::openScreenRecordingFolder());
             break;
         case presentation::GlobalShortcutAction::OpenCaptureHistory:
             ensureMainWindow().showScreenshotHistory();
@@ -536,9 +581,79 @@ class ApplicationController::Impl {
     }
 
     void restorePinnedWindows() {
-        if (ScreenshotController* controller = ensureScreenshotController()) {
-            controller->restorePinnedWindows();
+        static_cast<void>(featureRouter.dispatch(FeatureFamily::PinToScreen, [this]() {
+            if (ScreenshotController* controller = ensureScreenshotController()) {
+                controller->restorePinnedWindows();
+            }
+        }));
+    }
+
+    void dispatchGlobalMouseEvent(const presentation::GlobalMouseDragEvent& event) {
+        auto* controller = ensureScreenshotController();
+        using Kind = presentation::GlobalMouseDragEvent::Kind;
+        switch (event.kind) {
+        case Kind::Begin:
+            if (!controller->beginGlobalMouseCapture(event.action, event.id, event.position,
+                                                     event.coordinateSpace)) {
+                globalMouseManager.cancelGesture(event.id);
+            }
+            break;
+        case Kind::Update:
+            controller->updateGlobalMouseCapture(event.id, event.position);
+            break;
+        case Kind::Finish:
+            controller->finishGlobalMouseCapture(event.id, event.position);
+            break;
+        case Kind::Cancel:
+            controller->cancelGlobalMouseCapture(event.id);
+            break;
         }
+    }
+
+    QString unavailableFeatureMessage(FeatureFamily feature) const {
+        switch (feature) {
+        case FeatureFamily::Screenshot:
+            return ApplicationController::tr("Screenshot is not available on macOS yet.");
+        case FeatureFamily::PinToScreen:
+            return ApplicationController::tr("Pin to screen is not available on macOS yet.");
+        case FeatureFamily::ScreenRecording:
+            return ApplicationController::tr("Screen recording is not available on macOS yet.");
+        }
+        return {};
+    }
+
+    QString unavailableFeatureKey(FeatureFamily feature) const {
+        switch (feature) {
+        case FeatureFamily::Screenshot:
+            return QStringLiteral("macos-screenshot-unavailable");
+        case FeatureFamily::PinToScreen:
+            return QStringLiteral("macos-pin-unavailable");
+        case FeatureFamily::ScreenRecording:
+            return QStringLiteral("macos-recording-unavailable");
+        }
+        return {};
+    }
+
+    void showUnavailableFeatureInWindow(MainWindow& window, FeatureFamily feature) {
+        adqt::widgets::AdMessage::Request request;
+        request.key = unavailableFeatureKey(feature);
+        request.content = unavailableFeatureMessage(feature);
+        adqt::widgets::AdMessageService::warning(std::move(request), &window);
+    }
+
+    void showUnavailableFeature(FeatureFamily feature) {
+        if (mainWindow != nullptr && mainWindow->isVisible() && !mainWindow->isMinimized()) {
+            showUnavailableFeatureInWindow(*mainWindow, feature);
+            return;
+        }
+        if (systemTray.canShowMessages()) {
+            systemTray.showWarningMessage(ApplicationController::tr("Feature unavailable"),
+                                          unavailableFeatureMessage(feature));
+            return;
+        }
+        MainWindow& window = ensureMainWindow();
+        window.showAndActivate();
+        showUnavailableFeatureInWindow(window, feature);
     }
 
     void showInterfaceSettings() {
@@ -550,6 +665,7 @@ class ApplicationController::Impl {
     // These services outlive the disposable configuration window.
     presentation::PinnedWindowGroupManager groupManager;
     presentation::SystemTrayController systemTray;
+    FeatureActionRouter featureRouter;
     presentation::GlobalShortcutManager globalShortcutManager;
     presentation::GlobalMouseManager globalMouseManager;
     // Settings are intentionally constructed on first window access.  The
@@ -565,6 +681,9 @@ class ApplicationController::Impl {
     std::unique_ptr<presentation::SelectedTextTranslationCoordinator>
         selectedTextTranslationCoordinator;
     QPointer<MainWindow> mainWindow;
+#ifdef Q_OS_MACOS
+    std::unique_ptr<platform::macos::ApplicationReopenHandler> reopenHandler;
+#endif
     bool started = false;
     update::UpdateService* updates = nullptr;
 };

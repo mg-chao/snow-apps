@@ -1,7 +1,14 @@
 set(_app "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/snow_shot.app")
+string(TOLOWER "${CMAKE_INSTALL_CONFIG_NAME}" _snow_install_config)
+if(_snow_install_config STREQUAL "debug")
+    set(_snow_vcpkg_library_dir "@SNOW_FFMPEG_ROOT@/debug/lib")
+else()
+    set(_snow_vcpkg_library_dir "@SNOW_FFMPEG_ROOT@/lib")
+endif()
 if(@SNOW_MACOS_OCR_ASSETS_ENABLED@)
     execute_process(COMMAND "@Python3_EXECUTABLE@" "@SNOW_MACOS_OCR_TOOL@" prepare-bundle
-        --app "${_app}" --library-dir "@SNOW_FFMPEG_ROOT@/lib" COMMAND_ERROR_IS_FATAL ANY)
+        --app "${_app}" --library-dir "${_snow_vcpkg_library_dir}"
+        COMMAND_ERROR_IS_FATAL ANY)
 endif()
 # This dlopen-only library is deliberately renamed to ORT's stable lookup name.
 # Update its own Mach-O ID before macdeployqt scans it as an extra executable.
@@ -15,8 +22,7 @@ execute_process(COMMAND "@SNOW_MACDEPLOYQT@" "${_app}"
     "-executable=${_app}/Contents/MacOS/snow-shot-updater"
     "-executable=${_app}/Contents/MacOS/libonnxruntime.dylib"
     "-executable=${_app}/Contents/PlugIns/platforms/libqoffscreen.dylib"
-    "-libpath=@SNOW_FFMPEG_ROOT@/lib"
-    "-libpath=@SNOW_FFMPEG_ROOT@/debug/lib"
+    "-libpath=${_snow_vcpkg_library_dir}"
     -always-overwrite -codesign=-
     RESULT_VARIABLE _result OUTPUT_VARIABLE _output ERROR_VARIABLE _error)
 if(NOT _result EQUAL 0 OR "${_output}${_error}" MATCHES "ERROR:")
