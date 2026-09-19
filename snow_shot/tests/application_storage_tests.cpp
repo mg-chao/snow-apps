@@ -309,9 +309,8 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
                     QStringLiteral("quick.screenshot"), QStringLiteral("quick.screenshot-delay"),
                     QStringLiteral("quick.screenshot-fixed"),
                     QStringLiteral("quick.screenshot-ocr"), QStringLiteral("quick.screenshot-copy"),
-                    QStringLiteral("quick.screen-record"),
                     QStringLiteral("quick.pin-clipboard-content"),
-                    QStringLiteral("tray.window-grouping"),
+                    QStringLiteral("quick.screen-record"), QStringLiteral("tray.window-grouping"),
                     QStringLiteral("tray.disable-shortcut-functions"),
                     QStringLiteral("tray.show-main-window"), QStringLiteral("tray.exit")},
         "new settings defaults do not match the requested contract");
