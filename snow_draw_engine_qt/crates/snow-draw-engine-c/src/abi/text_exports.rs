@@ -648,7 +648,30 @@ pub unsafe extern "C" fn snow_viewport_take_text_edit_request(
     })
 }
 
-/// Returns the pending empty-label measurement for an active serial number drag,
+/// # Safety
+/// `runtime` and `viewport` must be live handles created by this library.
+/// `out_requested` must be valid for writes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_take_new_text_draft_request(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    out_requested: *mut u8,
+) -> SnowError {
+    ffi_error(|| {
+        if out_requested.is_null() {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_impl_mut(runtime, |state| {
+            let id = viewport_id(viewport)?;
+            let requested = state
+                .runtime
+                .take_new_text_draft_request(id)
+                .map_err(SnowError::from)?;
+            write_out(out_requested, u8::from(requested));
+            Ok(())
+        }))
+    })
+}
 /// if any. The host measures the empty draft for the requested font and applies
 /// the result via `snow_viewport_apply_serial_label_layout_ex`.
 /// # Safety

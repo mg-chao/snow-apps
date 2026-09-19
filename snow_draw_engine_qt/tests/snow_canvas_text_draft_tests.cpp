@@ -1470,47 +1470,69 @@ void textEditorActivationPreservesSelectToolSelectionBox() {
             "the text interior should remain available for caret placement while editing");
 }
 
-void newTextDraftClearsPreviouslySelectedText() {
-    ScopedRuntimeHandle runtime;
-    require(snow_runtime_create(runtime.outParam()) == SNOW_OK,
-            "new text selection test should create a runtime");
+void blankCanvasPressDeselectsBeforeBeginningNewText() {
+    SnowCanvasRuntime runtime;
+    require(runtime.isValid(), "blank-canvas deselect test should create a runtime");
+    SnowRuntime runtimeHandle = snow_canvas_runtime::Access::handle(runtime);
 
-    SnowCanvasViewport viewport;
+    SnowCanvasViewport inspectionViewport;
     const SnowEngineConfig config = snow_canvas_viewport::defaultEngineConfig();
-    require(viewport.create(runtime.get(), config),
-            "new text selection test should create a viewport");
-    require(snow_viewport_set_surface_size(runtime.get(), viewport.get(), 600, 400) == SNOW_OK,
-            "new text selection test should set the surface size");
+    require(inspectionViewport.create(runtimeHandle, config),
+            "blank-canvas deselect test should create a viewport");
+    require(snow_viewport_set_surface_size(runtimeHandle, inspectionViewport.get(), 600, 400) ==
+                SNOW_OK,
+            "blank-canvas deselect test should set the surface size");
 
     const QByteArray text = QByteArrayLiteral("previous text");
-    require(snow_viewport_create_text(runtime.get(), viewport.get(), 0.0, 0.0, text.constData(),
-                                      static_cast<std::uint32_t>(text.size()), 160.0,
-                                      50.0) == SNOW_OK,
-            "new text selection test should create the previous text");
-
+    require(snow_viewport_create_text(runtimeHandle, inspectionViewport.get(), 0.0, 0.0,
+                                      text.constData(), static_cast<std::uint32_t>(text.size()),
+                                      160.0, 50.0) == SNOW_OK,
+            "blank-canvas deselect test should create the previous text");
     SnowElementId textId{};
     std::uint8_t hit = 0;
-    require(snow_viewport_hit_text(runtime.get(), viewport.get(), 0.0, 0.0, &textId, &hit) ==
-                    SNOW_OK &&
+    require(snow_viewport_hit_text(runtimeHandle, inspectionViewport.get(), 0.0, 0.0, &textId,
+                                   &hit) == SNOW_OK &&
                 hit != 0,
-            "new text selection test should resolve the previous text");
-    require(snow_canvas_commands::selectElement(runtime.get(), viewport.get(), textId).success,
-            "new text selection test should select the previous text");
-    require(isElementSelected(runtime.get(), viewport.get(), textId),
+            "blank-canvas deselect test should resolve the previous text");
+
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(600, 400);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(0.0, 0.0, 1.0),
+            "blank-canvas deselect test should configure the camera");
+    require(canvas.setCanvasTool(SnowCanvasTool::Text),
+            "blank-canvas deselect test should activate the text tool");
+    require(snow_canvas_commands::selectElement(runtimeHandle, inspectionViewport.get(), textId)
+                .success,
+            "blank-canvas deselect test should select the previous text");
+    require(isElementSelected(runtimeHandle, inspectionViewport.get(), textId),
             "previous text should start selected");
 
-    SnowCanvasDisplayCache displayCache;
-    require(displayCache.sync(runtime.get(), viewport.get()),
-            "new text selection test should synchronize the selected text");
+    const QPointF blank(500.0, 300.0);
+    sendCanvasMouseEvent(canvas, QEvent::MouseButtonPress, blank, Qt::LeftButton, Qt::LeftButton);
+    sendCanvasMouseEvent(canvas, QEvent::MouseButtonRelease, blank, Qt::LeftButton, Qt::NoButton);
+    QApplication::processEvents();
 
-    QWidget editorHost;
-    SnowCanvasCursorController cursorController(editorHost);
-    SnowCanvasWidgetTextInteraction interaction(editorHost, cursorController);
-    const SnowCanvasWidgetTextInteraction::BeginResult beginResult = interaction.beginAt(
-        runtime.get(), viewport.get(), displayCache, QPointF(500.0, 300.0), SnowTextStyle{}, true);
-    require(beginResult.started, "blank canvas press should begin a new text draft");
-    require(!isElementSelected(runtime.get(), viewport.get(), textId),
-            "beginning a new text draft should clear the previously selected text");
+    require(!isElementSelected(runtimeHandle, inspectionViewport.get(), textId),
+            "the first blank press should deselect the previously selected text");
+    SnowTextElementInfo draftInfo{};
+    SnowTextStyle draftStyle{};
+    std::uint8_t activeDraft = 0;
+    require(snow_viewport_get_active_text_draft_presentation(
+                runtimeHandle, inspectionViewport.get(), &draftInfo, &draftStyle, &activeDraft) ==
+                    SNOW_OK &&
+                activeDraft == 0,
+            "the first blank press must not begin a new text draft");
+
+    sendCanvasMouseEvent(canvas, QEvent::MouseButtonPress, blank, Qt::LeftButton, Qt::LeftButton);
+    sendCanvasMouseEvent(canvas, QEvent::MouseButtonRelease, blank, Qt::LeftButton, Qt::NoButton);
+    QApplication::processEvents();
+    require(snow_viewport_get_active_text_draft_presentation(
+                runtimeHandle, inspectionViewport.get(), &draftInfo, &draftStyle, &activeDraft) ==
+                    SNOW_OK &&
+                activeDraft != 0,
+            "the blank press after deselecting should begin a new text draft");
 }
 
 void textToolInitialSelectionFrameRendersAndResizesThroughWidgetEvents() {
@@ -3765,7 +3787,7 @@ int main(int argc, char** argv) {
     selectionHitTestingUsesMinimumHandleHitSize();
     selectionHitTestingTreatsTextFramePaddingAsMoveRing();
     textEditorActivationPreservesSelectToolSelectionBox();
-    newTextDraftClearsPreviouslySelectedText();
+    blankCanvasPressDeselectsBeforeBeginningNewText();
     selectToolDragRendersSelectionMarquee();
     textToolInitialSelectionFrameRendersAndResizesThroughWidgetEvents();
     textEditorDoesNotSynthesizeSelectionControlsWithoutEngineOverlay();

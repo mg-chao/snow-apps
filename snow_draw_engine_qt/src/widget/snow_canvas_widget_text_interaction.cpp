@@ -550,6 +550,33 @@ SnowCanvasWidgetTextInteraction::beginRequestedTextEdit(
     return beginCreatedText(runtime, viewport, request, displayCache);
 }
 
+SnowCanvasWidgetTextInteraction::BeginResult
+SnowCanvasWidgetTextInteraction::beginRequestedNewTextDraft(SnowRuntime runtime,
+                                                            SnowViewport viewport,
+                                                            SnowCanvasDisplayCache& displayCache,
+                                                            const QPointF& viewPosition,
+                                                            const SnowTextStyle& newTextStyle) {
+    BeginResult result;
+    if (runtime == nullptr || viewport == nullptr) {
+        return result;
+    }
+    std::uint8_t requested = 0;
+    if (snow_viewport_take_new_text_draft_request(runtime, viewport, &requested) != SNOW_OK ||
+        requested == 0) {
+        return result;
+    }
+    const SnowTextElementInfo target = snow_canvas_text::newTextInfoAt(
+        viewToCanvasPoint(displayCache, viewPosition), m_widget.font(), newTextStyle);
+    result.started =
+        beginForElement(target, displayCache, viewPosition, &newTextStyle, true, runtime);
+    if (result.started) {
+        snow_canvas_commands::MutationResult draftResult =
+            publishActiveDraftPresentation(runtime, viewport);
+        result.firstChangedViewports = std::move(draftResult.changedViewports);
+    }
+    return result;
+}
+
 SnowCanvasWidgetTextInteraction::ActiveResizeMeasurementState
 SnowCanvasWidgetTextInteraction::activeResizeMeasurementState(SnowRuntime runtime,
                                                               SnowViewport viewport) const {

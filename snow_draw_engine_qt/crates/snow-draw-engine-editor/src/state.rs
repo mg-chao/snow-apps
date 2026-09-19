@@ -47,6 +47,24 @@ pub(crate) enum ToolEmptyCanvasAction {
     CreateSerialNumber,
 }
 
+impl ToolEmptyCanvasAction {
+    /// A press on blank canvas spends itself on deselecting an existing
+    /// selection before any creation workflow may begin.
+    pub(crate) fn starts_creation(self) -> bool {
+        match self {
+            Self::Configure | Self::MarqueeSelect => false,
+            Self::CreateRectangle
+            | Self::CreateArrow
+            | Self::CreateFreeDraw
+            | Self::CreateHighlight
+            | Self::CreatePenHighlight
+            | Self::CreatePenFilter
+            | Self::CreateText
+            | Self::CreateSerialNumber => true,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ToolPolicy {
     pub(crate) selection_scope: ToolSelectionScope,
@@ -419,6 +437,7 @@ pub(crate) struct EditorState {
     pub(crate) interaction: InteractionState,
     pub(crate) active_text_draft: Option<ActiveTextDraftPresentation>,
     pub(crate) pending_text_edit: Option<ElementId>,
+    pub(crate) pending_new_text_draft: bool,
     pub(crate) arrow_text_measurements: Vec<crate::arrow_text::ArrowTextMeasurement>,
     pub(crate) default_rectangle_shape_style: RectangleShapeStyle,
     pub(crate) default_arrow_style: ArrowStyle,
@@ -505,6 +524,7 @@ impl EditorState {
             interaction: InteractionState::default(),
             active_text_draft: None,
             pending_text_edit: None,
+            pending_new_text_draft: false,
             arrow_text_measurements: Vec::new(),
             default_rectangle_shape_style: default_styles.rectangle,
             default_arrow_style: default_styles.arrow,

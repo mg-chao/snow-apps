@@ -15,6 +15,7 @@ impl Editor {
     ) -> Result<EditorUpdate, ErrorCode> {
         self.pending_command = None;
         self.state.pending_text_edit = None;
+        self.state.pending_new_text_draft = false;
         let interaction = match event {
             InputEvent::Pointer(pointer) => self.process_pointer_event(document, pointer),
             InputEvent::Wheel(wheel) => self.process_wheel_event(document, wheel),
@@ -25,6 +26,10 @@ impl Editor {
             interaction,
             command: self.pending_command.take(),
         })
+    }
+
+    pub fn take_new_text_draft_request(&mut self) -> bool {
+        std::mem::take(&mut self.state.pending_new_text_draft)
     }
 
     fn process_pointer_event(

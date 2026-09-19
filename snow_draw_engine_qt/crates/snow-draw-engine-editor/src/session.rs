@@ -48,6 +48,10 @@ impl EditorSession {
         self.editor.state.pending_text_edit.take()
     }
 
+    pub fn take_new_text_draft_request(&mut self) -> bool {
+        self.editor.take_new_text_draft_request()
+    }
+
     pub fn serial_number_label_layout_request(
         &self,
         document: &DocumentModel,

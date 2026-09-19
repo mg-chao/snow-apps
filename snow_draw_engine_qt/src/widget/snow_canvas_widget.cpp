@@ -2263,10 +2263,15 @@ bool SnowCanvasWidget::Impl::handleMousePress(QMouseEvent* event) {
                                               &selected) == SNOW_OK &&
             selected != 0;
     }
-    if (!copySelectedText && plan.shouldBeginText &&
-        beginText(event->position(), plan.allowCreateText)) {
-        event->accept();
-        return true;
+    if (!copySelectedText && plan.shouldBeginText) {
+        if (plan.allowCreateText && beginArrowText(event->position(), false)) {
+            event->accept();
+            return true;
+        }
+        if (beginText(event->position(), false)) {
+            event->accept();
+            return true;
+        }
     }
     if (!copySelectedText && plan.shouldBeginSelectedText && !pointerOverSelectionInteraction &&
         beginSelectedText(event->position(), canvasTool() == SnowCanvasTool::SerialNumber)) {
@@ -2288,8 +2293,18 @@ bool SnowCanvasWidget::Impl::handleMousePress(QMouseEvent* event) {
         event->accept();
         return true;
     }
-    return dispatchInput(event,
-                         snow_canvas_input::makePointerInput(*event, SNOW_POINTER_EVENT_DOWN));
+    const bool handled =
+        dispatchInput(event, snow_canvas_input::makePointerInput(*event, SNOW_POINTER_EVENT_DOWN));
+    if (handled && plan.shouldBeginText && plan.allowCreateText) {
+        const SnowTextStyle textStyle = displayState.snapshot().styleToolbarState.text_style;
+        SnowCanvasWidgetTextInteraction::BeginResult draft =
+            textInteraction.beginRequestedNewTextDraft(
+                runtimeBinding.engine(), runtimeBinding.viewportHandle(),
+                displayState.displayCache(), event->position(), textStyle);
+        syncChangedViewports(draft.firstChangedViewports.get());
+        syncChangedViewports(draft.secondChangedViewports.get());
+    }
+    return handled;
 }
 
 void SnowCanvasWidget::mousePressEvent(QMouseEvent* event) {

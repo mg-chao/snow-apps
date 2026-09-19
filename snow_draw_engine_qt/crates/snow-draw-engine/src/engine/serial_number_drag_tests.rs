@@ -573,7 +573,26 @@ fn serial_number_existing_selection_drag_does_not_create_bound_text() {
         Point::new(50.0, 50.0)
     );
     assert_eq!(engine.take_text_edit_request(viewport).unwrap(), None);
-    // An empty-canvas press clears that selection and creates immediately.
+    // An empty-canvas press first spends itself on deselecting; only the next
+    // press starts a new badge.
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Down,
+        200.0,
+        150.0,
+        false,
+    );
+    assert!(engine.selected_ids().is_empty());
+    assert_eq!(engine.model.paint_order().len(), 1);
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Up,
+        200.0,
+        150.0,
+        false,
+    );
     pointer(
         &mut engine,
         viewport,
@@ -722,6 +741,26 @@ fn drag_and_toolbar_bound_labels_share_styling_and_layout() {
         .text(toolbar_text_id.expect("toolbar path creates the label"))
         .unwrap()
         .clone();
+
+    // The toolbar path leaves the new label selected; a blank-canvas press
+    // deselects it before the drag path can create the next badge.
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Down,
+        100.0,
+        100.0,
+        false,
+    );
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Up,
+        100.0,
+        100.0,
+        false,
+    );
+    assert!(engine.selected_ids().is_empty());
 
     // Drag path: press, drag, host measurement lands, release.
     pointer(
