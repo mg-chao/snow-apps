@@ -13,7 +13,7 @@
 
 namespace snow_shot::update {
 namespace {
-constexpr int kProtocolVersion = 1;
+constexpr int kProtocolVersion = 2;
 constexpr qsizetype kMaximumFrameBytes = 64 * 1024;
 constexpr qsizetype kMaximumDiagnosticBytes = 8 * 1024;
 
@@ -39,14 +39,71 @@ QString translatedError(const QJsonObject& object) {
     return source.isEmpty() ? QString()
                             : QCoreApplication::translate("UpdateErrors", source.constData());
 }
+
+enum class Operation { None, Probe, Check, Download, Apply };
+enum class Trigger { Startup, Periodic, User, PolicyChange };
+enum class Lifecycle { Stopped, Starting, Running, ExpectedExit };
+
+QString operationName(Operation operation) {
+    switch (operation) {
+    case Operation::Probe:
+        return QStringLiteral("probe");
+    case Operation::Check:
+        return QStringLiteral("check");
+    case Operation::Download:
+        return QStringLiteral("download");
+    case Operation::Apply:
+        return QStringLiteral("apply");
+    case Operation::None:
+        return {};
+    }
+    return {};
+}
+
+QString triggerName(Trigger trigger) {
+    switch (trigger) {
+    case Trigger::Startup:
+        return QStringLiteral("startup");
+    case Trigger::Periodic:
+        return QStringLiteral("periodic");
+    case Trigger::User:
+        return QStringLiteral("user");
+    case Trigger::PolicyChange:
+        return QStringLiteral("policyChange");
+    }
+    return {};
+}
+
+int operationPriority(Operation operation) {
+    switch (operation) {
+    case Operation::Apply:
+        return 4;
+    case Operation::Download:
+        return 3;
+    case Operation::Check:
+        return 2;
+    case Operation::Probe:
+        return 1;
+    case Operation::None:
+        return 0;
+    }
+    return 0;
+}
 } // namespace
 
 struct UpdateService::Impl {
     Impl(UpdateService& owner, Options value)
-        : q(owner), options(std::move(value)), process(&owner), handshakeTimeout(&owner) {
+        : q(owner), options(std::move(value)), process(&owner), handshakeTimeout(&owner),
+          scheduleTimer(&owner) {
         process.setProcessChannelMode(QProcess::SeparateChannels);
         handshakeTimeout.setSingleShot(true);
         handshakeTimeout.setInterval(10000);
+        scheduleTimer.setSingleShot(true);
+        scheduleTimer.setTimerType(Qt::CoarseTimer);
+        QObject::connect(&scheduleTimer, &QTimer::timeout, &q, [this] {
+            automaticCheckDue = true;
+            request(Operation::Check, Trigger::Periodic);
+        });
         QObject::connect(&handshakeTimeout, &QTimer::timeout, &q, [this] {
             if (!handshakeComplete) {
                 stopProcess();
@@ -58,40 +115,75 @@ struct UpdateService::Impl {
                          [this] { readProtocol(); });
         QObject::connect(&process, &QProcess::readyReadStandardError, &q,
                          [this] { readDiagnostics(); });
-        QObject::connect(&process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), &q,
-                         [this](int exitCode, QProcess::ExitStatus exitStatus) {
-                             readDiagnostics();
-                             readProtocol();
-                             if (!stdoutBuffer.isEmpty() && !preserveStatusOnExit) {
-                                 protocolFailure();
-                             }
-                             const bool intentional = stopping || handedOff || preserveStatusOnExit;
-                             handshakeTimeout.stop();
-                             handshakeComplete = false;
-                             stdoutBuffer.clear();
-                             if (intentional) {
-                                 return;
-                             }
-                             qWarning().noquote() << "Snow Shot updater service exited unexpectedly"
-                                                  << exitCode << exitStatus;
-                             manualRespawnAvailable = true;
-                             if (status.state == UpdateState::Checking ||
-                                 status.state == UpdateState::Downloading ||
-                                 status.state == UpdateState::Verifying ||
-                                 status.state == UpdateState::Applying) {
-                                 fail(QCoreApplication::translate(
-                                     "UpdateErrors", "Application coordinator disconnected"));
-                             } else {
-                                 unavailable(QCoreApplication::translate(
-                                     "UpdateErrors", "Could not contact the update coordinator"));
-                             }
-                         });
+        QObject::connect(
+            &process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), &q,
+            [this](int exitCode, QProcess::ExitStatus exitStatus) {
+                readDiagnostics();
+                readProtocol();
+                if (!stdoutBuffer.isEmpty() && !preserveStatusOnExit) {
+                    protocolFailure();
+                }
+                const Operation finishedOperation = activeOperation;
+                const Trigger finishedTrigger = activeTrigger;
+                const bool intentional = stopping || handedOff || preserveStatusOnExit ||
+                                         lifecycle == Lifecycle::ExpectedExit;
+                handshakeTimeout.stop();
+                handshakeComplete = false;
+                stdoutBuffer.clear();
+                activeOperation = Operation::None;
+                lifecycle = Lifecycle::Stopped;
+                if (intentional) {
+                    launchPending();
+                    return;
+                }
+                qWarning().noquote()
+                    << "Snow Shot updater service exited unexpectedly" << exitCode << exitStatus;
+                if (status.state == UpdateState::Checking ||
+                    status.state == UpdateState::Downloading ||
+                    status.state == UpdateState::Verifying ||
+                    status.state == UpdateState::Applying) {
+                    fail(QCoreApplication::translate("UpdateErrors",
+                                                     "Application coordinator disconnected"));
+                } else {
+                    unavailable(QCoreApplication::translate(
+                        "UpdateErrors", "Could not contact the update coordinator"));
+                }
+                if (finishedOperation == Operation::Probe) {
+                    scheduleTimer.stop();
+                    automaticCheckDue = false;
+                    if (pendingTrigger != Trigger::User) {
+                        pendingOperation = Operation::None;
+                    }
+                }
+                if (finishedOperation == Operation::Check &&
+                    (finishedTrigger == Trigger::Startup || finishedTrigger == Trigger::Periodic)) {
+                    armAutomaticInterval();
+                }
+                queueDueAutomaticCheck();
+                launchPending();
+            });
         QObject::connect(&process, &QProcess::errorOccurred, &q, [this](QProcess::ProcessError) {
             if (!stopping && !preserveStatusOnExit && process.state() == QProcess::NotRunning &&
                 !handshakeComplete) {
-                manualRespawnAvailable = true;
+                const Operation failedOperation = activeOperation;
+                const Trigger failedTrigger = activeTrigger;
+                activeOperation = Operation::None;
+                lifecycle = Lifecycle::Stopped;
                 unavailable(QCoreApplication::translate(
                     "UpdateErrors", "Could not launch the application update helper"));
+                if (failedOperation == Operation::Probe) {
+                    scheduleTimer.stop();
+                    automaticCheckDue = false;
+                    if (pendingTrigger != Trigger::User) {
+                        pendingOperation = Operation::None;
+                    }
+                }
+                if (failedOperation == Operation::Check &&
+                    (failedTrigger == Trigger::Startup || failedTrigger == Trigger::Periodic)) {
+                    armAutomaticInterval();
+                }
+                queueDueAutomaticCheck();
+                launchPending();
             }
         });
     }
@@ -103,14 +195,14 @@ struct UpdateService::Impl {
         }
         if (handshakeComplete) {
             send(QStringLiteral("shutdown"));
-            if (process.waitForFinished(750)) {
+            if (process.waitForFinished(250)) {
                 return;
             }
         }
         process.terminate();
-        if (!process.waitForFinished(500)) {
+        if (!process.waitForFinished(250)) {
             process.kill();
-            process.waitForFinished(500);
+            process.waitForFinished(250);
         }
     }
 
@@ -122,6 +214,99 @@ struct UpdateService::Impl {
 #endif
     }
 
+    bool automaticEnabled() const {
+        return mode != u"manual";
+    }
+
+    void armStartupCheck() {
+        if (started && automaticEnabled()) {
+            automaticCheckDue = false;
+            scheduleTimer.start(options.startupCheckDelay);
+        }
+    }
+
+    void armAutomaticInterval() {
+        if (started && automaticEnabled()) {
+            automaticCheckDue = false;
+            scheduleTimer.start(options.automaticCheckInterval);
+        }
+    }
+
+    void queueDueAutomaticCheck() {
+        if (automaticCheckDue && automaticEnabled() && pendingOperation == Operation::None) {
+            pendingOperation = Operation::Check;
+            pendingTrigger = Trigger::Periodic;
+        }
+    }
+
+    void request(Operation operation, Trigger trigger) {
+        if (operation == Operation::None) {
+            return;
+        }
+        if (process.state() != QProcess::NotRunning || lifecycle != Lifecycle::Stopped) {
+            if (operationPriority(operation) > operationPriority(pendingOperation) ||
+                (operation == pendingOperation && trigger == Trigger::User)) {
+                pendingOperation = operation;
+                pendingTrigger = trigger;
+            }
+            return;
+        }
+        activeOperation = operation;
+        activeTrigger = trigger;
+        if (operation == Operation::Check && trigger == Trigger::Periodic) {
+            automaticCheckDue = false;
+        }
+        lifecycle = Lifecycle::Starting;
+        spawn();
+    }
+
+    void launchPending() {
+        if (stopping || process.state() != QProcess::NotRunning ||
+            pendingOperation == Operation::None) {
+            return;
+        }
+        const Operation operation = pendingOperation;
+        const Trigger trigger = pendingTrigger;
+        pendingOperation = Operation::None;
+        QTimer::singleShot(0, &q, [this, operation, trigger] { request(operation, trigger); });
+    }
+
+    void completeOperation(const QString& outcome) {
+        if (activeOperation == Operation::Probe && status.state == UpdateState::Unavailable) {
+            scheduleTimer.stop();
+            automaticCheckDue = false;
+            if (pendingTrigger != Trigger::User) {
+                pendingOperation = Operation::None;
+            }
+        }
+        if (status.state == UpdateState::Ready && !status.version.isEmpty() &&
+            notifiedVersion != status.version) {
+            notifiedVersion = status.version;
+            emit q.updateReady();
+        }
+        if (activeOperation == Operation::Check &&
+            (activeTrigger == Trigger::Startup || activeTrigger == Trigger::Periodic)) {
+            armAutomaticInterval();
+        } else if (activeOperation == Operation::Check && activeTrigger == Trigger::User &&
+                   outcome == u"success") {
+            if (pendingOperation == Operation::Check &&
+                (pendingTrigger == Trigger::Startup || pendingTrigger == Trigger::Periodic)) {
+                pendingOperation = Operation::None;
+            }
+            armAutomaticInterval();
+        } else if (activeOperation == Operation::Download &&
+                   activeTrigger == Trigger::PolicyChange) {
+            armAutomaticInterval();
+        }
+        if (activeOperation == Operation::Check && mode == u"download" &&
+            status.state == UpdateState::Available) {
+            pendingOperation = Operation::Download;
+            pendingTrigger = Trigger::PolicyChange;
+        }
+        queueDueAutomaticCheck();
+        lifecycle = Lifecycle::ExpectedExit;
+    }
+
     void spawn() {
         if (process.state() != QProcess::NotRunning) {
             return;
@@ -129,9 +314,12 @@ struct UpdateService::Impl {
         stopping = false;
         handedOff = false;
         preserveStatusOnExit = false;
+        lifecycle = Lifecycle::Starting;
         handshakeComplete = false;
         helloSeen = false;
+        cancelWhenRunning = false;
         stdoutBuffer.clear();
+        stderrBuffer.clear();
         QStringList arguments{
             QStringLiteral("--service"),
             QStringLiteral("--target"),
@@ -247,22 +435,37 @@ struct UpdateService::Impl {
             }
             helloSeen = true;
             handshakeComplete = true;
+            lifecycle = Lifecycle::Running;
             handshakeTimeout.stop();
-            send(QStringLiteral("set_mode"), {{QStringLiteral("mode"), mode}});
-            send(QStringLiteral("set_system_proxy"), {{QStringLiteral("enabled"), systemProxy}});
-            if (startRequested) {
-                send(QStringLiteral("start"));
-            }
-            if (pendingManualCheck) {
-                pendingManualCheck = false;
-                send(QStringLiteral("check"), {{QStringLiteral("manual"), true}});
+            send(QStringLiteral("execute"),
+                 {{QStringLiteral("operation"), operationName(activeOperation)},
+                  {QStringLiteral("trigger"), triggerName(activeTrigger)},
+                  {QStringLiteral("mode"), mode},
+                  {QStringLiteral("systemProxy"), systemProxy}});
+            if (cancelWhenRunning) {
+                cancelWhenRunning = false;
+                send(QStringLiteral("cancel"));
             }
             return;
         }
         if (type == u"status") {
             applyStatus(event.value(QStringLiteral("status")).toObject());
         } else if (type == u"update_ready") {
-            emit q.updateReady();
+            if (!status.version.isEmpty() && notifiedVersion != status.version) {
+                notifiedVersion = status.version;
+                emit q.updateReady();
+            }
+        } else if (type == u"operation_complete") {
+            const QString outcome = event.value(QStringLiteral("outcome")).toString();
+            if (lifecycle != Lifecycle::Running ||
+                event.value(QStringLiteral("operation")).toString() !=
+                    operationName(activeOperation) ||
+                (outcome != u"success" && outcome != u"failed" && outcome != u"cancelled")) {
+                protocolFailure();
+                return;
+            }
+            applyStatus(event.value(QStringLiteral("status")).toObject());
+            completeOperation(outcome);
         } else if (type == u"handoff_ready") {
             emit q.handoffReady();
             const bool proceed = status.state == UpdateState::Applying;
@@ -273,8 +476,19 @@ struct UpdateService::Impl {
         } else if (type == u"fatal") {
             const auto error = event.value(QStringLiteral("error")).toObject();
             fail(translatedError(error));
+            if (activeOperation == Operation::Probe) {
+                scheduleTimer.stop();
+                automaticCheckDue = false;
+                if (pendingTrigger != Trigger::User) {
+                    pendingOperation = Operation::None;
+                }
+            }
+            if (activeOperation == Operation::Check &&
+                (activeTrigger == Trigger::Startup || activeTrigger == Trigger::Periodic)) {
+                armAutomaticInterval();
+            }
+            queueDueAutomaticCheck();
             preserveStatusOnExit = true;
-            manualRespawnAvailable = true;
             stopProcess();
         } else if (type != u"command_result") {
             protocolFailure();
@@ -321,7 +535,18 @@ struct UpdateService::Impl {
             unavailable(error);
         }
         preserveStatusOnExit = true;
-        manualRespawnAvailable = true;
+        if (activeOperation == Operation::Probe) {
+            scheduleTimer.stop();
+            automaticCheckDue = false;
+            if (pendingTrigger != Trigger::User) {
+                pendingOperation = Operation::None;
+            }
+        }
+        if (activeOperation == Operation::Check &&
+            (activeTrigger == Trigger::Startup || activeTrigger == Trigger::Periodic)) {
+            armAutomaticInterval();
+        }
+        queueDueAutomaticCheck();
         stopProcess();
     }
 
@@ -343,21 +568,28 @@ struct UpdateService::Impl {
     Options options;
     QProcess process;
     QTimer handshakeTimeout;
+    QTimer scheduleTimer;
     UpdateStatus status;
     QByteArray stdoutBuffer;
     QByteArray stderrBuffer;
     QByteArray errorSource;
     QString mode = QStringLiteral("download");
+    QString notifiedVersion;
     quint64 nextRequestId = 1;
+    Operation activeOperation = Operation::None;
+    Trigger activeTrigger = Trigger::Startup;
+    Operation pendingOperation = Operation::None;
+    Trigger pendingTrigger = Trigger::Periodic;
     bool systemProxy = false;
-    bool startRequested = false;
-    bool pendingManualCheck = false;
+    bool started = false;
     bool handshakeComplete = false;
     bool helloSeen = false;
-    bool manualRespawnAvailable = false;
     bool stopping = false;
     bool handedOff = false;
     bool preserveStatusOnExit = false;
+    bool cancelWhenRunning = false;
+    bool automaticCheckDue = false;
+    Lifecycle lifecycle = Lifecycle::Stopped;
 };
 
 UpdateService::UpdateService(Options options, QObject* parent)
@@ -381,43 +613,82 @@ const UpdateStatus& UpdateService::status() const {
 }
 
 void UpdateService::start() {
-    m_impl->startRequested = true;
-    m_impl->spawn();
-    if (m_impl->handshakeComplete) {
-        m_impl->send(QStringLiteral("start"));
+    if (m_impl->started) {
+        return;
     }
+    m_impl->started = true;
+    m_impl->request(Operation::Probe, Trigger::Startup);
+    m_impl->armStartupCheck();
 }
 
 void UpdateService::setMode(const QString& mode) {
     if (mode != u"manual" && mode != u"check" && mode != u"download") {
         return;
     }
+    const QString previous = m_impl->mode;
     m_impl->mode = mode;
-    m_impl->send(QStringLiteral("set_mode"), {{QStringLiteral("mode"), mode}});
+    if (!m_impl->started) {
+        return;
+    }
+    if (mode == u"manual") {
+        m_impl->scheduleTimer.stop();
+        m_impl->automaticCheckDue = false;
+        if (m_impl->pendingTrigger != Trigger::User) {
+            m_impl->pendingOperation = Operation::None;
+        }
+        if (m_impl->activeOperation == Operation::Download &&
+            m_impl->activeTrigger != Trigger::User) {
+            if (m_impl->handshakeComplete) {
+                m_impl->send(QStringLiteral("cancel"));
+            } else {
+                m_impl->cancelWhenRunning = true;
+            }
+        }
+        return;
+    }
+    if (mode != u"download" && m_impl->activeOperation == Operation::Download &&
+        m_impl->activeTrigger != Trigger::User) {
+        if (m_impl->handshakeComplete) {
+            m_impl->send(QStringLiteral("cancel"));
+        } else {
+            m_impl->cancelWhenRunning = true;
+        }
+    } else if (mode == u"download") {
+        m_impl->cancelWhenRunning = false;
+    }
+    if (mode != u"download" && m_impl->pendingOperation == Operation::Download &&
+        m_impl->pendingTrigger != Trigger::User) {
+        m_impl->pendingOperation = Operation::None;
+    }
+    if (mode == u"download" && m_impl->status.state == UpdateState::Available) {
+        m_impl->scheduleTimer.stop();
+        m_impl->request(Operation::Download, Trigger::PolicyChange);
+    } else if (previous == u"manual") {
+        m_impl->armStartupCheck();
+    }
 }
 
 void UpdateService::setSystemProxy(bool enabled) {
     m_impl->systemProxy = enabled;
-    m_impl->send(QStringLiteral("set_system_proxy"), {{QStringLiteral("enabled"), enabled}});
 }
 
 void UpdateService::check(bool manual) {
-    if (m_impl->process.state() == QProcess::NotRunning && manual &&
-        m_impl->manualRespawnAvailable) {
-        m_impl->manualRespawnAvailable = false;
-        m_impl->pendingManualCheck = true;
-        m_impl->spawn();
-        return;
-    }
-    m_impl->send(QStringLiteral("check"), {{QStringLiteral("manual"), manual}});
+    m_impl->request(Operation::Check, manual ? Trigger::User : Trigger::Periodic);
 }
 
 void UpdateService::download() {
-    m_impl->send(QStringLiteral("download"));
+    m_impl->request(Operation::Download, Trigger::User);
 }
 
 void UpdateService::cancel() {
-    m_impl->send(QStringLiteral("cancel"));
+    if (m_impl->activeOperation == Operation::None) {
+        return;
+    }
+    if (m_impl->handshakeComplete) {
+        m_impl->send(QStringLiteral("cancel"));
+    } else {
+        m_impl->cancelWhenRunning = true;
+    }
 }
 
 void UpdateService::requestRestart() {
@@ -425,7 +696,7 @@ void UpdateService::requestRestart() {
 }
 
 void UpdateService::beginApply() {
-    m_impl->send(QStringLiteral("begin_apply"));
+    m_impl->request(Operation::Apply, Trigger::User);
 }
 
 void UpdateService::reportBlocked(const QString& reason) {

@@ -18,7 +18,7 @@ fn path_option(args: &[String], name: &str) -> Result<PathBuf> {
 }
 
 fn async_runtime() -> Result<tokio::runtime::Runtime> {
-    tokio::runtime::Builder::new_multi_thread()
+    tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| {
@@ -98,7 +98,7 @@ fn run() -> Result<i32> {
         "--service" => {
             let root = path_option(&args, "--target")?;
             let runtime = async_runtime()?;
-            runtime.block_on(snow_shot_updater::service::run(
+            let result = runtime.block_on(snow_shot_updater::service::run(
                 snow_shot_updater::service::ServiceOptions {
                     root,
                     cache_directory: path_option(&args, "--cache")?,
@@ -111,7 +111,11 @@ fn run() -> Result<i32> {
                         )
                     })?,
                 },
-            ))?;
+            ));
+            // Tokio's stdin adapter owns a blocking reader thread. The operation-complete frame is
+            // already flushed, so do not wait for that reader after an operation-scoped session.
+            runtime.shutdown_background();
+            result?;
             Ok(0)
         }
         _ => Err(UpdateError::new(

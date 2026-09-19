@@ -41,9 +41,29 @@ void status(const char* state, qint64 received = 0, qint64 total = 0,
     if (!error.isEmpty()) {
         value.insert(QStringLiteral("error"), error);
     }
-    frame({{QStringLiteral("protocol"), 1},
+    frame({{QStringLiteral("protocol"), 2},
            {QStringLiteral("type"), QStringLiteral("status")},
            {QStringLiteral("status"), value}});
+}
+
+void complete(const QString& operation, const char* outcome, const char* state) {
+    QJsonObject finalStatus{{QStringLiteral("state"), QString::fromLatin1(state)},
+                            {QStringLiteral("version"), QStringLiteral("2.0.0")},
+                            {QStringLiteral("received"), 0},
+                            {QStringLiteral("total"), 0}};
+    if (QByteArray(outcome) == "failed") {
+        finalStatus.insert(
+            QStringLiteral("error"),
+            QJsonObject{{QStringLiteral("code"), QStringLiteral("metadata_download_failed")},
+                        {QStringLiteral("message"),
+                         QStringLiteral("Could not download signed update metadata")},
+                        {QStringLiteral("detail"), QStringLiteral("test detail")}});
+    }
+    frame({{QStringLiteral("protocol"), 2},
+           {QStringLiteral("type"), QStringLiteral("operation_complete")},
+           {QStringLiteral("operation"), operation},
+           {QStringLiteral("outcome"), QString::fromLatin1(outcome)},
+           {QStringLiteral("status"), finalStatus}});
 }
 
 QString argument(int argc, char** argv, const char* name) {
@@ -61,16 +81,30 @@ void touch(const QString& path) {
     require(file.open(QIODevice::WriteOnly), "create fake-sidecar marker");
 }
 
+int incrementCounter(const QString& path) {
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QFile file(path);
+    int value = 0;
+    if (file.open(QIODevice::ReadOnly)) {
+        value = file.readAll().trimmed().toInt();
+        file.close();
+    }
+    require(file.open(QIODevice::WriteOnly | QIODevice::Truncate), "write fake-sidecar counter");
+    file.write(QByteArray::number(++value));
+    return value;
+}
+
 int fakeSidecar(int argc, char** argv) {
     const QString scenario = QUrl(argument(argc, argv, "--base-url")).path().mid(1);
     const QString cache = argument(argc, argv, "--cache");
+    incrementCounter(QDir(cache).filePath(QStringLiteral("launch-count")));
     if (scenario == u"unsupported-handshake") {
-        frame({{QStringLiteral("protocol"), 2},
+        frame({{QStringLiteral("protocol"), 1},
                {QStringLiteral("type"), QStringLiteral("hello")},
                {QStringLiteral("updaterVersion"), QStringLiteral("test")}});
         return 0;
     }
-    frame({{QStringLiteral("protocol"), 1},
+    frame({{QStringLiteral("protocol"), 2},
            {QStringLiteral("type"), QStringLiteral("hello")},
            {QStringLiteral("updaterVersion"), QStringLiteral("test")},
            {QStringLiteral("platform"), QStringLiteral("windows-x64")},
@@ -81,11 +115,71 @@ int fakeSidecar(int argc, char** argv) {
         const auto command = QJsonDocument::fromJson(QByteArray::fromStdString(line)).object();
         const qint64 id = command.value(QStringLiteral("id")).toInteger();
         const QString name = command.value(QStringLiteral("command")).toString();
-        frame({{QStringLiteral("protocol"), 1},
+        frame({{QStringLiteral("protocol"), 2},
                {QStringLiteral("type"), QStringLiteral("command_result")},
                {QStringLiteral("id"), id},
                {QStringLiteral("ok"), true}});
-        if (name == u"check") {
+        if (name == u"execute") {
+            const QString operation = command.value(QStringLiteral("operation")).toString();
+            const QString trigger = command.value(QStringLiteral("trigger")).toString();
+            const QString operationCounter =
+                QDir(cache).filePath(operation + u'-' + trigger + QStringLiteral("-count"));
+            const QString completionCounter =
+                QDir(cache).filePath(operation + u'-' + trigger + QStringLiteral("-complete"));
+            incrementCounter(operationCounter);
+            if (operation == u"probe") {
+                const char* probeState = scenario == u"available" ? "Available" : "Idle";
+                status(probeState);
+                complete(operation, "success", probeState);
+                incrementCounter(completionCounter);
+                return 0;
+            }
+            if (operation == u"apply") {
+                status("Applying");
+                frame({{QStringLiteral("protocol"), 2},
+                       {QStringLiteral("type"), QStringLiteral("handoff_ready")}});
+                continue;
+            }
+            if (operation == u"download") {
+                status("Downloading", 12, 24);
+                status("Ready", 24, 24);
+                frame({{QStringLiteral("protocol"), 2},
+                       {QStringLiteral("type"), QStringLiteral("update_ready")}});
+                complete(operation, "success", "Ready");
+                incrementCounter(completionCounter);
+                return 0;
+            }
+            if ((scenario == u"manual-scheduling" || scenario == u"manual-failure") &&
+                trigger == u"user") {
+                status("Checking");
+                QThread::msleep(80);
+                const bool failed = scenario == u"manual-failure";
+                status(failed ? "Failed" : "Idle");
+                complete(operation, failed ? "failed" : "success", failed ? "Failed" : "Idle");
+                incrementCounter(completionCounter);
+                return 0;
+            }
+            if (scenario == u"manual-scheduling" || scenario == u"manual-failure") {
+                status("Checking");
+                status("Idle");
+                complete(operation, "success", "Idle");
+                incrementCounter(completionCounter);
+                return 0;
+            }
+            if (scenario == u"scheduled") {
+                status("Checking");
+                status("Idle");
+                complete(operation, "success", "Idle");
+                incrementCounter(completionCounter);
+                return 0;
+            }
+            if (scenario == u"scheduled-failure") {
+                status("Checking");
+                status("Failed");
+                complete(operation, "failed", "Failed");
+                incrementCounter(completionCounter);
+                return 0;
+            }
             if (scenario == u"all-statuses") {
                 status("Unavailable");
                 status("Idle");
@@ -100,6 +194,9 @@ int fakeSidecar(int argc, char** argv) {
                         {QStringLiteral("message"),
                          QStringLiteral("Could not download signed update metadata")},
                         {QStringLiteral("detail"), QStringLiteral("test detail")}});
+                complete(operation, "failed", "Failed");
+                incrementCounter(completionCounter);
+                return 0;
             } else if (scenario == u"malformed") {
                 std::cout << "{not-json}\n" << std::flush;
             } else if (scenario == u"oversized") {
@@ -115,20 +212,26 @@ int fakeSidecar(int argc, char** argv) {
                     return 9;
                 }
                 status("Ready");
-                frame({{QStringLiteral("protocol"), 1},
+                frame({{QStringLiteral("protocol"), 2},
                        {QStringLiteral("type"), QStringLiteral("update_ready")}});
+                complete(operation, "success", "Ready");
+                incrementCounter(completionCounter);
+                return 0;
             } else {
                 status("Checking");
                 status("Ready");
-                frame({{QStringLiteral("protocol"), 1},
+                frame({{QStringLiteral("protocol"), 2},
                        {QStringLiteral("type"), QStringLiteral("update_ready")}});
+                complete(operation, "success", "Ready");
+                incrementCounter(completionCounter);
+                return 0;
             }
-        } else if (name == u"begin_apply") {
-            status("Applying");
-            frame({{QStringLiteral("protocol"), 1},
-                   {QStringLiteral("type"), QStringLiteral("handoff_ready")}});
         } else if (name == u"handoff_decision") {
             status(command.value(QStringLiteral("proceed")).toBool() ? "Applying" : "Ready");
+            if (!command.value(QStringLiteral("proceed")).toBool()) {
+                complete(QStringLiteral("apply"), "cancelled", "Ready");
+            }
+            return 0;
         } else if (name == u"shutdown") {
             if (scenario == u"graceful-shutdown") {
                 touch(QDir(cache).filePath(QStringLiteral("shutdown")));
@@ -147,6 +250,20 @@ bool waitUntil(const std::function<bool()>& predicate, int timeout = 5000) {
         QThread::msleep(1);
     }
     return predicate();
+}
+
+int counterValue(const QString& path) {
+    QFile file(path);
+    return file.open(QIODevice::ReadOnly) ? file.readAll().trimmed().toInt() : 0;
+}
+
+void processFor(int duration) {
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < duration) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 25);
+        QThread::msleep(1);
+    }
 }
 } // namespace
 
@@ -276,16 +393,109 @@ int main(int argc, char** argv) {
                 "one-shot manual respawn succeeds");
     }
 
-    QString shutdownMarker;
+    {
+        auto scheduledOptions = options(QStringLiteral("scheduled"));
+        scheduledOptions.startupCheckDelay = std::chrono::milliseconds(25);
+        scheduledOptions.automaticCheckInterval = std::chrono::milliseconds(40);
+        const QString launches =
+            QDir(scheduledOptions.cacheDirectory).filePath(QStringLiteral("launch-count"));
+        UpdateService service(std::move(scheduledOptions));
+        service.setMode(QStringLiteral("check"));
+        service.start();
+        require(waitUntil([&] { return counterValue(launches) >= 3; }, 3000),
+                "probe, startup check, and interval each launch a short-lived sidecar");
+    }
+
+    {
+        auto manualOptions = options(QStringLiteral("scheduled"));
+        manualOptions.startupCheckDelay = std::chrono::milliseconds(20);
+        manualOptions.automaticCheckInterval = std::chrono::milliseconds(30);
+        const QString launches =
+            QDir(manualOptions.cacheDirectory).filePath(QStringLiteral("launch-count"));
+        UpdateService service(std::move(manualOptions));
+        service.setMode(QStringLiteral("manual"));
+        service.start();
+        require(waitUntil([&] { return counterValue(launches) == 1; }),
+                "manual mode launches the startup probe");
+        processFor(120);
+        require(counterValue(launches) == 1,
+                "manual mode leaves no resident or scheduled updater process");
+    }
+
+    {
+        auto failureOptions = options(QStringLiteral("scheduled-failure"));
+        failureOptions.startupCheckDelay = std::chrono::milliseconds(25);
+        failureOptions.automaticCheckInterval = std::chrono::milliseconds(40);
+        const QString launches =
+            QDir(failureOptions.cacheDirectory).filePath(QStringLiteral("launch-count"));
+        UpdateService service(std::move(failureOptions));
+        service.setMode(QStringLiteral("check"));
+        service.start();
+        require(waitUntil([&] { return counterValue(launches) >= 3; }, 3000),
+                "automatic failures schedule only the next fixed interval");
+    }
+
+    {
+        auto manualCheckOptions = options(QStringLiteral("manual-scheduling"));
+        manualCheckOptions.startupCheckDelay = std::chrono::milliseconds(25);
+        manualCheckOptions.automaticCheckInterval = std::chrono::milliseconds(100);
+        const QString cache = manualCheckOptions.cacheDirectory;
+        const QString userComplete = QDir(cache).filePath(QStringLiteral("check-user-complete"));
+        const QString periodic = QDir(cache).filePath(QStringLiteral("check-periodic-count"));
+        UpdateService service(std::move(manualCheckOptions));
+        service.setMode(QStringLiteral("check"));
+        service.start();
+        service.check(true);
+        require(waitUntil([&] { return counterValue(userComplete) == 1; }),
+                "successful user check completes while the startup timer is due");
+        processFor(40);
+        require(counterValue(periodic) == 0,
+                "successful user check removes a queued automatic check and resets its timer");
+        require(waitUntil([&] { return counterValue(periodic) == 1; }),
+                "successful user check schedules the next automatic interval");
+    }
+
+    {
+        auto manualCheckOptions = options(QStringLiteral("manual-failure"));
+        manualCheckOptions.startupCheckDelay = std::chrono::milliseconds(25);
+        manualCheckOptions.automaticCheckInterval = std::chrono::milliseconds(100);
+        const QString cache = manualCheckOptions.cacheDirectory;
+        const QString userComplete = QDir(cache).filePath(QStringLiteral("check-user-complete"));
+        const QString periodic = QDir(cache).filePath(QStringLiteral("check-periodic-count"));
+        UpdateService service(std::move(manualCheckOptions));
+        service.setMode(QStringLiteral("check"));
+        service.start();
+        service.check(true);
+        require(waitUntil([&] { return counterValue(userComplete) == 1; }),
+                "failed user check completes while the startup timer is due");
+        require(waitUntil([&] { return counterValue(periodic) >= 1; }, 500),
+                "failed user check does not postpone an already queued automatic check");
+    }
+
+    {
+        auto availableOptions = options(QStringLiteral("available"));
+        const QString launches =
+            QDir(availableOptions.cacheDirectory).filePath(QStringLiteral("launch-count"));
+        UpdateService service(std::move(availableOptions));
+        service.setMode(QStringLiteral("manual"));
+        service.start();
+        require(waitUntil([&] { return service.status().state == UpdateState::Available; }),
+                "probe restores an available update");
+        service.setMode(QStringLiteral("download"));
+        require(waitUntil([&] {
+                    return counterValue(launches) >= 2 &&
+                           service.status().state == UpdateState::Ready;
+                }),
+                "enabling automatic download launches an immediate short-lived download");
+    }
+
     {
         auto shutdownOptions = options(QStringLiteral("graceful-shutdown"));
-        shutdownMarker = QDir(shutdownOptions.cacheDirectory).filePath(QStringLiteral("shutdown"));
         UpdateService service(std::move(shutdownOptions));
         service.start();
         require(waitUntil([&] { return service.status().state == UpdateState::Idle; }),
-                "graceful-shutdown handshake");
+                "operation-scoped probe handshake");
     }
-    require(QFileInfo::exists(shutdownMarker), "adapter sends graceful shutdown command");
     return 0;
 #endif
 }

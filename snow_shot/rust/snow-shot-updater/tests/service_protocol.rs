@@ -101,7 +101,7 @@ impl ServiceProcess {
 fn service_handshake_rejects_duplicate_ids_and_shuts_down_orderly() {
     let (_temporary, mut service) = ServiceProcess::start();
     let hello = service.read();
-    assert_eq!(hello["protocol"], 1);
+    assert_eq!(hello["protocol"], 2);
     assert_eq!(hello["type"], "hello");
     assert_eq!(hello["platform"], "windows-x64");
     assert!(
@@ -112,16 +112,16 @@ fn service_handshake_rejects_duplicate_ids_and_shuts_down_orderly() {
     );
     assert_eq!(service.read()["status"]["state"], "Idle");
 
-    service.send(&json!({"protocol": 1, "id": 1, "command": "start"}));
+    service.send(&json!({"protocol": 2, "id": 1, "command": "cancel"}));
     assert_eq!(service.read()["ok"], true);
     assert_eq!(service.read()["status"]["state"], "Idle");
 
-    service.send(&json!({"protocol": 1, "id": 1, "command": "check"}));
+    service.send(&json!({"protocol": 2, "id": 1, "command": "cancel"}));
     let duplicate = service.read();
     assert_eq!(duplicate["ok"], false);
     assert_eq!(duplicate["error"]["code"], "protocol_request_id_invalid");
 
-    service.send(&json!({"protocol": 1, "id": 2, "command": "shutdown"}));
+    service.send(&json!({"protocol": 2, "id": 2, "command": "shutdown"}));
     assert_eq!(service.read()["ok"], true);
     assert_eq!(service.read()["status"]["state"], "Idle");
     service.close_input();
@@ -149,5 +149,29 @@ fn peer_closure_stops_the_service_without_reconnect_endpoint() {
     let _hello = service.read();
     let _status = service.read();
     service.close_input();
+    assert!(service.wait().success());
+}
+
+#[test]
+fn probe_reports_cached_status_and_exits_after_completion() {
+    let (_temporary, mut service) = ServiceProcess::start();
+    let _hello = service.read();
+    assert_eq!(service.read()["status"]["state"], "Idle");
+    service.send(&json!({
+        "protocol": 2,
+        "id": 1,
+        "command": "execute",
+        "operation": "probe",
+        "trigger": "startup",
+        "mode": "manual",
+        "systemProxy": false
+    }));
+    assert_eq!(service.read()["ok"], true);
+    assert_eq!(service.read()["status"]["state"], "Idle");
+    let completed = service.read();
+    assert_eq!(completed["type"], "operation_complete");
+    assert_eq!(completed["operation"], "probe");
+    assert_eq!(completed["outcome"], "success");
+    assert_eq!(completed["status"]["state"], "Idle");
     assert!(service.wait().success());
 }

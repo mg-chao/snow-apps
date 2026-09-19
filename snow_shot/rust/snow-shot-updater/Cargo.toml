@@ -30,7 +30,7 @@ sha2 = "0.10.9"
 tempfile = "3.23.0"
 thiserror = "2.0.17"
 time = { version = "0.3.44", features = ["formatting", "parsing"] }
-tokio = { version = "1.49.0", default-features = false, features = ["fs", "io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1.49.0", default-features = false, features = ["fs", "io-std", "io-util", "macros", "net", "process", "rt", "sync", "time"] }
 tokio-util = { version = "0.7.17", features = ["rt"] }
 tracing = { version = "0.1.41", default-features = false, features = ["attributes", "std"] }
 tracing-subscriber = { version = "0.3.20", default-features = false, features = ["fmt"] }

@@ -53,8 +53,8 @@ The limits are 8 MiB for metadata, 20,000 files and 4 GiB expanded payload per p
 
 | Initial state/event | Result |
 | --- | --- |
-| Fresh install | Background download mode; first check after 30 seconds |
-| Successful check less than 24 hours ago | Scheduled check skipped; manual check still allowed |
+| Fresh install | Background download mode; short cache probe at startup, first check after 30 seconds |
+| Completed automatic check | Updater exits; Snow Shot schedules the next check after 24 hours |
 | Settings mode `manual` / `check` / `download` | No scheduled requests / metadata only / metadata and payload |
 | Newer authenticated release | Select the same installation variant; download with bounded retries |
 | Interrupted transfer with a strong ETag | Resume with Range and If-Range; verify full signed size/hash |
@@ -68,12 +68,15 @@ The limits are 8 MiB for metadata, 20,000 files and 4 GiB expanded payload per p
 | Helper watchdog fires after handoff | Do not start a possibly incomplete app; manual launch enters recovery |
 | Development copy without installation metadata | Show updates unavailable; never infer an install layout |
 
-The GPL-3.0-only Rust sidecar is one long-lived child of each Snow Shot session. Private
-inherited stdin/stdout pipes carry a versioned, 64-KiB-bounded NDJSON protocol; stdout is
-reserved for frames and bounded operational diagnostics use stderr. Rust owns release
-validation, network/cache policy, scheduling, archive processing, transactions, recovery,
-elevation, installer commands, and release audits. The remaining C++ `snow_shot_updates`
-target is only a Qt `QProcess`/signal adapter and translated-error lookup.
+The GPL-3.0-only Rust sidecar is an operation-scoped child. Snow Shot briefly launches it to
+restore cached state at startup and launches a fresh child for each check, download, or apply
+handoff; the child exits after reporting a stable result. A lightweight Qt timer schedules the
+30-second startup check and subsequent 24-hour checks. Private inherited stdin/stdout pipes
+carry a versioned, 64-KiB-bounded NDJSON protocol; stdout is reserved for frames and bounded
+operational diagnostics use stderr. Rust owns release validation, network/cache policy, archive
+processing, transactions, recovery, elevation, installer commands, and release audits. The
+remaining C++ `snow_shot_updates` target owns process lifetime, scheduling, signal delivery, and
+translated-error lookup.
 
 For apply and recovery, the helper verifies the parent process's real executable path,
 stages outside `bin`, and requests elevation only for a matching registered installation.

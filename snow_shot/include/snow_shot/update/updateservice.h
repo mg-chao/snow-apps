@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QString>
 #include <QUrl>
+#include <chrono>
 #include <memory>
 
 class QEvent;
@@ -28,8 +29,8 @@ struct UpdateStatus {
     qint64 total = 0;
 };
 
-// The updater owns policy, persistence, networking, verification, and mutation. This QObject is
-// intentionally limited to process lifetime, protocol framing, signal delivery, and translation.
+// The updater owns persistence, networking, verification, and mutation. This lightweight QObject
+// owns scheduling, operation-scoped process lifetime, protocol framing, signals, and translation.
 class UpdateService final : public QObject {
     Q_OBJECT
   public:
@@ -39,6 +40,8 @@ class UpdateService final : public QObject {
         QString cacheDirectory;
         QUrl baseUrl;
         bool allowLocalHttp = false;
+        std::chrono::milliseconds startupCheckDelay = std::chrono::seconds(30);
+        std::chrono::milliseconds automaticCheckInterval = std::chrono::hours(24);
     };
 
     explicit UpdateService(Options options, QObject* parent = nullptr);

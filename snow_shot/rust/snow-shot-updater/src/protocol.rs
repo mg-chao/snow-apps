@@ -1,7 +1,7 @@
 use crate::error::UpdateError;
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 pub const MAX_FRAME_BYTES: usize = 64 * 1024;
 
 #[derive(Default)]
@@ -47,11 +47,13 @@ pub struct Command {
     pub id: u64,
     pub command: String,
     #[serde(default)]
+    pub operation: Option<String>,
+    #[serde(default)]
+    pub trigger: Option<String>,
+    #[serde(default)]
     pub mode: Option<String>,
     #[serde(default)]
-    pub enabled: Option<bool>,
-    #[serde(default)]
-    pub manual: Option<bool>,
+    pub system_proxy: Option<bool>,
     #[serde(default)]
     pub proceed: Option<bool>,
     #[serde(default)]
@@ -120,7 +122,7 @@ mod tests {
     #[test]
     fn rejects_oversized_and_wrong_version_frames() {
         assert!(parse_frame(&vec![b'x'; MAX_FRAME_BYTES + 1]).is_err());
-        assert!(parse_frame(br#"{"protocol":2,"id":1,"command":"start"}"#).is_err());
+        assert!(parse_frame(br#"{"protocol":1,"id":1,"command":"execute"}"#).is_err());
     }
 
     #[test]
@@ -128,12 +130,12 @@ mod tests {
         let mut decoder = FrameDecoder::default();
         assert!(
             decoder
-                .push(br#"{"protocol":1,"id":1,"comm"#)
+                .push(br#"{"protocol":2,"id":1,"comm"#)
                 .unwrap()
                 .is_empty()
         );
         let commands = decoder
-            .push(b"and\":\"start\"}\r\n{\"protocol\":1,\"id\":2,\"command\":\"shutdown\"}\n")
+            .push(b"and\":\"execute\"}\r\n{\"protocol\":2,\"id\":2,\"command\":\"shutdown\"}\n")
             .unwrap();
         assert_eq!(commands.len(), 2);
         assert_eq!(commands[0].id, 1);
@@ -151,7 +153,7 @@ mod tests {
 
         let mut truncated = FrameDecoder::default();
         truncated
-            .push(br#"{"protocol":1,"id":1,"command":"start"}"#)
+            .push(br#"{"protocol":2,"id":1,"command":"execute"}"#)
             .unwrap();
         assert!(truncated.finish().is_err());
     }

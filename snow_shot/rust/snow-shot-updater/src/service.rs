@@ -1,6 +1,4 @@
-use crate::contract::{
-    MAX_METADATA_BYTES, UpdatePackage, UpdateRelease, compare_versions, verify_release,
-};
+use crate::contract::{MAX_METADATA_BYTES, compare_versions, verify_release};
 use crate::error::{Result, UpdateError, io_error, require};
 use crate::fsutil;
 use crate::protocol::{Command, FrameDecoder, MAX_FRAME_BYTES, PROTOCOL_VERSION, Status};
@@ -13,7 +11,6 @@ use reqwest::header::{
 use reqwest::{Client, StatusCode, Url, redirect};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::HashSet;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -25,8 +22,6 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufWriter, SeekFrom};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-const FIRST_CHECK_DELAY: Duration = Duration::from_secs(30);
-const AUTOMATIC_CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const METADATA_TIMEOUT: Duration = Duration::from_secs(30);
 const PACKAGE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const DOWNLOAD_RESERVE_BYTES: u64 = 64 * 1024 * 1024;
@@ -208,6 +203,60 @@ impl Mode {
 enum ActiveOperation {
     Check,
     Download,
+    Apply,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RequestedOperation {
+    Probe,
+    Check,
+    Download,
+    Apply,
+}
+
+impl RequestedOperation {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "probe" => Some(Self::Probe),
+            "check" => Some(Self::Check),
+            "download" => Some(Self::Download),
+            "apply" => Some(Self::Apply),
+            _ => None,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Probe => "probe",
+            Self::Check => "check",
+            Self::Download => "download",
+            Self::Apply => "apply",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Trigger {
+    Startup,
+    Periodic,
+    User,
+    PolicyChange,
+}
+
+impl Trigger {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "startup" => Some(Self::Startup),
+            "periodic" => Some(Self::Periodic),
+            "user" => Some(Self::User),
+            "policyChange" => Some(Self::PolicyChange),
+            _ => None,
+        }
+    }
+
+    fn user_initiated(self) -> bool {
+        matches!(self, Self::User | Self::PolicyChange)
+    }
 }
 
 enum OperationMessage {
@@ -226,7 +275,7 @@ enum OperationMessage {
     },
     Downloaded {
         partial: PathBuf,
-        package: UpdatePackage,
+        package: AvailableUpdate,
     },
     Failed {
         operation: ActiveOperation,
@@ -240,17 +289,26 @@ struct Service {
     options: ServiceOptions,
     dependencies: ServiceDependencies,
     base_url: Url,
-    record: transaction::InstallationRecord,
+    variant: String,
+    installed_version: String,
     persisted: PersistedState,
-    release: Option<UpdateRelease>,
+    available: Option<AvailableUpdate>,
     status: Status,
     mode: Mode,
     system_proxy: bool,
     active: Option<ActiveOperation>,
     cancellation: Option<CancellationToken>,
-    started: bool,
+    requested: Option<RequestedOperation>,
     awaiting_handoff: bool,
     handoff: Option<crate::coordination::ServiceHandoff>,
+}
+
+#[derive(Clone)]
+struct AvailableUpdate {
+    version: String,
+    path: String,
+    size: u64,
+    sha256: String,
 }
 
 fn cache_path(options: &ServiceOptions, name: impl AsRef<Path>) -> PathBuf {
@@ -268,13 +326,6 @@ fn strong_etag(value: &str) -> bool {
 
 fn now_text(clock: &dyn Clock) -> String {
     clock.now_utc().format(&Rfc3339).unwrap_or_default()
-}
-
-fn checked_recently(value: &str, now: OffsetDateTime) -> bool {
-    let Ok(checked) = OffsetDateTime::parse(value, &Rfc3339) else {
-        return false;
-    };
-    checked <= now && (now - checked).whole_seconds() < AUTOMATIC_CHECK_INTERVAL.as_secs() as i64
 }
 
 fn same_origin(left: &Url, right: &Url) -> bool {
@@ -395,8 +446,9 @@ impl Service {
             options,
             dependencies,
             base_url,
-            record,
-            release: None,
+            variant: record.variant,
+            installed_version: record.version,
+            available: None,
             status: Status {
                 state: "Idle".to_owned(),
                 ..Status::default()
@@ -405,7 +457,7 @@ impl Service {
             system_proxy: false,
             active: None,
             cancellation: None,
-            started: false,
+            requested: None,
             awaiting_handoff: false,
             handoff: None,
         };
@@ -424,7 +476,7 @@ impl Service {
         let Ok(release) = verify_release(&bytes, None) else {
             return;
         };
-        let Ok(package) = release.update_package(&self.record.variant) else {
+        let Ok(package) = release.update_package(&self.variant) else {
             return;
         };
         if !self.persisted.observed_version.is_empty() {
@@ -436,17 +488,24 @@ impl Service {
                 return;
             }
         }
-        if compare_versions(&release.version, &self.record.version).is_ok_and(|order| order.is_gt())
+        if compare_versions(&release.version, &self.installed_version)
+            .is_ok_and(|order| order.is_gt())
         {
-            self.status.version.clone_from(&release.version);
+            let available = AvailableUpdate {
+                version: release.version.clone(),
+                path: package.path.clone(),
+                size: package.size,
+                sha256: package.sha256.clone(),
+            };
+            self.status.version.clone_from(&available.version);
             self.status.state = "Available".to_owned();
-            let complete = cache_path(&self.options, format!("{}.zip", package.sha256));
+            let complete = cache_path(&self.options, format!("{}.zip", available.sha256));
             if !is_failed_version(&self.options.root, &release.version)
-                && fsutil::verify_file(&complete, package.size, &package.sha256).is_ok()
+                && fsutil::verify_file(&complete, available.size, &available.sha256).is_ok()
             {
                 self.status.state = "Ready".to_owned();
             }
-            self.release = Some(release);
+            self.available = Some(available);
         }
     }
 
@@ -463,16 +522,15 @@ impl Service {
         }
     }
 
-    fn package(&self) -> Result<UpdatePackage> {
-        self.release
+    fn package(&self) -> Result<AvailableUpdate> {
+        self.available
             .as_ref()
             .ok_or_else(|| {
                 UpdateError::new(
                     "update_not_available",
                     "No update package matches this installation",
                 )
-            })?
-            .update_package(&self.record.variant)
+            })
             .cloned()
     }
 
@@ -520,6 +578,25 @@ async fn write_status(writer: &mut BufWriter<tokio::io::Stdout>, status: &Status
     write_value(
         writer,
         &json!({"protocol": PROTOCOL_VERSION, "type": "status", "status": status}),
+    )
+    .await
+}
+
+async fn write_completion(
+    writer: &mut BufWriter<tokio::io::Stdout>,
+    operation: RequestedOperation,
+    outcome: &str,
+    status: &Status,
+) -> Result<()> {
+    write_value(
+        writer,
+        &json!({
+            "protocol": PROTOCOL_VERSION,
+            "type": "operation_complete",
+            "operation": operation.name(),
+            "outcome": outcome,
+            "status": status,
+        }),
     )
     .await
 }
@@ -692,7 +769,7 @@ async fn fetch_metadata(
     let _ = sender.send(message).await;
 }
 
-fn content_range(package: &UpdatePackage, offset: u64) -> String {
+fn content_range(package: &AvailableUpdate, offset: u64) -> String {
     format!("bytes {offset}-{}/{}", package.size - 1, package.size)
 }
 
@@ -923,7 +1000,7 @@ struct DownloadInputs {
     base_url: Url,
     system_proxy: bool,
     installed_version: String,
-    package: UpdatePackage,
+    package: AvailableUpdate,
     saved_hash: String,
     saved_validator: String,
 }
@@ -988,7 +1065,7 @@ async fn download_package(
 
 fn start_check(
     service: &mut Service,
-    manual: bool,
+    user_initiated: bool,
     operation_sender: &mpsc::Sender<OperationMessage>,
 ) -> Result<()> {
     require(
@@ -996,15 +1073,6 @@ fn start_check(
         "operation_in_progress",
         "An update is still running",
     )?;
-    if !manual
-        && (service.mode == Mode::Manual
-            || checked_recently(
-                &service.persisted.checked_at,
-                service.dependencies.clock.now_utc(),
-            ))
-    {
-        return Ok(());
-    }
     service.active = Some(ActiveOperation::Check);
     service.set_state("Checking", None);
     let cancellation = CancellationToken::new();
@@ -1015,8 +1083,8 @@ fn start_check(
             network: service.dependencies.network.clone(),
             base_url: service.base_url.clone(),
             system_proxy: service.system_proxy,
-            installed_version: service.record.version.clone(),
-            manual,
+            installed_version: service.installed_version.clone(),
+            manual: user_initiated,
             auto_download: service.mode == Mode::Download,
         },
         cancellation,
@@ -1047,7 +1115,7 @@ fn start_download(
             network: service.dependencies.network.clone(),
             base_url: service.base_url.clone(),
             system_proxy: service.system_proxy,
-            installed_version: service.record.version.clone(),
+            installed_version: service.installed_version.clone(),
             package,
             saved_hash: service.persisted.partial_hash.clone(),
             saved_validator: service.persisted.validator.clone(),
@@ -1067,7 +1135,7 @@ async fn accept_metadata(
     operation_sender: &mpsc::Sender<OperationMessage>,
 ) -> Result<()> {
     let release = verify_release(&bytes, None)?;
-    let package = release.update_package(&service.record.variant)?.clone();
+    let package = release.update_package(&service.variant)?;
     if !service.persisted.observed_version.is_empty() {
         let order = compare_versions(&release.version, &service.persisted.observed_version)?;
         require(
@@ -1088,19 +1156,25 @@ async fn accept_metadata(
     service.persisted.observed_hash.clone_from(&package.sha256);
     service.persisted.checked_at = now_text(service.dependencies.clock.as_ref());
     write_persisted(&service.options, &service.persisted)?;
-    service.status.version.clone_from(&release.version);
-    if !compare_versions(&release.version, &service.record.version)?.is_gt() {
-        service.release = None;
+    let available = AvailableUpdate {
+        version: release.version.clone(),
+        path: package.path.clone(),
+        size: package.size,
+        sha256: package.sha256.clone(),
+    };
+    service.status.version.clone_from(&available.version);
+    if !compare_versions(&release.version, &service.installed_version)?.is_gt() {
+        service.available = None;
         service.set_state("Idle", None);
         write_status(writer, &service.status).await?;
         return Ok(());
     }
     fsutil::write_atomic(&cache_path(&service.options, "release.json"), &bytes)?;
-    retain_release_payload(&service.options.cache_directory, &package.sha256);
+    retain_release_payload(&service.options.cache_directory, &available.sha256);
     let suppressed = is_failed_version(&service.options.root, &release.version);
-    service.release = Some(release);
-    let complete = cache_path(&service.options, format!("{}.zip", package.sha256));
-    if fsutil::verify_file(&complete, package.size, &package.sha256).is_ok() {
+    let complete = cache_path(&service.options, format!("{}.zip", available.sha256));
+    if fsutil::verify_file(&complete, available.size, &available.sha256).is_ok() {
+        service.available = Some(available);
         service.set_state("Ready", None);
         write_status(writer, &service.status).await?;
         write_value(
@@ -1112,6 +1186,7 @@ async fn accept_metadata(
         if complete.exists() {
             let _ = std::fs::remove_file(&complete);
         }
+        service.available = Some(available);
         service.set_state("Available", None);
         write_status(writer, &service.status).await?;
         if auto_download && (manual || !suppressed) {
@@ -1159,80 +1234,121 @@ async fn handle_command(
     writer: &mut BufWriter<tokio::io::Stdout>,
     operation_sender: &mpsc::Sender<OperationMessage>,
 ) -> Result<bool> {
+    let mut complete = None;
     let result = match command.command.as_str() {
-        "start" => {
-            service.started = true;
-            Ok(())
-        }
-        "set_mode" => command
-            .mode
-            .as_deref()
-            .and_then(Mode::parse)
-            .ok_or_else(|| {
-                UpdateError::new("protocol_enum_invalid", "Invalid updater command argument")
-            })
-            .map(|mode| {
-                service.mode = mode;
-                if mode != Mode::Download
-                    && service.active == Some(ActiveOperation::Download)
-                    && let Some(cancellation) = service.cancellation.take()
-                {
-                    cancellation.cancel();
-                }
-            }),
-        "set_system_proxy" => command
-            .enabled
-            .ok_or_else(|| {
-                UpdateError::new(
-                    "protocol_message_invalid",
+        "execute" => {
+            let parsed = (|| {
+                require(
+                    service.requested.is_none(),
+                    "protocol_state_invalid",
                     "Invalid updater command argument",
-                )
-            })
-            .map(|enabled| service.system_proxy = enabled),
-        "check" => start_check(service, command.manual.unwrap_or(true), operation_sender),
-        "download" => start_download(service, operation_sender),
+                )?;
+                let operation = command
+                    .operation
+                    .as_deref()
+                    .and_then(RequestedOperation::parse)
+                    .ok_or_else(|| {
+                        UpdateError::new(
+                            "protocol_enum_invalid",
+                            "Invalid updater command argument",
+                        )
+                    })?;
+                let trigger = command
+                    .trigger
+                    .as_deref()
+                    .and_then(Trigger::parse)
+                    .ok_or_else(|| {
+                        UpdateError::new(
+                            "protocol_enum_invalid",
+                            "Invalid updater command argument",
+                        )
+                    })?;
+                let mode = command
+                    .mode
+                    .as_deref()
+                    .and_then(Mode::parse)
+                    .ok_or_else(|| {
+                        UpdateError::new(
+                            "protocol_enum_invalid",
+                            "Invalid updater command argument",
+                        )
+                    })?;
+                let system_proxy = command.system_proxy.ok_or_else(|| {
+                    UpdateError::new(
+                        "protocol_message_invalid",
+                        "Invalid updater command argument",
+                    )
+                })?;
+                Ok((operation, trigger, mode, system_proxy))
+            })();
+            match parsed {
+                Ok((operation, trigger, mode, system_proxy)) => {
+                    service.requested = Some(operation);
+                    service.mode = mode;
+                    service.system_proxy = system_proxy;
+                    let started = match operation {
+                        RequestedOperation::Probe => Ok(()),
+                        RequestedOperation::Check => {
+                            start_check(service, trigger.user_initiated(), operation_sender)
+                        }
+                        RequestedOperation::Download => start_download(service, operation_sender),
+                        RequestedOperation::Apply => {
+                            if service.status.state != "Ready" || service.active.is_some() {
+                                Err(UpdateError::new(
+                                    "protocol_state_invalid",
+                                    "Invalid updater command argument",
+                                ))
+                            } else {
+                                service.active = Some(ActiveOperation::Apply);
+                                service.set_state("Applying", None);
+                                prepare_apply(service, operation_sender)
+                            }
+                        }
+                    };
+                    if operation == RequestedOperation::Probe && started.is_ok() {
+                        complete = Some("success");
+                    }
+                    started
+                }
+                Err(error) => Err(error),
+            }
+        }
         "cancel" => {
-            if let Some(cancellation) = service.cancellation.take() {
+            if let Some(cancellation) = service.cancellation.as_ref() {
                 cancellation.cancel();
             }
-            service.active = None;
-            if service.release.is_some() {
-                service.set_state("Available", None);
-            } else {
-                service.set_state("Idle", None);
-            }
             Ok(())
         }
-        "begin_apply" => {
-            require(
-                service.status.state == "Ready" && service.active.is_none(),
-                "protocol_state_invalid",
-                "Invalid updater command argument",
-            )?;
-            service.set_state("Applying", None);
-            prepare_apply(service, operation_sender)
-        }
         "handoff_decision" => {
-            require(
-                service.awaiting_handoff && service.status.state == "Applying",
-                "protocol_state_invalid",
-                "Invalid updater command argument",
-            )?;
-            service.awaiting_handoff = false;
-            let proceed = command.proceed.unwrap_or(false);
-            let handoff = service.handoff.take().ok_or_else(|| {
-                UpdateError::new("protocol_state_invalid", "Invalid updater command argument")
-            })?;
-            handoff.decide(proceed).await?;
-            if proceed {
+            let decision = async {
+                require(
+                    service.awaiting_handoff && service.status.state == "Applying",
+                    "protocol_state_invalid",
+                    "Invalid updater command argument",
+                )?;
+                service.awaiting_handoff = false;
+                let proceed = command.proceed.unwrap_or(false);
+                let handoff = service.handoff.take().ok_or_else(|| {
+                    UpdateError::new("protocol_state_invalid", "Invalid updater command argument")
+                })?;
+                match handoff.decide(proceed).await {
+                    Ok(()) if proceed => {}
+                    Ok(()) => {
+                        service.set_state(
+                            "Ready",
+                            command.reason.as_deref().map(UpdateError::from_message),
+                        );
+                        complete = Some("cancelled");
+                    }
+                    Err(error) => {
+                        service.set_state("Failed", Some(error.clone()));
+                        complete = Some("failed");
+                        return Err(error);
+                    }
+                }
                 Ok(())
-            } else {
-                service.set_state(
-                    "Ready",
-                    command.reason.as_deref().map(UpdateError::from_message),
-                );
-                Ok(())
-            }
+            };
+            decision.await
         }
         "shutdown" => Ok(()),
         _ => Err(UpdateError::new(
@@ -1242,15 +1358,16 @@ async fn handle_command(
     };
     let error = result.as_ref().err();
     write_result(writer, command.id, error).await?;
-    if result.is_ok() {
-        write_status(writer, &service.status).await?;
-        if command.command == "start" && service.status.state == "Ready" {
-            write_value(
-                writer,
-                &json!({"protocol": PROTOCOL_VERSION, "type": "update_ready"}),
-            )
-            .await?;
-        }
+    if result.is_err() && command.command == "execute" {
+        service.active = None;
+        service.set_state("Failed", error.cloned());
+        complete = Some("failed");
+    }
+    write_status(writer, &service.status).await?;
+    if let Some(outcome) = complete {
+        let operation = service.requested.unwrap_or(RequestedOperation::Probe);
+        write_completion(writer, operation, outcome, &service.status).await?;
+        return Ok(true);
     }
     if command.command == "shutdown"
         || (command.command == "handoff_decision"
@@ -1267,7 +1384,7 @@ async fn handle_operation(
     message: OperationMessage,
     writer: &mut BufWriter<tokio::io::Stdout>,
     operation_sender: &mpsc::Sender<OperationMessage>,
-) -> Result<()> {
+) -> Result<Option<&'static str>> {
     match message {
         OperationMessage::Metadata {
             bytes,
@@ -1275,7 +1392,7 @@ async fn handle_operation(
             auto_download,
         } => {
             if service.active != Some(ActiveOperation::Check) {
-                return Ok(());
+                return Ok(None);
             }
             service.active = None;
             service.cancellation = None;
@@ -1291,6 +1408,10 @@ async fn handle_operation(
             {
                 service.set_state("Failed", Some(error));
                 write_status(writer, &service.status).await?;
+                return Ok(Some("failed"));
+            }
+            if service.active.is_none() {
+                return Ok(Some("success"));
             }
         }
         OperationMessage::DownloadValidator {
@@ -1301,8 +1422,13 @@ async fn handle_operation(
                 service.persisted.partial_hash = package_hash;
                 service.persisted.validator = validator;
                 if let Err(error) = write_persisted(&service.options, &service.persisted) {
+                    service.active = None;
+                    if let Some(cancellation) = service.cancellation.take() {
+                        cancellation.cancel();
+                    }
                     service.set_state("Failed", Some(error));
                     write_status(writer, &service.status).await?;
+                    return Ok(Some("failed"));
                 }
             }
         }
@@ -1315,7 +1441,7 @@ async fn handle_operation(
         }
         OperationMessage::Downloaded { partial, package } => {
             if service.active != Some(ActiveOperation::Download) {
-                return Ok(());
+                return Ok(None);
             }
             service.set_state("Verifying", None);
             service.status.received = package.size;
@@ -1343,7 +1469,7 @@ async fn handle_operation(
                 service.cancellation = None;
                 service.set_state("Failed", Some(error));
                 write_status(writer, &service.status).await?;
-                return Ok(());
+                return Ok(Some("failed"));
             }
             let complete = cache_path(&service.options, format!("{}.zip", package.sha256));
             crate::platform::replace_file(&partial, &complete)?;
@@ -1359,6 +1485,7 @@ async fn handle_operation(
                 &json!({"protocol": PROTOCOL_VERSION, "type": "update_ready"}),
             )
             .await?;
+            return Ok(Some("success"));
         }
         OperationMessage::Failed { operation, error } => {
             if service.active == Some(operation) {
@@ -1366,22 +1493,25 @@ async fn handle_operation(
                 service.cancellation = None;
                 service.set_state("Failed", Some(error));
                 write_status(writer, &service.status).await?;
+                return Ok(Some("failed"));
             }
         }
         OperationMessage::Cancelled(operation) => {
             if service.active == Some(operation) {
                 service.active = None;
                 service.cancellation = None;
-                if service.release.is_some() {
+                if service.available.is_some() {
                     service.set_state("Available", None);
                 } else {
                     service.set_state("Idle", None);
                 }
                 write_status(writer, &service.status).await?;
+                return Ok(Some("cancelled"));
             }
         }
         OperationMessage::HandoffPrepared(result) => match result {
             Ok(handoff) if service.status.state == "Applying" => {
+                service.active = None;
                 service.awaiting_handoff = true;
                 service.handoff = Some(handoff);
                 write_value(
@@ -1394,19 +1524,25 @@ async fn handle_operation(
                 let _ = handoff.decide(false).await;
             }
             Err(error) => {
+                service.active = None;
                 service.awaiting_handoff = false;
                 service.handoff = None;
                 service.set_state("Failed", Some(error));
                 write_status(writer, &service.status).await?;
+                return Ok(Some("failed"));
             }
         },
     }
-    Ok(())
+    Ok(None)
 }
 
 #[cfg(not(windows))]
 async fn run_unsupported_service() -> Result<()> {
     let mut writer = BufWriter::new(tokio::io::stdout());
+    let status = Status {
+        state: "Unavailable".to_owned(),
+        ..Status::default()
+    };
     write_value(
         &mut writer,
         &json!({
@@ -1418,21 +1554,50 @@ async fn run_unsupported_service() -> Result<()> {
         }),
     )
     .await?;
-    write_status(
-        &mut writer,
-        &Status {
-            state: "Unavailable".to_owned(),
-            ..Status::default()
-        },
-    )
-    .await
+    write_status(&mut writer, &status).await?;
+    let (sender, mut receiver) = mpsc::channel(1);
+    tokio::spawn(command_reader(sender));
+    if let Some(command) = receiver.recv().await.transpose()? {
+        let operation = command
+            .operation
+            .as_deref()
+            .and_then(RequestedOperation::parse);
+        let valid = command.protocol == PROTOCOL_VERSION
+            && command.command == "execute"
+            && operation.is_some()
+            && command
+                .trigger
+                .as_deref()
+                .and_then(Trigger::parse)
+                .is_some()
+            && command.mode.as_deref().and_then(Mode::parse).is_some()
+            && command.system_proxy.is_some();
+        let error = (!valid).then(|| {
+            UpdateError::new(
+                "protocol_command_unknown",
+                "Invalid updater command argument",
+            )
+        });
+        write_result(&mut writer, command.id, error.as_ref()).await?;
+        write_status(&mut writer, &status).await?;
+        if error.is_none() {
+            write_completion(
+                &mut writer,
+                operation.expect("validated operation"),
+                "success",
+                &status,
+            )
+            .await?;
+        }
+    }
+    Ok(())
 }
 
 pub async fn run(options: ServiceOptions) -> Result<()> {
     run_with_dependencies(options, ServiceDependencies::default()).await
 }
 
-/// Runs the long-lived service with injected clock and network dependencies.
+/// Runs one operation-scoped service session with injected clock and network dependencies.
 ///
 /// This entry point is intended for deterministic library tests and embedders. The public CLI
 /// always calls [`run`] and therefore always uses native TLS and the real system clock.
@@ -1467,11 +1632,7 @@ pub async fn run_with_dependencies(
         let (command_sender, mut command_receiver) = mpsc::channel(16);
         tokio::spawn(command_reader(command_sender));
         let (operation_sender, mut operation_receiver) = mpsc::channel(64);
-        let mut request_ids = HashSet::new();
         let mut last_request_id = 0_u64;
-        let schedule_clock = service.dependencies.clock.clone();
-        let mut schedule = schedule_clock.sleep(FIRST_CHECK_DELAY);
-        let mut first_schedule = true;
 
         loop {
             tokio::select! {
@@ -1492,7 +1653,7 @@ pub async fn run_with_dependencies(
                             return Ok(());
                         }
                     };
-                    if command.id == 0 || command.id <= last_request_id || !request_ids.insert(command.id) {
+                    if command.id == 0 || command.id <= last_request_id {
                         let error = UpdateError::new(
                             "protocol_request_id_invalid",
                             "The update service protocol message is invalid",
@@ -1514,32 +1675,37 @@ pub async fn run_with_dependencies(
                     }
                 }
                 operation = operation_receiver.recv() => {
-                    if let Some(operation) = operation {
-                        handle_operation(
+                    let outcome = if let Some(operation) = operation {
+                        match handle_operation(
                             &mut service,
                             operation,
                             &mut writer,
                             &operation_sender,
-                        ).await?;
-                    }
-                }
-                _ = schedule.as_mut(), if service.started => {
-                    if service.active.is_none() && service.status.state != "Applying" {
-                        if first_schedule && service.status.state == "Available" && service.mode == Mode::Download {
-                            let suppressed = service.release.as_ref().is_some_and(|release| {
-                                is_failed_version(&service.options.root, &release.version)
-                            });
-                            if !suppressed && start_check(&mut service, true, &operation_sender).is_ok() {
+                        ).await {
+                            Ok(outcome) => outcome,
+                            Err(error) => {
+                                service.active = None;
+                                if let Some(cancellation) = service.cancellation.take() {
+                                    cancellation.cancel();
+                                }
+                                service.set_state("Failed", Some(error));
                                 write_status(&mut writer, &service.status).await?;
+                                Some("failed")
                             }
-                        } else if start_check(&mut service, false, &operation_sender).is_ok()
-                            && service.active == Some(ActiveOperation::Check)
-                        {
-                            write_status(&mut writer, &service.status).await?;
                         }
+                    } else {
+                        None
+                    };
+                    if let Some(outcome) = outcome {
+                        let requested = service.requested.ok_or_else(|| {
+                            UpdateError::new(
+                                "protocol_state_invalid",
+                                "Invalid updater command argument",
+                            )
+                        })?;
+                        write_completion(&mut writer, requested, outcome, &service.status).await?;
+                        return Ok(());
                     }
-                    first_schedule = false;
-                    schedule = schedule_clock.sleep(AUTOMATIC_CHECK_INTERVAL);
                 }
             }
         }
@@ -1691,13 +1857,11 @@ mod tests {
             base_url: Url::parse("http://127.0.0.1:8080").unwrap(),
             system_proxy: false,
             installed_version: "1.0.0".to_owned(),
-            package: UpdatePackage {
-                variant: "portable".to_owned(),
-                kind: "archive".to_owned(),
+            package: AvailableUpdate {
+                version: "2.0.0".to_owned(),
                 path: "snow-shot-portable.zip".to_owned(),
                 size,
                 sha256: "a".repeat(64),
-                files: Vec::new(),
             },
             saved_hash: "a".repeat(64),
             saved_validator: "\"release-1\"".to_owned(),
@@ -1729,18 +1893,6 @@ mod tests {
         assert!(validate_base_url("http://127.0.0.1:8080", true).is_ok());
         assert!(validate_base_url("http://127.0.0.1:8080", false).is_err());
         assert!(validate_base_url("http://example.test", true).is_err());
-    }
-
-    #[test]
-    fn automatic_check_window_uses_the_injected_time() {
-        let now = fixed_time();
-        let recent = (now - time::Duration::hours(23)).format(&Rfc3339).unwrap();
-        let boundary = (now - time::Duration::hours(24)).format(&Rfc3339).unwrap();
-        let future = (now + time::Duration::seconds(1)).format(&Rfc3339).unwrap();
-        assert!(checked_recently(&recent, now));
-        assert!(!checked_recently(&boundary, now));
-        assert!(!checked_recently(&future, now));
-        assert!(!checked_recently("not-a-time", now));
     }
 
     #[tokio::test]
