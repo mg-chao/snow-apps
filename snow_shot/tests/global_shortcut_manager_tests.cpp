@@ -197,6 +197,15 @@ void deterministicOwnershipPartialFailureAndSuspension() {
                 !partial.bindings.at(1).registered &&
                 partial.bindings.at(1).nativeErrorCode == -9876,
             "partial state and signed native errors must be preserved");
+    require(!manager.validateShortcut(GlobalShortcutAction::ScreenshotCopy,
+                                      shortcuts::ShortcutBinding{QStringLiteral("Ctrl+F10")})
+                    .supported &&
+                manager
+                    .validateShortcut(GlobalShortcutAction::ScreenshotCopy,
+                                      shortcuts::ShortcutBinding{QStringLiteral("Ctrl+F11")})
+                    .supported,
+            "collision validation must reject the registered member and ignore the failed member "
+            "of a partially registered action");
 
     const auto firstSuspension = manager.suspendRegistrations();
     const int unregistered = input->unregisterCalls;

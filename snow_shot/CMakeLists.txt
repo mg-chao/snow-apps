@@ -1601,12 +1601,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         Qt6::Core
         Qt6::Network
     )
-    # The named-pipe forward can race with local IPC teardown between runs,
-    # so the entry goes through the retry launcher.
     add_test(NAME snow-shot-single-instance-coordinator-tests
-        COMMAND ${CMAKE_COMMAND}
-            -DTEST_COMMAND=$<TARGET_FILE:snow-shot-single-instance-coordinator-tests>
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_flaky_test_with_retry.cmake)
+             COMMAND snow-shot-single-instance-coordinator-tests)
     set_tests_properties(snow-shot-single-instance-coordinator-tests PROPERTIES
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
@@ -1709,14 +1705,8 @@ if(SNOW_SHOT_BUILD_TESTS)
             dwmapi
             user32
         )
-        # Native window-manager chrome assertions race with other foreground
-        # windows, so the entry runs through the retry launcher like the other
-        # native interaction tests.
         add_test(NAME snow-shot-window-chrome-tests
-            COMMAND ${CMAKE_COMMAND}
-                -DTEST_COMMAND=$<TARGET_FILE:snow-shot-window-chrome-tests>
-                -P ${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_flaky_test_with_retry.cmake
-        )
+                 COMMAND snow-shot-window-chrome-tests)
         set_tests_properties(snow-shot-window-chrome-tests PROPERTIES
             ENVIRONMENT
                 "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
@@ -3061,15 +3051,13 @@ if(SNOW_SHOT_BUILD_TESTS)
             user32
         )
     endif()
-    # The full battery drives native geometry interactions that race with the
-    # session's foreground window state, so it runs through the retry launcher
-    # like the other native drag batteries.
     add_test(
         NAME snow-shot-pinned-window-tests
-        COMMAND ${CMAKE_COMMAND}
-            -DTEST_COMMAND=$<TARGET_FILE:snow-shot-pinned-window-tests>
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_flaky_test_with_retry.cmake
+        COMMAND snow-shot-pinned-window-tests
     )
+    set_tests_properties(snow-shot-pinned-window-tests PROPERTIES
+        LABELS "interactive;e2e;windows" RUN_SERIAL TRUE TIMEOUT 180
+        ENVIRONMENT "QT_QPA_PLATFORM=windows")
     snow_shot_import_offscreen_platform(snow-shot-pinned-window-tests)
     add_test(NAME snow-shot-file-pin-presentation-tests
         COMMAND snow-shot-pinned-window-tests --file-pin-batch-only)
@@ -3096,11 +3084,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-pinned-remembered-drawing-tool-tests PROPERTIES LABELS "unit"
         RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-pinned-click-through-native-tests
-        COMMAND ${CMAKE_COMMAND}
-            "-DTEST_COMMAND=$<TARGET_FILE:snow-shot-pinned-window-tests>;--click-through-native-only;-platform;windows"
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_flaky_test_with_retry.cmake)
+        COMMAND snow-shot-pinned-window-tests --click-through-native-only -platform windows)
     set_tests_properties(snow-shot-pinned-click-through-native-tests PROPERTIES
-        LABELS "unit;windows" RUN_SERIAL TRUE TIMEOUT 60)
+        LABELS "interactive;e2e;windows" RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-pinned-shortcut-display-tests
         COMMAND snow-shot-pinned-window-tests --shortcut-display-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-shortcut-display-tests PROPERTIES LABELS "unit")
@@ -3983,15 +3969,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     if(WIN32)
         target_link_libraries(snow-shot-screen-recording-shortcut-tests PRIVATE user32 comctl32)
     endif()
-    # The shortcut gating asserts real keyboard focus ownership, which the
-    # non-activating floating toolbar only supports on a native platform; the
-    # focus race with other foreground windows makes it flaky by design, so it
-    # runs through the retry launcher like the native drag tests.
     add_test(NAME snow-shot-screen-recording-shortcut-tests
-        COMMAND ${CMAKE_COMMAND}
-            -DTEST_COMMAND=$<TARGET_FILE:snow-shot-screen-recording-shortcut-tests>
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_flaky_test_with_retry.cmake
-    )
+        COMMAND snow-shot-screen-recording-shortcut-tests)
     if(WIN32)
         foreach(_close_release_pair IN ITEMS
                 "overlay|snow-shot-screenshot-canvas-renderer-tests"
@@ -4010,6 +3989,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-screen-recording-shortcut-tests PROPERTIES
         # The shortcut gating asserts real keyboard focus ownership, which the
         # non-activating floating toolbar only supports on a native platform.
+        LABELS "interactive;e2e;windows" RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT "QT_QPA_PLATFORM=windows"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
@@ -5842,23 +5822,23 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotUpdateUiTests.cmake")
 
 if(WIN32)
     # These DLLs are consumed by the standalone OCR process that is staged
-    # next to each host target, not by snow_shot itself. DirectML is
-    # delay-loaded by the statically linked ONNX Runtime; onnxruntime.dll is
-    # only needed when the process links it dynamically.
+    # next to each host target, not by snow_shot itself. Static ONNX Runtime
+    # delay-loads DirectML; dynamic builds derive the complete non-system DLL
+    # closure from onnxruntime.dll instead of copying its entire bin directory.
     foreach(_ocr_runtime_target IN ITEMS snow_shot snow-shot-ocr-recognition-service-tests)
         if(TARGET ${_ocr_runtime_target})
-            add_custom_command(TARGET ${_ocr_runtime_target} POST_BUILD
-                COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                    "$<IF:$<CONFIG:Debug>,${SNOW_SHOT_DIRECTML_RUNTIME_DLL_DEBUG},${SNOW_SHOT_DIRECTML_RUNTIME_DLL_RELEASE}>"
-                    "$<TARGET_FILE_DIR:${_ocr_runtime_target}>/DirectML.dll"
-                COMMENT "Staging DirectML for ${_ocr_runtime_target}"
-                VERBATIM
-            )
-            if(NOT SNOW_SHOT_OCR_STATIC_ONNXRUNTIME)
-                # The dynamic vcpkg ONNX Runtime pulls in shared companions
-                # (for example the debug flavor links libprotobuf-lited.dll,
-                # libprotobufd.dll and abseil_dll.dll); the worker loads the
-                # whole closure by name, so every DLL must be staged.
+            if(SNOW_SHOT_OCR_STATIC_ONNXRUNTIME)
+                add_custom_command(TARGET ${_ocr_runtime_target} POST_BUILD
+                    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                        "$<IF:$<CONFIG:Debug>,${SNOW_SHOT_DIRECTML_RUNTIME_DLL_DEBUG},${SNOW_SHOT_DIRECTML_RUNTIME_DLL_RELEASE}>"
+                        "$<TARGET_FILE_DIR:${_ocr_runtime_target}>/DirectML.dll"
+                    COMMENT "Staging DirectML for ${_ocr_runtime_target}"
+                    VERBATIM
+                )
+            else()
+                # Resolve only the DLLs actually imported by ONNX Runtime and
+                # its companions. This keeps unrelated vcpkg DLLs out of the
+                # application directory and fails the build on a broken closure.
                 _snow_shot_onnxruntime_link_items(_snow_shot_onnxruntime_dll_items)
                 add_custom_command(TARGET ${_ocr_runtime_target} POST_BUILD
                     COMMAND "${CMAKE_COMMAND}"

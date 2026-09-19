@@ -1407,6 +1407,27 @@ void compactTrayManifestMatchesRegistryCatalog() {
     const settings::TrayCommandManifest compact = settings::builtInTrayCommandManifest();
     const auto& catalog = settings::builtInSettingsRegistry().catalog();
     const auto projectedGroups = catalog.trayMenuGroups();
+
+    const auto* trayMenuSchema =
+        storage::ConfigurationSchema::entry(QStringLiteral("tray/menu_options"));
+    require(trayMenuSchema != nullptr, "the tray menu schema must exist");
+    QStringList defaultOptionIds;
+    QSet<QString> defaultOptionSet;
+    for (const QJsonValue& value : trayMenuSchema->defaultValue.toArray()) {
+        defaultOptionIds.push_back(value.toString());
+        defaultOptionSet.insert(value.toString());
+    }
+    QStringList orderedManifestDefaults;
+    for (const auto& group : compact.groups) {
+        for (const auto& option : group.options) {
+            if (defaultOptionSet.contains(option.id)) {
+                orderedManifestDefaults.push_back(option.id);
+            }
+        }
+    }
+    require(defaultOptionIds == orderedManifestDefaults,
+            "tray defaults must follow the canonical manifest order");
+
     require(compact.groups.size() == projectedGroups.size(),
             "the compact tray manifest must preserve catalog group count");
     for (int groupIndex = 0; groupIndex < compact.groups.size(); ++groupIndex) {

@@ -221,6 +221,25 @@ void bmpPreservesTransparentPixels() {
     }
 }
 
+void jpegUsesTheCodecTransparencyPolicy() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary JPEG directory could not be created");
+    QImage source(QSize(16, 16), QImage::Format_RGBA8888);
+    source.fill(QColor(160, 80, 40, 128));
+
+    const ScreenshotImageFileSaveResult result = ScreenshotImageFileService::write(
+        source, directory.filePath(QStringLiteral("transparent")), ScreenshotImageFileFormat::Jpeg);
+    const QImage decoded =
+        snow_shot::image_codec::decodeFile(result.path, snow::image::Format::jpeg);
+    require(result.succeeded() && decoded.size() == source.size(),
+            "transparent JPEG output must be encoded and decoded by snow_image");
+
+    const QColor pixel = decoded.pixelColor(decoded.width() / 2, decoded.height() / 2);
+    const auto near = [](int actual, int expected) { return std::abs(actual - expected) <= 4; };
+    require(near(pixel.red(), 80) && near(pixel.green(), 40) && near(pixel.blue(), 20),
+            "the Snow Shot bridge must delegate JPEG alpha removal to the codec's black matte");
+}
+
 void streamsRowsToAtomicFileAndCancelsWithoutPublishing() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary streaming directory could not be created");
@@ -410,6 +429,7 @@ int main(int argc, char** argv) {
         writesLosslessImageAndPreservesCollisionNames();
         writesEveryAdvertisedFormat();
         bmpPreservesTransparentPixels();
+        jpegUsesTheCodecTransparencyPolicy();
         streamsRowsToAtomicFileAndCancelsWithoutPublishing();
         automaticDirectoriesUseSystemLocations();
         configuredAutomaticOutputUsesFormatDirectoryAndFilename();

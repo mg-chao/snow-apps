@@ -2879,14 +2879,6 @@ void pinnedContextMenuPreservesNativeGeometry(SnowCanvasRuntime&) {
             "the context-menu transition must reject rounded native geometry proposals");
 
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    if (guardedWindow.isNull()) {
-        // Some sessions (for example remote or DPI-virtualized ones) cannot
-        // realize the exact native client rectangle, the pin then closes
-        // itself after the failed geometry restore, and the exact-geometry
-        // assertions below are meaningless in that session.
-        std::cerr << "SKIP: session rejects exact native client geometry\n";
-        return;
-    }
     require(menu->isVisible(), "a native caption right-click should open the pinned context menu");
     require((menu->pos() - expectedContextPosition).manhattanLength() <= 1,
             "the native caption context menu should open at the Qt-global cursor position");
@@ -2940,8 +2932,10 @@ void pinnedAsyncPresentationDefersContent(SnowCanvasRuntime&) {
         };
     QImage placeholder(QSize(160, 96), QImage::Format_ARGB32_Premultiplied);
     placeholder.fill(Qt::transparent);
+    ScreenshotPinnedWindow::Config successfulConfig = makeConfig(placeholder, successLoader);
+    successfulConfig.enableEditing = true;
     require(successfulWindow->present(
-                makeConfig(placeholder, successLoader),
+                successfulConfig,
                 [&successCompletionCount, &successCompletionValue](bool succeeded, QImage image) {
                     ++successCompletionCount;
                     successCompletionValue = succeeded && !image.isNull();
@@ -2957,11 +2951,18 @@ void pinnedAsyncPresentationDefersContent(SnowCanvasRuntime&) {
             "the pinned canvas should stay transparent until materialization completes");
     require(static_cast<bool>(successLoad),
             "the pinned image loader should start after the shell is shown");
+    ScreenshotPinnedWindowTestAccess::editSelectionOffscreen(*successfulWindow, true);
+    auto* successEditController = successfulWindow->findChild<ScreenshotPinnedEditController*>();
+    require(successEditController != nullptr, "deferred pin editing must create its controller");
+    successEditController->activateResizeWindowTool();
+    require(successEditController->resizeWindowToolActive() && !successCanvas->interactionEnabled(),
+            "Resize window must disable canvas interaction before materialization");
     successLoad(expectedImage);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
     require(successCanvas->canvasContentVisible() && successCompletionCount == 1 &&
-                successCompletionValue,
-            "successful pinned materialization should reveal content exactly once");
+                successCompletionValue && successEditController->resizeWindowToolActive() &&
+                !successCanvas->interactionEnabled(),
+            "materialization must reveal content without overriding Resize window interaction");
     const QImage loadedFrame = renderWidget(*successCanvas);
     require(loadedFrame.pixelColor(loadedFrame.rect().center()).alpha() > 0,
             "the pinned canvas should render materialized content");
@@ -5445,14 +5446,6 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
     thumbnailSettle.start();
     while (thumbnailSettle.elapsed() < 2000) {
         waitForUi(50);
-        if (guardedWindow.isNull()) {
-            // In sessions that reject the exact native client rectangle (for
-            // example remote or DPI-virtualized ones) the pin closes itself
-            // when the thumbnail animation's geometry restore fails; the
-            // remaining native-geometry assertions need that restore.
-            std::cerr << "SKIP: session rejects exact native client geometry\n";
-            return;
-        }
         thumbnailGeometry = pinnedWindow->currentNativeGeometry();
         if (nativeHitTest(QPoint(thumbnailGeometry.right(), thumbnailGeometry.center().y())) ==
             HTCAPTION) {
@@ -6895,11 +6888,16 @@ void pinnedClickThroughNative() {
     require(SendInput(1, &clicks[0], sizeof(INPUT)) == 1, "press native move control");
     waitForUi(40);
     setSystemCursorPosition(moveStart + moveDelta);
-    waitForUi(80);
+    const QRect movedGeometry = pinnedGeometry.translated(moveDelta);
+    QElapsedTimer moveDelivery;
+    moveDelivery.start();
+    while (window.currentNativeGeometry() != movedGeometry && moveDelivery.elapsed() < 750) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(1);
+    }
     require(SendInput(1, &clicks[1], sizeof(INPUT)) == 1, "release native move control");
     waitForUi(40);
-    require(window.currentNativeGeometry() == pinnedGeometry.translated(moveDelta) &&
-                GetForegroundWindow() == lowerHwnd &&
+    require(window.currentNativeGeometry() == movedGeometry && GetForegroundWindow() == lowerHwnd &&
                 (GetWindowLongPtrW(pinnedHwnd, GWL_EXSTYLE) & transparentStyles) ==
                     transparentStyles,
             "native drag must move the pin while retaining passthrough and foreground focus");

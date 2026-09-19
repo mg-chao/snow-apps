@@ -531,8 +531,9 @@ void ScreenshotPinnedEditController::setEditMode(bool enabled) {
     m_resizeWindowToolActive = false;
     m_nativeWindowInteractionActive = false;
     m_drawingToolRequestedDuringRecognition = false;
+    m_recognitionToolActivationPending = false;
     static_cast<void>(m_canvas.resetEditingState());
-    m_canvas.setInteractionEnabled(false);
+    syncCanvasInteractionState();
     m_canvas.clearFocus();
     if (m_toolbarWindow != nullptr) {
         m_toolbarWindow->cancelDrag();
@@ -551,9 +552,10 @@ void ScreenshotPinnedEditController::activateResizeWindowTool() {
     cancelCanvasColorSampling();
     m_toolBeforeWindowResize.reset();
     m_drawingToolRequestedDuringRecognition = false;
+    m_recognitionToolActivationPending = false;
     static_cast<void>(m_canvas.resetEditingState());
     m_resizeWindowToolActive = true;
-    m_canvas.setInteractionEnabled(false);
+    syncCanvasInteractionState();
     if (ScreenshotToolPaletteHost* host = toolbarHost()) {
         host->setActiveTool(ScreenshotToolPalette::Tool::Move);
     }
@@ -571,9 +573,8 @@ bool ScreenshotPinnedEditController::beginTemporaryResizeWindowTool() {
         return false;
     }
     m_toolBeforeWindowResize = static_cast<int>(*activeTool);
-    m_canvasInteractionBeforeWindowResize = m_canvas.interactionEnabled();
     m_resizeWindowToolActive = true;
-    m_canvas.setInteractionEnabled(false);
+    syncCanvasInteractionState();
     if (ScreenshotToolPaletteHost* host = toolbarHost()) {
         host->setActiveTool(ScreenshotToolPalette::Tool::Move);
     }
@@ -591,8 +592,7 @@ void ScreenshotPinnedEditController::endTemporaryResizeWindowTool() {
     if (ScreenshotToolPaletteHost* host = toolbarHost()) {
         host->setActiveTool(previousTool);
     }
-    m_canvas.setInteractionEnabled(m_canvasInteractionBeforeWindowResize && m_editMode &&
-                                   !m_pinnedWindow.m_ocrMode);
+    syncCanvasInteractionState();
     m_pinnedWindow.updateWindowDragCursor(m_pinnedWindow.mapFromGlobal(QCursor::pos()));
 }
 
@@ -635,9 +635,10 @@ void ScreenshotPinnedEditController::endNativeWindowInteraction() {
 }
 
 void ScreenshotPinnedEditController::restoreDrawingToolState() {
+    m_recognitionToolActivationPending = false;
     if (m_drawingToolRequestedDuringRecognition) {
         m_drawingToolRequestedDuringRecognition = false;
-        m_canvas.setInteractionEnabled(m_editMode);
+        syncCanvasInteractionState();
         syncPaletteFromCanvasTool();
         return;
     }
@@ -730,7 +731,8 @@ void ScreenshotPinnedEditController::activateCanvasTool(SnowCanvasTool tool) {
     m_toolBeforeWindowResize.reset();
     m_resizeWindowToolActive = false;
     m_drawingToolRequestedDuringRecognition = m_pinnedWindow.m_ocrMode;
-    m_canvas.setInteractionEnabled(!m_pinnedWindow.m_ocrMode);
+    m_recognitionToolActivationPending = m_pinnedWindow.m_ocrMode;
+    syncCanvasInteractionState();
     m_canvas.setCanvasTool(tool);
     m_pinnedWindow.updateWindowDragCursor(m_pinnedWindow.mapFromGlobal(QCursor::pos()));
 }
@@ -739,8 +741,18 @@ void ScreenshotPinnedEditController::prepareRecognitionToolActivation() {
     m_toolBeforeWindowResize.reset();
     m_resizeWindowToolActive = false;
     m_drawingToolRequestedDuringRecognition = false;
-    m_canvas.setInteractionEnabled(false);
+    m_recognitionToolActivationPending = true;
+    syncCanvasInteractionState();
     m_pinnedWindow.clearWindowDragCursor();
+}
+
+bool ScreenshotPinnedEditController::canvasInteractionAllowed() const {
+    return m_editMode && !m_resizeWindowToolActive && !m_recognitionToolActivationPending &&
+           !m_pinnedWindow.m_ocrMode;
+}
+
+void ScreenshotPinnedEditController::syncCanvasInteractionState() {
+    m_canvas.setInteractionEnabled(canvasInteractionAllowed());
 }
 
 QScreen* ScreenshotPinnedEditController::placementScreen() const {

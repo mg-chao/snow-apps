@@ -112,6 +112,7 @@ class DividerTest final : public QObject {
   void ancestorCustomPaletteIsHonored();
   void customContentOwnershipCanBeTransferred();
   void customContentLifecycleUpdatesAccessibility();
+  void ownedContentDestructionDoesNotPublishDividerState();
   void disabledAndInvalidMetricsAreNormalized();
   void zeroLineWidthPreservesContent();
   void railThicknessIsDevicePixelAligned();
@@ -438,6 +439,25 @@ void DividerTest::customContentLifecycleUpdatesAccessibility() {
   AdDivider nested(&ancestor);
   nested.setContentWidget(&ancestor);
   QVERIFY(!nested.contentWidget());
+}
+
+void DividerTest::ownedContentDestructionDoesNotPublishDividerState() {
+  QObject observer;
+  int clearedSignals = 0;
+  auto* divider = new AdDivider(QStringLiteral("Fallback"));
+  auto* content = new QLabel(QStringLiteral("Owned"));
+  QPointer<QLabel> contentGuard(content);
+  divider->setContentWidget(content);
+  connect(divider, &AdDivider::contentWidgetChanged, &observer, [&clearedSignals](QWidget* widget) {
+    if (widget == nullptr) {
+      ++clearedSignals;
+    }
+  });
+
+  delete divider;
+
+  QVERIFY(contentGuard.isNull());
+  QCOMPARE(clearedSignals, 0);
 }
 
 void DividerTest::disabledAndInvalidMetricsAreNormalized() {

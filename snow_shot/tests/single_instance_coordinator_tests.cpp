@@ -10,10 +10,8 @@
 #include <QTemporaryDir>
 #include <QThread>
 
-#include <atomic>
 #include <cstdlib>
 #include <iostream>
-#include <thread>
 
 namespace single_instance = snow_shot::app;
 
@@ -57,20 +55,19 @@ void firstInstanceAndQueuedForwarding() {
     const QStringList forwardedArguments{QStringLiteral("snow-shot-test"),
                                          QStringLiteral("--show-main-window"),
                                          QStringLiteral("capture.png")};
-    single_instance::SingleInstanceResult forwarded;
-    std::atomic<bool> forwardingComplete = false;
-    std::thread secondaryThread([&forwardedArguments, &forwarded, &forwardingComplete]() {
-        single_instance::SingleInstanceCoordinator secondary;
-        forwarded = secondary.acquireOrForward(forwardedArguments);
-        forwardingComplete = true;
-    });
-    // The secondary retries its forward for kForwardTimeoutMilliseconds, so
-    // the completion wait must exceed that budget.
-    require(waitUntil([&forwardingComplete]() { return forwardingComplete.load(); }, 5000),
+    QProcess secondary;
+    QStringList secondaryArguments{QStringLiteral("--single-instance-forward")};
+    secondaryArguments.append(forwardedArguments);
+    secondary.start(QCoreApplication::applicationFilePath(), secondaryArguments);
+    require(secondary.waitForStarted(3000), "second process did not start");
+    // Process primary events while the child retries its forward so the local
+    // server can accept and drain the request exactly as it does in production.
+    require(waitUntil([&secondary]() { return secondary.state() == QProcess::NotRunning; }, 5000),
             "second process did not finish its forwarding attempt");
-    secondaryThread.join();
-    require(forwarded.outcome == single_instance::SingleInstanceOutcome::Forwarded &&
-                forwarded.error.isEmpty(),
+    if (secondary.exitStatus() != QProcess::NormalExit || secondary.exitCode() != EXIT_SUCCESS) {
+        std::cerr << secondary.readAllStandardError().constData();
+    }
+    require(secondary.exitStatus() == QProcess::NormalExit && secondary.exitCode() == EXIT_SUCCESS,
             "second process did not forward its launch request");
     require(waitUntil([&signaledArguments]() { return !signaledArguments.isEmpty(); }, 1000) &&
                 signaledArguments == forwardedArguments,
@@ -132,6 +129,17 @@ int main(int argc, char** argv) {
                 "child could not acquire stale-owner fixture");
         writeReadyFile(application.arguments().at(2));
         return QCoreApplication::exec();
+    }
+    if (application.arguments().size() >= 3 &&
+        application.arguments().at(1) == QStringLiteral("--single-instance-forward")) {
+        single_instance::SingleInstanceCoordinator secondary;
+        const auto result = secondary.acquireOrForward(application.arguments().mid(2));
+        if (result.outcome != single_instance::SingleInstanceOutcome::Forwarded ||
+            !result.error.isEmpty()) {
+            std::cerr << result.error.toStdString() << '\n';
+            return EXIT_FAILURE;
+        }
+        return EXIT_SUCCESS;
     }
 
     firstInstanceAndQueuedForwarding();

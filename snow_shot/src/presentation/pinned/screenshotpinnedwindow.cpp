@@ -2289,14 +2289,12 @@ bool ScreenshotPinnedWindow::present(const Config& config,
         finishPresentation(false);
         return false;
     }
-    if (config.enableEditing) {
-        if (m_editButton != nullptr) {
-            m_editButton->hide();
-        }
-    } else if (m_editButton != nullptr) {
+    if (m_editButton != nullptr) {
         m_editButton->hide();
-        m_canvas->setInteractionEnabled(false);
     }
+    // Canvas input is enabled only after the edit controller selects an
+    // interactive drawing tool. This also resets reused presentation state.
+    m_canvas->setInteractionEnabled(false);
 
     m_screenshotRenderer->setImageSource(m_imageSource);
     if (config.restorePersistentState && !m_imageTransform.isIdentity() &&
@@ -3756,15 +3754,11 @@ void ScreenshotPinnedWindow::finishDeferredPresentationSetup(quint64 generation)
     configureRecognitionTarget();
     updateRecognitionContentGeometry();
     if (m_canvas != nullptr) {
-        // This queued setup can run after a drawing session is already active
-        // (the user may enter drawing mode before the first content frame
-        // publishes). While a session is active the edit controller owns the
-        // interaction flag, and its Resize window tool keeps the canvas inert.
-        const bool editSessionAllowsInteraction = m_editController == nullptr ||
-                                                  !m_editController->editMode() ||
-                                                  !m_editController->resizeWindowToolActive();
-        m_canvas->setInteractionEnabled(m_editingEnabled && !m_ocrMode &&
-                                        editSessionAllowsInteraction);
+        if (m_editController != nullptr) {
+            m_editController->syncCanvasInteractionState();
+        } else {
+            m_canvas->setInteractionEnabled(false);
+        }
     }
     if (m_editingEnabled && m_editButton != nullptr) {
         m_editButton->show();
@@ -4010,7 +4004,7 @@ void ScreenshotPinnedWindow::setEditMode(bool enabled) {
         m_drawingAction->setChecked(enabled);
     }
     if (enabled && m_ocrMode) {
-        m_canvas->setInteractionEnabled(false);
+        m_editController->syncCanvasInteractionState();
         if (m_recognitionContent != nullptr) {
             m_recognitionContent->setFocus(Qt::OtherFocusReason);
         }
@@ -4278,8 +4272,11 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                 }
                 if (m_canvas != nullptr) {
                     m_canvas->setCanvasContentVisible(!active);
-                    m_canvas->setInteractionEnabled(!active && m_editController != nullptr &&
-                                                    m_editController->editMode());
+                    if (m_editController != nullptr) {
+                        m_editController->syncCanvasInteractionState();
+                    } else {
+                        m_canvas->setInteractionEnabled(false);
+                    }
                     if (active && !wasHiddenSelection) {
                         m_canvas->setFocus(Qt::OtherFocusReason);
                     } else {

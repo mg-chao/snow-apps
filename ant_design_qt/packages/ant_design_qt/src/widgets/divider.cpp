@@ -311,7 +311,15 @@ AdDivider::AdDivider(QWidget* parent) : QFrame(parent) {
 
 AdDivider::AdDivider(const QString& text, QWidget* parent) : AdDivider(parent) { setText(text); }
 
-AdDivider::~AdDivider() = default;
+AdDivider::~AdDivider() {
+  // QObject destroys child widgets from its base destructor, after every
+  // AdDivider member has already been destroyed. Disconnect the child's
+  // destroyed callback while the derived object is still intact so it cannot
+  // observe or publish partially destructed divider state.
+  if (contentDestroyedConnection_) {
+    disconnect(contentDestroyedConnection_);
+  }
+}
 
 AdDivider::Orientation AdDivider::orientation() const { return orientation_; }
 

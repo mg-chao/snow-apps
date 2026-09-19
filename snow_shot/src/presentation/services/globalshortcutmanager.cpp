@@ -300,16 +300,17 @@ class GlobalShortcutManager::Impl {
                 if (action == *owner) {
                     continue;
                 }
-                // Only actions that hold a runtime registration own the
-                // identity; a colliding binding whose registration failed
-                // must not veto the action that actually owns the shortcut.
-                if (m_states[actionIndex(action)].status == GlobalShortcutStatus::Failed) {
-                    continue;
-                }
-                const auto& configured = m_shortcuts[actionIndex(action)];
-                if (std::any_of(configured.cbegin(), configured.cend(),
+                // Runtime ownership is per binding, not per action. A
+                // partially registered action can contain both a live binding
+                // and a failed one; only the live binding may veto another
+                // action. Registration states remain intact while recorders
+                // temporarily suspend the native backend, so this also keeps
+                // validation stable throughout editing.
+                const auto& state = m_states[actionIndex(action)];
+                if (std::any_of(state.bindings.cbegin(), state.bindings.cend(),
                                 [&binding](const auto& existing) {
-                                    return shortcuts::bindingsConflict(existing, binding);
+                                    return existing.registered &&
+                                           shortcuts::bindingsConflict(existing.binding, binding);
                                 })) {
                     return invalidValidation(binding, GlobalShortcutFailureReason::AlreadyInUse);
                 }

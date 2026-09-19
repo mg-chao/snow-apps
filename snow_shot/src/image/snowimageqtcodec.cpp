@@ -45,7 +45,6 @@ struct StreamingBridgeContext final {
     const ScreenshotImageRowSource* source = nullptr;
     QIODevice* device = nullptr;
     QString ioError;
-    bool flattenForJpeg = false;
 };
 
 int32_t SNOW_SHOT_IMAGE_CODEC_CALL readRowsCallback(void* rawContext, uint32_t firstRow,
@@ -62,23 +61,6 @@ int32_t SNOW_SHOT_IMAGE_CODEC_CALL readRowsCallback(void* rawContext, uint32_t f
                                    static_cast<qsizetype>(destinationStride), destination,
                                    static_cast<qsizetype>(destinationSize))) {
         return 0;
-    }
-    if (context->flattenForJpeg) {
-        const int width = context->source->size.width();
-        for (uint32_t row = 0; row < rowCount; ++row) {
-            auto* pixels = destination + static_cast<uint64_t>(row) * destinationStride;
-            for (int column = 0; column < width; ++column) {
-                auto* pixel = pixels + static_cast<std::size_t>(column) * 4U;
-                const unsigned alpha = pixel[3];
-                for (int channel = 0; channel < 3; ++channel) {
-                    pixel[channel] =
-                        static_cast<uint8_t>((static_cast<unsigned>(pixel[channel]) * alpha +
-                                              255U * (255U - alpha) + 127U) /
-                                             255U);
-                }
-                pixel[3] = 255;
-            }
-        }
     }
     return 1;
 }
@@ -409,7 +391,7 @@ bool encodeToDevice(const ScreenshotImageRowSource& source, QIODevice* device,
         return false;
     }
 
-    StreamingBridgeContext context{&source, device, {}, format == snow::image::Format::jpeg};
+    StreamingBridgeContext context{&source, device, {}};
     SnowShotImageCodecRgba8Source bridgeSource{};
     bridgeSource.struct_size = sizeof(bridgeSource);
     bridgeSource.abi_version = SNOW_SHOT_IMAGE_CODEC_ABI_VERSION;
@@ -491,7 +473,7 @@ bool resizeToRgba8(const ScreenshotImageRowSource& source, const QSize& outputSi
         return false;
     }
 
-    StreamingBridgeContext context{&source, nullptr, {}, false};
+    StreamingBridgeContext context{&source, nullptr, {}};
     SnowShotImageCodecRgba8Source bridgeSource{};
     bridgeSource.struct_size = sizeof(bridgeSource);
     bridgeSource.abi_version = SNOW_SHOT_IMAGE_CODEC_ABI_VERSION;

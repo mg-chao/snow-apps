@@ -623,8 +623,7 @@ void globalRecorderRestoresRegistrationOnEveryExitPath() {
             modal->setOpen(false);
             break;
         case Exit::Close:
-            require(modal->contentWidget() != nullptr, "modal content must exist before close");
-            modal->contentWidget()->close();
+            modal->close();
             break;
         case Exit::Destroy:
             row.reset();
