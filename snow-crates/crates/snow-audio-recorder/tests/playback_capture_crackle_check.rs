@@ -48,7 +48,15 @@ const OUTPUT_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/output/play
 /// A burst block whose residual exceeds this level is audible buzzing.
 const BURST_BLOCK_DBFS: f64 = -25.0;
 
+/// A bench-style measurement: plays the fixture through the default render
+/// device and captures the system loopback on the running machine. It needs a
+/// quiet stereo endpoint, an idle CPU, and roughly twenty seconds of wall
+/// time, so it is excluded from the normal `cargo test` run; execute it
+/// explicitly with `cargo test -p snow-audio-recorder -- --ignored` on a
+/// prepared machine. The detection logic itself stays covered by the
+/// deterministic `analysis_tests` below.
 #[test]
+#[ignore = "hardware loopback measurement; run explicitly on a quiet machine"]
 fn captured_playback_of_clean_source_is_free_of_crackle() {
     let source = read_wav_pcm16(Path::new(FIXTURE_WAV))
         .unwrap_or_else(|err| panic!("failed to read WAV fixture {FIXTURE_WAV}: {err}"));

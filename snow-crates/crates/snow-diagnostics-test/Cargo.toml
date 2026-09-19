@@ -7,6 +7,11 @@ publish = false
 
 [lib]
 crate-type = ["staticlib"]
+# The extern "C" snow_diag_* symbols this fixture forwards to are resolved by
+# the C++ crash-bridge at final link; the standalone lib test target cannot
+# link them and the crate ships no Rust tests.
+test = false
+doctest = false
 
 [features]
 default = ["crash-diagnostics"]

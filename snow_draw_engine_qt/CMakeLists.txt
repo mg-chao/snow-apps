@@ -356,7 +356,9 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
         include ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
         "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include")
     target_link_libraries(snow-canvas-smart-erase-quality-tests PRIVATE
-        Qt6::Widgets opencv_core opencv_imgproc)
+        # snow_canvas_render_geometry resolves text paint bounds through the
+        # engine's C ABI, so the Rust static library must be linked in.
+        snow_draw_engine_c Qt6::Widgets opencv_core opencv_imgproc)
     add_test(NAME snow-canvas-smart-erase-quality-tests COMMAND snow-canvas-smart-erase-quality-tests)
     set_tests_properties(snow-canvas-smart-erase-quality-tests PROPERTIES TIMEOUT 180 LABELS unit
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:opencv_core>")
@@ -393,6 +395,7 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     target_link_libraries(snow-canvas-spotlight-render-tests PRIVATE
         snow_draw_engine_qt_canvas
     )
+    qt_import_plugins(snow-canvas-spotlight-render-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
     add_test(
         NAME snow-canvas-spotlight-render-tests
         COMMAND snow-canvas-spotlight-render-tests

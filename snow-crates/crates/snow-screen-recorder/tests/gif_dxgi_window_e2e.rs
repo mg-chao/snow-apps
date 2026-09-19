@@ -1,4 +1,10 @@
 #![cfg(target_os = "windows")]
+//! Bench-style capture end-to-end checks: each test spawns real windows,
+//! records the live desktop through DXGI or Windows Graphics Capture, and
+//! exports GIF/MP4 payloads. They need an interactive desktop with working
+//! capture and encoders, so they are excluded from the normal `cargo test`
+//! run; execute them with `cargo test -p snow-screen-recorder -- --ignored`
+//! on a prepared machine.
 
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -493,6 +499,7 @@ fn assert_frames_are_complete_solid_presents(frames: &[Vec<u8>], label: &str) {
 }
 
 #[test]
+#[ignore = "hardware capture bench; run explicitly on a prepared desktop"]
 fn dxgi_window_recording_exports_visually_changing_gif_frames() {
     let temp = tempdir().expect("temporary output directory should be created");
     let window = ColorWindow::spawn();
@@ -559,11 +566,13 @@ fn dxgi_window_recording_exports_visually_changing_gif_frames() {
 }
 
 #[test]
+#[ignore = "hardware capture bench; run explicitly on a prepared desktop"]
 fn wgc_region_recording_produces_complete_visually_changing_frames() {
     assert_sparse_region_recording(CaptureBackendKind::WindowsGraphicsCapture, "WGC");
 }
 
 #[test]
+#[ignore = "hardware capture bench; run explicitly on a prepared desktop"]
 fn dxgi_region_recording_produces_complete_visually_changing_frames() {
     assert_sparse_region_recording(CaptureBackendKind::DxgiDuplication, "DXGI");
 }
@@ -687,6 +696,7 @@ impl Drop for CursorPositionGuard {
 }
 
 #[test]
+#[ignore = "hardware capture bench; run explicitly on a prepared desktop"]
 fn dxgi_large_region_remains_complete_through_snow_shot_mp4_export() {
     let temp = tempdir().expect("temporary output directory should be created");
     let _window = ColorWindow::spawn_large_sparse();

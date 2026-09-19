@@ -226,12 +226,18 @@ if(ADQT_BUILD_TESTS)
     add_executable(adqt-pagination-tests packages/ant_design_qt/tests/tst_pagination.cpp)
     set_target_properties(adqt-pagination-tests PROPERTIES AUTOMOC ON)
     target_link_libraries(adqt-pagination-tests PRIVATE adqt::widgets Qt6::Test)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-pagination-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
     add_test(NAME adqt-pagination-tests COMMAND adqt-pagination-tests)
     set_tests_properties(adqt-pagination-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
     add_executable(adqt-tabs-tests packages/ant_design_qt/tests/tst_tabs.cpp)
     set_target_properties(adqt-tabs-tests PROPERTIES AUTOMOC ON)
     target_link_libraries(adqt-tabs-tests PRIVATE adqt::widgets Qt6::Test)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-tabs-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
     add_test(NAME adqt-tabs-tests COMMAND adqt-tabs-tests)
     set_tests_properties(adqt-tabs-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
@@ -256,12 +262,18 @@ if(ADQT_BUILD_TESTS)
     add_executable(adqt-segmented-tests packages/ant_design_qt/tests/tst_segmented.cpp)
     set_target_properties(adqt-segmented-tests PROPERTIES AUTOMOC ON)
     target_link_libraries(adqt-segmented-tests PRIVATE adqt::widgets Qt6::Test)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-segmented-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
     add_test(NAME adqt-segmented-tests COMMAND adqt-segmented-tests)
     set_tests_properties(adqt-segmented-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
     add_executable(adqt-scroll-area-tests packages/ant_design_qt/tests/tst_scroll_area.cpp)
     set_target_properties(adqt-scroll-area-tests PROPERTIES AUTOMOC ON)
     target_link_libraries(adqt-scroll-area-tests PRIVATE adqt::widgets Qt6::Test)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-scroll-area-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
     add_test(NAME adqt-scroll-area-tests COMMAND adqt-scroll-area-tests)
     set_tests_properties(adqt-scroll-area-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
@@ -296,8 +308,10 @@ if(ADQT_BUILD_TESTS)
     add_test(NAME adqt-qt-tool-popup-tests COMMAND adqt-qt-tool-popup-tests)
     if(WIN32)
         set_tests_properties(adqt-qt-tool-popup-tests PROPERTIES
-            ENVIRONMENT
-                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            # Native popup windows only settle reliably on an interactive
+            # desktop; the popup logic itself is platform-neutral, so the
+            # suite runs offscreen like its sibling recovery entry.
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
             ENVIRONMENT_MODIFICATION
                 "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         )
@@ -317,6 +331,9 @@ if(ADQT_BUILD_TESTS)
     add_executable(adqt-locale-manager-tests
         packages/ant_design_qt/tests/locale_manager_tests.cpp)
     target_link_libraries(adqt-locale-manager-tests PRIVATE adqt::widgets Qt6::Widgets)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-locale-manager-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
     add_test(NAME adqt-locale-manager-tests COMMAND adqt-locale-manager-tests)
     set_tests_properties(adqt-locale-manager-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -335,6 +352,9 @@ if(ADQT_BUILD_TESTS)
     add_executable(adqt-divider-tests packages/ant_design_qt/tests/tst_divider.cpp)
     set_target_properties(adqt-divider-tests PROPERTIES AUTOMOC ON)
     target_link_libraries(adqt-divider-tests PRIVATE adqt::widgets Qt6::Test)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-divider-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
     add_test(NAME adqt-divider-tests COMMAND adqt-divider-tests)
     set_tests_properties(adqt-divider-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()

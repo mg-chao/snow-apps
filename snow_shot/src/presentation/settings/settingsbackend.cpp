@@ -1175,7 +1175,8 @@ bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const 
         // An import replaces the whole configuration: keys the archive does not
         // carry (settings added after the archive's schema version, for example)
         // revert to schema defaults. The overlay is materialized with the same
-        // salvage rules as loading config.json, including schema upgrades.
+        // salvage rules as loading the persisted configuration, including schema
+        // upgrades.
         if (!applicationStorage.configuration().applySnapshot(read.values, read.schemaVersion)) {
             finish(false, QCoreApplication::translate("SettingsBackend",
                                                       "The configuration could not be imported."));
