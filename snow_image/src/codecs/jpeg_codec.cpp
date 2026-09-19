@@ -874,13 +874,14 @@ Result<EncodedArtifactReceipt> JpegCodec::encode_raster_to_sink(const RasterSour
                     const unsigned int opacity = pixel[3];
                     for (std::size_t channel = 0; channel < 3; ++channel) {
                         if (plane.format.alpha == AlphaMode::premultiplied) {
-                            pixel[channel] = static_cast<std::uint8_t>(
-                                (std::min)(255U, static_cast<unsigned int>(pixel[channel]) + 255U -
-                                                     opacity));
+                            // Premultiplied samples already carry the black
+                            // background's contribution and pass through.
                         } else {
+                            // JPEG has no alpha channel: composite straight
+                            // alpha onto black, matching the viewer's dark
+                            // canvas instead of a white matte.
                             pixel[channel] = static_cast<std::uint8_t>(
-                                (static_cast<unsigned int>(pixel[channel]) * opacity +
-                                 255U * (255U - opacity) + 127U) /
+                                (static_cast<unsigned int>(pixel[channel]) * opacity + 127U) /
                                 255U);
                         }
                     }
