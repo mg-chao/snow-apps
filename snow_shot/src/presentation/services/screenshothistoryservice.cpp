@@ -103,8 +103,10 @@ snow_shot::storage::CaptureHistoryDraft storageDraft(const ScreenshotHistoryEntr
     draft.canvasHistory = entry.canvasHistory;
     draft.source = entry.source;
     for (const ScreenshotHistoryDisplay& display : entry.displays) {
-        draft.displays.push_back(
-            {display.stableId, display.name, display.image, display.sourceCanvasOrigin});
+        draft.displays.push_back({display.stableId, display.name, display.image,
+                                  display.sourceCanvasOrigin, display.sourceCanvasRect,
+                                  display.canvasUsesPoints, display.backingScale,
+                                  display.nativeDisplayId});
     }
     draft.resultImage = entry.resultImage;
     draft.preparedResultImage = entry.preparedResultImage;
@@ -128,8 +130,10 @@ placeholderRecord(const snow_shot::storage::CaptureHistoryDraft& draft) {
         record.result = snow_shot::storage::CaptureHistoryResultRecord{resultSize, 0};
     }
     for (const snow_shot::storage::CaptureHistoryDisplayDraft& display : draft.displays) {
-        record.displays.push_back(
-            {display.stableId, display.name, display.image.size(), 0, display.sourceCanvasOrigin});
+        record.displays.push_back({display.stableId, display.name, display.image.size(), 0,
+                                   display.sourceCanvasOrigin, display.sourceCanvasRect,
+                                   display.canvasUsesPoints, display.backingScale,
+                                   display.nativeDisplayId});
     }
     return record;
 }
@@ -151,9 +155,11 @@ presentationEntry(const snow_shot::storage::CaptureHistoryRecord& record,
     entry.source = record.source;
     entry.persistent = true;
     for (qsizetype index = 0; index < record.displays.size(); ++index) {
-        entry.displays.push_back({record.displays[index].stableId, record.displays[index].name,
-                                  payload.displayImages[index],
-                                  record.displays[index].sourceCanvasOrigin});
+        entry.displays.push_back(
+            {record.displays[index].stableId, record.displays[index].name,
+             payload.displayImages[index], record.displays[index].sourceCanvasOrigin,
+             record.displays[index].sourceCanvasRect, record.displays[index].canvasUsesPoints,
+             record.displays[index].backingScale, record.displays[index].nativeDisplayId});
     }
     // Early direct-capture sessions stored absolute desktop coordinates instead of canvas ones.
     const bool directCapture =
@@ -168,6 +174,8 @@ presentationEntry(const snow_shot::storage::CaptureHistoryRecord& record,
         for (auto& display : entry.displays) {
             if (display.sourceCanvasOrigin.has_value())
                 *display.sourceCanvasOrigin += canvasOffset;
+            if (display.sourceCanvasRect)
+                display.sourceCanvasRect->translate(canvasOffset);
         }
     }
     return entry;
@@ -316,6 +324,11 @@ QRect ScreenshotHistoryService::currentCanvasBounds() const {
             bounds =
                 bounds.united(ScreenshotGeometryMapper::displayCanvasRect(display).toAlignedRect());
         });
+    if (m_context.displays.hasImageSources())
+        m_context.displays.forEachImageSource(
+            [&bounds](qsizetype, const CapturedDisplayModel& source) {
+                bounds = bounds.united(source.imageSourceCanvasRect);
+            });
     return bounds;
 }
 
@@ -343,19 +356,24 @@ ScreenshotHistoryService::snapshotCurrent(bool persistent) const {
         entry.selection.selection.isEmpty()) {
         return std::nullopt;
     }
-    m_context.displays.forEachActiveDisplay(
-        [&entry](qsizetype, const CapturedDisplayModel& display) {
-            if (display.image.isNull()) {
-                return;
-            }
-            const QPoint origin =
-                ScreenshotGeometryMapper::displayImageSourceCanvasRect(display).topLeft().toPoint();
-            const QPoint displayOrigin =
-                ScreenshotGeometryMapper::displayCanvasRect(display).topLeft().toPoint();
-            entry.displays.push_back(ScreenshotHistoryDisplay{
-                display.stableId, display.name, display.image,
-                origin != displayOrigin ? std::optional<QPoint>(origin) : std::nullopt});
-        });
+    m_context.displays.forEachImageSource([&entry](qsizetype, const CapturedDisplayModel& display) {
+        if (display.image.isNull()) {
+            return;
+        }
+        const QPoint origin =
+            ScreenshotGeometryMapper::displayImageSourceCanvasRect(display).topLeft().toPoint();
+        const QPoint displayOrigin =
+            ScreenshotGeometryMapper::displayCanvasRect(display).topLeft().toPoint();
+        entry.displays.push_back(ScreenshotHistoryDisplay{
+            display.stableId, display.name, display.image,
+            origin != displayOrigin ? std::optional<QPoint>(origin) : std::nullopt,
+            display.canvasUsesPoints
+                ? std::optional<QRect>(
+                      ScreenshotGeometryMapper::displayImageSourceCanvasRect(display)
+                          .toAlignedRect())
+                : std::nullopt,
+            display.canvasUsesPoints, display.backingScale, display.nativeDisplayId});
+    });
     if (entry.displays.isEmpty()) {
         return std::nullopt;
     }
@@ -529,7 +547,11 @@ void ScreenshotHistoryService::finishPersistentNavigation(
 }
 
 bool ScreenshotHistoryService::applyEntry(const ScreenshotHistoryEntry& entry) {
-    const QRect bounds = currentCanvasBounds();
+    const bool pointSources =
+        std::any_of(entry.displays.cbegin(), entry.displays.cend(),
+                    [](const auto& display) { return display.canvasUsesPoints; });
+    const QRect bounds = pointSources ? currentCanvasBounds().united(entry.recordedCanvasBounds)
+                                      : currentCanvasBounds();
     ScreenshotSelectionModel restoredSelection = m_context.selection;
     auto selectionParams = entry.selection;
     const bool imageOnly =
@@ -562,6 +584,29 @@ bool ScreenshotHistoryService::applyEntry(const ScreenshotHistoryEntry& entry) {
         !m_context.runtime.restoreDocumentHistoryPreservingEditorStyles(documentHistory)) {
         return false;
     }
+
+    QVector<CapturedDisplayModel> sources;
+    if (pointSources) {
+        for (const auto& saved : entry.displays) {
+            CapturedDisplayModel source;
+            source.stableId = saved.stableId;
+            source.name = saved.name;
+            source.nativeDisplayId = saved.nativeDisplayId;
+            source.image = saved.image;
+            source.imageSourceCanvasRect = saved.sourceCanvasRect.value_or(
+                QRect(saved.sourceCanvasOrigin.value_or(QPoint()), saved.image.size()));
+            source.canvasRect = source.imageSourceCanvasRect;
+            source.canvasUsesPoints = saved.canvasUsesPoints;
+            source.backingScale =
+                saved.backingScale > 0
+                    ? saved.backingScale
+                    : std::max(source.image.width() / double(source.canvasRect.width()),
+                               source.image.height() / double(source.canvasRect.height()));
+            source.active = true;
+            sources.push_back(std::move(source));
+        }
+    }
+    m_context.displays.setImageSources(std::move(sources));
 
     QVector<qsizetype> current;
     m_context.displays.forEachActiveDisplay(
@@ -612,10 +657,10 @@ bool ScreenshotHistoryService::applyEntry(const ScreenshotHistoryEntry& entry) {
         }
         const QImage& image = entry.displays[savedIndex].image;
         display.image = image;
-        display.imageSourceCanvasRect =
+        display.imageSourceCanvasRect = entry.displays[savedIndex].sourceCanvasRect.value_or(
             QRect(entry.displays[savedIndex].sourceCanvasOrigin.value_or(
                       ScreenshotGeometryMapper::displayCanvasRect(display).topLeft().toPoint()),
-                  image.size());
+                  image.size()));
     }
     m_context.selection = restoredSelection;
     m_context.interaction.cancelDrag();

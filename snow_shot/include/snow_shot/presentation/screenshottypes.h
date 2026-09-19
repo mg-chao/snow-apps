@@ -43,6 +43,7 @@ enum class ScreenshotCaptureBackend {
     Dxgi = 1,
     WindowsGraphicsCapture = 2,
     Gdi = 3,
+    ScreenCaptureKit = 4,
 };
 
 enum class ScreenshotCapturePurpose {
@@ -75,6 +76,12 @@ struct CapturedDisplayModel {
     QImage image;
     bool active = false;
     ScreenshotCaptureBackend backend = ScreenshotCaptureBackend::Auto;
+    // Desktop points and image pixels are independent on macOS. physicalRect
+    // remains the per-display pixel coordinate contract used by native selectors.
+    QRect capturedLogicalRect;
+    quint32 nativeDisplayId = 0;
+    qreal backingScale = 1.0;
+    bool canvasUsesPoints = false;
 };
 
 struct ScreenshotCaptureResult {

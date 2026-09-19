@@ -100,6 +100,29 @@ typedef struct SnowCaptureFrameInfo {
     size_t rgba_len;
 } SnowCaptureFrameInfo;
 
+/* Geometry belongs to the captured frame, not a later desktop enumeration.
+ * coordinate_space: 0 = desktop pixels (Windows), 1 = desktop points (macOS).
+ * width/height here describe desktop geometry; FrameInfo dimensions are pixels. */
+#define SNOW_CAPTURE_FRAME_GEOMETRY_VERSION 1
+typedef struct SnowCaptureFrameGeometry {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t coordinate_space;
+    uint32_t display_id;
+    double x;
+    double y;
+    double width;
+    double height;
+    double backing_scale;
+} SnowCaptureFrameGeometry;
+
+uint8_t snow_capture_screenshot_result_display_geometry(const SnowCaptureScreenshotResult* result,
+                                                        size_t index,
+                                                        SnowCaptureFrameGeometry* geometry);
+uint8_t
+snow_capture_screenshot_result_focused_window_geometry(const SnowCaptureScreenshotResult* result,
+                                                       SnowCaptureFrameGeometry* geometry);
+
 /* A single monitor identified by its native device name (for example \\.\DISPLAY1).
  * Uses DXGI, WGC, then GDI on eligible failures, independently of desktop sessions. */
 typedef struct SnowCaptureMonitorSessionConfig {

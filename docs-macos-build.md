@@ -100,11 +100,14 @@ privacy grants across rebuilds, configure a persistent code-signing certificate
 from your keychain (list available identities with `security find-identity -v -p codesigning`):
 
 ```sh
-scripts/build.sh snow-shot-macos-arm64-debug -- -DSNOW_MACOS_CODESIGN_IDENTITY="Your code-signing certificate name or SHA-1"
+scripts/run-snow-shot.sh snow-shot-macos-arm64-debug \
+  --codesign-identity "Your code-signing certificate name or SHA-1"
 ```
 
-The cached identity is used for deployment, including the final seal after OCR
-assets are finalized. A missing or unusable certificate fails deployment;
+The run script stores the identity in the selected preset's CMake cache, so it
+only needs to be supplied once. Later runs reuse it for deployment, including the
+final seal after OCR assets are finalized. Pass `--codesign-identity -` to return
+that preset to ad-hoc signing. A missing or unusable certificate fails deployment;
 it does not fall back to ad-hoc signing. Public distribution still requires
 Developer ID signing and Apple notarization; this setting does not notarize the app.
 The run script deploys a signed development copy under `build/<preset>/run`
@@ -208,6 +211,14 @@ The first run uses a fresh temporary cache and an unreachable download proxy. Th
 second acquires another model; the third proves cache reuse without network access.
 Run with `DYLD_LIBRARY_PATH`, `DYLD_FALLBACK_LIBRARY_PATH`, and `ORT_DYLIB_PATH` unset.
 Also launch the packaged app through Finder and check its screenshot-to-OCR flow.
+
+## Screenshots
+
+See [macOS screenshot support and validation](snow_shot/tests/macos_screenshots.md)
+for supported workflows, point-based editing, mixed-display export sizing,
+permission recovery, targeted checks and native hardware acceptance steps.
+Screenshot capture uses ScreenCaptureKit; Windows-only backend preferences remain
+stored but are not used on macOS.
 
 ## Pin to Screen
 

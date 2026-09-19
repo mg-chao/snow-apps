@@ -84,6 +84,10 @@ void ScreenshotSelectionEditWorkflow::openSelectionResizeModalFromToolbar() {
     ScreenshotSelectionResizeRequest request;
     request.currentParams = currentParams;
     request.selectionBounds = bounds;
+    m_context.displaySession.forEachImageSource(
+        [&](qsizetype, const CapturedDisplayModel& display) {
+            request.canvasUsesPoints |= display.canvasUsesPoints;
+        });
     request.ownerWindow = ownerWindowForSelectionResizeModal();
     request.onFinished = [this]() { setColorPickerSuppressedForScreenshotUi(false); };
     if (!m_context.ui.openResizeModal ||

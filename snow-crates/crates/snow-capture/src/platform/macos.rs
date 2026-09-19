@@ -212,6 +212,9 @@ impl MacCapturer {
     }
 }
 impl MonitorCapturer for MacCapturer {
+    fn set_cancellation(&mut self, token: snow_core::cancellation::CancellationToken) {
+        self.session.set_snapshot_cancellation(token);
+    }
     fn set_cursor_visible(&mut self, visible: bool) -> CaptureResult<()> {
         self.session
             .set_cursor(if visible {
@@ -262,7 +265,7 @@ impl MonitorCapturer for MacCapturer {
             cpu.size.height,
             self.options.output_pixel_format,
         )?;
-        frame.as_mut_bytes().copy_from_slice(&cpu.bytes);
+        copy_cpu_pixels(cpu, &mut frame)?;
         frame.metadata = Default::default();
         if self.options.output_pixel_format == CapturePixelFormat::Rgba8 {
             snow_media::convert::swap_red_blue(frame.as_mut_bytes());
@@ -297,9 +300,60 @@ impl MonitorCapturer for MacCapturer {
     }
 }
 
+fn copy_cpu_pixels(cpu: &snow_media::CpuFrame, frame: &mut Frame) -> CaptureResult<()> {
+    let [plane] = cpu.planes.as_slice() else {
+        return Err(CaptureError::BufferOverflow);
+    };
+    let row_bytes = (frame.width() as usize)
+        .checked_mul(4)
+        .ok_or(CaptureError::BufferOverflow)?;
+    if plane.width != frame.width() as usize
+        || plane.row_bytes != row_bytes
+        || plane.height != frame.height() as usize
+        || plane.stride < row_bytes
+        || cpu.plane_bytes(0).is_none()
+    {
+        return Err(CaptureError::BufferOverflow);
+    }
+    for (row, destination) in frame.as_mut_bytes().chunks_exact_mut(row_bytes).enumerate() {
+        let offset = plane.offset + row * plane.stride;
+        destination.copy_from_slice(&cpu.bytes[offset..offset + row_bytes]);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tuning_tests {
     use super::*;
+    #[test]
+    fn padded_cpu_frame_is_copied_without_padding_and_bad_layouts_are_rejected() {
+        let mut cpu = snow_media::CpuFrame {
+            size: snow_media::geometry::PixelSize::new(1, 2).unwrap(),
+            format: snow_media::PixelFormat::Bgra8,
+            color: snow_media::ColorDescription::SRGB,
+            planes: vec![snow_media::PlaneLayout {
+                offset: 1,
+                width: 1,
+                height: 2,
+                stride: 5,
+                row_bytes: 4,
+            }],
+            bytes: std::sync::Arc::from([99, 10, 20, 30, 40, 98, 50, 60, 70, 80]),
+        };
+        let mut frame = Frame::from_rgba8(1, 2, vec![0; 8]).unwrap();
+        copy_cpu_pixels(&cpu, &mut frame).unwrap();
+        assert_eq!(frame.as_bytes(), &[10, 20, 30, 40, 50, 60, 70, 80]);
+        cpu.planes[0].offset = 2;
+        assert!(matches!(
+            copy_cpu_pixels(&cpu, &mut frame),
+            Err(CaptureError::BufferOverflow)
+        ));
+        cpu.planes[0].offset = usize::MAX;
+        assert!(copy_cpu_pixels(&cpu, &mut frame).is_err());
+        cpu.planes[0].offset = 1;
+        cpu.planes[0].stride = 3;
+        assert!(copy_cpu_pixels(&cpu, &mut frame).is_err());
+    }
     #[test]
     fn snapshot_and_continuous_filters_reach_native_configs() {
         for workload in [CaptureWorkload::Snapshot, CaptureWorkload::Continuous] {

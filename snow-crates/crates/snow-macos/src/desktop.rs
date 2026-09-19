@@ -330,6 +330,19 @@ impl DesktopSession {
             inspected_at: Instant::now(),
         })
     }
+    /// Replace the cancellation token between one-shot operations. Streams must be stopped.
+    pub fn set_snapshot_cancellation(&mut self, token: crate::CancellationToken) {
+        debug_assert!(self.streams.is_empty());
+        self.config.cancellation = token;
+        // A new user request may follow a permission grant. Do not retry within
+        // the failed request, but allow the next snapshot to check access again.
+        if matches!(
+            self.failure,
+            Some(MacError::Canceled | MacError::PermissionDenied)
+        ) {
+            self.failure = None;
+        }
+    }
     pub fn transform(&self) -> DesktopTransform {
         self.plan.transform
     }

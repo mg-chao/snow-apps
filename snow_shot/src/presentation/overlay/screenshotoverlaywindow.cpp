@@ -105,6 +105,11 @@ void ScreenshotOverlayWindow::setScreenshotImage(QImage image, const QRectF& can
     }
 }
 
+void ScreenshotOverlayWindow::setScreenshotImageSource(ScreenshotImageSource source) {
+    if (m_screenshotRenderer)
+        m_screenshotRenderer->setImageSource(std::move(source));
+}
+
 void ScreenshotOverlayWindow::setScreenshotMaskVisible(bool visible) {
     if (m_screenshotRenderer != nullptr) {
         m_screenshotRenderer->setMaskVisible(visible);

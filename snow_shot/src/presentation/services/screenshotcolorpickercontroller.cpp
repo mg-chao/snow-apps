@@ -66,17 +66,25 @@ void ScreenshotColorPickerController::updateForOverlay(
 
     const QPointF virtualPosition =
         m_geometry.canvasPositionForOverlayLocalPoint(m_displaySession, overlay, localPosition);
-    updateAtPhysicalPoint(physicalPositionForCanvasPoint(virtualPosition), context);
+    updateAtCanvasPoint(virtualPosition, context);
+}
+
+void ScreenshotColorPickerController::updateAtCanvasPoint(
+    const QPointF& point, const ScreenshotColorPickerContext& context, qreal opacity) {
+    updateAtPhysicalPoint(physicalPositionForCanvasPoint(point), context, opacity,
+                          m_geometry.displayForCanvasPoint(m_displaySession, point));
 }
 
 void ScreenshotColorPickerController::updateAtPhysicalPoint(
-    const QPoint& physicalPoint, const ScreenshotColorPickerContext& context, qreal opacity) {
+    const QPoint& physicalPoint, const ScreenshotColorPickerContext& context, qreal opacity,
+    const CapturedDisplayModel* display) {
     if (!enabled(context) || screenshotUiContainsGlobalCursor()) {
         hide();
         return;
     }
 
-    const CapturedDisplayModel* display = displayForPhysicalPoint(physicalPoint);
+    if (!display)
+        display = displayForPhysicalPoint(physicalPoint);
     ScreenshotOverlayWindow* overlay = m_displaySession.overlayForDisplay(display);
     if (display == nullptr || overlay == nullptr) {
         hide();
@@ -85,8 +93,10 @@ void ScreenshotColorPickerController::updateAtPhysicalPoint(
 
     const QPoint logicalPoint = logicalPositionForPhysicalPoint(physicalPoint, *display);
     const QPointF overlayLocalPosition = QPointF(logicalPoint - overlay->geometry().topLeft());
-    const qreal pickerOpacity = std::min(std::clamp<qreal>(opacity, 0.0, 1.0),
-                                         opacityForPoint(physicalPoint, opacity < 1.0, context));
+    const qreal pickerOpacity =
+        std::min(std::clamp<qreal>(opacity, 0.0, 1.0),
+                 opacityForPoint(m_geometry.canvasPositionForPhysicalPoint(*display, physicalPoint),
+                                 opacity < 1.0, context));
 
     m_overlayCoordinator.updateColorPicker(overlay, display->image, display->physicalRect,
                                            physicalPoint, overlayLocalPosition, pickerOpacity);
@@ -122,12 +132,12 @@ void ScreenshotColorPickerController::updateForSelectionDrag(
         screenshotSelectionDragAnchor(context.selectionCanvas, context.dragMode, virtualPosition,
                                       snow_shot::presentation::kScreenshotSelectionMinimumSize);
     if (!anchor.has_value()) {
-        updateAtPhysicalPoint(physicalPositionForCanvasPoint(virtualPosition), context);
+        updateAtCanvasPoint(virtualPosition, context);
         return;
     }
 
-    updateAtPhysicalPoint(
-        physicalPositionForCanvasPoint(anchor.value()), context,
+    updateAtCanvasPoint(
+        anchor.value(), context,
         screenshotColorPickerOpacity(m_displayMode, ScreenshotColorPickerVisibilityState{
                                                         context.intelligentSelecting,
                                                         context.manualSelecting,
@@ -186,6 +196,11 @@ bool ScreenshotColorPickerController::enabled(const ScreenshotColorPickerContext
 
 const CapturedDisplayModel*
 ScreenshotColorPickerController::displayForPhysicalPoint(const QPointF& point) const {
+#ifdef Q_OS_MACOS
+    if (const auto* owner = m_geometry.displayForLogicalPoint(
+            m_displaySession, m_physicalCursor.logicalPosition().value_or(QCursor::pos())))
+        return owner;
+#endif
     return m_geometry.displayForPhysicalPoint(m_displaySession, point);
 }
 
@@ -200,7 +215,9 @@ QPoint ScreenshotColorPickerController::physicalPositionForCanvasPoint(const QPo
 
 QPointF
 ScreenshotColorPickerController::canvasPositionForPhysicalPoint(const QPointF& point) const {
-    return m_geometry.canvasPositionForPhysicalPoint(m_displaySession, point);
+    if (const auto* owner = displayForPhysicalPoint(point))
+        return m_geometry.canvasPositionForPhysicalPoint(*owner, point);
+    return point;
 }
 
 bool ScreenshotColorPickerController::screenshotUiContainsGlobalCursor() const {
@@ -208,7 +225,7 @@ bool ScreenshotColorPickerController::screenshotUiContainsGlobalCursor() const {
 }
 
 qreal ScreenshotColorPickerController::opacityForPoint(
-    const QPoint& physicalPoint, bool selectionDrag,
+    const QPointF& canvasPoint, bool selectionDrag,
     const ScreenshotColorPickerContext& context) const {
     const bool hasSelection =
         context.selectionPixels.width() >= 1 && context.selectionPixels.height() >= 1;
@@ -216,15 +233,13 @@ qreal ScreenshotColorPickerController::opacityForPoint(
         context.selectionPixels.adjusted(-kSelectionOpacityTolerance, -kSelectionOpacityTolerance,
                                          kSelectionOpacityTolerance, kSelectionOpacityTolerance);
     return screenshotColorPickerOpacity(
-        m_displayMode,
-        ScreenshotColorPickerVisibilityState{
-            context.intelligentSelecting,
-            context.manualSelecting,
-            context.movingSelection,
-            context.dragging,
-            selectionDrag,
-            hasSelection,
-            hasSelection &&
-                QRectF(toleratedSelection).contains(canvasPositionForPhysicalPoint(physicalPoint)),
-        });
+        m_displayMode, ScreenshotColorPickerVisibilityState{
+                           context.intelligentSelecting,
+                           context.manualSelecting,
+                           context.movingSelection,
+                           context.dragging,
+                           selectionDrag,
+                           hasSelection,
+                           hasSelection && QRectF(toleratedSelection).contains(canvasPoint),
+                       });
 }

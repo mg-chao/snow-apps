@@ -439,6 +439,17 @@ void pageAndAlerts() {
             mouse.findChild<adqt::widgets::AdAlert*>(QStringLiteral("appPermissionsAlert"));
         require(hotkeyAlert && mouseAlert && !hotkeyAlert->isVisible() && !mouseAlert->isVisible(),
                 "granted permissions hide both alerts");
+        const auto metric = styles::ThemeManager::instance().themeColorScheme().metricAlias;
+        for (SettingsPageWidget* currentPage : {&hotkeys, &mouse}) {
+            auto* content = currentPage->findChild<QWidget*>(QStringLiteral("settings-content-") +
+                                                             currentPage->pageId());
+            require(content != nullptr, "permission alert page content must be available");
+            const QMargins pageMargins = content->layout()->contentsMargins();
+            require(pageMargins.top() == metric.paddingXXS &&
+                        pageMargins.left() == metric.paddingLG &&
+                        pageMargins.right() == metric.paddingLG,
+                    "hidden permission alerts must retain the standard page top spacing");
+        }
         native->value.statuses[2] = S::Missing;
         service.refresh();
         flush();
@@ -483,6 +494,18 @@ void pageAndAlerts() {
         require(destination.pageId == u"app-permissions" &&
                     destination.itemId == u"screen-recording",
                 "alert navigates to first relevant permission");
+        native->value.statuses.fill(S::Granted);
+        service.refresh();
+        flush();
+        for (SettingsPageWidget* currentPage : {&hotkeys, &mouse}) {
+            auto* content = currentPage->findChild<QWidget*>(QStringLiteral("settings-content-") +
+                                                             currentPage->pageId());
+            auto* alert = currentPage->findChild<adqt::widgets::AdAlert*>(
+                QStringLiteral("appPermissionsAlert"));
+            require(content && alert && !alert->isVisible() &&
+                        content->layout()->contentsMargins().top() == metric.paddingXXS,
+                    "hiding permission alerts must restore the standard page top spacing");
+        }
         require(native->requests == 0, "page navigation and refresh must never prompt");
         SettingsPageWidget functions(registry, QStringLiteral("function-settings"), runtime);
         require(!functions.findChild<QWidget*>(QStringLiteral("smartSelectionPermission")),

@@ -37,7 +37,7 @@ bool ScreenshotSelectionResizeWorkflow::open(QObject* modalParent,
 
     auto* content = new ScreenshotSelectionResizeModalContent(
         request.currentParams, request.selectionBounds, hasPreviousParams, previousParams,
-        m_settingsStore.presets(), nullptr);
+        m_settingsStore.presets(), nullptr, request.canvasUsesPoints);
     const QPointer<ScreenshotSelectionResizeModalContent> contentGuard(content);
     ScreenshotSelectionSettingsStore* settingsStore = &m_settingsStore;
     QObject::connect(content, &ScreenshotSelectionResizeModalContent::presetsUpdated, modal,

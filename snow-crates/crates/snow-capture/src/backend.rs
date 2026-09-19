@@ -146,6 +146,7 @@ impl Default for CaptureSampleMetadata {
 }
 
 pub(crate) trait MonitorCapturer: Send {
+    fn set_cancellation(&mut self, _token: snow_core::cancellation::CancellationToken) {}
     fn set_cursor_visible(&mut self, _visible: bool) -> CaptureResult<()> {
         Ok(())
     }

@@ -73,6 +73,14 @@ PhysicalCursorAccess nativeAccess() {
             const qreal tolerance = .51 / (*display)->devicePixelRatio();
             return qAbs(actual.x - desktop.x()) < tolerance &&
                    qAbs(actual.y - desktop.y()) < tolerance;
+        },
+        []() -> std::optional<QPointF> {
+            CGEventRef event = CGEventCreate(nullptr);
+            if (!event)
+                return std::nullopt;
+            const CGPoint point = CGEventGetLocation(event);
+            CFRelease(event);
+            return QPointF(point.x, point.y);
         }};
 #else
     return {};
@@ -124,6 +132,10 @@ std::optional<QPoint> PhysicalCursor::position() const {
         return std::nullopt;
     }
     return m_access.readPosition();
+}
+
+std::optional<QPointF> PhysicalCursor::logicalPosition() const {
+    return m_access.readLogicalPosition ? m_access.readLogicalPosition() : std::nullopt;
 }
 
 PhysicalCursorMoveResult PhysicalCursor::moveOnePixel(PhysicalCursorDirection direction) const {

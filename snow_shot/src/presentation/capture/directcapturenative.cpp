@@ -1,7 +1,9 @@
 #include "directcapturenative.h"
 #include "captureframeimage.h"
+#include "captureframegeometry.h"
 
 #include <memory>
+#include <QCoreApplication>
 #include <utility>
 
 namespace snow_shot::presentation {
@@ -57,11 +59,29 @@ DirectCaptureFrame captureDirectTarget(const DirectCaptureRequest& request) {
             capture::FrameAlphaMode::Opaque);
         display.physicalBounds =
             QRect(info.x, info.y, static_cast<int>(info.width), static_cast<int>(info.height));
+#ifdef Q_OS_MACOS
+        SnowCaptureFrameGeometry geometry{};
+        geometry.version = SNOW_CAPTURE_FRAME_GEOMETRY_VERSION;
+        geometry.struct_size = sizeof(geometry);
+        if (!snow_capture_screenshot_result_display_geometry(snapshot.get(), index, &geometry)) {
+            result.error = nativeError();
+            break;
+        }
+        const auto logicalBounds = capture::logicalFrameRect(geometry);
+        if (!logicalBounds) {
+            result.error = QCoreApplication::translate("DirectCaptureController",
+                                                       "The captured display geometry is invalid");
+            break;
+        }
+        display.logicalBounds = *logicalBounds;
+        display.nativeDisplayId = geometry.display_id;
+#endif
         display.stableId = QString::fromUtf8(info.stable_id);
         display.name = QString::fromUtf8(info.name);
         if (request.target == DirectCaptureTarget::CurrentMonitor &&
             display.name == request.monitorName) {
             result.image = display.image;
+            result.logicalBounds = display.logicalBounds;
             result.physicalBounds = display.physicalBounds;
             result.identity = display.stableId;
             result.backend = info.backend_kind;
@@ -86,9 +106,27 @@ DirectCaptureFrame captureDirectTarget(const DirectCaptureRequest& request) {
         result.image = capture::imageFromFrameLease(
             snow_capture_screenshot_result_focused_window_retain(snapshot.get()), info.rgba_bytes,
             info.rgba_len, info.width, info.height, info.stride_bytes, info.pixel_format,
-            capture::FrameAlphaMode::Preserve);
+            info.backend_kind == SNOW_CAPTURE_BACKEND_SCREEN_CAPTURE_KIT
+                ? capture::FrameAlphaMode::Premultiplied
+                : capture::FrameAlphaMode::Preserve);
         result.physicalBounds =
             QRect(info.x, info.y, static_cast<int>(info.width), static_cast<int>(info.height));
+#ifdef Q_OS_MACOS
+        SnowCaptureFrameGeometry geometry{};
+        geometry.version = SNOW_CAPTURE_FRAME_GEOMETRY_VERSION;
+        geometry.struct_size = sizeof(geometry);
+        if (!snow_capture_screenshot_result_focused_window_geometry(snapshot.get(), &geometry)) {
+            result.error = nativeError();
+            return result;
+        }
+        const auto logicalBounds = capture::logicalFrameRect(geometry);
+        if (!logicalBounds) {
+            result.error = QCoreApplication::translate("DirectCaptureController",
+                                                       "The captured window geometry is invalid");
+            return result;
+        }
+        result.logicalBounds = *logicalBounds;
+#endif
         result.identity = QStringLiteral("window:%1").arg(request.window);
         result.backend = info.backend_kind;
     }

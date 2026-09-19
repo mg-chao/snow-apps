@@ -132,10 +132,31 @@ if name == 'cmake' and '--preset' in sys.argv and os.environ.get('FAIL_CONFIGURE
         self.assertIn(['cmake', '--build', '--preset', 'build-snow-shot-macos-arm64-debug',
                        '--target', 'snow_shot', '--clean-first', '--parallel'], calls)
 
+    def test_launch_can_cache_a_persistent_codesign_identity(self):
+        app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/snow_shot.app'
+        binary = app / 'Contents/MacOS/snow_shot'
+        binary.parent.mkdir(parents=True)
+        binary.touch()
+        binary.chmod(0o755)
+        deployed = app.parent.parent / 'run/snow_shot.app'
+        deployed.mkdir(parents=True)
+
+        identity = 'Snow Shot Development (Local)'
+        calls = self.run_script('run-snow-shot.sh', '--codesign-identity', identity)
+        configure = next(c for c in calls if c[0] == 'cmake' and '--preset' in c)
+        self.assertIn('-DSNOW_MACOS_CODESIGN_IDENTITY=' + identity, configure)
+        self.assertIn(['cmake', '--build', '--preset', 'build-snow-shot-macos-arm64-debug',
+                       '--target', 'snow_shot', '--parallel'], calls)
+
     def test_no_build_requires_deployment_and_rejects_clean(self):
-        for args in (('--no-build',), ('--no-build', '--clean')):
+        for args in (('--no-build',), ('--no-build', '--clean'),
+                     ('--no-build', '--codesign-identity', 'Development')):
             calls = self.run_script('run-snow-shot.sh', *args, success=False)
             self.assertFalse(any(c[0] in ('cmake', 'open') for c in calls))
+
+    def test_codesign_identity_requires_a_value(self):
+        calls = self.run_script('run-snow-shot.sh', '--codesign-identity', success=False)
+        self.assertFalse(any(c[0] in ('cmake', 'open') for c in calls))
 
     def test_deployment_uses_the_matching_vcpkg_library_configuration(self):
         deployment = (ROOT / 'cmake/DeploySnowShotMacOS.cmake.in').read_text()

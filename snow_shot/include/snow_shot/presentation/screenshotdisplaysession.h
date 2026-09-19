@@ -17,6 +17,23 @@ class ScreenshotDisplaySession final {
   public:
     void clear() {
         m_slots.clear();
+        m_sources.clear();
+    }
+
+    // Restored screenshot sources are independent of the currently attached displays.
+    void setImageSources(QVector<CapturedDisplayModel> sources) {
+        m_sources = std::move(sources);
+    }
+    [[nodiscard]] bool hasImageSources() const {
+        return !m_sources.isEmpty();
+    }
+    template <typename Visitor> void forEachImageSource(Visitor visit) const {
+        if (m_sources.isEmpty()) {
+            forEachActiveDisplay(visit);
+            return;
+        }
+        for (qsizetype i = 0; i < m_sources.size(); ++i)
+            visit(i, m_sources[i]);
     }
 
     void reserve(qsizetype size) {
@@ -198,6 +215,7 @@ class ScreenshotDisplaySession final {
 
   private:
     QVector<ScreenshotDisplaySlot> m_slots;
+    QVector<CapturedDisplayModel> m_sources;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTDISPLAYSESSION_H

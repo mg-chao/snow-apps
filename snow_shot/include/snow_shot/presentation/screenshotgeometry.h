@@ -11,9 +11,23 @@
 #include <QSize>
 #include <QtGlobal>
 #include <QVector>
+#include <QTransform>
 
 class QScreen;
 class ScreenshotDisplaySession;
+
+struct ScreenshotSelectionRenderSpec {
+    QRect canvasRect;
+    QSize pixelSize;
+    qreal scale = 1.0;
+    QTransform canvasToImage;
+    [[nodiscard]] bool isValid() const {
+        return !pixelSize.isEmpty();
+    }
+};
+
+[[nodiscard]] ScreenshotSelectionRenderSpec
+screenshotSelectionRenderSpec(const ScreenshotDisplaySession& displays, const QRect& selection);
 
 struct ScreenshotHalfOpenRect {
     double left = 0.0;
@@ -112,6 +126,11 @@ class ScreenshotGeometryMapper final {
     [[nodiscard]] const CapturedDisplayModel*
     displayForPhysicalPoint(const ScreenshotDisplaySession& displaySession,
                             const QPointF& point) const;
+    [[nodiscard]] const CapturedDisplayModel*
+    displayForLogicalPoint(const ScreenshotDisplaySession& displaySession,
+                           const QPointF& point) const;
+    [[nodiscard]] QPointF canvasPositionForPhysicalPoint(const CapturedDisplayModel& display,
+                                                         const QPointF& point) const;
     [[nodiscard]] const CapturedDisplayModel*
     displayForCanvasPoint(const ScreenshotDisplaySession& displaySession,
                           const QPointF& point) const;

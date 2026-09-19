@@ -259,10 +259,11 @@ adqt::widgets::AdSelect::Option option(const QString& value, const QString& labe
 ScreenshotSelectionResizeModalContent::ScreenshotSelectionResizeModalContent(
     const ScreenshotSelectionParams& currentParams, const QRect& selectionBounds,
     bool hasPreviousParams, const ScreenshotSelectionParams& previousParams,
-    const QVector<ScreenshotSelectionPreset>& presets, QWidget* parent)
-    : QWidget(parent), m_selectionBounds(selectionBounds.isValid() && !selectionBounds.isEmpty()
-                                             ? selectionBounds
-                                             : QRect(0, 0, 1, 1)),
+    const QVector<ScreenshotSelectionPreset>& presets, QWidget* parent, bool canvasUsesPoints)
+    : QWidget(parent), m_canvasUsesPoints(canvasUsesPoints),
+      m_selectionBounds(selectionBounds.isValid() && !selectionBounds.isEmpty()
+                            ? selectionBounds
+                            : QRect(0, 0, 1, 1)),
       m_currentParams(clampScreenshotSelectionParams(currentParams, m_selectionBounds)),
       m_hasPreviousParams(hasPreviousParams),
       m_previousParams(clampScreenshotSelectionParams(previousParams, m_selectionBounds)),
@@ -436,7 +437,8 @@ QWidget* ScreenshotSelectionResizeModalContent::createNormalPage() {
     m_widthInput = createIntegerInput(1, m_selectionBounds.width());
     m_heightInput = createIntegerInput(1, m_selectionBounds.height());
     adqt::widgets::AdFormItem* widthItem =
-        addNormalField(tr("Width"), m_widthInput, QString::fromLatin1(kFieldWidth));
+        addNormalField(m_canvasUsesPoints ? tr("Width (points)") : tr("Width"), m_widthInput,
+                       QString::fromLatin1(kFieldWidth));
     widthItem->setFixedWidth(kDimensionFieldWidth);
 
     auto* aspectRatioLockControl = new QWidget(m_normalForm);
@@ -457,7 +459,8 @@ QWidget* ScreenshotSelectionResizeModalContent::createNormalPage() {
     aspectRatioLockItem->setFixedWidth(kAspectRatioLockButtonSize);
 
     adqt::widgets::AdFormItem* heightItem =
-        addNormalField(tr("Height"), m_heightInput, QString::fromLatin1(kFieldHeight));
+        addNormalField(m_canvasUsesPoints ? tr("Height (points)") : tr("Height"), m_heightInput,
+                       QString::fromLatin1(kFieldHeight));
     heightItem->setFixedWidth(kDimensionFieldWidth);
 
     m_radiusInput = createIntegerInput(0, kScreenshotSelectionCornerRadiusMax);

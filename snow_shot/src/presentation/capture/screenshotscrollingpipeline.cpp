@@ -511,6 +511,16 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
         const auto trace = source.trace;
         SNOW_SCROLL_TRACE(trace, trace->record(scrolling_perf::Stage::SourceQueueWait,
                                                scrolling_perf::now() - trace->publishedAt));
+#ifdef Q_OS_MACOS
+        // The selected backing scale is fixed for the entire stitching session.
+        // Never silently discard frames after a native display reconfiguration.
+        if (!source.image.isNull() && source.image.size() != m_viewport) {
+            result.fatalError = true;
+            result.errorMessage =
+                QStringLiteral("scrolling viewport changed after display reconfiguration");
+            return;
+        }
+#endif
         const auto expected = static_cast<std::size_t>(m_viewport.width()) *
                               static_cast<std::size_t>(m_viewport.height()) * 4U;
         const bool valid = !source.image.isNull() && source.image.size() == m_viewport &&

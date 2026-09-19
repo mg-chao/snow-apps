@@ -44,7 +44,7 @@ bool hasSamePixels(const QImage& actual, const QImage& expected) {
 
 class ExportFixture final {
   public:
-    ExportFixture()
+    explicit ExportFixture(bool points = false)
         : m_runtime(
               SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasStyleDefaults()}) {
         CapturedDisplayModel display;
@@ -57,6 +57,12 @@ class ExportFixture final {
         display.image = patternedImage(display.physicalRect.size(), 3);
         display.screen = QGuiApplication::primaryScreen();
         display.active = true;
+        if (points) {
+            display.canvasUsesPoints = true;
+            display.capturedLogicalRect = QRect(0, 0, 40, 30);
+            display.imageSourceCanvasRect = display.capturedLogicalRect;
+            display.backingScale = 2;
+        }
         m_displays.appendDisplay(std::move(display));
         m_geometry.rebuild(m_displays);
 
@@ -339,10 +345,62 @@ void pinnedSelectionMaterializesCompositedImage() {
                 materialized->resultStyle.shadowWidth == style.shadowWidth,
             "pinned selection request lost its result style metadata");
 }
+void pointSelectionRetainsBackingPixelsAndScalesEffects() {
+    ExportFixture fixture(true);
+    const QRect selection(0, 0, 40, 30);
+    const auto copied = waitForResult(
+        [&](QObject* receiver, auto callback) {
+            return fixture.service().requestSelectionClipboard(selection, {}, receiver,
+                                                               std::move(callback));
+        },
+        [](ScreenshotSelectionClipboardResult result) {
+            require(QImage::fromData(result.payload.pngBytes()).size() == QSize(80, 60),
+                    "PNG lost backing resolution");
+            return result.image;
+        });
+    require(hasSamePixels(copied, fixture.displaySnapshot()),
+            "point-space clipboard resampled native Retina pixels");
+    SnowCanvasWidget canvas(fixture.runtime());
+    canvas.resize(40, 30);
+    canvas.show();
+    QCoreApplication::processEvents();
+    require(canvas.setViewportCamera(20, 15, 1), "point annotation viewport");
+    require(canvas.setCanvasTool(SnowCanvasTool::Shape), "point annotation tool");
+    QMouseEvent press(QEvent::MouseButtonPress, QPointF(3, 3), canvas.mapToGlobal(QPoint(3, 3)),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QMouseEvent move(QEvent::MouseMove, QPointF(12, 12), canvas.mapToGlobal(QPoint(12, 12)),
+                     Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QMouseEvent release(QEvent::MouseButtonRelease, QPointF(12, 12),
+                        canvas.mapToGlobal(QPoint(12, 12)), Qt::LeftButton, Qt::NoButton,
+                        Qt::NoModifier);
+    QCoreApplication::sendEvent(&canvas, &press);
+    QCoreApplication::sendEvent(&canvas, &move);
+    QCoreApplication::sendEvent(&canvas, &release);
+    const auto annotated = waitForResult(
+        [&](QObject* receiver, auto callback) {
+            return fixture.service().requestSelectionResult(selection, {}, receiver,
+                                                            std::move(callback));
+        },
+        [](QImage image) { return image; });
+    require(annotated.size() == copied.size() && !hasSamePixels(annotated, copied),
+            "annotation not rendered");
+    require(hasSamePixels(annotated.copy(60, 40, 16, 16), copied.copy(60, 40, 16, 16)),
+            "annotations downsampled the screenshot background");
+    const auto styled = waitForResult(
+        [&](QObject* receiver, auto callback) {
+            return fixture.service().requestSelectionResult(selection, {3, 2, Qt::black}, receiver,
+                                                            std::move(callback));
+        },
+        [](QImage image) { return image; });
+    require(
+        hasSamePixels(styled, ScreenshotResultCompositor::compose(annotated, {6, 4, Qt::black})),
+        "effects did not follow output scale");
+}
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    pointSelectionRetainsBackingPixelsAndScalesEffects();
     styledClipboardResultRetainsPngTransparency();
     selectionClipboardPreservesEffects();
     pinnedSelectionMaterializesCompositedImage();

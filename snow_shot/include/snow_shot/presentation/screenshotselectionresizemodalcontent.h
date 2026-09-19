@@ -32,7 +32,7 @@ class ScreenshotSelectionResizeModalContent final : public QWidget {
                                           const QRect& selectionBounds, bool hasPreviousParams,
                                           const ScreenshotSelectionParams& previousParams,
                                           const QVector<ScreenshotSelectionPreset>& presets,
-                                          QWidget* parent = nullptr);
+                                          QWidget* parent = nullptr, bool canvasUsesPoints = false);
 
     [[nodiscard]] CommitResult commit(ScreenshotSelectionParams* params,
                                       QVector<ScreenshotSelectionPreset>* presets,
@@ -70,6 +70,7 @@ class ScreenshotSelectionResizeModalContent final : public QWidget {
     void syncWidthFromHeight();
     bool validateNormalFields();
 
+    bool m_canvasUsesPoints = false;
     QRect m_selectionBounds;
     ScreenshotSelectionParams m_currentParams;
     bool m_hasPreviousParams = false;

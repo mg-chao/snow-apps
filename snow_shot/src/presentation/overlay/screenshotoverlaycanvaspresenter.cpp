@@ -7,6 +7,7 @@
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 
 #include <QCursor>
+#include "snow_shot/presentation/screenshotimagesource.h"
 #include <QGuiApplication>
 #include <QScreen>
 #include <QTimer>
@@ -79,8 +80,20 @@ void applyDisplayModelsToDisplaySession(
         }
 
         if (applyCapturedImage) {
-            overlay->setScreenshotImage(
-                display.image, ScreenshotGeometryMapper::displayImageSourceCanvasRect(display));
+            if (displaySession.hasImageSources()) {
+                QList<ScreenshotImageLayer> layers;
+                displaySession.forEachImageSource(
+                    [&](qsizetype, const CapturedDisplayModel& source) {
+                        const QRectF rect =
+                            ScreenshotGeometryMapper::displayImageSourceCanvasRect(source);
+                        layers.push_back({source.image, rect, rect});
+                    });
+                overlay->setScreenshotImageSource(
+                    ScreenshotImageSource::fromLayers(std::move(layers)));
+            } else {
+                overlay->setScreenshotImage(
+                    display.image, ScreenshotGeometryMapper::displayImageSourceCanvasRect(display));
+            }
         }
         canvas->setViewportCamera(viewport.canvasCenter.x(), viewport.canvasCenter.y(),
                                   viewport.canvasToLogicalScale);

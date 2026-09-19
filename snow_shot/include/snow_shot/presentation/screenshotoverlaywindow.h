@@ -27,6 +27,8 @@ class ScreenshotOverlayEventSink;
 class ScreenshotOverlayFramePresenter;
 class ScreenshotScrollingThumbnailWidget;
 
+struct ScreenshotImageSource;
+
 class ScreenshotOverlayWindow final : public QWidget {
     Q_OBJECT
 
@@ -37,6 +39,7 @@ class ScreenshotOverlayWindow final : public QWidget {
 
     SnowCanvasWidget* canvas() const;
     void setScreenshotImage(QImage image, const QRectF& canvasRect);
+    void setScreenshotImageSource(ScreenshotImageSource source);
     void setScreenshotMaskVisible(bool visible);
     void setScreenshotMaskColor(const QColor& color);
     void setScreenshotGuideLines(const QPointF& cursorPosition, const QColor& cursorColor,

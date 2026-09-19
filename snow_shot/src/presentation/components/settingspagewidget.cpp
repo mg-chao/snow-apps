@@ -194,8 +194,7 @@ class SettingsPageWidget::Impl {
         if (page->id == QStringLiteral("global-mouse") ||
             page->id == QStringLiteral("global-hotkeys")) {
             const QMargins margins = contentLayout->contentsMargins();
-            contentLayout->setContentsMargins(margins.left(), metric.paddingLG, margins.right(),
-                                              margins.bottom());
+            contentTopMarginWithoutPermissionBanner = margins.top();
             permissionBanner = new adqt::widgets::AdAlert(contentWidget);
             permissionBanner->setObjectName(QStringLiteral("appPermissionsAlert"));
             permissionBanner->setSeverity(adqt::widgets::AdAlert::Severity::Warning);
@@ -1385,6 +1384,12 @@ class SettingsPageWidget::Impl {
         if (!permissionBanner)
             return;
         const auto missing = relevantMissingPermissions();
+        const bool bannerVisible = !missing.isEmpty();
+        const QMargins margins = contentLayout->contentsMargins();
+        contentLayout->setContentsMargins(margins.left(),
+                                          bannerVisible ? colorScheme.metricAlias.paddingLG
+                                                        : contentTopMarginWithoutPermissionBanner,
+                                          margins.right(), margins.bottom());
         QStringList names;
         for (auto permission : missing)
             names.append(snow_shot::presentation::appPermissionName(permission));
@@ -1405,7 +1410,7 @@ class SettingsPageWidget::Impl {
                 q.tr("To use %1, review access to: %2.")
                     .arg(actions.join(q.tr(", ")), names.join(q.tr(", "))));
         }
-        permissionBanner->setVisible(!missing.isEmpty());
+        permissionBanner->setVisible(bannerVisible);
     }
 
     void syncValues() {
@@ -1707,6 +1712,7 @@ class SettingsPageWidget::Impl {
     bool synchronizingValues = false;
     bool visibleSectionSyncPending = false;
     QPointer<adqt::widgets::AdAlert> permissionBanner;
+    int contentTopMarginWithoutPermissionBanner = 0;
     QPointer<adqt::widgets::AdButton> permissionButton;
 };
 

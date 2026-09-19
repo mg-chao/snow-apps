@@ -988,6 +988,43 @@ impl CaptureSession {
         Ok(frame)
     }
 
+    /// Snapshot policy with native cursor embedding and per-request cancellation.
+    /// Existing Windows capture metadata remains available for explicit compositing.
+    pub fn capture_snapshot(
+        &mut self,
+        include_cursor: bool,
+        cancellation: snow_core::cancellation::CancellationToken,
+    ) -> CaptureResult<Frame> {
+        if cancellation.is_canceled() {
+            self.release_idle_resources();
+            return Err(CaptureError::Canceled);
+        }
+        if let Some(native) = &mut self.native {
+            native.set_cancellation(cancellation.clone());
+        }
+        let result = if include_cursor {
+            self.capture_with_cursor(None).map(|(frame, _)| frame)
+        } else {
+            self.capture_frame(None)
+        };
+        // Native snapshots are already prepared. Re-enumerating after releasing
+        // them would delay cancellation and could reject a valid captured frame
+        // after its target moves or disappears.
+        let reset = if self.native.is_some() {
+            self.release_idle_resources();
+            Ok(())
+        } else {
+            self.reset_to_prepared()
+        };
+        if cancellation.is_canceled() {
+            return Err(CaptureError::Canceled);
+        }
+        match (result, reset) {
+            (Ok(frame), Ok(())) => Ok(frame),
+            (Err(error), _) | (_, Err(error)) => Err(error),
+        }
+    }
+
     /// Capture one frame, release all snapshot capture-time resources, and
     /// restore the lightweight prepared state before returning. Region/
     /// scrolling and recording callers that need an operation-scoped session
@@ -2375,6 +2412,32 @@ mod tests {
             virtual_width: width,
             virtual_height: height,
         }
+    }
+
+    #[test]
+    fn snapshot_cancellation_and_failure_release_resources_and_allow_next_request()
+    -> CaptureResult<()> {
+        let state = Arc::new(Mutex::new(LifecycleState::default()));
+        let mut session = lifecycle_session(Arc::clone(&state))?;
+        let canceled = snow_core::cancellation::CancellationToken::default();
+        canceled.cancel();
+        assert!(matches!(
+            session.capture_snapshot(false, canceled),
+            Err(CaptureError::Canceled)
+        ));
+        assert_eq!(state.lock().unwrap().capture_calls, 0);
+        for include_cursor in [false, true] {
+            let frame = session.capture_snapshot(include_cursor, Default::default())?;
+            assert_eq!(frame.dimensions(), (4, 4));
+            assert_eq!(session.active_capture_access_count(), 0);
+            assert!(session.monitor_output_cache_is_empty());
+        }
+        state.lock().unwrap().fail_capture = true;
+        assert!(session.capture_snapshot(false, Default::default()).is_err());
+        assert_eq!(session.active_capture_access_count(), 0);
+        state.lock().unwrap().fail_capture = false;
+        assert!(session.capture_snapshot(false, Default::default()).is_ok());
+        Ok(())
     }
 
     #[test]

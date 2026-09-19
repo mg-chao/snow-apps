@@ -71,6 +71,15 @@ impl MonitorId {
         self.handle
     }
 
+    /// Native Quartz display identity; absent on other platforms.
+    pub fn macos_display_id(&self) -> Option<u32> {
+        if cfg!(target_os = "macos") {
+            u32::try_from(self.handle).ok()
+        } else {
+            None
+        }
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }

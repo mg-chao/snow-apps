@@ -211,7 +211,7 @@ void builtInCatalogIsCompleteAndValid() {
     }
 #ifdef Q_OS_MACOS
     require(sectionCount == 40, "macOS adds one permissions section");
-    require(itemCount == 168, "macOS adds four permission rows and omits Windows-only choices");
+    require(itemCount == 166, "macOS adds four permission rows and omits Windows-only choices");
 #else
     require(sectionCount == 39, "catalog must contain thirty-nine sections");
     require(itemCount == 166, "catalog must contain one hundred sixty-six items");
@@ -266,11 +266,15 @@ void builtInCatalogIsCompleteAndValid() {
     const auto* apiMode =
         catalog.item({QStringLiteral("system-settings"), QStringLiteral("screenshot-capture"),
                       QStringLiteral("screenshot.api-mode")});
+#ifdef Q_OS_MACOS
+    require(apiMode == nullptr, "macOS must omit Windows-only capture backends");
+#else
     require(apiMode != nullptr &&
                 apiMode->configurationKey == QStringLiteral("screenshot/api_mode") &&
                 std::get<settings::SettingsSelectDefinition>(apiMode->payload).binding ==
                     settings::SettingsSelectBinding::ScreenshotApiMode,
             "capture API and color restoration must share the system screenshot section");
+#endif
     const auto* windowElementApi =
         catalog.item({QStringLiteral("system-settings"), QStringLiteral("screenshot-capture"),
                       QStringLiteral("screenshot.window-element-api")});
@@ -298,24 +302,28 @@ void builtInCatalogIsCompleteAndValid() {
     const auto* colorRestoration =
         catalog.item({QStringLiteral("system-settings"), QStringLiteral("screenshot-capture"),
                       QStringLiteral("screenshot.restore-original-screen-colors")});
+#ifdef Q_OS_MACOS
+    require(colorRestoration == nullptr, "macOS must omit Windows color restoration");
+#else
     require(colorRestoration != nullptr &&
                 colorRestoration->configurationKey ==
                     QStringLiteral("screenshot/restore_original_screen_colors") &&
                 std::get<settings::SettingsSwitchDefinition>(colorRestoration->payload).binding ==
                     settings::SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors,
             "screen color restoration must be a system screenshot switch");
+#endif
     const auto* captureCursor =
         catalog.item({QStringLiteral("system-settings"), QStringLiteral("screenshot-capture"),
                       QStringLiteral("screenshot.capture-cursor")});
-    const qsizetype elementApiCount = windowElementApi != nullptr ? 1 : 0;
+    const qsizetype precedingCount = (windowElementApi != nullptr ? 1 : 0) +
+                                     (apiMode != nullptr ? 1 : 0) +
+                                     (colorRestoration != nullptr ? 1 : 0);
     const auto* screenshotCaptureSection =
         catalog.section(QStringLiteral("system-settings"), QStringLiteral("screenshot-capture"));
     require(
         captureCursor != nullptr && screenshotCaptureSection != nullptr &&
-            screenshotCaptureSection->items.size() == 4 + elementApiCount &&
-            screenshotCaptureSection->items.at(1 + elementApiCount).id ==
-                QStringLiteral("screenshot.restore-original-screen-colors") &&
-            screenshotCaptureSection->items.at(2 + elementApiCount).id ==
+            screenshotCaptureSection->items.size() == 2 + precedingCount &&
+            screenshotCaptureSection->items.at(precedingCount).id ==
                 QStringLiteral("screenshot.capture-cursor") &&
             captureCursor->title.translated() == QStringLiteral("Capture cursor") &&
             captureCursor->description.translated() ==
@@ -330,7 +338,7 @@ void builtInCatalogIsCompleteAndValid() {
         catalog.item({QStringLiteral("system-settings"), QStringLiteral("screenshot-capture"),
                       QStringLiteral("screenshot.capture-ui-in-scrolling-screenshot")});
     require(scrollingUiCapture != nullptr &&
-                screenshotCaptureSection->items.at(3 + elementApiCount).id ==
+                screenshotCaptureSection->items.at(1 + precedingCount).id ==
                     QStringLiteral("screenshot.capture-ui-in-scrolling-screenshot") &&
                 scrollingUiCapture->title.translated() ==
                     QStringLiteral("Capture UI during scrolling screenshots") &&

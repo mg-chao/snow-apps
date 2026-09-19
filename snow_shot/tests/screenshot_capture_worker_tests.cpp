@@ -103,25 +103,26 @@ void requireBackend(ScreenshotCaptureWorker& worker, uint8_t expected) {
     require(!result.displays.front().image.isNull(), "capture did not retain the frame");
 }
 
+uint8_t backendFor(const char* mode) {
+    namespace policy = snow_shot::presentation::capture;
+    auto requested = policy::screenshotApiModeFromValue(mode);
+    if (requested == policy::ScreenshotApiMode::Auto) {
+        requested = policy::resolveAutoScreenshotApiMode();
+    }
+    return policy::nativeBackendForNormalScreenshot(requested);
+}
+
 void changedModeReplacesPrewarmedSession() {
     setMode("dxgi");
     ScreenshotCaptureWorker worker;
     worker.prepare(1, {});
-    require(preparedBackend == SNOW_CAPTURE_BACKEND_DXGI, "DXGI session was not prewarmed");
+    require(preparedBackend == backendFor("dxgi"), "DXGI session was not prewarmed");
     setMode("gdi");
-    requireBackend(worker, SNOW_CAPTURE_BACKEND_GDI);
+    requireBackend(worker, backendFor("gdi"));
 }
 
 void allModeTransitionsApplyWithoutRestart() {
-    namespace policy = snow_shot::presentation::capture;
     const std::array<const char*, 4> modes{"dxgi", "wgc", "gdi", "auto"};
-    const auto backendFor = [](const char* mode) {
-        auto requested = policy::screenshotApiModeFromValue(mode);
-        if (requested == policy::ScreenshotApiMode::Auto) {
-            requested = policy::resolveAutoScreenshotApiMode();
-        }
-        return policy::nativeBackendForNormalScreenshot(requested);
-    };
     for (const auto* before : modes) {
         for (const auto* after : modes) {
             setMode(before);
@@ -177,19 +178,21 @@ void preparationAndLayoutRefreshUseCurrentMode() {
     worker.prepare(1, {});
     setMode("gdi");
     worker.prepare(2, {});
-    require(preparedBackend == SNOW_CAPTURE_BACKEND_GDI,
+    require(preparedBackend == backendFor("gdi"),
             "preparation reused a session with an obsolete backend");
     setMode("wgc");
     worker.refreshLayout(3, {});
-    require(refreshedBackend == SNOW_CAPTURE_BACKEND_WGC,
+    require(refreshedBackend == backendFor("wgc"),
             "layout refresh reused a session with an obsolete backend");
-    requireBackend(worker, SNOW_CAPTURE_BACKEND_WGC);
+    requireBackend(worker, backendFor("wgc"));
 }
 
 void failedReplacementDoesNotCaptureWithOldBackend() {
     setMode("dxgi");
     ScreenshotCaptureWorker worker;
-    requireBackend(worker, SNOW_CAPTURE_BACKEND_DXGI);
+#ifndef Q_OS_MACOS
+    requireBackend(worker, backendFor("dxgi"));
+#endif
     setMode("gdi");
     const int previousCaptured = captured;
     failCreation = true;
@@ -198,7 +201,7 @@ void failedReplacementDoesNotCaptureWithOldBackend() {
     require(!failed.succeeded && !failed.errorMessage.isEmpty() && failed.displays.isEmpty(),
             "failed backend replacement was not reported");
     require(captured == previousCaptured, "failed replacement captured with the stale backend");
-    requireBackend(worker, SNOW_CAPTURE_BACKEND_GDI);
+    requireBackend(worker, backendFor("gdi"));
 }
 
 void modeChangeAfterCaptureFailurePreservesRetainedFrame() {
@@ -210,7 +213,7 @@ void modeChangeAfterCaptureFailurePreservesRetainedFrame() {
     require(!capture(worker).succeeded, "native capture failure was not reported");
     failCapture = false;
     setMode("gdi");
-    requireBackend(worker, SNOW_CAPTURE_BACKEND_GDI);
+    requireBackend(worker, backendFor("gdi"));
     require(retained.displays.front().image.constBits()[0] == 10,
             "replacing a session invalidated an already delivered image");
 }
@@ -397,6 +400,23 @@ uint8_t snow_capture_screenshot_result_display_info(const SnowCaptureScreenshotR
     info->backend_kind = result->backend;
     info->pixel_format = result->pixelFormat;
     return 1;
+}
+
+uint8_t snow_capture_screenshot_result_display_geometry(const SnowCaptureScreenshotResult*,
+                                                        size_t index,
+                                                        SnowCaptureFrameGeometry* geometry) {
+    geometry->coordinate_space = 1;
+    geometry->display_id = static_cast<uint32_t>(index + 1);
+    geometry->x = 0;
+    geometry->y = 0;
+    geometry->width = 1;
+    geometry->height = 1;
+    geometry->backing_scale = 1;
+    return 1;
+}
+uint8_t snow_capture_screenshot_result_focused_window_geometry(const SnowCaptureScreenshotResult*,
+                                                               SnowCaptureFrameGeometry* geometry) {
+    return snow_capture_screenshot_result_display_geometry(nullptr, 0, geometry);
 }
 
 SnowCaptureFrameLease*

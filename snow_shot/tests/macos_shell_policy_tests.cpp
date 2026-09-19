@@ -73,10 +73,9 @@ void macosRouterStopsDispatchAndNotifiesOnce() {
         lastNotice = feature;
     });
 
-    require(!router.dispatch(FeatureFamily::Screenshot, [&]() { ++screenshotDispatches; }),
-            "macOS screenshot routing must be rejected");
-    require(lastNotice == FeatureFamily::Screenshot,
-            "the router must identify an unavailable screenshot operation");
+    require(router.dispatch(FeatureFamily::Screenshot, [&]() { ++screenshotDispatches; }),
+            "macOS screenshot routing must reach capture");
+    require(!lastNotice.has_value(), "supported screenshots must not show an unavailable notice");
     require(!router.dispatch(FeatureFamily::PinToScreen, [&]() { ++pinDispatches; }),
             "macOS pin routing must be rejected");
     require(lastNotice == FeatureFamily::PinToScreen,
@@ -85,13 +84,13 @@ void macosRouterStopsDispatchAndNotifiesOnce() {
             "macOS recording routing must be rejected");
     require(lastNotice == FeatureFamily::ScreenRecording,
             "the router must identify an unavailable recording operation");
-    require(screenshotDispatches == 0 && pinDispatches == 0 && recordingDispatches == 0,
+    require(screenshotDispatches == 1 && pinDispatches == 0 && recordingDispatches == 0,
             "unavailable macOS actions must never reach feature handlers");
-    require(notices == 3, "each explicit unavailable action must emit one notice");
+    require(notices == 2, "each explicit unavailable action must emit one notice");
 
     require(!router.dispatch(
                 FeatureFamily::PinToScreen, [&]() { ++restorationDispatches; }, false) &&
-                restorationDispatches == 0 && notices == 3,
+                restorationDispatches == 0 && notices == 2,
             "silent startup restoration must not run or emit a notice");
 }
 
@@ -100,15 +99,15 @@ void macosRouterCancelsBlockedGestureOnce() {
     int cancellations = 0;
     int gestureDispatches = 0;
     const snow_shot::app::FeatureActionRouter router([&](FeatureFamily feature) {
-        require(feature == FeatureFamily::Screenshot,
+        require(feature == FeatureFamily::ScreenRecording,
                 "a screenshot gesture must report the screenshot family");
         ++notices;
     });
 
-    require(
-        !router.beginGesture(
-            FeatureFamily::Screenshot, [&]() { ++cancellations; }, [&]() { ++gestureDispatches; }),
-        "an unavailable global-mouse gesture must be rejected");
+    require(!router.beginGesture(
+                FeatureFamily::ScreenRecording, [&]() { ++cancellations; },
+                [&]() { ++gestureDispatches; }),
+            "an unavailable global-mouse gesture must be rejected");
     require(notices == 1, "a blocked gesture must emit exactly one notice at begin");
     require(cancellations == 1, "a blocked gesture must be cancelled exactly once");
     require(gestureDispatches == 0, "a blocked gesture must not reach capture handling");

@@ -1,14 +1,12 @@
 #![allow(clippy::missing_safety_doc)]
 
+mod frame_geometry;
+
 use snow_capture::exclusions::SnowCaptureExclusions;
 use std::cell::RefCell;
 use std::ffi::{CStr, CString, c_char};
 use std::ptr;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-    mpsc,
-};
+use std::sync::{Arc, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -21,6 +19,7 @@ use snow_capture::{
     WindowId,
     backend::{AutoBackendPolicy, CaptureBackendKind},
 };
+use snow_core::cancellation::CancellationToken;
 use snow_core::error::RecvTimeoutError;
 
 pub struct SnowCaptureDesktopSessionImpl {
@@ -63,7 +62,7 @@ pub struct SnowCaptureMonitorSessionConfig {
 }
 
 pub struct SnowCaptureCancellationTokenImpl {
-    canceled: Arc<AtomicBool>,
+    canceled: CancellationToken,
 }
 
 pub struct SnowCaptureScreenshotResultImpl {
@@ -341,7 +340,12 @@ struct SnapshotWindowFrame {
 
 enum WorkerCommand {
     Prepare(mpsc::Sender<Result<(), String>>),
-    Capture(mpsc::Sender<Result<Frame, String>>, ColorCorrection, bool),
+    Capture(
+        mpsc::Sender<Result<Frame, String>>,
+        ColorCorrection,
+        bool,
+        CancellationToken,
+    ),
     ResetToPrepared(mpsc::Sender<Result<(), String>>),
     ActiveCaptureAccessCount(mpsc::Sender<Result<usize, String>>),
     Stop,
@@ -661,11 +665,11 @@ impl MonitorWorker {
                             };
                             let _ = reply.send(result);
                         }
-                        WorkerCommand::Capture(reply, correction, include_cursor) => {
+                        WorkerCommand::Capture(reply, correction, include_cursor, cancellation) => {
                             let result = match session.as_mut() {
                                 Ok(session) => {
                                     session.set_windows_color_correction(correction);
-                                    match session.capture_once() {
+                                    match session.capture_snapshot(include_cursor, cancellation) {
                                         Ok(mut frame)
                                             if session.active_capture_access_count() == 0 =>
                                         {
@@ -735,10 +739,16 @@ impl MonitorWorker {
         &self,
         correction: ColorCorrection,
         include_cursor: bool,
+        cancellation: CancellationToken,
     ) -> Result<mpsc::Receiver<Result<Frame, String>>, String> {
         let (tx, rx) = mpsc::channel();
         self.tx
-            .send(WorkerCommand::Capture(tx, correction, include_cursor))
+            .send(WorkerCommand::Capture(
+                tx,
+                correction,
+                include_cursor,
+                cancellation,
+            ))
             .map_err(|_| "capture worker is not running".to_owned())?;
         Ok(rx)
     }
@@ -877,6 +887,7 @@ fn rebuild_workers(session: &mut SnowCaptureDesktopSessionImpl) -> Result<(), St
     reconcile_workers(session, entries)
 }
 
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn same_monitor_layout(left: &[MonitorEntry], right: &[MonitorEntry]) -> bool {
     left.len() == right.len()
         && left.iter().all(|candidate| {
@@ -895,11 +906,12 @@ fn capture_all_frames(
     session: &mut SnowCaptureDesktopSessionImpl,
     correction: ColorCorrection,
     include_cursor: bool,
+    cancellation: CancellationToken,
 ) -> Result<Vec<SnapshotFrame>, String> {
     let mut receivers = Vec::with_capacity(session.workers.len());
     let mut first_error = None;
     for worker in &session.workers {
-        match worker.request_capture(correction, include_cursor) {
+        match worker.request_capture(correction, include_cursor, cancellation.clone()) {
             Ok(receiver) => receivers.push((worker.entry.clone(), receiver)),
             Err(error) => {
                 if first_error.is_none() {
@@ -942,8 +954,16 @@ fn capture_all_frames_with_layout_retry(
     session: &mut SnowCaptureDesktopSessionImpl,
     correction: ColorCorrection,
     include_cursor: bool,
+    cancellation: CancellationToken,
 ) -> Result<Vec<SnapshotFrame>, String> {
-    match capture_all_frames(session, correction, include_cursor) {
+    // ScreenCaptureKit refreshes its plan per snapshot. Never retry a permission
+    // failure or cancellation by re-enumerating the desktop.
+    #[cfg(target_os = "macos")]
+    {
+        capture_all_frames(session, correction, include_cursor, cancellation)
+    }
+    #[cfg(not(target_os = "macos"))]
+    match capture_all_frames(session, correction, include_cursor, cancellation.clone()) {
         Ok(frames) => Ok(frames),
         Err(first_error) => {
             if let Err(refresh_error) = session.system.refresh_display_configuration() {
@@ -968,9 +988,11 @@ fn capture_all_frames_with_layout_retry(
                     "{first_error}; layout refresh failed: {refresh_error}"
                 ));
             }
-            capture_all_frames(session, correction, include_cursor).map_err(|retry_error| {
-                format!("{first_error}; retry after layout refresh failed: {retry_error}")
-            })
+            capture_all_frames(session, correction, include_cursor, cancellation.clone()).map_err(
+                |retry_error| {
+                    format!("{first_error}; retry after layout refresh failed: {retry_error}")
+                },
+            )
         }
     }
 }
@@ -1165,6 +1187,7 @@ fn backend_kind_ptr(session: &SnowCaptureDesktopSessionImpl) -> *const c_char {
         "dxgi" => c"dxgi".as_ptr(),
         "wgc" => c"wgc".as_ptr(),
         "gdi" => c"gdi".as_ptr(),
+        "sck" => c"sck".as_ptr(),
         _ => c"unknown".as_ptr(),
     }
 }
@@ -1188,6 +1211,7 @@ fn capture_window_snapshot(
     hwnd: isize,
     options: CaptureOptions,
     include_cursor: bool,
+    cancellation: CancellationToken,
 ) -> Result<SnapshotWindowFrame, String> {
     let system = CaptureSystem::builder()
         .with_backend_kind(CaptureBackendKind::Auto)
@@ -1196,14 +1220,9 @@ fn capture_window_snapshot(
     let mut session = system
         .open_session(CaptureTarget::Window(native_window_id(hwnd)?), options)
         .map_err(|error| error.to_string())?;
-    let capture_result = session.capture_once();
-    let mut frame = match capture_result {
-        Ok(frame) => frame,
-        Err(error) => {
-            let _ = session.reset_to_prepared();
-            return Err(error.to_string());
-        }
-    };
+    let mut frame = session
+        .capture_snapshot(include_cursor, cancellation)
+        .map_err(|error| error.to_string())?;
     if session.active_capture_access_count() != 0 {
         let _ = session.reset_to_prepared();
         return Err("capture access remained active after focused-window capture".to_owned());
@@ -1211,12 +1230,20 @@ fn capture_window_snapshot(
     if include_cursor {
         frame.composite_attached_cursor();
     }
-    let target = session
-        .target_info_for_backend(frame.metadata().backend_kind())
-        .map_err(|error| error.to_string())?;
+    let (x, y) = if let Some(transform) = frame.metadata().capture_transform() {
+        (
+            transform.source.x.round() as i32,
+            transform.source.y.round() as i32,
+        )
+    } else {
+        let target = session
+            .target_info_for_backend(frame.metadata().backend_kind())
+            .map_err(|error| error.to_string())?;
+        (target.origin_x, target.origin_y)
+    };
     Ok(SnapshotWindowFrame {
-        x: target.origin_x,
-        y: target.origin_y,
+        x,
+        y,
         frame: Arc::new(frame),
     })
 }
@@ -1478,7 +1505,7 @@ pub extern "C" fn snow_capture_cancellation_token_create() -> *mut SnowCaptureCa
 {
     clear_last_error();
     Box::into_raw(Box::new(SnowCaptureCancellationTokenImpl {
-        canceled: Arc::new(AtomicBool::new(false)),
+        canceled: CancellationToken::default(),
     }))
 }
 
@@ -1487,7 +1514,7 @@ pub unsafe extern "C" fn snow_capture_cancellation_token_cancel(
     token: *mut SnowCaptureCancellationTokenImpl,
 ) {
     if !token.is_null() {
-        unsafe { &*token }.canceled.store(true, Ordering::Release);
+        unsafe { &*token }.canceled.cancel();
     }
 }
 
@@ -1521,14 +1548,21 @@ pub unsafe extern "C" fn snow_capture_desktop_session_capture(
     } else {
         Some(unsafe { &*request.cancellation_token }.canceled.clone())
     };
-    let is_canceled = || {
-        canceled
-            .as_ref()
-            .is_some_and(|state| state.load(Ordering::Acquire))
-    };
+    let is_canceled = || canceled.as_ref().is_some_and(|state| state.is_canceled());
     if is_canceled() {
         set_last_error("screenshot capture canceled");
         return ptr::null_mut();
+    }
+
+    if session.workers.is_empty() {
+        if let Err(error) = rebuild_workers(session) {
+            set_last_error(error);
+            return ptr::null_mut();
+        }
+        if session.workers.is_empty() {
+            set_last_error("no active displays are available");
+            return ptr::null_mut();
+        }
     }
 
     if !session.prepared && snow_capture_desktop_session_prepare(session as *mut _) == 0 {
@@ -1561,17 +1595,16 @@ pub unsafe extern "C" fn snow_capture_desktop_session_capture(
         match thread::Builder::new()
             .name("snow-capture-window-once".to_owned())
             .spawn(move || {
-                if canceled
-                    .as_ref()
-                    .is_some_and(|state| state.load(Ordering::Acquire))
-                {
+                if canceled.as_ref().is_some_and(|state| state.is_canceled()) {
                     return Err("screenshot capture canceled".to_owned());
                 }
-                let result = capture_window_snapshot(hwnd, options, include_cursor);
-                if canceled
-                    .as_ref()
-                    .is_some_and(|state| state.load(Ordering::Acquire))
-                {
+                let result = capture_window_snapshot(
+                    hwnd,
+                    options,
+                    include_cursor,
+                    canceled.clone().unwrap_or_default(),
+                );
+                if canceled.as_ref().is_some_and(|state| state.is_canceled()) {
                     return Err("screenshot capture canceled".to_owned());
                 }
                 result
@@ -1586,7 +1619,12 @@ pub unsafe extern "C" fn snow_capture_desktop_session_capture(
         None
     };
 
-    let frames_result = capture_all_frames_with_layout_retry(session, correction, include_cursor);
+    let frames_result = capture_all_frames_with_layout_retry(
+        session,
+        correction,
+        include_cursor,
+        canceled.clone().unwrap_or_default(),
+    );
     let focused_window_result = focused_window_worker.map(|worker| {
         worker
             .join()
@@ -3205,7 +3243,7 @@ mod tests {
             );
         });
         cancel.join().expect("cancel thread should complete");
-        assert!(state.load(Ordering::Acquire));
+        assert!(state.is_canceled());
         unsafe { snow_capture_cancellation_token_destroy(token) };
     }
 

@@ -1,3 +1,7 @@
+// Non-Windows hosts expose only the unsupported-platform protocol endpoint.
+// The Windows service implementation is retained here for shared protocol tests.
+#![cfg_attr(not(windows), allow(dead_code))]
+
 use crate::contract::{MAX_METADATA_BYTES, compare_versions, verify_release};
 use crate::error::{Result, UpdateError, io_error, require};
 use crate::fsutil;
@@ -1604,7 +1608,7 @@ pub async fn run_with_dependencies(
     {
         drop(options);
         drop(dependencies);
-        return run_unsupported_service().await;
+        run_unsupported_service().await
     }
 
     #[cfg(windows)]

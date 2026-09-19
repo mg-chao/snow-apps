@@ -6,7 +6,7 @@
 #include <limits>
 
 namespace snow_shot::presentation::capture {
-enum class FrameAlphaMode { Preserve, Opaque };
+enum class FrameAlphaMode { Preserve, Premultiplied, Opaque };
 
 inline void releaseFrameLease(void* lease) {
     snow_capture_frame_lease_release(static_cast<SnowCaptureFrameLease*>(lease));
@@ -74,8 +74,11 @@ inline QImage imageFromFrameLease(SnowCaptureFrameLease* lease, const std::uint8
     // in the format tag as well as the bytes, including during image conversion.
     const QImage::Format format =
         pixelFormat == SNOW_CAPTURE_PIXEL_FORMAT_BGRA8
-            ? (alphaMode == FrameAlphaMode::Opaque ? QImage::Format_RGB32 : QImage::Format_ARGB32)
-            : QImage::Format_RGBA8888;
+            ? (alphaMode == FrameAlphaMode::Opaque          ? QImage::Format_RGB32
+               : alphaMode == FrameAlphaMode::Premultiplied ? QImage::Format_ARGB32_Premultiplied
+                                                            : QImage::Format_ARGB32)
+            : (alphaMode == FrameAlphaMode::Premultiplied ? QImage::Format_RGBA8888_Premultiplied
+                                                          : QImage::Format_RGBA8888);
     QImage image(rgbaBytes, static_cast<int>(width), static_cast<int>(height),
                  static_cast<int>(strideBytes), format, &releaseFrameLease, lease);
     if (image.isNull()) {

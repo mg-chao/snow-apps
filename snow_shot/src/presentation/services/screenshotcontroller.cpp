@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/screenshotsourceimagecomposer.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
+#include "snow_shot/platform/screenshotnative.h"
 #include "snow_shot/presentation/screenshotglobalmousedrag.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/network/snowshotapiclient.h"
@@ -1061,6 +1062,15 @@ bool ScreenshotController::Impl::ensureScrollingFeature() {
             []() {
                 return snow_shot::storage::ScreenshotSettings().captureUiInScrollingScreenshot();
             },
+            [this]() {
+                if (auto* toolbar = m_overlayCoordinator->toolbar())
+                    toolbar->setScrollingScreenshotMode(false);
+                m_messages->warning(QStringLiteral("scrolling-capture-failed"),
+                                    QCoreApplication::translate(
+                                        "ScreenshotController",
+                                        "Scrolling capture stopped. Check screen permissions and "
+                                        "display settings, then try again."));
+            },
         },
         &owner);
     return m_scrollingCaptureController != nullptr;
@@ -1393,7 +1403,13 @@ void ScreenshotController::Impl::createDisplayConfigurationObserver() {
         [this]() {
             if (auto cancel = std::exchange(m_cancelSaveDialog, {}))
                 cancel();
-            static_cast<void>(stopScrollingCapture(false));
+            const bool scrollingStopped = stopScrollingCapture(false);
+            if (scrollingStopped)
+                m_messages->warning(
+                    QStringLiteral("scrolling-display-changed"),
+                    QCoreApplication::translate("ScreenshotController",
+                                                "Scrolling capture stopped because the display "
+                                                "configuration changed. Select the region again."));
             if (m_captureWorkflow != nullptr) {
                 m_captureWorkflow->handleDisplayConfigurationChanged();
             }
@@ -1594,7 +1610,12 @@ bool ScreenshotController::Impl::moveCursorOnePixel(
 
     if (canvasColorSampling) {
         const CapturedDisplayModel* display =
+#ifdef Q_OS_MACOS
+            m_geometry.displayForLogicalPoint(
+                m_displaySession, m_physicalCursor->logicalPosition().value_or(QCursor::pos()));
+#else
             m_geometry.displayForPhysicalPoint(m_displaySession, result.position.value());
+#endif
         ScreenshotOverlayWindow* overlay = m_displaySession.overlayForDisplay(display);
         if (display != nullptr && overlay != nullptr) {
             updateCanvasColorSamplingPreviewAtPhysicalPoint(overlay, result.position.value());
@@ -2661,6 +2682,10 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
 }
 
 void ScreenshotController::Impl::setScrollingScreenshotAutoScroll(bool enabled) {
+    if (enabled && !snow_shot::platform::screenshotScrollPermission()) {
+        emit owner.accessibilityPermissionRequested();
+        return;
+    }
     if (m_scrollingCaptureController != nullptr) {
         m_scrollingCaptureController->setAutoScroll(enabled);
     }
@@ -4093,7 +4118,12 @@ void ScreenshotController::Impl::beginCanvasColorSampling(adqt::widgets::AdColor
         m_physicalCursor != nullptr ? m_physicalCursor->position() : std::nullopt;
     if (physicalPosition.has_value()) {
         const CapturedDisplayModel* display =
+#ifdef Q_OS_MACOS
+            m_geometry.displayForLogicalPoint(
+                m_displaySession, m_physicalCursor->logicalPosition().value_or(QCursor::pos()));
+#else
             m_geometry.displayForPhysicalPoint(m_displaySession, *physicalPosition);
+#endif
         if (ScreenshotOverlayWindow* overlay = m_displaySession.overlayForDisplay(display)) {
             updateCanvasColorSamplingPreviewAtPhysicalPoint(overlay, *physicalPosition);
         }
@@ -4131,6 +4161,15 @@ void ScreenshotController::Impl::endGlobalMouseDrag() {
 }
 
 QPointF ScreenshotController::Impl::globalMouseCanvasPosition(const QPointF& point) const {
+    if (m_globalMouseDrag.coordinateSpace() ==
+        snow_shot::presentation::GlobalMouseCoordinateSpace::DesktopPoints) {
+        bool points = false;
+        m_displaySession.forEachActiveDisplay([&](qsizetype, const CapturedDisplayModel& display) {
+            points |= display.canvasUsesPoints;
+        });
+        if (points)
+            return point - m_geometry.canvasOrigin();
+    }
     const QPointF physical =
         m_globalMouseDrag.coordinateSpace() ==
                 snow_shot::presentation::GlobalMouseCoordinateSpace::DesktopPoints

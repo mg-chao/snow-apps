@@ -32,7 +32,7 @@ constexpr qint64 kMaximumCanvasBytes = 16 * kMiB;
 constexpr qint64 kMaximumPixelsPerImage = 64'000'000;
 constexpr qint64 kMaximumPixelsPerRecord = 128'000'000;
 constexpr int kMaximumDisplays = 32;
-constexpr int kIndexVersion = 1;
+constexpr int kIndexVersion = 2;
 // Bounds arithmetic on persisted sizes without consulting payload files.
 constexpr qint64 kMaximumStoredBytes = 1LL << 40;
 
@@ -119,6 +119,20 @@ QJsonObject recordJson(const StoredRecord& stored) {
             object.insert(QStringLiteral("source_canvas_origin"),
                           QJsonObject{{QStringLiteral("x"), display.sourceCanvasOrigin->x()},
                                       {QStringLiteral("y"), display.sourceCanvasOrigin->y()}});
+        }
+        if (display.sourceCanvasRect.has_value()) {
+            const QRect rect = *display.sourceCanvasRect;
+            object.insert(QStringLiteral("source_canvas_rect"),
+                          QJsonObject{{QStringLiteral("x"), rect.x()},
+                                      {QStringLiteral("y"), rect.y()},
+                                      {QStringLiteral("width"), rect.width()},
+                                      {QStringLiteral("height"), rect.height()}});
+            object.insert(QStringLiteral("backing_scale"), display.backingScale);
+            object.insert(QStringLiteral("native_display_id"),
+                          static_cast<qint64>(display.nativeDisplayId));
+            object.insert(QStringLiteral("canvas_space"), display.canvasUsesPoints
+                                                              ? QStringLiteral("points")
+                                                              : QStringLiteral("pixels"));
         }
         displays.append(object);
     }
@@ -254,6 +268,37 @@ bool parseRecord(const QJsonObject& object, StoredRecord* stored) {
             }
             image.sourceCanvasOrigin = QPoint(static_cast<int>(originX), static_cast<int>(originY));
         }
+        const QJsonValue sourceRect = display.value(QStringLiteral("source_canvas_rect"));
+        if (!sourceRect.isUndefined()) {
+            const QJsonObject rect = sourceRect.toObject();
+            qint64 rx = 0, ry = 0, rw = 0, rh = 0;
+            const QString space = display.value(QStringLiteral("canvas_space")).toString();
+            if (!sourceRect.isObject() ||
+                (space != QStringLiteral("points") && space != QStringLiteral("pixels")) ||
+                !integer(rect.value(QStringLiteral("width")), 1, std::numeric_limits<int>::max(),
+                         &rw) ||
+                !integer(rect.value(QStringLiteral("height")), 1, std::numeric_limits<int>::max(),
+                         &rh) ||
+                !integer(rect.value(QStringLiteral("x")), std::numeric_limits<int>::min(),
+                         std::numeric_limits<int>::max() - rw, &rx) ||
+                !integer(rect.value(QStringLiteral("y")), std::numeric_limits<int>::min(),
+                         std::numeric_limits<int>::max() - rh, &ry))
+                return false;
+            image.sourceCanvasRect = QRect(static_cast<int>(rx), static_cast<int>(ry),
+                                           static_cast<int>(rw), static_cast<int>(rh));
+            image.canvasUsesPoints = space == QStringLiteral("points");
+            qint64 nativeId = 0;
+            if (display.contains(QStringLiteral("native_display_id")) &&
+                !integer(display.value(QStringLiteral("native_display_id")), 0,
+                         std::numeric_limits<quint32>::max(), &nativeId))
+                return false;
+            image.nativeDisplayId = static_cast<quint32>(nativeId);
+            image.backingScale = display.value(QStringLiteral("backing_scale"))
+                                     .toDouble(std::max(image.imageSize.width() / double(rw),
+                                                        image.imageSize.height() / double(rh)));
+            if (!std::isfinite(image.backingScale) || image.backingScale <= 0)
+                return false;
+        }
         record.displays.append(image);
         stored->displayFileNames.append(file);
         bytes += image.encodedBytes;
@@ -375,6 +420,28 @@ bool encodeDraft(const CaptureHistoryDraft& draft, qint64 quota, EncodedDraft* r
                  std::numeric_limits<int>::max())) {
             return false;
         }
+        if (display.canvasUsesPoints &&
+            (!display.sourceCanvasRect || display.sourceCanvasRect->isEmpty()))
+            return false;
+        if (display.sourceCanvasRect && (display.sourceCanvasRect->isEmpty() ||
+                                         static_cast<qint64>(display.sourceCanvasRect->x()) +
+                                                 display.sourceCanvasRect->width() >
+                                             std::numeric_limits<int>::max() ||
+                                         static_cast<qint64>(display.sourceCanvasRect->y()) +
+                                                 display.sourceCanvasRect->height() >
+                                             std::numeric_limits<int>::max()))
+            return false;
+        const qreal backingScale =
+            !display.sourceCanvasRect ? 0.0
+            : display.backingScale > 0
+                ? display.backingScale
+                : (display.canvasUsesPoints
+                       ? std::max(display.image.width() / double(display.sourceCanvasRect->width()),
+                                  display.image.height() /
+                                      double(display.sourceCanvasRect->height()))
+                       : 1.0);
+        if (!std::isfinite(backingScale) || (display.sourceCanvasRect && backingScale <= 0))
+            return false;
         const QString name = QStringLiteral("display_%1.png").arg(i);
         const qint64 bytes = addImage(display.image.size(), name, [&]() {
             return snow_shot::image_codec::encodePng(display.image);
@@ -383,7 +450,8 @@ bool encodeDraft(const CaptureHistoryDraft& draft, qint64 quota, EncodedDraft* r
             return false;
         stored.displayFileNames.append(name);
         record.displays.append({display.stableId, display.name, display.image.size(), bytes,
-                                display.sourceCanvasOrigin});
+                                display.sourceCanvasOrigin, display.sourceCanvasRect,
+                                display.canvasUsesPoints, backingScale, display.nativeDisplayId});
     }
     return record.totalBytes <= quota;
 }
@@ -712,7 +780,8 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
         const QJsonDocument document = QJsonDocument::fromJson(bytes);
         const QJsonObject object = document.object();
         if (file.error() != QFileDevice::NoError || !document.isObject() ||
-            object.value(QStringLiteral("format_version")).toInteger() != kIndexVersion ||
+            (object.value(QStringLiteral("format_version")).toInteger() != kIndexVersion &&
+             object.value(QStringLiteral("format_version")).toInteger() != 1) ||
             !object.value(QStringLiteral("records")).isArray() ||
             !object.value(QStringLiteral("pending_deletions")).isArray()) {
             indexFailed();

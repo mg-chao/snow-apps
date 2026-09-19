@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PLATFORM_PHYSICALCURSOR_H
 
 #include <QPoint>
+#include <QPointF>
 
 #include <functional>
 #include <optional>
@@ -38,6 +39,7 @@ struct PhysicalCursorAccess {
     bool supported = false;
     std::function<std::optional<QPoint>()> readPosition;
     std::function<bool(const QPoint&)> writePosition;
+    std::function<std::optional<QPointF>()> readLogicalPosition = {};
 };
 
 class PhysicalCursor final {
@@ -48,6 +50,7 @@ class PhysicalCursor final {
     [[nodiscard]] bool isSupported() const noexcept;
     [[nodiscard]] bool canRead() const noexcept;
     [[nodiscard]] std::optional<QPoint> position() const;
+    [[nodiscard]] std::optional<QPointF> logicalPosition() const;
     [[nodiscard]] PhysicalCursorMoveResult moveOnePixel(PhysicalCursorDirection direction) const;
 
   private:

@@ -1,6 +1,7 @@
 #include "screenshotcaptureworker.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include "captureframeimage.h"
+#include "captureframegeometry.h"
 
 #include "screenshotcaptureperfinstrumentation.h"
 #include "snow_shot/presentation/screenshotcapturecoordinator.h"
@@ -14,6 +15,7 @@
 #include <QMetaObject>
 
 #include <limits>
+#include <cmath>
 #include <utility>
 
 namespace {
@@ -26,6 +28,8 @@ ScreenshotCaptureBackend backendFromNative(std::uint8_t backend) {
         return ScreenshotCaptureBackend::Dxgi;
     case SNOW_CAPTURE_BACKEND_WGC:
         return ScreenshotCaptureBackend::WindowsGraphicsCapture;
+    case SNOW_CAPTURE_BACKEND_SCREEN_CAPTURE_KIT:
+        return ScreenshotCaptureBackend::ScreenCaptureKit;
     case SNOW_CAPTURE_BACKEND_GDI:
         return ScreenshotCaptureBackend::Gdi;
     default:
@@ -143,6 +147,25 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
         display.name = QString::fromUtf8(info.name != nullptr ? info.name : "");
         display.physicalRect =
             QRect(info.x, info.y, static_cast<int>(info.width), static_cast<int>(info.height));
+#ifdef Q_OS_MACOS
+        SnowCaptureFrameGeometry geometry{};
+        geometry.version = SNOW_CAPTURE_FRAME_GEOMETRY_VERSION;
+        geometry.struct_size = sizeof(geometry);
+        if (!snow_capture_screenshot_result_display_geometry(nativeResult, index, &geometry)) {
+            valid = false;
+            break;
+        }
+        const auto logicalRect = snow_shot::presentation::capture::logicalFrameRect(geometry);
+        if (!logicalRect || geometry.display_id == 0) {
+            valid = false;
+            break;
+        }
+        display.capturedLogicalRect = *logicalRect;
+        display.physicalRect.moveTopLeft(display.capturedLogicalRect.topLeft());
+        display.nativeDisplayId = geometry.display_id;
+        display.backingScale = geometry.backing_scale;
+        display.canvasUsesPoints = true;
+#endif
         display.canvasRect = display.physicalRect;
         display.image = std::move(image);
         display.active = true;

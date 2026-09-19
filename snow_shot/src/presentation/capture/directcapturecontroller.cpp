@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/directcapturecontroller.h"
 
 #include "directcapturenative.h"
+#include "snow_shot/platform/screenshotnative.h"
 #include "camerashuttersound.h"
 #include "snow_shot/presentation/directcapturehistory.h"
 #include "snow_shot/presentation/directcaptureworkflow.h"
@@ -243,6 +244,9 @@ void DirectCaptureController::captureFocusedWindow() {
         request.window = reinterpret_cast<quintptr>(root != nullptr ? root : target);
     }
 #endif
+#ifdef Q_OS_MACOS
+    request.window = platform::screenshotFocusedWindow();
+#endif
     m_impl->workflow.enqueue(std::move(request));
 }
 
@@ -256,6 +260,11 @@ void DirectCaptureController::captureCurrentMonitor() {
                                                  reinterpret_cast<MONITORINFO*>(&info))) {
         request.monitorName = QString::fromWCharArray(info.szDevice);
     }
+#endif
+#ifdef Q_OS_MACOS
+    const quint32 id = platform::screenshotDisplayAtCursor();
+    if (id)
+        request.monitorName = QStringLiteral("display:%1").arg(id);
 #endif
     m_impl->workflow.enqueue(std::move(request));
 }

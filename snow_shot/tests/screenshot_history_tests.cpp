@@ -20,6 +20,7 @@
 #include "widgets/modal.h"
 
 #include <QApplication>
+#include <QUuid>
 #include <QDir>
 #include <QDirIterator>
 #include <QElapsedTimer>
@@ -240,6 +241,52 @@ void directImagesPersistWithoutTouchingTheEditor(
                 image.copy(QRect(QPoint(3, 3), editedSelection.size()))
                     .convertToFormat(QImage::Format_ARGB32),
             "edited direct capture exported pixels from the wrong region");
+}
+
+void pointHistorySurvivesDisplayRemoval() {
+    QTemporaryDir temporary;
+    SnowCanvasRuntime runtime;
+    auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+    storage::CaptureHistoryDraft draft;
+    draft.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    draft.createdUtc = QDateTime::currentDateTimeUtc();
+    draft.canvasBounds = QRect(0, 0, 64, 24);
+    draft.selection.rectangle = draft.canvasBounds;
+    draft.selection.shadowColor = Qt::black;
+    draft.canvasHistory = runtime.serializeDocumentHistory();
+    draft.displays.push_back({QStringLiteral("retina"), QStringLiteral("Retina"),
+                              solidImage(QSize(64, 48), qRgb(255, 0, 0)), QPoint(),
+                              QRect(0, 0, 32, 24), true});
+    draft.displays.push_back({QStringLiteral("external"), QStringLiteral("External"),
+                              solidImage(QSize(32, 24), qRgb(0, 0, 255)), QPoint(32, 0),
+                              QRect(32, 0, 32, 24), true});
+    require(repository->publish(draft).get().storage.success, "point history fixture publication");
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(display(QStringLiteral("new"), QStringLiteral("New"),
+                                   QRect(0, 0, 32, 24), solidImage(QSize(32, 24), Qt::black)));
+    ScreenshotSelectionModel selection;
+    selection.setSelectionRect(QRectF(0, 0, 10, 10));
+    ScreenshotInteractionState interaction;
+    interaction.enterOverlayVisible(false);
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotHistoryService history({displays, runtime, selection, interaction, intelligent},
+                                     *repository);
+    require(history.navigateToRecord(draft.id), "point history navigation");
+    waitForNavigation(history, "point history navigation timed out");
+    require(selection.pixelSelection() == draft.canvasBounds,
+            "display removal cropped saved selection");
+    const auto spec = screenshotSelectionRenderSpec(displays, selection.pixelSelection());
+    require(spec.pixelSize == QSize(128, 48), "display removal changed saved output resolution");
+    QList<CanvasExportSource> sources;
+    displays.forEachImageSource([&](qsizetype, const CapturedDisplayModel& source) {
+        sources.push_back(
+            {source.image, ScreenshotGeometryMapper::displayImageSourceCanvasRect(source)});
+    });
+    require(sources.size() == 2, "history lost a disconnected display source");
+    const auto image = runtime.renderToImage(selection.pixelSelection(), spec.pixelSize, sources);
+    require(image.pixelColor(63, 10) == draft.displays[0].image.pixelColor(0, 0) &&
+                image.pixelColor(64, 10) == draft.displays[1].image.pixelColor(0, 0),
+            "restored source geometry is wrong");
 }
 
 void directCaptureHistoryPreservesSelectionRegions(const QString& root) {
@@ -2819,6 +2866,7 @@ int main(int argc, char** argv) {
         storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    pointHistorySurvivesDisplayRemoval();
     committedSelectionFollowsHistory(
         QDir(temporary.path()).filePath(QStringLiteral("committed-selection")));
     navigationMatchesDisplaysAndRestoresLiveEndpoint(

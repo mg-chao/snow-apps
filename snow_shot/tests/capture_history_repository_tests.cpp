@@ -90,6 +90,53 @@ QJsonObject firstRecord(const QString& root) {
         .toObject();
 }
 
+void pointGeometryRoundTripsAndLegacyIndexRemainsReadable() {
+    QTemporaryDir temporary;
+    const auto now = QDateTime::currentDateTimeUtc();
+    auto draft = draftAt(now);
+    draft.displays.front().sourceCanvasRect = QRect(-10, 20, 10, 6);
+    draft.displays.front().backingScale = 2.0;
+    draft.displays.front().nativeDisplayId = 42;
+    draft.displays.front().canvasUsesPoints = true;
+    storage::CaptureHistoryRecord published;
+    {
+        auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+        const auto result = repository->publish(draft).get();
+        require(result.storage.success, "point geometry publication failed");
+        published = result.record;
+    }
+    {
+        auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+        require(repository->records().size() == 1 && repository->records().front() == published &&
+                    repository->records().front().displays.front().nativeDisplayId == 42 &&
+                    repository->records().front().displays.front().backingScale == 2.0 &&
+                    repository->records().front().displays.front().sourceCanvasRect ==
+                        QRect(-10, 20, 10, 6) &&
+                    repository->records().front().displays.front().canvasUsesPoints,
+                "point geometry was not persisted");
+    }
+    QJsonObject index = readObject(indexPath(temporary.path()));
+    index.insert(QStringLiteral("format_version"), 1);
+    auto records = index.value(QStringLiteral("records")).toArray();
+    auto record = records[0].toObject();
+    auto images = record.value(QStringLiteral("displays")).toArray();
+    auto image = images[0].toObject();
+    image.remove(QStringLiteral("source_canvas_rect"));
+    image.remove(QStringLiteral("canvas_space"));
+    images[0] = image;
+    record.insert(QStringLiteral("displays"), images);
+    records[0] = record;
+    index.insert(QStringLiteral("records"), records);
+    QFile file(indexPath(temporary.path()));
+    require(file.open(QIODevice::WriteOnly), "legacy index write failed");
+    file.write(QJsonDocument(index).toJson());
+    file.close();
+    auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+    require(repository->records().size() == 1 &&
+                !repository->records().front().displays.front().canvasUsesPoints,
+            "legacy pixel-space history was rejected");
+}
+
 void sourceCanvasOriginsRoundTripAndRejectInvalidCoordinates() {
     const auto now = QDateTime::currentDateTimeUtc();
     for (const auto origin :
@@ -168,7 +215,7 @@ void publicationAndRecovery() {
         const QJsonObject manifest = firstRecord(temporary.path());
         require(readObject(indexPath(temporary.path()))
                             .value(QStringLiteral("format_version"))
-                            .toInt() == 1 &&
+                            .toInt() == 2 &&
                     manifest.value(QStringLiteral("id")).toString() == published.id &&
                     manifest.value(QStringLiteral("source")).toString() ==
                         QStringLiteral("pinned_to_screen") &&
@@ -625,7 +672,7 @@ void startupExpiresAgeButDoesNotEnforceCapacity() {
     options.policy.retentionDays = 365;
     {
         auto writer = storage::makeCaptureHistoryRepository(temporary.path(), options);
-        for (const auto date : {now.addDays(-8), now.addDays(-7), now}) {
+        for (const auto& date : {now.addDays(-8), now.addDays(-7), now}) {
             require(writer->publish(draftAt(date)).get().storage.success,
                     "failed to publish retention fixture");
         }
@@ -788,6 +835,7 @@ void clearCancelsQueuedPublicationsAndShutdownDrains() {
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    pointGeometryRoundTripsAndLegacyIndexRemainsReadable();
     sourceCanvasOriginsRoundTripAndRejectInvalidCoordinates();
     publicationAndRecovery();
     preparedResultBytesAreCommittedWithoutReplacement();

@@ -20,6 +20,8 @@ struct DirectCaptureDisplay {
     QRect physicalBounds;
     QString stableId;
     QString name;
+    QRect logicalBounds{};
+    quint32 nativeDisplayId = 0;
 };
 
 struct DirectCaptureRequest {
@@ -46,6 +48,7 @@ struct DirectCaptureFrame {
     QString error;
     QVector<DirectCaptureDisplay> displays{};
     QByteArray canonicalPng{};
+    QRect logicalBounds{};
 
     [[nodiscard]] bool isValid() const {
         return error.isEmpty() && !image.isNull() && physicalBounds.size() == image.size();

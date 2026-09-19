@@ -2,8 +2,9 @@
 set -euo pipefail
 source "$(dirname "$0")/snow-build-environment.sh"
 if [[ "${1:-}" == --help ]]; then
-    echo 'Usage: run-snow-shot.sh [macOS-preset] [--clean] [--no-build] [-- APP_ARGUMENTS...]'
+    echo 'Usage: run-snow-shot.sh [macOS-preset] [--clean] [--no-build] [--codesign-identity IDENTITY] [-- APP_ARGUMENTS...]'
     echo '--no-build launches the existing deployed app without reinstalling or signing it.'
+    echo '--codesign-identity selects and caches a persistent signing identity for future rebuilds.'
     exit 0
 fi
 snow_require_macos
@@ -12,10 +13,19 @@ if [[ $# -gt 0 && "$1" != --* ]]; then preset="$1"; shift; fi
 snow_select_preset "$preset"
 clean=false
 build=true
+codesign_identity=''
+codesign_identity_set=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --clean) clean=true; shift ;;
         --no-build) build=false; shift ;;
+        --codesign-identity)
+            [[ $# -ge 2 ]] || snow_die '--codesign-identity needs an identity'
+            [[ -n "$2" ]] || snow_die '--codesign-identity needs an identity'
+            codesign_identity="$2"
+            codesign_identity_set=true
+            shift 2
+            ;;
         --) shift; break ;;
         *) snow_die "Unknown argument: $1" ;;
     esac
@@ -24,6 +34,9 @@ deployed_app="$snow_build_dir/run/snow_shot.app"
 if [[ "$build" == false && "$clean" == true ]]; then
     snow_die '--clean cannot be combined with --no-build'
 fi
+if [[ "$build" == false && "$codesign_identity_set" == true ]]; then
+    snow_die '--codesign-identity cannot be combined with --no-build'
+fi
 if [[ "$build" == false ]]; then
     [[ -x "$deployed_app/Contents/MacOS/snow_shot" ]] || snow_die "The deployed Snow Shot was not found for $snow_preset. Run without --no-build to create it."
     # Preserve the exact signed bundle to which the user granted permissions.
@@ -31,6 +44,9 @@ if [[ "$build" == false ]]; then
 fi
 build_args=("$snow_preset" --target snow_shot)
 if [[ "$clean" == true ]]; then build_args+=(--clean); fi
+if [[ "$codesign_identity_set" == true ]]; then
+    build_args+=(-- "-DSNOW_MACOS_CODESIGN_IDENTITY=$codesign_identity")
+fi
 "$(dirname "$0")/build.sh" "${build_args[@]}"
 app="$snow_build_dir/snow_shot/snow_shot.app"
 [[ -x "$app/Contents/MacOS/snow_shot" ]] || snow_die "Snow Shot was not found for $snow_preset. Run without --no-build to create it."

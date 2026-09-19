@@ -499,6 +499,7 @@ SettingsItemDefinition updateModeItem() {
         payload};
 }
 
+#ifndef Q_OS_MACOS
 SettingsItemDefinition screenshotApiModeItem() {
     SettingsSelectDefinition payload;
     payload.binding = SettingsSelectBinding::ScreenshotApiMode;
@@ -521,7 +522,6 @@ SettingsItemDefinition screenshotApiModeItem() {
     };
 }
 
-#ifndef Q_OS_MACOS
 SettingsItemDefinition windowElementApiItem() {
     SettingsSelectDefinition payload;
     payload.binding = SettingsSelectBinding::WindowElementApi;
@@ -852,6 +852,7 @@ SettingsItemDefinition selectionResizeModeItem() {
         });
 }
 
+#ifndef Q_OS_MACOS
 SettingsItemDefinition screenshotRestoreOriginalScreenColorsItem() {
     return switchItem(
         QStringLiteral("screenshot.restore-original-screen-colors"),
@@ -861,6 +862,8 @@ SettingsItemDefinition screenshotRestoreOriginalScreenColorsItem() {
         QStringLiteral("screenshot/restore_original_screen_colors"),
         SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors);
 }
+
+#endif
 
 SettingsItemDefinition screenshotCaptureCursorItem() {
     return switchItem(
@@ -2243,12 +2246,13 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot")),
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screen capture settings")),
                     SettingsSectionReset::ScreenshotCapture,
-                    {screenshotApiModeItem(),
+                    {
 #ifndef Q_OS_MACOS
-                     windowElementApiItem(),
+                        screenshotApiModeItem(), windowElementApiItem(),
+                        screenshotRestoreOriginalScreenColorsItem(),
 #endif
-                     screenshotRestoreOriginalScreenColorsItem(), screenshotCaptureCursorItem(),
-                     screenshotCaptureUiInScrollingScreenshotItem()},
+                        screenshotCaptureCursorItem(),
+                        screenshotCaptureUiInScrollingScreenshotItem()},
                 },
                 {
                     QStringLiteral("screen-recording-capture"),

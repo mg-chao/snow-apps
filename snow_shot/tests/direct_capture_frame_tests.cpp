@@ -57,7 +57,7 @@ int main() {
                 pixels[pixel * 4 + 1],
                 pixelFormat == SNOW_CAPTURE_PIXEL_FORMAT_BGRA8 ? pixels[pixel * 4]
                                                                : pixels[pixel * 4 + 2],
-                alpha[pixel]);
+                alpha[static_cast<std::size_t>(pixel)]);
             require(wrapped.pixelColor(pixel % 2, pixel / 2) == expected &&
                         converted.pixelColor(pixel % 2, pixel / 2) == expected,
                     "native frame conversion changed colors or transparency");

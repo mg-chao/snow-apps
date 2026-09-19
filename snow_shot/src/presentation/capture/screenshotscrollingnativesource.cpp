@@ -56,6 +56,13 @@ class NativeScrollingSource final : public ScrollingFrameSource {
                 event.frame);
             break;
         }
+#ifdef Q_OS_MACOS
+        case SNOW_CAPTURE_STREAM_EVENT_RESOLUTION_CHANGED:
+            result.kind = ScrollingSourceEvent::Kind::Error;
+            result.error =
+                QStringLiteral("display reconfiguration invalidated the scrolling viewport");
+            break;
+#endif
         case SNOW_CAPTURE_STREAM_EVENT_FRAMES_DROPPED:
             result.kind = ScrollingSourceEvent::Kind::Dropped;
             break;

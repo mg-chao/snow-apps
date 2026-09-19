@@ -11,6 +11,14 @@
             <source>The capture returned an invalid image</source>
             <translation>The capture returned an invalid image</translation>
         </message>
+        <message>
+            <source>The captured display geometry is invalid</source>
+            <translation>The captured display geometry is invalid</translation>
+        </message>
+        <message>
+            <source>The captured window geometry is invalid</source>
+            <translation>The captured window geometry is invalid</translation>
+        </message>
     </context>
     <context>
         <name>ScreenshotAutoFilterController</name>
@@ -48,6 +56,14 @@
         <message>
             <source>Save screenshot</source>
             <translation>Save screenshot</translation>
+        </message>
+        <message>
+            <source>Scrolling capture stopped because the display configuration changed. Select the region again.</source>
+            <translation>Scrolling capture stopped because the display configuration changed. Select the region again.</translation>
+        </message>
+        <message>
+            <source>Scrolling capture stopped. Check screen permissions and display settings, then try again.</source>
+            <translation>Scrolling capture stopped. Check screen permissions and display settings, then try again.</translation>
         </message>
         <message>
             <source>Smart selection is using window mode. Enable Accessibility access in Screenshot settings to select window elements.</source>
@@ -160,6 +176,10 @@
             <translation>Height</translation>
         </message>
         <message>
+            <source>Height (points)</source>
+            <translation>Height (points)</translation>
+        </message>
+        <message>
             <source>Lock aspect ratio</source>
             <translation>Lock aspect ratio</translation>
         </message>
@@ -207,6 +227,10 @@
             <source>Width</source>
             <translation>Width</translation>
         </message>
+        <message>
+            <source>Width (points)</source>
+            <translation>Width (points)</translation>
+        </message>
     </context>
     <context>
         <name>ScreenshotSelectionResizeWorkflow</name>
@@ -226,6 +250,10 @@
     <context>
         <name>ScreenshotSelectionToolbarWidget</name>
         <message>
+            <source>%1 × %2 px</source>
+            <translation>%1 × %2 px</translation>
+        </message>
+        <message>
             <source>Corner radius</source>
             <translation>Corner radius</translation>
         </message>
@@ -238,8 +266,16 @@
             <translation>Lock selection aspect ratio</translation>
         </message>
         <message>
+            <source>Output image dimensions</source>
+            <translation>Output image dimensions</translation>
+        </message>
+        <message>
             <source>Pixels</source>
             <translation>Pixels</translation>
+        </message>
+        <message>
+            <source>Points</source>
+            <translation>Points</translation>
         </message>
         <message>
             <source>Shadow width</source>
@@ -256,6 +292,14 @@
         <message>
             <source>Y coordinate</source>
             <translation>Y coordinate</translation>
+        </message>
+        <message>
+            <source>pt</source>
+            <translation>pt</translation>
+        </message>
+        <message>
+            <source>px</source>
+            <translation>px</translation>
         </message>
     </context>
     <context>

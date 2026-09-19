@@ -19,7 +19,11 @@ struct ScreenshotHistoryDisplay {
     QString stableId;
     QString name;
     QImage image;
-    std::optional<QPoint> sourceCanvasOrigin;
+    std::optional<QPoint> sourceCanvasOrigin{};
+    std::optional<QRect> sourceCanvasRect{};
+    bool canvasUsesPoints = false;
+    qreal backingScale = 0.0;
+    quint32 nativeDisplayId = 0;
 };
 
 struct ScreenshotHistoryEntry {

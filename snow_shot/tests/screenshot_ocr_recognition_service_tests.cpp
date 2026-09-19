@@ -441,12 +441,12 @@ std::shared_ptr<ScreenshotOcrPresentation> filterPresentation(const QRect& selec
     return presentation;
 }
 
-void renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine() {
+void renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine(qreal scale = 1) {
     ScreenshotOcrRecognitionService service;
     QObject receiver;
     QImage image(96, 64, QImage::Format_RGBA8888);
     image.fill(QColor(20, 80, 220));
-    const QRectF canvasRect(QPointF(), QSizeF(image.size()));
+    const QRectF canvasRect(QPointF(-32, 17), QSizeF(image.size()) / scale);
     ScreenshotOcrRequest request;
     request.image = image;
     request.canvasRect = canvasRect;
@@ -1144,6 +1144,7 @@ int main(int argc, char** argv) {
     explicitAssetsControlReadiness();
     modelInitializationFailureIsReportedOnRequestsAndRetries();
     renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine();
+    renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine(2);
     destructionStaysBoundedWhileRendersAreInFlight();
     diskBackedEngineCompletesThroughTheQtWorker(directMlRequested);
     residentRuntimeRebuildsWarmSessions(directMlRequested);

@@ -1,3 +1,7 @@
+if(APPLE)
+    set_source_files_properties(src/presentation/core/screenshotgeometry.cpp PROPERTIES LANGUAGE OBJCXX)
+endif()
+
 cmake_minimum_required(VERSION 3.30)
 
 project(snow_shot VERSION ${SNOW_SHOT_VERSION_NUMERIC} LANGUAGES CXX)
@@ -1228,6 +1232,7 @@ set(PROJECT_CXX_SOURCES
 if(APPLE)
     list(APPEND PROJECT_CXX_SOURCES
         src/platform/macos/applicationactivation.mm
+        src/platform/macos/screenshotnative.mm
         src/platform/macos/windowcaptureexclusion.mm)
     list(APPEND PROJECT_HEADERS include/snow_shot/platform/macos/applicationactivation.h)
 endif()
@@ -6765,4 +6770,44 @@ if(SNOW_SHOT_BUILD_TESTS)
             snow-shot-pinned-quick-save-tests
             PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" SNOW_TEST_CROSS_PLATFORM TRUE LABELS unit)
     endif()
+endif()
+
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-selection-render-tests
+        tests/screenshot_selection_render_tests.cpp
+        src/presentation/core/screenshotgeometry.cpp
+        src/presentation/services/screenshotsourceimagecomposer.cpp)
+    target_include_directories(snow-shot-selection-render-tests PRIVATE include
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
+    target_link_libraries(snow-shot-selection-render-tests PRIVATE Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-selection-render-tests)
+    add_test(NAME snow-shot-selection-render-tests COMMAND snow-shot-selection-render-tests)
+    set_tests_properties(snow-shot-selection-render-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit")
+endif()
+
+if(APPLE)
+    get_property(_screenshot_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(_target IN LISTS _screenshot_targets)
+        get_target_property(_sources ${_target} SOURCES)
+        if(_sources MATCHES "screenshotscrollingcapturecontroller.cpp|directcapturecontroller.cpp")
+            if(NOT _sources MATCHES "platform/macos/screenshotnative.mm")
+                target_sources(${_target} PRIVATE src/platform/macos/screenshotnative.mm)
+            endif()
+            target_link_libraries(${_target} PRIVATE "-framework AppKit" "-framework ApplicationServices")
+        endif()
+    endforeach()
+endif()
+
+if(APPLE AND SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-macos-screenshot-native-smoke
+        tests/macos_screenshot_native_smoke.mm
+        src/platform/macos/screenshotnative.mm
+        src/presentation/core/screenshotgeometry.cpp
+        src/presentation/services/screenshotsourceimagecomposer.cpp)
+    target_include_directories(snow-shot-macos-screenshot-native-smoke PRIVATE include
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
+    target_link_libraries(snow-shot-macos-screenshot-native-smoke PRIVATE Qt6::Widgets snow_capture_c
+        "-framework AppKit" "-framework ApplicationServices")
+    add_test(NAME snow-shot-macos-screenshot-native-smoke COMMAND snow-shot-macos-screenshot-native-smoke)
+    set_tests_properties(snow-shot-macos-screenshot-native-smoke PROPERTIES LABELS "interactive;macos" SKIP_RETURN_CODE 77 TIMEOUT 60)
 endif()

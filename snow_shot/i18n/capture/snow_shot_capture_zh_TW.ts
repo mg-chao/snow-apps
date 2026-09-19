@@ -11,6 +11,14 @@
             <source>The capture returned an invalid image</source>
             <translation>擷取傳回了無效影像</translation>
         </message>
+        <message>
+            <source>The captured display geometry is invalid</source>
+            <translation>擷取的顯示器幾何資訊無效</translation>
+        </message>
+        <message>
+            <source>The captured window geometry is invalid</source>
+            <translation>擷取的視窗幾何資訊無效</translation>
+        </message>
     </context>
     <context>
         <name>ScreenshotAutoFilterController</name>
@@ -48,6 +56,14 @@
         <message>
             <source>Save screenshot</source>
             <translation>儲存截圖</translation>
+        </message>
+        <message>
+            <source>Scrolling capture stopped because the display configuration changed. Select the region again.</source>
+            <translation>顯示器設定已變更，捲動截圖已停止。請重新選取區域。</translation>
+        </message>
+        <message>
+            <source>Scrolling capture stopped. Check screen permissions and display settings, then try again.</source>
+            <translation>捲動截圖已停止。請檢查螢幕錄製權限和顯示器設定，然後重試。</translation>
         </message>
         <message>
             <source>Smart selection is using window mode. Enable Accessibility access in Screenshot settings to select window elements.</source>
@@ -160,6 +176,10 @@
             <translation>高度</translation>
         </message>
         <message>
+            <source>Height (points)</source>
+            <translation>高度（點）</translation>
+        </message>
+        <message>
             <source>Lock aspect ratio</source>
             <translation>鎖定長寬比</translation>
         </message>
@@ -207,6 +227,10 @@
             <source>Width</source>
             <translation>寬度</translation>
         </message>
+        <message>
+            <source>Width (points)</source>
+            <translation>寬度（點）</translation>
+        </message>
     </context>
     <context>
         <name>ScreenshotSelectionResizeWorkflow</name>
@@ -226,6 +250,10 @@
     <context>
         <name>ScreenshotSelectionToolbarWidget</name>
         <message>
+            <source>%1 × %2 px</source>
+            <translation>%1 × %2 像素</translation>
+        </message>
+        <message>
             <source>Corner radius</source>
             <translation>圓角半徑</translation>
         </message>
@@ -238,8 +266,16 @@
             <translation>鎖定選取範圍長寬比</translation>
         </message>
         <message>
+            <source>Output image dimensions</source>
+            <translation>輸出影像尺寸</translation>
+        </message>
+        <message>
             <source>Pixels</source>
             <translation>像素</translation>
+        </message>
+        <message>
+            <source>Points</source>
+            <translation>點</translation>
         </message>
         <message>
             <source>Shadow width</source>
@@ -256,6 +292,14 @@
         <message>
             <source>Y coordinate</source>
             <translation> Y 座標</translation>
+        </message>
+        <message>
+            <source>pt</source>
+            <translation>點</translation>
+        </message>
+        <message>
+            <source>px</source>
+            <translation>像素</translation>
         </message>
     </context>
     <context>

@@ -19,6 +19,7 @@ struct ScreenshotSelectionResizeRequest {
     QRect selectionBounds;
     QWidget* ownerWindow = nullptr;
     ScreenshotSelectionResizeFinishedCallback onFinished;
+    bool canvasUsesPoints = false;
 };
 
 struct ScreenshotSelectionEditUiActions {

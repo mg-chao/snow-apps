@@ -1,4 +1,5 @@
 #include "directcapturenative.h"
+#include "captureframeimage.h"
 #include "snow_capture.h"
 #include "snowimageqtcodec.h"
 #include "snow_shot/presentation/screenshotimagefileservice.h"
@@ -97,6 +98,23 @@ uint8_t snow_capture_screenshot_result_display_info(const SnowCaptureScreenshotR
     info->backend_kind = SNOW_CAPTURE_BACKEND_DXGI;
     return 1;
 }
+uint8_t snow_capture_screenshot_result_display_geometry(const SnowCaptureScreenshotResult*,
+                                                        size_t index,
+                                                        SnowCaptureFrameGeometry* geometry) {
+    geometry->coordinate_space = 1;
+    geometry->display_id = static_cast<uint32_t>(index + 1);
+    geometry->x = 0;
+    geometry->y = 0;
+    geometry->width = 2;
+    geometry->height = 2;
+    geometry->backing_scale = 1;
+    return 1;
+}
+uint8_t snow_capture_screenshot_result_focused_window_geometry(const SnowCaptureScreenshotResult*,
+                                                               SnowCaptureFrameGeometry* geometry) {
+    return snow_capture_screenshot_result_display_geometry(nullptr, 0, geometry);
+}
+
 SnowCaptureFrameLease*
 snow_capture_screenshot_result_display_retain(const SnowCaptureScreenshotResult* result,
                                               size_t index) {
@@ -126,6 +144,22 @@ void snow_capture_frame_lease_release(SnowCaptureFrameLease* lease) {
 
 int main() {
     using namespace snow_shot::presentation;
+    {
+        auto* lease = new SnowCaptureFrameLease;
+        ++leases;
+        *lease->pixels = {25, 50, 100, 128, 0, 0, 0, 0, 0, 0, 0, 255, 0, 0, 0, 255};
+        const auto image = capture::imageFromFrameLease(lease, lease->pixels->data(), 16, 2, 2, 8,
+                                                        SNOW_CAPTURE_PIXEL_FORMAT_BGRA8,
+                                                        capture::FrameAlphaMode::Premultiplied);
+        require(image.pixelColor(0, 0).red() >= 199 && image.pixelColor(0, 0).alpha() == 128,
+                "ScreenCaptureKit colors must be decoded from premultiplied alpha");
+        QTemporaryDir directory;
+        const auto path = directory.filePath(QStringLiteral("alpha.png"));
+        require(image.save(path) &&
+                    QImage(path).pixelColor(0, 0).rgba() == image.pixelColor(0, 0).rgba(),
+                "window PNG must preserve straight colors and alpha");
+    }
+    require(leases == 0, "premultiplied image lease leaked");
     for (const auto target :
          {DirectCaptureTarget::FocusedWindow, DirectCaptureTarget::CurrentMonitor}) {
         DirectCaptureRequest request;
@@ -153,7 +187,8 @@ int main() {
                 require(!saved.isNull(), "focused-window PNG encoding failed");
                 const std::array<int, 4> expectedAlpha{0, 64, 128, 255};
                 for (int pixel = 0; pixel < 4; ++pixel) {
-                    require(saved.pixelColor(pixel % 2, pixel / 2).alpha() == expectedAlpha[pixel],
+                    require(saved.pixelColor(pixel % 2, pixel / 2).alpha() ==
+                                expectedAlpha[static_cast<size_t>(pixel)],
                             "focused-window PNG lost native transparency");
                     require(frame.image.pixelColor(pixel % 2, pixel / 2) ==
                                 saved.pixelColor(pixel % 2, pixel / 2),
@@ -171,7 +206,7 @@ int main() {
                     require(!decoded.isNull(), "focused-window saved image could not be decoded");
                     for (int pixel = 0; pixel < 4; ++pixel) {
                         require(decoded.pixelColor(pixel % 2, pixel / 2).alpha() ==
-                                    expectedAlpha[pixel],
+                                    expectedAlpha[static_cast<size_t>(pixel)],
                                 "focused-window automatic save lost native transparency");
                     }
                 }

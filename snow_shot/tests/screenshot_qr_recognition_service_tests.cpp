@@ -106,9 +106,9 @@ QImage eanFixture() {
 
     std::string modules = "101";
     const std::string_view parity = kParityPatterns[kDigits[0] - '0'];
-    for (int index = 1; index <= 6; ++index) {
+    for (std::size_t index = 1; index <= 6; ++index) {
         const std::string_view code = kLeftCodes[kDigits[index] - '0'];
-        if (parity[static_cast<std::size_t>(index - 1)] == 'L') {
+        if (parity[index - 1] == 'L') {
             modules.append(code.begin(), code.end());
         } else {
             // The G code for a digit is the reverse of its right-half code.
@@ -117,7 +117,7 @@ QImage eanFixture() {
         }
     }
     modules += "01010";
-    for (int index = 7; index <= 12; ++index) {
+    for (std::size_t index = 7; index <= 12; ++index) {
         modules.append(kRightCodes[kDigits[index] - '0'].begin(),
                        kRightCodes[kDigits[index] - '0'].end());
     }

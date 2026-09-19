@@ -145,6 +145,11 @@ class DisplaySlotLookup final {
 void applySnapshotToDisplay(CapturedDisplayModel& display, const CapturedDisplayModel& snapshot) {
     display.stableId = snapshot.stableId;
     display.name = snapshot.name;
+    display.capturedLogicalRect = snapshot.capturedLogicalRect;
+    display.nativeDisplayId = snapshot.nativeDisplayId;
+    display.backingScale = snapshot.backingScale;
+    display.canvasUsesPoints = snapshot.canvasUsesPoints;
+    display.backend = snapshot.backend;
     display.physicalRect = snapshot.physicalRect;
     display.canvasRect = snapshot.physicalRect;
     display.imageSourceCanvasRect = QRect();
@@ -189,11 +194,16 @@ void applySnapshotsToDisplaySession(ScreenshotDisplaySession& displaySession,
 
 void ScreenshotCaptureDisplayModelReconciler::applySnapshots(
     ScreenshotDisplaySession& displaySession, const QVector<CapturedDisplayModel>& snapshots) {
+    displaySession.setImageSources({});
     applySnapshotsToDisplaySession(displaySession, snapshots);
 }
 
 void ScreenshotCaptureDisplayModelReconciler::clearCaptureMetadata(CapturedDisplayModel& display) {
     display.name.clear();
+    display.capturedLogicalRect = {};
+    display.nativeDisplayId = 0;
+    display.backingScale = 1.0;
+    display.canvasUsesPoints = false;
     display.physicalRect = QRect();
     display.canvasRect = QRect();
     display.imageSourceCanvasRect = QRect();

@@ -11,13 +11,19 @@ QImage composeScreenshotSourceSelection(const ScreenshotDisplaySession& displayS
         return {};
     }
 
-    QImage image(selection.size(), QImage::Format_RGBA8888);
+    const auto spec = screenshotSelectionRenderSpec(displaySession, selection);
+    if (!spec.isValid())
+        return {};
+    QImage image(spec.pixelSize, QImage::Format_RGBA8888);
+    if (image.isNull())
+        return {};
     image.fill(Qt::transparent);
     QPainter painter(&image);
+    painter.scale(spec.scale, spec.scale);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
 
     const QRectF selectionRect(selection);
-    displaySession.forEachActiveDisplay([&](qsizetype, const CapturedDisplayModel& display) {
+    displaySession.forEachImageSource([&](qsizetype, const CapturedDisplayModel& display) {
         const QRectF canvasRect = ScreenshotGeometryMapper::displayImageSourceCanvasRect(display);
         if (display.image.isNull() || !canvasRect.intersects(selectionRect)) {
             return;

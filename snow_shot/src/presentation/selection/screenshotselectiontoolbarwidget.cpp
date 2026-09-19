@@ -195,11 +195,16 @@ ScreenshotSelectionToolbarWidget::ScreenshotSelectionToolbarWidget(
     auto* sizeUnitLabel = addStaticLabel(QStringLiteral("px"), tr("Pixels"),
                                          QMargins(toolbar_widgets::UnitLeftMargin, 0, 0, 0));
     setTranslationSource(sizeUnitLabel, "Pixels");
+    m_sizeUnitLabel = sizeUnitLabel;
     panelLayout->addWidget(m_widthLabel);
     panelLayout->addWidget(sizeSeparatorLabel);
     panelLayout->addWidget(m_heightLabel);
     panelLayout->addWidget(sizeUnitLabel);
     m_sizeWidgets << m_widthLabel << sizeSeparatorLabel << m_heightLabel << sizeUnitLabel;
+    m_outputLabel = addStaticLabel(QString(), tr("Output image dimensions"));
+    setTranslationSource(m_outputLabel, "Output image dimensions");
+    panelLayout->addWidget(m_outputLabel);
+    m_outputLabel->hide();
 
     QWidget* selectionSettingsSeparator = addSeparator();
     panelLayout->addWidget(selectionSettingsSeparator);
@@ -242,6 +247,7 @@ void ScreenshotSelectionToolbarWidget::resetForNewCapture() {
     m_displayMode = DisplayMode::Full;
     m_cornerRadius = 0;
     m_shadowWidth = 0;
+    m_outputPixels = {};
     updateLabels();
     updateDisplayMode();
 }
@@ -279,11 +285,13 @@ void ScreenshotSelectionToolbarWidget::prewarm() {
 
 void ScreenshotSelectionToolbarWidget::setSelectionState(const QRect& selection,
                                                          bool aspectRatioLocked, int cornerRadius,
-                                                         int shadowWidth, DisplayMode displayMode) {
+                                                         int shadowWidth, DisplayMode displayMode,
+                                                         QSize outputPixels) {
     const QRect normalized = selection.normalized();
     const int clampedRadius = std::clamp(cornerRadius, 0, kScreenshotSelectionCornerRadiusMax);
     const int clampedShadowWidth = std::clamp(shadowWidth, 0, kScreenshotSelectionShadowWidthMax);
-    const bool selectionChanged = m_selection != normalized;
+    const bool selectionChanged = m_selection != normalized || m_outputPixels != outputPixels;
+    m_outputPixels = outputPixels;
     const bool aspectRatioChanged = m_aspectRatioLocked != aspectRatioLocked;
     const bool cornerRadiusChanged = m_cornerRadius != clampedRadius;
     const bool shadowWidthChanged = m_shadowWidth != clampedShadowWidth;
@@ -581,6 +589,18 @@ void ScreenshotSelectionToolbarWidget::updateInputRegion() {
 
 bool ScreenshotSelectionToolbarWidget::updateLabels(bool refreshGeometry) {
     bool geometryChanged = false;
+    if (m_sizeUnitLabel && m_outputLabel) {
+        geometryChanged |= updateLabelText(
+            m_sizeUnitLabel, m_outputPixels.isEmpty() ? tr("px") : tr("pt"), refreshGeometry);
+        m_sizeUnitLabel->setToolTip(m_outputPixels.isEmpty() ? tr("Pixels") : tr("Points"));
+        geometryChanged |= updateLabelText(
+            m_outputLabel,
+            m_outputPixels.isEmpty()
+                ? QString()
+                : tr("%1 × %2 px").arg(m_outputPixels.width()).arg(m_outputPixels.height()),
+            refreshGeometry);
+        m_outputLabel->setVisible(!m_outputPixels.isEmpty());
+    }
     geometryChanged |= updateLabelText(m_xLabel, pxText(m_selection.left()), refreshGeometry);
     geometryChanged |= updateLabelText(m_yLabel, pxText(m_selection.top()), refreshGeometry);
     geometryChanged |= updateLabelText(m_widthLabel, pxText(m_selection.width()), refreshGeometry);

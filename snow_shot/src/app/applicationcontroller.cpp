@@ -338,13 +338,7 @@ class ApplicationController::Impl {
 #endif
         systemTray.show();
         globalShortcutManager.initialize();
-#ifdef Q_OS_MACOS
-        // Capture remains unavailable, but the native listener must recognize a configured
-        // gesture so ApplicationController can present the not-yet-supported notice.
-        globalMouseManager.setCaptureAvailable(true);
-#else
         globalMouseManager.setCaptureAvailable(ensureScreenshotController()->captureAvailable());
-#endif
         globalMouseManager.initialize();
         QObject::connect(&app, &QGuiApplication::applicationStateChanged, &globalMouseManager,
                          [this](Qt::ApplicationState state) {
@@ -376,6 +370,13 @@ class ApplicationController::Impl {
         if (screenshotController == nullptr) {
             screenshotController = std::make_unique<ScreenshotController>(
                 &q, &groupManager, ocrRecognition.get(), translationClient.get());
+            QObject::connect(
+                screenshotController.get(), &ScreenshotController::accessibilityPermissionRequested,
+                &q, [this] {
+                    permissions.refresh();
+                    ensureMainWindow().showAppPermissions(
+                        presentation::appPermissionId(presentation::AppPermission::Accessibility));
+                });
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::showMainWindowRequested, &q,
                              [this]() { showMainWindow(); });

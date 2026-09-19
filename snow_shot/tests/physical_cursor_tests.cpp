@@ -231,6 +231,14 @@ void windowsBackendMovesOnePhysicalPixelOnEveryMonitor() {
 } // namespace
 
 int main() {
+    PhysicalCursor logical(
+        PhysicalCursorAccess{true,
+                             [] { return std::optional<QPoint>(QPoint(-1, 40)); },
+                             {},
+                             [] { return std::optional<QPointF>(QPointF(-0.5, 20)); }});
+    require(logical.logicalPosition() == QPointF(-0.5, 20),
+            "fractional desktop position must retain display ownership at a Retina boundary");
+
     try {
         everyDirectionRequestsOnePhysicalPixel();
         everyMoveStartsFromTheLivePosition();

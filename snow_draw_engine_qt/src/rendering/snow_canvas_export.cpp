@@ -194,7 +194,12 @@ QImage renderToImage(SnowRuntime runtime, const QRectF& virtualSelectionRect,
         return output;
     }
 
+    // Keep compositor scratch surfaces at export resolution. The temporary DPR
+    // describes rasterization only; exported images always carry DPR 1.
+    const qreal rasterScale = qMax(1.0, qMin(projection.scaleX(), projection.scaleY()));
+    output.setDevicePixelRatio(rasterScale);
     QPainter painter(&output);
+    painter.scale(1.0 / rasterScale, 1.0 / rasterScale);
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
     SnowCanvasViewport viewport;
@@ -206,11 +211,12 @@ QImage renderToImage(SnowRuntime runtime, const QRectF& virtualSelectionRect,
         !snow_canvas_smart_erase::hasItems(smartErase)) {
         ++g_renderDiagnostics.directSourceFastPathCount;
         renderSources(painter, projection, sources);
+        painter.end();
+        output.setDevicePixelRatio(1.0);
         return output;
     }
 
-    const QSize sceneSize(static_cast<int>(positiveCeil(virtualSelectionRect.width())),
-                          static_cast<int>(positiveCeil(virtualSelectionRect.height())));
+    const QSize sceneSize = outputSize;
     QImage background(sceneSize, QImage::Format_ARGB32_Premultiplied);
     background.fill(Qt::transparent);
     {
@@ -227,6 +233,8 @@ QImage renderToImage(SnowRuntime runtime, const QRectF& virtualSelectionRect,
         ++g_renderDiagnostics.unsynchronizedFallbackCount;
         painter.drawImage(QRect(QPoint(0, 0), outputSize), background);
     }
+    painter.end();
+    output.setDevicePixelRatio(1.0);
     return output;
 }
 

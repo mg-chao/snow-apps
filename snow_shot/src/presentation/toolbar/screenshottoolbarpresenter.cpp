@@ -98,10 +98,21 @@ void ScreenshotToolbarPresenter::updateSelectionToolbarState(
 
     {
         SNOW_SHOT_CAPTURE_PERF_SCOPE("toolbar.set_selection_state");
+        QSize outputPixels;
+#ifdef Q_OS_MACOS
+        bool points = false;
+        m_displaySession.forEachImageSource([&](qsizetype, const CapturedDisplayModel& display) {
+            points |= display.canvasUsesPoints;
+        });
+        if (points)
+            outputPixels =
+                screenshotSelectionRenderSpec(m_displaySession, state.selectionPixels).pixelSize;
+#endif
         toolbarWidget->setSelectionState(
             state.selectionPixels, state.aspectRatioLocked, state.cornerRadius, state.shadowWidth,
             state.intelligentSelecting ? ScreenshotSelectionToolbarWidget::DisplayMode::SizeOnly
-                                       : ScreenshotSelectionToolbarWidget::DisplayMode::Full);
+                                       : ScreenshotSelectionToolbarWidget::DisplayMode::Full,
+            outputPixels);
     }
 
     if (reposition) {

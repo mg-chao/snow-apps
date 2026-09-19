@@ -25,6 +25,10 @@ ScreenshotApiMode screenshotApiModeFromValue(const char* value) noexcept {
 }
 
 std::uint8_t nativeBackendForNormalScreenshot(ScreenshotApiMode mode) noexcept {
+#ifdef Q_OS_MACOS
+    Q_UNUSED(mode);
+    return SNOW_CAPTURE_BACKEND_SCREEN_CAPTURE_KIT;
+#else
     switch (mode) {
     case ScreenshotApiMode::Dxgi:
         return SNOW_CAPTURE_BACKEND_DXGI;
@@ -36,6 +40,7 @@ std::uint8_t nativeBackendForNormalScreenshot(ScreenshotApiMode mode) noexcept {
         break;
     }
     return SNOW_CAPTURE_BACKEND_AUTO;
+#endif
 }
 
 ScreenshotApiMode resolveAutoScreenshotApiMode() noexcept {
@@ -63,7 +68,11 @@ ScreenshotApiMode resolveAutoScreenshotApiMode() noexcept {
             }
         }
 #endif
+#ifdef Q_OS_MACOS
+        return ScreenshotApiMode::Auto;
+#else
         return ScreenshotApiMode::Gdi;
+#endif
     }();
     return resolved;
 }
