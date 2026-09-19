@@ -263,7 +263,6 @@ enum OperationMessage {
     Metadata {
         bytes: Vec<u8>,
         manual: bool,
-        auto_download: bool,
     },
     DownloadValidator {
         package_hash: String,
@@ -405,6 +404,14 @@ fn is_failed_version(root: &Path, version: &str) -> bool {
         .ok()
         .and_then(|bytes| String::from_utf8(bytes).ok())
         .is_some_and(|text| text.trim() == version)
+}
+
+fn release_retry_is_allowed(user_initiated: bool, failed_version: bool) -> bool {
+    user_initiated || !failed_version
+}
+
+fn cached_payload_is_ready(user_initiated: bool, failed_version: bool, valid: bool) -> bool {
+    valid && release_retry_is_allowed(user_initiated, failed_version)
 }
 
 fn retain_release_payload(cache: &Path, accepted_hash: &str) {
@@ -678,7 +685,6 @@ struct MetadataInputs {
     system_proxy: bool,
     installed_version: String,
     manual: bool,
-    auto_download: bool,
 }
 
 async fn fetch_metadata(
@@ -756,7 +762,6 @@ async fn fetch_metadata(
         Ok(bytes) => OperationMessage::Metadata {
             bytes,
             manual: inputs.manual,
-            auto_download: inputs.auto_download,
         },
         Err(error) if error.code == "operation_cancelled" => {
             OperationMessage::Cancelled(ActiveOperation::Check)
@@ -1085,7 +1090,6 @@ fn start_check(
             system_proxy: service.system_proxy,
             installed_version: service.installed_version.clone(),
             manual: user_initiated,
-            auto_download: service.mode == Mode::Download,
         },
         cancellation,
         operation_sender.clone(),
@@ -1130,9 +1134,7 @@ async fn accept_metadata(
     service: &mut Service,
     bytes: Vec<u8>,
     manual: bool,
-    auto_download: bool,
     writer: &mut BufWriter<tokio::io::Stdout>,
-    operation_sender: &mpsc::Sender<OperationMessage>,
 ) -> Result<()> {
     let release = verify_release(&bytes, None)?;
     let package = release.update_package(&service.variant)?;
@@ -1173,7 +1175,8 @@ async fn accept_metadata(
     retain_release_payload(&service.options.cache_directory, &available.sha256);
     let suppressed = is_failed_version(&service.options.root, &release.version);
     let complete = cache_path(&service.options, format!("{}.zip", available.sha256));
-    if fsutil::verify_file(&complete, available.size, &available.sha256).is_ok() {
+    let complete_valid = fsutil::verify_file(&complete, available.size, &available.sha256).is_ok();
+    if cached_payload_is_ready(manual, suppressed, complete_valid) {
         service.available = Some(available);
         service.set_state("Ready", None);
         write_status(writer, &service.status).await?;
@@ -1183,16 +1186,12 @@ async fn accept_metadata(
         )
         .await?;
     } else {
-        if complete.exists() {
+        if !complete_valid && complete.exists() {
             let _ = std::fs::remove_file(&complete);
         }
         service.available = Some(available);
         service.set_state("Available", None);
         write_status(writer, &service.status).await?;
-        if auto_download && (manual || !suppressed) {
-            start_download(service, operation_sender)?;
-            write_status(writer, &service.status).await?;
-        }
     }
     Ok(())
 }
@@ -1291,7 +1290,17 @@ async fn handle_command(
                         RequestedOperation::Check => {
                             start_check(service, trigger.user_initiated(), operation_sender)
                         }
-                        RequestedOperation::Download => start_download(service, operation_sender),
+                        RequestedOperation::Download => {
+                            let failed_version = service.available.as_ref().is_some_and(|update| {
+                                is_failed_version(&service.options.root, &update.version)
+                            });
+                            if release_retry_is_allowed(trigger.user_initiated(), failed_version) {
+                                start_download(service, operation_sender)
+                            } else {
+                                complete = Some("success");
+                                Ok(())
+                            }
+                        }
                         RequestedOperation::Apply => {
                             if service.status.state != "Ready" || service.active.is_some() {
                                 Err(UpdateError::new(
@@ -1383,29 +1392,15 @@ async fn handle_operation(
     service: &mut Service,
     message: OperationMessage,
     writer: &mut BufWriter<tokio::io::Stdout>,
-    operation_sender: &mpsc::Sender<OperationMessage>,
 ) -> Result<Option<&'static str>> {
     match message {
-        OperationMessage::Metadata {
-            bytes,
-            manual,
-            auto_download,
-        } => {
+        OperationMessage::Metadata { bytes, manual } => {
             if service.active != Some(ActiveOperation::Check) {
                 return Ok(None);
             }
             service.active = None;
             service.cancellation = None;
-            if let Err(error) = accept_metadata(
-                service,
-                bytes,
-                manual,
-                auto_download,
-                writer,
-                operation_sender,
-            )
-            .await
-            {
+            if let Err(error) = accept_metadata(service, bytes, manual, writer).await {
                 service.set_state("Failed", Some(error));
                 write_status(writer, &service.status).await?;
                 return Ok(Some("failed"));
@@ -1680,7 +1675,6 @@ pub async fn run_with_dependencies(
                             &mut service,
                             operation,
                             &mut writer,
-                            &operation_sender,
                         ).await {
                             Ok(outcome) => outcome,
                             Err(error) => {
@@ -1895,6 +1889,17 @@ mod tests {
         assert!(validate_base_url("http://example.test", true).is_err());
     }
 
+    #[test]
+    fn failed_cached_payload_requires_a_manual_retry() {
+        assert!(release_retry_is_allowed(false, false));
+        assert!(!release_retry_is_allowed(false, true));
+        assert!(release_retry_is_allowed(true, true));
+        assert!(cached_payload_is_ready(false, false, true));
+        assert!(!cached_payload_is_ready(false, true, true));
+        assert!(cached_payload_is_ready(true, true, true));
+        assert!(!cached_payload_is_ready(true, false, false));
+    }
+
     #[tokio::test]
     async fn metadata_request_exposes_proxy_timeout_and_cancellation_policy() {
         let network = FakeNetwork::new([reply(StatusCode::OK, b"signed-envelope")]);
@@ -1908,21 +1913,15 @@ mod tests {
                 system_proxy: true,
                 installed_version: "1.2.3".to_owned(),
                 manual: true,
-                auto_download: false,
             },
             CancellationToken::new(),
             sender,
         )
         .await;
         match receiver.recv().await.unwrap() {
-            OperationMessage::Metadata {
-                bytes,
-                manual,
-                auto_download,
-            } => {
+            OperationMessage::Metadata { bytes, manual } => {
                 assert_eq!(bytes, b"signed-envelope");
                 assert!(manual);
-                assert!(!auto_download);
             }
             _ => panic!("expected metadata"),
         }
@@ -1952,7 +1951,6 @@ mod tests {
                 system_proxy: false,
                 installed_version: "1.0.0".to_owned(),
                 manual: false,
-                auto_download: false,
             },
             CancellationToken::new(),
             sender,

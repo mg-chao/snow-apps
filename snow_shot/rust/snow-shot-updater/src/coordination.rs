@@ -1004,8 +1004,18 @@ mod windows_coordination {
             let root = path_option(args, "--target")?;
             transaction::validate_root(&root)?;
             validate_worker_copy(args, &root)?;
-            let parent = numeric_option(args, "--parent")?;
-            platform::validate_parent_process(parent, &root.join("bin/snow_shot.exe"))?;
+            let parent = platform::open_validated_process(
+                numeric_option(args, "--parent")?,
+                &root.join("bin/snow_shot.exe"),
+            )?;
+            let service = if args.iter().any(|argument| argument == "--service-parent") {
+                Some(platform::open_validated_process(
+                    numeric_option(args, "--service-parent")?,
+                    &root.join("bin/snow-shot-updater.exe"),
+                )?)
+            } else {
+                None
+            };
             let recovery = args.iter().any(|argument| argument == "--recovery");
             let mut staged_archive = None;
             let release = if recovery {
@@ -1033,9 +1043,9 @@ mod windows_coordination {
                 staged_archive = Some(input);
                 Some(release)
             };
-            Ok((root, parent, recovery, staged_archive, release))
+            Ok((root, parent, service, recovery, staged_archive, release))
         })();
-        let (root, parent, recovery, mut staged_archive, release) = match prepared {
+        let (root, parent, service, recovery, mut staged_archive, release) = match prepared {
             Ok(prepared) => prepared,
             Err(error) => {
                 report_worker_failure_async(args, &error).await;
@@ -1061,16 +1071,9 @@ mod windows_coordination {
             return Ok(1);
         }
         let status = (|| {
-            platform::wait_for_process(parent, PARENT_EXIT_TIMEOUT)?;
-            if let Ok(service_pid) = option(args, "--service-parent").and_then(|value| {
-                value.parse().map_err(|_| {
-                    UpdateError::new(
-                        "invalid_updater_argument",
-                        "Invalid updater command argument",
-                    )
-                })
-            }) {
-                platform::wait_for_process(service_pid, PARENT_EXIT_TIMEOUT)?;
+            parent.wait_for_exit(PARENT_EXIT_TIMEOUT)?;
+            if let Some(service) = service {
+                service.wait_for_exit(PARENT_EXIT_TIMEOUT)?;
             }
             if recovery {
                 transaction::recover_transaction(&root)

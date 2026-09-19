@@ -180,6 +180,14 @@ int fakeSidecar(int argc, char** argv) {
                 incrementCounter(completionCounter);
                 return 0;
             }
+            if (scenario == u"adapter-download-policy") {
+                status("Checking");
+                QThread::msleep(80);
+                status("Available");
+                complete(operation, "success", "Available");
+                incrementCounter(completionCounter);
+                return 0;
+            }
             if (scenario == u"all-statuses") {
                 status("Unavailable");
                 status("Idle");
@@ -433,6 +441,50 @@ int main(int argc, char** argv) {
         service.start();
         require(waitUntil([&] { return counterValue(launches) >= 3; }, 3000),
                 "automatic failures schedule only the next fixed interval");
+    }
+
+    {
+        auto policyOptions = options(QStringLiteral("adapter-download-policy"));
+        const QString cache = policyOptions.cacheDirectory;
+        const QString check = QDir(cache).filePath(QStringLiteral("check-periodic-complete"));
+        const QString download =
+            QDir(cache).filePath(QStringLiteral("download-policyChange-count"));
+        UpdateService service(std::move(policyOptions));
+        service.start();
+        require(waitUntil([&] { return service.status().state == UpdateState::Idle; }),
+                "download-policy probe");
+        service.check(false);
+        require(waitUntil([&] { return service.status().state == UpdateState::Checking; }),
+                "download-policy check starts");
+        require(waitUntil([&] {
+                    return counterValue(check) == 1 && counterValue(download) == 1 &&
+                           service.status().state == UpdateState::Ready;
+                }),
+                "adapter schedules a distinct download from current policy");
+    }
+
+    {
+        auto policyOptions = options(QStringLiteral("adapter-download-policy"));
+        const QString cache = policyOptions.cacheDirectory;
+        const QString check = QDir(cache).filePath(QStringLiteral("check-periodic-complete"));
+        const QString download =
+            QDir(cache).filePath(QStringLiteral("download-policyChange-count"));
+        UpdateService service(std::move(policyOptions));
+        service.start();
+        require(waitUntil([&] { return service.status().state == UpdateState::Idle; }),
+                "changed-policy probe");
+        service.check(false);
+        require(waitUntil([&] { return service.status().state == UpdateState::Checking; }),
+                "changed-policy check starts");
+        service.setMode(QStringLiteral("check"));
+        require(waitUntil([&] {
+                    return counterValue(check) == 1 &&
+                           service.status().state == UpdateState::Available;
+                }),
+                "changed policy keeps metadata-only result available");
+        processFor(100);
+        require(counterValue(download) == 0,
+                "leaving download mode prevents a queued payload operation");
     }
 
     {

@@ -54,24 +54,11 @@ pub fn launch_on_interactive_desktop(_executable: &Path) -> Result<bool> {
 }
 
 #[cfg(not(windows))]
-pub fn validate_parent_process(_pid: u32, _expected: &Path) -> Result<()> {
-    Err(UpdateError::new(
-        "unsupported_platform",
-        "The update target does not match its application process",
-    ))
-}
-
-#[cfg(not(windows))]
 pub fn process_path_for_pid(_pid: u32) -> Result<std::path::PathBuf> {
     Err(UpdateError::new(
         "unsupported_platform",
         "The update target does not match its application process",
     ))
-}
-
-#[cfg(not(windows))]
-pub fn wait_for_process(_pid: u32, _timeout: std::time::Duration) -> Result<()> {
-    Ok(())
 }
 
 #[cfg(not(windows))]

@@ -200,7 +200,22 @@ pub fn process_path_for_pid(pid: u32) -> Result<PathBuf> {
     })
 }
 
-pub fn validate_parent_process(pid: u32, expected: &Path) -> Result<()> {
+pub struct ValidatedProcess(Handle);
+
+impl ValidatedProcess {
+    pub fn wait_for_exit(&self, timeout: Duration) -> Result<()> {
+        let result = unsafe {
+            WaitForSingleObject(self.0.0, timeout.as_millis().min(u32::MAX as u128) as u32)
+        };
+        require(
+            result == WAIT_OBJECT_0,
+            "application_exit_timeout",
+            "The application did not exit; the update was cancelled",
+        )
+    }
+}
+
+pub fn open_validated_process(pid: u32, expected: &Path) -> Result<ValidatedProcess> {
     let process = unsafe {
         OpenProcess(
             SYNCHRONIZE_ACCESS | PROCESS_QUERY_LIMITED_INFORMATION,
@@ -221,32 +236,8 @@ pub fn validate_parent_process(pid: u32, expected: &Path) -> Result<()> {
         path_eq(&actual, expected),
         "application_process_mismatch",
         "The update target does not match its application process",
-    )
-}
-
-pub fn wait_for_process(pid: u32, timeout: Duration) -> Result<()> {
-    let process = unsafe {
-        OpenProcess(
-            SYNCHRONIZE_ACCESS | PROCESS_QUERY_LIMITED_INFORMATION,
-            false,
-            pid,
-        )
-    }
-    .map(Handle)
-    .map_err(|error| {
-        io_error(
-            "application_process_open_failed",
-            "Could not open the application process",
-            error,
-        )
-    })?;
-    let result =
-        unsafe { WaitForSingleObject(process.0, timeout.as_millis().min(u32::MAX as u128) as u32) };
-    require(
-        result == WAIT_OBJECT_0,
-        "application_exit_timeout",
-        "The application did not exit; the update was cancelled",
-    )
+    )?;
+    Ok(ValidatedProcess(process))
 }
 
 fn quote_argument(argument: &str) -> Result<String> {
@@ -295,4 +286,24 @@ pub fn migrate_installation_startup(previous: &Path, root: &Path) -> Result<()> 
 
 pub fn launch_on_interactive_desktop(executable: &Path) -> Result<bool> {
     super::windows_startup::launch_on_interactive_desktop(executable)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command;
+
+    #[test]
+    fn validated_process_handle_survives_process_exit() {
+        let command = std::env::var_os("ComSpec").unwrap_or_else(|| "cmd.exe".into());
+        let mut child = Command::new(command)
+            .args(["/d", "/c", "ping -n 2 127.0.0.1 >nul"])
+            .spawn()
+            .unwrap();
+        let expected = process_path_for_pid(child.id()).unwrap();
+        let process = open_validated_process(child.id(), &expected).unwrap();
+        assert!(child.wait().unwrap().success());
+        drop(child);
+        process.wait_for_exit(Duration::from_secs(1)).unwrap();
+    }
 }
