@@ -799,14 +799,40 @@ impl<T> Default for LayerPatch<T> {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ViewportPatch {
     pub frame_view: FrameView,
     pub decoration: DecorationPatch,
     pub scene: LayerPatch<SceneDisplayItem>,
+    /// Complete replacement, indexed into the resulting scene, not patch payload items.
+    /// None retains the previous plan; Some(empty) clears it.
+    pub scene_render_plan: Option<Vec<SceneRenderRun>>,
     pub pen_filter_geometry_ops: Vec<PenFilterGeometryPatch>,
     pub path_geometry_ops: Vec<PathGeometryPatch>,
     pub overlay: LayerPatch<OverlayDisplayItem>,
+}
+
+impl Default for ViewportPatch {
+    fn default() -> Self {
+        Self {
+            frame_view: FrameView::default(),
+            decoration: DecorationPatch::default(),
+            scene: LayerPatch::default(),
+            scene_render_plan: Some(Vec::new()),
+            pen_filter_geometry_ops: Vec::new(),
+            path_geometry_ops: Vec::new(),
+            overlay: LayerPatch::default(),
+        }
+    }
+}
+
+/// An ordered, homogeneous effect run. Identities are assigned before culling.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SceneRenderRun {
+    pub source_pass: DisplayItemId,
+    pub effect_run: DisplayItemId,
+    pub start: u32,
+    pub count: u32,
 }
 
 #[derive(Clone, Debug, PartialEq)]

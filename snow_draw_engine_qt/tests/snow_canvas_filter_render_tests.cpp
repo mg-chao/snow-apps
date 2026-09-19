@@ -15,6 +15,7 @@
 #include <QColor>
 #include <QImage>
 #include <QPainter>
+#include <QMouseEvent>
 #include <QStringList>
 
 #include <algorithm>
@@ -25,6 +26,7 @@
 #include <limits>
 #include <random>
 #include <utility>
+#include <tuple>
 #include <vector>
 
 namespace {
@@ -2204,6 +2206,305 @@ void mosaicReplayRendersEveryFreeDrawChunk() {
     }
 }
 
+void runtimeExportPreservesOffscreenSourceBoundaries() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(640, 128);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(320, 64, 1), "configure export ordering viewport");
+    require(runtime.setQuickSelectionDisabledTools(
+                {SnowCanvasTool::RectangleFilter, SnowCanvasTool::Shape}),
+            "disable quick selection for the ordering fixture");
+    require(canvas.setCanvasFilterStyle({SnowCanvasFilterType::Inversion, 1, 1, 30},
+                                        SnowCanvasFilterStylePropertyType |
+                                            SnowCanvasFilterStylePropertyStrength |
+                                            SnowCanvasFilterStylePropertyOpacity),
+            "configure opaque inversion");
+    const auto draw = [&](SnowCanvasTool tool, QPointF start, QPointF end) {
+        require(canvas.resetEditingStatePreservingTool(), "clear fixture selection");
+        require(canvas.setCanvasTool(tool), "activate fixture drawing tool");
+        for (const auto& [type, position, button, buttons] :
+             {std::tuple{QEvent::MouseButtonPress, start, Qt::LeftButton,
+                         Qt::MouseButtons(Qt::LeftButton)},
+              std::tuple{QEvent::MouseMove, end, Qt::NoButton, Qt::MouseButtons(Qt::LeftButton)},
+              std::tuple{QEvent::MouseButtonRelease, end, Qt::LeftButton,
+                         Qt::MouseButtons(Qt::NoButton)}}) {
+            QMouseEvent event(type, position, position, position, button, buttons, Qt::NoModifier);
+            QApplication::sendEvent(&canvas, &event);
+        }
+    };
+    draw(SnowCanvasTool::RectangleFilter, {20, 20}, {620, 108});
+    draw(SnowCanvasTool::Shape, {550, 40}, {560, 50});
+    draw(SnowCanvasTool::RectangleFilter, {20, 20}, {620, 108});
+    QImage base(640, 128, QImage::Format_ARGB32_Premultiplied);
+    base.fill(QColor(120, 30, 10));
+    const QList<CanvasExportSource> sources{{base, QRectF(0, 0, 640, 128)}};
+    const auto wide = runtime.renderToImage(QRectF(0, 0, 640, 128), base.size(), sources);
+    const auto cropped = runtime.renderToImage(QRectF(32, 32, 64, 64), QSize(64, 64), sources);
+    require(cropped.pixelColor(32, 32) == QColor(120, 30, 10),
+            "runtime export must sample the first inversion through the offscreen separator");
+    require(cropped == wide.copy(32, 32, 64, 64),
+            "export crop must preserve the uncropped render plan");
+}
+
+void runtimeExportUsesExactFractionalProjection() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(100, 64);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(50, 32, 1), "configure fractional export viewport");
+    require(runtime.setQuickSelectionDisabledTools({SnowCanvasTool::RectangleFilter}),
+            "disable quick selection for the fractional export fixture");
+    require(canvas.setCanvasFilterStyle({SnowCanvasFilterType::Inversion, 1, 1, 30},
+                                        SnowCanvasFilterStylePropertyType |
+                                            SnowCanvasFilterStylePropertyStrength |
+                                            SnowCanvasFilterStylePropertyOpacity),
+            "configure fractional export inversion");
+    require(canvas.setCanvasTool(SnowCanvasTool::RectangleFilter),
+            "activate the fractional export filter tool");
+    for (const auto& [type, position, button, buttons] :
+         {std::tuple{QEvent::MouseButtonPress, QPointF(32.25, 10.0), Qt::LeftButton,
+                     Qt::MouseButtons(Qt::LeftButton)},
+          std::tuple{QEvent::MouseMove, QPointF(60.25, 54.0), Qt::NoButton,
+                     Qt::MouseButtons(Qt::LeftButton)},
+          std::tuple{QEvent::MouseButtonRelease, QPointF(60.25, 54.0), Qt::LeftButton,
+                     Qt::MouseButtons(Qt::NoButton)}}) {
+        QMouseEvent event(type, position, position, position, button, buttons, Qt::NoModifier);
+        QApplication::sendEvent(&canvas, &event);
+    }
+
+    QImage base(100, 64, QImage::Format_ARGB32_Premultiplied);
+    base.fill(QColor(120, 30, 10));
+    const QList<CanvasExportSource> sources{{base, QRectF(0, 0, 100, 64)}};
+    const QImage exported =
+        runtime.renderToImage(QRectF(0.25, 0, 64.5, 64), QSize(258, 256), sources);
+    require(exported.pixelColor(85, 128) == QColor(120, 30, 10),
+            "fractional export must preserve the source pixel before the filter edge");
+    require(exported.pixelColor(130, 128) == QColor(135, 225, 245),
+            "fractional export must place the filter edge using the exact export projection");
+}
+
+void explicitRenderPlanValidatesBoundariesAndCrops() {
+    SnowSceneDisplayItem background{};
+    background.kind = SNOW_SCENE_DISPLAY_ITEM_DRAW_RECT;
+    background.width = 2304;
+    background.height = 64;
+    background.fill = SnowColorRgba8{120, 30, 10, 255};
+    background.fill_style = SNOW_FILL_STYLE_SOLID;
+    background.opacity = 1;
+    SnowSceneDisplayItem filter{};
+    filter.kind = SNOW_SCENE_DISPLAY_ITEM_FILTER;
+    filter.element_id = {10, 7};
+    filter.width = 2304;
+    filter.height = 64;
+    filter.opacity = 1;
+    filter.filter = snow_filter_render_spec_resolve(3, 1);
+    SnowSceneDisplayItem separator = background;
+    separator.center_x = 1000;
+    separator.width = 8;
+    separator.opacity = 0; // Transparent ordinary drawables still establish a boundary.
+    SnowSceneDisplayItem second = filter;
+    second.element_id = {12, 9};
+    const std::vector<SnowCanvasSceneItem> complete{
+        SnowCanvasSceneItem(background), SnowCanvasSceneItem(filter),
+        SnowCanvasSceneItem(separator), SnowCanvasSceneItem(second)};
+    const std::vector<SnowCanvasSceneItem> cropped{complete[0], complete[1], complete[3]};
+    const std::vector<SnowSceneRenderRun> widePlan{{{10, 7}, {10, 7}, 1, 1},
+                                                   {{12, 9}, {12, 9}, 3, 1}};
+    const std::vector<SnowSceneRenderRun> cropPlan{{{10, 7}, {10, 7}, 1, 1},
+                                                   {{12, 9}, {12, 9}, 2, 1}};
+    using snow_canvas_renderer::validateRenderPlan;
+    require(validateRenderPlan(cropPlan, cropped.data(), 3),
+            "culled separator may leave adjacent distinct source passes");
+    require(validateRenderPlan({}, nullptr, 0), "empty plan must validate for an empty scene");
+    require(!validateRenderPlan({}, cropped.data(), 3),
+            "missing filter descriptors must be rejected");
+    for (int invalid = 0; invalid < 6; ++invalid) {
+        auto plan = cropPlan;
+        if (invalid == 0) {
+            plan[0].count = 0;
+        }
+        if (invalid == 1) {
+            plan[1].count = 0xffffffffu;
+        }
+        if (invalid == 2) {
+            plan[1].start = 1;
+        }
+        if (invalid == 3) {
+            plan[0].start = 0;
+        }
+        if (invalid == 4) {
+            plan[1].effect_run = plan[0].effect_run;
+        }
+        if (invalid == 5) {
+            plan[1].start = 4;
+        }
+        require(!validateRenderPlan(plan, cropped.data(), 3),
+                "malformed render descriptors must be rejected");
+    }
+    auto spanning = widePlan;
+    spanning[1].source_pass = spanning[0].source_pass;
+    require(!validateRenderPlan(spanning, complete.data(), 4),
+            "a source pass cannot cross a displayed drawable");
+    const auto render = [&](const std::vector<SnowCanvasSceneItem>& items,
+                            const std::vector<SnowSceneRenderRun>& plan, int width, double dpr,
+                            bool tiled, bool partial) {
+        QImage image(QSize(qRound(width * dpr), qRound(64 * dpr)),
+                     QImage::Format_ARGB32_Premultiplied);
+        image.setDevicePixelRatio(dpr);
+        image.fill(Qt::transparent);
+        SceneDisplayInfo info{};
+        info.surface_width = width;
+        info.surface_height = 64;
+        info.camera_zoom = 1;
+        int token = 0;
+        snow_canvas_filter_tile_cache::clear();
+        snow_canvas_renderer::SceneExecutionPlan execution;
+        snow_canvas_renderer::prepareExecutionPlan(
+            execution, items.data(), static_cast<std::uint32_t>(items.size()), info, dpr, plan, 1);
+        for (int frame = 0; frame < 3; ++frame) {
+            const QRegion region(partial && frame == 2 ? QRect(16, 8, 32, 40)
+                                                       : QRect(0, 0, width, 64));
+            QPainter painter(&image);
+            painter.setClipRegion(region);
+            snow_canvas_renderer::SceneRenderRequest request;
+            request.painter = &painter;
+            request.displayInfo = &info;
+            request.sceneItems = items.data();
+            request.sceneItemCount = static_cast<std::uint32_t>(items.size());
+            request.exposedRegion = region;
+            request.executionPlan = &execution;
+            request.cacheNamespace = &token;
+            if (tiled) {
+                snow_canvas_renderer::renderSceneItemsTiled(request);
+            } else {
+                snow_canvas_renderer::renderSceneItems(request);
+            }
+            require(snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread()
+                            .executionPlanBuildCount == 0,
+                    "paints with a retained execution plan must not rebuild it");
+        }
+        require(execution.buildCount == 1,
+                "tiles and partial paints must share one execution plan");
+        snow_canvas_filter_tile_cache::clear();
+        return image;
+    };
+    for (double dpr : {1.0, 1.25, 2.0}) {
+        const auto wide = render(complete, widePlan, 2304, dpr, false, false);
+        const auto crop = render(cropped, cropPlan, 64, dpr, false, false);
+        require(crop.pixelColor(qRound(32 * dpr), qRound(32 * dpr)) == QColor(120, 30, 10),
+                "offscreen drawable must keep the second inversion in its own source pass");
+        require(wide.copy(qRound(1120 * dpr), 0, crop.width(), crop.height()) == crop,
+                "uncropped and cropped scenes must have identical pixels at equal projection");
+        require(render(cropped, cropPlan, 64, dpr, true, true) == crop,
+                "cold, retained, partial and full paints must respect explicit source boundaries");
+    }
+}
+
+// Ordered effects must be independent of tiling and spatial candidate selection.
+void mixedEffectsPreservePaintOrderAcrossTiles() {
+    const auto rectangle = [](double x, double width) {
+        SnowSceneDisplayItem item{};
+        item.kind = SNOW_SCENE_DISPLAY_ITEM_DRAW_RECT;
+        item.center_x = x;
+        item.width = width;
+        item.height = 64.0;
+        item.fill = SnowColorRgba8{120, 30, 10, 255};
+        item.fill_style = SNOW_FILL_STYLE_SOLID;
+        item.opacity = 1.0;
+        return item;
+    };
+    const auto filter = [](std::uint32_t id, std::uint32_t type, double x, double width) {
+        SnowSceneDisplayItem item{};
+        item.kind = SNOW_SCENE_DISPLAY_ITEM_FILTER;
+        item.element_id = SnowElementId{id, 1};
+        item.center_x = x;
+        item.width = width;
+        item.height = 64.0;
+        item.filter = snow_filter_render_spec_resolve(type, 1.0);
+        item.opacity = 1.0;
+        return item;
+    };
+    const auto render = [](const std::vector<SnowCanvasSceneItem>& items, double dpr, bool tiled,
+                           bool retained) {
+        QImage image(QSize(qCeil(768 * dpr), qCeil(64 * dpr)), QImage::Format_ARGB32_Premultiplied);
+        image.setDevicePixelRatio(dpr);
+        image.fill(Qt::transparent);
+        SceneDisplayInfo info{};
+        info.surface_width = 768;
+        info.surface_height = 64;
+        info.camera_zoom = 1.0;
+        int cacheToken = 0;
+        snow_canvas_filter_tile_cache::clear();
+        for (int frame = 0; frame < (retained ? 2 : 1); ++frame) {
+            image.fill(Qt::transparent);
+            QPainter painter(&image);
+            const QRegion region(QRect(0, 0, 768, 64));
+            painter.setClipRegion(region);
+            snow_canvas_renderer::SceneRenderRequest request;
+            request.painter = &painter;
+            request.displayInfo = &info;
+            request.sceneItems = items.data();
+            request.sceneItemCount = static_cast<std::uint32_t>(items.size());
+            request.exposedRegion = region;
+            request.cacheNamespace = &cacheToken;
+            if (tiled) {
+                snow_canvas_renderer::renderSceneItemsTiled(request);
+            } else {
+                snow_canvas_renderer::renderSceneItems(request);
+            }
+        }
+        snow_canvas_filter_tile_cache::clear();
+        return image;
+    };
+    const std::vector<SnowCanvasSceneItem> overlap = {
+        SnowCanvasSceneItem(rectangle(0, 768)),
+        SnowCanvasSceneItem(filter(1, 3, 0, 768)),
+        SnowCanvasSceneItem(filter(2, 2, 0, 768)),
+        SnowCanvasSceneItem(filter(3, 3, 0, 768)),
+    };
+    const std::vector<SnowCanvasSceneItem> separated = {
+        overlap[0],
+        SnowCanvasSceneItem(filter(1, 3, -300, 64)),
+        overlap[2],
+        SnowCanvasSceneItem(filter(3, 3, 300, 64)),
+    };
+    auto translucent = overlap;
+    translucent[1].opacity = 0.4;
+    translucent[2].filter = snow_filter_render_spec_resolve(2, 0.3);
+    translucent[3].opacity = 0.7;
+    const SnowArrowPoint points[]{{-300, 0}, {300, 0}};
+    SnowSceneDisplayItem pen = filter(2, 2, 0, 768);
+    pen.is_free_draw = 1;
+    pen.arrow_points = points;
+    pen.arrow_point_count = 2;
+    pen.stroke_width = 24;
+    pen.opacity = 0.6;
+    auto penMixed = translucent;
+    penMixed[2] = SnowCanvasSceneItem(pen);
+    for (double dpr : {1.0, 1.25, 2.0}) {
+        const QImage full = render(overlap, dpr, false, false);
+        require(full.pixelColor(qRound(384 * dpr), qRound(32 * dpr)) == QColor(135, 225, 245),
+                "the last opaque invert must remain above an intervening grayscale effect");
+        require(full == render(overlap, dpr, true, false) &&
+                    full == render(overlap, dpr, true, true),
+                "overlapping effect order must match in full, cold tiled, and retained rendering");
+        for (const auto& mixed : {translucent, penMixed}) {
+            const auto reference = render(mixed, dpr, false, false);
+            require(reference == render(mixed, dpr, true, false) &&
+                        reference == render(mixed, dpr, true, true),
+                    "mixed strengths, partial opacity and pen masks must preserve ordered "
+                    "shared-source effects");
+        }
+        const QImage sparse = render(separated, dpr, false, false);
+        require(sparse == render(separated, dpr, true, false) &&
+                    sparse == render(separated, dpr, true, true),
+                "culling a distant matching effect must not reorder the remaining effects");
+    }
+}
+
 void adjacentLayerBatchesEffectsAndKeepsSparseComponents() {
     QImage image(400, 200, QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::transparent);
@@ -2732,6 +3033,10 @@ int main(int argc, char** argv) {
     renderWorkspaceClearReleasesCanvasScratch();
     stableRendererFramesReuseOpaqueGaussianWorkspace();
     mosaicReplayRendersEveryFreeDrawChunk();
+    runtimeExportPreservesOffscreenSourceBoundaries();
+    runtimeExportUsesExactFractionalProjection();
+    explicitRenderPlanValidatesBoundariesAndCrops();
+    mixedEffectsPreservePaintOrderAcrossTiles();
     adjacentLayerBatchesEffectsAndKeepsSparseComponents();
     distantSameEffectFiltersUseIndependentSpatialGroups();
     filterSourceCacheKeepsOverlappingZBoundariesSeparate();

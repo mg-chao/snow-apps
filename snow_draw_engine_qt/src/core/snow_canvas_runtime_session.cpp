@@ -76,11 +76,17 @@ ScopedRuntimeHandle runtimeFromSerializedSession(const QByteArray& payload,
     ScopedRuntimeHandle runtime;
     SnowStyleDefaults styleDefaults{};
     SnowRuntimeConfig engineConfig{};
-    if (payload.isEmpty() || !toEngineRuntimeConfig(config, styleDefaults, engineConfig) ||
-        snow_runtime_create_from_document_session_with_config(
-            reinterpret_cast<const std::uint8_t*>(payload.constData()),
-            static_cast<std::size_t>(payload.size()), &engineConfig,
-            runtime.outParam()) != SNOW_OK) {
+    if (payload.isEmpty() || !toEngineRuntimeConfig(config, styleDefaults, engineConfig)) {
+        qWarning("Canvas session restoration failed: stage=input_validation bytes=%lld",
+                 static_cast<long long>(payload.size()));
+        return runtime;
+    }
+    const auto status = snow_runtime_create_from_document_session_with_config(
+        reinterpret_cast<const std::uint8_t*>(payload.constData()),
+        static_cast<std::size_t>(payload.size()), &engineConfig, runtime.outParam());
+    if (status != SNOW_OK) {
+        qWarning("Canvas session restoration failed: stage=deserialize status=%d bytes=%lld",
+                 static_cast<int>(status), static_cast<long long>(payload.size()));
         runtime.reset();
     }
     if (runtime.get() != nullptr) {

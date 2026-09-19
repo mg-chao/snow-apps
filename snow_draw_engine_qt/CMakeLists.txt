@@ -122,6 +122,11 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_DEMO)
 endif()
 
 if(SNOW_DRAW_ENGINE_QT_BUILD_BENCHMARKS)
+    snow_add_rust_executable(snow-scene-order-benchmark
+        PACKAGE snow-draw-engine-scene
+        MANIFEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_NAME snow-scene-order-benchmark
+    )
     add_executable(snow-canvas-smart-erase-benchmark
         tests/snow_canvas_smart_erase_benchmark.cpp
         src/rendering/snow_canvas_smart_erase_algorithm.cpp
@@ -395,7 +400,7 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     target_link_libraries(snow-canvas-spotlight-render-tests PRIVATE
         snow_draw_engine_qt_canvas
     )
-    qt_import_plugins(snow-canvas-spotlight-render-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    snow_shot_import_offscreen_platform(snow-canvas-spotlight-render-tests)
     add_test(
         NAME snow-canvas-spotlight-render-tests
         COMMAND snow-canvas-spotlight-render-tests

@@ -69,6 +69,7 @@ set(SNOW_CANVAS_QT_SOURCES
     src/rendering/snow_canvas_render_geometry.cpp
     src/rendering/snow_canvas_render_geometry.h
     src/rendering/snow_canvas_renderer.cpp
+    src/rendering/snow_canvas_render_plan.h
     src/rendering/snow_canvas_renderer.h
     src/rendering/snow_canvas_spotlight_renderer.cpp
     src/rendering/snow_canvas_spotlight_renderer.h

@@ -5,7 +5,7 @@
 #include "snow_canvas_lifecycle.h"
 #include "snow_canvas_pen_mask_atlas.h"
 #include "snow_canvas_renderer.h"
-#include "snow_canvas_spotlight_renderer.h"
+#include "snow_canvas_compositor.h"
 #include "snow_canvas_state.h"
 #include "snow_canvas_viewport.h"
 
@@ -128,6 +128,14 @@ void renderRuntimeScene(QPainter& painter, const ExportProjection& projection,
     for (std::uint32_t i = 0; i < displayCache.sceneItemCount(); ++i)
         items.push_back(displayCache.sceneItems()[i]);
     snow_canvas_smart_erase::applySnapshot(items, smartErase);
+    const double devicePixelRatio =
+        painter.device() != nullptr ? qMax(1.0, painter.device()->devicePixelRatioF()) : 1.0;
+    // Export may replace the ceiled synchronization surface with an exact fractional projection.
+    // Resolve filter geometry from the same projection that will draw the scene.
+    snow_canvas_renderer::SceneExecutionPlan executionPlan;
+    snow_canvas_renderer::prepareExecutionPlan(
+        executionPlan, items.data(), static_cast<std::uint32_t>(items.size()), sceneInfo,
+        devicePixelRatio, displayCache.renderPlan(), displayCache.patchCursor().scene_revision);
     snow_canvas_renderer::SceneRenderRequest request{
         &painter,
         &sceneInfo,
@@ -148,28 +156,16 @@ void renderRuntimeScene(QPainter& painter, const ExportProjection& projection,
         &penMaskAtlas,
     };
     request.smartErase = smartErase;
+    request.executionPlan = &executionPlan;
     snow_canvas_renderer::renderSceneItems(request);
-    snow_canvas_spotlight_renderer::render(
-        painter, sceneInfo, displayCache.spotlightInfo(), displayCache.spotlightCutouts(),
-        displayCache.spotlightCutoutCount(),
-        QRectF(0.0, 0.0, sceneInfo.surface_width, sceneInfo.surface_height),
-        painter.hasClipping()
-            ? painter.clipRegion()
-            : QRegion(QRect(0, 0, static_cast<int>(positiveCeil(sceneInfo.surface_width)),
-                            static_cast<int>(positiveCeil(sceneInfo.surface_height)))));
-    snow_canvas_renderer::WatermarkPatternRenderer::render(
-        painter,
-        snow_canvas_renderer::WatermarkRenderRequest{
-            watermarkInfo,
-            QRectF(0.0, 0.0, watermarkInfo.surface_width, watermarkInfo.surface_height),
-            QRectF(0.0, 0.0, watermarkInfo.surface_width, watermarkInfo.surface_height),
-            painter.hasClipping()
-                ? painter.clipRegion()
-                : QRegion(QRect(0, 0, static_cast<int>(positiveCeil(watermarkInfo.surface_width)),
-                                static_cast<int>(positiveCeil(watermarkInfo.surface_height)))),
-            painter.deviceTransform(),
-            snow_canvas_renderer::WatermarkRenderPurpose::ImageExport,
-        });
+    snow_canvas_compositor::Frame decorations;
+    decorations.sceneInfo = &sceneInfo;
+    decorations.spotlightInfo = &displayCache.spotlightInfo();
+    decorations.spotlightCutouts = displayCache.spotlightCutouts();
+    decorations.spotlightCutoutCount = displayCache.spotlightCutoutCount();
+    decorations.watermarkInfo = &watermarkInfo;
+    snow_canvas_compositor::renderDocumentDecorations(
+        painter, decorations, snow_canvas_renderer::WatermarkRenderPurpose::ImageExport);
     painter.restore();
     workspace.finishFrame(true);
 }

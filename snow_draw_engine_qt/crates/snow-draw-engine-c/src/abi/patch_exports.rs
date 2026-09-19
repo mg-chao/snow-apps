@@ -505,3 +505,113 @@ mod spotlight_patch_export_tests {
         }
     }
 }
+
+/// # Safety
+/// `patch` must be a live patch handle. Output pointers must be valid for writes.
+/// The returned array remains valid until the patch is destroyed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_patch_get_scene_render_plan(
+    patch: SnowPatchHandle,
+    out_replace: *mut u8,
+    out_runs: *mut *const SnowSceneRenderRun,
+    out_count: *mut u32,
+) -> SnowError {
+    ffi_error(|| {
+        if out_replace.is_null() || out_runs.is_null() || out_count.is_null() {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_patch_ref(patch, |patch| {
+            write_out(out_replace, u8::from(patch.payload.render_plan_replace));
+            write_slice_out(out_runs, out_count, &patch.payload.render_plan);
+            Ok(())
+        }))
+    })
+}
+
+#[cfg(test)]
+mod render_plan_tests {
+    use super::*;
+    use snow_draw_engine::{DisplayItemId, SceneRenderRun, ViewportPatch};
+
+    #[test]
+    fn render_plan_replacement_roundtrips_and_borrows_patch_storage() {
+        let id = DisplayItemId {
+            index: 71,
+            generation: 9,
+        };
+        for metadata in [
+            None,
+            Some(Vec::new()),
+            Some(vec![SceneRenderRun {
+                source_pass: id,
+                effect_run: DisplayItemId {
+                    index: 82,
+                    generation: 11,
+                },
+                start: 4,
+                count: 2,
+            }]),
+        ] {
+            let patch = ViewportPatch {
+                scene_render_plan: metadata.clone(),
+                ..Default::default()
+            };
+            let handle = Box::into_raw(Box::new(SnowPatchHandleImpl {
+                payload: SnowPatchPayload::from_patch(&patch),
+            }));
+            let mut replace = 99;
+            let mut runs = std::ptr::null();
+            let mut count = 99;
+            unsafe {
+                assert_eq!(
+                    snow_patch_get_scene_render_plan(handle, &mut replace, &mut runs, &mut count),
+                    SnowError::Ok
+                );
+                assert_eq!(replace, u8::from(metadata.is_some()));
+                assert_eq!(count as usize, metadata.as_ref().map_or(0, Vec::len));
+                if count != 0 {
+                    assert_eq!((*runs).source_pass.index, 71);
+                    assert_eq!((*runs).source_pass.generation, 9);
+                    assert_eq!((*runs).effect_run.generation, 11);
+                    assert_eq!((*runs).start, 4);
+                    assert_eq!((*runs).count, 2);
+                    let first = runs;
+                    assert_eq!(
+                        snow_patch_get_scene_render_plan(
+                            handle,
+                            &mut replace,
+                            &mut runs,
+                            &mut count
+                        ),
+                        SnowError::Ok
+                    );
+                    assert_eq!(first, runs);
+                }
+                for (replacement, descriptors, length) in [
+                    (
+                        std::ptr::null_mut(),
+                        &mut runs as *mut _,
+                        &mut count as *mut _,
+                    ),
+                    (
+                        &mut replace as *mut _,
+                        std::ptr::null_mut(),
+                        &mut count as *mut _,
+                    ),
+                    (
+                        &mut replace as *mut _,
+                        &mut runs as *mut _,
+                        std::ptr::null_mut(),
+                    ),
+                ] {
+                    assert_eq!(
+                        snow_patch_get_scene_render_plan(handle, replacement, descriptors, length),
+                        SnowError::InvalidArgument
+                    );
+                }
+                snow_patch_destroy(handle);
+            }
+        }
+        assert_eq!(std::mem::size_of::<SnowSceneRenderRun>(), 24);
+    }
+}

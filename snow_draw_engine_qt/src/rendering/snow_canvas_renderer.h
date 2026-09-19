@@ -25,6 +25,9 @@ namespace snow_canvas_renderer {
 
 struct FilterRenderDiagnostics {
     bool usedFilterPath = false;
+    std::size_t executionPlanBuildCount = 0;
+    std::size_t dependencyItemVisits = 0;
+    std::uint64_t planningNanoseconds = 0;
     std::size_t exposedPixelCount = 0;
     std::size_t totalWorkingPixelCount = 0;
     std::size_t peakWorkingPixelCount = 0;
@@ -113,6 +116,8 @@ struct SceneRenderRequest {
     QPoint filterTileCoordinate{};
     bool clearBackgroundEnabled = true;
     SnowCanvasSmartEraseSnapshot smartErase{};
+    const SceneExecutionPlan* executionPlan = nullptr;
+    const std::vector<SnowSceneRenderRun>* renderPlan = nullptr;
 };
 
 QColor toQColor(const SnowColorRgba8& color);

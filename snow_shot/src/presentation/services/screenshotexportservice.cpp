@@ -55,6 +55,9 @@ QImage composeSelectionResultFromRuntime(SnowCanvasRuntime& runtime, const QRect
                                          const ScreenshotResultStyle& style,
                                          const QList<CanvasExportSource>& sources) {
     if (selection.width() < 1 || selection.height() < 1) {
+        qWarning(
+            "Screenshot selection export failed: stage=selection_validation width=%d height=%d",
+            selection.width(), selection.height());
         return {};
     }
 
@@ -65,13 +68,21 @@ QImage composeSelectionResultFromRuntime(SnowCanvasRuntime& runtime, const QRect
         content = runtime.renderToImage(QRectF(selection), selection.size(), sources);
     }
     if (content.isNull()) {
+        qWarning("Screenshot selection export failed: stage=render_canvas width=%d height=%d "
+                 "sources=%lld",
+                 selection.width(), selection.height(), static_cast<long long>(sources.size()));
         SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.failure.render_canvas", 1);
         return {};
     }
     SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.rendered_bytes", content.sizeInBytes());
     SNOW_SHOT_CLIPBOARD_PERF_SCOPE("export.compose_result");
     SNOW_SHOT_PIN_PERF_SCOPE("export.compose_result");
-    return ScreenshotResultCompositor::compose(content, style);
+    QImage result = ScreenshotResultCompositor::compose(content, style);
+    if (result.isNull()) {
+        qWarning("Screenshot selection export failed: stage=compose_result width=%d height=%d",
+                 content.width(), content.height());
+    }
+    return result;
 }
 
 ScreenshotPinnedSelectionRequest
@@ -122,6 +133,7 @@ class ScreenshotExportWorker final : public QObject {
             SNOW_SHOT_CLIPBOARD_PERF_SCOPE("export.ensure_worker_runtime");
             SNOW_SHOT_PIN_PERF_SCOPE("export.ensure_worker_runtime");
             if (!ensureRuntime()) {
+                qWarning("Screenshot selection export failed: stage=worker_runtime");
                 SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.failure.worker_runtime", 1);
                 return {};
             }
@@ -130,6 +142,8 @@ class ScreenshotExportWorker final : public QObject {
             SNOW_SHOT_CLIPBOARD_PERF_SCOPE("export.restore_document");
             SNOW_SHOT_PIN_PERF_SCOPE("export.restore_document");
             if (!m_runtime->restoreDocumentSession(documentSession)) {
+                qWarning("Screenshot selection export failed: stage=restore_document bytes=%lld",
+                         static_cast<long long>(documentSession.size()));
                 SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.failure.restore_document", 1);
                 return {};
             }

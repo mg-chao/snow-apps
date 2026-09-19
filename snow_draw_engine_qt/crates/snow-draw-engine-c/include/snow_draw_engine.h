@@ -969,6 +969,15 @@ typedef struct SnowArrowPathCommand {
  * SnowPatchHandle that returned this item remains alive. A pointer may be
  * null only when its corresponding count or UTF-8 length is zero.
  */
+/* Filter runs use stable uncropped identities; start/count index the resulting scene.
+   Replacement flag 0 retains the plan; 1 replaces it (including an empty plan). */
+typedef struct SnowSceneRenderRun {
+    SnowElementId source_pass;
+    SnowElementId effect_run;
+    uint32_t start;
+    uint32_t count;
+} SnowSceneRenderRun;
+
 typedef struct SnowFilterRenderSpec {
     uint32_t filter_type;
     uint32_t render_phase;
@@ -1397,6 +1406,10 @@ SnowError snow_patch_get_spotlight_ops(SnowPatchHandle patch, const SnowPatchOp*
                                        uint32_t* out_count);
 
 /* Returned items and all nested pointer fields borrow from `patch`. */
+SnowError snow_patch_get_scene_render_plan(SnowPatchHandle patch, uint8_t* out_replace,
+                                           const SnowSceneRenderRun** out_runs,
+                                           uint32_t* out_count);
+
 SnowError snow_patch_get_scene_items(SnowPatchHandle patch, const SnowSceneDisplayItem** out_items,
                                      uint32_t* out_count);
 

@@ -525,6 +525,7 @@ mod tests {
         watermark.text[..3].copy_from_slice(b"ABI");
         watermark.text_len = 3;
         let patch = ViewportPatch {
+            scene_render_plan: None,
             path_geometry_ops: Vec::new(),
             pen_filter_geometry_ops: Vec::new(),
             frame_view: FrameView::default(),

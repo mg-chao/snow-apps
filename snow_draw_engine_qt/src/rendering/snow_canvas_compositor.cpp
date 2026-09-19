@@ -43,11 +43,16 @@ void clearSurface(QPainter& painter, const Frame& frame) {
     }
 }
 
-void renderDocumentDecorations(QPainter& painter, const Frame& frame) {
-    if (frame.widget == nullptr) {
+void renderDocumentDecorations(QPainter& painter, const Frame& frame,
+                               snow_canvas_renderer::WatermarkRenderPurpose purpose) {
+    if (frame.sceneInfo == nullptr) {
         return;
     }
-    const QRegion exposedRegion = painter.clipRegion();
+    const QRegion exposedRegion =
+        painter.hasClipping()
+            ? painter.clipRegion()
+            : QRegion(QRectF(0, 0, frame.sceneInfo->surface_width, frame.sceneInfo->surface_height)
+                          .toAlignedRect());
     if (frame.sceneInfo != nullptr && frame.spotlightInfo != nullptr) {
         const QRectF spotlightArea =
             frame.hasSpotlightRenderArea
@@ -72,7 +77,7 @@ void renderDocumentDecorations(QPainter& painter, const Frame& frame) {
                      renderArea,
                      exposedRegion,
                      painter.deviceTransform(),
-                     snow_canvas_renderer::WatermarkRenderPurpose::Widget,
+                     purpose,
                  });
 }
 

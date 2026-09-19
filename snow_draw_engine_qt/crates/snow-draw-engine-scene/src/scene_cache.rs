@@ -1,3 +1,4 @@
+use crate::scene_order::{OrderNode, SceneOrderPlan};
 use std::collections::HashMap;
 
 use snow_draw_engine_core::DrawRect;
@@ -26,6 +27,13 @@ struct CachedSceneEntry {
 #[derive(Debug, Default)]
 pub struct DocumentSceneCache {
     document_revision: DocumentRevision,
+    pub(crate) order_plan: SceneOrderPlan,
+    order_plan_builds: u64,
+    relation_revision: u64,
+    pub(crate) preview_order_plan: std::sync::Mutex<SceneOrderPlan>,
+    pub(crate) duplicate_scene:
+        std::sync::Mutex<Option<std::rc::Rc<crate::scene_composition::DuplicateScene>>>,
+    pub(crate) preview_order_builds: std::sync::atomic::AtomicU64,
     entries: HashMap<ElementId, CachedSceneEntry>,
     spotlight_entries: HashMap<ElementId, DisplaySpotlightCutout>,
 }
@@ -55,6 +63,50 @@ impl DocumentSceneCache {
         }
     }
 
+    pub fn order_plan_build_count(&self) -> u64 {
+        self.order_plan_builds
+            + self
+                .preview_order_builds
+                .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn rebuild_order(&mut self, model: &DocumentModel) {
+        // Labels are parts of their owners, even when only the label is in view.
+        // Removing their original positions is essential to filter source boundaries.
+        let mut labels = HashMap::<ElementId, Vec<ElementId>>::new();
+        let label_ids: std::collections::HashSet<_> = model
+            .arrow_label_bindings()
+            .iter()
+            .map(|(_, text)| *text)
+            .collect();
+        for &(owner, text) in model.arrow_label_bindings() {
+            if model
+                .element(owner)
+                .is_ok_and(|element| element.meta.visible)
+            {
+                labels.entry(owner).or_default().push(text);
+            }
+        }
+        let mut nodes = Vec::with_capacity(self.entries.len());
+        for &id in model.paint_order() {
+            if !label_ids.contains(&id)
+                && let Some(item) = self.entry(id)
+            {
+                nodes.push(OrderNode::new(id, item));
+            }
+            if let Some(texts) = labels.get(&id) {
+                nodes.extend(texts.iter().map(|&id| OrderNode {
+                    id,
+                    effect: None,
+                    smart_erase: false,
+                }));
+            }
+        }
+        self.order_plan = SceneOrderPlan::new(nodes);
+        self.relation_revision = model.relation_index_build_count();
+        self.order_plan_builds += 1;
+    }
+
     pub fn entry(&self, id: ElementId) -> Option<&SceneDisplayItem> {
         self.entries.get(&id).map(|entry| &entry.item)
     }
@@ -73,19 +125,26 @@ impl DocumentSceneCache {
         for state in model.element_states() {
             self.refresh_entry(model, state.id);
         }
+        self.rebuild_order(model);
         self.document_revision = model.document_revision();
     }
 
     fn refresh(&mut self, model: &DocumentModel, delta: &DocumentDelta) {
+        let mut topology_changed = self.relation_revision != model.relation_index_build_count()
+            || delta.z_order_changed
+            || !delta.created.is_empty()
+            || !delta.removed.is_empty();
         for id in &delta.removed {
             self.entries.remove(id);
             self.spotlight_entries.remove(id);
         }
-        for id in &delta.touched {
+        for id in delta.touched.iter().chain(&delta.created) {
+            let old = self.entry(*id).map(|item| OrderNode::new(*id, item));
             self.refresh_entry(model, *id);
+            topology_changed |= old != self.entry(*id).map(|item| OrderNode::new(*id, item));
         }
-        for id in &delta.created {
-            self.refresh_entry(model, *id);
+        if topology_changed {
+            self.rebuild_order(model);
         }
     }
 

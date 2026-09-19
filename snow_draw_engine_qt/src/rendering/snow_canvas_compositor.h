@@ -49,7 +49,9 @@ struct Frame {
 };
 
 void clearSurface(QPainter& painter, const Frame& frame);
-void renderDocumentDecorations(QPainter& painter, const Frame& frame);
+void renderDocumentDecorations(QPainter& painter, const Frame& frame,
+                               snow_canvas_renderer::WatermarkRenderPurpose purpose =
+                                   snow_canvas_renderer::WatermarkRenderPurpose::Widget);
 void renderEditorOverlays(QPainter& painter, const Frame& frame);
 
 } // namespace snow_canvas_compositor

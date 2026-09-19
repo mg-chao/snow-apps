@@ -1584,10 +1584,8 @@ impl Document {
     }
 
     pub fn bound_text_id_for_serial_number(&self, serial_id: ElementId) -> Option<ElementId> {
-        self.serial_number_text_bindings()
-            .into_iter()
-            .find(|binding| binding.serial_id == serial_id)
-            .map(|binding| binding.text_id)
+        let text_id = self.serial_number(serial_id).ok()?.text_element_id?;
+        self.text(text_id).ok().map(|_| text_id)
     }
 
     pub fn serial_number_ids_with_text(&self, text_id: ElementId) -> Vec<ElementId> {
@@ -1690,7 +1688,7 @@ impl Document {
                     old_snapshot,
                     self.element_change_snapshot(*id),
                 );
-                if element_data_has_arrow_relations(data) || self.has_arrow_bound_to_element(*id) {
+                if element_data_has_relations(data) || self.has_arrow_bound_to_element(*id) {
                     changes.relations_changed = true;
                 }
                 Ok(Operation::RemoveElement { id: *id })
@@ -1707,8 +1705,7 @@ impl Document {
                 if element.data.kind() != data.kind() {
                     return Err(ErrorCode::InvalidArgument);
                 }
-                let relations_changed =
-                    element_data_arrow_relation_targets_changed(&inverse_data, data);
+                let relations_changed = element_data_relation_targets_changed(&inverse_data, data);
                 element.data = data.clone();
                 changes.touch(*id);
                 changes.note_element_bounds(data);
@@ -1754,7 +1751,7 @@ impl Document {
                 if element.meta.locked {
                     return Err(ErrorCode::InvalidState);
                 }
-                let relations_changed = element_data_has_arrow_relations(&element.data)
+                let relations_changed = element_data_has_relations(&element.data)
                     || self.has_arrow_bound_to_element(*id);
                 changes.note_existing_bounds(self, *id);
                 self.remove_element(*id)?;
@@ -1788,7 +1785,7 @@ impl Document {
                     old_snapshot,
                     self.element_change_snapshot(element.id),
                 );
-                if element_data_has_arrow_relations(&element.data)
+                if element_data_has_relations(&element.data)
                     || self.has_arrow_bound_to_element(element.id)
                 {
                     changes.relations_changed = true;
@@ -1923,11 +1920,21 @@ impl Document {
     }
 }
 
-fn element_data_has_arrow_relations(data: &ElementData) -> bool {
-    matches!(data, ElementData::Arrow(arrow) if arrow.text_element_id.is_some() || !arrow.bound_element_ids().is_empty())
+fn element_data_has_relations(data: &ElementData) -> bool {
+    match data {
+        ElementData::Arrow(arrow) => {
+            arrow.text_element_id.is_some() || !arrow.bound_element_ids().is_empty()
+        }
+        ElementData::SerialNumber(serial) => serial.text_element_id.is_some(),
+        _ => false,
+    }
 }
 
-fn element_data_arrow_relation_targets_changed(previous: &ElementData, next: &ElementData) -> bool {
+fn element_data_relation_targets_changed(previous: &ElementData, next: &ElementData) -> bool {
+    if let (ElementData::SerialNumber(previous), ElementData::SerialNumber(next)) = (previous, next)
+    {
+        return previous.text_element_id != next.text_element_id;
+    }
     let (ElementData::Arrow(previous), ElementData::Arrow(next)) = (previous, next) else {
         return false;
     };

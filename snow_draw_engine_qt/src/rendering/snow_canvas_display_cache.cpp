@@ -102,6 +102,9 @@ PatchApplyResult applyPatchOps(std::vector<Owned>& storage, bool reset, const Sn
 }
 
 struct PatchPayloadView {
+    std::uint8_t renderPlanReplace = 0;
+    const SnowSceneRenderRun* renderPlan = nullptr;
+    std::uint32_t renderPlanCount = 0;
     const SnowPatchOp* sceneOps = nullptr;
     const SnowPenFilterGeometryPatch* penFilterGeometryOps = nullptr;
     const SnowArrowPoint* penFilterGeometryPoints = nullptr;
@@ -139,7 +142,10 @@ bool readPatchPayload(SnowPatchHandle patch, PatchPayloadView* outPayload) {
         return false;
     }
 
-    return snow_patch_get_scene_ops(patch, &outPayload->sceneOps, &outPayload->sceneOpCount) ==
+    return snow_patch_get_scene_render_plan(patch, &outPayload->renderPlanReplace,
+                                            &outPayload->renderPlan,
+                                            &outPayload->renderPlanCount) == SNOW_OK &&
+           snow_patch_get_scene_ops(patch, &outPayload->sceneOps, &outPayload->sceneOpCount) ==
                SNOW_OK &&
            snow_patch_get_pen_filter_geometry_ops(patch, &outPayload->penFilterGeometryOps,
                                                   &outPayload->penFilterGeometryOpCount) ==
@@ -183,6 +189,8 @@ SnowCanvasDisplayCache::SnowCanvasDisplayCache() {
 
 void SnowCanvasDisplayCache::reset(const SnowColorRgba8& clearColor) {
     m_patchCursor = SnowPatchCursor{};
+    m_renderPlan.clear();
+    m_executionPlan = {};
     std::vector<SnowCanvasSceneItem>().swap(m_sceneStorage);
     std::vector<SnowCanvasOverlayItem>().swap(m_overlayStorage);
     std::vector<SnowSpotlightCutout>().swap(m_spotlightStorage);
@@ -242,6 +250,22 @@ bool SnowCanvasDisplayCache::sync(SnowRuntime runtime, SnowViewport viewport) {
     PatchApplyResult sceneApply =
         applyPatchOps(m_sceneStorage, patchInfo.scene_reset != 0, payload.sceneOps,
                       payload.sceneOpCount, payload.sceneItems, payload.sceneItemCount);
+    if (payload.renderPlanReplace > 1 ||
+        (patchInfo.scene_reset != 0 && payload.renderPlanReplace == 0)) {
+        reset(patchInfo.clear_color);
+        return false;
+    }
+    if (payload.renderPlanReplace != 0) {
+        assignStorage(m_renderPlan, payload.renderPlan, payload.renderPlanCount);
+    }
+    if ((payload.renderPlanReplace != 0 ||
+         patchInfo.scene_revision != m_patchCursor.scene_revision) &&
+        !snow_canvas_renderer::validateRenderPlan(
+            m_renderPlan, m_sceneStorage.data(),
+            static_cast<std::uint32_t>(m_sceneStorage.size()))) {
+        reset(patchInfo.clear_color);
+        return false;
+    }
     for (std::uint32_t opIndex = 0; opIndex < payload.pathGeometryOpCount; ++opIndex) {
         const SnowPathGeometryPatch& op = payload.pathGeometryOps[opIndex];
         if (op.range_offset > payload.pathGeometryRangeCount ||
@@ -729,3 +753,13 @@ QRegion dirtyVisualizationRegion(const SnowCanvasDisplayCache& cache, const QRec
 }
 
 } // namespace snow_canvas_display
+
+const snow_canvas_renderer::SceneExecutionPlan&
+SnowCanvasDisplayCache::executionPlan(double dpr) const {
+    if (m_executionPlan.dpr != dpr || m_executionPlan.revision != m_patchCursor.scene_revision) {
+        snow_canvas_renderer::prepareExecutionPlan(m_executionPlan, m_sceneItems, m_sceneItemCount,
+                                                   m_sceneDisplayInfo, dpr, m_renderPlan,
+                                                   m_patchCursor.scene_revision);
+    }
+    return m_executionPlan;
+}

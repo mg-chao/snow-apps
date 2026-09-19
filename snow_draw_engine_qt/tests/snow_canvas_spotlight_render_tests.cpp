@@ -202,6 +202,10 @@ void displayCachePatchesSpotlightIndependentlyFromStyle() {
     require(cache.sync(runtime.get(), viewport.get()),
             "initial spotlight display cache sync must succeed");
     const std::uint64_t sceneRevision = cache.patchCursor().scene_revision;
+    require(cache.executionPlan(1.0).buildCount == 1,
+            "first paint must prepare the execution plan");
+    require(cache.executionPlan(1.0).buildCount == 1,
+            "unchanged paint must reuse the execution plan");
 
     const auto pointer = [&](SnowPointerEventType type, double x, double y, std::uint8_t buttons) {
         SnowInputEvent event{};
@@ -245,6 +249,12 @@ void displayCachePatchesSpotlightIndependentlyFromStyle() {
     require(cache.sync(runtime.get(), viewport.get()), "spotlight opacity sync must succeed");
     require(cache.patchCursor().scene_revision == sceneRevision,
             "spotlight color/opacity-only updates must preserve scene revision");
+    require(cache.executionPlan(1.0).buildCount == 1,
+            "decoration and editor changes must reuse the scene execution plan");
+    require(cache.executionPlan(1.25).buildCount == 2,
+            "DPR changes must refresh physical filter parameters");
+    require(cache.executionPlan(1.25).buildCount == 2,
+            "unchanged fractional DPR must reuse the plan");
 }
 
 void unchangedRenderAreaDoesNotScheduleRepaint() {

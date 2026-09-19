@@ -44,16 +44,30 @@ pub(crate) fn compose_scene_items(
         viewport,
     };
 
-    for id in preview_rects
+    let mut present: std::collections::HashSet<_> = ordered_ids.iter().copied().collect();
+    let mut extra: Vec<_> = preview_rects
         .keys()
         .chain(preview_arrows.keys())
         .chain(active_existing_text.iter().map(|(id, _)| id))
-    {
-        if model.paint_rank(*id).is_some() && !ordered_ids.contains(id) {
-            ordered_ids.push(*id);
+        .copied()
+        .filter(|id| model.paint_rank(*id).is_some() && present.insert(*id))
+        .collect();
+    extra.sort_unstable_by_key(|id| model.paint_rank(*id));
+    if !extra.is_empty() {
+        let mut merged = Vec::with_capacity(ordered_ids.len() + extra.len());
+        let mut extra = extra.into_iter().peekable();
+        for id in ordered_ids {
+            while extra
+                .peek()
+                .is_some_and(|next| model.paint_rank(*next) < model.paint_rank(id))
+            {
+                merged.push(extra.next().unwrap());
+            }
+            merged.push(id);
         }
+        merged.extend(extra);
+        ordered_ids = merged;
     }
-    ordered_ids.sort_unstable_by_key(|id| model.paint_rank(*id).unwrap_or(u32::MAX));
 
     for id in &ordered_ids {
         if let Some((active_id, active_text)) = active_existing_text.as_ref()
@@ -95,10 +109,14 @@ pub(crate) fn compose_scene_items(
             continue;
         }
         if let Some(item) = cache.entry(*id) {
-            items.push(scene_item_with_serial_bound_text(
-                item.clone(),
-                model.bound_text_id_for_serial_number(*id),
-            ));
+            items.push(if matches!(item, SceneDisplayItem::SerialNumber(_)) {
+                scene_item_with_serial_bound_text(
+                    item.clone(),
+                    model.bound_text_id_for_serial_number(*id),
+                )
+            } else {
+                item.clone()
+            });
         }
     }
 
@@ -187,29 +205,22 @@ pub(crate) fn compose_scene_items(
             }
         }
     }
-    // Creation previews are appended above; Smart Erase keeps its fixed bottom layer even then.
-    items.sort_by_key(|item| match item {
-        SceneDisplayItem::Filter(f)
-            if f.filter.filter_type == snow_draw_engine_display::DisplayFilterType::SmartErase =>
-        {
-            (0, f.id.index)
-        }
-        _ => (1, 0),
-    });
     compose_arrow_text(&mut items, model, presentation, &preview_arrows, viewport);
     serial_connectors.append_from_displayed_items(&mut items);
-    if let Some((copy_model, copy_cache, ids)) = duplicate_preview_scene(presentation) {
+    if let Some(copy) = duplicate_preview_scene(cache, presentation) {
         let mut copies = compose_scene_items(
-            &copy_cache,
-            &copy_model,
+            &copy.cache,
+            &copy.model,
             &EditorPresentationState::default(),
             frame_view,
         );
         for item in &mut copies {
-            remap_copy_display_ids(item, &ids);
+            remap_copy_display_ids(item, &copy.ids);
         }
         items.extend(copies);
-        // Smart Erase always occupies the bottom layer, including copy previews.
+    }
+    if presentation.creation_preview.is_some() || presentation.duplicate_preview.is_some() {
+        // Smart Erase previews keep the fixed bottom layer.
         items.sort_by_key(|item| match item {
             SceneDisplayItem::Filter(f)
                 if f.filter.filter_type
@@ -220,10 +231,7 @@ pub(crate) fn compose_scene_items(
             _ => (1, 0),
         });
     }
-    // Connectors are derived from displayed items after emission, then restacked
-    // immediately above bound text. Copy-preview ids are absent from `model` and
-    // are recovered from serial display items.
-    restack_serial_connectors_above_bound_text(&mut items, model);
+    // Connector parts are emitted immediately after their bound text.
     debug_assert!(
         serial_connectors_follow_bound_text(&items, model),
         "serial connectors must paint immediately above their bound text"
@@ -231,13 +239,161 @@ pub(crate) fn compose_scene_items(
     items
 }
 
+pub(crate) fn compose_scene_render_plan(
+    cache: &DocumentSceneCache,
+    model: &DocumentModel,
+    presentation: &EditorPresentationState,
+    items: &[SceneDisplayItem],
+) -> Vec<snow_draw_engine_display::SceneRenderRun> {
+    use crate::scene_order::{OrderNode, SceneOrderPlan};
+    let mut overrides = HashMap::new();
+    for preview in &presentation.preview_elements {
+        let node = scene_item_from_selection_preview(model, preview.id, preview.rect, None)
+            .map(|(item, _)| OrderNode::new(preview.id, &item));
+        overrides.insert(preview.id, node);
+    }
+    for preview in &presentation.preview_arrows {
+        overrides.insert(
+            preview.id,
+            (!arrow_is_degenerate(&preview.arrow)).then_some(OrderNode {
+                id: preview.id,
+                effect: None,
+                smart_erase: false,
+            }),
+        );
+    }
+    if let Some(draft) = &presentation.active_text_draft
+        && let Some(id) = draft.existing_id()
+    {
+        overrides.insert(
+            id,
+            Some(OrderNode {
+                id,
+                effect: None,
+                smart_erase: false,
+            }),
+        );
+    }
+    if presentation.creation_preview.is_none()
+        && presentation.duplicate_preview.is_none()
+        && presentation
+            .active_text_draft
+            .as_ref()
+            .is_none_or(|draft| draft.existing_id().is_some())
+        && overrides
+            .iter()
+            .all(|(id, node)| cache.order_plan.node(*id) == node.as_ref())
+    {
+        return cache.order_plan.project(items);
+    }
+    let mut nodes = Vec::with_capacity(cache.order_plan.nodes.len() + overrides.len());
+    for node in &cache.order_plan.nodes {
+        if let Some(replacement) = overrides.remove(&node.id) {
+            nodes.extend(replacement);
+        } else {
+            nodes.push(*node);
+        }
+    }
+    if !overrides.is_empty() {
+        nodes.extend(overrides.into_values().flatten());
+        nodes.sort_by_key(|node| model.paint_rank(node.id).unwrap_or(u32::MAX));
+    }
+    if let Some(preview) = &presentation.creation_preview {
+        let id = model.peek_next_element_id();
+        let item = match preview {
+            ElementCreationPreview::Filter(filter) => Some(scene_item_from_filter(id, *filter)),
+            ElementCreationPreview::PenFilter(filter) => {
+                scene_item_from_pen_filter_preview(id, filter).map(|(item, _)| item)
+            }
+            ElementCreationPreview::Arrow(arrow) if arrow_is_degenerate(arrow) => None,
+            ElementCreationPreview::Rectangle(rect) if rect.is_spotlight() => None,
+            _ => Some(SceneDisplayItem::Image),
+        };
+        if let Some(item) = item {
+            nodes.push(OrderNode::new(id, &item));
+        }
+    }
+    if let Some(draft) = &presentation.active_text_draft
+        && draft.existing_id().is_none()
+    {
+        let node = OrderNode {
+            id: draft.display_id(),
+            effect: None,
+            smart_erase: false,
+        };
+        if let snow_draw_engine_editor::ActiveTextDraftTarget::NewArrow(owner) = draft.target {
+            if model
+                .element(owner)
+                .is_ok_and(|element| element.meta.visible)
+                && let Some(rank) = model.paint_rank(owner)
+            {
+                let position = nodes
+                    .iter()
+                    .position(|node| model.paint_rank(node.id).is_none_or(|r| r > rank))
+                    .unwrap_or(nodes.len());
+                nodes.insert(position, node);
+            }
+        } else {
+            nodes.push(node);
+        }
+    }
+    if let Some(copy) = duplicate_preview_scene(cache, presentation) {
+        nodes.extend(copy.cache.order_plan.nodes.iter().map(|node| OrderNode {
+            id: copy.ids[node.id.index as usize],
+            effect: node.effect,
+            smart_erase: node.smart_erase,
+        }));
+    }
+    // Smart Erase is a drawable at the bottom, not an ordinary filter source run.
+    // Use the document/preview type, including offscreen nodes, to place it.
+    nodes.sort_by_key(|node| {
+        if node.smart_erase {
+            (0, node.id.index)
+        } else {
+            (1, 0)
+        }
+    });
+    let mut retained = cache.preview_order_plan.lock().expect("preview plan lock");
+    if retained.nodes != nodes {
+        *retained = SceneOrderPlan::new(nodes);
+        cache
+            .preview_order_builds
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+    retained.project(items)
+}
+
+#[derive(Debug)]
+pub(crate) struct DuplicateScene {
+    pub model: DocumentModel,
+    pub cache: DocumentSceneCache,
+    pub ids: Vec<ElementId>,
+    transaction: snow_draw_engine_document::Transaction,
+}
+
 // Build only the copied subset, never clone the full document. This keeps links,
 // arrow labels and serial connectors on the normal scene composition path.
 pub(crate) fn duplicate_preview_scene(
+    scene_cache: &DocumentSceneCache,
     presentation: &EditorPresentationState,
-) -> Option<(DocumentModel, DocumentSceneCache, Vec<ElementId>)> {
+) -> Option<std::rc::Rc<DuplicateScene>> {
     use snow_draw_engine_document::{Operation, Transaction};
-    let transaction = presentation.duplicate_preview.as_ref()?;
+    let Some(transaction) = presentation.duplicate_preview.as_ref() else {
+        *scene_cache
+            .duplicate_scene
+            .lock()
+            .expect("duplicate scene lock") = None;
+        return None;
+    };
+    let mut retained = scene_cache
+        .duplicate_scene
+        .lock()
+        .expect("duplicate scene lock");
+    if let Some(copy) = retained.as_ref()
+        && copy.transaction == *transaction
+    {
+        return Some(copy.clone());
+    }
     let ids: Vec<_> = transaction
         .operations()
         .iter()
@@ -280,11 +436,45 @@ pub(crate) fn duplicate_preview_scene(
             });
         }
     }
-    let mut model = DocumentModel::new();
-    model.apply_transaction(compact).ok()?;
-    let mut cache = DocumentSceneCache::new();
-    cache.sync(&model, None);
-    Some((model, cache, ids))
+    if let Some(previous) = retained.as_mut().and_then(std::rc::Rc::get_mut)
+        && previous.ids == ids
+    {
+        let mut update = Transaction::new("move copy preview");
+        for op in compact.operations() {
+            if let Operation::InsertElement { id, meta, data } = op {
+                let current = previous.model.element(*id).ok()?;
+                if current.data != *data {
+                    update.push(Operation::UpdateElementData {
+                        id: *id,
+                        data: data.clone(),
+                    });
+                }
+                if current.meta != *meta {
+                    update.push(Operation::UpdateElementMeta {
+                        id: *id,
+                        meta: *meta,
+                    });
+                }
+            }
+        }
+        if !update.is_empty() {
+            let result = previous.model.apply_transaction(update).ok()?;
+            previous.cache.sync(&previous.model, Some(&result.changes));
+        }
+        previous.transaction = transaction.clone();
+    } else {
+        let mut model = DocumentModel::new();
+        model.apply_transaction(compact).ok()?;
+        let mut cache = DocumentSceneCache::new();
+        cache.sync(&model, None);
+        *retained = Some(std::rc::Rc::new(DuplicateScene {
+            model,
+            cache,
+            ids,
+            transaction: transaction.clone(),
+        }));
+    }
+    retained.clone()
 }
 
 fn remap_copy_display_ids(item: &mut SceneDisplayItem, ids: &[ElementId]) {
@@ -319,7 +509,7 @@ fn compose_arrow_text(
     arrows: &HashMap<ElementId, ArrowData>,
     viewport: (f64, f64, f64, f64),
 ) {
-    let mut bindings = model.arrow_text_bindings();
+    let mut bindings = model.arrow_label_bindings().to_vec();
     let new_draft = presentation.active_text_draft.as_ref().and_then(|draft| {
         if let snow_draw_engine_editor::ActiveTextDraftTarget::NewArrow(id) = draft.target {
             Some((id, draft.display_id()))
@@ -330,6 +520,25 @@ fn compose_arrow_text(
     if let Some(binding) = new_draft {
         bindings.push(binding);
     }
+    let label_ids: std::collections::HashSet<_> = bindings
+        .iter()
+        .map(|(_, id)| display_item_id(*id))
+        .collect();
+    items.retain(
+        |item| !matches!(item, SceneDisplayItem::Text(text) if label_ids.contains(&text.id)),
+    );
+    let arrow_positions: HashMap<_, _> = items
+        .iter()
+        .enumerate()
+        .filter_map(|(index, item)| {
+            if let SceneDisplayItem::Arrow(arrow) = item {
+                Some((arrow.id, index))
+            } else {
+                None
+            }
+        })
+        .collect();
+    let mut labels = Vec::with_capacity(bindings.len());
     for (arrow_id, text_id) in bindings {
         let Some(arrow) = arrows.get(&arrow_id).or_else(|| model.arrow(arrow_id).ok()) else {
             continue;
@@ -363,36 +572,47 @@ fn compose_arrow_text(
             text.opacity = (text.opacity * arrow.opacity / committed.opacity).clamp(0.0, 1.0);
         }
         let text_display_id = display_item_id(text_id);
-        items.retain(
-            |item| !matches!(item, SceneDisplayItem::Text(item) if item.id == text_display_id),
-        );
         if !owner.meta.visible {
             continue;
         }
-        for item in items.iter_mut() {
-            if let SceneDisplayItem::Arrow(item) = item
-                && item.id == display_item_id(arrow_id)
-                && !text.text.trim().is_empty()
-            {
-                item.bound_text_id = Some(text_display_id);
-                item.label_bounds = Some(text_bounds(&text));
-            }
+        if !text.text.trim().is_empty()
+            && let Some(&index) = arrow_positions.get(&display_item_id(arrow_id))
+            && let SceneDisplayItem::Arrow(item) = &mut items[index]
+        {
+            item.bound_text_id = Some(text_display_id);
+            item.label_bounds = Some(text_bounds(&text));
         }
         if !bounds_visible(text_bounds(&text), viewport) {
             continue;
         }
-        let item = scene_item_from_text(text_id, text);
-        if let Some(index) = items.iter().position(|item| matches!(item, SceneDisplayItem::Arrow(item) if item.id == display_item_id(arrow_id))) {
-            items.insert(index + 1, item);
-        } else {
-            // The arrow itself may be culled while its label is in the viewport.
-            let rank = model.paint_rank(arrow_id).unwrap_or(u32::MAX);
-            let index = items.iter().position(|item| {
-                scene_element_id(item).and_then(|id| model.paint_rank(id)).is_some_and(|r| r > rank)
-            }).unwrap_or(items.len());
-            items.insert(index, item);
+        labels.push((
+            model.paint_rank(arrow_id).unwrap_or(u32::MAX),
+            scene_item_from_text(text_id, text),
+        ));
+    }
+    labels.sort_by_key(|(rank, _)| *rank);
+    let mut labels = labels.into_iter().peekable();
+    let mut expanded = Vec::with_capacity(items.len() + labels.len());
+    for item in items.drain(..) {
+        let rank = scene_element_id(&item)
+            .and_then(|id| model.paint_rank(id))
+            .unwrap_or(u32::MAX);
+        while labels
+            .peek()
+            .is_some_and(|(label_rank, _)| *label_rank < rank)
+        {
+            expanded.push(labels.next().unwrap().1);
+        }
+        expanded.push(item);
+        while labels
+            .peek()
+            .is_some_and(|(label_rank, _)| *label_rank == rank)
+        {
+            expanded.push(labels.next().unwrap().1);
         }
     }
+    expanded.extend(labels.map(|(_, item)| item));
+    *items = expanded;
 }
 
 fn scene_element_id(item: &SceneDisplayItem) -> Option<ElementId> {
@@ -451,32 +671,36 @@ impl SerialConnectorEmission<'_> {
     /// committed data so a connector that spans into view is still emitted.
     fn append_from_displayed_items(&self, items: &mut Vec<SceneDisplayItem>) {
         let mut displayed_serials = HashMap::<DisplayItemId, PresentedSerial>::new();
-        let mut texts = Vec::new();
         for item in items.iter() {
-            match item {
-                SceneDisplayItem::SerialNumber(serial) => {
-                    displayed_serials.insert(
-                        serial.id,
-                        PresentedSerial {
-                            geometry: serial_paint_geometry_from_display_item(serial),
-                            color: serial.color,
-                            opacity: serial.opacity,
-                        },
-                    );
-                }
-                SceneDisplayItem::Text(text) => texts.push((
+            if let SceneDisplayItem::SerialNumber(serial) = item {
+                displayed_serials.insert(
+                    serial.id,
+                    PresentedSerial {
+                        geometry: serial_paint_geometry_from_display_item(serial),
+                        color: serial.color,
+                        opacity: serial.opacity,
+                    },
+                );
+            }
+        }
+        let mut expanded = Vec::with_capacity(items.len());
+        for item in items.drain(..) {
+            let text = match &item {
+                SceneDisplayItem::Text(text) => Some((
                     ElementId {
                         index: text.id.index,
                         generation: text.id.generation,
                     },
                     text_paint_geometry_from_display_item(text),
                 )),
-                _ => {}
+                _ => None,
+            };
+            expanded.push(item);
+            if let Some((id, geometry)) = text {
+                self.append_connectors_for_text(&mut expanded, &displayed_serials, id, &geometry);
             }
         }
-        for (text_id, text) in texts {
-            self.append_connectors_for_text(items, &displayed_serials, text_id, &text);
-        }
+        *items = expanded;
     }
 
     fn presented_serial(
@@ -506,7 +730,7 @@ impl SerialConnectorEmission<'_> {
         text_id: ElementId,
         text: &TextPaintGeometry,
     ) {
-        for serial_id in self.model.serial_number_ids_with_text(text_id) {
+        for &serial_id in self.model.serials_for_text(text_id) {
             let Some(serial) = self.presented_serial(displayed_serials, serial_id) else {
                 continue;
             };
@@ -555,42 +779,6 @@ fn connector_bound_text_id(
         .or_else(|| serial_bound_texts.get(&connector_id).copied())
 }
 
-fn restack_serial_connectors_above_bound_text(
-    items: &mut Vec<SceneDisplayItem>,
-    model: &DocumentModel,
-) {
-    let serial_bound_texts = serial_bound_text_index(items);
-    let mut connectors_by_text = HashMap::<DisplayItemId, Vec<SceneDisplayItem>>::new();
-    let mut rest = Vec::with_capacity(items.len());
-    for item in items.drain(..) {
-        let SceneDisplayItem::SerialNumberConnector(connector) = &item else {
-            rest.push(item);
-            continue;
-        };
-        match connector_bound_text_id(model, &serial_bound_texts, connector.id) {
-            Some(text_id) => connectors_by_text.entry(text_id).or_default().push(item),
-            None => rest.push(item),
-        }
-    }
-
-    let connector_count = connectors_by_text.values().map(Vec::len).sum::<usize>();
-    let mut stacked = Vec::with_capacity(rest.len() + connector_count);
-    for item in rest {
-        let text_id = match &item {
-            SceneDisplayItem::Text(text) => Some(text.id),
-            _ => None,
-        };
-        stacked.push(item);
-        if let Some(text_id) = text_id
-            && let Some(connectors) = connectors_by_text.remove(&text_id)
-        {
-            stacked.extend(connectors);
-        }
-    }
-    stacked.extend(connectors_by_text.into_values().flatten());
-    *items = stacked;
-}
-
 fn serial_connectors_follow_bound_text(items: &[SceneDisplayItem], model: &DocumentModel) -> bool {
     let serial_bound_texts = serial_bound_text_index(items);
     for (index, item) in items.iter().enumerate() {
@@ -627,8 +815,7 @@ mod tests {
     use super::*;
     use snow_draw_engine_core::{Camera, SurfaceSize};
     use snow_draw_engine_document::{
-        ElementMeta, InkBox, TextLayoutSize, Transaction, resolve_serial_number_stroke_width,
-        resolve_serial_number_text_connection,
+        ElementMeta, InkBox, TextLayoutSize, Transaction, resolve_serial_number_text_connection,
     };
     use snow_draw_engine_editor::{
         ActiveTextDraftPresentation, ActiveTextDraftTarget, TextPreviewPaint,
@@ -1317,49 +1504,6 @@ mod tests {
         assert_close(connector.baseline_start_x, 120.0 - 40.0);
         assert_close(connector.baseline_end_x, 120.0 - 40.0 + 40.0);
         assert_serial_connectors_follow_bound_text(&items, &model);
-    }
-
-    #[test]
-    fn restack_moves_preceding_connector_above_bound_text() {
-        let serial_id = ElementId {
-            index: 0,
-            generation: 1,
-        };
-        let text_id = ElementId {
-            index: 1,
-            generation: 1,
-        };
-        let serial = bound_serial(text_id, Point::new(0.0, 0.0));
-        let text = filled_bound_text(Point::new(90.0, 40.0));
-        let connection = resolve_serial_number_text_connection(&serial, &text).unwrap();
-
-        let mut model = DocumentModel::new();
-        let mut transaction = Transaction::new("setup");
-        transaction.insert_serial_number(serial_id, ElementMeta::default(), serial.clone());
-        transaction.insert_text(text_id, ElementMeta::default(), text.clone());
-        model.apply_transaction(transaction).unwrap();
-
-        let mut items = vec![
-            scene_item_from_serial_number(serial_id, serial.clone(), Some(text_id)),
-            scene_item_from_serial_connector_paint(
-                serial_id,
-                serial.color,
-                resolve_serial_number_stroke_width(&serial),
-                serial.opacity,
-                connection,
-            ),
-            scene_item_from_text(text_id, text),
-        ];
-        assert!(!serial_connectors_follow_bound_text(&items, &model));
-        restack_serial_connectors_above_bound_text(&mut items, &model);
-        assert_serial_connectors_follow_bound_text(&items, &model);
-        assert!(matches!(
-            (&items[1], &items[2]),
-            (
-                SceneDisplayItem::Text(text),
-                SceneDisplayItem::SerialNumberConnector(_)
-            ) if text.id == display_item_id(text_id)
-        ));
     }
 
     #[test]

@@ -9,6 +9,8 @@ use crate::abi::types::*;
 
 pub(crate) struct SnowPatchPayload {
     pub(crate) info: SnowPatchInfo,
+    pub(crate) render_plan_replace: bool,
+    pub(crate) render_plan: Box<[SnowSceneRenderRun]>,
     pub(crate) scene_ops: Box<[SnowPatchOp]>,
     pub(crate) overlay_ops: Box<[SnowPatchOp]>,
     pub(crate) spotlight_ops: Box<[SnowPatchOp]>,
@@ -218,6 +220,25 @@ impl SnowPatchPayload {
             .into_boxed_slice();
 
         Self {
+            render_plan_replace: patch.scene_render_plan.is_some(),
+            render_plan: patch
+                .scene_render_plan
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .map(|run| SnowSceneRenderRun {
+                    source_pass: SnowElementId {
+                        index: run.source_pass.index,
+                        generation: run.source_pass.generation,
+                    },
+                    effect_run: SnowElementId {
+                        index: run.effect_run.index,
+                        generation: run.effect_run.generation,
+                    },
+                    start: run.start,
+                    count: run.count,
+                })
+                .collect(),
             info: snow_patch_info_from_rust(patch),
             scene_ops,
             overlay_ops,

@@ -4,6 +4,9 @@ mod item_conversions;
 mod overlay_composition;
 mod scene_cache;
 mod scene_composition;
+mod scene_order;
+#[cfg(test)]
+mod scene_order_tests;
 mod selection_visuals;
 
 use dirty_regions::finalize_dirty_regions;
@@ -54,6 +57,7 @@ pub struct ViewportComposer {
     decoration_view: DecorationView,
     spotlight_cutouts: Vec<DisplaySpotlightCutout>,
     scene_items: Vec<SceneDisplayItem>,
+    scene_render_plan: Vec<snow_draw_engine_display::SceneRenderRun>,
     overlay_items: Vec<OverlayDisplayItem>,
     scene_revision: SceneRevision,
     decoration_revision: DecorationRevision,
@@ -71,6 +75,7 @@ impl Default for ViewportComposer {
             decoration_view: DecorationView::default(),
             spotlight_cutouts: Vec::new(),
             scene_items: Vec::new(),
+            scene_render_plan: Vec::new(),
             overlay_items: Vec::new(),
             scene_revision: SceneRevision(0),
             decoration_revision: DecorationRevision(0),
@@ -128,6 +133,8 @@ impl ViewportComposer {
         snap_config: SnapConfig,
     ) {
         let next_scene_items = compose_scene_items(cache, model, presentation, frame_view);
+        let next_render_plan =
+            compose_scene_render_plan(cache, model, presentation, &next_scene_items);
         let next_overlay_items = compose_overlay_items(snap_config, presentation, frame_view);
         let next_decoration_view = display_decoration(model, presentation);
         let next_spotlight_cutouts =
@@ -139,14 +146,20 @@ impl ViewportComposer {
         let clear_color_changed =
             force_reset || self.frame_view.clear_color != frame_view.clear_color;
 
-        let (scene_patch, scene_revision) = build_scene_layer_patch(
+        let (mut scene_patch, mut scene_revision) = build_scene_layer_patch_with_plan(
             &self.scene_items,
             self.scene_revision.0,
             &next_scene_items,
             frame_view,
             force_reset,
             surface_or_camera_changed || clear_color_changed,
+            (&self.scene_render_plan, &next_render_plan),
         );
+        let plan_changed = force_reset || self.scene_render_plan != next_render_plan;
+        if plan_changed && scene_revision == self.scene_revision.0 {
+            scene_revision = scene_revision.wrapping_add(1);
+            scene_patch.revision = scene_revision;
+        }
         let (overlay_patch, overlay_revision) = build_layer_patch(
             &self.overlay_items,
             self.overlay_revision.0,
@@ -180,6 +193,7 @@ impl ViewportComposer {
         self.decoration_view = next_decoration_view;
         self.spotlight_cutouts = next_spotlight_cutouts;
         self.scene_items = next_scene_items;
+        self.scene_render_plan = next_render_plan;
         self.overlay_items = next_overlay_items;
         self.scene_revision = SceneRevision(scene_revision);
         self.decoration_revision = DecorationRevision(decoration_revision);
@@ -188,6 +202,7 @@ impl ViewportComposer {
             frame_view,
             decoration: decoration_patch,
             scene: scene_patch,
+            scene_render_plan: plan_changed.then(|| self.scene_render_plan.clone()),
             pen_filter_geometry_ops,
             path_geometry_ops,
             overlay: overlay_patch,
@@ -212,6 +227,7 @@ impl ViewportComposer {
                     frame_view: self.frame_view,
                     decoration: noop_decoration(self.decoration_revision.0, self.decoration_view),
                     scene: noop_layer(self.scene_revision.0),
+                    scene_render_plan: None,
                     pen_filter_geometry_ops: Vec::new(),
                     path_geometry_ops: Vec::new(),
                     overlay: noop_layer(self.overlay_revision.0),
@@ -313,6 +329,7 @@ impl ViewportComposer {
                 dirty_regions: full_surface_dirty_region(self.frame_view.surface),
             },
             scene,
+            scene_render_plan: Some(self.scene_render_plan.clone()),
             pen_filter_geometry_ops,
             path_geometry_ops,
             overlay: LayerPatch {
@@ -779,10 +796,10 @@ fn compose_spotlight_cutouts(
     {
         cutouts.push(spotlight_cutout(*rect));
     }
-    if let Some((copy_model, copy_cache, _)) = duplicate_preview_scene(presentation) {
+    if let Some(copy) = duplicate_preview_scene(cache, presentation) {
         cutouts.extend(compose_spotlight_cutouts(
-            &copy_cache,
-            &copy_model,
+            &copy.cache,
+            &copy.model,
             &EditorPresentationState::default(),
             frame_view,
         ));
@@ -937,26 +954,51 @@ fn filter_sampling_radius(
     item.filter.sampling_radius * frame.camera.zoom.max(0.0)
 }
 
+#[cfg(test)]
 fn dirty_region_through_filters(
     items: &[SceneDisplayItem],
     changed_index: usize,
     base: DirtyRegion,
     frame: FrameView,
 ) -> DirtyRegion {
+    dirty_region_through_plan(
+        items,
+        changed_index,
+        base,
+        frame,
+        &scene_order::plan_for_items(items),
+    )
+}
+
+fn dirty_region_through_plan(
+    items: &[SceneDisplayItem],
+    changed_index: usize,
+    base: DirtyRegion,
+    frame: FrameView,
+    plan: &[snow_draw_engine_display::SceneRenderRun],
+) -> DirtyRegion {
     let mut affected = base;
-    let mut index = changed_index.saturating_add(1);
-    while index < items.len() {
-        if !matches!(items[index], SceneDisplayItem::Filter(_)) {
-            index += 1;
-            continue;
+    let mut source = None;
+    let mut entering = base;
+    for run in plan {
+        if source != Some(run.source_pass) {
+            source = Some(run.source_pass);
+            entering = affected;
         }
-        let entering = affected;
-        while index < items.len() {
-            let SceneDisplayItem::Filter(filter) = &items[index] else {
-                break;
+        for (index, item) in items
+            .iter()
+            .enumerate()
+            .skip(run.start as usize)
+            .take(run.count as usize)
+        {
+            if index <= changed_index {
+                continue;
+            }
+            let SceneDisplayItem::Filter(filter) = item else {
+                continue;
             };
             if filter.opacity > 0.0
-                && let Some(filter_bounds) = scene_display_item_bounds(&items[index], frame)
+                && let Some(bounds) = scene_display_item_bounds(item, frame)
             {
                 let radius = filter_sampling_radius(filter, frame);
                 let expanded = DirtyRegion::new(
@@ -965,11 +1007,10 @@ fn dirty_region_through_filters(
                     entering.max_x + radius,
                     entering.max_y + radius,
                 );
-                if let Some(filtered) = intersect_dirty_regions(expanded, filter_bounds) {
+                if let Some(filtered) = intersect_dirty_regions(expanded, bounds) {
                     affected = affected.union(filtered);
                 }
             }
-            index += 1;
         }
     }
     affected
@@ -1121,6 +1162,7 @@ fn path_geometry_dirty_region(
     ))
 }
 
+#[cfg(test)]
 fn build_scene_layer_patch(
     current_items: &[SceneDisplayItem],
     current_revision: u64,
@@ -1129,6 +1171,33 @@ fn build_scene_layer_patch(
     force_reset: bool,
     force_full_dirty: bool,
 ) -> (LayerPatch<SceneDisplayItem>, u64) {
+    build_scene_layer_patch_with_plan(
+        current_items,
+        current_revision,
+        next_items,
+        frame_view,
+        force_reset,
+        force_full_dirty,
+        (
+            &scene_order::plan_for_items(current_items),
+            &scene_order::plan_for_items(next_items),
+        ),
+    )
+}
+
+fn build_scene_layer_patch_with_plan(
+    current_items: &[SceneDisplayItem],
+    current_revision: u64,
+    next_items: &[SceneDisplayItem],
+    frame_view: FrameView,
+    force_reset: bool,
+    force_full_dirty: bool,
+    plans: (
+        &[snow_draw_engine_display::SceneRenderRun],
+        &[snow_draw_engine_display::SceneRenderRun],
+    ),
+) -> (LayerPatch<SceneDisplayItem>, u64) {
+    let (current_plan, next_plan) = plans;
     let (mut patch, revision) = build_layer_patch(
         current_items,
         current_revision,
@@ -1138,6 +1207,58 @@ fn build_scene_layer_patch(
         force_full_dirty,
         scene_display_item_bounds,
     );
+    if current_plan != next_plan && !force_reset && !force_full_dirty {
+        // Positional offsets can change without changing a pass. Compare ordered
+        // membership, then invalidate only changed passes and downstream dependents.
+        let memberships =
+            |items: &[SceneDisplayItem], plan: &[snow_draw_engine_display::SceneRenderRun]| {
+                let mut result = std::collections::HashMap::<_, Vec<_>>::new();
+                for run in plan {
+                    let members = result.entry(run.source_pass).or_default();
+                    for item in items
+                        .iter()
+                        .skip(run.start as usize)
+                        .take(run.count as usize)
+                    {
+                        if let SceneDisplayItem::Filter(filter) = item {
+                            members.push((run.effect_run, filter.id, filter.filter));
+                        }
+                    }
+                }
+                result
+            };
+        let old_members = memberships(current_items, current_plan);
+        let new_members = memberships(next_items, next_plan);
+        let mut dirty = patch.dirty_regions;
+        for (items, plan) in [(current_items, current_plan), (next_items, next_plan)] {
+            let mut affected: Option<(usize, DirtyRegion)> = None;
+            for run in plan {
+                if old_members.get(&run.source_pass) == new_members.get(&run.source_pass) {
+                    continue;
+                }
+                for (index, item) in items
+                    .iter()
+                    .enumerate()
+                    .skip(run.start as usize)
+                    .take(run.count as usize)
+                {
+                    if let Some(bounds) = scene_display_item_bounds(item, frame_view) {
+                        affected = Some(match affected {
+                            Some((first, region)) => (first, region.union(bounds)),
+                            None => (index, bounds),
+                        });
+                    }
+                }
+            }
+            if let Some((first, bounds)) = affected {
+                dirty.push(dirty_region_through_plan(
+                    items, first, bounds, frame_view, plan,
+                ));
+            }
+        }
+        patch.dirty_regions = finalize_dirty_regions(dirty, frame_view.surface);
+        return (patch, revision);
+    }
     if force_reset || force_full_dirty || patch.ops.len() != 1 {
         return (patch, revision);
     }
@@ -1155,8 +1276,8 @@ fn build_scene_layer_patch(
             path_geometry_dirty_region(&current_items[start], &next_items[start], frame_view)
     {
         patch.dirty_regions = finalize_dirty_regions(
-            vec![dirty_region_through_filters(
-                next_items, start, delta, frame_view,
+            vec![dirty_region_through_plan(
+                next_items, start, delta, frame_view, next_plan,
             )],
             frame_view.surface,
         );
@@ -1168,8 +1289,8 @@ fn build_scene_layer_patch(
             pen_filter_tail_dirty_region(&current_items[start], &next_items[start], frame_view)
     {
         patch.dirty_regions = finalize_dirty_regions(
-            vec![dirty_region_through_filters(
-                next_items, start, delta, frame_view,
+            vec![dirty_region_through_plan(
+                next_items, start, delta, frame_view, next_plan,
             )],
             frame_view.surface,
         );
@@ -1178,18 +1299,19 @@ fn build_scene_layer_patch(
     let mut dirty = Vec::new();
     for (index, item) in current_items.iter().enumerate().take(old_end).skip(start) {
         if let Some(bounds) = scene_display_item_bounds(item, frame_view) {
-            dirty.push(dirty_region_through_filters(
+            dirty.push(dirty_region_through_plan(
                 current_items,
                 index,
                 bounds,
                 frame_view,
+                current_plan,
             ));
         }
     }
     for (index, item) in next_items.iter().enumerate().take(new_end).skip(start) {
         if let Some(bounds) = scene_display_item_bounds(item, frame_view) {
-            dirty.push(dirty_region_through_filters(
-                next_items, index, bounds, frame_view,
+            dirty.push(dirty_region_through_plan(
+                next_items, index, bounds, frame_view, next_plan,
             ));
         }
     }

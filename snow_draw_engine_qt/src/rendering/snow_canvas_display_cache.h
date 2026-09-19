@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "snow_canvas_display_item.h"
+#include "snow_canvas_render_plan.h"
 #include "snow_draw_engine.h"
 #include "snow_draw_engine_qt/snow_canvas_types.h"
 
@@ -75,6 +76,13 @@ class SnowCanvasDisplayCache {
     bool sync(SnowRuntime runtime, SnowViewport viewport);
 
     const SceneDisplayInfo& sceneInfo() const;
+    const std::vector<SnowSceneRenderRun>& renderPlan() const {
+        return m_renderPlan;
+    }
+    const snow_canvas_renderer::SceneExecutionPlan& executionPlan(double dpr) const;
+    std::size_t executionPlanBuildCount() const {
+        return m_executionPlan.buildCount;
+    }
     const WatermarkDisplayInfo& watermarkInfo() const;
     const SpotlightDisplayInfo& spotlightInfo() const;
     const OverlayDisplayInfo& overlayInfo() const;
@@ -109,6 +117,8 @@ class SnowCanvasDisplayCache {
     void rebuildFilterIndices();
     void updateFilterIndices(const std::vector<std::uint32_t>& changedIndices);
 
+    std::vector<SnowSceneRenderRun> m_renderPlan;
+    mutable snow_canvas_renderer::SceneExecutionPlan m_executionPlan;
     SnowPatchCursor m_patchCursor{};
     SceneDisplayInfo m_sceneDisplayInfo{};
     WatermarkDisplayInfo m_watermarkDisplayInfo{};

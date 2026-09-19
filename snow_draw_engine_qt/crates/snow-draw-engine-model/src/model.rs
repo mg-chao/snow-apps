@@ -63,6 +63,19 @@ impl DocumentModel {
         self.auto_filter_generation
     }
 
+    pub fn relation_index_build_count(&self) -> u64 {
+        self.queries.relations().rebuild_count()
+    }
+    pub fn arrow_label_bindings(&self) -> &[(ElementId, ElementId)] {
+        self.queries.relations().arrow_label_bindings()
+    }
+    pub fn arrow_label_owner(&self, text: ElementId) -> Option<ElementId> {
+        self.queries.relations().arrow_label_owner(text)
+    }
+    pub fn serials_for_text(&self, text: ElementId) -> &[ElementId] {
+        self.queries.relations().serials_for_text(text)
+    }
+
     pub fn document(&self) -> &Document {
         &self.document
     }

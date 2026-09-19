@@ -34,6 +34,7 @@
 #include <limits>
 #include <new>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -111,36 +112,50 @@ using snow_canvas_render_geometry::roundedRectPath;
 using snow_canvas_render_geometry::sceneItemBounds;
 using snow_canvas_render_geometry::toViewCornerRadii;
 
-std::uint64_t filterDependencyFingerprintForRegion(const SnowCanvasSceneItem* items,
-                                                   std::uint32_t end,
-                                                   const SceneDisplayInfo& displayInfo,
-                                                   const QRectF& bounds) {
+std::vector<std::uint64_t>
+filterDependencyFingerprintsForRegion(const SnowCanvasSceneItem* items,
+                                      const SceneExecutionPlan& plan,
+                                      const SceneDisplayInfo& displayInfo, const QRectF& bounds) {
+    std::vector<std::uint64_t> fingerprints;
+    fingerprints.reserve(plan.passes.size());
     std::uint64_t hash = 1469598103934665603ULL;
-    for (std::uint32_t index = 0; items != nullptr && index < end; ++index) {
-        const SnowCanvasSceneItem& item = items[index];
-        if (!sceneItemBounds(displayInfo, item).intersects(bounds)) {
-            continue;
+    std::uint32_t index = 0;
+    for (const auto& pass : plan.passes) {
+        for (; items != nullptr && index < pass.start; ++index) {
+            ++g_filterDiagnostics.dependencyItemVisits;
+            const auto& item = items[index];
+            if (!sceneItemBounds(displayInfo, item).intersects(bounds)) {
+                continue;
+            }
+            hash = filterTileHashAppend(hash, index);
+            hash = filterTileHashAppend(hash, static_cast<std::uint64_t>(item.kind));
+            hash = filterTileHashAppend(hash, item.element_id.index);
+            hash = filterTileHashAppend(hash, item.element_id.generation);
+            hash = filterTileHashDouble(hash, item.center_x);
+            hash = filterTileHashDouble(hash, item.center_y);
+            hash = filterTileHashDouble(hash, item.width);
+            hash = filterTileHashDouble(hash, item.height);
+            hash = filterTileHashDouble(hash, item.rotation);
+            hash = filterTileHashDouble(hash, item.opacity);
+            hash = filterTileHashAppend(hash, item.penFilterGeometryRevision());
+            hash = filterTileHashAppend(hash, item.pathGeometryRevision());
+            hash = filterTileHashAppend(hash, item.filter.filter_type);
+            hash = filterTileHashAppend(hash, item.filter.render_phase);
+            hash = filterTileHashDouble(hash, item.filter.strength);
+            hash = filterTileHashDouble(hash, item.filter.mosaic_block_size);
+            hash = filterTileHashDouble(hash, item.filter.blur_sigma);
+            hash = filterTileHashDouble(hash, item.filter.sampling_radius);
+
+            const int dependencyPass = plan.passForItem[index];
+            if (dependencyPass >= 0) {
+                const auto id = plan.passes[static_cast<std::size_t>(dependencyPass)].id;
+                hash = filterTileHashAppend(hash, id.index);
+                hash = filterTileHashAppend(hash, id.generation);
+            }
         }
-        hash = filterTileHashAppend(hash, index);
-        hash = filterTileHashAppend(hash, static_cast<std::uint64_t>(item.kind));
-        hash = filterTileHashAppend(hash, item.element_id.index);
-        hash = filterTileHashAppend(hash, item.element_id.generation);
-        hash = filterTileHashDouble(hash, item.center_x);
-        hash = filterTileHashDouble(hash, item.center_y);
-        hash = filterTileHashDouble(hash, item.width);
-        hash = filterTileHashDouble(hash, item.height);
-        hash = filterTileHashDouble(hash, item.rotation);
-        hash = filterTileHashDouble(hash, item.opacity);
-        hash = filterTileHashAppend(hash, item.penFilterGeometryRevision());
-        hash = filterTileHashAppend(hash, item.pathGeometryRevision());
-        hash = filterTileHashAppend(hash, item.filter.filter_type);
-        hash = filterTileHashAppend(hash, item.filter.render_phase);
-        hash = filterTileHashDouble(hash, item.filter.strength);
-        hash = filterTileHashDouble(hash, item.filter.mosaic_block_size);
-        hash = filterTileHashDouble(hash, item.filter.blur_sigma);
-        hash = filterTileHashDouble(hash, item.filter.sampling_radius);
+        fingerprints.push_back(hash);
     }
-    return hash;
+    return fingerprints;
 }
 
 void applyMultiSelectionDashStyle(QPen& pen) {
@@ -1758,11 +1773,294 @@ QColor toQColor(const SnowColorRgba8& color) {
     return QColor(color.r, color.g, color.b, color.a);
 }
 
+namespace {
+bool sameId(SnowElementId left, SnowElementId right) {
+    return left.index == right.index && left.generation == right.generation;
+}
+bool ordinaryFilter(const SnowCanvasSceneItem& item) {
+    return item.kind == SNOW_SCENE_DISPLAY_ITEM_FILTER && item.filter.filter_type != 5;
+}
+bool sameEffect(const SnowFilterRenderSpec& a, const SnowFilterRenderSpec& b) {
+    return a.filter_type == b.filter_type && a.strength == b.strength &&
+           a.mosaic_block_size == b.mosaic_block_size && a.blur_sigma == b.blur_sigma &&
+           a.sampling_radius == b.sampling_radius;
+}
+bool sameResolvedEffect(const SnowCanvasSceneItem& a, const SnowCanvasSceneItem& b,
+                        const SceneDisplayInfo& info, double dpr) {
+    if (a.filter.filter_type != b.filter.filter_type) {
+        return false;
+    }
+    if (a.filter.filter_type == 0) {
+        return qMax(1, qRound(a.filter.mosaic_block_size * info.camera_zoom * dpr)) ==
+               qMax(1, qRound(b.filter.mosaic_block_size * info.camera_zoom * dpr));
+    }
+    if (a.filter.filter_type == 1) {
+        const auto left =
+            snow_canvas_filter_render::gaussianBlurPlan(filterParameters(info, a, dpr, {}));
+        const auto right =
+            snow_canvas_filter_render::gaussianBlurPlan(filterParameters(info, b, dpr, {}));
+        return left.reductionFactor == right.reductionFactor && left.passCount == right.passCount &&
+               left.physicalSupportRadius == right.physicalSupportRadius &&
+               std::equal(std::begin(left.radii), std::end(left.radii), std::begin(right.radii));
+    }
+    if (isColorEffect(a.filter.filter_type)) {
+        return true;
+    }
+    return sameEffect(a.filter, b.filter);
+}
+std::uint64_t passFingerprint(SnowElementId id) {
+    return (static_cast<std::uint64_t>(id.generation) << 32) | id.index;
+}
+} // namespace
+
+std::vector<SnowSceneRenderRun> buildUnculledRenderPlan(const SnowCanvasSceneItem* items,
+                                                        std::uint32_t count,
+                                                        const SceneDisplayInfo& info, double dpr) {
+    std::vector<SnowSceneRenderRun> runs;
+    SnowElementId source{};
+    for (std::uint32_t i = 0; items != nullptr && i < count; ++i) {
+        if (!ordinaryFilter(items[i])) {
+            continue;
+        }
+        // Real elements retain their complete identity. Legacy direct fixtures leave
+        // generation zero, so give those items distinct, list-local identities.
+        const SnowElementId id =
+            items[i].element_id.generation != 0 ? items[i].element_id : SnowElementId{i, 0};
+        if (i == 0 || !ordinaryFilter(items[i - 1])) {
+            source = id;
+        }
+        if (!runs.empty() && runs.back().start + runs.back().count == i &&
+            sameId(runs.back().source_pass, source) &&
+            sameResolvedEffect(items[i - 1], items[i], info, dpr)) {
+            ++runs.back().count;
+        } else {
+            runs.push_back(SnowSceneRenderRun{source, id, i, 1});
+        }
+    }
+    return runs;
+}
+
+bool validateRenderPlan(const std::vector<SnowSceneRenderRun>& runs,
+                        const SnowCanvasSceneItem* items, std::uint32_t count) {
+    std::uint32_t next = 0;
+    if (items == nullptr && count != 0) {
+        return false;
+    }
+    std::unordered_set<std::uint64_t> completedSources;
+    std::unordered_set<std::uint64_t> effects;
+    SnowElementId previousSource{};
+    bool hasPrevious = false;
+    for (const auto& run : runs) {
+        if (items == nullptr || run.count == 0 || run.start < next || run.start > count ||
+            run.count > count - run.start) {
+            return false;
+        }
+        for (std::uint32_t i = next; i < run.start; ++i) {
+            if (ordinaryFilter(items[i])) {
+                return false;
+            }
+        }
+        if (hasPrevious && sameId(previousSource, run.source_pass) && run.start != next) {
+            return false;
+        }
+        if (!hasPrevious || !sameId(previousSource, run.source_pass)) {
+            if (!completedSources.insert(passFingerprint(run.source_pass)).second) {
+                return false;
+            }
+        }
+        if (!effects.insert(passFingerprint(run.effect_run)).second) {
+            return false;
+        }
+        for (std::uint32_t i = run.start; i < run.start + run.count; ++i) {
+            if (!ordinaryFilter(items[i]) ||
+                !sameEffect(items[run.start].filter, items[i].filter)) {
+                return false;
+            }
+        }
+        next = run.start + run.count;
+        previousSource = run.source_pass;
+        hasPrevious = true;
+    }
+    for (std::uint32_t i = next; items != nullptr && i < count; ++i) {
+        if (ordinaryFilter(items[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void prepareExecutionPlan(SceneExecutionPlan& plan, const SnowCanvasSceneItem* items,
+                          std::uint32_t count, const SceneDisplayInfo& info, double dpr,
+                          const std::vector<SnowSceneRenderRun>& runs, std::uint64_t revision) {
+    const auto builds = plan.buildCount + 1;
+    plan = {};
+    plan.buildCount = builds;
+    plan.revision = revision;
+    plan.dpr = dpr;
+    plan.filterForItem.assign(count, -1);
+    plan.passForItem.assign(count, -1);
+    const QRectF viewport(0, 0, info.surface_width, info.surface_height);
+    const auto cachedFilter = [&](std::uint32_t index) -> const FilterFrameInfo& {
+        return plan.filter(index);
+    };
+    const double devicePixelRatio = dpr;
+    for (const auto& run : runs) {
+        if (plan.passes.empty() || !sameId(plan.passes.back().id, run.source_pass)) {
+            plan.passes.push_back(SourcePass{run.source_pass, run.start, run.start, {}});
+        }
+        auto& pass = plan.passes.back();
+        pass.end = run.start + run.count;
+        EffectGroup group;
+        const auto& spec = items[run.start].filter;
+        group.type = spec.filter_type;
+        group.blockPixels = qMax(1, qRound(spec.mosaic_block_size * info.camera_zoom * dpr));
+        if (group.type == 1) {
+            group.gaussianPlan = snow_canvas_filter_render::gaussianBlurPlan(
+                filterParameters(info, items[run.start], dpr, {}));
+        } else if (isEmbossEffect(group.type)) {
+            group.strength = spec.strength;
+            group.samplingRadiusPixels = snow_canvas_filter_render::samplingRadiusPixels(
+                filterParameters(info, items[run.start], dpr, {}));
+        }
+        for (std::uint32_t index = run.start; index < pass.end; ++index) {
+            plan.passForItem[index] = static_cast<int>(plan.passes.size() - 1);
+            plan.filterIndices.push_back(index);
+            const auto& item = items[index];
+            plan.filterForItem[index] = static_cast<int>(plan.filters.size());
+            auto& cached = plan.filters.emplace_back();
+            const bool valid = item.is_free_draw != 0
+                                   ? item.arrow_points != nullptr && item.arrow_point_count >= 2 &&
+                                         item.stroke_width > 0.0
+                                   : item.width > 0 && item.height > 0;
+            if (!valid || item.opacity <= 0) {
+                continue;
+            }
+            cached.logicalSamplingRadius =
+                item.filter.filter_type == 1
+                    ? qCeil(snow_canvas_filter_render::samplingRadiusPixels(
+                                filterParameters(info, item, dpr, {})) /
+                            dpr)
+                    : qCeil(filterLogicalSamplingRadius(info, item));
+            cached.clipPath = filterClipPath(info, item);
+            cached.logicalBounds = cached.clipPath.boundingRect();
+            cached.effective = cached.logicalBounds.intersects(viewport);
+            cached.axisAlignedRect = item.is_free_draw == 0 && std::abs(item.rotation) <= 1e-12;
+            const auto aligned = [dpr](double x) {
+                return nearlyEqual(x * dpr, std::round(x * dpr));
+            };
+            cached.devicePixelAlignedRect =
+                cached.axisAlignedRect && aligned(cached.logicalBounds.left()) &&
+                aligned(cached.logicalBounds.top()) && aligned(cached.logicalBounds.right()) &&
+                aligned(cached.logicalBounds.bottom());
+            if (cached.effective) {
+                group.indices.push_back(index);
+            }
+        }
+        if (group.indices.empty()) {
+            continue;
+        }
+        std::vector<EffectGroup> groups{std::move(group)};
+        std::vector<EffectGroup> spatialGroups;
+        for (const EffectGroup& effect : groups) {
+            std::vector<EffectGroup> pending;
+            pending.reserve(effect.indices.size());
+            EffectGroup parameters = effect;
+            parameters.indices.clear();
+            for (std::uint32_t filterIndex : effect.indices) {
+                EffectGroup subgroup = parameters;
+                subgroup.indices = {filterIndex};
+                pending.push_back(std::move(subgroup));
+            }
+            bool merged = false;
+            do {
+                merged = false;
+                for (std::size_t left = 0; left < pending.size() && !merged; ++left) {
+                    QRectF leftBounds;
+                    for (std::uint32_t filterIndex : pending[left].indices) {
+                        leftBounds =
+                            leftBounds.isNull()
+                                ? cachedFilter(filterIndex).logicalBounds
+                                : leftBounds.united(cachedFilter(filterIndex).logicalBounds);
+                    }
+                    const double physicalOutset =
+                        effect.type == 1 ? effect.gaussianPlan.physicalSupportRadius + 0.5
+                        : isEmbossEffect(effect.type) ? effect.samplingRadiusPixels + 0.5
+                                                      : 0.5;
+                    const double logicalOutset = physicalOutset / devicePixelRatio;
+                    const QRectF leftSource = leftBounds.adjusted(-logicalOutset, -logicalOutset,
+                                                                  logicalOutset, logicalOutset);
+                    for (std::size_t right = left + 1; right < pending.size(); ++right) {
+                        QRectF rightBounds;
+                        for (std::uint32_t filterIndex : pending[right].indices) {
+                            rightBounds =
+                                rightBounds.isNull()
+                                    ? cachedFilter(filterIndex).logicalBounds
+                                    : rightBounds.united(cachedFilter(filterIndex).logicalBounds);
+                        }
+                        const QRectF rightSource = rightBounds.adjusted(
+                            -logicalOutset, -logicalOutset, logicalOutset, logicalOutset);
+                        if (!leftSource.intersects(rightSource)) {
+                            continue;
+                        }
+                        pending[left].indices.insert(pending[left].indices.end(),
+                                                     pending[right].indices.begin(),
+                                                     pending[right].indices.end());
+                        pending.erase(pending.begin() + static_cast<std::ptrdiff_t>(right));
+                        merged = true;
+                        break;
+                    }
+                }
+            } while (merged);
+            spatialGroups.insert(spatialGroups.end(), std::make_move_iterator(pending.begin()),
+                                 std::make_move_iterator(pending.end()));
+        }
+        groups = std::move(spatialGroups);
+
+        pass.groups.insert(pass.groups.end(), std::make_move_iterator(groups.begin()),
+                           std::make_move_iterator(groups.end()));
+    }
+}
+
+namespace {
+const SceneExecutionPlan& resolveExecutionPlan(const SceneRenderRequest& request,
+                                               SceneExecutionPlan& local,
+                                               std::uint64_t& planningNanoseconds) {
+    StageTimer planningTimer(planningNanoseconds);
+    if (request.executionPlan != nullptr) {
+        return *request.executionPlan;
+    }
+    const double dpr = request.painter->device() != nullptr
+                           ? qMax(1.0, request.painter->device()->devicePixelRatioF())
+                           : 1.0;
+    if (request.displayCache != nullptr) {
+        return request.displayCache->executionPlan(dpr);
+    }
+    const auto runs = request.renderPlan != nullptr
+                          ? *request.renderPlan
+                          : buildUnculledRenderPlan(request.sceneItems, request.sceneItemCount,
+                                                    *request.displayInfo, dpr);
+    prepareExecutionPlan(local, request.sceneItems, request.sceneItemCount, *request.displayInfo,
+                         dpr, runs, 0);
+    return local;
+}
+} // namespace
+
 void renderSceneItems(const SceneRenderRequest& request) {
     if (request.painter == nullptr || request.displayInfo == nullptr) {
         return;
     }
-    renderSceneItemsImpl(request);
+    const auto previousBuilds =
+        request.displayCache != nullptr ? request.displayCache->executionPlanBuildCount() : 0;
+    std::uint64_t planningNanoseconds = 0;
+    SceneExecutionPlan local;
+    SceneRenderRequest prepared = request;
+    prepared.executionPlan = &resolveExecutionPlan(request, local, planningNanoseconds);
+    renderSceneItemsImpl(prepared);
+    g_filterDiagnostics.planningNanoseconds += planningNanoseconds;
+    g_filterDiagnostics.executionPlanBuildCount +=
+        local.buildCount + (request.displayCache != nullptr
+                                ? request.displayCache->executionPlanBuildCount() - previousBuilds
+                                : 0);
     if (request.diagnostics != nullptr) {
         *request.diagnostics = g_filterDiagnostics;
     }
@@ -1786,18 +2084,27 @@ void renderSceneItemsTiled(const SceneRenderRequest& request) {
         return;
     }
 
-    std::vector<std::uint32_t> filters;
-    for (std::uint32_t index = 0; index < request.sceneItemCount; ++index) {
-        if (request.sceneItems[index].kind == SNOW_SCENE_DISPLAY_ITEM_FILTER &&
-            request.sceneItems[index].opacity > 0.0) {
-            filters.push_back(index);
+    const auto previousBuilds =
+        request.displayCache != nullptr ? request.displayCache->executionPlanBuildCount() : 0;
+    std::uint64_t planningNanoseconds = 0;
+    SceneExecutionPlan localPlan;
+    const SceneExecutionPlan& executionPlan =
+        resolveExecutionPlan(request, localPlan, planningNanoseconds);
+    if (executionPlan.filterIndices.empty()) {
+        SceneRenderRequest prepared = request;
+        prepared.executionPlan = &executionPlan;
+        renderSceneItems(prepared);
+        g_filterDiagnostics.planningNanoseconds += planningNanoseconds;
+        g_filterDiagnostics.executionPlanBuildCount +=
+            localPlan.buildCount +
+            (request.displayCache != nullptr
+                 ? request.displayCache->executionPlanBuildCount() - previousBuilds
+                 : 0);
+        if (request.diagnostics != nullptr) {
+            *request.diagnostics = g_filterDiagnostics;
         }
-    }
-    if (filters.empty()) {
-        renderSceneItems(request);
         return;
     }
-
     FilterRenderDiagnostics aggregateDiagnostics;
     const QRect exposedBounds = request.exposedRegion.boundingRect();
     const int firstTileX = std::max(0, qFloor(exposedBounds.left() * dpr) /
@@ -1812,7 +2119,9 @@ void renderSceneItemsTiled(const SceneRenderRequest& request) {
         std::max(firstTileY, (qCeil((exposedBounds.y() + exposedBounds.height()) * dpr) - 1) /
                                  snow_canvas_filter_tile_cache::kTilePhysicalSize);
     const std::uint64_t fullFingerprint =
-        filterDependencyFingerprint(request.sceneItems, request.sceneItemCount);
+        request.filterTileContentKey == 0
+            ? filterDependencyFingerprint(request.sceneItems, request.sceneItemCount)
+            : 0;
 
     for (int tileY = firstTileY; tileY <= lastTileY; ++tileY) {
         for (int tileX = firstTileX; tileX <= lastTileX; ++tileX) {
@@ -1853,6 +2162,7 @@ void renderSceneItemsTiled(const SceneRenderRequest& request) {
             tilePainter.setClipRegion(QRegion(logicalRect));
             SceneRenderRequest tiled = request;
             tiled.painter = &tilePainter;
+            tiled.executionPlan = &executionPlan;
             tiled.exposedRegion = QRegion(logicalRect);
             SnowCanvasRenderContext tileContext;
             if (request.backgroundContext != nullptr) {
@@ -1879,6 +2189,12 @@ void renderSceneItemsTiled(const SceneRenderRequest& request) {
 
     const auto retainedDiagnostics = snow_canvas_filter_tile_cache::takeDiagnostics();
     g_filterDiagnostics = aggregateDiagnostics;
+    g_filterDiagnostics.planningNanoseconds += planningNanoseconds;
+    g_filterDiagnostics.executionPlanBuildCount +=
+        localPlan.buildCount +
+        (request.displayCache != nullptr
+             ? request.displayCache->executionPlanBuildCount() - previousBuilds
+             : 0);
     g_filterDiagnostics.sourceTileHits += retainedDiagnostics.hits;
     g_filterDiagnostics.sourceTileMisses += retainedDiagnostics.misses;
     g_filterDiagnostics.sourceTileEvictions += retainedDiagnostics.evictions;
@@ -1937,95 +2253,25 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
     thread_local snow_canvas_pen_mask::PenMaskAtlas fallbackPenMaskAtlas;
     snow_canvas_pen_mask::PenMaskAtlas& penMaskAtlas =
         request.penMaskAtlas != nullptr ? *request.penMaskAtlas : fallbackPenMaskAtlas;
-    std::vector<std::uint32_t> filterIndices;
-    if (displayCache != nullptr) {
-        filterIndices = displayCache->filterIndices();
-    } else {
-        for (std::uint32_t index = 0; index < sceneItemCount; ++index) {
-            if (sceneItems[index].kind == SNOW_SCENE_DISPLAY_ITEM_FILTER) {
-                filterIndices.push_back(index);
-            }
-        }
-    }
-    filterIndices.erase(std::remove_if(filterIndices.begin(), filterIndices.end(),
-                                       [&](std::uint32_t i) {
-                                           return i < sceneItemCount &&
-                                                  sceneItems[i].filter.filter_type == 5;
-                                       }),
-                        filterIndices.end());
+    const SceneExecutionPlan& plan = *request.executionPlan;
+    const auto& filterIndices = plan.filterIndices;
     const bool hasPenFilterItems =
-        std::any_of(filterIndices.begin(), filterIndices.end(),
-                    [sceneItems, sceneItemCount](std::uint32_t index) {
-                        return index < sceneItemCount && sceneItems[index].is_free_draw != 0;
-                    });
+        std::any_of(filterIndices.begin(), filterIndices.end(), [sceneItems](std::uint32_t index) {
+            return sceneItems[index].is_free_draw != 0;
+        });
     if (hasPenFilterItems) {
         penMaskAtlas.beginFrame(penMaskNamespace, displayInfo, devicePixelRatio, displayCache);
     }
-    struct CachedFilterFrameInfo {
-        bool effective = false;
-        bool axisAlignedRect = false;
-        bool devicePixelAlignedRect = false;
-        bool pathReady = false;
-        QPainterPath clipPath;
-        QRectF logicalBounds;
-    };
-    std::vector<int> cachedFilterSlots(sceneItemCount, -1);
-    std::vector<CachedFilterFrameInfo> cachedFilters;
-    cachedFilters.reserve(filterIndices.size());
-    const QRectF viewportBounds(0.0, 0.0, displayInfo.surface_width, displayInfo.surface_height);
-    for (std::uint32_t index : filterIndices) {
-        if (index >= sceneItemCount) {
-            continue;
-        }
-        const SnowCanvasSceneItem& item = sceneItems[index];
-        cachedFilterSlots[index] = static_cast<int>(cachedFilters.size());
-        cachedFilters.emplace_back();
-        CachedFilterFrameInfo& cached = cachedFilters.back();
-        item.takePenFilterGeometryDiagnostics(&g_filterDiagnostics.penGeometryChunkBuildCount,
-                                              &g_filterDiagnostics.penGeometryChunkReuseCount);
-        const bool validGeometry = item.is_free_draw != 0
-                                       ? item.arrow_points != nullptr &&
-                                             item.arrow_point_count >= 2 && item.stroke_width > 0.0
-                                       : item.width > 0.0 && item.height > 0.0;
-        cached.effective =
-            item.kind == SNOW_SCENE_DISPLAY_ITEM_FILTER && validGeometry && item.opacity > 0.0;
-        if (!cached.effective) {
-            continue;
-        }
-        if (displayCache != nullptr) {
-            cached.logicalBounds = item.viewBounds;
-        } else {
-            const StageTimer pathTimer{g_filterDiagnostics.pathConstructionNanoseconds};
-            cached.clipPath = filterClipPath(displayInfo, item);
-            cached.pathReady = true;
-            cached.logicalBounds = cached.clipPath.boundingRect();
-        }
-        cached.axisAlignedRect = item.is_free_draw == 0 && std::abs(item.rotation) <= 1e-12;
-        const double physicalLeft = cached.logicalBounds.left() * devicePixelRatio;
-        const double physicalTop = cached.logicalBounds.top() * devicePixelRatio;
-        const double physicalRight =
-            (cached.logicalBounds.left() + cached.logicalBounds.width()) * devicePixelRatio;
-        const double physicalBottom =
-            (cached.logicalBounds.top() + cached.logicalBounds.height()) * devicePixelRatio;
-        cached.devicePixelAlignedRect = cached.axisAlignedRect &&
-                                        nearlyEqual(physicalLeft, std::round(physicalLeft)) &&
-                                        nearlyEqual(physicalTop, std::round(physicalTop)) &&
-                                        nearlyEqual(physicalRight, std::round(physicalRight)) &&
-                                        nearlyEqual(physicalBottom, std::round(physicalBottom));
-        cached.effective = cached.logicalBounds.intersects(viewportBounds);
+    for (const auto index : filterIndices) {
+        sceneItems[index].takePenFilterGeometryDiagnostics(
+            &g_filterDiagnostics.penGeometryChunkBuildCount,
+            &g_filterDiagnostics.penGeometryChunkReuseCount);
     }
-    const auto cachedFilter = [&](std::uint32_t index) -> const CachedFilterFrameInfo& {
-        return cachedFilters[static_cast<std::size_t>(cachedFilterSlots[index])];
+    const auto cachedFilter = [&](std::uint32_t index) -> const FilterFrameInfo& {
+        return plan.filter(index);
     };
     const auto filterPath = [&](std::uint32_t index) -> const QPainterPath& {
-        CachedFilterFrameInfo& cached =
-            cachedFilters[static_cast<std::size_t>(cachedFilterSlots[index])];
-        if (!cached.pathReady) {
-            const StageTimer pathTimer{g_filterDiagnostics.pathConstructionNanoseconds};
-            cached.clipPath = filterClipPath(displayInfo, sceneItems[index]);
-            cached.pathReady = true;
-        }
-        return cached.clipPath;
+        return plan.filter(index).clipPath;
     };
     bool hasFilter = false;
     for (std::uint32_t index : filterIndices) {
@@ -2086,13 +2332,13 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
         };
         mergeComponents();
 
-        // Filters in one adjacent run share a pre-layer source, so their halos
+        // Filters in one explicit source pass share a backdrop, so their halos
         // expand the entering component independently rather than recursively.
         for (std::size_t reverse = filterIndices.size(); reverse > 0;) {
             const std::size_t layerEnd = reverse;
             std::size_t layerStart = reverse - 1;
-            while (layerStart > 0 &&
-                   filterIndices[layerStart - 1] + 1 == filterIndices[layerStart]) {
+            while (layerStart > 0 && plan.passForItem[filterIndices[layerStart - 1]] ==
+                                         plan.passForItem[filterIndices[layerStart]]) {
                 --layerStart;
             }
             for (std::size_t componentIndex = 0; componentIndex < components.size();
@@ -2107,7 +2353,6 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                     if (index >= sceneItemCount) {
                         continue;
                     }
-                    const SnowCanvasSceneItem& filter = sceneItems[index];
                     if (!cachedFilter(index).effective) {
                         continue;
                     }
@@ -2116,14 +2361,7 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                     if (affected.isEmpty()) {
                         continue;
                     }
-                    const snow_canvas_filter_render::Parameters plannedParameters =
-                        filterParameters(displayInfo, filter, devicePixelRatio, {});
-                    const int radius =
-                        filter.filter.filter_type == 1
-                            ? qCeil(snow_canvas_filter_render::samplingRadiusPixels(
-                                        plannedParameters) /
-                                    devicePixelRatio)
-                            : qCeil(filterLogicalSamplingRadius(displayInfo, filter));
+                    const int radius = cachedFilter(index).logicalSamplingRadius;
                     expanded = expanded.united(affected.adjusted(-radius, -radius, radius, radius)
                                                    .intersected(viewportRect));
                 }
@@ -2138,15 +2376,6 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
             renderWorkspace != nullptr ? *renderWorkspace : fallbackWorkspace;
         workspace.resetDiagnostics();
         g_filterDiagnostics.surfaceComponentCount = components.size();
-
-        struct EffectGroup {
-            std::uint32_t type = 0;
-            int blockPixels = 0;
-            int samplingRadiusPixels = 0;
-            double strength = 0.0;
-            snow_canvas_filter_render::GaussianBlurPlan gaussianPlan;
-            std::vector<std::uint32_t> indices;
-        };
 
         for (const PlannedComponent& component : components) {
             const QRect surfaceBounds = component.bounds;
@@ -2216,23 +2445,21 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                 }
             }
             std::vector<std::uint32_t> expandedStream = stream;
+            std::vector<bool> expandedPasses(plan.passes.size(), false);
             for (std::uint32_t index : stream) {
                 if (index >= sceneItemCount ||
                     (sceneItems[index].kind != SNOW_SCENE_DISPLAY_ITEM_FILTER ||
                      sceneItems[index].filter.filter_type == 5)) {
                     continue;
                 }
-                std::uint32_t begin = index;
-                std::uint32_t end = index + 1;
-                while (begin > 0 && sceneItems[begin - 1].kind == SNOW_SCENE_DISPLAY_ITEM_FILTER &&
-                       sceneItems[begin - 1].filter.filter_type != 5) {
-                    --begin;
+                const auto passIndex = static_cast<std::size_t>(plan.passForItem[index]);
+                if (expandedPasses[passIndex]) {
+                    continue;
                 }
-                while (end < sceneItemCount &&
-                       sceneItems[end].kind == SNOW_SCENE_DISPLAY_ITEM_FILTER &&
-                       sceneItems[end].filter.filter_type != 5) {
-                    ++end;
-                }
+                expandedPasses[passIndex] = true;
+                const auto& pass = plan.passes[passIndex];
+                const auto begin = pass.start;
+                const auto end = pass.end;
                 for (std::uint32_t adjacent = begin; adjacent < end; ++adjacent) {
                     expandedStream.push_back(adjacent);
                 }
@@ -2241,6 +2468,11 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
             expandedStream.erase(std::unique(expandedStream.begin(), expandedStream.end()),
                                  expandedStream.end());
 
+            const auto dependencyFingerprints =
+                request.enableFilterTileCache && request.cacheNamespace != nullptr
+                    ? filterDependencyFingerprintsForRegion(sceneItems, plan, displayInfo,
+                                                            surfaceBounds)
+                    : std::vector<std::uint64_t>{};
             std::size_t replayStartPosition = 0;
             bool reusedPreLayer = false;
             bool preloadedLookupAttempted = false;
@@ -2255,13 +2487,9 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                          sceneItems[candidateIndex].filter.filter_type == 5)) {
                         continue;
                     }
-                    std::uint32_t candidateLayerStart = candidateIndex;
-                    while (candidateLayerStart > 0 &&
-                           sceneItems[candidateLayerStart - 1].kind ==
-                               SNOW_SCENE_DISPLAY_ITEM_FILTER &&
-                           sceneItems[candidateLayerStart - 1].filter.filter_type != 5) {
-                        --candidateLayerStart;
-                    }
+                    const auto& candidatePass =
+                        plan.passes[static_cast<std::size_t>(plan.passForItem[candidateIndex])];
+                    const auto candidateLayerStart = candidatePass.start;
                     const QRect sourcePhysicalBounds = surfaceGeometry.pixelBounds;
                     const snow_canvas_filter_tile_cache::Key sourceKey{
                         request.cacheNamespace,
@@ -2271,9 +2499,9 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                               qMax(1, qRound(displayInfo.surface_height))),
                         filterTileDprBits(devicePixelRatio),
                         request.filterTileContentKey,
-                        filterDependencyFingerprintForRegion(sceneItems, candidateLayerStart,
-                                                             displayInfo, surfaceBounds),
-                        0,
+                        dependencyFingerprints[static_cast<std::size_t>(
+                            plan.passForItem[candidateIndex])],
+                        passFingerprint(candidatePass.id),
                     };
                     preloadedLayerStart = candidateLayerStart;
                     preloadedLookupAttempted = true;
@@ -2333,18 +2561,9 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                     continue;
                 }
 
-                std::uint32_t layerStart = index;
-                std::uint32_t layerEnd = index + 1;
-                while (layerStart > 0 &&
-                       sceneItems[layerStart - 1].kind == SNOW_SCENE_DISPLAY_ITEM_FILTER &&
-                       sceneItems[layerStart - 1].filter.filter_type != 5) {
-                    --layerStart;
-                }
-                while (layerEnd < sceneItemCount &&
-                       sceneItems[layerEnd].kind == SNOW_SCENE_DISPLAY_ITEM_FILTER &&
-                       sceneItems[layerEnd].filter.filter_type != 5) {
-                    ++layerEnd;
-                }
+                const auto& pass = plan.passes[static_cast<std::size_t>(plan.passForItem[index])];
+                const auto layerStart = pass.start;
+                const auto layerEnd = pass.end;
                 while (position < expandedStream.size() && expandedStream[position] < layerEnd) {
                     ++position;
                 }
@@ -2353,113 +2572,20 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                 }
 
                 std::vector<EffectGroup> groups;
-                for (std::uint32_t filterIndex = layerStart; filterIndex < layerEnd;
-                     ++filterIndex) {
-                    const SnowCanvasSceneItem& filter = sceneItems[filterIndex];
-                    if (!cachedFilter(filterIndex).effective ||
-                        !cachedFilter(filterIndex).logicalBounds.intersects(surfaceBounds)) {
-                        continue;
+                for (const auto& planned : pass.groups) {
+                    EffectGroup group = planned;
+                    group.indices.erase(
+                        std::remove_if(group.indices.begin(), group.indices.end(),
+                                       [&](std::uint32_t i) {
+                                           return !cachedFilter(i).logicalBounds.intersects(
+                                               surfaceBounds);
+                                       }),
+                        group.indices.end());
+                    if (!group.indices.empty()) {
+                        g_filterDiagnostics.originalFilterCount += group.indices.size();
+                        groups.push_back(std::move(group));
                     }
-                    const auto projection =
-                        snow_canvas_render_geometry::sceneProjection(displayInfo);
-                    EffectGroup key;
-                    key.type = filter.filter.filter_type;
-                    key.blockPixels = qMax(1, qRound(filter.filter.mosaic_block_size *
-                                                     projection.cameraZoom * devicePixelRatio));
-                    if (key.type == 1) {
-                        key.gaussianPlan = snow_canvas_filter_render::gaussianBlurPlan(
-                            filterParameters(displayInfo, filter, devicePixelRatio, {}));
-                    } else if (isEmbossEffect(key.type)) {
-                        key.strength = filter.filter.strength;
-                        key.samplingRadiusPixels = snow_canvas_filter_render::samplingRadiusPixels(
-                            filterParameters(displayInfo, filter, devicePixelRatio, {}));
-                    }
-                    auto found =
-                        std::find_if(groups.begin(), groups.end(), [&](const EffectGroup& group) {
-                            if (group.type != key.type) {
-                                return false;
-                            }
-                            if (key.type == 0) {
-                                return group.blockPixels == key.blockPixels;
-                            }
-                            if (key.type == 1) {
-                                return group.gaussianPlan.reductionFactor ==
-                                           key.gaussianPlan.reductionFactor &&
-                                       group.gaussianPlan.passCount == key.gaussianPlan.passCount &&
-                                       group.gaussianPlan.physicalSupportRadius ==
-                                           key.gaussianPlan.physicalSupportRadius &&
-                                       std::equal(std::begin(group.gaussianPlan.radii),
-                                                  std::end(group.gaussianPlan.radii),
-                                                  std::begin(key.gaussianPlan.radii));
-                            }
-                            if (isEmbossEffect(key.type)) {
-                                return group.strength == key.strength &&
-                                       group.samplingRadiusPixels == key.samplingRadiusPixels;
-                            }
-                            return true;
-                        });
-                    if (found == groups.end()) {
-                        key.indices.push_back(filterIndex);
-                        groups.push_back(std::move(key));
-                    } else {
-                        found->indices.push_back(filterIndex);
-                    }
-                    ++g_filterDiagnostics.originalFilterCount;
                 }
-                std::vector<EffectGroup> spatialGroups;
-                for (const EffectGroup& effect : groups) {
-                    std::vector<EffectGroup> pending;
-                    for (std::uint32_t filterIndex : effect.indices) {
-                        EffectGroup subgroup = effect;
-                        subgroup.indices = {filterIndex};
-                        pending.push_back(std::move(subgroup));
-                    }
-                    bool merged = false;
-                    do {
-                        merged = false;
-                        for (std::size_t left = 0; left < pending.size() && !merged; ++left) {
-                            QRectF leftBounds;
-                            for (std::uint32_t filterIndex : pending[left].indices) {
-                                leftBounds = leftBounds.isNull()
-                                                 ? cachedFilter(filterIndex).logicalBounds
-                                                 : leftBounds.united(
-                                                       cachedFilter(filterIndex).logicalBounds);
-                            }
-                            const double physicalOutset =
-                                effect.type == 1 ? effect.gaussianPlan.physicalSupportRadius + 0.5
-                                : isEmbossEffect(effect.type) ? effect.samplingRadiusPixels + 0.5
-                                                              : 0.5;
-                            const double logicalOutset = physicalOutset / devicePixelRatio;
-                            const QRectF leftSource = leftBounds.adjusted(
-                                -logicalOutset, -logicalOutset, logicalOutset, logicalOutset);
-                            for (std::size_t right = left + 1; right < pending.size(); ++right) {
-                                QRectF rightBounds;
-                                for (std::uint32_t filterIndex : pending[right].indices) {
-                                    rightBounds =
-                                        rightBounds.isNull()
-                                            ? cachedFilter(filterIndex).logicalBounds
-                                            : rightBounds.united(
-                                                  cachedFilter(filterIndex).logicalBounds);
-                                }
-                                const QRectF rightSource = rightBounds.adjusted(
-                                    -logicalOutset, -logicalOutset, logicalOutset, logicalOutset);
-                                if (!leftSource.intersects(rightSource)) {
-                                    continue;
-                                }
-                                pending[left].indices.insert(pending[left].indices.end(),
-                                                             pending[right].indices.begin(),
-                                                             pending[right].indices.end());
-                                pending.erase(pending.begin() + static_cast<std::ptrdiff_t>(right));
-                                merged = true;
-                                break;
-                            }
-                        }
-                    } while (merged);
-                    spatialGroups.insert(spatialGroups.end(),
-                                         std::make_move_iterator(pending.begin()),
-                                         std::make_move_iterator(pending.end()));
-                }
-                groups = std::move(spatialGroups);
                 g_filterDiagnostics.spatialEffectGroupCount += groups.size();
                 if (groups.empty()) {
                     continue;
@@ -2484,9 +2610,8 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                               qMax(1, qRound(displayInfo.surface_height))),
                         filterTileDprBits(devicePixelRatio),
                         request.filterTileContentKey,
-                        filterDependencyFingerprintForRegion(sceneItems, layerStart, displayInfo,
-                                                             surfaceBounds),
-                        0,
+                        dependencyFingerprints[static_cast<std::size_t>(plan.passForItem[index])],
+                        passFingerprint(pass.id),
                     };
                     std::shared_ptr<const snow_canvas_filter_tile_cache::Entry> retainedSource =
                         preloadedLookupAttempted && preloadedLayerStart == layerStart
@@ -2814,6 +2939,9 @@ void resetFilterRenderDiagnosticsForCurrentThread() {
 
 void accumulateFilterRenderDiagnostics(FilterRenderDiagnostics& target,
                                        const FilterRenderDiagnostics& source) {
+    target.executionPlanBuildCount += source.executionPlanBuildCount;
+    target.dependencyItemVisits += source.dependencyItemVisits;
+    target.planningNanoseconds += source.planningNanoseconds;
     target.usedFilterPath = target.usedFilterPath || source.usedFilterPath;
     target.exposedPixelCount += source.exposedPixelCount;
     target.totalWorkingPixelCount += source.totalWorkingPixelCount;

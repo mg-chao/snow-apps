@@ -399,3 +399,13 @@ mod tests {
         );
     }
 }
+
+/// Ordered filter metadata indexed into the complete resulting scene array.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SnowSceneRenderRun {
+    pub source_pass: SnowElementId,
+    pub effect_run: SnowElementId,
+    pub start: u32,
+    pub count: u32,
+}

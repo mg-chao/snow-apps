@@ -53,6 +53,10 @@ impl QueryStore {
         self.relation_index.bound_bindable_ids(arrow_id)
     }
 
+    pub fn relations(&self) -> &RelationIndex {
+        &self.relation_index
+    }
+
     pub fn paint_rank(&self, id: ElementId) -> Option<u32> {
         self.paint_ranks
             .get(id.index as usize)

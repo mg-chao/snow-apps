@@ -1,5 +1,6 @@
 #include "snow_canvas_display_item.h"
 #include "snow_canvas_filter_render.h"
+#include "snow_canvas_filter_tile_cache.h"
 #include "snow_canvas_render_diagnostics.h"
 #include "snow_canvas_renderer.h"
 
@@ -446,6 +447,7 @@ struct RendererConfig {
     bool varyStrength = false;
     bool splitLayer = false;
     int offscreenItemCount = 0;
+    bool retainPlan = false;
 };
 
 Runner makeRendererRunner(RendererConfig config) {
@@ -516,11 +518,23 @@ Runner makeRendererRunner(RendererConfig config) {
             }
         }
 
+        snow_canvas_filter_tile_cache::Diagnostics retainedSourceDiagnostics;
+        snow_canvas_renderer::SceneExecutionPlan retainedPlan;
+        int cacheToken = 0;
+        if (config.retainPlan) {
+            snow_canvas_filter_tile_cache::clear();
+            const auto runs = snow_canvas_renderer::buildUnculledRenderPlan(
+                items.data(), static_cast<std::uint32_t>(items.size()), displayInfo,
+                config.devicePixelRatio);
+            snow_canvas_renderer::prepareExecutionPlan(
+                retainedPlan, items.data(), static_cast<std::uint32_t>(items.size()), displayInfo,
+                config.devicePixelRatio, runs, 1);
+        }
         const auto render = [&] {
             QPainter painter(&output);
             painter.setRenderHint(QPainter::Antialiasing, true);
             painter.setClipRegion(exposed);
-            snow_canvas_renderer::renderSceneItems(snow_canvas_renderer::SceneRenderRequest{
+            snow_canvas_renderer::SceneRenderRequest request{
                 &painter,
                 &displayInfo,
                 items.data(),
@@ -529,7 +543,14 @@ Runner makeRendererRunner(RendererConfig config) {
                 spatialCandidates.empty() ? nullptr : spatialCandidates.data(),
                 static_cast<std::uint32_t>(spatialCandidates.size()),
                 &background,
-            });
+            };
+            request.executionPlan = config.retainPlan ? &retainedPlan : nullptr;
+            request.enableFilterTileCache = config.retainPlan;
+            request.cacheNamespace = &cacheToken;
+            snow_canvas_renderer::renderSceneItems(request);
+            if (config.retainPlan) {
+                retainedSourceDiagnostics = snow_canvas_filter_tile_cache::takeDiagnostics();
+            }
             painter.end();
         };
         for (int iteration = 0; iteration < options.warmupIterations; ++iteration) {
@@ -559,10 +580,24 @@ Runner makeRendererRunner(RendererConfig config) {
         result.exposedHeight = config.exposed.boundingRect().height();
         result.checksum = imageChecksum(output);
         result.diagnostics = snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread();
+        if (config.retainPlan) {
+            result.diagnostics.sourceTileHits = retainedSourceDiagnostics.hits;
+            result.diagnostics.sourceTileMisses = retainedSourceDiagnostics.misses;
+            result.diagnostics.retainedSourceBytes = retainedSourceDiagnostics.retainedBytes;
+            snow_canvas_filter_tile_cache::clear();
+            if (result.diagnostics.executionPlanBuildCount != 0 ||
+                retainedSourceDiagnostics.hits == 0) {
+                error = "warm renderer must reuse its execution plan and source";
+                return std::nullopt;
+            }
+        }
         const std::size_t expectedLayers = config.splitLayer ? 2u : 1u;
         const std::size_t dispatchesPerLayer =
-            config.varyStrength ? static_cast<std::size_t>(config.filterCount) / expectedLayers
-                                : (config.alternateTypes ? 2u : 1u);
+            config.varyStrength
+                ? static_cast<std::size_t>(config.filterCount) / expectedLayers
+                : (config.alternateTypes
+                       ? static_cast<std::size_t>(config.filterCount) / expectedLayers
+                       : 1u);
         const std::size_t expectedDispatches = dispatchesPerLayer * expectedLayers;
         const std::size_t componentCount = result.diagnostics.surfaceComponentCount;
         if (!result.diagnostics.usedFilterPath ||
@@ -825,6 +860,18 @@ std::vector<Scenario> makeScenarios() {
             makeRendererRunner(std::move(config)),
         });
     };
+    RendererConfig warm;
+    warm.scenario = "renderer_retained_plan_source_1080p";
+    warm.workload = "warm_plan_and_shared_source";
+    warm.type = 1;
+    warm.filterCount = 8;
+    warm.filterWidth = 512;
+    warm.filterHeight = 512;
+    warm.strength = 0.7;
+    warm.exposed = QRegion(centeredRect(1920, 1080, 640, 640));
+    warm.retainPlan = true;
+    warm.splitLayer = true;
+    addRenderer(warm, "Eight Gaussian filters reusing an execution plan and source cache");
     for (std::uint32_t type = 0; type < 5; ++type) {
         scenarios.push_back(Scenario{
             "renderer_pen_append_" + std::string(effectName(type)) + "_dpr2_4k",
@@ -1013,7 +1060,10 @@ void printResults(const std::vector<Result>& results) {
                       << " reconstruction_ms="
                       << result.diagnostics.reconstructionNanoseconds / 1.0e6
                       << " presentation_ms=" << result.diagnostics.presentationNanoseconds / 1.0e6
-                      << " simd=" << result.diagnostics.simdBackend << '\n';
+                      << " simd=" << result.diagnostics.simdBackend
+                      << " plan_builds=" << result.diagnostics.executionPlanBuildCount
+                      << " dependency_visits=" << result.diagnostics.dependencyItemVisits
+                      << " planning_ns=" << result.diagnostics.planningNanoseconds << '\n';
         }
     }
 }
@@ -1052,7 +1102,8 @@ bool writeCsv(const std::string& path, const std::vector<Result>& results, std::
               "opaque_rect_dispatches,constant_rect_dispatches,"
               "scene_replay_ns,path_construction_ns,mask_construction_ns,mask_scan_ns,"
               "downsample_ns,reduced_blur_ns,"
-              "reconstruction_ns,presentation_ns,simd_backend\n";
+              "reconstruction_ns,presentation_ns,simd_backend,execution_plan_builds,dependency_"
+              "item_visits,planning_ns\n";
     stream << std::fixed << std::setprecision(6);
     for (const Result& result : results) {
         stream << "1," << csvEscape(result.suite) << ',' << csvEscape(result.scenario) << ','
@@ -1108,7 +1159,10 @@ bool writeCsv(const std::string& path, const std::vector<Result>& results, std::
                << result.diagnostics.reducedBlurNanoseconds << ','
                << result.diagnostics.reconstructionNanoseconds << ','
                << result.diagnostics.presentationNanoseconds << ','
-               << result.diagnostics.simdBackend << '\n';
+               << result.diagnostics.simdBackend << ','
+               << result.diagnostics.executionPlanBuildCount << ','
+               << result.diagnostics.dependencyItemVisits << ','
+               << result.diagnostics.planningNanoseconds << '\n';
     }
     if (!stream) {
         error = "failed while writing CSV output: " + path;
