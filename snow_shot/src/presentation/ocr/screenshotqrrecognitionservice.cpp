@@ -7,6 +7,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
+#include <QFile>
 #include <QHash>
 #include <QMetaObject>
 #include <QPointer>
@@ -57,9 +58,27 @@ struct BarcodeDecoders {
     QString loadError;
 };
 
+// QFile resolves through Unicode-capable platform APIs, so model files can be
+// read from install directories that OpenCV's narrow-char path handling cannot
+// represent (for example non-ASCII Windows paths).
+bool readModelFile(const QDir& modelsDirectory, const QString& name, std::vector<uchar>& output) {
+    QFile file(modelsDirectory.filePath(name));
+    if (!file.open(QIODevice::ReadOnly)) {
+        qWarning() << "Failed to open the WeChat QR model" << name << ":" << file.errorString();
+        return false;
+    }
+    const QByteArray bytes = file.readAll();
+    if (bytes.isEmpty()) {
+        qWarning() << "The WeChat QR model" << name << "is empty";
+        return false;
+    }
+    output.assign(bytes.cbegin(), bytes.cend());
+    return true;
+}
+
 // The WeChat detector owns two DNN sessions; constructing it once per worker
 // thread avoids reloading the models for every queued request.
-const BarcodeDecoders& threadDecoders() {
+const BarcodeDecoders& threadDecoders(const QString& modelsDirectoryPath) {
     thread_local std::optional<BarcodeDecoders> decoders;
     if (decoders.has_value()) {
         return *decoders;
@@ -68,23 +87,36 @@ const BarcodeDecoders& threadDecoders() {
     BarcodeDecoders created;
     created.barcode = cv::makePtr<cv::barcode::BarcodeDetector>();
     const QDir modelsDirectory(
-        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("assets/qrcode")));
-    const auto modelPath = [&modelsDirectory](const char* name) {
-        return modelsDirectory.filePath(QString::fromLatin1(name)).toStdString();
-    };
-    try {
-        created.qr = cv::makePtr<cv::wechat_qrcode::WeChatQRCode>(
-            modelPath("detect.prototxt"), modelPath("detect.caffemodel"), modelPath("sr.prototxt"),
-            modelPath("sr.caffemodel"));
-    } catch (const std::exception& exception) {
-        qWarning() << "Failed to load the WeChat QR models:" << exception.what();
+        modelsDirectoryPath.isEmpty()
+            ? QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("assets/qrcode"))
+            : modelsDirectoryPath);
+    std::vector<uchar> detectorPrototxt;
+    std::vector<uchar> detectorCaffeModel;
+    std::vector<uchar> superResolutionPrototxt;
+    std::vector<uchar> superResolutionCaffeModel;
+    const bool modelsReadable =
+        readModelFile(modelsDirectory, QStringLiteral("detect.prototxt"), detectorPrototxt) &&
+        readModelFile(modelsDirectory, QStringLiteral("detect.caffemodel"), detectorCaffeModel) &&
+        readModelFile(modelsDirectory, QStringLiteral("sr.prototxt"), superResolutionPrototxt) &&
+        readModelFile(modelsDirectory, QStringLiteral("sr.caffemodel"), superResolutionCaffeModel);
+    if (modelsReadable) {
+        try {
+            created.qr = cv::makePtr<cv::wechat_qrcode::WeChatQRCode>(
+                std::move(detectorPrototxt), std::move(detectorCaffeModel),
+                std::move(superResolutionPrototxt), std::move(superResolutionCaffeModel));
+        } catch (const std::exception& exception) {
+            qWarning() << "Failed to load the WeChat QR models:" << exception.what();
+            created.loadError = recognitionModelsMissingMessage();
+        }
+    } else {
         created.loadError = recognitionModelsMissingMessage();
     }
     decoders = std::move(created);
     return *decoders;
 }
 
-ScreenshotQrRecognitionResult recognizeImage(QImage source, const std::atomic_bool& cancellation) {
+ScreenshotQrRecognitionResult recognizeImage(QImage source, const std::atomic_bool& cancellation,
+                                             const QString& modelsDirectoryPath) {
     try {
         const QSize detectorSize = boundedDetectorSize(source.size());
         if (detectorSize.isEmpty() || cancellation.load(std::memory_order_relaxed)) {
@@ -103,7 +135,7 @@ ScreenshotQrRecognitionResult recognizeImage(QImage source, const std::atomic_bo
             return {};
         }
 
-        const BarcodeDecoders& decoders = threadDecoders();
+        const BarcodeDecoders& decoders = threadDecoders(modelsDirectoryPath);
         if (decoders.qr.empty()) {
             return {{}, decoders.loadError};
         }
@@ -158,7 +190,8 @@ ScreenshotQrRecognitionResult recognizeImage(QImage source, const std::atomic_bo
 
 class ScreenshotQrRecognitionService::Impl final {
   public:
-    explicit Impl(ScreenshotQrRecognitionService* owner) : m_owner(owner) {}
+    Impl(ScreenshotQrRecognitionService* owner, QString modelsDirectory)
+        : m_owner(owner), m_modelsDirectory(std::move(modelsDirectory)) {}
 
     ~Impl() {
         shutdown();
@@ -240,9 +273,10 @@ class ScreenshotQrRecognitionService::Impl final {
             return;
         }
 
-        QThread* const thread = QThread::create([request]() {
+        QThread* const thread = QThread::create([request, modelsDirectory = m_modelsDirectory]() {
             if (!request->cancellation->load(std::memory_order_acquire)) {
-                request->result = recognizeImage(std::move(request->image), *request->cancellation);
+                request->result = recognizeImage(std::move(request->image), *request->cancellation,
+                                                 modelsDirectory);
             }
         });
         thread->setObjectName(QStringLiteral("ScreenshotQrWorker"));
@@ -314,6 +348,7 @@ class ScreenshotQrRecognitionService::Impl final {
     }
 
     ScreenshotQrRecognitionService* m_owner = nullptr;
+    QString m_modelsDirectory;
     QHash<RequestToken, RequestHandle> m_requests;
     std::deque<RequestHandle> m_queue;
     QThread* m_workerThread = nullptr;
@@ -321,8 +356,9 @@ class ScreenshotQrRecognitionService::Impl final {
     bool m_stopping = false;
 };
 
-ScreenshotQrRecognitionService::ScreenshotQrRecognitionService(QObject* parent)
-    : ScreenshotQrRecognitionPort(parent), m_impl(std::make_unique<Impl>(this)) {}
+ScreenshotQrRecognitionService::ScreenshotQrRecognitionService(QObject* parent,
+                                                               const QString& modelsDirectory)
+    : ScreenshotQrRecognitionPort(parent), m_impl(std::make_unique<Impl>(this, modelsDirectory)) {}
 
 ScreenshotQrRecognitionService::~ScreenshotQrRecognitionService() = default;
 

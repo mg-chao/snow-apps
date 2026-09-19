@@ -1,0 +1,122 @@
+--- a/modules/wechat_qrcode/include/opencv2/wechat_qrcode.hpp
++++ b/modules/wechat_qrcode/include/opencv2/wechat_qrcode.hpp
+@@ -37,6 +37,28 @@ public:
+                          const std::string& detector_caffe_model_path = "",
+                          const std::string& super_resolution_prototxt_path = "",
+                          const std::string& super_resolution_caffe_model_path = "");
++
++    /**
++     * @brief Initialize the WeChatQRCode from models held in memory.
++     * It includes two models, which are packaged with caffe format.
++     * Therefore, there are prototxt and caffe models (In total, four paramenters).
++     *
++     * The models are parsed from the provided buffers instead of being read from
++     * the filesystem, so callers that already loaded the model files with
++     * platform-aware APIs can avoid path encoding issues (for example, install
++     * directories that cannot be represented in the active ANSI code page on
++     * Windows).
++     *
++     * @param detector_prototxt_buffer buffer with the detector prototxt content
++     * @param detector_caffe_model_buffer buffer with the detector caffe model content
++     * @param super_resolution_prototxt_buffer buffer with the super resolution prototxt content
++     * @param super_resolution_caffe_model_buffer buffer with the super resolution caffe model
++     * content
++     */
++    WeChatQRCode(const std::vector<uchar>& detector_prototxt_buffer,
++                 const std::vector<uchar>& detector_caffe_model_buffer,
++                 const std::vector<uchar>& super_resolution_prototxt_buffer,
++                 const std::vector<uchar>& super_resolution_caffe_model_buffer);
+     ~WeChatQRCode(){};
+ 
+     /**
+--- a/modules/wechat_qrcode/src/detector/ssd_detector.cpp
++++ b/modules/wechat_qrcode/src/detector/ssd_detector.cpp
+@@ -14,6 +14,12 @@ int SSDDetector::init(const string& proto_path, const string& model_path) {
+     return 0;
+ }
+ 
++int SSDDetector::init(const std::vector<uchar>& proto_buffer,
++                      const std::vector<uchar>& model_buffer) {
++    net_ = dnn::readNetFromCaffe(proto_buffer, model_buffer);
++    return 0;
++}
++
+ vector<Mat> SSDDetector::forward(Mat img, const int target_width, const int target_height) {
+     int img_w = img.cols;
+     int img_h = img.rows;
+--- a/modules/wechat_qrcode/src/detector/ssd_detector.hpp
++++ b/modules/wechat_qrcode/src/detector/ssd_detector.hpp
+@@ -20,6 +20,7 @@ public:
+     SSDDetector(){};
+     ~SSDDetector(){};
+     int init(const std::string& proto_path, const std::string& model_path);
++    int init(const std::vector<uchar>& proto_buffer, const std::vector<uchar>& model_buffer);
+     std::vector<Mat> forward(Mat img, const int target_width, const int target_height);
+ 
+ private:
+--- a/modules/wechat_qrcode/src/scale/super_scale.cpp
++++ b/modules/wechat_qrcode/src/scale/super_scale.cpp
+@@ -17,6 +17,13 @@ int SuperScale::init(const std::string &proto_path, const std::string &model_pat
+     return 0;
+ }
+ 
++int SuperScale::init(const std::vector<uchar> &proto_buffer,
++                     const std::vector<uchar> &model_buffer) {
++    srnet_ = dnn::readNetFromCaffe(proto_buffer, model_buffer);
++    net_loaded_ = true;
++    return 0;
++}
++
+ Mat SuperScale::processImageScale(const Mat &src, float scale, const bool &use_sr,
+                                   int sr_max_size) {
+     Mat dst = src;
+--- a/modules/wechat_qrcode/src/scale/super_scale.hpp
++++ b/modules/wechat_qrcode/src/scale/super_scale.hpp
+@@ -19,6 +19,7 @@ public:
+     SuperScale(){};
+     ~SuperScale(){};
+     int init(const std::string &proto_path, const std::string &model_path);
++    int init(const std::vector<uchar> &proto_buffer, const std::vector<uchar> &model_buffer);
+     Mat processImageScale(const Mat &src, float scale, const bool &use_sr, int sr_max_size = 160);
+ 
+ private:
+--- a/modules/wechat_qrcode/src/wechat_qrcode.cpp
++++ b/modules/wechat_qrcode/src/wechat_qrcode.cpp
+@@ -81,6 +81,37 @@ WeChatQRCode::WeChatQRCode(const String& detector_prototxt_path,
+     }
+ }
+ 
++WeChatQRCode::WeChatQRCode(const std::vector<uchar>& detector_prototxt_buffer,
++                           const std::vector<uchar>& detector_caffe_model_buffer,
++                           const std::vector<uchar>& super_resolution_prototxt_buffer,
++                           const std::vector<uchar>& super_resolution_caffe_model_buffer) {
++    p = makePtr<WeChatQRCode::Impl>();
++    if (!detector_prototxt_buffer.empty() && !detector_caffe_model_buffer.empty()) {
++        // initialize detector model (caffe)
++        p->use_nn_detector_ = true;
++        p->detector_ = make_shared<SSDDetector>();
++        auto ret = p->detector_->init(detector_prototxt_buffer, detector_caffe_model_buffer);
++        CV_Assert(ret == 0);
++    } else {
++        p->use_nn_detector_ = false;
++        p->detector_ = NULL;
++    }
++    // initialize super_resolution_model
++    // it could also support non model weights by cubic resizing
++    // so, we initialize it first.
++    p->super_resolution_model_ = make_shared<SuperScale>();
++    if (!super_resolution_prototxt_buffer.empty() &&
++        !super_resolution_caffe_model_buffer.empty()) {
++        p->use_nn_sr_ = true;
++        // initialize dnn model (caffe format)
++        auto ret = p->super_resolution_model_->init(super_resolution_prototxt_buffer,
++                                                    super_resolution_caffe_model_buffer);
++        CV_Assert(ret == 0);
++    } else {
++        p->use_nn_sr_ = false;
++    }
++}
++
+ vector<string> WeChatQRCode::detectAndDecode(InputArray img, OutputArrayOfArrays points) {
+     CV_Assert(!img.empty());
+     CV_CheckDepthEQ(img.depth(), CV_8U, "");
