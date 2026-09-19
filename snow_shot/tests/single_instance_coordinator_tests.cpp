@@ -64,7 +64,9 @@ void firstInstanceAndQueuedForwarding() {
         forwarded = secondary.acquireOrForward(forwardedArguments);
         forwardingComplete = true;
     });
-    require(waitUntil([&forwardingComplete]() { return forwardingComplete.load(); }, 3000),
+    // The secondary retries its forward for kForwardTimeoutMilliseconds, so
+    // the completion wait must exceed that budget.
+    require(waitUntil([&forwardingComplete]() { return forwardingComplete.load(); }, 5000),
             "second process did not finish its forwarding attempt");
     secondaryThread.join();
     require(forwarded.outcome == single_instance::SingleInstanceOutcome::Forwarded &&

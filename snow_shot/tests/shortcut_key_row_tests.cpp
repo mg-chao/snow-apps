@@ -18,6 +18,7 @@
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QFontMetricsF>
+#include <QHideEvent>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QImage>
@@ -159,9 +160,12 @@ void keyDisplayUsesCanonicalLabels() {
         config.shortcuts = {binding(portable), binding(QStringLiteral("F3"))};
         ShortcutKeyRow row(config, scheme.metricAlias, metrics);
         auto* button = row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutKeyButton"));
-        require(button != nullptr && button->text() == displayText(portable) +
-                                                           QStringLiteral(" / ") +
-                                                           displayText(QStringLiteral("F3")),
+        // The legend renders through the same list formatting as the widget,
+        // which drops bindings that do not parse (a bare "+" is not a valid
+        // portable key on its own) instead of showing an empty alternative.
+        require(button != nullptr &&
+                    button->text() ==
+                        shortcut_domain::formatShortcutListDisplayText(config.shortcuts),
                 "settings key names and alternatives must retain their canonical display");
     }
 }
@@ -385,6 +389,9 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
 
     QString lastValidatedShortcut;
     ShortcutKeyRowConfig config;
+    // Bare Shift is only a legal binding for screenshot shortcuts, not for
+    // global shortcuts; scope the recorder accordingly for the Shift checks.
+    config.validationScope = ShortcutKeyRowConfig::ValidationScope::ScreenshotShortcut;
     config.title = QStringLiteral("Screenshot");
     config.maxShortcutCount = 2;
     config.shortcutValidator =
@@ -445,12 +452,12 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
             "the recorder info trigger should sit inside the key button after its text");
     auto* const validationTooltip = validationInfo->tooltipHost();
     require(keyButton->toolTip().isEmpty() &&
-                validationInfo->tooltipText().contains(QStringLiteral("global shortcut")) &&
+                validationInfo->tooltipText().contains(QStringLiteral("screenshot shortcut")) &&
                 validationTooltip != nullptr &&
                 validationTooltip->placement() == adqt::widgets::AdTooltip::Placement::Top &&
                 validationTooltip->hoverOpenDelayMs() == 0,
             "the recorder info icon should own an immediate upward tooltip");
-    require(keyButton->accessibleDescription().contains(QStringLiteral("global shortcut")),
+    require(keyButton->accessibleDescription().contains(QStringLiteral("screenshot shortcut")),
             "a rejected key should expose an understandable validation reason");
     require(!actionButton->isEnabled(), "a backend-rejected key must not be confirmable");
     require(!modal->acceptButton()->isEnabled(),
@@ -633,6 +640,46 @@ void globalRecorderRestoresRegistrationOnEveryExitPath() {
         require(resumptions == 1,
                 "deferred modal cleanup must not resume registrations a second time");
     }
+}
+
+void globalRecorderSuspensionSurvivesTransientModalHide() {
+    const styles::ThemeColorScheme scheme = styles::ThemeManager::instance().themeColorScheme();
+    int resumptions = 0;
+    ShortcutKeyRowConfig config;
+    config.title = QStringLiteral("Screenshot");
+    config.shortcuts = {binding(QStringLiteral("F3"))};
+    config.suspendGlobalShortcuts = [] { return quint64{71}; };
+    config.resumeGlobalShortcuts = [&](quint64) { ++resumptions; };
+    auto row = std::make_unique<ShortcutKeyRow>(
+        config, scheme.metricAlias, styles::buildMainWindowComponentMetricToken(scheme));
+    row->show();
+    row->findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutKeyButton"))->click();
+    QApplication::processEvents();
+    auto* modal = row->findChild<adqt::widgets::AdModal*>();
+    auto* content = row->findChild<QWidget*>(QStringLiteral("shortcutConfigContent"));
+    require(modal != nullptr && content != nullptr && modal->isOpen() && resumptions == 0,
+            "the global recorder must hold its suspension while the modal is open");
+
+    // The modal and its content can receive Hide events while the dialog is
+    // still opening; the queued resume must re-check the recorder and keep
+    // the native registrations suspended.
+    QHideEvent transientHide;
+    QCoreApplication::sendEvent(modal, &transientHide);
+    QCoreApplication::sendEvent(content, &transientHide);
+    QApplication::processEvents();
+    require(resumptions == 0,
+            "a transient recorder hide must not restore native registrations early");
+
+    modal->rejectButton()->click();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QApplication::processEvents();
+    require(resumptions == 1,
+            "closing the transiently hidden recorder must restore the suspension exactly once");
+    row.reset();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QApplication::processEvents();
+    require(resumptions == 1,
+            "deferred cleanup after a transient hide must not resume a second time");
 }
 
 void printScreenReleaseRecordsModifiers() {
@@ -1406,6 +1453,7 @@ int main(int argc, char** argv) {
     recorderAcceptsOnlyBackendSupportedShortcuts();
     recorderCapturesMacPhysicalKeysAndRejectsPhysicalDuplicates();
     globalRecorderRestoresRegistrationOnEveryExitPath();
+    globalRecorderSuspensionSurvivesTransientModalHide();
     printScreenReleaseRecordsModifiers();
     printScreenRecordingPreservesEventOrderAndLifecycle();
     localShortcutRecordersUseOnlyNormalKeyEvents();

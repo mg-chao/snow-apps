@@ -198,9 +198,13 @@ void toolbarLayoutSectionResetsRemainIndependent() {
          QStringLiteral("text"), QStringLiteral("serial-number"), QStringLiteral("filter"),
          QStringLiteral("eraser")},
     };
+    // The custom arrangement still lists every default action (including the
+    // conversions and quick-save) so normalization cannot append anything and
+    // the persisted layout compares equal to what was applied.
     const storage::ScreenshotToolbarLayout actionLayout{
-        {{QStringLiteral("save-as-file")}},
-        {QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
+        {{QStringLiteral("quick-save"), QStringLiteral("save-as-file")}},
+        {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
+         QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
          QStringLiteral("record-screen"), QStringLiteral("pin-to-screen"),
          QStringLiteral("text-recognition"), QStringLiteral("text-translation"),
          QStringLiteral("scrolling-screenshot")},
@@ -211,20 +215,22 @@ void toolbarLayoutSectionResetsRemainIndependent() {
                                            actionLayout),
             "toolbar reset fixture must persist independent layouts");
 
-    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotInterfaceSettings) &&
-                backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools) ==
-                    drawingLayout &&
-                backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools) ==
-                    storage::ScreenshotToolbarLayout{{{QStringLiteral("barcode-recognition"),
-                                                       QStringLiteral("table-recognition")},
-                                                      {QStringLiteral("record-screen")},
-                                                      {QStringLiteral("pin-to-screen")},
-                                                      {QStringLiteral("text-recognition")},
-                                                      {QStringLiteral("text-translation")},
-                                                      {QStringLiteral("scrolling-screenshot")},
-                                                      {QStringLiteral("save-as-file")}},
-                                                     {}},
-            "Screenshot Interface reset must restore only the screenshot action layout");
+    require(
+        backend.resetSection(settings::SettingsSectionReset::ScreenshotInterfaceSettings) &&
+            backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools) ==
+                drawingLayout &&
+            backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools) ==
+                storage::ScreenshotToolbarLayout{
+                    {{QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
+                      QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
+                     {QStringLiteral("record-screen")},
+                     {QStringLiteral("pin-to-screen")},
+                     {QStringLiteral("text-recognition")},
+                     {QStringLiteral("text-translation")},
+                     {QStringLiteral("scrolling-screenshot")},
+                     {QStringLiteral("quick-save"), QStringLiteral("save-as-file")}},
+                    {}},
+        "Screenshot Interface reset must restore only the screenshot action layout");
 
     require(backend.applyToolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools,
                                        actionLayout) &&

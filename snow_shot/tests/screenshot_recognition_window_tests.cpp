@@ -40,6 +40,7 @@
 #include <QTextEdit>
 #include <QTextFragment>
 #include <QTimer>
+#include <QThread>
 #include <QUrl>
 #include <QWindow>
 
@@ -1165,6 +1166,10 @@ void qrContentsUseStrictRichTextLinksAndPreserveOrder() {
             "QR payloads should be rendered as escaped text in recognition order");
     require(QApplication::focusWidget() == browser,
             "QR results should focus their read-only selection surface");
+    const QTextCursor presentedSelection = browser->textCursor();
+    require(presentedSelection.hasSelection() &&
+                presentedSelection.selectedText() == contents.join(QChar(0x2029)),
+            "QR results should present every payload selected for a plain copy");
 
     QKeyEvent sessionShortcutEvent(QEvent::KeyPress, Qt::Key_P, Qt::NoModifier);
     QApplication::sendEvent(browser, &sessionShortcutEvent);
@@ -1176,8 +1181,7 @@ void qrContentsUseStrictRichTextLinksAndPreserveOrder() {
     require(copyAll.isAccepted() && lowerPriorityCopyCalls == 0 &&
                 QGuiApplication::clipboard()->text() == contents.join(QLatin1Char('\n')) &&
                 recognitionCopyCalls == 1,
-            "Ctrl+C should copy all QR result text when no selection is active and end the "
-            "screenshot");
+            "Ctrl+C should copy the presented QR selection and end the screenshot");
     require(qobject_cast<adqt::widgets::AdScrollBar*>(browser->verticalScrollBar()) != nullptr,
             "QR contents should use the themed vertical scrollbar");
 
@@ -1812,9 +1816,25 @@ void tableClipboardPreservesLargeValuesForWholeTableAndSelection() {
             QStringLiteral("Value\tOther\n") + value + QStringLiteral("\t42")));
     ScreenshotTableEditor editor;
     editor.setSession(session);
-    require(editor.copySelectionToClipboard(), "whole-table copy should succeed");
-    const QMimeData* mime = QApplication::clipboard()->mimeData();
-    require(mime != nullptr && mime->hasHtml() && mime->hasText() &&
+    // The OS clipboard is a shared resource: after the rapid writes of the
+    // earlier tests the clipboard history service can hold it briefly
+    // (CLIPBRD_E_CANT_OPEN), so publishing needs bounded retries before the
+    // payload can be judged.
+    const auto publishAndRead = [&editor]() -> const QMimeData* {
+        for (int attempt = 0; attempt < 40; ++attempt) {
+            const bool issued = editor.copySelectionToClipboard();
+            QCoreApplication::processEvents();
+            const QMimeData* mime = QApplication::clipboard()->mimeData();
+            if (issued && mime != nullptr && mime->hasHtml() && mime->hasText()) {
+                return mime;
+            }
+            QThread::msleep(50);
+        }
+        return nullptr;
+    };
+    const QMimeData* mime = publishAndRead();
+    require(mime != nullptr, "whole-table copy should publish its clipboard payload");
+    require(mime->hasHtml() && mime->hasText() &&
                 mime->text() ==
                     QStringLiteral("Value\tOther\n'") + value + QStringLiteral("\t42") &&
                 ScreenshotTableDocument::fromHtml(mime->html()).toPlainText() == mime->text() &&
@@ -1823,9 +1843,9 @@ void tableClipboardPreservesLargeValuesForWholeTableAndSelection() {
 
     const QModelIndex index = editor.model()->index(1, 0);
     editor.selectionModel()->select(index, QItemSelectionModel::ClearAndSelect);
-    require(editor.copySelectionToClipboard(), "selected-cell copy should succeed");
-    mime = QApplication::clipboard()->mimeData();
-    require(mime != nullptr && mime->text() == QLatin1Char('\'') + value &&
+    mime = publishAndRead();
+    require(mime != nullptr, "selected-cell copy should publish its clipboard payload");
+    require(mime->text() == QLatin1Char('\'') + value &&
                 ScreenshotTableDocument::fromHtml(mime->html()).cellText(0, 0) == mime->text(),
             "selected-cell copy should retain every digit and the spreadsheet HTML payload");
     editor.setCurrentIndex(editor.model()->index(1, 1));

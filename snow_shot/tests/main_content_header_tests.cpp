@@ -295,6 +295,10 @@ int main(int argc, char** argv) {
     require(storageDirectory.isValid(), "temporary storage directory should be available");
     static_cast<void>(snow_shot::storage::ApplicationStorage::instance().initialize(
         {storageDirectory.path(), storageDirectory.path(), 8000}));
+    // The translation page is hidden by default; the search expectations below
+    // count every registered settings page, so surface it explicitly.
+    require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
+            "translation page should be enabled for the search expectations");
     snow_shot::presentation::styles::ThemeManager::instance().initialize(application);
 
     headerPlacesSearchAboveAntDesignTabs();

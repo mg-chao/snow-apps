@@ -90,7 +90,17 @@ void verifyDib(const QImage& source, const QByteArray& bytes) {
 }
 
 QByteArray nativeBytes(UINT format) {
-    require(OpenClipboard(nullptr) != FALSE, "could not open clipboard");
+    // The OS clipboard is a shared resource; the clipboard history service or
+    // a neighbouring application can hold it briefly, so the open needs
+    // bounded retries before the payload can be judged.
+    bool opened = false;
+    for (int attempt = 0; attempt < 50 && !opened; ++attempt) {
+        opened = OpenClipboard(nullptr) != FALSE;
+        if (!opened) {
+            Sleep(20);
+        }
+    }
+    require(opened, "could not open clipboard");
     const auto handle = static_cast<HGLOBAL>(GetClipboardData(format));
     const auto* memory = handle == nullptr ? nullptr : static_cast<const char*>(GlobalLock(handle));
     QByteArray bytes = memory == nullptr ? QByteArray{} : QByteArray(memory, GlobalSize(handle));

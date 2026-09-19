@@ -27,6 +27,13 @@ QString shortcutLine(const QString& label, std::initializer_list<QString> portab
     return QStringLiteral("%1: %2").arg(label, shortcutDisplay(portableText));
 }
 
+QString modifierLine(const QString& label, Qt::KeyboardModifier modifier) {
+    // Modifier-only rows render through the display service's modifier
+    // labels; a bare "Alt"/"Ctrl" portable text does not parse as a key.
+    return QStringLiteral("%1: %2").arg(
+        label, snow_shot::shortcuts::ShortcutDisplayService::instance().modifierText(modifier));
+}
+
 QStringList hintLines(ScreenshotActiveTool tool,
                       std::initializer_list<SnowCanvasTool> disabled = {}) {
     ScreenshotShortcutHintContext context;
@@ -58,8 +65,8 @@ void toolMatrixMatchesRequestedVisibility() {
     const QStringList transformHints = withDefaultCursorHints({
         shortcutLine(QStringLiteral("Maintain aspect ratio"), {QStringLiteral("Shift")}),
         shortcutLine(QStringLiteral("Fixed-angle rotation"), {QStringLiteral("Shift")}),
-        shortcutLine(QStringLiteral("Scale from center"), {QStringLiteral("Alt")}),
-        shortcutLine(QStringLiteral("Auto-align"), {QStringLiteral("Ctrl")}),
+        modifierLine(QStringLiteral("Scale from center"), Qt::AltModifier),
+        modifierLine(QStringLiteral("Auto-align"), Qt::ControlModifier),
         shortcutLine(QStringLiteral("Delete selected elements"), {QStringLiteral("Delete")}),
     });
     require(hintLines(ScreenshotActiveTool::Select) == transformHints,
@@ -89,8 +96,8 @@ void toolMatrixMatchesRequestedVisibility() {
 
     const QStringList textTransformHints = withDefaultCursorHints({
         shortcutLine(QStringLiteral("Fixed-angle rotation"), {QStringLiteral("Shift")}),
-        shortcutLine(QStringLiteral("Scale from center"), {QStringLiteral("Alt")}),
-        shortcutLine(QStringLiteral("Auto-align"), {QStringLiteral("Ctrl")}),
+        modifierLine(QStringLiteral("Scale from center"), Qt::AltModifier),
+        modifierLine(QStringLiteral("Auto-align"), Qt::ControlModifier),
         shortcutLine(QStringLiteral("Delete selected elements"), {QStringLiteral("Delete")}),
     });
     require(hintLines(ScreenshotActiveTool::Text) == textTransformHints,
@@ -102,36 +109,36 @@ void toolMatrixMatchesRequestedVisibility() {
         hintLines(ScreenshotActiveTool::Shape, {SnowCanvasTool::Shape}) ==
             withDefaultCursorHints({
                 shortcutLine(QStringLiteral("Maintain aspect ratio"), {QStringLiteral("Shift")}),
-                shortcutLine(QStringLiteral("Scale from center"), {QStringLiteral("Alt")}),
-                shortcutLine(QStringLiteral("Auto-align"), {QStringLiteral("Ctrl")}),
+                modifierLine(QStringLiteral("Scale from center"), Qt::AltModifier),
+                modifierLine(QStringLiteral("Auto-align"), Qt::ControlModifier),
             }),
         "shape quick-selection suppression changed");
     require(hintLines(ScreenshotActiveTool::Arrow, {SnowCanvasTool::Arrow}) ==
                 withDefaultCursorHints({
                     shortcutLine(QStringLiteral("Fixed-angle rotation"), {QStringLiteral("Shift")}),
-                    shortcutLine(QStringLiteral("Auto-align"), {QStringLiteral("Ctrl")}),
+                    modifierLine(QStringLiteral("Auto-align"), Qt::ControlModifier),
                 }),
             "arrow quick-selection suppression changed");
     require(hintLines(ScreenshotActiveTool::Line, {SnowCanvasTool::Line}) ==
                 withDefaultCursorHints({
                     shortcutLine(QStringLiteral("Fixed-angle rotation"), {QStringLiteral("Shift")}),
-                    shortcutLine(QStringLiteral("Auto-align"), {QStringLiteral("Ctrl")}),
+                    modifierLine(QStringLiteral("Auto-align"), Qt::ControlModifier),
                 }),
             "line quick-selection suppression changed");
     require(
         hintLines(ScreenshotActiveTool::RectangleHighlight, {SnowCanvasTool::RectangleHighlight}) ==
             withDefaultCursorHints({
                 shortcutLine(QStringLiteral("Maintain aspect ratio"), {QStringLiteral("Shift")}),
-                shortcutLine(QStringLiteral("Scale from center"), {QStringLiteral("Alt")}),
-                shortcutLine(QStringLiteral("Auto-align"), {QStringLiteral("Ctrl")}),
+                modifierLine(QStringLiteral("Scale from center"), Qt::AltModifier),
+                modifierLine(QStringLiteral("Auto-align"), Qt::ControlModifier),
             }),
         "rectangle-highlighter quick-selection suppression changed");
     require(
         hintLines(ScreenshotActiveTool::RectangleFilter, {SnowCanvasTool::RectangleFilter}) ==
             withDefaultCursorHints({
                 shortcutLine(QStringLiteral("Maintain aspect ratio"), {QStringLiteral("Shift")}),
-                shortcutLine(QStringLiteral("Scale from center"), {QStringLiteral("Alt")}),
-                shortcutLine(QStringLiteral("Auto-align"), {QStringLiteral("Ctrl")}),
+                modifierLine(QStringLiteral("Scale from center"), Qt::AltModifier),
+                modifierLine(QStringLiteral("Auto-align"), Qt::ControlModifier),
             }),
         "rectangle-filter quick-selection suppression changed");
     require(hintLines(ScreenshotActiveTool::FreeDraw, {SnowCanvasTool::FreeDraw}) ==

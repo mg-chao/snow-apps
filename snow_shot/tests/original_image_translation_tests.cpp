@@ -1057,10 +1057,22 @@ void runPinnedOriginalImageTranslationTests() {
                 content == nullptr
                     ? nullptr
                     : content->findChild<QGraphicsView*>(QStringLiteral("snowShotOcrTextLayer"));
-            require(layer != nullptr && layer->isVisible() && layer->scene()->items().size() == 1 &&
-                        content->copyVisibleContentToClipboard() &&
-                        QApplication::clipboard()->text() == expected.text,
-                    "merged pinned paragraphs must remain visible and copyable");
+            // Clipboard handoff is asynchronous and the OS clipboard is a
+            // shared resource, so the copied text needs a bounded settle
+            // before the visibility and copy assertions can be judged.
+            bool copied = false;
+            if (layer != nullptr && layer->isVisible() && layer->scene()->items().size() == 1) {
+                for (int attempt = 0; attempt < 40 && !copied; ++attempt) {
+                    if (content->copyVisibleContentToClipboard() &&
+                        QApplication::clipboard()->text() == expected.text) {
+                        copied = true;
+                        break;
+                    }
+                    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+                    QThread::msleep(50);
+                }
+            }
+            require(copied, "merged pinned paragraphs must remain visible and copyable");
             const auto record = window->persistenceSnapshot();
             mergedConfig.recognitionResults = {};
             mergedConfig.persistedRecognitionResults = record.recognitionResults;
@@ -1203,12 +1215,24 @@ void runPinnedOriginalImageTranslationTests() {
                 "initial and restored translations must keep the toolbar hidden");
         if (visible) {
             auto* restoredContent = restored->findChild<ScreenshotRecognitionWindow*>();
+            // The OS clipboard handoff is asynchronous; bound the settle
+            // before judging the copied payload.
+            bool restoredCopied = false;
+            const QString restoredExpected = translated ? QStringLiteral("translated\nsource 1")
+                                                        : QStringLiteral("source 0\nsource 1");
+            if (restoredContent != nullptr && restoredContent->isVisible()) {
+                for (int attempt = 0; attempt < 40 && !restoredCopied; ++attempt) {
+                    if (restoredContent->copyVisibleContentToClipboard() &&
+                        QApplication::clipboard()->text() == restoredExpected) {
+                        restoredCopied = true;
+                        break;
+                    }
+                    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+                    QThread::msleep(50);
+                }
+            }
             require(
-                restoredContent != nullptr && restoredContent->isVisible() &&
-                    restoredContent->copyVisibleContentToClipboard() &&
-                    QApplication::clipboard()->text() ==
-                        (translated ? QStringLiteral("translated\nsource 1")
-                                    : QStringLiteral("source 0\nsource 1")),
+                restoredCopied,
                 "a restored translated overlay must be visible and copyable without new requests");
             if (scenario == 1) {
                 auto* drawingAction =

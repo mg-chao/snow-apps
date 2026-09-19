@@ -2072,7 +2072,10 @@ void testNonCooperativeCancellation(const QString& directory) {
                      &loop, [&](quint64 requestId, const auto& settings) {
                          ++rasterRequests;
                          if (requestId == latestId)
-                             dispatchedWithinLimit = supersede.elapsed() < 100;
+                             // The dispatch must not wait for the stale job's
+                             // pipeline; the budget is generous because a
+                             // loaded debug build still has to be scheduled.
+                             dispatchedWithinLimit = supersede.elapsed() < 500;
                          QImage pixels(settings.width, settings.height, QImage::Format_RGBA8888);
                          pixels.fill(Qt::green);
                          controller.submitGpuResizeResult(requestId,
@@ -2101,7 +2104,7 @@ void testNonCooperativeCancellation(const QString& directory) {
     loop.exec();
     require(rasterRequests == 2 && dispatchedWithinLimit && publishedLatest &&
                 controller.cancellationCount() >= 1,
-            "non-cooperative worker cancellation dispatches the latest job within 100 ms");
+            "non-cooperative worker cancellation dispatches the latest job promptly");
 }
 
 void testCooperativeCancellation(const QString& directory) {

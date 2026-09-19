@@ -108,6 +108,8 @@ class DividerTest final : public QObject {
   void verticalSuppressesContent();
   void componentTokensAndSemanticStylesApply();
   void scopedThemeAndResolversApply();
+  void scopedThemePalettesAreNotCustomOverrides();
+  void ancestorCustomPaletteIsHonored();
   void customContentOwnershipCanBeTransferred();
   void customContentLifecycleUpdatesAccessibility();
   void disabledAndInvalidMetricsAreNormalized();
@@ -315,6 +317,70 @@ void DividerTest::scopedThemeAndResolversApply() {
   themeManager.clearScopeOverride(&themed);
 }
 
+void DividerTest::scopedThemePalettesAreNotCustomOverrides() {
+  AdDivider themed;
+  auto& themeManager = adqt::theme::ThemeManager::instance();
+  adqt::theme::ThemeOverride oppositeOverride;
+  oppositeOverride.scheme = themeManager.resolve().config.scheme == adqt::theme::ThemeScheme::Dark
+                                ? adqt::theme::ThemeScheme::Light
+                                : adqt::theme::ThemeScheme::Dark;
+  themeManager.setScopeOverride(&themed, oppositeOverride);
+  QVERIFY(themed.palette() != themeManager.resolve().palette);
+
+  // A scope override is applied by the theme manager itself, so the divider
+  // must keep rendering through the scope's theme map: the root stays
+  // transparent and only the rail and text may deviate from the canvas.
+  const QColor canvas(QStringLiteral("#7a24c8"));
+  const QImage scopedImage = renderDivider(&themed, canvas);
+  int canvasPixels = 0;
+  for (int y = 0; y < scopedImage.height(); ++y) {
+    for (int x = 0; x < scopedImage.width(); ++x) {
+      if (scopedImage.pixelColor(x, y) == canvas) {
+        ++canvasPixels;
+      }
+    }
+  }
+  QVERIFY2(canvasPixels > scopedImage.width() * scopedImage.height() / 2,
+           "a theme-managed scope palette must not paint an opaque root background");
+  themeManager.clearScopeOverride(&themed);
+}
+
+void DividerTest::ancestorCustomPaletteIsHonored() {
+  QWidget parent;
+  AdDivider divider(&parent);
+  const QImage baselineImage = renderDivider(&divider);
+  QPalette customPalette = parent.palette();
+  const QColor customRail(QStringLiteral("#fa541c"));
+  customPalette.setColor(QPalette::Active, QPalette::Mid, customRail);
+  parent.setPalette(customPalette);
+  const QImage customPaletteImage = renderDivider(&divider);
+  QCOMPARE(baselineImage.size(), customPaletteImage.size());
+  // The rail renders with unhinted anti-aliased outlines, so no pixel
+  // reproduces the palette color exactly; the inherited custom rail is still
+  // detectable directionally, as in disabledAndInvalidMetricsAreNormalized.
+  const auto squaredDistance = [](const QColor& lhs, const QColor& rhs) {
+    const int dr = lhs.red() - rhs.red();
+    const int dg = lhs.green() - rhs.green();
+    const int db = lhs.blue() - rhs.blue();
+    return dr * dr + dg * dg + db * db;
+  };
+  int movedTowardCustomRail = 0;
+  for (int y = 0; y < customPaletteImage.height(); ++y) {
+    for (int x = 0; x < customPaletteImage.width(); ++x) {
+      const QColor before = baselineImage.pixelColor(x, y);
+      const QColor after = customPaletteImage.pixelColor(x, y);
+      if (before == after) {
+        continue;
+      }
+      if (squaredDistance(after, customRail) * 2 < squaredDistance(before, customRail)) {
+        ++movedTowardCustomRail;
+      }
+    }
+  }
+  QVERIFY2(movedTowardCustomRail >= 16,
+           "a custom palette on an ancestor must recolor the divider rail");
+}
+
 void DividerTest::customContentOwnershipCanBeTransferred() {
   AdDivider divider;
   auto* label = new QLabel(QStringLiteral("Owned"));
@@ -392,21 +458,37 @@ void DividerTest::disabledAndInvalidMetricsAreNormalized() {
   QVERIFY(disabledAppearanceVisible);
 
   divider.setEnabled(true);
+  const QImage baselineImage = renderDivider(&divider);
   QPalette customPalette = divider.palette();
   const QColor customRail(QStringLiteral("#fa541c"));
   customPalette.setColor(QPalette::Active, QPalette::Mid, customRail);
   divider.setPalette(customPalette);
   const QImage customPaletteImage = renderDivider(&divider);
-  bool customRailVisible = false;
-  for (int y = 0; y < customPaletteImage.height() && !customRailVisible; ++y) {
+  QCOMPARE(baselineImage.size(), customPaletteImage.size());
+  // The rail renders with unhinted anti-aliased outlines, so no pixel
+  // reproduces the palette color exactly. The custom rail is still detectable
+  // directionally: every pixel the palette changed must move most of the way
+  // toward the custom color instead of an unrelated theme color.
+  const auto squaredDistance = [](const QColor& lhs, const QColor& rhs) {
+    const int dr = lhs.red() - rhs.red();
+    const int dg = lhs.green() - rhs.green();
+    const int db = lhs.blue() - rhs.blue();
+    return dr * dr + dg * dg + db * db;
+  };
+  int movedTowardCustomRail = 0;
+  for (int y = 0; y < customPaletteImage.height(); ++y) {
     for (int x = 0; x < customPaletteImage.width(); ++x) {
-      if (customPaletteImage.pixelColor(x, y) == customRail) {
-        customRailVisible = true;
-        break;
+      const QColor before = baselineImage.pixelColor(x, y);
+      const QColor after = customPaletteImage.pixelColor(x, y);
+      if (before == after) {
+        continue;
+      }
+      if (squaredDistance(after, customRail) * 2 < squaredDistance(before, customRail)) {
+        ++movedTowardCustomRail;
       }
     }
   }
-  QVERIFY(customRailVisible);
+  QVERIFY(movedTowardCustomRail >= 16);
 
   divider.setOrientationMargin(qQNaN());
   QVERIFY(qIsFinite(divider.orientationMargin()));

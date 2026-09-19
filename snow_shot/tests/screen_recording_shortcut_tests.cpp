@@ -33,6 +33,25 @@ class ScreenshotFloatingToolPaletteWindowTestAccess {
         toolbar.beginKeyboardFocusInteraction(&editor);
         toolbar.endKeyboardFocusInteraction(&editor);
     }
+
+    static void beginInputFocus(ScreenshotFloatingToolPaletteWindow& toolbar, QWidget& editor) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        // Windows denies SetForegroundWindow to processes that do not own the
+        // foreground; joining the foreground thread's input queue for the
+        // duration of the interaction makes the toolbar's programmatic
+        // activation legal in automation.
+        const DWORD foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), nullptr);
+        const DWORD currentThread = GetCurrentThreadId();
+        const bool joined = foregroundThread != 0 && foregroundThread != currentThread &&
+                            AttachThreadInput(currentThread, foregroundThread, TRUE) != FALSE;
+#endif
+        toolbar.beginKeyboardFocusInteraction(&editor);
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        if (joined) {
+            AttachThreadInput(currentThread, foregroundThread, FALSE);
+        }
+#endif
+    }
 };
 
 class ScreenRecordingAreaWindowTestAccess {
@@ -287,14 +306,19 @@ void recordingSelectionEditsAnnotationsAndPreservesPassThrough() {
         }
         require(reset->isEnabled(), "recording reset must work with or without selection");
         reset->click();
-        require(!canvas.canvasHistoryState().canUndo && !canvas.canvasHistoryState().canRedo,
-                "recording reset should clear canvas history");
+        // Reset deletes every annotation as a single undoable action: the
+        // canvas empties while the deletion itself stays undoable.
+        require(canvas.canvasHistoryState().canUndo && !canvas.canvasHistoryState().canRedo,
+                "recording reset should clear the canvas as one undoable action");
+        require(canvas.undo(), "recording reset undo should restore the annotations");
+        require(canvas.redo(), "recording reset redo should re-apply the deletion");
         clickCanvas({30, 55});
         require(canvas.canvasStyleToolbarState().source !=
                     SnowCanvasStyleToolbarSource::SelectedRectangle,
                 "recording reset must remove unselected annotations as well");
+        const QByteArray beforeEmptyReset = ScreenRecordingAreaWindowTestAccess::history(area);
         reset->click();
-        require(!canvas.canvasHistoryState().canUndo,
+        require(ScreenRecordingAreaWindowTestAccess::history(area) == beforeEmptyReset,
                 "resetting an empty recording canvas should be harmless");
     }
 }
@@ -605,8 +629,14 @@ void recordingShortcutsFollowBothWindowsAndConfiguredKeys() {
 
     QLineEdit editor(&toolbar);
     editor.show();
-    focus(editor);
-    require(editor.hasFocus(), "editable toolbar control should own keyboard focus");
+    ScreenshotFloatingToolPaletteWindowTestAccess::beginInputFocus(toolbar, editor);
+    // The OS may deny a background process the foreground, but the shortcut
+    // gating only consults the application focus widget, which Qt tracks
+    // independently of the OS foreground.
+    editor.setFocus(Qt::OtherFocusReason);
+    QCoreApplication::processEvents();
+    require(editor.hasFocus() && QApplication::focusWidget() == &editor,
+            "editable toolbar control should own keyboard focus");
     press(editor, Qt::Key_F10);
     press(editor, Qt::Key_Z, Qt::ControlModifier);
     require(shapes == before && undos == 3, "text editors must retain shortcut input");

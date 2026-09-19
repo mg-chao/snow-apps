@@ -767,7 +767,10 @@ void conversionToolbarMigration() {
                                                         QStringLiteral("table-recognition"),
                                                         QStringLiteral("convert-to-markdown"),
                                                         QStringLiteral("convert-to-html")} &&
-                migrated.hidden == original.hidden,
+                // quick-save always mirrors save-as-file: hiding the manual
+                // save hides its companion too.
+                migrated.hidden ==
+                    QStringList{QStringLiteral("save-as-file"), QStringLiteral("quick-save")},
             "older layouts gain conversions inside recognition without rearranging other tools");
     const storage::ScreenshotToolbarSettings settings;
     settings.setLayout(storage::ScreenshotToolbarLayoutKind::ActionTools, original);
@@ -819,7 +822,9 @@ void conversionToolbarMigration() {
     qrHidden.hidden.push_back(QStringLiteral("barcode-recognition"));
     auto tableGroup = migrated;
     tableGroup.positions[1].removeAll(QStringLiteral("barcode-recognition"));
-    tableGroup.hidden.push_back(QStringLiteral("barcode-recognition"));
+    // The migration preserves the input's hidden order and appends the
+    // quick-save companion last, so barcode-recognition slots in before it.
+    tableGroup.hidden.insert(1, QStringLiteral("barcode-recognition"));
     verify(qrHidden, tableGroup);
     auto recognitionHidden = defaults;
     recognitionHidden.positions.removeFirst();

@@ -1495,6 +1495,94 @@ void test_jpeg_round_trip(Service& service) {
     std::filesystem::remove(packed_store_path, ignored);
 }
 
+void test_jpeg_alpha_matte(Service& service) {
+    if (!supports(service, Format::jpeg, snow::image::CodecCapability::encode))
+        return;
+    struct MatteCase {
+        std::string_view label;
+        snow::image::AlphaMode mode;
+        std::array<std::uint8_t, 3> stored;
+        std::uint8_t opacity;
+        std::array<int, 3> expected;
+    };
+    // Uniform rasters survive JPEG's DC-only blocks within a small tolerance,
+    // while the superseded white matte would land far outside it.
+    constexpr std::array matte_cases{
+        MatteCase{"straight semi-transparent pixels composite onto black",
+                  snow::image::AlphaMode::straight,
+                  {200, 120, 60},
+                  128,
+                  {100, 60, 30}},
+        MatteCase{"straight fully transparent pixels composite onto black",
+                  snow::image::AlphaMode::straight,
+                  {200, 120, 60},
+                  0,
+                  {0, 0, 0}},
+        MatteCase{"premultiplied pixels pass through onto black",
+                  snow::image::AlphaMode::premultiplied,
+                  {100, 60, 30},
+                  128,
+                  {100, 60, 30}}};
+    constexpr std::uint32_t matte_width = 8;
+    constexpr std::uint32_t matte_height = 6;
+    for (std::size_t index = 0; index < matte_cases.size(); ++index) {
+        const MatteCase& matte = matte_cases[index];
+        snow::image::PixelFormat format = snow::image::kRgba8;
+        format.alpha = matte.mode;
+        snow::image::MutableImage image =
+            take(snow::image::MutableImage::allocate(matte_width, matte_height, format),
+                 "allocate JPEG alpha matte fixture");
+        for (std::size_t offset = 0; offset < image.pixels().size(); offset += 4) {
+            image.pixels()[offset] = static_cast<std::byte>(matte.stored[0]);
+            image.pixels()[offset + 1] = static_cast<std::byte>(matte.stored[1]);
+            image.pixels()[offset + 2] = static_cast<std::byte>(matte.stored[2]);
+            image.pixels()[offset + 3] = static_cast<std::byte>(matte.opacity);
+        }
+        Document document;
+        document.canvas_width = matte_width;
+        document.canvas_height = matte_height;
+        Frame frame;
+        frame.image = std::move(image).freeze();
+        document.frames.push_back(std::move(frame));
+        snow::image::DocumentDescriptor descriptor =
+            take(snow::image::describe_document(document), "describe JPEG alpha matte fixture");
+        const std::filesystem::path store_path =
+            std::filesystem::temp_directory_path() /
+            ("snow-image-jpeg-matte-" +
+             std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-" +
+             std::to_string(index) + ".srs");
+        std::error_code ignored;
+        std::filesystem::remove(store_path, ignored);
+        auto store = take(snow::image::RasterStore::create(store_path, descriptor),
+                          "create JPEG alpha matte raster store");
+        const Image& source = document.frames.front().image;
+        require(store->write_rows(0, 0, 0, matte_height, source.row_stride(), source.pixels())
+                        .has_value() &&
+                    store->commit().has_value(),
+                "JPEG alpha matte raster store accepts its content");
+        snow::image::EncodeOptions options;
+        options.format = Format::jpeg;
+        options.quality = 95;
+        auto encoded = std::make_shared<std::vector<std::byte>>();
+        take(service.encode(*store, snow::image::memory_output(encoded, "matte.jpg"), options),
+             "JPEG alpha matte encode succeeds");
+        store.reset();
+        std::filesystem::remove(store_path, ignored);
+        Document decoded = take(service.decode(snow::image::memory_input(encoded)),
+                                "decode JPEG alpha matte artifact");
+        const Image& raster = decoded.frames.front().image;
+        require(raster.format() == snow::image::kRgb8 && raster.width() == matte_width &&
+                    raster.height() == matte_height,
+                "JPEG alpha matte artifact decodes as an RGB8 raster");
+        for (std::size_t offset = 0; offset + 2 < raster.pixels().size(); offset += 3) {
+            for (std::size_t channel = 0; channel < 3; ++channel) {
+                const int value = std::to_integer<int>(raster.pixels()[offset + channel]);
+                require(std::abs(value - matte.expected[channel]) <= 3, matte.label);
+            }
+        }
+    }
+}
+
 void test_gif_animation(Service& service) {
     if (!supports(service, Format::gif, snow::image::CodecCapability::encode))
         return;
@@ -3523,6 +3611,7 @@ int main(int argc, char* argv[]) {
     if (argc == 2 && std::string_view(argv[1]) == "--jpeg-only") {
         Service service;
         test_jpeg_round_trip(service);
+        test_jpeg_alpha_matte(service);
         std::cout << "snow_image JPEG tests passed\n";
         return 0;
     }
@@ -3546,6 +3635,7 @@ int main(int argc, char* argv[]) {
     test_png_palette_behavior(service);
     test_encode_receipts(service);
     test_jpeg_round_trip(service);
+    test_jpeg_alpha_matte(service);
     test_gif_animation(service);
     test_icon_containers(service);
     test_xbitmap_formats(service);
