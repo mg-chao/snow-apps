@@ -113,13 +113,24 @@ if name == 'cmake' and '--preset' in sys.argv and os.environ.get('FAIL_CONFIGURE
         binary.touch()
         binary.chmod(0o755)
 
+        deployed = app.parent.parent / 'run/snow_shot.app/Contents/MacOS/snow_shot'
+        deployed.parent.mkdir(parents=True)
+        deployed.touch()
+        deployed.chmod(0o755)
+
         calls = self.run_script('run-snow-shot.sh', '--no-build')
-        self.assertFalse(any('--build' in call for call in calls))
+        self.assertFalse(any(c[0] == 'cmake' for c in calls))
+        self.assertEqual(calls[-1], ['open', '-n', str(deployed.parents[2]), '--args'])
 
         self.log.unlink()
         calls = self.run_script('run-snow-shot.sh', '--clean')
         self.assertIn(['cmake', '--build', '--preset', 'build-snow-shot-macos-arm64-debug',
                        '--target', 'snow_shot', '--clean-first', '--parallel'], calls)
+
+    def test_no_build_requires_deployment_and_rejects_clean(self):
+        for args in (('--no-build',), ('--no-build', '--clean')):
+            calls = self.run_script('run-snow-shot.sh', *args, success=False)
+            self.assertFalse(any(c[0] in ('cmake', 'open') for c in calls))
 
     def test_deployment_uses_the_matching_vcpkg_library_configuration(self):
         deployment = (ROOT / 'cmake/DeploySnowShotMacOS.cmake.in').read_text()
@@ -127,6 +138,66 @@ if name == 'cmake' and '--preset' in sys.argv and os.environ.get('FAIL_CONFIGURE
         self.assertIn('set(_snow_vcpkg_library_dir "@SNOW_FFMPEG_ROOT@/debug/lib")', deployment)
         self.assertIn('set(_snow_vcpkg_library_dir "@SNOW_FFMPEG_ROOT@/lib")', deployment)
         self.assertEqual(deployment.count('"-libpath=${_snow_vcpkg_library_dir}"'), 1)
+
+
+class MacOSSigningDeployment(unittest.TestCase):
+    """Exercise the deployment script with fake external tools, including OCR resealing."""
+
+    def test_identity_survives_deployment_and_ocr_reseal(self):
+        for identity in ('-', 'Snow Shot Development (Local)'):
+            with self.subTest(identity=identity):
+                calls, result = self.deploy(identity)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                deploy = next(c for c in calls if c[0] == 'macdeployqt')
+                self.assertIn('-codesign=' + identity, deploy)
+                sign = next(c for c in calls if c[0] == 'codesign' and '--sign' in c)
+                self.assertEqual(sign[sign.index('--sign') + 1], identity)
+                finalize = next(i for i, c in enumerate(calls) if 'finalize' in c)
+                self.assertLess(finalize, calls.index(sign))
+                self.assertEqual(calls[-1][0:4], ['codesign', '--verify', '--deep', '--strict'])
+
+    def test_signing_failure_stops_without_ad_hoc_fallback(self):
+        calls, result = self.deploy('Unavailable Certificate', fail=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(sum(c[0] == 'macdeployqt' for c in calls), 1)
+        self.assertFalse(any(c[0] == 'codesign' for c in calls))
+
+    def deploy(self, identity, fail=False):
+        with tempfile.TemporaryDirectory(prefix='snow signing tests ') as temp:
+            root = Path(temp)
+            log = root / 'calls.jsonl'
+            mock = """#!/usr/bin/env python3
+import json, os, pathlib, sys
+name = pathlib.Path(sys.argv[0]).name
+with open(os.environ['SNOW_TEST_LOG'], 'a') as log:
+    log.write(json.dumps([name] + sys.argv[1:]) + '\\n')
+if name == 'macdeployqt' and os.environ.get('SNOW_TEST_FAIL_SIGN'): sys.exit(1)
+"""
+            for name in ('macdeployqt', 'codesign', 'install_name_tool', 'ocr'):
+                tool = root / name
+                tool.write_text(mock)
+                tool.chmod(0o755)
+            script = (ROOT / 'cmake/DeploySnowShotMacOS.cmake.in').read_text()
+            values = {'SNOW_MACOS_CODESIGN_IDENTITY': identity,
+                      'SNOW_MACDEPLOYQT': str(root / 'macdeployqt'),
+                      'SNOW_MACOS_OCR_ASSETS_ENABLED': 'ON',
+                      'Python3_EXECUTABLE': str(root / 'ocr'),
+                      'SNOW_MACOS_OCR_TOOL': 'ocr.py', 'SNOW_MACOS_OCR_MANIFEST': 'manifest.json',
+                      'SNOW_FFMPEG_ROOT': str(root / 'ffmpeg'), 'CMAKE_BINARY_DIR': str(root)}
+            for key, value in values.items():
+                script = script.replace('@' + key + '@', value)
+            for name in ('codesign', 'install_name_tool'):
+                script = script.replace('/usr/bin/' + name, '"' + str(root / name) + '"')
+            path = root / 'deploy.cmake'
+            path.write_text(script)
+            cmake = shutil.which('cmake') or str(ROOT / '.tools/macos-dev/bin/cmake')
+            env = dict(os.environ, SNOW_TEST_LOG=str(log))
+            if fail:
+                env['SNOW_TEST_FAIL_SIGN'] = '1'
+            result = subprocess.run([cmake, '-DCMAKE_INSTALL_PREFIX=' + str(root),
+                                     '-DCMAKE_INSTALL_CONFIG_NAME=Debug', '-P', str(path)],
+                                    env=env, text=True, capture_output=True)
+            return [json.loads(line) for line in log.read_text().splitlines()], result
 
 
 @unittest.skipUnless(os.environ.get("SNOW_TEST_MACOS_BUNDLE") == "1",

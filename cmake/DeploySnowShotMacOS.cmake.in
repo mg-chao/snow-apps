@@ -1,4 +1,8 @@
 set(_app "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/snow_shot.app")
+set(_snow_codesign_identity [==[@SNOW_MACOS_CODESIGN_IDENTITY@]==])
+if(_snow_codesign_identity STREQUAL "-")
+    message(WARNING "Snow Shot is ad-hoc signed. Rebuilds can invalidate macOS privacy grants even when System Settings shows them enabled. Use SNOW_MACOS_CODESIGN_IDENTITY with a persistent certificate to retain the signing identity.")
+endif()
 string(TOLOWER "${CMAKE_INSTALL_CONFIG_NAME}" _snow_install_config)
 if(_snow_install_config STREQUAL "debug")
     set(_snow_vcpkg_library_dir "@SNOW_FFMPEG_ROOT@/debug/lib")
@@ -23,7 +27,7 @@ execute_process(COMMAND "@SNOW_MACDEPLOYQT@" "${_app}"
     "-executable=${_app}/Contents/MacOS/libonnxruntime.dylib"
     "-executable=${_app}/Contents/PlugIns/platforms/libqoffscreen.dylib"
     "-libpath=${_snow_vcpkg_library_dir}"
-    -always-overwrite -codesign=-
+    -always-overwrite "-codesign=${_snow_codesign_identity}"
     RESULT_VARIABLE _result OUTPUT_VARIABLE _output ERROR_VARIABLE _error)
 if(NOT _result EQUAL 0 OR "${_output}${_error}" MATCHES "ERROR:")
     message(FATAL_ERROR "macdeployqt failed (${_result}):\n${_output}\n${_error}")
@@ -34,7 +38,7 @@ if(@SNOW_MACOS_OCR_ASSETS_ENABLED@)
     execute_process(COMMAND "@Python3_EXECUTABLE@" "@SNOW_MACOS_OCR_TOOL@" finalize --deployed
         --manifest "@SNOW_MACOS_OCR_MANIFEST@"
         --runtime-dir "${_app}/Contents/MacOS" COMMAND_ERROR_IS_FATAL ANY)
-    execute_process(COMMAND /usr/bin/codesign --force --sign - "${_app}"
+    execute_process(COMMAND /usr/bin/codesign --force --sign "${_snow_codesign_identity}" "${_app}"
         COMMAND_ERROR_IS_FATAL ANY)
     execute_process(COMMAND "@Python3_EXECUTABLE@" "@SNOW_MACOS_OCR_TOOL@" verify
         --manifest "@SNOW_MACOS_OCR_MANIFEST@"

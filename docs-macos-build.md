@@ -87,7 +87,7 @@ scripts/package-snow-shot.sh snow-shot-macos-arm64-release
 
 The release script builds and produces a DMG plus SHA-256 checksum under the
 preset's build directory. CPack installs only the Snow Shot component, runs the
-matching Qt kit's `macdeployqt`, and verifies the ad-hoc bundle signature. The
+matching Qt kit's `macdeployqt`, and verifies the bundle signature. The
 bundle includes Qt plugins/frameworks (including offscreen startup-probe support), native dylibs, the OCR helper and updater,
 QR models, shutter audio, and project license notices. Executable-relative
 asset lookup paths remain under `Contents/MacOS`; deployment moves data into
@@ -95,12 +95,40 @@ asset lookup paths remain under `Contents/MacOS`; deployment moves data into
 code signing seals them as resources. Libraries are deployed in `Contents/Frameworks`. A plain `cmake --install build/<preset> --component
 SnowShot --prefix /path/to/staging` performs the same deployment without a DMG.
 
-Ad-hoc signing supports local testing. Public distribution still requires
-Developer ID signing and Apple notarization as a separate release operation.
+Signing defaults to ad-hoc (`SNOW_MACOS_CODESIGN_IDENTITY=-`). To retain macOS
+privacy grants across rebuilds, configure a persistent code-signing certificate
+from your keychain (list available identities with `security find-identity -v -p codesigning`):
+
+```sh
+scripts/build.sh snow-shot-macos-arm64-debug -- -DSNOW_MACOS_CODESIGN_IDENTITY="Your code-signing certificate name or SHA-1"
+```
+
+The cached identity is used for deployment, including the final seal after OCR
+assets are finalized. A missing or unusable certificate fails deployment;
+it does not fall back to ad-hoc signing. Public distribution still requires
+Developer ID signing and Apple notarization; this setting does not notarize the app.
 The run script deploys a signed development copy under `build/<preset>/run`
 before launching; this also resolves the OCR helper's dynamically loaded libraries.
 Launch through the run script/Finder and grant Screen Recording, Accessibility,
 and microphone permissions when using the corresponding capabilities.
+
+### Accessibility enabled in Settings but reported missing
+
+Ad-hoc signatures identify a particular build by its code hash. After rebuilding,
+TCC can reject the old grant while System Settings still shows Snow Shot enabled.
+The system log then reports `Failed to match existing code requirement` for
+`com.snowshot.snow_shot` and `kTCCServiceAccessibility`.
+
+Quit Snow Shot, remove its old entry from System Settings > Privacy & Security >
+Accessibility with the minus button, then add and enable the exact deployed app:
+`build/<preset>/run/snow_shot.app`. Restart that copy with
+`scripts/run-snow-shot.sh <preset> --no-build`. This option launches the existing
+deployment without rebuilding, reinstalling, or signing it again. The raw app
+under `build/<preset>/snow_shot` has a different signature and is not the copy
+launched by the run script. Ad-hoc builds may need this recovery again after a
+rebuild; use the same persistent signing certificate for subsequent builds to
+avoid that identity change. Switching from ad-hoc to certificate signing also
+requires granting permission to the new identity once.
 
 Apple Silicon OCR uses native CPU inference with all seven existing V4/V5/V6
 models. The ARM64 app bundles its worker, ONNX Runtime, and Small V6 model;

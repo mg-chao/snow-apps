@@ -76,6 +76,11 @@ find_file(SNOW_QT_OFFSCREEN_PLUGIN NAMES libqoffscreen.dylib
 install(FILES "${SNOW_QT_OFFSCREEN_PLUGIN}"
     DESTINATION "snow_shot.app/Contents/PlugIns/platforms" COMPONENT SnowShot)
 find_program(SNOW_MACDEPLOYQT NAMES macdeployqt HINTS "${_snow_qt_bin}" REQUIRED)
+set(SNOW_MACOS_CODESIGN_IDENTITY "-" CACHE STRING
+    "Code-signing certificate name or SHA-1; '-' uses ad-hoc signing (permissions may reset after rebuilds)")
+if(SNOW_MACOS_CODESIGN_IDENTITY STREQUAL "")
+    message(FATAL_ERROR "SNOW_MACOS_CODESIGN_IDENTITY must be a certificate identity or '-'")
+endif()
 configure_file("${CMAKE_CURRENT_LIST_DIR}/DeploySnowShotMacOS.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/DeploySnowShotMacOS.cmake" @ONLY)
 install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/DeploySnowShotMacOS.cmake" COMPONENT SnowShot)
