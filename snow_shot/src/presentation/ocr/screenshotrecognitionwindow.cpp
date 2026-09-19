@@ -810,6 +810,9 @@ void ScreenshotRecognitionWindow::showQrContents(const QStringList& contents) {
     }
     cursor.movePosition(QTextCursor::Start);
     m_qrBrowser->setTextCursor(cursor);
+    // Present the decoded payload fully selected so a plain Ctrl+C copies
+    // every payload without requiring a manual Select All first.
+    m_qrBrowser->selectAll();
     m_stack->setCurrentWidget(m_qrBrowser);
     m_qrBrowser->setFocus(Qt::OtherFocusReason);
 }
