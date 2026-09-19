@@ -12,10 +12,10 @@ use windows::Win32::UI::WindowsAndMessaging::{CHILDID_SELF, IsHungAppWindow, OBJ
 use windows::core::{IUnknown, Interface, Result};
 
 use crate::ElementRect;
-use crate::com::ComApartment;
-use crate::geometry::*;
-use crate::spatial::*;
-use crate::window;
+use crate::windows::com::ComApartment;
+use crate::windows::geometry::*;
+use crate::windows::spatial::*;
+use crate::windows::window;
 
 const MSAA_SELF_CHILD_ID: i32 = CHILDID_SELF as i32;
 const MSAA_MAX_HIT_PATH_STEPS: usize = 64;

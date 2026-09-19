@@ -2672,6 +2672,29 @@ Unavailable: %2</translation>
         </message>
     </context>
     <context>
+        <name>SmartSelectionPermissionWidget</name>
+        <message>
+            <source>Accessibility access is enabled for Smart selection.</source>
+            <translation>Accessibility access is enabled for Smart selection.</translation>
+        </message>
+        <message>
+            <source>Allow Accessibility access to select window elements. Smart selection currently selects whole windows.</source>
+            <translation>Allow Accessibility access to select window elements. Smart selection currently selects whole windows.</translation>
+        </message>
+        <message>
+            <source>Open System Settings</source>
+            <translation>Open System Settings</translation>
+        </message>
+        <message>
+            <source>Request Accessibility Access</source>
+            <translation>Request Accessibility Access</translation>
+        </message>
+        <message>
+            <source>Retry</source>
+            <translation>Retry</translation>
+        </message>
+    </context>
+    <context>
         <name>StorageStatusSettingsWidget</name>
         <message>
             <source>App storage usage</source>

@@ -62,6 +62,12 @@ Accessibility and pasteboard interoperability. Their resolved notices are
 included in the generated Rust dependency bundle. Apple system frameworks are
 provided by macOS and are not redistributed.
 
+Smart selection (`snow-ui-selector` and `snow-ui-selector-c`) uses the same
+accessibility-sys, core-foundation, and core-foundation-sys dependencies
+(MIT OR Apache-2.0) for macOS Accessibility and Quartz window snapshots.
+ApplicationServices, CoreFoundation, and CoreGraphics are system frameworks and
+are not redistributed. Windows selection continues to use Microsoft windows-rs.
+
 Mouse and keyboard effect rendering and its C bridge (`snow-recording-effects`
 and `snow-recording-effects-c`) are Apache-2.0 code under `snow-crates/`. They
 reuse crossbeam-channel (MIT OR Apache-2.0) and Microsoft windows-rs (MIT OR

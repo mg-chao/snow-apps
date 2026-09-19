@@ -7,6 +7,13 @@
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include <qt_windows.h>
+#elif defined(Q_OS_MACOS)
+#include <CoreGraphics/CoreGraphics.h>
+#include <QGuiApplication>
+#include <QScreen>
+#include <QPointer>
+#include <memory>
+#include <cmath>
 #endif
 
 namespace snow_shot::platform {
@@ -27,6 +34,46 @@ PhysicalCursorAccess nativeAccess() {
             return SetPhysicalCursorPos(position.x(), position.y()) != FALSE;
         },
     };
+#elif defined(Q_OS_MACOS)
+    if (!qGuiApp || QGuiApplication::platformName() != QStringLiteral("cocoa"))
+        return {};
+    auto display = std::make_shared<QPointer<QScreen>>();
+    return PhysicalCursorAccess{
+        true,
+        [display]() -> std::optional<QPoint> {
+            CGEventRef event = CGEventCreate(nullptr);
+            if (!event)
+                return std::nullopt;
+            const CGPoint point = CGEventGetLocation(event);
+            CFRelease(event);
+            const QPointF desktop(point.x, point.y);
+            *display = QGuiApplication::screenAt(QPoint(static_cast<int>(std::floor(desktop.x())),
+                                                        static_cast<int>(std::floor(desktop.y()))));
+            if (!*display)
+                return std::nullopt;
+            const QPoint origin = (*display)->geometry().topLeft();
+            return origin + ((desktop - origin) * (*display)->devicePixelRatio()).toPoint();
+        },
+        [display](const QPoint& pixels) {
+            if (!*display)
+                return false;
+            const QPoint origin = (*display)->geometry().topLeft();
+            const QPointF desktop =
+                QPointF(origin) + QPointF(pixels - origin) / (*display)->devicePixelRatio();
+            if (!QGuiApplication::screenAt(QPoint(static_cast<int>(std::floor(desktop.x())),
+                                                  static_cast<int>(std::floor(desktop.y())))))
+                return false;
+            if (CGWarpMouseCursorPosition(CGPointMake(desktop.x(), desktop.y())) != kCGErrorSuccess)
+                return false;
+            CGEventRef event = CGEventCreate(nullptr);
+            if (!event)
+                return false;
+            const CGPoint actual = CGEventGetLocation(event);
+            CFRelease(event);
+            const qreal tolerance = .51 / (*display)->devicePixelRatio();
+            return qAbs(actual.x - desktop.x()) < tolerance &&
+                   qAbs(actual.y - desktop.y()) < tolerance;
+        }};
 #else
     return {};
 #endif
@@ -68,8 +115,12 @@ bool PhysicalCursor::isSupported() const noexcept {
            static_cast<bool>(m_access.writePosition);
 }
 
+bool PhysicalCursor::canRead() const noexcept {
+    return m_access.supported && static_cast<bool>(m_access.readPosition);
+}
+
 std::optional<QPoint> PhysicalCursor::position() const {
-    if (!isSupported()) {
+    if (!canRead()) {
         return std::nullopt;
     }
     return m_access.readPosition();

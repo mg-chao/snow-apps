@@ -34,7 +34,6 @@ enum class PaintSynchronization {
     FlushAlreadyPainted,
 };
 
-[[nodiscard]] Qt::WindowFlags windowFlags();
 [[nodiscard]] bool
 applyClientGeometry(WId windowId, const QRect& geometry,
                     GeometryUpdate update = GeometryUpdate::PreserveClientPixels);

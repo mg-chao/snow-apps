@@ -34,6 +34,10 @@
             <translation>保存截图</translation>
         </message>
         <message>
+            <source>Smart selection is using window mode. Enable Accessibility access in Screenshot settings to select window elements.</source>
+            <translation>智能选择正在使用窗口模式。请在截图设置中启用辅助功能权限，以选择窗口元素。</translation>
+        </message>
+        <message>
             <source>The clipboard content could not be pinned</source>
             <translation>无法固定剪贴板内容到屏幕</translation>
         </message>

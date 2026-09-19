@@ -506,6 +506,28 @@ void physicalPointMappingUsesHalfOpenMonitorBounds() {
             "a pointer on the exclusive right edge must not select a monitor");
 }
 
+void selectorDisplayIdentityPreventsMixedScaleCrossMapping() {
+    ScreenshotDisplaySession displays;
+    auto first = syntheticDisplay(QRect(0, 0, 200, 200), QRect(0, 0, 100, 100));
+    first.stableId = QStringLiteral("display:1");
+    first.canvasRect = QRect(0, 0, 200, 200);
+    auto second = syntheticDisplay(QRect(100, 0, 100, 100), QRect(100, 0, 100, 100));
+    second.stableId = QStringLiteral("display:2");
+    second.canvasRect = QRect(200, 0, 100, 100);
+    displays.appendDisplay(first);
+    displays.appendDisplay(second);
+    ScreenshotGeometryMapper geometry;
+    const QRectF rect(120, 20, 20, 20);
+    require(geometry.canvasRectForPhysicalRect(displays, rect, QStringLiteral("display:1")) == rect,
+            "Retina selector output must remain on the queried display");
+    require(geometry.canvasRectForPhysicalRect(displays, rect, QStringLiteral("display:2")) ==
+                QRectF(220, 20, 20, 20),
+            "secondary display output must map using its own canvas origin");
+    require(
+        geometry.canvasRectForPhysicalRect(displays, rect, QStringLiteral("display:3")).isEmpty(),
+        "obsolete display output must not select a different monitor");
+}
+
 void physicalWindowRectIsClippedAndMappedAcrossMonitors() {
     ScreenshotDisplaySession displays;
     displays.appendDisplay(syntheticDisplay(QRect(0, 0, 100, 100), QRect(0, 0, 100, 100)));
@@ -605,6 +627,7 @@ int main() {
     globalMouseDesktopPointsMapAcrossMixedScaleDisplays();
     physicalPointMappingUsesHalfOpenMonitorBounds();
     physicalWindowRectIsClippedAndMappedAcrossMonitors();
+    selectorDisplayIdentityPreventsMixedScaleCrossMapping();
     dragAnchorDoesNotReplaceTheActualCursorPosition();
     return 0;
 }

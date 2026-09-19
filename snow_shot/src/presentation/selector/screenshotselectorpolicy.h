@@ -8,12 +8,22 @@
 #include <QByteArray>
 
 struct ScreenshotSelectorLookupPolicy {
+#ifdef Q_OS_MACOS
+    SnowUiSelectorBackend backend = SNOW_UI_SELECTOR_BACKEND_ACCESSIBILITY;
+#else
     SnowUiSelectorBackend backend = SNOW_UI_SELECTOR_BACKEND_UIA;
+#endif
     SnowUiSelectorHitTestMode mode = SNOW_UI_SELECTOR_HIT_TEST_MODE_UI_ELEMENT;
 };
 
 inline ScreenshotSelectorLookupPolicy
 screenshotSelectorLookupPolicy(bool smartSelectionEnabled, const QByteArray& configuredBackend) {
+#ifdef Q_OS_MACOS
+    Q_UNUSED(configuredBackend);
+    return {SNOW_UI_SELECTOR_BACKEND_ACCESSIBILITY, smartSelectionEnabled
+                                                        ? SNOW_UI_SELECTOR_HIT_TEST_MODE_UI_ELEMENT
+                                                        : SNOW_UI_SELECTOR_HIT_TEST_MODE_WINDOW};
+#else
     const QByteArray backend = configuredBackend.trimmed().toLower();
     SnowUiSelectorBackend selectedBackend = SNOW_UI_SELECTOR_BACKEND_UIA;
     if (backend == "msaa") {
@@ -21,6 +31,7 @@ screenshotSelectorLookupPolicy(bool smartSelectionEnabled, const QByteArray& con
     }
     return {selectedBackend, smartSelectionEnabled ? SNOW_UI_SELECTOR_HIT_TEST_MODE_UI_ELEMENT
                                                    : SNOW_UI_SELECTOR_HIT_TEST_MODE_WINDOW};
+#endif
 }
 
 inline SnowUiSelectorHitTestMode

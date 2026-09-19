@@ -60,6 +60,7 @@ class ScreenshotPinnedNativeGeometryController final {
     [[nodiscard]] bool beginMove(const QPoint& nativeCursorPosition);
     [[nodiscard]] bool beginResize(screenshot_pinned_resize_geometry::DragHandle handle);
     void cancelPendingInteraction();
+    [[nodiscard]] bool acceptInteractiveGeometry(const QRect& geometry);
 
     [[nodiscard]] QRect constrainWindowPos(const QRect& proposed, bool moveRequested,
                                            bool sizeRequested) const;
@@ -75,6 +76,7 @@ class ScreenshotPinnedNativeGeometryController final {
                                       const std::optional<QPoint>& nativeCursorPosition);
 
     [[nodiscard]] bool beginProgrammatic(const QRect& target, Origin origin);
+    [[nodiscard]] bool acceptAppliedGeometry(const QRect& actual);
     [[nodiscard]] QRect finishInteractiveTarget() const;
     [[nodiscard]] GeometryChange commitTarget(bool transactionFinished = true);
     void prepareRollback();

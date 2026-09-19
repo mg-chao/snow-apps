@@ -1,3 +1,4 @@
+#include "../pinned/pinnedwindowplatform.h"
 #include "snow_shot/presentation/screenshotselectionexportuiservices.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 
@@ -81,85 +82,24 @@ ScreenshotResultStyle decodeResultStyle(const QByteArray& bytes) {
     return style;
 }
 
-QRect availablePhysicalRect(QScreen* screen) {
-    if (screen == nullptr) {
-        return {};
-    }
-    const QRect logicalBounds = screen->geometry();
-    const QRect logicalAvailable = screen->availableGeometry();
-    const QRect physicalBounds = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
-    const qreal scale = screen->devicePixelRatio() > 0.0 ? screen->devicePixelRatio() : 1.0;
-    return QRect(
-        physicalBounds.left() + qRound((logicalAvailable.left() - logicalBounds.left()) * scale),
-        physicalBounds.top() + qRound((logicalAvailable.top() - logicalBounds.top()) * scale),
-        std::max(1, qRound(logicalAvailable.width() * scale)),
-        std::max(1, qRound(logicalAvailable.height() * scale)));
-}
-
-screenshot_pinned_restore_geometry::ScreenGeometry restoreScreenGeometry(QScreen* screen) {
-    screenshot_pinned_restore_geometry::ScreenGeometry geometry;
-    geometry.physicalBounds = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
-    geometry.availableBounds = availablePhysicalRect(screen);
-    return geometry;
-}
-
-// Re-bases the persisted physical geometries of a record onto `target`
-// (never null) in one step. The saved physical pixel sizes — and with them
-// the scale value — are left untouched; monitor DPI plays no role.
+// Restore display-local positions within the current usable area. Pixel
+// extents remain unchanged while the display scale determines point dimensions.
 screenshot_pinned_restore_geometry::RestoredState
 reconcileRestoreState(const snow_shot::storage::PinnedWindowRecord& record, QScreen& target) {
-    screenshot_pinned_restore_geometry::SavedState saved;
-    saved.nativeGeometry = record.nativeGeometry;
-    saved.preThumbnailNativeGeometry = record.preThumbnailNativeGeometry;
-    saved.hideToTopHandleNativeGeometry = record.hideToTopHandleNativeGeometry;
-    saved.screenPhysicalBounds = record.screenPhysicalGeometry;
-    QList<screenshot_pinned_restore_geometry::ScreenGeometry> screens;
-    for (QScreen* screen : QGuiApplication::screens()) {
-        if (screen != nullptr) {
-            screens.push_back(restoreScreenGeometry(screen));
-        }
-    }
-    return screenshot_pinned_restore_geometry::reconcileSavedState(
-        saved, restoreScreenGeometry(&target), screens);
+    using namespace snow_shot::presentation;
+    const auto restore = [&target](const snow_shot::storage::PinnedWindowPlacement& placement) {
+        return placement.isValid()
+                   ? pinnedPixelRect(recoverPinnedPlacement(placement, target), target)
+                   : QRect();
+    };
+    return {restore(record.placement), restore(record.preThumbnailPlacement),
+            restore(record.hideToTopPlacement)};
 }
 
 QScreen* restoreScreen(const snow_shot::storage::PinnedWindowRecord& record) {
-    const QList<QScreen*> screens = QGuiApplication::screens();
-    for (QScreen* screen : screens) {
-        if (screen != nullptr && !record.screenSerial.isEmpty() &&
-            screen->serialNumber() == record.screenSerial) {
-            return screen;
-        }
-    }
-    for (QScreen* screen : screens) {
-        if (screen != nullptr && !record.screenName.isEmpty() &&
-            screen->name() == record.screenName) {
-            return screen;
-        }
-    }
-    if (screens.isEmpty()) {
-        return nullptr;
-    }
-    const QPoint savedCenter = record.nativeGeometry.center();
-    QScreen* nearest = screens.front();
-    qint64 nearestDistance = std::numeric_limits<qint64>::max();
-    for (QScreen* screen : screens) {
-        if (screen == nullptr) {
-            continue;
-        }
-        const QRect bounds = availablePhysicalRect(screen);
-        const QPoint clamped(qBound(bounds.left(), savedCenter.x(), bounds.right()),
-                             qBound(bounds.top(), savedCenter.y(), bounds.bottom()));
-        const qint64 dx = static_cast<qint64>(savedCenter.x()) - clamped.x();
-        const qint64 dy = static_cast<qint64>(savedCenter.y()) - clamped.y();
-        const qint64 distance = dx * dx + dy * dy;
-        if (distance < nearestDistance) {
-            nearestDistance = distance;
-            nearest = screen;
-        }
-    }
-    return nearest;
+    return snow_shot::presentation::pinnedDisplay(record.placement);
 }
+
 } // namespace
 
 class ScreenshotPinnedWindowPool final : public QObject {
@@ -478,9 +418,13 @@ class ScreenshotPendingPinCoordinator final : public QObject {
 namespace {
 bool presentPinnedWindowAndSynchronize(ScreenshotPinnedWindowPool* pool,
                                        ScreenshotPinnedWindow* window,
-                                       const ScreenshotPinnedWindow::Config& config,
+                                       const ScreenshotPinnedWindow::Config& requestedConfig,
                                        const std::function<void()>& showMainWindowRequested,
                                        std::function<void(bool, QImage)> completion = {}) {
+    ScreenshotPinnedWindow::Config config = requestedConfig;
+    if (!config.placement.isValid() && config.screen)
+        config.placement =
+            snow_shot::presentation::pinnedPlacement(config.nativeGeometry, *config.screen);
     if (window == nullptr) {
         return false;
     }
@@ -929,6 +873,8 @@ void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
             reconcileRestoreState(record, *targetScreen);
         ScreenshotPinnedWindow::Config config;
         config.nativeGeometry = restored.nativeGeometry;
+        config.placement =
+            snow_shot::presentation::recoverPinnedPlacement(record.placement, *targetScreen);
         config.canvasSourceRect = record.canvasSourceRect;
         // The persisted content/surface rects describe the post-transform
         // frame. Presentation starts from the immutable source canvas and
@@ -952,6 +898,10 @@ void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
         config.persistedThumbnailMode = record.thumbnailMode;
         config.persistedClickThroughMode = record.clickThroughMode;
         config.persistedPreThumbnailNativeGeometry = restored.preThumbnailNativeGeometry;
+        if (record.preThumbnailPlacement.isValid()) {
+            config.persistedPreThumbnailPlacement = snow_shot::presentation::recoverPinnedPlacement(
+                record.preThumbnailPlacement, *targetScreen);
+        }
         config.persistedFirstCreationTextDpi = record.firstCreationTextDpi;
         config.persistedCanvasSession = record.canvasSession;
         config.persistedRecognitionResults = record.recognitionResults;

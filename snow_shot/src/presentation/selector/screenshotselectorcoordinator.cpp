@@ -24,6 +24,10 @@ ScreenshotSelectorCoordinator::ScreenshotSelectorCoordinator(QObject* parent,
     if (storage.isInitialized()) {
         connect(&storage.configuration(), &snow_shot::storage::ConfigurationStore::valueChanged,
                 this, [this](const QString& key, const QJsonValue&) {
+#ifdef Q_OS_MACOS
+                    if (key == QStringLiteral("screenshot/window_element_api"))
+                        return;
+#endif
                     if (key != QStringLiteral("screenshot_selection/smart_selection") &&
                         key != QStringLiteral("screenshot/window_element_api")) {
                         return;
@@ -60,6 +64,7 @@ void ScreenshotSelectorCoordinator::resetRequests() {
     m_hasTarget = false;
     ++m_refreshRequestId;
     ++m_hitTestRequestId;
+    m_permissionWarningShown = false;
     m_ready = false;
     m_refreshInFlight = false;
     m_hitTestInFlight = false;
@@ -117,7 +122,9 @@ bool ScreenshotSelectorCoordinator::requestHitTest(const QPoint& physicalPoint,
         return false;
     }
 
-    if (m_hasTarget && m_pendingHitTestPoint == physicalPoint && m_pendingHitTestMode == mode) {
+    const quint32 displayId = ScreenshotSelectorServiceClient::displayIdAtCursor();
+    if (m_hasTarget && m_pendingHitTestPoint == physicalPoint && m_pendingHitTestMode == mode &&
+        m_pendingDisplayId == displayId) {
         return true;
     }
     cancelRefinement();
@@ -126,6 +133,7 @@ bool ScreenshotSelectorCoordinator::requestHitTest(const QPoint& physicalPoint,
     m_targetChangedAt = m_now();
     emit targetChanged();
     m_pendingHitTestPoint = physicalPoint;
+    m_pendingDisplayId = displayId;
     m_pendingHitTestMode = mode;
     m_hasPendingHitTestPoint = true;
     if (!m_hitTestInFlight) {
@@ -145,7 +153,7 @@ void ScreenshotSelectorCoordinator::startNextHitTest() {
     const quint64 requestId = ++m_hitTestRequestId;
     m_hitTestInFlight = true;
     if (!m_serviceClient->startHitTest(m_refreshRequestId, requestId, m_targetGeneration, point,
-                                       mode)) {
+                                       mode, m_pendingDisplayId)) {
         m_hitTestInFlight = false;
         emit initialResultReady(false, {});
     }
@@ -194,6 +202,13 @@ void ScreenshotSelectorCoordinator::handleResult(const ScreenshotSelectorResult&
     SNOW_SHOT_CAPTURE_PERF_COUNTER("selector.result_phase", static_cast<int>(result.phase));
     SNOW_SHOT_CAPTURE_PERF_COUNTER("selector.stop_reason", static_cast<int>(result.stopReason));
     SNOW_SHOT_CAPTURE_PERF_COUNTER("selector.elapsed_us", static_cast<qint64>(result.elapsedUs));
+    const auto warnIfPermissionRequired = [this, &result] {
+        if (result.stopReason == ScreenshotSelectorStopReason::PermissionRequired &&
+            !m_permissionWarningShown) {
+            m_permissionWarningShown = true;
+            emit accessibilityPermissionRequired();
+        }
+    };
     if (result.phase == ScreenshotSelectorResultPhase::Initial) {
         if (!m_hitTestInFlight || result.requestId != m_hitTestRequestId)
             return;
@@ -201,16 +216,22 @@ void ScreenshotSelectorCoordinator::handleResult(const ScreenshotSelectorResult&
         m_initial = result.canRefine ? result : ScreenshotSelectorResult{};
         SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.hit_test_finished");
         SNOW_SHOT_CAPTURE_PERF_COUNTER("selector.hit_test_ok", result.ok ? 1 : 0);
-        emit initialResultReady(result.ok, result.rects);
+        emit initialResultReady(result.ok, result.rects, result.displayId);
+        warnIfPermissionRequired();
         startNextHitTest();
         scheduleRefinement();
         return;
     }
     if (!m_hasTarget || result.generation != m_targetGeneration ||
         result.requestId != m_initial.requestId || result.point != m_pendingHitTestPoint ||
-        result.mode != m_pendingHitTestMode || m_hitTestInFlight || m_hasPendingHitTestPoint)
+        result.mode != m_pendingHitTestMode || result.displayId != m_pendingDisplayId ||
+        m_hitTestInFlight || m_hasPendingHitTestPoint)
         return;
     if (result.ok && result.stopReason != ScreenshotSelectorStopReason::Cancelled &&
-        !result.rects.isEmpty())
-        emit refinementReady(result.rects);
+        !result.rects.isEmpty()) {
+        const bool permissionRequired =
+            result.stopReason == ScreenshotSelectorStopReason::PermissionRequired;
+        emit refinementReady(result.rects, result.displayId, permissionRequired);
+        warnIfPermissionRequired();
+    }
 }

@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/components/settingspagewidget.h"
 
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
+#include "snow_shot/presentation/components/smartselectionpermissionwidget.h"
 #include "snow_shot/presentation/components/globalmouserow.h"
 #include "snow_shot/presentation/components/pathinput.h"
 #include "snow_shot/presentation/components/sectionheaderwidget.h"
@@ -230,6 +231,10 @@ class SettingsPageWidget::Impl {
             QStringLiteral("%1-%2").arg(page->id, sectionDefinition.id)));
         runtimeSection.header->setResetVisible(reset != settings::SettingsSectionReset::None);
         contentLayout->addWidget(runtimeSection.header);
+#ifdef Q_OS_MACOS
+        if (sectionDefinition.id == QStringLiteral("screenshot-settings"))
+            contentLayout->addWidget(new SmartSelectionPermissionWidget(contentWidget));
+#endif
         sections.push_back(runtimeSection);
         sectionIndexes.insert(sectionDefinition.id, static_cast<int>(sections.size()) - 1);
 

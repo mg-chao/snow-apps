@@ -1,8 +1,9 @@
-//! Asynchronous selector boundary. Each worker owns all of its COM state.
+//! Asynchronous selector boundary. Each worker owns all of its native state.
 use snow_ui_selector::{
-    AccessibilityBackend, ElementRegionService, HitTestMode, QueryControl, QueryResult, StopReason,
-    WindowSnapshot,
+    AccessibilityBackend, ElementRegionService, HitTestMode, Point, QueryControl, QueryResult,
+    SelectorResult, StopReason, WindowSnapshot,
 };
+use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::sync::{
     Arc, Mutex,
@@ -11,13 +12,13 @@ use std::sync::{
 };
 use std::thread;
 use std::time::Instant;
-use windows::Win32::Foundation::{HWND, POINT};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SnowUiSelectorBackend {
     Uia,
     Msaa,
+    Accessibility,
 }
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,6 +50,7 @@ pub struct SnowUiSelectorQuery {
     pub x: i32,
     pub y: i32,
     pub mode: SnowUiSelectorHitTestMode,
+    pub display_id: u32,
 }
 #[repr(C)]
 pub struct SnowUiSelectorEvent {
@@ -71,7 +73,8 @@ struct Shared {
     sink: Mutex<Option<Sink>>,
     closed: AtomicBool,
     revision: AtomicU64,
-    snapshot: Mutex<Option<(u64, WindowSnapshot)>>,
+    snapshot: Mutex<Option<(u64, u64, WindowSnapshot)>>,
+    cache_revision: AtomicU64,
 }
 impl Shared {
     fn emit(
@@ -122,9 +125,16 @@ fn empty(reason: StopReason) -> QueryResult {
     QueryResult { path: None, reason }
 }
 fn backend(value: SnowUiSelectorBackend) -> AccessibilityBackend {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = value;
+        AccessibilityBackend::Accessibility
+    }
+    #[cfg(not(target_os = "macos"))]
     match value {
         SnowUiSelectorBackend::Uia => AccessibilityBackend::Uia,
         SnowUiSelectorBackend::Msaa => AccessibilityBackend::Msaa,
+        SnowUiSelectorBackend::Accessibility => AccessibilityBackend::Accessibility,
     }
 }
 fn mode(value: SnowUiSelectorHitTestMode) -> HitTestMode {
@@ -138,7 +148,8 @@ enum ForegroundCommand {
     Refresh {
         epoch: u64,
         backend: SnowUiSelectorBackend,
-        excluded: Vec<isize>,
+        excluded: Vec<usize>,
+        revision: u64,
     },
     Query(SnowUiSelectorQuery),
     Release,
@@ -147,6 +158,50 @@ enum ForegroundCommand {
 enum RefinementCommand {
     Query(SnowUiSelectorQuery, u64),
     Release,
+}
+struct ForegroundQueue {
+    pending: Mutex<VecDeque<ForegroundCommand>>,
+    wake: mpsc::SyncSender<()>,
+}
+impl ForegroundQueue {
+    fn submit(&self, command: ForegroundCommand, shared: &Shared) -> bool {
+        let removed = {
+            let mut pending = self.pending.lock().unwrap();
+            let removed = if matches!(command, ForegroundCommand::Query(_)) {
+                if matches!(pending.back(), Some(ForegroundCommand::Query(_))) {
+                    pending.pop_back().into_iter().collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                }
+            } else {
+                pending.drain(..).collect()
+            };
+            pending.push_back(command);
+            removed
+        };
+        // Every accepted request still receives a terminal callback when coalesced.
+        for command in removed {
+            match command {
+                ForegroundCommand::Query(query) => shared.emit(
+                    query,
+                    SnowUiSelectorPhase::Initial,
+                    empty(StopReason::Cancelled),
+                    false,
+                    Instant::now(),
+                ),
+                ForegroundCommand::Refresh { epoch, .. } => {
+                    if let Some(sink) = shared.sink.lock().unwrap().as_ref() {
+                        unsafe { (sink.refresh)(epoch, 0, sink.userdata as *mut c_void) };
+                    }
+                }
+                _ => {}
+            }
+        }
+        !matches!(
+            self.wake.try_send(()),
+            Err(mpsc::TrySendError::Disconnected(_))
+        )
+    }
 }
 struct RefinementQueue {
     pending: Mutex<Option<RefinementCommand>>,
@@ -162,7 +217,7 @@ impl RefinementQueue {
     }
 }
 pub struct SnowUiSelectorServiceImpl {
-    foreground: mpsc::Sender<ForegroundCommand>,
+    foreground: Arc<ForegroundQueue>,
     refinement: Arc<RefinementQueue>,
     shared: Arc<Shared>,
     workers: Vec<thread::JoinHandle<()>>,
@@ -170,34 +225,34 @@ pub struct SnowUiSelectorServiceImpl {
 }
 
 trait WorkerService: Sized {
-    fn create(backend: AccessibilityBackend, excluded: &[HWND]) -> windows::core::Result<Self>;
+    fn create(backend: AccessibilityBackend, excluded: &[usize]) -> SelectorResult<Self>;
     fn backend(&self) -> AccessibilityBackend;
-    fn refresh(&mut self, excluded: &[HWND]) -> windows::core::Result<()>;
+    fn refresh(&mut self, excluded: &[usize]) -> SelectorResult<()>;
     fn snapshot(&self) -> Option<WindowSnapshot>;
-    fn from_snapshot(snapshot: &WindowSnapshot) -> windows::core::Result<Self>;
+    fn from_snapshot(snapshot: &WindowSnapshot) -> SelectorResult<Self>;
     fn release(&mut self);
     fn query(
         &mut self,
-        point: POINT,
+        point: Point,
         mode: HitTestMode,
         control: &QueryControl<'_>,
         progress: &mut dyn FnMut(&[snow_ui_selector::ElementRect]),
-    ) -> windows::core::Result<QueryResult>;
+    ) -> SelectorResult<QueryResult>;
 }
 impl WorkerService for ElementRegionService {
-    fn create(backend: AccessibilityBackend, excluded: &[HWND]) -> windows::core::Result<Self> {
-        Self::with_backend_excluding_hwnds(backend, excluded)
+    fn create(backend: AccessibilityBackend, excluded: &[usize]) -> SelectorResult<Self> {
+        Self::with_backend_excluding_ids(backend, excluded)
     }
     fn backend(&self) -> AccessibilityBackend {
         self.backend()
     }
-    fn refresh(&mut self, excluded: &[HWND]) -> windows::core::Result<()> {
-        self.refresh_excluding_hwnds(excluded)
+    fn refresh(&mut self, excluded: &[usize]) -> SelectorResult<()> {
+        self.refresh_excluding_ids(excluded)
     }
     fn snapshot(&self) -> Option<WindowSnapshot> {
         self.window_snapshot()
     }
-    fn from_snapshot(snapshot: &WindowSnapshot) -> windows::core::Result<Self> {
+    fn from_snapshot(snapshot: &WindowSnapshot) -> SelectorResult<Self> {
         Self::from_snapshot(snapshot)
     }
     fn release(&mut self) {
@@ -205,22 +260,30 @@ impl WorkerService for ElementRegionService {
     }
     fn query(
         &mut self,
-        point: POINT,
+        point: Point,
         mode: HitTestMode,
         control: &QueryControl<'_>,
         progress: &mut dyn FnMut(&[snow_ui_selector::ElementRect]),
-    ) -> windows::core::Result<QueryResult> {
+    ) -> SelectorResult<QueryResult> {
         self.query(point, mode, control, progress)
     }
 }
 
 fn foreground_worker<S: WorkerService>(
-    receiver: mpsc::Receiver<ForegroundCommand>,
+    receiver: mpsc::Receiver<()>,
+    queue: Arc<ForegroundQueue>,
     shared: Arc<Shared>,
 ) {
     let mut service: Option<S> = None;
     let mut current_epoch = 0;
-    while let Ok(command) = receiver.recv() {
+    loop {
+        let command = queue.pending.lock().unwrap().pop_front();
+        let Some(command) = command else {
+            if receiver.recv().is_err() {
+                break;
+            }
+            continue;
+        };
         if shared.closed.load(Ordering::Acquire) {
             break;
         }
@@ -229,23 +292,27 @@ fn foreground_worker<S: WorkerService>(
                 epoch,
                 backend: selected,
                 excluded,
+                revision,
             } => {
-                let hwnds: Vec<_> = excluded.into_iter().map(|h| HWND(h as *mut _)).collect();
                 let selected = backend(selected);
                 let result =
                     if let Some(service) = service.as_mut().filter(|s| s.backend() == selected) {
-                        service.refresh(&hwnds)
+                        service.refresh(&excluded)
                     } else {
-                        S::create(selected, &hwnds).map(|s| service = Some(s))
+                        S::create(selected, &excluded).map(|s| service = Some(s))
                     };
                 if result.is_err() {
                     service = None;
                 }
                 current_epoch = epoch;
-                *shared.snapshot.lock().unwrap() = service
-                    .as_ref()
-                    .and_then(|s| s.snapshot())
-                    .map(|s| (epoch, s));
+                let mut snapshot = shared.snapshot.lock().unwrap();
+                if shared.cache_revision.load(Ordering::Acquire) == revision {
+                    *snapshot = service
+                        .as_ref()
+                        .and_then(|s| s.snapshot())
+                        .map(|s| (epoch, revision, s));
+                }
+                drop(snapshot);
                 if let Some(sink) = shared.sink.lock().unwrap().as_ref() {
                     unsafe {
                         (sink.refresh)(
@@ -258,17 +325,23 @@ fn foreground_worker<S: WorkerService>(
             }
             ForegroundCommand::Query(query) => {
                 let started = Instant::now();
+                let revision = shared.cache_revision.load(Ordering::Acquire);
+                let cancelled = || {
+                    shared.closed.load(Ordering::Acquire)
+                        || shared.cache_revision.load(Ordering::Acquire) != revision
+                };
                 let result = service
                     .as_mut()
                     .filter(|_| current_epoch == query.epoch)
                     .map(|s| {
                         s.query(
-                            POINT {
+                            Point {
                                 x: query.x,
                                 y: query.y,
+                                display_id: query.display_id,
                             },
                             mode(query.mode),
-                            &QueryControl::foreground(),
+                            &QueryControl::foreground_with_cancellation(&cancelled),
                             &mut |_| {},
                         )
                     });
@@ -296,7 +369,7 @@ fn refinement_worker<S: WorkerService>(
     shared: Arc<Shared>,
 ) {
     let mut service: Option<S> = None;
-    let mut current_epoch = 0;
+    let mut current_snapshot = None;
     while receiver.recv().is_ok() {
         if shared.closed.load(Ordering::Acquire) {
             break;
@@ -305,7 +378,7 @@ fn refinement_worker<S: WorkerService>(
         match command {
             Some(RefinementCommand::Release) => {
                 service = None;
-                current_epoch = 0;
+                current_snapshot = None;
             }
             Some(RefinementCommand::Query(query, revision)) => {
                 let started = Instant::now();
@@ -317,22 +390,26 @@ fn refinement_worker<S: WorkerService>(
                     shared.cancelled(query);
                     continue;
                 }
-                if current_epoch != query.epoch {
-                    let snapshot = shared
-                        .snapshot
-                        .lock()
-                        .unwrap()
+                let snapshot = shared
+                    .snapshot
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .filter(|(e, _, _)| *e == query.epoch)
+                    .cloned();
+                let key = snapshot.as_ref().map(|(e, r, _)| (*e, *r));
+                if current_snapshot != key || service.is_none() {
+                    service = snapshot
                         .as_ref()
-                        .filter(|(e, _)| *e == query.epoch)
-                        .map(|(_, s)| s.clone());
-                    service = snapshot.as_ref().and_then(|s| S::from_snapshot(s).ok());
-                    current_epoch = query.epoch;
+                        .and_then(|(_, _, s)| S::from_snapshot(s).ok());
+                    current_snapshot = key;
                 }
                 let result = service.as_mut().map(|s| {
                     s.query(
-                        POINT {
+                        Point {
                             x: query.x,
                             y: query.y,
+                            display_id: query.display_id,
                         },
                         mode(query.mode),
                         &QueryControl::refinement(&cancelled),
@@ -394,8 +471,13 @@ fn start_service<S: WorkerService + 'static>(
         closed: AtomicBool::new(false),
         revision: AtomicU64::new(0),
         snapshot: Mutex::new(None),
+        cache_revision: AtomicU64::new(0),
     });
-    let (sender, receiver) = mpsc::channel();
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let foreground_queue = Arc::new(ForegroundQueue {
+        pending: Mutex::new(VecDeque::new()),
+        wake: sender,
+    });
     let (wake, refine_receiver) = mpsc::sync_channel(1);
     let refinement = Arc::new(RefinementQueue {
         pending: Mutex::new(None),
@@ -403,9 +485,10 @@ fn start_service<S: WorkerService + 'static>(
     });
     let foreground = {
         let shared = shared.clone();
+        let queue = foreground_queue.clone();
         thread::Builder::new()
             .name("selector-foreground".into())
-            .spawn(move || foreground_worker::<S>(receiver, shared))
+            .spawn(move || foreground_worker::<S>(receiver, queue, shared))
     };
     let Ok(foreground) = foreground else {
         return std::ptr::null_mut();
@@ -422,7 +505,7 @@ fn start_service<S: WorkerService + 'static>(
         })
     };
     Box::into_raw(Box::new(SnowUiSelectorServiceImpl {
-        foreground: sender,
+        foreground: foreground_queue,
         refinement,
         shared,
         workers: vec![foreground],
@@ -441,7 +524,9 @@ pub unsafe extern "C" fn snow_ui_selector_service_destroy(service: *mut SnowUiSe
     let service = unsafe { Box::from_raw(service) };
     service.shared.closed.store(true, Ordering::Release);
     service.shared.sink.lock().unwrap().take();
-    let _ = service.foreground.send(ForegroundCommand::Shutdown);
+    let _ = service
+        .foreground
+        .submit(ForegroundCommand::Shutdown, &service.shared);
     let _ = service.refinement.wake.try_send(());
     // Joining never holds up Qt or waits for a provider on the calling thread.
     let _ = thread::Builder::new()
@@ -485,7 +570,9 @@ pub unsafe extern "C" fn snow_ui_selector_service_release_cache(
     };
     unsafe { snow_ui_selector_service_invalidate_refinement(service) };
     s.refinement.replace(RefinementCommand::Release, &s.shared);
-    u8::from(s.foreground.send(ForegroundCommand::Release).is_ok())
+    s.shared.cache_revision.fetch_add(1, Ordering::AcqRel);
+    *s.shared.snapshot.lock().unwrap() = None;
+    u8::from(s.foreground.submit(ForegroundCommand::Release, &s.shared))
 }
 #[unsafe(no_mangle)]
 /// # Safety
@@ -500,28 +587,27 @@ pub unsafe extern "C" fn snow_ui_selector_service_refresh(
     let Some(s) = (unsafe { service.as_ref() }) else {
         return 0;
     };
-    if count > 0 && excluded.is_null() {
+    if count > 4096 || (count > 0 && excluded.is_null()) {
         return 0;
     }
     let excluded = if count == 0 {
         Vec::new()
     } else {
-        unsafe { std::slice::from_raw_parts(excluded, count) }
-            .iter()
-            .map(|&h| h as isize)
-            .collect()
+        unsafe { std::slice::from_raw_parts(excluded, count) }.to_vec()
     };
     unsafe { snow_ui_selector_service_invalidate_refinement(service) };
     s.refinement.replace(RefinementCommand::Release, &s.shared);
-    u8::from(
-        s.foreground
-            .send(ForegroundCommand::Refresh {
-                epoch,
-                backend,
-                excluded,
-            })
-            .is_ok(),
-    )
+    let revision = s.shared.cache_revision.fetch_add(1, Ordering::AcqRel) + 1;
+    *s.shared.snapshot.lock().unwrap() = None;
+    u8::from(s.foreground.submit(
+        ForegroundCommand::Refresh {
+            epoch,
+            backend,
+            excluded,
+            revision,
+        },
+        &s.shared,
+    ))
 }
 #[unsafe(no_mangle)]
 /// # Safety
@@ -533,7 +619,10 @@ pub unsafe extern "C" fn snow_ui_selector_service_query(
     let (Some(s), Some(query)) = (unsafe { service.as_ref() }, unsafe { query.as_ref() }) else {
         return 0;
     };
-    u8::from(s.foreground.send(ForegroundCommand::Query(*query)).is_ok())
+    u8::from(
+        s.foreground
+            .submit(ForegroundCommand::Query(*query), &s.shared),
+    )
 }
 #[unsafe(no_mangle)]
 /// # Safety
@@ -555,7 +644,7 @@ pub unsafe extern "C" fn snow_ui_selector_service_refine(
         .lock()
         .unwrap()
         .as_ref()
-        .is_some_and(|(epoch, _)| *epoch == query.epoch)
+        .is_some_and(|(epoch, _, _)| *epoch == query.epoch)
     {
         return 0;
     }
@@ -577,3 +666,17 @@ pub unsafe extern "C" fn snow_ui_selector_service_refine(
 
 #[cfg(test)]
 mod tests;
+
+/// Queries permission without a prompt unless explicitly requested by the user.
+#[unsafe(no_mangle)]
+pub extern "C" fn snow_ui_selector_accessibility_permission(prompt: u8) -> u8 {
+    #[cfg(target_os = "macos")]
+    {
+        u8::from(snow_ui_selector::accessibility_permission(prompt != 0))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = prompt;
+        1
+    }
+}

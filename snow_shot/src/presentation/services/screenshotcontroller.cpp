@@ -1567,21 +1567,33 @@ void ScreenshotController::Impl::redoCanvasEdit() {
 }
 
 void ScreenshotController::Impl::connectSelectorSignals() {
+    QObject::connect(m_selectorCoordinator,
+                     &ScreenshotSelectorCoordinator::accessibilityPermissionRequired, &owner,
+                     [this] {
+                         if (!m_interaction.inactive())
+                             m_messages->warning(
+                                 QStringLiteral("smart-selection-permission"),
+                                 QCoreApplication::translate(
+                                     "ScreenshotController",
+                                     "Smart selection is using window mode. Enable Accessibility "
+                                     "access in Screenshot settings to select window elements."));
+                     });
     QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::refreshFinished, &owner,
                      [this](bool ok) {
                          if (!m_globalMouseDrag.active())
                              m_selectorWorkflow->handleRefreshFinished(ok);
                      });
     QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::initialResultReady,
-                     &owner, [this](bool ok, const QVector<QRectF>& hitRects) {
+                     &owner, [this](bool ok, const QVector<QRectF>& hitRects, quint32 displayId) {
                          if (!m_globalMouseDrag.active())
-                             m_selectorWorkflow->handleInitialResult(ok, hitRects);
+                             m_selectorWorkflow->handleInitialResult(ok, hitRects, displayId);
                      });
-    QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::refinementReady, &owner,
-                     [this](const QVector<QRectF>& rects) {
-                         if (!m_globalMouseDrag.active())
-                             m_selectorWorkflow->handleRefinement(rects);
-                     });
+    QObject::connect(
+        m_selectorCoordinator, &ScreenshotSelectorCoordinator::refinementReady, &owner,
+        [this](const QVector<QRectF>& rects, quint32 displayId, bool permissionRequired) {
+            if (!m_globalMouseDrag.active())
+                m_selectorWorkflow->handleRefinement(rects, displayId, permissionRequired);
+        });
     QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::targetChanged, &owner,
                      [this]() { m_selectorWorkflow->handleTargetChanged(); });
 }

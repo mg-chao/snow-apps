@@ -7,6 +7,7 @@
 #include <QPointF>
 #include <QRect>
 #include <QRectF>
+#include <QString>
 #include <QSize>
 #include <QtGlobal>
 #include <QVector>
@@ -132,7 +133,8 @@ class ScreenshotGeometryMapper final {
     canvasPositionForPhysicalPoint(const ScreenshotDisplaySession& displaySession,
                                    const QPointF& point) const;
     [[nodiscard]] QRectF canvasRectForPhysicalRect(const ScreenshotDisplaySession& displaySession,
-                                                   const QRectF& rect) const;
+                                                   const QRectF& rect,
+                                                   const QString& displayId = {}) const;
     [[nodiscard]] QPoint
     physicalPositionForLogicalPoint(const ScreenshotDisplaySession& displaySession,
                                     const QPointF& point) const;

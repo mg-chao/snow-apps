@@ -34,6 +34,10 @@
             <translation>儲存截圖</translation>
         </message>
         <message>
+            <source>Smart selection is using window mode. Enable Accessibility access in Screenshot settings to select window elements.</source>
+            <translation>智慧選取正在使用視窗模式。請在螢幕擷取設定中啟用輔助使用權限，以選取視窗元素。</translation>
+        </message>
+        <message>
             <source>The clipboard content could not be pinned</source>
             <translation>無法釘選剪貼簿內容</translation>
         </message>

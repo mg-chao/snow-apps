@@ -9,6 +9,8 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 snow-ui-selector = { path = "../snow-ui-selector" }
+
+[target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [
     "Win32_Foundation",
 ] }

@@ -1746,7 +1746,7 @@ void appUsageScanAndCacheCleanup() {
     setLastModified(activeRecording, QDateTime::currentDateTime().addSecs(3600));
     writeBytes(QDir(root).filePath(QStringLiteral("capture_history/records/dummy/display.png")),
                QByteArray(200, 'x'));
-    writeBytes(QDir(root).filePath(QStringLiteral("pinned_windows/index.json")),
+    writeBytes(QDir(root).filePath(QStringLiteral("pinned_windows_v2/index.json")),
                QByteArray(30, 'x'));
     writeBytes(QDir(root).filePath(QStringLiteral("assets/ocr/model.bin")), QByteArray(150, 'x'));
 

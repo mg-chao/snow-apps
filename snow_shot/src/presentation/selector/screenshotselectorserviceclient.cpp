@@ -1,7 +1,7 @@
 #include "screenshotselectorserviceclient.h"
 #include "screenshotselectorpolicy.h"
 
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
 #include "../capture/screenshotcaptureperfinstrumentation.h"
 #include "snow_ui_selector.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -11,15 +11,20 @@
 
 #include <QByteArray>
 #include <QMetaObject>
+#ifdef Q_OS_MACOS
+#include <QCursor>
+#include <CoreGraphics/CoreGraphics.h>
+#endif
 
 #include <utility>
 
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
 struct ScreenshotSelectorServiceClient::CallbackBridge {
     ScreenshotSelectorServiceClient* client;
 };
 
 namespace {
+#ifndef Q_OS_MACOS
 QByteArray configuredSelectorBackend() {
     QByteArray backend = qgetenv("SNOW_SHOT_SELECTOR_BACKEND");
     if (backend.isEmpty()) {
@@ -36,6 +41,8 @@ QByteArray configuredSelectorBackend() {
     return backend.trimmed().toLower();
 }
 
+#endif
+
 bool smartSelectionEnabled() {
     const auto& storage = snow_shot::storage::ApplicationStorage::instance();
     return storage.isInitialized() ? storage.smartSelectionEnabled()
@@ -45,8 +52,12 @@ bool smartSelectionEnabled() {
 }
 
 SnowUiSelectorBackend selectorBackendForCurrentMode() {
+#ifdef Q_OS_MACOS
+    return SNOW_UI_SELECTOR_BACKEND_ACCESSIBILITY;
+#else
     return screenshotSelectorLookupPolicy(smartSelectionEnabled(), configuredSelectorBackend())
         .backend;
+#endif
 }
 
 SnowUiSelectorHitTestMode
@@ -63,6 +74,16 @@ ScreenshotSelectorServiceClient::ScreenshotSelectorServiceClient(
 
 ScreenshotSelectorServiceClient::~ScreenshotSelectorServiceClient() {
     destroyService();
+}
+
+quint32 ScreenshotSelectorServiceClient::displayIdAtCursor() {
+    uint32_t displayId = 0;
+#ifdef Q_OS_MACOS
+    const QPoint cursor = QCursor::pos();
+    uint32_t count = 0;
+    CGGetDisplaysWithPoint(CGPointMake(cursor.x(), cursor.y()), 1, &displayId, &count);
+#endif
+    return displayId;
 }
 
 bool ScreenshotSelectorServiceClient::hasService() const {
@@ -124,11 +145,13 @@ bool ScreenshotSelectorServiceClient::startRefresh(quint64 requestId,
 
 bool ScreenshotSelectorServiceClient::startHitTest(quint64 epoch, quint64 requestId,
                                                    quint64 generation, const QPoint& point,
-                                                   ScreenshotSelectorHitTestMode mode) {
+                                                   ScreenshotSelectorHitTestMode mode,
+                                                   quint32 displayId) {
     if (!hasService())
         return false;
     const SnowUiSelectorQuery query{epoch,     requestId, generation,
-                                    point.x(), point.y(), hitTestModeForRequestedTarget(mode)};
+                                    point.x(), point.y(), hitTestModeForRequestedTarget(mode),
+                                    displayId};
     const bool started = snow_ui_selector_service_query(m_service, &query) != 0;
     if (started)
         SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.hit_test_dispatched");
@@ -140,7 +163,8 @@ bool ScreenshotSelectorServiceClient::startRefinement(const ScreenshotSelectorRe
         return false;
     const SnowUiSelectorQuery query{initial.epoch,      initial.requestId,
                                     initial.generation, initial.point.x(),
-                                    initial.point.y(),  SNOW_UI_SELECTOR_HIT_TEST_MODE_UI_ELEMENT};
+                                    initial.point.y(),  SNOW_UI_SELECTOR_HIT_TEST_MODE_UI_ELEMENT,
+                                    initial.displayId};
     return snow_ui_selector_service_refine(m_service, &query) != 0;
 }
 
@@ -177,6 +201,7 @@ void ScreenshotSelectorServiceClient::resultCallback(const SnowUiSelectorEvent* 
     result.stopReason = static_cast<ScreenshotSelectorStopReason>(event->reason);
     result.ok = event->ok != 0;
     result.elapsedUs = event->elapsed_us;
+    result.displayId = event->query.display_id;
     result.rects.reserve(static_cast<qsizetype>(event->count));
     for (size_t i = 0; i < event->count; ++i) {
         const auto& rect = event->rects[i];
@@ -188,8 +213,9 @@ void ScreenshotSelectorServiceClient::resultCallback(const SnowUiSelectorEvent* 
         client,
         [client, result = std::move(result)]() mutable {
             result.canRefine =
-                client->m_serviceBackend == SNOW_UI_SELECTOR_BACKEND_UIA && result.ok &&
-                result.mode == ScreenshotSelectorHitTestMode::WindowSubElement &&
+                (client->m_serviceBackend == SNOW_UI_SELECTOR_BACKEND_UIA ||
+                 client->m_serviceBackend == SNOW_UI_SELECTOR_BACKEND_ACCESSIBILITY) &&
+                result.ok && result.mode == ScreenshotSelectorHitTestMode::WindowSubElement &&
                 (result.stopReason == ScreenshotSelectorStopReason::BudgetExhausted ||
                  result.stopReason == ScreenshotSelectorStopReason::DecodingPending ||
                  result.stopReason == ScreenshotSelectorStopReason::ProviderTimeout);
@@ -200,8 +226,10 @@ void ScreenshotSelectorServiceClient::resultCallback(const SnowUiSelectorEvent* 
 }
 
 #else
-// The native UIA/MSAA service is Windows-only. Report unavailable so the
-// selector workflow can retain its manual-selection fallback on macOS.
+// Native selector unavailable on unsupported platforms.
+quint32 ScreenshotSelectorServiceClient::displayIdAtCursor() {
+    return 0;
+}
 struct ScreenshotSelectorServiceClient::CallbackBridge {};
 ScreenshotSelectorServiceClient::ScreenshotSelectorServiceClient(
     ScreenshotSelectorServiceClientCallbacks callbacks, QObject* parent)
@@ -221,7 +249,7 @@ bool ScreenshotSelectorServiceClient::startRefresh(quint64, const QVector<std::u
     return false;
 }
 bool ScreenshotSelectorServiceClient::startHitTest(quint64, quint64, quint64, const QPoint&,
-                                                   ScreenshotSelectorHitTestMode) {
+                                                   ScreenshotSelectorHitTestMode, quint32) {
     return false;
 }
 bool ScreenshotSelectorServiceClient::startRefinement(const ScreenshotSelectorResult&) {

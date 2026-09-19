@@ -191,7 +191,7 @@ void builtInCatalogIsCompleteAndValid() {
     }
     require(sectionCount == 38, "catalog must contain thirty-eight sections");
 #ifdef Q_OS_MACOS
-    require(itemCount == 159, "the macOS catalog omits DirectML acceleration");
+    require(itemCount == 158, "the macOS catalog omits DirectML and Windows element API choices");
 #else
     require(itemCount == 160, "catalog must contain one hundred sixty items");
 #endif
@@ -253,6 +253,9 @@ void builtInCatalogIsCompleteAndValid() {
     const auto* windowElementApi =
         catalog.item({QStringLiteral("system-settings"), QStringLiteral("screenshot-capture"),
                       QStringLiteral("screenshot.window-element-api")});
+#ifdef Q_OS_MACOS
+    require(windowElementApi == nullptr, "macOS must omit the Windows-only element API setting");
+#else
     const auto* windowElementSelect =
         windowElementApi != nullptr
             ? std::get_if<settings::SettingsSelectDefinition>(&windowElementApi->payload)
@@ -270,6 +273,7 @@ void builtInCatalogIsCompleteAndValid() {
                 storage::ConfigurationSchema::defaultValue(windowElementApi->configurationKey) ==
                     QStringLiteral("uia"),
             "system Screenshot settings must expose MSAA and UIA with UIA as the default");
+#endif
     const auto* colorRestoration =
         catalog.item({QStringLiteral("system-settings"), QStringLiteral("screenshot-capture"),
                       QStringLiteral("screenshot.restore-original-screen-colors")});
@@ -282,14 +286,15 @@ void builtInCatalogIsCompleteAndValid() {
     const auto* captureCursor =
         catalog.item({QStringLiteral("system-settings"), QStringLiteral("screenshot-capture"),
                       QStringLiteral("screenshot.capture-cursor")});
+    const qsizetype elementApiCount = windowElementApi != nullptr ? 1 : 0;
     const auto* screenshotCaptureSection =
         catalog.section(QStringLiteral("system-settings"), QStringLiteral("screenshot-capture"));
     require(
         captureCursor != nullptr && screenshotCaptureSection != nullptr &&
-            screenshotCaptureSection->items.size() == 5 &&
-            screenshotCaptureSection->items.at(2).id ==
+            screenshotCaptureSection->items.size() == 4 + elementApiCount &&
+            screenshotCaptureSection->items.at(1 + elementApiCount).id ==
                 QStringLiteral("screenshot.restore-original-screen-colors") &&
-            screenshotCaptureSection->items.at(3).id ==
+            screenshotCaptureSection->items.at(2 + elementApiCount).id ==
                 QStringLiteral("screenshot.capture-cursor") &&
             captureCursor->title.translated() == QStringLiteral("Capture cursor") &&
             captureCursor->description.translated() ==
@@ -304,7 +309,7 @@ void builtInCatalogIsCompleteAndValid() {
         catalog.item({QStringLiteral("system-settings"), QStringLiteral("screenshot-capture"),
                       QStringLiteral("screenshot.capture-ui-in-scrolling-screenshot")});
     require(scrollingUiCapture != nullptr &&
-                screenshotCaptureSection->items.at(4).id ==
+                screenshotCaptureSection->items.at(3 + elementApiCount).id ==
                     QStringLiteral("screenshot.capture-ui-in-scrolling-screenshot") &&
                 scrollingUiCapture->title.translated() ==
                     QStringLiteral("Capture UI during scrolling screenshots") &&
@@ -1450,11 +1455,11 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-#ifdef Q_OS_MACOS
-    constexpr qsizetype expectedNodes = 209;
-#else
-    constexpr qsizetype expectedNodes = 210;
-#endif
+    const auto& registry = settings::builtInSettingsRegistry();
+    qsizetype expectedNodes = registry.pages().size() + registry.fields().size();
+    for (const auto& page : registry.pages()) {
+        expectedNodes += page.sections.size();
+    }
     require(index.entries().size() == expectedNodes &&
                 index.search(QString()).size() == expectedNodes,
             "search must generate all visible catalog nodes in catalog order");
@@ -1534,9 +1539,13 @@ void searchIndexIsGeneratedAndRanked() {
                 option.constFirst().location.itemId == QStringLiteral("interface.theme"),
             "select option labels must be indexed");
     const auto windowElementApi = index.search(QStringLiteral("UIA"));
+#ifdef Q_OS_MACOS
+    require(windowElementApi.isEmpty(), "macOS search must omit Windows-only backend choices");
+#else
     require(!windowElementApi.isEmpty() && windowElementApi.constFirst().location.itemId ==
                                                QStringLiteral("screenshot.window-element-api"),
             "window element API options must find the system Screenshot setting");
+#endif
     const auto ocrModel = index.search(QStringLiteral("Ultra Small V6 OCR model"));
     require(!ocrModel.isEmpty() && ocrModel.constFirst().location.itemId ==
                                        QStringLiteral("text-recognition.model-type"),

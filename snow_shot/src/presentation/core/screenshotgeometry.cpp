@@ -519,7 +519,7 @@ QPointF ScreenshotGeometryMapper::canvasPositionForPhysicalPoint(
 
 namespace {
 QRectF canvasRectForPhysicalRectInDisplaySession(const ScreenshotDisplaySession& displaySession,
-                                                 const QRectF& rect) {
+                                                 const QRectF& rect, const QString& displayId) {
     const ScreenshotHalfOpenRect target = ScreenshotHalfOpenRect::fromRectF(rect);
     if (target.isEmpty()) {
         return {};
@@ -527,6 +527,8 @@ QRectF canvasRectForPhysicalRectInDisplaySession(const ScreenshotDisplaySession&
 
     ScreenshotHalfOpenRect canvasRect;
     displaySession.forEachActiveDisplay([&](qsizetype, const CapturedDisplayModel& display) {
+        if (!displayId.isEmpty() && display.stableId != displayId)
+            return;
         const ScreenshotHalfOpenRect physicalDisplay =
             ScreenshotHalfOpenRect::fromRect(display.physicalRect);
         const ScreenshotHalfOpenRect intersection = target.intersected(physicalDisplay);
@@ -545,8 +547,9 @@ QRectF canvasRectForPhysicalRectInDisplaySession(const ScreenshotDisplaySession&
 
 QRectF
 ScreenshotGeometryMapper::canvasRectForPhysicalRect(const ScreenshotDisplaySession& displaySession,
-                                                    const QRectF& rect) const {
-    return canvasRectForPhysicalRectInDisplaySession(displaySession, rect);
+                                                    const QRectF& rect,
+                                                    const QString& displayId) const {
+    return canvasRectForPhysicalRectInDisplaySession(displaySession, rect, displayId);
 }
 
 namespace {

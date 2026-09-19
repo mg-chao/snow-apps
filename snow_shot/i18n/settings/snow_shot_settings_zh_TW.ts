@@ -2672,6 +2672,29 @@ Unavailable: %2</source>
         </message>
     </context>
     <context>
+        <name>SmartSelectionPermissionWidget</name>
+        <message>
+            <source>Accessibility access is enabled for Smart selection.</source>
+            <translation>已為智慧選取啟用輔助使用權限。</translation>
+        </message>
+        <message>
+            <source>Allow Accessibility access to select window elements. Smart selection currently selects whole windows.</source>
+            <translation>允許輔助使用存取以選取視窗元素。智慧選取目前只能選取整個視窗。</translation>
+        </message>
+        <message>
+            <source>Open System Settings</source>
+            <translation>開啟系統設定</translation>
+        </message>
+        <message>
+            <source>Request Accessibility Access</source>
+            <translation>要求輔助使用權限</translation>
+        </message>
+        <message>
+            <source>Retry</source>
+            <translation>重試</translation>
+        </message>
+    </context>
+    <context>
         <name>StorageStatusSettingsWidget</name>
         <message>
             <source>App storage usage</source>

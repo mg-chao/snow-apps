@@ -4,7 +4,7 @@ use rstar::{AABB, RTree, RTreeObject};
 use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::core::Result;
 
-use crate::geometry::{contains_point, intersect_rect, rect_to_aabb, same_rect};
+use crate::windows::geometry::{contains_point, intersect_rect, rect_to_aabb, same_rect};
 use crate::{QueryControl, StopReason};
 
 #[cfg(test)]

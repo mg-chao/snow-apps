@@ -9,6 +9,7 @@
 #include "snow_shot/presentation/screenshotrecognitionresults.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/storage/pinnedwindowtypes.h"
+#include "snow_shot/storage/pinnedwindowplacement.h"
 
 #include <QByteArray>
 #include "snow_shot/presentation/mousereleaseactioncontroller.h"
@@ -38,14 +39,12 @@ class AdSlider;
 namespace snow_shot::presentation {
 class WindowShortcutManager;
 class PinnedWindowGroupManager;
+class PinnedWindowPlatform;
 } // namespace snow_shot::presentation
 namespace snow_shot::platform {
 class PhysicalCursor;
 enum class PhysicalCursorDirection;
 } // namespace snow_shot::platform
-namespace screenshot_pinned_window_native {
-class SystemMoveKeyboard;
-}
 
 class QAction;
 class QActionGroup;
@@ -95,6 +94,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     }
     void requestAutoFilterSource(std::function<void(QImage)> completion);
     struct Config {
+        snow_shot::storage::PinnedWindowPlacement placement;
+        // Pixel rectangle scoped to screen, for capture/export geometry adapters.
         QRect nativeGeometry;
         QRectF canvasSourceRect;
         QRectF contentCanvasRect;
@@ -131,6 +132,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         bool persistedThumbnailMode = false;
         bool persistedClickThroughMode = false;
         QRect persistedPreThumbnailNativeGeometry;
+        snow_shot::storage::PinnedWindowPlacement persistedPreThumbnailPlacement;
         QByteArray persistedCanvasSession;
         QByteArray persistedRecognitionResults;
         bool persistedRecognitionVisible = false;
@@ -175,6 +177,7 @@ class ScreenshotPinnedWindow final : public QWidget {
   private:
     friend class ScreenshotPinnedEditController;
     friend class ScreenshotPinnedWindowTestAccess;
+    friend class PinnedWindowWindowsEvents;
 
     enum class GeometryMutation {
         Move,
@@ -279,7 +282,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void resetImageTransform();
     void rebuildTransformedImage();
     void applyScale(int percent);
-    void applyWheelScale(int percent, const QPointF& nativeCursor);
+    void applyWheelScale(double percent, const QPointF& nativeCursor);
     bool handleOpacityWheel(QObject* watched, QWheelEvent* event);
     bool handleScaleWheel(QObject* watched, QWheelEvent* event);
     QSize orientedInitialPhysicalSize() const;
@@ -340,10 +343,30 @@ class ScreenshotPinnedWindow final : public QWidget {
     QPoint globalPositionForNativePosition(const QPoint& position) const;
     bool isControlsPanelPosition(const QPoint& position) const;
 
+    void reconcilePlatformEnvironment();
+    bool handleControlledPointer(QObject* watched, QEvent* event);
+    void resetPinnedGestures();
+    bool handlePinnedGesture(QObject* watched, QEvent* event);
+    bool beginControlledInteraction(const QPointF& desktopPosition,
+                                    std::optional<int> resizeHandle);
+    void updateControlledInteraction(const QPointF& desktopPosition);
+    void endControlledInteraction(bool cancel);
+    std::unique_ptr<snow_shot::presentation::PinnedWindowPlatform> m_platform;
+    bool m_platformReconciliationPending = false;
+    bool m_platformApplying = false;
+    std::optional<snow_shot::storage::PinnedWindowPlacement> m_platformPlacement;
+    std::optional<snow_shot::storage::PinnedWindowPlacement> m_interactionPlacement;
+    QPointF m_interactionPointer;
+    QPointF m_interactionAnchorPixels;
+    std::optional<int> m_interactionResizeHandle;
+    QPointer<QWidget> m_interactionGrabber;
+    double m_scrollZoom = 0;
+    double m_scrollOpacity = 0;
+    bool m_pinchActive = false;
+    bool m_controlledEscapeRelease = false;
     SnowCanvasRuntime m_runtime;
     std::unique_ptr<snow_shot::presentation::WindowShortcutManager> m_shortcutManager;
     snow_shot::presentation::MouseReleaseActionController m_mouseReleaseAction;
-    std::unique_ptr<screenshot_pinned_window_native::SystemMoveKeyboard> m_systemMoveKeyboard;
     std::unique_ptr<snow_shot::platform::PhysicalCursor> m_physicalCursor;
     QMap<QString, quint64> m_pinnedShortcutBindings;
     std::shared_ptr<ScreenshotExportArtifact> m_exportArtifact;
@@ -431,6 +454,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QSize m_initialPhysicalSize;
     QSize m_originalPixelSize;
     QRect m_preThumbnailNativeGeometry;
+    snow_shot::storage::PinnedWindowPlacement m_preThumbnailPlacement;
     std::unique_ptr<ScreenshotPinnedNativeGeometryController> m_nativeGeometryController;
     std::function<void(const snow_shot::storage::PinnedWindowRecord&)> m_persistenceWriter;
     std::function<void(const snow_shot::storage::PinnedWindowRecord&)>
@@ -484,7 +508,6 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::unique_ptr<ScreenshotPinnedPointerPresence> m_pointerPresence;
     bool m_windowActive = false;
     bool m_passiveGeometryReconciliationActive = false;
-    WId m_synchronizedResizeWindowId = 0;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTPINNEDWINDOW_H

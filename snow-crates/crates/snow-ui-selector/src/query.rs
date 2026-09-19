@@ -12,6 +12,7 @@ pub enum StopReason {
     ProviderFailure,
     Cancelled,
     TraversalLimit,
+    PermissionRequired,
 }
 
 #[derive(Clone, Debug)]
@@ -23,6 +24,7 @@ pub struct QueryResult {
 pub struct QueryControl<'a> {
     pub(crate) budget: Duration,
     pub(crate) call_limit: Duration,
+    #[cfg(windows)]
     pub(crate) retry_timeout: bool,
     pub(crate) publication_interval: Option<Duration>,
     pub(crate) cancelled: &'a dyn Fn() -> bool,
@@ -33,6 +35,7 @@ impl QueryControl<'_> {
         Self {
             budget: Duration::from_millis(168),
             call_limit: Duration::from_millis(168),
+            #[cfg(windows)]
             retry_timeout: false,
             publication_interval: None,
             cancelled: &|| false,
@@ -43,6 +46,7 @@ impl QueryControl<'_> {
         QueryControl {
             budget: Duration::from_millis(1500),
             call_limit: Duration::from_millis(500),
+            #[cfg(windows)]
             retry_timeout: true,
             publication_interval: Some(Duration::from_millis(32)),
             cancelled,
@@ -50,6 +54,11 @@ impl QueryControl<'_> {
     }
 }
 
-/// Plain geometry from one capture; safe to transfer between COM-owning workers.
-#[derive(Clone, Debug, Default)]
-pub struct WindowSnapshot(pub(crate) Vec<(isize, windows::Win32::Foundation::RECT)>);
+impl<'a> QueryControl<'a> {
+    pub fn foreground_with_cancellation(cancelled: &'a dyn Fn() -> bool) -> Self {
+        Self {
+            cancelled,
+            ..Self::foreground()
+        }
+    }
+}
