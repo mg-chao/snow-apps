@@ -940,6 +940,7 @@ fn run_sample(
         ExportFormat::Mp4,
     );
     let keyboard = scenario.keyboard_overlay.then(|| KeyboardOverlayConfig {
+        font: None,
         keycap_size: 64,
         background_rgba: KEYBOARD_BACKGROUND_RGBA,
         text_rgba: KEYBOARD_TEXT_RGBA,

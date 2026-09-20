@@ -34,6 +34,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
 fn main() -> Result<(), String> {
     for size in [(1920, 1080), (3840, 2160)] {
         let style = KeyboardOverlayConfig {
+            font: None,
             keycap_size: 64,
             background_rgba: [31, 31, 31, 204],
             text_rgba: [255, 255, 255, 217],

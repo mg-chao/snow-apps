@@ -15,7 +15,11 @@ mod platform {
     use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
     use windows::Win32::Graphics::Imaging::*;
     use windows::Win32::System::Com::*;
-    use windows::core::w;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        NONCLIENTMETRICSW, SPI_GETNONCLIENTMETRICS, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+        SystemParametersInfoW,
+    };
+    use windows::core::{Interface, PCWSTR, w};
 
     struct ComApartment;
     impl Drop for ComApartment {
@@ -27,6 +31,10 @@ mod platform {
     }
     struct Rasterizer {
         write: IDWriteFactory,
+        collection: Option<IDWriteFontCollection>,
+        fallback: IDWriteFontFallback,
+        family: Vec<u16>,
+        weight: DWRITE_FONT_WEIGHT,
         draw: ID2D1Factory,
         imaging: IWICImagingFactory,
         config: KeyboardOverlayConfig,
@@ -35,12 +43,78 @@ mod platform {
     }
 
     pub fn create(config: &KeyboardOverlayConfig) -> Result<Box<dyn KeycapRasterizer>, String> {
+        create_native(config, None)
+            .map(|value| Box::new(value) as Box<dyn KeycapRasterizer>)
+            .map_err(|e| e.to_string())
+    }
+
+    fn create_native(
+        config: &KeyboardOverlayConfig,
+        collection: Option<IDWriteFontCollection>,
+    ) -> windows::core::Result<Rasterizer> {
         let native = || -> windows::core::Result<Rasterizer> {
             unsafe {
                 CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
                 let apartment = ComApartment;
+                let write: IDWriteFactory2 = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
+                let fallback = write.CreateFontFallbackBuilder()?;
+                let (family, weight) = if let Some(font) = &config.font {
+                    // Qt resolves the CJK fallback from the same application font
+                    // as the rest of Snow Shot. Apply it before measuring labels.
+                    let cjk: Vec<u16> = font.cjk_family.encode_utf16().chain(Some(0)).collect();
+                    fallback.AddMapping(
+                        &[
+                            DWRITE_UNICODE_RANGE {
+                                first: 0x3000,
+                                last: 0x303f,
+                            },
+                            DWRITE_UNICODE_RANGE {
+                                first: 0x3400,
+                                last: 0x9fff,
+                            },
+                            DWRITE_UNICODE_RANGE {
+                                first: 0xf900,
+                                last: 0xfaff,
+                            },
+                            DWRITE_UNICODE_RANGE {
+                                first: 0x20000,
+                                last: 0x323af,
+                            },
+                        ],
+                        &[cjk.as_ptr()],
+                        collection.as_ref(),
+                        None,
+                        None,
+                        1.0,
+                    )?;
+                    (
+                        font.family.encode_utf16().chain(Some(0)).collect(),
+                        font.weight as i32,
+                    )
+                } else {
+                    // Standalone/older callers inherit the current Windows UI font.
+                    let mut metrics = NONCLIENTMETRICSW {
+                        cbSize: std::mem::size_of::<NONCLIENTMETRICSW>() as u32,
+                        ..Default::default()
+                    };
+                    SystemParametersInfoW(
+                        SPI_GETNONCLIENTMETRICS,
+                        metrics.cbSize,
+                        Some((&raw mut metrics).cast()),
+                        SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+                    )?;
+                    (
+                        metrics.lfMessageFont.lfFaceName.to_vec(),
+                        metrics.lfMessageFont.lfWeight,
+                    )
+                };
+                fallback.AddMappings(&write.GetSystemFontFallback()?)?;
                 Ok(Rasterizer {
-                    write: DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?,
+                    fallback: fallback.CreateFontFallback()?,
+                    family,
+                    weight: DWRITE_FONT_WEIGHT(weight),
+                    collection,
+                    write: write.cast()?,
                     draw: D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)?,
                     imaging: CoCreateInstance(
                         &CLSID_WICImagingFactory,
@@ -52,14 +126,11 @@ mod platform {
                 })
             }
         };
-        native()
-            .and_then(|value| {
-                // Validate the complete rendering path before recording startup reports success.
-                value.render("M", config.keycap_size as f32 / KEYCAP_SIZE as f32)?;
-                Ok(value)
-            })
-            .map(|value| Box::new(value) as Box<dyn KeycapRasterizer>)
-            .map_err(|e| e.to_string())
+        native().and_then(|value| {
+            // Validate the complete rendering path before recording startup reports success.
+            value.render("M", config.keycap_size as f32 / KEYCAP_SIZE as f32)?;
+            Ok(value)
+        })
     }
 
     fn color(rgba: [u8; 4]) -> D2D1_COLOR_F {
@@ -75,9 +146,9 @@ mod platform {
         fn text_layout(&self, label: &str) -> windows::core::Result<(IDWriteTextLayout, u32)> {
             unsafe {
                 let format = self.write.CreateTextFormat(
-                    w!("Segoe UI"),
-                    None,
-                    DWRITE_FONT_WEIGHT_MEDIUM,
+                    PCWSTR(self.family.as_ptr()),
+                    self.collection.as_ref(),
+                    self.weight,
                     DWRITE_FONT_STYLE_NORMAL,
                     DWRITE_FONT_STRETCH_NORMAL,
                     32.0,
@@ -86,6 +157,9 @@ mod platform {
                 format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
                 let text: Vec<_> = label.encode_utf16().collect();
                 let layout = self.write.CreateTextLayout(&text, &format, 4096.0, 256.0)?;
+                layout
+                    .cast::<IDWriteTextLayout2>()?
+                    .SetFontFallback(&self.fallback)?;
                 let mut metrics = DWRITE_TEXT_METRICS::default();
                 layout.GetMetrics(&mut metrics)?;
                 // Sublinear growth keeps long legends compact, with equal padding for
@@ -113,8 +187,17 @@ mod platform {
         }
 
         fn render(&self, label: &str, scale: f32) -> windows::core::Result<Keycap> {
+            let (layout, width) = self.text_layout(label)?;
+            self.render_layout(&layout, width, scale)
+        }
+
+        fn render_layout(
+            &self,
+            layout: &IDWriteTextLayout,
+            width: u32,
+            scale: f32,
+        ) -> windows::core::Result<Keycap> {
             unsafe {
-                let (layout, width) = self.text_layout(label)?;
                 let logical_width = width;
                 let width = (width as f32 * scale).ceil() as u32;
                 let height = (KEYCAP_SIZE as f32 * scale).round() as u32;
@@ -159,7 +242,7 @@ mod platform {
                 target.DrawRoundedRectangle(&rect, &border, 2.0, None);
                 target.DrawTextLayout(
                     Default::default(),
-                    &layout,
+                    layout,
                     &foreground,
                     D2D1_DRAW_TEXT_OPTIONS_CLIP,
                 );
@@ -187,17 +270,204 @@ mod platform {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use std::os::windows::ffi::OsStrExt;
+
+        fn fixture_rasterizer(config: &KeyboardOverlayConfig) -> Rasterizer {
+            // An isolated font collection exercises the real DirectWrite path,
+            // including missing-glyph fallback, without installed-language dependencies.
+            unsafe {
+                let write: IDWriteFactory5 =
+                    DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).unwrap();
+                let builder = write.CreateFontSetBuilder().unwrap();
+                for family in ["Sans", "Mono", "Han"] {
+                    for style in ["Regular", "Bold"] {
+                        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                            .join("../../../test-support/fonts")
+                            .join(format!("SnowRecordingTest{family}-{style}.ttf"));
+                        let path: Vec<u16> =
+                            path.as_os_str().encode_wide().chain(Some(0)).collect();
+                        builder
+                            .AddFontFile(
+                                &write
+                                    .CreateFontFileReference(PCWSTR(path.as_ptr()), None)
+                                    .unwrap(),
+                            )
+                            .unwrap();
+                    }
+                }
+                let collection = write
+                    .CreateFontCollectionFromFontSet(&builder.CreateFontSet().unwrap())
+                    .unwrap()
+                    .cast()
+                    .unwrap();
+                create_native(config, Some(collection)).unwrap()
+            }
+        }
+
+        #[test]
+        fn chinese_labels_render_with_one_ui_font() {
+            let config = KeyboardOverlayConfig {
+                font: Some(
+                    crate::keyboard_overlay::KeyboardOverlayFont::new(
+                        "Snow Recording Test Sans",
+                        "Snow Recording Test Han",
+                        400,
+                    )
+                    .unwrap(),
+                ),
+                keycap_size: 64,
+                background_rgba: [0; 4],
+                border_rgba: [0; 4],
+                text_rgba: [255; 4],
+                labels: Default::default(),
+            };
+            let rasterizer = fixture_rasterizer(&config);
+            // Compare fallback pixels against an explicitly selected fixture
+            // family, without a golden image tied to a DirectWrite version.
+            for (label, family, start) in [
+                ("鼠标左键", w!("Snow Recording Test Han"), 0),
+                ("鼠標右鍵", w!("Snow Recording Test Han"), 0),
+                ("空格退格鍵", w!("Snow Recording Test Han"), 0),
+                ("Ctrl鼠标左键", w!("Snow Recording Test Han"), 4),
+                ("\u{20000}", w!("Snow Recording Test Han"), 0),
+                ("Ctrl", w!("Snow Recording Test Sans"), 0),
+            ] {
+                for scale in [0.5, 1.0, 1.5, 2.0] {
+                    let actual = rasterizer.render(label, scale).unwrap();
+                    let (layout, width) = rasterizer.text_layout(label).unwrap();
+                    unsafe {
+                        layout
+                            .cast::<IDWriteTextLayout2>()
+                            .unwrap()
+                            .SetFontFallback(None)
+                            .unwrap();
+                        layout
+                            .SetFontFamilyName(
+                                family,
+                                DWRITE_TEXT_RANGE {
+                                    startPosition: start,
+                                    length: label.encode_utf16().count() as u32 - start,
+                                },
+                            )
+                            .unwrap();
+                    }
+                    let expected = rasterizer.render_layout(&layout, width, scale).unwrap();
+                    assert!(actual.pixels.iter().any(|value| *value != 0));
+                    assert_eq!(
+                        (actual.width, actual.height),
+                        (expected.width, expected.height)
+                    );
+                    assert!(
+                        actual.pixels == expected.pixels,
+                        "{label} at {scale} must use a consistent UI font"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn application_font_family_and_weight_control_rendered_glyphs() {
+            for (family, cjk_family, weight) in [
+                ("Snow Recording Test Sans", "Snow Recording Test Han", 400),
+                ("Snow Recording Test Mono", "Snow Recording Test Han", 700),
+            ] {
+                let config = KeyboardOverlayConfig {
+                    font: Some(
+                        crate::keyboard_overlay::KeyboardOverlayFont::new(
+                            family, cjk_family, weight,
+                        )
+                        .unwrap(),
+                    ),
+                    keycap_size: 64,
+                    background_rgba: [0; 4],
+                    border_rgba: [0; 4],
+                    text_rgba: [255; 4],
+                    labels: Default::default(),
+                };
+                let rasterizer = fixture_rasterizer(&config);
+                for (label, expected_family) in [("Ctrl", family), ("鼠标左键", cjk_family)] {
+                    let actual = rasterizer.render(label, 1.0).unwrap();
+                    let (layout, width) = rasterizer.text_layout(label).unwrap();
+                    let name: Vec<_> = expected_family.encode_utf16().chain(Some(0)).collect();
+                    let range = DWRITE_TEXT_RANGE {
+                        startPosition: 0,
+                        length: label.encode_utf16().count() as u32,
+                    };
+                    unsafe {
+                        layout
+                            .cast::<IDWriteTextLayout2>()
+                            .unwrap()
+                            .SetFontFallback(None)
+                            .unwrap();
+                        layout
+                            .SetFontFamilyName(PCWSTR(name.as_ptr()), range)
+                            .unwrap();
+                        layout
+                            .SetFontWeight(DWRITE_FONT_WEIGHT(weight as i32), range)
+                            .unwrap();
+                    }
+                    let expected = rasterizer.render_layout(&layout, width, 1.0).unwrap();
+                    assert!(
+                        actual.pixels == expected.pixels,
+                        "{label}: {expected_family}, {weight}"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn changing_font_family_or_weight_changes_pixels() {
+            let render = |family, weight, label| {
+                let config = KeyboardOverlayConfig {
+                    font: Some(
+                        crate::keyboard_overlay::KeyboardOverlayFont::new(
+                            family,
+                            "Snow Recording Test Han",
+                            weight,
+                        )
+                        .unwrap(),
+                    ),
+                    keycap_size: 64,
+                    background_rgba: [0; 4],
+                    border_rgba: [0; 4],
+                    text_rgba: [255; 4],
+                    labels: Default::default(),
+                };
+                fixture_rasterizer(&config)
+                    .render(label, 1.0)
+                    .unwrap()
+                    .pixels
+            };
+            assert_ne!(
+                render("Snow Recording Test Sans", 400, "WWW"),
+                render("Snow Recording Test Mono", 400, "WWW")
+            );
+            for label in ["Ctrl", "鼠标左键", "Ctrl\u{20000}"] {
+                assert_ne!(
+                    render("Snow Recording Test Sans", 400, label),
+                    render("Snow Recording Test Sans", 700, label)
+                );
+            }
+        }
 
         #[test]
         fn native_keycaps_fit_label_width_and_keep_fixed_height() {
             let config = KeyboardOverlayConfig {
+                font: Some(
+                    crate::keyboard_overlay::KeyboardOverlayFont::new(
+                        "Snow Recording Test Sans",
+                        "Snow Recording Test Han",
+                        400,
+                    )
+                    .unwrap(),
+                ),
                 keycap_size: 64,
                 background_rgba: [0, 0, 0, 255],
                 border_rgba: [20, 20, 20, 255],
                 text_rgba: [255, 255, 255, 255],
                 labels: Default::default(),
             };
-            let mut rasterizer = create(&config).unwrap();
+            let mut rasterizer = fixture_rasterizer(&config);
             for size in [32, 64, 96, 128] {
                 let cap = rasterizer.rasterize("Ctrl", size as f32 / 64.0).unwrap();
                 assert_eq!(cap.height, size);
@@ -295,12 +565,20 @@ mod platform {
             label: &str,
             scale: f32,
         ) -> Result<crate::keyboard_overlay::Keycap, String> {
-            let image = snow_macos::text::keycap(
+            let image = snow_macos::text::keycap_with_font(
                 label,
                 scale,
                 self.0.background_rgba,
                 self.0.text_rgba,
                 self.0.border_rgba,
+                self.0
+                    .font
+                    .as_ref()
+                    .map(|font| snow_macos::text::KeycapFont {
+                        family: &font.family,
+                        cjk_family: &font.cjk_family,
+                        weight: font.weight,
+                    }),
             )
             .map_err(|e| e.to_string())?;
             Ok(crate::keyboard_overlay::Keycap {

@@ -1,8 +1,11 @@
 use crate::mouse_hook::ObservedMouseButton;
 use crate::surface::{RgbaSurface, Surface};
 use std::collections::VecDeque;
-pub const CLICK_ANIMATION_MS: u64 = 450;
+pub const CLICK_ANIMATION_MS: u64 = 600;
 pub const CLICK_QUEUE_DEPTH: usize = 128;
+/// Half-open pixel bounds [-radius, radius), with a one-pixel feather.
+/// Passed to the GPU compositor as well as used by the CPU/preview renderer.
+pub const HIGHLIGHT_RADIUS: i32 = 41;
 #[derive(Clone, Copy)]
 pub struct RenderClick {
     pub timestamp_ms: u64,
@@ -62,7 +65,7 @@ pub fn draw_clicks_to(
             continue;
         }
         let progress = age as f32 / CLICK_ANIMATION_MS as f32;
-        let radius = 7 + (progress * 25.0).round() as i32;
+        let radius = 7 + (progress * 33.0).round() as i32;
         let alpha = (f32::from(color[3]) * (1.0 - progress)).round() as u8;
         let (x, y) = scale_point(click.x, click.y, source_size, output_size);
         let thickness = match click.button {
@@ -131,15 +134,18 @@ pub fn draw_highlight_to(
         return;
     }
     let (width, height) = surface.size();
-    for y in (center.1.saturating_sub(20)).max(0)..(center.1.saturating_add(20)).min(height as i32)
+    for y in (center.1.saturating_sub(HIGHLIGHT_RADIUS)).max(0)
+        ..(center.1.saturating_add(HIGHLIGHT_RADIUS)).min(height as i32)
     {
-        for x in
-            (center.0.saturating_sub(20)).max(0)..(center.0.saturating_add(20)).min(width as i32)
+        for x in (center.0.saturating_sub(HIGHLIGHT_RADIUS)).max(0)
+            ..(center.0.saturating_add(HIGHLIGHT_RADIUS)).min(width as i32)
         {
             let dx = (x - center.0) as f32 + 0.5;
             let dy = (y - center.1) as f32 + 0.5;
-            let coverage = (20.5 - (dx * dx + dy * dy).sqrt()).clamp(0.0, 1.0);
-            let alpha = (f32::from(color[3]) * coverage).round() as u32;
+            let coverage =
+                (HIGHLIGHT_RADIUS as f32 + 0.5 - (dx * dx + dy * dy).sqrt()).clamp(0.0, 1.0);
+            // Ties round to even so the CPU reference matches HLSL round() in recording_cursor.hlsl.
+            let alpha = (f32::from(color[3]) * coverage).round_ties_even() as u32;
             if alpha == 0 {
                 continue;
             }
@@ -187,11 +193,11 @@ mod highlight_tests {
     }
     #[test]
     fn highlight_clips_and_zero_alpha_is_identity() {
-        let mut pixels = vec![255; 16 * 16 * 4];
+        let mut pixels = vec![255; 96 * 96 * 4];
         draw_highlight_to(
             &mut RgbaSurface {
                 pixels: &mut pixels,
-                dimensions: (16, 16),
+                dimensions: (96, 96),
             },
             (0, 0),
             [255, 255, 0, 0],
@@ -201,7 +207,7 @@ mod highlight_tests {
         draw_highlight_to(
             &mut RgbaSurface {
                 pixels: &mut pixels,
-                dimensions: (16, 16),
+                dimensions: (96, 96),
             },
             (0, 0),
             [255, 255, 0, 255],

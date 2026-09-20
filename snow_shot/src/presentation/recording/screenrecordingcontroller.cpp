@@ -720,6 +720,7 @@ struct ScreenRecordingController::Impl {
             sessionMouseClickColor = mouseClickColor;
             sessionShowCursor = showCursor;
             const bool audioSupported = outputFormat == QStringLiteral("mp4");
+            const RecordingKeyboardFont keyboardFont;
             const RecordingKeyboardTheme keyboardTheme(keyboardBackgroundColor,
                                                        keyboardForegroundColor);
             QVector<std::uint32_t> excludedWindowIds;
@@ -768,6 +769,9 @@ struct ScreenRecordingController::Impl {
                 {},
                 mouseHighlightEnabled ? packedRgba(mouseHighlightColor) : 0u,
                 static_cast<uint32_t>(recordMouseClicks),
+                nullptr,
+                nullptr,
+                0u,
             };
             const QString baseName =
                 ScreenshotImageFileService::suggestedBaseName(settings.videoFilenameFormat());
@@ -780,8 +784,8 @@ struct ScreenRecordingController::Impl {
             // paint. The FFI error string is thread-local, so it is read here.
             startFuture = std::async(
                 std::launch::async,
-                [config, excludedWindowIds, directories, baseName, extension,
-                 keyboard]() mutable -> StartAttemptResult {
+                [config, excludedWindowIds, directories, baseName, extension, keyboard,
+                 keyboardFont]() mutable -> StartAttemptResult {
                     StartAttemptResult result;
                     result.outputPath = chooseRecordingOutputPath(directories, baseName, extension);
                     if (result.outputPath.isEmpty()) {
@@ -793,6 +797,7 @@ struct ScreenRecordingController::Impl {
                     const QByteArray outputUtf8 =
                         QDir::toNativeSeparators(result.outputPath).toUtf8();
                     const RecordingKeyboardLabels labels(keyboard);
+                    keyboardFont.applyTo(config);
                     config.output_file_utf8 = outputUtf8.constData();
                     config.keyboard_labels = labels.entries.constData();
                     config.keyboard_label_count = static_cast<uint32_t>(labels.entries.size());

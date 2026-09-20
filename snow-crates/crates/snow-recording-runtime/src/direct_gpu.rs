@@ -709,7 +709,7 @@ impl GpuVisualCompositor {
             i32::from(color[2]),
             i32::from(color[3]),
             2,
-            0,
+            snow_recording_effects::mouse_effects::HIGHLIGHT_RADIUS,
             0,
             0,
         ];
@@ -1021,7 +1021,10 @@ mod tests {
             .map_err(gpu_error)?;
         let device = SharedDevice::create(&adapter).map_err(gpu_error)?;
         let _lock = device.lock();
-        let size = (64, 48);
+        // Include the complete disk and untouched surrounding pixels, plus
+        // partially/fully clipped disks. A small frame can miss these invariants.
+        let size = (128, 112);
+        let stride = size.0 as usize * 4;
         let background = device
             .texture(
                 size.0,
@@ -1030,7 +1033,7 @@ mod tests {
                 (D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET).0 as u32,
             )
             .map_err(gpu_error)?;
-        let mut reference = vec![0; 64 * 48 * 4];
+        let mut reference = vec![0; stride * size.1 as usize];
         for (index, pixel) in reference.chunks_exact_mut(4).enumerate() {
             pixel.copy_from_slice(&[index as u8, (index / 7) as u8, (index / 11) as u8, 255]);
         }
@@ -1044,7 +1047,7 @@ mod tests {
                 0,
                 None,
                 bgra.as_ptr().cast(),
-                256,
+                stride as u32,
                 0,
             );
         }
@@ -1061,7 +1064,14 @@ mod tests {
         }
         .map_err(gpu_error)?;
         let staging = staging.ok_or_else(|| gpu_error("staging texture"))?;
-        for center in [(0, 0), (32, 24), (63, 47)] {
+        let radius = snow_recording_effects::mouse_effects::HIGHLIGHT_RADIUS;
+        for center in [
+            (0, 0),
+            (64, 56),
+            (127, 111),
+            (-radius, 56),
+            (64, -radius - 1),
+        ] {
             for color in [
                 [255, 255, 0, 128],
                 [80, 140, 220, 255],
@@ -1092,21 +1102,41 @@ mod tests {
                 }
                 .map_err(gpu_error)?;
                 let mut actual = Vec::new();
-                for row in 0..48 {
+                for row in 0..size.1 as usize {
                     actual.extend_from_slice(unsafe {
                         std::slice::from_raw_parts(
                             mapped
                                 .pData
                                 .cast::<u8>()
                                 .add(row * mapped.RowPitch as usize),
-                            256,
+                            stride,
                         )
                     });
                 }
                 unsafe {
                     device.context().Unmap(&staging, 0);
                 }
-                assert_eq!(actual, expected, "highlight {center:?} {color:?}");
+                assert_eq!(actual.len(), expected.len());
+                for (index, (actual, expected)) in actual.iter().zip(&expected).enumerate() {
+                    let pixel = index / 4;
+                    let channel = index % 4;
+                    let x = (pixel % size.0 as usize) as i32 - center.0;
+                    let y = (pixel / size.0 as usize) as i32 - center.1;
+                    let distance = (f64::from(x) + 0.5).hypot(f64::from(y) + 0.5);
+                    let feather = (-radius..radius).contains(&x)
+                        && (-radius..radius).contains(&y)
+                        && distance > f64::from(radius) - 0.5
+                        && distance < f64::from(radius) + 0.5;
+                    // Only feathered RGB values depend on sqrt precision. Alpha,
+                    // the interior, clipped pixels, and identity colors remain exact.
+                    let tolerance =
+                        u8::from(feather && color[3] != 0 && channel < 3 && color[channel] != 255);
+                    assert!(
+                        actual.abs_diff(*expected) <= tolerance,
+                        "highlight {center:?} {color:?} pixel ({x}, {y}) channel {channel}: \
+                         {actual} != {expected} (tolerance {tolerance})"
+                    );
+                }
             }
         }
         Ok(())
@@ -1242,6 +1272,7 @@ mod tests {
             config.mouse_click_rgba = [0; 4];
             config.mouse_trail_rgba = [0; 4];
             config.keyboard = Some(KeyboardOverlayConfig {
+                font: None,
                 keycap_size: 64,
                 background_rgba: [0, 0, 0, 204],
                 text_rgba: [255; 4],

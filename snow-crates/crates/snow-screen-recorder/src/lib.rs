@@ -15,10 +15,10 @@ pub use snow_recording_model::{
 };
 pub use snow_recording_runtime::{
     AudioChannels, CaptureBackendKind, DirectRecordingConfig, DirectRecordingReport,
-    DirectRecordingSession, KeyboardOverlayConfig, MediaPermission, MonitorSelector,
-    RecordingAudioConfig, RecordingAudioTrackConfig, RecordingAudioTrackSource, RecordingConfig,
-    RecordingRegion, RecordingSession, RecordingState, RecordingTarget, ScreenRecorderError,
-    WindowId,
+    DirectRecordingSession, KeyboardOverlayConfig, KeyboardOverlayFont, MediaPermission,
+    MonitorSelector, RecordingAudioConfig, RecordingAudioTrackConfig, RecordingAudioTrackSource,
+    RecordingConfig, RecordingRegion, RecordingSession, RecordingState, RecordingTarget,
+    ScreenRecorderError, WindowId,
 };
 
 #[cfg(target_os = "macos")]

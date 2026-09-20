@@ -1,3 +1,4 @@
+#include <QFontDatabase>
 #include "recording_effect_test_source.h"
 #include "../src/presentation/recording/recordingeffectstyle.h"
 #include "../src/presentation/recording/recordingeffectgeometry.h"
@@ -72,6 +73,8 @@ std::unique_ptr<RecordingEffectsSource> testEffectsSource() {
 SnowRecordingSession session;
 std::atomic<int> starts = 0;
 SnowCaptureDirectRecordingConfig lastDirectConfig{};
+QByteArray lastKeyboardFontFamily;
+QByteArray lastKeyboardCjkFontFamily;
 std::vector<uint32_t> lastExcludedWindows;
 std::atomic<int> exports = 0;
 std::shared_future<void> exportGate;
@@ -678,6 +681,36 @@ void effectsPreviewLifecycle() {
     preview.setEligible(true);
     pumpPreview();
     require(state->active, "a fresh activation must recover after preview failure");
+}
+
+void recordingKeyboardFontFollowsApplication() {
+    const QFont original = QApplication::font();
+    ScreenRecordingAreaWindow area;
+    area.setPhysicalRegion(QRect(32, 32, 320, 240));
+    auto state = std::make_shared<RecordingEffectTestState>();
+    RecordingEffectPreview preview(area, std::make_unique<RecordingEffectTestSource>(state));
+    preview.configure(area.physicalRegion(), QSize(320, 240), Qt::transparent, Qt::transparent,
+                      true);
+    preview.setEligible(true);
+    area.show();
+    pumpPreview();
+    require(state->keyboardFontFamily == QFontInfo(original).family().toUtf8() &&
+                state->keyboardFontWeight == static_cast<uint32_t>(original.weight()) &&
+                state->keyboardCjkFontFamily == QByteArray("Snow Recording Test Han"),
+            "preview must receive the application's resolved UI font and Chinese fallback");
+    const quint64 generation = state->generation;
+    QFont changed = original;
+    changed.setFamily(QStringLiteral("Snow Recording Test Mono"));
+    changed.setWeight(QFont::Bold);
+    QApplication::setFont(changed);
+    pumpPreview();
+    require(state->generation > generation &&
+                state->keyboardFontFamily == QFontInfo(changed).family().toUtf8() &&
+                state->keyboardCjkFontFamily == QByteArray("Snow Recording Test Han") &&
+                state->keyboardFontWeight == static_cast<uint32_t>(QFont::Bold),
+            "an open preview must follow application font changes");
+    QApplication::setFont(original);
+    pumpPreview();
 }
 
 // The window clears itself fully before painting the border, so a zero-alpha
@@ -1340,6 +1373,8 @@ snow_recording_session_create_direct(const SnowCaptureDirectRecordingConfig* con
     // may be touched here. The preview label invariant is asserted on the GUI
     // thread by controllerPreviewTransitions instead.
     lastDirectConfig = *config;
+    lastKeyboardFontFamily = config->keyboard_font_family_utf8;
+    lastKeyboardCjkFontFamily = config->keyboard_cjk_font_family_utf8;
     lastExcludedWindows.clear();
     if (config->exclusions.window_count != 0) {
         lastExcludedWindows.assign(config->exclusions.windows,
@@ -1402,6 +1437,7 @@ int main(int argc, char** argv) {
     RecordingEffectsBenchmarkApplication app(argc, argv);
 #else
     QApplication app(argc, argv);
+
 #endif
     QTemporaryDir temporary;
     require(temporary.isValid(), "temporary storage must exist");
@@ -1451,6 +1487,20 @@ int main(int argc, char** argv) {
         return result;
     }
 #endif
+    // The offscreen plugin may have no system font database. These original
+    // fixtures exercise real font resolution without requiring language packs.
+    for (const auto* name : {"SnowRecordingTestSans-Regular.ttf", "SnowRecordingTestSans-Bold.ttf",
+                             "SnowRecordingTestMono-Regular.ttf", "SnowRecordingTestMono-Bold.ttf",
+                             "SnowRecordingTestHan-Regular.ttf", "SnowRecordingTestHan-Bold.ttf"}) {
+        require(QFontDatabase::addApplicationFont(QStringLiteral(":/recording-test-fonts/") +
+                                                  QString::fromLatin1(name)) >= 0,
+                "load offscreen recording font");
+    }
+    QFont testFont(QStringLiteral("Snow Recording Test Sans"));
+    testFont.setWeight(QFont::Normal);
+    QApplication::setFont(testFont);
+    QFontDatabase::setApplicationFallbackFontFamilies(QChar::Script_Han,
+                                                      {QStringLiteral("Snow Recording Test Han")});
     if (app.arguments().contains(QStringLiteral("--effects-preview-only"))) {
         class KeyTranslator : public QTranslator {
           public:
@@ -1471,6 +1521,7 @@ int main(int argc, char** argv) {
                     localized.text.contains(QByteArray("Num 0")),
                 "key legends must use English names");
         app.removeTranslator(&translator);
+        recordingKeyboardFontFollowsApplication();
         effectsPreviewLifecycle();
         areaWindowPaintsInputSurfaceOnlyWhenItIsVisible();
         previewIgnoresEventsOtherThanDialogVisibility();
@@ -1602,6 +1653,11 @@ int main(int argc, char** argv) {
         controller.startRecording();
         waitForRecording(controller);
         require(starts == 1 && controller.isRecording(), "a fresh request must start exactly once");
+        const RecordingKeyboardFont expectedFont;
+        require(lastKeyboardFontFamily == expectedFont.family &&
+                    lastKeyboardCjkFontFamily == expectedFont.cjkFamily &&
+                    lastDirectConfig.keyboard_font_weight == expectedFont.weight,
+                "saved recordings must receive the same application font as the preview");
         require(lastDirectConfig.loop_animated_images == 1, "recordings must default to looping");
         require(snow_shot::storage::RecordingSettings().setLoopAnimatedImages(false),
                 "disable looping for subsequent recordings");

@@ -7,7 +7,8 @@ cbuffer Parameters : register(b0) {
     int2 scaledSize;
     int2 shapeSize;
     int masked;
-    int3 reserved;
+    int highlightRadius;
+    int2 reserved;
 };
 
 [numthreads(16, 16, 1)]
@@ -17,8 +18,8 @@ void main(uint3 id : SV_DispatchThreadID) {
     int2 position = int2(id.xy) - origin;
     if (masked == 2) {
         float2 delta = float2(position) + 0.5;
-        uint alpha = (uint)round(shapeSize.y * saturate(20.5 - length(delta)));
-        if (all(position >= -20) && all(position < 20)) {
+        uint alpha = (uint)round(shapeSize.y * saturate(highlightRadius + 0.5 - length(delta)));
+        if (all(position >= -highlightRadius) && all(position < highlightRadius)) {
             uint3 color = uint3(scaledSize, shapeSize.x);
             uint3 factor = 255 * (255 - alpha) + alpha * color;
             background.rgb = (background.rgb * factor + 32512) / 65025;

@@ -277,6 +277,7 @@ pub unsafe extern "C" fn snow_recording_macos_create(
                 },
                 keyboard: (config.keyboard == 1 || config.record_mouse_clicks == 1).then(|| {
                     snow_screen_recorder::KeyboardOverlayConfig {
+                        font: None,
                         keycap_size: 64,
                         background_rgba: [24, 24, 24, 220],
                         text_rgba: [255; 4],

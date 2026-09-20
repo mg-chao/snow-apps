@@ -161,6 +161,9 @@ pub struct SnowCaptureDirectRecordingConfig {
     exclusions: SnowCaptureExclusions,
     mouse_highlight_rgba: u32,
     record_mouse_clicks: u32,
+    keyboard_font_family_utf8: *const c_char,
+    keyboard_cjk_font_family_utf8: *const c_char,
+    keyboard_font_weight: u32,
 }
 
 #[repr(C)]
@@ -170,7 +173,7 @@ struct SnowCaptureDirectRecordingConfigHeader {
     struct_size: u32,
 }
 
-pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 7;
+pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 8;
 const DIRECT_RECORDING_CONFIG_V4_FIELDS_SIZE: usize =
     std::mem::offset_of!(SnowCaptureDirectRecordingConfig, loop_animated_images);
 const DIRECT_RECORDING_CONFIG_V4_SIZE: u32 = (DIRECT_RECORDING_CONFIG_V4_FIELDS_SIZE
@@ -197,6 +200,10 @@ fn direct_config_size(version: u32) -> Result<u32, String> {
         6 => {
             Ok(std::mem::offset_of!(SnowCaptureDirectRecordingConfig, mouse_highlight_rgba) as u32)
         }
+        7 => Ok(
+            std::mem::offset_of!(SnowCaptureDirectRecordingConfig, keyboard_font_family_utf8)
+                as u32,
+        ),
         DIRECT_RECORDING_CONFIG_VERSION => Ok(DIRECT_RECORDING_CONFIG_SIZE),
         _ => Err(format!(
             "unsupported direct recording config version: {version}"
@@ -551,6 +558,22 @@ fn parse_keyboard_config(
         }
     }
     Ok(Some(snow_screen_recorder::KeyboardOverlayConfig {
+        font: if config.version >= 8 && !config.keyboard_font_family_utf8.is_null() {
+            if config.keyboard_cjk_font_family_utf8.is_null() {
+                return Err("missing keyboard CJK font family".into());
+            }
+            Some(snow_screen_recorder::KeyboardOverlayFont::new(
+                unsafe { CStr::from_ptr(config.keyboard_font_family_utf8) }
+                    .to_str()
+                    .map_err(|e| e.to_string())?,
+                unsafe { CStr::from_ptr(config.keyboard_cjk_font_family_utf8) }
+                    .to_str()
+                    .map_err(|e| e.to_string())?,
+                config.keyboard_font_weight,
+            )?)
+        } else {
+            None
+        },
         keycap_size: if config.version < 4 {
             64
         } else {
@@ -1112,16 +1135,49 @@ pub extern "C" fn snow_recording_last_error_message() -> *const c_char {
 mod tests {
     use super::*;
     #[test]
+    fn keyboard_font_is_owned_validated_and_legacy_compatible() {
+        let mut raw = direct_config(c"font.mp4");
+        raw.show_keyboard = 1;
+        let family = CString::new("Courier New").unwrap();
+        let cjk = CString::new("Microsoft JhengHei UI").unwrap();
+        raw.keyboard_font_family_utf8 = family.as_ptr();
+        raw.keyboard_cjk_font_family_utf8 = cjk.as_ptr();
+        raw.keyboard_font_weight = 700;
+        let parsed = parse_keyboard_config(&raw).unwrap().unwrap();
+        drop(family);
+        drop(cjk);
+        let font = parsed.font.unwrap();
+        assert_eq!(font.family, "Courier New");
+        assert_eq!(font.cjk_family, "Microsoft JhengHei UI");
+        assert_eq!(font.weight, 700);
+        raw.keyboard_font_family_utf8 = c"Segoe UI".as_ptr();
+        raw.keyboard_cjk_font_family_utf8 = c"Microsoft YaHei UI".as_ptr();
+        raw.keyboard_font_weight = 1000;
+        assert!(parse_keyboard_config(&raw).is_err());
+        raw.keyboard_font_weight = 400;
+        raw.keyboard_cjk_font_family_utf8 = std::ptr::null();
+        assert!(parse_keyboard_config(&raw).is_err());
+        raw.version = 7;
+        raw.struct_size = direct_config_size(7).unwrap();
+        assert!(
+            (parse_keyboard_config(&raw).unwrap().unwrap())
+                .font
+                .is_none()
+        );
+    }
+
+    #[test]
     fn direct_recording_exclusion_abi_layout() {
-        assert_eq!(DIRECT_RECORDING_CONFIG_VERSION, 7);
+        assert_eq!(DIRECT_RECORDING_CONFIG_VERSION, 8);
         assert_eq!(
             std::mem::offset_of!(SnowCaptureDirectRecordingConfig, exclusions),
             192
         );
-        assert_eq!(DIRECT_RECORDING_CONFIG_SIZE, 232);
+        assert_eq!(DIRECT_RECORDING_CONFIG_SIZE, 256);
+        assert_eq!(direct_config_size(7).unwrap(), 232);
         assert_eq!(direct_config_size(6).unwrap(), 224);
         assert_eq!(DIRECT_RECORDING_CONFIG_V5_SIZE, 192);
-        for version in [5, 6, 7] {
+        for version in [5, 6, 7, 8] {
             let header = SnowCaptureDirectRecordingConfigHeader {
                 version,
                 struct_size: 8,
@@ -1438,6 +1494,9 @@ mod tests {
             mouse_click_rgba: 0xAABBCC80,
             mouse_highlight_rgba: 0,
             record_mouse_clicks: 0,
+            keyboard_font_family_utf8: std::ptr::null(),
+            keyboard_cjk_font_family_utf8: std::ptr::null(),
+            keyboard_font_weight: 0,
             reserved: [0; 64],
             show_keyboard: 0,
             keyboard_background_rgba: 0,

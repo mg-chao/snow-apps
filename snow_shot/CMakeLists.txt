@@ -4667,6 +4667,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE "${SNOW_SHOT_APPKIT_FRAMEWORK}")
     endif()
     target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE SNOW_SHOT_TEST_HOOKS=1)
+    target_sources(snow-shot-screen-recording-controller-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test-support/fonts/recording_test_fonts.qrc")
     # Override only the test executable: exercise the real controller without
     # opening capture devices, recording the desktop, or exporting media.
     foreach(_operation create_direct destroy start pause resume stop state)

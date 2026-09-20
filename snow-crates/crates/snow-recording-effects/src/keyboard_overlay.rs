@@ -17,11 +17,37 @@ const MAX_CACHE_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyboardOverlayConfig {
+    pub font: Option<KeyboardOverlayFont>,
     pub keycap_size: u32,
     pub background_rgba: [u8; 4],
     pub text_rgba: [u8; 4],
     pub border_rgba: [u8; 4],
     pub labels: BTreeMap<u16, String>,
+}
+
+/// Application-resolved UI families and OpenType weight (1..=999).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeyboardOverlayFont {
+    pub family: String,
+    pub cjk_family: String,
+    pub weight: u32,
+}
+
+impl KeyboardOverlayFont {
+    pub fn new(family: &str, cjk_family: &str, weight: u32) -> Result<Self, String> {
+        if !(1..=999).contains(&weight)
+            || [family, cjk_family].iter().any(|name| {
+                name.trim().is_empty() || name.len() > 256 || name.chars().any(char::is_control)
+            })
+        {
+            return Err("invalid keyboard font family or weight".into());
+        }
+        Ok(Self {
+            family: family.into(),
+            cjk_family: cjk_family.into(),
+            weight,
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -508,6 +534,7 @@ mod tests {
     fn mouse_buttons_share_hold_release_and_fade_without_colliding_with_keys() {
         use crate::mouse_hook::{MouseClickObservation, ObservedMouseButton};
         let style = KeyboardOverlayConfig {
+            font: None,
             keycap_size: 64,
             background_rgba: [0; 4],
             text_rgba: [255; 4],

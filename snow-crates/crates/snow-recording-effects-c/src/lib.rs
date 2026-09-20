@@ -47,6 +47,9 @@ pub struct SnowRecordingEffectsConfig {
     pub reserved_v3: u32,
     pub highlight_rgba: u32,
     pub record_mouse_clicks: u32,
+    pub keyboard_font_family_utf8: *const c_char,
+    pub keyboard_cjk_font_family_utf8: *const c_char,
+    pub keyboard_font_weight: u32,
 }
 #[repr(C)]
 pub struct SnowRecordingEffectsTile {
@@ -89,7 +92,8 @@ unsafe fn config(raw: *const SnowRecordingEffectsConfig) -> Result<PreviewConfig
     let size = match version {
         1 | 2 => std::mem::offset_of!(SnowRecordingEffectsConfig, keyboard_size),
         3 => std::mem::offset_of!(SnowRecordingEffectsConfig, highlight_rgba),
-        4 => std::mem::size_of::<SnowRecordingEffectsConfig>(),
+        4 => std::mem::offset_of!(SnowRecordingEffectsConfig, keyboard_font_family_utf8),
+        5 => std::mem::size_of::<SnowRecordingEffectsConfig>(),
         _ => return Err("unsupported effects configuration version".into()),
     };
     if unsafe { *header.add(1) } != size as u32 {
@@ -145,6 +149,22 @@ unsafe fn config(raw: *const SnowRecordingEffectsConfig) -> Result<PreviewConfig
         generation: raw.generation,
         keyboard: (raw.show_keyboard != 0 || (raw.version >= 4 && raw.record_mouse_clicks != 0))
             .then_some(KeyboardOverlayConfig {
+                font: if raw.version >= 5 && !raw.keyboard_font_family_utf8.is_null() {
+                    if raw.keyboard_cjk_font_family_utf8.is_null() {
+                        return Err("missing keyboard CJK font family".into());
+                    }
+                    Some(snow_recording_effects::KeyboardOverlayFont::new(
+                        unsafe { CStr::from_ptr(raw.keyboard_font_family_utf8) }
+                            .to_str()
+                            .map_err(|e| e.to_string())?,
+                        unsafe { CStr::from_ptr(raw.keyboard_cjk_font_family_utf8) }
+                            .to_str()
+                            .map_err(|e| e.to_string())?,
+                        raw.keyboard_font_weight,
+                    )?)
+                } else {
+                    None
+                },
                 keycap_size: if raw.version < 3 {
                     64
                 } else {
@@ -360,6 +380,39 @@ mod tests {
     use super::*;
     use std::time::Duration;
     #[test]
+    fn keyboard_font_is_owned_validated_and_legacy_compatible() {
+        let mut raw = valid();
+        raw.show_keyboard = 1;
+        let family = CString::new("Courier New").unwrap();
+        let cjk = CString::new("Microsoft JhengHei UI").unwrap();
+        raw.keyboard_font_family_utf8 = family.as_ptr();
+        raw.keyboard_cjk_font_family_utf8 = cjk.as_ptr();
+        raw.keyboard_font_weight = 700;
+        let parsed = unsafe { config(&raw) }.unwrap().keyboard.unwrap();
+        drop(family);
+        drop(cjk);
+        let font = parsed.font.unwrap();
+        assert_eq!(font.family, "Courier New");
+        assert_eq!(font.cjk_family, "Microsoft JhengHei UI");
+        assert_eq!(font.weight, 700);
+        raw.keyboard_font_family_utf8 = c"Segoe UI".as_ptr();
+        raw.keyboard_cjk_font_family_utf8 = c"Microsoft YaHei UI".as_ptr();
+        raw.keyboard_font_weight = 1000;
+        assert!(unsafe { config(&raw) }.is_err());
+        raw.keyboard_font_weight = 400;
+        raw.keyboard_cjk_font_family_utf8 = std::ptr::null();
+        assert!(unsafe { config(&raw) }.is_err());
+        raw.version = 4;
+        raw.struct_size =
+            std::mem::offset_of!(SnowRecordingEffectsConfig, keyboard_font_family_utf8) as u32;
+        assert!(
+            (unsafe { config(&raw) }.unwrap().keyboard.unwrap())
+                .font
+                .is_none()
+        );
+    }
+
+    #[test]
     fn mouse_options_are_independent_and_v3_padding_is_ignored() {
         let mut raw = valid();
         raw.highlight_rgba = 0xffff0080;
@@ -397,7 +450,7 @@ mod tests {
 
     fn valid() -> SnowRecordingEffectsConfig {
         SnowRecordingEffectsConfig {
-            version: 4,
+            version: 5,
             struct_size: std::mem::size_of::<SnowRecordingEffectsConfig>() as u32,
             x: -1920,
             y: -100,
@@ -419,6 +472,9 @@ mod tests {
             reserved_v3: 0,
             highlight_rgba: 0,
             record_mouse_clicks: 0,
+            keyboard_font_family_utf8: std::ptr::null(),
+            keyboard_cjk_font_family_utf8: std::ptr::null(),
+            keyboard_font_weight: 0,
         }
     }
     #[test]

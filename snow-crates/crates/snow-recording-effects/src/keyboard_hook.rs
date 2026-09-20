@@ -430,6 +430,7 @@ mod platform {
                 sequence
             );
             let config = KeyboardOverlayConfig {
+                font: None,
                 keycap_size: 64,
                 background_rgba: [0; 4],
                 text_rgba: [0; 4],
@@ -529,6 +530,7 @@ mod tests {
     #[test]
     fn modifier_sides_collapse_and_altgr_hides_only_synthetic_control() {
         let config = KeyboardOverlayConfig {
+            font: None,
             keycap_size: 64,
             background_rgba: [0; 4],
             text_rgba: [0; 4],

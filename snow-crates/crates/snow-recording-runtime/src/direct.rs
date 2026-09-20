@@ -3558,7 +3558,7 @@ mod tests {
             &[255, 255, 127, 255]
         );
         assert_eq!(
-            &pixels[(40 * 100 + 71) * 4..(40 * 100 + 71) * 4 + 4],
+            &pixels[(40 * 100 + 92) * 4..(40 * 100 + 92) * 4 + 4],
             &[255; 4]
         );
         config.show_cursor = false;
@@ -4127,8 +4127,8 @@ mod tests {
             y: 1,
             button: ObservedMouseButton::Left,
         });
-        assert!(compositor.has_active_animation(&value, 950));
-        assert!(!compositor.has_active_animation(&value, 951));
+        assert!(compositor.has_active_animation(&value, 1100));
+        assert!(!compositor.has_active_animation(&value, 1101));
     }
 
     #[test]
@@ -4269,6 +4269,7 @@ mod tests {
                 synthetic.input.observe_key(key, down).unwrap();
             }
             let config = KeyboardOverlayConfig {
+                font: None,
                 keycap_size: 64,
                 background_rgba: [0; 4],
                 text_rgba: [0; 4],

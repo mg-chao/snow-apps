@@ -7,4 +7,4 @@ pub mod mouse_effects;
 pub mod mouse_hook;
 pub mod preview;
 pub mod surface;
-pub use keyboard_overlay::KeyboardOverlayConfig;
+pub use keyboard_overlay::{KeyboardOverlayConfig, KeyboardOverlayFont};

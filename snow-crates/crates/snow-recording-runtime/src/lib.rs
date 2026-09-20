@@ -12,7 +12,7 @@ pub(crate) mod keyboard_rasterizer;
 pub(crate) mod laser_trail;
 pub(crate) mod mouse_hook;
 mod output_schedule;
-pub use keyboard_overlay::KeyboardOverlayConfig;
+pub use keyboard_overlay::{KeyboardOverlayConfig, KeyboardOverlayFont};
 pub(crate) mod processor;
 pub(crate) mod temp;
 pub(crate) mod video_quality;
