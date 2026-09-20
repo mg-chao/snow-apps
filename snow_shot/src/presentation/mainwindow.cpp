@@ -341,6 +341,7 @@ void MainWindow::showAndActivate() {
     snow_shot::platform::windows::bringWindowToForeground(this);
 #elif defined(Q_OS_MACOS)
     snow_shot::platform::macos::activateWindow(this);
+    setupNativeTitleBar();
 #endif
 }
 

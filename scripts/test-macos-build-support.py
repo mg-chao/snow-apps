@@ -2,6 +2,7 @@
 """Offscreen build-script contract tests; no compiler, Qt, or network required."""
 import json
 import os
+import plistlib
 from pathlib import Path
 import signal
 import shutil
@@ -9,8 +10,20 @@ import subprocess
 import tempfile
 import threading
 import unittest
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class MacOSBundleMetadata(unittest.TestCase):
+    def test_native_languages_match_the_application_catalogs(self):
+        plist = plistlib.loads((ROOT / 'snow_shot/packaging/macos/Info.plist.in').read_bytes())
+        native_languages = {'en_US': 'en', 'zh_CN': 'zh-Hans', 'zh_TW': 'zh-Hant'}
+        catalog_languages = {ET.parse(path).getroot().attrib['language']
+                             for path in (ROOT / 'snow_shot/i18n').rglob('*.ts')}
+        self.assertEqual(set(plist['CFBundleLocalizations']),
+                         {native_languages[language] for language in catalog_languages})
+        self.assertEqual(plist['CFBundleDevelopmentRegion'], native_languages['en_US'])
 
 
 class MacOSBuildScripts(unittest.TestCase):

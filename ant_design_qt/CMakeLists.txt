@@ -56,6 +56,11 @@ file(GLOB_RECURSE ADQT_WIDGET_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src/*.h"
 )
 add_library(ant_design_qt STATIC ${ADQT_WIDGET_SOURCES})
+if(APPLE)
+    enable_language(OBJCXX)
+    target_sources(ant_design_qt PRIVATE packages/ant_design_qt/src/widgets/modal_mac.mm)
+    target_link_libraries(ant_design_qt PRIVATE "-framework AppKit")
+endif()
 add_library(adqt::widgets ALIAS ant_design_qt)
 target_include_directories(ant_design_qt SYSTEM PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src"
@@ -242,6 +247,11 @@ if(ADQT_BUILD_TESTS)
     set_tests_properties(adqt-tabs-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
     add_executable(adqt-modal-window-tests packages/ant_design_qt/tests/tst_modal_window.cpp)
+    if(APPLE)
+        set_source_files_properties(packages/ant_design_qt/tests/tst_modal_window.cpp
+            PROPERTIES LANGUAGE OBJCXX)
+        target_link_libraries(adqt-modal-window-tests PRIVATE "-framework AppKit")
+    endif()
     set_target_properties(adqt-modal-window-tests PROPERTIES AUTOMOC ON)
     target_link_libraries(adqt-modal-window-tests PRIVATE adqt::widgets Qt6::Test)
     if(TARGET Qt6::QOffscreenIntegrationPlugin)

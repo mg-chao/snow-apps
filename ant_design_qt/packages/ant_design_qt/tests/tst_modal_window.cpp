@@ -7,6 +7,10 @@
 #include <QWidget>
 #include <QtTest>
 
+#ifdef Q_OS_MACOS
+#import <AppKit/AppKit.h>
+#endif
+
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
 #endif
@@ -109,6 +113,58 @@ class TstModalWindow : public QObject {
     modal.setWindowModeDetached(true);
     requireOpenProducesVisibleWindow(modal, QStringLiteral("Ownerless detached"));
   }
+
+#ifdef Q_OS_MACOS
+  void macWindowChromeSurvivesSurfaceChanges() {
+    AdModal modal;
+    modal.setMode(AdModal::Mode::Window);
+    modal.setWindowModeDetached(true);
+    modal.setWindowModality(Qt::NonModal);
+    modal.setWindowTitle(QStringLiteral("Native modal chrome"));
+    const auto verifyChrome = [&] {
+      QWidget* surface = visibleOverlaySurface(modal.windowTitle());
+      QVERIFY(surface);
+      QVERIFY(!surface->windowFlags().testFlag(Qt::FramelessWindowHint));
+      QVERIFY(surface->windowFlags().testFlag(Qt::WindowTitleHint));
+      QVERIFY(surface->windowFlags().testFlag(Qt::ExpandedClientAreaHint));
+      QVERIFY(surface->windowFlags().testFlag(Qt::NoTitleBarBackgroundHint));
+      QVERIFY(!surface->testAttribute(Qt::WA_TranslucentBackground));
+      surface->layout()->activate();
+      QWidget* panel = modalSection(surface, "ad-modal-panel");
+      QVERIFY(panel);
+      QCOMPARE(panel->mapTo(surface, QPoint()).y(), 0);
+      if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+        NSWindow* window = reinterpret_cast<NSView*>(surface->winId()).window;
+        QVERIFY(window);
+        QVERIFY(window.styleMask & NSWindowStyleMaskTitled);
+        QVERIFY(window.styleMask & NSWindowStyleMaskFullSizeContentView);
+        QVERIFY(window.hasShadow);
+        QVERIFY(window.titlebarAppearsTransparent);
+        QCOMPARE(window.titleVisibility, NSWindowTitleHidden);
+        QVERIFY([window standardWindowButton:NSWindowCloseButton].hidden);
+        QVERIFY([window standardWindowButton:NSWindowMiniaturizeButton].hidden);
+        QVERIFY([window standardWindowButton:NSWindowZoomButton].hidden);
+      }
+    };
+    modal.open();
+    verifyChrome();
+    modal.setWindowAlwaysOnTop(true);
+    verifyChrome();
+    modal.setWindowTaskbarVisible(true);
+    verifyChrome();
+    modal.setWindowTitle(QStringLiteral("Updated native title"));
+    verifyChrome();
+    modal.setWindowAlwaysOnTop(false);
+    modal.setWindowTaskbarVisible(false);
+    verifyChrome();
+    modal.setWindowResizable(true);
+    verifyChrome();
+    modal.close();
+    modal.open();
+    verifyChrome();
+    modal.close();
+  }
+#endif
 
   void serviceShowInfoWithoutOwnerShowsDialog() {
     QPointer<AdModal> modal;

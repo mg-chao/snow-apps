@@ -14,6 +14,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QCoreApplication>
+#include <QCursor>
 #include <QDateTime>
 #include <QFileInfo>
 #include <QHash>
@@ -236,13 +237,20 @@ class SystemTrayController::Impl {
         retranslateUi();
         setMenuOptions({});
 
+        // Cocoa opens an attached menu on left-click too. Handle Context explicitly there.
+#ifndef Q_OS_MACOS
         trayIcon->setContextMenu(menu.get());
+#endif
         QObject::connect(trayIcon, &QSystemTrayIcon::activated, &q,
                          [this](QSystemTrayIcon::ActivationReason reason) {
                              if (reason == QSystemTrayIcon::Trigger) {
                                  dispatchClickAction(leftClickAction);
                              } else if (reason == QSystemTrayIcon::MiddleClick) {
                                  dispatchClickAction(middleClickAction);
+#ifdef Q_OS_MACOS
+                             } else if (reason == QSystemTrayIcon::Context) {
+                                 menu->popup(QCursor::pos());
+#endif
                              }
                          });
         QObject::connect(trayIcon, &QSystemTrayIcon::messageClicked, &q, [this]() {

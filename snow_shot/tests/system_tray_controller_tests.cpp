@@ -252,7 +252,19 @@ int main(int argc, char* argv[]) {
                 QStringLiteral(":/snow-shot/app-icons/snow-shot-tray-light.png"),
             "a readable custom image outside PNG and ICO should use the bundled fallback");
 
+#ifdef Q_OS_MACOS
+    require(trayIcon->contextMenu() == nullptr,
+            "macOS must not attach a native menu that also opens on left-click");
+    adqt::widgets::AdContextMenu* menu = nullptr;
+    for (QWidget* widget : QApplication::topLevelWidgets()) {
+        if (widget->objectName() == QStringLiteral("systemTrayMenu")) {
+            menu = dynamic_cast<adqt::widgets::AdContextMenu*>(widget);
+            break;
+        }
+    }
+#else
     auto* menu = dynamic_cast<adqt::widgets::AdContextMenu*>(trayIcon->contextMenu());
+#endif
     require(menu != nullptr, "the tray should use the Ant Design context menu");
     require(menu->minimumWidth() == 300,
             "tray context menu should retain its 300-pixel minimum width");
@@ -511,6 +523,13 @@ int main(int argc, char* argv[]) {
     }
     require(trayGroupCreated, "accepting the tray New Group dialog should create the group");
 
+#ifdef Q_OS_MACOS
+    menu->hide();
+    trayIcon->activated(QSystemTrayIcon::Context);
+    require(menu->isVisible(), "macOS right-click must open the tray menu");
+    menu->hide();
+#endif
+
     int screenshotRequests = 0;
     int showMainWindowRequests = 0;
     int exitRequests = 0;
@@ -553,6 +572,7 @@ int main(int argc, char* argv[]) {
             screenshotRequests = showMainWindowRequests = functionSettingsRequests = 0;
             quickActions.clear();
             trayIcon->activated(reason);
+            require(!menu->isVisible(), "tray click actions must not open the context menu");
             require(screenshotRequests == (action == QStringLiteral("screenshot") ? 1 : 0) &&
                         showMainWindowRequests ==
                             (action == QStringLiteral("show_main_window") ? 1 : 0) &&
@@ -577,6 +597,7 @@ int main(int argc, char* argv[]) {
             "invalid middle click must fall back to capture and pin");
     trayIcon->activated(QSystemTrayIcon::Trigger);
     trayIcon->activated(QSystemTrayIcon::Context);
+    menu->hide();
     trayIcon->activated(QSystemTrayIcon::DoubleClick);
     trayIcon->activated(QSystemTrayIcon::MiddleClick);
     trayIcon->activated(QSystemTrayIcon::Unknown);

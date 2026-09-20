@@ -6725,6 +6725,8 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/platform/macos/applicationactivation.h
         src/platform/macos/applicationactivation.mm)
     target_include_directories(snow-shot-macos-shell-native-tests PRIVATE include)
+    target_compile_definitions(snow-shot-macos-shell-native-tests PRIVATE
+        SNOW_SHOT_MACOS_INFO_PLIST="${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/Info.plist.in")
     target_link_libraries(snow-shot-macos-shell-native-tests PRIVATE
         Qt6::Widgets "-framework AppKit")
     add_test(NAME snow-shot-macos-shell-native-tests

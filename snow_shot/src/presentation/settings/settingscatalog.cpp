@@ -1161,6 +1161,7 @@ SettingsItemDefinition trayLeftClickItem() {
         trayClickActionOptions());
 }
 
+#ifndef Q_OS_MACOS
 SettingsItemDefinition trayMiddleClickItem() {
     return fixedSelectItem(
         QStringLiteral("tray.middle-click-action"),
@@ -1170,6 +1171,7 @@ SettingsItemDefinition trayMiddleClickItem() {
         QStringLiteral("tray/middle_click_action"), SettingsSelectBinding::TrayMiddleClickAction,
         trayClickActionOptions());
 }
+#endif
 
 SettingsItemDefinition translationLayoutProcessingItem() {
     return fixedSelectItem(
@@ -2008,7 +2010,11 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                                    "System tray availability and icon settings")),
                     SettingsSectionReset::TrayBehavior,
-                    {trayLeftClickItem(), trayMiddleClickItem(), trayMenuOptionsItem()},
+                    {trayLeftClickItem(),
+#ifndef Q_OS_MACOS
+                     trayMiddleClickItem(),
+#endif
+                     trayMenuOptionsItem()},
                 },
                 {
                     QStringLiteral("global-hotkeys"),

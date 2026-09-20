@@ -3,6 +3,10 @@
 #include "antd_icons.h"
 #include "theme/theme.h"
 
+#ifdef Q_OS_MACOS
+#include "modal_mac_p.h"
+#endif
+
 #include <QApplication>
 #include <QAbstractButton>
 #include <QByteArray>
@@ -246,6 +250,16 @@ class ModalOverlayWidget final : public QWidget {
 
   void setWindowResizable(bool value) { windowResizable_ = value; }
 
+#ifdef Q_OS_MACOS
+  void setVisible(bool visible) override {
+    QWidget::setVisible(visible);
+    if (visible) {
+      // Cocoa can replace the NSWindow when showing a new surface type.
+      applyWindowModeNativeChrome();
+    }
+  }
+#endif
+
   void applyWindowSurfaceFlags(Qt::WindowFlags flags) {
     if (windowFlags() == flags) {
       return;
@@ -272,6 +286,7 @@ class ModalOverlayWidget final : public QWidget {
         windowHandle()->setFlags(flags);
       }
       overrideWindowFlags(flags);
+      applyWindowModeNativeChrome();
       return;
     }
 
@@ -370,6 +385,11 @@ class ModalOverlayWidget final : public QWidget {
 #endif
 
   void applyWindowModeNativeChrome() {
+#ifdef Q_OS_MACOS
+    if (windowModeChromeEnabled_ && QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+      detail::applyMacModalChrome(this);
+    }
+#endif
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (!windowModeChromeEnabled_ || QGuiApplication::platformName() != QStringLiteral("windows")) {
       return;
@@ -1853,7 +1873,14 @@ QRect AdModal::windowModeAnchorGeometry() const {
 }
 
 Qt::WindowFlags AdModal::windowSurfaceFlags() const {
+#ifdef Q_OS_MACOS
+  // Keep a native titled frame so AppKit supplies corner clipping and shadow.
+  // The modal paints its own header and controls across the full content area.
+  Qt::WindowFlags flags = Qt::CustomizeWindowHint | Qt::WindowTitleHint |
+                          Qt::ExpandedClientAreaHint | Qt::NoTitleBarBackgroundHint;
+#else
   Qt::WindowFlags flags = Qt::FramelessWindowHint;
+#endif
   // A taskbar-visible surface must be a plain window: Qt::Tool surfaces never
   // get a taskbar button and owned dialogs only appear while their owner does.
   flags |= windowTaskbarVisible_ ? Qt::Window : (windowModeDetached_ ? Qt::Tool : Qt::Dialog);
@@ -1909,6 +1936,11 @@ void AdModal::ensureOverlay() {
   overlay->setProperty("adqt.interaction.surface", true);
   overlay->setProperty("adqt.popup.container", true);
   if (windowMode) {
+#ifdef Q_OS_MACOS
+    // The expanded content area contains our own header; the native title and
+    // buttons are hidden, so reserving their safe area adds an empty top strip.
+    overlay->setAttribute(Qt::WA_ContentsMarginsRespectsSafeArea, false);
+#endif
     overlay->setWindowTitle(windowTitle_.trimmed().isEmpty() ? tr("Modal")
                                                              : windowTitle_.trimmed());
     overlay->setWindowModality(windowModality_);

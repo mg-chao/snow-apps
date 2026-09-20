@@ -4,6 +4,8 @@
 
 #include <QApplication>
 #include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QThread>
 #include <QWidget>
 
 #include <cmath>
@@ -28,6 +30,22 @@ void flushEvents() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
 
+    NSDictionary* bundleInfo =
+        [NSDictionary dictionaryWithContentsOfFile:@SNOW_SHOT_MACOS_INFO_PLIST];
+    NSArray<NSString*>* localizations = bundleInfo[@"CFBundleLocalizations"];
+    require(localizations.count == 3, "the bundle must advertise all three catalog languages");
+    const auto requireNativeLanguage = [&](NSString* preference, NSString* expected) {
+        NSArray<NSString*>* selected = [NSBundle preferredLocalizationsFromArray:localizations
+                                                                  forPreferences:@[ preference ]];
+        require([selected.firstObject isEqualToString:expected],
+                "AppKit must resolve the system language to the matching application language");
+    };
+    requireNativeLanguage(@"en-US", @"en");
+    requireNativeLanguage(@"zh-CN", @"zh-Hans");
+    requireNativeLanguage(@"zh-TW", @"zh-Hant");
+    requireNativeLanguage(@"zh-HK", @"zh-Hant");
+    requireNativeLanguage(@"de-DE", @"en");
+
     id<NSApplicationDelegate> originalDelegate = NSApp.delegate;
     bool reopened = false;
     {
@@ -51,9 +69,18 @@ int main(int argc, char** argv) {
     NSView* view = reinterpret_cast<NSView*>(window.internalWinId());
     NSWindow* nativeWindow = view.window;
     require(nativeWindow != nil, "a Cocoa widget must expose an NSWindow");
+    require(nativeWindow.level == NSNormalWindowLevel,
+            "the main window must use the normal macOS window level after showing");
+    const NSWindowCollectionBehavior originalBehavior = nativeWindow.collectionBehavior;
+    NSButton* originalZoomButton = [nativeWindow standardWindowButton:NSWindowZoomButton];
+    const SEL originalZoomAction = originalZoomButton.action;
+    id originalZoomTarget = originalZoomButton.target;
     constexpr int titleBarHeight = 32;
+    nativeWindow.level = NSFloatingWindowLevel;
     snow_shot::platform::macos::configureMainWindowTitleBar(&window, titleBarHeight);
     flushEvents();
+    require(nativeWindow.level == NSNormalWindowLevel,
+            "custom title-bar layout must preserve the normal macOS window level");
     const NSWindowStyleMask expected =
         NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable |
         NSWindowStyleMaskResizable | NSWindowStyleMaskFullSizeContentView;
@@ -66,6 +93,12 @@ int main(int argc, char** argv) {
     NSButton* closeButton = [nativeWindow standardWindowButton:NSWindowCloseButton];
     NSButton* minimizeButton = [nativeWindow standardWindowButton:NSWindowMiniaturizeButton];
     NSButton* zoomButton = [nativeWindow standardWindowButton:NSWindowZoomButton];
+    require((nativeWindow.collectionBehavior & NSWindowCollectionBehaviorFullScreenPrimary) != 0 &&
+                nativeWindow.collectionBehavior == originalBehavior,
+            "custom title-bar layout must preserve native fullscreen eligibility");
+    require(zoomButton == originalZoomButton && zoomButton.action == originalZoomAction &&
+                zoomButton.target == originalZoomTarget && zoomButton.enabled,
+            "custom title-bar layout must retain AppKit's enabled green button and action");
     require(closeButton != nil && minimizeButton != nil && zoomButton != nil &&
                 !closeButton.hidden && !minimizeButton.hidden && !zoomButton.hidden,
             "AppKit must continue to own all three native traffic-light buttons");
@@ -88,7 +121,39 @@ int main(int argc, char** argv) {
             "native traffic lights must be vertically centered in SnowShot's title bar");
     snow_shot::platform::macos::activateWindow(&window);
     flushEvents();
+    require(nativeWindow.level == NSNormalWindowLevel,
+            "activation must preserve the normal macOS window level");
     require(nativeWindow.visible, "activation must keep the native window ordered in front");
     require(nativeWindow.keyWindow, "activation must make the native window key");
+
+    window.hide();
+    window.show();
+    snow_shot::platform::macos::configureMainWindowTitleBar(&window, titleBarHeight);
+    snow_shot::platform::macos::activateWindow(&window);
+    flushEvents();
+    require(nativeWindow.level == NSNormalWindowLevel,
+            "reopening the main window must retain the normal macOS window level");
+
+    const auto waitForFullscreen = [&](bool fullscreen) {
+        QElapsedTimer timeout;
+        timeout.start();
+        while (timeout.elapsed() < 5000) {
+            flushEvents();
+            const bool nativeFullscreen =
+                (nativeWindow.styleMask & NSWindowStyleMaskFullScreen) != 0;
+            if (window.isFullScreen() == fullscreen && nativeFullscreen == fullscreen) {
+                return true;
+            }
+            QThread::msleep(10);
+        }
+        return false;
+    };
+    [zoomButton performClick:nil];
+    require(waitForFullscreen(true), "the native green button must enter macOS fullscreen");
+    snow_shot::platform::macos::configureMainWindowTitleBar(&window, titleBarHeight);
+    [zoomButton performClick:nil];
+    require(waitForFullscreen(false), "the native green button must leave macOS fullscreen");
+    require(nativeWindow.level == NSNormalWindowLevel,
+            "leaving fullscreen must retain the normal macOS window level");
     return 0;
 }
