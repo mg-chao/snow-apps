@@ -6,6 +6,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -72,6 +73,36 @@ void noEffectResultSharesNormalizedStorage() {
     require(result.size() == source.size(), "no-effect result changed dimensions");
 }
 
+void outputOpacityScalesTheCompleteComposition() {
+    QImage translucent(QSize(32, 24), QImage::Format_ARGB32_Premultiplied);
+    translucent.fill(QColor(30, 100, 210, 120));
+    const QImage translucentResult = ScreenshotResultCompositor::compose(translucent, {}, 1.0, 0.5);
+    require(qAbs(translucentResult.pixelColor(10, 10).alpha() - 60) <= 1,
+            "output opacity did not scale existing source alpha");
+
+    const ScreenshotResultStyle style{10, 8, QColor(20, 30, 40, 220)};
+    const QImage opaque = ScreenshotResultCompositor::compose(solidContent(), style);
+    const QImage faded = ScreenshotResultCompositor::compose(solidContent(), style, 1.0, 0.5);
+    require(faded.size() == opaque.size() &&
+                qAbs(faded.pixelColor(8 + 40, 8 + 24).alpha() - 128) <= 1,
+            "output opacity did not scale composed content");
+    const int opaqueShadowAlpha = opaque.pixelColor(7, 8 + 24).alpha();
+    const int fadedShadowAlpha = faded.pixelColor(7, 8 + 24).alpha();
+    require(opaqueShadowAlpha > 0 &&
+                qAbs(fadedShadowAlpha - qRound(opaqueShadowAlpha * 128.0 / 255.0)) <= 1,
+            "output opacity did not scale the composed shadow exactly once");
+
+    const QImage transparent = ScreenshotResultCompositor::compose(solidContent(), {}, 1.0, -1.0);
+    const QImage clampedOpaque = ScreenshotResultCompositor::compose(solidContent(), {}, 1.0, 2.0);
+    const QImage invalidOpaque = ScreenshotResultCompositor::compose(
+        solidContent(), {}, 1.0, std::numeric_limits<qreal>::quiet_NaN());
+    require(transparent.pixelColor(10, 10).alpha() == 0,
+            "negative output opacity was not clamped to transparent");
+    require(clampedOpaque.pixelColor(10, 10).alpha() == 255 &&
+                invalidOpaque.pixelColor(10, 10).alpha() == 255,
+            "oversized or invalid output opacity did not use a safe opaque value");
+}
+
 void liveSurfaceClipsExistingCanvasPixelsBeforeAddingShadow() {
     QImage surface(QSize(70, 60), QImage::Format_ARGB32_Premultiplied);
     surface.fill(Qt::transparent);
@@ -101,6 +132,7 @@ int main(int argc, char** argv) {
         roundedAndShadowedResultHasRealTransparency();
         layoutScalesOnlyEffectsForFractionalDpr();
         noEffectResultSharesNormalizedStorage();
+        outputOpacityScalesTheCompleteComposition();
         liveSurfaceClipsExistingCanvasPixelsBeforeAddingShadow();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

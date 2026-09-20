@@ -471,6 +471,12 @@ class ScreenshotPinnedWindowTestAccess {
     static std::shared_ptr<ScreenshotExportArtifact> fileSave(ScreenshotPinnedWindow& window) {
         return window.fileSaveArtifact();
     }
+    static void copyCurrentViewport(ScreenshotPinnedWindow& window) {
+        window.copyCurrentViewport();
+    }
+    static void copyOriginalContent(ScreenshotPinnedWindow& window) {
+        window.copyOriginalContent();
+    }
     static void rotateRecognitionOffscreen(ScreenshotPinnedWindow& window) {
         window.m_imageTransform =
             QImage::trueMatrix(QTransform().rotate(90), window.m_originalImage.width(),
@@ -8159,6 +8165,92 @@ void pinnedRecognitionSaveSnapshotsAndRoutesOffscreen() {
             "rotation maps paragraph background regions together with text and native dimensions");
 }
 
+void pinnedOpacityAppliesToRenderedExportsOffscreen() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+
+#if defined(Q_OS_WIN)
+    require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
+            "load offscreen recognition font for opacity export");
+    QApplication::setFont(QFont(QStringLiteral("Segoe UI")));
+#endif
+
+    const snow_shot::storage::TextRecognitionSettings recognitionSettings;
+    const bool previousRecognitionSave = recognitionSettings.saveRecognitionResultAsImage();
+    const auto restoreRecognitionSave = qScopeGuard([&] {
+        static_cast<void>(
+            recognitionSettings.setSaveRecognitionResultAsImage(previousRecognitionSave));
+    });
+    require(recognitionSettings.setSaveRecognitionResultAsImage(false),
+            "disable recognition rendering for the opacity fixture");
+
+    ScreenshotPinnedWindow window;
+    const auto config = cachedOcrPinConfig(nullptr);
+    Access::restoreOffscreen(window, config);
+    window.show();
+    waitForUi(20);
+
+    const auto render = [&window](const std::shared_ptr<ScreenshotExportArtifact>& artifact) {
+        ScreenshotExportImageResult result;
+        bool complete = false;
+        require(artifact != nullptr &&
+                    artifact->requestImage(&window,
+                                           [&](ScreenshotExportImageResult rendered) {
+                                               result = std::move(rendered);
+                                               complete = true;
+                                           }),
+                "pinned opacity artifact must start rendering");
+        QElapsedTimer timer;
+        timer.start();
+        while (!complete && timer.elapsed() < 10000) {
+            waitForUi(5);
+        }
+        require(complete && result.succeeded(), "pinned opacity artifact must finish rendering");
+        return result.image;
+    };
+    const auto centerAlpha = [](const QImage& image) {
+        return image.pixelColor(image.rect().center()).alpha();
+    };
+
+    Access::setGeneralOpacity(window, 50);
+    const auto frozenSave = Access::fileSave(window);
+    Access::setGeneralOpacity(window, 75);
+    const QImage saved = render(frozenSave);
+    require(qAbs(centerAlpha(saved) - 128) <= 1,
+            "a save artifact must retain the configured opacity captured at creation");
+
+    Access::copyCurrentViewport(window);
+    const QImage copied = render(Access::exportArtifact(window));
+    require(qAbs(centerAlpha(copied) - 191) <= 1,
+            "Copy Current Viewport must render the configured pin opacity");
+
+    require(Access::setClickThrough(window, true),
+            "enter Click Through for configured-opacity export coverage");
+    Access::copyCurrentViewport(window);
+    const QImage clickThroughCopy = render(Access::exportArtifact(window));
+    require(qAbs(window.windowOpacity() - 0.5) <= 1.0 / 255.0 &&
+                qAbs(centerAlpha(clickThroughCopy) - 191) <= 1,
+            "transient Click Through opacity must not replace configured export opacity");
+    require(Access::setClickThrough(window, false), "leave Click Through after opacity export");
+
+    Access::copyOriginalContent(window);
+    const QImage original = render(Access::exportArtifact(window));
+    require(original == config.imageSource.materializedImage,
+            "Copy Original Content must remain independent of pinned opacity");
+
+    auto* session = Access::recognitionOffscreen(window, config);
+    require(session != nullptr && session->active(),
+            "activate cached recognition for opacity export coverage");
+    Access::setGeneralOpacity(window, 60);
+    const QImage ordinaryRecognitionMode = render(Access::fileSave(window));
+    require(recognitionSettings.setSaveRecognitionResultAsImage(true),
+            "enable recognition rendering for the opacity fixture");
+    const auto frozenRecognition = Access::fileSave(window);
+    Access::setGeneralOpacity(window, 80);
+    const QImage recognized = render(frozenRecognition);
+    require(recognized != ordinaryRecognitionMode && qAbs(centerAlpha(recognized) - 153) <= 1,
+            "recognition exports must render their captured configured opacity");
+}
+
 void pinnedQuickSaveKeepsWindowAndConfiguredOutput() {
     const snow_shot::storage::ScreenshotSettings settings;
     QTemporaryDir directory;
@@ -9399,6 +9491,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--recognition-save-only"))) {
             pinnedRecognitionSaveSnapshotsAndRoutesOffscreen();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--opacity-export-only"))) {
+            pinnedOpacityAppliesToRenderedExportsOffscreen();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--quick-save-only"))) {

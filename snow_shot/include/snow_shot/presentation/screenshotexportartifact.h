@@ -26,6 +26,7 @@ struct ScreenshotPinnedViewportExportSource final {
     QSize contentPixelSize;
     ScreenshotResultStyle resultStyle;
     SnowCanvasSmartEraseSnapshot smartErase;
+    qreal outputOpacity = 1.0;
 };
 
 struct ScreenshotExportImageResult final {

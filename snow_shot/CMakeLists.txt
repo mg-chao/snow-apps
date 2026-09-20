@@ -3762,6 +3762,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-pinned-recognition-save-tests
         COMMAND snow-shot-pinned-window-tests --recognition-save-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-recognition-save-tests PROPERTIES LABELS "unit" TIMEOUT 90)
+    add_test(NAME snow-shot-pinned-opacity-export-tests
+        COMMAND snow-shot-pinned-window-tests --opacity-export-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-opacity-export-tests PROPERTIES
+        LABELS "unit" TIMEOUT 90)
     add_test(NAME snow-shot-pinned-quick-save-tests
         COMMAND snow-shot-pinned-window-tests --quick-save-only -platform $<IF:$<PLATFORM_ID:Darwin>,offscreen,windows>)
     set_tests_properties(snow-shot-pinned-quick-save-tests PROPERTIES LABELS "unit;windows")

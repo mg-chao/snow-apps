@@ -42,5 +42,7 @@ QImage renderScreenshotRecognitionImage(const ScreenshotRecognitionImageSnapshot
         painter.restore();
     }
     painter.end();
-    return stopped() ? QImage{} : ScreenshotResultCompositor::compose(image, snapshot.resultStyle);
+    return stopped() ? QImage{}
+                     : ScreenshotResultCompositor::compose(image, snapshot.resultStyle, 1.0,
+                                                           snapshot.outputOpacity);
 }

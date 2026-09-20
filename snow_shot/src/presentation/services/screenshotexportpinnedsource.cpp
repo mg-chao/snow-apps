@@ -40,7 +40,8 @@ QImage renderPinnedViewport(const ScreenshotPinnedViewportExportSource& source) 
     QImage content =
         runtime->renderToImage(source.backgroundCanvasRect, source.contentPixelSize, sources);
     return content.isNull() ? QImage{}
-                            : ScreenshotResultCompositor::compose(content, source.resultStyle);
+                            : ScreenshotResultCompositor::compose(content, source.resultStyle, 1.0,
+                                                                  source.outputOpacity);
 }
 } // namespace
 

@@ -36,7 +36,7 @@ class ScreenshotResultCompositor final {
                                                                  qreal devicePixelRatio = 1.0);
     [[nodiscard]] static QImage normalizeImage(const QImage& image);
     [[nodiscard]] static QImage compose(const QImage& content, const ScreenshotResultStyle& style,
-                                        qreal devicePixelRatio = 1.0);
+                                        qreal devicePixelRatio = 1.0, qreal outputOpacity = 1.0);
 
     // Called after the live canvas has painted. It clips every existing pixel
     // to the result shape, then places the shared shadow behind that content.

@@ -302,6 +302,22 @@ constexpr auto kShortcutDisplayProperty = "screenshotPinnedShortcutDisplay";
 constexpr auto kRecognitionMessageKey = "screenshot-pinned-recognition-status";
 constexpr auto kModelDownloadMessageKey = "screenshot-pinned-model-download-status";
 constexpr auto kOcrTooLargeDescription = "Image size is too large.";
+
+struct PinnedExportAppearance final {
+    ScreenshotResultStyle resultStyle;
+    qreal outputOpacity = 1.0;
+};
+
+PinnedExportAppearance pinnedExportAppearance(const ScreenshotResultStyle& sourceStyle,
+                                              int opacityPercent, qreal renderScale) {
+    PinnedExportAppearance appearance;
+    appearance.resultStyle = sourceStyle;
+    appearance.resultStyle.cornerRadius = qRound(appearance.resultStyle.cornerRadius * renderScale);
+    appearance.resultStyle.shadowWidth = qRound(appearance.resultStyle.shadowWidth * renderScale);
+    appearance.outputOpacity = qBound(0, opacityPercent, 100) / 100.0;
+    return appearance;
+}
+
 enum class PinPaintMode {
     Control,
     Single,
@@ -4201,12 +4217,12 @@ void ScreenshotPinnedWindow::copyCurrentViewport() {
         return;
     }
     QByteArray documentSession = m_runtime.serializeDocumentSession();
-    ScreenshotResultStyle scaledStyle = m_resultStyle;
-    scaledStyle.cornerRadius = qRound(scaledStyle.cornerRadius * surfaceScale);
-    scaledStyle.shadowWidth = qRound(scaledStyle.shadowWidth * surfaceScale);
+    const PinnedExportAppearance appearance =
+        pinnedExportAppearance(m_resultStyle, m_opacityPercent, surfaceScale);
     ScreenshotPinnedViewportExportSource request{
-        std::move(documentSession), m_transformedImage, m_backgroundCanvasRect,
-        contentPixelSize,           scaledStyle,        m_runtime.smartEraseSnapshot(),
+        std::move(documentSession), m_transformedImage,     m_backgroundCanvasRect,
+        contentPixelSize,           appearance.resultStyle, m_runtime.smartEraseSnapshot(),
+        appearance.outputOpacity,
     };
     invalidatePendingCopy();
     auto artifact = std::make_shared<ScreenshotExportArtifact>(
@@ -4303,25 +4319,27 @@ std::shared_ptr<ScreenshotExportArtifact> ScreenshotPinnedWindow::fileSaveArtifa
     if (m_transformedImage.isNull() || m_backgroundCanvasRect.isEmpty())
         return {};
     const qreal renderScale = m_transformedImage.width() / m_backgroundCanvasRect.width();
-    ScreenshotResultStyle style = m_resultStyle;
-    style.cornerRadius = qRound(style.cornerRadius * renderScale);
-    style.shadowWidth = qRound(style.shadowWidth * renderScale);
+    const PinnedExportAppearance appearance =
+        pinnedExportAppearance(m_resultStyle, m_opacityPercent, renderScale);
     if (snow_shot::storage::TextRecognitionSettings().saveRecognitionResultAsImage() &&
         m_recognitionSession != nullptr && m_recognitionSession->originalImageVisible() &&
         m_recognitionContent != nullptr && m_screenshotRenderer != nullptr) {
         auto snapshot = m_recognitionContent->imageSnapshot(
             m_transformedImage, m_backgroundCanvasRect, m_screenshotRenderer->ocrFilteredImage(),
-            m_screenshotRenderer->ocrFilteredCanvasRect(), style);
-        if (snapshot)
+            m_screenshotRenderer->ocrFilteredCanvasRect(), appearance.resultStyle);
+        if (snapshot) {
+            snapshot->outputOpacity = appearance.outputOpacity;
             return std::make_shared<ScreenshotExportArtifact>(
                 ScreenshotExportSource::fromRecognitionImage(std::move(*snapshot)));
+        }
     }
     ScreenshotPinnedViewportExportSource request{m_runtime.serializeDocumentSession(),
                                                  m_transformedImage,
                                                  m_backgroundCanvasRect,
                                                  m_transformedImage.size(),
-                                                 style,
-                                                 m_runtime.smartEraseSnapshot()};
+                                                 appearance.resultStyle,
+                                                 m_runtime.smartEraseSnapshot(),
+                                                 appearance.outputOpacity};
     return std::make_shared<ScreenshotExportArtifact>(
         ScreenshotExportSource::fromPinnedViewport(std::move(request)));
 }

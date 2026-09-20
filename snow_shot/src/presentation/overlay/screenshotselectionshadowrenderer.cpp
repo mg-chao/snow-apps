@@ -34,6 +34,22 @@ struct ShadowKey {
     }
 };
 
+QImage applyOutputOpacity(QImage image, qreal opacity) {
+    if (image.isNull()) {
+        return {};
+    }
+    const qreal normalizedOpacity = std::isfinite(opacity) ? std::clamp(opacity, 0.0, 1.0) : 1.0;
+    if (normalizedOpacity >= 1.0) {
+        return image;
+    }
+
+    QPainter painter(&image);
+    painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+    painter.fillRect(image.rect(), QColor(0, 0, 0, qRound(normalizedOpacity * 255.0)));
+    painter.end();
+    return image;
+}
+
 struct ShadowCacheEntry {
     ShadowKey key;
     QImage image;
@@ -325,14 +341,14 @@ QImage ScreenshotResultCompositor::normalizeImage(const QImage& image) {
 
 QImage ScreenshotResultCompositor::compose(const QImage& content,
                                            const ScreenshotResultStyle& style,
-                                           qreal devicePixelRatio) {
+                                           qreal devicePixelRatio, qreal outputOpacity) {
     const QImage normalizedContent = normalizeImage(content);
     if (normalizedContent.isNull()) {
         return {};
     }
     const ScreenshotResultStyle normalized = normalizedStyle(style);
     if (normalized.cornerRadius == 0 && normalized.shadowWidth == 0) {
-        return normalizedContent;
+        return applyOutputOpacity(normalizedContent, outputOpacity);
     }
     const ScreenshotResultLayout layout =
         layoutForContent(normalizedContent.size(), normalized, devicePixelRatio);
@@ -368,7 +384,7 @@ QImage ScreenshotResultCompositor::compose(const QImage& content,
             normalized.shadowColor, 1.0);
     }
     painter.end();
-    return output;
+    return applyOutputOpacity(std::move(output), outputOpacity);
 }
 
 void ScreenshotResultCompositor::finishLiveSurface(QPainter& painter, const QRectF& viewportBounds,
