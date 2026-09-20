@@ -5,9 +5,11 @@
 #include "snow_canvas_display_cache.h"
 
 #include <QPainterPath>
+#include <QSize>
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <vector>
 
 class QPainter;
 
@@ -19,6 +21,38 @@ struct Result {
     QRectF canvasRect;
     bool success = false;
 };
+
+// Private reconstruction controls for quality tests and performance experiments.
+// Application callers use reconstruct(), which always uses the selected defaults.
+struct ReconstructionOptions {
+    int coarsePasses = 5;
+    int intermediatePasses = 3;
+    int finePasses = 2;
+    bool earlyRejection = true;
+    bool parallelVoting = true;
+};
+struct LevelDiagnostics {
+    QSize size;
+    int maskedPixels = 0;
+    int passes = 0;
+    double searchMs = 0;
+    double votingMs = 0;
+};
+struct ReconstructionDiagnostics {
+    QSize workingSize;
+    int maskedPixels = 0;
+    enum class Path { Empty, Surface, Periodic, Patches } path = Path::Empty;
+    double preparationMs = 0;
+    double fastPathsMs = 0;
+    double guidePyramidMs = 0;
+    std::vector<LevelDiagnostics> levels;
+};
+
+Result reconstructWithOptions(const SnowCanvasSceneItem& item,
+                              const QList<SnowCanvasBaseImageSource>& sources,
+                              const std::atomic_bool& cancelled,
+                              const ReconstructionOptions& options,
+                              ReconstructionDiagnostics* diagnostics = nullptr);
 
 QPainterPath path(const SnowCanvasSceneItem& item);
 QByteArray geometryKey(const SnowCanvasSceneItem& item);

@@ -138,7 +138,7 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_BENCHMARKS)
         "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include"
     )
     target_link_libraries(snow-canvas-smart-erase-benchmark PRIVATE
-        Qt6::Widgets opencv_core opencv_imgproc
+        snow_draw_engine_c Qt6::Widgets opencv_core opencv_imgproc
     )
     add_executable(snow-canvas-rectangle-benchmark
         tests/snow_canvas_rectangle_benchmark.cpp

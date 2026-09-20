@@ -13,9 +13,28 @@
 #include <random>
 #include <stdexcept>
 #include <vector>
+#include <chrono>
+#include <type_traits>
 
 namespace snow_canvas_smart_erase {
 namespace {
+class StageTimer {
+  public:
+    explicit StageTimer(double* elapsed) : elapsed_(elapsed) {
+        if (elapsed_)
+            start_ = std::chrono::steady_clock::now();
+    }
+    ~StageTimer() {
+        if (elapsed_)
+            *elapsed_ +=
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start_)
+                    .count();
+    }
+
+  private:
+    double* elapsed_;
+    std::chrono::steady_clock::time_point start_{};
+};
 constexpr qsizetype kMaximumWorkingPixels = 16 * 1024 * 1024;
 
 void checkCancelled(const std::atomic_bool& cancelled) {
@@ -165,8 +184,7 @@ cv::Mat3f periodicFill(const cv::Mat3f& source, const cv::Mat1b& hole, const cv:
 }
 
 cv::Mat3f observedBackground(const cv::Mat3f& source, const cv::Mat1b& known, int radius,
-                             const std::atomic_bool& cancelled) {
-    cv::Mat1f weights;
+                             const std::atomic_bool& cancelled, cv::Mat1f& weights) {
     known.convertTo(weights, CV_32F, 1.0 / 255);
     cv::Mat3f weighted(source.size(), cv::Vec3f(0, 0, 0));
     source.copyTo(weighted, known);
@@ -182,10 +200,9 @@ cv::Mat3f observedBackground(const cv::Mat3f& source, const cv::Mat1b& known, in
 }
 
 cv::Mat1f backgroundVariation(const cv::Mat3f& source, const cv::Mat3f& mean,
-                              const cv::Mat1b& known, int radius,
-                              const std::atomic_bool& cancelled) {
-    cv::Mat1f weights, squared(source.size(), 0.0F);
-    known.convertTo(weights, CV_32F, 1.0 / 255);
+                              const cv::Mat1b& known, int radius, const std::atomic_bool& cancelled,
+                              const cv::Mat1f& weights) {
+    cv::Mat1f squared(source.size(), 0.0F);
     for (int y = 0; y < source.rows; ++y) {
         checkCancelled(cancelled);
         for (int x = 0; x < source.cols; ++x)
@@ -194,7 +211,6 @@ cv::Mat1f backgroundVariation(const cv::Mat3f& source, const cv::Mat3f& mean,
     }
     const cv::Size kernel(2 * radius + 1, 2 * radius + 1);
     cv::GaussianBlur(squared, squared, kernel, radius / 2.0);
-    cv::GaussianBlur(weights, weights, kernel, radius / 2.0);
     for (int y = 0; y < source.rows; ++y) {
         checkCancelled(cancelled);
         for (int x = 0; x < source.cols; ++x)
@@ -227,6 +243,8 @@ BackgroundGuide backgroundGuide(const cv::Mat3f& observed, const cv::Mat1f& vari
                 cv::Point before(-1, -1);
                 std::vector<cv::Point> pending;
                 const auto flush = [&](cv::Point after) {
+                    if (pending.empty())
+                        return;
                     if (before.x < 0 && after.x < 0)
                         return;
                     const auto a = before.x >= 0 ? before : after;
@@ -271,28 +289,84 @@ struct LevelResult {
     cv::Mat_<cv::Vec2i> matches;
 };
 
-// PatchMatch searches only patches made entirely from original, unmasked pixels.
-// Synthesized target pixels contribute to matching but can never become donors.
+struct MaskSpan {
+    int y;
+    int begin;
+    int end;
+    std::size_t offset;
+};
+struct PatchCoverage {
+    unsigned char known = 0;
+    unsigned char missing = 0;
+    bool interior = false;
+};
+struct TargetPatch {
+    int x;
+    int y;
+    cv::Vec3f color;
+    float variation;
+    float structureWeight;
+    float normalization;
+    bool interior;
+};
+
+// Original observations remain immutable. Only masked row spans participate in
+// propagation and voting; their order matches a dense forward/reverse scan.
 LevelResult fillLevel(const cv::Mat3f& source, const cv::Mat1b& hole, const cv::Mat1b& coverage,
                       const cv::Mat1b& domain, const BackgroundGuide& background,
-                      const LevelResult& previous, const std::atomic_bool& cancelled) {
+                      const LevelResult& previous, const std::atomic_bool& cancelled,
+                      const ReconstructionOptions& options, int passes,
+                      LevelDiagnostics* diagnostics) {
     const auto& guide = background.color;
     const auto& variation = background.variation;
     cv::Mat1b donors;
     std::vector<cv::Point> candidates;
     int radius = 3;
     for (; radius >= 0; --radius) {
-        cv::erode(
-            domain, donors,
-            cv::getStructuringElement(cv::MORPH_RECT, cv::Size(2 * radius + 1, 2 * radius + 1)),
-            cv::Point(-1, -1), 1, cv::BORDER_CONSTANT, cv::Scalar(0));
+        cv::erode(domain, donors,
+                  cv::getStructuringElement(cv::MORPH_RECT, {2 * radius + 1, 2 * radius + 1}),
+                  {-1, -1}, 1, cv::BORDER_CONSTANT, cv::Scalar(0));
         cv::findNonZero(donors, candidates);
-        if (!candidates.empty()) {
+        if (!candidates.empty())
             break;
-        }
     }
-    if (candidates.empty()) {
+    if (candidates.empty())
         throw std::runtime_error("no source patches");
+    std::vector<MaskSpan> spans;
+    std::vector<PatchCoverage> patches;
+    for (int y = 0; y < hole.rows; ++y) {
+        checkCancelled(cancelled);
+        const auto* row = hole.ptr<unsigned char>(y);
+        for (int x = 0; x < hole.cols;) {
+            if (!row[x]) {
+                ++x;
+                continue;
+            }
+            const int begin = x;
+            const auto offset = patches.size();
+            for (; x < hole.cols && row[x]; ++x) {
+                PatchCoverage patch;
+                for (int dy = -radius; dy <= radius; ++dy) {
+                    const int ty = y + dy;
+                    if (ty < 0 || ty >= hole.rows)
+                        continue;
+                    const auto* covered = coverage.ptr<unsigned char>(ty);
+                    const auto* masked = hole.ptr<unsigned char>(ty);
+                    for (int dx = -radius; dx <= radius; ++dx) {
+                        const int tx = x + dx;
+                        if (tx < 0 || tx >= hole.cols || !covered[tx])
+                            continue;
+                        if (masked[tx])
+                            ++patch.missing;
+                        else
+                            ++patch.known;
+                    }
+                }
+                patch.interior = patch.known + patch.missing == (2 * radius + 1) * (2 * radius + 1);
+                patches.push_back(patch);
+            }
+            spans.push_back({y, begin, x, offset});
+        }
     }
     cv::Mat3f output = source.clone();
     if (!previous.image.empty()) {
@@ -308,18 +382,16 @@ LevelResult fillLevel(const cv::Mat3f& source, const cv::Mat1b& hole, const cv::
         nearest.at(static_cast<std::size_t>(labels(p))) = p;
     cv::Mat_<cv::Vec2i> matches(source.size(), cv::Vec2i(-1, -1));
     cv::Mat1f costs(source.size(), std::numeric_limits<float>::max());
-    cv::Mat1f usage(source.size(), 0.0F);
-    const float expectedUsage = std::max(1.0F, static_cast<float>(cv::countNonZero(hole)) /
-                                                   static_cast<float>(candidates.size()));
+    // Counts are converted in place to penalties after each complete usage pass.
+    cv::Mat1f reusePenalty(source.size(), 0.0F);
+    const float expectedUsage =
+        std::max(1.0F, static_cast<float>(patches.size()) / static_cast<float>(candidates.size()));
     std::mt19937 random(0x534e4f57U);
     if (previous.image.empty()) {
-        // Seed real texture, not a flat interpolation that would favor low-variance
-        // donors (rails/walls) even when the surrounding background is textured.
-        for (int y = 0; y < source.rows; ++y) {
+        for (const auto& span : spans) {
             checkCancelled(cancelled);
-            for (int x = 0; x < source.cols; ++x) {
-                if (!hole(y, x))
-                    continue;
+            const int y = span.y;
+            for (int x = span.begin; x < span.end; ++x) {
                 auto best = nearest.at(static_cast<std::size_t>(labels(y, x)));
                 auto delta = guide(y, x) - guide(best);
                 float textureDelta = variation(y, x) - variation(best);
@@ -340,48 +412,73 @@ LevelResult fillLevel(const cv::Mat3f& source, const cv::Mat1b& hole, const cv::
         }
     }
     float synthesizedWeight = 0.05F;
-    const auto patchCost = [&](int x, int y, int sx, int sy) {
-        float sum = 0;
-        float weight = 0;
-        for (int dy = -radius; dy <= radius; ++dy) {
-            for (int dx = -radius; dx <= radius; ++dx) {
-                const int tx = x + dx, ty = y + dy;
-                if (tx < 0 || ty < 0 || tx >= source.cols || ty >= source.rows || !coverage(ty, tx))
-                    continue;
-                const cv::Vec3f difference = output(ty, tx) - source(sy + dy, sx + dx);
-                const float confidence = hole(ty, tx) ? synthesizedWeight : 1.0F;
-                sum += difference.dot(difference) * confidence;
-                weight += confidence;
-            }
-        }
-        // The fixed guide cannot reinforce an incorrect provisional fill. Texture
-        // variation distinguishes, for example, a crowd from a similarly colored wall.
-        const auto structure = guide(y, x) - guide(sy, sx);
-        const float textureDelta = variation(y, x) - variation(sy, sx);
-        const float structureWeight = 8.0F / (4.0F + variation(y, x));
-        const float reuse = usage(sy, sx) / expectedUsage;
-        const float dx = static_cast<float>(sx - x), dy = static_cast<float>(sy - y);
-        const float scale = static_cast<float>(std::max(source.cols, source.rows));
-        return sum / std::max(1.0F, weight) + structureWeight * structure.dot(structure) +
-               4.0F * textureDelta * textureDelta + 25.0F * std::log1p(reuse) +
-               8.0F * (dx * dx + dy * dy) / (scale * scale);
+    const float scale = static_cast<float>(std::max(source.cols, source.rows));
+    const auto targetPatch = [&](const MaskSpan& span, int x) {
+        const auto& patch = patches[span.offset + static_cast<std::size_t>(x - span.begin)];
+        const float texture = variation(span.y, x);
+        return TargetPatch{x,
+                           span.y,
+                           guide(span.y, x),
+                           texture,
+                           8.0F / (4.0F + texture),
+                           std::max(1.0F, patch.known + patch.missing * synthesizedWeight),
+                           patch.interior};
     };
-    const auto tryCandidate = [&](int x, int y, int sx, int sy) {
+    const auto tryCandidate = [&](const TargetPatch& target, int sx, int sy) {
         if (sx < 0 || sy < 0 || sx >= source.cols || sy >= source.rows || !donors(sy, sx))
             return;
-        const float cost = patchCost(x, y, sx, sy);
-        if (cost < costs(y, x)) {
-            costs(y, x) = cost;
-            matches(y, x) = cv::Vec2i(sx, sy);
+        const auto structure = target.color - guide(sy, sx);
+        const float textureDelta = target.variation - variation(sy, sx);
+        const float dx = static_cast<float>(sx - target.x), dy = static_cast<float>(sy - target.y);
+        const float fixed = target.structureWeight * structure.dot(structure) +
+                            4 * textureDelta * textureDelta + reusePenalty(sy, sx) +
+                            8 * (dx * dx + dy * dy) / (scale * scale);
+        const float best = costs(target.y, target.x);
+        // Every omitted squared difference is nonnegative. Use the complete
+        // denominator, with slack so rounding cannot prune a competitive patch.
+        const float limit = options.earlyRejection ? best + 1e-5F * std::max(1.0F, best)
+                                                   : std::numeric_limits<float>::infinity();
+        if (fixed > limit)
+            return;
+        float sum = 0;
+        const auto accumulate = [&](auto interior) {
+            for (int py = -radius; py <= radius; ++py) {
+                const int ty = target.y + py;
+                if constexpr (!decltype(interior)::value) {
+                    if (ty < 0 || ty >= source.rows)
+                        continue;
+                }
+                const auto* targetRow = output.ptr<cv::Vec3f>(ty);
+                const auto* sourceRow = source.ptr<cv::Vec3f>(sy + py);
+                const auto* holeRow = hole.ptr<unsigned char>(ty);
+                const auto* coverageRow = coverage.ptr<unsigned char>(ty);
+                for (int px = -radius; px <= radius; ++px) {
+                    const int tx = target.x + px;
+                    if constexpr (!decltype(interior)::value) {
+                        if (tx < 0 || tx >= source.cols || !coverageRow[tx])
+                            continue;
+                    }
+                    const auto delta = targetRow[tx] - sourceRow[sx + px];
+                    sum += delta.dot(delta) * (holeRow[tx] ? synthesizedWeight : 1.0F);
+                }
+                if (sum / target.normalization + fixed > limit)
+                    return false;
+            }
+            return true;
+        };
+        if (!(target.interior ? accumulate(std::true_type{}) : accumulate(std::false_type{})))
+            return;
+        const float cost = sum / target.normalization + fixed;
+        if (cost < best) {
+            costs(target.y, target.x) = cost;
+            matches(target.y, target.x) = {sx, sy};
         }
     };
-    // Lift donor correspondences as well as appearance from the coarser level.
     if (!previous.matches.empty()) {
-        for (int y = 0; y < source.rows; ++y) {
+        for (const auto& span : spans) {
             checkCancelled(cancelled);
-            for (int x = 0; x < source.cols; ++x) {
-                if (!hole(y, x))
-                    continue;
+            const int y = span.y;
+            for (int x = span.begin; x < span.end; ++x) {
                 const int px =
                     static_cast<int>(static_cast<qint64>(x) * previous.matches.cols / source.cols);
                 const int py =
@@ -392,103 +489,118 @@ LevelResult fillLevel(const cv::Mat3f& source, const cv::Mat1b& hole, const cv::
                                                     previous.matches.cols);
                     const int sy = static_cast<int>(static_cast<qint64>(p[1]) * source.rows /
                                                     previous.matches.rows);
-                    tryCandidate(x, y, sx, sy);
+                    tryCandidate(targetPatch(span, x), sx, sy);
                 }
             }
         }
     }
-    for (int iteration = 0; iteration < 5; ++iteration) {
-        synthesizedWeight = 0.15F + 0.05F * static_cast<float>(iteration);
-        usage.setTo(0);
-        for (int y = 0; y < source.rows; ++y) {
-            checkCancelled(cancelled);
-            for (int x = 0; x < source.cols; ++x)
-                if (hole(y, x) && matches(y, x)[0] >= 0) {
-                    const auto& p = matches(y, x);
-                    usage(p[1], p[0]) += 1;
-                }
-        }
-        costs.setTo(static_cast<double>(std::numeric_limits<float>::max()));
-        const int step = iteration % 2 == 0 ? 1 : -1;
-        for (int yi = 0; yi < source.rows; ++yi) {
-            checkCancelled(cancelled);
-            const int y = step > 0 ? yi : source.rows - 1 - yi;
-            for (int xi = 0; xi < source.cols; ++xi) {
-                if (xi % 64 == 0)
-                    checkCancelled(cancelled);
-                const int x = step > 0 ? xi : source.cols - 1 - xi;
-                if (!hole(y, x))
-                    continue;
-                const auto& old = matches(y, x);
-                tryCandidate(x, y, old[0], old[1]);
-                const auto local = nearest.at(static_cast<std::size_t>(labels(y, x)));
-                tryCandidate(x, y, local.x, local.y);
-                const auto seed = candidates[random() % candidates.size()];
-                tryCandidate(x, y, seed.x, seed.y);
-                if (x - step >= 0 && x - step < source.cols) {
-                    const auto& neighbor = matches(y, x - step);
-                    if (neighbor[0] >= 0)
-                        tryCandidate(x, y, neighbor[0] + step, neighbor[1]);
-                }
-                if (y - step >= 0 && y - step < source.rows) {
-                    const auto& neighbor = matches(y - step, x);
-                    if (neighbor[0] >= 0)
-                        tryCandidate(x, y, neighbor[0], neighbor[1] + step);
-                }
-                for (int window = std::max(source.cols, source.rows); window > 0; window /= 2) {
-                    const auto& center = matches(y, x);
-                    const int span = window * 2 + 1;
-                    const int sx = center[0] +
-                                   static_cast<int>(random() % static_cast<unsigned>(span)) -
-                                   window;
-                    const int sy = center[1] +
-                                   static_cast<int>(random() % static_cast<unsigned>(span)) -
-                                   window;
-                    tryCandidate(x, y, sx, sy);
+    cv::Mat3f next = source.clone();
+    for (int iteration = 0; iteration < passes; ++iteration) {
+        {
+            StageTimer searchTimer(diagnostics ? &diagnostics->searchMs : nullptr);
+            synthesizedWeight =
+                0.15F + 0.20F * static_cast<float>(iteration) / static_cast<float>(passes - 1);
+            for (const auto p : candidates)
+                reusePenalty(p) = 0;
+            for (const auto& span : spans) {
+                checkCancelled(cancelled);
+                for (int x = span.begin; x < span.end; ++x) {
+                    const auto p = matches(span.y, x);
+                    if (p[0] >= 0)
+                        reusePenalty(p[1], p[0]) += 1;
                 }
             }
-        }
-        // Overlapping compatible patch votes hide boundaries without blending
-        // unrelated background regions together.
-        cv::Mat3f next = output.clone();
-        for (int y = 0; y < source.rows; ++y) {
-            checkCancelled(cancelled);
-            for (int x = 0; x < source.cols; ++x) {
-                if (!hole(y, x))
-                    continue;
-                cv::Vec3f sum(0, 0, 0);
-                float weight = 0;
-                const auto& center = matches(y, x);
-                const auto& anchor = source(center[1], center[0]);
-                const float tolerance = std::clamp(variation(y, x) * 0.25F, 1.5F, 10.0F);
-                for (int dy = -radius; dy <= radius; ++dy) {
-                    for (int dx = -radius; dx <= radius; ++dx) {
-                        const int nx = x + dx, ny = y + dy;
-                        if (nx < 0 || ny < 0 || nx >= source.cols || ny >= source.rows ||
-                            !hole(ny, nx))
-                            continue;
-                        const auto& donor = matches(ny, nx);
-                        if (donor[0] < 0)
-                            continue;
-                        const auto& value = source(donor[1] - dy, donor[0] - dx);
-                        const auto difference = guide(donor[1] - dy, donor[0] - dx) - guide(y, x);
-                        const auto detailDifference = value - anchor;
-                        const float w = 1.0F / ((1.0F + costs(ny, nx)) *
-                                                (1.0F + difference.dot(difference) / 100.0F) *
-                                                (1.0F + detailDifference.dot(detailDifference) /
-                                                            (tolerance * tolerance)));
-                        sum += value * w;
-                        weight += w;
+            for (const auto p : candidates)
+                reusePenalty(p) = 25 * std::log1p(reusePenalty(p) / expectedUsage);
+            const int step = iteration % 2 == 0 ? 1 : -1;
+            for (std::size_t si = 0; si < spans.size(); ++si) {
+                checkCancelled(cancelled);
+                const auto& span = spans[step > 0 ? si : spans.size() - 1 - si];
+                const int y = span.y;
+                for (int xi = 0; xi < span.end - span.begin; ++xi) {
+                    if (xi % 64 == 0)
+                        checkCancelled(cancelled);
+                    const int x = step > 0 ? span.begin + xi : span.end - 1 - xi;
+                    costs(y, x) = std::numeric_limits<float>::max();
+                    const auto target = targetPatch(span, x);
+                    const auto old = matches(y, x);
+                    tryCandidate(target, old[0], old[1]);
+                    const auto local = nearest.at(static_cast<std::size_t>(labels(y, x)));
+                    tryCandidate(target, local.x, local.y);
+                    const auto seed = candidates[random() % candidates.size()];
+                    tryCandidate(target, seed.x, seed.y);
+                    if (x - step >= 0 && x - step < source.cols) {
+                        const auto neighbor = matches(y, x - step);
+                        if (neighbor[0] >= 0)
+                            tryCandidate(target, neighbor[0] + step, neighbor[1]);
+                    }
+                    if (y - step >= 0 && y - step < source.rows) {
+                        const auto neighbor = matches(y - step, x);
+                        if (neighbor[0] >= 0)
+                            tryCandidate(target, neighbor[0], neighbor[1] + step);
+                    }
+                    for (int window = std::max(source.cols, source.rows); window > 0; window /= 2) {
+                        const auto center = matches(y, x);
+                        const int width = window * 2 + 1;
+                        const int sx = center[0] +
+                                       static_cast<int>(random() % static_cast<unsigned>(width)) -
+                                       window;
+                        const int sy = center[1] +
+                                       static_cast<int>(random() % static_cast<unsigned>(width)) -
+                                       window;
+                        tryCandidate(target, sx, sy);
                     }
                 }
-                if (weight > 0)
-                    next(y, x) = sum / weight;
             }
         }
-        output = std::move(next);
+        StageTimer voteTimer(diagnostics ? &diagnostics->votingMs : nullptr);
+        const auto vote = [&](const cv::Range& range) {
+            for (int si = range.start; si < range.end; ++si) {
+                checkCancelled(cancelled);
+                const auto& span = spans[static_cast<std::size_t>(si)];
+                const int y = span.y;
+                for (int x = span.begin; x < span.end; ++x) {
+                    cv::Vec3f sum(0, 0, 0);
+                    float weight = 0;
+                    const auto center = matches(y, x);
+                    const auto anchor = source(center[1], center[0]);
+                    const float tolerance = std::clamp(variation(y, x) * 0.25F, 1.5F, 10.0F);
+                    for (int dy = -radius; dy <= radius; ++dy) {
+                        for (int dx = -radius; dx <= radius; ++dx) {
+                            const int nx = x + dx, ny = y + dy;
+                            if (nx < 0 || ny < 0 || nx >= source.cols || ny >= source.rows ||
+                                !hole(ny, nx))
+                                continue;
+                            const auto donor = matches(ny, nx);
+                            if (donor[0] < 0)
+                                continue;
+                            const auto value = source(donor[1] - dy, donor[0] - dx);
+                            const auto difference =
+                                guide(donor[1] - dy, donor[0] - dx) - guide(y, x);
+                            const auto detailDifference = value - anchor;
+                            const float w = 1.0F / ((1.0F + costs(ny, nx)) *
+                                                    (1.0F + difference.dot(difference) / 100.0F) *
+                                                    (1.0F + detailDifference.dot(detailDifference) /
+                                                                (tolerance * tolerance)));
+                            sum += value * w;
+                            weight += w;
+                        }
+                    }
+                    // Both buffers retain the original known pixels permanently.
+                    next(y, x) = weight > 0 ? sum / weight : output(y, x);
+                }
+            }
+        };
+        const cv::Range range(0, static_cast<int>(spans.size()));
+        if (options.parallelVoting && patches.size() >= 32768)
+            cv::parallel_for_(range, vote, 2);
+        else
+            vote(range);
+        std::swap(output, next);
     }
     return {output, matches};
 }
+
 } // namespace
 
 QPainterPath path(const SnowCanvasSceneItem& item) {
@@ -516,8 +628,18 @@ QPainterPath path(const SnowCanvasSceneItem& item) {
     return transform.map(result);
 }
 
-Result reconstruct(const SnowCanvasSceneItem& item, const QList<SnowCanvasBaseImageSource>& sources,
-                   const std::atomic_bool& cancelled) {
+Result reconstructWithOptions(const SnowCanvasSceneItem& item,
+                              const QList<SnowCanvasBaseImageSource>& sources,
+                              const std::atomic_bool& cancelled,
+                              const ReconstructionOptions& options,
+                              ReconstructionDiagnostics* diagnostics) {
+    if (options.coarsePasses < 2 || options.coarsePasses > 5 || options.intermediatePasses < 2 ||
+        options.intermediatePasses > 5 || options.finePasses < 2 || options.finePasses > 5)
+        return {};
+    if (diagnostics)
+        *diagnostics = {};
+    auto preparationStart =
+        diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     try {
         const QPainterPath shape = path(item);
         QRectF available;
@@ -601,20 +723,45 @@ Result reconstruct(const SnowCanvasSceneItem& item, const QList<SnowCanvasBaseIm
         cv::bitwise_and(coverage, ~hole, known);
         if (cv::countNonZero(known) == 0)
             return {};
+        if (diagnostics) {
+            diagnostics->workingSize = size;
+            diagnostics->maskedPixels = cv::countNonZero(hole);
+            diagnostics->preparationMs = std::chrono::duration<double, std::milli>(
+                                             std::chrono::steady_clock::now() - preparationStart)
+                                             .count();
+        }
+        auto fastStart = diagnostics ? std::chrono::steady_clock::now()
+                                     : std::chrono::steady_clock::time_point{};
         cv::Mat3f surface = surfaceFill(rgb, hole, known, cancelled);
+        if (diagnostics && !surface.empty())
+            diagnostics->path = ReconstructionDiagnostics::Path::Surface;
         const auto domain = surface.empty() ? donorDomain(hole, known, cancelled) : cv::Mat1b();
-        if (surface.empty())
+        if (surface.empty()) {
             surface = periodicFill(rgb, hole, domain, cancelled);
+            if (diagnostics && !surface.empty())
+                diagnostics->path = ReconstructionDiagnostics::Path::Periodic;
+        }
+        if (diagnostics)
+            diagnostics->fastPathsMs = std::chrono::duration<double, std::milli>(
+                                           std::chrono::steady_clock::now() - fastStart)
+                                           .count();
         if (!surface.empty()) {
             rgb = std::move(surface);
         } else {
+            auto guideStart = diagnostics ? std::chrono::steady_clock::now()
+                                          : std::chrono::steady_clock::time_point{};
+            if (diagnostics)
+                diagnostics->path = ReconstructionDiagnostics::Path::Patches;
             cv::Mat3f lab;
             cv::cvtColor(rgb, lab, cv::COLOR_RGB2Lab);
             rgb.release();
             const auto bounds = cv::boundingRect(hole);
             const int guideRadius = std::clamp(std::min(bounds.width, bounds.height) / 12, 4, 16);
-            const auto mean = observedBackground(lab, known, guideRadius, cancelled);
-            const auto variation = backgroundVariation(lab, mean, known, guideRadius, cancelled);
+            cv::Mat1f weights;
+            const auto mean = observedBackground(lab, known, guideRadius, cancelled, weights);
+            const auto variation =
+                backgroundVariation(lab, mean, known, guideRadius, cancelled, weights);
+            weights.release();
             const auto guide = backgroundGuide(mean, variation, hole, known, cancelled);
             std::vector<cv::Mat3f> images{lab};
             std::vector<BackgroundGuide> guides{guide};
@@ -656,10 +803,23 @@ Result reconstruct(const SnowCanvasSceneItem& item, const QList<SnowCanvasBaseIm
                 coverages.push_back(reducedCoverage);
                 domains.push_back(reducedDomain);
             }
+            if (diagnostics)
+                diagnostics->guidePyramidMs = std::chrono::duration<double, std::milli>(
+                                                  std::chrono::steady_clock::now() - guideStart)
+                                                  .count();
             LevelResult filled;
             for (std::size_t i = images.size(); i-- > 0;) {
+                const int passes = i == images.size() - 1 ? options.coarsePasses
+                                   : i == 0               ? options.finePasses
+                                                          : options.intermediatePasses;
+                LevelDiagnostics* level = nullptr;
+                if (diagnostics) {
+                    diagnostics->levels.push_back({QSize(images[i].cols, images[i].rows),
+                                                   cv::countNonZero(holes[i]), passes, 0, 0});
+                    level = &diagnostics->levels.back();
+                }
                 filled = fillLevel(images[i], holes[i], coverages[i], domains[i], guides[i], filled,
-                                   cancelled);
+                                   cancelled, options, passes, level);
             }
             cv::cvtColor(filled.image, rgb, cv::COLOR_Lab2RGB);
         }
@@ -685,5 +845,9 @@ Result reconstruct(const SnowCanvasSceneItem& item, const QList<SnowCanvasBaseIm
     } catch (const std::exception&) {
         return {};
     }
+}
+Result reconstruct(const SnowCanvasSceneItem& item, const QList<SnowCanvasBaseImageSource>& sources,
+                   const std::atomic_bool& cancelled) {
+    return reconstructWithOptions(item, sources, cancelled, {});
 }
 } // namespace snow_canvas_smart_erase
