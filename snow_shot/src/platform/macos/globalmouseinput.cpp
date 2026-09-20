@@ -56,10 +56,9 @@ GlobalMouseInputResult MacGlobalMouseInput::handle(CGEventType type, CGEventRef 
                                                    const GlobalMouseConfiguration& configuration) {
     if (!event)
         return {};
-    // Public Quartz events identify their posting process. WindowServer/HID
-    // events use zero; do not let automation acquire or release physical ownership.
-    if (CGEventGetIntegerValueField(event, kCGEventSourceUnixProcessID) != 0)
-        return {};
+    // The session tap also receives input forwarded by accessibility tools and
+    // remote mice. A posting PID is provenance, not a reason to drop a press or
+    // its matching release (including releases of drags begun by a Qt button).
     const CGEventFlags flags = CGEventGetFlags(event);
     // Retire only modifiers physically released; masking survives Finish/Cancel
     // and never steals a later independent press of the same modifier.
@@ -142,20 +141,19 @@ GlobalMouseInputResult MacGlobalMouseInput::handle(CGEventType type, CGEventRef 
 std::optional<GlobalMouseDragEvent> MacGlobalMouseInput::interrupt() {
     return gesture.handle({GlobalMouseInput::Kind::Cancel, lastPosition}, {}).event;
 }
-void MacGlobalMouseInput::resynchronize(Qt::MouseButtons buttons, CGEventFlags flags,
-                                        bool escapeHeld) {
+void MacGlobalMouseInput::resynchronize(const MacGlobalMouseInputState& state) {
     // A timeout can hide releases. Retire only those pairs known to have ended;
     // still-held swallowed presses remain owned until their real releases arrive.
-    const auto released = heldButtons & ~buttons;
+    const auto released = heldButtons & ~state.buttons;
     for (unsigned i = 0; i < 27; ++i) {
         const auto button = static_cast<Qt::MouseButton>(quint32{1} << i);
         if (released.testFlag(button))
             static_cast<void>(
                 gesture.handle({GlobalMouseInput::Kind::Release, lastPosition, button}, {}));
     }
-    heldButtons = buttons;
-    maskedFlags &= flags;
-    escapeConsumed = escapeConsumed && escapeHeld;
+    heldButtons = state.buttons;
+    maskedFlags &= state.modifierFlags;
+    escapeConsumed = escapeConsumed && state.escapeDown;
 }
 void MacGlobalMouseInput::reset() {
     gesture.reset();

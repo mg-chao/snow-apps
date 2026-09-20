@@ -6,6 +6,13 @@
 
 namespace snow_shot::presentation::detail {
 
+// A coherent snapshot from one CoreGraphics input-state domain.
+struct MacGlobalMouseInputState {
+    Qt::MouseButtons buttons;
+    CGEventFlags modifierFlags = 0;
+    bool escapeDown = false;
+};
+
 // Native calls are injectable so lifecycle tests never install a system hook
 // or request TCC access. Event translation is tested with private CGEvents.
 struct MacGlobalMouseApi {
@@ -14,13 +21,11 @@ struct MacGlobalMouseApi {
     std::function<CFMachPortRef(CGEventMask, CGEventTapCallBack, void*)> createTap;
     std::function<void(CFMachPortRef, bool)> enableTap;
     std::function<bool(CFMachPortRef)> tapEnabled;
-    std::function<Qt::MouseButtons()> buttons;
+    std::function<MacGlobalMouseInputState()> inputState;
     std::function<std::optional<QPointF>()> cursor;
     std::function<void()> requestAccess;
     std::function<void(bool)> openSettings;
     std::function<bool()> sessionActive;
-    std::function<CGEventFlags()> modifierFlags;
-    std::function<bool()> escapeDown;
 };
 
 struct MacGlobalMouseInput {
@@ -30,11 +35,12 @@ struct MacGlobalMouseInput {
     bool escapeConsumed = false;
     QPointF lastPosition;
 
-    // Mutates a private/native event only after matching a physical gesture.
+    // Mutates an event only after the session input establishes gesture ownership.
+    // Source process and state identifiers describe provenance, not user intent.
     [[nodiscard]] GlobalMouseInputResult handle(CGEventType type, CGEventRef event,
                                                 const GlobalMouseConfiguration& configuration);
     [[nodiscard]] std::optional<GlobalMouseDragEvent> interrupt();
-    void resynchronize(Qt::MouseButtons buttons, CGEventFlags flags, bool escapeHeld);
+    void resynchronize(const MacGlobalMouseInputState& state);
     void reset();
 };
 
