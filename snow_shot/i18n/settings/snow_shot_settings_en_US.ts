@@ -380,6 +380,10 @@
             <translation>Left-button drag</translation>
         </message>
         <message>
+            <source>Middle-button drag</source>
+            <translation>Middle-button drag</translation>
+        </message>
+        <message>
             <source>Mouse button</source>
             <translation>Mouse button</translation>
         </message>
@@ -430,10 +434,6 @@
         <message>
             <source>Unset</source>
             <translation>Unset</translation>
-        </message>
-        <message>
-            <source>Wheel drag</source>
-            <translation>Wheel drag</translation>
         </message>
         <message>
             <source>Windows</source>
@@ -987,16 +987,16 @@
             <translation>Choose the video encoder</translation>
         </message>
         <message>
-            <source>Choose what clicking the tray icon with the scroll wheel does</source>
-            <translation>Choose what clicking the tray icon with the scroll wheel does</translation>
-        </message>
-        <message>
             <source>Choose what happens automatically when text recognition completes</source>
             <translation>Choose what happens automatically when text recognition completes</translation>
         </message>
         <message>
             <source>Choose what left-clicking the tray icon does</source>
             <translation>Choose what left-clicking the tray icon does</translation>
+        </message>
+        <message>
+            <source>Choose what middle-clicking the tray icon does</source>
+            <translation>Choose what middle-clicking the tray icon does</translation>
         </message>
         <message>
             <source>Choose when recognized text can be selected on pinned screenshots.</source>
@@ -2301,10 +2301,6 @@
         <message>
             <source>Screenshots</source>
             <translation>Screenshots</translation>
-        </message>
-        <message>
-            <source>Scroll-wheel click action</source>
-            <translation>Scroll-wheel click action</translation>
         </message>
         <message>
             <source>Scrolling screenshot</source>

@@ -1164,9 +1164,8 @@ SettingsItemDefinition trayLeftClickItem() {
 SettingsItemDefinition trayMiddleClickItem() {
     return fixedSelectItem(
         QStringLiteral("tray.middle-click-action"),
-        QT_TRANSLATE_NOOP("SettingsCatalog", "Scroll-wheel click action"),
-        QT_TRANSLATE_NOOP("SettingsCatalog",
-                          "Choose what clicking the tray icon with the scroll wheel does"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Middle mouse button action"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Choose what middle-clicking the tray icon does"),
         QStringLiteral("tray/middle_click_action"), SettingsSelectBinding::TrayMiddleClickAction,
         trayClickActionOptions());
 }

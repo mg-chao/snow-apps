@@ -380,6 +380,10 @@
             <translation>左键拖动</translation>
         </message>
         <message>
+            <source>Middle-button drag</source>
+            <translation>中键拖动</translation>
+        </message>
+        <message>
             <source>Mouse button</source>
             <translation>鼠标按键</translation>
         </message>
@@ -430,10 +434,6 @@
         <message>
             <source>Unset</source>
             <translation>未设置</translation>
-        </message>
-        <message>
-            <source>Wheel drag</source>
-            <translation>滚轮拖动</translation>
         </message>
         <message>
             <source>Windows</source>
@@ -987,16 +987,16 @@
             <translation>选择视频编码器</translation>
         </message>
         <message>
-            <source>Choose what clicking the tray icon with the scroll wheel does</source>
-            <translation>选择使用滚轮点击托盘图标时执行的操作</translation>
-        </message>
-        <message>
             <source>Choose what happens automatically when text recognition completes</source>
             <translation>选择文本识别完成后自动执行的操作</translation>
         </message>
         <message>
             <source>Choose what left-clicking the tray icon does</source>
             <translation>选择左键单击托盘图标时执行的操作</translation>
+        </message>
+        <message>
+            <source>Choose what middle-clicking the tray icon does</source>
+            <translation>选择中键单击托盘图标时执行的操作</translation>
         </message>
         <message>
             <source>Choose when recognized text can be selected on pinned screenshots.</source>
@@ -2301,10 +2301,6 @@
         <message>
             <source>Screenshots</source>
             <translation>截图</translation>
-        </message>
-        <message>
-            <source>Scroll-wheel click action</source>
-            <translation>滚轮点击操作</translation>
         </message>
         <message>
             <source>Scrolling screenshot</source>
