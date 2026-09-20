@@ -412,6 +412,17 @@ bool ShortcutSettings::setToggleGlobalHotkeys(
     return setShortcutValue(QStringLiteral("global_shortcuts/toggle_global_hotkeys"), bindings);
 }
 
+shortcuts::ShortcutBindingList ShortcutSettings::toggleDisableOnFocusedFullscreenWindow() const {
+    return shortcutValue(
+        QStringLiteral("global_shortcuts/toggle_disable_on_focused_fullscreen_window"));
+}
+
+bool ShortcutSettings::setToggleDisableOnFocusedFullscreenWindow(
+    const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(
+        QStringLiteral("global_shortcuts/toggle_disable_on_focused_fullscreen_window"), bindings);
+}
+
 bool ExtendedFeaturesSettings::translationPageEnabled() const {
     return cache()
         .value(QStringLiteral("extended_features/translation_page_enabled"))

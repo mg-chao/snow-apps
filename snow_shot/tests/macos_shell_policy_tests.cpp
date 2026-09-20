@@ -38,6 +38,7 @@ void shortcutFamiliesAreComplete() {
         {GlobalShortcutAction::TranslateSelectedText, std::nullopt},
         {GlobalShortcutAction::PinSelectedFiles, FeatureFamily::PinToScreen},
         {GlobalShortcutAction::ToggleGlobalHotkeys, std::nullopt},
+        {GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow, std::nullopt},
     };
     for (const auto& [action, family] : expected) {
         require(snow_shot::app::featureFamilyFor(action) == family,

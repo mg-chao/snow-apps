@@ -53,6 +53,7 @@ class SystemTrayController final : public QObject {
     void setMenuOptions(const QStringList& options);
     [[nodiscard]] QStringList menuOptions() const;
     void setGlobalHotkeysDisabled(bool disabled);
+    void setFullscreenHotkeysDisabled(bool disabled);
 
   signals:
     void screenshotRequested();

@@ -617,6 +617,22 @@ SettingsItemDefinition toggleGlobalHotkeysItem() {
         {QT_TRANSLATE_NOOP("SettingsCatalog", "Disable global hotkeys"), true});
 }
 
+SettingsItemDefinition toggleDisableOnFocusedFullscreenWindowItem() {
+    return quickActionItem(
+        QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Disable hotkeys in fullscreen windows"),
+        QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Turn off or back on the suppression of global hotkeys while the focused window is "
+            "fullscreen; this shortcut stays active while fullscreen suppression is enabled"),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Fullscreen suppression"))},
+        GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow,
+        QStringLiteral("global_shortcuts/toggle_disable_on_focused_fullscreen_window"),
+        []() { return custom_outlined_icons::ScreenshotFullScreen(); },
+        SettingsShortcutAdjustment::None,
+        {QT_TRANSLATE_NOOP("SettingsCatalog", "Disable hotkeys in fullscreen windows"), true});
+}
+
 SettingsItemDefinition pinClipboardContentItem() {
     return quickActionItem(
         QStringLiteral("quick.pin-clipboard-content"),
@@ -1848,6 +1864,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                         openCaptureHistoryItem(),
                         translateSelectedTextItem(),
                         toggleGlobalHotkeysItem(),
+                        toggleDisableOnFocusedFullscreenWindowItem(),
                     },
                 },
             },
@@ -2570,6 +2587,8 @@ QString shortcutConfigurationKey(GlobalShortcutAction action) {
         return QStringLiteral("global_shortcuts/translate_selected_text");
     case GlobalShortcutAction::ToggleGlobalHotkeys:
         return QStringLiteral("global_shortcuts/toggle_global_hotkeys");
+    case GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow:
+        return QStringLiteral("global_shortcuts/toggle_disable_on_focused_fullscreen_window");
     }
     return {};
 }
@@ -2887,7 +2906,13 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
               QT_TRANSLATE_NOOP("SettingsCatalog", "Disable global hotkeys"),
               GlobalShortcutAction::ToggleGlobalHotkeys,
               []() { return custom_outlined_icons::Disabled(); }, SettingsShortcutAdjustment::None,
-              true)}},
+              true),
+          quick(
+              QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window"),
+              QT_TRANSLATE_NOOP("SettingsCatalog", "Disable hotkeys in fullscreen windows"),
+              GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow,
+              []() { return custom_outlined_icons::ScreenshotFullScreen(); },
+              SettingsShortcutAdjustment::None, true)}},
         {QStringLiteral("system"),
          {{QStringLiteral("tray.window-grouping"),
            {"SettingsCatalog", QT_TRANSLATE_NOOP("SettingsCatalog", "Window grouping")},

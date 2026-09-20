@@ -1279,6 +1279,10 @@
             <translation>Disable global hotkeys</translation>
         </message>
         <message>
+            <source>Disable hotkeys in fullscreen windows</source>
+            <translation>Disable hotkeys in fullscreen windows</translation>
+        </message>
+        <message>
             <source>Disable/Enable global hotkeys</source>
             <translation>Disable/Enable global hotkeys</translation>
         </message>
@@ -1469,6 +1473,10 @@
         <message>
             <source>Full screen</source>
             <translation>Full screen</translation>
+        </message>
+        <message>
+            <source>Fullscreen suppression</source>
+            <translation>Fullscreen suppression</translation>
         </message>
         <message>
             <source>Function settings</source>
@@ -2717,6 +2725,10 @@
         <message>
             <source>Turn every global hotkey off or back on; this shortcut stays active while global hotkeys are disabled</source>
             <translation>Turn every global hotkey off or back on; this shortcut stays active while global hotkeys are disabled</translation>
+        </message>
+        <message>
+            <source>Turn off or back on the suppression of global hotkeys while the focused window is fullscreen; this shortcut stays active while fullscreen suppression is enabled</source>
+            <translation>Turn off or back on the suppression of global hotkeys while the focused window is fullscreen; this shortcut stays active while fullscreen suppression is enabled</translation>
         </message>
         <message>
             <source>UIA</source>

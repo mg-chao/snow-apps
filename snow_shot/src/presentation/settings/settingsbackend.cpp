@@ -1318,6 +1318,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                       QStringLiteral("global_shortcuts/translate_selected_text"));
         resetShortcut(GlobalShortcutAction::ToggleGlobalHotkeys,
                       QStringLiteral("global_shortcuts/toggle_global_hotkeys"));
+        resetShortcut(
+            GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow,
+            QStringLiteral("global_shortcuts/toggle_disable_on_focused_fullscreen_window"));
         return accepted;
     }
     case SettingsSectionReset::GlobalPinToScreenShortcuts: {

@@ -211,10 +211,10 @@ void builtInCatalogIsCompleteAndValid() {
     }
 #ifdef Q_OS_MACOS
     require(sectionCount == 40, "macOS adds one permissions section");
-    require(itemCount == 168, "macOS permission rows offset omitted Windows-only choices");
+    require(itemCount == 169, "macOS permission rows offset omitted Windows-only choices");
 #else
     require(sectionCount == 39, "catalog must contain thirty-nine sections");
-    require(itemCount == 168, "catalog must contain one hundred sixty-eight items");
+    require(itemCount == 169, "catalog must contain one hundred sixty-nine items");
 #endif
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -1227,6 +1227,10 @@ void globalHotkeyShortcutsHaveStableContracts() {
         {Action::ToggleGlobalHotkeys, "other", "quick.toggle-global-hotkeys",
          "global_shortcuts/toggle_global_hotkeys",
          settings::SettingsCommandKind::ExecuteQuickAction},
+        {Action::ToggleDisableOnFocusedFullscreenWindow, "other",
+         "quick.toggle-disable-on-focused-fullscreen-window",
+         "global_shortcuts/toggle_disable_on_focused_fullscreen_window",
+         settings::SettingsCommandKind::ExecuteQuickAction},
         {Action::PinClipboardContent, "pin-to-screen", "quick.pin-clipboard-content",
          "global_shortcuts/pin_clipboard_content",
          settings::SettingsCommandKind::ExecuteQuickAction},
@@ -1266,8 +1270,8 @@ void globalHotkeyShortcutsHaveStableContracts() {
         }
     }
 
-    require(actions.size() == expectations.size() && expectations.size() == 16,
-            "the global-hotkeys catalog must expose all sixteen shortcut actions exactly once");
+    require(actions.size() == expectations.size() && expectations.size() == 17,
+            "the global-hotkeys catalog must expose all seventeen shortcut actions exactly once");
     require(!catalog.commandForShortcut(Action::OpenSettings).has_value(),
             "Open Interface settings must not appear in Global hotkeys");
 
@@ -1310,9 +1314,9 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 trayGroups.at(2).id == QStringLiteral("screen-recording") &&
                 trayGroups.at(2).options.size() == 3 &&
                 trayGroups.at(3).id == QStringLiteral("other") &&
-                trayGroups.at(3).options.size() == 3 &&
+                trayGroups.at(3).options.size() == 4 &&
                 trayGroups.at(4).id == QStringLiteral("system") &&
-                trayGroups.at(4).options.size() == 3 && trayOptionIds.size() == 19 &&
+                trayGroups.at(4).options.size() == 3 && trayOptionIds.size() == 20 &&
                 trayOptionIds.at(8) == QStringLiteral("quick.pin-clipboard-content") &&
                 trayOptionIds.at(9) == QStringLiteral("quick.pin-selected-files") &&
                 trayOptionIds.at(10) == QStringLiteral("quick.screen-record") &&
@@ -1321,11 +1325,13 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 trayOptionIds.at(13) == QStringLiteral("quick.open-capture-history") &&
                 trayOptionIds.at(14) == QStringLiteral("quick.translate-selected-text") &&
                 trayOptionIds.at(15) == QStringLiteral("quick.toggle-global-hotkeys") &&
-                trayOptionIds.at(16) == QStringLiteral("tray.window-grouping") &&
+                trayOptionIds.at(16) ==
+                    QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window") &&
+                trayOptionIds.at(17) == QStringLiteral("tray.window-grouping") &&
                 trayGroups.at(4).options.at(0).kind ==
                     settings::SettingsTrayMenuOptionKind::WindowGrouping &&
-                trayOptionIds.at(17) == QStringLiteral("tray.show-main-window") &&
-                trayOptionIds.at(18) == QStringLiteral("tray.exit") && trayMenuSchema != nullptr &&
+                trayOptionIds.at(18) == QStringLiteral("tray.show-main-window") &&
+                trayOptionIds.at(19) == QStringLiteral("tray.exit") && trayMenuSchema != nullptr &&
                 trayMenuSchema->allowedStringValues == trayOptionIds,
             "tray menu options must derive all global-hotkey groups and append system commands");
 
@@ -1340,17 +1346,20 @@ void globalHotkeyShortcutsHaveStableContracts() {
     const auto* hotkeyToggleItem =
         catalog.item({QStringLiteral("global-hotkeys"), QStringLiteral("other"),
                       QStringLiteral("quick.toggle-global-hotkeys")});
-    require(hotkeyToggleTrayOption != nullptr && hotkeyToggleItem != nullptr &&
-                hotkeyToggleItem->title.source != nullptr &&
-                QString::fromLatin1(hotkeyToggleItem->title.source) ==
-                    QStringLiteral("Disable/Enable global hotkeys") &&
-                hotkeyToggleTrayOption->kind == settings::SettingsTrayMenuOptionKind::QuickAction &&
-                hotkeyToggleTrayOption->label.source != nullptr &&
-                QString::fromLatin1(hotkeyToggleTrayOption->label.source) ==
-                    QStringLiteral("Disable global hotkeys") &&
-                hotkeyToggleTrayOption->checkable &&
-                checkableOptionIds == QStringList{QStringLiteral("quick.toggle-global-hotkeys")},
-            "the tray must keep the historical label and toggle checkmark for the hotkey switch");
+    require(
+        hotkeyToggleTrayOption != nullptr && hotkeyToggleItem != nullptr &&
+            hotkeyToggleItem->title.source != nullptr &&
+            QString::fromLatin1(hotkeyToggleItem->title.source) ==
+                QStringLiteral("Disable/Enable global hotkeys") &&
+            hotkeyToggleTrayOption->kind == settings::SettingsTrayMenuOptionKind::QuickAction &&
+            hotkeyToggleTrayOption->label.source != nullptr &&
+            QString::fromLatin1(hotkeyToggleTrayOption->label.source) ==
+                QStringLiteral("Disable global hotkeys") &&
+            hotkeyToggleTrayOption->checkable &&
+            checkableOptionIds ==
+                QStringList{QStringLiteral("quick.toggle-global-hotkeys"),
+                            QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window")},
+        "the tray must keep the historical label and toggle checkmark for the hotkey switch");
 
     const auto* delaySchema =
         storage::ConfigurationSchema::entry(QStringLiteral("screenshot/delay_seconds"));
@@ -1367,6 +1376,15 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 toggleSchema->defaultValue.toArray().isEmpty() &&
                 toggleSchema->maximumListItems == 2,
             "the global-hotkey toggle must ship without a default binding");
+
+    const auto* fullscreenToggleSchema = storage::ConfigurationSchema::entry(
+        QStringLiteral("global_shortcuts/toggle_disable_on_focused_fullscreen_window"));
+    require(fullscreenToggleSchema != nullptr &&
+                fullscreenToggleSchema->valueKind ==
+                    storage::ConfigurationValueKind::ShortcutList &&
+                fullscreenToggleSchema->defaultValue.toArray().isEmpty() &&
+                fullscreenToggleSchema->maximumListItems == 2,
+            "the fullscreen suppression toggle must ship without a default binding");
 
     const auto* ocrItem =
         catalog.item({QStringLiteral("global-hotkeys"), QStringLiteral("screenshot"),
@@ -1427,11 +1445,14 @@ void globalHotkeyShortcutsHaveStableContracts() {
                       QStringLiteral("quick.pin-selected-files")});
     const auto* otherShortcuts =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("other"));
-    require(otherShortcuts != nullptr && otherShortcuts->items.size() == 3 &&
-                otherShortcuts->items.at(0).id == QStringLiteral("quick.open-capture-history") &&
-                otherShortcuts->items.at(1).id == QStringLiteral("quick.translate-selected-text") &&
-                otherShortcuts->items.at(2).id == QStringLiteral("quick.toggle-global-hotkeys"),
-            "Other quick actions expose history, selected text translation, and the hotkey toggle");
+    require(
+        otherShortcuts != nullptr && otherShortcuts->items.size() == 4 &&
+            otherShortcuts->items.at(0).id == QStringLiteral("quick.open-capture-history") &&
+            otherShortcuts->items.at(1).id == QStringLiteral("quick.translate-selected-text") &&
+            otherShortcuts->items.at(2).id == QStringLiteral("quick.toggle-global-hotkeys") &&
+            otherShortcuts->items.at(3).id ==
+                QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window"),
+        "Other quick actions expose history, selected text translation, and both hotkey toggles");
     const auto* pinSection =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("pin-to-screen"));
     require(pinSection != nullptr && pinSection->title.source != nullptr &&

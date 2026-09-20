@@ -26,6 +26,7 @@ std::optional<FeatureFamily> featureFamilyFor(presentation::GlobalShortcutAction
     case Action::OpenSettings:
     case Action::TranslateSelectedText:
     case Action::ToggleGlobalHotkeys:
+    case Action::ToggleDisableOnFocusedFullscreenWindow:
         return std::nullopt;
     }
     return std::nullopt;

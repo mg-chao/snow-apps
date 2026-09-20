@@ -27,6 +27,7 @@ enum class GlobalShortcutAction {
     TranslateSelectedText,
     PinSelectedFiles,
     ToggleGlobalHotkeys,
+    ToggleDisableOnFocusedFullscreenWindow,
 };
 
 enum class GlobalShortcutStatus {

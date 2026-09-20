@@ -123,6 +123,9 @@ class ShortcutSettings final {
     bool setTranslateSelectedText(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList toggleGlobalHotkeys() const;
     bool setToggleGlobalHotkeys(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList toggleDisableOnFocusedFullscreenWindow() const;
+    bool
+    setToggleDisableOnFocusedFullscreenWindow(const shortcuts::ShortcutBindingList& bindings) const;
 };
 
 class GlobalShortcutSettings final {

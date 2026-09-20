@@ -1279,6 +1279,10 @@
             <translation>停用全域快速鍵</translation>
         </message>
         <message>
+            <source>Disable hotkeys in fullscreen windows</source>
+            <translation>在全螢幕視窗中停用快速鍵</translation>
+        </message>
+        <message>
             <source>Disable/Enable global hotkeys</source>
             <translation>停用/啟用全域快速鍵</translation>
         </message>
@@ -1469,6 +1473,10 @@
         <message>
             <source>Full screen</source>
             <translation>全螢幕</translation>
+        </message>
+        <message>
+            <source>Fullscreen suppression</source>
+            <translation>全螢幕抑制</translation>
         </message>
         <message>
             <source>Function settings</source>
@@ -2717,6 +2725,10 @@
         <message>
             <source>Turn every global hotkey off or back on; this shortcut stays active while global hotkeys are disabled</source>
             <translation>關閉或重新開啟所有全域快速鍵；即使全域快速鍵已停用，此快速鍵仍然有效</translation>
+        </message>
+        <message>
+            <source>Turn off or back on the suppression of global hotkeys while the focused window is fullscreen; this shortcut stays active while fullscreen suppression is enabled</source>
+            <translation>關閉或重新開啟焦點視窗全螢幕時對全域快速鍵的抑制；即使全螢幕抑制已生效，此快速鍵仍然有效</translation>
         </message>
         <message>
             <source>UIA</source>

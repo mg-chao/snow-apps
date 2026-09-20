@@ -22,7 +22,7 @@ namespace {
 constexpr int MAX_SHORTCUTS_PER_ACTION = 2;
 constexpr int FIRST_REGISTRATION_ID = 0x2200;
 constexpr int LAST_REGISTRATION_ID = 0xBFFF;
-constexpr std::size_t ACTION_COUNT = 17;
+constexpr std::size_t ACTION_COUNT = 18;
 
 constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::Screenshot,
@@ -42,6 +42,7 @@ constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::TranslateSelectedText,
     GlobalShortcutAction::PinSelectedFiles,
     GlobalShortcutAction::ToggleGlobalHotkeys,
+    GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow,
 };
 
 std::size_t actionIndex(GlobalShortcutAction action) {
@@ -155,6 +156,8 @@ shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSetting
         return settings.translateSelectedText();
     case GlobalShortcutAction::ToggleGlobalHotkeys:
         return settings.toggleGlobalHotkeys();
+    case GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow:
+        return settings.toggleDisableOnFocusedFullscreenWindow();
     }
     return {};
 }
@@ -196,6 +199,8 @@ bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutA
         return settings.setTranslateSelectedText(bindings);
     case GlobalShortcutAction::ToggleGlobalHotkeys:
         return settings.setToggleGlobalHotkeys(bindings);
+    case GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow:
+        return settings.setToggleDisableOnFocusedFullscreenWindow(bindings);
     }
     return false;
 }
@@ -243,9 +248,13 @@ class GlobalShortcutManager::Impl {
                  !storage::ExtendedFeaturesSettings().translationPageEnabled())) {
                 return;
             }
+            // The fullscreen suppression toggle must stay usable while that
+            // suppression is active so it can always be undone by keyboard.
             const bool suppress =
                 storage::GlobalShortcutSettings().disableOnFocusedFullscreenWindow();
-            if (!suppress || !m_focusedFullscreenDetector || !m_focusedFullscreenDetector()) {
+            if (!suppress ||
+                active->action == GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow ||
+                !m_focusedFullscreenDetector || !m_focusedFullscreenDetector()) {
                 emit q.activated(active->action);
             }
         });

@@ -726,4 +726,14 @@ void SystemTrayController::setGlobalHotkeysDisabled(bool disabled) {
         action->setChecked(disabled);
     }
 }
+
+void SystemTrayController::setFullscreenHotkeysDisabled(bool disabled) {
+    // Pure view update: the configuration store owns the suppression state and
+    // announces changes; the checkmark only mirrors them, so this must not
+    // dispatch anything.
+    if (QAction* action = m_impl->checkableQuickActions.value(
+            GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow)) {
+        action->setChecked(disabled);
+    }
+}
 } // namespace snow_shot::presentation
