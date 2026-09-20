@@ -4191,7 +4191,21 @@ if(SNOW_SHOT_BUILD_TESTS)
             comctl32
         )
     endif()
+    if(APPLE)
+        target_sources(snow-shot-floating-toolbar-drag-tests PRIVATE
+            ../cmake/test-support/macos_native_input.mm
+            src/platform/macos/screenshotnative.mm)
+        target_link_libraries(snow-shot-floating-toolbar-drag-tests PRIVATE "-framework AppKit")
+        target_include_directories(snow-shot-floating-toolbar-drag-tests PRIVATE ../cmake/test-support)
+        add_test(NAME snow-shot-macos-toolbar-shadow-input-tests
+            COMMAND snow-shot-floating-toolbar-drag-tests --macos-shadow-input-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-toolbar-shadow-input-tests PROPERTIES
+            LABELS "interactive;macos" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60)
+    endif()
     snow_shot_import_offscreen_platform(snow-shot-floating-toolbar-drag-tests)
+    add_test(NAME snow-shot-border-cursor-tool-restoration-tests
+        COMMAND snow-shot-floating-toolbar-drag-tests --border-cursor-only -platform offscreen)
+    set_tests_properties(snow-shot-border-cursor-tool-restoration-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-interrupted-toolbar-drag-tests
         COMMAND snow-shot-floating-toolbar-drag-tests --interrupted-drag-only -platform offscreen)
     set_tests_properties(snow-shot-interrupted-toolbar-drag-tests PROPERTIES LABELS "unit")
@@ -4876,6 +4890,15 @@ if(SNOW_SHOT_BUILD_TESTS)
         )
     endif()
     snow_shot_import_offscreen_platform(snow-shot-recognition-window-tests)
+    if(APPLE)
+        set_source_files_properties(tests/screenshot_recognition_window_tests.cpp
+            PROPERTIES LANGUAGE OBJCXX)
+        target_link_libraries(snow-shot-recognition-window-tests PRIVATE "-framework AppKit")
+    endif()
+    add_test(NAME snow-shot-recognition-message-shadow-tests
+        COMMAND snow-shot-recognition-window-tests --message-shadow-only -platform offscreen)
+    set_tests_properties(snow-shot-recognition-message-shadow-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-recognition-context-menu-tests
         COMMAND snow-shot-recognition-window-tests --context-menu-only -platform offscreen)
     set_tests_properties(snow-shot-recognition-context-menu-tests PROPERTIES

@@ -230,6 +230,9 @@ ScreenshotRecognitionWindow::ScreenshotRecognitionWindow(
     m_shortcutManager->addScopeWindow(this);
     setObjectName(QStringLiteral("screenshotRecognitionWindow"));
     if (m_presentationMode == PresentationMode::TopLevelWindow) {
+        // This is an exact selection overlay, not a floating panel. Cocoa otherwise
+        // shadows every nontransparent pixel, outlining Message's painted shadow.
+        setWindowFlag(Qt::NoDropShadowWindowHint);
         setAttribute(Qt::WA_TranslucentBackground, true);
     }
     setAutoFillBackground(false);

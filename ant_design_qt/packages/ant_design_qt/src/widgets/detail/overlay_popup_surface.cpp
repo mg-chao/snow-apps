@@ -2,6 +2,10 @@
 
 #include "popup_shadow.h"
 
+#if defined(Q_OS_MACOS)
+#include "window_surface_mac_p.h"
+#endif
+
 #include <QPaintEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -25,7 +29,14 @@ OverlayPopupSurface::OverlayPopupSurface(QWidget* parent) : QWidget(parent) {
   bodyWidget_ = new QWidget(this);
 }
 
-QMargins OverlayPopupSurface::shadowMargins() const { return antPopupShadowSecondaryMargins(); }
+QMargins OverlayPopupSurface::shadowMargins() const {
+#if defined(Q_OS_MACOS)
+  if (isWindow()) {
+    return {};
+  }
+#endif
+  return antPopupShadowSecondaryMargins();
+}
 
 void OverlayPopupSurface::setSurfaceStyle(const OverlayPopupSurfaceStyle& style) {
   const bool unchanged = style_.background == style.background &&
@@ -41,6 +52,7 @@ void OverlayPopupSurface::setSurfaceStyle(const OverlayPopupSurfaceStyle& style)
   style_ = style;
   invalidatePathCache();
   updateBodyGeometry();
+  updateNativeSurface();
   updateGeometry();
   update();
 }
@@ -52,6 +64,7 @@ void OverlayPopupSurface::setArrowVisible(bool visible) {
   arrowVisible_ = visible;
   invalidatePathCache();
   updateBodyGeometry();
+  updateNativeSurface();
   updateGeometry();
   update();
 }
@@ -64,6 +77,7 @@ void OverlayPopupSurface::setPlacement(OverlayPopupPlacement placement) {
   arrowSide_ = arrowSideForPlacement(placement_);
   invalidatePathCache();
   updateBodyGeometry();
+  updateNativeSurface();
   updateGeometry();
   update();
 }
@@ -74,6 +88,7 @@ void OverlayPopupSurface::setArrowCenter(qreal center) {
   }
   arrowCenter_ = center;
   invalidatePathCache();
+  updateNativeSurface();
   update();
 }
 
@@ -88,7 +103,11 @@ QSize OverlayPopupSurface::visualSizeHint() const {
                std::max(1, bodyHint.height() + heightPadding));
 }
 
-QSize OverlayPopupSurface::sizeHint() const { return addAntPopupShadowMargins(visualSizeHint()); }
+QSize OverlayPopupSurface::sizeHint() const {
+  const QMargins margins = shadowMargins();
+  return visualSizeHint() +
+         QSize(margins.left() + margins.right(), margins.top() + margins.bottom());
+}
 
 bool OverlayPopupSurface::containsInteractiveLocalPos(const QPointF& pos) const {
   ensurePathCache();
@@ -136,6 +155,7 @@ void OverlayPopupSurface::resizeEvent(QResizeEvent* event) {
   QWidget::resizeEvent(event);
   invalidatePathCache();
   updateBodyGeometry();
+  updateNativeSurface();
 }
 
 void OverlayPopupSurface::paintEvent(QPaintEvent* event) {
@@ -153,6 +173,7 @@ void OverlayPopupSurface::showEvent(QShowEvent* event) {
   shadowCache_ = std::make_unique<ShadowCache>();
   ensurePathCache();
   ensureShadowCache();
+  updateNativeSurface();
 }
 
 void OverlayPopupSurface::hideEvent(QHideEvent* event) {
@@ -258,7 +279,12 @@ void OverlayPopupSurface::paintSurface(QPainter& painter) const {
   painter.save();
   painter.translate(QPointF(0.0, 6.0));
   painter.setPen(Qt::NoPen);
-  if (shadowCache_ && shadowCache_->valid) {
+  bool paintShadow = true;
+#if defined(Q_OS_MACOS)
+  // A painted shadow is part of Cocoa's input surface. Native shadows are not.
+  paintShadow = !isWindow();
+#endif
+  if (paintShadow && shadowCache_ && shadowCache_->valid) {
     for (const QPainterPath& shadowPath : shadowCache_->paths) {
       QColor stepColor = shadowColor;
       stepColor.setAlphaF(std::clamp(stepAlpha, 0.0F, 1.0F));
@@ -449,6 +475,43 @@ QPolygonF OverlayPopupSurface::arrowPolygon(const QRectF& bubbleRect) const {
       break;
   }
   return polygon;
+}
+
+void OverlayPopupSurface::updateNativeSurface() {
+#if defined(Q_OS_MACOS)
+  if (!isWindow()) {
+    clearMask();
+    return;
+  }
+  if (!isVisible()) {
+    return;
+  }
+  ensurePathCache();
+  if (!pathCache_ || !pathCache_->valid) {
+    return;
+  }
+  // Cocoa clips both input and the backing layer to QWidget's integer mask.
+  // Preserve the entire painted bounds (including border coverage), rather
+  // than rasterizing the curved hover path and cutting off antialiased pixels.
+  // Separate bubble/arrow bounds still exclude the unused arrow gutters.
+  // QRegion edges can round inward when mapped to fractional device pixels.
+  // Retain one extra logical mask cell beyond the stroke to cover that rounding.
+  const qreal paintOutset = std::max(0, style_.metrics.borderWidth) / 2.0 + 1.0;
+  const auto paintedBounds = [paintOutset](const QPainterPath& path) {
+    return path.boundingRect()
+        .adjusted(-paintOutset, -paintOutset, paintOutset, paintOutset)
+        .toAlignedRect();
+  };
+  QRegion region(paintedBounds(pathCache_->bubble));
+  if (!pathCache_->arrow.isEmpty()) {
+    region += paintedBounds(pathCache_->arrow);
+  }
+  region &= rect();
+  if (mask() != region) {
+    setMask(region);
+  }
+  updateMacWindowSurfaceShadow(this);
+#endif
 }
 
 void OverlayPopupSurface::updateBodyGeometry() {

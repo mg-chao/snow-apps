@@ -20,6 +20,15 @@ namespace adqt::widgets::detail {
 
 class OverlayPopupSurfaceTestAccess;
 
+// Cocoa shadows must lie outside the native input window, rather than inside
+// a larger masked window whose responder chain can still consume their clicks.
+inline Qt::WindowFlags overlayPopupSurfaceWindowFlags(Qt::WindowFlags flags) {
+#if defined(Q_OS_MACOS)
+  flags &= ~Qt::NoDropShadowWindowHint;
+#endif
+  return flags;
+}
+
 struct OverlayPopupSurfaceMetrics {
   int borderRadius = 8;
   int borderWidth = 1;
@@ -87,6 +96,7 @@ class OverlayPopupSurface final : public QWidget, public TopLevelToolResourceRel
   qreal clampedArrowCenter(const QRectF& bubbleRect) const;
   QPolygonF arrowPolygon(const QRectF& bubbleRect) const;
   void updateBodyGeometry();
+  void updateNativeSurface();
   void invalidatePathCache() const;
   void invalidateShadowCache() const;
   void ensurePathCache() const;

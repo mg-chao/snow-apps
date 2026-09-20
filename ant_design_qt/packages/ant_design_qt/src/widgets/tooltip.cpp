@@ -346,7 +346,8 @@ void TooltipPopupView::ensureSurface(AdTooltipPrivate* owner, QWidget* scopeWind
   const bool topLevelTransient = owner->layerMode == AdTooltip::LayerMode::TopLevelTransient;
   auto* surfaceWidget = new detail::OverlayPopupSurface(topLevelTransient ? nullptr : scopeWindow);
   if (topLevelTransient) {
-    surfaceWidget->setWindowFlags(topLevelTooltipWindowFlags());
+    surfaceWidget->setWindowFlags(
+        detail::overlayPopupSurfaceWindowFlags(topLevelTooltipWindowFlags()));
     surfaceWidget->setAttribute(Qt::WA_ShowWithoutActivating, true);
     surfaceWidget->setAttribute(Qt::WA_TranslucentBackground, true);
     surfaceWidget->setProperty("adqt.tooltip.topLevelTransient", true);

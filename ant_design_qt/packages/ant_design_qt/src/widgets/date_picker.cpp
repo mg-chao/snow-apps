@@ -8615,7 +8615,7 @@ void AdDatePicker::ensurePopup() {
   auto* surface = new detail::OverlayPopupSurface(
       popupLayerMode_ == PopupLayerMode::QtTool ? nullptr : scopeWindow);
   if (popupLayerMode_ == PopupLayerMode::QtTool) {
-    surface->setWindowFlags(adQtToolWindowFlags());
+    surface->setWindowFlags(detail::overlayPopupSurfaceWindowFlags(adQtToolWindowFlags()));
     surface->setAttribute(Qt::WA_ShowWithoutActivating, true);
     surface->setAttribute(Qt::WA_TranslucentBackground, true);
     surface->setAttribute(Qt::WA_QuitOnClose, false);
@@ -8723,8 +8723,9 @@ void AdDatePicker::applyPopupLayerMode() {
   }
   QWidget* scopeWindow = detail::resolvePopupScopeWindow(this);
   QWidget* targetParent = popupLayerMode_ == PopupLayerMode::QtTool ? nullptr : scopeWindow;
-  const Qt::WindowFlags flags =
-      popupLayerMode_ == PopupLayerMode::QtTool ? adQtToolWindowFlags() : Qt::Widget;
+  const Qt::WindowFlags flags = popupLayerMode_ == PopupLayerMode::QtTool
+                                    ? detail::overlayPopupSurfaceWindowFlags(adQtToolWindowFlags())
+                                    : Qt::Widget;
   const bool useToolWindow = popupLayerMode_ == PopupLayerMode::QtTool;
   popup_->setAttribute(Qt::WA_ShowWithoutActivating, useToolWindow);
   popup_->setAttribute(Qt::WA_TranslucentBackground, useToolWindow);
@@ -11212,7 +11213,7 @@ void AdDateRangePicker::ensurePopup() {
   auto* surface = new detail::OverlayPopupSurface(
       popupLayerMode_ == PopupLayerMode::QtTool ? nullptr : scopeWindow);
   if (popupLayerMode_ == PopupLayerMode::QtTool) {
-    surface->setWindowFlags(adQtToolWindowFlags());
+    surface->setWindowFlags(detail::overlayPopupSurfaceWindowFlags(adQtToolWindowFlags()));
     surface->setAttribute(Qt::WA_ShowWithoutActivating, true);
     surface->setAttribute(Qt::WA_TranslucentBackground, true);
     surface->setAttribute(Qt::WA_QuitOnClose, false);
@@ -11453,8 +11454,9 @@ void AdDateRangePicker::applyPopupLayerMode() {
   }
   QWidget* scopeWindow = detail::resolvePopupScopeWindow(this);
   QWidget* targetParent = popupLayerMode_ == PopupLayerMode::QtTool ? nullptr : scopeWindow;
-  const Qt::WindowFlags flags =
-      popupLayerMode_ == PopupLayerMode::QtTool ? adQtToolWindowFlags() : Qt::Widget;
+  const Qt::WindowFlags flags = popupLayerMode_ == PopupLayerMode::QtTool
+                                    ? detail::overlayPopupSurfaceWindowFlags(adQtToolWindowFlags())
+                                    : Qt::Widget;
   const bool useToolWindow = popupLayerMode_ == PopupLayerMode::QtTool;
   popup_->setAttribute(Qt::WA_ShowWithoutActivating, useToolWindow);
   popup_->setAttribute(Qt::WA_TranslucentBackground, useToolWindow);

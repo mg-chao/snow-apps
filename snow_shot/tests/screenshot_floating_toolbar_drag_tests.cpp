@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
@@ -7,6 +8,9 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "widgets/button.h"
+#include "widgets/popover.h"
+#include "widgets/detail/overlay_popup_surface.h"
+#include <QPushButton>
 #include "widgets/dpi_stable_window_controller.h"
 
 #include <QAbstractButton>
@@ -17,6 +21,8 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QGuiApplication>
+#include <QImage>
+#include <QPainter>
 #include <QLayout>
 #include <QLineEdit>
 #include <QLabel>
@@ -47,6 +53,11 @@
 #ifndef WM_GETDPISCALEDSIZE
 #define WM_GETDPISCALEDSIZE 0x02E4
 #endif
+#endif
+
+#if defined(Q_OS_MACOS)
+#include "macos_native_input.h"
+#include "snow_shot/platform/screenshotnative.h"
 #endif
 
 class ScreenshotFloatingToolPaletteWindowTestAccess {
@@ -2401,6 +2412,102 @@ void interruptedToolbarDragStopsMoving() {
 }
 
 #if defined(Q_OS_MACOS)
+void macosToolbarShadowClickThrough() {
+    require(macCanPostMouseEvents(),
+            "native click test requires Accessibility event-posting access");
+    MacCursorRestore restoreCursor;
+    QTemporaryDir temporary;
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(temporary.isValid() &&
+                storage.initialize({temporary.path(), temporary.path(), 60000}).success,
+            "native toolbar input tests require isolated settings");
+    {
+        QWidget owner;
+        owner.setGeometry(
+            QApplication::primaryScreen()->availableGeometry().adjusted(50, 100, -50, -100));
+        QPushButton underlying(QStringLiteral("Underlying canvas"), &owner);
+        underlying.setGeometry(owner.rect());
+        int canvasClicks = 0;
+        QObject::connect(&underlying, &QPushButton::clicked, [&] { ++canvasClicks; });
+        owner.show();
+        snow_shot::platform::configureScreenshotOverlayWindow(&owner);
+        macActivateApplication();
+        owner.activateWindow();
+        NoOpToolbarCommands commands;
+        ScreenshotToolbarWindow window(commands);
+        window.setOwnerWindow(&owner);
+        window.moveContentTo(owner.mapToGlobal(QPoint(300, 300)));
+        window.show();
+        settleQueuedRefreshes();
+        snow_shot::platform::configureScreenshotToolbarWindow(&window);
+        for (const auto& size : {QStringLiteral("normal"), QStringLiteral("small")}) {
+            window.setToolbarSize(size);
+            window.prepareForDisplay();
+            settleQueuedRefreshes();
+            for (const auto& name : {QStringLiteral("screenshotArrowLineButton"),
+                                     QStringLiteral("screenshotHighlightButton")}) {
+                auto* trigger = window.findChild<adqt::widgets::AdButton*>(name);
+                require(trigger && trigger->isVisible(), "drawing group trigger missing");
+                int triggerClicks = 0;
+                const auto connection = QObject::connect(trigger, &adqt::widgets::AdButton::clicked,
+                                                         [&] { ++triggerClicks; });
+                const QPoint center = trigger->mapToGlobal(trigger->rect().center());
+                macPostMove(center);
+                QElapsedTimer wait;
+                wait.start();
+                adqt::widgets::detail::OverlayPopupSurface* popup = nullptr;
+                while (wait.elapsed() < 2000 && !popup) {
+                    QCoreApplication::processEvents();
+                    QThread::msleep(10);
+                    for (auto* widget : QApplication::topLevelWidgets()) {
+                        if (widget->isVisible() &&
+                            widget->objectName() == QStringLiteral("adpopover-surface")) {
+                            popup =
+                                dynamic_cast<adqt::widgets::detail::OverlayPopupSurface*>(widget);
+                            break;
+                        }
+                    }
+                }
+                require(popup, "real hover must open the drawing group popover");
+                // Masks cannot forward Cocoa events to a lower window. The native
+                // popup frame itself must not cover any of its trigger's pixels.
+                const QRect triggerRect(trigger->mapToGlobal(QPoint()), trigger->size());
+                require(!popup->frameGeometry().intersects(triggerRect),
+                        "popover native input frame must not overlap its trigger");
+                require(popup->shadowMargins().isNull(),
+                        "macOS popovers must not reserve native input space for shadows");
+                for (const int y : {1, trigger->height() / 2, trigger->height() - 2}) {
+                    const int before = triggerClicks;
+                    const QPoint point = trigger->mapToGlobal(QPoint(trigger->width() / 2, y));
+                    macPostClick(point);
+                    require(triggerClicks == before + 1,
+                            "popover shadow must pass a complete click to its toolbar trigger");
+                }
+                QObject::disconnect(connection);
+                for (auto* popover : window.findChildren<adqt::widgets::AdPopover*>())
+                    popover->hide();
+                settleQueuedRefreshes();
+            }
+            for (int cycle = 0; cycle < 2; ++cycle) {
+                const auto* panel = window.palette()->mainPanel();
+                for (const QPoint point : {QPoint(panel->width() / 2, panel->height() + 4),
+                                           QPoint(-4, panel->height() / 2), QPoint(0, 0)}) {
+                    const int before = canvasClicks;
+                    macPostClick(panel->mapToGlobal(point));
+                    require(canvasClicks == before + 1, "toolbar shadow and rounded corner must "
+                                                        "pass a complete click to the canvas");
+                }
+                window.releaseNativeSurface();
+                window.restoreNativeSurface();
+                window.show();
+                settleQueuedRefreshes();
+                snow_shot::platform::configureScreenshotToolbarWindow(&window);
+            }
+        }
+    }
+    storage.shutdown();
+}
+
 void macosToolbarUsesLogicalGeometry() {
     QTemporaryDir temporary;
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
@@ -2429,6 +2536,12 @@ void macosToolbarUsesLogicalGeometry() {
         const auto checkMask = [&]() {
             const QRegion panels = window.paletteHost()->interactiveHostRegion().translated(
                 window.paletteHost()->pos());
+            require(window.mask().boundingRect() == window.rect(),
+                    "macOS toolbar native frame must fit the panel bounds without shadow padding");
+            require(window.palette()->mainPanel()->graphicsEffect() == nullptr,
+                    "toolbar shadows must not be painted into the native input backing image");
+            require(!window.windowFlags().testFlag(Qt::NoDropShadowWindowHint),
+                    "native shadow visibility must be owned by the Qt window flags");
             require(!window.mask().isEmpty() &&
                         (panels.intersected(window.rect()) - window.mask()).isEmpty(),
                     "window mask must include every displayed panel");
@@ -2436,8 +2549,36 @@ void macosToolbarUsesLogicalGeometry() {
                     "unused backing-window space must be excluded from the mask");
             const QRect main =
                 window.palette()->mainPanel()->geometry().translated(window.palette()->pos());
-            require(window.mask().contains(main.topLeft() - QPoint(1, 1)),
-                    "window mask must retain the painted panel shadow");
+            require(!window.mask().contains(main.topLeft() - QPoint(1, 1)),
+                    "toolbar shadows must be outside the native input mask");
+            QWidget* panel = window.palette()->mainPanel();
+            for (const qreal renderDpr : {1.0, 1.5, 2.0}) {
+                QImage image(
+                    QSize(qRound(panel->width() * renderDpr), qRound(panel->height() * renderDpr)),
+                    QImage::Format_ARGB32_Premultiplied);
+                image.setDevicePixelRatio(renderDpr);
+                image.fill(Qt::transparent);
+                QPainter painter(&image);
+                panel->render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
+                painter.end();
+                int blendedPixels = 0;
+                for (int y = 0; y < qRound(8 * renderDpr); ++y) {
+                    for (int x = 0; x < qRound(8 * renderDpr); ++x) {
+                        const int alpha = image.pixelColor(x, y).alpha();
+                        if (alpha > 0 && alpha < 255) {
+                            ++blendedPixels;
+                            const QPoint point = panel->mapTo(
+                                &window, QPoint(qFloor(x / renderDpr), qFloor(y / renderDpr)));
+                            require(window.mask().contains(point),
+                                    "native mask must retain every antialiased corner pixel");
+                        }
+                    }
+                }
+                require(blendedPixels > 0, "toolbar corners must have fractional alpha coverage");
+                require(image.pixelColor(image.width() / 2, 0) ==
+                            image.pixelColor(image.width() / 2, 2),
+                        "toolbar surface edge must not have a border stroke");
+            }
         };
         for (const qreal multiplier : {1.0, 0.8}) {
             window.setToolbarSize(multiplier == 1.0 ? QStringLiteral("normal")
@@ -2508,7 +2649,7 @@ void macosToolbarUsesLogicalGeometry() {
                     "surface recreation must restore ownership without showing the toolbar");
             window.show();
             settleQueuedRefreshes();
-            require(window.size() == logicalSize &&
+            require(window.size() == window.windowSizeHint() &&
                         window.testAttribute(Qt::WA_MacAlwaysShowToolWindow),
                     "surface recreation must retain logical sizing and macOS attributes");
             checkMask();
@@ -2518,10 +2659,100 @@ void macosToolbarUsesLogicalGeometry() {
 }
 #endif
 
+void borderCursorSurvivesToolRestoration() {
+    QTemporaryDir temporary;
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(temporary.isValid() &&
+                storage.initialize({temporary.path(), temporary.path(), 60000}).success,
+            "border cursor tests require isolated settings");
+    // Match the application's non-native canvas children.
+    const bool nativeSiblingsDisabled =
+        QCoreApplication::testAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
+    QCoreApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
+    using Tool = ScreenshotToolPalette::Tool;
+    for (const auto tool : {Tool::FreeDraw, Tool::Arrow, Tool::Shape, Tool::Select}) {
+        QWidget overlay(nullptr, Qt::Tool | Qt::FramelessWindowHint);
+        overlay.resize(800, 600);
+        SnowCanvasWidget canvas(&overlay);
+        canvas.setGeometry(overlay.rect());
+        overlay.show();
+        NoOpToolbarCommands commands;
+        ScreenshotToolbarWindow toolbar(commands);
+        toolbar.setOwnerWindow(&overlay);
+        toolbar.prepareForDisplay();
+        ScreenshotToolPalette& palette = *toolbar.palette();
+        toolbar.setActiveTool(tool);
+        toolbar.show();
+        const auto canvasTool = tool == Tool::FreeDraw ? SnowCanvasTool::FreeDraw
+                                : tool == Tool::Arrow  ? SnowCanvasTool::Arrow
+                                : tool == Tool::Shape  ? SnowCanvasTool::Shape
+                                                       : SnowCanvasTool::Select;
+        QObject::connect(&canvas, &SnowCanvasWidget::styleToolbarStateChanged, &palette,
+                         [&] { palette.setStyleToolbarState(canvas.canvasStyleToolbarState()); });
+        require(canvas.setCanvasTool(canvasTool), "activate drawing tool");
+        QCoreApplication::processEvents();
+
+        for (int resize = 0; resize < 2; ++resize) {
+            // The real border-resize path resets the engine before switching the toolbar to
+            // Move. Free Draw and Arrow consequently materialize a temporary Shape row.
+            require(canvas.resetEditingState(), "reset canvas for border drag");
+            canvas.setInteractionEnabled(false);
+            QVector<QPointer<QWidget>> controls;
+            for (QWidget* control : palette.findChildren<QWidget*>()) {
+                controls.push_back(control);
+            }
+            toolbar.setActiveTool(Tool::Move);
+            toolbar.hide();
+            QVector<QPointer<QWidget>> retiredControls;
+            for (const QPointer<QWidget>& control : controls) {
+                if (control && control->parentWidget() == nullptr) {
+                    retiredControls.push_back(control);
+                    require(control->isHidden(), "retired controls must initially be hidden");
+                }
+            }
+            require(!retiredControls.isEmpty(), "resize must retire the previous toolbar controls");
+
+            canvas.setInteractionEnabled(true);
+            require(canvas.setCanvasTool(canvasTool), "restore drawing tool");
+            toolbar.setActiveTool(tool);
+            toolbar.show();
+            canvas.setCursorForLayer(SnowCanvasCursorLayer::Host, QCursor(Qt::SizeHorCursor));
+
+            // Layout insertion queues QWidget's _q_showIfNotHidden. Deliver those callbacks
+            // before deferred deletion, as the application event loop does after mouse-up.
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+            for (const QPointer<QWidget>& control : retiredControls) {
+                require(control && control->isHidden(),
+                        "queued layout callbacks must not reopen retired controls as windows");
+                require(control->windowHandle() == nullptr,
+                        "retired controls must not acquire a native window and steal cursor focus");
+            }
+            require(canvas.cursor().shape() == Qt::SizeHorCursor,
+                    "restored drawing tool must preserve the border cursor");
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            for (const QPointer<QWidget>& control : retiredControls) {
+                require(control.isNull(), "retired controls must still be deleted asynchronously");
+            }
+            QCoreApplication::processEvents();
+        }
+    }
+    QCoreApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings, nativeSiblingsDisabled);
+    storage.shutdown();
+}
+
 int main(int argc, char* argv[]) {
+    QCoreApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
     QApplication app(argc, argv);
     try {
+        if (app.arguments().contains(QStringLiteral("--border-cursor-only"))) {
+            borderCursorSurvivesToolRestoration();
+            return 0;
+        }
 #if defined(Q_OS_MACOS)
+        if (app.arguments().contains(QStringLiteral("--macos-shadow-input-only"))) {
+            macosToolbarShadowClickThrough();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--macos-logical-only"))) {
             macosToolbarUsesLogicalGeometry();
             return 0;

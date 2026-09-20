@@ -15,8 +15,12 @@ HWND toNativeHwnd(WId windowId) {
 #endif
 
 Qt::WindowFlags screenshot_floating_palette_native::windowFlags() {
-    return Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
-           Qt::WindowDoesNotAcceptFocus | Qt::NoDropShadowWindowHint;
+    Qt::WindowFlags flags = Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
+                            Qt::WindowDoesNotAcceptFocus;
+#if !defined(Q_OS_MACOS)
+    flags |= Qt::NoDropShadowWindowHint;
+#endif
+    return flags;
 }
 
 bool screenshot_floating_palette_native::currentPhysicalCursorPosition(QPointF* position) {

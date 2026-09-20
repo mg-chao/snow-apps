@@ -1842,7 +1842,7 @@ void prewarmedDestinationMergesSourceSharedAndDestinationOnlyEditors() {
 
     require(palette.ensureStyleFamily(ScreenshotToolPalette::Tool::Text),
             "the destination Text row should support explicit prewarming");
-    QWidget* prewarmedTextRow =
+    QPointer<QWidget> prewarmedTextRow =
         palette.findChild<QWidget*>(QStringLiteral("screenshotTextStyleControls"));
     QPointer<QWidget> destinationAlignment = styleEditorRoot(prewarmedTextRow, "text-alignment");
     QPointer<QWidget> duplicateColor = styleEditorRoot(prewarmedTextRow, "foreground-color");
@@ -1854,8 +1854,8 @@ void prewarmedDestinationMergesSourceSharedAndDestinationOnlyEditors() {
     palette.setStyleToolbarState(selectedText);
 
     QWidget* textRow = palette.findChild<QWidget*>(QStringLiteral("screenshotTextStyleControls"));
-    require(textRow != nullptr && textRow != prewarmedTextRow,
-            "reconciliation should publish a fresh destination row container");
+    require(textRow != nullptr && prewarmedTextRow.isNull(),
+            "reconciliation should destroy the prewarmed row and publish a fresh container");
     require(styleEditorRoot(textRow, "foreground-color") == sourceColor &&
                 styleEditorRoot(textRow, "text-font") == sourceFont &&
                 styleEditorRoot(textRow, "text-fill") == sourceFill,

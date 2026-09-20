@@ -1221,7 +1221,10 @@ void AdButton::keyReleaseEvent(QKeyEvent* event) {
 bool AdButton::hitButton(const QPoint& pos) const {
   const Shape visualShape = effectiveShape(renderText());
   if (visualShape != Shape::Circle) {
-    return QPushButton::hitButton(pos);
+    // AdButton paints its own surface across the widget, independent of the
+    // platform style. QPushButton uses the native SE_PushButtonBevel instead,
+    // which leaves visibly painted edges unclickable on macOS.
+    return rect().contains(pos);
   }
 
   const detail::ButtonVisualStyle style = resolvedStyle();

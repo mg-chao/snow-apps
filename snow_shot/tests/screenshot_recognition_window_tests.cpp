@@ -8,6 +8,7 @@
 #include "theme/theme_manager.h"
 #include "widgets/context_menu.h"
 #include "widgets/input_text_edit.h"
+#include "widgets/message.h"
 #include "widgets/scroll_area.h"
 #include "widgets/spin.h"
 
@@ -50,6 +51,10 @@
 #include <iostream>
 #include <functional>
 #include <utility>
+
+#ifdef Q_OS_MACOS
+#import <AppKit/AppKit.h>
+#endif
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include <qt_windows.h>
@@ -420,6 +425,52 @@ HWND windowAtPhysicalPoint(const POINT& point) {
 }
 
 #endif
+
+void recognitionMessageUsesOnlyItsPaintedShadow() {
+    auto& themes = adqt::theme::ThemeManager::instance();
+    const auto originalTheme = themes.config();
+    auto theme = originalTheme;
+    theme.motion = false;
+    themes.setConfig(theme);
+
+    ScreenshotRecognitionWindow window({});
+    const QRect geometry(80, 80, 480, 240);
+    const ScreenshotRecognitionWindow::Config config{QGuiApplication::primaryScreen(), nullptr,
+                                                     geometry,
+                                                     QRectF(QPointF(), QSizeF(geometry.size()))};
+    for (int presentation = 0; presentation < 2; ++presentation) {
+        require(window.present(config), "the recognition message owner should be presented");
+#ifdef Q_OS_MACOS
+        if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+            NSWindow* nativeWindow = reinterpret_cast<NSView*>(window.winId()).window;
+            require(nativeWindow != nil && !nativeWindow.hasShadow,
+                    "Cocoa must not add an outline around painted message shadow pixels");
+        }
+#endif
+        require(window.windowFlags().testFlag(Qt::NoDropShadowWindowHint),
+                "the transparent recognition surface must not shadow the message's shadow");
+        // The recognition surface deliberately retains a nearly transparent fill
+        // for Windows hit testing; preserve that background while adding the message.
+        const QImage background = window.grab().toImage().convertToFormat(QImage::Format_ARGB32);
+        adqt::widgets::AdMessage messages(&window);
+        auto* message = messages.loading(QStringLiteral("Recognizing text"), 0);
+        require(message != nullptr, "the recognition surface should display a loading message");
+        QApplication::processEvents();
+        const QImage image = window.grab().toImage().convertToFormat(QImage::Format_ARGB32);
+        bool hasPaintedShadow = false;
+        for (int y = 0; y < image.height(); ++y) {
+            for (int x = 0; x < image.width(); ++x) {
+                const int alpha = qAlpha(image.pixel(x, y));
+                hasPaintedShadow |= alpha > qAlpha(background.pixel(x, y)) && alpha < 255;
+            }
+        }
+        require(hasPaintedShadow, "disabling the native shadow must preserve the painted shadow");
+        require(image.pixel(0, 0) == background.pixel(0, 0),
+                "the recognition surface background should be preserved outside the message");
+        window.hide();
+    }
+    themes.setConfig(originalTheme);
+}
 
 void recognitionWindowUsesOrdinaryQtWindowBehavior() {
     QScreen* screen = QGuiApplication::primaryScreen();
@@ -1874,6 +1925,10 @@ void tableClipboardPreservesLargeValuesForWholeTableAndSelection() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
+    if (application.arguments().contains(QStringLiteral("--message-shadow-only"))) {
+        recognitionMessageUsesOnlyItsPaintedShadow();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--table-clipboard-only"))) {
         tableClipboardPreservesLargeValuesForWholeTableAndSelection();
         return 0;
@@ -1900,6 +1955,7 @@ int main(int argc, char** argv) {
     selectionOnlyTextLayerPaintsOnlyHighlights();
     embeddedRecognitionWindowPreservesParentSurfaceWithVisibleTextLayer();
     recognitionWindowCanExtendBeyondItsDpiScreen();
+    recognitionMessageUsesOnlyItsPaintedShadow();
     recognitionWindowUsesOrdinaryQtWindowBehavior();
     shortRecognitionWindowPreservesExactSelectionGeometryAcrossModes();
     formattedClipboardTextUsesASelectableQtDocument();

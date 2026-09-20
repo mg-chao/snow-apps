@@ -41,10 +41,12 @@ constexpr int kSeparatorHeight = 16;
 constexpr int kSeparatorWidth = 1;
 constexpr int kSeparatorSideSpacing = 12;
 constexpr int kPanelRadius = 8;
+#if !defined(Q_OS_MACOS)
 constexpr qreal kShadowBlurRadius = 18.0;
 constexpr qreal kShadowOffsetX = 0.0;
 constexpr qreal kShadowOffsetY = 3.0;
 constexpr QColor kShadowColor(0, 0, 0, 90);
+#endif
 
 QColor toolbarSurfaceColor() {
     const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
@@ -101,6 +103,7 @@ void ScreenshotToolbarPanel::setPanelScale(qreal scale) {
     }
     m_panelScale = scale;
     m_panelRadius = scaledMetric(kPanelRadius, scale);
+#if !defined(Q_OS_MACOS)
     auto* shadow = qobject_cast<QGraphicsDropShadowEffect*>(graphicsEffect());
     if (shadow == nullptr) {
         shadow = new QGraphicsDropShadowEffect(this);
@@ -109,6 +112,7 @@ void ScreenshotToolbarPanel::setPanelScale(qreal scale) {
     shadow->setBlurRadius(kShadowBlurRadius * scale);
     shadow->setOffset(kShadowOffsetX * scale, kShadowOffsetY * scale);
     shadow->setColor(kShadowColor);
+#endif
     update();
 }
 
@@ -117,13 +121,19 @@ QString ScreenshotToolbarPanel::separatorStyleSheet() {
         .arg(cssColor(toolbarSeparatorColor()));
 }
 
+QPainterPath ScreenshotToolbarPanel::surfacePath() const {
+    QPainterPath path;
+    path.addRoundedRect(QRectF(rect()), m_panelRadius, m_panelRadius);
+    return path;
+}
+
 void ScreenshotToolbarPanel::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setPen(Qt::NoPen);
     painter.setBrush(toolbarSurfaceColor());
-    painter.drawRoundedRect(QRectF(rect()), m_panelRadius, m_panelRadius);
+    painter.drawPath(surfacePath());
 }
 
 ScreenshotToolbarMainPanel::ScreenshotToolbarMainPanel(const Options& options, QWidget* parent)
@@ -189,7 +199,11 @@ QSize ScreenshotToolbarMainPanel::sizeHint() const {
 }
 
 QMargins ScreenshotToolbarMainPanel::shadowMargins() {
+#if defined(Q_OS_MACOS)
+    return {};
+#else
     return QMargins(24, 24, 24, 28);
+#endif
 }
 
 adqt::widgets::AdButton*

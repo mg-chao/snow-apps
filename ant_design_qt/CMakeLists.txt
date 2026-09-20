@@ -58,7 +58,9 @@ file(GLOB_RECURSE ADQT_WIDGET_SOURCES CONFIGURE_DEPENDS
 add_library(ant_design_qt STATIC ${ADQT_WIDGET_SOURCES})
 if(APPLE)
     enable_language(OBJCXX)
-    target_sources(ant_design_qt PRIVATE packages/ant_design_qt/src/widgets/modal_mac.mm)
+    target_sources(ant_design_qt PRIVATE
+        packages/ant_design_qt/src/widgets/modal_mac.mm
+        packages/ant_design_qt/src/widgets/detail/window_surface_mac.mm)
     target_link_libraries(ant_design_qt PRIVATE "-framework AppKit")
 endif()
 add_library(adqt::widgets ALIAS ant_design_qt)
@@ -295,12 +297,26 @@ if(ADQT_BUILD_TESTS)
 
     add_executable(adqt-qt-tool-popup-tests
         packages/ant_design_qt/tests/qt_tool_popup_tests.cpp)
+    if(APPLE)
+        target_sources(adqt-qt-tool-popup-tests PRIVATE
+            ../cmake/test-support/macos_native_input.mm)
+        target_link_libraries(adqt-qt-tool-popup-tests PRIVATE "-framework AppKit")
+        target_include_directories(adqt-qt-tool-popup-tests PRIVATE ../cmake/test-support)
+        add_test(NAME adqt-popup-input-native-tests
+            COMMAND adqt-qt-tool-popup-tests popupShadowDoesNotCoverUnderlyingWindow -platform cocoa)
+        set_tests_properties(adqt-popup-input-native-tests PROPERTIES LABELS "interactive" RUN_SERIAL TRUE)
+    endif()
     set_target_properties(adqt-qt-tool-popup-tests PROPERTIES AUTOMOC ON)
     target_link_libraries(adqt-qt-tool-popup-tests PRIVATE adqt::widgets Qt6::Test)
-    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+    get_target_property(adqt_qt_core_type Qt6::Core TYPE)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin AND adqt_qt_core_type STREQUAL "STATIC_LIBRARY")
         target_link_libraries(adqt-qt-tool-popup-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)
         qt_import_plugins(adqt-qt-tool-popup-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
     endif()
+    add_test(NAME adqt-popup-input-shape-tests
+        COMMAND adqt-qt-tool-popup-tests popupHoverShapeTracksPaintedSurface
+                popupSurfacePreservesAntialiasedEdges
+                customButtonHitAreaIgnoresNativeBevel -platform offscreen)
     add_test(NAME adqt-select-popup-lifetime-tests
         COMMAND adqt-qt-tool-popup-tests selectSurvivesPopupContainerDestructionOrder
                 -platform offscreen)
@@ -316,7 +332,7 @@ if(ADQT_BUILD_TESTS)
     set_tests_properties(adqt-popover-content-lifecycle-tests PROPERTIES LABELS "unit")
     add_executable(adqt-popup-hover-geometry-tests tests/popup_hover_geometry_tests.cpp)
     target_link_libraries(adqt-popup-hover-geometry-tests PRIVATE adqt::widgets Qt6::Test)
-    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin AND adqt_qt_core_type STREQUAL "STATIC_LIBRARY")
         target_link_libraries(adqt-popup-hover-geometry-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)
         qt_import_plugins(adqt-popup-hover-geometry-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
     endif()

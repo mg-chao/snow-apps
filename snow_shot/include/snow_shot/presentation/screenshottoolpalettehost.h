@@ -34,6 +34,7 @@ class ScreenshotToolPaletteHost final : public QWidget {
     QRect mainToolbarContentRect() const;
     ScreenshotToolbarPlacementSnapshot placementSnapshot() const;
     QRegion interactiveHostRegion() const;
+    QRegion surfaceHostRegion() const;
     QPoint contentOffset() const;
     void prepareForDisplay();
     void resetStyleState();
@@ -65,6 +66,7 @@ class ScreenshotToolPaletteHost final : public QWidget {
     void dragCancelled();
 
   private:
+    QRegion panelHostRegion(bool rounded) const;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 

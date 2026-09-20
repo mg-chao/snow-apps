@@ -5989,6 +5989,11 @@ bool ScreenshotToolPalette::evictSecondaryToolbarContents() {
                 continue;
             }
             widget->setParent(nullptr);
+            // Reparenting only hides implicitly. A pending layout _q_showIfNotHidden call
+            // can otherwise reopen this retired row as a top-level window before deletion,
+            // stealing macOS focus and leaving the overlay's cursor inactive. Hide explicitly
+            // after reparenting, which resets the explicit-show/hide attribute.
+            widget->hide();
             widget->deleteLater();
         }
     };

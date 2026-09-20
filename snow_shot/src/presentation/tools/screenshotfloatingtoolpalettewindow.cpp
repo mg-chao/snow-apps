@@ -12,6 +12,9 @@
 #include "widgets/control_scale.h"
 #include "widgets/dpi_stable_window_controller.h"
 #include "widgets/button.h"
+#if defined(Q_OS_MACOS)
+#include "widgets/detail/window_surface_mac_p.h"
+#endif
 #include "widgets/select.h"
 #include "icon_renderer.h"
 
@@ -42,7 +45,9 @@
 namespace {
 namespace native = screenshot_floating_palette_native;
 
+#if !defined(Q_OS_MACOS)
 constexpr QSize kToolbarWindowPresetSize(1242, 142);
+#endif
 } // namespace
 
 ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
@@ -1148,23 +1153,17 @@ void ScreenshotFloatingToolPaletteWindow::updateWindowMask() {
     if (m_paletteHost == nullptr) {
         return;
     }
-    // Keep the panels' painted shadows, but do not let unused space in the
-    // fixed backing window intercept clicks on the canvas or another app.
-    const qreal scale = m_paletteHost->physicalScale();
-    const QMargins base = ScreenshotToolPaletteHost::defaultShadowMargins();
-    const auto scaled = [scale](int value) {
-        return value > 0 ? std::max(1, qRound(value * scale)) : 0;
-    };
-    const QMargins margins(scaled(base.left()), scaled(base.top()), scaled(base.right()),
-                           scaled(base.bottom()));
-    QRegion visibleRegion;
-    const QRegion panels = m_paletteHost->interactiveHostRegion();
-    for (const QRect& panel : panels) {
-        visibleRegion += panel.marginsAdded(margins).translated(m_paletteHost->pos());
+    // A QRegion rounds curves to integer rectangles. Cocoa also uses this mask
+    // to clip the backing layer, cutting off antialiased coverage and creating
+    // a stepped rim at the shadow boundary. Mask only the gaps between panels;
+    // their painted alpha supplies the smooth silhouette for AppKit's shadow.
+    const QRegion body =
+        m_paletteHost->surfaceHostRegion().translated(m_paletteHost->pos()).intersected(rect());
+    if (mask() != body) {
+        setMask(body);
     }
-    visibleRegion &= rect();
-    if (mask() != visibleRegion) {
-        setMask(visibleRegion);
+    if (isVisible()) {
+        adqt::widgets::detail::updateMacWindowSurfaceShadow(this);
     }
 #endif
 }
@@ -1323,9 +1322,15 @@ void ScreenshotFloatingToolPaletteWindow::endKeyboardFocusInteraction(QWidget* e
 }
 
 QSize ScreenshotFloatingToolPaletteWindow::fixedWindowSizeHint() const {
+#if defined(Q_OS_MACOS)
+    // A native frame is also an input surface on Cocoa. Fit it to the visible
+    // rows; the Windows backing-store reserve must not cover the canvas.
+    return m_paletteHost != nullptr ? m_paletteHost->palette()->size() : QSize(1, 1);
+#else
     const qreal scale = m_paletteHost != nullptr ? m_paletteHost->physicalScale() : 1.0;
     return QSize(qMax(1, qRound(kToolbarWindowPresetSize.width() * scale)),
                  qMax(1, qRound(kToolbarWindowPresetSize.height() * scale)));
+#endif
 }
 
 QPoint ScreenshotFloatingToolPaletteWindow::contentOffset() const {

@@ -5,6 +5,7 @@
 
 #include <QFrame>
 #include <QMargins>
+#include <QPainterPath>
 #include <QVector>
 
 class QBoxLayout;
@@ -22,6 +23,7 @@ class ScreenshotToolbarPanel : public QFrame {
   public:
     explicit ScreenshotToolbarPanel(QWidget* parent = nullptr);
     void setPanelScale(qreal scale);
+    [[nodiscard]] QPainterPath surfacePath() const;
     static QString separatorStyleSheet();
 
   protected:
