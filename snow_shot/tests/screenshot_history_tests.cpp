@@ -2372,7 +2372,11 @@ void shortcutExitConfirmationGatesCancellation() {
     auto* modal = owner.findChild<adqt::widgets::AdModal*>(
         QStringLiteral("screenshotShortcutExitConfirmation"));
     require(modal != nullptr && modal->ownerWindow() == &owner &&
+#ifdef Q_OS_MACOS
+                modal->mode() == adqt::widgets::AdModal::Mode::Window &&
+#else
                 modal->mode() == adqt::widgets::AdModal::Mode::Overlay &&
+#endif
                 modal->windowTitle() == QStringLiteral("Exit screenshot?") &&
                 modal->text() == QStringLiteral("Your current screenshot will be discarded.") &&
                 modal->acceptButton() != nullptr &&
@@ -2381,6 +2385,11 @@ void shortcutExitConfirmationGatesCancellation() {
                 modal->rejectButton() != nullptr &&
                 modal->rejectButton()->text() == QStringLiteral("Cancel") && exits == 0,
             "enabled confirmation must show the configured destructive modal on its owner");
+#ifdef Q_OS_MACOS
+    require(modal->acceptButton()->window()->isWindow() &&
+                modal->acceptButton()->window() != &owner,
+            "macOS confirmation must use a native window that can cover floating toolbars");
+#endif
     require(confirmation.request(true, &owner) &&
                 owner.findChildren<adqt::widgets::AdModal*>(
                          QStringLiteral("screenshotShortcutExitConfirmation"))

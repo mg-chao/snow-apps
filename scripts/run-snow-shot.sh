@@ -31,6 +31,41 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 deployed_app="$snow_build_dir/run/snow_shot.app"
+wait_for_process_exit() {
+    local pid="$1"
+    local attempts="$2"
+    local attempt
+    for ((attempt = 0; attempt < attempts; ++attempt)); do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+        sleep 0.1
+    done
+    return 1
+}
+stop_running_build_instances() {
+    local pid
+    local executable_path
+    while read -r pid executable_path; do
+        [[ -n "$pid" && "${executable_path##*/}" == snow_shot ]] || continue
+        case "$executable_path" in
+            "$snow_build_dir"/*) ;;
+            *) continue ;;
+        esac
+
+        printf 'Stopping the running development instance (PID %s)...\n' "$pid"
+        if ! kill -TERM "$pid" 2>/dev/null; then
+            kill -0 "$pid" 2>/dev/null && snow_die "snow_shot process $pid could not be stopped."
+            continue
+        fi
+        if wait_for_process_exit "$pid" 15; then
+            continue
+        fi
+
+        kill -KILL "$pid" 2>/dev/null || true
+        wait_for_process_exit "$pid" 50 || snow_die "snow_shot process $pid did not stop."
+    done < <(ps -axww -o pid= -o comm=)
+}
 if [[ "$build" == false && "$clean" == true ]]; then
     snow_die '--clean cannot be combined with --no-build'
 fi
@@ -42,6 +77,7 @@ if [[ "$build" == false ]]; then
     # Preserve the exact signed bundle to which the user granted permissions.
     exec open -n "$deployed_app" --args "$@"
 fi
+stop_running_build_instances
 build_args=("$snow_preset" --target snow_shot)
 if [[ "$clean" == true ]]; then build_args+=(--clean); fi
 if [[ "$codesign_identity_set" == true ]]; then

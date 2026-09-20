@@ -3,9 +3,11 @@
 import json
 import os
 from pathlib import Path
+import signal
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,9 +31,10 @@ with open(os.environ['SNOW_TEST_LOG'], 'a') as log:
 if name == 'uname': print('Darwin' if sys.argv[1] == '-s' else 'arm64')
 if name == 'xcode-select': print('/mock Xcode')
 if name == 'cmake' and '--preset' in sys.argv and os.environ.get('FAIL_CONFIGURE'): sys.exit(17)
+if name == 'ps' and os.environ.get('SNOW_TEST_PS_OUTPUT'): print(os.environ['SNOW_TEST_PS_OUTPUT'])
 """
         tools = ("cmake", "cpack", "ninja", "cargo", "rustup", "pkg-config", "uname",
-                 "open", "xcode-select", "xcrun", "git", "lsregister")
+                 "open", "ps", "xcode-select", "xcrun", "git", "lsregister")
         for name in tools:
             path = self.bin / name
             path.write_text(mock)
@@ -51,6 +54,7 @@ if name == 'cmake' and '--preset' in sys.argv and os.environ.get('FAIL_CONFIGURE
     def run_script(self, script, *args, success=True):
         result = subprocess.run(["/bin/bash", str(self.root / "scripts" / script), *args],
                                 env=self.env, text=True, capture_output=True, cwd="/")
+        self.last_result = result
         if success:
             self.assertEqual(result.returncode, 0, result.stderr)
         else:
@@ -110,6 +114,36 @@ if name == 'cmake' and '--preset' in sys.argv and os.environ.get('FAIL_CONFIGURE
         self.assertEqual(calls[-1], ['open', '-n', str(deployed), '--args', '--example', 'a path'])
         self.assertIn('--install', calls[-3])
         self.assertEqual(calls[-2], ['lsregister', '-f', str(deployed)])
+
+    def test_launch_stops_selected_build_instances_before_rebuilding(self):
+        app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/snow_shot.app'
+        binary = app / 'Contents/MacOS/snow_shot'
+        binary.parent.mkdir(parents=True)
+        binary.touch()
+        binary.chmod(0o755)
+        running = app.parent.parent / 'run/snow_shot.app/Contents/MacOS/snow_shot'
+        running.parent.mkdir(parents=True)
+        unrelated = self.root / 'other/snow_shot'
+        process = subprocess.Popen(['/bin/sleep', '60'])
+        reaper = threading.Thread(target=process.wait)
+        reaper.start()
+        self.env['SNOW_TEST_PS_OUTPUT'] = f'{process.pid} {running}\n2147483646 {unrelated}'
+
+        try:
+            calls = self.run_script('run-snow-shot.sh')
+        finally:
+            if process.poll() is None:
+                process.kill()
+            reaper.join(timeout=2)
+
+        inspect = calls.index(['ps', '-axww', '-o', 'pid=', '-o', 'comm='])
+        build = next(i for i, call in enumerate(calls) if '--build' in call)
+        self.assertLess(inspect, build)
+        self.assertIn(f'Stopping the running development instance (PID {process.pid})...',
+                      self.last_result.stdout)
+        self.assertNotIn('2147483646', self.last_result.stdout)
+        self.assertFalse(reaper.is_alive())
+        self.assertEqual(process.returncode, -signal.SIGTERM)
 
     def test_launch_can_skip_or_clean_the_automatic_build(self):
         app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/snow_shot.app'

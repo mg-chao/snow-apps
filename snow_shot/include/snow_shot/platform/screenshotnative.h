@@ -6,6 +6,7 @@ namespace snow_shot::platform {
 using ScrollInputResult = windows::ScrollInputResult;
 #ifdef Q_OS_MACOS
 void configureScreenshotOverlayWindow(QWidget* widget);
+void configureScreenshotToolbarWindow(QWidget* widget);
 quint32 screenshotDisplayAtCursor();
 quint32 screenshotFocusedWindow();
 bool screenshotScrollPermission();

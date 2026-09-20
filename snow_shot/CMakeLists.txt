@@ -6833,10 +6833,15 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         src/platform/macos/screenshotnative.mm
         src/presentation/core/screenshotgeometry.cpp)
     target_include_directories(snow-shot-macos-overlay-initialization-tests PRIVATE include)
-    target_link_libraries(snow-shot-macos-overlay-initialization-tests PRIVATE Qt6::Widgets
+    target_link_libraries(snow-shot-macos-overlay-initialization-tests PRIVATE ant_design_qt Qt6::Widgets
         "-framework AppKit" "-framework ApplicationServices")
     add_test(NAME snow-shot-macos-overlay-initialization-tests
         COMMAND snow-shot-macos-overlay-initialization-tests)
     set_tests_properties(snow-shot-macos-overlay-initialization-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit;macos")
+    add_test(NAME snow-shot-macos-screenshot-stacking-native-tests
+        COMMAND snow-shot-macos-overlay-initialization-tests -platform cocoa)
+    set_tests_properties(snow-shot-macos-screenshot-stacking-native-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=cocoa" LABELS "interactive;macos"
+        RUN_SERIAL TRUE TIMEOUT 60)
 endif()
