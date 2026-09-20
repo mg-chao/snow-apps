@@ -169,6 +169,7 @@ class ScreenshotGeometryMapper final {
     [[nodiscard]] static ScreenshotDisplayPlacementGeometry
     displayPlacementGeometry(const CapturedDisplayModel* display,
                              const QRect& fallbackLogicalBounds = QRect());
+    [[nodiscard]] static CapturedDisplayModel preCaptureDisplayModel(QScreen& screen);
     [[nodiscard]] static QRect physicalRectForScreen(const QScreen& screen);
     [[nodiscard]] static QRectF logicalRectFForPhysicalRect(const QRect& rect,
                                                             const QScreen* screen);

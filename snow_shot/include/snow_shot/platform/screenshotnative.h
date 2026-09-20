@@ -1,9 +1,11 @@
 #ifndef SNOW_SHOT_PLATFORM_SCREENSHOTNATIVE_H
 #define SNOW_SHOT_PLATFORM_SCREENSHOTNATIVE_H
 #include "snow_shot/platform/windows/scrollinput.h"
+class QWidget;
 namespace snow_shot::platform {
 using ScrollInputResult = windows::ScrollInputResult;
 #ifdef Q_OS_MACOS
+void configureScreenshotOverlayWindow(QWidget* widget);
 quint32 screenshotDisplayAtCursor();
 quint32 screenshotFocusedWindow();
 bool screenshotScrollPermission();

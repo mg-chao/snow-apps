@@ -745,6 +745,31 @@ ScreenshotGeometryMapper::displayPlacementGeometry(const CapturedDisplayModel* d
     return geometry;
 }
 
+CapturedDisplayModel ScreenshotGeometryMapper::preCaptureDisplayModel(QScreen& screen) {
+    CapturedDisplayModel display;
+    display.name = screen.name();
+    display.logicalRect = screen.geometry();
+    display.physicalRect = physicalRectForScreen(screen);
+    display.canvasRect = display.physicalRect;
+    display.screen = &screen;
+    display.active = true;
+#ifdef Q_OS_MACOS
+    // Selection can finish before image acquisition. Use the same display identity
+    // and point-based canvas as the captured frame from the start of the session.
+    auto* native = screen.nativeInterface<QNativeInterface::QCocoaScreen>();
+    if (native) {
+        display.nativeDisplayId = [[[native->nativeScreen() deviceDescription]
+            objectForKey:@"NSScreenNumber"] unsignedIntValue];
+        display.stableId = QStringLiteral("display:%1").arg(display.nativeDisplayId);
+        display.capturedLogicalRect = display.logicalRect;
+        display.backingScale = screen.devicePixelRatio();
+        display.canvasUsesPoints = true;
+        display.canvasRect = display.logicalRect;
+    }
+#endif
+    return display;
+}
+
 QRect ScreenshotGeometryMapper::physicalRectForScreen(const QScreen& screen) {
     const QRect logicalGeometry = screen.geometry();
     const qreal devicePixelRatio = screen.devicePixelRatio();

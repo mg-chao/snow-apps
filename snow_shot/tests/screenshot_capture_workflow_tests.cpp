@@ -766,9 +766,13 @@ void phasedWorkflowOnlySignalsInitialReadinessOnce() {
     ScreenshotDisplaySession displays;
     CapturedDisplayModel display;
     display.stableId = QStringLiteral("display:1");
-    display.physicalRect = QRect(0, 0, 100, 100);
-    display.image = QImage(100, 100, QImage::Format_RGBA8888);
-    ScreenshotCaptureDisplayModelReconciler::applySnapshots(displays, {display});
+    display.physicalRect = QRect(0, 0, 200, 200);
+    display.capturedLogicalRect = QRect(0, 0, 100, 100);
+    display.nativeDisplayId = 1;
+    display.backingScale = 2;
+    display.canvasUsesPoints = true;
+    display.active = true;
+    displays.appendDisplay(display);
     ScreenshotGeometryMapper geometry;
     geometry.rebuild(displays);
     ScreenshotInteractionState interaction;
@@ -788,26 +792,38 @@ void phasedWorkflowOnlySignalsInitialReadinessOnce() {
                                          interaction, selection, intelligent, callbacks});
     const QRectF bounds(0, 0, 100, 100), parent(0, 0, 80, 80), child(0, 0, 40, 40),
         leaf(0, 0, 20, 20);
-    workflow.handleInitialResult(true, {bounds}, 1);
+    const auto physical = [](const QRectF& rect) {
+        return QRectF(rect.topLeft() * 2, rect.size() * 2);
+    };
+    workflow.handleInitialResult(true, {physical(bounds)}, 1);
     require(intelligent.currentSelection() == bounds,
             "permission fallback must apply the window on the queried display");
-    workflow.handleInitialResult(true, {parent, bounds}, 1);
-    workflow.handleRefinement({child, parent, bounds}, 1);
+    // The first result arrives while the image is still being acquired and the
+    // pointer remains stationary. Image arrival must preserve that selection.
+    display.image = QImage(200, 200, QImage::Format_RGBA8888);
+    ScreenshotCaptureDisplayModelReconciler::applySnapshots(displays, {display});
+    geometry.rebuild(displays);
+    require(selection.normalizedSelection() == bounds,
+            "image arrival must preserve the selection resolved on the prepared Retina canvas");
+    workflow.handleInitialResult(true, {physical(parent), physical(bounds)}, 1);
+    workflow.handleRefinement({physical(child), physical(parent), physical(bounds)}, 1);
     require(readyCount == 1 && updates == 3 && intelligent.currentSelection() == child,
             "refinement must update presentation without repeating initial readiness");
     intelligent.beginPress(QPointF(5, 5), child);
-    workflow.handleRefinement({leaf, child, parent, bounds});
-    workflow.handleRefinement({bounds}, 1, true);
+    workflow.handleRefinement(
+        {physical(leaf), physical(child), physical(parent), physical(bounds)});
+    workflow.handleRefinement({physical(bounds)}, 1, true);
     require(updates == 3 && intelligent.takePressSelection() == child,
             "press must suppress late refinement");
     interaction.confirmSelection();
-    workflow.handleRefinement({leaf, child, parent, bounds});
+    workflow.handleRefinement(
+        {physical(leaf), physical(child), physical(parent), physical(bounds)});
     require(updates == 3, "editing must suppress late refinement");
     ++state.sessionId;
     interaction.returnToSelectionMode(true);
-    workflow.handleInitialResult(true, {parent, bounds});
+    workflow.handleInitialResult(true, {physical(parent), physical(bounds)});
     require(readyCount == 2, "a new capture must notify readiness again");
-    workflow.handleRefinement({bounds}, 1, true);
+    workflow.handleRefinement({physical(bounds)}, 1, true);
     require(intelligent.currentSelection() == bounds && readyCount == 2,
             "permission revocation during refinement must replace children with the window");
 }

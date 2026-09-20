@@ -112,15 +112,7 @@ bool ScreenshotOverlayCoordinator::preparePreCaptureOverlayWindows(
             continue;
         }
 
-        const QRect physicalRect = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
-        display.stableId.clear();
-        display.name = screen->name();
-        display.logicalRect = screen->geometry();
-        display.physicalRect = physicalRect;
-        display.canvasRect = physicalRect;
-        display.screen = screen;
-        display.image = QImage();
-        display.active = true;
+        display = ScreenshotGeometryMapper::preCaptureDisplayModel(*screen);
 
         ScreenshotOverlayWindow* overlay =
             displaySession.ensureOverlayAt(index, [this](ScreenshotOverlayWindow* existingOverlay) {

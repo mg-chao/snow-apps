@@ -2,6 +2,8 @@
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
 #include <dlfcn.h>
+#include <QGuiApplication>
+#include <QWidget>
 
 namespace snow_shot::platform {
 namespace {
@@ -48,6 +50,18 @@ WindowTarget windowTarget(pid_t owner, const QPoint* point) {
     return result;
 }
 } // namespace
+void configureScreenshotOverlayWindow(QWidget* widget) {
+    if (!widget || QGuiApplication::platformName() != QStringLiteral("cocoa"))
+        return;
+    NSView* view = reinterpret_cast<NSView*>(widget->winId());
+    NSWindow* window = view.window;
+    // Qt's WindowStaysOnTopHint uses a level below macOS system UI.
+    window.level = CGWindowLevelForKey(kCGScreenSaverWindowLevelKey);
+    window.collectionBehavior =
+        NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary;
+    window.hidesOnDeactivate = NO;
+}
+
 quint32 screenshotDisplayAtCursor() {
     CGEventRef event = CGEventCreate(nullptr);
     if (!event)
