@@ -87,6 +87,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     };
 
     explicit ScreenshotCanvasRenderer(SnowCanvasWidget& canvas);
+    explicit ScreenshotCanvasRenderer(class SnowCanvasView& canvas);
     ~ScreenshotCanvasRenderer() override;
 
     void setRenderMode(RenderMode mode);
@@ -154,7 +155,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     // unsynchronized.
     [[nodiscard]] QRegion ocrFilterImageDamageRegion(const QRectF& canvasRect) const;
 
-    SnowCanvasWidget& m_canvas;
+    SnowCanvasView& m_canvas;
     std::uint64_t m_contentRevision = 0;
     ScreenshotImageSource m_imageSource;
     QSize m_imageViewportPhysicalSize;

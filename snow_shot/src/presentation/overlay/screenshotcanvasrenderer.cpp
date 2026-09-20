@@ -861,7 +861,9 @@ void ScreenshotOcrTextLayer::synchronizeTextItem(TextItem& item,
     item.graphicsText->show();
 }
 
-ScreenshotCanvasRenderer::ScreenshotCanvasRenderer(SnowCanvasWidget& canvas) : m_canvas(canvas) {}
+ScreenshotCanvasRenderer::ScreenshotCanvasRenderer(SnowCanvasWidget& canvas)
+    : ScreenshotCanvasRenderer(canvas.view()) {}
+ScreenshotCanvasRenderer::ScreenshotCanvasRenderer(SnowCanvasView& canvas) : m_canvas(canvas) {}
 
 ScreenshotCanvasRenderer::~ScreenshotCanvasRenderer() {
     delete m_ocrTextLayer.data();
@@ -1103,8 +1105,8 @@ void ScreenshotCanvasRenderer::setOcrPresentation(
     m_ocrPresentationMode = mode;
     m_ocrBackgroundColor = {};
     if (m_ocrPresentation != nullptr) {
-        const adqt::theme::ThemeMapToken theme =
-            adqt::theme::ThemeManager::instance().resolveTheme(&m_canvas);
+        const adqt::theme::ThemeMapToken theme = adqt::theme::ThemeManager::instance().resolveTheme(
+            qobject_cast<QWidget*>(m_canvas.parent()));
         m_ocrBackgroundColor =
             theme.colorBgContainer.isValid() ? theme.colorBgContainer : QColor(Qt::white);
     }
@@ -1342,7 +1344,7 @@ void ScreenshotCanvasRenderer::invalidateCachedContent() {
 
 ScreenshotOcrTextLayer* ScreenshotCanvasRenderer::ensureOcrTextLayer() {
     if (m_ocrTextLayer == nullptr) {
-        m_ocrTextLayer = new ScreenshotOcrTextLayer(&m_canvas);
+        m_ocrTextLayer = new ScreenshotOcrTextLayer(qobject_cast<QWidget*>(m_canvas.parent()));
     }
     return m_ocrTextLayer;
 }

@@ -458,6 +458,10 @@ bool persistScreenshotCanvasToolStyles(const SnowCanvasStyleDefaults& defaults) 
 
 void applyScreenshotCanvasToolStyles(SnowCanvasWidget& canvas,
                                      const SnowCanvasStyleDefaults& defaults) {
+    applyScreenshotCanvasToolStyles(canvas.view(), defaults);
+}
+void applyScreenshotCanvasToolStyles(SnowCanvasView& canvas,
+                                     const SnowCanvasStyleDefaults& defaults) {
     const SnowCanvasTool previousTool = canvas.canvasTool();
     // Style setters also update selected elements when a selection is active.
     // Refreshing creation defaults must never rewrite document content.

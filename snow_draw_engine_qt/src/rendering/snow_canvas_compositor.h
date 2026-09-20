@@ -39,7 +39,7 @@ struct Frame {
     const SnowCanvasRenderContext* backgroundContext = nullptr;
     snow_canvas_filter_render::RenderWorkspace* workspace = nullptr;
     snow_canvas_pen_mask::PenMaskAtlas* penMaskAtlas = nullptr;
-    const QWidget* widget = nullptr;
+    QRect viewportRect;
     QRectF watermarkRenderArea;
     bool hasWatermarkRenderArea = false;
     QRectF spotlightRenderArea;

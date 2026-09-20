@@ -957,7 +957,7 @@ void textEditorCaretBlinksResetsAndHonorsSystemFlashTime() {
     require(displayCache.sync(runtime.get(), viewport.get()),
             "text caret blink test should synchronize the display cache");
 
-    QWidget editorHost;
+    SnowCanvasWidget editorHost;
     editorHost.resize(surfaceSize);
     editorHost.show();
     QApplication::processEvents();
@@ -971,8 +971,8 @@ void textEditorCaretBlinksResetsAndHonorsSystemFlashTime() {
     const SnowTextElementInfo info =
         snow_canvas_text::newTextInfoAt(QPointF(0.0, 0.0), editorHost.font(), style);
 
-    SnowCanvasCursorController cursorController(editorHost);
-    SnowCanvasWidgetTextInteraction interaction(editorHost, cursorController);
+    SnowCanvasCursorController cursorController(editorHost.view());
+    SnowCanvasWidgetTextInteraction interaction(editorHost.view(), cursorController);
     require(interaction.beginForElement(
                 info, displayCache, QPointF(surfaceSize.width() / 2.0, surfaceSize.height() / 2.0),
                 &style, false),
@@ -1433,9 +1433,9 @@ void textEditorActivationPreservesSelectToolSelectionBox() {
     require(displayCache.sync(runtime.get(), viewport.get()),
             "selection box consistency test should synchronize the text tool");
 
-    QWidget editorHost;
-    SnowCanvasCursorController cursorController(editorHost);
-    SnowCanvasWidgetTextInteraction interaction(editorHost, cursorController);
+    SnowCanvasWidget editorHost;
+    SnowCanvasCursorController cursorController(editorHost.view());
+    SnowCanvasWidgetTextInteraction interaction(editorHost.view(), cursorController);
     const SnowCanvasWidgetTextInteraction::BeginResult beginResult = interaction.beginAt(
         runtime.get(), viewport.get(), displayCache, QPointF(300.0, 200.0), SnowTextStyle{}, false);
     require(beginResult.started, "selection box consistency test should activate text editing");
@@ -1698,9 +1698,9 @@ void textEditorDoesNotSynthesizeSelectionControlsWithoutEngineOverlay() {
             runtime.get(), viewport.get(), QPointF(0.0, 0.0), QFont(), SnowTextStyle{}, false);
     require(target.has_value(), "canonical text selection test should resolve the created text");
 
-    QWidget editorHost;
-    SnowCanvasCursorController cursorController(editorHost);
-    SnowCanvasWidgetTextInteraction interaction(editorHost, cursorController);
+    SnowCanvasWidget editorHost;
+    SnowCanvasCursorController cursorController(editorHost.view());
+    SnowCanvasWidgetTextInteraction interaction(editorHost.view(), cursorController);
     require(
         interaction.beginForElement(*target, displayCache, QPointF(100.0, 100.0), nullptr, false),
         "canonical text selection test should begin an existing text edit");
@@ -3911,6 +3911,55 @@ void eraserMoveBurstsUseTheLatestSamplePerFrame() {
                          Qt::NoButton);
 }
 
+void sharedViewPreservesPointerNotifications() {
+    for (bool widgetHost : {false, true}) {
+        SnowCanvasWidget adapter;
+        SnowCanvasView standalone;
+        SnowCanvasView& view = widgetHost ? adapter.view() : standalone;
+        QObject* receiver = widgetHost ? static_cast<QObject*>(&adapter) : &view;
+        view.setSurfaceMetrics(QSize(301, 201), 1.25);
+        view.setInteractionEnabled(false);
+        int middleClicks = 0;
+        int doubleClicks = 0;
+        int filterStarts = 0;
+        if (widgetHost) {
+            QObject::connect(&adapter, &SnowCanvasWidget::unhandledMiddleClick, &adapter,
+                             [&] { ++middleClicks; });
+            QObject::connect(&adapter, &SnowCanvasWidget::unhandledLeftDoubleClick, &adapter,
+                             [&] { ++doubleClicks; });
+            QObject::connect(&adapter, &SnowCanvasWidget::autoFilterInteractionStarting, &adapter,
+                             [&] { ++filterStarts; });
+        } else {
+            QObject::connect(&view, &SnowCanvasView::unhandledMiddleClick, &view,
+                             [&] { ++middleClicks; });
+            QObject::connect(&view, &SnowCanvasView::unhandledLeftDoubleClick, &view,
+                             [&] { ++doubleClicks; });
+            QObject::connect(&view, &SnowCanvasView::autoFilterInteractionStarting, &view,
+                             [&] { ++filterStarts; });
+        }
+        const auto send = [&](QEvent::Type type, Qt::MouseButton button, const QPointF& point) {
+            QMouseEvent event(type, point, point, button,
+                              type == QEvent::MouseButtonRelease ? Qt::NoButton : button,
+                              Qt::NoModifier);
+            QCoreApplication::sendEvent(receiver, &event);
+        };
+        send(QEvent::MouseButtonPress, Qt::MiddleButton, QPointF(30.25, 40.75));
+        send(QEvent::MouseButtonRelease, Qt::MiddleButton, QPointF(30.25, 40.75));
+        require(middleClicks == 1,
+                "both hosts must forward an unhandled middle click exactly once");
+        send(QEvent::MouseButtonPress, Qt::MiddleButton, QPointF(30, 40));
+        send(QEvent::MouseMove, Qt::NoButton, QPointF(150, 140));
+        send(QEvent::MouseButtonRelease, Qt::MiddleButton, QPointF(150, 140));
+        require(middleClicks == 1, "dragging must cancel the unhandled middle click");
+        send(QEvent::MouseButtonDblClick, Qt::LeftButton, QPointF(30, 40));
+        require(doubleClicks == 1,
+                "both hosts must forward an unhandled double click exactly once");
+        require(view.setCanvasTool(SnowCanvasTool::AutoFilter), "select auto filter");
+        send(QEvent::MouseButtonPress, Qt::LeftButton, QPointF(30, 40));
+        require(filterStarts == 1, "both hosts must notify auto filter before pointer processing");
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -3998,5 +4047,6 @@ int main(int argc, char** argv) {
     watermarkIsIncludedInRuntimeExport();
     freeDrawMoveBurstsAreFrameBounded();
     eraserMoveBurstsUseTheLatestSamplePerFrame();
+    sharedViewPreservesPointerNotifications();
     return 0;
 }

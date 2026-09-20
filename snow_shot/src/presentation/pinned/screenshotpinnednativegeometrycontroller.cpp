@@ -3,16 +3,10 @@
 #include <QtGlobal>
 
 namespace {
-constexpr int kNativeRoundTripTolerance = 2;
-
 bool validGeometry(const QRect& geometry) {
     return geometry.isValid() && !geometry.isEmpty();
 }
 
-bool withinRoundTripTolerance(const QPoint& delta) {
-    return qAbs(delta.x()) <= kNativeRoundTripTolerance &&
-           qAbs(delta.y()) <= kNativeRoundTripTolerance;
-}
 } // namespace
 
 bool ScreenshotPinnedNativeGeometryController::initialize(const QRect& geometry) {
@@ -95,28 +89,6 @@ void ScreenshotPinnedNativeGeometryController::cancelPendingInteraction() {
     resetTransaction();
 }
 
-QRect ScreenshotPinnedNativeGeometryController::constrainWindowPos(const QRect& proposed,
-                                                                   bool moveRequested,
-                                                                   bool sizeRequested) const {
-    if (m_phase == Phase::Uninitialized || !validGeometry(proposed)) {
-        return proposed;
-    }
-
-    const QRect desired = validGeometry(m_targetGeometry) ? m_targetGeometry : m_committedGeometry;
-    if (!validGeometry(desired)) {
-        return proposed;
-    }
-
-    QRect constrained = proposed;
-    if (moveRequested) {
-        constrained.moveTopLeft(desired.topLeft());
-    }
-    if (sizeRequested) {
-        constrained.setSize(desired.size());
-    }
-    return constrained;
-}
-
 QRect ScreenshotPinnedNativeGeometryController::updateMove(const QRect& proposed,
                                                            const QPoint& nativeCursorPosition) {
     if (m_phase == Phase::Stable && validGeometry(proposed)) {
@@ -138,10 +110,6 @@ QRect ScreenshotPinnedNativeGeometryController::updateMove(const QRect& proposed
     QRect cursorDerived(m_moveReferenceGeometry.topLeft() + cursorDelta,
                         m_moveReferenceGeometry.size());
     QRect accepted = validGeometry(proposed) ? proposed : cursorDerived;
-    if (accepted.size() == cursorDerived.size() &&
-        withinRoundTripTolerance(accepted.topLeft() - cursorDerived.topLeft())) {
-        accepted = cursorDerived;
-    }
 
     m_targetGeometry = accepted;
     m_phase = Phase::Moving;

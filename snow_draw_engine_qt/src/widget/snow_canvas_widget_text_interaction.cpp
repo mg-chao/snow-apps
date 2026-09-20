@@ -22,7 +22,7 @@
 #include <QRect>
 #include <QRegion>
 #include <QStyleHints>
-#include <QWidget>
+#include "snow_draw_engine_qt/snow_canvas_view.h"
 
 #include <cmath>
 #include <limits>
@@ -67,7 +67,7 @@ QRegion committedTextRegion(const QRegion& editorRegion, const SnowCanvasDisplay
 } // namespace
 
 SnowCanvasWidgetTextInteraction::SnowCanvasWidgetTextInteraction(
-    QWidget& widget, SnowCanvasCursorController& cursorController)
+    SnowCanvasView& widget, SnowCanvasCursorController& cursorController)
     : m_widget(widget), m_cursorController(cursorController) {
     m_caretBlinkTimer.setTimerType(Qt::CoarseTimer);
     QObject::connect(&m_caretBlinkTimer, &QTimer::timeout, &m_caretBlinkTimer,
@@ -953,11 +953,11 @@ bool SnowCanvasWidgetTextInteraction::attachEditor(const SnowCanvasDisplayCache&
 }
 
 void SnowCanvasWidgetTextInteraction::setInputMethodEnabled(bool enabled) {
-    if (m_widget.testAttribute(Qt::WA_InputMethodEnabled) == enabled) {
+    if (m_widget.inputMethodEnabled() == enabled) {
         return;
     }
 
-    m_widget.setAttribute(Qt::WA_InputMethodEnabled, enabled);
+    m_widget.setInputMethodEnabled(enabled);
     if (m_widget.hasFocus()) {
         updateInputMethod();
     }

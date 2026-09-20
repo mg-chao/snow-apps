@@ -245,6 +245,17 @@ void destroyedReceiverIgnoresCompletion() {
     done({}, {});
 }
 
+void destroyedCanvasReleasesItsVisual() {
+    Fixture f;
+    auto additionalCanvas = std::make_unique<SnowCanvasWidget>(f.runtime);
+    f.controller.attachCanvas(additionalCanvas.get());
+    additionalCanvas.reset();
+    f.activate();
+    f.complete();
+    require(f.controller.available(), "remaining canvas must retain detection after a host closes");
+    f.controller.resetSession();
+}
+
 void styles() {
     Fixture f;
     f.activate();
@@ -277,5 +288,6 @@ int main(int argc, char** argv) {
     renderingAndExport();
     fallbackGesturesAndUnrelatedEdits();
     destroyedReceiverIgnoresCompletion();
+    destroyedCanvasReleasesItsVisual();
     std::cout << "Auto Filter lifecycle, races, mapping, history, and styles passed\n";
 }

@@ -8,7 +8,7 @@
 #include <functional>
 
 class QEvent;
-class QWidget;
+class SnowCanvasView;
 class SnowCanvasCursorController;
 
 class SnowCanvasWidgetInputHandler final {
@@ -35,7 +35,8 @@ class SnowCanvasWidgetInputHandler final {
         ProcessResult process;
     };
 
-    SnowCanvasWidgetInputHandler(QWidget& widget, SnowCanvasCursorController& cursorController);
+    SnowCanvasWidgetInputHandler(SnowCanvasView& widget,
+                                 SnowCanvasCursorController& cursorController);
 
     bool interactionEnabled() const;
     void setInteractionEnabled(bool enabled);
@@ -46,7 +47,7 @@ class SnowCanvasWidgetInputHandler final {
     DispatchResult dispatch(QEvent* event, const Context& context, const SnowInputEvent& input);
 
   private:
-    QWidget& m_widget;
+    SnowCanvasView& m_widget;
     SnowCanvasCursorController& m_cursorController;
     snow_canvas_interaction::Controller m_interaction;
 };

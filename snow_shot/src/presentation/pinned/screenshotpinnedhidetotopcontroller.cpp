@@ -1,3 +1,4 @@
+#include "pinnedwindowhost.h"
 #include "screenshotpinnedhidetotopcontroller.h"
 #include "screenshotpinnedpointerpresence.h"
 #include "pinnedwindowplatform.h"
@@ -217,13 +218,22 @@ ScreenshotPinnedHideToTopController::ScreenshotPinnedHideToTopController(QWidget
             m_handle.get(), qOverload<>(&QWidget::update));
     connect(qApp, &QGuiApplication::screenRemoved, this, [this](QScreen* removed) {
         if (active() && !m_shutdown && m_screen.screen == removed) {
-            QScreen* target = m_owner ? m_owner->screen() : QGuiApplication::primaryScreen();
+            QScreen* target =
+                m_host ? m_host->screen()
+                       : (m_owner ? m_owner->screen() : QGuiApplication::primaryScreen());
             if (target == removed) {
                 target = QGuiApplication::primaryScreen();
             }
             recoverToScreen(geometry::screenGeometry(target));
         }
     });
+}
+
+ScreenshotPinnedHideToTopController::ScreenshotPinnedHideToTopController(
+    snow_shot::presentation::PinnedWindowHost* owner, Hooks hooks)
+    : ScreenshotPinnedHideToTopController(owner->widgetHost(), std::move(hooks)) {
+    m_host = owner;
+    owner->attachAuxiliary(m_handle.get(), false);
 }
 
 ScreenshotPinnedHideToTopController::~ScreenshotPinnedHideToTopController() {
@@ -330,9 +340,18 @@ bool ScreenshotPinnedHideToTopController::prepareRestore(const geometry::Screen&
     m_state = State::Hidden;
     m_shutdown = false;
     m_restoring = true;
-    m_owner->setAttribute(Qt::WA_ShowWithoutActivating, true);
-    m_owner->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-    m_owner->setWindowOpacity(0.0);
+    if (m_host)
+        m_host->setAttribute(Qt::WA_ShowWithoutActivating, true);
+    else
+        m_owner->setAttribute(Qt::WA_ShowWithoutActivating, true);
+    if (m_host)
+        m_host->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    else
+        m_owner->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    if (m_host)
+        m_host->setWindowOpacity(0.0);
+    else
+        m_owner->setWindowOpacity(0.0);
     return true;
 }
 
@@ -342,8 +361,14 @@ void ScreenshotPinnedHideToTopController::finishRestore() {
     }
     m_restoring = false;
     hideWindow();
-    m_owner->setAttribute(Qt::WA_ShowWithoutActivating, false);
-    m_owner->setAttribute(Qt::WA_TransparentForMouseEvents, false);
+    if (m_host)
+        m_host->setAttribute(Qt::WA_ShowWithoutActivating, false);
+    else
+        m_owner->setAttribute(Qt::WA_ShowWithoutActivating, false);
+    if (m_host)
+        m_host->setAttribute(Qt::WA_TransparentForMouseEvents, false);
+    else
+        m_owner->setAttribute(Qt::WA_TransparentForMouseEvents, false);
     showHandle();
     changed();
 }
@@ -368,10 +393,19 @@ void ScreenshotPinnedHideToTopController::exit(bool cancelEntry) {
     if (target != m_hooks.geometry()) {
         static_cast<void>(m_hooks.applyGeometry(target));
     }
-    m_owner->setAttribute(Qt::WA_ShowWithoutActivating, false);
-    m_owner->setAttribute(Qt::WA_TransparentForMouseEvents, false);
+    if (m_host)
+        m_host->setAttribute(Qt::WA_ShowWithoutActivating, false);
+    else
+        m_owner->setAttribute(Qt::WA_ShowWithoutActivating, false);
+    if (m_host)
+        m_host->setAttribute(Qt::WA_TransparentForMouseEvents, false);
+    else
+        m_owner->setAttribute(Qt::WA_TransparentForMouseEvents, false);
     refreshOpacity();
-    m_owner->show();
+    if (m_host)
+        m_host->show();
+    else
+        m_owner->show();
     changed();
 }
 
@@ -409,7 +443,10 @@ void ScreenshotPinnedHideToTopController::refreshOpacity() {
             m_restoring || m_state == State::Hidden
                 ? 0.0
                 : (m_state == State::Entering ? 1.0 - m_animation.currentValue().toReal() : 1.0);
-        m_owner->setWindowOpacity(qBound(25, m_hooks.opacity(), 100) / 100.0 * factor);
+        if (m_host)
+            m_host->setWindowOpacity(qBound(25, m_hooks.opacity(), 100) / 100.0 * factor);
+        else
+            m_owner->setWindowOpacity(qBound(25, m_hooks.opacity(), 100) / 100.0 * factor);
     }
 }
 
@@ -448,8 +485,14 @@ void ScreenshotPinnedHideToTopController::showHandle() {
 void ScreenshotPinnedHideToTopController::hideWindow() {
     QScopedValueRollback guard(m_changing, true);
     m_state = State::Hidden;
-    m_owner->clearFocus();
-    m_owner->hide();
+    if (m_host)
+        m_host->clearFocus();
+    else
+        m_owner->clearFocus();
+    if (m_host)
+        m_host->hide();
+    else
+        m_owner->hide();
     refreshOpacity();
 }
 
@@ -462,9 +505,18 @@ void ScreenshotPinnedHideToTopController::reveal() {
     m_state = State::Revealed;
     refreshOpacity();
     if (QGuiApplication::platformName() == QStringLiteral("cocoa"))
-        m_owner->setAttribute(Qt::WA_ShowWithoutActivating, true);
-    m_owner->show();
-    m_owner->raise();
+        if (m_host)
+            m_host->setAttribute(Qt::WA_ShowWithoutActivating, true);
+        else
+            m_owner->setAttribute(Qt::WA_ShowWithoutActivating, true);
+    if (m_host)
+        m_host->show();
+    else
+        m_owner->show();
+    if (m_host)
+        m_host->raise();
+    else
+        m_owner->raise();
     m_handle->raise();
     m_hooks.activate();
 }

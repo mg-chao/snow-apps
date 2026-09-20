@@ -977,6 +977,57 @@ void shortRecognitionWindowPreservesExactSelectionGeometryAcrossModes() {
     window.hideTextEditor();
 }
 
+void nativeFormattedContentRendersAndReceivesKeyboardSelection() {
+    QWidget host;
+    host.resize(401, 161);
+    host.show();
+    // The editor borrows its document, which must outlive the widget.
+    auto document = std::make_shared<QTextDocument>();
+    int invalidations = 0;
+    ScreenshotRecognitionWindow window(
+        {}, &host, ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild);
+    window.setNativeFrameEnabled(true);
+    const QSize pixels(501, 201);
+    const qreal ratio = 1.25;
+    require(
+        window.present({QGuiApplication::primaryScreen(), &host, host.rect(),
+                        QRectF(QPointF(), QSizeF(pixels)),
+                        ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild, 1.0, false}),
+        "native formatted content initializes");
+    window.setNativeFrameTransform(QTransform::fromScale(1.0 / ratio, 1.0 / ratio));
+    document->setPlainText(QStringLiteral("Native formatted selection"));
+    document->setTextWidth(pixels.width());
+    window.showFormattedText(document);
+    QApplication::processEvents();
+    require(window.usesNativeFrame() && window.testAttribute(Qt::WA_DontShowOnScreen),
+            "image-aligned formatted content must use the native frame");
+    const auto render = [&] {
+        QImage frame(pixels, QImage::Format_ARGB32_Premultiplied);
+        frame.setDevicePixelRatio(ratio);
+        frame.fill(Qt::white);
+        QPainter painter(&frame);
+        window.renderNativeFrame(painter);
+        return frame;
+    };
+    const QImage before = render();
+    require(nonWhitePixelBounds(before).isValid(), "native scene rendering must include text");
+    QObject::connect(&window, &ScreenshotRecognitionWindow::nativeFrameChanged, &host,
+                     [&] { ++invalidations; });
+    QKeyEvent selectAll(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+    require(window.sendNativeFrameEvent(&selectAll),
+            "native key event must reach the formatted scene");
+    QApplication::processEvents();
+    auto* layer = window.findChild<QGraphicsView*>(QStringLiteral("screenshotClipboardText"));
+    auto* item = formattedTextItem(layer);
+    require(item && item->textCursor().selectedText() == document->toPlainText(),
+            "native keyboard input must select formatted text");
+    require(invalidations > 0 && render() != before,
+            "formatted selection changes must invalidate and paint the native frame");
+    window.showTextEditor(document.get());
+    require(!window.usesNativeFrame() && !window.testAttribute(Qt::WA_DontShowOnScreen),
+            "rich editing controls must return to their owned widget surface");
+}
+
 void formattedClipboardTextUsesASelectableQtDocument() {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -1859,6 +1910,10 @@ void tableClipboardPreservesLargeValuesForWholeTableAndSelection() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
+    if (application.arguments().contains(QStringLiteral("--native-frame-only"))) {
+        nativeFormattedContentRendersAndReceivesKeyboardSelection();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--table-clipboard-only"))) {
         tableClipboardPreservesLargeValuesForWholeTableAndSelection();
         return 0;
@@ -1888,6 +1943,7 @@ int main(int argc, char** argv) {
     recognitionWindowUsesOrdinaryQtWindowBehavior();
     shortRecognitionWindowPreservesExactSelectionGeometryAcrossModes();
     formattedClipboardTextUsesASelectableQtDocument();
+    nativeFormattedContentRendersAndReceivesKeyboardSelection();
     qrContentsUseStrictRichTextLinksAndPreserveOrder();
     emptyOcrResultCopiesEmptyText();
     tableClipboardPreservesLargeValuesForWholeTableAndSelection();

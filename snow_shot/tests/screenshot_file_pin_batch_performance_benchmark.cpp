@@ -11,6 +11,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 
 #include <QApplication>
+#include <QAction>
 #include <QColorSpace>
 #include <QCommandLineOption>
 #include <QCommandLineParser>
@@ -102,15 +103,17 @@ QStringList writeFixtureFiles(const QString& name, const Scenario& scenario,
 }
 
 void closePresentedWindows() {
-    QVector<QPointer<ScreenshotPinnedWindow>> windows;
-    for (QWidget* widget : QApplication::topLevelWidgets()) {
-        if (auto* window = qobject_cast<ScreenshotPinnedWindow*>(widget)) {
-            windows.append(window);
-        }
-    }
+    const auto windows = ScreenshotPinnedWindow::instances();
     for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
         if (window != nullptr) {
-            window->close();
+            // Use the user-close action to remove this benchmark's temporary
+            // saved record as well as the native surface between samples.
+            if (auto* close = window->widgetHost()->findChild<QAction*>(
+                    QStringLiteral("screenshotPinnedCloseAction"))) {
+                close->trigger();
+            } else {
+                window->close();
+            }
         }
     }
     QElapsedTimer drain;

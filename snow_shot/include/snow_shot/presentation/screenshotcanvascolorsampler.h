@@ -9,6 +9,7 @@
 #include <QSize>
 
 class QWidget;
+class SnowCanvasView;
 
 class ScreenshotCanvasColorSampler final {
   public:
@@ -16,6 +17,7 @@ class ScreenshotCanvasColorSampler final {
 
     void reset();
     [[nodiscard]] bool ensureSnapshot(QWidget& canvas, const QRect& physicalBounds);
+    [[nodiscard]] bool ensureSnapshot(SnowCanvasView& canvas, const QRect& physicalBounds);
     [[nodiscard]] QImage previewAtPhysicalPoint(const QPoint& physicalPoint) const;
 
     [[nodiscard]] static QPoint physicalPointForLocalPosition(const QPointF& localPosition,
@@ -26,7 +28,7 @@ class ScreenshotCanvasColorSampler final {
                                                           const QPoint& physicalPoint);
 
   private:
-    QPointer<QWidget> m_canvas;
+    QPointer<QObject> m_canvas;
     QImage m_physicalRaster;
     QRect m_physicalBounds;
 };

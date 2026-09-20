@@ -21,7 +21,7 @@ class ScreenshotCanvasColorSamplerWindow;
 class ScreenshotFloatingToolPaletteWindow;
 class ScreenshotPinnedWindow;
 class ScreenshotToolPaletteHost;
-class SnowCanvasWidget;
+class SnowCanvasView;
 class ScreenshotAutoFilterController;
 namespace adqt::widgets {
 class AdColorPicker;
@@ -34,7 +34,7 @@ class ScreenshotPinnedEditController final : public QObject {
     Q_OBJECT
 
   public:
-    ScreenshotPinnedEditController(ScreenshotPinnedWindow& pinnedWindow, SnowCanvasWidget& canvas,
+    ScreenshotPinnedEditController(ScreenshotPinnedWindow& pinnedWindow, SnowCanvasView& canvas,
                                    snow_shot::presentation::WindowShortcutManager& shortcutManager,
                                    QObject* parent = nullptr);
     ~ScreenshotPinnedEditController() override;
@@ -97,7 +97,7 @@ class ScreenshotPinnedEditController final : public QObject {
     [[nodiscard]] bool canvasInteractionAllowed() const;
 
     ScreenshotPinnedWindow& m_pinnedWindow;
-    SnowCanvasWidget& m_canvas;
+    SnowCanvasView& m_canvas;
     snow_shot::presentation::WindowShortcutManager& m_shortcutManager;
     QMap<QString, quint64> m_drawingShortcutBindings;
     QMap<QString, quint64> m_recognitionShortcutBindings;

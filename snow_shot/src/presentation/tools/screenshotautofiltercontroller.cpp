@@ -50,14 +50,16 @@ void detect(QImage image, ScreenshotAutoFilterController::Completion completion)
 }
 } // namespace
 
-class ScreenshotAutoFilterVisual final : public QWidget {
+class ScreenshotAutoFilterVisual final : public QObject {
   public:
-    ScreenshotAutoFilterVisual(SnowCanvasWidget* canvas, ScreenshotAutoFilterController* controller)
-        : QWidget(canvas), m_canvas(canvas), m_controller(controller) {
-        setAttribute(Qt::WA_TransparentForMouseEvents);
-        setAttribute(Qt::WA_NoSystemBackground);
-        canvas->installEventFilter(this);
-        setGeometry(canvas->rect());
+    ScreenshotAutoFilterVisual(SnowCanvasView* canvas, ScreenshotAutoFilterController* controller)
+        : QObject(canvas), m_canvas(canvas), m_controller(controller) {
+        connect(controller, &QObject::destroyed, this, [this] { delete this; });
+        connect(canvas, &SnowCanvasView::overlayPaintRequested, this,
+                [this](QPainter* painter, const QRegion&) {
+                    if (m_visible)
+                        paint(*painter);
+                });
     }
 
     void updateFrame() {
@@ -76,22 +78,24 @@ class ScreenshotAutoFilterVisual final : public QWidget {
                 dirty += transform.mapRect(region.bounds).adjusted(-2, -2, 2, 2).toAlignedRect();
             }
         }
-        update(dirty | m_previousFrame);
+        m_canvas->update(dirty | m_previousFrame);
         m_previousFrame = dirty;
     }
 
-  protected:
-    bool eventFilter(QObject*, QEvent* event) override {
-        if (event->type() == QEvent::Resize) {
-            setGeometry(m_canvas->rect());
+    void setVisible(bool visible) {
+        if (m_visible != visible) {
+            m_visible = visible;
+            m_canvas->update();
         }
-        return false;
     }
-    void paintEvent(QPaintEvent*) override {
+
+  private:
+    bool m_visible = false;
+    void paint(QPainter& painter) {
         if (!m_controller || m_canvas->canvasTool() != SnowCanvasTool::AutoFilter) {
             return;
         }
-        QPainter painter(this);
+        painter.save();
         painter.setRenderHint(QPainter::Antialiasing);
         const QTransform transform = m_canvas->canvasToViewTransform();
         const QRectF bounds = transform.mapRect(m_controller->currentBounds());
@@ -113,11 +117,12 @@ class ScreenshotAutoFilterVisual final : public QWidget {
                 painter.drawRect(transform.mapRect(region.bounds));
             }
         }
+        painter.restore();
     }
 
   private:
     QRegion m_previousFrame;
-    SnowCanvasWidget* m_canvas;
+    SnowCanvasView* m_canvas;
     QPointer<ScreenshotAutoFilterController> m_controller;
 };
 
@@ -140,7 +145,7 @@ ScreenshotAutoFilterController::ScreenshotAutoFilterController(std::function<QRe
     });
 }
 
-SnowCanvasWidget* ScreenshotAutoFilterController::canvas() const {
+SnowCanvasView* ScreenshotAutoFilterController::canvas() const {
     for (const auto& item : m_canvases) {
         if (item) {
             return item;
@@ -159,20 +164,25 @@ bool ScreenshotAutoFilterController::available() const {
     return record && record->sourceBounds == m_bounds() && !record->regions.isEmpty();
 }
 void ScreenshotAutoFilterController::attachCanvas(SnowCanvasWidget* item) {
+    if (item)
+        attachCanvas(&item->view());
+}
+void ScreenshotAutoFilterController::attachCanvas(SnowCanvasView* item) {
     if (!item || m_canvases.contains(item)) {
         return;
     }
     m_canvases.append(item);
-    item->installEventFilter(this);
+    connect(item, &SnowCanvasView::historyStateChanged, this,
+            &ScreenshotAutoFilterController::updateAvailability);
     m_visuals.append(new ScreenshotAutoFilterVisual(item, this));
-    connect(item, &SnowCanvasWidget::autoFilterInteractionStarting, this,
+    connect(item, &SnowCanvasView::autoFilterInteractionStarting, this,
             &ScreenshotAutoFilterController::validate, Qt::DirectConnection);
-    connect(item, &SnowCanvasWidget::autoFilterRegionsChanged, this, [this]() {
+    connect(item, &SnowCanvasView::autoFilterRegionsChanged, this, [this]() {
         m_flashUntil = 0;
         m_flashRegions.clear();
         refresh();
     });
-    connect(item, &SnowCanvasWidget::activeToolChanged, this, [this]() {
+    connect(item, &SnowCanvasView::activeToolChanged, this, [this]() {
         if (active()) {
             validate();
         } else {
@@ -194,8 +204,7 @@ void ScreenshotAutoFilterController::refresh() {
         if (visual) {
             visual->setVisible(visible);
             if (visible) {
-                visual->raise();
-                static_cast<ScreenshotAutoFilterVisual*>(visual.data())->updateFrame();
+                visual->updateFrame();
             }
         }
     }
@@ -306,10 +315,4 @@ void ScreenshotAutoFilterController::updateAvailability() {
         m_available = next;
         emit availabilityChanged(next);
     }
-}
-bool ScreenshotAutoFilterController::eventFilter(QObject*, QEvent* event) {
-    if (event->type() == QEvent::Paint || event->type() == QEvent::Resize) {
-        updateAvailability();
-    }
-    return false;
 }

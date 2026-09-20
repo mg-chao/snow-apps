@@ -26,6 +26,7 @@
 #include <QString>
 #include <QTransform>
 #include <QWidget>
+#include "../../../src/presentation/pinned/pinnedwindowhost.h"
 
 #include <memory>
 #include <functional>
@@ -68,6 +69,7 @@ class QTimer;
 class QVariantAnimation;
 class QWheelEvent;
 class SnowCanvasWidget;
+class SnowCanvasView;
 class ScreenshotCanvasRenderer;
 class ScreenshotOcrPresentation;
 class ScreenshotOcrRecognitionPort;
@@ -89,7 +91,7 @@ struct ScreenshotPinnedRecognitionProviders {
     SnowShotApiClient* tableRecognition = nullptr;
 };
 
-class ScreenshotPinnedWindow final : public QWidget {
+class ScreenshotPinnedWindow final : public snow_shot::presentation::PinnedWindowHost {
     Q_OBJECT
 
   public:
@@ -152,6 +154,7 @@ class ScreenshotPinnedWindow final : public QWidget {
 
     explicit ScreenshotPinnedWindow(QWidget* parent = nullptr);
     ~ScreenshotPinnedWindow() override;
+    [[nodiscard]] static QList<QPointer<ScreenshotPinnedWindow>> instances();
 
     bool present(const Config& config, std::function<void(bool, QImage)> completion = {});
     bool prewarm(QScreen* screen = nullptr);
@@ -215,6 +218,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     [[nodiscard]] QStringList eligibleDropPaths(const QDropEvent& event) const;
     void setFileDragActive(bool active);
 
+    bool paintNativeFrame(QPainter& painter, const QRegion& dirty) override;
+    void nativeFramePublished() override;
+    void nativeFrameRejected() override;
     void createUi();
     void registerWindowShortcuts();
     void reloadPinnedWindowShortcuts();
@@ -242,6 +248,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void requestMaterializedImage(MaterializationCallback callback);
     void finishMaterializedImage(ScreenshotExportTaskResult result);
     void requestFirstContentFramePaint();
+    void activatePresentedWindow();
     void handleFirstContentFramePainted();
     void finishMaterializationCallbacks(bool succeeded);
     bool installMaterializedImage(QImage image);
@@ -398,12 +405,13 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_firstContentFramePublished = false;
     bool m_firstFramePaintPending = false;
     bool m_firstFramePaintSucceeded = true;
-    bool m_deferFirstFrameNativeFlush = false;
     bool m_completePresentationAfterFirstFrame = false;
+    bool m_showAfterFirstFrame = false;
     bool m_recognitionTargetReady = false;
     bool m_deferredPresentationSetupScheduled = false;
     quint64 m_presentationGeneration = 0;
-    SnowCanvasWidget* m_canvas = nullptr;
+    SnowCanvasView* m_canvas = nullptr;
+    SnowCanvasWidget* m_canvasWidget = nullptr;
     std::unique_ptr<ScreenshotCanvasRenderer> m_screenshotRenderer;
     QFrame* m_borderFrame = nullptr;
     QFrame* m_controlsPanel = nullptr;

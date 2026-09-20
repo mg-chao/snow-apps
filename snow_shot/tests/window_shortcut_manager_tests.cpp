@@ -3,6 +3,7 @@
 
 #include <QApplication>
 #include <QKeyEvent>
+#include <QInputMethodQueryEvent>
 #include <QLineEdit>
 #include <QSpinBox>
 #include <QPlainTextEdit>
@@ -1098,6 +1099,59 @@ void canceledCloseDoesNotStealAnotherManagersFreshPress() {
     require(closes == 1, "canceled ownership must not steal another window's fresh gesture");
 }
 
+void nativeWindowScopePreservesFocusAndPopupOwnership() {
+    class Editor final : public QObject {
+      public:
+        bool editing = false;
+        bool event(QEvent* event) override {
+            if (event->type() != QEvent::InputMethodQuery)
+                return QObject::event(event);
+            static_cast<QInputMethodQueryEvent*>(event)->setValue(Qt::ImEnabled, editing);
+            return true;
+        }
+    } editor;
+    class Surface final : public QWindow {
+      public:
+        QObject* editor = nullptr;
+        QObject* focusObject() const override {
+            return editor;
+        }
+    } surface;
+    surface.editor = &editor;
+    surface.show();
+    WindowShortcutManager manager;
+    manager.addScopeWindow(&surface);
+    int commands = 0;
+    auto item = binding(QStringLiteral("native.command"), Qt::Key_F8, 100, [&] {
+        ++commands;
+        return true;
+    });
+    item.canActivate = [&](const auto& context) {
+        require(context.scopeObject == &surface && context.scopeWindow == nullptr,
+                "native scope must not masquerade as a QWidget");
+        return !WindowShortcutManager::focusObjectAcceptsTextInput(&editor) &&
+               !WindowShortcutManager::focusAcceptsTextInput(context.focusWidget);
+    };
+    require(manager.addBinding(&surface, item) != 0, "native binding must register");
+    sendKey(&surface, QEvent::KeyPress, Qt::Key_F8);
+    require(commands == 1, "QWindow key delivery must invoke its scope");
+    editor.editing = true;
+    sendKey(&surface, QEvent::KeyPress, Qt::Key_F8);
+    require(commands == 1, "IME focus object must suppress window commands while editing");
+    editor.editing = false;
+    QWidget popup(nullptr, Qt::Tool);
+    popup.winId();
+    popup.windowHandle()->setTransientParent(&surface);
+    popup.show();
+    sendKey(&popup, QEvent::KeyPress, Qt::Key_F8);
+    require(commands == 2, "owned widget popups must retain native window shortcut scope");
+    sendKey(&editor, QEvent::KeyPress, Qt::Key_F8);
+    require(commands == 3, "native focus object must resolve to the same shortcut scope");
+    manager.removeScopeWindow(&surface);
+    sendKey(&surface, QEvent::KeyPress, Qt::Key_F8);
+    require(commands == 3, "removing a native scope must stop dispatch");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1105,6 +1159,7 @@ int main(int argc, char** argv) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
     }
     QApplication application(argc, argv);
+    nativeWindowScopePreservesFocusAndPopupOwnership();
     sharedShortcutDomainCanonicalizesIdentityAndDisplay();
     canceledCloseDoesNotStealAnotherManagersFreshPress();
     releaseActivationOwnsTheWholeSequence();

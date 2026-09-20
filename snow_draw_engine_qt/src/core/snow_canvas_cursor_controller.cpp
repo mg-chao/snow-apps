@@ -1,12 +1,12 @@
 #include "snow_canvas_cursor_controller.h"
 
-#include <QWidget>
+#include "snow_draw_engine_qt/snow_canvas_view.h"
 #include "snow_canvas_input_adapter.h"
 
 #include <algorithm>
 #include <cmath>
 
-SnowCanvasCursorController::SnowCanvasCursorController(QWidget& widget) : m_widget(widget) {}
+SnowCanvasCursorController::SnowCanvasCursorController(SnowCanvasView& widget) : m_widget(widget) {}
 
 void SnowCanvasCursorController::setCursor(SnowCanvasCursorLayer layer, const QCursor& cursor) {
     if (layer == SnowCanvasCursorLayer::CanvasTool) {
@@ -43,7 +43,7 @@ void SnowCanvasCursorController::applyResolvedCursor() {
         applyResolvedCursorToWidget(*m_canvasToolCursor);
         return;
     }
-    if (m_widget.testAttribute(Qt::WA_SetCursor)) {
+    if (m_widget.hasCursor()) {
         m_widget.unsetCursor();
     }
 }
@@ -53,7 +53,7 @@ void SnowCanvasCursorController::applyResolvedCursorToWidget(const QCursor& curs
     // Windows each changed-shape transition reaches the native sprite
     // immediately. Re-applying the cursor a widget already shows would flash
     // it, so layered updates must resolve to a no-op here.
-    if (m_widget.testAttribute(Qt::WA_SetCursor) && m_widget.cursor() == cursor) {
+    if (m_widget.hasCursor() && m_widget.cursor() == cursor) {
         return;
     }
     m_widget.setCursor(cursor);

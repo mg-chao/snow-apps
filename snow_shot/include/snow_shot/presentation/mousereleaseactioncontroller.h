@@ -16,7 +16,7 @@ class MouseReleaseActionController final : public QObject {
     explicit MouseReleaseActionController(QObject* parent = nullptr);
     ~MouseReleaseActionController() override;
 
-    [[nodiscard]] bool arm(QWidget* scopeWindow, Qt::MouseButton button,
+    [[nodiscard]] bool arm(QObject* scopeWindow, Qt::MouseButton button,
                            std::function<void()> action);
     void cancel();
     [[nodiscard]] bool pending() const;
@@ -31,8 +31,8 @@ class MouseReleaseActionController final : public QObject {
     void finish();
     void releaseCapture();
 
-    QPointer<QWidget> m_scope;
-    QPointer<QWidget> m_capture;
+    QPointer<QObject> m_scope;
+    QPointer<QObject> m_capture;
     QMetaObject::Connection m_scopeDestroyed;
     std::function<void()> m_action;
     Qt::MouseButton m_button = Qt::NoButton;

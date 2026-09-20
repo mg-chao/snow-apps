@@ -4,7 +4,7 @@ namespace snow_canvas_widget_paint_frame {
 
 snow_canvas_compositor::Frame build(const Request& request) {
     snow_canvas_compositor::Frame frame;
-    frame.widget = request.widget;
+    frame.viewportRect = request.viewportRect;
     frame.showDirtyRects = request.showDirtyRects;
     frame.workspace = request.workspace;
 

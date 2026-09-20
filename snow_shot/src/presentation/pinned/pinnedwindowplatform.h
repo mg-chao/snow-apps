@@ -20,6 +20,7 @@ class PinnedWindowWindowsEvents {
 };
 
 namespace snow_shot::presentation {
+class PinnedWindowHost;
 using PinnedPlacement = storage::PinnedWindowPlacement;
 
 [[nodiscard]] PinnedDisplayGeometry pinnedDisplayGeometry(const QScreen& screen);
@@ -81,7 +82,7 @@ class PinnedWindowPlatform : public QObject {
                          GeometryUpdate update = GeometryUpdate::PreserveContents);
     [[nodiscard]] bool applyPixelGeometry(const QRect& pixels, QScreen* screen,
                                           GeometryUpdate update = GeometryUpdate::PreserveContents);
-    [[nodiscard]] QRect pixelGeometry() const;
+    [[nodiscard]] virtual QRect pixelGeometry() const;
     std::function<void()> environmentChanged;
 
   protected:
@@ -95,6 +96,8 @@ class PinnedWindowPlatform : public QObject {
 [[nodiscard]] std::unique_ptr<PinnedWindowPlatform>
 createPinnedWindowPlatform(QWidget* window,
                            PinnedWindowPlatform::Role role = PinnedWindowPlatform::Role::Image);
+[[nodiscard]] std::unique_ptr<PinnedWindowPlatform>
+createPinnedWindowPlatform(PinnedWindowHost* window);
 // Owned by the auxiliary QWidget. Reattaches on every native-surface recreation.
 PinnedWindowPlatform* configurePinnedAuxiliary(QWidget* window);
 } // namespace snow_shot::presentation

@@ -8,11 +8,11 @@
 
 #include <optional>
 
-class QWidget;
+class SnowCanvasView;
 
 class SnowCanvasCursorController final {
   public:
-    explicit SnowCanvasCursorController(QWidget& widget);
+    explicit SnowCanvasCursorController(SnowCanvasView& widget);
 
     void setCursor(SnowCanvasCursorLayer layer, const QCursor& cursor);
     void clearCursor(SnowCanvasCursorLayer layer);
@@ -25,7 +25,7 @@ class SnowCanvasCursorController final {
     void applyResolvedCursor();
     void applyResolvedCursorToWidget(const QCursor& cursor);
 
-    QWidget& m_widget;
+    SnowCanvasView& m_widget;
     std::optional<SnowCursorStyle> m_engineCursorStyle;
     double m_strokeDiameter = 2.0;
     std::optional<QColor> m_strokeColor;

@@ -9,7 +9,7 @@ namespace snow_canvas_widget_paint_frame {
 
 struct Request {
     const SnowCanvasDisplayCache* displayCache = nullptr;
-    const QWidget* widget = nullptr;
+    QRect viewportRect;
     bool clearBackgroundEnabled = true;
     bool showDirtyRects = false;
     snow_canvas_filter_render::RenderWorkspace* workspace = nullptr;

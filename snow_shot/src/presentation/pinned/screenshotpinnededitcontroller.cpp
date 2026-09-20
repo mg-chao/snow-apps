@@ -14,7 +14,7 @@
 #include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/storage/settingsadapters.h"
 
-#include "snow_draw_engine_qt/snow_canvas_widget.h"
+#include "snow_draw_engine_qt/snow_canvas_view.h"
 
 #include "widgets/color_picker.h"
 #include "widgets/message.h"
@@ -29,6 +29,7 @@
 #include <QTimer>
 #include <QWheelEvent>
 #include <QWindow>
+#include <cmath>
 
 namespace {
 constexpr int kToolbarGap = 4;
@@ -87,7 +88,7 @@ bool wheelAdjustsStrokeWidth(SnowCanvasTool tool) {
 } // namespace
 
 ScreenshotPinnedEditController::ScreenshotPinnedEditController(
-    ScreenshotPinnedWindow& pinnedWindow, SnowCanvasWidget& canvas,
+    ScreenshotPinnedWindow& pinnedWindow, SnowCanvasView& canvas,
     snow_shot::presentation::WindowShortcutManager& shortcutManager, QObject* parent)
     : QObject(parent), m_pinnedWindow(pinnedWindow), m_canvas(canvas),
       m_shortcutManager(shortcutManager) {
@@ -100,7 +101,7 @@ ScreenshotPinnedEditController::ScreenshotPinnedEditController(
     m_autoFilterController->attachCanvas(&m_canvas);
     connect(m_autoFilterController.get(), &ScreenshotAutoFilterController::detectionFailed, this,
             [this](const QString& message) {
-                adqt::widgets::AdMessageService::error(message, -1, &m_pinnedWindow);
+                adqt::widgets::AdMessageService::error(message, -1, m_pinnedWindow.widgetHost());
             });
     connect(m_autoFilterController.get(), &ScreenshotAutoFilterController::availabilityChanged,
             this, [this](bool available) {
@@ -109,11 +110,11 @@ ScreenshotPinnedEditController::ScreenshotPinnedEditController(
                 }
             });
     m_canvas.installEventFilter(this);
-    connect(&m_canvas, &SnowCanvasWidget::activeToolChanged, this,
+    connect(&m_canvas, &SnowCanvasView::activeToolChanged, this,
             &ScreenshotPinnedEditController::syncPaletteFromCanvasTool);
-    connect(&m_canvas, &SnowCanvasWidget::styleToolbarStateChanged, this,
+    connect(&m_canvas, &SnowCanvasView::styleToolbarStateChanged, this,
             &ScreenshotPinnedEditController::syncPaletteFromCanvasStyle);
-    connect(&m_canvas, &SnowCanvasWidget::historyStateChanged, this, [this]() {
+    connect(&m_canvas, &SnowCanvasView::historyStateChanged, this, [this]() {
         if (m_toolbarWindow != nullptr) {
             if (ScreenshotToolPalette* toolbar = m_toolbarWindow->palette()) {
                 toolbar->setHistoryState(m_canvas.canvasHistoryState());
@@ -269,8 +270,8 @@ void ScreenshotPinnedEditController::registerDrawingShortcuts() {
             snow_shot::presentation::WindowShortcutManager::StandardPriority::DrawingShortcut;
         binding.canActivate = [this](const auto& context) {
             return m_editMode &&
-                   !snow_shot::presentation::WindowShortcutManager::focusAcceptsTextInput(
-                       context.focusWidget) &&
+                   !snow_shot::presentation::WindowShortcutManager::focusObjectAcceptsTextInput(
+                       context.focusObject) &&
                    !m_canvas.hasActiveTextEditing() && m_toolbarWindow != nullptr &&
                    m_toolbarWindow->palette() != nullptr;
         };
@@ -307,8 +308,8 @@ void ScreenshotPinnedEditController::registerRecognitionShortcuts() {
             snow_shot::presentation::WindowShortcutManager::StandardPriority::ScreenshotShortcut;
         binding.canActivate = [this](const auto& context) {
             return m_editMode &&
-                   !snow_shot::presentation::WindowShortcutManager::focusAcceptsTextInput(
-                       context.focusWidget) &&
+                   !snow_shot::presentation::WindowShortcutManager::focusObjectAcceptsTextInput(
+                       context.focusObject) &&
                    !m_canvas.hasActiveTextEditing() && m_toolbarWindow != nullptr &&
                    m_toolbarWindow->palette() != nullptr;
         };
@@ -344,7 +345,8 @@ void ScreenshotPinnedEditController::ensureToolbar() {
 
     m_toolbarWindow = new ScreenshotFloatingToolPaletteWindow(pinnedEditToolbarOptions());
     m_toolbarWindow->setAttribute(Qt::WA_DeleteOnClose, false);
-    m_toolbarWindow->setTransientOwnerWindow(&m_pinnedWindow);
+    m_toolbarWindow->setTransientOwnerWindow(m_pinnedWindow.widgetHost());
+    m_pinnedWindow.attachAuxiliary(m_toolbarWindow, false);
     m_toolbarWindow->setStyleToolbarAboveMain(false);
 
     if (ScreenshotToolPalette* toolbar = m_toolbarWindow->palette()) {
@@ -976,12 +978,23 @@ void ScreenshotPinnedEditController::cancelCanvasColorSampling() {
 
 QPoint
 ScreenshotPinnedEditController::canvasColorPhysicalPositionAt(const QPointF& localPosition) const {
+    if (m_pinnedWindow.usesNativeImagePresentation()) {
+        const QRect bounds = m_pinnedWindow.currentNativeGeometry();
+        const qreal ratio = m_canvas.devicePixelRatioF();
+        return bounds.topLeft() +
+               QPoint(qBound(0, static_cast<int>(std::floor(localPosition.x() * ratio)),
+                             bounds.width() - 1),
+                      qBound(0, static_cast<int>(std::floor(localPosition.y() * ratio)),
+                             bounds.height() - 1));
+    }
     return ScreenshotCanvasColorSampler::physicalPointForLocalPosition(
         localPosition, m_canvas.size(), m_pinnedWindow.currentNativeGeometry());
 }
 
 QPoint
 ScreenshotPinnedEditController::canvasColorGlobalPositionAt(const QPoint& physicalPosition) const {
+    if (m_pinnedWindow.usesNativeImagePresentation())
+        return m_pinnedWindow.globalPositionForNativePosition(physicalPosition);
     const QRect physicalBounds = m_pinnedWindow.currentNativeGeometry();
     if (!physicalBounds.isValid() || physicalBounds.isEmpty()) {
         return QCursor::pos();
@@ -991,7 +1004,7 @@ ScreenshotPinnedEditController::canvasColorGlobalPositionAt(const QPoint& physic
                static_cast<qreal>(m_canvas.width()) / physicalBounds.width()),
         qRound((physicalPosition.y() - physicalBounds.top()) *
                static_cast<qreal>(m_canvas.height()) / physicalBounds.height()));
-    return m_canvas.mapToGlobal(localPosition);
+    return m_canvas.mapToGlobal(localPosition).toPoint();
 }
 
 QImage

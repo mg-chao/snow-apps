@@ -18,23 +18,10 @@ ScreenshotPinnedNativeGeometryController initializedController() {
     return controller;
 }
 
-void passiveProposalsCannotChangeStableGeometry() {
-    auto controller = initializedController();
-    const QRect proposed(1016, 806, 1298, 737);
-    require(controller.constrainWindowPos(proposed, true, true) == QRect(1015, 805, 1298, 737),
-            "stable geometry must reject passive native rounding");
-    require(controller.constrainWindowPos(proposed, true, false).topLeft() == QPoint(1015, 805) &&
-                controller.constrainWindowPos(proposed, true, false).size() == proposed.size(),
-            "position-only proposals must preserve their size flags");
-}
-
 void clickWithoutMovementRestoresTheExactStart() {
     auto controller = initializedController();
     require(controller.beginMove(QPoint(1664, 1173)), "move transaction did not begin");
     const QRect roundedProposal(1016, 806, 1298, 737);
-    require(controller.constrainWindowPos(roundedProposal, true, false) ==
-                QRect(1015, 805, 1298, 737),
-            "pending move must reject a no-op rounding proposal");
     require(controller.updateMove(roundedProposal, QPoint(1664, 1173)) ==
                 QRect(1015, 805, 1298, 737),
             "a stationary cursor must retain the exact starting rectangle");
@@ -52,13 +39,13 @@ void externallyInitiatedMovementEstablishesAnExplicitTransaction() {
             "the externally established move transaction must be committable");
 }
 
-void realMovementUsesPhysicalCursorDelta() {
+void realMovementAcceptsNativePhysicalGeometry() {
     auto controller = initializedController();
     require(controller.beginMove(QPoint(1664, 1173)), "move transaction did not begin");
     const QRect biasedProposal(1053, 835, 1298, 737);
-    const QRect expected(1052, 834, 1298, 737);
+    const QRect expected = biasedProposal;
     require(controller.updateMove(biasedProposal, QPoint(1701, 1202)) == expected,
-            "small logical-to-native bias must be removed from a real move");
+            "native physical movement must be accepted without rounding corrections");
     const auto change = controller.commitTarget();
     require(change.isValid() && change.positionChanged && !change.sizeChanged &&
                 change.geometry == expected,
@@ -94,8 +81,7 @@ void dpiAndProgrammaticTargetsAreExplicitTransactions() {
     // rect is adopted verbatim, position included.
     const QRect dpiTarget(1200, 900, 1623, 921);
     require(controller.adoptDpiTarget(dpiTarget, std::nullopt), "DPI target was rejected");
-    require(controller.constrainWindowPos(QRect(1201, 901, 1624, 922), true, true) == dpiTarget,
-            "DPI transaction target must reject later rounded proposals");
+
     const auto dpiChange = controller.commitTarget();
     require(dpiChange.dpiChanged && dpiChange.sizeChanged && dpiChange.positionChanged &&
                 dpiChange.geometry == dpiTarget,
@@ -105,8 +91,7 @@ void dpiAndProgrammaticTargetsAreExplicitTransactions() {
     require(controller.beginProgrammatic(scaleTarget,
                                          ScreenshotPinnedNativeGeometryController::Origin::Scale),
             "programmatic scale transaction did not begin");
-    require(controller.constrainWindowPos(QRect(1201, 901, 1299, 738), true, true) == scaleTarget,
-            "programmatic geometry must remain authoritative during reentrant messages");
+
     require(controller.commitTarget().geometry == scaleTarget,
             "programmatic geometry did not commit");
 }
@@ -184,9 +169,8 @@ void failedTransactionsRollBackDeterministically() {
 
 int main() {
     try {
-        passiveProposalsCannotChangeStableGeometry();
         clickWithoutMovementRestoresTheExactStart();
-        realMovementUsesPhysicalCursorDelta();
+        realMovementAcceptsNativePhysicalGeometry();
         externallyInitiatedMovementEstablishesAnExplicitTransaction();
         nativeManagedMoveProposalsRemainAvailable();
         resizingUsesTheTransactionStartAsItsFixedReference();

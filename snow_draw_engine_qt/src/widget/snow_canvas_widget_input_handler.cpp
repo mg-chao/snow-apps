@@ -5,12 +5,12 @@
 #include "snow_canvas_cursor_controller.h"
 
 #include <QEvent>
-#include <QWidget>
+#include "snow_draw_engine_qt/snow_canvas_view.h"
 
 #include <utility>
 
 SnowCanvasWidgetInputHandler::SnowCanvasWidgetInputHandler(
-    QWidget& widget, SnowCanvasCursorController& cursorController)
+    SnowCanvasView& widget, SnowCanvasCursorController& cursorController)
     : m_widget(widget), m_cursorController(cursorController) {}
 
 bool SnowCanvasWidgetInputHandler::interactionEnabled() const {

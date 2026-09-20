@@ -13,6 +13,38 @@
 
 namespace snow_shot::presentation {
 
+namespace {
+QWindow* releaseSurface(QObject* object) {
+    if (auto* widget = qobject_cast<QWidget*>(object))
+        return widget->windowHandle();
+    return qobject_cast<QWindow*>(object);
+}
+WId releaseWindowId(QObject* object) {
+    if (auto* widget = qobject_cast<QWidget*>(object))
+        return widget->winId();
+    if (auto* surface = releaseSurface(object))
+        return surface->winId();
+    return 0;
+}
+bool releaseScopeVisible(QObject* object) {
+    if (auto* widget = qobject_cast<QWidget*>(object))
+        return widget->isVisible();
+    if (auto* surface = releaseSurface(object))
+        return surface->isVisible();
+    return false;
+}
+void releaseSetCapture(QObject* object, bool capture) {
+    if (auto* widget = qobject_cast<QWidget*>(object)) {
+        if (capture)
+            widget->grabMouse();
+        else
+            widget->releaseMouse();
+    } else if (auto* surface = releaseSurface(object)) {
+        surface->setMouseGrabEnabled(capture);
+    }
+}
+} // namespace
+
 MouseReleaseActionController::MouseReleaseActionController(QObject* parent) : QObject(parent) {
     qApp->installEventFilter(this);
 }
@@ -22,15 +54,16 @@ MouseReleaseActionController::~MouseReleaseActionController() {
     qApp->removeEventFilter(this);
 }
 
-bool MouseReleaseActionController::arm(QWidget* scopeWindow, Qt::MouseButton button,
+bool MouseReleaseActionController::arm(QObject* scopeWindow, Qt::MouseButton button,
                                        std::function<void()> action) {
     if (pending()) {
         return false;
     }
-    if (!scopeWindow || !scopeWindow->isVisible() || button == Qt::NoButton || !action) {
+    if (!scopeWindow || !releaseScopeVisible(scopeWindow) || button == Qt::NoButton || !action) {
         return false;
     }
-    QWidget* scope = scopeWindow->window();
+    auto* widgetScope = qobject_cast<QWidget*>(scopeWindow);
+    QObject* scope = widgetScope ? static_cast<QObject*>(widgetScope->window()) : scopeWindow;
     QWidget* grabber = QWidget::mouseGrabber();
     if (grabber && grabber->window() != scope) {
         return false;
@@ -38,7 +71,7 @@ bool MouseReleaseActionController::arm(QWidget* scopeWindow, Qt::MouseButton but
 #ifdef Q_OS_WIN
     if (QGuiApplication::platformName() == QStringLiteral("windows")) {
         const HWND capture = GetCapture();
-        const HWND root = reinterpret_cast<HWND>(scope->winId());
+        const HWND root = reinterpret_cast<HWND>(releaseWindowId(scope));
         if (capture && capture != root && !IsChild(root, capture)) {
             return false;
         }
@@ -48,12 +81,12 @@ bool MouseReleaseActionController::arm(QWidget* scopeWindow, Qt::MouseButton but
     m_capture = grabber ? grabber : scope;
     m_ownsCapture = grabber == nullptr;
     if (m_ownsCapture) {
-        m_capture->grabMouse();
+        releaseSetCapture(m_capture, true);
     }
-    bool captured = QWidget::mouseGrabber() == m_capture;
+    bool captured = widgetScope ? QWidget::mouseGrabber() == m_capture : true;
 #ifdef Q_OS_WIN
     if (QGuiApplication::platformName() == QStringLiteral("windows")) {
-        captured = captured && GetCapture() == reinterpret_cast<HWND>(m_capture->winId());
+        captured = captured && GetCapture() == reinterpret_cast<HWND>(releaseWindowId(m_capture));
     }
 #endif
     if (!captured) {
@@ -73,8 +106,9 @@ bool MouseReleaseActionController::pending() const {
 
 void MouseReleaseActionController::releaseCapture() {
     const auto capture = std::exchange(m_capture, {});
-    if (std::exchange(m_ownsCapture, false) && capture && QWidget::mouseGrabber() == capture) {
-        capture->releaseMouse();
+    if (std::exchange(m_ownsCapture, false) && capture &&
+        (!qobject_cast<QWidget*>(capture.data()) || QWidget::mouseGrabber() == capture)) {
+        releaseSetCapture(capture, false);
     }
 }
 
@@ -102,7 +136,8 @@ void MouseReleaseActionController::finish() {
     QMetaObject::invokeMethod(
         this,
         [this, revision, action = std::move(action)] {
-            if (revision != m_revision || !m_finishing || !m_scope || !m_scope->isVisible()) {
+            if (revision != m_revision || !m_finishing || !m_scope ||
+                !releaseScopeVisible(m_scope)) {
                 return;
             }
             cancel();
@@ -114,7 +149,7 @@ void MouseReleaseActionController::finish() {
 bool MouseReleaseActionController::eventFilter(QObject* watched, QEvent* event) {
     // Let QWidgetWindow finish routing and release its implicit mouse capture
     // before consuming the QWidget delivery of the terminating event.
-    if (!pending() || qobject_cast<QWindow*>(watched)) {
+    if (!pending() || (qobject_cast<QWindow*>(watched) && watched != m_scope)) {
         return false;
     }
     if (event->type() == QEvent::ApplicationDeactivate ||
@@ -157,12 +192,13 @@ bool MouseReleaseActionController::handleNativeEvent(void* message, qintptr* res
         return false;
     }
     if (native->message == WM_CAPTURECHANGED && m_capture &&
-        native->hwnd == reinterpret_cast<HWND>(m_capture->winId()) &&
-        reinterpret_cast<HWND>(native->lParam) != reinterpret_cast<HWND>(m_capture->winId())) {
+        native->hwnd == reinterpret_cast<HWND>(releaseWindowId(m_capture)) &&
+        reinterpret_cast<HWND>(native->lParam) !=
+            reinterpret_cast<HWND>(releaseWindowId(m_capture))) {
         cancel();
         return false;
     }
-    if (native->hwnd != reinterpret_cast<HWND>(m_scope->winId())) {
+    if (native->hwnd != reinterpret_cast<HWND>(releaseWindowId(m_scope))) {
         return false;
     }
     const Qt::MouseButton released = native->message == WM_NCLBUTTONUP   ? Qt::LeftButton

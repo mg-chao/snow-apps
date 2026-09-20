@@ -1,12 +1,15 @@
 #pragma once
 #include "snow_draw_engine_qt/snow_canvas_smart_erase.h"
-#include "snow_draw_engine_qt/snow_canvas_view.h"
 
 #include <QRect>
 #include <QRectF>
 #include <QTransform>
 #include <QVariant>
-#include <QWidget>
+#include <QObject>
+#include <QCursor>
+#include <QFont>
+#include <QRegion>
+#include <functional>
 
 #include <cstdint>
 #include <memory>
@@ -28,14 +31,110 @@ class QWheelEvent;
 class SnowCanvasRuntime;
 class SnowCanvasCustomRenderer;
 
-class SnowCanvasWidget : public QWidget {
+class QWidget;
+class QWindow;
+class QPainter;
+
+struct SnowCanvasHostCallbacks {
+    std::function<void(const QRegion&)> repaint;
+    std::function<void(Qt::FocusReason)> focus;
+    std::function<void()> clearFocus;
+    std::function<bool()> hasFocus;
+    std::function<void(bool)> capture;
+    std::function<void(const std::optional<QCursor>&)> cursor;
+    std::function<void(bool)> inputMethodEnabled;
+    std::function<QVariant(Qt::InputMethodQuery)> inputMethodQuery;
+    std::function<QFont()> font;
+    std::function<QWindow*()> window;
+    std::function<QPointF(const QPointF&)> mapFromGlobal;
+    std::function<QPointF(const QPointF&)> mapToGlobal;
+};
+
+struct SnowCanvasDecorationRenderAreas {
+    std::optional<QRectF> watermark;
+    std::optional<QRectF> spotlight;
+};
+
+class SnowCanvasView : public QObject {
     Q_OBJECT
 
   public:
-    explicit SnowCanvasWidget(QWidget* parent = nullptr);
-    explicit SnowCanvasWidget(SnowCanvasRuntime& runtime, QWidget* parent = nullptr);
-    ~SnowCanvasWidget() override;
-    SnowCanvasView& view() const;
+    explicit SnowCanvasView(SnowCanvasHostCallbacks host = {}, QObject* parent = nullptr);
+    explicit SnowCanvasView(SnowCanvasRuntime& runtime, SnowCanvasHostCallbacks host = {},
+                            QObject* parent = nullptr);
+    ~SnowCanvasView() override;
+    bool setSurfaceMetrics(const QSize& physicalSize, qreal devicePixelRatio);
+    void setLogicalSurfaceSize(const QSize& size, qreal devicePixelRatio);
+    QSize physicalSize() const {
+        return m_physicalSize;
+    }
+    QSizeF logicalExtent() const {
+        return QSizeF(m_physicalSize) / m_devicePixelRatio;
+    }
+    QSize size() const {
+        return m_size;
+    }
+    QRect rect() const {
+        return QRect(QPoint(), m_size);
+    }
+    int width() const {
+        return m_size.width();
+    }
+    int height() const {
+        return m_size.height();
+    }
+    qreal devicePixelRatioF() const {
+        return m_devicePixelRatio;
+    }
+    QFont font() const {
+        return m_host.font ? m_host.font() : QFont();
+    }
+    QWindow* windowHandle() const {
+        return m_host.window ? m_host.window() : nullptr;
+    }
+    QPointF mapFromGlobal(const QPointF& point) const {
+        return m_host.mapFromGlobal ? m_host.mapFromGlobal(point) : point;
+    }
+    QPointF mapToGlobal(const QPointF& point) const {
+        return m_host.mapToGlobal ? m_host.mapToGlobal(point) : point;
+    }
+    void clearFocus() {
+        if (m_host.clearFocus)
+            m_host.clearFocus();
+    }
+    void update();
+    void update(const QRegion& region);
+    void setFocus(Qt::FocusReason reason = Qt::OtherFocusReason);
+    bool hasFocus() const {
+        return m_host.hasFocus && m_host.hasFocus();
+    }
+    void grabMouse() {
+        if (m_host.capture)
+            m_host.capture(true);
+    }
+    void releaseMouse() {
+        if (m_host.capture)
+            m_host.capture(false);
+    }
+    void setCursor(const QCursor& cursor);
+    void unsetCursor();
+    QCursor cursor() const {
+        return m_cursor.value_or(QCursor());
+    }
+    bool hasCursor() const {
+        return m_cursor.has_value();
+    }
+    void setInputMethodEnabled(bool enabled);
+    bool inputMethodEnabled() const {
+        return m_inputMethodEnabled;
+    }
+    QVariant defaultInputMethodQuery(Qt::InputMethodQuery query) const {
+        if (query == Qt::ImEnabled)
+            return m_inputMethodEnabled;
+        return m_host.inputMethodQuery ? m_host.inputMethodQuery(query) : QVariant();
+    }
+    QVariant inputMethodQuery(Qt::InputMethodQuery query) const;
+    bool render(QPainter& painter, const QRegion& dirty);
 
     SnowCanvasTool canvasTool() const;
     bool setCanvasTool(SnowCanvasTool tool);
@@ -143,6 +242,8 @@ class SnowCanvasWidget : public QWidget {
     void setShowDirtyRects(bool show);
 
   signals:
+    void serialNumberToolbarStateChanged();
+    void overlayPaintRequested(QPainter* painter, const QRegion& dirty);
     void autoFilterRegionsChanged();
     void autoFilterInteractionStarting();
     void activeToolChanged();
@@ -160,28 +261,14 @@ class SnowCanvasWidget : public QWidget {
 
   protected:
     bool event(QEvent* event) override;
-    bool eventFilter(QObject* watched, QEvent* event) override;
-    void paintEvent(QPaintEvent* event) override;
-    void mousePressEvent(QMouseEvent* event) override;
-    void mouseDoubleClickEvent(QMouseEvent* event) override;
-    void mouseMoveEvent(QMouseEvent* event) override;
-    void mouseReleaseEvent(QMouseEvent* event) override;
-    void enterEvent(QEnterEvent* event) override;
-    void leaveEvent(QEvent* event) override;
-    void wheelEvent(QWheelEvent* event) override;
-    void keyPressEvent(QKeyEvent* event) override;
-    void keyReleaseEvent(QKeyEvent* event) override;
-    void inputMethodEvent(QInputMethodEvent* event) override;
-    QVariant inputMethodQuery(Qt::InputMethodQuery query) const override;
-    void focusOutEvent(QFocusEvent* event) override;
-    void resizeEvent(QResizeEvent* event) override;
 
   private:
-    void initializeAdapter();
+    SnowCanvasHostCallbacks m_host;
+    QSize m_physicalSize;
+    QSize m_size;
+    qreal m_devicePixelRatio = 1.0;
+    bool m_inputMethodEnabled = false;
+    std::optional<QCursor> m_cursor;
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };
-
-// Creates the existing serial-number controls for either canvas host.
-QWidget* createSnowCanvasSerialNumberToolbar(SnowCanvasView& view, QWidget* parent,
-                                             QWindow* transientOwner = nullptr);

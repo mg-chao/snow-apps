@@ -2,6 +2,8 @@
 
 #include <QPixmap>
 #include <QWidget>
+#include <QPainter>
+#include "snow_draw_engine_qt/snow_canvas_view.h"
 
 #include <algorithm>
 #include <utility>
@@ -46,6 +48,33 @@ bool ScreenshotCanvasColorSampler::ensureSnapshot(QWidget& canvas, const QRect& 
     m_canvas = &canvas;
     m_physicalRaster = std::move(raster);
     m_physicalBounds = normalizedBounds;
+    return true;
+}
+
+bool ScreenshotCanvasColorSampler::ensureSnapshot(SnowCanvasView& canvas, const QRect& bounds) {
+    if (bounds.isEmpty()) {
+        reset();
+        return false;
+    }
+    if (m_canvas == &canvas && m_physicalBounds == bounds && !m_physicalRaster.isNull())
+        return true;
+    QImage raster(bounds.size(), QImage::Format_ARGB32_Premultiplied);
+    if (raster.isNull()) {
+        reset();
+        return false;
+    }
+    raster.setDevicePixelRatio(canvas.devicePixelRatioF());
+    raster.fill(Qt::transparent);
+    QPainter painter(&raster);
+    if (!canvas.render(painter, QRegion(canvas.rect()))) {
+        reset();
+        return false;
+    }
+    painter.end();
+    raster.setDevicePixelRatio(1.0);
+    m_canvas = &canvas;
+    m_physicalRaster = std::move(raster);
+    m_physicalBounds = bounds;
     return true;
 }
 

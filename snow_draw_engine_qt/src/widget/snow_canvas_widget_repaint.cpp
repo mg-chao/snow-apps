@@ -1,6 +1,6 @@
 #include "snow_canvas_widget_repaint.h"
 
-#include <QWidget>
+#include "snow_draw_engine_qt/snow_canvas_view.h"
 
 namespace snow_canvas_widget_repaint {
 
@@ -32,14 +32,14 @@ QRegion adaptiveUpdateRegion(const QRegion& region, const QRect& clip, double bo
     return clipped;
 }
 
-void updateClipped(QWidget& widget, const QRegion& region) {
+void updateClipped(SnowCanvasView& widget, const QRegion& region) {
     const QRegion updateRegion = clippedUpdateRegion(region, widget.rect());
     if (!updateRegion.isEmpty()) {
         widget.update(updateRegion);
     }
 }
 
-void updateCoalesced(QWidget& widget, const QRegion& region) {
+void updateCoalesced(SnowCanvasView& widget, const QRegion& region) {
     const QRegion updateRegion = adaptiveUpdateRegion(region, widget.rect());
     if (!updateRegion.isEmpty()) {
         widget.update(updateRegion);

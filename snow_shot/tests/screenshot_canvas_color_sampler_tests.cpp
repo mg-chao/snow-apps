@@ -1,5 +1,9 @@
 #include "snow_shot/presentation/screenshotcanvascolorsampler.h"
 
+#include "snow_draw_engine_qt/snow_canvas_view.h"
+#include "snow_draw_engine_qt/snow_canvas_custom_renderer.h"
+#include <QApplication>
+#include <QPainter>
 #include <QColor>
 #include <QImage>
 
@@ -73,13 +77,54 @@ void previewClampsAtPhysicalEdges() {
                 preview.pixelColor(6, 6) == colorForPixel(3, 2),
             "the physical preview did not clamp consistently at the raster edge");
 }
+void sharedViewSamplingPreservesFractionalSurfacePixels() {
+    class Renderer final : public SnowCanvasCustomRenderer {
+      public:
+        QImage image{QSize(1001, 31), QImage::Format_ARGB32_Premultiplied};
+        Renderer() {
+            for (int y = 0; y < image.height(); ++y)
+                for (int x = 0; x < image.width(); ++x)
+                    image.setPixelColor(x, y, colorForPixel(x, y));
+        }
+        void renderBeforeCanvas(QPainter& painter,
+                                const SnowCanvasRenderContext& context) override {
+            painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
+            painter.setTransform(context.canvasToViewTransform, true);
+            painter.drawImage(QPointF(), image);
+        }
+    } renderer;
+    for (qreal ratio : {1.0, 1.25, 1.5, 1.75, 2.0}) {
+        SnowCanvasView view;
+        require(view.setSurfaceMetrics(renderer.image.size(), ratio),
+                "set sampler surface metrics");
+        view.setCanvasContentVisible(false);
+        view.setClearBackgroundEnabled(false);
+        view.setCustomRenderer(&renderer);
+        require(
+            view.setViewportCamera(view.width() * ratio / 2, view.height() * ratio / 2, 1 / ratio),
+            "set pixel-aligned sampling camera");
+        ScreenshotCanvasColorSampler sampler;
+        const QRect bounds(QPoint(-1401, -73), renderer.image.size());
+        require(sampler.ensureSnapshot(view, bounds),
+                "sample shared canvas directly without a QWidget");
+        for (const QPoint& pixel :
+             {QPoint(0, 0), QPoint(499, 15), QPoint(500, 15), QPoint(999, 30), QPoint(1000, 30)}) {
+            const QImage preview = sampler.previewAtPhysicalPoint(bounds.topLeft() + pixel);
+            require(preview.pixelColor(3, 3) == colorForPixel(pixel.x(), pixel.y()),
+                    "sampling must preserve exact source pixels through fractional view extents");
+        }
+        view.setCustomRenderer(nullptr);
+    }
+}
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    QApplication application(argc, argv);
     try {
         exactPhysicalPixelsRemainDistinct();
         fractionalLogicalCoordinatesMapBeforeRounding();
         previewClampsAtPhysicalEdges();
+        sharedViewSamplingPreservesFractionalSurfacePixels();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

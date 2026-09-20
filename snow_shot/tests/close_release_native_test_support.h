@@ -164,7 +164,8 @@ class Receiver final {
         require(SendInput(1, &input, sizeof(input)) == 1, "send native mouse input");
     }
 
-    void verify(QWidget& target, Qt::MouseButton button = Qt::NoButton, bool doubleClick = false,
+    template <typename Host>
+    void verify(Host& target, Qt::MouseButton button = Qt::NoButton, bool doubleClick = false,
                 bool caption = false) {
         std::cerr << "Verifying native dismissal: button=" << static_cast<int>(button)
                   << " double-click=" << doubleClick << '\n';
@@ -194,7 +195,7 @@ class Receiver final {
                 return false;
             }
         } observer;
-        QPointer<QWidget> guarded(&target);
+        QPointer<Host> guarded(&target);
         const HWND targetWindow = reinterpret_cast<HWND>(target.winId());
         RECT bounds{};
         require(GetWindowRect(targetWindow, &bounds) != FALSE, "get target rectangle");

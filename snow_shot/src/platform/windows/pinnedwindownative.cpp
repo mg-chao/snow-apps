@@ -1,7 +1,6 @@
 #include "pinnedwindownative.h"
 
 #include <QCursor>
-#include <QEventLoop>
 #include <QGuiApplication>
 #include <QCoreApplication>
 #include <QKeyEvent>
@@ -16,50 +15,25 @@
 #include <qpa/qplatformnativeinterface.h>
 #include <qpa/qwindowsysteminterface.h>
 #include <qt_windows.h>
-// clang-format off
-#include <commctrl.h>
-// clang-format on
 
 namespace {
-constexpr UINT_PTR kSynchronizedResizeSubclassId = 0x5353525A; // "SSRZ"
 
 HWND toNativeHwnd(WId windowId) {
     return reinterpret_cast<HWND>(windowId); // NOLINT(performance-no-int-to-ptr)
 }
 
-LRESULT CALLBACK synchronizedResizeSubclassProc(HWND hwnd, UINT message, WPARAM wParam,
-                                                LPARAM lParam, UINT_PTR subclassId,
-                                                DWORD_PTR referenceData) {
-    Q_UNUSED(subclassId);
-    bool synchronizeFrame = false;
-    if (message == WM_WINDOWPOSCHANGED) {
-        const auto* position = reinterpret_cast<const WINDOWPOS*>(lParam);
-        const auto* interactiveResizeActive = reinterpret_cast<const bool*>(referenceData);
-        synchronizeFrame = interactiveResizeActive != nullptr && *interactiveResizeActive &&
-                           position != nullptr && (position->flags & SWP_NOSIZE) == 0 &&
-                           (position->flags & SWP_NOCOPYBITS) != 0;
-    }
-
-    const LRESULT result = DefSubclassProc(hwnd, message, wParam, lParam);
-    if (synchronizeFrame) {
-        // Qt queues the QWidget geometry notification behind its native
-        // procedure. Drain only non-input window-system events so the resized
-        // canvas and camera are ready before publishing the layered surface.
-        static_cast<void>(
-            QWindowSystemInterface::flushWindowSystemEvents(QEventLoop::ExcludeUserInputEvents));
-        static_cast<void>(
-            RedrawWindow(hwnd, nullptr, nullptr,
-                         RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN | RDW_NOERASE));
-    }
-    return result;
-}
 } // namespace
 #endif
 
 struct screenshot_pinned_window_native::SystemMoveKeyboard::Impl final : QObject {
-    explicit Impl(QWidget* widget) : window(widget) {}
+    explicit Impl(QObject* widget) : window(widget) {}
 
-    QPointer<QWidget> window;
+    QPointer<QObject> window;
+    QWindow* windowHandle() const {
+        if (auto* widget = qobject_cast<QWidget*>(window.data()))
+            return widget->windowHandle();
+        return qobject_cast<QWindow*>(window.data());
+    }
     QList<QKeyCombination> combinations;
 #if defined(Q_OS_WIN) || defined(_WIN32)
     static thread_local Impl* active;
@@ -69,7 +43,6 @@ struct screenshot_pinned_window_native::SystemMoveKeyboard::Impl final : QObject
     QSet<int> pressedKeys;
 
     bool eventFilter(QObject* watched, QEvent* event) override {
-        Q_UNUSED(watched);
         if (!translating || window == nullptr) {
             return false;
         }
@@ -90,6 +63,13 @@ struct screenshot_pinned_window_native::SystemMoveKeyboard::Impl final : QObject
             } else if (!key->isAutoRepeat()) {
                 pressedKeys.remove(key->key());
             }
+            // A native QWindow is already the delivery target. Let the
+            // application shortcut manager handle it after this filter has
+            // marked the native message consumed; redispatch would duplicate
+            // the key. QWidget hosts still need the translated event forwarded.
+            if (watched == window)
+                return false;
+            QScopedValueRollback<bool> guard(translating, false);
             QCoreApplication::sendEvent(window, event);
         }
         // Translation is only a probe for movement shortcuts. Unmatched keys
@@ -106,7 +86,7 @@ struct screenshot_pinned_window_native::SystemMoveKeyboard::Impl final : QObject
             info.cbSize = sizeof(info);
             if (message != nullptr && GetGUIThreadInfo(GetCurrentThreadId(), &info) != FALSE &&
                 (info.flags & GUI_INMOVESIZE) != 0 &&
-                info.hwndMoveSize == toNativeHwnd(self->window->winId()) &&
+                info.hwndMoveSize == toNativeHwnd(self->windowHandle()->winId()) &&
                 (message->message == WM_KEYDOWN || message->message == WM_KEYUP ||
                  message->message == WM_SYSKEYDOWN || message->message == WM_SYSKEYUP)) {
                 QScopedValueRollback<bool> guard(self->translating, true);
@@ -114,8 +94,8 @@ struct screenshot_pinned_window_native::SystemMoveKeyboard::Impl final : QObject
                 // USER32's modal move loop bypasses Qt's event dispatcher.
                 // Use Qt's window procedure for layout/modifier translation,
                 // then deliver the translated event before the loop resumes.
-                SendMessageW(toNativeHwnd(self->window->winId()), message->message, message->wParam,
-                             message->lParam);
+                SendMessageW(toNativeHwnd(self->windowHandle()->winId()), message->message,
+                             message->wParam, message->lParam);
                 QWindowSystemInterface::flushWindowSystemEvents();
                 if (self->handled) {
                     message->message = WM_NULL;
@@ -134,7 +114,7 @@ thread_local screenshot_pinned_window_native::SystemMoveKeyboard::Impl*
     screenshot_pinned_window_native::SystemMoveKeyboard::Impl::active = nullptr;
 #endif
 
-screenshot_pinned_window_native::SystemMoveKeyboard::SystemMoveKeyboard(QWidget* window)
+screenshot_pinned_window_native::SystemMoveKeyboard::SystemMoveKeyboard(QObject* window)
     : m_impl(std::make_unique<Impl>(window)) {}
 
 screenshot_pinned_window_native::SystemMoveKeyboard::~SystemMoveKeyboard() {
@@ -151,8 +131,7 @@ bool screenshot_pinned_window_native::SystemMoveKeyboard::start() {
     if (m_impl->hook != nullptr) {
         return true;
     }
-    if (Impl::active != nullptr || m_impl->window == nullptr ||
-        m_impl->window->windowHandle() == nullptr) {
+    if (Impl::active != nullptr || m_impl->window == nullptr || m_impl->windowHandle() == nullptr) {
         return false;
     }
     m_impl->hook = SetWindowsHookExW(WH_GETMESSAGE, Impl::filter, nullptr, GetCurrentThreadId());
@@ -160,7 +139,7 @@ bool screenshot_pinned_window_native::SystemMoveKeyboard::start() {
         return false;
     }
     Impl::active = m_impl.get();
-    m_impl->window->windowHandle()->installEventFilter(m_impl.get());
+    QCoreApplication::instance()->installEventFilter(m_impl.get());
 #endif
     return true;
 }
@@ -171,9 +150,7 @@ void screenshot_pinned_window_native::SystemMoveKeyboard::stop() {
         UnhookWindowsHookEx(m_impl->hook);
         m_impl->hook = nullptr;
         Impl::active = nullptr;
-        if (m_impl->window != nullptr && m_impl->window->windowHandle() != nullptr) {
-            m_impl->window->windowHandle()->removeEventFilter(m_impl.get());
-        }
+        QCoreApplication::instance()->removeEventFilter(m_impl.get());
         m_impl->pressedKeys.clear();
     }
 #endif
@@ -392,32 +369,6 @@ bool screenshot_pinned_window_native::activateWindow(WId windowId) {
 #endif
 }
 
-bool screenshot_pinned_window_native::installSynchronizedResize(
-    WId windowId, const bool* interactiveResizeActive) {
-#if defined(Q_OS_WIN) || defined(_WIN32)
-    const HWND hwnd = toNativeHwnd(windowId);
-    return hwnd != nullptr && interactiveResizeActive != nullptr &&
-           SetWindowSubclass(hwnd, synchronizedResizeSubclassProc, kSynchronizedResizeSubclassId,
-                             reinterpret_cast<DWORD_PTR>(interactiveResizeActive)) != FALSE;
-#else
-    Q_UNUSED(windowId);
-    Q_UNUSED(interactiveResizeActive);
-    return true;
-#endif
-}
-
-void screenshot_pinned_window_native::removeSynchronizedResize(WId windowId) {
-#if defined(Q_OS_WIN) || defined(_WIN32)
-    const HWND hwnd = toNativeHwnd(windowId);
-    if (hwnd != nullptr) {
-        static_cast<void>(RemoveWindowSubclass(hwnd, synchronizedResizeSubclassProc,
-                                               kSynchronizedResizeSubclassId));
-    }
-#else
-    Q_UNUSED(windowId);
-#endif
-}
-
 bool screenshot_pinned_window_native::applyCursor(Qt::CursorShape shape) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
     QPlatformNativeInterface* nativeInterface = QGuiApplication::platformNativeInterface();
@@ -436,24 +387,5 @@ bool screenshot_pinned_window_native::applyCursor(Qt::CursorShape shape) {
 #else
     Q_UNUSED(shape);
     return false;
-#endif
-}
-
-bool screenshot_pinned_window_native::synchronizeClientPaint(WId windowId,
-                                                             PaintSynchronization synchronization) {
-#if defined(Q_OS_WIN) || defined(_WIN32)
-    const HWND hwnd = toNativeHwnd(windowId);
-    if (hwnd == nullptr) {
-        return false;
-    }
-    UINT flags = RDW_UPDATENOW | RDW_ALLCHILDREN;
-    if (synchronization == PaintSynchronization::InvalidateAndUpdate) {
-        flags |= RDW_INVALIDATE;
-    }
-    return RedrawWindow(hwnd, nullptr, nullptr, flags) != FALSE;
-#else
-    Q_UNUSED(windowId);
-    Q_UNUSED(synchronization);
-    return true;
 #endif
 }

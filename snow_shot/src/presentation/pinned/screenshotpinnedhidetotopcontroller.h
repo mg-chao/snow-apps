@@ -14,6 +14,9 @@
 
 class QScreen;
 class QWidget;
+namespace snow_shot::presentation {
+class PinnedWindowHost;
+}
 class ScreenshotPinnedPointerPresence;
 
 namespace screenshot_pinned_hide_to_top {
@@ -46,6 +49,8 @@ class ScreenshotPinnedHideToTopController final : public QObject {
     };
 
     ScreenshotPinnedHideToTopController(QWidget* owner, Hooks hooks);
+    ScreenshotPinnedHideToTopController(snow_shot::presentation::PinnedWindowHost* owner,
+                                        Hooks hooks);
     ~ScreenshotPinnedHideToTopController() override;
     [[nodiscard]] State state() const {
         return m_state;
@@ -96,6 +101,7 @@ class ScreenshotPinnedHideToTopController final : public QObject {
     void retranslate();
     void watchScreen();
 
+    QPointer<snow_shot::presentation::PinnedWindowHost> m_host;
     QPointer<QWidget> m_owner;
     Hooks m_hooks;
     State m_state = State::Normal;

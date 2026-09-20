@@ -1,3 +1,4 @@
+#include "pinnedwindowhost.h"
 #include "pinnedwindowplatform.h"
 #if defined(Q_OS_WIN)
 #include "../../platform/windows/pinnedwindownative.h"
@@ -61,7 +62,8 @@ PinnedPlacement recoverPinnedPlacement(PinnedPlacement placement, const QScreen&
 
 PinnedWindowPlatform::PinnedWindowPlatform(QWidget* window, Role role)
     : m_window(window), m_role(role) {
-    window->installEventFilter(this);
+    if (window)
+        window->installEventFilter(this);
     qApp->installEventFilter(this);
     const auto changed = [this] {
         if (environmentChanged)
@@ -219,11 +221,11 @@ std::unique_ptr<PinnedWindowPlatform> createCocoaPinnedWindowPlatform(QWidget*,
                                                                       PinnedWindowPlatform::Role);
 #endif
 #if defined(Q_OS_WIN)
-class WindowsPinnedWindowPlatform final : public PinnedWindowPlatform {
+class WindowsAuxiliaryWindowPlatform final : public PinnedWindowPlatform {
   public:
-    WindowsPinnedWindowPlatform(QWidget* window, Role role)
+    WindowsAuxiliaryWindowPlatform(QWidget* window, Role role)
         : PinnedWindowPlatform(window, role), m_keyboard(window) {}
-    ~WindowsPinnedWindowPlatform() override {
+    ~WindowsAuxiliaryWindowPlatform() override {
         detach();
     }
     bool attach() override {
@@ -233,11 +235,6 @@ class WindowsPinnedWindowPlatform final : public PinnedWindowPlatform {
         const WId id = m_window->internalWinId();
         if (m_attached && m_attached != id)
             detach();
-        if (m_role == Role::Image && !screenshot_pinned_window_native::applySystemResizeStyle(id))
-            return false;
-        if (m_resizeState &&
-            !screenshot_pinned_window_native::installSynchronizedResize(id, m_resizeState))
-            return false;
         if (m_transparent && m_attached != id &&
             !screenshot_pinned_window_native::setInputTransparent(id, true))
             return false;
@@ -246,13 +243,9 @@ class WindowsPinnedWindowPlatform final : public PinnedWindowPlatform {
     }
     void detach() override {
         m_keyboard.stop();
-        if (m_attached)
-            screenshot_pinned_window_native::removeSynchronizedResize(m_attached);
         m_attached = 0;
     }
-    void setResizeInteractionState(const bool* state) override {
-        m_resizeState = state;
-    }
+
     void setMoveKeyCombinations(const QList<QKeyCombination>& keys) override {
         m_keyboard.setKeyCombinations(keys);
     }
@@ -265,10 +258,7 @@ class WindowsPinnedWindowPlatform final : public PinnedWindowPlatform {
     bool startSystemMove() override {
         return m_window && m_window->windowHandle() && m_window->windowHandle()->startSystemMove();
     }
-    bool handleNativeEvent(const QByteArray& type, void* message, qintptr* result) override {
-        auto* pin = qobject_cast<ScreenshotPinnedWindow*>(m_window.data());
-        return pin && PinnedWindowWindowsEvents::handle(*pin, type, message, result);
-    }
+
     bool systemInteractionReleased() const override {
         return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) == 0;
     }
@@ -277,13 +267,7 @@ class WindowsPinnedWindowPlatform final : public PinnedWindowPlatform {
                               m_window->internalWinId())
                         : QRect();
     }
-    bool synchronizePaint(bool invalidate) override {
-        using namespace screenshot_pinned_window_native;
-        return m_window &&
-               synchronizeClientPaint(m_window->internalWinId(),
-                                      invalidate ? PaintSynchronization::InvalidateAndUpdate
-                                                 : PaintSynchronization::FlushAlreadyPainted);
-    }
+
     bool applyPlacement(const PinnedPlacement& placement, QScreen* screen,
                         GeometryUpdate update) override {
         return m_window && screen && placement.isValid() &&
@@ -326,7 +310,6 @@ class WindowsPinnedWindowPlatform final : public PinnedWindowPlatform {
   private:
     screenshot_pinned_window_native::SystemMoveKeyboard m_keyboard;
     WId m_attached = 0;
-    const bool* m_resizeState = nullptr;
 };
 #endif
 std::unique_ptr<PinnedWindowPlatform> createPinnedWindowPlatform(QWidget* window,
@@ -336,9 +319,104 @@ std::unique_ptr<PinnedWindowPlatform> createPinnedWindowPlatform(QWidget* window
         return createCocoaPinnedWindowPlatform(window, role);
 #elif defined(Q_OS_WIN)
     if (QGuiApplication::platformName() == QStringLiteral("windows"))
-        return std::make_unique<WindowsPinnedWindowPlatform>(window, role);
+        return std::make_unique<WindowsAuxiliaryWindowPlatform>(window, role);
 #endif
     return std::make_unique<QtPinnedWindowPlatform>(window, role);
+}
+
+#if defined(Q_OS_WIN)
+class NativeImageWindowPlatform final : public PinnedWindowPlatform {
+  public:
+    explicit NativeImageWindowPlatform(PinnedWindowHost* owner)
+        : PinnedWindowPlatform(nullptr, Role::Image), m_owner(owner),
+          m_keyboard(owner->windowHandle()) {
+        m_surface = owner->windowHandle();
+        m_surface->installEventFilter(this);
+    }
+    ~NativeImageWindowPlatform() override {
+        detach();
+    }
+    bool attach() override {
+        return m_owner && m_owner->internalWinId() &&
+               screenshot_pinned_window_native::applySystemResizeStyle(m_owner->internalWinId());
+    }
+    void detach() override {
+        m_keyboard.stop();
+    }
+    bool applyPlacement(const PinnedPlacement& value, QScreen* screen,
+                        GeometryUpdate update) override {
+        Q_UNUSED(update);
+        return m_owner && screen && value.isValid() &&
+               m_owner->applyNativeGeometry(pinnedPixelRect(value, *screen));
+    }
+    QRect pixelGeometry() const override {
+        return m_owner ? screenshot_pinned_window_native::currentClientGeometry(
+                             m_owner->internalWinId())
+                       : QRect();
+    }
+    std::optional<PinnedPlacement> placement() const override {
+        if (!m_owner || !m_owner->screen())
+            return std::nullopt;
+        const QRect pixels =
+            screenshot_pinned_window_native::currentClientGeometry(m_owner->internalWinId());
+        return pixels.isValid() ? std::optional(pinnedPlacement(pixels, *m_owner->screen()))
+                                : std::nullopt;
+    }
+    bool setInputTransparent(bool enabled) override {
+        return m_owner && screenshot_pinned_window_native::setInputTransparent(
+                              m_owner->internalWinId(), enabled);
+    }
+    bool setStaysOnTop(bool enabled) override {
+        return m_owner &&
+               screenshot_pinned_window_native::setStaysOnTop(m_owner->internalWinId(), enabled);
+    }
+    bool activate() override {
+        return m_owner && screenshot_pinned_window_native::activateWindow(m_owner->internalWinId());
+    }
+    bool startSystemMove() override {
+        return m_owner && m_owner->windowHandle()->startSystemMove();
+    }
+    void setMoveKeyCombinations(const QList<QKeyCombination>& keys) override {
+        m_keyboard.setKeyCombinations(keys);
+    }
+    void setSystemMoveActive(bool active) override {
+        if (active)
+            static_cast<void>(m_keyboard.start());
+        else
+            m_keyboard.stop();
+    }
+    bool systemInteractionReleased() const override {
+        return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) == 0;
+    }
+    std::optional<bool> pointerInside() const override {
+        return m_owner
+                   ? screenshot_pinned_window_native::pointerInsideWindow(m_owner->internalWinId())
+                   : std::nullopt;
+    }
+    QRect framePixelGeometry() const override {
+        return m_owner ? screenshot_pinned_window_native::currentWindowGeometry(
+                             m_owner->internalWinId())
+                       : QRect();
+    }
+    bool synchronizePaint(bool) override {
+        return m_owner && m_owner->publishNativeFrame();
+    }
+    bool handleNativeEvent(const QByteArray& type, void* message, qintptr* result) override {
+        auto* pin = qobject_cast<ScreenshotPinnedWindow*>(m_owner.data());
+        return pin && PinnedWindowWindowsEvents::handle(*pin, type, message, result);
+    }
+
+  private:
+    QPointer<PinnedWindowHost> m_owner;
+    screenshot_pinned_window_native::SystemMoveKeyboard m_keyboard;
+};
+#endif
+std::unique_ptr<PinnedWindowPlatform> createPinnedWindowPlatform(PinnedWindowHost* window) {
+#if defined(Q_OS_WIN)
+    if (window->usesNativeImagePresentation())
+        return std::make_unique<NativeImageWindowPlatform>(window);
+#endif
+    return createPinnedWindowPlatform(window->widgetHost());
 }
 PinnedWindowPlatform* configurePinnedAuxiliary(QWidget* window) {
     if (!window)

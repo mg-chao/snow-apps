@@ -162,7 +162,7 @@ bool ScreenshotPinnedWindow::beginControlledInteraction(const QPointF& desktopPo
         static_cast<void>(m_platform->activate());
     m_interactionGrabber = QWidget::mouseGrabber();
     if (!m_interactionGrabber) {
-        m_interactionGrabber = this;
+        m_interactionGrabber = widgetHost();
         grabMouse();
     }
     qApp->installEventFilter(this);
@@ -266,7 +266,7 @@ void ScreenshotPinnedWindow::endControlledInteraction(bool cancel) {
             if (restored)
                 m_platformPlacement = m_platform->placement();
             else
-                QTimer::singleShot(0, this, &QWidget::close);
+                QTimer::singleShot(0, this, &ScreenshotPinnedWindow::close);
         }
     } else {
         static_cast<void>(m_nativeGeometryController->commitTarget());

@@ -22,11 +22,15 @@ set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
 set(CMAKE_OBJCXX_EXTENSIONS OFF)
 
 set(SNOW_PINNED_PLATFORM_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/pinned/pinnedwindowplatform.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/pinned/pinnedwindowplatform.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/pinned/pinnedwindowhost.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/pinned/pinnedwindowhost.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/pinned/pinnedimagepresenter.cpp)
 if(WIN32)
     list(APPEND SNOW_PINNED_PLATFORM_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows/pinnedwindowevents.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows/pinnedwindownative.cpp)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows/pinnedwindownative.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows/pinnedimagepresentation.cpp)
 endif()
 if(APPLE)
     list(APPEND SNOW_PINNED_PLATFORM_SOURCES
@@ -1839,9 +1843,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_include_directories(snow-shot-canvas-color-sampler-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
-    target_link_libraries(snow-shot-canvas-color-sampler-tests PRIVATE Qt6::Widgets)
+    target_link_libraries(snow-shot-canvas-color-sampler-tests PRIVATE Qt6::Widgets snow_draw_engine_qt_canvas)
+    snow_shot_import_offscreen_platform(snow-shot-canvas-color-sampler-tests)
     add_test(NAME snow-shot-canvas-color-sampler-tests
-             COMMAND snow-shot-canvas-color-sampler-tests)
+             COMMAND snow-shot-canvas-color-sampler-tests -platform offscreen)
 
     add_executable(snow-shot-language-manager-tests
         tests/language_manager_tests.cpp
@@ -3321,6 +3326,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             NAME snow-shot-pinned-native-drag-dpi-tests
             COMMAND snow-shot-pinned-window-tests --native-drag-dpi-only
         )
+        set_tests_properties(snow-shot-pinned-native-drag-dpi-tests PROPERTIES SKIP_RETURN_CODE 77)
     endif()
 
     add_executable(snow-shot-pdf-export-tests
@@ -5729,6 +5735,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         src/presentation/ocr/screenshotrecognitionimage.cpp
         src/presentation/selection/screenshotselectionexportuiservices.cpp
         src/presentation/pinned/screenshotpinnednativegeometrycontroller.cpp
+        src/presentation/pinned/screenshotpinnedclickthroughgeometry.cpp
         src/presentation/pinned/screenshotpinnedresizegeometry.cpp
         src/presentation/pinned/screenshotpinnedrestoregeometry.cpp
         src/presentation/pinned/screenshotpinnedhidetotopcontroller.cpp
@@ -6788,6 +6795,16 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" SNOW_TEST_CROSS_PLATFORM TRUE)
 endif()
 
+if(WIN32 AND SNOW_SHOT_BUILD_TESTS)
+    foreach(_pin_scale IN ITEMS 1 1.25 1.5 1.75 2)
+        add_test(NAME snow-shot-windows-pinned-pixels-${_pin_scale}-tests
+            COMMAND snow-shot-pinned-window-tests --physical-pixels-only -platform windows)
+        set_tests_properties(snow-shot-windows-pinned-pixels-${_pin_scale}-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60
+            ENVIRONMENT "QT_SCREEN_SCALE_FACTORS=${_pin_scale}")
+    endforeach()
+endif()
+
 if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-pinned-pixel-alignment-tests
         COMMAND snow-shot-pinned-window-tests --pixel-alignment-only -platform offscreen)
@@ -6848,4 +6865,27 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         "-framework AppKit" "-framework ApplicationServices")
     add_test(NAME snow-shot-macos-screenshot-native-smoke COMMAND snow-shot-macos-screenshot-native-smoke)
     set_tests_properties(snow-shot-macos-screenshot-native-smoke PROPERTIES LABELS "interactive;macos" SKIP_RETURN_CODE 77 TIMEOUT 60)
+endif()
+
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-pinned-image-presenter-tests
+        tests/pinned_image_presenter_tests.cpp
+        src/presentation/pinned/pinnedimagepresenter.cpp
+        src/presentation/pinned/pinnedwindowhost.cpp
+        src/presentation/pinned/pinnedwindowhost.h)
+    target_link_libraries(snow-shot-pinned-image-presenter-tests PRIVATE Qt6::Widgets snow_draw_engine_qt_canvas)
+    snow_shot_import_offscreen_platform(snow-shot-pinned-image-presenter-tests)
+    add_test(NAME snow-shot-pinned-image-presenter-tests
+        COMMAND snow-shot-pinned-image-presenter-tests -platform offscreen)
+    set_tests_properties(snow-shot-pinned-image-presenter-tests PROPERTIES LABELS unit)
+    if(WIN32)
+        target_sources(snow-shot-pinned-image-presenter-tests PRIVATE
+            src/platform/windows/pinnedimagepresentation.cpp)
+        target_link_libraries(snow-shot-pinned-image-presenter-tests PRIVATE user32 gdi32)
+        add_test(NAME snow-shot-pinned-image-presenter-native-tests
+            COMMAND snow-shot-pinned-image-presenter-tests --native -platform windows)
+        set_tests_properties(snow-shot-pinned-image-presenter-native-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60
+            ENVIRONMENT "QT_SCREEN_SCALE_FACTORS=1.75")
+    endif()
 endif()

@@ -142,6 +142,11 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
         if (pinnedHwnd == nullptr) {
             return false;
         }
+        if (nativeMessage->message == WM_NCCALCSIZE && window.usesNativeImagePresentation()) {
+            if (result)
+                *result = 0;
+            return true;
+        }
 
         if (window.m_clickThroughActive) {
             if (nativeMessage->message == WM_NCHITTEST) {
@@ -223,44 +228,6 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
                 window.m_editController->endNativeWindowInteraction();
             }
         }
-        if (nativeMessage->message == WM_WINDOWPOSCHANGING &&
-            window.m_nativeGeometryController != nullptr) {
-            auto* position = pointerFromLParam<WINDOWPOS>(nativeMessage->lParam);
-            if (position != nullptr) {
-                const bool moveRequested = (position->flags & SWP_NOMOVE) == 0;
-                const bool sizeRequested = (position->flags & SWP_NOSIZE) == 0;
-                QRect proposal = window.m_nativeGeometryController->targetGeometry();
-                if (!proposal.isValid() || proposal.isEmpty()) {
-                    proposal = native::currentClientGeometry(reinterpret_cast<WId>(pinnedHwnd));
-                }
-                if (proposal.isValid() && !proposal.isEmpty()) {
-                    if (moveRequested) {
-                        proposal.moveTopLeft(QPoint(position->x, position->y));
-                    }
-                    if (sizeRequested) {
-                        proposal.setSize(
-                            QSize(std::max(1, position->cx), std::max(1, position->cy)));
-                    }
-                    const QRect constrained = window.m_nativeGeometryController->constrainWindowPos(
-                        proposal, moveRequested, sizeRequested);
-                    if (moveRequested) {
-                        position->x = constrained.x();
-                        position->y = constrained.y();
-                    }
-                    if (sizeRequested) {
-                        position->cx = constrained.width();
-                        position->cy = constrained.height();
-                    }
-                }
-                // A translucent QWidget is published with UpdateLayeredWindow.
-                // Letting USER preserve/copy old client bits while Qt replaces
-                // that alpha surface makes live shrinking alternate between
-                // the stale surface and a cleared backing-store frame.
-                if (!window.m_presented || (sizeRequested && window.m_systemSizingActive)) {
-                    position->flags |= SWP_NOCOPYBITS;
-                }
-            }
-        }
 
         if (nativeMessage->message == WM_DPICHANGED &&
             window.m_nativeGeometryController != nullptr) {
@@ -325,12 +292,10 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
                                         GET_Y_LPARAM(nativeMessage->lParam));
             if (window.interactiveResizingEnabled() && nativeGeometry.isValid() &&
                 !nativeGeometry.isEmpty()) {
-                const int nativeHitWidth = std::max(
-                    1, qRound(kResizeHitWidth * static_cast<double>(nativeGeometry.width()) /
-                              std::max(1, window.width())));
-                const int nativeHitHeight = std::max(
-                    1, qRound(kResizeHitWidth * static_cast<double>(nativeGeometry.height()) /
-                              std::max(1, window.height())));
+                const int nativeHitWidth =
+                    std::max(1, qRound(kResizeHitWidth * window.devicePixelRatioF()));
+                const int nativeHitHeight =
+                    std::max(1, qRound(kResizeHitWidth * window.devicePixelRatioF()));
                 const bool inside =
                     screenPosition.x() >= nativeGeometry.left() &&
                     screenPosition.x() < nativeGeometry.left() + nativeGeometry.width() &&
@@ -367,12 +332,10 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
 
                 if (hitTest == HTCLIENT) {
                     const QPoint clientPosition(
-                        qRound((screenPosition.x() - nativeGeometry.left()) *
-                               static_cast<double>(std::max(1, window.width())) /
-                               nativeGeometry.width()),
-                        qRound((screenPosition.y() - nativeGeometry.top()) *
-                               static_cast<double>(std::max(1, window.height())) /
-                               nativeGeometry.height()));
+                        qRound((screenPosition.x() - nativeGeometry.left()) /
+                               window.devicePixelRatioF()),
+                        qRound((screenPosition.y() - nativeGeometry.top()) /
+                               window.devicePixelRatioF()));
                     if (window.windowDragEnabledAt(clientPosition) && !window.m_geometryAnimating) {
                         hitTest = HTCAPTION;
                     }
@@ -380,12 +343,10 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             } else if (window.windowDragEnabled()) {
                 if (nativeGeometry.isValid() && !nativeGeometry.isEmpty()) {
                     const QPoint clientPosition(
-                        qRound((screenPosition.x() - nativeGeometry.left()) *
-                               static_cast<double>(std::max(1, window.width())) /
-                               nativeGeometry.width()),
-                        qRound((screenPosition.y() - nativeGeometry.top()) *
-                               static_cast<double>(std::max(1, window.height())) /
-                               nativeGeometry.height()));
+                        qRound((screenPosition.x() - nativeGeometry.left()) /
+                               window.devicePixelRatioF()),
+                        qRound((screenPosition.y() - nativeGeometry.top()) /
+                               window.devicePixelRatioF()));
                     if (window.windowDragEnabledAt(clientPosition)) {
                         hitTest = HTCAPTION;
                     }
@@ -408,11 +369,10 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
                                         GET_Y_LPARAM(nativeMessage->lParam));
             const QRect nativeGeometry = window.currentNativeGeometry();
             if (nativeGeometry.isValid() && !nativeGeometry.isEmpty()) {
-                const QPoint position(
-                    qRound((nativePosition.x() - nativeGeometry.left()) *
-                           static_cast<double>(window.width()) / nativeGeometry.width()),
-                    qRound((nativePosition.y() - nativeGeometry.top()) *
-                           static_cast<double>(window.height()) / nativeGeometry.height()));
+                const QPoint position(qRound((nativePosition.x() - nativeGeometry.left()) /
+                                             window.devicePixelRatioF()),
+                                      qRound((nativePosition.y() - nativeGeometry.top()) /
+                                             window.devicePixelRatioF()));
                 static_cast<void>(window.handleDoubleClick(position));
             }
             // The image is a synthetic caption. Never let USER32 maximize it,
@@ -430,11 +390,10 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
                                         GET_Y_LPARAM(nativeMessage->lParam));
             const QRect nativeGeometry = window.currentNativeGeometry();
             if (nativeGeometry.isValid() && !nativeGeometry.isEmpty()) {
-                const QPoint position(
-                    qRound((nativePosition.x() - nativeGeometry.left()) *
-                           static_cast<double>(window.width()) / nativeGeometry.width()),
-                    qRound((nativePosition.y() - nativeGeometry.top()) *
-                           static_cast<double>(window.height()) / nativeGeometry.height()));
+                const QPoint position(qRound((nativePosition.x() - nativeGeometry.left()) /
+                                             window.devicePixelRatioF()),
+                                      qRound((nativePosition.y() - nativeGeometry.top()) /
+                                             window.devicePixelRatioF()));
                 static_cast<void>(window.handleMiddleClick(position));
             }
             // Consume the synthetic caption press so Qt cannot dispatch it again.
@@ -596,24 +555,19 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             const WId nativeWindowId = reinterpret_cast<WId>(pinnedHwnd);
             const QRect actual = native::currentClientGeometry(nativeWindowId);
             const QRect target = window.m_nativeGeometryController->targetGeometry();
+            if (window.nativePresentationInProgress())
+                return false;
+            // USER32 owns the accepted physical rectangle. A paint never
+            // reconciles it against rounded Qt logical geometry.
             if (window.m_nativeGeometryController->phase() ==
                     ScreenshotPinnedNativeGeometryController::Phase::DpiChanging &&
-                actual != target && !native::applyClientGeometry(nativeWindowId, target)) {
-                static_cast<void>(window.restoreCommittedNativeGeometry());
-            }
-            if (window.m_nativeGeometryController->phase() ==
-                    ScreenshotPinnedNativeGeometryController::Phase::DpiChanging &&
-                native::currentClientGeometry(nativeWindowId) == target) {
-                const auto change = window.m_nativeGeometryController->commitTarget();
-                if (change.sizeChanged || change.dpiChanged) {
-                    window.m_preserveScaleForSettledGeometry = false;
-                    window.scheduleNativeScaleAdoption();
-                }
-            } else if (window.m_nativeGeometryController->phase() ==
-                           ScreenshotPinnedNativeGeometryController::Phase::Stable &&
-                       native::currentClientGeometry(nativeWindowId) !=
-                           window.m_nativeGeometryController->committedGeometry()) {
-                static_cast<void>(window.restoreCommittedNativeGeometry());
+                actual == target) {
+                window.m_preserveScaleForSettledGeometry = false;
+                window.scheduleNativeScaleAdoption();
+                if (window.publishNativeFrame())
+                    static_cast<void>(window.m_nativeGeometryController->commitTarget());
+                else
+                    static_cast<void>(window.restoreCommittedNativeGeometry());
             }
         }
     }

@@ -11,6 +11,8 @@
 class QWidget;
 class QTimer;
 class SnowCanvasWidget;
+class SnowCanvasView;
+class ScreenshotAutoFilterVisual;
 class ScreenshotAutoFilterVisual;
 
 class ScreenshotAutoFilterController final : public QObject {
@@ -25,6 +27,7 @@ class ScreenshotAutoFilterController final : public QObject {
                                    std::function<qint64()> clock = {});
     ~ScreenshotAutoFilterController() override;
     void attachCanvas(SnowCanvasWidget* canvas);
+    void attachCanvas(SnowCanvasView* canvas);
     void validate();
     void resetSession();
     void refresh();
@@ -49,20 +52,17 @@ class ScreenshotAutoFilterController final : public QObject {
     void availabilityChanged(bool available);
     void detectionFailed(const QString& message);
 
-  protected:
-    bool eventFilter(QObject* watched, QEvent* event) override;
-
   private:
     void updateAvailability();
-    SnowCanvasWidget* canvas() const;
+    SnowCanvasView* canvas() const;
     bool active() const;
     void finish(quint64 session, quint64 generation, QRectF bounds, QSize pixels,
                 QList<SnowCanvasAutoFilterRegion> regions, const QString& error);
     std::function<QRectF()> m_bounds;
     Source m_source;
     Detector m_detector;
-    QList<QPointer<SnowCanvasWidget>> m_canvases;
-    QList<QPointer<QWidget>> m_visuals;
+    QList<QPointer<SnowCanvasView>> m_canvases;
+    QList<QPointer<ScreenshotAutoFilterVisual>> m_visuals;
     QTimer* m_timer = nullptr;
     QElapsedTimer m_elapsed;
     std::function<qint64()> m_clock;

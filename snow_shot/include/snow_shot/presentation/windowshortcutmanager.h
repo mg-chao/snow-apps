@@ -13,6 +13,7 @@
 
 class QKeyEvent;
 class QWidget;
+class QWindow;
 
 namespace snow_shot::presentation {
 
@@ -35,6 +36,8 @@ class WindowShortcutManager final : public QObject {
         // The registered scope root reached from the event receiver. This is
         // populated for direct scope children and owned/transient tool windows.
         QWidget* scopeWindow = nullptr;
+        QObject* scopeObject = nullptr;
+        QObject* focusObject = nullptr;
     };
 
     struct Binding {
@@ -73,6 +76,8 @@ class WindowShortcutManager final : public QObject {
 
     void addScopeWindow(QWidget* window);
     void removeScopeWindow(QWidget* window);
+    void addScopeWindow(QWindow* window);
+    void removeScopeWindow(QWindow* window);
 
     // Temporarily prevents this manager from dispatching shortcut presses.
     // Suspension is tokenized so nested modal interactions cannot resume one
@@ -95,6 +100,7 @@ class WindowShortcutManager final : public QObject {
     // Returns whether keyboard focus belongs to an editable text control.
     // Read-only text surfaces remain eligible for window command shortcuts.
     [[nodiscard]] static bool focusAcceptsTextInput(QWidget* focusWidget);
+    [[nodiscard]] static bool focusObjectAcceptsTextInput(QObject* focusObject);
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;

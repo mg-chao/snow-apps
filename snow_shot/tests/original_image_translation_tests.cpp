@@ -1052,7 +1052,7 @@ void runPinnedOriginalImageTranslationTests() {
                         actual.sourceLineQuads == expected.sourceLineQuads &&
                         actual.direction == expected.direction,
                     "pin persistence must retain paragraph geometry and rendering metadata");
-            auto* content = window->findChild<ScreenshotRecognitionWindow*>();
+            auto* content = window->widgetHost()->findChild<ScreenshotRecognitionWindow*>();
             auto* layer =
                 content == nullptr
                     ? nullptr
@@ -1111,7 +1111,7 @@ void runPinnedOriginalImageTranslationTests() {
     controller->activate(ScreenshotRecognitionSessionController::Mode::Text);
     controller->beginTextTranslation();
     server.waitForStreams(2);
-    auto* content = pinned->findChild<ScreenshotRecognitionWindow*>();
+    auto* content = pinned->widgetHost()->findChild<ScreenshotRecognitionWindow*>();
     auto* layer = content == nullptr
                       ? nullptr
                       : content->findChild<QGraphicsView*>(QStringLiteral("snowShotOcrTextLayer"));
@@ -1143,7 +1143,7 @@ void runPinnedOriginalImageTranslationTests() {
     require(partialRecord.recognitionVisible && partialRecord.translationVisible &&
                 !partialRecord.recognitionResults.isEmpty(),
             "a translating pin must persist the visible partial overlay");
-    auto* canvas = pinned->findChild<SnowCanvasWidget*>();
+    auto* canvas = pinned->findChild<SnowCanvasView*>();
     require(canvas != nullptr, "find pinned canvas for wheel zoom");
     const QSize beforeZoom = pinned->currentNativeGeometry().size();
     const QPoint zoomPosition = canvas->rect().center();
@@ -1152,7 +1152,7 @@ void runPinnedOriginalImageTranslationTests() {
     QCoreApplication::sendEvent(canvas, &zoom);
     waitUntil([&]() { return pinned->currentNativeGeometry().size() != beforeZoom; },
               "pinned translation should remain zoomable during streaming");
-    auto* processMenu = pinned->findChild<adqt::widgets::AdContextMenu*>(
+    auto* processMenu = pinned->widgetHost()->findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedProcessImageMenu"));
     require(processMenu != nullptr && !processMenu->actions().isEmpty(),
             "find pinned rotation action");
@@ -1214,7 +1214,8 @@ void runPinnedOriginalImageTranslationTests() {
         require(restored->findChild<ScreenshotPinnedEditController*>() == nullptr,
                 "initial and restored translations must keep the toolbar hidden");
         if (visible) {
-            auto* restoredContent = restored->findChild<ScreenshotRecognitionWindow*>();
+            auto* restoredContent =
+                restored->widgetHost()->findChild<ScreenshotRecognitionWindow*>();
             // The OS clipboard handoff is asynchronous; bound the settle
             // before judging the copied payload.
             bool restoredCopied = false;
@@ -1235,14 +1236,14 @@ void runPinnedOriginalImageTranslationTests() {
                 restoredCopied,
                 "a restored translated overlay must be visible and copyable without new requests");
             if (scenario == 1) {
-                auto* drawingAction =
-                    restored->findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction"));
+                auto* drawingAction = restored->widgetHost()->findChild<QAction*>(
+                    QStringLiteral("screenshotPinnedDrawingAction"));
                 require(drawingAction != nullptr, "find the toolbar menu action");
                 drawingAction->trigger();
                 require(drawingAction->isChecked(),
                         "the toolbar menu action must reflect the open toolbar");
             } else {
-                auto* editButton = restored->findChild<adqt::widgets::AdButton*>(
+                auto* editButton = restored->widgetHost()->findChild<adqt::widgets::AdButton*>(
                     QStringLiteral("screenshotPinnedEditButton"));
                 require(editButton != nullptr, "find the toolbar activation control");
                 editButton->click();

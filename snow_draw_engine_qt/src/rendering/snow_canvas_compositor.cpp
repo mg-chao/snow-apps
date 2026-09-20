@@ -28,12 +28,12 @@ void renderDirtyRectOverlay(QPainter& painter, const Frame& frame) {
 } // namespace
 
 void clearSurface(QPainter& painter, const Frame& frame) {
-    if (frame.sceneInfo == nullptr || frame.widget == nullptr) {
+    if (frame.sceneInfo == nullptr || frame.viewportRect.isEmpty()) {
         return;
     }
 
     const QRegion exposedRegion = painter.clipRegion();
-    const QRect exposedRect = exposedRegion.boundingRect().intersected(frame.widget->rect());
+    const QRect exposedRect = exposedRegion.boundingRect().intersected(frame.viewportRect);
     if (exposedRect.isEmpty()) {
         return;
     }
@@ -82,7 +82,8 @@ void renderDocumentDecorations(QPainter& painter, const Frame& frame,
 }
 
 void renderEditorOverlays(QPainter& painter, const Frame& frame) {
-    if (frame.sceneInfo == nullptr || frame.overlayInfo == nullptr || frame.widget == nullptr) {
+    if (frame.sceneInfo == nullptr || frame.overlayInfo == nullptr ||
+        frame.viewportRect.isEmpty()) {
         return;
     }
     const QRegion exposedRegion = painter.clipRegion();

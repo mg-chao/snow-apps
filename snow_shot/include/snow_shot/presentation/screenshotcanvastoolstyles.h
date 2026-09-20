@@ -4,11 +4,14 @@
 #include "snow_draw_engine_qt/snow_canvas_types.h"
 
 class SnowCanvasWidget;
+class SnowCanvasView;
 
 namespace snow_shot::presentation {
 
 [[nodiscard]] SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults();
 [[nodiscard]] bool persistScreenshotCanvasToolStyles(const SnowCanvasStyleDefaults& defaults);
+void applyScreenshotCanvasToolStyles(SnowCanvasView& canvas,
+                                     const SnowCanvasStyleDefaults& defaults);
 void applyScreenshotCanvasToolStyles(SnowCanvasWidget& canvas,
                                      const SnowCanvasStyleDefaults& defaults);
 

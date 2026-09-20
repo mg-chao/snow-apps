@@ -198,8 +198,18 @@ class ScreenshotFormattedTextLayer final : public QGraphicsView {
         viewport()->update();
     }
 
-    void focusText() {
-        setFocus(Qt::OtherFocusReason);
+    bool sendNativeKeyEvent(QEvent* event) {
+        // The scene has no active QWidget when it is painted into the pin's
+        // DIB. Deliver keyboard selection to its text item without activating
+        // an invisible widget window or changing the QWindow focus object.
+        event->ignore();
+        return m_scene->sendEvent(m_textItem, event) && event->isAccepted();
+    }
+
+    void focusText(bool takeWidgetFocus) {
+        if (takeWidgetFocus)
+            setFocus(Qt::OtherFocusReason);
+        m_scene->setFocus(Qt::OtherFocusReason);
         m_textItem->setFocus(Qt::OtherFocusReason);
     }
 
@@ -245,6 +255,19 @@ ScreenshotRecognitionWindow::ScreenshotRecognitionWindow(
     m_stack->addWidget(m_textLayer);
     m_textLayer->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     m_textLayer->viewport()->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    connect(m_stack, &QStackedLayout::currentChanged, this, [this] {
+        if (!m_nativeFrameEnabled)
+            return;
+        const bool visible = isVisible();
+        const bool offscreen = usesNativeFrame();
+        if (testAttribute(Qt::WA_DontShowOnScreen) != offscreen) {
+            hide();
+            setAttribute(Qt::WA_DontShowOnScreen, offscreen);
+            if (visible)
+                show();
+        }
+        emit nativeFrameChanged();
+    });
 
     registerWindowShortcuts();
 }
@@ -302,7 +325,7 @@ bool ScreenshotRecognitionWindow::present(const Config& config) {
         raise();
         activateWindow();
     }
-    if (config.takeFocus) {
+    if (config.takeFocus && !usesNativeFrame()) {
         setFocus(Qt::OtherFocusReason);
     }
     synchronizeTextLayer();
@@ -355,7 +378,7 @@ void ScreenshotRecognitionWindow::setOcrPresentation(
     m_textLayer->setPresentation(m_ocrPresentation, mode);
     m_stack->setCurrentWidget(m_textLayer);
     synchronizeTextLayer();
-    if (takeFocus) {
+    if (takeFocus && !usesNativeFrame()) {
         setFocus(Qt::OtherFocusReason);
     }
 }
@@ -382,6 +405,10 @@ void ScreenshotRecognitionWindow::updateOcrText(int lineIndex, const QString& te
 void ScreenshotRecognitionWindow::clearOcrPresentation() {
     m_selectionOnly = false;
     m_ocrPresentation.reset();
+    connect(m_textLayer->scene(), &QGraphicsScene::changed, this, [this] {
+        if (usesNativeFrame())
+            emit nativeFrameChanged();
+    });
     m_textLayer->clearPresentation();
     unsetCursor();
 }
@@ -397,6 +424,10 @@ void ScreenshotRecognitionWindow::showFormattedText(std::shared_ptr<QTextDocumen
     clearQrContents();
     if (m_formattedTextLayer == nullptr) {
         m_formattedTextLayer = new ScreenshotFormattedTextLayer(this);
+        connect(m_formattedTextLayer->scene(), &QGraphicsScene::changed, this, [this] {
+            if (usesNativeFrame())
+                emit nativeFrameChanged();
+        });
         m_stack->addWidget(m_formattedTextLayer);
         installSelectionResizeEventFilters(m_formattedTextLayer);
     }
@@ -404,7 +435,7 @@ void ScreenshotRecognitionWindow::showFormattedText(std::shared_ptr<QTextDocumen
                                       m_formattedTextDevicePixelRatio);
     m_stack->setCurrentWidget(m_formattedTextLayer);
     synchronizeTextLayer();
-    m_formattedTextLayer->focusText();
+    m_formattedTextLayer->focusText(!usesNativeFrame());
 }
 
 void ScreenshotRecognitionWindow::clearFormattedText() {
@@ -562,6 +593,11 @@ void ScreenshotRecognitionWindow::showTextEditor(QTextDocument* document, bool r
     }
 }
 
+bool ScreenshotRecognitionWindow::acceptsShortcutScope(QObject* scope) const {
+    return scope == this ||
+           (usesNativeFrame() && windowHandle() && scope == windowHandle()->transientParent());
+}
+
 void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     using ShortcutManager = snow_shot::presentation::WindowShortcutManager;
 
@@ -571,7 +607,7 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     cancel.priority = ShortcutManager::StandardPriority::WindowCommand;
     cancel.activationTrigger = ShortcutManager::Binding::ActivationTrigger::Release;
     cancel.canActivate = [this](const ShortcutManager::ActivationContext& context) {
-        return context.scopeWindow == this && isVisible() &&
+        return acceptsShortcutScope(context.scopeObject) && isVisible() &&
                (m_tableEditor == nullptr || !m_tableEditor->isEditingCell());
     };
     cancel.activate = [this](const auto&) {
@@ -585,7 +621,7 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     cancelEdit.keyCombinations = {QKeyCombination(Qt::NoModifier, Qt::Key_Escape)};
     cancelEdit.priority = ShortcutManager::StandardPriority::WindowCommand + 1;
     cancelEdit.canActivate = [this](const auto& context) {
-        return context.scopeWindow == this && isVisible() && m_tableEditor &&
+        return acceptsShortcutScope(context.scopeObject) && isVisible() && m_tableEditor &&
                m_tableEditor->isEditingCell();
     };
     cancelEdit.activate = [this](const auto&) { return m_tableEditor->cancelActiveEdit(); };
@@ -596,7 +632,7 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     const auto recognitionCommandsAllowed =
         [this](const ShortcutManager::ActivationContext& context) {
             QWidget* focus = context.focusWidget;
-            if (context.scopeWindow != this || !isVisible()) {
+            if (!acceptsShortcutScope(context.scopeObject) || !isVisible()) {
                 return false;
             }
 
@@ -617,7 +653,7 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
             return false;
         }
         QWidget* focus = context.focusWidget;
-        if (context.scopeWindow != this || !isVisible()) {
+        if (!acceptsShortcutScope(context.scopeObject) || !isVisible()) {
             return false;
         }
         if (m_conversionView != nullptr) {
@@ -678,7 +714,8 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     static_cast<void>(m_shortcutManager->addBinding(this, std::move(copy)));
 
     const auto textEditorActive = [this](const ShortcutManager::ActivationContext& context) {
-        return context.scopeWindow == this && focusInside(m_textEditor, context.focusWidget);
+        return acceptsShortcutScope(context.scopeObject) &&
+               focusInside(m_textEditor, context.focusWidget);
     };
     ShortcutManager::Binding undo;
     undo.id = QStringLiteral("recognition.text.undo");
@@ -1153,7 +1190,8 @@ void ScreenshotRecognitionWindow::mousePressEvent(QMouseEvent* event) {
         return;
     }
     if (event != nullptr && event->button() == Qt::LeftButton && m_ocrPresentation != nullptr) {
-        setFocus(Qt::MouseFocusReason);
+        if (!usesNativeFrame())
+            setFocus(Qt::MouseFocusReason);
         const quint64 previousRevision = m_ocrPresentation->selectionRevision();
         m_ocrPresentation->beginTextSelection(
             m_textLayer->textPositionAt(canvasPositionForLocalPoint(event->position()), false));
@@ -1240,6 +1278,8 @@ ScreenshotRecognitionWindow::canvasPositionForLocalPoint(const QPointF& localPos
 }
 
 QTransform ScreenshotRecognitionWindow::canvasToLocalTransform() const {
+    if (usesNativeFrame())
+        return m_nativeFrameTransform;
     const QRectF localRect(QPointF(0.0, 0.0), QSizeF(size()));
     if (!m_canvasSelection.isValid() || m_canvasSelection.isEmpty() || localRect.isEmpty()) {
         return {};
@@ -1258,6 +1298,60 @@ QTransform ScreenshotRecognitionWindow::canvasToLocalTransform() const {
     });
     QTransform transform;
     return QTransform::quadToQuad(canvasQuad, localQuad, transform) ? transform : QTransform();
+}
+
+void ScreenshotRecognitionWindow::setNativeFrameEnabled(bool enabled) {
+    if (m_nativeFrameEnabled == enabled)
+        return;
+    m_nativeFrameEnabled = enabled;
+    setAttribute(Qt::WA_DontShowOnScreen, usesNativeFrame());
+}
+
+bool ScreenshotRecognitionWindow::usesNativeFrame() const {
+    return m_nativeFrameEnabled &&
+           (m_stack->currentWidget() == m_textLayer ||
+            (m_formattedTextLayer && m_stack->currentWidget() == m_formattedTextLayer));
+}
+
+void ScreenshotRecognitionWindow::setNativeFrameTransform(const QTransform& transform) {
+    if (m_nativeFrameTransform == transform)
+        return;
+    m_nativeFrameTransform = transform;
+    synchronizeTextLayer();
+}
+
+void ScreenshotRecognitionWindow::renderNativeFrame(QPainter& painter) {
+    if (!usesNativeFrame() || isHidden())
+        return;
+    painter.save();
+    if (m_stack->currentWidget() == m_textLayer) {
+        m_textLayer->scene()->render(&painter, QRectF(rect()), QRectF(rect()),
+                                     Qt::IgnoreAspectRatio);
+    } else {
+        const QRectF target = m_nativeFrameTransform.mapRect(m_canvasSelection);
+        painter.fillRect(target, m_formattedTextLayer->backgroundBrush());
+        m_formattedTextLayer->scene()->render(&painter, target, m_canvasSelection,
+                                              Qt::IgnoreAspectRatio);
+    }
+    painter.restore();
+}
+
+bool ScreenshotRecognitionWindow::sendNativeFrameEvent(QEvent* event) {
+    if (!usesNativeFrame() || isHidden())
+        return false;
+    QObject* receiver = this;
+    if (m_formattedTextLayer && m_stack->currentWidget() == m_formattedTextLayer) {
+        if (event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease) {
+            const bool handled = m_formattedTextLayer->sendNativeKeyEvent(event);
+            emit nativeFrameChanged();
+            return handled;
+        }
+        receiver = m_formattedTextLayer->viewport();
+    }
+    event->ignore();
+    const bool handled = QCoreApplication::sendEvent(receiver, event);
+    emit nativeFrameChanged();
+    return handled && event->isAccepted();
 }
 
 void ScreenshotRecognitionWindow::synchronizeTextLayer() {

@@ -3,7 +3,7 @@
 #include "snow_canvas_cursor_controller.h"
 #include "snow_canvas_input_adapter.h"
 
-#include <QWidget>
+#include "snow_draw_engine_qt/snow_canvas_view.h"
 
 namespace snow_canvas_interaction {
 
@@ -11,7 +11,7 @@ bool Controller::isEnabled() const {
     return m_enabled;
 }
 
-void Controller::setEnabled(QWidget& widget, SnowCanvasCursorController& cursorController,
+void Controller::setEnabled(SnowCanvasView& widget, SnowCanvasCursorController& cursorController,
                             bool enabled) {
     if (m_enabled == enabled) {
         return;
@@ -23,7 +23,7 @@ void Controller::setEnabled(QWidget& widget, SnowCanvasCursorController& cursorC
     }
 }
 
-void Controller::clearTransientState(QWidget& widget,
+void Controller::clearTransientState(SnowCanvasView& widget,
                                      SnowCanvasCursorController& cursorController) {
     if (m_capturedPointerId != 0) {
         widget.releaseMouse();
@@ -32,7 +32,7 @@ void Controller::clearTransientState(QWidget& widget,
     cursorController.clearCursor(SnowCanvasCursorLayer::CanvasTool);
 }
 
-void Controller::applyOutput(QWidget& widget, SnowCanvasCursorController& cursorController,
+void Controller::applyOutput(SnowCanvasView& widget, SnowCanvasCursorController& cursorController,
                              const SnowInteractionOutput& output) {
     if (!m_enabled) {
         return;

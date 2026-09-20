@@ -127,6 +127,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void redoTableEdit();
     void commitActiveTableEdit();
 
+    // The document is borrowed until hideTextEditor() or window destruction.
     void showTextEditor(QTextDocument* document, bool readOnly = false, bool streaming = false);
     void setTextEditorStreaming(bool streaming);
     void hideTextEditor();
@@ -139,10 +140,16 @@ class ScreenshotRecognitionWindow final : public QWidget {
 
     [[nodiscard]] bool copyVisibleContentToClipboard();
     [[nodiscard]] bool isOcrBackgroundAt(const QPointF& localPosition) const;
+    void setNativeFrameEnabled(bool enabled);
+    [[nodiscard]] bool usesNativeFrame() const;
+    void setNativeFrameTransform(const QTransform& canvasToView);
+    void renderNativeFrame(QPainter& painter);
+    bool sendNativeFrameEvent(QEvent* event);
 
   signals:
     void embeddedContextMenuRequested(const QPoint& globalPosition);
     void imageConversionRetryRequested();
+    void nativeFrameChanged();
 
   protected:
     void contextMenuEvent(QContextMenuEvent* event) override;
@@ -157,6 +164,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
   private:
     [[nodiscard]] QPointF canvasPositionForLocalPoint(const QPointF& localPosition) const;
     [[nodiscard]] QTransform canvasToLocalTransform() const;
+    bool acceptsShortcutScope(QObject* scope) const;
     void registerWindowShortcuts();
     void synchronizeTextLayer();
     void updateTextEditorSpinGeometry();
@@ -190,6 +198,8 @@ class ScreenshotRecognitionWindow final : public QWidget {
     PresentationMode m_presentationMode = PresentationMode::TopLevelWindow;
     bool m_selectionResizeActive = false;
     bool m_selectionOnly = false;
+    bool m_nativeFrameEnabled = false;
+    QTransform m_nativeFrameTransform;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTRECOGNITIONWINDOW_H

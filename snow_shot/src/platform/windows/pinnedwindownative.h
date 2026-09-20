@@ -13,7 +13,7 @@
 namespace screenshot_pinned_window_native {
 class SystemMoveKeyboard final {
   public:
-    explicit SystemMoveKeyboard(QWidget* window);
+    explicit SystemMoveKeyboard(QObject* window);
     ~SystemMoveKeyboard();
     void setKeyCombinations(const QList<QKeyCombination>& combinations);
     [[nodiscard]] bool start();
@@ -27,11 +27,6 @@ class SystemMoveKeyboard final {
 enum class GeometryUpdate {
     PreserveClientPixels,
     DiscardClientPixels,
-};
-
-enum class PaintSynchronization {
-    InvalidateAndUpdate,
-    FlushAlreadyPainted,
 };
 
 [[nodiscard]] bool
@@ -57,11 +52,7 @@ applyClientGeometry(WId windowId, const QRect& geometry,
 // unavailable so callers can fall back to Qt window flags.
 [[nodiscard]] bool setStaysOnTop(WId windowId, bool staysOnTop);
 [[nodiscard]] bool activateWindow(WId windowId);
-[[nodiscard]] bool installSynchronizedResize(WId windowId, const bool* interactiveResizeActive);
-void removeSynchronizedResize(WId windowId);
 [[nodiscard]] bool applyCursor(Qt::CursorShape shape);
-[[nodiscard]] bool synchronizeClientPaint(
-    WId windowId, PaintSynchronization synchronization = PaintSynchronization::InvalidateAndUpdate);
 } // namespace screenshot_pinned_window_native
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTPINNEDWINDOWNATIVE_H

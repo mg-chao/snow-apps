@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-class QWidget;
+class SnowCanvasView;
 class SnowCanvasCursorController;
 
 namespace snow_canvas_interaction {
@@ -13,9 +13,10 @@ class Controller final {
   public:
     bool isEnabled() const;
 
-    void setEnabled(QWidget& widget, SnowCanvasCursorController& cursorController, bool enabled);
-    void clearTransientState(QWidget& widget, SnowCanvasCursorController& cursorController);
-    void applyOutput(QWidget& widget, SnowCanvasCursorController& cursorController,
+    void setEnabled(SnowCanvasView& widget, SnowCanvasCursorController& cursorController,
+                    bool enabled);
+    void clearTransientState(SnowCanvasView& widget, SnowCanvasCursorController& cursorController);
+    void applyOutput(SnowCanvasView& widget, SnowCanvasCursorController& cursorController,
                      const SnowInteractionOutput& output);
 
   private:
