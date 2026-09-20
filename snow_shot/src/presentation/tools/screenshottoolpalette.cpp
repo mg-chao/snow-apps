@@ -5566,7 +5566,9 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
     m_recordCursorPopover->setObjectName(QStringLiteral("screenRecordingCursorPopover"));
     m_recordCursorPopover->setSourceWidget(m_recordCursorButton);
     m_recordCursorPopover->setTriggers(adqt::widgets::AdPopover::Trigger::Hover);
-    m_recordCursorPopover->setPlacement(adqt::widgets::AdPopover::Placement::Top);
+    // Open downward like the color pickers in the same export row; overflow
+    // auto-adjustment still flips the popup when the screen edge is nearby.
+    m_recordCursorPopover->setPlacement(adqt::widgets::AdPopover::Placement::Bottom);
     m_recordCursorPopover->setPopupLayerMode(adqt::widgets::AdPopover::PopupLayerMode::QtTool);
     m_recordCursorPopover->setContentFactory(
         [this]() -> QWidget* {

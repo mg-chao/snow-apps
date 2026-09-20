@@ -409,6 +409,7 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
 
 void recordingCursorOptionsAreIndependentAndLazy() {
     ScreenshotToolPalette::Options options;
+    options.showShapeTool = true;
     options.showRecordingControls = true;
     options.recordingDrawingMode = true;
     options.enableStyleToolbar = true;
@@ -424,6 +425,8 @@ void recordingCursorOptionsAreIndependentAndLazy() {
     require(popover->triggers() == adqt::widgets::AdPopover::Trigger::Hover &&
                 popover->popupLayerMode() == adqt::widgets::AdPopover::PopupLayerMode::QtTool,
             "cursor options must use the native hover popover");
+    require(popover->placement() == adqt::widgets::AdPopover::Placement::Bottom,
+            "cursor options must open downward by default like the row's color pickers");
     require(!palette.recordingMouseHighlightEnabled() && !palette.recordingRecordMouseClicks() &&
                 palette.recordingMouseHighlightColor() == QColor(255, 255, 0, 128),
             "mouse effect defaults");
@@ -466,6 +469,16 @@ void recordingCursorOptionsAreIndependentAndLazy() {
     require(highlight->text() == QStringLiteral("Mouse highlight") &&
                 click->text() == QStringLiteral("Record mouse clicks"),
             "cursor options retranslate");
+    popover->show();
+    QCoreApplication::processEvents();
+    require(popover->isVisible() && popover->contentWidget() != nullptr,
+            "opening the popover must materialize the cursor options");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    QCoreApplication::processEvents();
+    require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape &&
+                !palette.recordingExportSettingsVisible() && !popover->isVisible() &&
+                popover->contentWidget() == nullptr,
+            "switching tools must dismiss the popover and destroy its content");
     palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::starting());
     require(!popover->isEnabled() && !popover->isVisible(),
             "busy recording must dismiss and disable cursor options");
