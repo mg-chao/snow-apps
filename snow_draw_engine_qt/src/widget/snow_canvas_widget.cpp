@@ -287,6 +287,17 @@ void accept(QKeyEvent& event) {
     event.accept();
 }
 
+bool hitsSelectedText(SnowRuntime runtime, SnowViewport viewport, const QPointF& canvasPoint) {
+    SnowElementId id{};
+    std::uint8_t hit = 0;
+    std::uint8_t selected = 0;
+    return snow_viewport_hit_text(runtime, viewport, canvasPoint.x(), canvasPoint.y(), &id, &hit) ==
+               SNOW_OK &&
+           hit != 0 &&
+           snow_viewport_is_element_selected(runtime, viewport, id, &selected) == SNOW_OK &&
+           selected != 0;
+}
+
 } // namespace
 
 struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
@@ -2210,17 +2221,18 @@ bool SnowCanvasWidget::Impl::handleMousePress(QMouseEvent* event) {
     const bool textEditorActive = textInteraction.isActive();
     const bool pointerInsideTextEditor =
         textInteraction.editorContains(displayState.displayCache(), event->position());
-    if (textInteraction.handleEditorMousePress(event, displayState.displayCache(), widget.font())) {
-        return true;
-    }
-    const bool pointerOverTextEditorSelectionInteraction =
-        textInteraction.selectionInteractionContains(displayState.displayCache(),
-                                                     event->position());
+    const auto selectionTarget = snow_canvas_widget_selection_hit_testing::selectionInteractionAt(
+        displayState.displayCache(), event->position());
+    using snow_canvas_widget_selection_hit_testing::SelectionInteractionTarget;
     const bool pointerOverSelectionInteraction =
-        pointerOverTextEditorSelectionInteraction ||
-        (!textEditorActive &&
-         snow_canvas_widget_selection_hit_testing::pointerHitsSelectionInteraction(
-             displayState.displayCache(), event->position()));
+        selectionTarget != SelectionInteractionTarget::None &&
+        (!textEditorActive || textInteraction.hasSelectionInteraction());
+    const bool pointerHitsSelectedText =
+        snow_canvas_widget_pointer_flow::isSelectedTextCopyGesture(event->button(),
+                                                                   event->modifiers()) &&
+        selectionTarget != SelectionInteractionTarget::Handle &&
+        hitsSelectedText(runtimeBinding.engine(), runtimeBinding.viewportHandle(),
+                         widget.canvasToViewTransform().inverted().map(event->position()));
     const snow_canvas_widget_pointer_flow::PressPlan plan =
         snow_canvas_widget_pointer_flow::planPress(snow_canvas_widget_pointer_flow::PressRequest{
             true,
@@ -2232,7 +2244,13 @@ bool SnowCanvasWidget::Impl::handleMousePress(QMouseEvent* event) {
             pointerOverSelectionInteraction,
             suppressNextTextToolCreate,
             restoredSelectionForNextTextToolPress,
+            pointerHitsSelectedText,
+            selectionTarget,
         });
+    if (plan.shouldHandleEditorPress) {
+        return textInteraction.handleEditorMousePress(event, displayState.displayCache(),
+                                                      widget.font());
+    }
     if (!plan.shouldFocusWidget) {
         return false;
     }
@@ -2243,31 +2261,14 @@ bool SnowCanvasWidget::Impl::handleMousePress(QMouseEvent* event) {
     bool canDispatchAfterTextCommit = true;
     if (plan.shouldCommitTextEditor) {
         const SnowCanvasWidgetTextInteraction::CommitResult commitResult =
-            commitText(true, pointerOverSelectionInteraction);
+            commitText(true, plan.shouldRestoreSelectionOnCommit);
         if (plan.dispatchAfterCommitRequiresRestoredSelection) {
             canDispatchAfterTextCommit = commitResult.restoredExistingSelection ||
                                          plan.suppressedTextCreateRestoredSelection;
         }
     }
 
-    bool copySelectedText = false;
-    if (!textEditorActive && event->button() == Qt::LeftButton &&
-        event->modifiers().testFlag(Qt::AltModifier) &&
-        !event->modifiers().testFlag(Qt::ShiftModifier)) {
-        const QPointF point = widget.canvasToViewTransform().inverted().map(event->position());
-        SnowElementId id{};
-        std::uint8_t hit = 0;
-        std::uint8_t selected = 0;
-        copySelectedText =
-            snow_viewport_hit_text(runtimeBinding.engine(), runtimeBinding.viewportHandle(),
-                                   point.x(), point.y(), &id, &hit) == SNOW_OK &&
-            hit != 0 &&
-            snow_viewport_is_element_selected(runtimeBinding.engine(),
-                                              runtimeBinding.viewportHandle(), id,
-                                              &selected) == SNOW_OK &&
-            selected != 0;
-    }
-    if (!copySelectedText && plan.shouldBeginText) {
+    if (plan.shouldBeginText) {
         if (plan.allowCreateText && beginArrowText(event->position(), false)) {
             event->accept();
             return true;
@@ -2277,7 +2278,7 @@ bool SnowCanvasWidget::Impl::handleMousePress(QMouseEvent* event) {
             return true;
         }
     }
-    if (!copySelectedText && plan.shouldBeginSelectedText && !pointerOverSelectionInteraction &&
+    if (plan.shouldBeginSelectedText && !pointerOverSelectionInteraction &&
         beginSelectedText(event->position(), canvasTool() == SnowCanvasTool::SerialNumber)) {
         event->accept();
         return true;

@@ -9,7 +9,6 @@
 #include "snow_canvas_text_editor_connector.h"
 #include "snow_canvas_text_measurement.h"
 #include "snow_canvas_widget_repaint.h"
-#include "snow_canvas_widget_selection_hit_testing.h"
 
 #include <QByteArray>
 #include <QFont>
@@ -183,13 +182,8 @@ bool SnowCanvasWidgetTextInteraction::editorContains(const SnowCanvasDisplayCach
     return m_session.containsViewPosition(displayCache.sceneInfo(), position);
 }
 
-bool SnowCanvasWidgetTextInteraction::selectionInteractionContains(
-    const SnowCanvasDisplayCache& displayCache, const QPointF& position) const {
-    if (!m_session.isActive() || m_session.arrowId().generation != 0) {
-        return false;
-    }
-    return snow_canvas_widget_selection_hit_testing::pointerHitsSelectionInteraction(displayCache,
-                                                                                     position);
+bool SnowCanvasWidgetTextInteraction::hasSelectionInteraction() const {
+    return m_session.isActive() && m_session.arrowId().generation == 0;
 }
 
 const SnowSceneDisplayItem* SnowCanvasWidgetTextInteraction::previewItem() const {

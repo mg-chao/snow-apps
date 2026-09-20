@@ -1368,6 +1368,27 @@ void selectionHitTestingTreatsTextFramePaddingAsMoveRing() {
             "text selection move ring should not consume the actual text frame");
 }
 
+void selectionHitTestingDistinguishesMoveFromHandles() {
+    using namespace snow_canvas_widget_selection_hit_testing;
+    const SnowOverlayDisplayItem items[] = {
+        overlayRect(SNOW_OVERLAY_RECT_SELECTION_FRAME, 0.0, 0.0, 68.0, 48.0),
+        overlayRect(SNOW_OVERLAY_RECT_TEXT_ACTUAL_FRAME, 0.0, 0.0, 40.0, 20.0),
+        overlayRect(SNOW_OVERLAY_RECT_SELECTION_RESIZE_HANDLE, 0.0, -24.0, 8.0, 8.0),
+    };
+    require(selectionInteractionAtItems(items, 3, testProjection(), QPointF(100.0, 78.0)) ==
+                SelectionInteractionTarget::Handle,
+            "a handle overlapping the move ring must retain handle priority");
+    require(selectionInteractionAtItems(items, 3, testProjection(), QPointF(110.0, 78.0)) ==
+                SelectionInteractionTarget::Move,
+            "padding away from handles must be classified as selection movement");
+    require(selectionInteractionAtItems(items, 3, testProjection(), QPointF(110.0, 76.0)) ==
+                SelectionInteractionTarget::Handle,
+            "the outer frame edge must retain its resize behavior");
+    require(selectionInteractionAtItems(items, 3, testProjection(), QPointF(100.0, 100.0)) ==
+                SelectionInteractionTarget::None,
+            "text interior must remain available to the editor");
+}
+
 void textEditorActivationPreservesSelectToolSelectionBox() {
     ScopedRuntimeHandle runtime;
     require(snow_runtime_create(runtime.outParam()) == SNOW_OK,
@@ -1439,7 +1460,7 @@ void textEditorActivationPreservesSelectToolSelectionBox() {
         }
         if (control.rect_kind == SNOW_OVERLAY_RECT_SELECTION_RESIZE_HANDLE ||
             control.rect_kind == SNOW_OVERLAY_RECT_SELECTION_ROTATION_HANDLE) {
-            require(interaction.selectionInteractionContains(
+            require(snow_canvas_widget_selection_hit_testing::pointerHitsSelectionInteraction(
                         displayCache, snow_canvas_render_geometry::canvasToView(
                                           projection, control.center_x, control.center_y)),
                     "all canonical text selection handles should be interactive while editing");
@@ -1448,10 +1469,12 @@ void textEditorActivationPreservesSelectToolSelectionBox() {
     require(selectionFrame != nullptr && textActualFrame != nullptr,
             "text editing should expose both canonical selection frames");
     const QPointF frameCenter(selectionFrame->center_x, selectionFrame->center_y);
+    require(interaction.hasSelectionInteraction(),
+            "an existing text draft must retain selection interaction routing");
     const QPointF frameEdgeCanvas = snow_canvas_render_geometry::rotatePoint(
         QPointF(selectionFrame->center_x - selectionFrame->width / 2.0, selectionFrame->center_y),
         frameCenter, selectionFrame->rotation);
-    require(interaction.selectionInteractionContains(
+    require(snow_canvas_widget_selection_hit_testing::pointerHitsSelectionInteraction(
                 displayCache, snow_canvas_render_geometry::canvasToView(
                                   projection, frameEdgeCanvas.x(), frameEdgeCanvas.y())),
             "the canonical text selection frame edge should be interactive while editing");
@@ -1459,11 +1482,11 @@ void textEditorActivationPreservesSelectToolSelectionBox() {
         QPointF(selectionFrame->center_x - (selectionFrame->width + textActualFrame->width) / 4.0,
                 selectionFrame->center_y),
         frameCenter, selectionFrame->rotation);
-    require(interaction.selectionInteractionContains(
+    require(snow_canvas_widget_selection_hit_testing::pointerHitsSelectionInteraction(
                 displayCache, snow_canvas_render_geometry::canvasToView(
                                   projection, moveRingCanvas.x(), moveRingCanvas.y())),
             "the canonical text padding move ring should be interactive while editing");
-    require(!interaction.selectionInteractionContains(
+    require(!snow_canvas_widget_selection_hit_testing::pointerHitsSelectionInteraction(
                 displayCache,
                 snow_canvas_render_geometry::canvasToView(projection, textActualFrame->center_x,
                                                           textActualFrame->center_y)),
@@ -1681,7 +1704,8 @@ void textEditorDoesNotSynthesizeSelectionControlsWithoutEngineOverlay() {
     require(
         interaction.beginForElement(*target, displayCache, QPointF(100.0, 100.0), nullptr, false),
         "canonical text selection test should begin an existing text edit");
-    require(!interaction.selectionInteractionContains(displayCache, QPointF(66.0, 76.0)),
+    require(!snow_canvas_widget_selection_hit_testing::pointerHitsSelectionInteraction(
+                displayCache, QPointF(66.0, 76.0)),
             "text editing should not hit-test controls absent from the engine overlay");
 
     QImage image(QSize(200, 200), QImage::Format_ARGB32_Premultiplied);
@@ -2651,6 +2675,8 @@ void widgetPointerFlowDispatchesTextToolSelectionPressWithoutCommit() {
             true,
         });
 
+    require(!plan.shouldHandleEditorPress,
+            "text selection interaction press should not be consumed as caret placement");
     require(!plan.shouldCommitTextEditor,
             "active text selection press should keep the draft active");
     require(plan.shouldDispatchToEngine,
@@ -2678,6 +2704,8 @@ void widgetPointerFlowDispatchesSelectToolSelectionPressWithoutCommit() {
             false,
         });
 
+    require(!plan.shouldHandleEditorPress,
+            "select tool selection press should not be consumed as caret placement");
     require(!plan.shouldCommitTextEditor,
             "select tool selection press should keep the active draft");
     require(plan.shouldDispatchToEngine, "select tool selection interaction press should dispatch "
@@ -2702,6 +2730,8 @@ void widgetPointerFlowDispatchesAnyToolSelectionPressWithoutCommit() {
             false,
         });
 
+    require(!plan.shouldHandleEditorPress,
+            "selection interaction press should not be consumed as caret placement");
     require(!plan.shouldCommitTextEditor,
             "selection interaction press should keep the active draft");
     require(plan.shouldDispatchToEngine, "selection interaction press should dispatch to "
@@ -2712,6 +2742,138 @@ void widgetPointerFlowDispatchesAnyToolSelectionPressWithoutCommit() {
     require(
         !plan.dispatchAfterCommitRequiresRestoredSelection,
         "selection interaction press should not require restored selection for any active tool");
+}
+
+void requireSelectedTextCopyOwnsPress(const snow_canvas_widget_pointer_flow::PressPlan& plan,
+                                      bool editorActive) {
+    require(!plan.shouldHandleEditorPress, "selected-text copy must not enter the text editor");
+    require(plan.shouldCommitTextEditor == editorActive,
+            "selected-text copy commits only an active draft");
+    require(plan.shouldRestoreSelectionOnCommit == editorActive,
+            "selected-text copy restores selection after committing a draft");
+    require(plan.dispatchAfterCommitRequiresRestoredSelection == editorActive,
+            "selected-text copy dispatches only after restored selection");
+    require(plan.shouldDispatchToEngine, "selected-text copy must reach engine duplication");
+    require(!plan.shouldBeginText, "selected-text copy must not create text");
+    require(!plan.shouldBeginSelectedText, "selected-text copy must not reopen the editor");
+    require(!plan.allowCreateText, "selected-text copy must not create a new text draft");
+}
+
+void widgetPointerFlowDetectsSelectedTextCopyGesture() {
+    require(
+        snow_canvas_widget_pointer_flow::isSelectedTextCopyGesture(Qt::LeftButton, Qt::AltModifier),
+        "Alt left-press without Shift is the selected-text copy gesture");
+    require(!snow_canvas_widget_pointer_flow::isSelectedTextCopyGesture(
+                Qt::LeftButton, Qt::AltModifier | Qt::ShiftModifier),
+            "Shift+Alt is not a selected-text copy gesture");
+    require(
+        !snow_canvas_widget_pointer_flow::isSelectedTextCopyGesture(Qt::LeftButton, Qt::NoModifier),
+        "unmodified left-press is not a selected-text copy gesture");
+    require(!snow_canvas_widget_pointer_flow::isSelectedTextCopyGesture(Qt::RightButton,
+                                                                        Qt::AltModifier),
+            "Alt right-press is not a selected-text copy gesture");
+}
+
+void widgetPointerFlowGivesSelectedTextCopyExclusiveOwnership() {
+    for (const auto tool : {SnowCanvasTool::Select, SnowCanvasTool::Text}) {
+        const snow_canvas_widget_pointer_flow::PressPlan idlePlan =
+            snow_canvas_widget_pointer_flow::planPress(
+                snow_canvas_widget_pointer_flow::PressRequest{
+                    true,
+                    false,
+                    false,
+                    tool,
+                    Qt::LeftButton,
+                    Qt::AltModifier,
+                    false,
+                    false,
+                    false,
+                    true,
+                });
+        requireSelectedTextCopyOwnsPress(idlePlan, false);
+
+        const snow_canvas_widget_pointer_flow::PressPlan editingPlan =
+            snow_canvas_widget_pointer_flow::planPress(
+                snow_canvas_widget_pointer_flow::PressRequest{
+                    true,
+                    true,
+                    true,
+                    tool,
+                    Qt::LeftButton,
+                    Qt::AltModifier,
+                    false,
+                    false,
+                    false,
+                    true,
+                });
+        requireSelectedTextCopyOwnsPress(editingPlan, true);
+    }
+}
+
+void widgetPointerFlowResolvesCopyFromHitTargetAndModifiers() {
+    using namespace snow_canvas_widget_pointer_flow;
+    using snow_canvas_widget_selection_hit_testing::SelectionInteractionTarget;
+    for (const auto tool : {SnowCanvasTool::Select, SnowCanvasTool::Text}) {
+        PressRequest request;
+        request.hasEvent = true;
+        request.textEditorActive = true;
+        request.canvasTool = tool;
+        request.button = Qt::LeftButton;
+        request.modifiers = Qt::AltModifier;
+        request.pointerOverSelectionInteraction = true;
+        request.selectionTarget = SelectionInteractionTarget::Move;
+        requireSelectedTextCopyOwnsPress(planPress(request), true);
+
+        // A text hit can overlap a handle's tolerance. The handle must still win.
+        request.pointerHitsSelectedText = true;
+        request.selectionTarget = SelectionInteractionTarget::Handle;
+        const auto handlePlan = planPress(request);
+        require(!handlePlan.shouldCommitTextEditor && handlePlan.shouldDispatchToEngine,
+                "Alt on a selection handle must preserve the draft and reach the engine");
+        require(!handlePlan.shouldHandleEditorPress && !handlePlan.shouldBeginText,
+                "Alt on a selection handle must not activate caret placement or create text");
+
+        request.selectionTarget = SelectionInteractionTarget::None;
+        request.pointerOverSelectionInteraction = false;
+        request.pointerInsideTextEditor = true;
+        for (const auto modifiers : {Qt::KeyboardModifiers(Qt::NoModifier),
+                                     Qt::KeyboardModifiers(Qt::AltModifier | Qt::ShiftModifier)}) {
+            request.modifiers = modifiers;
+            const auto editorPlan = planPress(request);
+            require(editorPlan.shouldHandleEditorPress && !editorPlan.shouldCommitTextEditor &&
+                        !editorPlan.shouldDispatchToEngine,
+                    "ordinary and Shift+Alt text presses must remain editor interactions");
+        }
+    }
+}
+
+void widgetPointerFlowLetsEditorOwnPressInsideDraft() {
+    for (const auto tool : {SnowCanvasTool::Select, SnowCanvasTool::Text}) {
+        const snow_canvas_widget_pointer_flow::PressPlan plan =
+            snow_canvas_widget_pointer_flow::planPress(
+                snow_canvas_widget_pointer_flow::PressRequest{
+                    true,
+                    true,
+                    true,
+                    tool,
+                    Qt::LeftButton,
+                    Qt::NoModifier,
+                    false,
+                    false,
+                    false,
+                    false,
+                });
+
+        require(plan.shouldHandleEditorPress,
+                "left-press inside an active draft belongs to caret selection");
+        require(!plan.shouldCommitTextEditor,
+                "caret press inside an active draft must not commit the editor");
+        require(!plan.shouldBeginText, "caret press inside an active draft must not create text");
+        require(!plan.shouldBeginSelectedText,
+                "caret press inside an active draft must not reopen the editor");
+        require(!plan.shouldDispatchToEngine,
+                "caret press inside an active draft must not reach the engine");
+    }
 }
 
 void textEditorWheelPlansFontSizeStepping() {
@@ -3786,6 +3948,7 @@ int main(int argc, char** argv) {
     textEditorCaretBlinksResetsAndHonorsSystemFlashTime();
     selectionHitTestingUsesMinimumHandleHitSize();
     selectionHitTestingTreatsTextFramePaddingAsMoveRing();
+    selectionHitTestingDistinguishesMoveFromHandles();
     textEditorActivationPreservesSelectToolSelectionBox();
     blankCanvasPressDeselectsBeforeBeginningNewText();
     selectToolDragRendersSelectionMarquee();
@@ -3817,6 +3980,10 @@ int main(int argc, char** argv) {
     widgetPointerFlowDispatchesTextToolSelectionPressWithoutCommit();
     widgetPointerFlowDispatchesSelectToolSelectionPressWithoutCommit();
     widgetPointerFlowDispatchesAnyToolSelectionPressWithoutCommit();
+    widgetPointerFlowDetectsSelectedTextCopyGesture();
+    widgetPointerFlowGivesSelectedTextCopyExclusiveOwnership();
+    widgetPointerFlowResolvesCopyFromHitTargetAndModifiers();
+    widgetPointerFlowLetsEditorOwnPressInsideDraft();
     textEditorWheelPlansFontSizeStepping();
     compactSceneItemsOwnBorrowedPatchData();
     adaptiveRepaintKeepsSparseRegionsSeparate();

@@ -83,8 +83,7 @@ class SnowCanvasWidgetTextInteraction final {
                                                                   SnowViewport viewport);
     bool isActive() const;
     bool editorContains(const SnowCanvasDisplayCache& displayCache, const QPointF& position) const;
-    bool selectionInteractionContains(const SnowCanvasDisplayCache& displayCache,
-                                      const QPointF& position) const;
+    bool hasSelectionInteraction() const;
     const SnowSceneDisplayItem* previewItem() const;
     SnowTextStyle currentTextStyle() const;
     void renderEditorOverlay(QPainter& painter, const QFont& baseFont,

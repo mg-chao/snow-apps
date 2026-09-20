@@ -104,11 +104,12 @@ bool overlayFrameEdgeContainsViewPoint(
 }
 
 template <typename Item>
-bool pointerHitsSelectionInteractionItemRange(
-    const Item* items, std::uint32_t itemCount,
-    const snow_canvas_render_geometry::ViewProjection& projection, const QPointF& viewPosition) {
+SelectionInteractionTarget
+selectionInteractionAtItemRange(const Item* items, std::uint32_t itemCount,
+                                const snow_canvas_render_geometry::ViewProjection& projection,
+                                const QPointF& viewPosition) {
     if (items == nullptr || itemCount == 0) {
-        return false;
+        return SelectionInteractionTarget::None;
     }
 
     constexpr double kHandleHitSizePx = 12.0;
@@ -130,7 +131,7 @@ bool pointerHitsSelectionInteractionItemRange(
             const double extraPx =
                 std::max(0.0, kHandleHitSizePx - std::min(handleWidth, handleHeight)) / 2.0;
             if (overlayRectContainsViewPoint(projection, item, viewPosition, extraPx)) {
-                return true;
+                return SelectionInteractionTarget::Handle;
             }
             continue;
         }
@@ -138,15 +139,15 @@ bool pointerHitsSelectionInteractionItemRange(
         if (item.rect_kind == SNOW_OVERLAY_RECT_SELECTION_FRAME && textActualFrame != nullptr &&
             overlayTextSelectionMoveRingContainsViewPoint(projection, item, *textActualFrame,
                                                           viewPosition)) {
-            return true;
+            return SelectionInteractionTarget::Move;
         }
 
         if (isSelectionFrameRectKind(item.rect_kind) &&
             overlayFrameEdgeContainsViewPoint(projection, item, viewPosition)) {
-            return true;
+            return SelectionInteractionTarget::Handle;
         }
     }
-    return false;
+    return SelectionInteractionTarget::None;
 }
 
 } // namespace
@@ -154,14 +155,27 @@ bool pointerHitsSelectionInteractionItemRange(
 bool pointerHitsSelectionInteractionItems(
     const SnowOverlayDisplayItem* items, std::uint32_t itemCount,
     const snow_canvas_render_geometry::ViewProjection& projection, const QPointF& viewPosition) {
-    return pointerHitsSelectionInteractionItemRange(items, itemCount, projection, viewPosition);
+    return selectionInteractionAtItems(items, itemCount, projection, viewPosition) !=
+           SelectionInteractionTarget::None;
 }
 
 bool pointerHitsSelectionInteraction(const SnowCanvasDisplayCache& displayCache,
                                      const QPointF& viewPosition) {
+    return selectionInteractionAt(displayCache, viewPosition) != SelectionInteractionTarget::None;
+}
+
+SelectionInteractionTarget
+selectionInteractionAtItems(const SnowOverlayDisplayItem* items, std::uint32_t itemCount,
+                            const snow_canvas_render_geometry::ViewProjection& projection,
+                            const QPointF& viewPosition) {
+    return selectionInteractionAtItemRange(items, itemCount, projection, viewPosition);
+}
+
+SelectionInteractionTarget selectionInteractionAt(const SnowCanvasDisplayCache& displayCache,
+                                                  const QPointF& viewPosition) {
     const snow_canvas_render_geometry::ViewProjection projection =
         snow_canvas_render_geometry::overlayProjection(displayCache.overlayInfo());
-    return pointerHitsSelectionInteractionItemRange(
+    return selectionInteractionAtItemRange(
         displayCache.overlayItems(), displayCache.overlayItemCount(), projection, viewPosition);
 }
 
