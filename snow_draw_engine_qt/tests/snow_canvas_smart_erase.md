@@ -41,6 +41,13 @@ texture-variation guide. Compatible observations across horizontal, vertical, an
 diagonal runs guide the missing background. This is a local heuristic, not semantic
 segmentation of photographs or screenshot panels.
 
+After both fast paths reject the input, reconstruction crops its working buffers
+to the bounding rectangle of the hole and eligible donor domain, with a margin
+equal to the guide radius plus the three-pixel patch radius. The original mapping,
+hole mask, output crop and source resolution remain unchanged. Color conversion,
+guides, pyramid construction, matching and voting use this smaller region. Source
+composition, mask preparation and fast-path detection still use the original ROI.
+
 Matching gives real boundary pixels more weight than synthesized pixels. Color
 and texture compatibility discourage unrelated donors; a reuse penalty discourages
 repeated donor locations. Both reconstructed pixels and donor correspondences pass
@@ -121,6 +128,9 @@ also saves complete `*-result.png` images for comparison. Supported options:
 - `--scenario NAME` (repeatable): select fixtures; omitted means all fixtures.
 - `--warmup 1 --repeat 7`: warmup and sample counts (the defaults).
 - `--schedule 532|533|544|555`: private coarse/intermediate/fine pass budgets.
+- `--policy default|reference|crop`: selected default, the pre-cropping 5/3/2
+  implementation, or explicitly enabled context cropping. `--schedule` can still
+  override the pass budgets for either policy.
 - `--serial-voting` / `--parallel-voting`: compare voting implementations.
 - `--jobs 2`: time completion of two simultaneous reconstructions.
 - `--reference DIRECTORY`: compare with saved baseline result images; exit nonzero
@@ -133,6 +143,8 @@ working bytes (Windows; zero on other platforms). Summaries report median and
 nearest-rank p95; with seven samples, p95 is the largest observation. Input creation,
 image saving/comparison, and process startup are outside the timed interval.
 Application calls do not collect or log these diagnostics.
+Additional columns report cropped dimensions and each level's dimensions and
+search/voting times. All levels in the selected policy retain broad patch search.
 
 Preserve a baseline executable using the same extended benchmark harness before
 changing reconstruction. `scripts/run-smart-erase-perf.ps1 -Baseline <path>` runs
@@ -226,3 +238,129 @@ boundaries, not a corpus of photographs. Results do not establish performance or
 visual parity with Photoshop on arbitrary photos. Donor context, resolution, mask
 safety, placeholder behavior, caching, export snapshots and the two-job coordinator
 pool are unchanged.
+
+### Context cropping and restricted-search qualification (2026-09-20)
+
+This study starts from commit `0fea271e`, including the earlier optimized 5/3/2
+search and parallel voting. The selected change is **context cropping only**.
+The four adaptive search policies were implemented and measured, but rejected by
+the agreed visual gates; their restricted search, displacement transfer and
+one-pass refinement code are not enabled or retained in the library.
+
+The experimental policies permitted broad search up to 32,768 or 65,536 masked
+pixels and 512 K working pixels, with one or two restricted passes on finer
+levels. Restricted passes evaluated transferred donor displacements, their 3 x 3
+neighborhoods, propagation candidates and nearest valid donors without global
+random search. All policies kept the existing surface and periodic paths.
+
+One warmup and seven samples per fixture, in fresh processes with rotated policy
+order, produced the following geometric means across eight nonrepeating cases:
+
+| Policy | Geometric mean ms | Image-gate outcome |
+| --- | ---: | --- |
+| Preserved baseline | 383.50 | Reference |
+| Context cropping | 309.96 | Pass |
+| 32 K / one restricted pass | 231.64 | Reject: large rectangle and diagonal stroke texture |
+| 32 K / two restricted passes | 278.07 | Reject: diagonal stroke texture |
+| 64 K / one restricted pass | 242.38 | Reject: large rectangle and diagonal stroke texture |
+| 64 K / two restricted passes | 281.47 | Reject: diagonal stroke texture |
+
+The rejected one-pass variants had texture-energy ratios of 1.474 on the large
+rectangle and 1.468 on the diagonal stroke. Two passes reduced the diagonal ratio
+to 1.278, still beyond the 1.15 limit. Native-resolution inspection also showed
+additional directional/block artifacts in one-pass rectangular fills. No gate
+was relaxed to admit these policies.
+
+Cropping passed all thirteen saved-image comparisons against the preserved
+baseline. Maximum smoothed mean Lab delta was 0.478, maximum p95 was 1.538,
+and texture-energy ratios were 0.974-1.078. All five periodic fast-path outputs
+were byte-identical. Native-resolution crops of medium/large rectangles, long
+and diagonal strokes, source-edge holes and 2x scale were inspected. Existing
+synthesis seams/artifacts remain; cropping changes fine texture placement.
+
+A separate final-default qualification reran all thirteen fixtures, alternating
+baseline and candidate order, with no image I/O in the measurements:
+
+| Nonrepeating fixture | Baseline median ms | Cropped median ms | Cropped p95 ms | Baseline / cropped peak MiB |
+| --- | ---: | ---: | ---: | ---: |
+| 192 x 96 rectangle | 126.61 | 106.17 | 109.74 | 58.4 / 36.3 |
+| 384 x 256 rectangle | 685.90 | 618.90 | 645.31 | 169.1 / 78.2 |
+| 768 x 512 rectangle | 2440.75 | 2195.64 | 2367.18 | 254.6 / 133.1 |
+| 2400-pixel brush span | 987.25 | 804.25 | 873.92 | 475.2 / 159.9 |
+| Thin diagonal stroke | 194.44 | 144.13 | 171.22 | 121.3 / 94.3 |
+| Source-edge rectangle | 92.59 | 89.26 | 98.03 | 39.8 / 29.8 |
+| 1.25x physical scale | 214.20 | 188.71 | 194.01 | 78.1 / 44.1 |
+| 2x physical scale | 689.23 | 594.18 | 890.51 | 164.2 / 76.4 |
+
+The medium/large/long-stroke geometric-mean speedup is **1.15x**, below the 2x
+target. Across all eight nonrepeating cases it is 1.16x. The earlier policy matrix
+showed 1.24x across those eight cases; absolute timings varied between runs on the
+shared development machine. Large rectangles still take about 2.2 seconds. The
+2x-scale p95 also varied upward despite its improved median; these observations
+are not a tail-latency guarantee.
+
+The final fast-path baseline/candidate medians were 2.441/2.466 ms (small texture),
+7.145/6.900 (4K), 7.085/6.887 (8K), 32.906/33.006 (large repeating region), and
+109.051/104.308 (long repeating stroke), within the larger-of-10%-or-2-ms gate.
+Every nonrepeating median improved. Final single-job peak-memory changes were
+within the 5% regression gate; textured cases used 22-66% less process peak memory.
+
+The long stroke's expensive reconstruction buffers shrink from 3441 x 1104 to
+2515 x 178 pixels (88.2% less area); the large rectangle shrinks from 1792 x 1080
+to 998 x 742. Initial source composition and fast-path preparation still use the
+original region, and full-resolution patch search still dominates large holes.
+
+Stage timings from the median-latency samples (baseline / cropped, milliseconds)
+show where the savings occur. Initialization and other unlisted work account for
+the remainder of each total:
+
+| Fixture | Cropped dimensions | Search ms | Voting ms | Guide/pyramid ms |
+| --- | --- | ---: | ---: | ---: |
+| Medium rectangle | 614 x 486 | 416.33 / 428.97 | 86.71 / 89.33 | 78.33 / 25.94 |
+| Large rectangle | 998 x 742 | 1681.67 / 1600.99 | 363.91 / 313.16 | 142.23 / 69.82 |
+| Long stroke | 2515 x 178 | 436.17 / 482.64 | 67.84 / 83.68 | 219.08 / 45.97 |
+| 2x scale | 614 x 422 | 422.94 / 418.43 | 74.02 / 80.92 | 80.40 / 26.54 |
+
+Two simultaneous jobs also passed the 5% completion-time and peak-memory
+regression gates. Each timing measures completion of both jobs:
+
+| Fixture | Baseline median ms | Cropped median ms | Cropped p95 ms | Baseline / cropped peak MiB |
+| --- | ---: | ---: | ---: | ---: |
+| Medium rectangle | 869.91 | 614.53 | 827.59 | 306.4 / 123.1 |
+| Large rectangle | 3019.40 | 2743.90 | 2890.69 | 481.3 / 236.3 |
+| Long stroke | 1146.94 | 608.20 | 835.01 | 896.2 / 266.0 |
+| 2x scale | 684.11 | 506.80 | 723.99 | 292.6 / 117.1 |
+
+Strict Release builds passed for the benchmark and four related test targets.
+Only Smart Erase functional/quality tests, filter rendering and screenshot export
+service tests were run. Expanded quality coverage includes larger diagonal holes,
+odd pyramid dimensions, thin multispan strokes at 2x scale, negative/fractional
+mappings, rotation, partial alpha, disjoint coverage, unchanged native output
+mapping, erased-color independence, deterministic cancellation on entering a finer
+level, and serial/parallel and exhaustive/bounded scoring equivalence. All passed,
+and changed C++ files passed clang-format and whitespace checks.
+
+Export testing initially encountered the same libde265 initialization defect
+documented above. A fresh loader trace again located `init_scan_orders` in
+`scan.cc:150`, called by HEIF during DLL initialization, before the test reached
+main. The staged DLL matched the installed package. Replacing only the generated
+test directory's DLL with the existing local Release rebuild allowed the unchanged
+export executable to pass. No codec source or installed dependency was changed;
+dependency staging can reintroduce the original DLL.
+
+Reproduce the final timing comparison with
+`scripts/run-smart-erase-policy-perf.ps1 -Baseline <preserved-executable>` from
+this module. It defaults to baseline/default, records executable hashes and runs
+the thirteen fixtures. Use `-Jobs 2` and `-Scenarios nonrepeat-medium,nonrepeat-large,nonrepeat-long-pen,double-scale`
+for concurrent qualification. `--policy reference` on the current benchmark
+reproduces the old reconstruction without needing the preserved executable.
+Image comparison remains a separate invocation with `--reference <baseline-images>`.
+
+Local evidence is under `build/smart-erase-adaptive/`: `policy-timings`,
+`final-timings`, `concurrent-timings`, saved baseline/final images and
+`native-comparisons.png`.
+The rejected implementation is preserved there as `experimental.patch`, and its
+benchmark as `smart-erase-adaptive-candidate.exe` beside the benchmark binaries.
+The policy runner's explicit adaptive choices require that experimental executable;
+the shipped benchmark accepts only default/reference/crop policies. Build artifacts
+are not committed.

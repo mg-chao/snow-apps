@@ -30,6 +30,13 @@ struct ReconstructionOptions {
     int finePasses = 2;
     bool earlyRejection = true;
     bool parallelVoting = true;
+    bool cropContext = true;
+
+    static ReconstructionOptions reference() {
+        ReconstructionOptions options;
+        options.cropContext = false;
+        return options;
+    }
 };
 struct LevelDiagnostics {
     QSize size;
@@ -40,12 +47,15 @@ struct LevelDiagnostics {
 };
 struct ReconstructionDiagnostics {
     QSize workingSize;
+    QSize croppedSize;
     int maskedPixels = 0;
     enum class Path { Empty, Surface, Periodic, Patches } path = Path::Empty;
     double preparationMs = 0;
     double fastPathsMs = 0;
     double guidePyramidMs = 0;
     std::vector<LevelDiagnostics> levels;
+    // Optional synchronous progress observer; preserved when measurements reset.
+    std::function<void(const LevelDiagnostics&)> levelStarted;
 };
 
 Result reconstructWithOptions(const SnowCanvasSceneItem& item,

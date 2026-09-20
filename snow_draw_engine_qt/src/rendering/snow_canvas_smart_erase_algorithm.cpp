@@ -636,8 +636,11 @@ Result reconstructWithOptions(const SnowCanvasSceneItem& item,
     if (options.coarsePasses < 2 || options.coarsePasses > 5 || options.intermediatePasses < 2 ||
         options.intermediatePasses > 5 || options.finePasses < 2 || options.finePasses > 5)
         return {};
-    if (diagnostics)
+    if (diagnostics) {
+        auto observer = std::move(diagnostics->levelStarted);
         *diagnostics = {};
+        diagnostics->levelStarted = std::move(observer);
+    }
     auto preparationStart =
         diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     try {
@@ -669,6 +672,7 @@ Result reconstructWithOptions(const SnowCanvasSceneItem& item,
             pixelHeight > kMaximumWorkingPixels || pixelWidth * pixelHeight > kMaximumWorkingPixels)
             return {};
         const QSize size(static_cast<int>(pixelWidth), static_cast<int>(pixelHeight));
+        cv::Rect reconstructionRect(0, 0, size.width(), size.height());
         if (size.width() <= 0 || size.height() <= 0 ||
             static_cast<qint64>(size.width()) * size.height() > kMaximumWorkingPixels)
             return {};
@@ -725,6 +729,7 @@ Result reconstructWithOptions(const SnowCanvasSceneItem& item,
             return {};
         if (diagnostics) {
             diagnostics->workingSize = size;
+            diagnostics->croppedSize = size;
             diagnostics->maskedPixels = cv::countNonZero(hole);
             diagnostics->preparationMs = std::chrono::duration<double, std::milli>(
                                              std::chrono::steady_clock::now() - preparationStart)
@@ -752,21 +757,37 @@ Result reconstructWithOptions(const SnowCanvasSceneItem& item,
                                           : std::chrono::steady_clock::time_point{};
             if (diagnostics)
                 diagnostics->path = ReconstructionDiagnostics::Path::Patches;
-            cv::Mat3f lab;
-            cv::cvtColor(rgb, lab, cv::COLOR_RGB2Lab);
-            rgb.release();
             const auto bounds = cv::boundingRect(hole);
             const int guideRadius = std::clamp(std::min(bounds.width, bounds.height) / 12, 4, 16);
+            if (options.cropContext) {
+                // Keep all eligible donors and the observations needed by the guide
+                // and patch kernels. The original source mapping and hole stay intact.
+                const auto active = cv::boundingRect(hole | domain);
+                const int margin = guideRadius + 3;
+                reconstructionRect =
+                    cv::Rect(active.x - margin, active.y - margin, active.width + 2 * margin,
+                             active.height + 2 * margin) &
+                    reconstructionRect;
+            }
+            if (diagnostics)
+                diagnostics->croppedSize =
+                    QSize(reconstructionRect.width, reconstructionRect.height);
+            const auto patchHole = hole(reconstructionRect);
+            const auto patchCoverage = coverage(reconstructionRect);
+            const auto patchKnown = known(reconstructionRect);
+            cv::Mat3f lab;
+            cv::cvtColor(rgb(reconstructionRect), lab, cv::COLOR_RGB2Lab);
+            rgb.release();
             cv::Mat1f weights;
-            const auto mean = observedBackground(lab, known, guideRadius, cancelled, weights);
+            const auto mean = observedBackground(lab, patchKnown, guideRadius, cancelled, weights);
             const auto variation =
-                backgroundVariation(lab, mean, known, guideRadius, cancelled, weights);
+                backgroundVariation(lab, mean, patchKnown, guideRadius, cancelled, weights);
             weights.release();
-            const auto guide = backgroundGuide(mean, variation, hole, known, cancelled);
+            const auto guide = backgroundGuide(mean, variation, patchHole, patchKnown, cancelled);
             std::vector<cv::Mat3f> images{lab};
             std::vector<BackgroundGuide> guides{guide};
-            std::vector<cv::Mat1b> holes{hole}, coverages{coverage};
-            std::vector<cv::Mat1b> domains{domain};
+            std::vector<cv::Mat1b> holes{patchHole}, coverages{patchCoverage};
+            std::vector<cv::Mat1b> domains{domain(reconstructionRect)};
             while (std::max(images.back().cols, images.back().rows) > 64 &&
                    std::min(images.back().cols, images.back().rows) > 8) {
                 checkCancelled(cancelled);
@@ -817,6 +838,8 @@ Result reconstructWithOptions(const SnowCanvasSceneItem& item,
                     diagnostics->levels.push_back({QSize(images[i].cols, images[i].rows),
                                                    cv::countNonZero(holes[i]), passes, 0, 0});
                     level = &diagnostics->levels.back();
+                    if (diagnostics->levelStarted)
+                        diagnostics->levelStarted(*level);
                 }
                 filled = fillLevel(images[i], holes[i], coverages[i], domains[i], guides[i], filled,
                                    cancelled, options, passes, level);
@@ -832,7 +855,7 @@ Result reconstructWithOptions(const SnowCanvasSceneItem& item,
             for (int x = 0; x < size.width(); ++x) {
                 if (!hole(y, x))
                     continue;
-                const auto& color = rgb(y, x);
+                const auto& color = rgb(y - reconstructionRect.y, x - reconstructionRect.x);
                 row[x] = qRgba(std::clamp(qRound(color[0] * 255), 0, 255),
                                std::clamp(qRound(color[1] * 255), 0, 255),
                                std::clamp(qRound(color[2] * 255), 0, 255), qAlpha(row[x]));

@@ -197,9 +197,13 @@ bool run(const Scenario& scenario, const QString& directory, const QString& refe
             continue;
         times.push_back(elapsed);
         double search = 0, voting = 0;
-        QStringList passCounts;
+        QStringList passCounts, sizes, searches, votes;
         for (const auto& level : last.diagnostics.levels) {
             passCounts.push_back(QString::number(level.passes));
+            sizes.push_back(
+                QStringLiteral("%1x%2").arg(level.size.width()).arg(level.size.height()));
+            searches.push_back(QString::number(level.searchMs, 'f', 3));
+            votes.push_back(QString::number(level.votingMs, 'f', 3));
             search += level.searchMs;
             voting += level.votingMs;
         }
@@ -209,7 +213,10 @@ bool run(const Scenario& scenario, const QString& directory, const QString& refe
                   << d.maskedPixels << ',' << static_cast<int>(d.path) << ',' << d.levels.size()
                   << ',' << passCounts.join(QLatin1Char('/')).toStdString() << ',' << search << ','
                   << voting << ',' << d.preparationMs << ',' << d.fastPathsMs << ','
-                  << d.guidePyramidMs << ',' << peakWorkingBytes() << '\n'
+                  << d.guidePyramidMs << ',' << peakWorkingBytes() << ',' << d.croppedSize.width()
+                  << ',' << d.croppedSize.height() << ',' << sizes.join('/').toStdString() << ','
+                  << searches.join('/').toStdString() << ',' << votes.join('/').toStdString()
+                  << '\n'
                   << std::flush;
     }
     std::sort(times.begin(), times.end());
@@ -283,6 +290,10 @@ int main(int argc, char** argv) {
          QStringLiteral("passes")},
         {{QStringLiteral("parallel-voting")}, QStringLiteral("Enable two-stripe voting.")},
         {{QStringLiteral("serial-voting")}, QStringLiteral("Disable two-stripe voting.")},
+        {{QStringLiteral("policy")},
+         QStringLiteral("Policy: default, reference, crop."),
+         QStringLiteral("policy"),
+         QStringLiteral("default")},
         {{QStringLiteral("reference")},
          QStringLiteral("Baseline result PNG directory for quality gates."),
          QStringLiteral("directory")},
@@ -296,6 +307,14 @@ int main(int argc, char** argv) {
         (jobs != 1 && jobs != 2) || parser.positionalArguments().size() > 1)
         return 2;
     ReconstructionOptions options;
+    const QString policy = parser.value(QStringLiteral("policy"));
+    if (!QStringList{QStringLiteral("default"), QStringLiteral("reference"), QStringLiteral("crop")}
+             .contains(policy))
+        return 2;
+    if (policy == QStringLiteral("reference"))
+        options = ReconstructionOptions::reference();
+    else if (policy == QStringLiteral("crop"))
+        options.cropContext = true;
     const QString schedule = parser.value(QStringLiteral("schedule"));
     if (!schedule.isEmpty()) {
         if (!QStringList{QStringLiteral("532"), QStringLiteral("533"), QStringLiteral("544"),
@@ -326,7 +345,8 @@ int main(int argc, char** argv) {
     std::cout
         << "record,scenario,iteration,jobs,elapsed_ms,working_width,working_height,masked_"
            "pixels,path,levels,passes,search_ms,vote_ms,preparation_ms,fast_paths_ms,guide_pyramid_"
-           "ms,peak_working_bytes\n";
+           "ms,peak_working_bytes,cropped_width,cropped_height,level_sizes,level_search_ms,level_"
+           "vote_ms\n";
     bool ok = true;
     for (const auto& scenario : scenarios) {
         if (!requested.empty() && !requested.contains(QLatin1String(scenario.name)))
