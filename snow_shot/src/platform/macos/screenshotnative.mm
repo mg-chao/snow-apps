@@ -1,4 +1,5 @@
 #include "snow_shot/platform/screenshotnative.h"
+#include "screenshotwindowtarget_p.h"
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
 #include <dlfcn.h>
@@ -321,46 +322,14 @@ void registerScreenshotLayer(QWidget* widget, int layer) {
     synchronizeScreenshotLayers();
 }
 
-struct WindowTarget {
-    CGWindowID id = 0;
-    pid_t pid = 0;
-    CGRect bounds{};
-};
-WindowTarget windowTarget(pid_t owner, const QPoint* point) {
+detail::WindowTarget windowTarget(pid_t owner, const QPoint* point) {
     CFArrayRef windows = CGWindowListCopyWindowInfo(
         kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements, kCGNullWindowID);
-    if (!windows)
-        return {};
-    WindowTarget result;
-    for (CFIndex index = 0; index < CFArrayGetCount(windows); ++index) {
-        const auto window = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(windows, index));
-        const auto number = [window](CFStringRef key, CFNumberType type, void* value) {
-            const auto entry = static_cast<CFNumberRef>(CFDictionaryGetValue(window, key));
-            return entry && CFNumberGetValue(entry, type, value);
-        };
-        pid_t pid = 0;
-        int layer = 0;
-        double alpha = 0;
-        CGWindowID id = 0;
-        if (!number(kCGWindowOwnerPID, kCFNumberIntType, &pid) ||
-            !number(kCGWindowLayer, kCFNumberIntType, &layer) ||
-            !number(kCGWindowAlpha, kCFNumberDoubleType, &alpha) ||
-            !number(kCGWindowNumber, kCFNumberIntType, &id) || pid <= 0 ||
-            pid == NSProcessInfo.processInfo.processIdentifier || (owner && pid != owner) ||
-            layer != 0 || alpha <= 0)
-            continue;
-        CGRect bounds{};
-        const auto rectangle =
-            static_cast<CFDictionaryRef>(CFDictionaryGetValue(window, kCGWindowBounds));
-        if (!rectangle || !CGRectMakeWithDictionaryRepresentation(rectangle, &bounds) ||
-            CGRectIsEmpty(bounds))
-            continue;
-        if (point && !CGRectContainsPoint(bounds, CGPointMake(point->x(), point->y())))
-            continue;
-        result = {id, pid, bounds};
-        break;
-    }
-    CFRelease(windows);
+    const auto result = point ? detail::scrollWindowTarget(
+                                    windows, NSProcessInfo.processInfo.processIdentifier, *point)
+                              : detail::focusedWindowTarget(windows, owner);
+    if (windows)
+        CFRelease(windows);
     return result;
 }
 } // namespace
@@ -396,7 +365,7 @@ ScrollInputResult sendScreenshotScroll(const QRect& selection, const QPoint& del
     if (!screenshotScrollPermission())
         return {ScrollInputResult::Status::PostFailed, 1};
     const QPoint center = selection.center();
-    const WindowTarget target = windowTarget(0, &center);
+    const detail::WindowTarget target = windowTarget(0, &center);
     if (!target.id)
         return {ScrollInputResult::Status::TargetNotFound, 0};
 

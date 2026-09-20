@@ -28,6 +28,7 @@ enum class PhysicalCursorMoveStatus {
 struct PhysicalCursorMoveResult {
     PhysicalCursorMoveStatus status = PhysicalCursorMoveStatus::Unsupported;
     std::optional<QPoint> position;
+    bool mouseMoveDispatched = false;
 
     [[nodiscard]] bool commandApplied() const noexcept {
         return status == PhysicalCursorMoveStatus::Applied ||
@@ -40,6 +41,8 @@ struct PhysicalCursorAccess {
     std::function<std::optional<QPoint>()> readPosition;
     std::function<bool(const QPoint&)> writePosition;
     std::function<std::optional<QPointF>()> readLogicalPosition = {};
+    // Cursor warps on macOS do not generate native mouse movement events.
+    bool generatesMouseMoveEvents = true;
 };
 
 class PhysicalCursor final {

@@ -1,4 +1,5 @@
 #include "snow_capture.h"
+#include "../src/presentation/capture/directcapturenative.h"
 #include "../src/presentation/capture/captureframeimage.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -288,6 +289,11 @@ int main(int argc, char** argv) {
                      "grant; no permission is requested.\n";
         return 77;
     }
+    NSRunningApplication* previous = [NSWorkspace.sharedWorkspace.frontmostApplication retain];
+    const auto restoreFocus = qScopeGuard([previous] {
+        [previous activateWithOptions:0];
+        [previous release];
+    });
     CaptureFixture fixture;
     fixture.resize(160, 120);
     fixture.setWindowTitle(QStringLiteral("Snow Shot screenshot fixture"));
@@ -295,7 +301,34 @@ int main(int argc, char** argv) {
     app.processEvents();
     auto* view = reinterpret_cast<NSView*>(fixture.winId());
     const auto window = static_cast<CGWindowID>(view.window.windowNumber);
-    auto result = std::async(std::launch::async, [window] {
+    fixture.activateWindow();
+    [NSApp activateIgnoringOtherApps:YES];
+    QEventLoop activation;
+    QTimer activationPoll;
+    QObject::connect(&activationPoll, &QTimer::timeout, &activation, [&] {
+        if (NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier ==
+            NSProcessInfo.processInfo.processIdentifier)
+            activation.quit();
+    });
+    activationPoll.start(10);
+    QTimer::singleShot(5000, &activation, &QEventLoop::quit);
+    activation.exec();
+    activationPoll.stop();
+    const auto focused = snow_shot::platform::screenshotFocusedWindow();
+    if (focused != window) {
+        std::cerr << "focused capture failed to resolve its own foreground window: " << focused
+                  << " expected " << window << '\n';
+        return 1;
+    }
+    auto result = std::async(std::launch::async, [window, focused] {
+        snow_shot::presentation::DirectCaptureRequest request;
+        request.target = snow_shot::presentation::DirectCaptureTarget::FocusedWindow;
+        request.window = focused;
+        const auto direct = snow_shot::presentation::captureDirectTarget(request);
+        if (!direct.isValid()) {
+            std::cerr << "direct focused capture failed: " << direct.error.toStdString() << '\n';
+            return QImage();
+        }
         if (capture(window, false).isNull())
             return QImage();
         return capture(window, true);

@@ -122,12 +122,10 @@ if(NOT DEFINED SNOW_SHOT_API_BASE_URL OR SNOW_SHOT_API_BASE_URL STREQUAL "")
             "Snow Shot API base URL." FORCE)
     endif()
 endif()
-if(WIN32)
-    find_package(Qt6GuiPrivate 6.11.1 EXACT REQUIRED CONFIG
-        PATHS "${Qt6_DIR}/.."
-        NO_DEFAULT_PATH
-    )
-endif()
+find_package(Qt6GuiPrivate 6.11.1 EXACT REQUIRED CONFIG
+    PATHS "${Qt6_DIR}/.."
+    NO_DEFAULT_PATH
+)
 set(SNOW_SHOT_DRAW_ENGINE_QT_DIR
     "${SNOW_DRAW_ENGINE_SOURCE_DIR}"
     CACHE PATH
@@ -1310,6 +1308,15 @@ if(MSVC)
     target_link_options(snow_shot PRIVATE $<$<CONFIG:Release>:/DEBUG:FULL>)
 endif()
 
+if(APPLE)
+    target_sources(snow_shot PRIVATE src/platform/macos/camerashuttersound.mm)
+    target_link_libraries(snow_shot PRIVATE "-framework AVFoundation" "-framework Foundation" objc)
+    qt_add_resources(snow_shot "snow_shot_shutter_audio"
+        PREFIX "/snow-shot"
+        BASE "resources"
+        FILES "${SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE}")
+endif()
+
 if(EXISTS "${SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE}")
     add_custom_command(TARGET snow_shot POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E make_directory
@@ -1773,7 +1780,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_include_directories(snow-shot-physical-cursor-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
-    target_link_libraries(snow-shot-physical-cursor-tests PRIVATE Qt6::Gui)
+    target_link_libraries(snow-shot-physical-cursor-tests PRIVATE Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-physical-cursor-tests)
     if(APPLE)
         target_link_libraries(snow-shot-physical-cursor-tests PRIVATE "-framework CoreGraphics")
     endif()
@@ -2522,6 +2530,25 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-direct-capture-workflow-tests PRIVATE Qt6::Gui)
     add_test(NAME snow-shot-direct-capture-workflow-tests
         COMMAND snow-shot-direct-capture-workflow-tests)
+
+    if(APPLE)
+        add_executable(snow-shot-camera-shutter-sound-tests
+            tests/camera_shutter_sound_tests.mm
+            src/presentation/capture/camerashuttersound.cpp
+            src/platform/macos/camerashuttersound.mm)
+        target_include_directories(snow-shot-camera-shutter-sound-tests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/capture")
+        target_link_libraries(snow-shot-camera-shutter-sound-tests PRIVATE
+            Qt6::Core "-framework AVFoundation" "-framework Foundation" objc)
+        qt_add_resources(snow-shot-camera-shutter-sound-tests "snow_shot_shutter_audio_tests"
+            PREFIX "/snow-shot"
+            BASE "resources"
+            FILES "${SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE}")
+        add_test(NAME snow-shot-camera-shutter-sound-tests
+            COMMAND snow-shot-camera-shutter-sound-tests)
+        set_tests_properties(snow-shot-camera-shutter-sound-tests PROPERTIES
+            LABELS "unit" TIMEOUT 30)
+    endif()
 
     add_executable(snow-shot-direct-capture-frame-tests tests/direct_capture_frame_tests.cpp)
     target_include_directories(snow-shot-direct-capture-frame-tests PRIVATE
@@ -6875,8 +6902,17 @@ if(APPLE)
 endif()
 
 if(APPLE AND SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-macos-screenshot-window-target-tests
+        tests/macos_screenshot_window_target_tests.mm)
+    target_link_libraries(snow-shot-macos-screenshot-window-target-tests PRIVATE Qt6::Core
+        "-framework Foundation" "-framework CoreGraphics")
+    add_test(NAME snow-shot-macos-screenshot-window-target-tests
+        COMMAND snow-shot-macos-screenshot-window-target-tests)
+    set_tests_properties(snow-shot-macos-screenshot-window-target-tests PROPERTIES LABELS "unit;macos")
+
     add_executable(snow-shot-macos-screenshot-native-smoke
         tests/macos_screenshot_native_smoke.mm
+        src/presentation/capture/directcapturenative.cpp
         src/platform/macos/screenshotnative.mm
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/services/screenshotsourceimagecomposer.cpp)
@@ -6906,3 +6942,12 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "QT_QPA_PLATFORM=cocoa" LABELS "interactive;macos"
         RUN_SERIAL TRUE TIMEOUT 60)
 endif()
+
+# Physical cursor warps enter Qt's platform input path so Qt's pointer state and
+# widget grabs remain consistent with subsequent native mouse events.
+foreach(_cursor_host IN ITEMS snow_shot snow-shot-physical-cursor-tests
+        snow-shot-pinned-window-tests snow-shot-file-pin-batch-performance-benchmark)
+    if(TARGET ${_cursor_host})
+        target_link_libraries(${_cursor_host} PRIVATE Qt6::GuiPrivate)
+    endif()
+endforeach()

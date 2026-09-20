@@ -63,6 +63,6 @@ void playCameraShutterSound() {
         static_cast<void>(sendMediaControlCommand(QStringLiteral("close %1").arg(alias)));
     });
 }
-#else
+#elif !defined(Q_OS_MACOS)
 void playCameraShutterSound() {}
 #endif

@@ -1,7 +1,12 @@
 #include "snow_shot/platform/physicalcursor.h"
 
 #include <QtGlobal>
+#include <QGuiApplication>
+#include <qpa/qwindowsysteminterface.h>
+#include <private/qhighdpiscaling_p.h>
+#include <QWindow>
 
+#include <cmath>
 #include <limits>
 #include <utility>
 
@@ -9,11 +14,9 @@
 #include <qt_windows.h>
 #elif defined(Q_OS_MACOS)
 #include <CoreGraphics/CoreGraphics.h>
-#include <QGuiApplication>
 #include <QScreen>
 #include <QPointer>
 #include <memory>
-#include <cmath>
 #endif
 
 namespace snow_shot::platform {
@@ -81,7 +84,8 @@ PhysicalCursorAccess nativeAccess() {
             const CGPoint point = CGEventGetLocation(event);
             CFRelease(event);
             return QPointF(point.x, point.y);
-        }};
+        },
+        false};
 #else
     return {};
 #endif
@@ -157,10 +161,35 @@ PhysicalCursorMoveResult PhysicalCursor::moveOnePixel(PhysicalCursorDirection di
     }
 
     const std::optional<QPoint> actual = m_access.readPosition();
-    if (!actual.has_value()) {
-        return {PhysicalCursorMoveStatus::AppliedPositionUnavailable, std::nullopt};
+    bool mouseMoveDispatched = false;
+    if (!m_access.generatesMouseMoveEvents && qGuiApp) {
+        if (const auto global = logicalPosition()) {
+            // Route through the native QWidget window so Qt retains implicit/explicit
+            // mouse grabs and child hit testing. Sending directly to the widget under
+            // the cursor would lose an in-progress drag when it crosses a child/window.
+            QWindow* window =
+                QGuiApplication::topLevelAt(QPoint(static_cast<int>(std::floor(global->x())),
+                                                   static_cast<int>(std::floor(global->y()))));
+            if (!window && QGuiApplication::mouseButtons() != Qt::NoButton)
+                window = QGuiApplication::focusWindow();
+            if (window) {
+                const QPointF local = window->mapFromGlobal(*global);
+                // Enter through QPA, not sendEvent(): Qt must also update its global
+                // pointer position or it can discard the next real move back to the
+                // pre-warp position as an unchanged-position event.
+                QWindowSystemInterface::handleMouseEvent<
+                    QWindowSystemInterface::SynchronousDelivery>(
+                    window, QHighDpi::toNativeLocalPosition(local, window),
+                    QHighDpi::toNativePixels(*global, window), QGuiApplication::mouseButtons(),
+                    Qt::NoButton, QEvent::MouseMove, QGuiApplication::keyboardModifiers(),
+                    Qt::MouseEventSynthesizedByApplication);
+                mouseMoveDispatched = true;
+            }
+        }
     }
-    return {PhysicalCursorMoveStatus::Applied, actual};
+    return {actual ? PhysicalCursorMoveStatus::Applied
+                   : PhysicalCursorMoveStatus::AppliedPositionUnavailable,
+            actual, mouseMoveDispatched};
 }
 
 } // namespace snow_shot::platform
