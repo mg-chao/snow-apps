@@ -52,8 +52,7 @@ class SystemTrayController final : public QObject {
                             const shortcuts::ShortcutBindingList& shortcuts);
     void setMenuOptions(const QStringList& options);
     [[nodiscard]] QStringList menuOptions() const;
-    void setGlobalHotkeysDisabled(bool disabled);
-    void setFullscreenHotkeysDisabled(bool disabled);
+    void setQuickActionChecked(GlobalShortcutAction action, bool checked);
 
   signals:
     void screenshotRequested();

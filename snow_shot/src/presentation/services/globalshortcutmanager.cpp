@@ -239,21 +239,20 @@ class GlobalShortcutManager::Impl {
         m_backend->setActivationHandler([this](int registrationId) {
             const QString activeKey = m_registrationKeysById.value(registrationId);
             const auto active = m_activeRegistrations.constFind(activeKey);
-            // The toggle shortcut must stay usable while global hotkeys are
-            // disabled so the disabled state can always be undone by keyboard.
-            if (active == m_activeRegistrations.cend() ||
-                (!m_globalHotkeysEnabled &&
-                 active->action != GlobalShortcutAction::ToggleGlobalHotkeys) ||
+            if (active == m_activeRegistrations.cend()) {
+                return;
+            }
+            // Gate-control shortcuts must stay usable under both the session
+            // disablement and fullscreen suppression so either can be undone
+            // from the keyboard.
+            const bool gateControl = controlsGlobalHotkeyGates(active->action);
+            if ((!m_globalHotkeysEnabled && !gateControl) ||
                 (active->action == GlobalShortcutAction::TranslateSelectedText &&
                  !storage::ExtendedFeaturesSettings().translationPageEnabled())) {
                 return;
             }
-            // The fullscreen suppression toggle must stay usable while that
-            // suppression is active so it can always be undone by keyboard.
-            const bool suppress =
-                storage::GlobalShortcutSettings().disableOnFocusedFullscreenWindow();
-            if (!suppress ||
-                active->action == GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow ||
+            if (gateControl ||
+                !storage::GlobalShortcutSettings().disableOnFocusedFullscreenWindow() ||
                 !m_focusedFullscreenDetector || !m_focusedFullscreenDetector()) {
                 emit q.activated(active->action);
             }

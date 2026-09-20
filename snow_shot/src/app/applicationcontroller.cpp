@@ -133,7 +133,10 @@ class ApplicationController::Impl {
                          });
         QObject::connect(&globalShortcutManager,
                          &presentation::GlobalShortcutManager::globalHotkeysEnabledChanged, &q,
-                         [this](bool enabled) { systemTray.setGlobalHotkeysDisabled(!enabled); });
+                         [this](bool enabled) {
+                             systemTray.setQuickActionChecked(
+                                 presentation::GlobalShortcutAction::ToggleGlobalHotkeys, !enabled);
+                         });
         QObject::connect(&app, &QCoreApplication::aboutToQuit, &systemTray,
                          &presentation::SystemTrayController::hide);
         QObject::connect(&app, &QCoreApplication::aboutToQuit, &globalMouseManager,
@@ -446,7 +449,9 @@ class ApplicationController::Impl {
         } else if (key == kScreenshotDelaySecondsKey) {
             systemTray.setScreenshotDelaySeconds(value.toInt(3));
         } else if (key == kFullscreenSuppressionKey) {
-            systemTray.setFullscreenHotkeysDisabled(value.toBool());
+            systemTray.setQuickActionChecked(
+                presentation::GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow,
+                value.toBool());
         } else if (key == kOcrModelTypeKey || key == kOcrDirectMlKey ||
                    key == QStringLiteral("text_recognition/resident_process") ||
                    key == QStringLiteral("text_recognition/model_hot_start")) {

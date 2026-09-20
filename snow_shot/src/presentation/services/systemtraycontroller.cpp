@@ -320,9 +320,8 @@ class SystemTrayController::Impl {
                                          emit q.quickActionRequested(shortcutAction);
                                      });
                     if (option.checkable) {
-                        // The checkmark mirrors the manager's enabled flag; it
-                        // is a view of that state, so nothing listens to
-                        // toggled() here.
+                        // The checkmark is a view of owner state; nothing
+                        // listens to toggled() here.
                         action->setCheckable(true);
                         checkableQuickActions.insert(option.shortcutAction, action);
                     }
@@ -495,9 +494,10 @@ class SystemTrayController::Impl {
             priorGroupVisible = priorGroupVisible || visibleGroups.at(groupIndex);
         }
 
-        // A checked toggle must not leave the user without a way back: when its
-        // entry disappears from the menu, re-enable hotkeys through the same
-        // quick action the entry itself dispatches.
+        // Session latches must not leave the user without a way back: hiding a
+        // checked ToggleGlobalHotkeys re-enables through the same quick action.
+        // Persisted checkables such as fullscreen suppression must not be
+        // flipped by menu visibility.
         if (QAction* toggleAction =
                 checkableQuickActions.value(GlobalShortcutAction::ToggleGlobalHotkeys);
             toggleAction != nullptr && !toggleAction->isVisible() && toggleAction->isChecked()) {
@@ -718,22 +718,11 @@ QStringList SystemTrayController::menuOptions() const {
     return m_impl->menuOptions;
 }
 
-void SystemTrayController::setGlobalHotkeysDisabled(bool disabled) {
-    // Pure view update: the manager owns the state and announces changes; the
-    // checkmark only mirrors them, so this must not dispatch anything.
-    if (QAction* action =
-            m_impl->checkableQuickActions.value(GlobalShortcutAction::ToggleGlobalHotkeys)) {
-        action->setChecked(disabled);
-    }
-}
-
-void SystemTrayController::setFullscreenHotkeysDisabled(bool disabled) {
-    // Pure view update: the configuration store owns the suppression state and
-    // announces changes; the checkmark only mirrors them, so this must not
-    // dispatch anything.
-    if (QAction* action = m_impl->checkableQuickActions.value(
-            GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow)) {
-        action->setChecked(disabled);
+void SystemTrayController::setQuickActionChecked(GlobalShortcutAction action, bool checked) {
+    // Pure view update: owners announce changes; the checkmark only mirrors
+    // them, so this must not dispatch anything.
+    if (QAction* trayAction = m_impl->checkableQuickActions.value(action)) {
+        trayAction->setChecked(checked);
     }
 }
 } // namespace snow_shot::presentation

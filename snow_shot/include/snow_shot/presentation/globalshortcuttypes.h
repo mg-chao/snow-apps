@@ -30,6 +30,11 @@ enum class GlobalShortcutAction {
     ToggleDisableOnFocusedFullscreenWindow,
 };
 
+[[nodiscard]] constexpr bool controlsGlobalHotkeyGates(GlobalShortcutAction action) {
+    return action == GlobalShortcutAction::ToggleGlobalHotkeys ||
+           action == GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow;
+}
+
 enum class GlobalShortcutStatus {
     Unset,
     Registered,
