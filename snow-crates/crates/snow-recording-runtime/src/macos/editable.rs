@@ -40,9 +40,12 @@ impl NativeEditableSession {
                 crate::MediaPermission::Microphone,
             ));
         }
-        if config.effects.keyboard.is_some() {
+        if config.effects.keyboard.is_some()
+            || config.effects.record_mouse_clicks
+            || config.effects.highlight_rgba[3] != 0
+        {
             return Err(ScreenRecorderError::UnsupportedFeature(
-                "editable keyboard assets are not yet supported".into(),
+                "editable input keycaps and mouse highlight assets are not yet supported".into(),
             ));
         }
         let destination = config.output_path.clone();

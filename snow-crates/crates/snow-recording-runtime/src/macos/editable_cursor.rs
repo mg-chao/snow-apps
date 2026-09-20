@@ -332,6 +332,7 @@ mod tests {
             y: 25.0,
             timestamp_ns: 0,
             key_code: 0,
+            mouse_button: 0,
             keyboard_type: 0,
             modifiers: 0,
             repeat: false,

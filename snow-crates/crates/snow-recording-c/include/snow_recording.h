@@ -100,7 +100,7 @@ typedef struct SnowCaptureExclusions {
 } SnowCaptureExclusions;
 #endif
 
-#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 6u
+#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 7u
 
 /* Strings are bounded UTF-8 key names, copied during session creation. */
 typedef struct SnowCaptureKeyboardLabel {
@@ -149,6 +149,9 @@ typedef struct SnowCaptureDirectRecordingConfig {
     uint32_t loop_animated_images;
     /* Version 6: fixed exclusion filters for this recording, including pauses. */
     SnowCaptureExclusions exclusions;
+    /* Version 7: multiply highlight and independent mouse input keycaps. */
+    uint32_t mouse_highlight_rgba;
+    uint32_t record_mouse_clicks;
 } SnowCaptureDirectRecordingConfig;
 
 SnowRecordingSession* snow_recording_session_create(const SnowRecordingConfig* config);

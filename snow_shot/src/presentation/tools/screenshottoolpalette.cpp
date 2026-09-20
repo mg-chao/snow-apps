@@ -20,6 +20,7 @@
 
 #include "antd_icons.h"
 #include "widgets/button.h"
+#include "widgets/checkbox.h"
 #include "widgets/color_picker.h"
 #include "widgets/control_scale.h"
 #include "widgets/radio.h"
@@ -1349,6 +1350,7 @@ void ScreenshotToolPalette::refreshThemeDependentIcons() {
 
     updateRecordingControls();
     updateRecordingExportSettingsControls();
+    refreshRecordingMouseOptions();
     updateRecordingControlMetrics();
 }
 
@@ -1936,6 +1938,81 @@ void ScreenshotToolPalette::setRecordingMouseClickColor(const QColor& color) {
 
 QColor ScreenshotToolPalette::recordingMouseClickColor() const {
     return m_recordingMouseClickColor;
+}
+
+void ScreenshotToolPalette::setRecordingMouseHighlightEnabled(bool value) {
+    m_recordingMouseHighlightEnabled = value;
+    refreshRecordingMouseOptions();
+}
+bool ScreenshotToolPalette::recordingMouseHighlightEnabled() const {
+    return m_recordingMouseHighlightEnabled;
+}
+void ScreenshotToolPalette::setRecordingRecordMouseClicks(bool value) {
+    m_recordingRecordMouseClicks = value;
+    refreshRecordingMouseOptions();
+}
+bool ScreenshotToolPalette::recordingRecordMouseClicks() const {
+    return m_recordingRecordMouseClicks;
+}
+void ScreenshotToolPalette::setRecordingMouseHighlightColor(const QColor& value) {
+    m_recordingMouseHighlightColor = value.isValid() ? value : QColor(255, 255, 0, 128);
+    if (m_recordHighlightColorPicker) {
+        const QSignalBlocker blocker(m_recordHighlightColorPicker);
+        m_recordHighlightColorPicker->setValue(
+            adqt::widgets::AdColorValue::solid(m_recordingMouseHighlightColor));
+    }
+    refreshRecordingHighlightSwatch();
+}
+QColor ScreenshotToolPalette::recordingMouseHighlightColor() const {
+    return m_recordingMouseHighlightColor;
+}
+
+void ScreenshotToolPalette::refreshRecordingMouseOptions() {
+    if (!m_recordHighlightCheckbox || !m_recordClicksCheckbox) {
+        return;
+    }
+    const QSignalBlocker highlightBlocker(m_recordHighlightCheckbox);
+    const QSignalBlocker clicksBlocker(m_recordClicksCheckbox);
+    m_recordHighlightCheckbox->setText(tr("Mouse highlight"));
+    m_recordClicksCheckbox->setText(tr("Record mouse clicks"));
+    m_recordHighlightCheckbox->setAccessibleName(tr("Mouse highlight"));
+    m_recordClicksCheckbox->setAccessibleName(tr("Record mouse clicks"));
+    m_recordHighlightCheckbox->setChecked(m_recordingMouseHighlightEnabled);
+    m_recordClicksCheckbox->setChecked(m_recordingRecordMouseClicks);
+    for (auto* checkbox : {m_recordHighlightCheckbox.data(), m_recordClicksCheckbox.data()}) {
+        auto tokens = adqt::widgets::AdCheckbox::ComponentTokens{};
+        tokens.metrics.checkboxSize = scaledMetric(16);
+        tokens.metrics.labelPaddingInlineStart = scaledMetric(8);
+        tokens.metrics.textLineHeight = scaledMetric(22);
+        checkbox->setComponentTokens(tokens);
+        QFont textFont = font();
+        textFont.setPixelSize(scaledMetric(14));
+        checkbox->setFont(textFont);
+    }
+    if (auto* content = m_recordCursorPopover->contentWidget()) {
+        content->layout()->setSpacing(scaledMetric(8));
+    }
+}
+
+void ScreenshotToolPalette::refreshRecordingHighlightSwatch() {
+    if (!m_recordHighlightSwatch) {
+        return;
+    }
+    QPixmap swatch(144, 48);
+    swatch.fill(Qt::transparent);
+    QPainter painter(&swatch);
+    painter.fillRect(0, 0, 48, 48, Qt::white);
+    painter.fillRect(48, 0, 48, 48, QColor(40, 40, 40));
+    painter.fillRect(96, 0, 48, 48, QColor(80, 140, 220));
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setCompositionMode(QPainter::CompositionMode_Multiply);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(m_recordingMouseHighlightColor);
+    for (int x : {24, 72, 120}) {
+        painter.drawEllipse(QPointF(x, 24), 20, 20);
+    }
+    painter.end();
+    m_recordHighlightSwatch->setPixmap(swatch);
 }
 
 void ScreenshotToolPalette::setRecordingCursorVisible(bool visible) {
@@ -5418,6 +5495,40 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
         custom_outlined_icons::RecordingCursor(), styleButtonMetrics(m_physicalScale));
     m_recordCursorButton->setObjectName(QStringLiteral("screenRecordingShowCursor"));
     layout->addWidget(m_recordCursorButton);
+    m_recordCursorPopover = new adqt::widgets::AdPopover(m_recordCursorButton);
+    m_recordCursorPopover->setObjectName(QStringLiteral("screenRecordingCursorPopover"));
+    m_recordCursorPopover->setSourceWidget(m_recordCursorButton);
+    m_recordCursorPopover->setTriggers(adqt::widgets::AdPopover::Trigger::Hover);
+    m_recordCursorPopover->setPlacement(adqt::widgets::AdPopover::Placement::Top);
+    m_recordCursorPopover->setPopupLayerMode(adqt::widgets::AdPopover::PopupLayerMode::QtTool);
+    m_recordCursorPopover->setContentFactory(
+        [this]() -> QWidget* {
+            auto* content = new QWidget;
+            content->setObjectName(QStringLiteral("screenRecordingCursorOptions"));
+            auto* options = new QVBoxLayout(content);
+            options->setContentsMargins(0, 0, 0, 0);
+            options->setSpacing(scaledMetric(8));
+            m_recordHighlightCheckbox = new adqt::widgets::AdCheckbox(content);
+            m_recordClicksCheckbox = new adqt::widgets::AdCheckbox(content);
+            m_recordHighlightCheckbox->setObjectName(
+                QStringLiteral("screenRecordingMouseHighlight"));
+            m_recordClicksCheckbox->setObjectName(
+                QStringLiteral("screenRecordingRecordMouseClicks"));
+            options->addWidget(m_recordHighlightCheckbox);
+            options->addWidget(m_recordClicksCheckbox);
+            refreshRecordingMouseOptions();
+            connect(m_recordHighlightCheckbox, &QAbstractButton::toggled, this, [this](bool value) {
+                setRecordingMouseHighlightEnabled(value);
+                emit recordingMouseHighlightEnabledChanged(value);
+            });
+            connect(m_recordClicksCheckbox, &QAbstractButton::toggled, this, [this](bool value) {
+                setRecordingRecordMouseClicks(value);
+                emit recordingRecordMouseClicksChanged(value);
+            });
+            return content;
+        },
+        adqt::widgets::AdPopover::FactoryContentLifetime::RecreateOnOpen);
+
     m_recordKeyboardButton = createScreenshotToolPaletteStyleActionButton(
         m_recordExportSettingsPanel, "Show keystrokes in recording",
         custom_outlined_icons::RecordingKeyboard(), styleButtonMetrics(m_physicalScale));
@@ -5537,11 +5648,19 @@ bool ScreenshotToolPalette::ensureRecordingEffectSettingsModal() {
                 // The popups are separate native windows; dismiss them before the
                 // pickers go away with the modal.
                 if (m_recordKeyboardBackgroundPicker != nullptr) {
+                    if (m_recordHighlightColorPicker) {
+                        m_recordHighlightColorPicker->setPopupVisible(false);
+                    }
                     m_recordKeyboardBackgroundPicker->setPopupVisible(false);
                 }
                 if (m_recordKeyboardForegroundPicker != nullptr) {
                     m_recordKeyboardForegroundPicker->setPopupVisible(false);
                 }
+                if (m_recordHighlightColorPicker) {
+                    m_recordHighlightColorPicker->setPopupVisible(false);
+                }
+                m_recordHighlightColorPicker = nullptr;
+                m_recordHighlightSwatch = nullptr;
                 m_recordSettingsModal = nullptr;
                 m_recordSettingsForm = nullptr;
                 m_recordTrailDurationInput = nullptr;
@@ -5640,6 +5759,28 @@ bool ScreenshotToolPalette::ensureRecordingEffectSettingsModal() {
     m_recordKeyboardForegroundPicker = addKeyboardPicker(
         QStringLiteral("screenRecordingKeyboardForegroundColor"), tr("Keyboard Foreground Color"),
         QStringLiteral("foreground"), m_recordingKeyboardForegroundColor);
+    m_recordHighlightColorPicker = addKeyboardPicker(
+        QStringLiteral("screenRecordingMouseHighlightColor"), tr("Mouse highlight color"),
+        QStringLiteral("highlightColor"), m_recordingMouseHighlightColor);
+    auto* highlightSpacer = new QWidget(form);
+    highlightSpacer->setFixedSize(kRecordingSettingsColumnGap, 1);
+    auto* highlightSpacerItem = form->addField(QString(), highlightSpacer);
+    highlightSpacerItem->setNoStyle(true);
+    highlightSpacerItem->setFixedWidth(kRecordingSettingsColumnGap);
+    m_recordHighlightSwatch = new QLabel(form);
+    m_recordHighlightSwatch->setObjectName(QStringLiteral("screenRecordingMouseHighlightSwatch"));
+    m_recordHighlightSwatch->setAccessibleName(tr("Mouse highlight preview"));
+    form->addField(tr("Mouse highlight preview"), m_recordHighlightSwatch,
+                   QStringLiteral("highlightPreview"));
+    refreshRecordingHighlightSwatch();
+    connect(m_recordHighlightColorPicker, &adqt::widgets::AdColorPicker::valueChanged, this,
+            [this](const adqt::widgets::AdColorValue& value) {
+                if (value.isSolid() && value.solidColor.isValid() &&
+                    value.solidColor != m_recordingMouseHighlightColor) {
+                    setRecordingMouseHighlightColor(value.solidColor);
+                    emit recordingMouseHighlightColorChanged(m_recordingMouseHighlightColor);
+                }
+            });
     for (auto* item : form->items()) {
         item->setItemLayout(adqt::widgets::AdFormItem::ItemLayout::Vertical);
     }
@@ -5647,6 +5788,8 @@ bool ScreenshotToolPalette::ensureRecordingEffectSettingsModal() {
     form->field(QStringLiteral("duration"))->setFixedWidth(kRecordingSettingsContentWidth);
     form->field(QStringLiteral("background"))->setFixedWidth(kRecordingSettingsColumnWidth);
     form->field(QStringLiteral("foreground"))->setFixedWidth(kRecordingSettingsColumnWidth);
+    form->field(QStringLiteral("highlightColor"))->setFixedWidth(kRecordingSettingsColumnWidth);
+    form->field(QStringLiteral("highlightPreview"))->setFixedWidth(kRecordingSettingsColumnWidth);
     modal->setContentWidget(form);
     modal->setInitialFocusWidget(m_recordTrailDurationInput);
     m_recordSettingsForm = form;
@@ -5692,6 +5835,12 @@ void ScreenshotToolPalette::refreshRecordingEffectSettingsModalText() {
     if (m_recordSettingsForm == nullptr || m_recordSettingsModal == nullptr) {
         return;
     }
+    m_recordHighlightColorPicker->setAccessibleName(tr("Mouse highlight color"));
+    m_recordHighlightSwatch->setAccessibleName(tr("Mouse highlight preview"));
+    m_recordSettingsForm->field(QStringLiteral("highlightColor"))
+        ->setLabel(tr("Mouse highlight color"));
+    m_recordSettingsForm->field(QStringLiteral("highlightPreview"))
+        ->setLabel(tr("Mouse highlight preview"));
     m_recordSettingsModal->setWindowTitle(tr("Settings"));
     m_recordKeyboardSizeInput->setAccessibleName(tr("Keyboard Size"));
     m_recordKeyboardSizeInput->setSuffixText(tr("px"));
@@ -5708,6 +5857,7 @@ void ScreenshotToolPalette::refreshRecordingEffectSettingsModalText() {
 }
 
 void ScreenshotToolPalette::refreshRecordingExportSettingsText() {
+    refreshRecordingMouseOptions();
     if (m_recordSettingsButton != nullptr) {
         configureScreenshotToolPaletteTooltip(m_recordSettingsButton, "Settings");
         m_recordSettingsButton->setAccessibleName(tr("Settings"));
@@ -5747,6 +5897,9 @@ void ScreenshotToolPalette::refreshRecordingExportSettingsText() {
 }
 
 void ScreenshotToolPalette::setRecordingExportSettingsVisible(bool visible) {
+    if (!visible && m_recordCursorPopover) {
+        m_recordCursorPopover->hide();
+    }
     if (!visible && m_recordSettingsModal != nullptr) {
         m_recordSettingsModal->close();
     }
@@ -5772,9 +5925,18 @@ void ScreenshotToolPalette::setRecordingExportSettingsVisible(bool visible) {
 
 void ScreenshotToolPalette::updateRecordingExportSettingsControls() {
     const bool editable = m_recordingSession.state() == RecordingState::Idle && !recordingBusy();
+    if (m_recordCursorPopover) {
+        m_recordCursorPopover->setEnabled(editable);
+        if (!editable) {
+            m_recordCursorPopover->hide();
+        }
+    }
     if (m_recordSettingsForm != nullptr) {
         m_recordSettingsForm->setDisabled(!editable);
         if (!editable) {
+            if (m_recordHighlightColorPicker) {
+                m_recordHighlightColorPicker->setPopupVisible(false);
+            }
             m_recordKeyboardBackgroundPicker->setPopupVisible(false);
             m_recordKeyboardForegroundPicker->setPopupVisible(false);
             // close() destroys the dialog and nulls every member above, so it has

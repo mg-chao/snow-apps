@@ -67,7 +67,7 @@ pub fn draw_clicks_to(
         let (x, y) = scale_point(click.x, click.y, source_size, output_size);
         let thickness = match click.button {
             ObservedMouseButton::Left => 3,
-            ObservedMouseButton::Right | ObservedMouseButton::Middle => 2,
+            _ => 2,
         };
         draw_circle_outline_rgba(
             surface,
@@ -117,5 +117,97 @@ mod timing_tests {
         assert!(pixels.iter().all(|pixel| *pixel == 0));
         draw_clicks(&mut pixels, (100, 100), &clicks, 101, [255; 4], (100, 100));
         assert!(pixels.iter().any(|pixel| *pixel != 0));
+    }
+}
+
+/// Fixed output-pixel geometry, shared by saved output and the desktop approximation.
+pub fn draw_highlight_to(
+    surface: &mut impl Surface,
+    center: (i32, i32),
+    color: [u8; 4],
+    multiply: bool,
+) {
+    if color[3] == 0 {
+        return;
+    }
+    let (width, height) = surface.size();
+    for y in (center.1.saturating_sub(20)).max(0)..(center.1.saturating_add(20)).min(height as i32)
+    {
+        for x in
+            (center.0.saturating_sub(20)).max(0)..(center.0.saturating_add(20)).min(width as i32)
+        {
+            let dx = (x - center.0) as f32 + 0.5;
+            let dy = (y - center.1) as f32 + 0.5;
+            let coverage = (20.5 - (dx * dx + dy * dy).sqrt()).clamp(0.0, 1.0);
+            let alpha = (f32::from(color[3]) * coverage).round() as u32;
+            if alpha == 0 {
+                continue;
+            }
+            if multiply {
+                surface.span(x as u32, y as u32, 1, |pixel, _| {
+                    for channel in 0..3 {
+                        let factor = 255 * (255 - alpha) + alpha * u32::from(color[channel]);
+                        pixel[channel] =
+                            ((u32::from(pixel[channel]) * factor + 32512) / 65025) as u8;
+                    }
+                });
+            } else {
+                surface.blend_pixel(x, y, [color[0], color[1], color[2], alpha as u8]);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod highlight_tests {
+    use super::*;
+    #[test]
+    fn multiply_preserves_black_and_tints_content_with_alpha() {
+        for (background, expected) in [
+            ([255, 255, 255, 255], [255, 255, 127, 255]),
+            ([0, 0, 0, 255], [0, 0, 0, 255]),
+            ([80, 120, 200, 255], [80, 120, 100, 255]),
+        ] {
+            let mut pixels = background.repeat(64 * 64);
+            draw_highlight_to(
+                &mut RgbaSurface {
+                    pixels: &mut pixels,
+                    dimensions: (64, 64),
+                },
+                (32, 32),
+                [255, 255, 0, 128],
+                true,
+            );
+            assert_eq!(
+                &pixels[(32 * 64 + 32) * 4..(32 * 64 + 32) * 4 + 4],
+                &expected
+            );
+            assert_eq!(&pixels[..4], &background);
+        }
+    }
+    #[test]
+    fn highlight_clips_and_zero_alpha_is_identity() {
+        let mut pixels = vec![255; 16 * 16 * 4];
+        draw_highlight_to(
+            &mut RgbaSurface {
+                pixels: &mut pixels,
+                dimensions: (16, 16),
+            },
+            (0, 0),
+            [255, 255, 0, 0],
+            true,
+        );
+        assert!(pixels.iter().all(|v| *v == 255));
+        draw_highlight_to(
+            &mut RgbaSurface {
+                pixels: &mut pixels,
+                dimensions: (16, 16),
+            },
+            (0, 0),
+            [255, 255, 0, 255],
+            true,
+        );
+        assert_eq!(&pixels[..4], &[255, 255, 0, 255]);
+        assert!(pixels.chunks_exact(4).any(|p| p[2] > 0 && p[2] < 255));
     }
 }

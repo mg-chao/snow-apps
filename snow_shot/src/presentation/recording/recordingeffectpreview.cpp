@@ -142,11 +142,13 @@ RecordingEffectPreview::~RecordingEffectPreview() {
 void RecordingEffectPreview::configure(const QRect& capture, const QSize& output,
                                        const QColor& trail, const QColor& click, bool keyboard,
                                        int trailDurationMs, const QColor& keyboardBackground,
-                                       const QColor& keyboardForeground, int keyboardSize) {
+                                       const QColor& keyboardForeground, int keyboardSize,
+                                       const QColor& highlight, bool recordMouseClicks) {
     if (m_capture == capture && m_output == output && m_trail == trail && m_click == click &&
         m_keyboard == keyboard && m_trailDurationMs == trailDurationMs &&
         m_keyboardBackground == keyboardBackground && m_keyboardForeground == keyboardForeground &&
-        m_keyboardSize == keyboardSize) {
+        m_keyboardSize == keyboardSize && m_highlight == highlight &&
+        m_recordMouseClicks == recordMouseClicks) {
         return;
     }
     // Clear with the old transform before changing geometry or disabling an effect.
@@ -156,6 +158,8 @@ void RecordingEffectPreview::configure(const QRect& capture, const QSize& output
     m_output = output;
     m_trail = trail;
     m_click = click;
+    m_highlight = highlight;
+    m_recordMouseClicks = recordMouseClicks;
     m_keyboard = keyboard;
     m_keyboardSize = keyboardSize;
     m_trailDurationMs = trailDurationMs;
@@ -163,7 +167,8 @@ void RecordingEffectPreview::configure(const QRect& capture, const QSize& output
     m_keyboardForeground = keyboardForeground;
     m_configurationDirty = true;
     m_failed = false;
-    if (trail.alpha() == 0 && click.alpha() == 0 && !keyboard) {
+    if (trail.alpha() == 0 && click.alpha() == 0 && !keyboard && highlight.alpha() == 0 &&
+        !recordMouseClicks) {
         stopAndClear();
     } else {
         m_configurationTimer.start();
@@ -188,7 +193,8 @@ void RecordingEffectPreview::synchronize() {
     const bool enabled = m_eligible && m_area.isVisible() && !m_windowBlocked &&
                          QApplication::activeModalWidget() == nullptr && m_capture.isValid() &&
                          m_output.isValid() &&
-                         (m_trail.alpha() != 0 || m_click.alpha() != 0 || m_keyboard);
+                         (m_trail.alpha() != 0 || m_click.alpha() != 0 || m_keyboard ||
+                          m_highlight.alpha() != 0 || m_recordMouseClicks);
     if (!enabled) {
         stopAndClear();
         return;
@@ -199,7 +205,7 @@ void RecordingEffectPreview::synchronize() {
     }
     ++m_generation;
     clearFrame();
-    const RecordingKeyboardLabels labels(m_keyboard);
+    const RecordingKeyboardLabels labels(m_keyboard || m_recordMouseClicks);
     const RecordingKeyboardTheme theme(m_keyboardBackground, m_keyboardForeground);
     const SnowRecordingEffectsConfig config{SNOW_RECORDING_EFFECTS_CONFIG_VERSION,
                                             sizeof(SnowRecordingEffectsConfig),
@@ -219,7 +225,10 @@ void RecordingEffectPreview::synchronize() {
                                             static_cast<uint32_t>(labels.previewEntries.size()),
                                             static_cast<uint32_t>(m_trailDurationMs),
                                             m_generation,
-                                            static_cast<uint32_t>(m_keyboardSize)};
+                                            static_cast<uint32_t>(m_keyboardSize),
+                                            0u,
+                                            rgba(m_highlight),
+                                            static_cast<uint32_t>(m_recordMouseClicks)};
     QString error;
     const bool success = m_running ? m_source->configure(config, error)
                                    : m_source->start(

@@ -9,6 +9,29 @@
         </message>
     </context>
     <context>
+        <name>RecordingKeyboardLabels</name>
+        <message>
+            <source>Left click</source>
+            <translation>Left click</translation>
+        </message>
+        <message>
+            <source>Middle click</source>
+            <translation>Middle click</translation>
+        </message>
+        <message>
+            <source>Mouse button 4</source>
+            <translation>Mouse button 4</translation>
+        </message>
+        <message>
+            <source>Mouse button 5</source>
+            <translation>Mouse button 5</translation>
+        </message>
+        <message>
+            <source>Right click</source>
+            <translation>Right click</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenRecordingController</name>
         <message>
             <source>Keyboard recording failed: %1</source>

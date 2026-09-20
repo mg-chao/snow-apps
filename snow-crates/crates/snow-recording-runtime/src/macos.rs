@@ -109,6 +109,12 @@ pub(crate) fn native_error(error: MacError) -> ScreenRecorderError {
 }
 impl NativeRecordingSession {
     pub fn start(mut config: NativeRecordingConfig) -> Result<Self> {
+        // Composite the tint against clean content and draw the pointer above it.
+        if config.effects.highlight_rgba[3] != 0
+            && config.capture.cursor == snow_media::CursorMode::Embedded
+        {
+            config.capture.cursor = snow_media::CursorMode::Separate;
+        }
         if config.capture.cancellation.is_canceled() {
             return Err(native_error(MacError::Canceled));
         }
@@ -378,7 +384,23 @@ impl NativeRecordingSession {
                 bytes: tile.pixels.as_slice(),
             })
             .collect();
-        let image = match self.compositor.compose_with_overlays(
+        let highlight_tiles = self
+            .effects
+            .as_ref()
+            .map(|effects| effects.highlight_tiles())
+            .unwrap_or_default();
+        let highlight: Vec<_> = highlight_tiles
+            .iter()
+            .map(|tile| snow_macos::compositor::RgbaOverlay {
+                x: tile.x,
+                y: tile.y,
+                width: 128,
+                height: 128,
+                stride: 512,
+                bytes: tile.pixels.as_slice(),
+            })
+            .collect();
+        let image = match self.compositor.compose_with_highlight(
             &[Layer {
                 image: &frame.image,
                 source: PixelRect {
@@ -390,6 +412,7 @@ impl NativeRecordingSession {
                 destination,
             }],
             &overlays,
+            &highlight,
             true,
         ) {
             Ok(image) => image,

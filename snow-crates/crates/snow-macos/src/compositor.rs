@@ -143,7 +143,16 @@ impl Compositor {
         overlays: &[RgbaOverlay<'_>],
         opaque: bool,
     ) -> MacResult<PixelBuffer> {
-        for overlay in overlays {
+        self.compose_with_highlight(layers, overlays, &[], opaque)
+    }
+    pub fn compose_with_highlight(
+        &mut self,
+        layers: &[Layer<'_>],
+        overlays: &[RgbaOverlay<'_>],
+        highlight: &[RgbaOverlay<'_>],
+        opaque: bool,
+    ) -> MacResult<PixelBuffer> {
+        for overlay in highlight.iter().chain(overlays) {
             let needed = overlay.stride.checked_mul(overlay.height as usize);
             if overlay.width == 0
                 || overlay.height == 0
@@ -213,7 +222,11 @@ impl Compositor {
             }
             let srgb =
                 CGColorSpace::with_name(Some(kCGColorSpaceSRGB)).ok_or(MacError::Inactive)?;
-            for overlay in overlays {
+            for (overlay, multiply) in highlight
+                .iter()
+                .map(|tile| (tile, true))
+                .chain(overlays.iter().map(|tile| (tile, false)))
+            {
                 let data = objc2_foundation::NSData::with_bytes(overlay.bytes);
                 let image = CIImage::imageWithBitmapData_bytesPerRow_size_format_colorSpace(
                     &data,
@@ -235,7 +248,18 @@ impl Compositor {
                         - f64::from(overlay.y)
                         - f64::from(overlay.height),
                 });
-                result = positioned.imageByCompositingOverImage(&result);
+                result = if multiply {
+                    let parameters = objc2_foundation::NSDictionary::from_slices(
+                        &[objc2_foundation::ns_string!("inputBackgroundImage")],
+                        &[&*result as &objc2::runtime::AnyObject],
+                    );
+                    positioned.imageByApplyingFilter_withInputParameters(
+                        objc2_foundation::ns_string!("CIMultiplyBlendMode"),
+                        &parameters,
+                    )
+                } else {
+                    positioned.imageByCompositingOverImage(&result)
+                };
             }
             if self.color == ColorDescription::HDR10 {
                 for (key, value) in [

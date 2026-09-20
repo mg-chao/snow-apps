@@ -19,6 +19,9 @@ pub struct NativeEffectsConfig {
     pub clicks: bool,
     pub trail: bool,
     pub keyboard: Option<KeyboardOverlayConfig>,
+    pub show_keyboard: bool,
+    pub record_mouse_clicks: bool,
+    pub highlight_rgba: [u8; 4],
 }
 pub(crate) struct Effects {
     input: Option<InputObserver>,
@@ -26,6 +29,10 @@ pub(crate) struct Effects {
     config: NativeEffectsConfig,
     output: PixelSize,
     surface: TileSurface,
+    highlight: TileSurface,
+    held_buttons: [bool; 5],
+    pending_input: VecDeque<InputEvent>,
+    show_cursor: bool,
     clicks: VecDeque<RenderClick>,
     trail: LaserTrail,
     keyboard: Option<KeyboardOverlay>,
@@ -39,17 +46,23 @@ impl Effects {
         cursor_mode: snow_media::CursorMode,
     ) -> Result<Option<Self>> {
         let separate = cursor_mode == snow_media::CursorMode::Separate;
-        let observing = config.clicks || config.trail || config.keyboard.is_some();
-        if !observing && !separate {
+        let observing =
+            config.clicks || config.trail || config.show_keyboard || config.record_mouse_clicks;
+        if !observing && !separate && config.highlight_rgba[3] == 0 {
             return Ok(None);
         }
         let input = observing
             .then(|| {
-                InputObserver::start(config.keyboard.is_some(), config.clicks || config.trail)
-                    .map_err(super::macos::native_error)
+                InputObserver::start(
+                    config.show_keyboard,
+                    config.clicks || config.trail || config.record_mouse_clicks,
+                )
+                .map_err(super::macos::native_error)
             })
             .transpose()?;
-        let cursor = if separate {
+        let cursor = if separate
+            || (cursor_mode != snow_media::CursorMode::Hidden && config.highlight_rgba[3] != 0)
+        {
             let mut sampler = snow_macos::cursor::CursorSampler::default();
             if sampler
                 .sample()
@@ -84,6 +97,10 @@ impl Effects {
             config,
             output,
             surface: TileSurface::new((output.width, output.height)),
+            highlight: TileSurface::new((output.width, output.height)),
+            held_buttons: [false; 5],
+            pending_input: VecDeque::new(),
+            show_cursor: separate,
             clicks: VecDeque::new(),
             trail: LaserTrail::default(),
             keyboard,
@@ -92,6 +109,9 @@ impl Effects {
         }))
     }
     pub fn reset(&mut self, now: u64) {
+        self.held_buttons = [false; 5];
+        self.pending_input.clear();
+        self.highlight.clear();
         self.clicks.clear();
         self.trail.clear();
         if let Some(keyboard) = &mut self.keyboard {
@@ -100,6 +120,9 @@ impl Effects {
         if let Some(input) = &self.input {
             while input.events.try_recv().is_ok() {}
         }
+    }
+    pub fn highlight_tiles(&self) -> Vec<Tile> {
+        self.highlight.snapshot()
     }
     pub fn draw(
         &mut self,
@@ -120,11 +143,19 @@ impl Effects {
         }
         self.generation = generation;
         self.status = status;
-        while let Some(event) = self
-            .input
-            .as_ref()
-            .and_then(|input| input.events.try_recv().ok())
-        {
+        if let Some(input) = &self.input {
+            for event in input.events.try_iter() {
+                if self.pending_input.len() == 256 {
+                    self.pending_input.clear();
+                    self.held_buttons = [false; 5];
+                    if let Some(keyboard) = &mut self.keyboard {
+                        keyboard.model.reset(now);
+                    }
+                }
+                self.pending_input.push_back(event);
+            }
+        }
+        while let Some(event) = self.pending_input.pop_front() {
             if event.generation != generation {
                 continue;
             }
@@ -142,6 +173,10 @@ impl Effects {
                 continue;
             }
             let at_ms = clock.active_elapsed_ms(at);
+            if at_ms > now {
+                self.pending_input.push_front(event);
+                break;
+            }
             let point = project(event.x, event.y, transform, destination);
             if self.config.clicks
                 && let Some((x, y)) = point
@@ -149,7 +184,7 @@ impl Effects {
                 let button = match event.kind {
                     1 => Some(ObservedMouseButton::Left),
                     3 => Some(ObservedMouseButton::Right),
-                    25 => Some(ObservedMouseButton::Middle),
+                    25 if event.mouse_button == 2 => Some(ObservedMouseButton::Middle),
                     _ => None,
                 };
                 if let Some(button) = button {
@@ -164,17 +199,58 @@ impl Effects {
                     });
                 }
             }
+            if self.config.record_mouse_clicks {
+                let button = match event.kind {
+                    1 | 2 => Some(ObservedMouseButton::Left),
+                    3 | 4 => Some(ObservedMouseButton::Right),
+                    25 | 26 => match event.mouse_button {
+                        2 => Some(ObservedMouseButton::Middle),
+                        3 => Some(ObservedMouseButton::Button4),
+                        4 => Some(ObservedMouseButton::Button5),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if let Some(button) = button {
+                    let down = matches!(event.kind, 1 | 3 | 25);
+                    if (down && point.is_some()) || (!down && self.held_buttons[button as usize]) {
+                        self.held_buttons[button as usize] = down;
+                        if let (Some(style), Some(keyboard)) =
+                            (&self.config.keyboard, &mut self.keyboard)
+                        {
+                            let observation =
+                                snow_recording_effects::mouse_hook::MouseClickObservation {
+                                    at,
+                                    x: 0,
+                                    y: 0,
+                                    button,
+                                    down,
+                                    modifiers: [18, 19, 17, 20]
+                                        .map(|bit| event.modifiers & (1 << bit) != 0),
+                                };
+                            keyboard.model.event(observation.event(
+                                at_ms,
+                                style,
+                                self.config.show_keyboard,
+                            ));
+                        }
+                    }
+                }
+            }
             if self.config.trail && matches!(event.kind, 5..=7 | 27) {
                 let size = (self.output.width, self.output.height);
                 self.trail.observe(point, size, size, at_ms);
             }
-            if let Some(keyboard) = &mut self.keyboard
+            if self.config.show_keyboard
+                && let Some(keyboard) = &mut self.keyboard
                 && let Some(event) = key_event(&event, at_ms)
             {
                 keyboard.model.event(event);
             }
         }
         self.surface.clear();
+        self.highlight.clear();
+        let mut cursor_shape = None;
         if let Some(cursor) = &mut self.cursor {
             let sample = cursor.sample().map_err(super::macos::native_error)?;
             let shape = sample.shape.ok_or_else(|| {
@@ -183,14 +259,15 @@ impl Effects {
                 )
             })?;
             if let Some((x, y)) = project(sample.x, sample.y, transform, destination) {
-                draw_cursor(
-                    &mut self.surface,
-                    &shape,
-                    x,
-                    y,
-                    f64::from(destination.width) / transform.source.width,
-                    f64::from(destination.height) / transform.source.height,
+                snow_recording_effects::mouse_effects::draw_highlight_to(
+                    &mut self.highlight,
+                    (x, y),
+                    self.config.highlight_rgba,
+                    false,
                 );
+                if self.show_cursor {
+                    cursor_shape = Some((x, y, shape));
+                }
             }
         }
         while self
@@ -212,6 +289,16 @@ impl Effects {
         if self.config.trail {
             self.trail
                 .draw_to(&mut self.surface, now, [255, 64, 80, 230]);
+        }
+        if let Some((x, y, shape)) = cursor_shape {
+            draw_cursor(
+                &mut self.surface,
+                &shape,
+                x,
+                y,
+                f64::from(destination.width) / transform.source.width,
+                f64::from(destination.height) / transform.source.height,
+            );
         }
         if let Some(keyboard) = &mut self.keyboard {
             keyboard

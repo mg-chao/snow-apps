@@ -60,6 +60,7 @@
 #include <QWidget>
 
 #include "widgets/button.h"
+#include "widgets/checkbox.h"
 #include "widgets/alert.h"
 #include "widgets/color_picker.h"
 #include "widgets/control_scale.h"
@@ -406,6 +407,70 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
     require(startRequests == 1, "the visible start button should request recording");
 }
 
+void recordingCursorOptionsAreIndependentAndLazy() {
+    ScreenshotToolPalette::Options options;
+    options.showRecordingControls = true;
+    options.recordingDrawingMode = true;
+    options.enableStyleToolbar = true;
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    palette.prepareForDisplay();
+    QCoreApplication::processEvents();
+    auto* cursor =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingShowCursor"));
+    auto* popover = palette.findChild<adqt::widgets::AdPopover*>(
+        QStringLiteral("screenRecordingCursorPopover"));
+    require(cursor && popover && !popover->contentWidget(), "cursor options must be lazy");
+    require(popover->triggers() == adqt::widgets::AdPopover::Trigger::Hover &&
+                popover->popupLayerMode() == adqt::widgets::AdPopover::PopupLayerMode::QtTool,
+            "cursor options must use the native hover popover");
+    require(!palette.recordingMouseHighlightEnabled() && !palette.recordingRecordMouseClicks() &&
+                palette.recordingMouseHighlightColor() == QColor(255, 255, 0, 128),
+            "mouse effect defaults");
+    int highlights = 0, clicks = 0, cursors = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingMouseHighlightEnabledChanged,
+                     &palette, [&](bool) { ++highlights; });
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingRecordMouseClicksChanged, &palette,
+                     [&](bool) { ++clicks; });
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingCursorVisibleChanged, &palette,
+                     [&](bool) { ++cursors; });
+    popover->preparePopup();
+    auto* highlight = popover->contentWidget()->findChild<adqt::widgets::AdCheckbox*>(
+        QStringLiteral("screenRecordingMouseHighlight"));
+    auto* click = popover->contentWidget()->findChild<adqt::widgets::AdCheckbox*>(
+        QStringLiteral("screenRecordingRecordMouseClicks"));
+    require(highlight && click && !highlight->isChecked() && !click->isChecked(),
+            "both checkboxes start unchecked");
+    const QString snapshotDirectory = qEnvironmentVariable("SNOW_RECORDING_UI_SNAPSHOT_DIR");
+    if (!snapshotDirectory.isEmpty()) {
+        QDir().mkpath(snapshotDirectory);
+        require(popover->contentWidget()->grab().save(
+                    QDir(snapshotDirectory).filePath(QStringLiteral("cursor-options.png"))),
+                "save cursor options visual fixture");
+    }
+    highlight->click();
+    click->click();
+    require(highlights == 1 && clicks == 1 && cursors == 0 && palette.recordingCursorVisible() &&
+                !palette.recordingKeyboardVisible(),
+            "checkboxes must not activate either existing toggle");
+    cursor->click();
+    require(cursors == 1 && !palette.recordingCursorVisible() &&
+                palette.recordingMouseHighlightEnabled(),
+            "cursor visibility preserves highlight preference");
+    palette.setRecordingMouseHighlightEnabled(false);
+    palette.setRecordingRecordMouseClicks(false);
+    require(highlights == 1 && clicks == 1 && !highlight->isChecked() && !click->isChecked(),
+            "synchronization must not emit user changes");
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(&palette, &languageChange);
+    require(highlight->text() == QStringLiteral("Mouse highlight") &&
+                click->text() == QStringLiteral("Record mouse clicks"),
+            "cursor options retranslate");
+    palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::starting());
+    require(!popover->isEnabled() && !popover->isVisible(),
+            "busy recording must dismiss and disable cursor options");
+}
+
 void recordingEffectSettingsModal() {
     ScreenshotToolPalette::Options options;
     options.showShapeTool = true;
@@ -488,6 +553,14 @@ void recordingEffectSettingsModal() {
         flushLayout();
         Settings settings;
         settings.modal = palette.recordingEffectSettingsModalForTests();
+        auto* highlight = settings.modal->contentWidget()->findChild<adqt::widgets::AdColorPicker*>(
+            QStringLiteral("screenRecordingMouseHighlightColor"));
+        auto* swatch = settings.modal->contentWidget()->findChild<QLabel*>(
+            QStringLiteral("screenRecordingMouseHighlightSwatch"));
+        require(highlight && swatch &&
+                    highlight->value().solidColor == palette.recordingMouseHighlightColor(),
+                "highlight picker and multiply swatch follow palette state");
+        require(!swatch->pixmap().isNull(), "highlight preview must render a swatch");
         require(settings.modal != nullptr && settings.modal->isOpen(),
                 "clicking Settings must build and open the modal");
         require(settings.modal == palette.findChild<adqt::widgets::AdModal*>(
@@ -516,6 +589,14 @@ void recordingEffectSettingsModal() {
     const Settings opened = openSettings();
     adqt::widgets::AdModal* modal = opened.modal;
     adqt::widgets::AdForm* form = opened.form;
+    const QString snapshotDirectory = qEnvironmentVariable("SNOW_RECORDING_UI_SNAPSHOT_DIR");
+    if (!snapshotDirectory.isEmpty()) {
+        QDir().mkpath(snapshotDirectory);
+        require(form->window()->grab().save(
+                    QDir(snapshotDirectory).filePath(QStringLiteral("recording-settings.png"))),
+                "save recording settings visual fixture");
+    }
+
     require(modal->mode() == adqt::widgets::AdModal::Mode::Window &&
                 modal->windowModality() == Qt::ApplicationModal && modal->centered() &&
                 !modal->maskVisible() && !modal->closeOnMaskClick() &&
@@ -592,6 +673,19 @@ void recordingEffectSettingsModal() {
     require(background->value().solidColor == QColor(0, 0, 0, 204) &&
                 foreground->value().solidColor == QColor(Qt::white),
             "keyboard defaults must preserve alpha");
+    auto* highlightPicker = form->findChild<adqt::widgets::AdColorPicker*>(
+        QStringLiteral("screenRecordingMouseHighlightColor"));
+    int highlightChanges = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingMouseHighlightColorChanged,
+                     &palette, [&](const QColor&) { ++highlightChanges; });
+    highlightPicker->commitValue(adqt::widgets::AdColorValue::solid(QColor(100, 150, 200, 80)));
+    require(highlightChanges == 1 &&
+                palette.recordingMouseHighlightColor() == QColor(100, 150, 200, 80),
+            "highlight color edits preserve opacity");
+    palette.setRecordingMouseHighlightColor(QColor(255, 255, 0, 128));
+    require(highlightChanges == 1 &&
+                highlightPicker->value().solidColor == QColor(255, 255, 0, 128),
+            "highlight synchronization emits no user edit");
     int changes = 0;
     int lastDuration = 0;
     QObject::connect(&palette, &ScreenshotToolPalette::recordingMouseTrailDurationMsChanged,
@@ -11490,6 +11584,7 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--recording-controls-only"))) {
         recordingSessionStatusMakesInvalidCombinationsUnrepresentable();
+        recordingCursorOptionsAreIndependentAndLazy();
         recordingEffectSettingsModal();
         recordingControlsRemainLaidOutAcrossStateChanges();
         recordingExportSettingsAndDrawingAvailabilityFollowSessionState();

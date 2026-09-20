@@ -1313,6 +1313,19 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 recording.encoder() == QStringLiteral("h264"),
             "recording adapters must reject unadvertised values atomically");
 
+    require(!recording.mouseHighlightEnabled() && !recording.recordMouseClicks() &&
+                recording.mouseHighlightColor() == QColor(255, 255, 0, 128),
+            "new mouse recording settings default off with soft yellow");
+    require(recording.setMouseHighlightEnabled(true) && recording.setRecordMouseClicks(true) &&
+                recording.setMouseHighlightColor(QColor(12, 34, 56, 78)),
+            "mouse recording settings save");
+    const storage::RecordingSettings reloadedRecording;
+    require(reloadedRecording.mouseHighlightEnabled() && reloadedRecording.recordMouseClicks() &&
+                reloadedRecording.mouseHighlightColor() == QColor(12, 34, 56, 78),
+            "mouse recording settings persist across adapter instances");
+    require(!recording.setMouseHighlightColor(QColor()) &&
+                recording.mouseHighlightColor() == QColor(12, 34, 56, 78),
+            "invalid highlight color is rejected atomically");
     const storage::TraySettings tray;
     const storage::NetworkSettings network;
     const storage::GlobalShortcutSettings globalShortcuts;

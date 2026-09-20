@@ -46,6 +46,7 @@ pub struct InputEvent {
     pub y: f64,
     pub timestamp_ns: u64,
     pub key_code: u16,
+    pub mouse_button: u16,
     pub keyboard_type: u32,
     pub modifiers: u64,
     pub repeat: bool,
@@ -53,6 +54,16 @@ pub struct InputEvent {
     pub text_len: usize,
     /// Changes after overflow, tap interruption or secure input transitions.
     pub generation: u64,
+}
+impl InputEvent {
+    pub fn instant(&self) -> Option<std::time::Instant> {
+        crate::time::host_time_to_instant(snow_media::time::MediaTime {
+            value: i64::try_from(self.timestamp_ns).ok()?,
+            timescale: 1_000_000_000,
+            domain: snow_media::time::ClockDomain::MacHostTime,
+            epoch: 0,
+        })
+    }
 }
 struct State {
     sender: Sender<InputEvent>,
@@ -106,6 +117,8 @@ unsafe extern "C-unwind" fn receive(
     }
     state.publish(InputEvent {
         kind: kind.0,
+        mouse_button: CGEvent::integer_value_field(event_ref, CGEventField::MouseEventButtonNumber)
+            as u16,
         x: location.x,
         y: location.y,
         timestamp_ns: CGEvent::timestamp(event_ref),
@@ -292,6 +305,7 @@ mod tests {
             y: 0.0,
             timestamp_ns: 0,
             key_code: 0,
+            mouse_button: 0,
             keyboard_type: 0,
             modifiers: 0,
             repeat: false,

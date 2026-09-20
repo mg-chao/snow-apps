@@ -516,6 +516,18 @@
             <translation>鼠标点击颜色 透明</translation>
         </message>
         <message>
+            <source>Mouse highlight</source>
+            <translation>鼠标高亮</translation>
+        </message>
+        <message>
+            <source>Mouse highlight color</source>
+            <translation>鼠标高亮颜色</translation>
+        </message>
+        <message>
+            <source>Mouse highlight preview</source>
+            <translation>鼠标高亮预览</translation>
+        </message>
+        <message>
             <source>Mouse trail color</source>
             <translation>鼠标轨迹颜色</translation>
         </message>
@@ -610,6 +622,10 @@
         <message>
             <source>Record microphone</source>
             <translation>录制麦克风</translation>
+        </message>
+        <message>
+            <source>Record mouse clicks</source>
+            <translation>记录鼠标点击</translation>
         </message>
         <message>
             <source>Record screen</source>

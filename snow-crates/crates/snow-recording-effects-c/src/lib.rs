@@ -44,6 +44,9 @@ pub struct SnowRecordingEffectsConfig {
     pub trail_duration_ms: u32,
     pub generation: u64,
     pub keyboard_size: u32,
+    pub reserved_v3: u32,
+    pub highlight_rgba: u32,
+    pub record_mouse_clicks: u32,
 }
 #[repr(C)]
 pub struct SnowRecordingEffectsTile {
@@ -85,7 +88,8 @@ unsafe fn config(raw: *const SnowRecordingEffectsConfig) -> Result<PreviewConfig
     let version = unsafe { *header };
     let size = match version {
         1 | 2 => std::mem::offset_of!(SnowRecordingEffectsConfig, keyboard_size),
-        3 => std::mem::size_of::<SnowRecordingEffectsConfig>(),
+        3 => std::mem::offset_of!(SnowRecordingEffectsConfig, highlight_rgba),
+        4 => std::mem::size_of::<SnowRecordingEffectsConfig>(),
         _ => return Err("unsupported effects configuration version".into()),
     };
     if unsafe { *header.add(1) } != size as u32 {
@@ -97,6 +101,7 @@ unsafe fn config(raw: *const SnowRecordingEffectsConfig) -> Result<PreviewConfig
     }
     let raw = &value;
     if raw.show_keyboard > 1
+        || (raw.version >= 4 && raw.record_mouse_clicks > 1)
         || (raw.version == 1 && raw.trail_duration_ms != 0)
         || (raw.version >= 3 && !(32..=128).contains(&raw.keyboard_size))
         || raw.label_count > 256
@@ -107,7 +112,9 @@ unsafe fn config(raw: *const SnowRecordingEffectsConfig) -> Result<PreviewConfig
     let mut labels = std::collections::BTreeMap::new();
     for index in 0..raw.label_count as usize {
         let label = unsafe { &*raw.labels.add(index) };
-        if label.virtual_key > 255 || label.label_utf8.is_null() {
+        if (label.virtual_key > 255 && !(0x200..=0x204).contains(&label.virtual_key))
+            || label.label_utf8.is_null()
+        {
             return Err("invalid key label".into());
         }
         let text = unsafe { CStr::from_ptr(label.label_utf8) }
@@ -128,18 +135,26 @@ unsafe fn config(raw: *const SnowRecordingEffectsConfig) -> Result<PreviewConfig
             u64::from(raw.trail_duration_ms)
         },
         click: raw.click_rgba.to_be_bytes(),
+        highlight: if raw.version >= 4 {
+            raw.highlight_rgba.to_be_bytes()
+        } else {
+            [0; 4]
+        },
+        record_mouse_clicks: raw.version >= 4 && raw.record_mouse_clicks != 0,
+        show_keyboard: raw.show_keyboard != 0,
         generation: raw.generation,
-        keyboard: (raw.show_keyboard != 0).then_some(KeyboardOverlayConfig {
-            keycap_size: if raw.version < 3 {
-                64
-            } else {
-                raw.keyboard_size
-            },
-            background_rgba: raw.keyboard_background_rgba.to_be_bytes(),
-            text_rgba: raw.keyboard_text_rgba.to_be_bytes(),
-            border_rgba: raw.keyboard_border_rgba.to_be_bytes(),
-            labels,
-        }),
+        keyboard: (raw.show_keyboard != 0 || (raw.version >= 4 && raw.record_mouse_clicks != 0))
+            .then_some(KeyboardOverlayConfig {
+                keycap_size: if raw.version < 3 {
+                    64
+                } else {
+                    raw.keyboard_size
+                },
+                background_rgba: raw.keyboard_background_rgba.to_be_bytes(),
+                text_rgba: raw.keyboard_text_rgba.to_be_bytes(),
+                border_rgba: raw.keyboard_border_rgba.to_be_bytes(),
+                labels,
+            }),
     };
     value.validate()?;
     Ok(value)
@@ -345,6 +360,21 @@ mod tests {
     use super::*;
     use std::time::Duration;
     #[test]
+    fn mouse_options_are_independent_and_v3_padding_is_ignored() {
+        let mut raw = valid();
+        raw.highlight_rgba = 0xffff0080;
+        raw.record_mouse_clicks = 1;
+        let parsed = unsafe { config(&raw) }.unwrap();
+        assert!(parsed.record_mouse_clicks && !parsed.show_keyboard && parsed.keyboard.is_some());
+        assert_eq!(parsed.highlight, [255, 255, 0, 128]);
+        raw.version = 3;
+        raw.struct_size = std::mem::offset_of!(SnowRecordingEffectsConfig, highlight_rgba) as u32;
+        raw.reserved_v3 = u32::MAX;
+        let parsed = unsafe { config(&raw) }.unwrap();
+        assert!(!parsed.record_mouse_clicks && parsed.keyboard.is_none());
+        assert_eq!(parsed.highlight, [0; 4]);
+    }
+    #[test]
     fn duration_versions_and_bounds() {
         let mut raw = valid();
         assert_eq!(unsafe { config(&raw) }.unwrap().trail_duration_ms, 500);
@@ -367,7 +397,7 @@ mod tests {
 
     fn valid() -> SnowRecordingEffectsConfig {
         SnowRecordingEffectsConfig {
-            version: 3,
+            version: 4,
             struct_size: std::mem::size_of::<SnowRecordingEffectsConfig>() as u32,
             x: -1920,
             y: -100,
@@ -386,6 +416,9 @@ mod tests {
             trail_duration_ms: 500,
             generation: 12,
             keyboard_size: 64,
+            reserved_v3: 0,
+            highlight_rgba: 0,
+            record_mouse_clicks: 0,
         }
     }
     #[test]

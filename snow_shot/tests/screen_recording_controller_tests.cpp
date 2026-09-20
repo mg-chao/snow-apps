@@ -776,6 +776,24 @@ void controllerPreviewTransitions() {
                 RecordingSettings().keyboardBackgroundColor() == QColor(40, 80, 120, 128) &&
                 RecordingSettings().keyboardForegroundColor() == QColor(240, 230, 220, 200),
             "controller edits must persist with color alpha");
+    palette()->recordingMouseHighlightEnabledChanged(true);
+    palette()->recordingMouseHighlightColorChanged(QColor(255, 255, 0, 128));
+    palette()->recordingRecordMouseClicksChanged(true);
+    palette()->recordingKeyboardVisibleChanged(false);
+    palette()->recordingCursorVisibleChanged(true);
+    pumpPreview();
+    require(state->highlight == 0xffff0080 && state->recordMouseClicks && !state->showKeyboard,
+            "highlight and click-only recording must reach preview independently");
+    palette()->recordingCursorVisibleChanged(false);
+    pumpPreview();
+    require(
+        state->highlight == 0 && state->recordMouseClicks &&
+            RecordingSettings().mouseHighlightEnabled(),
+        "hiding cursor suppresses highlight without forgetting preference or hiding click keycaps");
+    palette()->recordingMouseHighlightEnabledChanged(false);
+    palette()->recordingRecordMouseClicksChanged(false);
+    palette()->recordingCursorVisibleChanged(true);
+    pumpPreview();
     ScreenRecordingAreaWindow* area = nullptr;
     for (QWidget* widget : QApplication::topLevelWidgets()) {
         if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget);

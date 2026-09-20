@@ -1310,6 +1310,25 @@ bool RecordingSettings::setShowKeyboard(bool show) const {
     return cache().setValue(QStringLiteral("screen_recording/show_keyboard"), show);
 }
 
+bool RecordingSettings::mouseHighlightEnabled() const {
+    return cache().value(QStringLiteral("screen_recording/mouse_highlight_enabled")).toBool();
+}
+bool RecordingSettings::setMouseHighlightEnabled(bool enabled) const {
+    return cache().setValue(QStringLiteral("screen_recording/mouse_highlight_enabled"), enabled);
+}
+bool RecordingSettings::recordMouseClicks() const {
+    return cache().value(QStringLiteral("screen_recording/record_mouse_clicks")).toBool();
+}
+bool RecordingSettings::setRecordMouseClicks(bool enabled) const {
+    return cache().setValue(QStringLiteral("screen_recording/record_mouse_clicks"), enabled);
+}
+QColor RecordingSettings::mouseHighlightColor() const {
+    return colorValue(QStringLiteral("screen_recording/mouse_highlight_color"));
+}
+bool RecordingSettings::setMouseHighlightColor(const QColor& color) const {
+    return setColorValue(QStringLiteral("screen_recording/mouse_highlight_color"), color);
+}
+
 bool RecordingSettings::showCursor() const {
     return cache().value(QStringLiteral("screen_recording/show_cursor")).toBool();
 }

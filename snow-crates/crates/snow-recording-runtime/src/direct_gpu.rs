@@ -462,6 +462,30 @@ impl GpuVisualCompositor {
                 .blit(&[], self.scratch[index].raw(), 0)
                 .map_err(|error| gpu_error(format!("desktop pass: {error:#}")))?;
         }
+        if config.show_cursor
+            && config.mouse_highlight_rgba[3] != 0
+            && let Some(sample) = cursor.filter(|c| {
+                c.visible
+                    && c.x >= 0
+                    && c.y >= 0
+                    && c.x < source_size.0 as i32
+                    && c.y < source_size.1 as i32
+            })
+        {
+            self.highlight(
+                &self.scratch[index].clone(),
+                scale_point(sample.x, sample.y, source_size, self.size),
+                config.mouse_highlight_rgba,
+            )?;
+            self.processor
+                .blit(
+                    &[self.layer(self.cursor_output.clone(), false)],
+                    self.scratch[1 - index].raw(),
+                    0,
+                )
+                .map_err(gpu_error)?;
+            index = 1 - index;
+        }
         self.tiles.clear();
         state.trail.set_lifetime_ms(config.mouse_trail_duration_ms);
         if config.mouse_trail_rgba[3] != 0 {
@@ -669,6 +693,59 @@ impl GpuVisualCompositor {
         }
         self.device.check().map_err(gpu_error)
     }
+    fn highlight(
+        &mut self,
+        background: &Texture,
+        center: (i32, i32),
+        color: [u8; 4],
+    ) -> Result<()> {
+        let constants: [i32; 12] = [
+            self.size.0 as i32,
+            self.size.1 as i32,
+            center.0,
+            center.1,
+            i32::from(color[0]),
+            i32::from(color[1]),
+            i32::from(color[2]),
+            i32::from(color[3]),
+            2,
+            0,
+            0,
+            0,
+        ];
+        let mut background_view = None;
+
+        let mut output_view = None;
+        unsafe {
+            self.device
+                .device()
+                .CreateShaderResourceView(background.raw(), None, Some(&mut background_view))
+                .map_err(gpu_error)?;
+
+            self.device
+                .device()
+                .CreateUnorderedAccessView(self.cursor_output.raw(), None, Some(&mut output_view))
+                .map_err(gpu_error)?;
+            let context = self.device.context();
+            context.UpdateSubresource(
+                &self.cursor_constants,
+                0,
+                None,
+                constants.as_ptr().cast(),
+                0,
+                0,
+            );
+            context.CSSetShader(&self.cursor_shader, None);
+            context.CSSetConstantBuffers(0, Some(&[Some(self.cursor_constants.clone())]));
+            context.CSSetShaderResources(0, Some(&[background_view, None]));
+            context.CSSetUnorderedAccessViews(0, 1, Some(&output_view), None);
+            context.Dispatch(self.size.0.div_ceil(16), self.size.1.div_ceil(16), 1);
+            context.CSSetShaderResources(0, Some(&[None, None]));
+            context.CSSetUnorderedAccessViews(0, 1, Some(&None), None);
+            context.CSSetShader(None, None);
+        }
+        self.device.check().map_err(gpu_error)
+    }
 }
 
 #[cfg(test)]
@@ -737,6 +814,9 @@ mod tests {
             mouse_trail_rgba: [255, 0, 0, 180],
             mouse_trail_duration_ms: 400,
             mouse_click_rgba: [255, 0, 0, 180],
+            mouse_highlight_rgba: [0; 4],
+            record_mouse_clicks: false,
+            show_keyboard: true,
         }
     }
 
@@ -931,6 +1011,109 @@ mod tests {
 
     #[test]
     #[ignore = "requires an offscreen D3D11 hardware device"]
+    fn hardware_highlight_shader_matches_cpu_multiply_and_clipping() -> Result<()> {
+        use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIFactory1};
+        use windows::core::Interface;
+        let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.map_err(gpu_error)?;
+        let adapter = unsafe { factory.EnumAdapters1(0) }
+            .map_err(gpu_error)?
+            .cast()
+            .map_err(gpu_error)?;
+        let device = SharedDevice::create(&adapter).map_err(gpu_error)?;
+        let _lock = device.lock();
+        let size = (64, 48);
+        let background = device
+            .texture(
+                size.0,
+                size.1,
+                DXGI_FORMAT_B8G8R8X8_UNORM,
+                (D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET).0 as u32,
+            )
+            .map_err(gpu_error)?;
+        let mut reference = vec![0; 64 * 48 * 4];
+        for (index, pixel) in reference.chunks_exact_mut(4).enumerate() {
+            pixel.copy_from_slice(&[index as u8, (index / 7) as u8, (index / 11) as u8, 255]);
+        }
+        let mut bgra = reference.clone();
+        for pixel in bgra.chunks_exact_mut(4) {
+            pixel.swap(0, 2);
+        }
+        unsafe {
+            device.context().UpdateSubresource(
+                background.raw(),
+                0,
+                None,
+                bgra.as_ptr().cast(),
+                256,
+                0,
+            );
+        }
+        let mut compositor = GpuVisualCompositor::new(device.clone(), size, size, 30)?;
+        let mut desc = compositor.cursor_output.desc();
+        desc.Usage = D3D11_USAGE_STAGING;
+        desc.BindFlags = 0;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ.0 as u32;
+        let mut staging = None;
+        unsafe {
+            device
+                .device()
+                .CreateTexture2D(&desc, None, Some(&mut staging))
+        }
+        .map_err(gpu_error)?;
+        let staging = staging.ok_or_else(|| gpu_error("staging texture"))?;
+        for center in [(0, 0), (32, 24), (63, 47)] {
+            for color in [
+                [255, 255, 0, 128],
+                [80, 140, 220, 255],
+                [255, 255, 255, 255],
+                [0, 0, 0, 0],
+            ] {
+                let mut expected = reference.clone();
+                snow_recording_effects::mouse_effects::draw_highlight_to(
+                    &mut snow_recording_effects::surface::RgbaSurface {
+                        pixels: &mut expected,
+                        dimensions: size,
+                    },
+                    center,
+                    color,
+                    true,
+                );
+                compositor.highlight(&background, center, color)?;
+                unsafe {
+                    device
+                        .context()
+                        .CopyResource(&staging, compositor.cursor_output.raw());
+                }
+                let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+                unsafe {
+                    device
+                        .context()
+                        .Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
+                }
+                .map_err(gpu_error)?;
+                let mut actual = Vec::new();
+                for row in 0..48 {
+                    actual.extend_from_slice(unsafe {
+                        std::slice::from_raw_parts(
+                            mapped
+                                .pData
+                                .cast::<u8>()
+                                .add(row * mapped.RowPitch as usize),
+                            256,
+                        )
+                    });
+                }
+                unsafe {
+                    device.context().Unmap(&staging, 0);
+                }
+                assert_eq!(actual, expected, "highlight {center:?} {color:?}");
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires an offscreen D3D11 hardware device"]
     fn hardware_cursor_shader_matches_cpu_for_alpha_mask_xor_scaling_and_clipping() -> Result<()> {
         use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIFactory1};
         use windows::core::Interface;
@@ -1040,6 +1223,98 @@ mod tests {
                     );
                 }
             }
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "bench-synthetic-input")]
+    #[test]
+    #[ignore = "requires desktop capture; records five synthetic buttons without injecting OS input"]
+    fn mouse_recording_native_smoke() -> Result<()> {
+        for hardware in [false, true] {
+            let directory = tempfile::tempdir()?;
+            let path = directory.path().join("mouse.mp4");
+            let mut config = config(path.clone(), CaptureBackendKind::Auto);
+            config.prefer_hardware_encoder = hardware;
+            config.mouse_highlight_rgba = [255, 255, 0, 128];
+            config.record_mouse_clicks = true;
+            config.show_keyboard = false;
+            config.mouse_click_rgba = [0; 4];
+            config.mouse_trail_rgba = [0; 4];
+            config.keyboard = Some(KeyboardOverlayConfig {
+                keycap_size: 64,
+                background_rgba: [0, 0, 0, 204],
+                text_rgba: [255; 4],
+                border_rgba: [80, 80, 80, 204],
+                labels: Default::default(),
+            });
+            let mut session = DirectRecordingSession::create(config)?;
+            session.set_bench_synthetic_input(true)?;
+            session.start()?;
+            session.bench_observe_cursor(320, 240)?;
+            for button in [
+                ObservedMouseButton::Left,
+                ObservedMouseButton::Right,
+                ObservedMouseButton::Middle,
+                ObservedMouseButton::Button4,
+                ObservedMouseButton::Button5,
+            ] {
+                for down in [true, false] {
+                    session.with_bench_synthetic(|input| {
+                        input
+                            .clicks
+                            .try_send(MouseClickObservation {
+                                at: Instant::now(),
+                                x: 320,
+                                y: 240,
+                                button,
+                                down,
+                                modifiers: [false; 4],
+                            })
+                            .map_err(gpu_error)
+                    })?;
+                    std::thread::sleep(Duration::from_millis(70));
+                }
+            }
+            session.pause()?;
+            std::thread::sleep(Duration::from_millis(50));
+            session.resume()?;
+            session.bench_observe_cursor(100, 100)?;
+            std::thread::sleep(Duration::from_millis(200));
+            let report = session.stop()?;
+            assert!(report.encoded_frames > 0, "{report:?}");
+            if hardware {
+                assert_eq!(report.selected_pipeline, "d3d11", "{report:?}");
+            }
+            let mut media = ffmpeg_next::format::input(&path).map_err(gpu_error)?;
+            let stream = media
+                .streams()
+                .best(ffmpeg_next::media::Type::Video)
+                .ok_or_else(|| gpu_error("missing video"))?;
+            let mut decoder =
+                ffmpeg_next::codec::context::Context::from_parameters(stream.parameters())
+                    .map_err(gpu_error)?
+                    .decoder()
+                    .video()
+                    .map_err(gpu_error)?;
+            let mut decoded = 0;
+            for (_, packet) in media.packets() {
+                decoder.send_packet(&packet).map_err(gpu_error)?;
+                while decoder
+                    .receive_frame(&mut ffmpeg_next::frame::Video::empty())
+                    .is_ok()
+                {
+                    decoded += 1;
+                }
+            }
+            decoder.send_eof().map_err(gpu_error)?;
+            while decoder
+                .receive_frame(&mut ffmpeg_next::frame::Video::empty())
+                .is_ok()
+            {
+                decoded += 1;
+            }
+            assert!(decoded > 0);
         }
         Ok(())
     }

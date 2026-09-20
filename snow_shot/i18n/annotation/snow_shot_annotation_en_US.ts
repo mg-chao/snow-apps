@@ -516,6 +516,18 @@
             <translation>Mouse click color transparent</translation>
         </message>
         <message>
+            <source>Mouse highlight</source>
+            <translation>Mouse highlight</translation>
+        </message>
+        <message>
+            <source>Mouse highlight color</source>
+            <translation>Mouse highlight color</translation>
+        </message>
+        <message>
+            <source>Mouse highlight preview</source>
+            <translation>Mouse highlight preview</translation>
+        </message>
+        <message>
             <source>Mouse trail color</source>
             <translation>Mouse trail color</translation>
         </message>
@@ -610,6 +622,10 @@
         <message>
             <source>Record microphone</source>
             <translation>Record microphone</translation>
+        </message>
+        <message>
+            <source>Record mouse clicks</source>
+            <translation>Record mouse clicks</translation>
         </message>
         <message>
             <source>Record screen</source>

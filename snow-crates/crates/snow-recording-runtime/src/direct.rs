@@ -102,6 +102,9 @@ pub struct DirectRecordingConfig {
     pub mouse_trail_rgba: [u8; 4],
     pub mouse_trail_duration_ms: u64,
     pub mouse_click_rgba: [u8; 4],
+    pub mouse_highlight_rgba: [u8; 4],
+    pub record_mouse_clicks: bool,
+    pub show_keyboard: bool,
     pub excluded_windows: Arc<[u32]>,
     pub excluded_processes: Arc<[i32]>,
 }
@@ -631,6 +634,8 @@ impl DirectRecordingSession {
             synthetic
                 .clicks
                 .try_send(MouseClickObservation {
+                    down: true,
+                    modifiers: [false; 4],
                     at: Instant::now(),
                     x,
                     y,
@@ -703,30 +708,33 @@ impl DirectRecordingSession {
         )
         .map_err(ScreenRecorderError::Encode)?;
         #[cfg(feature = "bench-synthetic-input")]
-        let (keyboard_input, bench_keyboard_tx, bench_keyboard_generation) =
-            match (self.config.keyboard.is_some(), self.bench_synthetic_input) {
-                (true, true) => {
-                    let (input, sender) =
-                        KeyboardInput::start_with_synthetic_sender().map_err(|error| {
-                            ScreenRecorderError::Encode(format!("keyboard recording: {error}"))
-                        })?;
-                    let generation = Arc::clone(&input.generation);
-                    (Some(input), Some(sender), Some(generation))
-                }
-                (true, false) => (
-                    Some(KeyboardInput::start().map_err(|error| {
+        let (keyboard_input, bench_keyboard_tx, bench_keyboard_generation) = match (
+            self.config.keyboard.is_some() && self.config.show_keyboard,
+            self.bench_synthetic_input,
+        ) {
+            (true, true) => {
+                let (input, sender) =
+                    KeyboardInput::start_with_synthetic_sender().map_err(|error| {
                         ScreenRecorderError::Encode(format!("keyboard recording: {error}"))
-                    })?),
-                    None,
-                    None,
-                ),
-                (false, _) => (None, None, None),
-            };
+                    })?;
+                let generation = Arc::clone(&input.generation);
+                (Some(input), Some(sender), Some(generation))
+            }
+            (true, false) => (
+                Some(KeyboardInput::start().map_err(|error| {
+                    ScreenRecorderError::Encode(format!("keyboard recording: {error}"))
+                })?),
+                None,
+                None,
+            ),
+            (false, _) => (None, None, None),
+        };
         #[cfg(not(feature = "bench-synthetic-input"))]
         let keyboard_input = self
             .config
             .keyboard
             .as_ref()
+            .filter(|_| self.config.show_keyboard)
             .map(|_| KeyboardInput::start())
             .transpose()
             .map_err(|error| ScreenRecorderError::Encode(format!("keyboard recording: {error}")))?;
@@ -777,6 +785,11 @@ impl DirectRecordingSession {
             .spawn(move || {
                 let result = (|| {
                     let mut compositor = VisualCompositor::new(config.output_dimensions());
+                    compositor.mouse_input_style = config
+                        .record_mouse_clicks
+                        .then(|| config.keyboard.clone())
+                        .flatten();
+                    compositor.include_mouse_modifiers = config.show_keyboard;
                     compositor.resize_pool = resize_pool;
                     compositor.restoration_only = restoration_only;
                     #[cfg(feature = "bench-synthetic-input")]
@@ -1253,7 +1266,6 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
     let mut gpu_metrics = gpu::Metrics::default();
     #[cfg(feature = "bench-pipeline-timing")]
     let pixel_start = snow_capture::pixel_counters::snapshot();
-    let _mouse_hook = mouse_hook;
     // Synthetic cursor positions replace the capture-attached samples so the
     // trail and cursor overlays follow the benchmark's sweep, not the
     // physical pointer (`bench-synthetic-input` builds only).
@@ -1270,6 +1282,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
     // Initialization can take time; keys used before the worker is ready are not recording input.
     let mut keyboard_since = Instant::now();
     let mut keyboard_generation = 0;
+    let mut mouse_generation = 0;
     let mut paused = false;
     let mut stopping = false;
     let mut canceled = false;
@@ -1378,7 +1391,23 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                 ControlCommand::Pause | ControlCommand::Resume => {}
             }
         }
-        drain_click_observations(&click_rx, &clock, paused, fresh_since, &mut compositor);
+        if mouse_hook.generation() != mouse_generation {
+            mouse_generation = mouse_hook.generation();
+            while click_rx.try_recv().is_ok() {}
+            reset_keyboard(
+                keyboard_input.as_ref(),
+                &mut compositor,
+                clock.active_elapsed_ms(Instant::now()),
+            );
+        }
+        drain_click_observations(
+            &click_rx,
+            &clock,
+            paused,
+            fresh_since,
+            input_end,
+            &mut compositor,
+        );
         #[cfg(feature = "bench-synthetic-input")]
         if let (Some(receiver), Some(shape)) =
             (bench_cursor_rx.as_ref(), bench_cursor_shape.as_ref())
@@ -1428,6 +1457,10 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                     .push_back(event.event(clock.active_elapsed_ms(event.at), style));
             }
         }
+        compositor
+            .pending_keys
+            .make_contiguous()
+            .sort_by_key(|event| event.at_ms);
         if !stopping
             && !canceled
             && let Err(error) = encoder.tick()
@@ -2236,10 +2269,29 @@ fn drain_click_observations(
     clock: &RecordingClock,
     paused: bool,
     fresh_since: Instant,
+    input_end: Option<Instant>,
     compositor: &mut VisualCompositor,
 ) {
     while let Ok(observation) = receiver.try_recv() {
-        if paused || observation.at < fresh_since || !clock.is_active_at(observation.at) {
+        if paused
+            || observation.at < fresh_since
+            || input_end.is_some_and(|end| observation.at > end)
+            || !clock.is_active_at(observation.at)
+        {
+            continue;
+        }
+        if let Some(style) = &compositor.mouse_input_style {
+            let event = observation.event(
+                clock.active_elapsed_ms(observation.at),
+                style,
+                compositor.include_mouse_modifiers,
+            );
+            if compositor.pending_keys.len() >= 256 {
+                reset_keyboard(None, compositor, event.at_ms);
+            }
+            compositor.pending_keys.push_back(event);
+        }
+        if !observation.down || !observation.button.has_ring() {
             continue;
         }
         if compositor.clicks.len() >= CLICK_QUEUE_DEPTH {
@@ -2306,6 +2358,8 @@ struct VisualCompositor {
     cursor_shapes: HashMap<u64, CursorShape>,
     keyboard: Option<KeyboardOverlay>,
     pending_keys: VecDeque<KeyEvent>,
+    mouse_input_style: Option<KeyboardOverlayConfig>,
+    include_mouse_modifiers: bool,
     #[cfg(feature = "bench-compositor-timing")]
     timings: StageHistogram,
 }
@@ -2337,6 +2391,8 @@ impl VisualCompositor {
             cursor_shapes: HashMap::new(),
             keyboard: None,
             pending_keys: VecDeque::new(),
+            mouse_input_style: None,
+            include_mouse_modifiers: false,
             #[cfg(feature = "bench-compositor-timing")]
             timings: StageHistogram::default(),
         }
@@ -2518,6 +2574,39 @@ impl VisualCompositor {
         #[cfg(feature = "bench-compositor-timing")]
         self.timings.record("compose.resize", stage.elapsed());
         let cursor = cursor.cloned();
+        if config.show_cursor
+            && config.mouse_highlight_rgba[3] != 0
+            && let Some(sample) = cursor.as_ref().filter(|c| {
+                c.visible
+                    && c.x >= 0
+                    && c.y >= 0
+                    && c.x < source_size.0 as i32
+                    && c.y < source_size.1 as i32
+            })
+        {
+            let center = scale_point(sample.x, sample.y, source_size, self.output_size);
+            if let Some(rows) = touched.as_mut() {
+                snow_recording_effects::mouse_effects::draw_highlight_to(
+                    &mut TrackedSurface {
+                        pixels: &mut rgba,
+                        rows,
+                    },
+                    center,
+                    config.mouse_highlight_rgba,
+                    true,
+                );
+            } else {
+                snow_recording_effects::mouse_effects::draw_highlight_to(
+                    &mut snow_recording_effects::surface::RgbaSurface {
+                        pixels: &mut rgba,
+                        dimensions: self.output_size,
+                    },
+                    center,
+                    config.mouse_highlight_rgba,
+                    true,
+                );
+            }
+        }
         #[cfg(feature = "bench-compositor-timing")]
         let stage = Instant::now();
         if config.mouse_trail_rgba[3] != 0 {
@@ -2927,6 +3016,9 @@ mod tests {
             mouse_trail_rgba: [0, 0, 0, 0],
             mouse_trail_duration_ms: 500,
             mouse_click_rgba: [0, 0, 0, 0],
+            mouse_highlight_rgba: [0; 4],
+            record_mouse_clicks: false,
+            show_keyboard: true,
         }
     }
 
@@ -2957,6 +3049,7 @@ mod tests {
     fn check_recycled_overlay_restoration(restoration_only: bool) {
         let output = (160, 90);
         let mut config = config();
+        config.mouse_highlight_rgba = [255, 255, 0, 128];
         config.mouse_trail_rgba = [255, 85, 0, 255];
         config.mouse_click_rgba = [255, 0, 0, 255];
         let mut full = VisualCompositor::new(output);
@@ -3439,6 +3532,61 @@ mod tests {
         assert_eq!(scale_point(100, 50, (200, 100), (100, 50)), (50, 25));
         let source = vec![255u8; 4 * 4 * 4];
         assert_eq!(resize_rgba(&source, (4, 4), (2, 2)).len(), 16);
+    }
+
+    #[test]
+    fn mouse_highlight_uses_hotspot_output_pixels_and_obeys_cursor_visibility() {
+        let size = (100, 80);
+        let original = [255, 255, 255, 255].repeat(200 * 160);
+        let frame: CapturedFrame = snow_capture::frame::Frame::from_rgba8(200, 160, original)
+            .unwrap()
+            .into();
+        let mut config = config();
+        config.mouse_highlight_rgba = [255, 255, 0, 128];
+        let mut compositor = VisualCompositor::new(size);
+        let mut cursor = AttachedCursorSample {
+            x: 100,
+            y: 80,
+            visible: true,
+            shape: CursorShapeState::Unavailable,
+        };
+        let pixels = compositor
+            .compose_with_cursor(&config, &frame, 0, Some(&cursor))
+            .unwrap();
+        assert_eq!(
+            &pixels[(40 * 100 + 50) * 4..(40 * 100 + 50) * 4 + 4],
+            &[255, 255, 127, 255]
+        );
+        assert_eq!(
+            &pixels[(40 * 100 + 71) * 4..(40 * 100 + 71) * 4 + 4],
+            &[255; 4]
+        );
+        config.show_cursor = false;
+        assert!(
+            compositor
+                .compose_with_cursor(&config, &frame, 1, Some(&cursor))
+                .unwrap()
+                .iter()
+                .all(|v| *v == 255)
+        );
+        config.show_cursor = true;
+        cursor.visible = false;
+        assert!(
+            compositor
+                .compose_with_cursor(&config, &frame, 2, Some(&cursor))
+                .unwrap()
+                .iter()
+                .all(|v| *v == 255)
+        );
+        cursor.visible = true;
+        cursor.x = -1;
+        assert!(
+            compositor
+                .compose_with_cursor(&config, &frame, 3, Some(&cursor))
+                .unwrap()
+                .iter()
+                .all(|v| *v == 255)
+        );
     }
 
     struct KeyboardTestRasterizer;
@@ -3991,6 +4139,8 @@ mod tests {
         for index in 0..CLICK_QUEUE_DEPTH * 3 {
             sender
                 .send(MouseClickObservation {
+                    down: true,
+                    modifiers: [false; 4],
                     at: started_at + Duration::from_millis(index as u64),
                     x: index as i32,
                     y: 0,
@@ -3999,7 +4149,7 @@ mod tests {
                 .unwrap();
         }
         let mut compositor = VisualCompositor::new((4, 4));
-        drain_click_observations(&receiver, &clock, false, started_at, &mut compositor);
+        drain_click_observations(&receiver, &clock, false, started_at, None, &mut compositor);
         assert_eq!(compositor.clicks.len(), CLICK_QUEUE_DEPTH);
         assert_eq!(
             compositor.clicks.front().map(|click| click.x),
@@ -4018,9 +4168,11 @@ mod tests {
         clock
             .controller()
             .mark_resume(start + Duration::from_millis(300));
-        for ms in [50, 150, 299, 301] {
+        for ms in [50, 150, 299, 301, 401] {
             sender
                 .send(MouseClickObservation {
+                    down: true,
+                    modifiers: [false; 4],
                     at: start + Duration::from_millis(ms),
                     x: ms as i32,
                     y: 0,
@@ -4034,6 +4186,7 @@ mod tests {
             &clock,
             false,
             start + Duration::from_millis(300),
+            Some(start + Duration::from_millis(301)),
             &mut compositor,
         );
         assert_eq!(compositor.clicks.len(), 1);
@@ -4159,6 +4312,8 @@ mod tests {
                 .input
                 .clicks
                 .try_send(MouseClickObservation {
+                    down: true,
+                    modifiers: [false; 4],
                     at: Instant::now(),
                     x: 12,
                     y: 34,

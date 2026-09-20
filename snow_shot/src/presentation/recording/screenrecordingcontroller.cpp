@@ -225,6 +225,9 @@ struct ScreenRecordingController::Impl {
         keyboardBackgroundColor = settings.keyboardBackgroundColor();
         keyboardForegroundColor = settings.keyboardForegroundColor();
         mouseClickColor = settings.mouseClickColor();
+        mouseHighlightEnabled = settings.mouseHighlightEnabled();
+        recordMouseClicks = settings.recordMouseClicks();
+        mouseHighlightColor = settings.mouseHighlightColor();
         showCursor = settings.showCursor();
         showKeyboard = settings.showKeyboard();
         startDelaySeconds = settings.startDelaySeconds();
@@ -467,10 +470,30 @@ struct ScreenRecordingController::Impl {
                              snow_shot::storage::RecordingSettings().setShowKeyboard(visible);
                              syncUi();
                          });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingMouseHighlightEnabledChanged,
+                         uiSession->connections.get(), [this](bool value) {
+                             mouseHighlightEnabled = value;
+                             snow_shot::storage::RecordingSettings().setMouseHighlightEnabled(
+                                 value);
+                             syncPreview();
+                         });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingRecordMouseClicksChanged,
+                         uiSession->connections.get(), [this](bool value) {
+                             recordMouseClicks = value;
+                             snow_shot::storage::RecordingSettings().setRecordMouseClicks(value);
+                             syncPreview();
+                         });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingMouseHighlightColorChanged,
+                         uiSession->connections.get(), [this](const QColor& value) {
+                             mouseHighlightColor = value;
+                             snow_shot::storage::RecordingSettings().setMouseHighlightColor(value);
+                             syncPreview();
+                         });
         QObject::connect(palette, &ScreenshotToolPalette::recordingCursorVisibleChanged,
                          uiSession->connections.get(), [this](bool visible) {
                              showCursor = visible;
                              snow_shot::storage::RecordingSettings().setShowCursor(visible);
+                             syncPreview();
                          });
     }
 
@@ -743,13 +766,15 @@ struct ScreenRecordingController::Impl {
                 static_cast<uint32_t>(keyboardSize),
                 static_cast<uint32_t>(settings.loopAnimatedImages()),
                 {},
+                mouseHighlightEnabled ? packedRgba(mouseHighlightColor) : 0u,
+                static_cast<uint32_t>(recordMouseClicks),
             };
             const QString baseName =
                 ScreenshotImageFileService::suggestedBaseName(settings.videoFilenameFormat());
             const QStringList directories =
                 snow_shot::presentation::recording::screenRecordingDirectories();
             const QString extension = sessionOutputSettings.extension;
-            const bool keyboard = showKeyboard;
+            const bool keyboard = showKeyboard || recordMouseClicks;
             // Session creation blocks on capture, audio, hooks, and encoder
             // initialization; keep it off the GUI thread so the busy state can
             // paint. The FFI error string is thread-local, so it is read here.
@@ -1009,7 +1034,9 @@ struct ScreenRecordingController::Impl {
         uiSession->preview->configure(
             captureRegion, QSize(static_cast<int>(width), static_cast<int>(height)),
             mouseTrailColor, mouseClickColor, showKeyboard, mouseTrailDurationMs,
-            keyboardBackgroundColor, keyboardForegroundColor, keyboardSize);
+            keyboardBackgroundColor, keyboardForegroundColor, keyboardSize,
+            mouseHighlightEnabled && showCursor ? mouseHighlightColor : QColor(0, 0, 0, 0),
+            recordMouseClicks);
         uiSession->preview->setEligible(true);
     }
 
@@ -1033,6 +1060,9 @@ struct ScreenRecordingController::Impl {
             palette->setRecordingKeyboardBackgroundColor(keyboardBackgroundColor);
             palette->setRecordingKeyboardForegroundColor(keyboardForegroundColor);
             palette->setRecordingMouseClickColor(mouseClickColor);
+            palette->setRecordingMouseHighlightEnabled(mouseHighlightEnabled);
+            palette->setRecordingRecordMouseClicks(recordMouseClicks);
+            palette->setRecordingMouseHighlightColor(mouseHighlightColor);
             palette->setRecordingStartDelaySeconds(startDelaySeconds);
             palette->setRecordingCursorVisible(showCursor);
             palette->setRecordingKeyboardVisible(showKeyboard);
@@ -1083,6 +1113,9 @@ struct ScreenRecordingController::Impl {
     QColor keyboardForegroundColor{Qt::white};
     QColor mouseTrailColor{0, 0, 0, 0};
     QColor mouseClickColor{0, 0, 0, 0};
+    bool mouseHighlightEnabled = false;
+    bool recordMouseClicks = false;
+    QColor mouseHighlightColor{255, 255, 0, 128};
     bool showCursor = true;
     bool showKeyboard = false;
     DirectRecordingSettings sessionOutputSettings;

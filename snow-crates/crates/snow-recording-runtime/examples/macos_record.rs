@@ -37,6 +37,7 @@ fn main() {
                     clicks: args.iter().any(|arg| arg == "effects"),
                     trail: args.iter().any(|arg| arg == "effects"),
                     keyboard: None,
+                    ..Default::default()
                 },
                 capture,
                 output: snow_media::geometry::PixelSize::new(1280, 720)?,

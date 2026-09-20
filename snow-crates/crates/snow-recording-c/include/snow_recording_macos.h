@@ -40,6 +40,9 @@ typedef struct SnowMacRecordingConfig {
     uint32_t click_effects, trail, keyboard; /* 0 disabled, 1 enabled; require Input Monitoring */
     const char* microphone_id; /* NULL selects default device; otherwise CoreAudio device UID */
     const char* output_path;   /* UTF-8 */
+    /* Optional appended fields, selected by struct_size; legacy callers default off. */
+    uint32_t highlight_rgba;      /* 0xRRGGBBAA multiply tint, visible cursor only */
+    uint32_t record_mouse_clicks; /* independent of keyboard */
 } SnowMacRecordingConfig;
 typedef struct SnowMacRecordingEvent {
     uint32_t kind; /* 0 idle, 1 configuration, 2 encoded frame, 3 source interrupted */

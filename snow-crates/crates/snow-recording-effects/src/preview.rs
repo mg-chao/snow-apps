@@ -20,6 +20,9 @@ pub struct PreviewConfig {
     pub trail: [u8; 4],
     pub trail_duration_ms: u64,
     pub click: [u8; 4],
+    pub highlight: [u8; 4],
+    pub record_mouse_clicks: bool,
+    pub show_keyboard: bool,
     pub keyboard: Option<KeyboardOverlayConfig>,
     pub generation: u64,
 }
@@ -79,6 +82,7 @@ pub struct EffectsPreview {
     keyboard_surface: TileSurface,
     position: Option<(i32, i32)>,
     continuity: u64,
+    pending_keys: Vec<crate::keyboard_overlay::KeyEvent>,
 }
 
 impl EffectsPreview {
@@ -100,6 +104,7 @@ impl EffectsPreview {
             keyboard_surface: TileSurface::new(keyboard_output),
             position: None,
             continuity: 0,
+            pending_keys: Vec::new(),
         }
     }
     pub fn observe(&mut self, position: Option<(i32, i32)>, at: u64) {
@@ -127,12 +132,53 @@ impl EffectsPreview {
         }
         self.clicks.push_back(click);
     }
+    pub fn key_event(&mut self, event: crate::keyboard_overlay::KeyEvent) {
+        if self.pending_keys.len() >= 256 {
+            self.reset_inputs(event.at_ms);
+        }
+        self.pending_keys.push(event);
+    }
+    pub fn reset_inputs(&mut self, now: u64) {
+        self.pending_keys.clear();
+        if let Some(overlay) = &mut self.keyboard {
+            overlay.model.reset(now);
+        }
+    }
+    pub fn mouse_event(&mut self, event: &MouseClickObservation, at_ms: u64) {
+        if event.down && event.button.has_ring() && self.config.click[3] != 0 {
+            self.click(RenderClick {
+                timestamp_ms: at_ms,
+                x: event.x,
+                y: event.y,
+                button: event.button,
+            });
+        }
+        if self.config.record_mouse_clicks
+            && let Some(style) = &self.config.keyboard
+        {
+            self.key_event(event.event(at_ms, style, self.config.show_keyboard));
+        }
+    }
     pub fn render(&mut self, now: u64) -> Result<PreviewLayers, String> {
         self.surface.clear();
         self.keyboard_surface.clear();
         self.observe(self.position, now);
         self.clicks
             .retain(|click| now.saturating_sub(click.timestamp_ms) < CLICK_ANIMATION_MS);
+        if let Some(position) = self.position {
+            let center = crate::mouse_effects::scale_point(
+                position.0,
+                position.1,
+                (self.config.region.2, self.config.region.3),
+                self.config.output,
+            );
+            crate::mouse_effects::draw_highlight_to(
+                &mut self.surface,
+                center,
+                self.config.highlight,
+                false,
+            );
+        }
         self.trail
             .draw_to(&mut self.surface, now, self.config.trail);
         draw_clicks_to(
@@ -142,7 +188,14 @@ impl EffectsPreview {
             self.config.click,
             (self.config.region.2, self.config.region.3),
         );
+        self.pending_keys.sort_by_key(|event| event.at_ms);
+        let ready = self
+            .pending_keys
+            .partition_point(|event| event.at_ms <= now);
         if let Some(keyboard) = self.keyboard.as_mut() {
+            for event in self.pending_keys.drain(..ready) {
+                keyboard.model.event(event);
+            }
             keyboard.draw_to(&mut self.keyboard_surface, now)?;
         }
         Ok(PreviewLayers {
@@ -151,7 +204,10 @@ impl EffectsPreview {
         })
     }
     pub fn next_frame_at(&self, now: u64) -> Option<u64> {
-        if self.trail.has_active_animation(now) || !self.clicks.is_empty() {
+        if !self.pending_keys.is_empty()
+            || self.trail.has_active_animation(now)
+            || !self.clicks.is_empty()
+        {
             Some(now.saturating_add(16))
         } else {
             self.keyboard
@@ -247,15 +303,20 @@ fn initialize(config: &PreviewConfig) -> Result<(Input, EffectsPreview), String>
     let keyboard = config
         .keyboard
         .as_ref()
+        .filter(|_| config.show_keyboard)
         .map(|_| KeyboardInput::start())
         .transpose()?;
     let (click_tx, clicks) = bounded(CLICK_QUEUE_DEPTH);
     let (move_tx, mouse) = bounded(1);
-    let observer = if config.trail[3] != 0 || config.click[3] != 0 {
+    let observer = if config.trail[3] != 0
+        || config.highlight[3] != 0
+        || config.click[3] != 0
+        || config.record_mouse_clicks
+    {
         Some(MouseHookObserver::start_with_movement(
             config.region,
             click_tx,
-            (config.trail[3] != 0).then(|| (move_tx, mouse.clone())),
+            (config.trail[3] != 0 || config.highlight[3] != 0).then(|| (move_tx, mouse.clone())),
         )?)
     } else {
         None
@@ -316,12 +377,12 @@ fn run(
         // Disabled sources must never turn a disconnected receiver into a busy loop.
         let no_mouse = crossbeam_channel::never();
         let no_clicks = crossbeam_channel::never();
-        let mouse = if config.trail[3] != 0 {
+        let mouse = if config.trail[3] != 0 || config.highlight[3] != 0 {
             &input.mouse
         } else {
             &no_mouse
         };
-        let clicks = if config.click[3] != 0 {
+        let clicks = if config.click[3] != 0 || config.record_mouse_clicks {
             &input.clicks
         } else {
             &no_clicks
@@ -329,10 +390,36 @@ fn run(
         let mut dirty = true;
         let mut next_frame = elapsed(Instant::now());
         let mut keyboard_generation = 0;
+        let mut mouse_generation = 0;
         let mut pending_position: Option<MouseMovement> = None;
         loop {
             let now = elapsed(Instant::now());
+            let generation = input
+                ._mouse
+                .as_ref()
+                .map_or(0, MouseHookObserver::generation);
+            if generation != mouse_generation {
+                mouse_generation = generation;
+                while input.clicks.try_recv().is_ok() {}
+                effects.reset_inputs(now);
+                dirty = true;
+            }
             if dirty && now >= next_frame {
+                for event in input.clicks.try_iter() {
+                    effects.mouse_event(&event, elapsed(event.at));
+                }
+                if let (Some(input), Some(style)) = (&input.keyboard, &config.keyboard) {
+                    let generation = input.generation.load(Ordering::Acquire);
+                    if generation != keyboard_generation {
+                        effects.reset_inputs(now);
+                        keyboard_generation = generation;
+                    }
+                    for event in input.receiver.try_iter() {
+                        if event.generation == generation {
+                            effects.key_event(event.event(elapsed(event.at), style));
+                        }
+                    }
+                }
                 if let Some(movement) = pending_position.take() {
                     effects.observe_input(
                         movement.position,
@@ -375,6 +462,11 @@ fn run(
             let timer = deadline
                 .map(|at| crossbeam_channel::after(Duration::from_millis(at.saturating_sub(now))))
                 .unwrap_or_else(crossbeam_channel::never);
+            let reset_timer = if config.record_mouse_clicks {
+                crossbeam_channel::after(Duration::from_millis(50))
+            } else {
+                crossbeam_channel::never()
+            };
             select_biased! {
                 recv(receiver) -> command => match command {
                     Ok(Command::Configure(next)) => { config = next; continue 'configure; }
@@ -385,19 +477,20 @@ fn run(
                     dirty = true;
                 },
                 recv(clicks) -> event => if let Ok(event) = event {
-                    effects.click(RenderClick { timestamp_ms: elapsed(event.at), x: event.x, y: event.y, button: event.button });
+                    effects.mouse_event(&event, elapsed(event.at));
                     dirty = true;
                 },
                 recv(keys) -> event => if let Ok(event) = event
-                    && let (Some(input), Some(style), Some(overlay)) = (&input.keyboard, &config.keyboard, &mut effects.keyboard) {
+                    && let (Some(input), Some(style)) = (&input.keyboard, &config.keyboard) {
                         let generation = input.generation.load(Ordering::Acquire);
                         if generation != keyboard_generation {
-                            overlay.model.reset(now);
+                            effects.reset_inputs(now);
                             keyboard_generation = generation;
                         }
-                        if event.generation == generation { overlay.model.event(event.event(elapsed(event.at), style)); }
+                        if event.generation == generation { effects.key_event(event.event(elapsed(event.at), style)); }
                         dirty = true;
                 },
+                recv(reset_timer) -> _ => {},
                 recv(timer) -> _ => { dirty = true; },
             }
         }
@@ -431,9 +524,37 @@ mod tests {
             trail: [255, 0, 0, 128],
             trail_duration_ms: 500,
             click: [0, 255, 0, 128],
+            highlight: [0; 4],
+            record_mouse_clicks: false,
+            show_keyboard: true,
             keyboard: None,
             generation: 7,
         }
+    }
+    #[test]
+    fn highlight_preview_moves_and_clears_without_animating_a_stationary_pointer() {
+        let mut cfg = config();
+        cfg.trail = [0; 4];
+        cfg.click = [0; 4];
+        cfg.highlight = [255, 255, 0, 128];
+        let mut preview = EffectsPreview::new(cfg, None);
+        preview.observe(Some((200, 200)), 0);
+        let first = preview.render(0).unwrap();
+        assert!(!first.mouse.is_empty());
+        assert!(preview.next_frame_at(20).is_none());
+        preview.observe(Some((800, 800)), 40);
+        let second = preview.render(40).unwrap();
+        assert!(
+            first
+                .mouse
+                .iter()
+                .all(|a| second.mouse.iter().all(|b| a.x != b.x || a.y != b.y))
+        );
+        preview.observe(None, 60);
+        assert!(preview.render(60).unwrap().is_empty());
+        preview.config.highlight = [0; 4];
+        preview.observe(Some((200, 200)), 80);
+        assert!(preview.render(80).unwrap().is_empty());
     }
     struct Solid;
     impl KeycapRasterizer for Solid {
@@ -444,6 +565,22 @@ mod tests {
                 pixels: [80, 20, 10, 128].repeat(800),
             })
         }
+    }
+    #[test]
+    fn preview_queues_future_input_and_orders_mouse_with_keyboard() {
+        let mut cfg = config();
+        cfg.click = [0; 4];
+        cfg.trail = [0; 4];
+        let mut preview = EffectsPreview::new(cfg, Some(Box::new(Solid)));
+        preview.key_event(key(200, false));
+        preview.key_event(key(100, true));
+        assert!(preview.render(50).unwrap().is_empty());
+        assert!(!preview.render(150).unwrap().is_empty());
+        assert!(!preview.render(250).unwrap().is_empty());
+        assert!(preview.render(1900).unwrap().is_empty());
+        preview.key_event(key(2200, true));
+        preview.reset_inputs(2100);
+        assert!(preview.render(2300).unwrap().is_empty());
     }
     fn key(at_ms: u64, down: bool) -> KeyEvent {
         KeyEvent {

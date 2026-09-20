@@ -371,6 +371,12 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::String},
     {QStringLiteral("screen_recording/show_keyboard"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("screen_recording/show_cursor"), true, ConfigurationValueKind::Boolean},
+    {QStringLiteral("screen_recording/mouse_highlight_enabled"), false,
+     ConfigurationValueKind::Boolean},
+    {QStringLiteral("screen_recording/record_mouse_clicks"), false,
+     ConfigurationValueKind::Boolean},
+    {QStringLiteral("screen_recording/mouse_highlight_color"), QStringLiteral("#FFFF0080"),
+     ConfigurationValueKind::String},
     {QStringLiteral("screen_recording/encoder"),
      QStringLiteral("h264_hw"),
      ConfigurationValueKind::String,
@@ -1288,6 +1294,7 @@ bool isRgbaColorKey(const QString& key) {
            key == QStringLiteral("pin_to_screen/border_active_color") ||
            key == QStringLiteral("screen_recording/mouse_trail_color") ||
            key == QStringLiteral("screen_recording/mouse_click_color") ||
+           key == QStringLiteral("screen_recording/mouse_highlight_color") ||
            key == QStringLiteral("screen_recording/keyboard_background_color") ||
            key == QStringLiteral("screen_recording/keyboard_foreground_color");
 }

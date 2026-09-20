@@ -119,6 +119,8 @@ pub struct SnowMacRecordingConfig {
     pub keyboard: u32,
     pub microphone_id: *const c_char,
     pub output_path: *const c_char,
+    pub highlight_rgba: u32,
+    pub record_mouse_clicks: u32,
 }
 pub struct SnowMacRecording {
     session: Option<RecordingSession>,
@@ -188,14 +190,24 @@ pub unsafe extern "C" fn snow_recording_macos_create(
         }
         // Validate the fixed header before constructing a reference to the full
         // versioned struct; an older caller may only have allocated the header.
-        if config.is_null()
-            || unsafe { config.cast::<u32>().read() } as usize
-                != size_of::<SnowMacRecordingConfig>()
-        {
+        if config.is_null() {
             return Err(invalid());
         }
-        let config = unsafe { &*config };
-        if config.struct_size as usize != size_of::<SnowMacRecordingConfig>()
+        let size = unsafe { config.cast::<u32>().read() } as usize;
+        let legacy_size = std::mem::offset_of!(SnowMacRecordingConfig, highlight_rgba);
+        if size != legacy_size && size != size_of::<SnowMacRecordingConfig>() {
+            return Err(invalid());
+        }
+        let mut extended: SnowMacRecordingConfig = unsafe { std::mem::zeroed() };
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                config.cast::<u8>(),
+                (&raw mut extended).cast::<u8>(),
+                size,
+            );
+        }
+        let config = &extended;
+        if config.record_mouse_clicks > 1
             || config.output_path.is_null()
             || config.hdr > 1
             || config.editable > 1
@@ -256,7 +268,14 @@ pub unsafe extern "C" fn snow_recording_macos_create(
             effects: snow_screen_recorder::macos::NativeEffectsConfig {
                 clicks: config.click_effects == 1,
                 trail: config.trail == 1,
-                keyboard: (config.keyboard == 1).then(|| {
+                show_keyboard: config.keyboard == 1,
+                record_mouse_clicks: config.record_mouse_clicks == 1,
+                highlight_rgba: if config.cursor != 0 {
+                    config.highlight_rgba.to_be_bytes()
+                } else {
+                    [0; 4]
+                },
+                keyboard: (config.keyboard == 1 || config.record_mouse_clicks == 1).then(|| {
                     snow_screen_recorder::KeyboardOverlayConfig {
                         keycap_size: 64,
                         background_rgba: [24, 24, 24, 220],
