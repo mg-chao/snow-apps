@@ -18,7 +18,6 @@ class QInputMethodEvent;
 class QKeyEvent;
 class QMouseEvent;
 class QPainter;
-class QWheelEvent;
 class QWidget;
 class SnowCanvasCursorController;
 
@@ -63,13 +62,6 @@ class SnowCanvasWidgetTextInteraction final {
         bool toolbarStateChanged = false;
         ScopedChangedViewportList changedViewports;
     };
-    struct WheelFontSizeResult {
-        bool matchedToolWheel = false;
-        bool handled = false;
-        bool success = false;
-        bool toolbarStateChanged = false;
-        ScopedChangedViewportList changedViewports;
-    };
     struct ActiveResizeMeasurementState {
         bool success = false;
         bool active = false;
@@ -103,10 +95,6 @@ class SnowCanvasWidgetTextInteraction final {
     StyleChangeResult stepFontSize(SnowRuntime runtime, SnowViewport viewport,
                                    SnowCanvasDisplayCache& displayCache,
                                    const SnowTextStyle& fallbackStyle, bool increase);
-    WheelFontSizeResult handleFontSizeWheel(SnowRuntime runtime, SnowViewport viewport,
-                                            SnowCanvasDisplayCache& displayCache,
-                                            const SnowTextStyle& fallbackStyle,
-                                            SnowCanvasTool canvasTool, const QWheelEvent* event);
 
     BeginResult beginArrow(SnowRuntime runtime, SnowViewport viewport,
                            SnowCanvasDisplayCache& displayCache, const QPointF& viewPosition,

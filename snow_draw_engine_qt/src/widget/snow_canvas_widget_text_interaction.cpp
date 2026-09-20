@@ -7,7 +7,6 @@
 #include "snow_canvas_text_layout.h"
 #include "snow_canvas_text_edit_target.h"
 #include "snow_canvas_text_editor_connector.h"
-#include "snow_canvas_text_editor_input.h"
 #include "snow_canvas_text_measurement.h"
 #include "snow_canvas_widget_repaint.h"
 #include "snow_canvas_widget_selection_hit_testing.h"
@@ -24,7 +23,6 @@
 #include <QRect>
 #include <QRegion>
 #include <QStyleHints>
-#include <QWheelEvent>
 #include <QWidget>
 
 #include <cmath>
@@ -299,40 +297,6 @@ SnowCanvasWidgetTextInteraction::stepFontSize(SnowRuntime runtime, SnowViewport 
 
     style.font_size = nextFontSize;
     return applyTextStyle(runtime, viewport, displayCache, style);
-}
-
-SnowCanvasWidgetTextInteraction::WheelFontSizeResult
-SnowCanvasWidgetTextInteraction::handleFontSizeWheel(SnowRuntime runtime, SnowViewport viewport,
-                                                     SnowCanvasDisplayCache& displayCache,
-                                                     const SnowTextStyle& fallbackStyle,
-                                                     SnowCanvasTool canvasTool,
-                                                     const QWheelEvent* event) {
-    WheelFontSizeResult result;
-    const snow_canvas_text_editor_input::FontSizeWheelPlan plan =
-        snow_canvas_text_editor_input::planFontSizeWheel(
-            snow_canvas_text_editor_input::FontSizeWheelRequest{
-                event != nullptr,
-                canvasTool,
-                event != nullptr ? event->modifiers() : Qt::NoModifier,
-                event != nullptr ? event->pixelDelta().y() : 0,
-                event != nullptr ? event->angleDelta().y() : 0,
-            });
-    result.matchedToolWheel = plan.matchedToolWheel;
-    if (!plan.shouldStepFontSize) {
-        return result;
-    }
-
-    StyleChangeResult styleResult =
-        stepFontSize(runtime, viewport, displayCache, fallbackStyle, plan.increase);
-    result.success = styleResult.success;
-    if (!styleResult.success) {
-        return result;
-    }
-
-    result.handled = true;
-    result.toolbarStateChanged = styleResult.toolbarStateChanged;
-    result.changedViewports = std::move(styleResult.changedViewports);
-    return result;
 }
 
 QRegion SnowCanvasWidgetTextInteraction::applyEditorTextStyle(

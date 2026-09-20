@@ -430,6 +430,10 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool handleEnter(QEnterEvent* event);
     bool handleLeave(QEvent* event);
     bool handleWheel(QWheelEvent* event);
+    enum class FontWheelTarget { Text, SerialNumber };
+    FontWheelTarget fontWheelTarget() const;
+    bool stepSerialNumberFontSize(bool increase);
+    bool stepTextFontSize(bool increase);
     bool handleKeyPress(QKeyEvent* event);
     bool handleKeyRelease(QKeyEvent* event);
     bool handleInputMethodEvent(QInputMethodEvent* event);
@@ -2565,51 +2569,24 @@ bool SnowCanvasWidget::Impl::handleWheel(QWheelEvent* event) {
         return false;
     }
 
-    if (canvasTool() == SnowCanvasTool::SerialNumber) {
-        const snow_canvas_text_editor_input::FontSizeWheelPlan plan =
-            snow_canvas_text_editor_input::planFontSizeWheel(
-                snow_canvas_text_editor_input::FontSizeWheelRequest{
-                    true,
-                    canvasTool(),
-                    event->modifiers(),
-                    event->pixelDelta().y(),
-                    event->angleDelta().y(),
-                });
-        if (plan.matchedToolWheel) {
-            if (!plan.shouldStepFontSize) {
-                return false;
-            }
-
-            SnowSerialNumberStyle style =
-                displayState.snapshot().styleToolbarState.serial_number_style;
-            const double nextFontSize =
-                snow_canvas_text_measurement::steppedFontSize(style.font_size, plan.increase);
-            if (std::abs(nextFontSize - style.font_size) <=
-                std::numeric_limits<double>::epsilon()) {
-                return true;
-            }
-
-            style.font_size = nextFontSize;
-            return applyMutationResult(snow_canvas_commands::setSerialNumberStyle(
-                runtimeBinding.engine(), runtimeBinding.viewportHandle(), style));
-        }
-    }
-
-    SnowCanvasWidgetTextInteraction::WheelFontSizeResult textWheelResult =
-        textInteraction.handleFontSizeWheel(
-            runtimeBinding.engine(), runtimeBinding.viewportHandle(), displayState.displayCache(),
-            displayState.snapshot().styleToolbarState.text_style, canvasTool(), event);
-    if (textWheelResult.matchedToolWheel) {
-        if (!textWheelResult.handled) {
+    const snow_canvas_text_editor_input::FontSizeWheelPlan plan =
+        snow_canvas_text_editor_input::planFontSizeWheel(
+            snow_canvas_text_editor_input::FontSizeWheelRequest{
+                true,
+                canvasTool(),
+                event->modifiers(),
+                event->pixelDelta().y(),
+                event->angleDelta().y(),
+            });
+    if (plan.matchedToolWheel) {
+        if (!plan.shouldStepFontSize) {
             return false;
         }
-
-        syncChangedViewports(textWheelResult.changedViewports.get());
-        if (textWheelResult.toolbarStateChanged) {
-            emit widget.styleToolbarStateChanged();
-        }
-        return true;
+        return fontWheelTarget() == FontWheelTarget::SerialNumber
+                   ? stepSerialNumberFontSize(plan.increase)
+                   : stepTextFontSize(plan.increase);
     }
+
     if (!wheelZoomEnabled()) {
         event->accept();
         return true;
@@ -2622,6 +2599,56 @@ void SnowCanvasWidget::wheelEvent(QWheelEvent* event) {
         return;
     }
     QWidget::wheelEvent(event);
+}
+
+// Font-size wheel steps follow the style toolbar source so the wheel and the
+// toolbar agree: an active text draft, selected text, or selected serial
+// badges. With no text or badge selected, that source is the active tool's
+// default style. Other selected kinds fall back to the active font tool.
+SnowCanvasWidget::Impl::FontWheelTarget SnowCanvasWidget::Impl::fontWheelTarget() const {
+    if (textInteraction.isActive()) {
+        return FontWheelTarget::Text;
+    }
+    switch (displayState.snapshot().styleToolbarState.source) {
+    case SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_TEXT:
+    case SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_TEXT:
+        return FontWheelTarget::Text;
+    case SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_SERIAL_NUMBER:
+    case SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_SERIAL_NUMBER:
+        return FontWheelTarget::SerialNumber;
+    default:
+        break;
+    }
+    return canvasTool() == SnowCanvasTool::SerialNumber ? FontWheelTarget::SerialNumber
+                                                        : FontWheelTarget::Text;
+}
+
+bool SnowCanvasWidget::Impl::stepSerialNumberFontSize(bool increase) {
+    SnowSerialNumberStyle style = displayState.snapshot().styleToolbarState.serial_number_style;
+    const double nextFontSize =
+        snow_canvas_text_measurement::steppedFontSize(style.font_size, increase);
+    if (std::abs(nextFontSize - style.font_size) <= std::numeric_limits<double>::epsilon()) {
+        return true;
+    }
+
+    style.font_size = nextFontSize;
+    return applyMutationResult(snow_canvas_commands::setSerialNumberStyle(
+        runtimeBinding.engine(), runtimeBinding.viewportHandle(), style));
+}
+
+bool SnowCanvasWidget::Impl::stepTextFontSize(bool increase) {
+    SnowCanvasWidgetTextInteraction::StyleChangeResult result = textInteraction.stepFontSize(
+        runtimeBinding.engine(), runtimeBinding.viewportHandle(), displayState.displayCache(),
+        displayState.snapshot().styleToolbarState.text_style, increase);
+    if (!result.success) {
+        return false;
+    }
+
+    syncChangedViewports(result.changedViewports.get());
+    if (result.toolbarStateChanged) {
+        emit widget.styleToolbarStateChanged();
+    }
+    return true;
 }
 
 bool SnowCanvasWidget::Impl::handleKeyPress(QKeyEvent* event) {
