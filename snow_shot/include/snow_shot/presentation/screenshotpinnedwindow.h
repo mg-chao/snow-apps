@@ -54,6 +54,10 @@ class CanvasStatusReadout;
 class QCloseEvent;
 class QContextMenuEvent;
 class QEvent;
+class QDragEnterEvent;
+class QDragMoveEvent;
+class QDragLeaveEvent;
+class QDropEvent;
 class QKeyEvent;
 class QMouseEvent;
 class QMoveEvent;
@@ -204,6 +208,12 @@ class ScreenshotPinnedWindow final : public QWidget {
     void mouseDoubleClickEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dragMoveEvent(QDragMoveEvent* event) override;
+    void dragLeaveEvent(QDragLeaveEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
+    [[nodiscard]] QStringList eligibleDropPaths(const QDropEvent& event) const;
+    void setFileDragActive(bool active);
 
     void createUi();
     void registerWindowShortcuts();
@@ -513,6 +523,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QMetaObject::Connection m_clickThroughScreenDpiConnection;
     std::unique_ptr<ScreenshotPinnedPointerPresence> m_pointerPresence;
     bool m_windowActive = false;
+    bool m_fileDragActive = false;
     bool m_passiveGeometryReconciliationActive = false;
 };
 

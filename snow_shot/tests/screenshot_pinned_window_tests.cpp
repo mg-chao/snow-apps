@@ -54,6 +54,10 @@
 #include <QCursor>
 #include <QDataStream>
 #include <QDir>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDragLeaveEvent>
+#include <QDropEvent>
 #include <QElapsedTimer>
 #include <QEnterEvent>
 #include <QEvent>
@@ -83,6 +87,7 @@
 #include <QThread>
 #include <QTimer>
 #include <QTextBrowser>
+#include <QTextDocument>
 #include <QTranslator>
 #include <QUuid>
 #include <QVariantAnimation>
@@ -219,6 +224,12 @@ class ScreenshotPinnedWindowTestAccess {
     }
     static bool replacementPending(const ScreenshotPinnedWindow& window) {
         return window.m_contentReplacementJob.isValid();
+    }
+    static bool fileDragActive(const ScreenshotPinnedWindow& window) {
+        return window.m_fileDragActive;
+    }
+    static ScreenshotRecognitionWindow* dropRecognitionContent(ScreenshotPinnedWindow& window) {
+        return window.ensureRecognitionContent();
     }
     static const QImage& originalImage(const ScreenshotPinnedWindow& window) {
         return window.m_originalImage;
@@ -8430,6 +8441,257 @@ void pinnedCloseReleaseNative() {
 }
 #endif
 
+void pinnedFileDrop() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    QTemporaryDir files;
+    require(files.isValid(), "drop fixture directory");
+    QImage original(120, 80, QImage::Format_ARGB32_Premultiplied);
+    original.fill(QColor(20, 40, 60));
+    QImage replacement(original.size(), original.format());
+    replacement.fill(QColor(80, 100, 120));
+    const QString first = files.filePath(QStringLiteral("first.png"));
+    const QString second = files.filePath(QStringLiteral("new image # % 中文.PNG"));
+    const QString corrupt = files.filePath(QStringLiteral("corrupt.png"));
+    require(original.save(first) && replacement.save(second, "PNG"), "save drop fixtures");
+    QFile invalid(corrupt);
+    require(invalid.open(QIODevice::WriteOnly), "open corrupt fixture");
+    invalid.write("not an image");
+    invalid.close();
+
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = QRect(40, 60, 120, 80);
+    config.canvasSourceRect = QRectF(10, 20, 120, 80);
+    config.fullResolutionScaleBasis = original.size();
+    config.imageSource = ScreenshotImageSource::fromImage(original, config.canvasSourceRect);
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    QMimeData mime;
+    mime.setUrls({QUrl::fromLocalFile(second)});
+    const auto enter = [&](QWidget* target, const QMimeData& data,
+                           Qt::DropActions actions = Qt::CopyAction | Qt::MoveAction) {
+        QDragEnterEvent event(QPoint(10, 10), actions, &data, Qt::LeftButton, Qt::ShiftModifier);
+        QApplication::sendEvent(target, &event);
+        if (event.isAccepted()) {
+            require(event.dropAction() == Qt::CopyAction, "file drops must always copy");
+        }
+        return event.isAccepted();
+    };
+    const auto leave = [&]() {
+        QDragLeaveEvent event;
+        QApplication::sendEvent(&window, &event);
+    };
+    const auto drop = [&](QWidget* target, const QMimeData& data) {
+        require(enter(target, data), "valid drop enter must be accepted");
+        QDropEvent event(QPointF(10, 10), Qt::CopyAction | Qt::MoveAction, &data, Qt::LeftButton,
+                         Qt::ShiftModifier);
+        QApplication::sendEvent(target, &event);
+        require(event.isAccepted() && event.dropAction() == Qt::CopyAction,
+                "drop must accept copy even when Shift proposes move");
+        require(!Access::fileDragActive(window), "drop must clear hover immediately");
+    };
+    const auto waitForReplacement = [&]() {
+        QElapsedTimer timer;
+        timer.start();
+        while (Access::replacementPending(window) && timer.elapsed() < 10000) {
+            waitForUi(5);
+        }
+        require(!Access::replacementPending(window), "drop replacement must finish");
+    };
+    const auto samePixels = [](const QImage& a, const QImage& b) {
+        return a.convertToFormat(QImage::Format_ARGB32_Premultiplied) ==
+               b.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    };
+    window.show();
+    require(!enter(&window, mime), "unmaterialized pin must reject drops");
+    Access::prepareReplacement(window, config);
+    window.show();
+    QCoreApplication::processEvents();
+    auto* border = window.findChild<QFrame*>(QStringLiteral("screenshotPinnedBorder"));
+    require(border != nullptr, "drop target must have a border");
+    const QColor inactive(QStringLiteral("#DBDBDB"));
+    const QColor active(QStringLiteral("#69B1FF"));
+    ScreenshotPinnedWindow::setRuntimeBorderColor(inactive);
+    ScreenshotPinnedWindow::setRuntimeBorderActiveColor(active);
+    QEvent deactivate(QEvent::WindowDeactivate);
+    QApplication::sendEvent(&window, &deactivate);
+    QWidget* focus = QApplication::focusWidget();
+    const QRect geometry = window.geometry();
+    const qreal opacity = window.windowOpacity();
+    require(enter(&window, mime) && Access::fileDragActive(window), "valid enter must highlight");
+    require(border->property("borderColor").value<QColor>() == active,
+            "inactive pin must use active border while dragging");
+    require(QApplication::focusWidget() == focus && window.geometry() == geometry &&
+                window.windowOpacity() == opacity,
+            "drag hover must not change focus, geometry, or opacity");
+    QApplication::sendEvent(&window, &deactivate);
+    require(border->property("borderColor").value<QColor>() == active,
+            "deactivation during a drag must retain highlight");
+    const QColor live(QStringLiteral("#276EF1"));
+    ScreenshotPinnedWindow::setRuntimeBorderActiveColor(live);
+    require(border->property("borderColor").value<QColor>() == live,
+            "runtime border setting must apply during drag");
+    leave();
+    require(!Access::fileDragActive(window) &&
+                border->property("borderColor").value<QColor>() == inactive,
+            "leave or cancellation must restore inactive border");
+    QEvent activate(QEvent::WindowActivate);
+    QApplication::sendEvent(&window, &activate);
+    require(enter(&window, mime), "active pin must accept drag");
+    leave();
+    require(border->property("borderColor").value<QColor>() == live,
+            "leave must preserve actual activation border");
+    ScreenshotPinnedWindow::setRuntimeBorderActiveColor(active);
+
+    QMimeData unsupported;
+    unsupported.setText(second);
+    unsupported.setHtml(QStringLiteral("<b>image</b>"));
+    unsupported.setImageData(replacement);
+    unsupported.setUrls({QUrl(QStringLiteral("https://example.com/image.png")),
+                         QUrl::fromLocalFile(files.filePath(QStringLiteral("document.txt")))});
+    require(!enter(&window, unsupported), "non-file payloads and unsupported URLs must reject");
+    unsupported.clear();
+    unsupported.setText(second);
+    require(!enter(&window, unsupported), "plain paths must not be treated as file URLs");
+    unsupported.clear();
+    unsupported.setImageData(replacement);
+    require(!enter(&window, unsupported), "image-only MIME data must reject");
+    require(!enter(&window, mime, Qt::MoveAction), "move-only sources must reject");
+    require(enter(&window, mime), "valid drag before invalid move");
+    QDragMoveEvent rejectedMove(QPoint(10, 10), Qt::MoveAction, &mime, Qt::LeftButton,
+                                Qt::NoModifier);
+    QApplication::sendEvent(&window, &rejectedMove);
+    require(!rejectedMove.isAccepted() && !Access::fileDragActive(window),
+            "move must revalidate actions and clear feedback");
+    leave();
+    require(enter(&window, mime), "valid drag before rejected drop");
+    QDropEvent rejectedDrop(QPointF(10, 10), Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&window, &rejectedDrop);
+    require(!rejectedDrop.isAccepted() && !Access::fileDragActive(window) &&
+                !Access::replacementPending(window),
+            "drop must revalidate actions without starting replacement");
+
+    const QString id = window.persistenceId();
+    const QByteArray history = Access::drawingHistory(window);
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    auto* control = window.findChild<QWidget*>(QStringLiteral("screenshotPinnedCloseButton"));
+    require(canvas && control && !canvas->acceptDrops() && !control->acceptDrops(),
+            "embedded surfaces must delegate drops to the pin");
+    require(enter(canvas, mime), "canvas must route enter to pin");
+    QDragMoveEvent move(QPoint(1, 1), Qt::CopyAction | Qt::MoveAction, &mime, Qt::LeftButton,
+                        Qt::ShiftModifier);
+    QApplication::sendEvent(control, &move);
+    require(move.isAccepted() && Access::fileDragActive(window),
+            "moving over controls must retain drop target");
+    leave();
+    drop(canvas, mime);
+    require(samePixels(Access::originalImage(window), original),
+            "old pixels must remain until asynchronous completion");
+    waitForReplacement();
+    require(samePixels(Access::originalImage(window), replacement) &&
+                window.persistenceId() == id && Access::drawingHistory(window) == history,
+            "encoded uppercase path must replace content without replacing pin or document");
+
+    auto* recognition = Access::dropRecognitionContent(window);
+    QTextDocument document;
+    document.setPlainText(QStringLiteral("keep text"));
+    recognition->showTextEditor(&document);
+    auto* editor = recognition->findChild<QTextEdit*>();
+    require(editor != nullptr, "embedded recognition must create a text editor");
+    recognition->show();
+    editor->show();
+    editor->setAcceptDrops(true);
+    editor->viewport()->setAcceptDrops(true);
+    require(!editor->acceptDrops() && !editor->viewport()->acceptDrops(),
+            "lazy recognition editors must not intercept file drops");
+    QMimeData mixed;
+    mixed.setUrls({QUrl::fromLocalFile(files.filePath(QStringLiteral("ignore.txt"))),
+                   QUrl::fromLocalFile(corrupt), QUrl::fromLocalFile(first),
+                   QUrl::fromLocalFile(second)});
+    drop(editor->viewport(), mixed);
+    waitForReplacement();
+    require(samePixels(Access::originalImage(window), original) &&
+                editor->toPlainText() == QStringLiteral("keep text"),
+            "first decodable image must win without inserting URLs into recognition text");
+    recognition->hide();
+
+    QMimeData failed;
+    failed.setUrls({QUrl::fromLocalFile(files.filePath(QStringLiteral("missing.png"))),
+                    QUrl::fromLocalFile(corrupt), QUrl::fromLocalFile(files.path())});
+    drop(control, failed);
+    waitForReplacement();
+    require(samePixels(Access::originalImage(window), original) &&
+                Access::drawingHistory(window) == history && window.persistenceId() == id,
+            "failed files must preserve current content and identity");
+
+    QMimeData old;
+    old.setUrls({QUrl::fromLocalFile(first)});
+    drop(&window, old);
+    {
+        QMimeData transientMime;
+        transientMime.setUrls({QUrl::fromLocalFile(second)});
+        drop(&window, transientMime);
+    }
+    waitForReplacement();
+    require(samePixels(Access::originalImage(window), replacement),
+            "a newer drop must supersede pending replacement");
+    Access::thumbnailForHideTest(window, true);
+    drop(&window, old);
+    waitForReplacement();
+    require(window.persistenceSnapshot().thumbnailMode &&
+                samePixels(Access::originalImage(window), original),
+            "thumbnail drops must retain thumbnail mode");
+    Access::thumbnailForHideTest(window, false);
+    auto& hideToTop = Access::hideToTop(window);
+    require(hideToTop.enter(screenshot_pinned_hide_to_top::screenGeometry(window.screen())),
+            "enter hide-to-top drop fixture");
+    hideToTop.animation().setCurrentTime(hideToTop.animation().duration());
+    require(!window.isVisible() && !hideToTop.handleWidget()->acceptDrops(),
+            "collapsed top handle must remain outside drop targets");
+    hideToTop.updatePointer(hideToTop.handleGeometry().center());
+    require(window.isVisible() &&
+                hideToTop.state() == ScreenshotPinnedHideToTopController::State::Revealed,
+            "top handle must reveal the content");
+    drop(&window, old);
+    waitForReplacement();
+    require(hideToTop.active() && samePixels(Access::originalImage(window), original),
+            "revealed window must accept replacement and retain hide-to-top mode");
+    hideToTop.exit();
+    require(enter(&window, mime), "enter before hiding");
+    window.hide();
+    require(!Access::fileDragActive(window) && !enter(&window, mime),
+            "hidden window must clear and reject drag");
+    window.show();
+    require(enter(&window, mime), "enter before click-through");
+    require(Access::setClickThrough(window, true), "enter click-through");
+    require(!Access::fileDragActive(window) && !enter(&window, mime),
+            "click-through must clear and reject drag");
+    require(Access::setClickThrough(window, false), "exit click-through");
+    {
+        ScreenshotPinnedWindow other;
+        other.setAttribute(Qt::WA_DeleteOnClose, false);
+        Access::prepareReplacement(other, config);
+        other.show();
+        require(enter(&window, mime) && !Access::fileDragActive(other),
+                "drag feedback must belong only to its target pin");
+        leave();
+        require(enter(&other, mime) && !Access::fileDragActive(window) &&
+                    Access::fileDragActive(other),
+                "moving between pins must transfer feedback without leaving a stale highlight");
+        QDragLeaveEvent otherLeave;
+        QApplication::sendEvent(&other, &otherLeave);
+        other.close();
+    }
+    drop(&window, mime);
+    require(enter(&window, mime), "enter before closing");
+    window.close();
+    require(!Access::fileDragActive(window) && !Access::replacementPending(window),
+            "close must clear feedback and cancel pending replacement");
+    waitForUi(30);
+    require(samePixels(Access::originalImage(window), original),
+            "closed pin must ignore stale replacement completion");
+    require(QFileInfo::exists(first) && QFileInfo::exists(second), "sources must remain intact");
+}
+
 void pinnedContentReplacement() {
     using Access = ScreenshotPinnedWindowTestAccess;
     QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
@@ -9015,6 +9277,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--content-replacement-only"))) {
             pinnedContentReplacement();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--file-drop-only"))) {
+            pinnedFileDrop();
             return 0;
         }
 #ifdef Q_OS_WIN

@@ -52,6 +52,11 @@
 #include <QApplication>
 #include <QByteArray>
 #include <QClipboard>
+#include <QChildEvent>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDragLeaveEvent>
+#include <QDropEvent>
 #include <QCloseEvent>
 #include <QDataStream>
 #include <QContextMenuEvent>
@@ -455,6 +460,48 @@ QTransform normalizedImageTransform(const QTransform& transform, const QSize& so
     return normalized;
 }
 
+// Let Qt route the entire embedded surface to a single drop target. In particular,
+// text editors must not consume file URLs. Watch polish and subsequent changes so
+// lazily created recognition editors participate too; separate tool windows do not.
+class PinnedFileDropRouting final : public QObject {
+  public:
+    explicit PinnedFileDropRouting(QWidget* owner) : QObject(owner), m_owner(owner) {
+        watch(owner);
+    }
+
+  private:
+    void watch(QWidget* widget) {
+        if (widget != m_owner && widget->window() != m_owner) {
+            return;
+        }
+        widget->installEventFilter(this);
+        if (widget != m_owner) {
+            widget->setAcceptDrops(false);
+        }
+        const auto children = widget->findChildren<QWidget*>(Qt::FindDirectChildrenOnly);
+        for (QWidget* child : children) {
+            watch(child);
+        }
+    }
+
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() == QEvent::ChildPolished) {
+            auto* child = static_cast<QChildEvent*>(event)->child();
+            if (auto* widget = qobject_cast<QWidget*>(child)) {
+                watch(widget);
+            }
+        } else if (event->type() == QEvent::AcceptDropsChange && watched != m_owner) {
+            auto* widget = qobject_cast<QWidget*>(watched);
+            if (widget != nullptr && widget->window() == m_owner && widget->acceptDrops()) {
+                widget->setAcceptDrops(false);
+            }
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+    QWidget* m_owner;
+};
+
 // Paints the pinned window border in physical device pixels. A style sheet
 // border is sized in logical pixels, which land on fractional device-pixel
 // positions on fractional-scale screens and rasterize with uneven
@@ -778,6 +825,8 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
     }
 
     createUi();
+    setAcceptDrops(true);
+    new PinnedFileDropRouting(this);
     m_hideToTop = std::make_unique<ScreenshotPinnedHideToTopController>(
         this, ScreenshotPinnedHideToTopController::Hooks{
                   [this] { return currentNativeGeometry(); },
@@ -1381,6 +1430,7 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
             schedulePointerPresence(event->type() == QEvent::Enter);
         }
     } else if (event != nullptr && event->type() == QEvent::Hide) {
+        setFileDragActive(false);
         m_pointerPresence->reset();
         m_pointerInside = false;
         if (m_clickThroughExitButton != nullptr) {
@@ -2052,6 +2102,7 @@ void ScreenshotPinnedWindow::contextMenuEvent(QContextMenuEvent* event) {
 }
 
 void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
+    setFileDragActive(false);
     emit closingForPersistence(persistenceRecord(), m_persistenceRemovalRequested);
     if (m_persistenceRemovalRequested) {
         removePersistence();
@@ -2554,8 +2605,8 @@ void ScreenshotPinnedWindow::applyRuntimeBorderColor() {
     if (m_borderFrame == nullptr) {
         return;
     }
-    const QColor color =
-        m_windowActive ? configuredPinnedBorderActiveColor() : configuredPinnedBorderColor();
+    const QColor color = (m_windowActive || m_fileDragActive) ? configuredPinnedBorderActiveColor()
+                                                              : configuredPinnedBorderColor();
     m_borderFrame->setProperty(kPinnedBorderColorProperty, color);
     m_borderFrame->update();
 }
@@ -4326,6 +4377,69 @@ void ScreenshotPinnedWindow::cancelContentReplacement() {
     m_contentReplacementJob = {};
 }
 
+QStringList ScreenshotPinnedWindow::eligibleDropPaths(const QDropEvent& event) const {
+    if (!m_firstContentFramePublished || m_originalImage.isNull() || !isVisible() || m_closing ||
+        m_clickThroughActive || !event.possibleActions().testFlag(Qt::CopyAction)) {
+        return {};
+    }
+    const QStringList extensions = ScreenshotClipboardContentReader::supportedFileExtensions();
+    QStringList paths;
+    for (const QString& path : ScreenshotClipboardContentReader::localFilePaths(event.mimeData())) {
+        // suffix() only inspects the path; never stat or decode a file during a drag.
+        if (extensions.contains(QFileInfo(path).suffix(), Qt::CaseInsensitive)) {
+            paths.append(path);
+        }
+    }
+    return paths;
+}
+
+void ScreenshotPinnedWindow::setFileDragActive(bool active) {
+    if (m_fileDragActive == active) {
+        return;
+    }
+    m_fileDragActive = active;
+    applyRuntimeBorderColor();
+}
+
+void ScreenshotPinnedWindow::dragEnterEvent(QDragEnterEvent* event) {
+    const bool accepted = !eligibleDropPaths(*event).isEmpty();
+    setFileDragActive(accepted);
+    if (accepted) {
+        event->setDropAction(Qt::CopyAction);
+        event->accept();
+    } else {
+        event->ignore();
+    }
+}
+
+void ScreenshotPinnedWindow::dragMoveEvent(QDragMoveEvent* event) {
+    const bool accepted = !eligibleDropPaths(*event).isEmpty();
+    setFileDragActive(accepted);
+    if (accepted) {
+        event->setDropAction(Qt::CopyAction);
+        event->accept();
+    } else {
+        event->ignore();
+    }
+}
+
+void ScreenshotPinnedWindow::dragLeaveEvent(QDragLeaveEvent* event) {
+    setFileDragActive(false);
+    event->accept();
+}
+
+void ScreenshotPinnedWindow::dropEvent(QDropEvent* event) {
+    QStringList paths = eligibleDropPaths(*event);
+    setFileDragActive(false);
+    if (paths.isEmpty()) {
+        event->ignore();
+        return;
+    }
+    event->setDropAction(Qt::CopyAction);
+    event->accept();
+    requestContentReplacement(std::move(paths));
+}
+
 void ScreenshotPinnedWindow::loadImageFile() {
     if (!m_firstContentFramePublished || m_closing) {
         return;
@@ -5311,6 +5425,9 @@ bool ScreenshotPinnedWindow::updateClickThroughExitButtonGeometry() {
 }
 
 bool ScreenshotPinnedWindow::setClickThroughMode(bool enabled) {
+    if (enabled) {
+        setFileDragActive(false);
+    }
     resetPinnedGestures();
     if (enabled == m_clickThroughActive) {
         refreshContextMenu();
