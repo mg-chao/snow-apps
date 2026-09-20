@@ -1,5 +1,6 @@
 #include "snow_shot/storage/configurationarchive.h"
 #include "snow_shot/storage/configurationschema.h"
+#include "snow_shot/platform/minizippath.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -96,6 +97,14 @@ QString ConfigurationArchive::write(const QString& archivePath,
             .filePath(QStringLiteral(".%1.%2.part")
                           .arg(target.fileName(), QUuid::createUuid().toString(QUuid::Id128)));
 
+    // Declared before the writer so every failure closes the archive before removing it.
+    struct TemporaryGuard {
+        QString path;
+        ~TemporaryGuard() {
+            QFile::remove(path);
+        }
+    } temporaryGuard{temporary};
+
     QJsonObject configuration;
     for (auto it = values.cbegin(); it != values.cend(); ++it) {
         if (it.key() == QLatin1String("storage/schema_version")) {
@@ -117,15 +126,13 @@ QString ConfigurationArchive::write(const QString& archivePath,
     }
     struct WriterGuard {
         void* writer;
-        bool closed = false;
         ~WriterGuard() {
-            if (!closed) {
-                mz_zip_writer_close(writer);
-            }
+            // Minizip deletes an open writer by closing it first.
             mz_zip_writer_delete(&writer);
         }
     } guard{writer};
-    if (mz_zip_writer_open_file(writer, QFile::encodeName(temporary).constData(), 0, 0) != MZ_OK) {
+    if (mz_zip_writer_open_file(writer, platform::minizipPath(temporary).constData(), 0, 0) !=
+        MZ_OK) {
         return failure;
     }
     const auto addEntry = [writer](const char* name, const QByteArray& payload) {
@@ -135,17 +142,15 @@ QString ConfigurationArchive::write(const QString& archivePath,
         return mz_zip_writer_add_buffer(writer, const_cast<char*>(payload.constData()),
                                         static_cast<int32_t>(payload.size()), &info) == MZ_OK;
     };
-    if (!addEntry("manifest.json", QJsonDocument(manifest).toJson(QJsonDocument::Compact)) ||
-        !addEntry("config.json", QJsonDocument(configuration).toJson(QJsonDocument::Compact)) ||
-        mz_zip_writer_close(writer) != MZ_OK) {
-        guard.closed = true;
-        QFile::remove(temporary);
+    const bool entriesWritten =
+        addEntry("manifest.json", QJsonDocument(manifest).toJson(QJsonDocument::Compact)) &&
+        addEntry("config.json", QJsonDocument(configuration).toJson(QJsonDocument::Compact));
+    const int32_t closeResult = mz_zip_writer_close(writer);
+    if (!entriesWritten || closeResult != MZ_OK) {
         return failure;
     }
-    guard.closed = true;
     QFile::remove(archivePath);
     if (!QFile::rename(temporary, archivePath)) {
-        QFile::remove(temporary);
         return failure;
     }
     return {};
@@ -163,7 +168,7 @@ ConfigurationArchiveReadResult ConfigurationArchive::read(const QString& archive
 
     void* reader = mz_zip_reader_create();
     if (reader == nullptr || archivePath.isEmpty() ||
-        mz_zip_reader_open_file(reader, QFile::encodeName(archivePath).constData()) != MZ_OK) {
+        mz_zip_reader_open_file(reader, platform::minizipPath(archivePath).constData()) != MZ_OK) {
         if (reader != nullptr) {
             mz_zip_reader_close(reader);
             mz_zip_reader_delete(&reader);

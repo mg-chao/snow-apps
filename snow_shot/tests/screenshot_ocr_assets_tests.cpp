@@ -24,6 +24,12 @@
 #include <Windows.h>
 #endif
 
+#include <mz.h>
+#include <mz_strm.h>
+#include <mz_strm_mem.h>
+#include <mz_zip.h>
+#include <mz_zip_rw.h>
+
 namespace {
 #ifdef Q_OS_MACOS
 const QString kWorkerName = QStringLiteral("snow-ocr-process");
@@ -237,6 +243,44 @@ bool writeDownloadedModelFixture(const QString& destination, QString* error) {
     }
     writeFixture(destination, contents);
     return true;
+}
+
+// Builds the runtime archive in memory so the fixture itself never depends on
+// path encoding choices made by the production archive reader.
+QByteArray buildRuntimeArchiveBytes() {
+    const QList<QPair<QString, QByteArray>> entries{
+        {QStringLiteral("snow-ocr-process-1.0.7-windows-x64.exe"), QByteArray("process")},
+        {QStringLiteral("DirectML.dll"), QByteArray("directml")},
+        {QStringLiteral("runtime-manifest.json"), QByteArray("runtime")},
+    };
+    void* stream = mz_stream_mem_create();
+    require(stream != nullptr, "the fixture memory stream must be created");
+    mz_stream_mem_set_grow_size(stream, 64 * 1024);
+    require(mz_stream_mem_open(stream, nullptr, MZ_OPEN_MODE_CREATE) == MZ_OK,
+            "the fixture memory stream must open");
+    void* writer = mz_zip_writer_create();
+    require(writer != nullptr, "the fixture archive writer must be created");
+    require(mz_zip_writer_open(writer, stream, 0) == MZ_OK, "the fixture archive writer must open");
+    for (const auto& entry : entries) {
+        const QByteArray name = entry.first.toUtf8();
+        mz_zip_file info{};
+        info.filename = name.constData();
+        info.compression_method = MZ_COMPRESS_METHOD_DEFLATE;
+        require(mz_zip_writer_add_buffer(writer, entry.second.constData(),
+                                         static_cast<int32_t>(entry.second.size()), &info) == MZ_OK,
+                "the fixture archive entry must be written");
+    }
+    require(mz_zip_writer_close(writer) == MZ_OK, "the fixture archive must close");
+    const void* buffer = nullptr;
+    require(mz_stream_mem_get_buffer(stream, &buffer) == MZ_OK && buffer != nullptr,
+            "the fixture archive buffer must be readable");
+    int32_t length = 0;
+    mz_stream_mem_get_buffer_length(stream, &length);
+    const QByteArray archive(static_cast<const char*>(buffer), length);
+    mz_zip_writer_delete(&writer);
+    mz_stream_mem_close(stream);
+    mz_stream_mem_delete(&stream);
+    return archive;
 }
 
 void validOfflineAssetsAreSelectedWithoutNetwork() {
@@ -725,6 +769,65 @@ void concurrentAcquisitionAndInterruptedDownload() {
             "interrupted downloads must remove partial staging files");
 }
 
+void runtimeArchivesExtractThroughUnicodeCachePaths() {
+#ifndef Q_OS_MACOS
+    // The macOS fixture manifest switches to the bundled runtime schema, which
+    // never reaches archive extraction; the downloaded runtime path below is
+    // the Windows delivery.
+    QTemporaryDir offline;
+    QTemporaryDir cache(QDir::tempPath() +
+                        QStringLiteral("/snow OCR caf\u00e9 缓存-\U0001F9CA-XXXXXX"));
+    require(offline.isValid() && cache.isValid(),
+            "temporary OCR extraction roots should be available");
+    writeAssetManifest(offline.path(), false);
+    const QByteArray archive = buildRuntimeArchiveBytes();
+    const QString manifestPath =
+        QDir(offline.path()).filePath(QStringLiteral("asset-manifest.json"));
+    QFile input(manifestPath);
+    require(input.open(QIODevice::ReadOnly), "fixture manifest should be readable");
+    QJsonObject manifest = QJsonDocument::fromJson(input.readAll()).object();
+    input.close();
+    QJsonObject runtime = manifest.value(QStringLiteral("runtime")).toObject();
+    QJsonObject archiveEntry = runtime.value(QStringLiteral("archive")).toObject();
+    archiveEntry.insert(QStringLiteral("size"), archive.size());
+    archiveEntry.insert(
+        QStringLiteral("sha256"),
+        QString::fromLatin1(QCryptographicHash::hash(archive, QCryptographicHash::Sha256).toHex()));
+    runtime.insert(QStringLiteral("archive"), archiveEntry);
+    manifest.insert(QStringLiteral("runtime"), runtime);
+    writeFixture(manifestPath, QJsonDocument(manifest).toJson(QJsonDocument::Compact));
+
+    ScreenshotOcrAssets::Options options;
+    options.offlineRoot = offline.path();
+    options.bundledRuntimeRoot = offline.path();
+    options.cacheRoot = cache.path();
+    options.downloadOverride = [&](const QString& url, const QString& destination, QString* error) {
+        if (url == QStringLiteral("https://example.invalid/runtime")) {
+            QFile archiveDestination(destination);
+            if (!archiveDestination.open(QIODevice::WriteOnly | QIODevice::Truncate) ||
+                archiveDestination.write(archive) != archive.size()) {
+                *error = QStringLiteral("fixture runtime archive write failed");
+                return false;
+            }
+            return true;
+        }
+        return writeDownloadedModelFixture(destination, error);
+    };
+    ScreenshotOcrAssets assets(options);
+    bool ready = false;
+    bool failed = false;
+    QObject::connect(&assets, &ScreenshotOcrAssets::ready, &assets,
+                     [&](const ScreenshotOcrResolvedAssets& result) { ready = result.valid(); });
+    QObject::connect(&assets, &ScreenshotOcrAssets::failed, &assets,
+                     [&](const QString&) { failed = true; });
+    assets.prepare();
+    require(waitUntil([&]() { return ready || failed; }, 5'000),
+            "OCR runtime extraction should complete through a unicode cache path");
+    require(ready && !failed,
+            "runtime archives must extract from directories outside the ANSI code page");
+#endif
+}
+
 void macosBundledRuntimeTests() {
 #ifdef Q_OS_MACOS
     QTemporaryDir root(QDir::tempPath() + QStringLiteral("/snow OCR 空间-XXXXXX"));
@@ -872,6 +975,7 @@ int main(int argc, char** argv) {
     modelSelectionDuringAcquisitionIsLastSelectionWins();
     assetDestructionInterruptsTheCacheLockWait();
     concurrentAcquisitionAndInterruptedDownload();
+    runtimeArchivesExtractThroughUnicodeCachePaths();
     macosBundledRuntimeTests();
     return 0;
 }

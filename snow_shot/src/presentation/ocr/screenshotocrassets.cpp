@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotocrassets.h"
+#include "snow_shot/platform/minizippath.h"
 
 #include <QCryptographicHash>
 #include <QCoreApplication>
@@ -679,7 +680,7 @@ bool download(QNetworkAccessManager* manager, const FileDescriptor& descriptor,
 bool extractRuntime(const QString& archive, const QString& staging,
                     const QList<FileDescriptor>& allowlist, QString* error) {
     void* reader = mz_zip_reader_create();
-    const QByteArray archivePath = QFile::encodeName(archive);
+    const QByteArray archivePath = snow_shot::platform::minizipPath(archive);
     if (reader == nullptr || mz_zip_reader_open_file(reader, archivePath.constData()) != MZ_OK) {
         if (error != nullptr)
             *error = QStringLiteral("could not open OCR runtime archive");

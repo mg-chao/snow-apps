@@ -1119,6 +1119,77 @@ mod tests {
     }
 
     #[test]
+    fn transactions_commit_through_non_ansi_installation_paths() {
+        // Rust filesystem operations must preserve Unicode paths throughout the
+        // transaction, including characters outside legacy Windows code pages.
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("雪图 SnowShot café 中文路径 🧊");
+        fs::create_dir_all(root.join("bin")).unwrap();
+        let old_app = b"old application";
+        fs::write(root.join("bin/snow_shot.exe"), old_app).unwrap();
+        let old_record = InstallationRecord {
+            schema: 1,
+            variant: "online".to_owned(),
+            version: "1.0.0".to_owned(),
+            files: vec![descriptor("bin/snow_shot.exe", old_app)],
+        };
+        fs::write(
+            root.join(INSTALLATION_RECORD),
+            serde_json::to_vec(&old_record).unwrap(),
+        )
+        .unwrap();
+
+        let new_app = b"new application";
+        let new_record = InstallationRecord {
+            schema: 1,
+            variant: "online".to_owned(),
+            version: "2.0.0".to_owned(),
+            files: vec![descriptor("bin/snow_shot.exe", new_app)],
+        };
+        let new_record_bytes = serde_json::to_vec(&new_record).unwrap();
+        let archive = directory.path().join("更新包 🧊.zip");
+        write_zip(
+            &archive,
+            &[
+                ("bin/snow_shot.exe", new_app, None),
+                (INSTALLATION_RECORD, &new_record_bytes, None),
+            ],
+        );
+        let mut update_package = package(vec![
+            descriptor("bin/snow_shot.exe", new_app),
+            descriptor(INSTALLATION_RECORD, &new_record_bytes),
+        ]);
+        update_package.size = fs::metadata(&archive).unwrap().len();
+        update_package.sha256 = sha256_file(&archive).unwrap();
+        let release = UpdateRelease {
+            version: "2.0.0".to_owned(),
+            packages: vec![update_package],
+            envelope: Vec::new(),
+        };
+        let probe = || true;
+        apply_transaction(
+            &root,
+            &archive,
+            &release,
+            TransactionHooks {
+                probe: Some(&probe),
+                checkpoint: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(fs::read(root.join("bin/snow_shot.exe")).unwrap(), new_app);
+        assert_eq!(
+            serde_json::from_slice::<InstallationRecord>(
+                &fs::read(root.join(INSTALLATION_RECORD)).unwrap()
+            )
+            .unwrap()
+            .version,
+            "2.0.0"
+        );
+        assert!(!transaction_pending(&root));
+    }
+
+    #[test]
     fn transaction_commits_and_rolls_back_after_probe_failure() {
         for probe_succeeds in [true, false] {
             let directory = tempfile::tempdir().unwrap();

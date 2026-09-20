@@ -1,10 +1,12 @@
 #include "snow_shot/storage/configurationarchive.h"
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/configurationstore.h"
+#include "snow_shot/platform/minizippath.h"
 
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QStringList>
@@ -30,7 +32,8 @@ void require(bool condition, const char* message) {
 void writeZip(const QString& path, const QMap<QString, QByteArray>& entries) {
     void* writer = mz_zip_writer_create();
     require(writer != nullptr, "test zip writer could not be created");
-    require(mz_zip_writer_open_file(writer, QFile::encodeName(path).constData(), 0, 0) == MZ_OK,
+    require(mz_zip_writer_open_file(writer, snow_shot::platform::minizipPath(path).constData(), 0,
+                                    0) == MZ_OK,
             "test zip could not be opened");
     for (auto it = entries.cbegin(); it != entries.cend(); ++it) {
         const QByteArray name = it.key().toUtf8();
@@ -41,7 +44,7 @@ void writeZip(const QString& path, const QMap<QString, QByteArray>& entries) {
                                          static_cast<int32_t>(it.value().size()), &info) == MZ_OK,
                 "test zip entry could not be written");
     }
-    mz_zip_writer_close(writer);
+    require(mz_zip_writer_close(writer) == MZ_OK, "test zip must finalize successfully");
     mz_zip_writer_delete(&writer);
 }
 
@@ -223,6 +226,52 @@ void writeRejectsUnwritableTargets(const QTemporaryDir& temporary) {
             "writing under a regular file must fail");
     require(!storage::ConfigurationArchive::write(QString(), {}, 1).isEmpty(),
             "writing without a target path must fail");
+
+    const QString directoryTarget = temporary.filePath(QStringLiteral("directory.zip"));
+    require(QDir().mkpath(directoryTarget), "a directory target must be available");
+    require(!storage::ConfigurationArchive::write(directoryTarget, {}, 1).isEmpty(),
+            "publishing an archive over a directory must fail");
+    require(QFileInfo(directoryTarget).isDir(), "failed publication must preserve the directory");
+    require(QDir(temporary.path())
+                .entryList({QStringLiteral("*.part")}, QDir::Files | QDir::Hidden)
+                .isEmpty(),
+            "failed publication must remove temporary archives");
+}
+
+void unicodePathRoundTrip(const QString& name) {
+    QTemporaryDir unicodeDirectory(QDir::tempPath() + QStringLiteral("/snow-%1-XXXXXX").arg(name));
+    require(unicodeDirectory.isValid(), "a unicode temporary directory must be available");
+    const QJsonObject configuration = sampleConfiguration();
+    QMap<QString, QJsonValue> values;
+    for (auto it = configuration.begin(); it != configuration.end(); ++it) {
+        values.insert(it.key(), it.value());
+    }
+
+    const QString path = QDir(unicodeDirectory.path()).filePath(name + QStringLiteral(".zip"));
+    require(storage::ConfigurationArchive::write(
+                path, values, storage::ConfigurationStore::currentSchemaVersion())
+                .isEmpty(),
+            "writing a configuration archive under a unicode path must succeed");
+    require(QFileInfo::exists(path), "the archive must exist at the exact requested Unicode path");
+    const storage::ConfigurationArchiveReadResult read = storage::ConfigurationArchive::read(path);
+    require(read.isValid(), "reading a configuration archive from a unicode path must succeed");
+    require(read.schemaVersion == storage::ConfigurationStore::currentSchemaVersion(),
+            "unicode-path archives must preserve the schema version");
+    for (auto it = values.cbegin(); it != values.cend(); ++it) {
+        if (it.key() == QStringLiteral("storage/schema_version")) {
+            continue;
+        }
+        require(read.values.value(it.key()) == it.value(),
+                "unicode-path archives must preserve values");
+    }
+}
+
+void unicodePathsRoundTrip() {
+    // Test both ANSI-representable characters whose bytes differ from UTF-8 and
+    // characters outside legacy code pages, in both directory and archive names.
+    unicodePathRoundTrip(QStringLiteral("caf\u00e9"));
+    unicodePathRoundTrip(QStringLiteral("配置归档-\U0001F9CA"));
+    unicodePathRoundTrip(QStringLiteral("cafe\u0301"));
 }
 
 void applySnapshotReplacesConfiguration(const QTemporaryDir& temporary) {
@@ -327,6 +376,7 @@ int main(int argc, char** argv) {
     roundTripPreservesValuesAndSchemaVersion(temporary);
     readRejectsInvalidArchives(temporary);
     writeRejectsUnwritableTargets(temporary);
+    unicodePathsRoundTrip();
     applySnapshotReplacesConfiguration(temporary);
     return 0;
 }
