@@ -65,6 +65,7 @@ class AdContextMenu final : public QMenu {
   using QMenu::addAction;
   using QMenu::addMenu;
 
+  // Appearance tokens are retained for compatibility; macOS renders native menus.
   ColorScheme colorScheme() const;
   void setColorScheme(ColorScheme value);
 
@@ -84,6 +85,11 @@ class AdContextMenu final : public QMenu {
 
   void setActionDanger(QAction* action, bool danger = true);
   bool actionDanger(const QAction* action) const;
+
+  // Native menus track outside QWidget visibility on macOS.
+  bool isPopupVisible() const;
+  void dismissPopup();
+  QSize sizeHint() const override;
 
   void popupAt(const QPoint& globalPosition);
   QAction* execAt(const QPoint& globalPosition, QAction* initialAction = nullptr);

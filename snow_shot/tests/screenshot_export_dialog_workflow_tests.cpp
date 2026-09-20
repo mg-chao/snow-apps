@@ -361,7 +361,8 @@ void pdfDialogAndSettings(QWidget& owner, const QTemporaryDir& temp) {
             const auto source = pipeline::prepare(snow_shot::image_codec::srgbRowSource(fixture()),
                                                   cancellation, &error);
             auto pixels = pipeline::preparePixels(source, source.rows.size, cancellation, &error);
-            ScreenshotSaveExportOptions options{source.rows.size, Format::Pdf, 99};
+            ScreenshotSaveExportOptions options{
+                .size = source.rows.size, .format = Format::Pdf, .quality = 99};
             const auto first = pipeline::render(pixels, options, cancellation, &error);
             require(first && first->pdf, "PDF pipeline must encode its image payload");
             options.pdfTitle = QStringLiteral("renamed");
@@ -604,8 +605,10 @@ void stateRules(const QTemporaryDir& temp) {
                                                     ScreenshotImageFileService::extension(format)),
                 "output must preserve the base name and append the selected format extension");
     }
-    require(pipeline::normalizedOptions({QSize(320, 123), Format::Bmp, 75}).quality == 100,
-            "BMP quality must normalize out because the encoder has no quality setting");
+    require(
+        pipeline::normalizedOptions({.size = QSize(320, 123), .format = Format::Bmp, .quality = 75})
+                .quality == 100,
+        "BMP quality must normalize out because the encoder has no quality setting");
     state.output.size = QSize(0, 100);
     require(!state.validationError().isEmpty(), "zero dimensions must fail");
     state.output.format = Format::Webp;
@@ -640,7 +643,9 @@ void encodingAndFullResolutionDisplay() {
                                 Format::Avif}) {
                 for (int quality : {100, 72}) {
                     const ScreenshotSaveExportOptions options{
-                        quality == 100 ? QSize(80, 50) : QSize(96, 32), format, quality};
+                        .size = quality == 100 ? QSize(80, 50) : QSize(96, 32),
+                        .format = format,
+                        .quality = quality};
                     const auto output = pipeline::render(source, options, cancellation, &error);
                     require(output && snow_shot::image_codec::inspectFile(
                                           output->path,
@@ -655,8 +660,9 @@ void encodingAndFullResolutionDisplay() {
                             "display pixels must match an independent decode of the export");
                 }
                 if (format != Format::Jpeg) {
-                    const auto lossless = pipeline::render(source, {original.size(), format, 100},
-                                                           cancellation, &error);
+                    const auto lossless = pipeline::render(
+                        source, {.size = original.size(), .format = format, .quality = 100},
+                        cancellation, &error);
                     const QImage preview =
                         lossless ? pipeline::decode(*lossless, cancellation, &error) : QImage{};
                     if (preview != original) {
@@ -688,8 +694,9 @@ void encodingAndFullResolutionDisplay() {
                     "large source must retain full dimensions and a bounded preview");
             for (auto format : {Format::Png, Format::Jpeg, Format::Bmp, Format::Webp, Format::Jxl,
                                 Format::Avif}) {
-                const auto output =
-                    pipeline::render(large, {QSize(48, 2304), format, 72}, cancellation, &error);
+                const auto output = pipeline::render(
+                    large, {.size = QSize(48, 2304), .format = format, .quality = 72}, cancellation,
+                    &error);
                 require(output != nullptr, "large output encoding failed");
                 const QImage preview = pipeline::decode(*output, cancellation, &error);
                 require(preview.size() == QSize(48, 2304) &&
@@ -699,8 +706,9 @@ void encodingAndFullResolutionDisplay() {
                                            ScreenshotImageFileService::snowImageFormat(format))),
                         "large display images must contain the complete decoded export");
             }
-            const auto retained =
-                pipeline::render(source, {original.size(), Format::Png, 100}, cancellation, &error);
+            const auto retained = pipeline::render(
+                source, {.size = original.size(), .format = Format::Png, .quality = 100},
+                cancellation, &error);
             require(retained != nullptr, "retained export fixture failed");
             const QString parked = retained->path + QStringLiteral(".unavailable");
             require(QFile::rename(retained->path, parked),
@@ -737,7 +745,7 @@ void encodingAndFullResolutionDisplay() {
             mapped = {};
             require(weak.expired(), "releasing the last display image must release its mapping");
             pipeline::Encoded missing;
-            missing.options = {QSize(2, 2), Format::Png, 100};
+            missing.options = {.size = QSize(2, 2), .format = Format::Png, .quality = 100};
             missing.path = missing.directory.filePath(QStringLiteral("missing.png"));
             error.clear();
             require(pipeline::decode(missing, cancellation, &error).isNull() && !error.isEmpty(),
@@ -1099,6 +1107,29 @@ void shortcutPopupInteraction(QWidget& owner, const QTemporaryDir& temp) {
         }
     };
     const QPoint outside = content->mapToGlobal(QPoint(10, 10));
+#ifdef Q_OS_MACOS
+    enter(trigger);
+    require(content->findChild<AdContextMenu*>(QStringLiteral("savePathMenu")) == nullptr,
+            "macOS shortcut menus do not open on hover");
+    trigger->click();
+    auto* nativeMenu = child<AdContextMenu>(content, "savePathMenu");
+    require(nativeMenu->isPopupVisible(), "click opens the macOS shortcut menu");
+    QCursor::setPos(outside);
+    leave(trigger);
+    settle();
+    require(nativeMenu->isPopupVisible(), "macOS menus do not use mouse-leave dismissal timers");
+    require(nativeMenu->actions().size() == 2 &&
+                nativeMenu->actions().first()->isIconVisibleInMenu() &&
+                !nativeMenu->actions().first()->icon().isNull(),
+            "shortcut actions preserve their icons");
+    nativeMenu->dismissPopup();
+    require(!nativeMenu->isPopupVisible(), "explicit dismissal closes the shortcut menu");
+    trigger->click();
+    trigger->hide();
+    require(!nativeMenu->isPopupVisible(), "hiding the trigger dismisses its menu");
+    require(settings.setSavePathShortcuts({}), "shortcut cleanup failed");
+    return;
+#endif
     enter(trigger);
     QPointer<AdContextMenu> menu = child<AdContextMenu>(content, "savePathMenu");
     require(menu->isVisible(), "hovering the shortcut arrow must open its menu");

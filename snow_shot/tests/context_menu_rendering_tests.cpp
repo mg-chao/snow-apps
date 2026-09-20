@@ -444,6 +444,14 @@ int main(int argc, char** argv) {
     QApplication application(argc, argv);
     adqt::theme::ThemeManager::instance().applyTo(application);
     try {
+#ifdef Q_OS_MACOS
+        adqt::widgets::AdContextMenu menu;
+        QMenu baseline;
+        require(menu.style() == baseline.style(), "macOS menus use the platform style");
+        require(!menu.testAttribute(Qt::WA_TranslucentBackground),
+                "macOS menus do not install the custom translucent surface");
+        return 0;
+#endif
         popupFontsKeepSmoothRendering();
         borderGeometryUsesWholeDevicePixels();
         constrainedPopupKeepsActionGeometryInsideSurface();

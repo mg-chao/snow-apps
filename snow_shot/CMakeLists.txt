@@ -1237,6 +1237,7 @@ set(PROJECT_CXX_SOURCES
 if(APPLE)
     list(APPEND PROJECT_CXX_SOURCES
         src/platform/macos/applicationactivation.mm
+        src/platform/macos/systemtraymenu.mm
         src/platform/macos/screenshotnative.mm
         src/platform/macos/windowcaptureexclusion.mm)
     list(APPEND PROJECT_HEADERS include/snow_shot/platform/macos/applicationactivation.h)
@@ -2256,6 +2257,17 @@ if(SNOW_SHOT_BUILD_TESTS)
         )
     endif()
 
+    if(APPLE)
+        target_sources(snow-shot-system-tray-controller-tests PRIVATE
+            src/platform/macos/systemtraymenu.mm
+            tests/system_tray_menu_native_tests.mm)
+        target_link_libraries(snow-shot-system-tray-controller-tests PRIVATE "-framework AppKit")
+        add_test(NAME snow-shot-system-tray-menu-native-tests
+            COMMAND snow-shot-system-tray-controller-tests --native-menu -platform cocoa)
+        set_tests_properties(snow-shot-system-tray-menu-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 30)
+    endif()
+
     add_executable(snow-shot-pinned-window-group-tests
         tests/pinned_window_group_tests.cpp
         include/snow_shot/presentation/pinnedwindowgroupmanager.h
@@ -2281,6 +2293,20 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+
+    if(APPLE)
+        find_package(Qt6 REQUIRED COMPONENTS Test)
+        add_executable(snow-shot-action-popup-native-tests tests/action_popup_menu_native_tests.mm)
+        target_include_directories(snow-shot-action-popup-native-tests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        target_link_libraries(snow-shot-action-popup-native-tests PRIVATE
+            ant_design_qt Qt6::Test "-framework AppKit")
+        add_test(NAME snow-shot-action-popup-native-tests COMMAND snow-shot-action-popup-native-tests)
+        set_tests_properties(snow-shot-action-popup-native-tests PROPERTIES
+            LABELS "interactive"
+            ENVIRONMENT "QT_QPA_PLATFORM=cocoa"
+            TIMEOUT 20)
+    endif()
 
     add_executable(snow-shot-context-menu-rendering-tests
         tests/context_menu_rendering_tests.cpp
@@ -3680,6 +3706,16 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-export-dialog-workflow-tests
         COMMAND snow-shot-export-dialog-workflow-tests)
+    add_test(NAME snow-shot-export-dialog-shortcut-tests
+        COMMAND snow-shot-export-dialog-workflow-tests --shortcuts)
+    # These tests drive QWidget events synchronously. Cocoa menu tracking has its
+    # own event loop and is exercised by snow-shot-action-popup-native-tests.
+    set_tests_properties(
+        snow-shot-export-dialog-workflow-tests snow-shot-export-dialog-shortcut-tests
+        PROPERTIES ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    set_tests_properties(snow-shot-export-dialog-shortcut-tests PROPERTIES
+        TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-save-format-tests
         COMMAND snow-shot-export-dialog-workflow-tests --remember-format)
     set_tests_properties(snow-shot-save-format-tests PROPERTIES

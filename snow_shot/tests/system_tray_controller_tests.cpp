@@ -20,16 +20,22 @@
 #include <QImage>
 #include <QLineEdit>
 #include <QMenu>
+#include <QPalette>
 #include <QPushButton>
 #include <QSet>
 #include <QString>
 #include <QSystemTrayIcon>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QUuid>
 #include <QWidget>
 
 #include <cstdlib>
 #include <iostream>
+
+#ifdef Q_OS_MACOS
+int runNativeSystemTrayMenuTests(snow_shot::presentation::SystemTrayController& controller);
+#endif
 
 namespace {
 void require(bool condition, const char* message) {
@@ -62,6 +68,20 @@ void requireBalloon(const QSystemTrayIcon* trayIcon, const QString& title, const
             reason);
 }
 
+#ifdef Q_OS_MACOS
+bool containsOpaqueColor(const QImage& image, const QColor& color) {
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            const QColor pixel = image.pixelColor(x, y);
+            if (pixel.alpha() == 255 && pixel.rgb() == color.rgb()) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+#endif
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -80,6 +100,18 @@ int main(int argc, char* argv[]) {
             "English should be available from the English catalog");
 
     snow_shot::presentation::SystemTrayController controller;
+#ifdef Q_OS_MACOS
+    if (application.arguments().contains(QStringLiteral("--native-menu"))) {
+        int result = 1;
+        QTimer::singleShot(0, &application, [&]() {
+            result = runNativeSystemTrayMenuTests(controller);
+            application.exit(result);
+        });
+        application.exec();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return result;
+    }
+#endif
     auto* trayIcon =
         controller.findChild<QSystemTrayIcon*>(QStringLiteral("snowShotSystemTrayIcon"));
     require(trayIcon != nullptr, "the controller should own a system tray icon");
@@ -360,6 +392,16 @@ int main(int argc, char* argv[]) {
         "the tray menu should expose the eleven default options in five catalog groups");
     requireActionText(screenshotMenuAction, QStringLiteral("Screenshot"),
                       "Screenshot should use its catalog label");
+#ifdef Q_OS_MACOS
+    const QImage screenshotMenuIcon =
+        screenshotMenuAction->icon().pixmap(QSize(32, 32), QIcon::Normal).toImage();
+    require(containsOpaqueColor(screenshotMenuIcon,
+                                menu->palette().color(QPalette::Active, QPalette::Text)) &&
+                containsOpaqueColor(screenshotMenuIcon, QColor(QStringLiteral("#9254de"))) &&
+                !containsOpaqueColor(screenshotMenuIcon, QColor(QStringLiteral("#1677ff"))),
+            "the native screenshot menu icon must use menu foreground with only its fixed purple "
+            "accent");
+#endif
     requireActionText(delayedScreenshotMenuAction, QStringLiteral("Delay 3s to execute"),
                       "Delayed screenshot should use the canonical shortcut title");
     requireActionText(recordingToggleMenuAction, QStringLiteral("Record/Copy Video"),
@@ -524,10 +566,11 @@ int main(int argc, char* argv[]) {
     require(trayGroupCreated, "accepting the tray New Group dialog should create the group");
 
 #ifdef Q_OS_MACOS
-    menu->hide();
+    // A synthetic Qt activation has no NSStatusBarButton to present a native menu.
+    // Real status-item presentation and placement are covered by the Cocoa fixture.
     trayIcon->activated(QSystemTrayIcon::Context);
-    require(menu->isVisible(), "macOS right-click must open the tray menu");
-    menu->hide();
+    require(trayIcon->contextMenu() == nullptr && !menu->isPopupVisible(),
+            "a context signal without a native status-item event must not open a detached popup");
 #endif
 
     int screenshotRequests = 0;
@@ -572,7 +615,7 @@ int main(int argc, char* argv[]) {
             screenshotRequests = showMainWindowRequests = functionSettingsRequests = 0;
             quickActions.clear();
             trayIcon->activated(reason);
-            require(!menu->isVisible(), "tray click actions must not open the context menu");
+            require(!menu->isPopupVisible(), "tray click actions must not open the context menu");
             require(screenshotRequests == (action == QStringLiteral("screenshot") ? 1 : 0) &&
                         showMainWindowRequests ==
                             (action == QStringLiteral("show_main_window") ? 1 : 0) &&
@@ -597,7 +640,7 @@ int main(int argc, char* argv[]) {
             "invalid middle click must fall back to capture and pin");
     trayIcon->activated(QSystemTrayIcon::Trigger);
     trayIcon->activated(QSystemTrayIcon::Context);
-    menu->hide();
+    menu->dismissPopup();
     trayIcon->activated(QSystemTrayIcon::DoubleClick);
     trayIcon->activated(QSystemTrayIcon::MiddleClick);
     trayIcon->activated(QSystemTrayIcon::Unknown);

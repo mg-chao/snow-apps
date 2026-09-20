@@ -27,7 +27,7 @@ class ActionPopupMenu final : public QObject {
         m_closeTimer.setInterval(150);
         connect(&m_closeTimer, &QTimer::timeout, this, [this] {
             if (m_menu && !contains(QCursor::pos()))
-                m_menu->hide();
+                m_menu->dismissPopup();
         });
         trigger->installEventFilter(this);
         connect(trigger, &QAbstractButton::clicked, this, [this] { open(); });
@@ -35,7 +35,7 @@ class ActionPopupMenu final : public QObject {
 
     ~ActionPopupMenu() override {
         if (m_menu)
-            m_menu->hide();
+            m_menu->dismissPopup();
     }
 
     void open(bool keyboard = false) {
@@ -43,7 +43,7 @@ class ActionPopupMenu final : public QObject {
         m_keyboard = keyboard;
         if (!m_trigger->isVisible() || !m_trigger->isEnabled())
             return;
-        if (!m_menu || !m_menu->isVisible()) {
+        if (!m_menu || !m_menu->isPopupVisible()) {
             m_menu = m_createMenu();
             if (!m_menu)
                 return;
@@ -62,6 +62,8 @@ class ActionPopupMenu final : public QObject {
                 const QSize size = m_menu->sizeHint();
                 position = QPoint(m_trigger->width() - size.width(), -size.height());
             }
+            if (!keyboard)
+                m_menu->setActiveAction(nullptr);
             m_menu->popupAt(m_trigger->mapToGlobal(position));
         }
         if (keyboard) {
@@ -71,17 +73,25 @@ class ActionPopupMenu final : public QObject {
                     break;
                 }
             }
-            m_menu->setFocus(Qt::PopupFocusReason);
+#ifdef Q_OS_MACOS
+            if (QGuiApplication::platformName() != QStringLiteral("cocoa"))
+#endif
+                m_menu->setFocus(Qt::PopupFocusReason);
         }
     }
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override {
-        if (watched == m_trigger && event->type() == QEvent::Enter) {
+#ifdef Q_OS_MACOS
+        constexpr bool nativeMenu = true;
+#else
+        constexpr bool nativeMenu = false;
+#endif
+        if (!nativeMenu && watched == m_trigger && event->type() == QEvent::Enter) {
             open();
         }
         if (watched == m_trigger && event->type() == QEvent::Hide && m_menu)
-            m_menu->hide();
+            m_menu->dismissPopup();
         if (event->type() == QEvent::KeyPress) {
             const auto* key = static_cast<QKeyEvent*>(event);
             if (watched == m_trigger &&
@@ -96,12 +106,12 @@ class ActionPopupMenu final : public QObject {
                 m_closeTimer.stop();
             }
             if (watched == m_menu && key->key() == Qt::Key_Escape) {
-                m_menu->hide();
+                m_menu->dismissPopup();
                 m_trigger->setFocus(Qt::PopupFocusReason);
                 return true;
             }
         }
-        if (m_menu && m_menu->isVisible()) {
+        if (!nativeMenu && m_menu && m_menu->isPopupVisible()) {
             if (event->type() == QEvent::Enter) {
                 m_closeTimer.stop();
             } else if (event->type() == QEvent::Leave && !m_keyboard) {

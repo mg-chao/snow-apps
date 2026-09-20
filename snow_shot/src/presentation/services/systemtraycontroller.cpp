@@ -8,13 +8,16 @@
 
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 
+#ifdef Q_OS_MACOS
+#include "snow_shot/platform/macos/systemtraymenu.h"
+#endif
+
 #include "antd_icons.h"
 #include "widgets/context_menu.h"
 
 #include <QAction>
 #include <QApplication>
 #include <QCoreApplication>
-#include <QCursor>
 #include <QDateTime>
 #include <QFileInfo>
 #include <QHash>
@@ -243,13 +246,20 @@ class SystemTrayController::Impl {
 #endif
         QObject::connect(trayIcon, &QSystemTrayIcon::activated, &q,
                          [this](QSystemTrayIcon::ActivationReason reason) {
+#ifdef Q_OS_MACOS
+                             // AppKit/Qt emits another activation when our attached menu starts
+                             // tracking. It is presentation, not another user click.
+                             if (trayIcon->contextMenu()) {
+                                 return;
+                             }
+#endif
                              if (reason == QSystemTrayIcon::Trigger) {
                                  dispatchClickAction(leftClickAction);
                              } else if (reason == QSystemTrayIcon::MiddleClick) {
                                  dispatchClickAction(middleClickAction);
 #ifdef Q_OS_MACOS
                              } else if (reason == QSystemTrayIcon::Context) {
-                                 menu->popup(QCursor::pos());
+                                 platform::macos::showSystemTrayMenu(trayIcon, menu.get());
 #endif
                              }
                          });

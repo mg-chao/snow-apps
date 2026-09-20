@@ -57,11 +57,16 @@ file(GLOB_RECURSE ADQT_WIDGET_SOURCES CONFIGURE_DEPENDS
 )
 add_library(ant_design_qt STATIC ${ADQT_WIDGET_SOURCES})
 if(APPLE)
+    # Consumers finalize Qt executables in sibling directories, so this static
+    # library's private link dependency must remain visible there as well.
+    find_package(Qt6 REQUIRED COMPONENTS GuiPrivate GLOBAL)
     enable_language(OBJCXX)
     target_sources(ant_design_qt PRIVATE
+        packages/ant_design_qt/src/widgets/context_menu_mac.mm
         packages/ant_design_qt/src/widgets/modal_mac.mm
         packages/ant_design_qt/src/widgets/detail/window_surface_mac.mm)
-    target_link_libraries(ant_design_qt PRIVATE "-framework AppKit")
+    # QPlatformMenu keeps Cocoa's modal ownership and mouse-release cleanup in Qt.
+    target_link_libraries(ant_design_qt PRIVATE Qt6::GuiPrivate "-framework AppKit")
 endif()
 add_library(adqt::widgets ALIAS ant_design_qt)
 target_include_directories(ant_design_qt SYSTEM PUBLIC
@@ -130,6 +135,28 @@ if(ADQT_BUILD_TESTS)
     # Test binaries must report failures as stderr output plus a non-zero
     # exit code instead of blocking on modal dialogs.
     snow_link_test_cli_guard(qt)
+    add_executable(adqt-context-menu-tests
+        packages/ant_design_qt/tests/context_menu_tests.cpp)
+    target_link_libraries(adqt-context-menu-tests PRIVATE adqt::widgets Qt6::Test)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-context-menu-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-context-menu-tests COMMAND adqt-context-menu-tests)
+    set_tests_properties(adqt-context-menu-tests PROPERTIES
+        LABELS "unit"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 30)
+    if(APPLE)
+        add_executable(adqt-context-menu-native-tests tests/context_menu_native_tests.mm)
+        target_link_libraries(adqt-context-menu-native-tests PRIVATE
+            adqt::widgets Qt6::Test "-framework AppKit")
+        add_test(NAME adqt-context-menu-native-tests COMMAND adqt-context-menu-native-tests)
+        set_tests_properties(adqt-context-menu-native-tests PROPERTIES
+            LABELS "interactive"
+            ENVIRONMENT "QT_QPA_PLATFORM=cocoa"
+            TIMEOUT 45)
+    endif()
+
     add_executable(adqt-widget-diagnostics-tests tests/widget_diagnostics_tests.cpp)
     target_link_libraries(adqt-widget-diagnostics-tests PRIVATE adqt::widgets Qt6::Widgets)
     if(TARGET Qt6::QOffscreenIntegrationPlugin)

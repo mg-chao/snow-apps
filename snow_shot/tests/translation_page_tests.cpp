@@ -564,7 +564,11 @@ void editorAndShortcutBehavior() {
     QCursor::setPos(floating->mapToGlobal(local.toPoint()));
     QEnterEvent hover(local, local, floating->mapToGlobal(local.toPoint()));
     QApplication::sendEvent(floating, &hover);
-    waitUntil([&]() { return menu->isVisible(); }, "hover reveals actions");
+#ifdef Q_OS_MACOS
+    require(!menu->isPopupVisible(), "macOS action menus do not open on hover");
+    floating->click();
+#endif
+    waitUntil([&]() { return menu->isPopupVisible(); }, "trigger reveals actions");
     require(menu->geometry().bottom() < floating->mapToGlobal(QPoint()).y(),
             "translation actions open above the floating trigger");
     require(menu->triggerWidget() == floating && menu->actions().size() == 2,
@@ -578,7 +582,7 @@ void editorAndShortcutBehavior() {
     flushEvents();
     require(menu->isVisible(), "pointer can travel from floating button to action");
     key(menu, Qt::Key_Escape);
-    require(!menu->isVisible() && floating->hasFocus(),
+    require(!menu->isVisible() && owner.focusWidget() == floating,
             "Escape dismisses the action popup and restores trigger focus");
     QCursor::setPos(owner.mapToGlobal(QPoint(2, 2)));
     flushEvents();

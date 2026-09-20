@@ -251,7 +251,7 @@ class SaveContent final : public QWidget {
         m_closed = true;
         ++m_generation;
         if (m_menu)
-            m_menu->hide();
+            m_menu->dismissPopup();
         m_job.cancel();
         cancelDecode();
         m_saveJob.cancel();

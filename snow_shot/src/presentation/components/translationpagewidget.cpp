@@ -273,7 +273,7 @@ void TranslationPageWidget::deactivate() {
 }
 
 void TranslationPageWidget::dismissPopups() {
-    m_menu->hide();
+    m_menu->dismissPopup();
     for (auto* select : m_selects) {
         select->setPopupVisible(false);
     }
@@ -289,7 +289,7 @@ void TranslationPageWidget::copyResult(bool closeWindow) {
         return;
     }
     QApplication::clipboard()->setText(m_controller->resultText());
-    m_menu->hide();
+    m_menu->dismissPopup();
     if (closeWindow) {
         emit closeWindowRequested();
     }
