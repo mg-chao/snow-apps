@@ -396,6 +396,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool clearDocument();
     bool duplicateSelected(const QPointF& offset);
     bool reorderSelected(SnowCanvasSelectionOrder order);
+    bool alignSelected(SnowCanvasSelectionAlignment alignment);
     bool setSelectedOpacity(double opacity);
     bool adjustSelectedSerialNumbers(qint64 delta);
     bool createSerialNumberText();
@@ -1589,6 +1590,16 @@ bool SnowCanvasWidget::Impl::reorderSelected(SnowCanvasSelectionOrder order) {
 
 bool SnowCanvasWidget::reorderSelected(SnowCanvasSelectionOrder order) {
     return m_impl->reorderSelected(order);
+}
+
+bool SnowCanvasWidget::Impl::alignSelected(SnowCanvasSelectionAlignment alignment) {
+    return applyMutationResult(snow_canvas_commands::alignSelected(
+        runtimeBinding.engine(), runtimeBinding.viewportHandle(),
+        static_cast<std::uint32_t>(alignment)));
+}
+
+bool SnowCanvasWidget::alignSelected(SnowCanvasSelectionAlignment alignment) {
+    return m_impl->alignSelected(alignment);
 }
 
 bool SnowCanvasWidget::Impl::setSelectedOpacity(double opacity) {

@@ -167,6 +167,14 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Blue"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Yellow"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Drag toolbar"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Align left"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Center horizontally"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Align right"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Distribute horizontally"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Align top"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Center vertically"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Align bottom"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Distribute vertically"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Send to back"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Send backward"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Bring forward"),
@@ -987,7 +995,7 @@ void ScreenshotToolPalette::resetStyleState() {
     refreshFilterEditorState(m_penFilterEditor, true);
     setSpotlightConfig(m_styleDefaults.spotlight);
     m_selectionOpacityAvailable = false;
-    updateSelectionActionAvailability(false);
+    updateSelectionActionAvailability(false, 0);
 }
 
 void ScreenshotToolPalette::setCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults) {
@@ -1240,15 +1248,30 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
     return true;
 }
 
-void ScreenshotToolPalette::updateSelectionActionAvailability(bool hasSelection) {
-    if (m_selectionActionAvailabilityInitialized && m_hasSelectedElements == hasSelection) {
+void ScreenshotToolPalette::updateSelectionActionAvailability(bool hasSelection,
+                                                              quint32 selectedElementCount) {
+    if (m_selectionActionAvailabilityInitialized && m_hasSelectedElements == hasSelection &&
+        m_selectedElementCount == selectedElementCount) {
         return;
     }
     m_selectionActionAvailabilityInitialized = true;
     m_hasSelectedElements = hasSelection;
+    m_selectedElementCount = selectedElementCount;
     for (QWidget* control : std::as_const(m_selectionActionControls)) {
         if (control != nullptr) {
             control->setEnabled(control == m_resetCanvasButton || hasSelection);
+        }
+    }
+    const bool canAlign = hasSelection && selectedElementCount >= 2;
+    for (QWidget* control : std::as_const(m_selectionAlignControls)) {
+        if (control != nullptr) {
+            control->setEnabled(canAlign);
+        }
+    }
+    const bool canDistribute = hasSelection && selectedElementCount >= 3;
+    for (QWidget* control : std::as_const(m_selectionDistributeControls)) {
+        if (control != nullptr) {
+            control->setEnabled(canDistribute);
         }
     }
     if (m_selectionOpacitySlider != nullptr) {
@@ -2177,7 +2200,7 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
     const bool hasSelectedElements = hasSelectedCanvasElements(state);
     m_selectionOpacityAvailable =
         hasSelectedElements && state.source != SnowCanvasStyleToolbarSource::SelectedSpotlight;
-    updateSelectionActionAvailability(hasSelectedElements);
+    updateSelectionActionAvailability(hasSelectedElements, state.selectedElementCount);
     // Canvas style state and palette tool state are delivered independently.
     // Style state synchronizes values, but only a style-capable active tool may
     // choose an editor. The active tool alone owns secondary-row visibility.
@@ -5822,6 +5845,8 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_styleLayoutProfiles.clear();
     m_styleMetricRevisions.clear();
     m_selectionActionControls.clear();
+    m_selectionAlignControls.clear();
+    m_selectionDistributeControls.clear();
     m_resetCanvasButton = nullptr;
     m_selectionActionSpacers.clear();
     m_textActionSpacers.clear();
@@ -6208,6 +6233,18 @@ void ScreenshotToolPalette::createSelectionActionFamily() {
         m_selectActionLayout->addWidget(button);
         connect(button, &adqt::widgets::AdButton::clicked, this, signal);
     };
+    // Alignment and distribution need a multi-element selection, so their
+    // availability is tracked separately from the plain selection controls.
+    const auto addAlignButton = [this](const char* tooltip, const adqt::icons::IconRef& icon,
+                                       auto signal, bool distributes) {
+        auto* button = createScreenshotToolPaletteStyleActionButton(
+            m_selectActionPanel, tooltip, icon, actionButtonMetrics(m_physicalScale));
+        button->setEnabled(false);
+        m_selectionActionControls.push_back(button);
+        (distributes ? m_selectionDistributeControls : m_selectionAlignControls).push_back(button);
+        m_selectActionLayout->addWidget(button);
+        connect(button, &adqt::widgets::AdButton::clicked, this, signal);
+    };
     const auto addSpacing = [this](int spacing) {
         m_selectionActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, spacing));
     };
@@ -6222,6 +6259,34 @@ void ScreenshotToolPalette::createSelectionActionFamily() {
     addSpacing(STYLE_ITEM_SPACING);
     addSelectButton("Bring to front", outlined_icons::VerticalAlignTop(),
                     &ScreenshotToolPalette::bringSelectionToFrontRequested);
+    addSpacing(STYLE_GROUP_SPACING * 2);
+    m_selectActionLayout->addWidget(createStyleToolbarSeparator(m_selectActionPanel));
+    addSpacing(STYLE_GROUP_SPACING * 2);
+    addAlignButton("Align left", custom_outlined_icons::AlignLeft(),
+                   &ScreenshotToolPalette::alignSelectionLeftRequested, false);
+    addSpacing(STYLE_ITEM_SPACING);
+    addAlignButton("Center horizontally", custom_outlined_icons::AlignCenterHorizontal(),
+                   &ScreenshotToolPalette::alignSelectionCenterHorizontallyRequested, false);
+    addSpacing(STYLE_ITEM_SPACING);
+    addAlignButton("Align right", custom_outlined_icons::AlignRight(),
+                   &ScreenshotToolPalette::alignSelectionRightRequested, false);
+    addSpacing(STYLE_ITEM_SPACING);
+    addAlignButton("Distribute horizontally", custom_outlined_icons::DistributeHorizontal(),
+                   &ScreenshotToolPalette::distributeSelectionHorizontallyRequested, true);
+    addSpacing(STYLE_GROUP_SPACING * 2);
+    m_selectActionLayout->addWidget(createStyleToolbarSeparator(m_selectActionPanel));
+    addSpacing(STYLE_GROUP_SPACING * 2);
+    addAlignButton("Align top", custom_outlined_icons::AlignTop(),
+                   &ScreenshotToolPalette::alignSelectionTopRequested, false);
+    addSpacing(STYLE_ITEM_SPACING);
+    addAlignButton("Center vertically", custom_outlined_icons::AlignCenterVertical(),
+                   &ScreenshotToolPalette::alignSelectionCenterVerticallyRequested, false);
+    addSpacing(STYLE_ITEM_SPACING);
+    addAlignButton("Align bottom", custom_outlined_icons::AlignBottom(),
+                   &ScreenshotToolPalette::alignSelectionBottomRequested, false);
+    addSpacing(STYLE_ITEM_SPACING);
+    addAlignButton("Distribute vertically", custom_outlined_icons::DistributeVertical(),
+                   &ScreenshotToolPalette::distributeSelectionVerticallyRequested, true);
     addSpacing(STYLE_GROUP_SPACING * 2);
     m_selectActionLayout->addWidget(createStyleToolbarSeparator(m_selectActionPanel));
     addSpacing(STYLE_GROUP_SPACING * 2);
@@ -6268,7 +6333,7 @@ void ScreenshotToolPalette::createSelectionActionFamily() {
     connect(m_resetCanvasButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::resetCanvasRequested);
     m_selectionActionAvailabilityInitialized = false;
-    updateSelectionActionAvailability(m_hasSelectedElements);
+    updateSelectionActionAvailability(m_hasSelectedElements, m_selectedElementCount);
     setSelectionOpacity(m_selectionOpacity, m_selectionOpacityMixed);
 }
 

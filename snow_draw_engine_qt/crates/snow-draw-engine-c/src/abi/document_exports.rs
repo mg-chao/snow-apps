@@ -195,6 +195,32 @@ pub unsafe extern "C" fn snow_viewport_reorder_selected_ex(
     })
 }
 
+/// # Safety
+/// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
+/// `out_changed_viewports` must be valid for writes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_align_selected_ex(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    alignment: u32,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if out_changed_viewports.is_null() {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_impl_mut(runtime, |state| {
+            let id = viewport_id(viewport)?;
+            let result = state
+                .runtime
+                .align_selected_with_viewport_changes(id, alignment)
+                .map_err(SnowError::from)?;
+            write_changed_viewports(out_changed_viewports, result.changed_viewports);
+            Ok(())
+        }))
+    })
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_viewport_set_selected_opacity_ex(
     runtime: SnowRuntime,

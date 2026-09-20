@@ -258,6 +258,37 @@ void ScreenshotToolbarWindow::connectStyleCommands(ScreenshotToolPalette& toolPa
     connect(&toolPalette, &ScreenshotToolPalette::bringSelectionToFrontRequested, this, [this]() {
         m_commands.reorderSelectedElements(SnowCanvasSelectionOrder::BringToFront);
     });
+    connect(&toolPalette, &ScreenshotToolPalette::alignSelectionLeftRequested, this, [this]() {
+        m_commands.alignSelectedElements(SnowCanvasSelectionAlignment::AlignLeft);
+    });
+    connect(&toolPalette, &ScreenshotToolPalette::alignSelectionCenterHorizontallyRequested, this,
+            [this]() {
+                m_commands.alignSelectedElements(
+                    SnowCanvasSelectionAlignment::AlignCenterHorizontally);
+            });
+    connect(&toolPalette, &ScreenshotToolPalette::alignSelectionRightRequested, this, [this]() {
+        m_commands.alignSelectedElements(SnowCanvasSelectionAlignment::AlignRight);
+    });
+    connect(&toolPalette, &ScreenshotToolPalette::alignSelectionTopRequested, this,
+            [this]() { m_commands.alignSelectedElements(SnowCanvasSelectionAlignment::AlignTop); });
+    connect(&toolPalette, &ScreenshotToolPalette::alignSelectionCenterVerticallyRequested, this,
+            [this]() {
+                m_commands.alignSelectedElements(
+                    SnowCanvasSelectionAlignment::AlignCenterVertically);
+            });
+    connect(&toolPalette, &ScreenshotToolPalette::alignSelectionBottomRequested, this, [this]() {
+        m_commands.alignSelectedElements(SnowCanvasSelectionAlignment::AlignBottom);
+    });
+    connect(&toolPalette, &ScreenshotToolPalette::distributeSelectionHorizontallyRequested, this,
+            [this]() {
+                m_commands.alignSelectedElements(
+                    SnowCanvasSelectionAlignment::DistributeHorizontally);
+            });
+    connect(&toolPalette, &ScreenshotToolPalette::distributeSelectionVerticallyRequested, this,
+            [this]() {
+                m_commands.alignSelectedElements(
+                    SnowCanvasSelectionAlignment::DistributeVertically);
+            });
     connect(&toolPalette, &ScreenshotToolPalette::selectionOpacityChanged, this,
             [this](qreal opacity) { m_commands.setSelectedElementsOpacity(opacity); });
     connect(&toolPalette, &ScreenshotToolPalette::duplicateSelectionRequested, this,

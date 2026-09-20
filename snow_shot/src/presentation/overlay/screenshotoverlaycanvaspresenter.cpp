@@ -701,6 +701,18 @@ void ScreenshotOverlayCanvasPresenter::reorderSelectedElements(
     });
 }
 
+void ScreenshotOverlayCanvasPresenter::alignSelectedElements(
+    const ScreenshotDisplaySession& displaySession, SnowCanvasSelectionAlignment alignment) const {
+    bool handled = false;
+    displaySession.forEachOverlay(
+        [alignment, &handled](qsizetype, ScreenshotOverlayWindow* overlay) {
+            if (!handled && overlay != nullptr && overlay->canvas() != nullptr) {
+                static_cast<void>(overlay->canvas()->alignSelected(alignment));
+                handled = true;
+            }
+        });
+}
+
 void ScreenshotOverlayCanvasPresenter::setSelectedElementsOpacity(
     const ScreenshotDisplaySession& displaySession, qreal opacity) const {
     bool handled = false;

@@ -83,6 +83,7 @@ MutationResult deleteAllElements(SnowRuntime runtime, SnowViewport viewport);
 MutationResult duplicateSelected(SnowRuntime runtime, SnowViewport viewport, double offsetX,
                                  double offsetY);
 MutationResult reorderSelected(SnowRuntime runtime, SnowViewport viewport, std::uint32_t action);
+MutationResult alignSelected(SnowRuntime runtime, SnowViewport viewport, std::uint32_t alignment);
 MutationResult setSelectedOpacity(SnowRuntime runtime, SnowViewport viewport, double opacity);
 MutationResult adjustSelectedSerialNumbers(SnowRuntime runtime, SnowViewport viewport,
                                            std::int64_t delta);

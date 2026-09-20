@@ -1062,7 +1062,7 @@ impl Default for SnowStyleToolbarState {
     fn default() -> Self {
         Self {
             source: SnowStyleToolbarSource::DefaultRectangle,
-            reserved0: 0,
+            selected_element_count: 0,
             shape_style: SnowShapeStyle::default(),
             text_style: SnowTextStyle::default(),
             serial_number_style: SnowSerialNumberStyle::default(),

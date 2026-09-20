@@ -21,6 +21,13 @@ namespace brand {
 } // namespace brand
 
 namespace outlined {
+[[nodiscard]] adqt::icons::IconRef AlignBottom(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef
+AlignCenterHorizontal(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef AlignCenterVertical(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef AlignLeft(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef AlignRight(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef AlignTop(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Angle(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ArrowTypeCurved(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ArrowTypeElbow(const adqt::icons::IconColors& colors = {});
@@ -70,6 +77,8 @@ ArrowheadTriangleStart(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ColorPicker(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Delete(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Disabled(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef DistributeHorizontal(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef DistributeVertical(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Duplicate(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Exit(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ExportConfiguration(const adqt::icons::IconColors& colors = {});

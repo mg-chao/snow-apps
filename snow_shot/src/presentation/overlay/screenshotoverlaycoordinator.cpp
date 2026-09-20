@@ -385,6 +385,11 @@ void ScreenshotOverlayCoordinator::reorderSelectedElements(
     m_canvasPresenter.reorderSelectedElements(displaySession, order);
 }
 
+void ScreenshotOverlayCoordinator::alignSelectedElements(
+    const ScreenshotDisplaySession& displaySession, SnowCanvasSelectionAlignment alignment) {
+    m_canvasPresenter.alignSelectedElements(displaySession, alignment);
+}
+
 void ScreenshotOverlayCoordinator::setSelectedElementsOpacity(
     const ScreenshotDisplaySession& displaySession, qreal opacity) {
     m_canvasPresenter.setSelectedElementsOpacity(displaySession, opacity);

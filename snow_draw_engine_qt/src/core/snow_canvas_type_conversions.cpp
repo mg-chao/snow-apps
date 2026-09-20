@@ -528,6 +528,7 @@ SnowSerialNumberStyle toEngineSerialNumberStyle(const SnowCanvasSerialNumberStyl
 SnowCanvasStyleToolbarState toCanvasStyleToolbarState(const SnowStyleToolbarState& state) {
     return SnowCanvasStyleToolbarState{
         toCanvasStyleToolbarSource(state.source),
+        state.selected_element_count,
         toCanvasShapeStyle(state.shape_style),
         toCanvasTextStyle(state.text_style),
         toCanvasSerialNumberStyle(state.serial_number_style),

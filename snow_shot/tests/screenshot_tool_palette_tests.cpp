@@ -9784,6 +9784,113 @@ void selectionResetRemainsAvailableWithoutSelection() {
     require(resetCount == 4, "each reset click should emit exactly one canvas reset command");
 }
 
+void selectionAlignmentActionsFollowSelectionUnitCount() {
+    ScreenshotToolPalette::Options options;
+    options.showSelectTool = true;
+    ScreenshotToolPalette palette(options);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    QCoreApplication::processEvents();
+
+    const char* alignActions[] = {
+        "Align left", "Center horizontally", "Align right",  "Distribute horizontally",
+        "Align top",  "Center vertically",   "Align bottom", "Distribute vertically",
+    };
+    for (const char* action : alignActions) {
+        QWidget* control = controlWithTooltip(palette, action);
+        require(control != nullptr, "alignment action is missing");
+        require(!control->isEnabled(), "alignment action should be disabled without a selection");
+    }
+
+    auto* layout = qobject_cast<QBoxLayout*>(palette.actionPanel()->layout());
+    require(layout != nullptr, "select action toolbar should use a box layout");
+    int layerEnd = -1;
+    int alignStart = -1;
+    int distributeHorizontal = -1;
+    int alignTop = -1;
+    for (int i = 0; i < layout->count(); ++i) {
+        QWidget* widget = layout->itemAt(i)->widget();
+        if (widget == nullptr) {
+            continue;
+        }
+        const QString tooltip = widget->toolTip();
+        if (tooltip == QStringLiteral("Bring to front")) {
+            layerEnd = i;
+        } else if (tooltip == QStringLiteral("Align left")) {
+            alignStart = i;
+        } else if (tooltip == QStringLiteral("Distribute horizontally")) {
+            distributeHorizontal = i;
+        } else if (tooltip == QStringLiteral("Align top")) {
+            alignTop = i;
+        }
+    }
+    require(layerEnd >= 0 && alignStart > layerEnd,
+            "alignment actions should sit right of the layer ordering actions");
+    require(distributeHorizontal > alignStart && alignTop > distributeHorizontal,
+            "vertical alignment actions should follow the horizontal ones");
+    bool dividerFound = false;
+    for (int i = distributeHorizontal + 1; i < alignTop; ++i) {
+        dividerFound =
+            dividerFound || qobject_cast<QFrame*>(layout->itemAt(i)->widget()) != nullptr;
+    }
+    require(dividerFound,
+            "a divider should separate the horizontal and vertical alignment actions");
+
+    int commandCount = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::alignSelectionLeftRequested,
+                     [&commandCount]() { ++commandCount; });
+    QObject::connect(&palette, &ScreenshotToolPalette::alignSelectionCenterHorizontallyRequested,
+                     [&commandCount]() { ++commandCount; });
+    QObject::connect(&palette, &ScreenshotToolPalette::alignSelectionRightRequested,
+                     [&commandCount]() { ++commandCount; });
+    QObject::connect(&palette, &ScreenshotToolPalette::alignSelectionTopRequested,
+                     [&commandCount]() { ++commandCount; });
+    QObject::connect(&palette, &ScreenshotToolPalette::alignSelectionCenterVerticallyRequested,
+                     [&commandCount]() { ++commandCount; });
+    QObject::connect(&palette, &ScreenshotToolPalette::alignSelectionBottomRequested,
+                     [&commandCount]() { ++commandCount; });
+    QObject::connect(&palette, &ScreenshotToolPalette::distributeSelectionHorizontallyRequested,
+                     [&commandCount]() { ++commandCount; });
+    QObject::connect(&palette, &ScreenshotToolPalette::distributeSelectionVerticallyRequested,
+                     [&commandCount]() { ++commandCount; });
+
+    SnowCanvasStyleToolbarState state;
+    state.source = SnowCanvasStyleToolbarSource::SelectedRectangle;
+    state.selectedElementCount = 1;
+    palette.setStyleToolbarState(state);
+    for (const char* action : alignActions) {
+        require(!controlWithTooltip(palette, action)->isEnabled(),
+                "alignment action should stay disabled for a single selected element");
+    }
+
+    state.selectedElementCount = 2;
+    palette.setStyleToolbarState(state);
+    for (const char* action : alignActions) {
+        QWidget* control = controlWithTooltip(palette, action);
+        const bool distributes = QString(action).startsWith(QStringLiteral("Distribute"));
+        require(control->isEnabled() != distributes,
+                distributes ? "distribute should require three selected elements"
+                            : "align should enable for two selected elements");
+    }
+
+    state.selectedElementCount = 3;
+    palette.setStyleToolbarState(state);
+    for (const char* action : alignActions) {
+        auto* button = qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, action));
+        require(button != nullptr, "alignment action should be a button");
+        require(button->isEnabled(), "alignment action should be enabled for three elements");
+        button->click();
+    }
+    require(commandCount == 8, "each alignment action should emit exactly one command");
+
+    SnowCanvasStyleToolbarState defaultState;
+    defaultState.source = SnowCanvasStyleToolbarSource::DefaultRectangle;
+    palette.setStyleToolbarState(defaultState);
+    for (const char* action : alignActions) {
+        require(!controlWithTooltip(palette, action)->isEnabled(),
+                "alignment action should be disabled again after clearing the selection");
+    }
+}
+
 void secondaryToolbarsStartHiddenUntilTheirToolIsSelected() {
     ScreenshotToolPalette::Options options;
     options.showSelectTool = true;
@@ -11377,6 +11484,7 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--selection-reset-only"))) {
         selectionResetRemainsAvailableWithoutSelection();
         selectToolExposesDedicatedActionToolbar();
+        selectionAlignmentActionsFollowSelectionUnitCount();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -11625,6 +11733,7 @@ int main(int argc, char** argv) {
     popupColorEditorButtonsKeepPopupScaleAfterToolbarDpiCommit();
     selectToolExposesDedicatedActionToolbar();
     selectionResetRemainsAvailableWithoutSelection();
+    selectionAlignmentActionsFollowSelectionUnitCount();
     secondaryToolbarsStartHiddenUntilTheirToolIsSelected();
     selectToolRemainsTheSoleOwnerOfItsSecondaryToolbar();
     crossTypeSelectionRecalculatesStyleToolbarSize();

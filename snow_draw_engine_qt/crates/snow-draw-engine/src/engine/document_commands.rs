@@ -87,6 +87,21 @@ impl Engine {
         }
     }
 
+    pub fn align_selected_with_viewport_changes(
+        &mut self,
+        source_viewport_id: ViewportId,
+        alignment: u32,
+    ) -> Result<MutationResult, ErrorCode> {
+        self.ensure_viewport(source_viewport_id)?;
+        let before = self.editor.snapshot();
+        let command = self.editor.align_selected(&self.model, alignment)?;
+        if let Some(command) = command {
+            self.apply_editor_command(source_viewport_id, command)
+        } else {
+            self.refresh_after_session_mutation(before)
+        }
+    }
+
     pub fn set_selected_opacity_with_viewport_changes(
         &mut self,
         source_viewport_id: ViewportId,

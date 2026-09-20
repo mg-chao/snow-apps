@@ -263,6 +263,19 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
         LABELS "unit"
     )
 
+    add_executable(snow-canvas-align-tests tests/snow_canvas_align_tests.cpp)
+    target_include_directories(snow-canvas-align-tests PRIVATE
+        ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
+        "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include"
+    )
+    target_link_libraries(snow-canvas-align-tests PRIVATE snow_draw_engine_qt_canvas)
+    qt_import_plugins(snow-canvas-align-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    add_test(NAME snow-canvas-align-tests COMMAND snow-canvas-align-tests)
+    set_tests_properties(snow-canvas-align-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        LABELS "unit"
+    )
+
     add_executable(snow-canvas-custom-renderer-tests
         tests/snow_canvas_custom_renderer_tests.cpp
     )

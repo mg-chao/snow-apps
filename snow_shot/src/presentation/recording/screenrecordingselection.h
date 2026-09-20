@@ -44,6 +44,33 @@ inline void connectScreenRecordingSelection(ScreenshotToolPalette& palette,
     QObject::connect(
         &palette, &ScreenshotToolPalette::bringSelectionToFrontRequested, &context,
         [canvas]() { canvas->reorderSelected(SnowCanvasSelectionOrder::BringToFront); });
+    QObject::connect(
+        &palette, &ScreenshotToolPalette::alignSelectionLeftRequested, &context,
+        [canvas]() { canvas->alignSelected(SnowCanvasSelectionAlignment::AlignLeft); });
+    QObject::connect(&palette, &ScreenshotToolPalette::alignSelectionCenterHorizontallyRequested,
+                     &context, [canvas]() {
+                         canvas->alignSelected(
+                             SnowCanvasSelectionAlignment::AlignCenterHorizontally);
+                     });
+    QObject::connect(
+        &palette, &ScreenshotToolPalette::alignSelectionRightRequested, &context,
+        [canvas]() { canvas->alignSelected(SnowCanvasSelectionAlignment::AlignRight); });
+    QObject::connect(&palette, &ScreenshotToolPalette::alignSelectionTopRequested, &context,
+                     [canvas]() { canvas->alignSelected(SnowCanvasSelectionAlignment::AlignTop); });
+    QObject::connect(
+        &palette, &ScreenshotToolPalette::alignSelectionCenterVerticallyRequested, &context,
+        [canvas]() { canvas->alignSelected(SnowCanvasSelectionAlignment::AlignCenterVertically); });
+    QObject::connect(
+        &palette, &ScreenshotToolPalette::alignSelectionBottomRequested, &context,
+        [canvas]() { canvas->alignSelected(SnowCanvasSelectionAlignment::AlignBottom); });
+    QObject::connect(&palette, &ScreenshotToolPalette::distributeSelectionHorizontallyRequested,
+                     &context, [canvas]() {
+                         canvas->alignSelected(
+                             SnowCanvasSelectionAlignment::DistributeHorizontally);
+                     });
+    QObject::connect(
+        &palette, &ScreenshotToolPalette::distributeSelectionVerticallyRequested, &context,
+        [canvas]() { canvas->alignSelected(SnowCanvasSelectionAlignment::DistributeVertically); });
     QObject::connect(&palette, &ScreenshotToolPalette::selectionOpacityChanged, &context,
                      [canvas](qreal opacity) { canvas->setSelectedOpacity(opacity); });
     QObject::connect(&palette, &ScreenshotToolPalette::duplicateSelectionRequested, &context,

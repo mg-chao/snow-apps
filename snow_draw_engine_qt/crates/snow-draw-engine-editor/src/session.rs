@@ -229,6 +229,10 @@ impl EditorSession {
         self.editor.style_toolbar_source(document)
     }
 
+    pub fn selected_element_count(&self, document: &DocumentModel) -> usize {
+        self.editor.selected_element_count(document)
+    }
+
     pub fn shape_style(&self, document: &DocumentModel) -> ShapeStyle {
         self.editor.shape_style(document)
     }
@@ -469,6 +473,14 @@ impl EditorSession {
         action: u32,
     ) -> Result<Option<EditorCommand>, ErrorCode> {
         self.editor.reorder_selected(document, action)
+    }
+
+    pub fn align_selected(
+        &mut self,
+        document: &DocumentModel,
+        alignment: u32,
+    ) -> Result<Option<EditorCommand>, ErrorCode> {
+        self.editor.align_selected(document, alignment)
     }
 
     pub fn set_selected_opacity(

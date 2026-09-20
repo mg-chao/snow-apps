@@ -82,6 +82,10 @@ class SnowCanvasWidget : public QWidget {
     bool clearDocument();
     bool duplicateSelected(const QPointF& offset = QPointF(12.0, 12.0));
     bool reorderSelected(SnowCanvasSelectionOrder order);
+    // Aligns or distributes the selected elements to their shared bounds as one
+    // undoable history entry. Requires at least two selected elements for the
+    // align modes and three for the distribute modes.
+    bool alignSelected(SnowCanvasSelectionAlignment alignment);
     bool setSelectedOpacity(double opacity);
     bool adjustSelectedSerialNumbers(qint64 delta);
     bool createSerialNumberText();

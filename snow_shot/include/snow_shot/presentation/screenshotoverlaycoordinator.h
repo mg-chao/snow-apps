@@ -107,6 +107,8 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     void createTextForSelectedSerialNumber(const ScreenshotDisplaySession& displaySession);
     void reorderSelectedElements(const ScreenshotDisplaySession& displaySession,
                                  SnowCanvasSelectionOrder order);
+    void alignSelectedElements(const ScreenshotDisplaySession& displaySession,
+                               SnowCanvasSelectionAlignment alignment);
     void setSelectedElementsOpacity(const ScreenshotDisplaySession& displaySession, qreal opacity);
     void duplicateSelectedElements(const ScreenshotDisplaySession& displaySession);
     void deleteSelectedElements(const ScreenshotDisplaySession& displaySession);

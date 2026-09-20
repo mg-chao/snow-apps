@@ -64,7 +64,8 @@ bool filterStylesEqual(const SnowFilterStyle& lhs, const SnowFilterStyle& rhs) {
 }
 
 bool styleToolbarStatesEqual(const SnowStyleToolbarState& lhs, const SnowStyleToolbarState& rhs) {
-    return lhs.source == rhs.source && textStylesEqual(lhs.text_style, rhs.text_style) &&
+    return lhs.source == rhs.source && lhs.selected_element_count == rhs.selected_element_count &&
+           textStylesEqual(lhs.text_style, rhs.text_style) &&
            serialNumberStylesEqual(lhs.serial_number_style, rhs.serial_number_style) &&
            shapeStylesEqual(lhs.shape_style, rhs.shape_style) &&
            filterStylesEqual(lhs.filter_style, rhs.filter_style) &&

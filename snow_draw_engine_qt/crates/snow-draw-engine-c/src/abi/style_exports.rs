@@ -162,7 +162,7 @@ pub unsafe extern "C" fn snow_viewport_get_style_toolbar_state(
                     out_state,
                     SnowStyleToolbarState {
                         source: snow_style_toolbar_source_from_rust(state.source),
-                        reserved0: 0,
+                        selected_element_count: state.selected_element_count,
                         shape_style: state.shape_style.into(),
                         text_style: state.text_style.into(),
                         serial_number_style: state.serial_number_style.into(),

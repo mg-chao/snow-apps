@@ -85,6 +85,7 @@ class ScreenshotToolbarCommandSink {
     virtual void incrementSelectedSerialNumbers() = 0;
     virtual void createTextForSelectedSerialNumber() = 0;
     virtual void reorderSelectedElements(SnowCanvasSelectionOrder) {}
+    virtual void alignSelectedElements(SnowCanvasSelectionAlignment) {}
     virtual void setSelectedElementsOpacity(qreal) {}
     virtual void duplicateSelectedElements() {}
     virtual void deleteSelectedElements() {}

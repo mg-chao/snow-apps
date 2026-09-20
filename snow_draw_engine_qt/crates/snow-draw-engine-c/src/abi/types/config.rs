@@ -322,7 +322,7 @@ pub struct SnowSerialNumberStyle {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SnowStyleToolbarState {
     pub source: SnowStyleToolbarSource,
-    pub reserved0: u32,
+    pub selected_element_count: u32,
     pub shape_style: SnowShapeStyle,
     pub text_style: SnowTextStyle,
     pub serial_number_style: SnowSerialNumberStyle,

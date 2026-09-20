@@ -258,6 +258,7 @@ impl Engine {
         self.ensure_viewport(id)?;
         Ok(StyleToolbarState {
             source: self.editor.style_toolbar_source(&self.model),
+            selected_element_count: self.editor.selected_element_count(&self.model) as u32,
             shape_style: self.editor.shape_style(&self.model),
             text_style: self.editor.text_style(&self.model),
             serial_number_style: self.editor.serial_number_style(&self.model),

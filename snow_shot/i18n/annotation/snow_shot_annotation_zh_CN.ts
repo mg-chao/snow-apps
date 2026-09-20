@@ -24,6 +24,18 @@
             <translation>调整透明度</translation>
         </message>
         <message>
+            <source>Align bottom</source>
+            <translation>底对齐</translation>
+        </message>
+        <message>
+            <source>Align left</source>
+            <translation>左对齐</translation>
+        </message>
+        <message>
+            <source>Align right</source>
+            <translation>右对齐</translation>
+        </message>
+        <message>
             <source>Align text center</source>
             <translation>文本居中对齐</translation>
         </message>
@@ -34,6 +46,10 @@
         <message>
             <source>Align text right</source>
             <translation>文本右对齐</translation>
+        </message>
+        <message>
+            <source>Align top</source>
+            <translation>顶对齐</translation>
         </message>
         <message>
             <source>Animated recording formats do not contain audio</source>
@@ -94,6 +110,14 @@
         <message>
             <source>Capture cursor</source>
             <translation>捕获光标</translation>
+        </message>
+        <message>
+            <source>Center horizontally</source>
+            <translation>水平居中</translation>
+        </message>
+        <message>
+            <source>Center vertically</source>
+            <translation>垂直居中</translation>
         </message>
         <message>
             <source>Circle</source>
@@ -214,6 +238,14 @@
         <message>
             <source>Diamond</source>
             <translation>菱形</translation>
+        </message>
+        <message>
+            <source>Distribute horizontally</source>
+            <translation>水平分布</translation>
+        </message>
+        <message>
+            <source>Distribute vertically</source>
+            <translation>垂直分布</translation>
         </message>
         <message>
             <source>Dotted arrow stroke</source>

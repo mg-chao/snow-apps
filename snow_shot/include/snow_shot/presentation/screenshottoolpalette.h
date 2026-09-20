@@ -465,6 +465,14 @@ class ScreenshotToolPalette final : public QWidget {
     void sendSelectionBackwardRequested();
     void bringSelectionForwardRequested();
     void bringSelectionToFrontRequested();
+    void alignSelectionLeftRequested();
+    void alignSelectionCenterHorizontallyRequested();
+    void alignSelectionRightRequested();
+    void alignSelectionTopRequested();
+    void alignSelectionCenterVerticallyRequested();
+    void alignSelectionBottomRequested();
+    void distributeSelectionHorizontallyRequested();
+    void distributeSelectionVerticallyRequested();
     void selectionOpacityChanged(qreal opacity);
     void duplicateSelectionRequested();
     void deleteSelectionRequested();
@@ -573,7 +581,7 @@ class ScreenshotToolPalette final : public QWidget {
     bool applyActiveToolSecondaryToolbarVisibility();
     [[nodiscard]] bool activeToolUsesStyleToolbar() const;
     bool setSecondaryToolbarVisibility(bool actionToolbarVisible, bool styleToolbarVisible);
-    void updateSelectionActionAvailability(bool hasSelection);
+    void updateSelectionActionAvailability(bool hasSelection, quint32 selectedElementCount);
     void updateHistoryActionAvailability();
     void updateTextRecognitionBusy();
     void updateScrollingRecognitionButtons();
@@ -829,6 +837,8 @@ class ScreenshotToolPalette final : public QWidget {
     QLabel* m_selectionOpacityIcon = nullptr;
     adqt::widgets::AdSlider* m_selectionOpacitySlider = nullptr;
     QVector<QWidget*> m_selectionActionControls;
+    QVector<QWidget*> m_selectionAlignControls;
+    QVector<QWidget*> m_selectionDistributeControls;
     adqt::widgets::AdButton* m_resetCanvasButton = nullptr;
     QVector<QSpacerItem*> m_selectionActionSpacers;
     QVector<QSpacerItem*> m_textActionSpacers;
@@ -856,6 +866,7 @@ class ScreenshotToolPalette final : public QWidget {
     bool m_styleToolbarTargetVisible = false;
     bool m_actionToolbarTargetVisible = false;
     bool m_hasSelectedElements = false;
+    quint32 m_selectedElementCount = 0;
     bool m_selectionOpacityAvailable = false;
     bool m_selectionActionAvailabilityInitialized = false;
     bool m_scrollingScreenshotMode = false;

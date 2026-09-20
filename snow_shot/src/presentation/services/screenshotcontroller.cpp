@@ -441,6 +441,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void incrementSelectedSerialNumbers() override;
     void createTextForSelectedSerialNumber() override;
     void reorderSelectedElements(SnowCanvasSelectionOrder order) override;
+    void alignSelectedElements(SnowCanvasSelectionAlignment alignment) override;
     void setSelectedElementsOpacity(qreal opacity) override;
     void duplicateSelectedElements() override;
     void deleteSelectedElements() override;
@@ -4627,6 +4628,10 @@ void ScreenshotController::Impl::setSelectionToolbarHovered(bool hovered) {
 }
 void ScreenshotController::Impl::reorderSelectedElements(SnowCanvasSelectionOrder order) {
     m_overlayCoordinator->reorderSelectedElements(m_displaySession, order);
+}
+
+void ScreenshotController::Impl::alignSelectedElements(SnowCanvasSelectionAlignment alignment) {
+    m_overlayCoordinator->alignSelectedElements(m_displaySession, alignment);
 }
 
 void ScreenshotController::Impl::setSelectedElementsOpacity(qreal opacity) {

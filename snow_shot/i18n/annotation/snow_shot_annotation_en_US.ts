@@ -24,6 +24,18 @@
             <translation>Adjust opacity</translation>
         </message>
         <message>
+            <source>Align bottom</source>
+            <translation>Align bottom</translation>
+        </message>
+        <message>
+            <source>Align left</source>
+            <translation>Align left</translation>
+        </message>
+        <message>
+            <source>Align right</source>
+            <translation>Align right</translation>
+        </message>
+        <message>
             <source>Align text center</source>
             <translation>Align text center</translation>
         </message>
@@ -34,6 +46,10 @@
         <message>
             <source>Align text right</source>
             <translation>Align text right</translation>
+        </message>
+        <message>
+            <source>Align top</source>
+            <translation>Align top</translation>
         </message>
         <message>
             <source>Animated recording formats do not contain audio</source>
@@ -94,6 +110,14 @@
         <message>
             <source>Capture cursor</source>
             <translation>Capture cursor</translation>
+        </message>
+        <message>
+            <source>Center horizontally</source>
+            <translation>Center horizontally</translation>
+        </message>
+        <message>
+            <source>Center vertically</source>
+            <translation>Center vertically</translation>
         </message>
         <message>
             <source>Circle</source>
@@ -214,6 +238,14 @@
         <message>
             <source>Diamond</source>
             <translation>Diamond</translation>
+        </message>
+        <message>
+            <source>Distribute horizontally</source>
+            <translation>Distribute horizontally</translation>
+        </message>
+        <message>
+            <source>Distribute vertically</source>
+            <translation>Distribute vertically</translation>
         </message>
         <message>
             <source>Dotted arrow stroke</source>

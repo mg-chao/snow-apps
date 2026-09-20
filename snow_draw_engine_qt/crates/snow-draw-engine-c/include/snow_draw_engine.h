@@ -536,7 +536,7 @@ typedef struct SnowSerialNumberStyle {
 
 typedef struct SnowStyleToolbarState {
     SnowStyleToolbarSource source;
-    uint32_t reserved0;
+    uint32_t selected_element_count;
     SnowShapeStyle shape_style;
     SnowTextStyle text_style;
     SnowSerialNumberStyle serial_number_style;
@@ -1327,6 +1327,10 @@ SnowError snow_viewport_duplicate_selected_ex(SnowRuntime runtime, SnowViewport 
 SnowError snow_viewport_reorder_selected_ex(SnowRuntime runtime, SnowViewport viewport,
                                             uint32_t action,
                                             SnowChangedViewportList* out_changed_viewports);
+
+SnowError snow_viewport_align_selected_ex(SnowRuntime runtime, SnowViewport viewport,
+                                          uint32_t alignment,
+                                          SnowChangedViewportList* out_changed_viewports);
 
 SnowError snow_viewport_set_selected_opacity_ex(SnowRuntime runtime, SnowViewport viewport,
                                                 double opacity,

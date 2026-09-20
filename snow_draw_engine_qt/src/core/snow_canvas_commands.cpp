@@ -152,6 +152,16 @@ MutationResult reorderSelected(SnowRuntime runtime, SnowViewport viewport, std::
     return result;
 }
 
+MutationResult alignSelected(SnowRuntime runtime, SnowViewport viewport, std::uint32_t alignment) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport)) {
+        return result;
+    }
+    result.success = snow_viewport_align_selected_ex(runtime, viewport, alignment,
+                                                     result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
 MutationResult setSelectedOpacity(SnowRuntime runtime, SnowViewport viewport, double opacity) {
     MutationResult result;
     if (!hasViewport(runtime, viewport)) {

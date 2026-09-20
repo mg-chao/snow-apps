@@ -31,6 +31,54 @@
     },
     {
       "variant": "outlined",
+      "symbol": "AlignBottom",
+      "name": "align-bottom",
+      "source": "../src/presentation/components/icons/resources/align-bottom.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "AlignCenterHorizontal",
+      "name": "align-center-horizontal",
+      "source": "../src/presentation/components/icons/resources/align-center-horizontal.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "AlignCenterVertical",
+      "name": "align-center-vertical",
+      "source": "../src/presentation/components/icons/resources/align-center-vertical.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "AlignLeft",
+      "name": "align-left",
+      "source": "../src/presentation/components/icons/resources/align-left.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "AlignRight",
+      "name": "align-right",
+      "source": "../src/presentation/components/icons/resources/align-right.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "AlignTop",
+      "name": "align-top",
+      "source": "../src/presentation/components/icons/resources/align-top.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Angle",
       "name": "angle",
       "source": "../src/presentation/components/icons/resources/angle.svg",
@@ -306,6 +354,22 @@
       "symbol": "Disabled",
       "name": "disabled",
       "source": "../src/presentation/components/icons/resources/disabled.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "DistributeHorizontal",
+      "name": "distribute-horizontal",
+      "source": "../src/presentation/components/icons/resources/distribute-horizontal.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "DistributeVertical",
+      "name": "distribute-vertical",
+      "source": "../src/presentation/components/icons/resources/distribute-vertical.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },

@@ -289,6 +289,7 @@ pub struct HistoryState {
 #[derive(Clone, Debug, PartialEq)]
 pub struct StyleToolbarState {
     pub source: StyleToolbarSource,
+    pub selected_element_count: u32,
     pub shape_style: ShapeStyle,
     pub text_style: TextStyle,
     pub serial_number_style: SerialNumberStyle,

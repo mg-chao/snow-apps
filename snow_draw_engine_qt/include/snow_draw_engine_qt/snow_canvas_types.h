@@ -122,6 +122,17 @@ enum class SnowCanvasSelectionOrder {
     BringToFront = 3,
 };
 
+enum class SnowCanvasSelectionAlignment {
+    AlignLeft = 0,
+    AlignCenterHorizontally = 1,
+    AlignRight = 2,
+    AlignTop = 3,
+    AlignCenterVertically = 4,
+    AlignBottom = 5,
+    DistributeHorizontally = 6,
+    DistributeVertically = 7,
+};
+
 enum SnowCanvasShapeStyleProperty : quint32 {
     SnowCanvasShapeStylePropertyFillColor = 1u << 0,
     SnowCanvasShapeStylePropertyFillStyle = 1u << 1,
@@ -478,6 +489,7 @@ struct SnowCanvasRuntimeConfig {
 
 struct SnowCanvasStyleToolbarState {
     SnowCanvasStyleToolbarSource source = SnowCanvasStyleToolbarSource::DefaultRectangle;
+    quint32 selectedElementCount = 0;
     SnowCanvasShapeStyle shapeStyle;
     SnowCanvasTextStyle textStyle;
     SnowCanvasSerialNumberStyle serialNumberStyle;
@@ -492,6 +504,7 @@ struct SnowCanvasStyleToolbarState {
 inline bool operator==(const SnowCanvasStyleToolbarState& lhs,
                        const SnowCanvasStyleToolbarState& rhs) {
     return lhs.canEditArrowText == rhs.canEditArrowText && lhs.source == rhs.source &&
+           lhs.selectedElementCount == rhs.selectedElementCount &&
            lhs.shapeStyle == rhs.shapeStyle && lhs.textStyle == rhs.textStyle &&
            lhs.serialNumberStyle == rhs.serialNumberStyle &&
            lhs.textStyleMixed == rhs.textStyleMixed &&

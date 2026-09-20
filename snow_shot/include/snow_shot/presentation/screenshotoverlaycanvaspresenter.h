@@ -75,6 +75,8 @@ class ScreenshotOverlayCanvasPresenter final {
     void createTextForSelectedSerialNumber(const ScreenshotDisplaySession& displaySession) const;
     void reorderSelectedElements(const ScreenshotDisplaySession& displaySession,
                                  SnowCanvasSelectionOrder order) const;
+    void alignSelectedElements(const ScreenshotDisplaySession& displaySession,
+                               SnowCanvasSelectionAlignment alignment) const;
     void setSelectedElementsOpacity(const ScreenshotDisplaySession& displaySession,
                                     qreal opacity) const;
     void duplicateSelectedElements(const ScreenshotDisplaySession& displaySession) const;

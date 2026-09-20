@@ -459,6 +459,30 @@ void ScreenshotPinnedEditController::ensureToolbar() {
                 [this]() { m_canvas.reorderSelected(SnowCanvasSelectionOrder::BringForward); });
         connect(toolbar, &ScreenshotToolPalette::bringSelectionToFrontRequested, this,
                 [this]() { m_canvas.reorderSelected(SnowCanvasSelectionOrder::BringToFront); });
+        connect(toolbar, &ScreenshotToolPalette::alignSelectionLeftRequested, this,
+                [this]() { m_canvas.alignSelected(SnowCanvasSelectionAlignment::AlignLeft); });
+        connect(toolbar, &ScreenshotToolPalette::alignSelectionCenterHorizontallyRequested, this,
+                [this]() {
+                    m_canvas.alignSelected(SnowCanvasSelectionAlignment::AlignCenterHorizontally);
+                });
+        connect(toolbar, &ScreenshotToolPalette::alignSelectionRightRequested, this,
+                [this]() { m_canvas.alignSelected(SnowCanvasSelectionAlignment::AlignRight); });
+        connect(toolbar, &ScreenshotToolPalette::alignSelectionTopRequested, this,
+                [this]() { m_canvas.alignSelected(SnowCanvasSelectionAlignment::AlignTop); });
+        connect(toolbar, &ScreenshotToolPalette::alignSelectionCenterVerticallyRequested, this,
+                [this]() {
+                    m_canvas.alignSelected(SnowCanvasSelectionAlignment::AlignCenterVertically);
+                });
+        connect(toolbar, &ScreenshotToolPalette::alignSelectionBottomRequested, this,
+                [this]() { m_canvas.alignSelected(SnowCanvasSelectionAlignment::AlignBottom); });
+        connect(toolbar, &ScreenshotToolPalette::distributeSelectionHorizontallyRequested, this,
+                [this]() {
+                    m_canvas.alignSelected(SnowCanvasSelectionAlignment::DistributeHorizontally);
+                });
+        connect(toolbar, &ScreenshotToolPalette::distributeSelectionVerticallyRequested, this,
+                [this]() {
+                    m_canvas.alignSelected(SnowCanvasSelectionAlignment::DistributeVertically);
+                });
         connect(toolbar, &ScreenshotToolPalette::selectionOpacityChanged, this,
                 [this](qreal opacity) { m_canvas.setSelectedOpacity(opacity); });
         connect(toolbar, &ScreenshotToolPalette::duplicateSelectionRequested, this,
