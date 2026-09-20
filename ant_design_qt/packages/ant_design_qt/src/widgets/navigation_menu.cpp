@@ -407,6 +407,34 @@ AdNavigationMenu::ColorScheme resolvedColorScheme(AdNavigationMenu::ColorScheme 
                                                        : AdNavigationMenu::ColorScheme::Light;
 }
 
+QColor compositeOnto(const QColor& foreground, const QColor& background) {
+  if (!foreground.isValid()) {
+    return background;
+  }
+  if (!background.isValid() || foreground.alphaF() >= 0.999F) {
+    QColor opaque = foreground;
+    if (opaque.isValid()) {
+      opaque.setAlpha(255);
+    }
+    return opaque;
+  }
+
+  const float alpha = std::clamp(foreground.alphaF(), 0.0F, 1.0F);
+  QColor mixed;
+  mixed.setRedF(foreground.redF() * alpha + background.redF() * (1.0F - alpha));
+  mixed.setGreenF(foreground.greenF() * alpha + background.greenF() * (1.0F - alpha));
+  mixed.setBlueF(foreground.blueF() * alpha + background.blueF() * (1.0F - alpha));
+  mixed.setAlpha(255);
+  return mixed;
+}
+
+AdNavigationMenu::ResolvedColorTokens colorTokensFromStyle(const MenuVisualStyle& style) {
+  AdNavigationMenu::ResolvedColorTokens tokens;
+  tokens.itemBackground = style.menuBackground;
+  tokens.subMenuItemBackground = compositeOnto(style.subMenuBackground, style.menuBackground);
+  return tokens;
+}
+
 int rootBorderWidthForStyle(AdNavigationMenu::Mode mode, AdNavigationMenu::ColorScheme colorScheme,
                             adqt::theme::ThemeScheme themeScheme, const MenuVisualStyle& style) {
   if (mode == AdNavigationMenu::Mode::Horizontal &&
@@ -3901,6 +3929,19 @@ void AdNavigationMenu::setTooltipEnabled(bool value) {
 
 AdNavigationMenu::ComponentTokens AdNavigationMenu::componentTokens() const {
   return d_->componentTokens;
+}
+
+AdNavigationMenu::ResolvedColorTokens AdNavigationMenu::resolvedColorTokens() const {
+  return colorTokensFromStyle(resolvedVisualStyle(d_->mode, d_->colorScheme, d_->collapsed));
+}
+
+AdNavigationMenu::ResolvedColorTokens AdNavigationMenu::resolveColorTokens(
+    const QWidget* context, ColorScheme colorScheme) {
+  const adqt::theme::ResolvedTheme resolvedTheme =
+      adqt::theme::ThemeManager::instance().resolve(context);
+  MenuStyleInput input;
+  input.colorScheme = resolvedColorScheme(colorScheme, resolvedTheme.theme.scheme);
+  return colorTokensFromStyle(detail::resolveMenuVisualStyle(input, resolvedTheme));
 }
 
 void AdNavigationMenu::setComponentTokens(const ComponentTokens& tokens) {

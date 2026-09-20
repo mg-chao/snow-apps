@@ -7,6 +7,7 @@
 #include "antd_icons.h"
 #include "icon_renderer.h"
 #include "widgets/button.h"
+#include "widgets/navigation_menu.h"
 
 #include <algorithm>
 #include <cmath>
@@ -383,7 +384,8 @@ bool TitleBarWidget::eventFilter(QObject* watched, QEvent* event) {
 
 void TitleBarWidget::applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
     QPalette palette = this->palette();
-    palette.setColor(QPalette::Window, scheme.map.colorBgContainer);
+    palette.setColor(QPalette::Window,
+                     adqt::widgets::AdNavigationMenu::resolveColorTokens(this).itemBackground);
     setPalette(palette);
     m_logoColor = scheme.map.colorText;
 #ifdef Q_OS_WIN

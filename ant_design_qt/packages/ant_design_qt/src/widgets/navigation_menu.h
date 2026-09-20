@@ -223,6 +223,11 @@ class AdNavigationMenu final : public QWidget, private detail::PopupInteractionO
     ColorTokens colors;
   };
 
+  struct ResolvedColorTokens {
+    QColor itemBackground;
+    QColor subMenuItemBackground;
+  };
+
   struct SemanticSlotStyle {
     std::optional<QColor> textColor;
     std::optional<QColor> backgroundColor;
@@ -295,6 +300,10 @@ class AdNavigationMenu final : public QWidget, private detail::PopupInteractionO
   ComponentTokens componentTokens() const;
   void setComponentTokens(const ComponentTokens& tokens);
   void resetComponentTokens();
+
+  ResolvedColorTokens resolvedColorTokens() const;
+  static ResolvedColorTokens resolveColorTokens(const QWidget* context = nullptr,
+                                                ColorScheme colorScheme = ColorScheme::Inherit);
 
   SemanticStyles semanticStyles() const;
   void setSemanticStyles(const SemanticStyles& styles);

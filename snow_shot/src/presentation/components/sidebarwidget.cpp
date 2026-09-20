@@ -28,7 +28,19 @@ constexpr int SIDEBAR_COLLAPSED_WIDTH = 80;
 constexpr int FIRST_TOP_LEVEL_MENU_TOP_SPACING = 8;
 constexpr int COLLAPSE_TRIGGER_HEIGHT = 48;
 constexpr int COLLAPSE_TRIGGER_ICON_SIZE = 18;
-constexpr auto DARK_COLLAPSE_TRIGGER_BACKGROUND = "#00203F";
+
+void applyWindowSurface(QWidget* widget, const QColor& color, bool fillBase = false) {
+    if (widget == nullptr) {
+        return;
+    }
+
+    QPalette palette = widget->palette();
+    palette.setColor(QPalette::Window, color);
+    if (fillBase) {
+        palette.setColor(QPalette::Base, color);
+    }
+    widget->setPalette(palette);
+}
 
 QStandardItem* createActionItem(const QString& stableId, const QString& label,
                                 const adqt::icons::IconRef& icon = adqt::icons::IconRef(),
@@ -242,29 +254,17 @@ void SidebarWidget::applyRouteSelection(const QString& routeKey, bool revealAnce
     m_currentRoute = resolvedRouteKey;
 }
 
-void SidebarWidget::applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
-    const QColor background = scheme.map.colorBgContainer;
-    const QColor collapseTriggerBackground =
-        scheme.appearance == snow_shot::presentation::styles::ThemeAppearance::Dark
-            ? QColor(QString::fromLatin1(DARK_COLLAPSE_TRIGGER_BACKGROUND))
-            : background;
-
-    QPalette sidebarPalette = palette();
-    sidebarPalette.setColor(QPalette::Window, background);
-    setPalette(sidebarPalette);
-
-    if (m_menu != nullptr) {
-        QPalette palette = m_menu->palette();
-        palette.setColor(QPalette::Window, background);
-        m_menu->setPalette(palette);
+void SidebarWidget::applyTheme(const snow_shot::presentation::styles::ThemeColorScheme&) {
+    if (m_menu == nullptr) {
+        return;
     }
 
-    if (m_collapseTrigger != nullptr) {
-        QPalette palette = m_collapseTrigger->palette();
-        palette.setColor(QPalette::Window, collapseTriggerBackground);
-        m_collapseTrigger->setPalette(palette);
-        m_collapseTrigger->setAutoFillBackground(true);
-    }
+    // Chrome around the menu (empty viewport, collapse trigger) uses the resolved inline
+    // submenu surface so it stays on the same token as nested items instead of the container.
+    const QColor background = m_menu->resolvedColorTokens().subMenuItemBackground;
+    applyWindowSurface(this, background, true);
+    applyWindowSurface(m_menu, background);
+    applyWindowSurface(m_collapseTrigger, background);
 
     update();
 }

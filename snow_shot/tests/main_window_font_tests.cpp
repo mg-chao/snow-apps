@@ -11,6 +11,7 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "widgets/message.h"
+#include "widgets/navigation_menu.h"
 
 #include <QAbstractButton>
 #include <QApplication>
@@ -209,6 +210,39 @@ void customTitleBarUsesPlatformWindowControls() {
 #endif
 }
 
+void titleBarBackgroundMatchesNavigationMenu() {
+    auto& themeManager = styles::ThemeManager::instance();
+    themeManager.setThemeAppearance(styles::ThemeAppearance::Light);
+
+    QWidget host;
+    host.resize(360, 80);
+    TitleBarWidget titleBar(themeManager.themeColorScheme().metricAlias, &host);
+    titleBar.resize(host.width(), titleBar.height());
+    host.show();
+    flushEvents();
+
+    const auto lightMenuColors = adqt::widgets::AdNavigationMenu::resolveColorTokens(&titleBar);
+    require(titleBar.autoFillBackground() &&
+                titleBar.palette().color(QPalette::Window) == lightMenuColors.itemBackground &&
+                lightMenuColors.itemBackground ==
+                    themeManager.themeColorScheme().map.colorBgContainer,
+            "the light title bar must use the navigation menu item background");
+
+    themeManager.setThemeAppearance(styles::ThemeAppearance::Dark);
+    flushEvents();
+    const auto darkMenuColors = adqt::widgets::AdNavigationMenu::resolveColorTokens(&titleBar);
+    require(titleBar.palette().color(QPalette::Window) == darkMenuColors.itemBackground &&
+                darkMenuColors.itemBackground !=
+                    themeManager.themeColorScheme().map.colorBgContainer,
+            "the dark title bar must use the navigation menu item background");
+
+    themeManager.setThemeAppearance(styles::ThemeAppearance::Light);
+    flushEvents();
+    require(titleBar.palette().color(QPalette::Window) ==
+                adqt::widgets::AdNavigationMenu::resolveColorTokens(&titleBar).itemBackground,
+            "returning to the light theme must restore the navigation menu item background");
+}
+
 void mainWindowTitlesKeepSmoothRendering() {
     const QFont applicationFont = QApplication::font();
     const auto& registry = settings::builtInSettingsRegistry();
@@ -342,6 +376,7 @@ int main(int argc, char** argv) {
     styles::ThemeManager::instance().initialize(application);
     applicationTypographyCoversUnownedSurfaces();
     customTitleBarUsesPlatformWindowControls();
+    titleBarBackgroundMatchesNavigationMenu();
     mainWindowTitlesKeepSmoothRendering();
 #ifdef Q_OS_MACOS
     permissionRedirectShowsMainInterfacePrompt();
