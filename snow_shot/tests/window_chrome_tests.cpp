@@ -142,6 +142,79 @@ void nativeCaptionControlHitsAreSuppressed() {
     }
 }
 
+void customMaximizePressUsesVisibleButtonGeometry() {
+    QWidget window(nullptr, Qt::Window | Qt::FramelessWindowHint);
+    window.resize(420, 280);
+    QWidget titleBar(&window);
+    titleBar.setGeometry(0, 0, 420, 48);
+    QToolButton maximize(&titleBar);
+    // Deliberately far from the native caption-button rectangle.
+    maximize.setGeometry(80, 8, 46, 32);
+    maximize.setProperty("snowWindowCaptionHit", HTMAXBUTTON);
+    int clicks = 0;
+    QObject::connect(&maximize, &QToolButton::clicked, &window, [&] {
+        ++clicks;
+        window.isMaximized() ? window.showNormal() : window.showMaximized();
+    });
+    window.show();
+    flushEvents();
+    const HWND hwnd = toNativeHwnd(window.winId());
+    for (const UINT type : {WM_NCMOUSEMOVE, WM_NCMOUSELEAVE}) {
+        MSG message{};
+        message.hwnd = hwnd;
+        message.message = type;
+        message.wParam = HTMAXBUTTON;
+        qintptr result = -1;
+        require(snow_shot::platform::windows::handleNativeWindowEvent(&titleBar, &message, &result),
+                "non-client hover must never fall through to USER32 caption painting");
+        require(maximize.property("snowNativeCaptionHover").toBool() == (type == WM_NCMOUSEMOVE),
+                "native hover and leave must update the custom button highlight");
+    }
+    const auto press = [&](QPoint local, UINT type = WM_NCLBUTTONDOWN) {
+        const QPoint inWindow = maximize.mapTo(&window, local);
+        const qreal scale = window.devicePixelRatioF();
+        POINT position{qRound(inWindow.x() * scale), qRound(inWindow.y() * scale)};
+        ClientToScreen(hwnd, &position);
+        MSG message{};
+        message.hwnd = hwnd;
+        message.message = type;
+        message.wParam = HTMAXBUTTON;
+        message.lParam = MAKELPARAM(position.x, position.y);
+        qintptr result = -1;
+        require(snow_shot::platform::windows::handleNativeWindowEvent(&titleBar, &message, &result),
+                "custom maximize presses must be consumed before default caption processing");
+        flushEvents();
+    };
+    const auto release = [&](QPoint local) {
+        const QPoint position = maximize.mapTo(&window, local);
+        const qreal scale = window.devicePixelRatioF();
+        SendMessageW(hwnd, WM_LBUTTONUP, 0,
+                     MAKELPARAM(qRound(position.x() * scale), qRound(position.y() * scale)));
+        flushEvents();
+    };
+    for (const QPoint point : {QPoint(2, 16), QPoint(43, 16)}) {
+        const int before = clicks;
+        press(point);
+        require(maximize.isDown() && clicks == before,
+                "pressing either edge must arm the Qt button without activating it");
+        require(GetCapture() == hwnd,
+                "Qt must capture the mouse so real movement and release use the client path");
+        release(point);
+        require(clicks == before + 1 && !maximize.isDown(),
+                "release inside the visible button must activate it exactly once");
+        require(window.isMaximized() == (clicks == 1),
+                "the same custom button must maximize and restore the window");
+    }
+    press(QPoint(2, 16));
+    release(QPoint(-20, 60));
+    require(clicks == 2 && !maximize.isDown(),
+            "release outside the custom button must cancel the click");
+    press(QPoint(2, 16), WM_NCLBUTTONDBLCLK);
+    release(QPoint(2, 16));
+    require(clicks == 3, "a double-click press must also stay on the Qt button path");
+    window.hide();
+}
+
 void captureExclusionCapabilityAndNativeVisibilityAreReported() {
     require(snow_shot::platform::windows::supportsWindowCaptureExclusion() ==
                 currentWindowsSupportsCaptureExclusion(),
@@ -200,6 +273,7 @@ void layeredWindowInputTransparencyPreservesNativeState() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     nativeCaptionControlHitsAreSuppressed();
+    customMaximizePressUsesVisibleButtonGeometry();
     layeredWindowInputTransparencyPreservesNativeState();
     captureExclusionCapabilityAndNativeVisibilityAreReported();
     raisedOverlayPreventsTitleBarDragging();

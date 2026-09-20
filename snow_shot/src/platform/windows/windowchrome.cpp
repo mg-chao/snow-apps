@@ -8,7 +8,6 @@
 #include <QCursor>
 #include <QAbstractButton>
 #include <QVariant>
-#include <QPointer>
 #include <QGuiApplication>
 #include <QPoint>
 #include <QRect>
@@ -481,29 +480,25 @@ bool handleNativeWindowEvent(QWidget* titleBar, void* message, qintptr* result) 
                 *result = nativeResult;
                 return true;
             }
+            // DWM may decline the message. USER32 must not paint or track its
+            // own caption buttons over our client-drawn title bar.
+            *result = 0;
+            return true;
         }
         return false;
 
     case WM_NCLBUTTONDOWN:
+    case WM_NCLBUTTONDBLCLK:
         if (titleBar != nullptr && msg->wParam == HTMAXBUTTON) {
-            QPointer<QAbstractButton> maximize;
-            for (auto* button : titleBar->findChildren<QAbstractButton*>()) {
-                if (button->property("snowWindowCaptionHit").toInt() == HTMAXBUTTON) {
-                    maximize = button;
-                    break;
-                }
-            }
-            if (maximize != nullptr) {
-                maximize->setDown(true);
-                // USER32 owns tracking, cancellation and the maximize/restore command.
-                *result = DefWindowProcW(msg->hwnd, msg->message, msg->wParam, msg->lParam);
-                if (maximize != nullptr) {
-                    maximize->setDown(false);
-                    maximize->setProperty("snowNativeCaptionHover", false);
-                    maximize->update();
-                }
-                return true;
-            }
+            // HTMAXBUTTON enables Snap hover, but DefWindowProc's press loop
+            // draws and tracks a native button at a different rectangle. Route
+            // the press into Qt so its button owns capture, release and clicked().
+            POINT position{GET_X_LPARAM(msg->lParam), GET_Y_LPARAM(msg->lParam)};
+            ScreenToClient(msg->hwnd, &position);
+            *result = SendMessageW(
+                msg->hwnd, msg->message == WM_NCLBUTTONDBLCLK ? WM_LBUTTONDBLCLK : WM_LBUTTONDOWN,
+                MK_LBUTTON, MAKELPARAM(position.x, position.y));
+            return true;
         }
         return false;
 
