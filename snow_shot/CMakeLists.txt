@@ -71,6 +71,11 @@ set(_snow_shot_static_qt_plugins
     # The full-color application icon embeds SVG images. QtSvg renders the
     # outer document, but QImageReader needs this plugin for those images.
     Qt6::QSvgPlugin
+    # The --update-probe startup path switches QT_QPA_PLATFORM to "offscreen"
+    # before constructing QApplication. Static Qt registers platform plugins
+    # at link time, so the release binary must import it here or the packaged
+    # startup probe blocks forever on the missing-plugin dialog.
+    Qt6::QOffscreenIntegrationPlugin
 )
 
 if(SNOW_SHOT_QT_STATIC)
