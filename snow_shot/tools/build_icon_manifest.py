@@ -47,6 +47,14 @@ def main() -> int:
         "colorModel": "fullColor",
         "fit": "contain",
     })
+    entries.append({
+        "variant": "app",
+        "symbol": "ApplicationTitleBarIcon",
+        "name": "application-title-bar-icon",
+        "source": "app-icon-titlebar.svg",
+        "colorModel": "fullColor",
+        "fit": "contain",
+    })
     entries.sort(key=lambda item: (item["variant"], item["name"]))
     manifest = {
         "schemaVersion": 1,

@@ -390,7 +390,8 @@ void TitleBarWidget::applyTheme(const snow_shot::presentation::styles::ThemeColo
     adqt::icons::IconRenderRequest request;
     request.logicalSize = QSize(16, 16);
     request.devicePixelRatio = devicePixelRatioF();
-    QPixmap icon = adqt::icons::renderIconPixmap(custom_icons::app::ApplicationIcon(), request);
+    QPixmap icon =
+        adqt::icons::renderIconPixmap(custom_icons::app::ApplicationTitleBarIcon(), request);
     if (!window()->isActiveWindow()) {
         QPainter painter(&icon);
         painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);

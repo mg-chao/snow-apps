@@ -90,6 +90,20 @@ void customTitleBarUsesPlatformWindowControls() {
     require(icon != nullptr && icon->geometry() == QRect(16, 8, 16, 16),
             "the 16 DIP app icon must have the standard leading inset and vertical alignment");
     require(!icon->pixmap().isNull(), "the caption must render the actual application icon");
+    const QImage captionIcon = icon->pixmap().toImage();
+    bool paintsWhiteBackdrop = false;
+    for (int y = 0; y < captionIcon.height() && !paintsWhiteBackdrop; ++y) {
+        for (int x = 0; x < captionIcon.width(); ++x) {
+            const QColor pixel = captionIcon.pixelColor(x, y);
+            if (pixel.alpha() >= 250 && pixel.red() >= 240 && pixel.green() >= 240 &&
+                pixel.blue() >= 240) {
+                paintsWhiteBackdrop = true;
+                break;
+            }
+        }
+    }
+    require(!paintsWhiteBackdrop,
+            "the caption icon must drop the application icon's white background");
     for (const auto* button : {minimizeButton, maximizeButton, closeButton}) {
         require(button->size() == QSize(46, 32) && button->y() == 0,
                 "caption buttons must provide full-height 46 DIP targets");

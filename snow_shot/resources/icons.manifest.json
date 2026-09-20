@@ -14,6 +14,14 @@
       "fit": "contain"
     },
     {
+      "variant": "app",
+      "symbol": "ApplicationTitleBarIcon",
+      "name": "application-title-bar-icon",
+      "source": "app-icon-titlebar.svg",
+      "colorModel": "fullColor",
+      "fit": "contain"
+    },
+    {
       "variant": "brand",
       "symbol": "SnowShotLogo",
       "name": "snow-shot-logo",

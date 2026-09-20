@@ -12,6 +12,8 @@ adqt::icons::IconPackRegistrationResult ensureRegistered();
 
 namespace app {
 [[nodiscard]] adqt::icons::IconRef ApplicationIcon(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef
+ApplicationTitleBarIcon(const adqt::icons::IconColors& colors = {});
 } // namespace app
 
 namespace brand {
