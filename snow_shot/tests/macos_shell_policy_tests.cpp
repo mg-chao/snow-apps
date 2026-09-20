@@ -37,6 +37,7 @@ void shortcutFamiliesAreComplete() {
         {GlobalShortcutAction::PinClipboardContent, FeatureFamily::PinToScreen},
         {GlobalShortcutAction::TranslateSelectedText, std::nullopt},
         {GlobalShortcutAction::PinSelectedFiles, FeatureFamily::PinToScreen},
+        {GlobalShortcutAction::ToggleGlobalHotkeys, std::nullopt},
     };
     for (const auto& [action, family] : expected) {
         require(snow_shot::app::featureFamilyFor(action) == family,

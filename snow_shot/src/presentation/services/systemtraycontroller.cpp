@@ -309,13 +309,13 @@ class SystemTrayController::Impl {
                                      [this, shortcutAction = option.shortcutAction]() {
                                          emit q.quickActionRequested(shortcutAction);
                                      });
-                    break;
-                case settings::SettingsTrayMenuOptionKind::DisableGlobalHotkeys:
-                    disableGlobalHotkeysAction = action;
-                    action->setCheckable(true);
-                    QObject::connect(action, &QAction::toggled, &q, [this](bool checked) {
-                        emit q.globalHotkeysDisabledChanged(checked);
-                    });
+                    if (option.checkable) {
+                        // The checkmark mirrors the manager's enabled flag; it
+                        // is a view of that state, so nothing listens to
+                        // toggled() here.
+                        action->setCheckable(true);
+                        checkableQuickActions.insert(option.shortcutAction, action);
+                    }
                     break;
                 case settings::SettingsTrayMenuOptionKind::ShowMainWindow:
                     QObject::connect(action, &QAction::triggered, &q,
@@ -342,11 +342,9 @@ class SystemTrayController::Impl {
             groupMenuAction->setData(windowGroupingOptionId);
             actions.insert(windowGroupingOptionId, groupMenuAction);
         }
-        // Window grouping sits above the disable command so pinned windows can
-        // be re-grouped without scrolling past the global-hotkey switches.
-        if (disableGlobalHotkeysAction != nullptr) {
-            menu->insertAction(disableGlobalHotkeysAction, groupMenuAction);
-        } else if (showMainWindow != nullptr) {
+        // Window grouping sits above the window commands so pinned windows
+        // can be re-grouped without scrolling past them.
+        if (showMainWindow != nullptr) {
             menu->insertAction(showMainWindow, groupMenuAction);
         }
         QObject::connect(groupMenu, &QMenu::aboutToShow, &q, [this]() { rebuildGroupMenu(); });
@@ -487,9 +485,14 @@ class SystemTrayController::Impl {
             priorGroupVisible = priorGroupVisible || visibleGroups.at(groupIndex);
         }
 
-        if (disableGlobalHotkeysAction != nullptr && !disableGlobalHotkeysAction->isVisible() &&
-            disableGlobalHotkeysAction->isChecked()) {
-            disableGlobalHotkeysAction->setChecked(false);
+        // A checked toggle must not leave the user without a way back: when its
+        // entry disappears from the menu, re-enable hotkeys through the same
+        // quick action the entry itself dispatches.
+        if (QAction* toggleAction =
+                checkableQuickActions.value(GlobalShortcutAction::ToggleGlobalHotkeys);
+            toggleAction != nullptr && !toggleAction->isVisible() && toggleAction->isChecked()) {
+            toggleAction->setChecked(false);
+            emit q.quickActionRequested(GlobalShortcutAction::ToggleGlobalHotkeys);
         }
     }
 
@@ -537,9 +540,9 @@ class SystemTrayController::Impl {
     QAction* groupMenuAction = nullptr;
     QHash<QString, QAction*> actions;
     QHash<GlobalShortcutAction, shortcuts::ShortcutBindingList> shortcutBindings;
+    QHash<GlobalShortcutAction, QAction*> checkableQuickActions;
     QVector<QAction*> separatorsBeforeGroup;
     TrayImageCache iconCache;
-    QAction* disableGlobalHotkeysAction = nullptr;
     QStringList menuOptions;
     QString iconSelection = QString::fromLatin1(DEFAULT_TRAY_ICON);
     QString customIconPath;
@@ -703,8 +706,12 @@ QStringList SystemTrayController::menuOptions() const {
     return m_impl->menuOptions;
 }
 
-bool SystemTrayController::globalHotkeysDisabled() const {
-    return m_impl->disableGlobalHotkeysAction != nullptr &&
-           m_impl->disableGlobalHotkeysAction->isChecked();
+void SystemTrayController::setGlobalHotkeysDisabled(bool disabled) {
+    // Pure view update: the manager owns the state and announces changes; the
+    // checkmark only mirrors them, so this must not dispatch anything.
+    if (QAction* action =
+            m_impl->checkableQuickActions.value(GlobalShortcutAction::ToggleGlobalHotkeys)) {
+        action->setChecked(disabled);
+    }
 }
 } // namespace snow_shot::presentation

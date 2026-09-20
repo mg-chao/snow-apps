@@ -46,11 +46,20 @@ SettingsItemDefinition screenshotItem() {
     };
 }
 
+// Tray presentation overrides for quick actions: a label that keeps a tray
+// entry on its historical wording while the settings page shows a longer one,
+// and an optional checkmark mirroring runtime state.
+struct TrayActionPresentation {
+    const char* title = nullptr;
+    bool checkable = false;
+};
+
 SettingsItemDefinition
 quickActionItem(const QString& id, const char* title, const char* description,
                 QVector<TranslatableText> aliases, GlobalShortcutAction shortcutAction,
                 const QString& configurationKey, std::function<adqt::icons::IconRef()> iconFactory,
-                SettingsShortcutAdjustment adjustment = SettingsShortcutAdjustment::None) {
+                SettingsShortcutAdjustment adjustment = SettingsShortcutAdjustment::None,
+                TrayActionPresentation tray = {}) {
     SettingsShortcutActionDefinition payload;
     payload.shortcutAction = shortcutAction;
     payload.command = {
@@ -60,6 +69,10 @@ quickActionItem(const QString& id, const char* title, const char* description,
     };
     payload.iconFactory = std::move(iconFactory);
     payload.adjustment = adjustment;
+    if (tray.title != nullptr) {
+        payload.trayLabel = settingsText(tray.title);
+    }
+    payload.trayCheckable = tray.checkable;
     return {
         id,
         settingsText(title),
@@ -587,6 +600,21 @@ SettingsItemDefinition translateSelectedTextItem() {
         {}, GlobalShortcutAction::TranslateSelectedText,
         QStringLiteral("global_shortcuts/translate_selected_text"),
         []() { return custom_outlined_icons::OcrTranslate(); });
+}
+
+SettingsItemDefinition toggleGlobalHotkeysItem() {
+    return quickActionItem(
+        QStringLiteral("quick.toggle-global-hotkeys"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Disable/Enable global hotkeys"),
+        QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Turn every global hotkey off or back on; this shortcut stays active while global "
+            "hotkeys are disabled"),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Toggle hotkeys"))},
+        GlobalShortcutAction::ToggleGlobalHotkeys,
+        QStringLiteral("global_shortcuts/toggle_global_hotkeys"),
+        []() { return custom_outlined_icons::Disabled(); }, SettingsShortcutAdjustment::None,
+        {QT_TRANSLATE_NOOP("SettingsCatalog", "Disable global hotkeys"), true});
 }
 
 SettingsItemDefinition pinClipboardContentItem() {
@@ -1819,6 +1847,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     {
                         openCaptureHistoryItem(),
                         translateSelectedTextItem(),
+                        toggleGlobalHotkeysItem(),
                     },
                 },
             },
@@ -2539,6 +2568,8 @@ QString shortcutConfigurationKey(GlobalShortcutAction action) {
         return QStringLiteral("global_shortcuts/pin_selected_files");
     case GlobalShortcutAction::TranslateSelectedText:
         return QStringLiteral("global_shortcuts/translate_selected_text");
+    case GlobalShortcutAction::ToggleGlobalHotkeys:
+        return QStringLiteral("global_shortcuts/toggle_global_hotkeys");
     }
     return {};
 }
@@ -2693,7 +2724,8 @@ QString SettingsCatalog::shortcutActionTitle(GlobalShortcutAction action,
     }
     const auto* shortcut = std::get_if<SettingsShortcutActionDefinition>(&itemDefinition->payload);
     Q_ASSERT(shortcut != nullptr);
-    QString title = itemDefinition->title.translated();
+    QString title = shortcut->trayLabel.isValid() ? shortcut->trayLabel.translated()
+                                                  : itemDefinition->title.translated();
     if (shortcut->adjustment == SettingsShortcutAdjustment::ScreenshotDelaySeconds) {
         title = title.arg(std::clamp(screenshotDelaySeconds, 1, 10));
     }
@@ -2715,9 +2747,11 @@ QVector<SettingsTrayMenuGroupDefinition> SettingsCatalog::trayMenuGroups() const
                 if (shortcut == nullptr) {
                     continue;
                 }
-                group.options.push_back({itemDefinition.id, itemDefinition.title,
-                                         SettingsTrayMenuOptionKind::QuickAction,
-                                         shortcut->shortcutAction, shortcut->iconFactory});
+                group.options.push_back(
+                    {itemDefinition.id,
+                     shortcut->trayLabel.isValid() ? shortcut->trayLabel : itemDefinition.title,
+                     SettingsTrayMenuOptionKind::QuickAction, shortcut->shortcutAction,
+                     shortcut->iconFactory, shortcut->trayCheckable});
             }
             if (!group.options.isEmpty()) {
                 groups.push_back(std::move(group));
@@ -2732,10 +2766,6 @@ QVector<SettingsTrayMenuGroupDefinition> SettingsCatalog::trayMenuGroups() const
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Window grouping")),
          SettingsTrayMenuOptionKind::WindowGrouping, GlobalShortcutAction::Screenshot,
          []() { return custom_outlined_icons::Group(); }},
-        {QStringLiteral("tray.disable-shortcut-functions"),
-         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Disable global hotkeys")),
-         SettingsTrayMenuOptionKind::DisableGlobalHotkeys, GlobalShortcutAction::Screenshot,
-         []() { return custom_outlined_icons::Disabled(); }},
         {QStringLiteral("tray.show-main-window"),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Show main interface")),
          SettingsTrayMenuOptionKind::ShowMainWindow, GlobalShortcutAction::Screenshot,
@@ -2776,12 +2806,11 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
     const auto quick =
         [&manifest](const QString& id, const char* title, GlobalShortcutAction action,
                     std::function<adqt::icons::IconRef()> iconFactory,
-                    SettingsShortcutAdjustment adjustment = SettingsShortcutAdjustment::None) {
-            SettingsTrayMenuOptionDefinition option{id,
-                                                    {"SettingsCatalog", title},
-                                                    SettingsTrayMenuOptionKind::QuickAction,
-                                                    action,
-                                                    std::move(iconFactory)};
+                    SettingsShortcutAdjustment adjustment = SettingsShortcutAdjustment::None,
+                    bool checkable = false) {
+            SettingsTrayMenuOptionDefinition option{
+                id,     {"SettingsCatalog", title}, SettingsTrayMenuOptionKind::QuickAction,
+                action, std::move(iconFactory),     checkable};
             manifest.shortcutAdjustments.insert(static_cast<int>(action), adjustment);
             return option;
         };
@@ -2852,18 +2881,19 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
           quick(QStringLiteral("quick.translate-selected-text"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Translate Selected Text"),
                 GlobalShortcutAction::TranslateSelectedText,
-                []() { return custom_outlined_icons::OcrTranslate(); })}},
+                []() { return custom_outlined_icons::OcrTranslate(); }),
+          quick(
+              QStringLiteral("quick.toggle-global-hotkeys"),
+              QT_TRANSLATE_NOOP("SettingsCatalog", "Disable global hotkeys"),
+              GlobalShortcutAction::ToggleGlobalHotkeys,
+              []() { return custom_outlined_icons::Disabled(); }, SettingsShortcutAdjustment::None,
+              true)}},
         {QStringLiteral("system"),
          {{QStringLiteral("tray.window-grouping"),
            {"SettingsCatalog", QT_TRANSLATE_NOOP("SettingsCatalog", "Window grouping")},
            SettingsTrayMenuOptionKind::WindowGrouping,
            GlobalShortcutAction::Screenshot,
            []() { return custom_outlined_icons::Group(); }},
-          {QStringLiteral("tray.disable-shortcut-functions"),
-           {"SettingsCatalog", QT_TRANSLATE_NOOP("SettingsCatalog", "Disable global hotkeys")},
-           SettingsTrayMenuOptionKind::DisableGlobalHotkeys,
-           GlobalShortcutAction::Screenshot,
-           []() { return custom_outlined_icons::Disabled(); }},
           {QStringLiteral("tray.show-main-window"),
            {"SettingsCatalog", QT_TRANSLATE_NOOP("SettingsCatalog", "Show main interface")},
            SettingsTrayMenuOptionKind::ShowMainWindow,

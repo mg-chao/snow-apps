@@ -248,6 +248,11 @@ struct SettingsShortcutActionDefinition {
     SettingsCommand command;
     std::function<adqt::icons::IconRef()> iconFactory;
     SettingsShortcutAdjustment adjustment = SettingsShortcutAdjustment::None;
+    // Overrides the item title on tray menu entries when valid, so the tray can
+    // keep a historical label while the settings page shows a longer one.
+    TranslatableText trayLabel;
+    // Marks the tray menu entry as checkable so it can mirror runtime state.
+    bool trayCheckable = false;
 };
 
 enum class SettingsLocalShortcutScope {
@@ -323,7 +328,6 @@ struct SettingsCustomDefinition {
 
 enum class SettingsTrayMenuOptionKind {
     QuickAction,
-    DisableGlobalHotkeys,
     ShowMainWindow,
     Exit,
     WindowGrouping,
@@ -335,6 +339,7 @@ struct SettingsTrayMenuOptionDefinition {
     SettingsTrayMenuOptionKind kind = SettingsTrayMenuOptionKind::QuickAction;
     GlobalShortcutAction shortcutAction = GlobalShortcutAction::Screenshot;
     std::function<adqt::icons::IconRef()> iconFactory;
+    bool checkable = false;
 };
 
 struct SettingsTrayMenuGroupDefinition {

@@ -26,6 +26,7 @@ enum class GlobalShortcutAction {
     PinClipboardContent,
     TranslateSelectedText,
     PinSelectedFiles,
+    ToggleGlobalHotkeys,
 };
 
 enum class GlobalShortcutStatus {

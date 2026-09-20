@@ -211,10 +211,10 @@ void builtInCatalogIsCompleteAndValid() {
     }
 #ifdef Q_OS_MACOS
     require(sectionCount == 40, "macOS adds one permissions section");
-    require(itemCount == 167, "macOS permission rows offset omitted Windows-only choices");
+    require(itemCount == 168, "macOS permission rows offset omitted Windows-only choices");
 #else
     require(sectionCount == 39, "catalog must contain thirty-nine sections");
-    require(itemCount == 167, "catalog must contain one hundred sixty-seven items");
+    require(itemCount == 168, "catalog must contain one hundred sixty-eight items");
 #endif
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -1224,6 +1224,9 @@ void globalHotkeyShortcutsHaveStableContracts() {
         {Action::TranslateSelectedText, "other", "quick.translate-selected-text",
          "global_shortcuts/translate_selected_text",
          settings::SettingsCommandKind::ExecuteQuickAction},
+        {Action::ToggleGlobalHotkeys, "other", "quick.toggle-global-hotkeys",
+         "global_shortcuts/toggle_global_hotkeys",
+         settings::SettingsCommandKind::ExecuteQuickAction},
         {Action::PinClipboardContent, "pin-to-screen", "quick.pin-clipboard-content",
          "global_shortcuts/pin_clipboard_content",
          settings::SettingsCommandKind::ExecuteQuickAction},
@@ -1263,23 +1266,35 @@ void globalHotkeyShortcutsHaveStableContracts() {
         }
     }
 
-    require(actions.size() == expectations.size() && expectations.size() == 15,
-            "the global-hotkeys catalog must expose all fifteen shortcut actions exactly once");
+    require(actions.size() == expectations.size() && expectations.size() == 16,
+            "the global-hotkeys catalog must expose all sixteen shortcut actions exactly once");
     require(!catalog.commandForShortcut(Action::OpenSettings).has_value(),
             "Open Interface settings must not appear in Global hotkeys");
 
     const auto trayGroups = catalog.trayMenuGroups();
     QStringList trayOptionIds;
+    QStringList checkableOptionIds;
     for (const auto& group : trayGroups) {
         for (const auto& option : group.options) {
             trayOptionIds.push_back(option.id);
+            if (option.checkable) {
+                checkableOptionIds.push_back(option.id);
+            }
             if (option.kind == settings::SettingsTrayMenuOptionKind::QuickAction) {
                 const auto command = catalog.commandForShortcut(option.shortcutAction);
                 require(command.has_value(),
                         "every tray quick action must resolve to a shortcut command");
                 const auto* quickItem = catalog.itemForShortcut(option.shortcutAction);
-                require(quickItem != nullptr && quickItem->title.source == option.label.source,
-                        "tray quick-action labels must share the shortcut title source");
+                const auto* quickPayload =
+                    quickItem != nullptr ? std::get_if<settings::SettingsShortcutActionDefinition>(
+                                               &quickItem->payload)
+                                         : nullptr;
+                const char* const expectedLabel =
+                    quickPayload != nullptr && quickPayload->trayLabel.isValid()
+                        ? quickPayload->trayLabel.source
+                        : (quickItem != nullptr ? quickItem->title.source : nullptr);
+                require(expectedLabel != nullptr && expectedLabel == option.label.source,
+                        "tray quick-action labels must share the shortcut title or tray override");
                 const auto title = catalog.shortcutActionTitle(option.shortcutAction, 7);
                 require(!title.isEmpty() && !title.contains(QStringLiteral("%1")),
                         "tray quick-action labels must come from resolved canonical titles");
@@ -1295,9 +1310,9 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 trayGroups.at(2).id == QStringLiteral("screen-recording") &&
                 trayGroups.at(2).options.size() == 3 &&
                 trayGroups.at(3).id == QStringLiteral("other") &&
-                trayGroups.at(3).options.size() == 2 &&
+                trayGroups.at(3).options.size() == 3 &&
                 trayGroups.at(4).id == QStringLiteral("system") &&
-                trayGroups.at(4).options.size() == 4 && trayOptionIds.size() == 19 &&
+                trayGroups.at(4).options.size() == 3 && trayOptionIds.size() == 19 &&
                 trayOptionIds.at(8) == QStringLiteral("quick.pin-clipboard-content") &&
                 trayOptionIds.at(9) == QStringLiteral("quick.pin-selected-files") &&
                 trayOptionIds.at(10) == QStringLiteral("quick.screen-record") &&
@@ -1305,14 +1320,37 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 trayOptionIds.at(12) == QStringLiteral("quick.open-screen-recording-folder") &&
                 trayOptionIds.at(13) == QStringLiteral("quick.open-capture-history") &&
                 trayOptionIds.at(14) == QStringLiteral("quick.translate-selected-text") &&
-                trayOptionIds.at(15) == QStringLiteral("tray.window-grouping") &&
+                trayOptionIds.at(15) == QStringLiteral("quick.toggle-global-hotkeys") &&
+                trayOptionIds.at(16) == QStringLiteral("tray.window-grouping") &&
                 trayGroups.at(4).options.at(0).kind ==
                     settings::SettingsTrayMenuOptionKind::WindowGrouping &&
-                trayOptionIds.at(16) == QStringLiteral("tray.disable-shortcut-functions") &&
                 trayOptionIds.at(17) == QStringLiteral("tray.show-main-window") &&
                 trayOptionIds.at(18) == QStringLiteral("tray.exit") && trayMenuSchema != nullptr &&
                 trayMenuSchema->allowedStringValues == trayOptionIds,
             "tray menu options must derive all global-hotkey groups and append system commands");
+
+    const settings::SettingsTrayMenuOptionDefinition* hotkeyToggleTrayOption = nullptr;
+    for (const auto& group : trayGroups) {
+        for (const auto& option : group.options) {
+            if (option.id == QStringLiteral("quick.toggle-global-hotkeys")) {
+                hotkeyToggleTrayOption = &option;
+            }
+        }
+    }
+    const auto* hotkeyToggleItem =
+        catalog.item({QStringLiteral("global-hotkeys"), QStringLiteral("other"),
+                      QStringLiteral("quick.toggle-global-hotkeys")});
+    require(hotkeyToggleTrayOption != nullptr && hotkeyToggleItem != nullptr &&
+                hotkeyToggleItem->title.source != nullptr &&
+                QString::fromLatin1(hotkeyToggleItem->title.source) ==
+                    QStringLiteral("Disable/Enable global hotkeys") &&
+                hotkeyToggleTrayOption->kind == settings::SettingsTrayMenuOptionKind::QuickAction &&
+                hotkeyToggleTrayOption->label.source != nullptr &&
+                QString::fromLatin1(hotkeyToggleTrayOption->label.source) ==
+                    QStringLiteral("Disable global hotkeys") &&
+                hotkeyToggleTrayOption->checkable &&
+                checkableOptionIds == QStringList{QStringLiteral("quick.toggle-global-hotkeys")},
+            "the tray must keep the historical label and toggle checkmark for the hotkey switch");
 
     const auto* delaySchema =
         storage::ConfigurationSchema::entry(QStringLiteral("screenshot/delay_seconds"));
@@ -1321,6 +1359,14 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 delaySchema->defaultValue.toInt() == 3 && delaySchema->integerRange.has_value() &&
                 delaySchema->integerRange->minimum == 1 && delaySchema->integerRange->maximum == 10,
             "delayed screenshots must use the persisted 3-second default and 1-10 second range");
+
+    const auto* toggleSchema = storage::ConfigurationSchema::entry(
+        QStringLiteral("global_shortcuts/toggle_global_hotkeys"));
+    require(toggleSchema != nullptr &&
+                toggleSchema->valueKind == storage::ConfigurationValueKind::ShortcutList &&
+                toggleSchema->defaultValue.toArray().isEmpty() &&
+                toggleSchema->maximumListItems == 2,
+            "the global-hotkey toggle must ship without a default binding");
 
     const auto* ocrItem =
         catalog.item({QStringLiteral("global-hotkeys"), QStringLiteral("screenshot"),
@@ -1381,10 +1427,11 @@ void globalHotkeyShortcutsHaveStableContracts() {
                       QStringLiteral("quick.pin-selected-files")});
     const auto* otherShortcuts =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("other"));
-    require(otherShortcuts != nullptr && otherShortcuts->items.size() == 2 &&
+    require(otherShortcuts != nullptr && otherShortcuts->items.size() == 3 &&
                 otherShortcuts->items.at(0).id == QStringLiteral("quick.open-capture-history") &&
-                otherShortcuts->items.at(1).id == QStringLiteral("quick.translate-selected-text"),
-            "Other quick actions expose history and selected text translation");
+                otherShortcuts->items.at(1).id == QStringLiteral("quick.translate-selected-text") &&
+                otherShortcuts->items.at(2).id == QStringLiteral("quick.toggle-global-hotkeys"),
+            "Other quick actions expose history, selected text translation, and the hotkey toggle");
     const auto* pinSection =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("pin-to-screen"));
     require(pinSection != nullptr && pinSection->title.source != nullptr &&
@@ -1489,6 +1536,7 @@ void compactTrayManifestMatchesRegistryCatalog() {
                 compactOption.id == projectedOption.id &&
                 compactOption.kind == projectedOption.kind &&
                 compactOption.shortcutAction == projectedOption.shortcutAction &&
+                compactOption.checkable == projectedOption.checkable &&
                 QString::fromLatin1(compactOption.label.context) ==
                     QString::fromLatin1(projectedOption.label.context) &&
                 QString::fromLatin1(compactOption.label.source) ==
@@ -1516,7 +1564,8 @@ void compactTrayManifestMatchesRegistryCatalog() {
           presentation::GlobalShortcutAction::OpenCaptureHistory,
           presentation::GlobalShortcutAction::PinClipboardContent,
           presentation::GlobalShortcutAction::PinSelectedFiles,
-          presentation::GlobalShortcutAction::TranslateSelectedText}) {
+          presentation::GlobalShortcutAction::TranslateSelectedText,
+          presentation::GlobalShortcutAction::ToggleGlobalHotkeys}) {
         require(compact.shortcutActionTitle(action, 0) == catalog.shortcutActionTitle(action, 0) &&
                     compact.shortcutActionTitle(action, 99) ==
                         catalog.shortcutActionTitle(action, 99),

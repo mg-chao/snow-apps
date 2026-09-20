@@ -1279,6 +1279,10 @@
             <translation>禁用全局快捷键</translation>
         </message>
         <message>
+            <source>Disable/Enable global hotkeys</source>
+            <translation>禁用/启用全局快捷键</translation>
+        </message>
+        <message>
             <source>Disk limit</source>
             <translation>磁盘限制</translation>
         </message>
@@ -2651,6 +2655,10 @@
             <translation>缩略图模式</translation>
         </message>
         <message>
+            <source>Toggle hotkeys</source>
+            <translation>切换快捷键</translation>
+        </message>
+        <message>
             <source>Tool positions</source>
             <translation>工具位置</translation>
         </message>
@@ -2705,6 +2713,10 @@
         <message>
             <source>Tray menu</source>
             <translation>托盘菜单</translation>
+        </message>
+        <message>
+            <source>Turn every global hotkey off or back on; this shortcut stays active while global hotkeys are disabled</source>
+            <translation>关闭或重新开启所有全局快捷键；即使全局快捷键已被禁用，此快捷键仍然有效</translation>
         </message>
         <message>
             <source>UIA</source>

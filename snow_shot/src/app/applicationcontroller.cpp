@@ -106,9 +106,6 @@ class ApplicationController::Impl {
             &systemTray, &presentation::SystemTrayController::quickActionRequested, &q,
             [this](presentation::GlobalShortcutAction action) { dispatchQuickAction(action); });
         QObject::connect(
-            &systemTray, &presentation::SystemTrayController::globalHotkeysDisabledChanged, &q,
-            [this](bool disabled) { globalShortcutManager.setGlobalHotkeysEnabled(!disabled); });
-        QObject::connect(
             &groupManager,
             &presentation::PinnedWindowGroupManager::restoreActiveGroupWindowsRequested, &q,
             [this]() {
@@ -130,6 +127,9 @@ class ApplicationController::Impl {
                                 const presentation::GlobalShortcutRegistrationState& state) {
                              systemTray.setGlobalShortcuts(action, state.shortcuts);
                          });
+        QObject::connect(&globalShortcutManager,
+                         &presentation::GlobalShortcutManager::globalHotkeysEnabledChanged, &q,
+                         [this](bool enabled) { systemTray.setGlobalHotkeysDisabled(!enabled); });
         QObject::connect(&app, &QCoreApplication::aboutToQuit, &systemTray,
                          &presentation::SystemTrayController::hide);
         QObject::connect(&app, &QCoreApplication::aboutToQuit, &globalMouseManager,
@@ -605,6 +605,10 @@ class ApplicationController::Impl {
             if (ScreenshotController* controller = ensureScreenshotController()) {
                 controller->pinClipboardContentToScreen();
             }
+            break;
+        case presentation::GlobalShortcutAction::ToggleGlobalHotkeys:
+            globalShortcutManager.setGlobalHotkeysEnabled(
+                !globalShortcutManager.globalHotkeysEnabled());
             break;
         }
     }

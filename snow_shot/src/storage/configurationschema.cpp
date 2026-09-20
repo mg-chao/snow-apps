@@ -287,6 +287,12 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {},
      2},
+    {QStringLiteral("global_shortcuts/toggle_global_hotkeys"),
+     QJsonArray(),
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
     {QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window"), false,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("global_mouse/screenshot_copy"),
@@ -849,13 +855,13 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
       QStringLiteral("screenshot_copy"), QStringLiteral("screenshot_fixed"),
       QStringLiteral("open_function_settings")}},
     {QStringLiteral("tray/menu_options"),
-     QJsonArray{QStringLiteral("quick.screenshot"), QStringLiteral("quick.screenshot-delay"),
-                QStringLiteral("quick.screenshot-fixed"), QStringLiteral("quick.screenshot-ocr"),
-                QStringLiteral("quick.screenshot-copy"),
-                QStringLiteral("quick.pin-clipboard-content"),
-                QStringLiteral("quick.screen-record"), QStringLiteral("tray.window-grouping"),
-                QStringLiteral("tray.disable-shortcut-functions"),
-                QStringLiteral("tray.show-main-window"), QStringLiteral("tray.exit")},
+     QJsonArray{
+         QStringLiteral("quick.screenshot"), QStringLiteral("quick.screenshot-delay"),
+         QStringLiteral("quick.screenshot-fixed"), QStringLiteral("quick.screenshot-ocr"),
+         QStringLiteral("quick.screenshot-copy"), QStringLiteral("quick.pin-clipboard-content"),
+         QStringLiteral("quick.screen-record"), QStringLiteral("quick.toggle-global-hotkeys"),
+         QStringLiteral("tray.window-grouping"), QStringLiteral("tray.show-main-window"),
+         QStringLiteral("tray.exit")},
      ConfigurationValueKind::StringList,
      std::nullopt,
      {QStringLiteral("quick.screenshot"), QStringLiteral("quick.screenshot-delay"),
@@ -867,7 +873,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
       QStringLiteral("quick.screen-record"), QStringLiteral("quick.screen-record-copy"),
       QStringLiteral("quick.open-screen-recording-folder"),
       QStringLiteral("quick.open-capture-history"), QStringLiteral("quick.translate-selected-text"),
-      QStringLiteral("tray.window-grouping"), QStringLiteral("tray.disable-shortcut-functions"),
+      QStringLiteral("quick.toggle-global-hotkeys"), QStringLiteral("tray.window-grouping"),
       QStringLiteral("tray.show-main-window"), QStringLiteral("tray.exit")},
      19},
     {QStringLiteral("screenshot_selection/previous_selection"), QJsonValue::Null,
@@ -1149,6 +1155,32 @@ ConfigurationNormalization normalizeAllowedStringList(const ConfigurationSchemaE
         changed = changed || *canonical != original;
     }
     return {normalized, true, changed};
+}
+
+ConfigurationNormalization normalizeTrayMenuOptions(const ConfigurationSchemaEntry& schemaEntry,
+                                                    const QJsonValue& value) {
+    if (!value.isArray()) {
+        return {};
+    }
+    QJsonArray migrated;
+    bool renamed = false;
+    for (const QJsonValue& item : value.toArray()) {
+        // Earlier builds exposed the hotkey switch through the dedicated tray
+        // command "tray.disable-shortcut-functions"; rename stored copies to the
+        // quick action so upgraders keep the entry instead of silently losing it.
+        if (item.isString() &&
+            item.toString().trimmed() == QStringLiteral("tray.disable-shortcut-functions")) {
+            migrated.push_back(QStringLiteral("quick.toggle-global-hotkeys"));
+            renamed = true;
+            continue;
+        }
+        migrated.push_back(item);
+    }
+    ConfigurationNormalization normalized = normalizeAllowedStringList(schemaEntry, migrated);
+    // The rename itself is a change even when the mapped list is otherwise
+    // canonical, so the store rewrites the persisted document with the new id.
+    normalized.changed = normalized.changed || renamed;
+    return normalized;
 }
 
 ConfigurationNormalization normalizeAllowedInteger(const QJsonValue& value,
@@ -1584,7 +1616,7 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
         return normalizeAllowedStringList(*schemaEntry, value);
     }
     if (key == QStringLiteral("tray/menu_options")) {
-        return normalizeAllowedStringList(*schemaEntry, value);
+        return normalizeTrayMenuOptions(*schemaEntry, value);
     }
     if (key == QStringLiteral("screen_recording/frame_rate")) {
         return normalizeAllowedInteger(value, {5, 10, 15, 24, 30, 60, 120, 83});

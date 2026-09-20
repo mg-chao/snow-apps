@@ -403,6 +403,15 @@ bool ShortcutSettings::setOpenSettings(const shortcuts::ShortcutBindingList& bin
     return setShortcutValue(QStringLiteral("global_shortcuts/open_settings"), bindings);
 }
 
+shortcuts::ShortcutBindingList ShortcutSettings::toggleGlobalHotkeys() const {
+    return shortcutValue(QStringLiteral("global_shortcuts/toggle_global_hotkeys"));
+}
+
+bool ShortcutSettings::setToggleGlobalHotkeys(
+    const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/toggle_global_hotkeys"), bindings);
+}
+
 bool ExtendedFeaturesSettings::translationPageEnabled() const {
     return cache()
         .value(QStringLiteral("extended_features/translation_page_enabled"))

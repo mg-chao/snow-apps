@@ -121,6 +121,8 @@ class ShortcutSettings final {
     bool setPinSelectedFiles(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList translateSelectedText() const;
     bool setTranslateSelectedText(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList toggleGlobalHotkeys() const;
+    bool setToggleGlobalHotkeys(const shortcuts::ShortcutBindingList& bindings) const;
 };
 
 class GlobalShortcutSettings final {

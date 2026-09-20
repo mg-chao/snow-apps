@@ -60,6 +60,7 @@ AppPermissions requiredPermissions(GlobalShortcutAction action, bool microphoneE
     case Action::OpenSettings:
     case Action::PinClipboardContent:
     case Action::PinSelectedFiles:
+    case Action::ToggleGlobalHotkeys:
         return {};
     }
     return {};

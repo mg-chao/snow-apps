@@ -313,9 +313,10 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
                     QStringLiteral("quick.screenshot-fixed"),
                     QStringLiteral("quick.screenshot-ocr"), QStringLiteral("quick.screenshot-copy"),
                     QStringLiteral("quick.pin-clipboard-content"),
-                    QStringLiteral("quick.screen-record"), QStringLiteral("tray.window-grouping"),
-                    QStringLiteral("tray.disable-shortcut-functions"),
-                    QStringLiteral("tray.show-main-window"), QStringLiteral("tray.exit")},
+                    QStringLiteral("quick.screen-record"),
+                    QStringLiteral("quick.toggle-global-hotkeys"),
+                    QStringLiteral("tray.window-grouping"), QStringLiteral("tray.show-main-window"),
+                    QStringLiteral("tray.exit")},
         "new settings defaults do not match the requested contract");
 
     const QMap<QString, QJsonArray> drawingShortcutDefaults{
@@ -431,6 +432,28 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
              QStringLiteral("drawing/quick_selection_disabled_tools"), QStringLiteral("free-draw"))
              .valid,
         "drawing-tool lists must reject non-array values");
+
+    const auto migratedTrayOptions = storage::ConfigurationSchema::normalize(
+        QStringLiteral("tray/menu_options"),
+        QJsonArray{QStringLiteral("quick.screenshot"),
+                   QStringLiteral("tray.disable-shortcut-functions"),
+                   QStringLiteral("quick.toggle-global-hotkeys"), QStringLiteral("tray.exit")});
+    require(
+        migratedTrayOptions.valid && migratedTrayOptions.changed &&
+            migratedTrayOptions.value.toArray() ==
+                QJsonArray{QStringLiteral("quick.screenshot"),
+                           QStringLiteral("quick.toggle-global-hotkeys"),
+                           QStringLiteral("tray.exit")},
+        "legacy tray hotkey commands must rename in place without duplicating the quick action");
+    const auto stableTrayOptions = storage::ConfigurationSchema::normalize(
+        QStringLiteral("tray/menu_options"),
+        storage::ConfigurationSchema::defaultValue(QStringLiteral("tray/menu_options")).toArray());
+    require(stableTrayOptions.valid && !stableTrayOptions.changed,
+            "current tray menu defaults must normalize without changes");
+    require(!storage::ConfigurationSchema::normalize(QStringLiteral("tray/menu_options"),
+                                                     QStringLiteral("quick.screenshot"))
+                 .valid,
+            "tray menu options must reject non-array values");
 
     for (const int frameRate : {5, 10, 15, 24, 30, 60, 120, 83}) {
         require(storage::ConfigurationSchema::normalize(
@@ -1866,6 +1889,37 @@ void invalidTrayClickSettingsUseIndependentDefaults() {
             "invalid persisted click actions must be repaired to their independent defaults");
 }
 
+void legacyTrayHotkeyCommandMigratesToQuickAction() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "failed to create tray menu migration directory");
+    const QString config = temporary.filePath(QStringLiteral("config.json"));
+    writeBytes(
+        config,
+        QByteArrayLiteral(
+            R"({"storage":{"schema_version":2},"tray":{"menu_options":["quick.screenshot","tray.window-grouping","tray.disable-shortcut-functions","tray.exit"]}})"));
+    const QJsonArray migratedOptions{
+        QStringLiteral("quick.screenshot"), QStringLiteral("tray.window-grouping"),
+        QStringLiteral("quick.toggle-global-hotkeys"), QStringLiteral("tray.exit")};
+    {
+        storage::ConfigurationStore store(config, true, true, 60000);
+        require(store.value(QStringLiteral("tray/menu_options")).toArray() == migratedOptions &&
+                    store.isDirty() && store.flushNow().success,
+                "the legacy tray hotkey command must migrate in place to the toggle quick action");
+    }
+    QFile persisted(config);
+    require(persisted.open(QIODevice::ReadOnly), "the migrated config must be readable");
+    const QJsonObject persistedRoot = QJsonDocument::fromJson(persisted.readAll()).object();
+    persisted.close();
+    require(persistedRoot.value(QStringLiteral("tray"))
+                    .toObject()
+                    .value(QStringLiteral("menu_options"))
+                    .toArray() == migratedOptions,
+            "the rename must be written back so it is not re-derived on every load");
+    storage::ConfigurationStore reloaded(config, true, true, 60000);
+    require(reloaded.value(QStringLiteral("tray/menu_options")).toArray() == migratedOptions,
+            "the migrated tray menu must survive a storage reload");
+}
+
 void trayClickSettingsSurviveRestart() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "temporary tray settings directory");
@@ -1979,6 +2033,7 @@ int main(int argc, char** argv) {
     obsoleteClickThroughShortcutIsIgnored();
     shortcutSchemaMigrationAndPhysicalMetadataRoundTrip();
     invalidTrayClickSettingsUseIndependentDefaults();
+    legacyTrayHotkeyCommandMigratesToQuickAction();
     trayClickSettingsSurviveRestart();
     watermarkTemplateSettingsRepairAndSurviveRestart();
     globalMouseCombinationSchemaIsStrictAndPersistent();

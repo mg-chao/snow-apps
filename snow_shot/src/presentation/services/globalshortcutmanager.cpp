@@ -22,7 +22,7 @@ namespace {
 constexpr int MAX_SHORTCUTS_PER_ACTION = 2;
 constexpr int FIRST_REGISTRATION_ID = 0x2200;
 constexpr int LAST_REGISTRATION_ID = 0xBFFF;
-constexpr std::size_t ACTION_COUNT = 16;
+constexpr std::size_t ACTION_COUNT = 17;
 
 constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::Screenshot,
@@ -41,6 +41,7 @@ constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::PinClipboardContent,
     GlobalShortcutAction::TranslateSelectedText,
     GlobalShortcutAction::PinSelectedFiles,
+    GlobalShortcutAction::ToggleGlobalHotkeys,
 };
 
 std::size_t actionIndex(GlobalShortcutAction action) {
@@ -152,6 +153,8 @@ shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSetting
         return settings.pinSelectedFiles();
     case GlobalShortcutAction::TranslateSelectedText:
         return settings.translateSelectedText();
+    case GlobalShortcutAction::ToggleGlobalHotkeys:
+        return settings.toggleGlobalHotkeys();
     }
     return {};
 }
@@ -191,6 +194,8 @@ bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutA
         return settings.setPinSelectedFiles(bindings);
     case GlobalShortcutAction::TranslateSelectedText:
         return settings.setTranslateSelectedText(bindings);
+    case GlobalShortcutAction::ToggleGlobalHotkeys:
+        return settings.setToggleGlobalHotkeys(bindings);
     }
     return false;
 }
@@ -229,7 +234,11 @@ class GlobalShortcutManager::Impl {
         m_backend->setActivationHandler([this](int registrationId) {
             const QString activeKey = m_registrationKeysById.value(registrationId);
             const auto active = m_activeRegistrations.constFind(activeKey);
-            if (active == m_activeRegistrations.cend() || !m_globalHotkeysEnabled ||
+            // The toggle shortcut must stay usable while global hotkeys are
+            // disabled so the disabled state can always be undone by keyboard.
+            if (active == m_activeRegistrations.cend() ||
+                (!m_globalHotkeysEnabled &&
+                 active->action != GlobalShortcutAction::ToggleGlobalHotkeys) ||
                 (active->action == GlobalShortcutAction::TranslateSelectedText &&
                  !storage::ExtendedFeaturesSettings().translationPageEnabled())) {
                 return;
@@ -514,7 +523,15 @@ void GlobalShortcutManager::resumeRegistrations(RegistrationSuspensionHandle han
 }
 
 void GlobalShortcutManager::setGlobalHotkeysEnabled(bool enabled) {
+    if (m_impl->m_globalHotkeysEnabled == enabled) {
+        return;
+    }
     m_impl->m_globalHotkeysEnabled = enabled;
+    emit globalHotkeysEnabledChanged(enabled);
+}
+
+bool GlobalShortcutManager::globalHotkeysEnabled() const {
+    return m_impl->m_globalHotkeysEnabled;
 }
 
 } // namespace snow_shot::presentation

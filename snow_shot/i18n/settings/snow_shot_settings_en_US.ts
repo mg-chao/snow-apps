@@ -1279,6 +1279,10 @@
             <translation>Disable global hotkeys</translation>
         </message>
         <message>
+            <source>Disable/Enable global hotkeys</source>
+            <translation>Disable/Enable global hotkeys</translation>
+        </message>
+        <message>
             <source>Disk limit</source>
             <translation>Disk limit</translation>
         </message>
@@ -2651,6 +2655,10 @@
             <translation>Thumbnail mode</translation>
         </message>
         <message>
+            <source>Toggle hotkeys</source>
+            <translation>Toggle hotkeys</translation>
+        </message>
+        <message>
             <source>Tool positions</source>
             <translation>Tool positions</translation>
         </message>
@@ -2705,6 +2713,10 @@
         <message>
             <source>Tray menu</source>
             <translation>Tray menu</translation>
+        </message>
+        <message>
+            <source>Turn every global hotkey off or back on; this shortcut stays active while global hotkeys are disabled</source>
+            <translation>Turn every global hotkey off or back on; this shortcut stays active while global hotkeys are disabled</translation>
         </message>
         <message>
             <source>UIA</source>

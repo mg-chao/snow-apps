@@ -1279,6 +1279,10 @@
             <translation>停用全域快速鍵</translation>
         </message>
         <message>
+            <source>Disable/Enable global hotkeys</source>
+            <translation>停用/啟用全域快速鍵</translation>
+        </message>
+        <message>
             <source>Disk limit</source>
             <translation>磁碟限制</translation>
         </message>
@@ -2651,6 +2655,10 @@
             <translation>縮圖模式</translation>
         </message>
         <message>
+            <source>Toggle hotkeys</source>
+            <translation>切換快速鍵</translation>
+        </message>
+        <message>
             <source>Tool positions</source>
             <translation>工具位置</translation>
         </message>
@@ -2705,6 +2713,10 @@
         <message>
             <source>Tray menu</source>
             <translation>系統匣選單</translation>
+        </message>
+        <message>
+            <source>Turn every global hotkey off or back on; this shortcut stays active while global hotkeys are disabled</source>
+            <translation>關閉或重新開啟所有全域快速鍵；即使全域快速鍵已停用，此快速鍵仍然有效</translation>
         </message>
         <message>
             <source>UIA</source>

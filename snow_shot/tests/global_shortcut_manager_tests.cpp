@@ -41,6 +41,7 @@ constexpr std::array ALL_ACTIONS{
     GlobalShortcutAction::PinClipboardContent,
     GlobalShortcutAction::TranslateSelectedText,
     GlobalShortcutAction::PinSelectedFiles,
+    GlobalShortcutAction::ToggleGlobalHotkeys,
 };
 
 void require(bool condition, const char* message) {
@@ -235,6 +236,64 @@ void deterministicOwnershipPartialFailureAndSuspension() {
     require(activations == 1, "registered backend activation must dispatch its action");
 }
 
+void toggleShortcutSurvivesGlobalHotkeyDisablement() {
+    auto native = std::make_unique<FakeBackend>();
+    FakeBackend* input = native.get();
+    GlobalShortcutManager manager(std::move(native), nullptr, [] { return false; });
+    manager.initialize();
+    clearAll(manager);
+    require(manager.setShortcuts(GlobalShortcutAction::Screenshot, {QStringLiteral("Ctrl+F10")}) &&
+                manager.setShortcuts(GlobalShortcutAction::ToggleGlobalHotkeys,
+                                     {QStringLiteral("Ctrl+F12")}),
+            "configure the toggle and a regular shortcut");
+
+    int screenshotActivations = 0;
+    int toggleActivations = 0;
+    QObject::connect(&manager, &GlobalShortcutManager::activated, &manager,
+                     [&screenshotActivations, &toggleActivations](GlobalShortcutAction action) {
+                         if (action == GlobalShortcutAction::Screenshot) {
+                             ++screenshotActivations;
+                         } else if (action == GlobalShortcutAction::ToggleGlobalHotkeys) {
+                             ++toggleActivations;
+                         }
+                     });
+    int enabledNotifications = 0;
+    bool lastEnabledState = true;
+    QObject::connect(&manager, &GlobalShortcutManager::globalHotkeysEnabledChanged, &manager,
+                     [&enabledNotifications, &lastEnabledState](bool enabled) {
+                         ++enabledNotifications;
+                         lastEnabledState = enabled;
+                     });
+    int screenshotRegistrationId = 0;
+    int toggleRegistrationId = 0;
+    for (auto it = input->registrations.cbegin(); it != input->registrations.cend(); ++it) {
+        if (it.value().portableText == QStringLiteral("Ctrl+F10")) {
+            screenshotRegistrationId = it.key();
+        } else if (it.value().portableText == QStringLiteral("Ctrl+F12")) {
+            toggleRegistrationId = it.key();
+        }
+    }
+    require(screenshotRegistrationId != 0 && toggleRegistrationId != 0,
+            "both bindings must be registered before the disablement check");
+
+    manager.setGlobalHotkeysEnabled(false);
+    manager.setGlobalHotkeysEnabled(false);
+    require(enabledNotifications == 1 && !lastEnabledState,
+            "redundant disable requests must announce the change exactly once");
+    input->handler(screenshotRegistrationId);
+    input->handler(toggleRegistrationId);
+    require(screenshotActivations == 0 && toggleActivations == 1,
+            "disabled hotkeys must stay silent except for the toggle shortcut");
+
+    manager.setGlobalHotkeysEnabled(true);
+    require(enabledNotifications == 2 && lastEnabledState && manager.globalHotkeysEnabled(),
+            "re-enabling global hotkeys must announce the restored state");
+    input->handler(screenshotRegistrationId);
+    input->handler(toggleRegistrationId);
+    require(screenshotActivations == 1 && toggleActivations == 2,
+            "re-enabling global hotkeys must restore every activation");
+}
+
 void nativeRegistrationProbe() {
 #ifdef Q_OS_MACOS
     GlobalShortcutManager manager;
@@ -298,6 +357,7 @@ int main(int argc, char** argv) {
     validationCoversSupportedAndRejectedKeys();
     fullscreenClassificationUsesTheFocusedLayerZeroWindow();
     deterministicOwnershipPartialFailureAndSuspension();
+    toggleShortcutSurvivesGlobalHotkeyDisablement();
     if (application.arguments().contains(QStringLiteral("--native-registration-smoke"))) {
         nativeRegistrationProbe();
     }

@@ -44,11 +44,13 @@ class GlobalShortcutManager final : public QObject {
     [[nodiscard]] RegistrationSuspensionHandle suspendRegistrations();
     void resumeRegistrations(RegistrationSuspensionHandle handle);
     void setGlobalHotkeysEnabled(bool enabled);
+    [[nodiscard]] bool globalHotkeysEnabled() const;
 
   signals:
     void activated(snow_shot::presentation::GlobalShortcutAction action);
     void stateChanged(snow_shot::presentation::GlobalShortcutAction action,
                       const snow_shot::presentation::GlobalShortcutRegistrationState& state);
+    void globalHotkeysEnabledChanged(bool enabled);
 
   private:
     class Impl;
