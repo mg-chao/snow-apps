@@ -5,6 +5,7 @@
 #import <objc/runtime.h>
 #include <algorithm>
 #include <QApplication>
+#include <QAbstractEventDispatcher>
 #include <QSet>
 #include <QScopedValueRollback>
 #include <QEvent>
@@ -101,7 +102,7 @@ void applyNativeSettings(NSWindow* window, const ScreenshotNativeSettings& setti
         window.hidesOnDeactivate = settings.hidesOnDeactivate;
 }
 
-void applyNativeWindowPolicy(NSWindow* window, NSInteger level) {
+void applyNativeWindowPolicy(NSWindow* window, NSInteger level, bool enforceQtSettings = true) {
     if (!window)
         return;
     auto* state = nativePolicyState(window);
@@ -111,7 +112,8 @@ void applyNativeWindowPolicy(NSWindow* window, NSInteger level) {
         objc_setAssociatedObject(window, &nativePolicyKey, state,
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [state release];
-        attachNativeWindowPolicy(window);
+        if (enforceQtSettings)
+            attachNativeWindowPolicy(window);
     }
     state->required = {level,
                        NSWindowCollectionBehaviorCanJoinAllSpaces |
@@ -210,19 +212,86 @@ void synchronizeScreenshotLayers() {
         if (!belongsToModal)
             modalFloor = std::max(modalFloor, screenshotLayer(handle) + 1);
     }
-    for (QWidget* widget : windows)
+    NSInteger panelLevel = 0;
+    for (QWidget* widget : windows) {
         applyScreenshotLayer(widget, modalFloor);
+        if (widget->isVisible() && widget->internalWinId()) {
+            NSWindow* native = reinterpret_cast<NSView*>(widget->internalWinId()).window;
+            if (nativePolicyState(native))
+                panelLevel = std::max(panelLevel, native.level + 1);
+        }
+    }
+    // QFileDialog's Cocoa helper presents NSSavePanel/NSOpenPanel without a
+    // QWidget native surface or Qt transient parent. Include them explicitly,
+    // above even the deepest screenshot modal. Do not swizzle AppKit classes.
+    for (NSWindow* window in NSApp.windows) {
+        if (![window isKindOfClass:[NSSavePanel class]])
+            continue;
+        if (panelLevel && window.visible)
+            applyNativeWindowPolicy(window, panelLevel, false);
+        else
+            releaseNativeWindowPolicy(window);
+    }
 }
 
 class ScreenshotStackingPolicy final : public QObject {
   public:
-    explicit ScreenshotStackingPolicy(QObject* parent) : QObject(parent) {}
+    explicit ScreenshotStackingPolicy(QObject* parent) : QObject(parent) {
+        // Cocoa ends Qt's native modal sessions after the dialog's finished/hide
+        // callbacks. Restore the owner only once that cleanup has reached idle.
+        connect(QAbstractEventDispatcher::instance(), &QAbstractEventDispatcher::aboutToBlock, this,
+                [this] {
+                    if (!m_focusOwner)
+                        return;
+                    QWindow* owner = m_focusOwner;
+                    m_focusOwner.clear();
+                    if (!owner->isVisible() || screenshotLayer(owner) < 0)
+                        return;
+                    if (QWindow* modal = QGuiApplication::modalWindow(); modal && modal != owner)
+                        return;
+                    owner->requestActivate();
+                });
+        NSNotificationCenter* center = NSNotificationCenter.defaultCenter;
+        // Native file panels bypass Qt show/expose events, including in exec().
+        m_panelShown =
+            [center addObserverForName:NSWindowDidBecomeKeyNotification
+                                object:nil
+                                 queue:nil
+                            usingBlock:^(NSNotification* notification) {
+                              if ([notification.object isKindOfClass:[NSSavePanel class]])
+                                  synchronizeScreenshotLayers();
+                            }];
+        m_panelClosed = [center
+            addObserverForName:NSWindowWillCloseNotification
+                        object:nil
+                         queue:nil
+                    usingBlock:^(NSNotification* notification) {
+                      if ([notification.object isKindOfClass:[NSSavePanel class]])
+                          releaseNativeWindowPolicy(static_cast<NSWindow*>(notification.object));
+                    }];
+    }
+
+    ~ScreenshotStackingPolicy() override {
+        [NSNotificationCenter.defaultCenter removeObserver:m_panelShown];
+        [NSNotificationCenter.defaultCenter removeObserver:m_panelClosed];
+        for (NSWindow* window in NSApp.windows)
+            if ([window isKindOfClass:[NSSavePanel class]])
+                releaseNativeWindowPolicy(window);
+    }
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override {
         // ShowToParent runs after QWidget's native show, which can reset the level.
         // Expose also covers QWindow-driven reveals and native surface recreation.
-        Q_UNUSED(watched);
+        if (event->type() == QEvent::HideToParent) {
+            auto* widget = qobject_cast<QWidget*>(watched);
+            if (widget && widget->isWindow() && widget->windowModality() != Qt::NonModal) {
+                QWindow* handle = widget->windowHandle();
+                QWindow* owner = handle ? handle->transientParent() : nullptr;
+                if (owner && screenshotLayer(owner) >= 0)
+                    m_focusOwner = owner;
+            }
+        }
         if (event->type() == QEvent::ShowToParent || event->type() == QEvent::ZOrderChange ||
             event->type() == QEvent::HideToParent || event->type() == QEvent::ParentChange ||
             event->type() == QEvent::Expose || event->type() == QEvent::ApplicationActivate) {
@@ -230,6 +299,11 @@ class ScreenshotStackingPolicy final : public QObject {
         }
         return false;
     }
+
+  private:
+    QPointer<QWindow> m_focusOwner;
+    id m_panelShown = nil;
+    id m_panelClosed = nil;
 };
 
 void registerScreenshotLayer(QWidget* widget, int layer) {

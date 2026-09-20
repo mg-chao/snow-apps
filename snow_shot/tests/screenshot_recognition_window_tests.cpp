@@ -372,6 +372,21 @@ void recognitionWindowCanExtendBeyondItsDpiScreen() {
             "cross-screen recognition geometry must not be clipped by an overlay parent");
     require(window.windowHandle() != nullptr && window.windowHandle()->screen() == screen,
             "a cross-screen recognition window should retain the selection screen's DPI");
+    require(window.minimumSize() == crossScreenSelection.size() &&
+                window.maximumSize() == crossScreenSelection.size(),
+            "recognition surfaces must disable native edge resizing");
+    const QRect updatedSelection(crossScreenSelection.topLeft(), QSize(180, 90));
+    require(window.updateSelectionGeometry(updatedSelection, QRectF(0, 0, 180, 90)),
+            "selection resizing must still update a fixed recognition surface");
+    require(window.geometry() == updatedSelection &&
+                window.minimumSize() == updatedSelection.size() &&
+                window.maximumSize() == updatedSelection.size(),
+            "recognition size constraints must follow selection changes");
+    window.hide();
+    require(window.present({screen, &overlayHost, crossScreenSelection, QRectF(0, 0, 240, 120)}),
+            "a pooled recognition surface must accept a new selection size");
+    require(window.geometry() == crossScreenSelection,
+            "reopening must replace the previous fixed size");
     window.hide();
 }
 
@@ -1305,8 +1320,8 @@ void imageSnapshotTracksOnlyOriginalImageAndOwnsItsResult() {
 }
 void defaultSelectionResizeActionsDeclineInteraction() {
     // Both empty and partial aggregates are used by embedded recognition hosts.
-    for (const auto& actions :
-         {ScreenshotRecognitionWindowActions{}, ScreenshotRecognitionWindowActions{[]() {}}}) {
+    for (const auto& actions : {ScreenshotRecognitionWindowActions{},
+                                ScreenshotRecognitionWindowActions{.handleCancel = []() {}}}) {
         for (const QPointF& point : {QPointF(), QPointF(19.5, -42.0)}) {
             require(actions.selectionResizeDragMode(point) == ScreenshotSelectionDragMode::None,
                     "an unwired recognition surface must expose no resize handle");

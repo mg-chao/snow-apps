@@ -1133,8 +1133,9 @@ void AdButton::mousePressEvent(QMouseEvent* event) {
   }
   d_->focusVisible = false;
   updateInteractionFocusOverlay();
+  const QPointer<AdButton> lifetime(this);
   QPushButton::mousePressEvent(event);
-  bumpSegmentZOrder();
+  if (lifetime) bumpSegmentZOrder();
 }
 
 void AdButton::mouseReleaseEvent(QMouseEvent* event) {
@@ -1144,7 +1145,10 @@ void AdButton::mouseReleaseEvent(QMouseEvent* event) {
   }
   const bool shouldTriggerWave =
       event && event->button() == Qt::LeftButton && isDown() && hitButton(mouseEventPos(event));
+  // Activation callbacks (including nested modal loops) may destroy this button.
+  const QPointer<AdButton> lifetime(this);
   QPushButton::mouseReleaseEvent(event);
+  if (!lifetime) return;
   if (shouldTriggerWave && isEnabled() && !interactionBlocked()) {
     triggerInteractionWaveOverlay();
   }
@@ -1196,7 +1200,9 @@ void AdButton::keyReleaseEvent(QKeyEvent* event) {
     d_->enterPressed = false;
     setDown(false);
     if (triggerClick) {
+      const QPointer<AdButton> lifetime(this);
       click();
+      if (!lifetime) return;
       triggerInteractionWaveOverlay();
     }
     event->accept();
@@ -1204,7 +1210,9 @@ void AdButton::keyReleaseEvent(QKeyEvent* event) {
     return;
   }
 
+  const QPointer<AdButton> lifetime(this);
   QPushButton::keyReleaseEvent(event);
+  if (!lifetime) return;
   if (activationKey && !event->isAutoRepeat() && isEnabled() && !interactionBlocked()) {
     triggerInteractionWaveOverlay();
   }

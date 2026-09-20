@@ -8,6 +8,8 @@
 #include <QApplication>
 #include <QAbstractEventDispatcher>
 #include <QEventLoop>
+#include <QFileDialog>
+#include <QTimer>
 #include <QEvent>
 #include <QScreen>
 #include <QWidget>
@@ -158,7 +160,7 @@ void screenshotWindowsKeepTheirStackingOrder(bool cocoa) {
         return reinterpret_cast<NSView*>(widget.winId()).window.level;
     };
     const NSInteger unrelatedLevel = cocoa ? level(unrelated) : 0;
-    for (int attempt = 0; attempt != 2; ++attempt) {
+    for (int attempt = 0; attempt != 4; ++attempt) {
         overlay.show();
         selectionToolbar.show();
         toolbar.show();
@@ -194,7 +196,7 @@ void screenshotWindowsKeepTheirStackingOrder(bool cocoa) {
         }
         auto* modal = new adqt::widgets::AdModal(&overlay);
         modal->setMode(adqt::widgets::AdModal::Mode::Window);
-        modal->setWindowModality(Qt::ApplicationModal);
+        modal->setWindowModality(attempt < 2 ? Qt::ApplicationModal : Qt::WindowModal);
         auto* content = new QWidget;
         modal->setContentWidget(content);
         modal->open();
@@ -205,8 +207,11 @@ void screenshotWindowsKeepTheirStackingOrder(bool cocoa) {
         require(QApplication::activeModalWidget() == surface,
                 "the selection editor must own modal interaction");
         if (cocoa) {
-            require(NSApp.modalWindow == reinterpret_cast<NSView*>(surface->winId()).window,
-                    "the test must exercise an actual Cocoa modal session");
+            NSWindow* nativeModal = reinterpret_cast<NSView*>(surface->winId()).window;
+            require(attempt < 2 ? NSApp.modalWindow == nativeModal
+                                : nativeModal.sheetParent ==
+                                      reinterpret_cast<NSView*>(overlay.winId()).window,
+                    "the test must exercise a Cocoa modal session or window-modal sheet");
             require(level(*surface) > level(recognition) && level(*surface) > level(toolbar) &&
                         level(*surface) > level(nestedPopup),
                     "the selection modal must cover OCR results, toolbars, and their popups");
@@ -237,13 +242,15 @@ void screenshotWindowsKeepTheirStackingOrder(bool cocoa) {
                     options:NSKeyValueObservingOptionOld | NSKeyValueObservingOptionNew
                     context:nullptr];
         }
-        if (attempt == 0)
+        if (attempt % 2 == 0)
             modal->reject();
         else
             modal->accept();
         delete modal;
         finishNativeModalTransition();
         if (cocoa) {
+            require(NSApp.keyWindow == reinterpret_cast<NSView*>(overlay.winId()).window,
+                    "closing a screenshot modal must return native keyboard focus to its owner");
             [toolbarNative removeObserver:trace forKeyPath:@"level"];
             [recognitionNative removeObserver:trace forKeyPath:@"level"];
             const bool changed = trace->changed;
@@ -290,6 +297,65 @@ void screenshotWindowsKeepTheirStackingOrder(bool cocoa) {
         overlay.recreateSurface();
     }
 }
+void nativeFilePanelsCoverScreenshotModals(bool cocoa) {
+    OverlayFixture overlay;
+    overlay.show();
+    adqt::widgets::AdModal modal(&overlay);
+    modal.setMode(adqt::widgets::AdModal::Mode::Window);
+    modal.setWindowModality(Qt::ApplicationModal);
+    auto* content = new QWidget;
+    modal.setContentWidget(content);
+    for (bool withModal : {false, true}) {
+        if (withModal)
+            modal.open();
+        finishNativeModalTransition();
+        QWidget* owner = withModal ? content->window() : &overlay;
+        for (bool directory : {false, true}) {
+            QFileDialog dialog(owner);
+            dialog.setAcceptMode(directory ? QFileDialog::AcceptOpen : QFileDialog::AcceptSave);
+            dialog.setFileMode(directory ? QFileDialog::Directory : QFileDialog::AnyFile);
+            bool inspected = false;
+            NSSavePanel* inspectedPanel = nil;
+            QTimer inspect;
+            QObject::connect(&inspect, &QTimer::timeout, &dialog, [&] {
+                if (cocoa) {
+                    NSSavePanel* panel = nil;
+                    for (NSWindow* window in NSApp.windows) {
+                        if (window.visible && [window isKindOfClass:[NSSavePanel class]])
+                            panel = static_cast<NSSavePanel*>(window);
+                    }
+                    if (!panel)
+                        return;
+                    require([panel isKindOfClass:[NSOpenPanel class]] == directory,
+                            "the native fixture must use the requested save or directory panel");
+                    require(panel.level > reinterpret_cast<NSView*>(owner->winId()).window.level &&
+                                panel.level >
+                                    reinterpret_cast<NSView*>(overlay.winId()).window.level,
+                            "native file panels must cover the screenshot and its modal");
+                    inspected = true;
+                    inspectedPanel = [panel retain];
+                    [panel cancel:nil];
+                } else {
+                    inspected = true;
+                    dialog.reject();
+                }
+            });
+            inspect.start(0);
+            QTimer::singleShot(5000, &dialog, &QDialog::reject);
+            dialog.exec();
+            inspect.stop();
+            require(inspected, "the file dialog must be inspected before closing");
+            if (cocoa) {
+                require(inspectedPanel.level <
+                            reinterpret_cast<NSView*>(overlay.winId()).window.level,
+                        "closing a native file panel must restore its ordinary window level");
+                [inspectedPanel release];
+            }
+        }
+        modal.reject();
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -346,6 +412,7 @@ int main(int argc, char** argv) {
         if (cocoa)
             screenshotNativeSettingsFollowOwnership();
         screenshotWindowsKeepTheirStackingOrder(cocoa);
+        nativeFilePanelsCoverScreenshotModals(cocoa);
     }
     return 0;
 }

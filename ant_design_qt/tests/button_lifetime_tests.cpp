@@ -8,6 +8,10 @@
 #include <QEnterEvent>
 #include <QHBoxLayout>
 #include <QImage>
+#include <QKeyEvent>
+#include <QMouseEvent>
+#include <QEventLoop>
+#include <QTimer>
 #include <QPointer>
 #include <QWidget>
 
@@ -39,6 +43,53 @@ void cursorOverlayMayBeDestroyedBeforeButton() {
   window.reset();
   require(overlay.isNull(), "destroying the window must release the cursor overlay");
   QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
+void activationMayDestroyButton() {
+  using adqt::widgets::AdButton;
+  for (const bool nestedLoop : {false, true}) {
+    for (const int key : {0, int(Qt::Key_Space), int(Qt::Key_Return), int(Qt::Key_Enter)}) {
+      QPointer<AdButton> button = new AdButton;
+      button->resize(100, 32);
+      button->show();
+      QApplication::processEvents();
+      QObject::connect(button, &AdButton::clicked, qApp, [button, nestedLoop] {
+        if (nestedLoop) {
+          QEventLoop loop;
+          QTimer::singleShot(0, &loop, [&] {
+            delete button.data();
+            loop.quit();
+          });
+          loop.exec();
+        } else {
+          delete button.data();
+        }
+      });
+      if (key == 0) {
+        const QPointF local = button->rect().center();
+        const QPointF global = button->mapToGlobal(local.toPoint());
+        QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton, Qt::LeftButton,
+                          Qt::NoModifier);
+        QApplication::sendEvent(button, &press);
+        QMouseEvent release(QEvent::MouseButtonRelease, local, global, Qt::LeftButton, Qt::NoButton,
+                            Qt::NoModifier);
+        QApplication::sendEvent(button, &release);
+      } else {
+        QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
+        QApplication::sendEvent(button, &press);
+        QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
+        QApplication::sendEvent(button, &release);
+      }
+      require(!button, "activation must tolerate deletion before the event handler returns");
+    }
+  }
+  QPointer<AdButton> button = new AdButton;
+  button->resize(100, 32);
+  QObject::connect(button, &AdButton::pressed, qApp, [button] { delete button.data(); });
+  QMouseEvent press(QEvent::MouseButtonPress, QPointF(10, 10), QPointF(10, 10), Qt::LeftButton,
+                    Qt::LeftButton, Qt::NoModifier);
+  QApplication::sendEvent(button, &press);
+  require(!button, "pressed callbacks may also delete the button");
 }
 
 void retainedPopoverButtonsForgetHover() {
@@ -134,6 +185,7 @@ int main(int argc, char* argv[]) {
                 successStyle.hover.text == QColor("#234567") &&
                 successStyle.active.text == QColor("#345678"),
             "success buttons must use semantic success tokens");
+    activationMayDestroyButton();
     cursorOverlayMayBeDestroyedBeforeButton();
     retainedPopoverButtonsForgetHover();
     std::cout << "Button lifetime tests passed\n";

@@ -296,6 +296,11 @@ bool ScreenshotRecognitionWindow::present(const Config& config) {
             }
         }
     }
+    // The selection owns this surface's size. Native edge resizing must not
+    // intercept the mouse events used to resize the screenshot selection.
+    if (m_presentationMode == PresentationMode::TopLevelWindow) {
+        setFixedSize(config.geometry.size());
+    }
     setGeometry(config.geometry);
     show();
     if (m_presentationMode == PresentationMode::TopLevelWindow) {
@@ -317,6 +322,9 @@ bool ScreenshotRecognitionWindow::updateSelectionGeometry(const QRect& geometry,
         return false;
     }
     m_canvasSelection = canvasSelection.normalized();
+    if (m_presentationMode == PresentationMode::TopLevelWindow) {
+        setFixedSize(geometry.size());
+    }
     setGeometry(geometry);
     synchronizeTextLayer();
     update();
