@@ -232,10 +232,6 @@
             <translation>百分比</translation>
         </message>
         <message>
-            <source>Pixels</source>
-            <translation>像素</translation>
-        </message>
-        <message>
             <source>Please enter a name</source>
             <translation>请输入名称</translation>
         </message>
@@ -338,6 +334,10 @@
         <message>
             <source>Width</source>
             <translation>宽度</translation>
+        </message>
+        <message>
+            <source>px</source>
+            <translation>px</translation>
         </message>
     </context>
     <context>

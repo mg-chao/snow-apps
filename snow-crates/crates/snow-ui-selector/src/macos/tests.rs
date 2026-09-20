@@ -1,4 +1,5 @@
 use super::geometry::*;
+use super::native::is_dock_surface;
 use super::traversal::{self, AxProvider, Budget, MAX_DEPTH, MAX_RECTS};
 use super::*;
 use std::time::Duration;
@@ -347,4 +348,155 @@ fn cancellation_during_ancestry_preserves_window_and_stops_publication() {
     let result = run(&mut Fake::new(), &control);
     assert_eq!(result.reason, StopReason::Cancelled);
     assert_eq!(result.path.unwrap().last().unwrap().width(), 200);
+}
+
+#[test]
+fn dock_surface_does_not_mask_application_windows_or_their_children() {
+    let app = rect(10., 10., 60., 60.);
+    let windows = [
+        (9, 99, rect(0., 0., 100., 5.), 24, "SystemUIServer"), // menu bar
+        (
+            8,
+            98,
+            display().bounds,
+            20,
+            "/System/Library/CoreServices/Dock.app/Contents/MacOS/Dock",
+        ), // Dock's full-display backing surface
+        (7, 42, app, 0, "Application"),
+    ]
+    .into_iter()
+    .filter(|(_, _, _, layer, owner)| !is_dock_surface(*layer, 20, Some(owner)))
+    .filter_map(|(id, pid, bounds, layer, _)| visible_window(id, pid, bounds, 1., layer, &[]))
+    .collect();
+    let snapshot = WindowSnapshot {
+        windows,
+        displays: vec![display()],
+    };
+    let mut service = ElementRegionService::from_snapshot(&snapshot).unwrap();
+    let result = service
+        .query(
+            Point {
+                x: 30,
+                y: 30,
+                display_id: 1,
+            },
+            HitTestMode::Window,
+            &QueryControl::foreground(),
+            &mut |_| {},
+        )
+        .unwrap();
+    assert_eq!(
+        result.path.unwrap(),
+        vec![ElementRect::new(display().to_pixels(app).unwrap())]
+    );
+    let selected = snapshot
+        .windows
+        .iter()
+        .find(|w| w.bounds.contains((15., 15.)))
+        .unwrap();
+    let mut provider = Fake::new();
+    provider.nodes[1].bounds = Some(app);
+    let result = traversal::query(
+        &mut provider,
+        selected,
+        &display(),
+        (15., 15.),
+        &QueryControl::foreground(),
+        &mut |_| {},
+    );
+    assert_eq!(result.reason, StopReason::Complete);
+    assert_eq!(result.path.unwrap().len(), 2);
+    let menu = service
+        .query(
+            Point {
+                x: 30,
+                y: 2,
+                display_id: 1,
+            },
+            HitTestMode::Window,
+            &QueryControl::foreground(),
+            &mut |_| {},
+        )
+        .unwrap();
+    assert_eq!(menu.path.unwrap()[0].height(), 10);
+}
+
+#[test]
+fn empty_dock_area_selects_only_the_queried_display_in_both_modes() {
+    let secondary = DisplayInfo {
+        id: 2,
+        bounds: rect(100., 0., 100., 100.),
+        width: 100,
+        height: 100,
+    };
+    let snapshot = WindowSnapshot {
+        windows: vec![],
+        displays: vec![display(), secondary.clone()],
+    };
+    let mut service = ElementRegionService::from_snapshot(&snapshot).unwrap();
+    for mode in [HitTestMode::Window, HitTestMode::UiElement] {
+        // Physical display rectangles overlap; the request's identity must win.
+        for d in [display(), secondary.clone()] {
+            let result = service
+                .query(
+                    Point {
+                        x: 150,
+                        y: 95,
+                        display_id: d.id,
+                    },
+                    mode,
+                    &QueryControl::foreground(),
+                    &mut |_| panic!("no AX traversal needed"),
+                )
+                .unwrap();
+            assert_eq!(result.reason, StopReason::Complete);
+            assert_eq!(
+                result.path.unwrap(),
+                vec![ElementRect::new(d.to_pixels(d.bounds).unwrap())]
+            );
+        }
+    }
+    let outside = service
+        .query(
+            Point {
+                x: 300,
+                y: 300,
+                display_id: 2,
+            },
+            HitTestMode::Window,
+            &QueryControl::foreground(),
+            &mut |_| {},
+        )
+        .unwrap();
+    assert!(outside.path.is_none());
+}
+
+#[test]
+fn dock_filter_preserves_other_owners_and_other_dock_levels() {
+    assert!(is_dock_surface(
+        20,
+        20,
+        Some("/System/Library/CoreServices/Dock.app/Contents/MacOS/Dock")
+    ));
+    assert!(!is_dock_surface(20, 20, Some("Application")));
+    assert!(!is_dock_surface(20, 20, None));
+    // Display names and similarly named third-party executables are not system identity.
+    for name in [
+        "Dock",
+        "程序坞",
+        "Dock.app",
+        "/Applications/Dock.app/Contents/MacOS/Dock",
+    ] {
+        assert!(!is_dock_surface(20, 20, Some(name)));
+    }
+    assert!(!is_dock_surface(
+        24,
+        20,
+        Some("/System/Library/CoreServices/Dock.app/Contents/MacOS/Dock")
+    ));
+    assert!(!is_dock_surface(
+        0,
+        20,
+        Some("/System/Library/CoreServices/Dock.app/Contents/MacOS/Dock")
+    ));
 }

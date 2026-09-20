@@ -82,7 +82,8 @@ class ScreenshotSelectionToolbarWidget final : public QWidget {
     QLabel* m_yLabel = nullptr;
     QLabel* m_widthLabel = nullptr;
     QLabel* m_sizeUnitLabel = nullptr;
-    QLabel* m_outputLabel = nullptr;
+    QList<QLabel*> m_canvasUnitLabels;
+    // Nonempty for point-backed canvases; preview dimensions are capture pixels.
     QSize m_outputPixels;
     QLabel* m_heightLabel = nullptr;
     QLabel* m_radiusLabel = nullptr;

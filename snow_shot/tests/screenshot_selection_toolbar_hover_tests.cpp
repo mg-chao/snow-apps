@@ -11,7 +11,9 @@
 #include <QLabel>
 #include <QPainter>
 #include <QPointF>
+#include <QTranslator>
 #include <QWidget>
+#include <QWheelEvent>
 
 #include <cstdlib>
 #include <iostream>
@@ -29,7 +31,8 @@ class NoOpSelectionToolbarCommands final : public ScreenshotSelectionToolbarComm
     void hideColorPickersForScreenshotUi() override {
         ++interactionCount;
     }
-    void adjustSelectionFromToolbar(int, int, int, int) override {
+    void adjustSelectionFromToolbar(int minDx, int minDy, int maxDx, int maxDy) override {
+        lastAdjustment = {minDx, minDy, maxDx, maxDy};
         ++interactionCount;
     }
     void setSelectionCornerRadiusFromToolbar(int) override {
@@ -42,7 +45,23 @@ class NoOpSelectionToolbarCommands final : public ScreenshotSelectionToolbarComm
         ++interactionCount;
     }
 
+    std::vector<int> lastAdjustment;
     int interactionCount = 0;
+};
+
+class PixelUnitTranslator final : public QTranslator {
+  public:
+    bool isEmpty() const override {
+        return false;
+    }
+
+    QString translate(const char*, const char* sourceText, const char*, int) const override {
+        const QByteArray source(sourceText);
+        if (source == "Pixels" || source == "Points") {
+            return QStringLiteral("translated-unit");
+        }
+        return {};
+    }
 };
 
 void require(bool condition, const char* message) {
@@ -385,6 +404,105 @@ void selectionToolbarLabelsFollowApplicationFontFamily() {
                 "selection toolbar labels must follow the application font family");
     }
 }
+
+void selectionToolbarUsesCanvasUnitsForEditingAndPixelsForPreview() {
+    NoOpSelectionToolbarCommands commands;
+    QWidget host;
+    ScreenshotSelectionToolbarWidget toolbar(commands, &host);
+    using Mode = ScreenshotSelectionToolbarWidget::DisplayMode;
+    const QRect selection(80, 70, 317, 181);
+    const QSize pixels(634, 362);
+    toolbar.setSelectionState(selection, false, 10, 5, Mode::Full, pixels);
+
+    const auto labels = toolbar.findChildren<QLabel*>();
+    const auto field = [&](const char* name) -> QLabel* {
+        for (QLabel* label : labels) {
+            if (label->accessibleName() == QString::fromLatin1(name)) {
+                return label;
+            }
+        }
+        require(false, "selection toolbar field missing");
+        return nullptr;
+    };
+    QLabel* width = field("Width");
+    QLabel* height = field("Height");
+    const auto checkUnits = [&](int points, int pixels) {
+        int pointLabels = 0;
+        int pixelLabels = 0;
+        for (QLabel* label : labels) {
+            if (label->text() == QStringLiteral("pt")) {
+                ++pointLabels;
+                require(label->toolTip() == QStringLiteral("Points") &&
+                            label->accessibleName() == QStringLiteral("Points"),
+                        "point units need descriptive accessibility text");
+            } else if (label->text() == QStringLiteral("px")) {
+                ++pixelLabels;
+                require(label->toolTip() == QStringLiteral("Pixels") &&
+                            label->accessibleName() == QStringLiteral("Pixels"),
+                        "pixel units need descriptive accessibility text");
+            }
+        }
+        require(pointLabels == points && pixelLabels == pixels, "incorrect toolbar unit system");
+    };
+    require(width->text() == QStringLiteral("317") && height->text() == QStringLiteral("181") &&
+                field("X coordinate")->text() == QStringLiteral("80") &&
+                field("Corner radius")->text() == QStringLiteral("10") &&
+                field("Shadow width")->text() == QStringLiteral("5"),
+            "editable values must match the canvas and resize dialog units");
+    checkUnits(4, 0);
+
+    const QPointF local(width->rect().center());
+    QWheelEvent wheel(local, width->mapToGlobal(local.toPoint()), QPoint(), QPoint(0, 120),
+                      Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(width, &wheel);
+    require(commands.lastAdjustment == std::vector<int>({0, 0, 1, 0}),
+            "width wheel must request one displayed canvas unit");
+    toolbar.setSelectionState(QRect(80, 70, 318, 181), false, 10, 5, Mode::Full, QSize(636, 362));
+    require(width->text() == QStringLiteral("318"),
+            "one canvas-unit edit must advance the editable readout by one");
+
+    toolbar.setSelectionState(selection, false, 10, 5, Mode::Full, pixels);
+    toolbar.setSelectionState(selection, false, 10, 5, Mode::SizeOnly, pixels);
+    require(width->text() == QStringLiteral("634") && height->text() == QStringLiteral("362"),
+            "mode-only transitions must switch preview to physical pixels");
+    checkUnits(3, 1);
+    commands.lastAdjustment.clear();
+    QApplication::sendEvent(width, &wheel);
+    require(commands.lastAdjustment.empty(), "pixel preview must not dispatch canvas edits");
+    toolbar.setSelectionState(selection, false, 10, 5, Mode::Full, pixels);
+    require(width->text() == QStringLiteral("317"), "editing must restore canvas dimensions");
+    checkUnits(4, 0);
+
+    PixelUnitTranslator translator;
+    require(QApplication::installTranslator(&translator), "pixel-unit translator unavailable");
+    QCoreApplication::processEvents();
+    for (QLabel* label : labels) {
+        if (label->text() == QStringLiteral("pt")) {
+            require(label->toolTip() == QStringLiteral("translated-unit") &&
+                        label->accessibleName() == QStringLiteral("translated-unit"),
+                    "unit descriptions must follow language changes");
+        }
+    }
+    toolbar.setSelectionState(selection, false, 10, 5, Mode::SizeOnly, pixels);
+    for (QLabel* label : labels) {
+        if (label->text() == QStringLiteral("px")) {
+            require(label->accessibleName() == QStringLiteral("translated-unit"),
+                    "preview unit descriptions must follow language changes");
+        }
+    }
+    QApplication::removeTranslator(&translator);
+    QCoreApplication::processEvents();
+
+    // A point-backed 1x display still uses points for editing, even when values coincide.
+    toolbar.setSelectionState(selection, false, 10, 5, Mode::Full, selection.size());
+    checkUnits(4, 0);
+    toolbar.setSelectionState(selection, false, 10, 5, Mode::Full);
+    require(width->text() == QStringLiteral("317"), "pixel canvases must retain their dimensions");
+    checkUnits(0, 4);
+    toolbar.resetForNewCapture();
+    checkUnits(0, 4);
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -393,6 +511,7 @@ int main(int argc, char* argv[]) {
     valueLabelPaintsFromItsOwnEnterLeaveState();
     selectionToolbarInputSurfaceMatchesInteractivePanel();
     selectionToolbarLabelsFollowApplicationFontFamily();
+    selectionToolbarUsesCanvasUnitsForEditingAndPixelsForPreview();
     smartSelectionToolbarIsClickThroughAcrossCaptureLifecycles();
     smartSelectionToolbarShedsNativeWindowForcedByNativeSiblingEmbed();
     return 0;

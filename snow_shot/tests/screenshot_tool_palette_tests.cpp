@@ -558,10 +558,11 @@ void recordingEffectSettingsModal() {
         QStringLiteral("screenRecordingKeyboardBackgroundColor"));
     auto* foreground = form->findChild<adqt::widgets::AdColorPicker*>(
         QStringLiteral("screenRecordingKeyboardForegroundColor"));
-    require(duration && background && foreground && duration->minimum() == 100 &&
+    require(duration && background && foreground &&
+                keyboardSize->suffixText() == QStringLiteral("px") && duration->minimum() == 100 &&
                 duration->maximum() == 2000 && duration->singleStep() == 100 &&
                 duration->value() == 500 && !duration->suffixText().isEmpty(),
-            "duration must show its unit and configured bounds, step and default");
+            "recording controls must show uniform units and configured bounds, step and default");
     const QString snapshotPath = qEnvironmentVariable("SNOW_RECORDING_SETTINGS_SNAPSHOT");
     if (!snapshotPath.isEmpty()) {
         require(form->window()->grab().save(snapshotPath), "settings snapshot must save");
@@ -644,7 +645,7 @@ void recordingEffectSettingsModal() {
     require(!reopened.form->disabled() &&
                 reopened.modal->windowTitle() == QStringLiteral("Settings") &&
                 !reopened.duration->suffixText().isEmpty() &&
-                !reopened.keyboardSize->suffixText().isEmpty(),
+                reopened.keyboardSize->suffixText() == QStringLiteral("px"),
             "a rebuilt form must be enabled and retranslated before it is shown");
     require(palette.findChildren<adqt::widgets::AdColorPicker*>().size() == 2,
             "dialog content must stay outside the palette widget tree");

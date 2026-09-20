@@ -14,6 +14,7 @@ use core_foundation_sys::{
         CFNumberGetTypeID, CFNumberGetValue, CFNumberRef, kCFNumberDoubleType, kCFNumberSInt64Type,
     },
 };
+use std::ffi::{CStr, c_void};
 use std::ptr;
 
 #[repr(C)]
@@ -46,6 +47,7 @@ impl From<CGRect> for Rect {
 }
 #[link(name = "CoreGraphics", kind = "framework")]
 unsafe extern "C" {
+    fn CGWindowLevelForKey(key: i32) -> i32;
     fn CGWindowListCopyWindowInfo(options: u32, relative: u32) -> CFArrayRef;
     fn CGRectMakeWithDictionaryRepresentation(dict: CFDictionaryRef, rect: *mut CGRect) -> bool;
     fn CGGetActiveDisplayList(max: u32, displays: *mut u32, count: *mut u32) -> i32;
@@ -55,6 +57,10 @@ unsafe extern "C" {
     fn CGDisplayModeGetWidth(mode: CFTypeRef) -> usize;
     fn CGDisplayModeGetHeight(mode: CFTypeRef) -> usize;
     fn CGDisplayModeGetPixelHeight(mode: CFTypeRef) -> usize;
+}
+#[link(name = "proc")]
+unsafe extern "C" {
+    fn proc_pidpath(pid: i32, buffer: *mut c_void, buffersize: u32) -> i32;
 }
 /// Only explicit user actions pass `prompt=true`. Snapshot and hover paths always use false.
 pub fn accessibility_permission(prompt: bool) -> bool {
@@ -102,6 +108,27 @@ fn number(dict: CFDictionaryRef, name: &str) -> Option<f64> {
     }
     .then_some(out)
 }
+pub(super) fn is_dock_surface(layer: i32, dock_layer: i32, executable: Option<&str>) -> bool {
+    // Level alone is not ownership, and Quartz owner names are localized. Identify the
+    // system Dock executable, preserving application panels that happen to use its level.
+    layer == dock_layer
+        && executable == Some("/System/Library/CoreServices/Dock.app/Contents/MacOS/Dock")
+}
+
+fn process_executable(pid: i32) -> Option<String> {
+    const PROC_PIDPATHINFO_MAXSIZE: usize = 4096;
+    let mut buffer = [0u8; PROC_PIDPATHINFO_MAXSIZE];
+    let length = unsafe { proc_pidpath(pid, buffer.as_mut_ptr().cast(), buffer.len() as u32) };
+    if length <= 0 {
+        return None;
+    }
+    CStr::from_bytes_until_nul(&buffer)
+        .ok()?
+        .to_str()
+        .ok()
+        .map(str::to_owned)
+}
+
 pub(super) fn snapshot(excluded: &[usize]) -> SelectorResult<WindowSnapshot> {
     let mut count = 0;
     if unsafe { CGGetActiveDisplayList(0, ptr::null_mut(), &mut count) } != 0
@@ -139,6 +166,9 @@ pub(super) fn snapshot(excluded: &[usize]) -> SelectorResult<WindowSnapshot> {
         return Err("invalid window list".into());
     }
     let array = list.as_CFTypeRef() as CFArrayRef;
+    const DOCK_WINDOW_LEVEL_KEY: i32 = 7; // kCGDockWindowLevelKey
+    let dock_layer = unsafe { CGWindowLevelForKey(DOCK_WINDOW_LEVEL_KEY) };
+    let mut dock_owners = std::collections::HashMap::new();
     let mut windows = Vec::new();
     for i in 0..unsafe { CFArrayGetCount(array) } {
         let value = unsafe { CFArrayGetValueAtIndex(array, i) };
@@ -158,6 +188,13 @@ pub(super) fn snapshot(excluded: &[usize]) -> SelectorResult<WindowSnapshot> {
         else {
             continue;
         };
+        if layer == dock_layer
+            && *dock_owners.entry(pid).or_insert_with(|| {
+                is_dock_surface(layer, dock_layer, process_executable(pid).as_deref())
+            })
+        {
+            continue;
+        }
         let Some(alpha) = number(dict, "kCGWindowAlpha") else {
             continue;
         };
@@ -326,6 +363,16 @@ impl AxProvider for Provider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn process_identity_uses_executable_path() {
+        let executable = process_executable(std::process::id() as i32).unwrap();
+        assert_eq!(
+            std::path::Path::new(&executable).file_name(),
+            std::env::current_exe().unwrap().file_name()
+        );
+        assert!(process_executable(-1).is_none());
+    }
+
     #[test]
     fn ax_values_require_correct_type_and_payload() {
         let p = CGPoint { x: -12.5, y: 3.25 };

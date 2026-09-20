@@ -116,6 +116,11 @@ int main(int argc, char** argv) {
     require(windowRect.left <= query.x && query.x < windowRect.right && windowRect.top <= query.y &&
                 query.y < windowRect.bottom,
             "window bounds must contain the physical pointer");
+    require(std::abs((windowRect.right - windowRect.left) -
+                     window.frameGeometry().width() * scaleX) <= 4 &&
+                std::abs((windowRect.bottom - windowRect.top) -
+                         window.frameGeometry().height() * scaleY) <= 4,
+            "window selection must match the fixture, not a full-screen shell surface");
     const bool trusted = snow_ui_selector_accessibility_permission(0) != 0;
     state.delivered = false;
     query.request_id++;

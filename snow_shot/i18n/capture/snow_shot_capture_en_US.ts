@@ -250,10 +250,6 @@
     <context>
         <name>ScreenshotSelectionToolbarWidget</name>
         <message>
-            <source>%1 × %2 px</source>
-            <translation>%1 × %2 px</translation>
-        </message>
-        <message>
             <source>Corner radius</source>
             <translation>Corner radius</translation>
         </message>
@@ -264,10 +260,6 @@
         <message>
             <source>Lock selection aspect ratio</source>
             <translation>Lock selection aspect ratio</translation>
-        </message>
-        <message>
-            <source>Output image dimensions</source>
-            <translation>Output image dimensions</translation>
         </message>
         <message>
             <source>Pixels</source>

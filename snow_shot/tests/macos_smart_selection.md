@@ -8,8 +8,17 @@ still receive terminal delivery. Closing the service shuts off callbacks before
 asynchronous worker cleanup.
 
 Quartz windows are cached front to back. Desktop elements, invalid or transparent
-windows, and excluded `CGWindowID`s are removed before hit testing. Qt's `WId` on
-macOS is an `NSView` pointer and must not be used as the exclusion ID.
+windows, Dock-owned surfaces at the Dock level, and excluded `CGWindowID`s are
+removed before hit testing. The Dock's Quartz rectangle can cover the entire display even
+when its visible content does not; excluding that owner/level combination prevents
+it from masking application windows and their Accessibility children. Menus and floating panels
+remain selectable, including other applications at the Dock level. Ownership is
+identified through the owner PID and system executable path, not the localized
+Quartz owner name. Qt's `WId` on macOS is an `NSView` pointer and must not be used
+as the exclusion ID.
+When no eligible window contains the pointer (including the Dock area), both
+window and element selection return the full queried display in capture pixels.
+The display ID keeps this fallback local to one screen on mixed-scale desktops.
 
 Coordinates use the capture contract: a display's Quartz desktop origin plus
 pixel offsets inside that display. Backing scale comes from the display mode,
@@ -18,6 +27,12 @@ physical rectangles can overlap on mixed-scale desktops. Selection is clipped to
 the queried display and the cached window; output edges round outward. The same
 display ID accompanies initial and refinement results through canvas mapping.
 A refresh is required after a display layout change.
+
+The read-only smart-selection toolbar shows the rendered physical pixel dimensions.
+Once editing starts, all toolbar measurements use canvas units (points on macOS),
+matching wheel increments, the resize dialog, and selection effects. Units switch
+on mode changes even if the selection has not moved. Unit descriptions retranslate
+on language changes; `px` and `pt` remain abbreviations in each catalog.
 
 Accessibility hit testing targets the selected window's application, then verifies
 the owning PID and AX window bounds before publishing any children. Ancestors are

@@ -232,10 +232,6 @@
             <translation>Percentage</translation>
         </message>
         <message>
-            <source>Pixels</source>
-            <translation>Pixels</translation>
-        </message>
-        <message>
             <source>Please enter a name</source>
             <translation>Please enter a name</translation>
         </message>
@@ -338,6 +334,10 @@
         <message>
             <source>Width</source>
             <translation>Width</translation>
+        </message>
+        <message>
+            <source>px</source>
+            <translation>px</translation>
         </message>
     </context>
     <context>

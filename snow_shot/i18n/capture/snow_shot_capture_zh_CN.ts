@@ -250,10 +250,6 @@
     <context>
         <name>ScreenshotSelectionToolbarWidget</name>
         <message>
-            <source>%1 × %2 px</source>
-            <translation>%1 × %2 像素</translation>
-        </message>
-        <message>
             <source>Corner radius</source>
             <translation>圆角半径</translation>
         </message>
@@ -264,10 +260,6 @@
         <message>
             <source>Lock selection aspect ratio</source>
             <translation>锁定选区宽高比</translation>
-        </message>
-        <message>
-            <source>Output image dimensions</source>
-            <translation>输出图像尺寸</translation>
         </message>
         <message>
             <source>Pixels</source>
@@ -295,11 +287,11 @@
         </message>
         <message>
             <source>pt</source>
-            <translation>点</translation>
+            <translation>pt</translation>
         </message>
         <message>
             <source>px</source>
-            <translation>像素</translation>
+            <translation>px</translation>
         </message>
     </context>
     <context>

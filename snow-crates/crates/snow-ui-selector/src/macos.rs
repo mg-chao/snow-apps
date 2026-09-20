@@ -75,8 +75,12 @@ impl ElementRegionService {
             .iter()
             .find(|w| w.id != 0 && w.bounds.contains(position))
         else {
+            // Desktop gaps and the excluded Dock surface still offer a selection:
+            // use the queried display, not the union of a mixed-scale desktop.
             return Ok(QueryResult {
-                path: None,
+                path: display
+                    .to_pixels(display.bounds)
+                    .map(|bounds| vec![ElementRect::new(bounds)]),
                 reason: StopReason::Complete,
             });
         };
